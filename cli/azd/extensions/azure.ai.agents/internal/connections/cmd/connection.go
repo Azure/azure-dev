@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -244,7 +245,7 @@ For metadata changes, use the 'metadata' subcommand.`,
 				return err
 			}
 
-			// GET current connection
+			// GET current connection metadata from ARM
 			current, err := connCtx.armClient.Get(
 				ctx, connCtx.rg, connCtx.account, connCtx.project, name, nil,
 			)
@@ -252,41 +253,73 @@ For metadata changes, use the 'metadata' subcommand.`,
 				return exterrors.ServiceFromAzure(err, exterrors.OpGetConnection)
 			}
 
-			// Merge changes into the existing properties
-			props := current.Properties.GetConnectionPropertiesV2()
-			if cmd.Flags().Changed("target") {
-				props.Target = &target
+			// Fetch current credentials from data-plane (ARM never returns credentials)
+			// We need these for the PUT body — ARM rejects PUT without credentials.
+			dpConn, err := connCtx.dpClient.GetConnectionWithCredentials(ctx, name)
+			if err != nil {
+				return fmt.Errorf("failed to fetch current credentials: %w", err)
 			}
 
-			// For credential updates, we need to rebuild the properties
-			// with the updated credential values. The ARM API requires a full PUT.
-			if cmd.Flags().Changed("key") || cmd.Flags().Changed("custom-key") {
-				// Fetch current credentials from data-plane to merge
-				dpConn, dpErr := connCtx.dpClient.GetConnectionWithCredentials(ctx, name)
-				if dpErr != nil {
-					return fmt.Errorf("failed to fetch current credentials for merge: %w", dpErr)
-				}
+			props := current.Properties.GetConnectionPropertiesV2()
 
-				if cmd.Flags().Changed("key") && dpConn.Credentials != nil {
-					dpConn.Credentials.Key = key
+			// Apply target change
+			newTarget := deref(props.Target)
+			if cmd.Flags().Changed("target") {
+				newTarget = target
+			}
+
+			// Build merged credentials
+			newKey := ""
+			newCustomKeys := map[string]string{}
+			if dpConn.Credentials != nil {
+				newKey = dpConn.Credentials.Key
+				for k, v := range dpConn.Credentials.CustomKeys {
+					newCustomKeys[k] = v
 				}
-				if cmd.Flags().Changed("custom-key") && dpConn.Credentials != nil {
-					for _, kv := range customKeys {
-						for i := range len(kv) {
-							if kv[i] == '=' {
-								dpConn.Credentials.CustomKeys[kv[:i]] = kv[i+1:]
-								break
-							}
+			}
+			if cmd.Flags().Changed("key") {
+				newKey = key
+			}
+			if cmd.Flags().Changed("custom-key") {
+				for _, kv := range customKeys {
+					for i := range len(kv) {
+						if kv[i] == '=' {
+							newCustomKeys[kv[:i]] = kv[i+1:]
+							break
 						}
 					}
 				}
 			}
 
-			// PUT back the full connection
+			// Rebuild the full connection body with credentials
+			normalizedAuth := normalizeAuthType(authTypeStr(props.AuthType))
+			kindStr := categoryStr(props.Category)
+			metaPairs := []string{}
+			for k, v := range props.Metadata {
+				if v != nil {
+					metaPairs = append(metaPairs, k+"="+*v)
+				}
+			}
+
+			// Map credential values into flag-style inputs for buildConnectionBody
+			var credKey string
+			var credCustomKeys []string
+			if newKey != "" {
+				credKey = newKey
+			}
+			for k, v := range newCustomKeys {
+				credCustomKeys = append(credCustomKeys, k+"="+v)
+			}
+
+			body, err := buildConnectionBody(kindStr, newTarget, normalizedAuth, credKey, credCustomKeys, metaPairs)
+			if err != nil {
+				return err
+			}
+
 			_, err = connCtx.armClient.Create(
 				ctx, connCtx.rg, connCtx.account, connCtx.project, name,
 				&armcognitiveservices.ProjectConnectionsClientCreateOptions{
-					Connection: &current.ConnectionPropertiesV2BasicResource,
+					Connection: body,
 				},
 			)
 			if err != nil {
@@ -553,4 +586,82 @@ func authTypeStr(a *armcognitiveservices.ConnectionAuthType) string {
 		return ""
 	}
 	return string(*a)
+}
+
+// normalizeAuthType converts ARM SDK auth type values to CLI kebab-case format.
+func normalizeAuthType(armAuthType string) string {
+	switch armAuthType {
+	case "ApiKey":
+		return "api-key"
+	case "CustomKeys":
+		return "custom-keys"
+	case "None":
+		return "none"
+	default:
+		return armAuthType
+	}
+}
+
+// rebuildAndPutConnection fetches the current connection from ARM + data-plane,
+// applies a modification function to the properties and credentials, then PUTs
+// the full body back. This is needed because ARM PUT requires credentials but
+// ARM GET never returns them — so we always fetch from data-plane.
+func rebuildAndPutConnection(
+	ctx context.Context,
+	connCtx *connectionContext,
+	name string,
+	modifyFn func(props *armcognitiveservices.ConnectionPropertiesV2, creds *connections.ConnectionCredentials),
+) error {
+	// GET metadata from ARM
+	current, err := connCtx.armClient.Get(
+		ctx, connCtx.rg, connCtx.account, connCtx.project, name, nil,
+	)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, exterrors.OpGetConnection)
+	}
+
+	// GET credentials from data-plane
+	dpConn, err := connCtx.dpClient.GetConnectionWithCredentials(ctx, name)
+	if err != nil {
+		return fmt.Errorf("failed to fetch credentials: %w", err)
+	}
+
+	props := current.Properties.GetConnectionPropertiesV2()
+
+	// Apply modifications
+	modifyFn(props, dpConn.Credentials)
+
+	// Rebuild full body with credentials
+	normalizedAuth := normalizeAuthType(authTypeStr(props.AuthType))
+	kindStr := categoryStr(props.Category)
+	targetStr := deref(props.Target)
+
+	metaPairs := []string{}
+	for k, v := range props.Metadata {
+		if v != nil {
+			metaPairs = append(metaPairs, k+"="+*v)
+		}
+	}
+
+	var credKey string
+	var credCustomKeys []string
+	if dpConn.Credentials != nil {
+		credKey = dpConn.Credentials.Key
+		for k, v := range dpConn.Credentials.CustomKeys {
+			credCustomKeys = append(credCustomKeys, k+"="+v)
+		}
+	}
+
+	body, err := buildConnectionBody(kindStr, targetStr, normalizedAuth, credKey, credCustomKeys, metaPairs)
+	if err != nil {
+		return err
+	}
+
+	_, err = connCtx.armClient.Create(
+		ctx, connCtx.rg, connCtx.account, connCtx.project, name,
+		&armcognitiveservices.ProjectConnectionsClientCreateOptions{
+			Connection: body,
+		},
+	)
+	return err
 }

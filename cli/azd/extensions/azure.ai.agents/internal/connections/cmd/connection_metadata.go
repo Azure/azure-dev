@@ -10,6 +10,7 @@ import (
 	"text/tabwriter"
 
 	"azureaiagent/internal/connections/exterrors"
+	"azureaiagent/internal/connections/pkg/connections"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -58,26 +59,12 @@ func newMetadataSetCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				return err
 			}
 
-			// GET current connection
-			current, err := connCtx.armClient.Get(
-				ctx, connCtx.rg, connCtx.account, connCtx.project, connName, nil,
-			)
-			if err != nil {
-				return exterrors.ServiceFromAzure(err, exterrors.OpGetConnection)
-			}
-
-			// Merge metadata
-			props := current.Properties.GetConnectionPropertiesV2()
-			if props.Metadata == nil {
-				props.Metadata = map[string]*string{}
-			}
-			props.Metadata[k] = &v
-
-			// PUT back
-			_, err = connCtx.armClient.Create(
-				ctx, connCtx.rg, connCtx.account, connCtx.project, connName,
-				&armcognitiveservices.ProjectConnectionsClientCreateOptions{
-					Connection: &current.ConnectionPropertiesV2BasicResource,
+			err = rebuildAndPutConnection(ctx, connCtx, connName,
+				func(props *armcognitiveservices.ConnectionPropertiesV2, _ *connections.ConnectionCredentials) {
+					if props.Metadata == nil {
+						props.Metadata = map[string]*string{}
+					}
+					props.Metadata[k] = &v
 				},
 			)
 			if err != nil {
@@ -104,22 +91,11 @@ func newMetadataRemoveCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				return err
 			}
 
-			current, err := connCtx.armClient.Get(
-				ctx, connCtx.rg, connCtx.account, connCtx.project, connName, nil,
-			)
-			if err != nil {
-				return exterrors.ServiceFromAzure(err, exterrors.OpGetConnection)
-			}
-
-			props := current.Properties.GetConnectionPropertiesV2()
-			if props.Metadata != nil {
-				delete(props.Metadata, key)
-			}
-
-			_, err = connCtx.armClient.Create(
-				ctx, connCtx.rg, connCtx.account, connCtx.project, connName,
-				&armcognitiveservices.ProjectConnectionsClientCreateOptions{
-					Connection: &current.ConnectionPropertiesV2BasicResource,
+			err = rebuildAndPutConnection(ctx, connCtx, connName,
+				func(props *armcognitiveservices.ConnectionPropertiesV2, _ *connections.ConnectionCredentials) {
+					if props.Metadata != nil {
+						delete(props.Metadata, key)
+					}
 				},
 			)
 			if err != nil {

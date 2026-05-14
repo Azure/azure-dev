@@ -13,20 +13,22 @@ import (
 	"azureaiagent/internal/connections/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/spf13/cobra"
 )
+
+// TODO: Unify endpoint resolution with the project set/unset commands being added
+// to avoid duplicating the resolution cascade logic.
 
 // resolveProjectEndpoint implements the 5-level resolution cascade from the spec.
 //
-//  1. -p / --project-endpoint flag
+//  1. -p / --project-endpoint flag (passed as flagEndpoint)
 //  2. Active azd env → AZURE_AI_PROJECT_ENDPOINT
 //  3. Global config → extensions.ai-agents.context.endpoint
 //  4. FOUNDRY_PROJECT_ENDPOINT environment variable
 //  5. Structured error
-func resolveProjectEndpoint(ctx context.Context, cmd *cobra.Command) (string, error) {
+func resolveProjectEndpoint(ctx context.Context, flagEndpoint string) (string, error) {
 	// 1. Flag
-	if ep, _ := cmd.Flags().GetString("project-endpoint"); ep != "" {
-		return ep, nil
+	if flagEndpoint != "" {
+		return flagEndpoint, nil
 	}
 
 	// 2 & 3. Try azd host (env value + global config) — best-effort

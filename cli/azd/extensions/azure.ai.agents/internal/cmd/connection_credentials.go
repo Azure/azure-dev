@@ -3,9 +3,6 @@
 
 package cmd
 
-// TODO: Add unit tests for resolveConnectionCredentials (success path,
-// missing connection/key, and ensuring secret values are never logged).
-
 import (
 	"context"
 	"fmt"
@@ -24,7 +21,54 @@ import (
 
 // connectionRefPattern matches ${{connections.<name>.credentials.<key>}} references
 // in agent manifest environment variable values.
-var connectionRefPattern = regexp.MustCompile(`\$\{\{connections\.([^.]+)\.credentials\.([^}]+)\}\}`)
+var connectionRefPattern = regexp.MustCompile(
+	`\$\{\{connections\.([^.]+)\.credentials\.([^}]+)\}\}`,
+)
+
+// connRef represents a single connection credential reference found in an
+// agent manifest's environment_variables section.
+type connRef struct {
+	EnvName  string // the env var name (e.g., TAVILY_API_KEY)
+	ConnName string // connection name (e.g., my-test-conn)
+	CredKey  string // credential key (e.g., x-api-key)
+}
+
+// extractConnectionRefs scans environment variable definitions for
+// ${{connections.<name>.credentials.<key>}} patterns and returns the parsed refs.
+func extractConnectionRefs(
+	envVars []agent_yaml.EnvironmentVariable,
+) []connRef {
+	var refs []connRef
+	for _, ev := range envVars {
+		matches := connectionRefPattern.FindStringSubmatch(ev.Value)
+		if matches != nil {
+			refs = append(refs, connRef{
+				EnvName:  ev.Name,
+				ConnName: matches[1],
+				CredKey:  matches[2],
+			})
+		}
+	}
+	return refs
+}
+
+// lookupCredentialValue finds the value of a credential key on a connection.
+// Returns the value and true if found, or empty string and false if not.
+func lookupCredentialValue(
+	conn *connections.Connection,
+	credKey string,
+) (string, bool) {
+	if conn == nil || conn.Credentials == nil {
+		return "", false
+	}
+	if credKey == "key" && conn.Credentials.Key != "" {
+		return conn.Credentials.Key, true
+	}
+	if v, ok := conn.Credentials.CustomKeys[credKey]; ok {
+		return v, true
+	}
+	return "", false
+}
 
 // resolveConnectionCredentials reads the agent manifest from projectDir,
 // scans environment_variables for ${{connections.<name>.credentials.<key>}} patterns,
@@ -84,24 +128,7 @@ func resolveConnectionCredentials(
 	}
 
 	// Scan for connection references
-	type connRef struct {
-		envName  string // the env var name (e.g., TAVILY_API_KEY)
-		connName string // connection name (e.g., my-test-conn)
-		credKey  string // credential key (e.g., x-api-key)
-	}
-
-	var refs []connRef
-	for _, ev := range envVars {
-		matches := connectionRefPattern.FindStringSubmatch(ev.Value)
-		if matches != nil {
-			refs = append(refs, connRef{
-				envName:  ev.Name,
-				connName: matches[1],
-				credKey:  matches[2],
-			})
-		}
-	}
-
+	refs := extractConnectionRefs(envVars)
 	if len(refs) == 0 {
 		return nil, nil
 	}
@@ -111,7 +138,9 @@ func resolveConnectionCredentials(
 		&azidentity.AzureDeveloperCLICredentialOptions{},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create credential for connection resolution: %w", err)
+		return nil, fmt.Errorf(
+			"failed to create credential for connection resolution: %w", err,
+		)
 	}
 
 	dpClient := connections.NewDataClient(endpoint, cred)
@@ -121,39 +150,32 @@ func resolveConnectionCredentials(
 	var result []string
 
 	for _, ref := range refs {
-		conn, cached := connCache[ref.connName]
+		conn, cached := connCache[ref.ConnName]
 		if !cached {
-			conn, err = dpClient.GetConnectionWithCredentials(ctx, ref.connName)
+			conn, err = dpClient.GetConnectionWithCredentials(ctx, ref.ConnName)
 			if err != nil {
 				return nil, fmt.Errorf(
 					"failed to resolve credential for %s (connection %q): %w",
-					ref.envName, ref.connName, err,
+					ref.EnvName, ref.ConnName, err,
 				)
 			}
-			connCache[ref.connName] = conn
+			connCache[ref.ConnName] = conn
 		}
 
-		// Look up the credential key
-		var credValue string
-		if ref.credKey == "key" && conn.Credentials != nil && conn.Credentials.Key != "" {
-			credValue = conn.Credentials.Key
-		} else if conn.Credentials != nil {
-			if v, ok := conn.Credentials.CustomKeys[ref.credKey]; ok {
-				credValue = v
-			}
-		}
-
-		if credValue == "" {
+		credValue, found := lookupCredentialValue(conn, ref.CredKey)
+		if !found {
 			return nil, fmt.Errorf(
 				"credential key %q not found on connection %q (for env var %s)",
-				ref.credKey, ref.connName, ref.envName,
+				ref.CredKey, ref.ConnName, ref.EnvName,
 			)
 		}
 
-		result = append(result, fmt.Sprintf("%s=%s", ref.envName, credValue))
+		result = append(result, fmt.Sprintf("%s=%s", ref.EnvName, credValue))
 		// Log the key name only — NEVER log the value
-		log.Printf("run: resolved connection credential: %s (connection: %s, key: %s)",
-			ref.envName, ref.connName, ref.credKey)
+		log.Printf(
+			"run: resolved connection credential: %s (connection: %s, key: %s)",
+			ref.EnvName, ref.ConnName, ref.CredKey,
+		)
 	}
 
 	if len(result) > 0 {

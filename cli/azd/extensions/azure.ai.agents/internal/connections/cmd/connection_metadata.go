@@ -54,7 +54,8 @@ func newMetadataSetCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				)
 			}
 
-			connCtx, err := resolveConnectionContext(ctx, cmd)
+			ep, _ := cmd.Flags().GetString("project-endpoint")
+			connCtx, err := resolveConnectionContext(ctx, ep)
 			if err != nil {
 				return err
 			}
@@ -86,7 +87,8 @@ func newMetadataRemoveCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			connName, key := args[0], args[1]
 			ctx := azdext.WithAccessToken(cmd.Context())
 
-			connCtx, err := resolveConnectionContext(ctx, cmd)
+			ep, _ := cmd.Flags().GetString("project-endpoint")
+			connCtx, err := resolveConnectionContext(ctx, ep)
 			if err != nil {
 				return err
 			}
@@ -117,7 +119,8 @@ func newMetadataListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			connName := args[0]
 			ctx := azdext.WithAccessToken(cmd.Context())
 
-			connCtx, err := resolveConnectionContext(ctx, cmd)
+			ep, _ := cmd.Flags().GetString("project-endpoint")
+			connCtx, err := resolveConnectionContext(ctx, ep)
 			if err != nil {
 				return err
 			}

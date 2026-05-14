@@ -22,55 +22,77 @@ import (
 
 // --- LIST ---
 
+// connectionListFlags holds validated input for ConnectionListAction.
+type connectionListFlags struct {
+	kind            string
+	output          string
+	projectEndpoint string
+}
+
+// ConnectionListAction implements connection listing.
+type ConnectionListAction struct {
+	flags *connectionListFlags
+}
+
+// Run executes the list operation.
+func (a *ConnectionListAction) Run(ctx context.Context) error {
+	normalizedKind := normalizeKind(a.flags.kind)
+
+	connCtx, err := resolveConnectionContext(ctx, a.flags.projectEndpoint)
+	if err != nil {
+		return err
+	}
+
+	pager := connCtx.armClient.NewListPager(
+		connCtx.rg, connCtx.account, connCtx.project, nil,
+	)
+
+	var results []connectionListItem
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return exterrors.ServiceFromAzure(err, exterrors.OpListConnections)
+		}
+		for _, conn := range page.Value {
+			props := conn.Properties.GetConnectionPropertiesV2()
+			if props == nil {
+				continue
+			}
+			if normalizedKind != "" &&
+				(props.Category == nil || string(*props.Category) != normalizedKind) {
+				continue
+			}
+			results = append(results, connectionListItem{
+				Name:     deref(conn.Name),
+				Kind:     categoryStr(props.Category),
+				AuthType: authTypeStr(props.AuthType),
+				Target:   deref(props.Target),
+			})
+		}
+	}
+
+	return printList(results, a.flags.output)
+}
+
 func newConnectionListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	var kind string
+	flags := &connectionListFlags{}
+	action := &ConnectionListAction{flags: flags}
 
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List connections in the Foundry project.",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			flags.output = extCtx.OutputFormat
+			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
+
 			ctx := azdext.WithAccessToken(cmd.Context())
-			normalizedKind := normalizeKind(kind)
-
-			connCtx, err := resolveConnectionContext(ctx, cmd)
-			if err != nil {
-				return err
-			}
-
-			pager := connCtx.armClient.NewListPager(
-				connCtx.rg, connCtx.account, connCtx.project, nil,
-			)
-
-			var results []connectionListItem
-			for pager.More() {
-				page, err := pager.NextPage(ctx)
-				if err != nil {
-					return exterrors.ServiceFromAzure(err, exterrors.OpListConnections)
-				}
-				for _, conn := range page.Value {
-					props := conn.Properties.GetConnectionPropertiesV2()
-					if props == nil {
-						continue
-					}
-					if normalizedKind != "" &&
-						(props.Category == nil || string(*props.Category) != normalizedKind) {
-						continue
-					}
-					results = append(results, connectionListItem{
-						Name:     deref(conn.Name),
-						Kind:     categoryStr(props.Category),
-						AuthType: authTypeStr(props.AuthType),
-						Target:   deref(props.Target),
-					})
-				}
-			}
-
-			return printList(results, extCtx.OutputFormat)
+			return action.Run(ctx)
 		},
 	}
 
-	cmd.Flags().StringVar(&kind, "kind", "", "Filter by connection kind (e.g., remote-tool)")
+	cmd.Flags().StringVar(&flags.kind, "kind", "",
+		"Filter by connection kind (e.g., remote-tool)")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{"json", "table"}, Default: "table",
 	})
@@ -79,8 +101,67 @@ func newConnectionListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 // --- SHOW ---
 
+// connectionShowFlags holds validated input for ConnectionShowAction.
+type connectionShowFlags struct {
+	name            string
+	showCredentials bool
+	output          string
+	projectEndpoint string
+}
+
+// ConnectionShowAction implements connection show.
+type ConnectionShowAction struct {
+	flags *connectionShowFlags
+}
+
+// Run executes the show operation.
+func (a *ConnectionShowAction) Run(ctx context.Context) error {
+	connCtx, err := resolveConnectionContext(ctx, a.flags.projectEndpoint)
+	if err != nil {
+		return err
+	}
+
+	armResp, err := connCtx.armClient.Get(
+		ctx, connCtx.rg, connCtx.account, connCtx.project, a.flags.name, nil,
+	)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, exterrors.OpGetConnection)
+	}
+
+	props := armResp.Properties.GetConnectionPropertiesV2()
+	if props == nil {
+		return fmt.Errorf("connection %q: unexpected response format", a.flags.name)
+	}
+
+	result := connectionDetailResult{
+		Name:     deref(armResp.Name),
+		Kind:     categoryStr(props.Category),
+		AuthType: authTypeStr(props.AuthType),
+		Target:   deref(props.Target),
+		Metadata: props.Metadata,
+	}
+
+	if a.flags.showCredentials {
+		dpConn, dpErr := connCtx.dpClient.GetConnectionWithCredentials(
+			ctx, a.flags.name,
+		)
+		if dpErr != nil {
+			fmt.Fprintf(os.Stderr,
+				"Warning: could not fetch credentials: %s\n", dpErr)
+		} else if dpConn.Credentials != nil {
+			result.Credentials = dpConn.Credentials.RawFields
+			result.CredentialRefs = buildCredentialReferences(
+				a.flags.name, dpConn.Credentials,
+			)
+		}
+	}
+
+	return printDetail(result, a.flags.output)
+}
+
 func newConnectionShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	var showCredentials bool
+	flags := &connectionShowFlags{}
+	action := &ConnectionShowAction{flags: flags}
 
 	cmd := &cobra.Command{
 		Use:   "show <name>",
@@ -88,49 +169,16 @@ func newConnectionShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long:  "Show connection details. Use --show-credentials to fetch secret values.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
+			flags.name = args[0]
+			flags.output = extCtx.OutputFormat
+			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
+
 			ctx := azdext.WithAccessToken(cmd.Context())
-
-			connCtx, err := resolveConnectionContext(ctx, cmd)
-			if err != nil {
-				return err
-			}
-
-			armResp, err := connCtx.armClient.Get(
-				ctx, connCtx.rg, connCtx.account, connCtx.project, name, nil,
-			)
-			if err != nil {
-				return exterrors.ServiceFromAzure(err, exterrors.OpGetConnection)
-			}
-
-			props := armResp.Properties.GetConnectionPropertiesV2()
-			if props == nil {
-				return fmt.Errorf("connection %q: unexpected response format", name)
-			}
-
-			result := connectionDetailResult{
-				Name:     deref(armResp.Name),
-				Kind:     categoryStr(props.Category),
-				AuthType: authTypeStr(props.AuthType),
-				Target:   deref(props.Target),
-				Metadata: props.Metadata,
-			}
-
-			if showCredentials {
-				dpConn, dpErr := connCtx.dpClient.GetConnectionWithCredentials(ctx, name)
-				if dpErr != nil {
-					fmt.Fprintf(os.Stderr, "Warning: could not fetch credentials: %s\n", dpErr)
-				} else if dpConn.Credentials != nil {
-					result.Credentials = dpConn.Credentials.RawFields
-					result.CredentialRefs = buildCredentialReferences(name, dpConn.Credentials)
-				}
-			}
-
-			return printDetail(result, extCtx.OutputFormat)
+			return action.Run(ctx)
 		},
 	}
 
-	cmd.Flags().BoolVar(&showCredentials, "show-credentials", false,
+	cmd.Flags().BoolVar(&flags.showCredentials, "show-credentials", false,
 		"Fetch credential values from the data plane")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{"json", "table"}, Default: "table",
@@ -140,16 +188,101 @@ func newConnectionShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 // --- CREATE ---
 
-func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	var (
-		kind       string
-		target     string
-		authType   string
-		key        string
-		customKeys []string
-		metadata   []string
-		force      bool
+// connectionCreateFlags holds validated input for ConnectionCreateAction.
+type connectionCreateFlags struct {
+	name            string
+	kind            string
+	target          string
+	authType        string
+	key             string
+	customKeys      []string
+	metadata        []string
+	force           bool
+	projectEndpoint string
+}
+
+// ConnectionCreateAction implements connection creation.
+type ConnectionCreateAction struct {
+	flags *connectionCreateFlags
+}
+
+// Run executes the create operation.
+func (a *ConnectionCreateAction) Run(ctx context.Context) error {
+	if a.flags.kind == "" {
+		return exterrors.Validation(
+			exterrors.CodeMissingConnectionField,
+			"Missing required flag --kind.",
+			"Specify the connection kind (e.g., --kind remote-tool).",
+		)
+	}
+	if a.flags.target == "" {
+		return exterrors.Validation(
+			exterrors.CodeMissingConnectionField,
+			"Missing required flag --target.",
+			"Specify the target URL (e.g., --target https://example.com).",
+		)
+	}
+	if a.flags.authType == "api-key" && a.flags.key == "" {
+		return exterrors.Validation(
+			exterrors.CodeMissingConnectionField,
+			"Missing required flag --key for api-key auth.",
+			"Specify the API key value.",
+		)
+	}
+	if a.flags.authType == "custom-keys" && len(a.flags.customKeys) == 0 {
+		return exterrors.Validation(
+			exterrors.CodeMissingConnectionField,
+			"Missing required flag --custom-key for custom-keys auth.",
+			"Specify at least one custom key (e.g., --custom-key x-api-key=value).",
+		)
+	}
+
+	connCtx, err := resolveConnectionContext(ctx, a.flags.projectEndpoint)
+	if err != nil {
+		return err
+	}
+
+	// Pre-check: fail if connection exists and --force not set
+	if !a.flags.force {
+		if _, err := connCtx.armClient.Get(
+			ctx, connCtx.rg, connCtx.account, connCtx.project,
+			a.flags.name, nil,
+		); err == nil {
+			return exterrors.Validation(
+				exterrors.CodeConnectionAlreadyExists,
+				fmt.Sprintf("Connection %q already exists.", a.flags.name),
+				"Use --force to replace the existing connection.",
+			)
+		}
+	}
+
+	body, err := buildConnectionBody(
+		a.flags.kind, a.flags.target, a.flags.authType,
+		a.flags.key, a.flags.customKeys, a.flags.metadata,
 	)
+	if err != nil {
+		return err
+	}
+
+	_, err = connCtx.armClient.Create(
+		ctx, connCtx.rg, connCtx.account, connCtx.project,
+		a.flags.name,
+		&armcognitiveservices.ProjectConnectionsClientCreateOptions{
+			Connection: body,
+		},
+	)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, exterrors.OpCreateConnection)
+	}
+
+	fmt.Printf("Connection %q created in project %q.\n",
+		a.flags.name, connCtx.project)
+	return nil
+}
+
+func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	flags := &connectionCreateFlags{}
+	action := &ConnectionCreateAction{flags: flags}
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
@@ -163,94 +296,159 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
     --auth-type custom-keys --custom-key "x-api-key=tvly-abc123"`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
+			flags.name = args[0]
+			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
+
 			ctx := azdext.WithAccessToken(cmd.Context())
-
-			connCtx, err := resolveConnectionContext(ctx, cmd)
-			if err != nil {
-				return err
-			}
-
-			// Pre-check: fail if connection exists and --force not set
-			if !force {
-				if _, err := connCtx.armClient.Get(
-					ctx, connCtx.rg, connCtx.account, connCtx.project, name, nil,
-				); err == nil {
-					return exterrors.Validation(
-						exterrors.CodeConnectionAlreadyExists,
-						fmt.Sprintf("Connection %q already exists.", name),
-						"Use --force to replace the existing connection.",
-					)
-				}
-			}
-
-			if kind == "" {
-				return exterrors.Validation(
-					exterrors.CodeMissingConnectionField,
-					"Missing required flag --kind.",
-					"Specify the connection kind (e.g., --kind remote-tool).",
-				)
-			}
-			if target == "" {
-				return exterrors.Validation(
-					exterrors.CodeMissingConnectionField,
-					"Missing required flag --target.",
-					"Specify the target URL (e.g., --target https://example.com).",
-				)
-			}
-			if authType == "api-key" && key == "" {
-				return exterrors.Validation(
-					exterrors.CodeMissingConnectionField,
-					"Missing required flag --key for api-key auth.",
-					"Specify the API key value.",
-				)
-			}
-			if authType == "custom-keys" && len(customKeys) == 0 {
-				return exterrors.Validation(
-					exterrors.CodeMissingConnectionField,
-					"Missing required flag --custom-key for custom-keys auth.",
-					"Specify at least one custom key (e.g., --custom-key x-api-key=value).",
-				)
-			}
-
-			body, err := buildConnectionBody(kind, target, authType, key, customKeys, metadata)
-			if err != nil {
-				return err
-			}
-
-			_, err = connCtx.armClient.Create(
-				ctx, connCtx.rg, connCtx.account, connCtx.project, name,
-				&armcognitiveservices.ProjectConnectionsClientCreateOptions{
-					Connection: body,
-				},
-			)
-			if err != nil {
-				return exterrors.ServiceFromAzure(err, exterrors.OpCreateConnection)
-			}
-
-			fmt.Printf("Connection %q created in project %q.\n", name, connCtx.project)
-			return nil
+			return action.Run(ctx)
 		},
 	}
 
-	cmd.Flags().StringVar(&kind, "kind", "", "Connection kind (e.g., remote-tool, cognitive-search)")
-	cmd.Flags().StringVar(&target, "target", "", "Target URL or ARM resource ID")
-	cmd.Flags().StringVar(&authType, "auth-type", "none", "Auth type: api-key, custom-keys, none")
-	cmd.Flags().StringVar(&key, "key", "", "API key (for api-key auth)")
-	cmd.Flags().StringArrayVar(&customKeys, "custom-key", nil, "Custom key=value (repeatable, for custom-keys auth)")
-	cmd.Flags().StringArrayVar(&metadata, "metadata", nil, "Metadata key=value (repeatable)")
-	cmd.Flags().BoolVar(&force, "force", false, "Replace existing connection (upsert)")
+	cmd.Flags().StringVar(&flags.kind, "kind", "",
+		"Connection kind (e.g., remote-tool, cognitive-search)")
+	cmd.Flags().StringVar(&flags.target, "target", "",
+		"Target URL or ARM resource ID")
+	cmd.Flags().StringVar(&flags.authType, "auth-type", "none",
+		"Auth type: api-key, custom-keys, none")
+	cmd.Flags().StringVar(&flags.key, "key", "",
+		"API key (for api-key auth)")
+	cmd.Flags().StringArrayVar(&flags.customKeys, "custom-key", nil,
+		"Custom key=value (repeatable, for custom-keys auth)")
+	cmd.Flags().StringArrayVar(&flags.metadata, "metadata", nil,
+		"Metadata key=value (repeatable)")
+	cmd.Flags().BoolVar(&flags.force, "force", false,
+		"Replace existing connection (upsert)")
 	return cmd
 }
 
 // --- UPDATE ---
 
-func newConnectionUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	var (
-		target     string
-		key        string
-		customKeys []string
+// connectionUpdateFlags holds validated input for ConnectionUpdateAction.
+type connectionUpdateFlags struct {
+	name             string
+	target           string
+	key              string
+	customKeys       []string
+	targetChanged    bool
+	keyChanged       bool
+	customKeyChanged bool
+	projectEndpoint  string
+}
+
+// ConnectionUpdateAction implements connection update.
+type ConnectionUpdateAction struct {
+	flags *connectionUpdateFlags
+}
+
+// Run executes the update operation.
+func (a *ConnectionUpdateAction) Run(ctx context.Context) error {
+	if !a.flags.targetChanged && !a.flags.keyChanged &&
+		!a.flags.customKeyChanged {
+		return exterrors.Validation(
+			exterrors.CodeMissingConnectionField,
+			"No fields to update.",
+			"Specify --target, --key, or --custom-key.",
+		)
+	}
+
+	connCtx, err := resolveConnectionContext(ctx, a.flags.projectEndpoint)
+	if err != nil {
+		return err
+	}
+
+	// GET current connection metadata from ARM
+	current, err := connCtx.armClient.Get(
+		ctx, connCtx.rg, connCtx.account, connCtx.project,
+		a.flags.name, nil,
 	)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, exterrors.OpGetConnection)
+	}
+
+	// Fetch current credentials from data-plane (ARM never returns credentials)
+	dpConn, err := connCtx.dpClient.GetConnectionWithCredentials(
+		ctx, a.flags.name,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to fetch current credentials: %w", err)
+	}
+
+	props := current.Properties.GetConnectionPropertiesV2()
+
+	// Apply target change
+	newTarget := deref(props.Target)
+	if a.flags.targetChanged {
+		newTarget = a.flags.target
+	}
+
+	// Build merged credentials
+	newKey := ""
+	newCustomKeys := map[string]string{}
+	if dpConn.Credentials != nil {
+		newKey = dpConn.Credentials.Key
+		maps.Copy(newCustomKeys, dpConn.Credentials.CustomKeys)
+	}
+	if a.flags.keyChanged {
+		newKey = a.flags.key
+	}
+	if a.flags.customKeyChanged {
+		for _, kv := range a.flags.customKeys {
+			for i := range len(kv) {
+				if kv[i] == '=' {
+					newCustomKeys[kv[:i]] = kv[i+1:]
+					break
+				}
+			}
+		}
+	}
+
+	// Rebuild the full connection body with credentials
+	normalizedAuth := normalizeAuthType(authTypeStr(props.AuthType))
+	kindStr := categoryStr(props.Category)
+	metaPairs := []string{}
+	for k, v := range props.Metadata {
+		if v != nil {
+			metaPairs = append(metaPairs, k+"="+*v)
+		}
+	}
+
+	var credKey string
+	var credCustomKeys []string
+	if newKey != "" {
+		credKey = newKey
+	}
+	for k, v := range newCustomKeys {
+		credCustomKeys = append(credCustomKeys, k+"="+v)
+	}
+
+	body, err := buildConnectionBody(
+		kindStr, newTarget, normalizedAuth,
+		credKey, credCustomKeys, metaPairs,
+	)
+	if err != nil {
+		return err
+	}
+
+	_, err = connCtx.armClient.Create(
+		ctx, connCtx.rg, connCtx.account, connCtx.project,
+		a.flags.name,
+		&armcognitiveservices.ProjectConnectionsClientCreateOptions{
+			Connection: body,
+		},
+	)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, exterrors.OpUpdateConnection)
+	}
+
+	fmt.Printf("Connection %q updated.\n", a.flags.name)
+	return nil
+}
+
+func newConnectionUpdateCommand(
+	extCtx *azdext.ExtensionContext,
+) *cobra.Command {
+	flags := &connectionUpdateFlags{}
+	action := &ConnectionUpdateAction{flags: flags}
 
 	cmd := &cobra.Command{
 		Use:   "update <name>",
@@ -265,185 +463,128 @@ For metadata changes, use the 'metadata' subcommand.`,
   azd ai agent connection update my-mcp --custom-key "x-api-key=new-key"`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
+			flags.name = args[0]
+			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
+			flags.targetChanged = cmd.Flags().Changed("target")
+			flags.keyChanged = cmd.Flags().Changed("key")
+			flags.customKeyChanged = cmd.Flags().Changed("custom-key")
+
 			ctx := azdext.WithAccessToken(cmd.Context())
-
-			if !cmd.Flags().Changed("target") && !cmd.Flags().Changed("key") &&
-				!cmd.Flags().Changed("custom-key") {
-				return exterrors.Validation(
-					exterrors.CodeMissingConnectionField,
-					"No fields to update.",
-					"Specify --target, --key, or --custom-key.",
-				)
-			}
-
-			connCtx, err := resolveConnectionContext(ctx, cmd)
-			if err != nil {
-				return err
-			}
-
-			// GET current connection metadata from ARM
-			current, err := connCtx.armClient.Get(
-				ctx, connCtx.rg, connCtx.account, connCtx.project, name, nil,
-			)
-			if err != nil {
-				return exterrors.ServiceFromAzure(err, exterrors.OpGetConnection)
-			}
-
-			// Fetch current credentials from data-plane (ARM never returns credentials)
-			// We need these for the PUT body — ARM rejects PUT without credentials.
-			dpConn, err := connCtx.dpClient.GetConnectionWithCredentials(ctx, name)
-			if err != nil {
-				return fmt.Errorf("failed to fetch current credentials: %w", err)
-			}
-
-			props := current.Properties.GetConnectionPropertiesV2()
-
-			// Apply target change
-			newTarget := deref(props.Target)
-			if cmd.Flags().Changed("target") {
-				newTarget = target
-			}
-
-			// Build merged credentials
-			newKey := ""
-			newCustomKeys := map[string]string{}
-			if dpConn.Credentials != nil {
-				newKey = dpConn.Credentials.Key
-				maps.Copy(newCustomKeys, dpConn.Credentials.CustomKeys)
-			}
-			if cmd.Flags().Changed("key") {
-				newKey = key
-			}
-			if cmd.Flags().Changed("custom-key") {
-				for _, kv := range customKeys {
-					for i := range len(kv) {
-						if kv[i] == '=' {
-							newCustomKeys[kv[:i]] = kv[i+1:]
-							break
-						}
-					}
-				}
-			}
-
-			// Rebuild the full connection body with credentials
-			normalizedAuth := normalizeAuthType(authTypeStr(props.AuthType))
-			kindStr := categoryStr(props.Category)
-			metaPairs := []string{}
-			for k, v := range props.Metadata {
-				if v != nil {
-					metaPairs = append(metaPairs, k+"="+*v)
-				}
-			}
-
-			// Map credential values into flag-style inputs for buildConnectionBody
-			var credKey string
-			var credCustomKeys []string
-			if newKey != "" {
-				credKey = newKey
-			}
-			for k, v := range newCustomKeys {
-				credCustomKeys = append(credCustomKeys, k+"="+v)
-			}
-
-			body, err := buildConnectionBody(kindStr, newTarget, normalizedAuth, credKey, credCustomKeys, metaPairs)
-			if err != nil {
-				return err
-			}
-
-			_, err = connCtx.armClient.Create(
-				ctx, connCtx.rg, connCtx.account, connCtx.project, name,
-				&armcognitiveservices.ProjectConnectionsClientCreateOptions{
-					Connection: body,
-				},
-			)
-			if err != nil {
-				return exterrors.ServiceFromAzure(err, exterrors.OpUpdateConnection)
-			}
-
-			fmt.Printf("Connection %q updated.\n", name)
-			return nil
+			return action.Run(ctx)
 		},
 	}
 
-	cmd.Flags().StringVar(&target, "target", "", "New target URL or ARM resource ID")
-	cmd.Flags().StringVar(&key, "key", "", "New API key value (for api-key auth)")
-	cmd.Flags().StringArrayVar(&customKeys, "custom-key", nil,
+	cmd.Flags().StringVar(&flags.target, "target", "",
+		"New target URL or ARM resource ID")
+	cmd.Flags().StringVar(&flags.key, "key", "",
+		"New API key value (for api-key auth)")
+	cmd.Flags().StringArrayVar(&flags.customKeys, "custom-key", nil,
 		"Update custom key=value (repeatable, for custom-keys auth)")
 	return cmd
 }
 
 // --- DELETE ---
 
-func newConnectionDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	var force bool
+// connectionDeleteFlags holds validated input for ConnectionDeleteAction.
+type connectionDeleteFlags struct {
+	name            string
+	force           bool
+	noPrompt        bool
+	projectEndpoint string
+}
+
+// ConnectionDeleteAction implements connection deletion.
+type ConnectionDeleteAction struct {
+	flags *connectionDeleteFlags
+}
+
+// Run executes the delete operation.
+func (a *ConnectionDeleteAction) Run(ctx context.Context) error {
+	connCtx, err := resolveConnectionContext(ctx, a.flags.projectEndpoint)
+	if err != nil {
+		return err
+	}
+
+	resp, err := connCtx.armClient.Get(
+		ctx, connCtx.rg, connCtx.account, connCtx.project,
+		a.flags.name, nil,
+	)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, exterrors.OpGetConnection)
+	}
+
+	props := resp.Properties.GetConnectionPropertiesV2()
+	fmt.Printf("Connection: %s (%s)\n",
+		a.flags.name, categoryStr(props.Category))
+	fmt.Printf("Target:     %s\n", deref(props.Target))
+
+	if !a.flags.force {
+		if a.flags.noPrompt {
+			return exterrors.Validation(
+				exterrors.CodeMissingForceFlag,
+				fmt.Sprintf(
+					"Deleting %q requires confirmation.", a.flags.name,
+				),
+				"Use --force to skip confirmation in non-interactive mode.",
+			)
+		}
+		azdClient, err := azdext.NewAzdClient()
+		if err != nil {
+			return fmt.Errorf("failed to create azd client: %w", err)
+		}
+		defer azdClient.Close()
+
+		confirmResp, err := azdClient.Prompt().Confirm(
+			ctx, &azdext.ConfirmRequest{
+				Options: &azdext.ConfirmOptions{
+					Message:      "Are you sure you want to delete this connection?",
+					DefaultValue: new(false),
+				},
+			},
+		)
+		if err != nil {
+			return err
+		}
+		if !*confirmResp.Value {
+			fmt.Println("Cancelled.")
+			return nil
+		}
+	}
+
+	_, err = connCtx.armClient.Delete(
+		ctx, connCtx.rg, connCtx.account, connCtx.project,
+		a.flags.name, nil,
+	)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, exterrors.OpDeleteConnection)
+	}
+
+	fmt.Printf("Connection %q deleted.\n", a.flags.name)
+	return nil
+}
+
+func newConnectionDeleteCommand(
+	extCtx *azdext.ExtensionContext,
+) *cobra.Command {
+	flags := &connectionDeleteFlags{}
+	action := &ConnectionDeleteAction{flags: flags}
 
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete a connection.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
+			flags.name = args[0]
+			flags.noPrompt = extCtx.NoPrompt
+			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
+
 			ctx := azdext.WithAccessToken(cmd.Context())
-
-			connCtx, err := resolveConnectionContext(ctx, cmd)
-			if err != nil {
-				return err
-			}
-
-			resp, err := connCtx.armClient.Get(
-				ctx, connCtx.rg, connCtx.account, connCtx.project, name, nil,
-			)
-			if err != nil {
-				return exterrors.ServiceFromAzure(err, exterrors.OpGetConnection)
-			}
-
-			props := resp.Properties.GetConnectionPropertiesV2()
-			fmt.Printf("Connection: %s (%s)\n", name, categoryStr(props.Category))
-			fmt.Printf("Target:     %s\n", deref(props.Target))
-
-			if !force {
-				if extCtx.NoPrompt {
-					return exterrors.Validation(
-						exterrors.CodeMissingForceFlag,
-						fmt.Sprintf("Deleting %q requires confirmation.", name),
-						"Use --force to skip confirmation in non-interactive mode.",
-					)
-				}
-				azdClient, err := azdext.NewAzdClient()
-				if err != nil {
-					return fmt.Errorf("failed to create azd client: %w", err)
-				}
-				defer azdClient.Close()
-
-				confirmResp, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-					Options: &azdext.ConfirmOptions{
-						Message:      "Are you sure you want to delete this connection?",
-						DefaultValue: new(false),
-					},
-				})
-				if err != nil {
-					return err
-				}
-				if !*confirmResp.Value {
-					fmt.Println("Cancelled.")
-					return nil
-				}
-			}
-
-			_, err = connCtx.armClient.Delete(
-				ctx, connCtx.rg, connCtx.account, connCtx.project, name, nil,
-			)
-			if err != nil {
-				return exterrors.ServiceFromAzure(err, exterrors.OpDeleteConnection)
-			}
-
-			fmt.Printf("Connection %q deleted.\n", name)
-			return nil
+			return action.Run(ctx)
 		},
 	}
 
-	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
+	cmd.Flags().BoolVar(&flags.force, "force", false,
+		"Skip confirmation prompt")
 	return cmd
 }
 

@@ -22,7 +22,6 @@ func newConnectionKeyCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	}
 
 	cmd.AddCommand(newKeySetCommand(extCtx))
-	cmd.AddCommand(newKeyRemoveCommand(extCtx))
 	cmd.AddCommand(newKeyListCommand(extCtx))
 
 	return cmd
@@ -53,7 +52,8 @@ func newKeySetCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				)
 			}
 
-			connCtx, err := resolveConnectionContext(ctx, cmd)
+			ep, _ := cmd.Flags().GetString("project-endpoint")
+			connCtx, err := resolveConnectionContext(ctx, ep)
 			if err != nil {
 				return err
 			}
@@ -90,23 +90,12 @@ func newKeySetCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			_ = current // credentials are updated through the ARM body
 			// For now, we use create --force semantics to update
 			fmt.Printf("Credential key %q set on connection %q.\n", k, connName)
-			fmt.Println("Note: Use 'azd ai agent connection update' with --key or --custom-key for full credential updates.")
+			fmt.Println(
+				"Note: Use 'azd ai agent connection update'" +
+					" with --key or --custom-key for" +
+					" full credential updates.",
+			)
 			return nil
-		},
-	}
-}
-
-func newKeyRemoveCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	return &cobra.Command{
-		Use:   "remove <connection-name> <key>",
-		Short: "Remove a credential key from a connection.",
-		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			connName, key := args[0], args[1]
-			_ = connName
-			_ = key
-			return fmt.Errorf("key remove is not yet supported by the ARM API; " +
-				"delete and recreate the connection to change credential keys")
 		},
 	}
 }
@@ -120,7 +109,8 @@ func newKeyListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			connName := args[0]
 			ctx := azdext.WithAccessToken(cmd.Context())
 
-			connCtx, err := resolveConnectionContext(ctx, cmd)
+			ep, _ := cmd.Flags().GetString("project-endpoint")
+			connCtx, err := resolveConnectionContext(ctx, ep)
 			if err != nil {
 				return err
 			}

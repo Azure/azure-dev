@@ -13,7 +13,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
-	"github.com/spf13/cobra"
 )
 
 // dataClient is a type alias for the data-plane client (used in endpoint.go).
@@ -32,9 +31,9 @@ type connectionContext struct {
 // and creates both clients needed for connection operations.
 func resolveConnectionContext(
 	ctx context.Context,
-	cmd *cobra.Command,
+	flagEndpoint string,
 ) (*connectionContext, error) {
-	endpoint, err := resolveProjectEndpoint(ctx, cmd)
+	endpoint, err := resolveProjectEndpoint(ctx, flagEndpoint)
 	if err != nil {
 		return nil, err
 	}

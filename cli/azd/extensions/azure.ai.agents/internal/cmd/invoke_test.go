@@ -232,6 +232,7 @@ func TestHttpTimeout(t *testing.T) {
 		timeout int
 		want    time.Duration
 	}{
+		{name: "default value", timeout: defaultInvokeTimeoutSeconds, want: 30 * time.Minute},
 		{name: "positive value", timeout: 120, want: 120 * time.Second},
 		{name: "zero means no timeout", timeout: 0, want: 0},
 		{name: "negative means no timeout", timeout: -1, want: 0},
@@ -250,6 +251,24 @@ func TestHttpTimeout(t *testing.T) {
 				t.Errorf("httpTimeout() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestInvokeCommandTimeoutDefault(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInvokeCommand(nil)
+	timeoutFlag := cmd.Flags().Lookup("timeout")
+	if timeoutFlag == nil {
+		t.Fatal("timeout flag not registered")
+	}
+
+	const want = "1800"
+	if timeoutFlag.DefValue != want {
+		t.Errorf("timeout default = %q, want %q", timeoutFlag.DefValue, want)
+	}
+	if timeoutFlag.Value.String() != want {
+		t.Errorf("timeout value = %q, want %q", timeoutFlag.Value.String(), want)
 	}
 }
 
@@ -823,6 +842,18 @@ func TestHandleInvocationLRO(t *testing.T) {
 			timeout:     100 * time.Millisecond,
 			wantErr:     true,
 			errContains: "timed out",
+		},
+		{
+			name:             "no timeout polls until completion",
+			initial202Header: "inv-009",
+			initial202Body:   `{}`,
+			pollResponses: []pollStep{
+				{status: 200, body: `{"status":"running"}`},
+				{status: 200, body: `{"status":"running"}`},
+				{status: 200, body: `{"status":"completed","result":"ok"}`},
+			},
+			timeout: 0,
+			wantErr: false,
 		},
 		{
 			name:             "retry-after header is respected",

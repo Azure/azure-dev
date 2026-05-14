@@ -275,8 +275,8 @@ func azureMCPServer() *ToolDefinition {
 
 func azdAIExtensions() *ToolDefinition {
 	return &ToolDefinition{
-		Id:            "azd-ai-extensions",
-		Name:          "azd AI Extensions",
+		Id:            "azure.ai.agents",
+		Name:          "azd AI Agent Extensions",
 		Description:   "Azure Developer CLI extensions for AI agent workflows.",
 		Category:      ToolCategoryLibrary,
 		Priority:      ToolPriorityOptional,
@@ -284,9 +284,8 @@ func azdAIExtensions() *ToolDefinition {
 		DetectCommand: "azd",
 		VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
 		InstallStrategies: allPlatforms(InstallStrategy{
-			InstallCommand: "azd extension install azure.ai.agents",
+			InstallCommand: "azd extension install azure.ai.agents --source azd",
 		}),
-		Dependencies: []string{"az-cli"},
 	}
 }
 

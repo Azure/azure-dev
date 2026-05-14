@@ -30,7 +30,7 @@ func TestBuiltInTools(t *testing.T) {
 			"vscode-bicep",
 			"GitHub.copilot-chat",
 			"azure-mcp-server",
-			"azd-ai-extensions",
+			"azure.ai.agents",
 		}
 
 		tools := BuiltInTools()
@@ -166,8 +166,8 @@ func TestFindTool(t *testing.T) {
 		},
 		{
 			name:     "FindsAzdAIExtensions",
-			id:       "azd-ai-extensions",
-			expectId: "azd-ai-extensions",
+			id:       "azure.ai.agents",
+			expectId: "azure.ai.agents",
 		},
 		{
 			name:      "ReturnsNilForUnknownID",
@@ -298,13 +298,33 @@ func TestSpecificToolDefinitions(t *testing.T) {
 		assert.True(t, hasLinux, "should have linux strategy")
 	})
 
-	t.Run("AzdAIExtensionsHasDependency", func(t *testing.T) {
+	t.Run("AzdAIExtensionsContract", func(t *testing.T) {
 		t.Parallel()
 
-		tool := FindTool("azd-ai-extensions")
-		require.NotNil(t, tool)
+		tool := FindTool("azure.ai.agents")
+		require.NotNil(t, tool, "azure.ai.agents must be registered")
 
-		assert.Contains(t, tool.Dependencies, "az-cli")
+		assert.Equal(t, "azure.ai.agents", tool.Id,
+			"Id must match the JSON id emitted by `azd extension list`")
+		assert.Equal(t, ToolCategoryLibrary, tool.Category,
+			"Category must be Library so DetectTool routes to detectLibrary")
+		assert.Equal(t, "azd", tool.DetectCommand,
+			"DetectCommand must be 'azd' for the extension-list probe")
+		assert.Equal(t,
+			[]string{"extension", "list", "--installed", "--output", "json"},
+			tool.VersionArgs,
+			"VersionArgs must match the JSON command parsed by detectLibrary")
+		assert.Empty(t, tool.Dependencies,
+			"azd extensions are self-contained; must not depend on az-cli")
+
+		for _, platform := range []string{"windows", "darwin", "linux"} {
+			strategy, ok := tool.InstallStrategies[platform]
+			require.True(t, ok, "missing install strategy for %s", platform)
+			assert.Contains(t, strategy.InstallCommand, "azure.ai.agents",
+				"%s install command must target azure.ai.agents", platform)
+			assert.Contains(t, strategy.InstallCommand, "--source azd",
+				"%s install command must pin the azd source", platform)
+		}
 	})
 
 	t.Run("VSCodeExtensionsUseCodeDetectCommand", func(t *testing.T) {

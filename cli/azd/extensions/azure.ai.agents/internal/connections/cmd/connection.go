@@ -146,12 +146,12 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 		Use:   "create <name>",
 		Short: "Create a new Foundry project connection.",
 		Example: `  azd ai connection create my-search \
-    --kind CognitiveSearch --target https://my-search.search.windows.net/ \
-    --auth-type ApiKey --key "abc123..."
+    --kind cognitive-search --target https://my-search.search.windows.net/ \
+    --auth-type api-key --key "abc123..."
 
   azd ai connection create my-tavily \
-    --kind RemoteTool --target https://mcp.tavily.com/mcp \
-    --auth-type CustomKeys --custom-key "x-api-key=tvly-abc123"`,
+    --kind remote-tool --target https://mcp.tavily.com/mcp \
+    --auth-type custom-keys --custom-key "x-api-key=tvly-abc123"`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -195,11 +195,11 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 		},
 	}
 
-	cmd.Flags().StringVar(&kind, "kind", "", "Connection kind (e.g., RemoteTool, CognitiveSearch)")
+	cmd.Flags().StringVar(&kind, "kind", "", "Connection kind (e.g., remote-tool, cognitive-search)")
 	cmd.Flags().StringVar(&target, "target", "", "Target URL or ARM resource ID")
-	cmd.Flags().StringVar(&authType, "auth-type", "None", "Auth type: ApiKey, CustomKeys, None")
-	cmd.Flags().StringVar(&key, "key", "", "API key (for ApiKey auth)")
-	cmd.Flags().StringArrayVar(&customKeys, "custom-key", nil, "Custom key=value (repeatable)")
+	cmd.Flags().StringVar(&authType, "auth-type", "none", "Auth type: api-key, custom-keys, none")
+	cmd.Flags().StringVar(&key, "key", "", "API key (for api-key auth)")
+	cmd.Flags().StringArrayVar(&customKeys, "custom-key", nil, "Custom key=value (repeatable, for custom-keys auth)")
 	cmd.Flags().StringArrayVar(&metadata, "metadata", nil, "Metadata key=value (repeatable)")
 	cmd.Flags().BoolVar(&force, "force", false, "Replace existing connection (upsert)")
 	return cmd
@@ -323,10 +323,11 @@ func buildConnectionBody(
 ) (*armcognitiveservices.ConnectionPropertiesV2BasicResource, error) {
 	metaMap := parseKVPtrMap(metadata)
 	cat := armcognitiveservices.ConnectionCategory(kind)
-	at := armcognitiveservices.ConnectionAuthType(authType)
 
+	// Map CLI kebab-case auth types to ARM SDK values
 	switch authType {
-	case "ApiKey":
+	case "api-key":
+		at := armcognitiveservices.ConnectionAuthTypeAPIKey
 		return &armcognitiveservices.ConnectionPropertiesV2BasicResource{
 			Properties: &armcognitiveservices.APIKeyAuthConnectionProperties{
 				AuthType:    &at,
@@ -337,7 +338,8 @@ func buildConnectionBody(
 			},
 		}, nil
 
-	case "CustomKeys":
+	case "custom-keys":
+		at := armcognitiveservices.ConnectionAuthTypeCustomKeys
 		keysMap := parseKVPtrMap(customKeys)
 		return &armcognitiveservices.ConnectionPropertiesV2BasicResource{
 			Properties: &armcognitiveservices.CustomKeysConnectionProperties{
@@ -349,11 +351,11 @@ func buildConnectionBody(
 			},
 		}, nil
 
-	case "None", "":
-		noneAuth := armcognitiveservices.ConnectionAuthTypeNone
+	case "none", "":
+		at := armcognitiveservices.ConnectionAuthTypeNone
 		return &armcognitiveservices.ConnectionPropertiesV2BasicResource{
 			Properties: &armcognitiveservices.NoneAuthTypeConnectionProperties{
-				AuthType: &noneAuth,
+				AuthType: &at,
 				Category: &cat,
 				Target:   &target,
 				Metadata: metaMap,
@@ -364,7 +366,7 @@ func buildConnectionBody(
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAuthType,
 			fmt.Sprintf("Unsupported auth type %q.", authType),
-			"Supported: ApiKey, CustomKeys, None",
+			"Supported: api-key, custom-keys, none",
 		)
 	}
 }

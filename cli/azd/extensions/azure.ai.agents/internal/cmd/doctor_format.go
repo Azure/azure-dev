@@ -98,7 +98,7 @@ func printDoctorReportText(
 	trailing []nextstep.Suggestion,
 	showNext bool,
 ) error {
-	if _, err := fmt.Fprintln(w, "azd ai agent doctor"); err != nil {
+	if err := printDoctorReportTextHeader(w); err != nil {
 		return err
 	}
 
@@ -108,6 +108,26 @@ func printDoctorReportText(
 		}
 	}
 
+	return printDoctorReportTextFooter(w, report, trailing, showNext)
+}
+
+// printDoctorReportTextHeader emits the report title. The streaming text
+// path calls this before the first check starts so users immediately see
+// that doctor is running.
+func printDoctorReportTextHeader(w io.Writer) error {
+	_, err := fmt.Fprintln(w, "azd ai agent doctor")
+	return err
+}
+
+// printDoctorReportTextFooter emits the blank separator, summary, and
+// optional trailing Next: block. It is shared by buffered and streaming
+// text paths so both keep identical final report shape.
+func printDoctorReportTextFooter(
+	w io.Writer,
+	report doctor.Report,
+	trailing []nextstep.Suggestion,
+	showNext bool,
+) error {
 	if _, err := fmt.Fprintln(w); err != nil {
 		return err
 	}

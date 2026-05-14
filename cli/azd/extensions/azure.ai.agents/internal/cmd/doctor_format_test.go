@@ -178,6 +178,31 @@ func TestPrintDoctorReportText_TrailingNextWhenAllowed(t *testing.T) {
 	assert.Less(t, sumIdx, nextIdx)
 }
 
+func TestPrintDoctorReportText_StreamingPiecesMatchBufferedReport(t *testing.T) {
+	report := doctor.Report{
+		Checks: []doctor.Result{
+			{ID: "local.grpc", Name: "azd extension", Status: doctor.StatusPass, Message: "running"},
+			{ID: "remote.auth", Name: "authentication", Status: doctor.StatusSkip, Message: "local-only"},
+		},
+		Summary: doctor.Summary{Pass: 1, Skip: 1},
+	}
+	trailing := []nextstep.Suggestion{
+		{Command: "azd ai agent run", Description: "start the agent locally", Priority: 10},
+	}
+
+	var buffered bytes.Buffer
+	require.NoError(t, printDoctorReportText(&buffered, report, trailing, true))
+
+	var streamed bytes.Buffer
+	require.NoError(t, printDoctorReportTextHeader(&streamed))
+	for _, result := range report.Checks {
+		require.NoError(t, writeCheckLines(&streamed, result))
+	}
+	require.NoError(t, printDoctorReportTextFooter(&streamed, report, trailing, true))
+
+	assert.Equal(t, buffered.String(), streamed.String())
+}
+
 func TestPrintDoctorReportText_TrailingSuppressedWhenShowNextFalse(t *testing.T) {
 	report := doctor.Report{
 		Checks:  []doctor.Result{{ID: "local.grpc", Name: "azd extension", Status: doctor.StatusPass}},

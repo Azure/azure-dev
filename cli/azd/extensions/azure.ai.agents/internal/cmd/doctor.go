@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -22,10 +23,7 @@ import (
 // localOnly skips remote (network-dependent) checks. The runner gates
 // remote checks via the Check.Remote field (see runner.go); doctor
 // remains responsive when network is unreachable, behind a proxy, or
-// the user just wants a fast local triage. Today the remote-checks
-// factory returns an empty slice, so the flag has no observable
-// effect — but the wire is fully exercised so the remote checks land
-// transparently.
+// the user just wants a fast local triage.
 //
 // output selects the rendering path: "text" (default, human-readable
 // with a trailing Next: block on success) or "json" (structured envelope
@@ -33,9 +31,8 @@ import (
 //
 // unredacted toggles the redaction of principal IDs, scope ARNs, and
 // UPNs in the report. The flag is surfaced today and threaded into
-// doctor.Options so remote checks can read `opts.Unredacted` from
-// their CheckFunc signature; the redaction layer itself lands with
-// the first check that produces sensitive identifiers.
+// doctor.Options so checks can read `opts.Unredacted` from their
+// CheckFunc signature.
 type doctorFlags struct {
 	localOnly  bool
 	output     string
@@ -96,9 +93,19 @@ Exit codes:
 				Unredacted: flags.unredacted,
 			}
 
-			report, trailing := runDoctor(ctx, deps, opts, azdClient)
-			if err := renderDoctorReport(os.Stdout, flags.output, report, trailing); err != nil {
-				return err
+			var report doctor.Report
+			if flags.output == "text" {
+				var err error
+				report, err = runAndRenderDoctorText(ctx, deps, opts, azdClient, os.Stdout)
+				if err != nil {
+					return err
+				}
+			} else {
+				var trailing []nextstep.Suggestion
+				report, trailing = runDoctor(ctx, deps, opts, azdClient)
+				if err := renderDoctorReport(os.Stdout, flags.output, report, trailing); err != nil {
+					return err
+				}
 			}
 
 			// Exit codes are part of the doctor contract (see design
@@ -136,8 +143,7 @@ Exit codes:
 	)
 	cmd.Flags().BoolVar(
 		&flags.unredacted, "unredacted", false,
-		"Show raw principal IDs, scope ARNs, and UPNs in the report. "+
-			"Has no effect today; takes effect when remote checks are added.",
+		"Show raw principal IDs, scope ARNs, and UPNs in the report.",
 	)
 
 	return cmd
@@ -175,6 +181,51 @@ func runDoctor(
 	opts doctor.Options,
 	azdClient *azdext.AzdClient,
 ) (doctor.Report, []nextstep.Suggestion) {
+	report, trailing, _ := runDoctorWithObserver(ctx, deps, opts, azdClient, nil)
+	return report, trailing
+}
+
+// runAndRenderDoctorText streams the human-readable doctor output as
+// checks complete. JSON output intentionally does not use this path; it
+// remains buffered so scripted consumers receive one stable envelope.
+func runAndRenderDoctorText(
+	ctx context.Context,
+	deps doctor.Dependencies,
+	opts doctor.Options,
+	azdClient *azdext.AzdClient,
+	w io.Writer,
+) (doctor.Report, error) {
+	if err := printDoctorReportTextHeader(w); err != nil {
+		return doctor.Report{}, err
+	}
+
+	report, trailing, err := runDoctorWithObserver(
+		ctx,
+		deps,
+		opts,
+		azdClient,
+		func(result doctor.Result) error {
+			return writeCheckLines(w, result)
+		},
+	)
+	if err != nil {
+		return report, err
+	}
+
+	showNext := len(trailing) > 0 && writerIsTerminal(w)
+	if err := printDoctorReportTextFooter(w, report, trailing, showNext); err != nil {
+		return report, err
+	}
+	return report, nil
+}
+
+func runDoctorWithObserver(
+	ctx context.Context,
+	deps doctor.Dependencies,
+	opts doctor.Options,
+	azdClient *azdext.AzdClient,
+	observer doctor.ResultObserver,
+) (doctor.Report, []nextstep.Suggestion, error) {
 	// Local checks run first so their Results are available to
 	// remote checks' skip-cascade guards (each remote check inspects
 	// `prior []Result` via `priorBlocked` to decide whether to skip
@@ -183,7 +234,10 @@ func runDoctor(
 	// reorder.
 	checks := append(doctor.NewLocalChecks(deps), doctor.NewRemoteChecks(deps)...)
 	runner := doctor.Runner{Checks: checks}
-	report := runner.Run(ctx, opts)
+	report, err := runner.RunWithObserver(ctx, opts, observer)
+	if err != nil {
+		return report, nil, err
+	}
 
 	// Trailing Next: block is only meaningful when checks all pass
 	// (exit code 0). On Fail or all-skip, the user's next move is to
@@ -192,11 +246,11 @@ func runDoctor(
 	// `docs/design/azd-ai-agent-nextsteps.md`, "Doctor output shape":
 	// "When all checks pass, the trailing Next: block is ...".
 	if doctor.ExitCode(report) != 0 {
-		return report, nil
+		return report, nil, nil
 	}
 
 	trailing := resolveDoctorTrailing(ctx, azdClient)
-	return report, trailing
+	return report, trailing, nil
 }
 
 // resolveDoctorTrailing assembles state from the azd gRPC channel and

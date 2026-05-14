@@ -23,6 +23,12 @@ import (
 // root cause is a single upstream issue.
 type CheckFunc func(ctx context.Context, opts Options, prior []Result) Result
 
+// ResultObserver is called after each check result is finalized and
+// appended to the report. Callers use it to stream text output while the
+// runner still owns canonical ID/Name stamping, duration capture, and
+// status normalization.
+type ResultObserver func(Result) error
+
 // Check pairs a stable identifier with its execution function. ID is the
 // value stamped onto the produced Result (the function itself does not
 // populate ID — the Runner does this so the canonical IDs are owned in
@@ -54,42 +60,68 @@ type Runner struct {
 // keeps the JSON envelope shape stable and lets the formatter render
 // partial results when the runner is interrupted mid-flight.
 func (r *Runner) Run(ctx context.Context, opts Options) Report {
+	report, _ := r.RunWithObserver(ctx, opts, nil)
+	return report
+}
+
+// RunWithObserver invokes every configured check exactly like Run, but
+// calls observer after each finalized result is appended. If observer
+// returns an error, execution stops and the partial Report is returned
+// with Summary populated for the results that were already produced.
+func (r *Runner) RunWithObserver(ctx context.Context, opts Options, observer ResultObserver) (Report, error) {
 	report := Report{
 		SchemaVersion: CurrentSchemaVersion,
 		Redacted:      !opts.Unredacted,
 		Checks:        make([]Result, 0, len(r.Checks)),
 	}
 
+	appendResult := func(result Result) error {
+		report.Checks = append(report.Checks, result)
+		if observer != nil {
+			return observer(result)
+		}
+		return nil
+	}
+
 	for _, check := range r.Checks {
 		if err := ctx.Err(); err != nil {
-			report.Checks = append(report.Checks, Result{
+			if err := appendResult(Result{
 				ID:      check.ID,
 				Name:    check.Name,
 				Status:  StatusSkip,
 				Message: "cancelled",
-			})
+			}); err != nil {
+				report.Summary = summarize(report.Checks)
+				return report, err
+			}
 			continue
 		}
 
 		if opts.LocalOnly && check.Remote {
-			report.Checks = append(report.Checks, Result{
+			if err := appendResult(Result{
 				ID:      check.ID,
 				Name:    check.Name,
 				Status:  StatusSkip,
 				Message: "remote check excluded by --local-only",
-			})
+			}); err != nil {
+				report.Summary = summarize(report.Checks)
+				return report, err
+			}
 			continue
 		}
 
 		// Defensive default for a malformed Check entry — fail loud rather
 		// than silently dropping the check from the report.
 		if check.Fn == nil {
-			report.Checks = append(report.Checks, Result{
+			if err := appendResult(Result{
 				ID:      check.ID,
 				Name:    check.Name,
 				Status:  StatusFail,
 				Message: "internal error: check function is nil",
-			})
+			}); err != nil {
+				report.Summary = summarize(report.Checks)
+				return report, err
+			}
 			continue
 		}
 
@@ -123,15 +155,17 @@ func (r *Runner) Run(ctx context.Context, opts Options) Report {
 				result.Message = "internal error: check returned invalid status: " + invalid
 			}
 		}
-		report.Checks = append(report.Checks, result)
-
 		if check.Remote {
 			report.Remote = true
+		}
+		if err := appendResult(result); err != nil {
+			report.Summary = summarize(report.Checks)
+			return report, err
 		}
 	}
 
 	report.Summary = summarize(report.Checks)
-	return report
+	return report, nil
 }
 
 // summarize counts results by status. Unknown statuses are not expected

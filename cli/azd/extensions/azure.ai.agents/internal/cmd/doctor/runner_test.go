@@ -5,6 +5,7 @@ package doctor
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -47,6 +48,106 @@ func TestRunner_Run_ProducesReportWithCanonicalIDsAndNames(t *testing.T) {
 	require.Equal(t, "first", report.Checks[0].Name)
 	require.Equal(t, "2", report.Checks[1].ID)
 	require.Equal(t, "second", report.Checks[1].Name, "runner pins Name; check return is ignored")
+}
+
+func TestRunner_RunWithObserver_ObservesFinalizedResultsInOrder(t *testing.T) {
+	t.Parallel()
+
+	runner := &Runner{
+		Checks: []Check{
+			{
+				ID:   "1",
+				Name: "first",
+				Fn: func(_ context.Context, _ Options, _ []Result) Result {
+					return Result{
+						ID:      "wrong",
+						Name:    "wrong",
+						Status:  StatusPass,
+						Message: "ok",
+					}
+				},
+			},
+			{
+				ID:     "2",
+				Name:   "remote",
+				Remote: true,
+				Fn: func(_ context.Context, _ Options, _ []Result) Result {
+					return Result{Status: StatusWarn, Message: "remote warning"}
+				},
+			},
+		},
+	}
+
+	var observed []Result
+	report, err := runner.RunWithObserver(t.Context(), Options{}, func(result Result) error {
+		observed = append(observed, result)
+		return nil
+	})
+
+	require.NoError(t, err)
+	require.True(t, report.Remote)
+	require.Equal(t, report.Checks, observed)
+	require.Equal(t, "1", observed[0].ID)
+	require.Equal(t, "first", observed[0].Name)
+	require.Equal(t, StatusPass, observed[0].Status)
+	require.Equal(t, "2", observed[1].ID)
+	require.Equal(t, "remote", observed[1].Name)
+	require.Equal(t, StatusWarn, observed[1].Status)
+}
+
+func TestRunner_RunWithObserver_ObservesBeforeNextCheckStarts(t *testing.T) {
+	t.Parallel()
+
+	secondStarted := false
+	observedFirstBeforeSecond := false
+	runner := &Runner{
+		Checks: []Check{
+			{ID: "1", Name: "first", Fn: func(_ context.Context, _ Options, _ []Result) Result {
+				return Result{Status: StatusPass}
+			}},
+			{ID: "2", Name: "second", Fn: func(_ context.Context, _ Options, _ []Result) Result {
+				secondStarted = true
+				return Result{Status: StatusPass}
+			}},
+		},
+	}
+
+	_, err := runner.RunWithObserver(t.Context(), Options{}, func(result Result) error {
+		if result.ID == "1" {
+			observedFirstBeforeSecond = !secondStarted
+		}
+		return nil
+	})
+
+	require.NoError(t, err)
+	require.True(t, observedFirstBeforeSecond)
+}
+
+func TestRunner_RunWithObserver_ErrorStopsWithPartialSummary(t *testing.T) {
+	t.Parallel()
+
+	observerErr := errors.New("write failed")
+	calledSecond := false
+	runner := &Runner{
+		Checks: []Check{
+			{ID: "1", Name: "first", Fn: func(_ context.Context, _ Options, _ []Result) Result {
+				return Result{Status: StatusPass, Message: "ok"}
+			}},
+			{ID: "2", Name: "second", Fn: func(_ context.Context, _ Options, _ []Result) Result {
+				calledSecond = true
+				return Result{Status: StatusPass, Message: "should not run"}
+			}},
+		},
+	}
+
+	report, err := runner.RunWithObserver(t.Context(), Options{}, func(Result) error {
+		return observerErr
+	})
+
+	require.ErrorIs(t, err, observerErr)
+	require.False(t, calledSecond)
+	require.Len(t, report.Checks, 1)
+	require.Equal(t, Summary{Pass: 1}, report.Summary)
 }
 
 func TestRunner_Run_PriorResultsPassedToSubsequentChecks(t *testing.T) {

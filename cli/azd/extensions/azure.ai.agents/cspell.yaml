@@ -1,5 +1,8 @@
 import: ../../.vscode/cspell.yaml
 words:
+  # Connection examples
+  - tavily
+  - tvly
   # Azure region names
   - australiaeast
   - brazilsouth

@@ -48,13 +48,16 @@ func resolveProjectEndpoint(ctx context.Context, cmd *cobra.Command) (string, er
 		ch, cfgErr := azdext.NewConfigHelper(azdClient)
 		if cfgErr == nil {
 			var endpoint string
-			if found, err := ch.GetUserJSON(ctx, "extensions.ai-agents.context.endpoint", &endpoint); err == nil && found && endpoint != "" {
+			if found, err := ch.GetUserJSON(
+				ctx, "extensions.ai-agents.context.endpoint", &endpoint,
+			); err == nil && found && endpoint != "" {
 				return endpoint, nil
 			}
 		}
 	}
 
 	// 4. FOUNDRY_PROJECT_ENDPOINT environment variable
+	// TODO: Document FOUNDRY_PROJECT_ENDPOINT in cli/azd/docs/environment-variables.md
 	if ep := os.Getenv("FOUNDRY_PROJECT_ENDPOINT"); ep != "" {
 		return ep, nil
 	}
@@ -63,7 +66,7 @@ func resolveProjectEndpoint(ctx context.Context, cmd *cobra.Command) (string, er
 	return "", exterrors.Dependency(
 		exterrors.CodeMissingProjectEndpoint,
 		"No Foundry project endpoint resolved.",
-		"Run 'azd ai project set' to set one, or pass '--project-endpoint'.",
+		"Pass '--project-endpoint', set FOUNDRY_PROJECT_ENDPOINT env var, or run 'azd ai agent init' in an azd project.",
 	)
 }
 
@@ -112,7 +115,10 @@ func discoverARMContext(
 	}
 
 	if len(conns) == 0 {
-		return nil, fmt.Errorf("no connections found in project; cannot discover ARM context")
+		return nil, fmt.Errorf(
+			"no connections found in project; cannot discover ARM context. " +
+				"Create a connection via the Foundry portal first, or pass the project endpoint that already has connections",
+		)
 	}
 
 	return parseARMResourceID(conns[0].ID)

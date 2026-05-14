@@ -7,13 +7,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"maps"
 	"os"
 	"text/tabwriter"
 
 	"azureaiagent/internal/connections/exterrors"
 	"azureaiagent/internal/connections/pkg/connections"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -29,6 +31,7 @@ func newConnectionListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
+			normalizedKind := normalizeKind(kind)
 
 			connCtx, err := resolveConnectionContext(ctx, cmd)
 			if err != nil {
@@ -50,7 +53,8 @@ func newConnectionListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 					if props == nil {
 						continue
 					}
-					if kind != "" && props.Category != nil && string(*props.Category) != kind {
+					if normalizedKind != "" &&
+						(props.Category == nil || string(*props.Category) != normalizedKind) {
 						continue
 					}
 					results = append(results, connectionListItem{
@@ -66,7 +70,7 @@ func newConnectionListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&kind, "kind", "", "Filter by connection kind (e.g., RemoteTool)")
+	cmd.Flags().StringVar(&kind, "kind", "", "Filter by connection kind (e.g., remote-tool)")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{"json", "table"}, Default: "table",
 	})
@@ -100,6 +104,10 @@ func newConnectionShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			}
 
 			props := armResp.Properties.GetConnectionPropertiesV2()
+			if props == nil {
+				return fmt.Errorf("connection %q: unexpected response format", name)
+			}
+
 			result := connectionDetailResult{
 				Name:     deref(armResp.Name),
 				Kind:     categoryStr(props.Category),
@@ -174,6 +182,35 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 						"Use --force to replace the existing connection.",
 					)
 				}
+			}
+
+			if kind == "" {
+				return exterrors.Validation(
+					exterrors.CodeMissingConnectionField,
+					"Missing required flag --kind.",
+					"Specify the connection kind (e.g., --kind remote-tool).",
+				)
+			}
+			if target == "" {
+				return exterrors.Validation(
+					exterrors.CodeMissingConnectionField,
+					"Missing required flag --target.",
+					"Specify the target URL (e.g., --target https://example.com).",
+				)
+			}
+			if authType == "api-key" && key == "" {
+				return exterrors.Validation(
+					exterrors.CodeMissingConnectionField,
+					"Missing required flag --key for api-key auth.",
+					"Specify the API key value.",
+				)
+			}
+			if authType == "custom-keys" && len(customKeys) == 0 {
+				return exterrors.Validation(
+					exterrors.CodeMissingConnectionField,
+					"Missing required flag --custom-key for custom-keys auth.",
+					"Specify at least one custom key (e.g., --custom-key x-api-key=value).",
+				)
 			}
 
 			body, err := buildConnectionBody(kind, target, authType, key, customKeys, metadata)
@@ -273,9 +310,7 @@ For metadata changes, use the 'metadata' subcommand.`,
 			newCustomKeys := map[string]string{}
 			if dpConn.Credentials != nil {
 				newKey = dpConn.Credentials.Key
-				for k, v := range dpConn.Credentials.CustomKeys {
-					newCustomKeys[k] = v
-				}
+				maps.Copy(newCustomKeys, dpConn.Credentials.CustomKeys)
 			}
 			if cmd.Flags().Changed("key") {
 				newKey = key
@@ -455,7 +490,7 @@ func buildConnectionBody(
 	customKeys, metadata []string,
 ) (*armcognitiveservices.ConnectionPropertiesV2BasicResource, error) {
 	metaMap := parseKVPtrMap(metadata)
-	cat := armcognitiveservices.ConnectionCategory(kind)
+	cat := armcognitiveservices.ConnectionCategory(normalizeKind(kind))
 
 	// Map CLI kebab-case auth types to ARM SDK values
 	switch authType {
@@ -556,12 +591,17 @@ func parseKVPtrMap(pairs []string) map[string]*string {
 	}
 	result := make(map[string]*string, len(pairs))
 	for _, pair := range pairs {
+		found := false
 		for i := range len(pair) {
 			if pair[i] == '=' {
 				v := pair[i+1:]
 				result[pair[:i]] = &v
+				found = true
 				break
 			}
+		}
+		if !found {
+			log.Printf("warning: ignoring malformed key=value pair: %q", pair)
 		}
 	}
 	return result
@@ -586,6 +626,23 @@ func authTypeStr(a *armcognitiveservices.ConnectionAuthType) string {
 		return ""
 	}
 	return string(*a)
+}
+
+func normalizeKind(cliKind string) string {
+	mapping := map[string]string{
+		"remote-tool":                "RemoteTool",
+		"cognitive-search":           "CognitiveSearch",
+		"api-key":                    "ApiKey",
+		"app-insights":               "AppInsights",
+		"grounding-with-bing-search": "GroundingWithBingSearch",
+		"ai-services":                "AIServices",
+		"container-registry":         "ContainerRegistry",
+		"custom-keys":                "CustomKeys",
+	}
+	if mapped, ok := mapping[cliKind]; ok {
+		return mapped
+	}
+	return cliKind
 }
 
 // normalizeAuthType converts ARM SDK auth type values to CLI kebab-case format.

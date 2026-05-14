@@ -162,7 +162,11 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 		// Resolve ${{connections.<name>.credentials.<key>}} references from the
 		// agent manifest's environment_variables section. These are fetched from
 		// the Foundry data plane at runtime and injected into the agent process.
-		if endpoint := azdEnvVars["AZURE_AI_PROJECT_ENDPOINT"]; endpoint != "" {
+		endpoint := azdEnvVars["AZURE_AI_PROJECT_ENDPOINT"]
+		if endpoint == "" {
+			endpoint = azdEnvVars["FOUNDRY_PROJECT_ENDPOINT"]
+		}
+		if endpoint != "" {
 			if connEnv, err := resolveConnectionCredentials(ctx, projectDir, endpoint); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: connection credential resolution failed: %s\n", err)
 			} else {

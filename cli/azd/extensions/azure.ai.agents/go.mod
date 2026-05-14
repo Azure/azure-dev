@@ -28,8 +28,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices v1.8.0
-
 require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/AlecAivazis/survey/v2 v2.3.7 // indirect

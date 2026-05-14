@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -52,8 +53,63 @@ func NewDataClient(endpoint string, cred azcore.TokenCredential) *DataClient {
 
 // ListConnections retrieves all connections from the project via data-plane GET.
 func (c *DataClient) ListConnections(ctx context.Context) ([]Connection, error) {
-	targetURL := fmt.Sprintf("%s/connections?api-version=%s", c.endpoint, dataPlaneAPIVersion)
+	var allConnections []Connection
 
+	paged, err := c.getPage(
+		ctx,
+		fmt.Sprintf("%s/connections?api-version=%s", c.endpoint, dataPlaneAPIVersion),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	allConnections = append(allConnections, paged.Value...)
+	nextLink := paged.NextLink
+
+	for nextLink != nil && *nextLink != "" {
+		if err := c.validateNextLinkOrigin(*nextLink); err != nil {
+			return nil, fmt.Errorf("refusing to follow pagination link: %w", err)
+		}
+
+		paged, err = c.getPage(ctx, *nextLink)
+		if err != nil {
+			return nil, err
+		}
+
+		allConnections = append(allConnections, paged.Value...)
+		nextLink = paged.NextLink
+	}
+
+	return allConnections, nil
+}
+
+func (c *DataClient) validateNextLinkOrigin(nextLink string) error {
+	endpointURL, err := url.Parse(c.endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	linkURL, err := url.Parse(nextLink)
+	if err != nil {
+		return fmt.Errorf("invalid nextLink URL: %w", err)
+	}
+
+	if linkURL.Scheme == "" {
+		return fmt.Errorf("nextLink must have an explicit scheme, got %q", nextLink)
+	}
+
+	if !strings.EqualFold(linkURL.Scheme, endpointURL.Scheme) ||
+		!strings.EqualFold(linkURL.Host, endpointURL.Host) {
+		return fmt.Errorf(
+			"nextLink origin mismatch: expected %s://%s, got %s://%s",
+			endpointURL.Scheme, endpointURL.Host, linkURL.Scheme, linkURL.Host,
+		)
+	}
+
+	return nil
+}
+
+func (c *DataClient) getPage(ctx context.Context, targetURL string) (*PagedConnection, error) {
 	req, err := runtime.NewRequest(ctx, http.MethodGet, targetURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -79,7 +135,7 @@ func (c *DataClient) ListConnections(ctx context.Context) ([]Connection, error) 
 		return nil, fmt.Errorf("failed to unmarshal connections: %w", err)
 	}
 
-	return paged.Value, nil
+	return &paged, nil
 }
 
 // GetConnectionWithCredentials retrieves a specific connection with its credentials
@@ -114,12 +170,12 @@ func (c *DataClient) GetConnectionWithCredentials(
 	}
 
 	var raw struct {
-		Name        string         `json:"name"`
-		ID          string         `json:"id"`
-		Type        string         `json:"type"`
-		Target      string         `json:"target"`
-		IsDefault   bool           `json:"isDefault"`
-		Credentials map[string]any `json:"credentials"`
+		Name        string            `json:"name"`
+		ID          string            `json:"id"`
+		Type        string            `json:"type"`
+		Target      string            `json:"target"`
+		IsDefault   bool              `json:"isDefault"`
+		Credentials map[string]any    `json:"credentials"`
 		Metadata    map[string]string `json:"metadata"`
 	}
 	if err := json.Unmarshal(body, &raw); err != nil {

@@ -5,13 +5,13 @@ package connections
 
 // Connection represents a Foundry project connection from the data-plane API.
 type Connection struct {
-	Name        string               `json:"name"`
-	ID          string               `json:"id"`
-	Type        string               `json:"type"`
-	Target      string               `json:"target"`
-	IsDefault   bool                 `json:"isDefault"`
+	Name        string                 `json:"name"`
+	ID          string                 `json:"id"`
+	Type        string                 `json:"type"`
+	Target      string                 `json:"target"`
+	IsDefault   bool                   `json:"isDefault"`
 	Credentials *ConnectionCredentials `json:"credentials,omitempty"`
-	Metadata    map[string]string    `json:"metadata,omitempty"`
+	Metadata    map[string]string      `json:"metadata,omitempty"`
 }
 
 // ConnectionCredentials holds credential values returned by the data-plane
@@ -28,7 +28,7 @@ type ConnectionCredentials struct {
 	Key        string            `json:"-"`
 	CustomKeys map[string]string `json:"-"`
 	// RawFields holds all fields from the JSON response for flexible access.
-	RawFields map[string]string `json:"credentials,omitempty"`
+	RawFields map[string]string `json:"-"`
 }
 
 // ParseCredentials parses a raw credentials JSON object into a typed struct.

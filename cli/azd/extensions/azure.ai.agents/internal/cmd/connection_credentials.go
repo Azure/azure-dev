@@ -3,6 +3,9 @@
 
 package cmd
 
+// TODO: Add unit tests for resolveConnectionCredentials (success path,
+// missing connection/key, and ensuring secret values are never logged).
+
 import (
 	"context"
 	"fmt"
@@ -16,7 +19,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // connectionRefPattern matches ${{connections.<name>.credentials.<key>}} references

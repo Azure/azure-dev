@@ -4,6 +4,8 @@
 package exterrors
 
 import (
+	"errors"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -40,7 +42,7 @@ func Auth(code, message, suggestion string) error {
 
 // ServiceFromAzure converts an Azure SDK error into a structured service error.
 func ServiceFromAzure(err error, operation string) error {
-	if respErr, ok := err.(*azcore.ResponseError); ok {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		return &azdext.ServiceError{
 			Message:     respErr.Error(),
 			ErrorCode:   respErr.ErrorCode,

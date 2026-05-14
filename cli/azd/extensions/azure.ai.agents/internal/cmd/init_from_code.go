@@ -1270,7 +1270,6 @@ func isPythonProject(dir string) bool {
 	return false
 }
 
-// isDotnetProject returns true if the directory contains a .csproj or .fsproj file.
 // isDotnetProject returns true if the directory contains a .csproj file.
 // NOTE: .fsproj (F#) is not yet supported by the packaging path (packageDotnetBundled/detectDefaultEntryPoint).
 func isDotnetProject(dir string) bool {

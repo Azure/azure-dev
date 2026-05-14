@@ -173,15 +173,24 @@ type Dependencies struct {
 		ctx context.Context,
 		subscriptionID, resourceGroup, accountName string,
 	) ([]string, error)
+
+	// lookupToolboxEnv is a test seam for the `local.toolboxes`
+	// check (Phase 5 C14). When non-nil it replaces the production
+	// `makeRealToolboxEnvLookup` closure inside the check, letting
+	// unit tests cover the all-present / partial / none /
+	// transport-error branches by returning canned `(value, err)`
+	// tuples per env key. Production wiring leaves this nil and the
+	// check binds `client.Environment().GetValue` on first call.
+	lookupToolboxEnv func(ctx context.Context, key string) (value string, err error)
 }
 
 // NewLocalChecks returns the canonical sequence of local doctor checks
 // in execution order. Phase 4.2 covered checks 1-3; Phase 4.3 added
 // checks 4-6 (agent service detected, project endpoint set, agent.yaml
-// valid). Phase 5 C9 appends check 7 (manual env vars set) — local
-// check #9 in the design's numbered table (renumbered here because
-// remote checks 7-8 are gated behind --local-only until the runner
-// refactor lands in C10).
+// valid). Phase 5 C9 appends check 7 (manual env vars set). Phase 5
+// C14 appends check 8 (`local.toolboxes`) which reads per-toolbox MCP
+// endpoint env vars; it is local because it does not call ARM /
+// Foundry (only the active azd environment).
 func NewLocalChecks(deps Dependencies) []Check {
 	return []Check{
 		newCheckGRPCAndVersion(deps),
@@ -191,6 +200,7 @@ func NewLocalChecks(deps Dependencies) []Check {
 		newCheckProjectEndpointSet(deps),
 		newCheckAgentYAMLValid(deps),
 		newCheckManualEnvVars(deps),
+		newCheckToolboxes(deps),
 	}
 }
 

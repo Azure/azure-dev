@@ -1,0 +1,301 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package doctor
+
+import (
+	"context"
+	"fmt"
+	"slices"
+	"sort"
+	"strings"
+
+	"azureaiagent/internal/cmd/nextstep"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+)
+
+// toolboxEndpointSuffix is the canonical Bicep-output suffix for a
+// hosted toolbox's MCP endpoint URL. The full convention is
+// `TOOLBOX_<NORMALIZED_TOOLBOX_NAME>_MCP_ENDPOINT`, where the toolbox
+// name is upper-snake-cased (e.g. `web-search-tools` →
+// `WEB_SEARCH_TOOLS`). The suffix is pinned in code because the
+// doctor needs to know what env var to expect even before the user
+// looks at their own Bicep template; emitting the canonical name in
+// the Fail Message lets the user grep their template for the exact
+// string the doctor is checking.
+const toolboxEndpointSuffix = "_MCP_ENDPOINT"
+
+// toolboxEndpointPrefix mirrors the same convention. It is split out
+// from toolboxEndpointSuffix purely for readability at the call site
+// (`toolboxEndpointPrefix + name + toolboxEndpointSuffix`).
+const toolboxEndpointPrefix = "TOOLBOX_"
+
+// toolboxEnvLookupFn is the seam-friendly signature for reading one
+// env var from the active azd environment. The Doctor's existing
+// project-endpoint and rbac checks read AZURE_AI_PROJECT_* directly
+// via gRPC; this check reads N values (one per toolbox), so isolating
+// the call shape behind a closure simplifies test fakes. Implementations
+// may return ("", nil) for an unset key (matches the azd gRPC env
+// service's actual contract).
+type toolboxEnvLookupFn func(ctx context.Context, key string) (value string, err error)
+
+// newCheckToolboxes produces Check `local.toolboxes` (P5.1 C14).
+// For each `ToolboxResource` declared in any service's
+// `agent.manifest.yaml` (collected by the C2 manifest walker), the
+// check verifies that the canonical
+// `TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT` env var is set to a
+// non-empty value in the active azd environment.
+//
+// The check is classified `local` (Remote: false) because it only
+// reads the active azd environment — no ARM / Foundry round trips.
+// `--local-only` therefore still runs it.
+//
+// # Skip cascade
+//
+//   - deps.AzdClient nil → upstream `local.grpc-extension` failure.
+//   - `local.environment-selected` failed/skipped → there is no env
+//     to read from. AssembleState's detectMissingVars block also
+//     skips in this state, so the toolbox check would falsely Pass.
+//   - `local.azure-yaml` / `local.agent-service-detected` failed →
+//     no services to walk; walker output is unreliable.
+//   - state.HasToolboxes == false → no manifest toolbox declarations;
+//     the check has nothing to verify.
+//
+// # Why this check is not gated on `remote.auth` /
+// `remote.foundry-endpoint`
+//
+// Unlike `remote.model-deployments`, this check does NOT talk to ARM
+// or Foundry; it only reads local azd env state. Gating on remote
+// upstream checks would surface a false Skip in the (legitimate) case
+// where ARM is down but the user can still diagnose a missing local
+// env var.
+//
+// # Classification
+//
+//   - All toolboxes have a set endpoint → Pass.
+//   - One or more missing endpoints → Fail with the missing toolbox
+//     names in the Message, and `Details["missingToolboxes"]` listing
+//     each missing toolbox together with the env var name the check
+//     was expecting.
+//   - Env service transport error → Fail (NOT Skip): a Skip would
+//     leave the user with no actionable signal at all; the
+//     Suggestion points at the env service / azd config as the
+//     likely culprit.
+func newCheckToolboxes(deps Dependencies) Check {
+	return Check{
+		ID:     "local.toolboxes",
+		Name:   "Manifest toolboxes have endpoint env vars set",
+		Remote: false,
+		Fn: func(ctx context.Context, _ Options, prior []Result) Result {
+			if deps.AzdClient == nil {
+				return Result{
+					Status:  StatusSkip,
+					Message: "skipped: azd extension not reachable.",
+				}
+			}
+			if priorBlocked(prior, "local.environment-selected") {
+				return Result{
+					Status: StatusSkip,
+					Message: "skipped: no azd environment is selected " +
+						"(see check `local.environment-selected`).",
+				}
+			}
+			if priorBlocked(prior, "local.azure-yaml") ||
+				priorBlocked(prior, "local.agent-service-detected") {
+				return Result{
+					Status: StatusSkip,
+					Message: "skipped: azure.yaml / agent service detection failed " +
+						"(see checks `local.azure-yaml`, `local.agent-service-detected`).",
+				}
+			}
+
+			assembler := deps.assembleState
+			if assembler == nil {
+				assembler = func(c context.Context, client *azdext.AzdClient) (*nextstep.State, []error) {
+					return nextstep.AssembleState(c, client)
+				}
+			}
+			state, _ := assembler(ctx, deps.AzdClient)
+			if state == nil || !state.HasToolboxes {
+				return Result{
+					Status:  StatusSkip,
+					Message: "skipped: no toolbox resources declared in any service's agent.manifest.yaml.",
+				}
+			}
+
+			lookup := deps.lookupToolboxEnv
+			if lookup == nil {
+				lookup = makeRealToolboxEnvLookup(deps.AzdClient)
+			}
+
+			return classifyToolboxEndpoints(ctx, state.Toolboxes, lookup)
+		},
+	}
+}
+
+// normalizeToolboxName converts a manifest toolbox name (e.g.
+// "web-search-tools") into the upper-snake form Bicep templates use
+// for the corresponding output (`TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT`).
+// Hyphens and dots are normalized to underscores; all other
+// characters are upper-cased verbatim. The function is deliberately
+// lossy on characters that azd / Bicep do not permit in output
+// identifiers (for example whitespace becomes a single underscore)
+// to maximize the chance of a match against the actual env var name.
+func normalizeToolboxName(name string) string {
+	var sb strings.Builder
+	sb.Grow(len(name))
+	for _, r := range name {
+		switch {
+		case r == '-' || r == '.' || r == ' ':
+			sb.WriteByte('_')
+		default:
+			if r >= 'a' && r <= 'z' {
+				r = r - 'a' + 'A'
+			}
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
+}
+
+// toolboxEndpointKey returns the canonical env var name for a
+// toolbox's MCP endpoint URL, formed by sandwiching the normalized
+// toolbox name between the fixed prefix and suffix. The convention
+// matches the Bicep templates emitted by azd's toolbox samples.
+func toolboxEndpointKey(name string) string {
+	return toolboxEndpointPrefix + normalizeToolboxName(name) + toolboxEndpointSuffix
+}
+
+// classifyToolboxEndpoints joins state.Toolboxes to the active azd
+// env. Each toolbox produces one env lookup; the first transport
+// error short-circuits the check to Fail (NOT Skip — see the
+// factory's doc-comment for why) so the user gets one actionable
+// surface instead of a quiet pass-through.
+//
+// Dedup is on the canonical env key, not the toolbox name: the
+// manifest walker deduplicates on (ServiceName, Name) so the same toolbox
+// referenced by two services surfaces twice in state.Toolboxes.
+// Without dedup here the doctor would issue two gRPC reads for the
+// same key and report the same toolbox twice in the missing list.
+func classifyToolboxEndpoints(
+	ctx context.Context,
+	toolboxes []nextstep.ResourceRef,
+	lookup toolboxEnvLookupFn,
+) Result {
+	type toolboxLookup struct {
+		Name        string `json:"name"`
+		ServiceName string `json:"service"`
+		EnvVar      string `json:"envVar"`
+	}
+
+	seen := make(map[string]struct{}, len(toolboxes))
+	var missing []toolboxLookup
+	matched := 0
+
+	for _, t := range toolboxes {
+		key := toolboxEndpointKey(t.Name)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		value, err := lookup(ctx, key)
+		if err != nil {
+			return Result{
+				Status: StatusFail,
+				Message: fmt.Sprintf(
+					"could not read toolbox endpoint env vars from the azd environment: %s",
+					err),
+				Suggestion: "Verify the azd extension is healthy and the active environment is accessible. " +
+					"Try `azd env list` and `azd env get-values`.",
+			}
+		}
+		if strings.TrimSpace(value) == "" {
+			missing = append(missing, toolboxLookup{
+				Name: t.Name, ServiceName: t.ServiceName, EnvVar: key,
+			})
+			continue
+		}
+		matched++
+	}
+
+	sort.Slice(missing, func(i, j int) bool {
+		if missing[i].Name != missing[j].Name {
+			return missing[i].Name < missing[j].Name
+		}
+		return missing[i].ServiceName < missing[j].ServiceName
+	})
+
+	if len(missing) == 0 {
+		return Result{
+			Status:  StatusPass,
+			Message: fmt.Sprintf("all %d declared toolbox(es) have an MCP endpoint set.", matched),
+			Details: map[string]any{
+				"matchedCount": matched,
+			},
+		}
+	}
+
+	var sb strings.Builder
+	for i, m := range missing {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(fmt.Sprintf("%s (env %s, service %s)", m.Name, m.EnvVar, m.ServiceName))
+	}
+
+	return Result{
+		Status: StatusFail,
+		Message: fmt.Sprintf(
+			"%d toolbox(es) declared in agent.manifest.yaml have no MCP endpoint set in the azd environment: %s",
+			len(missing), sb.String()),
+		Suggestion: "Run `azd provision` to materialize toolbox infrastructure, or " +
+			"`azd env set <ENV_VAR> <endpoint>` to point at an existing toolbox.",
+		Details: map[string]any{
+			"missingToolboxes": missing,
+			"matchedCount":     matched,
+		},
+	}
+}
+
+// makeRealToolboxEnvLookup binds an `azdext.AzdClient` to a one-key
+// env reader. The active environment is resolved by the gRPC server
+// (caller does not need to know its name), matching the existing
+// `readProjectResourceID` pattern in `checks_rbac.go:388-396`.
+//
+// An empty `Key` argument is treated as a programmer error and
+// short-circuits with the rpc error rather than masking it. A
+// missing key returns ("", nil) — the same shape every other azd
+// extension expects from `GetValue`.
+func makeRealToolboxEnvLookup(client *azdext.AzdClient) toolboxEnvLookupFn {
+	return func(ctx context.Context, key string) (string, error) {
+		resp, err := client.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			Key: key,
+		})
+		if err != nil {
+			return "", err
+		}
+		return resp.Value, nil
+	}
+}
+
+// dedupToolboxKeys returns the slice of canonical env keys the
+// classifier would probe for a given ToolboxRef slice — exposed for
+// the renderer / future telemetry consumer that wants to log "we
+// expected these N env vars". The classifier does its own dedup
+// inline; this helper is for callers that need the list up front.
+func dedupToolboxKeys(toolboxes []nextstep.ResourceRef) []string {
+	seen := make(map[string]struct{}, len(toolboxes))
+	keys := make([]string, 0, len(toolboxes))
+	for _, t := range toolboxes {
+		key := toolboxEndpointKey(t.Name)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
+}

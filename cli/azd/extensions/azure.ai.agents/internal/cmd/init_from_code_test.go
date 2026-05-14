@@ -108,6 +108,9 @@ func TestSanitizeAgentName(t *testing.T) {
 			if result != tt.expected {
 				t.Errorf("sanitizeAgentName(%q) = %q, want %q", tt.input, result, tt.expected)
 			}
+			if err := agent_yaml.ValidateAgentName(result); err != nil {
+				t.Errorf("sanitizeAgentName(%q) produced invalid agent name %q: %v", tt.input, result, err)
+			}
 		})
 	}
 }

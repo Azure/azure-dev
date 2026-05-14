@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
@@ -47,6 +48,7 @@ type initFlags struct {
 	modelDeployment   string
 	model             string
 	manifestPointer   string
+	agentName         string
 	src               string
 	env               string
 	protocols         []string
@@ -205,6 +207,222 @@ func parseAuthStatusJSON(data []byte) (string, error) {
 	return result.Status, nil
 }
 
+func resolveInitAgentName(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	flags *initFlags,
+	defaultName string,
+) (string, error) {
+	if flags.agentName != "" {
+		return validateInitAgentName(flags.agentName)
+	}
+
+	defaultName, err := validateInitAgentName(defaultName)
+	if err != nil {
+		return "", err
+	}
+
+	if flags.noPrompt {
+		return defaultName, nil
+	}
+
+	promptResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Enter a name for your agent",
+			DefaultValue: defaultName,
+			HelpMessage: "Foundry agents are unique by name within a project. " +
+				"Reusing a name creates a new version of the existing agent.",
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", exterrors.Cancelled("agent name prompt was cancelled")
+		}
+		return "", fmt.Errorf("failed to prompt for agent name: %w", err)
+	}
+
+	agentName := strings.TrimSpace(promptResp.Value)
+	if agentName == "" {
+		agentName = defaultName
+	}
+
+	return validateInitAgentName(agentName)
+}
+
+func validateInitAgentName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if err := agent_yaml.ValidateAgentName(name); err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidAgentName,
+			fmt.Sprintf("invalid agent name %q: %s", name, err),
+			"choose a 1-63 character name that starts and ends with a letter or number "+
+				"and contains only letters, numbers, and internal hyphens",
+		)
+	}
+
+	return name, nil
+}
+
+func agentNameFromTemplate(template any) (string, error) {
+	switch t := template.(type) {
+	case agent_yaml.ContainerAgent:
+		return t.Name, nil
+	case *agent_yaml.ContainerAgent:
+		if t == nil {
+			return "", fmt.Errorf("agent template is nil")
+		}
+		return t.Name, nil
+	case agent_yaml.Workflow:
+		return t.Name, nil
+	case *agent_yaml.Workflow:
+		if t == nil {
+			return "", fmt.Errorf("agent template is nil")
+		}
+		return t.Name, nil
+	default:
+		return "", fmt.Errorf("unsupported agent template type %T", template)
+	}
+}
+
+func setAgentNameOnTemplate(agentManifest *agent_yaml.AgentManifest, agentName string) error {
+	switch t := agentManifest.Template.(type) {
+	case agent_yaml.ContainerAgent:
+		t.Name = agentName
+		agentManifest.Template = t
+	case *agent_yaml.ContainerAgent:
+		if t == nil {
+			return fmt.Errorf("agent template is nil")
+		}
+		t.Name = agentName
+	case agent_yaml.Workflow:
+		t.Name = agentName
+		agentManifest.Template = t
+	case *agent_yaml.Workflow:
+		if t == nil {
+			return fmt.Errorf("agent template is nil")
+		}
+		t.Name = agentName
+	default:
+		return fmt.Errorf("unsupported agent template type %T", agentManifest.Template)
+	}
+
+	return nil
+}
+
+type agentGetter interface {
+	GetAgent(ctx context.Context, agentName, apiVersion string) (*agent_api.AgentObject, error)
+}
+
+func foundryAgentExists(ctx context.Context, client agentGetter, agentName string) (bool, error) {
+	_, err := client.GetAgent(ctx, agentName, DefaultAgentAPIVersion)
+	if err == nil {
+		return true, nil
+	}
+
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+		respErr.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+
+	return false, err
+}
+
+func existingAgentWarning(agentName string) string {
+	return output.WithWarningFormat(
+		"An agent named '%s' already exists in this Foundry project. "+
+			"Deploying with this name will create a new version of the existing agent, not a separate agent.\n",
+		agentName,
+	)
+}
+
+func nextAgentNameSuggestion(agentName string) string {
+	const suffix = "-2"
+	base := strings.TrimRight(agentName, "-")
+	if len(base)+len(suffix) > 63 {
+		base = strings.TrimRight(base[:63-len(suffix)], "-")
+	}
+	if base == "" {
+		base = "agent"
+	}
+
+	return base + suffix
+}
+
+func resolveExistingAgentNameConflict(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environment *azdext.Environment,
+	credential azcore.TokenCredential,
+	noPrompt bool,
+	agentName string,
+) (string, error) {
+	if azdClient == nil || environment == nil || environment.Name == "" || credential == nil {
+		return agentName, nil
+	}
+
+	endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: environment.Name,
+		Key:     "AZURE_AI_PROJECT_ENDPOINT",
+	})
+	if err != nil || endpointResp == nil || endpointResp.Value == "" {
+		return agentName, nil
+	}
+
+	agentClient := agent_api.NewAgentClient(endpointResp.Value, credential)
+	for {
+		exists, err := foundryAgentExists(ctx, agentClient, agentName)
+		if err != nil {
+			return "", fmt.Errorf("checking whether agent %q exists: %w", agentName, err)
+		}
+		if !exists {
+			return agentName, nil
+		}
+
+		fmt.Printf("%s", existingAgentWarning(agentName))
+		if noPrompt {
+			fmt.Printf("%s", output.WithGrayFormat(
+				"To create a separate agent, re-run init with --agent-name <unique-name>.\n",
+			))
+			return agentName, nil
+		}
+
+		confirmResp, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+			Options: &azdext.ConfirmOptions{
+				Message:      "Continue with this existing agent name?",
+				DefaultValue: new(false),
+				HelpMessage:  "Choose no to enter a different Foundry agent name before agent.yaml is written.",
+			},
+		})
+		if err != nil {
+			return "", exterrors.FromPrompt(err, "failed to confirm existing agent name")
+		}
+		if confirmResp != nil && confirmResp.Value != nil && *confirmResp.Value {
+			return agentName, nil
+		}
+
+		promptResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:      "Enter a different name for your agent",
+				DefaultValue: nextAgentNameSuggestion(agentName),
+				HelpMessage:  "Foundry agents are unique by name within a project.",
+			},
+		})
+		if err != nil {
+			return "", exterrors.FromPrompt(err, "failed to prompt for a different agent name")
+		}
+
+		nextName := strings.TrimSpace(promptResp.Value)
+		if nextName == "" {
+			nextName = nextAgentNameSuggestion(agentName)
+		}
+
+		agentName, err = validateInitAgentName(nextName)
+		if err != nil {
+			return "", err
+		}
+	}
+}
+
 // runInitFromManifest sets up Azure context, credentials, console, and runs the
 // InitAction for a given manifest pointer. This is the shared code path used when
 // initializing from a manifest URL/path (the -m flag, agent template, or azd template
@@ -286,7 +504,23 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init [<path>] [-m <manifest pointer>] [--src <source directory>]",
 		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Initialize a new AI agent project.
+
+The agent name written to agent.yaml is the Foundry agent identity. Foundry
+agents are unique by name within a project, so deploying with an existing name
+creates a new version of that existing agent instead of a separate agent.
+
+Use --agent-name to choose a unique Foundry agent name when initializing from
+a reusable sample or manifest.`,
+		Example: `  # Initialize from an agent manifest
+  azd ai agent init -m ./agent.manifest.yaml
+
+  # Initialize from a manifest with a unique Foundry agent name
+  azd ai agent init -m ./agent.manifest.yaml --agent-name my-unique-agent
+
+  # Initialize from local agent code
+  azd ai agent init --src ./src/my-agent --agent-name my-unique-agent`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.noPrompt = extCtx.NoPrompt
 			if flags.env == "" {
@@ -515,6 +749,9 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
 		"Path or URI to an agent manifest to add to your azd project")
 
+	cmd.Flags().StringVar(&flags.agentName, "agent-name", "",
+		"Foundry agent name to write to agent.yaml. Reusing a name creates a new version of the existing agent.")
+
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
@@ -637,6 +874,25 @@ func (a *InitAction) Run(ctx context.Context) error {
 		// so agent.yaml is self-documenting about what env vars will be set.
 		if err := injectToolboxEnvVarsIntoDefinition(agentManifest); err != nil {
 			return fmt.Errorf("injecting toolbox env vars: %w", err)
+		}
+
+		agentName, err := agentNameFromTemplate(agentManifest.Template)
+		if err != nil {
+			return err
+		}
+		agentName, err = resolveExistingAgentNameConflict(
+			ctx,
+			a.azdClient,
+			a.environment,
+			a.credential,
+			a.flags.noPrompt,
+			agentName,
+		)
+		if err != nil {
+			return err
+		}
+		if err := setAgentNameOnTemplate(agentManifest, agentName); err != nil {
+			return err
 		}
 
 		// Write the final agent.yaml to disk (after deployment names have been injected)
@@ -1378,9 +1634,24 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", err
 	}
 
+	templateAgentName, err := agentNameFromTemplate(agentManifest.Template)
+	if err != nil {
+		return nil, "", err
+	}
+	selectedAgentName, err := resolveInitAgentName(ctx, a.azdClient, a.flags, templateAgentName)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := setAgentNameOnTemplate(agentManifest, selectedAgentName); err != nil {
+		return nil, "", err
+	}
+
 	fmt.Println(output.WithGrayFormat("✓ Manifest validated successfully"))
 
 	agentId := agentManifest.Name
+	if agentId == "" {
+		agentId = selectedAgentName
+	}
 	serviceName := strings.ReplaceAll(agentId, " ", "")
 
 	// Use targetDir if provided, otherwise default to "src/{agentId}"

@@ -763,6 +763,36 @@ type deployPrepResult struct {
 	protocols       []agent_yaml.ProtocolVersionRecord
 }
 
+type agentExistenceClient interface {
+	GetAgent(ctx context.Context, agentName, apiVersion string) (*agent_api.AgentObject, error)
+}
+
+func agentExists(ctx context.Context, client agentExistenceClient, agentName string) (bool, error) {
+	_, err := client.GetAgent(ctx, agentName, agentAPIVersion)
+	if err == nil {
+		return true, nil
+	}
+
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+		respErr.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+
+	return false, err
+}
+
+func existingAgentVersionWarning(agentName string) string {
+	return output.WithWarningFormat(
+		"An agent named '%s' already exists in this Foundry project. "+
+			"Deploying with this name will create a new version of the existing agent, not a separate agent.\n",
+		agentName,
+	)
+}
+
+func writeExistingAgentVersionWarning(agentName string) {
+	fmt.Fprintf(os.Stderr, "%s", existingAgentVersionWarning(agentName))
+}
+
 // prepareDeploy handles the common pre-deploy logic shared by container and code
 // deploy: endpoint validation, environment variable resolution, service config
 // parsing, and API request building. The caller provides extra build options
@@ -1341,7 +1371,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 	} else {
 		// Agent exists — update
-		fmt.Fprintf(os.Stderr, "Updating existing agent: %s\n", agentDef.Name)
+		writeExistingAgentVersionWarning(agentDef.Name)
 		agentResp, err = agentClient.UpdateAgentFromZip(ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agentAPIVersion)
 		if err != nil {
 			return nil, exterrors.Internal(
@@ -1569,6 +1599,14 @@ func (p *AgentServiceTargetProvider) createAgent(
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
 		p.credential,
 	)
+
+	exists, err := agentExists(ctx, agentClient, request.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check if agent exists: %w", err)
+	}
+	if exists {
+		writeExistingAgentVersionWarning(request.Name)
+	}
 
 	// Extract CreateAgentVersionRequest from CreateAgentRequest
 	versionRequest := &agent_api.CreateAgentVersionRequest{

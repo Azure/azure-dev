@@ -12,33 +12,35 @@ import (
 
 // ---- NewRemoteChecks contract ----
 
-// TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusIdentityRolesModelDeployments
-// pins the current shape of the remote chain: exactly six checks, in
-// the order `remote.auth` → `remote.foundry-endpoint` →
+// TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusIdentityRolesModelDeploymentsConnections
+// pins the current shape of the remote chain: exactly seven checks,
+// in the order `remote.auth` → `remote.foundry-endpoint` →
 // `remote.rbac` → `remote.agent-status` → `remote.agent-identity-roles`
-// → `remote.model-deployments`, all with Remote=true. The ordering
-// matters because `remote.foundry-endpoint` skip-cascades against
-// `remote.auth`'s prior Result, `remote.rbac` skip-cascades against
-// `remote.auth` (but NOT `remote.foundry-endpoint`, per the design's
-// dependency matrix line 115 — RBAC reads ARM, not the data plane),
-// `remote.agent-status` skip-cascades against `remote.auth` +
-// `remote.foundry-endpoint` (Reader-level Foundry call, deliberately
-// bypasses RBAC), `remote.agent-identity-roles` cascades against
-// `remote.agent-status` Pass so the per-agent role enumeration only
-// runs against agents the previous check confirmed active, and
-// `remote.model-deployments` cascades against `remote.auth` +
-// `remote.foundry-endpoint` because it issues an ARM-side
-// Cognitive Services deployments list using the same identity. Any
-// future re-ordering or insertion has to come through this
-// assertion.
-func TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusIdentityRolesModelDeployments(t *testing.T) {
+// → `remote.model-deployments` → `remote.connections`, all with
+// Remote=true. The ordering matters because `remote.foundry-endpoint`
+// skip-cascades against `remote.auth`'s prior Result, `remote.rbac`
+// skip-cascades against `remote.auth` (but NOT
+// `remote.foundry-endpoint`, per the design's dependency matrix line
+// 115 — RBAC reads ARM, not the data plane), `remote.agent-status`
+// skip-cascades against `remote.auth` + `remote.foundry-endpoint`
+// (Reader-level Foundry call, deliberately bypasses RBAC),
+// `remote.agent-identity-roles` cascades against `remote.agent-status`
+// Pass so the per-agent role enumeration only runs against agents the
+// previous check confirmed active, `remote.model-deployments`
+// cascades against `remote.auth` + `remote.foundry-endpoint` because
+// it issues an ARM-side Cognitive Services deployments list using the
+// same identity, and `remote.connections` cascades against the same
+// pair plus `state.HasConnections` because it lists Foundry
+// connections via the data plane. Any future re-ordering or
+// insertion has to come through this assertion.
+func TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusIdentityRolesModelDeploymentsConnections(t *testing.T) {
 	t.Parallel()
 
 	got := NewRemoteChecks(Dependencies{})
 
-	require.Len(t, got, 6,
+	require.Len(t, got, 7,
 		"NewRemoteChecks should contain auth, foundry-endpoint, rbac, agent-status, "+
-			"agent-identity-roles, and model-deployments today")
+			"agent-identity-roles, model-deployments, and connections today")
 	require.Equal(t, "remote.auth", got[0].ID)
 	require.Equal(t, "authentication", got[0].Name)
 	require.True(t, got[0].Remote, "remote.auth must declare Remote=true")
@@ -63,6 +65,10 @@ func TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusIdentityRolesModel
 	require.Equal(t, "Manifest model deployments exist in Foundry", got[5].Name)
 	require.True(t, got[5].Remote, "remote.model-deployments must declare Remote=true")
 	require.NotNil(t, got[5].Fn, "remote.model-deployments must have a non-nil Fn")
+	require.Equal(t, "remote.connections", got[6].ID)
+	require.Equal(t, "Manifest connections exist on Foundry project", got[6].Name)
+	require.True(t, got[6].Remote, "remote.connections must declare Remote=true")
+	require.NotNil(t, got[6].Fn, "remote.connections must have a non-nil Fn")
 }
 
 // TestNewLocalAndRemoteChecks_ProductionCompositionLocalsFirst pins the

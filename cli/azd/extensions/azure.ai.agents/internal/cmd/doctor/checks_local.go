@@ -182,6 +182,19 @@ type Dependencies struct {
 	// tuples per env key. Production wiring leaves this nil and the
 	// check binds `client.Environment().GetValue` on first call.
 	lookupToolboxEnv func(ctx context.Context, key string) (value string, err error)
+
+	// probeFoundryConnections is a test seam for the
+	// `remote.connections` check (Phase 5 C15). When non-nil it
+	// replaces the production `realProbeFoundryConnections` call
+	// inside the check, letting unit tests cover the all-match /
+	// partial / none / probe-error branches without going through
+	// `azd auth` or hitting Foundry. The probe receives the account
+	// + project derived from `AZURE_AI_PROJECT_ID` and returns the
+	// connection names that exist on that project.
+	probeFoundryConnections func(
+		ctx context.Context,
+		accountName, projectName string,
+	) ([]string, error)
 }
 
 // NewLocalChecks returns the canonical sequence of local doctor checks

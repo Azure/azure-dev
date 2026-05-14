@@ -63,9 +63,11 @@ func NewRemoteChecks(deps Dependencies) []Check {
 	//   - C12 (landed): per-agent managed-identity role
 	//     listing across project/account/RG scopes
 	//     (`remote.agent-identity-roles`)
-	//   - C13 (this commit): manifest model deployments exist on
+	//   - C13 (landed): manifest model deployments exist on
 	//     the Foundry project's Cognitive Services account
 	//     (`remote.model-deployments`)
+	//   - C15 (this commit): manifest connections exist on the
+	//     Foundry project (`remote.connections`)
 	// Ordering matters for skip-cascade: each entry reads `prior
 	// []Result` produced by every check earlier in the combined
 	// local-then-remote sequence. Append checks in the order their
@@ -78,5 +80,6 @@ func NewRemoteChecks(deps Dependencies) []Check {
 		newCheckAgentStatus(deps),
 		newCheckAgentIdentityRoles(deps),
 		newCheckModelDeployments(deps),
+		newCheckConnections(deps),
 	}
 }

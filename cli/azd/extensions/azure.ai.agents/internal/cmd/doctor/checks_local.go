@@ -103,6 +103,34 @@ type Dependencies struct {
 		ctx context.Context,
 		azdClient *azdext.AzdClient,
 	) (string, error)
+
+	// probeAgentStatus is a test seam: when non-nil it replaces
+	// the production `realProbeAgentStatus` call inside the
+	// `remote.agent-status` check, letting unit tests cover the
+	// Active / Creating / Failed / NotFound / transport branches
+	// without standing up a live Foundry agent version. The probe
+	// is invoked once per service (so a single unit test can drive
+	// a multi-service aggregate by returning different statuses
+	// for different (name, version) pairs). Production wiring
+	// leaves this nil.
+	probeAgentStatus func(
+		ctx context.Context,
+		endpoint, agentName, agentVersion string,
+	) agentStatusProbeResult
+
+	// readAgentNameVersionFn is a test seam: when non-nil it
+	// replaces the production `readAgentNameVersion` call inside
+	// the `remote.agent-status` check. It returns the deployed
+	// agent name + version for a given service from the active
+	// azd environment. Wiring through a seam avoids the need to
+	// stand up a real gRPC AzdClient for unit tests that just
+	// need to assert classification logic. Production wiring
+	// leaves this nil.
+	readAgentNameVersionFn func(
+		ctx context.Context,
+		azdClient *azdext.AzdClient,
+		serviceName string,
+	) (name string, version string, err error)
 }
 
 // NewLocalChecks returns the canonical sequence of local doctor checks

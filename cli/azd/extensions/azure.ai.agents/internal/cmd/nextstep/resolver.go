@@ -345,12 +345,15 @@ func resolveInvokeFailure(_ *State, mode InvokeMode, _ string, failure *InvokeFa
 	return out
 }
 
-// ResolveAfterShow produces the Next: block printed at the end of a
-// successful `azd ai agent show`. Branches on State.AgentStatus per the
-// platform's `AgentVersionStatus` vocabulary.
+// ResolveAfterShow produces the Next: block printed at the end of
+// `azd ai agent show` for statuses that need action. Active agents
+// intentionally return no guidance: `show` is an inspection command,
+// and Doctor/deploy guidance already owns the "try invoke next" path.
+// Branches on State.AgentStatus per the platform's `AgentVersionStatus`
+// vocabulary.
 //
 // Status mapping (issue #7975 lines 208-214):
-//   - active / idle  → `azd ai agent invoke <svc> "Hello!"` (ready to test)
+//   - active / idle  → no guidance (already healthy)
 //   - creating       → `azd ai agent monitor --type system --follow`
 //   - failed / ""    → `azd ai agent monitor --follow` (live log feed,
 //     used to be `--tail 100` pre-C5; spec calls for `--follow` so
@@ -359,22 +362,8 @@ func resolveInvokeFailure(_ *State, mode InvokeMode, _ string, failure *InvokeFa
 //   - anything else (transitional / genuinely unknown) → `azd ai agent
 //     show <svc>` re-check
 //
-// serviceName is the azure.yaml service name. It is used end-to-end:
-// (1) to look up State.Services[].Protocol for the protocol-aware
-// payload, (2) as the positional in the suggested
-// `azd ai agent invoke <serviceName> ...` command, and (3) as the
-// positional in the unknown-status `azd ai agent show <serviceName>`
-// re-check fallback.
-//
-// Critically, the invoke suggestion intentionally uses the azure.yaml
-// service name rather than the deployed Foundry agent name. invoke's
-// protocol/service resolution keys on azure.yaml service names; the
-// invocations/responses remote paths then translate to the deployed
-// agent name internally before constructing the Foundry URL (see
-// invoke.go gates inside invocationsRemote/responsesRemote). Emitting
-// the deployed Foundry name here would fail upstream in
-// resolveAgentProtocol with "no azure.ai.agent service named …
-// found".
+// serviceName is the azure.yaml service name used by the unknown-status
+// `azd ai agent show <serviceName>` re-check fallback.
 func ResolveAfterShow(state *State, serviceName string) []Suggestion {
 	if state == nil {
 		return nil
@@ -382,19 +371,10 @@ func ResolveAfterShow(state *State, serviceName string) []Suggestion {
 
 	switch AgentVersionStatus(state.AgentStatus) {
 	case AgentVersionActive, AgentVersionIdle:
-		// Issue #7975 line 208: `idle` is a defensive synonym for
-		// `active`. The platform's verified enum only emits `active`
-		// today, but if the API ever surfaces `idle` we treat it the
-		// same — both mean "ready to invoke".
-		protocol := ProtocolResponses
-		if svc := findService(state, serviceName); svc != nil && svc.Protocol != "" {
-			protocol = svc.Protocol
-		}
-		return []Suggestion{{
-			Command:     invokeCommandFor(serviceName, protocol, state),
-			Description: "the agent is ready — send it a sample request",
-			Priority:    10,
-		}}
+		// `idle` is a defensive synonym for `active`. Both are healthy
+		// states, so `show` should stay a pure inspection command and
+		// not append invoke guidance.
+		return nil
 	case AgentVersionCreating:
 		return []Suggestion{{
 			Command:     "azd ai agent monitor --type system --follow",
@@ -616,29 +596,6 @@ func defaultInvokePayload(svc *ServiceState) string {
 		return invokeInvocationsPayload
 	}
 	return invokeResponsesPayload
-}
-
-// invokeCommandFor returns `azd ai agent invoke [name] <payload>` for the
-// protocol, omitting the name when empty. When state carries an OpenAPI
-// payload (HasOpenAPI == true), the cached sample is preferred over the
-// protocol-generic literal so the suggestion matches the agent's actual
-// schema. state may be nil — the lookup is a no-op in that case.
-//
-// `name` is the value placed verbatim into the emitted command. For the
-// ResolveAfterShow flow this is the azure.yaml service name (see that
-// function's contract for the rationale).
-func invokeCommandFor(name, protocol string, state *State) string {
-	payload := invokeResponsesPayload
-	if protocol == ProtocolInvocations {
-		payload = invokeInvocationsPayload
-	}
-	if state != nil && state.HasOpenAPI && state.OpenAPIPayload != "" {
-		payload = shellEscapeSingleQuoted(state.OpenAPIPayload)
-	}
-	if name == "" {
-		return fmt.Sprintf("azd ai agent invoke %s", payload)
-	}
-	return fmt.Sprintf("azd ai agent invoke %s %s", name, payload)
 }
 
 // shellEscapeSingleQuoted wraps s in single quotes for POSIX shells.

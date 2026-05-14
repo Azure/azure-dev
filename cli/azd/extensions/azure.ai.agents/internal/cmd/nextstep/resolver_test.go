@@ -645,13 +645,11 @@ func TestResolveAfterShow(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		status     AgentVersionStatus
-		agentName  string
-		wantCmdHas string
+		name        string
+		status      AgentVersionStatus
+		serviceName string
+		wantCmdHas  string
 	}{
-		{"Active without service in state → responses payload", AgentVersionActive, "echo", `azd ai agent invoke echo "Hello!"`},
-		{"Idle (defensive synonym for Active) → invoke", AgentVersionIdle, "echo", `azd ai agent invoke echo "Hello!"`},
 		{"Creating → monitor system", AgentVersionCreating, "echo", "azd ai agent monitor --type system --follow"},
 		{"Failed → monitor --follow", AgentVersionFailed, "echo", "azd ai agent monitor --follow"},
 		{"Deleting → redeploy", AgentVersionDeleting, "echo", "azd deploy"},
@@ -668,131 +666,42 @@ func TestResolveAfterShow(t *testing.T) {
 			// Same-name case: service and agent names align (common when deploy
 			// doesn't append a suffix). Divergent-name behavior is exercised by
 			// TestResolveAfterShow_DivergentNames below — the resolver always
-			// emits the service name; invoke.go translates to the deployed
-			// agent name internally.
-			out := ResolveAfterShow(&State{AgentStatus: string(tt.status)}, tt.agentName)
+			// emits the service name in the unknown-status re-check.
+			out := ResolveAfterShow(&State{AgentStatus: string(tt.status)}, tt.serviceName)
 			require.NotEmpty(t, out)
 			assert.Contains(t, out[0].Command, tt.wantCmdHas)
 		})
 	}
 }
 
-func TestResolveAfterShow_ActiveHonorsServiceProtocol(t *testing.T) {
+func TestResolveAfterShow_ActiveAndIdleReturnNil(t *testing.T) {
 	t.Parallel()
 
-	t.Run("invocations protocol → JSON payload", func(t *testing.T) {
-		t.Parallel()
-		state := &State{
-			AgentStatus: string(AgentVersionActive),
-			Services:    []ServiceState{{Name: "echo", Protocol: ProtocolInvocations}},
-		}
-		out := ResolveAfterShow(state, "echo")
-		require.Len(t, out, 1)
-		assert.Equal(t, `azd ai agent invoke echo '{"message": "Hello!"}'`, out[0].Command)
-	})
-
-	t.Run("responses protocol → bare string payload", func(t *testing.T) {
-		t.Parallel()
-		state := &State{
-			AgentStatus: string(AgentVersionActive),
-			Services:    []ServiceState{{Name: "echo", Protocol: ProtocolResponses}},
-		}
-		out := ResolveAfterShow(state, "echo")
-		require.Len(t, out, 1)
-		assert.Equal(t, `azd ai agent invoke echo "Hello!"`, out[0].Command)
-	})
-
-	t.Run("service name not present in state → responses fallback", func(t *testing.T) {
-		t.Parallel()
-		state := &State{
-			AgentStatus: string(AgentVersionActive),
-			Services:    []ServiceState{{Name: "other", Protocol: ProtocolInvocations}},
-		}
-		out := ResolveAfterShow(state, "echo")
-		require.Len(t, out, 1)
-		assert.Equal(t, `azd ai agent invoke echo "Hello!"`, out[0].Command)
-	})
+	for _, status := range []AgentVersionStatus{AgentVersionActive, AgentVersionIdle} {
+		status := status
+		t.Run(string(status), func(t *testing.T) {
+			t.Parallel()
+			state := &State{
+				AgentStatus: string(status),
+				Services:    []ServiceState{{Name: "echo", Protocol: ProtocolInvocations}},
+			}
+			assert.Nil(t, ResolveAfterShow(state, "echo"))
+		})
+	}
 }
 
 // TestResolveAfterShow_DivergentNames locks the divergent-name contract:
 // when the azure.yaml service name and the deployed Foundry agent name
-// differ, the emitted invoke suggestion always uses the SERVICE name as
-// the positional. invoke's own protocol/service resolution keys on
-// service names, and its invocationsRemote/responsesRemote gates then
-// translate to the deployed agent name before constructing the Foundry
-// URL. Emitting the deployed name here would fail upstream at
-// resolveAgentProtocol with "no azure.ai.agent service named …".
+// differ, the unknown-status re-check suggestion uses the SERVICE name
+// as the positional because show.go's lookup matches by service name.
 func TestResolveAfterShow_DivergentNames(t *testing.T) {
 	t.Parallel()
-
-	t.Run("Active branch: command uses service name (not deployed agent name)", func(t *testing.T) {
-		t.Parallel()
-		state := &State{
-			AgentStatus: string(AgentVersionActive),
-			Services:    []ServiceState{{Name: "svc-echo", Protocol: ProtocolInvocations}},
-		}
-		out := ResolveAfterShow(state, "svc-echo")
-		require.Len(t, out, 1)
-		assert.Equal(t, `azd ai agent invoke svc-echo '{"message": "Hello!"}'`, out[0].Command)
-	})
 
 	t.Run("unknown status: re-check uses service name", func(t *testing.T) {
 		t.Parallel()
 		out := ResolveAfterShow(&State{AgentStatus: "Transitioning"}, "svc-echo")
 		require.Len(t, out, 1)
 		assert.Equal(t, "azd ai agent show svc-echo", out[0].Command)
-	})
-}
-
-// TestResolveAfterShow_ActiveConsumesOpenAPICache locks the G2 behavior:
-// when state.HasOpenAPI is true and the payload is non-empty, the Active
-// suggestion uses the cached payload (shell-escaped) in place of the
-// protocol-generic literal so the command matches the agent's actual
-// schema.
-func TestResolveAfterShow_ActiveConsumesOpenAPICache(t *testing.T) {
-	t.Parallel()
-
-	t.Run("cached payload overrides protocol literal", func(t *testing.T) {
-		t.Parallel()
-		state := &State{
-			AgentStatus:    string(AgentVersionActive),
-			Services:       []ServiceState{{Name: "echo", Protocol: ProtocolInvocations}},
-			HasOpenAPI:     true,
-			OpenAPIPayload: `{"prompt": "hi", "max_tokens": 32}`,
-		}
-		out := ResolveAfterShow(state, "echo")
-		require.Len(t, out, 1)
-		assert.Equal(t,
-			`azd ai agent invoke echo '{"prompt": "hi", "max_tokens": 32}'`,
-			out[0].Command)
-	})
-
-	t.Run("payload with apostrophe is POSIX-escaped", func(t *testing.T) {
-		t.Parallel()
-		state := &State{
-			AgentStatus:    string(AgentVersionActive),
-			Services:       []ServiceState{{Name: "echo", Protocol: ProtocolInvocations}},
-			HasOpenAPI:     true,
-			OpenAPIPayload: `{"greeting": "it's me"}`,
-		}
-		out := ResolveAfterShow(state, "echo")
-		require.Len(t, out, 1)
-		assert.Equal(t,
-			`azd ai agent invoke echo '{"greeting": "it'\''s me"}'`,
-			out[0].Command)
-	})
-
-	t.Run("HasOpenAPI true but empty payload falls back to protocol literal", func(t *testing.T) {
-		t.Parallel()
-		state := &State{
-			AgentStatus:    string(AgentVersionActive),
-			Services:       []ServiceState{{Name: "echo", Protocol: ProtocolInvocations}},
-			HasOpenAPI:     true,
-			OpenAPIPayload: "",
-		}
-		out := ResolveAfterShow(state, "echo")
-		require.Len(t, out, 1)
-		assert.Equal(t, `azd ai agent invoke echo '{"message": "Hello!"}'`, out[0].Command)
 	})
 }
 

@@ -4,17 +4,14 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -230,15 +227,15 @@ func TestShowResultJSON_NextStepEnvelope(t *testing.T) {
 		ID:      "ver-999",
 		Name:    "my-agent",
 		Version: "1",
-		Status:  "active",
+		Status:  "failed",
 	}
 
 	result := &showResult{
 		AgentVersionObject: version,
 		NextStep: toNextStepEnvelope([]nextstep.Suggestion{
 			{
-				Command:     `azd ai agent invoke my-agent "Hello!"`,
-				Description: "the agent is ready — send it a sample request",
+				Command:     "azd ai agent monitor --follow",
+				Description: "stream agent logs to investigate the failure",
 				Priority:    10,
 			},
 		}),
@@ -257,8 +254,8 @@ func TestShowResultJSON_NextStepEnvelope(t *testing.T) {
 	require.True(t, ok, "next_step.suggestions should be an array")
 	require.Len(t, suggestions, 1)
 	first := suggestions[0].(map[string]any)
-	assert.Equal(t, `azd ai agent invoke my-agent "Hello!"`, first["command"])
-	assert.Equal(t, "the agent is ready — send it a sample request", first["description"])
+	assert.Equal(t, "azd ai agent monitor --follow", first["command"])
+	assert.Equal(t, "stream agent logs to investigate the failure", first["description"])
 	// Internal renderer hints (priority, trailing) must not leak into JSON.
 	_, hasPriority := first["priority"]
 	assert.False(t, hasPriority, "priority must not appear in JSON envelope")
@@ -354,96 +351,32 @@ func captureStdout(t *testing.T, run func() error) (string, error) {
 	return string(output), runErr
 }
 
-// fakeShowSource is a minimal nextstep.Source for wiring tests.
-// It returns canned project/env data without touching the real azd
-// gRPC client. Only the surfaces actually exercised by AssembleState
-// are populated.
-type fakeShowSource struct {
-	envName string
-	project *azdext.ProjectConfig
-	values  map[string]string
-}
-
-func (f *fakeShowSource) CurrentEnvName(_ context.Context) (string, error) {
-	return f.envName, nil
-}
-
-func (f *fakeShowSource) Project(_ context.Context) (*azdext.ProjectConfig, error) {
-	return f.project, nil
-}
-
-func (f *fakeShowSource) EnvValue(_ context.Context, envName, key string) (string, error) {
-	return f.values[envName+"/"+key], nil
-}
-
-// TestResolveNextStepFromSource_ActiveBranch_InvocationsProtocol exercises
-// the full show → resolver wiring end-to-end: AssembleState reads the
-// service's agent.yaml (via the fake project root in a t.TempDir) to
-// detect the invocations protocol, then ResolveAfterShow emits the
-// protocol-aware invoke suggestion using the Foundry agent name.
-func TestResolveNextStepFromSource_ActiveBranch_InvocationsProtocol(t *testing.T) {
+// TestResolveNextStepFromStatus_ActiveBranchNoSuggestion locks the active
+// show contract: active/idle are already healthy, so show remains an
+// inspection command and does not emit next_step guidance.
+func TestResolveNextStepFromStatus_ActiveBranchNoSuggestion(t *testing.T) {
 	t.Parallel()
 
-	projectRoot := t.TempDir()
-	svcDir := filepath.Join(projectRoot, "src", "echo-svc")
-	require.NoError(t, os.MkdirAll(svcDir, 0o750))
-	agentYAML := []byte(`
-protocols:
-  - protocol: invocations
-    version: "1"
-`)
-	require.NoError(t, os.WriteFile(filepath.Join(svcDir, "agent.yaml"), agentYAML, 0o600))
-
-	src := &fakeShowSource{
-		envName: "dev",
-		project: &azdext.ProjectConfig{
-			Name: "demo",
-			Path: projectRoot,
-			Services: map[string]*azdext.ServiceConfig{
-				"echo-svc": {
-					Name:         "echo-svc",
-					Host:         "azure.ai.agent",
-					RelativePath: filepath.Join("src", "echo-svc"),
-				},
-			},
-		},
-	}
-
-	out := resolveNextStepFromSource(t.Context(), src, "echo-svc", "echo-deployed-x7q9", "active")
-	require.Len(t, out, 1)
-	assert.Equal(t,
-		`azd ai agent invoke echo-svc '{"message": "Hello!"}'`,
-		out[0].Command,
-		"Active branch should emit protocol-aware invoke command using the azure.yaml service name "+
-			"(invoke.go translates to the deployed agent name internally)")
+	out := resolveNextStepFromStatus("echo-svc", "active")
+	require.Empty(t, out)
 }
 
-// TestResolveNextStepFromSource_UnknownStatusFallsBackToServiceName locks
+// TestResolveNextStepFromStatus_UnknownStatusFallsBackToServiceName locks
 // the unknown-status branch: when the resolver can't classify the status,
 // it suggests `azd ai agent show <serviceName>` (not agentName), because
 // show.go's lookup matches by service name.
-func TestResolveNextStepFromSource_UnknownStatusFallsBackToServiceName(t *testing.T) {
+func TestResolveNextStepFromStatus_UnknownStatusFallsBackToServiceName(t *testing.T) {
 	t.Parallel()
 
-	src := &fakeShowSource{
-		envName: "dev",
-		project: &azdext.ProjectConfig{Name: "demo"},
-	}
-
-	out := resolveNextStepFromSource(t.Context(), src, "echo-svc", "echo-deployed-x7q9", "Transitioning")
+	out := resolveNextStepFromStatus("echo-svc", "Transitioning")
 	require.Len(t, out, 1)
 	assert.Equal(t, "azd ai agent show echo-svc", out[0].Command)
 }
 
-// TestResolveNextStepFromSource_NonActiveBranches sanity-checks the
+// TestResolveNextStepFromStatus_NonActiveBranches sanity-checks the
 // remaining status branches don't depend on either service or agent name.
-func TestResolveNextStepFromSource_NonActiveBranches(t *testing.T) {
+func TestResolveNextStepFromStatus_NonActiveBranches(t *testing.T) {
 	t.Parallel()
-
-	src := &fakeShowSource{
-		envName: "dev",
-		project: &azdext.ProjectConfig{Name: "demo"},
-	}
 
 	tests := []struct {
 		status string
@@ -460,7 +393,7 @@ func TestResolveNextStepFromSource_NonActiveBranches(t *testing.T) {
 		tt := tt
 		t.Run(tt.status, func(t *testing.T) {
 			t.Parallel()
-			out := resolveNextStepFromSource(t.Context(), src, "echo-svc", "echo-deployed-x7q9", tt.status)
+			out := resolveNextStepFromStatus("echo-svc", tt.status)
 			require.Len(t, out, 1)
 			assert.Equal(t, tt.want, out[0].Command)
 		})

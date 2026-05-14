@@ -32,20 +32,9 @@ type ShowAction struct {
 	flags     *showFlags
 	azdClient *azdext.AzdClient
 	envName   string
-	// serviceName is the azure.yaml service name (used to match
-	// state.Services[].Name for protocol-aware Next: guidance and the
-	// unknown-status re-check fallback that suggests `azd ai agent
-	// show <serviceName>`).
+	// serviceName is the azure.yaml service name used by the unknown-status
+	// re-check fallback that suggests `azd ai agent show <serviceName>`.
 	serviceName string
-	// agentName is the deployed Foundry agent name (from the azd env
-	// `AGENT_<KEY>_NAME` value). Differs from serviceName when deploy
-	// appends a suffix. Used for (a) constructing the Foundry API
-	// client via newAgentContext and (b) keying the OpenAPI cache
-	// lookup via WithOpenAPIProbe(agentName, "remote"). The suggested
-	// invoke command, however, uses serviceName (not agentName) —
-	// invoke keys on azure.yaml s.Name, so the copy-pasted command
-	// must carry the service name. See `helpers.go:resolveAgentService`.
-	agentName string
 	// serviceKey is the uppercase/underscored form of the service name,
 	// used to look up per-service env vars (e.g. AGENT_{KEY}_RESPONSES_ENDPOINT).
 	serviceKey string
@@ -123,7 +112,6 @@ configuration and the current azd environment. Optionally specify the service na
 				azdClient:    azdClient,
 				envName:      envName,
 				serviceName:  info.ServiceName,
-				agentName:    info.AgentName,
 				serviceKey:   toServiceKey(info.ServiceName),
 			}
 
@@ -197,11 +185,13 @@ func (a *ShowAction) Run(ctx context.Context) error {
 	// Resolve deployed endpoint URLs from env vars (best-effort)
 	result.Endpoints = a.resolveEndpointURLs(ctx)
 
-	// Resolve context-aware next-step guidance (best-effort: assembly
-	// errors are tolerated; the resolver degrades gracefully on partial
-	// state per cli/azd/extensions/azure.ai.agents/internal/cmd/nextstep
-	// State assembly docs).
-	suggestions := a.resolveNextStep(ctx, version.Status)
+	// Resolve context-aware next-step guidance only for statuses that need
+	// action. Active agents intentionally omit next_step so `show` stays a
+	// pure inspection command and JSON output remains close to the API shape.
+	var suggestions []nextstep.Suggestion
+	if shouldResolveShowNextStep(version.Status) {
+		suggestions = a.resolveNextStep(version.Status)
+	}
 
 	return printShowResult(result, a.flags.output, suggestions)
 }
@@ -218,38 +208,27 @@ func printShowResult(result *showResult, output string, suggestions []nextstep.S
 	}
 }
 
-// resolveNextStep assembles state and asks the resolver for the post-show
-// guidance block. The actual work happens in resolveNextStepFromSource —
-// this is just the entry point that constructs a real Source from the
-// azd gRPC client. The OpenAPI probe is enabled so the Active-branch
-// invoke suggestion can pull a schema-correct payload from the cache
-// (populated by prior `azd ai agent invoke` runs) when available; when
-// the cache is empty the resolver falls back to a protocol-generic
-// literal.
-func (a *ShowAction) resolveNextStep(ctx context.Context, status string) []nextstep.Suggestion {
-	if a.azdClient == nil {
-		return nil
+func shouldResolveShowNextStep(status string) bool {
+	switch nextstep.AgentVersionStatus(status) {
+	case nextstep.AgentVersionActive, nextstep.AgentVersionIdle:
+		return false
+	default:
+		return true
 	}
-	return resolveNextStepFromSource(ctx, nextstep.NewSource(a.azdClient), a.serviceName, a.agentName, status)
 }
 
-// resolveNextStepFromSource is the source-injecting core of resolveNextStep,
-// extracted so tests can drive the resolver end-to-end with a fake Source
-// without spinning up a real azd gRPC client. AssembleStateFromSource
-// always returns a non-nil partial state per its documented contract
-// (`nextstep/state.go:AssembleStateFromSource`), so no nil check is
-// needed here even when len(errs) > 0.
-func resolveNextStepFromSource(
-	ctx context.Context,
-	src nextstep.Source,
-	serviceName, agentName, status string,
-) []nextstep.Suggestion {
-	var opts []nextstep.Option
-	if agentName != "" {
-		opts = append(opts, nextstep.WithOpenAPIProbe(agentName, "remote"))
+// resolveNextStep asks the resolver for the post-show guidance block.
+func (a *ShowAction) resolveNextStep(status string) []nextstep.Suggestion {
+	return resolveNextStepFromStatus(a.serviceName, status)
+}
+
+// resolveNextStepFromStatus is the testable core of resolveNextStep.
+func resolveNextStepFromStatus(serviceName, status string) []nextstep.Suggestion {
+	if !shouldResolveShowNextStep(status) {
+		return nil
 	}
-	state, _ := nextstep.AssembleStateFromSource(ctx, src, opts...)
-	state.AgentStatus = status
+
+	state := &nextstep.State{AgentStatus: status}
 	return nextstep.ResolveAfterShow(state, serviceName)
 }
 

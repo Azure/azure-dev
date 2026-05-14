@@ -86,12 +86,17 @@ func (s *rpcSession) proxyFetchSSE(raw json.RawMessage) {
 
 // pumpSSE streams an already-open response body as SSE chunk/done
 // notifications. Used by proxyInvoke when the response is event-stream.
+//
+// The body has no request context attached (proxyInvoke completed the HTTP
+// round-trip synchronously), so a hung Read on Body cannot be cancelled by
+// ctx alone. The goroutine below force-closes Body when streamCtx is
+// cancelled — that's what unblocks Read on session shutdown. We mirror that
+// by cancelling streamCtx ourselves on the normal-completion path so the
+// goroutine always runs and closes Body exactly once.
 func (s *rpcSession) pumpSSE(requestID string, resp *http.Response, logRaw bool) {
 	streamCtx, cancel := context.WithCancel(s.rootCtx)
 	s.registerStream(requestID, cancel)
-
 	defer s.unregisterStream(requestID)
-	defer resp.Body.Close()
 
 	go func() {
 		<-streamCtx.Done()
@@ -99,6 +104,7 @@ func (s *rpcSession) pumpSSE(requestID string, resp *http.Response, logRaw bool)
 	}()
 
 	s.streamSSELines(streamCtx, requestID, resp.Body, logRaw)
+	cancel()
 }
 
 // streamSSELines emits one chunk notification per `data: ` line. When a

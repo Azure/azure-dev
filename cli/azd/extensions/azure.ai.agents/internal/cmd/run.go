@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -197,20 +198,15 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 
 	url := fmt.Sprintf("http://localhost:%d", flags.port)
 
-	// Resolver picks a protocol-appropriate invoke payload (and reuses
-	// the cached OpenAPI sample from a prior `invoke`, when present).
-	// State assembly errors are intentionally ignored — the resolver
-	// degrades gracefully on partial state per the design spec.
-	state, _ := nextstep.AssembleState(ctx, azdClient,
-		nextstep.WithOpenAPIProbe(runCtx.ServiceName, "local"))
-	// `run` holds the foreground TTY for the agent process, so its `Next:`
-	// block is a "wait + new terminal" sequence — unlike `init`, which exits
-	// and hands the prompt back. Spell that out explicitly to avoid the
-	// common trap where a user pastes the suggested invoke into the same
-	// terminal and Ctrl+Cs the agent to get their prompt back.
-	fmt.Println("After startup, in another terminal, try:")
-	_ = nextstep.PrintNext(os.Stdout, nextstep.ResolveAfterRun(state, runCtx.ServiceName))
-	fmt.Printf("\nStarting agent on %s (Ctrl+C to stop)\n\n", url)
+	// `run` holds the foreground TTY for the agent process and the
+	// `Next:` block is a "wait + new terminal" sequence. Emitting it
+	// before the agent has actually bound its port produces the
+	// well-known race where a user alt-tabs to a fresh terminal and
+	// pastes the suggested invoke before the server is up — and the
+	// invoke fails. Defer the emission until net.DialTimeout against
+	// localhost:port succeeds (or the budget elapses). See B5 in the
+	// PR-8057 design spec.
+	fmt.Printf("Starting agent on %s (Ctrl+C to stop)\n\n", url)
 
 	// Create command with stdout/stderr piped to terminal
 	ctx, cancel := context.WithCancel(ctx)
@@ -242,6 +238,20 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 		os.Stderr,
 	)
 
+	// Emit the `Next:` block once the agent's port is open. We don't
+	// want users alt-tabbing to a fresh terminal and pasting the
+	// suggested invoke before the server is ready to answer. The
+	// goroutine returns silently if the agent never binds within the
+	// budget (e.g., the process exited during boot — the user already
+	// sees the stderr trace) or if the parent ctx is cancelled.
+	// nextDone signals the goroutine has exited so runRun can join it
+	// after proc.Wait returns, preventing stdout races on shutdown.
+	nextDone := make(chan struct{})
+	go func() {
+		defer close(nextDone)
+		emitNextAfterBind(ctx, azdClient, runCtx.ServiceName, flags.port)
+	}()
+
 	// Handle Ctrl+C / SIGTERM: forward signal to child, then wait for it to exit.
 	// The done channel is closed after proc.Wait returns so the goroutine can exit.
 	sigCh := make(chan os.Signal, 1)
@@ -259,6 +269,8 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 
 	err = proc.Wait()
 	close(done)
+	cancel()
+	<-nextDone
 
 	// Suppress the noisy "signal: interrupt" error on Ctrl+C
 	if ctx.Err() != nil {
@@ -696,4 +708,123 @@ func loadAzdEnvironment(ctx context.Context, azdClient *azdext.AzdClient) (map[s
 		result[kv.Key] = kv.Value
 	}
 	return result, nil
+}
+
+// emitNextAfterBind blocks until the agent process binds the local
+// port (or the budget elapses, or ctx is cancelled) and then prints
+// the protocol-appropriate `Next:` block. The state assembler is
+// configured with both a live HTTP probe and the on-disk cache: the
+// live spec wins when reachable, and the cache is the fallback when
+// the agent doesn't expose /invocations/docs/openapi.json or fails
+// its probe.
+//
+// Returns silently on every failure path (port never bound, ctx
+// cancelled mid-wait, state assembly error, non-terminal stdout). The
+// user already sees the agent's own stderr in those cases; surfacing
+// additional diagnostics here would clutter an otherwise-busy terminal.
+func emitNextAfterBind(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	port int,
+) {
+	// Honor the nextstep call-site TTY-gating contract: when stdout
+	// is redirected (e.g., `azd ai agent run > log`), the human-only
+	// "Agent ready"/Next: block must not contaminate the capture.
+	if !isTerminal(os.Stdout.Fd()) {
+		return
+	}
+	if !waitForPortReady(ctx, port, portReadyBudget) {
+		return
+	}
+	liveFetch := func(probeCtx context.Context) ([]byte, error) {
+		probeCtx, cancel := context.WithTimeout(probeCtx, liveOpenAPITimeout)
+		defer cancel()
+		return fetchLiveOpenAPI(probeCtx, port)
+	}
+	state, _ := nextstep.AssembleState(ctx, azdClient,
+		nextstep.WithOpenAPIProbe(serviceName, "local"),
+		nextstep.WithLiveOpenAPIProbe(liveFetch))
+	// Re-check ctx after AssembleState: if Ctrl+C arrived mid-call,
+	// the user already saw "Stopping agent..."/"Agent stopped." and
+	// printing "Agent ready" now would be factually wrong.
+	if ctx.Err() != nil {
+		return
+	}
+	fmt.Println("\nAgent ready. In another terminal, try:")
+	_ = nextstep.PrintNext(os.Stdout, nextstep.ResolveAfterRun(state, serviceName))
+}
+
+// portReadyBudget is the wall-clock ceiling for waitForPortReady;
+// most agent runtimes (uvicorn, dotnet, node) bind within a second
+// of start so 5 s is generous without making a failed boot drag
+// the user's attention.
+const portReadyBudget = 5 * time.Second
+
+// portReadyPollInterval is how often waitForPortReady probes the
+// loopback address; 100 ms is short enough to feel snappy while
+// keeping the wake-up count low on slow machines.
+const portReadyPollInterval = 100 * time.Millisecond
+
+// portReadyDialTimeout caps each individual dial; this stays well
+// below portReadyPollInterval so a slow refusal doesn't drag the
+// poll cadence beyond the configured rhythm.
+const portReadyDialTimeout = 50 * time.Millisecond
+
+// liveOpenAPITimeout caps the live /invocations/docs/openapi.json
+// fetch issued by emitNextAfterBind. The design budget is 3 s — long
+// enough for a freshly-bound server to honor the GET, short enough
+// that a silent agent (no openapi route) doesn't visibly delay the
+// `Next:` block.
+const liveOpenAPITimeout = 3 * time.Second
+
+// waitForPortReady polls localhost:port at portReadyPollInterval
+// until a TCP dial succeeds or the budget elapses. Returns true on
+// success. Respects ctx.Done so a Ctrl+C during boot doesn't block
+// the wait — the goroutine exits cleanly.
+func waitForPortReady(ctx context.Context, port int, budget time.Duration) bool {
+	deadline := time.Now().Add(budget)
+	addr := fmt.Sprintf("localhost:%d", port)
+	for time.Now().Before(deadline) {
+		if ctx.Err() != nil {
+			return false
+		}
+		conn, err := net.DialTimeout("tcp", addr, portReadyDialTimeout)
+		if err == nil {
+			_ = conn.Close()
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(portReadyPollInterval):
+		}
+	}
+	return false
+}
+
+// fetchLiveOpenAPI issues an HTTP GET against
+// /invocations/docs/openapi.json on the local agent and returns the
+// response body. The route matches the cache-side fetcher in
+// helpers.go (fetchOpenAPISpec) and the user-facing curl tip surfaced
+// by nextstep/resolver.go. The caller is responsible for the
+// surrounding timeout (we honor ctx). Non-200 responses are reported
+// as errors so the state assembler falls back to the on-disk cache
+// rather than feeding a stale or 404-shaped body into
+// ExtractInvokeExample.
+func fetchLiveOpenAPI(ctx context.Context, port int) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		fmt.Sprintf("http://localhost:%d/invocations/docs/openapi.json", port), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("openapi.json: %s", resp.Status)
+	}
+	return io.ReadAll(resp.Body)
 }

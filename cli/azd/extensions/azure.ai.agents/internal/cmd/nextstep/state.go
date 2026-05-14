@@ -152,6 +152,14 @@ type config struct {
 	// payload lookup. The zero value (empty strings) disables the probe.
 	openAPIAgent  string
 	openAPISuffix string
+
+	// openAPILiveFetch, when non-nil, is consulted before the on-disk
+	// cache: a non-empty body wins and is used for example extraction.
+	// On error or empty body the assembler silently falls back to the
+	// cache lookup configured via WithOpenAPIProbe. Used by
+	// `azd ai agent run` to surface a fresh sample without making the
+	// on-disk cache the source of truth.
+	openAPILiveFetch func(context.Context) ([]byte, error)
 }
 
 // WithAuthProbe enables a token-introspection step that populates
@@ -173,11 +181,30 @@ func WithAuthProbe(enabled bool) Option {
 // when they fetch the agent's OpenAPI spec. On cache miss, malformed
 // spec, or any read error the probe leaves State.HasOpenAPI false and
 // the resolver falls back to the protocol-generic <payload> literal.
+//
+// Combine with WithLiveOpenAPIProbe to prefer a fresh in-process fetch
+// (e.g., from a freshly-bound `run` server) while keeping the cache as
+// a fallback for offline / failed-fetch cases.
 func WithOpenAPIProbe(agentName, suffix string) Option {
 	return func(c *config) {
 		c.openAPIAgent = agentName
 		c.openAPISuffix = suffix
 	}
+}
+
+// WithLiveOpenAPIProbe enables an HTTP fetch of the agent's OpenAPI
+// spec. When the supplied closure returns a non-empty byte slice with a
+// nil error, those bytes are used for example extraction in preference
+// to the on-disk cache; any error or empty body falls back to the
+// cache lookup configured via WithOpenAPIProbe.
+//
+// The caller owns the probe's timeout — pass a closure that wraps the
+// HTTP call in its own short-lived context (the design budget is 3 s
+// for `azd ai agent run`). The probe is intended for transient "just
+// started" scenarios where the live spec is authoritative; cache-only
+// paths (show / deploy) should not register a live probe.
+func WithLiveOpenAPIProbe(fetch func(context.Context) ([]byte, error)) Option {
+	return func(c *config) { c.openAPILiveFetch = fetch }
 }
 
 // AssembleState builds a State snapshot for the current azd environment.
@@ -259,7 +286,7 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 		state.MissingInfraVars, state.MissingManualVars, state.UnresolvedPlaceholders = detectMissingVars(
 			ctx, src, envName, project.Path, state.Services, &errs,
 		)
-		populateOpenAPIPayload(cfg, project.Path, envName, state)
+		populateOpenAPIPayload(ctx, cfg, project.Path, envName, state)
 	}
 
 	// authProbe lands in a later commit; the flag is already plumbed so
@@ -269,19 +296,41 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 	return state, errs
 }
 
-// populateOpenAPIPayload reads the on-disk OpenAPI cache produced by
-// fetchOpenAPISpec and extracts a sample invoke payload. All failure
-// modes (probe disabled, cache miss, malformed spec, no extractable
-// payload) leave state.HasOpenAPI false so the resolver can fall back
-// to the protocol-generic literal.
-func populateOpenAPIPayload(cfg *config, projectPath, envName string, state *State) {
-	if cfg.openAPIAgent == "" || cfg.openAPISuffix == "" {
-		return
+// populateOpenAPIPayload locates a sample invoke payload for the
+// resolver. When a live probe is registered (via
+// WithLiveOpenAPIProbe) the closure is consulted first and its
+// non-empty body wins; otherwise — or on error / empty body — the
+// on-disk cache produced by fetchOpenAPISpec is consulted. All
+// failure modes (probe disabled, fetch error, cache miss, malformed
+// spec, no extractable payload) leave state.HasOpenAPI false so the
+// resolver can fall back to the protocol-generic literal.
+//
+// Live-fetch errors are silently absorbed: the doctor / `run` paths
+// must not surface partial-network diagnostics here — the user's
+// terminal is the wrong surface for them and a transient probe
+// failure should never block the cached fallback.
+func populateOpenAPIPayload(
+	ctx context.Context,
+	cfg *config,
+	projectPath, envName string,
+	state *State,
+) {
+	var specBytes []byte
+	if cfg.openAPILiveFetch != nil {
+		if b, err := cfg.openAPILiveFetch(ctx); err == nil && len(b) > 0 {
+			specBytes = b
+		}
 	}
-	configDir := filepath.Join(projectPath, ".azure", envName)
-	specBytes, err := ReadCachedOpenAPISpec(configDir, cfg.openAPIAgent, cfg.openAPISuffix)
-	if err != nil || len(specBytes) == 0 {
-		return
+	if len(specBytes) == 0 {
+		if cfg.openAPIAgent == "" || cfg.openAPISuffix == "" {
+			return
+		}
+		configDir := filepath.Join(projectPath, ".azure", envName)
+		b, err := ReadCachedOpenAPISpec(configDir, cfg.openAPIAgent, cfg.openAPISuffix)
+		if err != nil || len(b) == 0 {
+			return
+		}
+		specBytes = b
 	}
 	payload := ExtractInvokeExample(specBytes)
 	if payload == "" {

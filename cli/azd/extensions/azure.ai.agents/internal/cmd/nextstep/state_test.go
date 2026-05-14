@@ -277,9 +277,11 @@ func TestOptionsApplyCleanly(t *testing.T) {
 	cfg := &config{}
 	WithAuthProbe(true)(cfg)
 	WithOpenAPIProbe("echo", "local")(cfg)
+	WithLiveOpenAPIProbe(func(context.Context) ([]byte, error) { return nil, nil })(cfg)
 	assert.True(t, cfg.authProbe)
 	assert.Equal(t, "echo", cfg.openAPIAgent)
 	assert.Equal(t, "local", cfg.openAPISuffix)
+	assert.NotNil(t, cfg.openAPILiveFetch)
 }
 
 func TestWithOpenAPIProbe_EmptyArgsDisableProbe(t *testing.T) {
@@ -377,6 +379,173 @@ func TestAssembleState_WithOpenAPIProbe_DisabledWhenAgentEmpty(t *testing.T) {
 	}
 
 	state, errs := assembleState(context.Background(), src, WithOpenAPIProbe("", "local"))
+	require.Empty(t, errs)
+	assert.False(t, state.HasOpenAPI)
+	assert.Empty(t, state.OpenAPIPayload)
+}
+
+func TestAssembleState_WithLiveOpenAPIProbe_PrefersLiveOverCache(t *testing.T) {
+	t.Parallel()
+
+	// Put a "stale" payload in the on-disk cache. The live probe
+	// returns a different payload; the assembler must prefer the
+	// live result, proving the live probe takes precedence.
+	projectRoot := t.TempDir()
+	configDir := filepath.Join(projectRoot, ".azure", "dev")
+	require.NoError(t, os.MkdirAll(configDir, 0o750))
+	stale := `{"paths":{"/invocations":{"post":{"requestBody":{"content":{"application/json":{"example":{"stale":true}}}}}}}}`
+	require.NoError(t, os.WriteFile(
+		filepath.Join(configDir, "openapi-echo-local.json"),
+		[]byte(stale),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path:     projectRoot,
+			Services: map[string]*azdext.ServiceConfig{"echo": {Name: "echo", Host: agentHost}},
+		},
+	}
+
+	fresh := []byte(`{"paths":{"/invocations":{"post":{"requestBody":{"content":{"application/json":{"example":{"fresh":true}}}}}}}}`)
+	state, errs := assembleState(
+		context.Background(),
+		src,
+		WithOpenAPIProbe("echo", "local"),
+		WithLiveOpenAPIProbe(func(context.Context) ([]byte, error) { return fresh, nil }),
+	)
+	require.Empty(t, errs)
+	assert.True(t, state.HasOpenAPI)
+	assert.Equal(t, `{"fresh":true}`, state.OpenAPIPayload)
+}
+
+func TestAssembleState_WithLiveOpenAPIProbe_FallsBackToCacheOnError(t *testing.T) {
+	t.Parallel()
+
+	// Live probe returns an error; the cache (when present and
+	// well-formed) must take over silently — the design budget for
+	// the live probe is 3 s and a failed fetch shouldn't deprive
+	// the user of the cached sample.
+	projectRoot := t.TempDir()
+	configDir := filepath.Join(projectRoot, ".azure", "dev")
+	require.NoError(t, os.MkdirAll(configDir, 0o750))
+	cached := `{"paths":{"/invocations":{"post":{"requestBody":{"content":{"application/json":{"example":{"cached":true}}}}}}}}`
+	require.NoError(t, os.WriteFile(
+		filepath.Join(configDir, "openapi-echo-local.json"),
+		[]byte(cached),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path:     projectRoot,
+			Services: map[string]*azdext.ServiceConfig{"echo": {Name: "echo", Host: agentHost}},
+		},
+	}
+
+	state, errs := assembleState(
+		context.Background(),
+		src,
+		WithOpenAPIProbe("echo", "local"),
+		WithLiveOpenAPIProbe(func(context.Context) ([]byte, error) {
+			return nil, errors.New("connection refused")
+		}),
+	)
+	require.Empty(t, errs)
+	assert.True(t, state.HasOpenAPI)
+	assert.Equal(t, `{"cached":true}`, state.OpenAPIPayload)
+}
+
+func TestAssembleState_WithLiveOpenAPIProbe_FallsBackToCacheOnEmptyBody(t *testing.T) {
+	t.Parallel()
+
+	// Live probe returns nil bytes with no error (e.g., agent
+	// exposed /openapi.json but the body was empty after read).
+	// Treat identically to an error — empty body is unusable for
+	// example extraction and the cache must take over.
+	projectRoot := t.TempDir()
+	configDir := filepath.Join(projectRoot, ".azure", "dev")
+	require.NoError(t, os.MkdirAll(configDir, 0o750))
+	cached := `{"paths":{"/invocations":{"post":{"requestBody":{"content":{"application/json":{"example":{"cached":true}}}}}}}}`
+	require.NoError(t, os.WriteFile(
+		filepath.Join(configDir, "openapi-echo-local.json"),
+		[]byte(cached),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path:     projectRoot,
+			Services: map[string]*azdext.ServiceConfig{"echo": {Name: "echo", Host: agentHost}},
+		},
+	}
+
+	state, errs := assembleState(
+		context.Background(),
+		src,
+		WithOpenAPIProbe("echo", "local"),
+		WithLiveOpenAPIProbe(func(context.Context) ([]byte, error) { return nil, nil }),
+	)
+	require.Empty(t, errs)
+	assert.True(t, state.HasOpenAPI)
+	assert.Equal(t, `{"cached":true}`, state.OpenAPIPayload)
+}
+
+func TestAssembleState_WithLiveOpenAPIProbe_LiveWorksEvenWithoutCacheProbe(t *testing.T) {
+	t.Parallel()
+
+	// The live probe must not require WithOpenAPIProbe to be set —
+	// `run` may surface a payload from the freshly-started agent
+	// even when no prior `invoke` has populated the on-disk cache.
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, ".azure", "dev"), 0o750))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path:     projectRoot,
+			Services: map[string]*azdext.ServiceConfig{"echo": {Name: "echo", Host: agentHost}},
+		},
+	}
+
+	fresh := []byte(`{"paths":{"/invocations":{"post":{"requestBody":{"content":{"application/json":{"example":{"live":true}}}}}}}}`)
+	state, errs := assembleState(
+		context.Background(),
+		src,
+		WithLiveOpenAPIProbe(func(context.Context) ([]byte, error) { return fresh, nil }),
+	)
+	require.Empty(t, errs)
+	assert.True(t, state.HasOpenAPI)
+	assert.Equal(t, `{"live":true}`, state.OpenAPIPayload)
+}
+
+func TestAssembleState_WithLiveOpenAPIProbe_LiveFailureWithoutCacheLeavesUnset(t *testing.T) {
+	t.Parallel()
+
+	// Live probe errors AND no cache present → resolver must fall
+	// back to the protocol-generic literal (HasOpenAPI=false).
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, ".azure", "dev"), 0o750))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path:     projectRoot,
+			Services: map[string]*azdext.ServiceConfig{"echo": {Name: "echo", Host: agentHost}},
+		},
+	}
+
+	state, errs := assembleState(
+		context.Background(),
+		src,
+		WithOpenAPIProbe("echo", "local"),
+		WithLiveOpenAPIProbe(func(context.Context) ([]byte, error) {
+			return nil, errors.New("dial tcp: connection refused")
+		}),
+	)
 	require.Empty(t, errs)
 	assert.False(t, state.HasOpenAPI)
 	assert.Empty(t, state.OpenAPIPayload)

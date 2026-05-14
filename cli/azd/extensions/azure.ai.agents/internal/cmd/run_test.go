@@ -6,8 +6,11 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -639,4 +642,183 @@ func TestAppendPortEnvVars(t *testing.T) {
 			t.Errorf("existing entries not preserved, got %v", env)
 		}
 	})
+}
+
+// ---- waitForPortReady + fetchLiveOpenAPI (C8) ----
+
+// listenLoopback opens a TCP listener on 127.0.0.1:0 so the tests
+// pick up an OS-assigned free port. Returns the listener and its
+// port; the caller is responsible for closing the listener.
+func listenLoopback(t *testing.T) (net.Listener, int) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	return ln, ln.Addr().(*net.TCPAddr).Port
+}
+
+func TestWaitForPortReady_ReturnsTrueWhenPortIsBound(t *testing.T) {
+	t.Parallel()
+	ln, port := listenLoopback(t)
+	t.Cleanup(func() { _ = ln.Close() })
+	ok := waitForPortReady(t.Context(), port, 2*time.Second)
+	if !ok {
+		t.Fatalf("waitForPortReady returned false for bound port %d", port)
+	}
+}
+
+func TestWaitForPortReady_ReturnsFalseWhenBudgetElapses(t *testing.T) {
+	t.Parallel()
+	// Grab a port and immediately release it so the dial reliably
+	// fails. There's still a small race where another process could
+	// re-bind it; using 127.0.0.1 instead of 0.0.0.0 keeps that
+	// surface tiny in CI.
+	ln, port := listenLoopback(t)
+	_ = ln.Close()
+	start := time.Now()
+	ok := waitForPortReady(t.Context(), port, 200*time.Millisecond)
+	elapsed := time.Since(start)
+	if ok {
+		t.Fatalf("waitForPortReady returned true for closed port %d", port)
+	}
+	if elapsed < 150*time.Millisecond {
+		t.Fatalf("waitForPortReady returned before exhausting budget (%s)", elapsed)
+	}
+}
+
+func TestWaitForPortReady_ReturnsFalseOnContextCancellation(t *testing.T) {
+	t.Parallel()
+	ln, port := listenLoopback(t)
+	_ = ln.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	ok := waitForPortReady(ctx, port, 2*time.Second)
+	if ok {
+		t.Fatalf("waitForPortReady returned true for cancelled ctx")
+	}
+}
+
+func TestFetchLiveOpenAPI_Returns200Body(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"paths":{"/invocations":{"post":{}}}}`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/invocations/docs/openapi.json" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(srv.Close)
+
+	// Extract the port from the test server's URL so fetchLiveOpenAPI
+	// (which hard-codes localhost) targets the right listener.
+	u, err := net.ResolveTCPAddr("tcp", strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatalf("parse srv.URL: %v", err)
+	}
+	got, err := fetchLiveOpenAPI(t.Context(), u.Port)
+	if err != nil {
+		t.Fatalf("fetchLiveOpenAPI: %v", err)
+	}
+	if string(got) != string(body) {
+		t.Fatalf("body mismatch: got %q want %q", got, body)
+	}
+}
+
+func TestFetchLiveOpenAPI_ReturnsErrorOnNon200(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "nope", http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	u, err := net.ResolveTCPAddr("tcp", strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatalf("parse srv.URL: %v", err)
+	}
+	_, err = fetchLiveOpenAPI(t.Context(), u.Port)
+	if err == nil {
+		t.Fatalf("expected non-nil error for 500 response")
+	}
+	if !strings.Contains(err.Error(), "openapi.json") {
+		t.Fatalf("error %q missing expected prefix", err)
+	}
+}
+
+func TestFetchLiveOpenAPI_HonoursContextCancellation(t *testing.T) {
+	t.Parallel()
+	// Server that never responds — used to verify the supplied ctx
+	// (with a short deadline) reliably aborts the call. The
+	// time.Sleep mimics a slow-spec endpoint without coupling to a
+	// real network failure mode.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(500 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	u, err := net.ResolveTCPAddr("tcp", strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatalf("parse srv.URL: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	_, err = fetchLiveOpenAPI(ctx, u.Port)
+	if err == nil {
+		t.Fatalf("expected error from cancelled fetch")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) &&
+		!strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("error %q does not signal deadline exceeded", err)
+	}
+}
+
+func TestEmitNextAfterBind_ReturnsSilentlyWhenPortNeverBinds(t *testing.T) {
+	t.Parallel()
+	// Grab and release a port so the dial reliably fails for the
+	// duration of the test. emitNextAfterBind must return without
+	// panicking even with a nil azdClient — the early-return paths
+	// (non-TTY stdout in `go test`, then port-bind timeout) execute
+	// before AssembleState is reached.
+	ln, port := listenLoopback(t)
+	_ = ln.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// Bound the call so the default 5s budget doesn't block the
+		// test. The non-TTY gate fires first in `go test` (stdout is
+		// the test harness's pipe), so this primarily exercises the
+		// gate; with that gate removed, waitForPortReady's
+		// ctx-cancel path takes over.
+		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+		defer cancel()
+		emitNextAfterBind(ctx, nil, "svc", port)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("emitNextAfterBind did not exit within 2s")
+	}
+}
+
+func TestEmitNextAfterBind_ReturnsSilentlyOnContextCancellation(t *testing.T) {
+	t.Parallel()
+	// A live listener guarantees we'd otherwise progress past
+	// waitForPortReady; cancelling ctx immediately forces the
+	// goroutine to exit via the non-TTY gate or AssembleState
+	// returning quickly without printing.
+	ln, port := listenLoopback(t)
+	t.Cleanup(func() { _ = ln.Close() })
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		emitNextAfterBind(ctx, nil, "svc", port)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("emitNextAfterBind did not honor ctx cancel within 2s")
+	}
 }

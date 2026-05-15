@@ -35,10 +35,11 @@ sub-`run` group via `newRoutineRunCommand`. No new extension; no `registry.json`
 change.
 
 > **Command surface.** The agents extension registers its root as `agent`, so
-> these commands surface as **`azd ai agent routine …`** today. The umbrella
-> [command-spec.md](./command-spec.md) refers to them as `azd ai routine …`,
-> which is the eventual surface after the extension is split/renamed — a
-> registration-only change with no behavior diff.
+> these commands surface as **`azd ai agent routine …`** today. The eventual
+> umbrella surface is `azd ai routine …` after the extension is split/renamed,
+> which is a registration-only change with no behavior diff. See feature issue
+> [#8159](https://github.com/Azure/azure-dev/issues/8159) for the umbrella
+> context.
 
 ### Impact on existing commands
 
@@ -58,7 +59,7 @@ direct agent call (does not). Both must keep working.
 ### Out of scope
 
 - Declarative routines (`routine.yaml`, `azd provision` integration, `azd up`) —
-  belongs to the orchestrated config-driven model.
+  belong to the orchestrated config-driven model.
 - Multi-trigger routines via the CLI — deferred ([§7 OQ-2](#7-open-questions)).
 - Changing `--trigger` or `--action` *type* on an existing routine — delete and
   recreate, mirroring the `connection` auth-type rule ([§4.2](#42-create-vs-update)).
@@ -68,9 +69,10 @@ direct agent call (does not). Both must keep working.
 
 Every `routine` subcommand resolves the Foundry project endpoint through the
 standard 5-level cascade: `-p` / `--project-endpoint` flag → active azd env
-(`AZURE_AI_PROJECT_ENDPOINT`) → global config (`extensions.ai-agents.context.endpoint`)
-→ `FOUNDRY_PROJECT_ENDPOINT` env var → structured dependency error
-(code `CodeMissingProjectEndpoint`).
+(`AZURE_AI_PROJECT_ENDPOINT`) → global config (the `endpoint` field of the
+`extensions.ai-agents.project.context` object, written by
+`azd ai agent project set`) → `FOUNDRY_PROJECT_ENDPOINT` env var → structured
+dependency error (code `CodeMissingProjectEndpoint`).
 
 Standalone usability is required: every `routine` subcommand must work outside an
 azd project given a resolvable endpoint, matching `connection`, `toolbox`, and
@@ -128,9 +130,10 @@ other fields are preserved verbatim. Accepted flags: `--description`, `--cron`,
 `--time-zone`, `--at`, `--agent-id`, `--agent-endpoint-id`, `--conversation-id`,
 `--session-id`.
 
-**Type-switch guard.** Switching `--trigger` or `--action` *type* on an existing
-routine is rejected client-side with a `delete and recreate` suggestion. The
-server PUT would accept it, but the CLI refuses for surface stability.
+**Type-switch guard.** `--trigger` and `--action` are registered on `update`
+solely to surface a friendly client-side error when supplied: the command exits
+non-zero with a `delete and recreate` suggestion before calling the service.
+This mirrors the `connection` auth-type rule.
 
 **Post-merge validation.** After applying the named fields, `update` validates
 the merged body against the existing trigger/action type:
@@ -194,12 +197,13 @@ Maps onto `GET /routines/{routine_name}/runs`:
 
 | CLI flag      | Query param        |
 | ------------- | ------------------ |
-| `--top N`     | `maxResults`       |
+| `--top N`     | `maxResults` per page; CLI stops auto-paging once `N` items have been returned |
 | `--orderby`   | `orderBy` (repeatable) |
 | `--filter`    | `filter`           |
 
 Auto-pagination via `pageToken` / `next_page_token`, same rules as `routine list`
-([§4.3](#43-routine-show-name--routine-list)).
+([§4.3](#43-routine-show-name--routine-list)). When `--top N` is set the CLI
+caps the total returned at `N` items across all drained pages.
 
 ### 4.8 `routine run show` / `routine run delete`
 
@@ -213,6 +217,7 @@ churn on already-shipped verbs.
 | Command   | Table output                   | JSON output                         |
 | --------- | ------------------------------ | ----------------------------------- |
 | `create`  | `Routine '<name>' created.` + summary | Server `Routine` body          |
+| `update`  | `Routine '<name>' updated.` + summary of changed fields | Updated `Routine` body |
 | `delete`  | `Routine '<name>' deleted.`    | `{ "deleted": true, "name": "<name>" }` |
 | `enable`  | `Routine '<name>' enabled.`    | Updated `Routine` body              |
 | `disable` | `Routine '<name>' disabled.`   | Updated `Routine` body              |
@@ -249,18 +254,24 @@ For `agent-response`, the CLI validates "exactly one of `--agent-id` /
 
 ### 5.3 Routes and API status
 
-All requests include the `RoutinesPreviewHeader`.
+All requests include the `RoutinesPreviewHeader` and the `api-version=v1` query
+parameter, matching the existing toolboxes/agents Foundry clients in this
+extension (for example
+[`listen.go`](../../extensions/azure.ai.agents/internal/cmd/listen.go) builds
+`/toolboxes/{name}/versions/{version}/mcp?api-version=v1`). The
+`continuationToken` and `pageToken` query parameters are added on top of
+`api-version` where applicable.
 
 | CLI verb                              | HTTP                                                          | API status      |
 | ------------------------------------- | ------------------------------------------------------------- | --------------- |
 | `routine create` / `routine update`   | `PUT  {endpoint}/routines/{name}`                             | Ready           |
 | `routine show`                        | `GET  {endpoint}/routines/{name}`                             | Ready           |
-| `routine list`                        | `GET  {endpoint}/routines?continuationToken=…`                | Ready           |
+| `routine list`                        | `GET  {endpoint}/routines` (with `continuationToken`)         | Ready           |
 | `routine delete`                      | `DELETE {endpoint}/routines/{name}`                           | Ready           |
 | `routine enable` / `routine disable`  | GET-then-PUT toggling `enabled` ([§4.5](#45-routine-enable--disable-name)) | Ready (field on PUT) |
 | `routine dispatch`                    | `POST {endpoint}/routines/{name}:dispatch`                    | Ready           |
 | `routine dispatch --async`            | `POST {endpoint}/routines/{name}:dispatchAsync`               | Ready           |
-| `routine run list`                    | `GET  {endpoint}/routines/{name}/runs?...`                    | Ready           |
+| `routine run list`                    | `GET  {endpoint}/routines/{name}/runs`                        | Ready           |
 | `routine run show` *(deferred)*       | `GET  {endpoint}/routines/{name}/runs/{run-id}`               | Not in TypeSpec |
 | `routine run delete` *(deferred)*     | `DELETE {endpoint}/routines/{name}/runs/{run-id}`             | Not in TypeSpec |
 
@@ -293,7 +304,7 @@ endpoints hashed.
 | # | Question | Default proposal |
 |---|----------|------------------|
 | 1 | **Trigger / action enum names.** CLI aliases (`recurring`, `agent-response`, `agent-invoke`) vs. 1:1 API parity (`schedule`, `invoke_agent_responses_api`, …). Note: feature issue [#8159](https://github.com/Azure/azure-dev/issues/8159) uses `schedule`; this spec proposes `recurring`. | Ship CLI aliases. API names are verbose on the command line; a single mapping table absorbs upstream renames. |
-| 2 | **Multi-trigger routines.** TypeSpec `triggers` is `Record<RoutineTrigger>`. Add `routine trigger add | remove | list` now? | Defer. All hero scenarios use one trigger, keyed as `"default"`. Re-evaluate when a real multi-trigger scenario lands. |
+| 2 | **Multi-trigger routines.** TypeSpec `triggers` is `Record<RoutineTrigger>`. Add `routine trigger add \| remove \| list` now? | Defer. All hero scenarios use one trigger, keyed as `"default"`. Re-evaluate when a real multi-trigger scenario lands. |
 | 3 | **`--conversation-id` on dispatch.** Field is in the routines conceptual spec but not in TypeSpec PR #42779. | Ship the flag, mark preview-only in `--help`. If the service rejects unknown fields, the user sees a service error and re-runs without it. Revisit on TypeSpec lock. |
 
 ## 8. Test Plan

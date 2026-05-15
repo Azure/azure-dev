@@ -165,23 +165,31 @@ func TestDatasetFromJob(t *testing.T) {
 		expectedVersion string
 	}{
 		{
-			"standard fields",
-			&eval_api.GenerationJob{DatasetName: "ds-1", DatasetVersion: "v2"},
+			"result fields",
+			&eval_api.GenerationJob{
+				Result: json.RawMessage(`{"name":"ds-1","version":"v2"}`),
+			},
 			"ds-1", "v2",
 		},
 		{
-			"name fallback",
-			&eval_api.GenerationJob{Name: "ds-2"},
+			"result name",
+			&eval_api.GenerationJob{
+				Result: json.RawMessage(`{"outputs":[{"name":"ds-2"}]}`),
+			},
 			"ds-2", "v1",
 		},
 		{
-			"version fallback",
-			&eval_api.GenerationJob{DatasetName: "ds-3", Version: "v3"},
+			"nested outputs format",
+			&eval_api.GenerationJob{
+				Result: json.RawMessage(`{"outputs":[{"name":"ds-3","version":"v3"}]}`),
+			},
 			"ds-3", "v3",
 		},
 		{
 			"empty defaults version to v1",
-			&eval_api.GenerationJob{Name: "ds-4"},
+			&eval_api.GenerationJob{
+				Result: json.RawMessage(`{"outputs":[{"name":"ds-4"}]}`),
+			},
 			"ds-4", "v1",
 		},
 	}
@@ -270,16 +278,16 @@ func TestBuildModelChoices(t *testing.T) {
 func TestEvaluatorFromJob(t *testing.T) {
 	t.Parallel()
 
-	t.Run("extracts name from job", func(t *testing.T) {
+	t.Run("extracts name from result", func(t *testing.T) {
 		t.Parallel()
 		job := &eval_api.GenerationJob{
-			EvaluatorName: "quality-eval",
+			Result: json.RawMessage(`{"name":"quality-eval"}`),
 		}
 		name := evaluatorFromJob(job)
 		assert.Equal(t, "quality-eval", name)
 	})
 
-	t.Run("extracts name from result", func(t *testing.T) {
+	t.Run("extracts name from result display_name", func(t *testing.T) {
 		t.Parallel()
 		job := &eval_api.GenerationJob{
 			Result: json.RawMessage(`{"name":"smoke-core","display_name":"smoke-core"}`),

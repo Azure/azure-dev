@@ -32,7 +32,7 @@ const (
 	defaultEvalConfigName = "eval.yaml"
 	defaultEvalName       = "smoke-core"
 	defaultEvalModel      = "gpt-4o"
-	defaultEvalSamples    = 100
+	defaultEvalSamples    = 15
 )
 
 type evalConfig = eval_api.EvalConfig

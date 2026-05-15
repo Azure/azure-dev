@@ -178,8 +178,8 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 		}
 		if value := strings.TrimSpace(resp.Value); value != "" {
 			parsed, err := strconv.Atoi(value)
-			if err != nil || parsed <= 0 {
-				return fmt.Errorf("--max-samples must be a positive integer")
+			if err != nil || parsed < 15 || parsed > 1000 {
+				return fmt.Errorf("--max-samples must be between 15 and 1000")
 			}
 			flags.maxSamples = parsed
 		}

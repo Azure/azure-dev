@@ -78,37 +78,43 @@ func TestGenerationJob_NormalizedStatus(t *testing.T) {
 
 func TestGenerationJob_ResolvedDatasetName(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "ds-1", (&eval_api.GenerationJob{DatasetName: "ds-1", Name: "fallback"}).ResolvedDatasetName())
-	assert.Equal(t, "fallback", (&eval_api.GenerationJob{Name: "fallback"}).ResolvedDatasetName())
 	assert.Equal(t, "", (&eval_api.GenerationJob{}).ResolvedDatasetName())
 
-	// Extracts name from the result JSON when dataset_name and name are empty.
+	// Extracts name from the result JSON.
 	job := &eval_api.GenerationJob{
 		Result: json.RawMessage(`{"name":"generated-ds","version":"v2"}`),
 	}
 	assert.Equal(t, "generated-ds", job.ResolvedDatasetName())
+
+	// Extracts name from result.outputs[0] (nested API response format).
+	jobNested := &eval_api.GenerationJob{
+		Result: json.RawMessage(`{"outputs":[{"type":"dataset","name":"nested-ds","version":"36735"}]}`),
+	}
+	assert.Equal(t, "nested-ds", jobNested.ResolvedDatasetName())
 }
 
 func TestGenerationJob_ResolvedDatasetVersion(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "v2", (&eval_api.GenerationJob{DatasetVersion: "v2"}).ResolvedDatasetVersion())
-	assert.Equal(t, "v3", (&eval_api.GenerationJob{Version: "v3"}).ResolvedDatasetVersion())
 	assert.Equal(t, "v1", (&eval_api.GenerationJob{}).ResolvedDatasetVersion())
 
-	// Extracts version from the result JSON when dataset_version and version are empty.
+	// Extracts version from the result JSON.
 	job := &eval_api.GenerationJob{
 		Result: json.RawMessage(`{"name":"ds","version":"v5"}`),
 	}
 	assert.Equal(t, "v5", job.ResolvedDatasetVersion())
+
+	// Extracts version from result.outputs[0] (nested API response format).
+	jobNested := &eval_api.GenerationJob{
+		Result: json.RawMessage(`{"outputs":[{"type":"dataset","name":"ds","version":"36735"}]}`),
+	}
+	assert.Equal(t, "36735", jobNested.ResolvedDatasetVersion())
 }
 
 func TestGenerationJob_ResolvedEvaluatorName(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "quality", (&eval_api.GenerationJob{EvaluatorName: "quality", Name: "fb"}).ResolvedEvaluatorName())
-	assert.Equal(t, "fb", (&eval_api.GenerationJob{Name: "fb"}).ResolvedEvaluatorName())
 	assert.Equal(t, "", (&eval_api.GenerationJob{}).ResolvedEvaluatorName())
 
-	// Extracts name from the result JSON when evaluator_name and name are empty.
+	// Extracts name from the result JSON.
 	job := &eval_api.GenerationJob{
 		Result: json.RawMessage(`{"name":"smoke-core","display_name":"smoke-core"}`),
 	}

@@ -49,7 +49,8 @@ func newEvalConfig(flags *evalInitFlags, resolved *evalResolvedContext) *evalCon
 			},
 		},
 		Options: &opteval.Options{
-			EvalModel: flags.evalModel,
+			EvalModel:        flags.evalModel,
+			TargetAttributes: opteval.DefaultTargetAttributes,
 		},
 		GenerationInstruction: flags.genInstruction,
 		MaxSamples:            flags.maxSamples,
@@ -165,8 +166,10 @@ func pollAndFinalizeJobs(
 	state *evalState,
 	builtinEvals []string,
 ) error {
+	// Each goroutine writes to distinct fields of evalCfg and state, so no
+	// mutex is needed for those. Only the error variables are shared across
+	// both goroutines and guarded by wg.Wait() (written before Wait, read after).
 	var (
-		mu             sync.Mutex
 		datasetPollErr error
 		evalPollErr    error
 		wg             sync.WaitGroup
@@ -182,11 +185,11 @@ func pollAndFinalizeJobs(
 	parallel := pollDataset && pollEval
 	if parallel {
 		spinner := ux.NewSpinner(&ux.SpinnerOptions{
-			Text:        "Generating dataset and evaluators...",
+			Text:        "Generating ...",
 			ClearOnStop: true,
 		})
 		if err := spinner.Start(ctx); err != nil {
-			fmt.Println("  Generating dataset and evaluators...")
+			fmt.Println("  Generating ...")
 		}
 		defer func() { _ = spinner.Stop(ctx) }()
 	}
@@ -201,15 +204,13 @@ func pollAndFinalizeJobs(
 				!parallel,
 			)
 			if err != nil {
-				mu.Lock()
 				datasetPollErr = err
-				mu.Unlock()
 				return
 			}
-			mu.Lock()
+			// Dataset goroutine owns: state.DatasetGenStatus, evalCfg.DatasetReference, evalCfg.DatasetFile.
 			state.DatasetGenStatus = completed.NormalizedStatus()
-			mu.Unlock()
 			dsRef := datasetFromJob(completed)
+			evalCfg.DatasetReference = dsRef
 			if resolved.hasProject {
 				saveDatasetGenerationResult(
 					resolved.projectRoot, completed.ResolvedDatasetName(), completed.Result,
@@ -217,14 +218,9 @@ func pollAndFinalizeJobs(
 				if err := downloadDatasetArtifact(
 					ctx, resolved.datasetClient, resolved.projectRoot, dsRef, DefaultAgentAPIVersion,
 				); err != nil {
-					mu.Lock()
 					datasetPollErr = err
-					mu.Unlock()
 					return
 				}
-				mu.Lock()
-				evalCfg.DatasetFile = datasetArtifactPath(resolved.projectRoot, dsRef)
-				mu.Unlock()
 			}
 		}()
 	}
@@ -239,16 +235,13 @@ func pollAndFinalizeJobs(
 				!parallel,
 			)
 			if err != nil {
-				mu.Lock()
 				evalPollErr = err
-				mu.Unlock()
 				return
 			}
+			// Evaluator goroutine owns: state.EvalGenStatus, evalCfg.Evaluators.
 			evalName := evaluatorFromJob(completed)
-			mu.Lock()
 			state.EvalGenStatus = completed.NormalizedStatus()
 			evalCfg.Evaluators = append(builtinEvals, evalName)
-			mu.Unlock()
 			if resolved.hasProject {
 				saveEvaluatorResult(resolved.projectRoot, evalName, completed.Result)
 			}

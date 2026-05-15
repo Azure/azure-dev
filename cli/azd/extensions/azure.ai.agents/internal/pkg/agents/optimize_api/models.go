@@ -80,18 +80,20 @@ type Criterion struct {
 
 // OptimizeOptions controls the optimization run.
 type OptimizeOptions struct {
-	Budget               int      `json:"budget,omitempty"`
-	MaxIterations        int      `json:"maxIterations,omitempty"`
-	MinImprovement       float64  `json:"minImprovement,omitempty"`
-	ImprovementThreshold float64  `json:"improvementThreshold,omitempty"`
-	PassThreshold        float64  `json:"passThreshold,omitempty"`
-	EvalModel            string   `json:"evalModel"`
-	TargetAttributes     []string `json:"targetAttributes,omitempty"`
-	KeepVersions         bool     `json:"keepVersions,omitempty"`
-	TasksPerIteration    int      `json:"tasksPerIteration,omitempty"`
-	MaxReflectionTasks   int      `json:"maxReflectionTasks,omitempty"`
-	ReflectionModel      string   `json:"reflectionModel,omitempty"`
-	Mode                 string   `json:"mode,omitempty"`
+	Budget               int     `json:"budget,omitempty"`
+	MaxIterations        int     `json:"maxIterations,omitempty"`
+	MinImprovement       float64 `json:"minImprovement,omitempty"`
+	ImprovementThreshold float64 `json:"improvementThreshold,omitempty"`
+	PassThreshold        float64 `json:"passThreshold,omitempty"`
+	EvalModel            string  `json:"evalModel"`
+	// Send as both "strategies" (current server) and "targetAttributes" (future).
+	Strategies         []string `json:"strategies,omitempty"`
+	TargetAttributes   []string `json:"targetAttributes,omitempty"`
+	KeepVersions       bool     `json:"keepVersions,omitempty"`
+	TasksPerIteration  int      `json:"tasksPerIteration,omitempty"`
+	MaxReflectionTasks int      `json:"maxReflectionTasks,omitempty"`
+	ReflectionModel    string   `json:"reflectionModel,omitempty"`
+	Mode               string   `json:"mode,omitempty"`
 }
 
 // --- Response models ---

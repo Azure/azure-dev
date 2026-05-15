@@ -141,6 +141,7 @@ func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.Optimi
 			MinImprovement:       c.Options.MinImprovement,
 			ImprovementThreshold: c.Options.ImprovementThreshold,
 			PassThreshold:        c.Options.PassThreshold,
+			Strategies:           c.Options.TargetAttributes,
 			TargetAttributes:     c.Options.TargetAttributes,
 			KeepVersions:         c.Options.KeepVersions,
 			TasksPerIteration:    c.Options.TasksPerIteration,

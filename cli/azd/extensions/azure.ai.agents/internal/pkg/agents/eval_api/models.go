@@ -45,14 +45,9 @@ type GenerationSource struct {
 
 // GenerationJob is the response for data and evaluator generation job operations.
 type GenerationJob struct {
-	ID             string          `json:"id"`
-	Status         string          `json:"status"`
-	Result         json.RawMessage `json:"result,omitempty"`
-	DatasetName    string          `json:"dataset_name,omitempty"`
-	DatasetVersion string          `json:"dataset_version,omitempty"`
-	EvaluatorName  string          `json:"evaluator_name,omitempty"`
-	Name           string          `json:"name,omitempty"`
-	Version        string          `json:"version,omitempty"`
+	ID     string          `json:"id"`
+	Status string          `json:"status"`
+	Result json.RawMessage `json:"result,omitempty"`
 }
 
 // OperationID returns the job's operation identifier.
@@ -68,43 +63,29 @@ func (j *GenerationJob) NormalizedStatus() string {
 	return j.Status
 }
 
-// ResolvedDatasetName returns dataset_name falling back to result.name, then name.
+// ResolvedDatasetName returns the dataset name from the result JSON (top-level
+// or nested outputs[0]).
 func (j *GenerationJob) ResolvedDatasetName() string {
-	if j.DatasetName != "" {
-		return j.DatasetName
-	}
-	if name := j.resultStringField("name"); name != "" {
-		return name
-	}
-	return j.Name
+	return j.resultStringField("name")
 }
 
-// ResolvedDatasetVersion returns dataset_version falling back to result.version, then version.
+// ResolvedDatasetVersion returns the dataset version from the result JSON
+// (top-level or nested outputs[0]), defaulting to "v1".
 func (j *GenerationJob) ResolvedDatasetVersion() string {
-	if j.DatasetVersion != "" {
-		return j.DatasetVersion
-	}
 	if v := j.resultStringField("version"); v != "" {
 		return v
-	}
-	if j.Version != "" {
-		return j.Version
 	}
 	return "v1"
 }
 
-// ResolvedEvaluatorName returns evaluator_name falling back to result.name, then name.
+// ResolvedEvaluatorName returns the evaluator name from the result JSON.
 func (j *GenerationJob) ResolvedEvaluatorName() string {
-	if j.EvaluatorName != "" {
-		return j.EvaluatorName
-	}
-	if name := j.resultStringField("name"); name != "" {
-		return name
-	}
-	return j.Name
+	return j.resultStringField("name")
 }
 
 // resultStringField extracts a string field from the raw Result JSON.
+// It first checks for a top-level key, then falls back to outputs[0].key
+// to handle the nested response format.
 func (j *GenerationJob) resultStringField(key string) string {
 	if len(j.Result) == 0 {
 		return ""
@@ -113,15 +94,29 @@ func (j *GenerationJob) resultStringField(key string) string {
 	if err := json.Unmarshal(j.Result, &m); err != nil {
 		return ""
 	}
-	raw, ok := m[key]
-	if !ok {
-		return ""
+
+	// Try top-level field first.
+	if raw, ok := m[key]; ok {
+		var s string
+		if err := json.Unmarshal(raw, &s); err == nil && s != "" {
+			return s
+		}
 	}
-	var s string
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return ""
+
+	// Fall back to outputs[0].key for nested response format.
+	if rawOutputs, ok := m["outputs"]; ok {
+		var outputs []map[string]json.RawMessage
+		if err := json.Unmarshal(rawOutputs, &outputs); err == nil && len(outputs) > 0 {
+			if raw, ok := outputs[0][key]; ok {
+				var s string
+				if err := json.Unmarshal(raw, &s); err == nil {
+					return s
+				}
+			}
+		}
 	}
-	return s
+
+	return ""
 }
 
 // ---------------------------------------------------------------------------

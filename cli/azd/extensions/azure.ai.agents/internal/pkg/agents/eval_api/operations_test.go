@@ -108,7 +108,11 @@ func TestGetDataGenerationJob_Success(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		resp := map[string]any{"id": "op-123", "status": "completed", "dataset_name": "test-ds"}
+		resp := map[string]any{
+			"id":     "op-123",
+			"status": "completed",
+			"result": map[string]any{"name": "test-ds", "version": "v1"},
+		}
 		data, _ := json.Marshal(resp)
 		_, _ = w.Write(data)
 	})
@@ -119,7 +123,7 @@ func TestGetDataGenerationJob_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "/data_generation_jobs/op-123", capturedPath)
 	assert.Equal(t, "completed", result.Status)
-	assert.Equal(t, "test-ds", result.DatasetName)
+	assert.Equal(t, "test-ds", result.ResolvedDatasetName())
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +167,11 @@ func TestGetEvaluatorGenerationJob_Success(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		resp := map[string]any{"id": "eval-op-456", "status": "completed", "evaluator_name": "quality"}
+		resp := map[string]any{
+			"id":     "eval-op-456",
+			"status": "completed",
+			"result": map[string]any{"name": "quality"},
+		}
 		data, _ := json.Marshal(resp)
 		_, _ = w.Write(data)
 	})
@@ -174,7 +182,7 @@ func TestGetEvaluatorGenerationJob_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "/evaluator_generation_jobs/eval-op-456", capturedPath)
 	assert.Equal(t, "completed", result.Status)
-	assert.Equal(t, "quality", result.EvaluatorName)
+	assert.Equal(t, "quality", result.ResolvedEvaluatorName())
 }
 
 // ---------------------------------------------------------------------------

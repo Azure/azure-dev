@@ -76,7 +76,7 @@ the agent project root. Use --no-wait to write pending operation IDs and return.
 	cmd.Flags().StringVarP(&flags.genInstructionFile, "gen-instruction-file", "G", "", "Path to a file containing the generation instruction")
 	cmd.Flags().StringVar(&flags.evalModel, "eval-model", defaultEvalModel, "Model used for evaluation and generation, and also as the default model for evaluation")
 	cmd.Flags().StringVar(&flags.dataset, "dataset", "", "Existing local file or registered dataset name to use for evaluation (instead of generating a new dataset)")
-	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", defaultEvalSamples, "Maximum number of samples to generate")
+	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", defaultEvalSamples, "Number of samples to generate (15-1000)")
 	cmd.Flags().StringArrayVar(&flags.evaluators, "evaluator", nil, "Built-in or custom evaluator name")
 	cmd.Flags().StringVarP(&flags.output, "out-file", "O", defaultEvalConfigName, "Eval config path")
 	cmd.Flags().IntVar(&flags.traceDays, "trace-days", 0, "Include agent traces from the last N days for evaluator generation (0 = no traces)")
@@ -181,8 +181,8 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		flags.genInstruction == "" && (flags.dataset == "" || len(flags.evaluators) == 0) {
 		return fmt.Errorf("--gen-instruction is required when generating eval assets for a hosted agent")
 	}
-	if flags.maxSamples <= 0 {
-		return fmt.Errorf("--max-samples must be a positive integer")
+	if flags.maxSamples < 15 || flags.maxSamples > 1000 {
+		return fmt.Errorf("--max-samples must be between 15 and 1000")
 	}
 
 	if resolved.hasProject {

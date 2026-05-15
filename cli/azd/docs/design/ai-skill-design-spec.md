@@ -1,4 +1,4 @@
-<!-- cspell:ignore foundry gzip tarball zipslip orderby foundrysdk -->
+<!-- cspell:ignore exterrors foundry gzip tarball zipslip orderby foundrysdk -->
 
 # Design Spec: `azd ai agent skill` Commands
 

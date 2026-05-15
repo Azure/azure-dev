@@ -1,0 +1,2 @@
+  (!) Warning: Principal (5a3acce7-bcc4-4ebc-b4b3-c3b9f17535cb) has conditional role assignment permissions on subscription 3819cb9d-0f7c-4284-9e93-220e7fb2367a
+  An ABAC condition may restrict which roles can be assigned. The deployment may fail if the condition does not permit the specific role assignments in the template.

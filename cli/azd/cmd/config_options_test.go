@@ -118,8 +118,8 @@ func TestConfigOptionsAction_Table(t *testing.T) {
 	require.NoError(t, err)
 
 	outputStr := buf.String()
-	require.Contains(t, outputStr, "Key")
-	require.Contains(t, outputStr, "Description")
+	require.Contains(t, outputStr, "KEY")
+	require.Contains(t, outputStr, "DESCRIPTION")
 	require.Contains(t, outputStr, "defaults.subscription")
 	require.Contains(t, outputStr, "alpha.all")
 	require.Contains(t, outputStr, "auth.useAzCliAuth")

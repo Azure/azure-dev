@@ -10,10 +10,12 @@ import (
 	"testing"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
 
 func TestNamespacesConflictCases(t *testing.T) {
@@ -601,4 +603,64 @@ func TestUpgradeActionResult_EmptyResults(t *testing.T) {
 		"Extensions upgraded successfully",
 		actionResult.Message.Header,
 	)
+}
+
+func TestExtensionStatus(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		installed  bool
+		update     bool
+		incompat   bool
+		wantStatus string
+	}{
+		{"not installed", false, false, false, statusNotInstall},
+		{"up to date", true, false, false, statusUpToDate},
+		{"update available", true, true, false, statusUpdate},
+		{"incompatible", true, false, true, statusIncompat},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := extensionStatus(tt.installed, tt.update, tt.incompat)
+			assert.Equal(t, tt.wantStatus, got)
+		})
+	}
+}
+
+func TestExtensionStatusSymbol(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		status string
+		want   string
+	}{
+		{statusUpToDate, symbolUpToDate},
+		{statusUpdate, symbolUpdate},
+		{statusIncompat, symbolIncompat},
+		{statusNotInstall, symbolNotInstall},
+	}
+	for _, tt := range tests {
+		t.Run(tt.status, func(t *testing.T) {
+			t.Parallel()
+			got := extensionStatusSymbol(tt.status)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestExtensionStatusColor(t *testing.T) {
+	// Force color output on — fatih/color disables in non-TTY environments.
+	originalNoColor := color.NoColor
+	color.NoColor = false
+	defer func() { color.NoColor = originalNoColor }()
+
+	// Verify no panics and non-empty output for each status (full and symbol forms)
+	for _, s := range []string{
+		statusUpToDate, statusUpdate, statusIncompat, statusNotInstall,
+		symbolUpToDate, symbolUpdate, symbolIncompat, symbolNotInstall,
+	} {
+		result := extensionStatusColor(s)
+		assert.NotEmpty(t, result, "color function should return non-empty for %q", s)
+		assert.Contains(t, result, "\x1b[", "expected ANSI color codes in output for %q", s)
+	}
 }

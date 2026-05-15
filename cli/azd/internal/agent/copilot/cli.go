@@ -28,8 +28,8 @@ import (
 )
 
 // cliVersion is the Copilot CLI version that matches the SDK version in go.mod.
-// SDK v0.1.32 → CLI v1.0.2 (determined by the SDK's package-lock.json).
-const cliVersion = "1.0.2"
+// SDK v0.3.0 → CLI v1.0.36-0 (determined by the SDK's package-lock.json).
+const cliVersion = "1.0.36-0"
 
 // CopilotCLI manages the Copilot CLI binary lifecycle — download, cache, and version management.
 // Follows the same pattern as pkg/tools/bicep for on-demand tool installation.

@@ -54,8 +54,10 @@ func Test_CLI_PreflightQuota_RG_DefaultCapacity(t *testing.T) {
 	// In this flow, declining the preflight warning is expected to return successfully,
 	// and the output should contain the quota warning.
 	output := result.Stdout + result.Stderr
-	require.Contains(t, output, "insufficient quota",
+	require.Contains(t, output, "Insufficient quota",
 		"expected quota exceeded warning in output")
+	require.Contains(t, output, "Suggestion:",
+		"expected actionable suggestion in output")
 }
 
 // Test_CLI_PreflightQuota_RG_InvalidModelName verifies a warning when the model name
@@ -92,7 +94,7 @@ func Test_CLI_PreflightQuota_RG_InvalidModelName(t *testing.T) {
 	)
 	require.NoError(t, err)
 	output := result.Stdout + result.Stderr
-	require.Contains(t, output, "was not found in the AI model catalog",
+	require.Contains(t, output, "not found in AI model catalog",
 		"expected model-not-found warning for invalid model name")
 	require.Contains(t, output, "gpt-nonexistent-model")
 }
@@ -131,7 +133,7 @@ func Test_CLI_PreflightQuota_RG_InvalidVersion(t *testing.T) {
 	)
 	require.NoError(t, err)
 	output := result.Stdout + result.Stderr
-	require.Contains(t, output, "was not found in the AI model catalog",
+	require.Contains(t, output, "not found in AI model catalog",
 		"expected model-not-found warning for invalid version")
 }
 
@@ -164,7 +166,7 @@ func Test_CLI_PreflightQuota_Sub_DefaultCapacity(t *testing.T) {
 	)
 	require.NoError(t, err)
 	output := result.Stdout + result.Stderr
-	require.Contains(t, output, "insufficient quota",
+	require.Contains(t, output, "Insufficient quota",
 		"expected quota exceeded warning in output")
 }
 
@@ -199,7 +201,7 @@ func Test_CLI_PreflightQuota_Sub_InvalidModelName(t *testing.T) {
 	)
 	require.NoError(t, err)
 	output := result.Stdout + result.Stderr
-	require.Contains(t, output, "was not found in the AI model catalog",
+	require.Contains(t, output, "not found in AI model catalog",
 		"expected model-not-found warning for invalid model name")
 	require.Contains(t, output, "gpt-555-turbo")
 }

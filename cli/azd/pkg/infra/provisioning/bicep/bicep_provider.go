@@ -993,6 +993,13 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	// Start the deployment
 	p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
 
+	// If AZD_DEPLOYMENT_ID_FILE is set, expose the ARM deployment ID to the caller now
+	// that we are actually about to start the ARM deployment. Doing this here (rather
+	// than immediately after generating the deployment object) avoids advertising a
+	// deployment ID that never exists in Azure when the run short-circuits via the
+	// deployment-state cache or is aborted by preflight validation.
+	writeDeploymentIdFile(deployment, p.layer)
+
 	deployCtx, interruptStarted, interruptCh, markDeployCompleted, interruptCleanup :=
 		p.installDeploymentInterruptHandler(ctx, deployment, cancelProgress)
 	cleanupOnce := sync.OnceFunc(interruptCleanup)
@@ -2640,6 +2647,8 @@ func (p *BicepProvider) validatePreflight(
 				IsError:      result.Severity == PreflightCheckError,
 				DiagnosticID: result.DiagnosticID,
 				Message:      result.Message,
+				Suggestion:   result.Suggestion,
+				Links:        result.Links,
 			})
 		}
 		p.console.MessageUxItem(ctx, report)
@@ -2656,8 +2665,7 @@ func (p *BicepProvider) validatePreflight(
 		if report.HasWarnings() {
 			p.console.Message(ctx, "")
 			continueDeployment, promptErr := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message: "Preflight validation found warnings that may cause the " +
-					"deployment to fail. Do you want to continue?",
+				Message:      "Proceed with deployment despite the warnings above?",
 				DefaultValue: true,
 			})
 			if promptErr != nil {
@@ -2755,16 +2763,25 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 			Severity:     PreflightCheckWarning,
 			DiagnosticID: "role_assignment_missing",
 			Message: fmt.Sprintf(
-				"the current principal %s does not have permission to create role assignments "+
-					"%s on subscription %s. "+
-					"The deployment includes role assignments and will fail without this permission. "+
-					"Ensure you have the 'Role Based Access Control Administrator', "+
-					"'User Access Administrator', 'Owner', or a custom role with "+
-					"'Microsoft.Authorization/roleAssignments/write' assigned to your account.",
-				output.WithHighLightFormat("(%s)", principalId),
-				output.WithGrayFormat("(Microsoft.Authorization/roleAssignments/write)"),
+				"Principal %s lacks role assignment"+
+					" permissions on subscription %s\n"+
+					"The deployment includes role assignments"+
+					" and will fail without %s permission.",
+				output.WithHighLightFormat(
+					"(%s)", principalId),
 				output.WithHighLightFormat(subscriptionId),
+				output.WithGrayFormat(
+					"Microsoft.Authorization/"+
+						"roleAssignments/write"),
 			),
+			Suggestion: "Ensure you have the" +
+				" 'Role Based Access Control" +
+				" Administrator'," +
+				" 'User Access Administrator'," +
+				" 'Owner', or a custom role with" +
+				" 'Microsoft.Authorization/" +
+				"roleAssignments/write' assigned" +
+				" to your account.",
 		}}, nil
 	}
 
@@ -2773,14 +2790,17 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 			Severity:     PreflightCheckWarning,
 			DiagnosticID: "role_assignment_conditional",
 			Message: fmt.Sprintf(
-				"the current principal %s has conditional permission to create role "+
-					"assignments %s on "+
-					"subscription %s. The role assignment that grants this permission "+
-					"has an ABAC condition that may restrict which roles can be assigned. "+
-					"The deployment may fail if the condition does not permit the "+
-					"specific role assignments in the template.",
-				output.WithHighLightFormat("(%s)", principalId),
-				output.WithGrayFormat("(Microsoft.Authorization/roleAssignments/write)"),
+				"Principal %s has conditional role"+
+					" assignment permissions on"+
+					" subscription %s\n"+
+					"An ABAC condition may restrict"+
+					" which roles can be assigned."+
+					" The deployment may fail if the"+
+					" condition does not permit the"+
+					" specific role assignments in"+
+					" the template.",
+				output.WithHighLightFormat(
+					"(%s)", principalId),
 				output.WithHighLightFormat(subscriptionId),
 			),
 		}}, nil
@@ -2805,17 +2825,29 @@ func (p *BicepProvider) checkReservedResourceNames(
 			continue
 		}
 		for _, v := range findReservedResourceNameViolations(resource.Name) {
-			resourceName := output.WithHighLightFormat("%q", resource.Name)
-			resourceType := output.WithGrayFormat("(%s)", resource.Type)
-			link := output.WithLinkFormat(docsLink)
+			resourceName := output.WithHighLightFormat(
+				"%q", resource.Name)
+			resourceType := output.WithGrayFormat(
+				"(%s)", resource.Type)
 
 			results = append(results, PreflightCheckResult{
 				Severity:     PreflightCheckWarning,
 				DiagnosticID: "reserved_resource_name",
 				Message: fmt.Sprintf(
-					"resource %s %s %s the reserved word %q. See %s.",
-					resourceName, resourceType, v.matchType, v.reservedWord, link,
+					"Resource %s %s %s the"+
+						" reserved word %q\n"+
+						"Azure does not allow reserved"+
+						" words in resource names."+
+						" The deployment will fail.",
+					resourceName, resourceType,
+					v.matchType, v.reservedWord,
 				),
+				Links: []ux.PreflightReportLink{
+					{
+						URL:   docsLink,
+						Title: "Reserved resource name errors",
+					},
+				},
 			})
 		}
 	}
@@ -2924,16 +2956,25 @@ func (p *BicepProvider) checkAiModelQuota(
 					Severity:     PreflightCheckWarning,
 					DiagnosticID: "ai_model_not_found",
 					Message: fmt.Sprintf(
-						"model %s%s was not found in the AI model "+
-							"catalog for %s. The deployment may fail "+
-							"if this model is not available. Verify "+
-							"the model name, SKU, and version are "+
-							"correct. See %s for supported models and regions.",
-						output.WithHighLightFormat(fmt.Sprintf("%q", dep.ModelName)),
+						"Model %s%s not found in %s\n"+
+							"Model not found in AI model catalog."+
+							" Provisioning will likely fail.",
+						output.WithHighLightFormat(
+							"%q", dep.ModelName),
 						output.WithGrayFormat(details),
 						output.WithHighLightFormat(loc),
-						output.WithLinkFormat("https://learn.microsoft.com/azure/ai-services/openai/concepts/models"),
 					),
+					Suggestion: "Verify the model name, SKU," +
+						" and version are correct.",
+					Links: []ux.PreflightReportLink{
+						{
+							URL: "https://learn.microsoft.com/" +
+								"azure/ai-services/openai/" +
+								"concepts/models",
+							Title: "Azure OpenAI supported" +
+								" models and regions",
+						},
+					},
 				})
 				continue
 			}
@@ -2968,20 +3009,55 @@ func (p *BicepProvider) checkAiModelQuota(
 			totalRequired := requiredByUsage[r.usageName]
 			if remaining < totalRequired {
 				reportedUsage[r.usageName] = true
+
+				var suggestion string
+				if remaining > 0 {
+					suggestion = fmt.Sprintf(
+						"Reduce the requested capacity"+
+							" to %.0f or change your"+
+							" deployment location via %s."+
+							" You can also request a quota"+
+							" increase in the Azure portal.",
+						remaining,
+						output.WithHighLightFormat(
+							"azd env set"+
+								" AZURE_LOCATION <location>"),
+					)
+				} else {
+					suggestion = fmt.Sprintf(
+						"No quota is available."+
+							" Change your deployment"+
+							" location via %s or request"+
+							" a quota increase in the"+
+							" Azure portal.",
+						output.WithHighLightFormat(
+							"azd env set"+
+								" AZURE_LOCATION <location>"),
+					)
+				}
+
 				results = append(results, PreflightCheckResult{
 					Severity:     PreflightCheckWarning,
 					DiagnosticID: "ai_model_quota_exceeded",
 					Message: fmt.Sprintf(
-						"insufficient quota for model %s %s in %s. "+
-							"Requested capacity: %.0f, remaining quota: %.0f. "+
-							"The deployment may fail. Consider reducing capacity, "+
-							"selecting a different model, or requesting a quota increase.",
-						output.WithHighLightFormat("%q", r.dep.ModelName),
-						output.WithGrayFormat("(SKU: %s)", r.dep.SkuName),
+						"Insufficient quota for model %s %s"+
+							" in %s\n"+
+							"Requested: %.0f · Available: %.0f",
+						output.WithHighLightFormat(
+							"%q", r.dep.ModelName),
+						output.WithGrayFormat(
+							"(SKU: %s)", r.dep.SkuName),
 						output.WithHighLightFormat(loc),
 						totalRequired,
 						remaining,
 					),
+					Suggestion: suggestion,
+					Links: []ux.PreflightReportLink{
+						{
+							URL:   "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal",
+							Title: "Increase Azure subscription quotas",
+						},
+					},
 				})
 			}
 		}

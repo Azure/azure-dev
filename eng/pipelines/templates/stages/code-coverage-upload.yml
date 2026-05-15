@@ -1,13 +1,35 @@
 parameters:
   - name: DownloadArtifacts
+    # Coverage artifacts to download and merge. Each entry must match a
+    # `cover-<AZURE_DEV_CI_OS>` artifact published by the BuildAndTest matrix
+    # in eng/pipelines/templates/jobs/build-cli.yml (search for
+    # `artifact: cover-$(AZURE_DEV_CI_OS)`). Adding a new test-leg OS to the
+    # matrix without adding it here will silently exclude that leg's coverage
+    # from the merged total *and* from the missing-platform assertion in this
+    # template — keep these two lists in sync.
     type: object
     default:
       - cover-win
       - cover-lin
       - cover-mac
-  - name: MinimumCoveragePercent
+  - name: MaxPackageDecrease
+    # Maximum tolerated per-package coverage decrease (percentage points) on PRs.
+    # The PR fails when any single package's coverage drops by more than this
+    # many pp from the baseline. Scoped to PR-touched packages when changed
+    # files can be resolved; otherwise applies to all packages. Set to -1 to
+    # disable both this gate and the absolute-floor gate (advisory output only).
+    # Name matches the underlying Get-CoverageDiff.ps1 -MaxPackageDecrease flag.
     type: number
-    default: 0
+    default: 0.5
+  - name: MinOverallCoverage
+    # Absolute floor for overall coverage on PRs. The PR fails when current
+    # overall coverage is below this percentage, regardless of baseline.
+    # Calibrated just below the observed main overall coverage to ratchet
+    # quality up while keeping a small safety margin for normal churn; raise
+    # deliberately when ratcheting further.
+    # Name matches the underlying Get-CoverageDiff.ps1 -MinOverallCoverage flag.
+    type: number
+    default: 69
   - name: MaxPackageTestSeconds
     type: number
     default: 0
@@ -31,33 +53,74 @@ stages:
       os: linux
     steps:
       - template: /eng/pipelines/templates/steps/setup-go.yml
+      - pwsh: |
+          # Install mage so `mage coverage:report` (used both for the merged
+          # current profile below and for the baseline merge in the PR-diff
+          # step) is available on the build agent.
+          # Pinned for deterministic, supply-chain-safe installs (avoid
+          # `@latest` drift between builds). Keep this in sync with the
+          # `github.com/magefile/mage` version in `cli/azd/go.mod`.
+          go install github.com/magefile/mage@v1.17.2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Ensure $(go env GOPATH)/bin is on PATH for subsequent steps.
+          $goBin = (& go env GOPATH) + "/bin"
+          Write-Host "##vso[task.prependpath]$goBin"
+        displayName: Install mage
       - template: /eng/pipelines/templates/steps/download-artifacts.yml
         parameters:
           Artifacts: ${{ parameters.DownloadArtifacts }}
 
       - pwsh: |
           New-Item -ItemType Directory -Force -Path cover
-          New-Item -ItemType Directory -Force -Path cover-int
-          New-Item -ItemType Directory -Force -Path cover-unit
+
+          # Expected platform artifacts (populated from the DownloadArtifacts
+          # template parameter — itself mirroring the BuildAndTest matrix in
+          # eng/pipelines/templates/jobs/build-cli.yml). Assert presence
+          # before merging so a flaky runner that silently dropped its
+          # coverage artifact (e.g. the Mac leg fell over) fails the gate as
+          # an infra issue here, instead of masquerading downstream as a
+          # coverage regression after the merge silently proceeds with fewer
+          # platforms.
+          $expectedPlatforms = @'
+          ${{ convertToJson(parameters.DownloadArtifacts) }}
+          '@ | ConvertFrom-Json
+
+          $missing = @()
+          foreach ($p in $expectedPlatforms) {
+            # Test-Path returns true for empty dirs; require at least one file
+            # under each unit/ + int/ subtree so a partial-publish leg (empty
+            # dir) fails fast here instead of silently shrinking the merged
+            # coverage total downstream.
+            $unitOk = (Test-Path "$p/unit") -and `
+              @(Get-ChildItem "$p/unit" -File -Recurse -ErrorAction SilentlyContinue).Count -gt 0
+            $intOk = (Test-Path "$p/int") -and `
+              @(Get-ChildItem "$p/int" -File -Recurse -ErrorAction SilentlyContinue).Count -gt 0
+            if (-not $unitOk -or -not $intOk) {
+              $missing += $p
+            }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Host "##vso[task.logissue type=error]Missing or empty coverage artifacts for platform(s): $($missing -join ', '). Expected $($expectedPlatforms.Count) platform(s) ($($expectedPlatforms -join ', ')). This is an infra/build issue (a platform leg likely failed, skipped publish, or published an empty dir) and would silently shrink the merged coverage total — failing fast to avoid a false-positive coverage regression."
+            exit 1
+          }
 
           $unitCoverage = (Get-ChildItem cover-*/unit).FullName -join ","
           $integrationCoverage = (Get-ChildItem cover-*/int).FullName -join ","
 
-          # Merge unit test coverage across platforms
-          go tool covdata merge -i="$unitCoverage" -o cover-unit
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          # Merge integration test coverage across platforms
-          go tool covdata merge -i="$integrationCoverage" -o cover-int
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          # Merge unit and integration code coverage
-          go tool covdata merge -i="cover-unit,cover-int" -o cover
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          # Convert to text format
-          go tool covdata textfmt -i=cover -o cover.out
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Merge platform coverage and emit cover.out via the shared mage
+          # target so CI uses the same coverage reporting plumbing as
+          # `mage coverage:ci` does locally — avoids a second source of truth.
+          Push-Location $(Build.SourcesDirectory)/cli/azd
+          try {
+              $env:COVERAGE_REPORT_UNIT_INPUTS = $unitCoverage
+              $env:COVERAGE_REPORT_INT_INPUTS = $integrationCoverage
+              $env:COVERAGE_REPORT_OUTPUT = "$(Build.SourcesDirectory)/cover.out"
+              $env:COVERAGE_REPORT_MERGED_DIR = "$(Build.SourcesDirectory)/cover"
+              mage coverage:report
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally {
+              Pop-Location
+          }
 
           # Filter generated code (e.g. protobuf *.pb.go) from coverage profile
           # so that coverage percentages reflect only hand-written source code.
@@ -73,16 +136,6 @@ stages:
               exit $LASTEXITCODE 
           }
         displayName: Merge code coverage files
-
-      - ${{ if gt(parameters.MinimumCoveragePercent, 0) }}:
-        - task: PowerShell@2
-          inputs:
-            pwsh: true
-            targetType: filePath
-            filePath: $(Build.SourcesDirectory)/eng/scripts/Test-CodeCoverageThreshold.ps1
-            arguments: -CoverageFile $(Build.SourcesDirectory)/cover.out -MinimumCoveragePercent ${{ parameters.MinimumCoveragePercent }}
-            workingDirectory: $(Build.SourcesDirectory)/cli/azd
-          displayName: Check code coverage threshold
 
       - task: PublishCodeCoverageResults@2
         condition: succeededOrFailed()
@@ -128,7 +181,45 @@ stages:
             $ErrorActionPreference = 'Stop'
 
             # ---------------------------------------------------------------
-            # Download main branch baseline coverage for comparison
+            # Helper: retry a scriptblock with exponential backoff.
+            # Used for transient ADO REST / artifact download failures so
+            # network blips don't silently skip the gate.
+            # ---------------------------------------------------------------
+            function Invoke-WithRetry {
+                param(
+                    [Parameter(Mandatory)][scriptblock]$ScriptBlock,
+                    [string]$Operation = 'operation',
+                    [int]$MaxAttempts = 3,
+                    [int]$InitialDelaySeconds = 2
+                )
+                $delay = $InitialDelaySeconds
+                for ($i = 1; $i -le $MaxAttempts; $i++) {
+                    try {
+                        return & $ScriptBlock
+                    } catch {
+                        if ($i -eq $MaxAttempts) {
+                            Write-Warning "$Operation failed after $MaxAttempts attempts: $($_.Exception.Message)"
+                            throw
+                        }
+                        Write-Warning "$Operation attempt $i/$MaxAttempts failed: $($_.Exception.Message). Retrying in ${delay}s..."
+                        Start-Sleep -Seconds $delay
+                        $delay *= 2
+                    }
+                }
+            }
+
+            # ---------------------------------------------------------------
+            # Resolve the PR target branch up-front. Both the baseline build
+            # query AND the changed-files diff must use the SAME branch,
+            # otherwise PRs against release branches compare current coverage
+            # to a main baseline (false positives + negatives).
+            # ---------------------------------------------------------------
+            $targetRef = $env:SYSTEM_PULLREQUEST_TARGETBRANCH
+            $targetBranch = if ($targetRef) { $targetRef -replace '^refs/heads/', '' } else { 'main' }
+            Write-Host "PR target branch: $targetBranch"
+
+            # ---------------------------------------------------------------
+            # Download target-branch baseline coverage for comparison
             # ---------------------------------------------------------------
             $adoOrg = '$(System.CollectionUri)'.TrimEnd('/')
             $adoProject = '$(System.TeamProjectId)'
@@ -141,62 +232,138 @@ stages:
 
             $headers = @{ Authorization = "Bearer $env:SYSTEM_ACCESSTOKEN" }
 
-            Write-Host "Finding latest successful main build for baseline..."
+            Write-Host "Finding latest successful $targetBranch build for baseline..."
             $buildsUrl = "$adoOrg/$adoProject/_apis/build/builds?" +
-                "definitions=$pipelineId&branchName=refs/heads/main" +
+                "definitions=$pipelineId&branchName=refs/heads/$targetBranch" +
                 "&resultFilter=succeeded&`$top=1&api-version=7.1"
 
             try {
-                $buildsResp = Invoke-RestMethod -Uri $buildsUrl -Headers $headers -Method Get
+                $buildsResp = Invoke-WithRetry -Operation "Query $targetBranch builds" -ScriptBlock {
+                    Invoke-RestMethod -Uri $buildsUrl -Headers $headers -Method Get
+                }
             }
             catch {
-                Write-Warning "Failed to query main build baseline. Skipping coverage diff. $($_.Exception.Message)"
+                # Final-attempt failure: emit a loud annotation so the gate
+                # skip is visible in the PR (vs. the previous silent exit 0).
+                Write-Host "##vso[task.logissue type=warning]Failed to query $targetBranch baseline build after retries; coverage diff skipped. $($_.Exception.Message)"
                 exit 0
             }
 
             if ($buildsResp.count -eq 0) {
-                Write-Warning "No successful main builds found. Skipping coverage diff."
+                # No successful baseline build for this target branch (e.g. a
+                # newly-cut release branch). Skip diff but advertise the skip.
+                Write-Host "##vso[task.logissue type=warning]No successful $targetBranch builds found; coverage diff skipped (advisory)."
                 exit 0
             }
 
             $mainBuildId = $buildsResp.value[0].id
             $mainBuildNum = $buildsResp.value[0].buildNumber
-            Write-Host "Using main build $mainBuildId ($mainBuildNum) for baseline"
+            $mainCommit = $buildsResp.value[0].sourceVersion
+            $shortCommit = if ($mainCommit) { $mainCommit.Substring(0, [math]::Min(8, $mainCommit.Length)) } else { 'unknown' }
+            Write-Host "Using $targetBranch build $mainBuildId ($mainBuildNum) commit $shortCommit for baseline"
 
-            # Download and merge main build coverage artifacts
+            # Download and merge target-branch coverage artifacts. The baseline
+            # uses the SAME per-platform `cover-<os>` artifact list as the
+            # current-build merge above (driven by the DownloadArtifacts
+            # template parameter). Each platform artifact contains `unit/` and
+            # `int/` subdirs (see eng/pipelines/templates/jobs/build-cli.yml
+            # `path: cli/azd/cover-$(AZURE_DEV_CI_OS)`); merging the same shape
+            # ensures the baseline profile is comparable with the current one.
             New-Item -ItemType Directory -Force -Path baseline-tmp | Out-Null
 
-            foreach ($artifactName in @('cover-unit', 'cover-int')) {
+            $baselinePlatforms = @'
+            ${{ convertToJson(parameters.DownloadArtifacts) }}
+            '@ | ConvertFrom-Json
+
+            foreach ($artifactName in $baselinePlatforms) {
                 $url = "$adoOrg/$adoProject/_apis/build/builds/$mainBuildId/artifacts?artifactName=$artifactName&api-version=7.1"
                 try {
-                    $resp = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
+                    $resp = Invoke-WithRetry -Operation "Get $artifactName metadata" -ScriptBlock {
+                        Invoke-RestMethod -Uri $url -Headers $headers -Method Get
+                    }
                 } catch {
-                    Write-Warning "Failed to download $artifactName from main build: $_"
-                    exit 0
+                    # Distinguish "no baseline available" (404 — artifact never
+                    # existed for this build, e.g. main built before the gate
+                    # was wired up, or coverage was skipped on that build) from
+                    # transient network/auth failures that should hard-fail.
+                    # Without this distinction, the very-first PR after the
+                    # gate lands would block on a CI-infra reason rather than
+                    # a code reason.
+                    $statusCode = $null
+                    if ($_.Exception -and $_.Exception.Response) {
+                        $statusCode = [int]$_.Exception.Response.StatusCode
+                    }
+                    if ($statusCode -eq 404) {
+                        Write-Host "##vso[task.logissue type=warning]Baseline build $mainBuildId has no $artifactName artifact (HTTP 404); coverage diff skipped (advisory). This is expected on the first PR after the gate lands or when main builds were run with coverage disabled."
+                        exit 0
+                    }
+                    Write-Host "##vso[task.logissue type=error]Failed to fetch $artifactName metadata after retries; coverage diff cannot run. $($_.Exception.Message)"
+                    exit 1
                 }
                 $dlUrl = $resp.resource.downloadUrl
-                Invoke-WebRequest -Uri $dlUrl -Headers $headers -OutFile "baseline-tmp/$artifactName.zip"
+                try {
+                    Invoke-WithRetry -Operation "Download $artifactName" -ScriptBlock {
+                        Invoke-WebRequest -Uri $dlUrl -Headers $headers -OutFile "baseline-tmp/$artifactName.zip"
+                    } | Out-Null
+                } catch {
+                    Write-Host "##vso[task.logissue type=error]Failed to download $artifactName after retries; coverage diff cannot run. $($_.Exception.Message)"
+                    exit 1
+                }
                 Expand-Archive -Path "baseline-tmp/$artifactName.zip" -DestinationPath "baseline-tmp/$artifactName" -Force
                 Remove-Item "baseline-tmp/$artifactName.zip"
             }
 
-            # Resolve nested artifact paths (pipeline artifacts nest under artifact name)
-            $unitPath = "baseline-tmp/cover-unit/cover-unit"
-            $intPath = "baseline-tmp/cover-int/cover-int"
-            if (-not (Test-Path $unitPath)) { $unitPath = "baseline-tmp/cover-unit" }
-            if (-not (Test-Path $intPath)) { $intPath = "baseline-tmp/cover-int" }
-
-            New-Item -ItemType Directory -Force -Path baseline-merged | Out-Null
-            go tool covdata merge -i="$unitPath,$intPath" -o baseline-merged
-            if ($LASTEXITCODE -ne 0) {
-                Write-Warning "Failed to merge baseline coverage. Skipping diff."
+            # Collect unit/int subdirs from every downloaded platform artifact.
+            # Pipeline artifacts can land flat (`<art>/unit`) or nested under
+            # the artifact name (`<art>/<art>/unit`) depending on publish
+            # settings; handle both. The resulting comma-joined paths feed
+            # `mage coverage:report` exactly like the current-build merge,
+            # producing a baseline profile with matching package coverage.
+            $unitDirs = @()
+            $intDirs = @()
+            # Helper: returns the resolved path only if the dir exists AND
+            # contains at least one file. Resolve-Path alone passes empty
+            # dirs, which would silently shrink the baseline merge.
+            function Test-NonEmptyCoverDir($candidate) {
+                $rp = Resolve-Path $candidate -ErrorAction SilentlyContinue
+                if (-not $rp) { return $null }
+                $hasFiles = @(Get-ChildItem $rp.Path -File -Recurse -ErrorAction SilentlyContinue).Count -gt 0
+                if (-not $hasFiles) { return $null }
+                return $rp
+            }
+            foreach ($p in $baselinePlatforms) {
+                $unit = (Test-NonEmptyCoverDir "baseline-tmp/$p/$p/unit") `
+                    ?? (Test-NonEmptyCoverDir "baseline-tmp/$p/unit")
+                $int = (Test-NonEmptyCoverDir "baseline-tmp/$p/$p/int") `
+                    ?? (Test-NonEmptyCoverDir "baseline-tmp/$p/int")
+                if (-not $unit -or -not $int) {
+                    Write-Host "##vso[task.logissue type=warning]Baseline artifact $p missing or empty unit/int subdirs (unit=$unit int=$int); excluding this platform from baseline merge. The PR-side merge would also have flagged this as a missing-platform error, so this likely indicates the baseline build's matrix differs from the current build's matrix, or that baseline platform published an empty dir."
+                    continue
+                }
+                $unitDirs += $unit.Path
+                $intDirs += $int.Path
+            }
+            if ($unitDirs.Count -eq 0 -or $intDirs.Count -eq 0) {
+                Write-Host "##vso[task.logissue type=warning]Baseline build $mainBuildId contained no usable coverage data after layout resolution; coverage diff skipped (advisory)."
                 exit 0
             }
+            $unitPath = $unitDirs -join ','
+            $intPath = $intDirs -join ','
 
-            go tool covdata textfmt -i=baseline-merged -o cover-baseline.out
-            if ($LASTEXITCODE -ne 0) {
-                Write-Warning "Failed to convert baseline coverage. Skipping diff."
-                exit 0
+            New-Item -ItemType Directory -Force -Path baseline-merged | Out-Null
+            Push-Location $(Build.SourcesDirectory)/cli/azd
+            try {
+                $env:COVERAGE_REPORT_UNIT_INPUTS = $unitPath
+                $env:COVERAGE_REPORT_INT_INPUTS = $intPath
+                $env:COVERAGE_REPORT_OUTPUT = "$(Build.SourcesDirectory)/cover-baseline.out"
+                $env:COVERAGE_REPORT_MERGED_DIR = "$(Build.SourcesDirectory)/baseline-merged"
+                mage coverage:report
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host "##vso[task.logissue type=error]Failed to merge baseline coverage (mage coverage:report exit $LASTEXITCODE). Cannot run PR coverage diff."
+                    exit 1
+                }
+            } finally {
+                Pop-Location
             }
 
             # Filter generated code from baseline (same as current)
@@ -206,64 +373,104 @@ stages:
             }
 
             # ---------------------------------------------------------------
-            # Generate coverage diff report
+            # Resolve PR-changed files via `git diff` against the PR target
+            # branch. The triple-dot syntax `base...HEAD` implicitly uses the
+            # merge-base, so we don't need a separate `git merge-base` call.
+            # The list scopes the per-package report and per-package gate to
+            # packages that contain a touched file. If diff resolution fails
+            # (shallow clone, missing remote ref, etc.) we fall back to
+            # package mode (full scan of every package) — fail closed, never
+            # silently disable the per-package gate.
             # ---------------------------------------------------------------
-            pwsh -NoProfile -NonInteractive -File "$(Build.SourcesDirectory)/eng/scripts/Get-CoverageDiff.ps1" `
-                -BaselineFile cover-baseline.out `
-                -CurrentFile cover.out `
-                -OutputFile coverage-diff.md
+            $changedFilesPath = "changed-files.txt"
+            $changedFilesResolved = $false
 
-            if (-not (Test-Path coverage-diff.md)) {
-                Write-Warning "Coverage diff report was not generated."
-                exit 0
-            }
+            $packageTolerance = ${{ parameters.MaxPackageDecrease }}
+            $minOverall = ${{ parameters.MinOverallCoverage }}
 
-            # ---------------------------------------------------------------
-            # Post as PR comment (requires GH_TOKEN)
-            # ---------------------------------------------------------------
-            if (-not $env:GH_TOKEN) {
-                Write-Host "GH_TOKEN not configured - printing diff to log instead:"
-                Get-Content coverage-diff.md
-                exit 0
-            }
+            # NOTE: $targetBranch was resolved at the top of this script; the
+            # baseline build query above used the same value, so the diff and
+            # the baseline always reference the same branch.
 
-            $prNumber = '$(System.PullRequest.PullRequestNumber)'
-            if (-not $prNumber -or $prNumber -eq '$(System.PullRequest.PullRequestNumber)') {
-                Write-Warning "Cannot determine PR number. Printing diff to log:"
-                Get-Content coverage-diff.md
-                exit 0
-            }
+            Write-Host "Fetching target branch for changed-file resolution: $targetBranch"
+            git fetch --no-tags origin "+refs/heads/${targetBranch}:refs/remotes/origin/${targetBranch}" --depth=200 2>&1 | Write-Host
 
-            # Derive owner/repo from git remote
-            $repoSlug = git config --get remote.origin.url 2>$null
-            if ($repoSlug -match 'github\.com[:/](.+?)(?:\.git)?$') {
-                $repoSlug = $Matches[1]
+            # `git diff base...HEAD` does its own merge-base resolution; if the
+            # remote ref or merge-base isn't reachable, this fails non-zero.
+            # --diff-filter=AMRD also captures Deletions, so a PR that only
+            # removes files (e.g. removes a fully-covered file → package
+            # coverage drops) still triggers the per-package gate.
+            # --no-renames is explicit so behavior is deterministic regardless
+            # of the agent's diff.renames config: a rename surfaces as a
+            # D-old + A-new pair (both packages correctly scoped) rather than
+            # an opaque R-line whose old path the script cannot recover.
+            $diffOutput = git diff --name-only --no-renames --diff-filter=AMRD "origin/${targetBranch}...HEAD" 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                # Empty output is a valid result (docs-only PR, no Go changes);
+                # mark as resolved so the per-package gate scopes to "none".
+                Set-Content -Path $changedFilesPath -Value ($diffOutput -join "`n") -Encoding UTF8
+                $changedFilesResolved = $true
             } else {
-                Write-Warning "Cannot determine GitHub repo slug. Printing diff to log:"
-                Get-Content coverage-diff.md
-                exit 0
+                Write-Warning "git diff against origin/$targetBranch failed: $diffOutput — falling back to package mode (full per-package scan)."
             }
 
-            Write-Host "Posting coverage diff to $repoSlug#$prNumber..."
-            pwsh -NoProfile -NonInteractive -File "$(Build.SourcesDirectory)/eng/scripts/Update-PRComment.ps1" `
-                -Repo $repoSlug `
-                -PRNumber $prNumber `
-                -BodyFile coverage-diff.md `
-                -Tag '<!-- coverage-diff -->'
-          displayName: Post coverage diff to PR
-          condition: succeededOrFailed()
+            # Reuse the in-memory diff output instead of re-reading the file we
+            # just wrote — saves an unnecessary disk round-trip.
+            $changedCount = if ($changedFilesResolved) {
+                @($diffOutput | Where-Object { $_ -match '\S' }).Count
+            } else { 0 }
+            Write-Host "Changed files for coverage report scope: $changedCount (resolved=$changedFilesResolved)"
+
+            # ---------------------------------------------------------------
+            # Generate plain-text coverage report (logged inline) and fail
+            # the stage on either gate breach: overall coverage below the
+            # absolute floor, or any PR-touched package dropping beyond the
+            # per-package tolerance.
+            # ---------------------------------------------------------------
+            $diffArgs = @(
+                '-NoProfile', '-NonInteractive',
+                '-File', "$(Build.SourcesDirectory)/eng/scripts/Get-CoverageDiff.ps1",
+                '-BaselineFile', 'cover-baseline.out',
+                '-CurrentFile',  'cover.out',
+                '-BaselineLabel', "$targetBranch build $mainBuildNum / commit $shortCommit"
+            )
+
+            # Pass the changed-files list ONLY when git diff resolution
+            # succeeded. On failure we omit -ChangedFilesFromFile so the
+            # script falls into package mode (full per-package scan) instead
+            # of receiving an empty list (which would silently scope the
+            # per-package gate to zero packages → false negative).
+            if ($changedFilesResolved) {
+                $diffArgs += @('-ChangedFilesFromFile', $changedFilesPath)
+            }
+
+            if ($packageTolerance -ge 0) {
+                $diffArgs += @(
+                    '-MaxPackageDecrease', $packageTolerance,
+                    '-MinOverallCoverage', $minOverall,
+                    '-FailOnGate'
+                )
+            }
+            # MaxPackageDecrease < 0 disables BOTH gates (advisory output only).
+            # See cli/azd/docs/code-coverage-guide.md for the supported way to
+            # opt out (set the YAML param to -1 in your stage extension).
+
+            pwsh @diffArgs
+            $diffExit = $LASTEXITCODE
+            Write-Host ""
+            Write-Host "Get-CoverageDiff.ps1 exit code: $diffExit"
+            if ($diffExit -eq 2) {
+                # Gate breach (per-package decrease and/or absolute-floor):
+                # Get-CoverageDiff.ps1 already emitted ##vso[task.logissue]
+                # entries for each breached gate. Just propagate the exit code
+                # without duplicating the annotation.
+                exit 2
+            }
+            if ($diffExit -ne 0) {
+                Write-Host "##vso[task.logissue type=error]Coverage diff failed with exit code $diffExit. See log above."
+                exit $diffExit
+            }
+          displayName: PR coverage diff (fail on per-package decrease or floor breach)
+          condition: succeeded()
           env:
             SYSTEM_ACCESSTOKEN: $(System.AccessToken)
-            GH_TOKEN: $(GitHubToken)
-    
-    templateContext: 
-      outputs: 
-        - output: pipelineArtifact
-          path: cover-unit
-          artifact: cover-unit
-          displayName: Upload unit test code coverage
-
-        - output: pipelineArtifact
-          path: cover-int
-          artifact: cover-int
-          displayName: Upload integration test code coverage

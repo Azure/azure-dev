@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -31,10 +32,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/require"
@@ -60,7 +59,7 @@ func Test_MapError(t *testing.T) {
 		{
 			name:          "WithOtherError",
 			err:           errors.New("something bad happened!"),
-			wantErrReason: "internal.errors_errorString",
+			wantErrReason: "internal.unclassified",
 			wantErrDetails: []attribute.KeyValue{
 				fields.ErrType.String("*errors.errorString"),
 			},
@@ -115,20 +114,20 @@ func Test_MapError(t *testing.T) {
 				fields.ErrorKey(fields.ServiceErrorCode.Key).String(mustMarshalJson(
 					[]map[string]any{
 						{
-							string(fields.ErrCode.Key):  "Conflict,PreconditionFailed",
-							string(fields.ErrFrame.Key): 0,
+							string(fields.ErrCode.Key): "Conflict,PreconditionFailed",
+							"error.arm.frame_index":    0,
 						},
 						{
-							string(fields.ErrCode.Key):  "OutOfCapacity,RegionOutOfCapacity",
-							string(fields.ErrFrame.Key): 1,
+							string(fields.ErrCode.Key): "OutOfCapacity,RegionOutOfCapacity",
+							"error.arm.frame_index":    1,
 						},
 						{
-							string(fields.ErrCode.Key):  "ServiceUnavailable",
-							string(fields.ErrFrame.Key): 1,
+							string(fields.ErrCode.Key): "ServiceUnavailable",
+							"error.arm.frame_index":    1,
 						},
 						{
-							string(fields.ErrCode.Key):  "UnknownError",
-							string(fields.ErrFrame.Key): 2,
+							string(fields.ErrCode.Key): "UnknownError",
+							"error.arm.frame_index":    2,
 						},
 					})),
 			},
@@ -150,12 +149,12 @@ func Test_MapError(t *testing.T) {
 				fields.ErrorKey(fields.ServiceErrorCode.Key).String(mustMarshalJson(
 					[]map[string]any{
 						{
-							string(fields.ErrCode.Key):  "InvalidTemplate",
-							string(fields.ErrFrame.Key): 0,
+							string(fields.ErrCode.Key): "InvalidTemplate",
+							"error.arm.frame_index":    0,
 						},
 						{
-							string(fields.ErrCode.Key):  "TemplateValidationFailed",
-							string(fields.ErrFrame.Key): 1,
+							string(fields.ErrCode.Key): "TemplateValidationFailed",
+							"error.arm.frame_index":    1,
 						},
 					})),
 			},
@@ -479,7 +478,9 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "error.suggestion",
 			wantErrDetails: []attribute.KeyValue{
-				fields.ErrType.String("*errors.errorString"),
+				// Inner is a plain errors.errorString (no named type),
+				// so the inner classification is the catch-all.
+				fields.ErrType.String("internal.unclassified"),
 			},
 		},
 		// Sentinel error test cases — verify typed errors wrapped in
@@ -844,14 +845,26 @@ func Test_MapError(t *testing.T) {
 			MapError(tt.err, span)
 
 			require.Equal(t, tt.wantErrReason, span.Status.Description)
-			require.ElementsMatch(t, tt.wantErrDetails, span.Attributes)
 
-			// Enforcement: no test case should produce the opaque errors_errorString
-			// unless explicitly allowed. This catches regressions where new error paths
-			// return bare errors.New() without typed sentinels.
+			// MapError always emits error.chain.types. Per-case
+			// wantErrDetails asserts the remaining structured error.*
+			// attributes exactly; error.chain.types is exercised in
+			// Test_MapError_ChainTypes.
+			gotErrDetails := slices.DeleteFunc(slices.Clone(span.Attributes), func(a attribute.KeyValue) bool {
+				return a.Key == fields.ErrChainTypes.Key
+			})
+			require.ElementsMatch(t, tt.wantErrDetails, gotErrDetails)
+
+			// Enforcement: no test case should produce the opaque
+			// internal.unclassified bucket (or its predecessor
+			// errors_errorString) unless explicitly allowed. Catches
+			// regressions where new error paths return bare
+			// errors.New() without typed sentinels.
 			if !allowedCatchAll[tt.name] {
 				require.NotContains(t, span.Status.Description, "errors_errorString",
 					"test case %q produces opaque errors_errorString — use a typed sentinel error instead", tt.name)
+				require.NotEqual(t, "internal.unclassified", span.Status.Description,
+					"test case %q produces opaque internal.unclassified — use a typed sentinel error instead", tt.name)
 			}
 		})
 	}
@@ -918,13 +931,25 @@ func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 			wantErrType: "service.arm.deployment.failed",
 		},
 		{
-			name: "PlainError_falls_back_to_go_type",
+			name: "PlainError_falls_back_to_unclassified",
 			err: &internal.ErrorWithSuggestion{
 				Err:        errors.New("unknown failure"),
 				Suggestion: "Try again.",
 			},
 			wantErrCode: "error.suggestion",
-			wantErrType: "*errors.errorString",
+			wantErrType: "internal.unclassified",
+		},
+		{
+			name: "NestedSuggestion_uses_inner_suggestion_type",
+			err: &internal.ErrorWithSuggestion{
+				Err: &internal.ErrorWithSuggestion{
+					Err:        internal.ErrKeyNotFound,
+					Suggestion: "Run 'azd env get-values'.",
+				},
+				Suggestion: "Check the selected environment.",
+			},
+			wantErrCode: "error.suggestion",
+			wantErrType: "error.suggestion",
 		},
 	}
 
@@ -944,128 +969,73 @@ func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 	}
 }
 
-// Test_ClassifySuggestionType_MatchesMapError verifies that classifySuggestionType produces
-// the same errCode as MapError for every structured error type and sentinel.
-// This catches drift if someone updates the classification logic in one function but not the other.
-func Test_ClassifySuggestionType_MatchesMapError(t *testing.T) {
+// Test_MapError_ChainTypes verifies that MapError emits the
+// `error.chain.types` span attribute (outermost first). This lets
+// triagers group on the underlying type chain in Kusto without
+// scraping message text.
+func Test_MapError_ChainTypes(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name string
 		err  error
+		want []string
 	}{
 		{
-			name: "ResponseError",
-			err: &azcore.ResponseError{
-				ErrorCode:  "QuotaExceeded",
-				StatusCode: 429,
-				RawResponse: &http.Response{
+			name: "BareError",
+			err:  errors.New("boom"),
+			want: []string{"*errors.errorString"},
+		},
+		{
+			name: "FmtErrorfWrapsTyped",
+			err:  fmt.Errorf("ctx: %w", &exec.ExitError{Cmd: "tool", ExitCode: 1}),
+			want: []string{"*fmt.wrapError", "*exec.ExitError"},
+		},
+		{
+			name: "SuggestionWrapsTyped",
+			err: &internal.ErrorWithSuggestion{
+				Err: &azcore.ResponseError{
+					ErrorCode:  "QuotaExceeded",
 					StatusCode: 429,
-					Request: &http.Request{
-						Method: "POST",
-						Host:   "management.azure.com",
+					RawResponse: &http.Response{
+						StatusCode: 429,
+						Request: &http.Request{
+							Method: "POST",
+							Host:   "management.azure.com",
+						},
 					},
 				},
 			},
-		},
-		{
-			name: "ArmDeploymentError",
-			err: &azapi.AzureDeploymentError{
-				Operation: azapi.DeploymentOperationDeploy,
-				Details: &azapi.DeploymentErrorLine{
-					Code: "Conflict",
-				},
+			want: []string{
+				"*errorhandler.ErrorWithSuggestion",
+				fmt.Sprintf("%T", &azcore.ResponseError{}),
 			},
 		},
 		{
-			name: "ArmValidationError",
-			err: &azapi.AzureDeploymentError{
-				Operation: azapi.DeploymentOperationValidate,
-				Details:   &azapi.DeploymentErrorLine{Code: "InvalidTemplate"},
+			name: "Joined",
+			err:  errors.Join(errors.New("a"), &exec.ExitError{Cmd: "x", ExitCode: 2}),
+			want: []string{
+				"*errors.joinError",
+				"*errors.errorString",
+				"*exec.ExitError",
 			},
-		},
-		{
-			name: "ExtServiceError",
-			err: &azdext.ServiceError{
-				Message:     "Rate limit",
-				ErrorCode:   "create_agent.RateLimitExceeded",
-				StatusCode:  429,
-				ServiceName: "openai.azure.com",
-			},
-		},
-		{
-			name: "ExtLocalError",
-			err: &azdext.LocalError{
-				Message:  "invalid config",
-				Code:     "Invalid-Config",
-				Category: azdext.LocalErrorCategoryValidation,
-			},
-		},
-		{
-			name: "ExtensionRunError",
-			err:  &extensions.ExtensionRunError{ExtensionId: "test", Err: errors.New("fail")},
-		},
-		{
-			name: "ExitError",
-			err:  &exec.ExitError{Cmd: "docker", ExitCode: 1},
-		},
-		{
-			name: "MissingToolErrors_single",
-			err:  &tools.MissingToolErrors{ToolNames: []string{"docker"}},
-		},
-		{
-			name: "MissingToolErrors_multiple",
-			err:  &tools.MissingToolErrors{ToolNames: []string{"docker", "kubectl"}},
-		},
-		{
-			name: "AuthFailedError",
-			err: &auth.AuthFailedError{
-				Parsed: &auth.AadErrorResponse{Error: "invalid_grant"},
-			},
-		},
-		{
-			name: "ReLoginRequiredError",
-			err:  &auth.ReLoginRequiredError{},
-		},
-		{
-			name: "AzidentityAuthenticationFailedError",
-			err:  &azidentity.AuthenticationFailedError{},
-		},
-		// Sentinels
-		{name: "context.Canceled", err: context.Canceled},
-		{name: "context.DeadlineExceeded", err: context.DeadlineExceeded},
-		{name: "ErrNoCurrentUser", err: auth.ErrNoCurrentUser},
-		{name: "ErrNoProject", err: azdcontext.ErrNoProject},
-		{name: "ErrNotFound", err: environment.ErrNotFound},
-		{name: "ErrToolExecutionDenied", err: consent.ErrToolExecutionDenied},
-		{name: "ErrNotRepository", err: git.ErrNotRepository},
-		{name: "ErrPreviewNotSupported", err: azapi.ErrPreviewNotSupported},
-		{name: "ErrBindMountDisabled", err: provisioning.ErrBindMountOperationDisabled},
-		{name: "ErrRemoteHostIsNotAzDo", err: pipeline.ErrRemoteHostIsNotAzDo},
-		{name: "ErrInfraNotProvisioned", err: internal.ErrInfraNotProvisioned},
-		{name: "ErrKeyNotFound", err: internal.ErrKeyNotFound},
-		{name: "ErrExtensionNotFound", err: internal.ErrExtensionNotFound},
-		{name: "ErrOperationCancelled", err: internal.ErrOperationCancelled},
-		{name: "ErrAbortedByUser", err: internal.ErrAbortedByUser},
-		// Network error
-		{
-			name: "DNSError",
-			err:  &net.DNSError{Err: "no such host", Name: "example.com"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			// Get errCode from MapError
 			span := &mocktracing.Span{}
 			MapError(tt.err, span)
-			mapErrorCode := span.Status.Description
 
-			// Get code from classifySuggestionType
-			suggestionCode := classifySuggestionType(tt.err)
-
-			require.Equal(t, mapErrorCode, suggestionCode,
-				"classifySuggestionType and MapError must produce the same code for %T", tt.err)
+			var got []string
+			for _, a := range span.Attributes {
+				if a.Key == fields.ErrChainTypes.Key {
+					got = a.Value.AsStringSlice()
+					break
+				}
+			}
+			require.Equal(t, tt.want, got, string(fields.ErrChainTypes.Key))
 		})
 	}
 }
@@ -1118,106 +1088,10 @@ func Test_normalizeCodeSegment(t *testing.T) {
 	}
 }
 
-func Test_errorType(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name string
-		err  error
-		want string
-	}{
-		{
-			name: "NilError",
-			err:  nil,
-			want: "<nil>",
-		},
-		{
-			name: "SimpleError",
-			err:  errors.New("simple error"),
-			want: "*errors.errorString",
-		},
-		{
-			name: "SingleUnwrapError",
-			err: &exec.ExitError{
-				Cmd:      "test",
-				ExitCode: 1,
-			},
-			want: "*exec.ExitError",
-		},
-		{
-			name: "NestedUnwrapError",
-			err: func() error {
-				inner := errors.New("inner error")
-				return &singleUnwrapError{
-					msg: "wrapped error",
-					err: inner,
-				}
-			}(),
-			want: "*errors.errorString",
-		},
-		{
-			name: "MultipleUnwrapErrors",
-			err: func() error {
-				err1 := errors.New("error 1")
-				err2 := errors.New("error 2")
-				return &multiUnwrapError{
-					errs: []error{err1, err2},
-				}
-			}(),
-			want: "*errors.errorString,*errors.errorString",
-		},
-		{
-			name: "MultipleUnwrapErrorsWithNil",
-			err: func() error {
-				err1 := errors.New("error 1")
-				return &multiUnwrapError{
-					errs: []error{err1, nil, errors.New("error 2")},
-				}
-			}(),
-			want: "*errors.errorString,*errors.errorString",
-		},
-		{
-			name: "UnwrapReturnsNil",
-			err: &singleUnwrapError{
-				msg: "test error",
-				err: nil,
-			},
-			want: "*cmd.singleUnwrapError",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := errorType(tt.err)
-			require.Equal(t, tt.want, got)
-		})
-	}
-}
-
-// Test helper types for errorType tests
-type singleUnwrapError struct {
-	msg string
-	err error
-}
-
-func (e *singleUnwrapError) Error() string {
-	return e.msg
-}
-
-func (e *singleUnwrapError) Unwrap() error {
-	return e.err
-}
-
-type multiUnwrapError struct {
-	errs []error
-}
-
-func (e *multiUnwrapError) Error() string {
-	return "multiple errors"
-}
-
-func (e *multiUnwrapError) Unwrap() []error {
-	return e.errs
-}
+// Test_errorType and Test_ClassifySuggestionType_MatchesMapError were
+// removed when their targets (`errorType`, `classifySuggestionType`)
+// were collapsed into a shared `classify` ladder. The leaf-walk
+// behavior is exercised in `internal/tracing/errchain` tests.
 
 func mustMarshalJson(v any) string {
 	b, err := json.Marshal(v)

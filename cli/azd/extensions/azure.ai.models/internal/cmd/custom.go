@@ -26,8 +26,9 @@ func newCustomCommand() *cobra.Command {
 	flags := &customFlags{}
 
 	customCmd := &cobra.Command{
-		Use:   "custom",
-		Short: "Manage custom models in Azure AI Foundry",
+		Use:        "custom",
+		Short:      "Manage custom models in Azure AI Foundry",
+		Deprecated: "use 'azd ai models <create|list|show|delete>' directly instead",
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			return resolveProjectEndpoint(ctx, flags)
@@ -42,6 +43,7 @@ func newCustomCommand() *cobra.Command {
 	customCmd.AddCommand(newCustomCreateCommand(flags))
 	customCmd.AddCommand(newCustomListCommand(flags))
 	customCmd.AddCommand(newCustomShowCommand(flags))
+	customCmd.AddCommand(newCustomUpdateCommand(flags))
 	customCmd.AddCommand(newCustomDeleteCommand(flags))
 
 	return customCmd
@@ -119,7 +121,7 @@ func promptForProject(ctx context.Context, flags *customFlags, azdClient *azdext
 		azdClient, err = azdext.NewAzdClient()
 		if err != nil {
 			return fmt.Errorf("--project-endpoint is required when azd is not available.\n\n" +
-				"Example: azd ai models custom list " +
+				"Example: azd ai models list " +
 				"--project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>\n\n" +
 				"Or run 'azd ai models init' to set up your project first")
 		}

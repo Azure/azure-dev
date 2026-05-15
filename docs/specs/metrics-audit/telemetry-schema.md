@@ -87,18 +87,22 @@ These are set once at process startup via `resource.New()` and attached to every
 
 ### Error Attributes
 
-| Field | OTel Key | Classification | Purpose |
-|-------|----------|----------------|---------|
-| Error category | `error.category` | SystemMetadata | PerformanceAndHealth |
-| Error code | `error.code` | SystemMetadata | PerformanceAndHealth |
-| Error type | `error.type` | SystemMetadata | PerformanceAndHealth |
-| Inner error | `error.inner` | SystemMetadata | PerformanceAndHealth |
-| Error frame | `error.frame` | SystemMetadata | PerformanceAndHealth |
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Error category | `error.category` | SystemMetadata | PerformanceAndHealth | |
+| Error code | `error.code` | SystemMetadata | PerformanceAndHealth | |
+| Error type | `error.type` | SystemMetadata | PerformanceAndHealth | ResultCode or Go type for the classified error |
+| Error chain types | `error.chain.types` | SystemMetadata | PerformanceAndHealth | Wrapped Go error type chain, outermost first |
 
 Error classification is handled by `MapError` in `internal/cmd/errors.go`, which categorizes
 errors into: update errors, auth errors, service (Azure) errors, deployment errors, extension
 errors, tool errors, sentinel errors, and network errors. Each receives an `error.code`,
 `error.category`, and contextual attributes.
+
+Generic-only error chains now use the catch-all ResultCode `internal.unclassified` instead of
+the previous `internal.errors_errorString`. Use `error.chain.types` to inspect the concrete
+wrapper types behind that bucket. The removed `error.inner` and `error.frame` attributes were
+not emitted by azd spans.
 
 ### Service Attributes
 
@@ -108,7 +112,7 @@ errors, tool errors, sentinel errors, and network errors. Each receives an `erro
 | Service name | `service.name` | SystemMetadata | PerformanceAndHealth | |
 | Status code | `service.statusCode` | SystemMetadata | PerformanceAndHealth | **Measurement** |
 | Method | `service.method` | SystemMetadata | PerformanceAndHealth | |
-| Error code | `service.errorCode` | SystemMetadata | PerformanceAndHealth | **Measurement** |
+| Error code | `service.errorCode` | SystemMetadata | PerformanceAndHealth | **Measurement**; ARM deployment errors encode JSON objects with `error.code` and `error.arm.frame_index` |
 | Correlation ID | `service.correlationId` | SystemMetadata | PerformanceAndHealth | |
 
 ### Tool Attributes

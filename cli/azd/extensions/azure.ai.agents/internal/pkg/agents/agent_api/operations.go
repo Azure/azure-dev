@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"strconv"
 	"time"
@@ -356,6 +358,124 @@ func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, 
 	return &agentVersion, nil
 }
 
+// CreateAgentFromZip creates a hosted agent via multipart/form-data ZIP code deploy.
+// POST /agents?api-version=...
+func (c *AgentClient) CreateAgentFromZip(
+	ctx context.Context,
+	agentName string,
+	metadata *CreateAgentVersionRequest,
+	zipData []byte,
+	sha256Hex string,
+	apiVersion string,
+) (*AgentObject, error) {
+	reqURL := fmt.Sprintf("%s/agents?api-version=%s", c.endpoint, apiVersion)
+	// For create, include "name" in the metadata JSON (spec requirement)
+	createMeta := &CreateAgentRequest{
+		Name:                      agentName,
+		CreateAgentVersionRequest: *metadata,
+	}
+	return c.zipDeployRequest(ctx, reqURL, agentName, createMeta, zipData, sha256Hex)
+}
+
+// UpdateAgentFromZip updates an existing hosted agent via multipart/form-data ZIP code deploy.
+// POST /agents/{name}?api-version=...
+func (c *AgentClient) UpdateAgentFromZip(
+	ctx context.Context,
+	agentName string,
+	metadata *CreateAgentVersionRequest,
+	zipData []byte,
+	sha256Hex string,
+	apiVersion string,
+) (*AgentObject, error) {
+	reqURL := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
+	return c.zipDeployRequest(ctx, reqURL, "", metadata, zipData, sha256Hex)
+}
+
+// zipDeployRequest performs the multipart ZIP deploy request (shared by create and update).
+// TODO: Stream the ZIP file directly from disk instead of buffering zipData []byte in memory
+// to reduce memory usage for large agent projects. The 250MB ZIP limit makes OOM unlikely
+// in practice, but streaming would halve peak memory consumption.
+func (c *AgentClient) zipDeployRequest(
+	ctx context.Context,
+	reqURL string,
+	agentName string, // if non-empty, sent as x-ms-agent-name header (create only)
+	metadata any,
+	zipData []byte,
+	sha256Hex string,
+) (*AgentObject, error) {
+	// Build multipart body
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	// Part 1: metadata (JSON)
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	metadataPart, err := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": {`form-data; name="metadata"`},
+		"Content-Type":        {"application/json"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create metadata part: %w", err)
+	}
+	if _, err := metadataPart.Write(metadataJSON); err != nil {
+		return nil, fmt.Errorf("failed to write metadata: %w", err)
+	}
+
+	// Part 2: code (ZIP)
+	codePart, err := writer.CreateFormFile("code", "agent.zip")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create code part: %w", err)
+	}
+	if _, err := codePart.Write(zipData); err != nil {
+		return nil, fmt.Errorf("failed to write ZIP data: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	req, err := runtime.NewRequest(ctx, http.MethodPost, reqURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(body.Bytes())), writer.FormDataContentType()); err != nil {
+		return nil, fmt.Errorf("failed to set request body: %w", err)
+	}
+
+	// Required headers
+	req.Raw().Header.Set("Foundry-Features", "CodeAgents=V1Preview,HostedAgents=V1Preview")
+	req.Raw().Header.Set("x-ms-code-zip-sha256", sha256Hex)
+	if agentName != "" {
+		req.Raw().Header.Set("x-ms-agent-name", agentName)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var agentObj AgentObject
+	if err := json.Unmarshal(respBody, &agentObj); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &agentObj, nil
+}
+
 // GetAgentVersion retrieves a specific version of an agent
 func (c *AgentClient) GetAgentVersion(ctx context.Context, agentName, agentVersion, apiVersion string) (*AgentVersionObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
@@ -383,6 +503,11 @@ func (c *AgentClient) GetAgentVersion(ctx context.Context, agentName, agentVersi
 	var version AgentVersionObject
 	if err := json.Unmarshal(body, &version); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Capture request ID from response header for diagnostics.
+	if reqID := resp.Header.Get("x-request-id"); reqID != "" {
+		version.RequestID = reqID
 	}
 
 	return &version, nil

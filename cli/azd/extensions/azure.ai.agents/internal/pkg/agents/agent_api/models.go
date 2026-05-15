@@ -106,19 +106,74 @@ type WorkflowDefinition struct {
 	Trigger map[string]any `json:"trigger,omitempty"`
 }
 
-// HostedAgentDefinition represents a hosted agent
-type HostedAgentDefinition struct {
-	AgentDefinition
-	ContainerProtocolVersions []ProtocolVersionRecord `json:"container_protocol_versions"`
-	CPU                       string                  `json:"cpu"`
-	Memory                    string                  `json:"memory"`
-	EnvironmentVariables      map[string]string       `json:"environment_variables,omitempty"`
+// CodeConfigurationAPI represents the code_configuration block in the API request
+type CodeConfigurationAPI struct {
+	Runtime              string   `json:"runtime"`
+	EntryPoint           []string `json:"entry_point"`
+	DependencyResolution string   `json:"dependency_resolution,omitempty"`
 }
 
-// ImageBasedHostedAgentDefinition represents an image-based hosted agent
-type ImageBasedHostedAgentDefinition struct {
-	HostedAgentDefinition
-	Image string `json:"image"`
+// HostedAgentDefinition represents a hosted agent that can be either container-based
+// (with Image) or code-based (with CodeConfiguration). The protocol versions JSON
+// field name differs: container uses "container_protocol_versions" while code uses
+// "protocol_versions". Custom marshaling handles this automatically.
+type HostedAgentDefinition struct {
+	AgentDefinition
+	ProtocolVersions     []ProtocolVersionRecord `json:"-"` // marshaled dynamically based on deploy mode
+	CPU                  string                  `json:"cpu"`
+	Memory               string                  `json:"memory"`
+	EnvironmentVariables map[string]string       `json:"environment_variables,omitempty"`
+	Image                string                  `json:"image,omitempty"`              // container deploy only
+	CodeConfiguration    *CodeConfigurationAPI   `json:"code_configuration,omitempty"` // code deploy only
+}
+
+// MarshalJSON implements custom JSON marshaling for HostedAgentDefinition.
+// Code deploy agents use "protocol_versions"; container agents use "container_protocol_versions".
+func (d HostedAgentDefinition) MarshalJSON() ([]byte, error) {
+	type Alias HostedAgentDefinition
+
+	if d.CodeConfiguration != nil {
+		// Code deploy: use protocol_versions
+		return json.Marshal(struct {
+			Alias
+			ProtocolVersions []ProtocolVersionRecord `json:"protocol_versions"`
+		}{
+			Alias:            Alias(d),
+			ProtocolVersions: d.ProtocolVersions,
+		})
+	}
+
+	// Container deploy: use container_protocol_versions
+	return json.Marshal(struct {
+		Alias
+		ContainerProtocolVersions []ProtocolVersionRecord `json:"container_protocol_versions"`
+	}{
+		Alias:                     Alias(d),
+		ContainerProtocolVersions: d.ProtocolVersions,
+	})
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for HostedAgentDefinition.
+// It reads protocol versions from either "protocol_versions" or "container_protocol_versions".
+func (d *HostedAgentDefinition) UnmarshalJSON(data []byte) error {
+	type Alias HostedAgentDefinition
+
+	var raw struct {
+		Alias
+		ProtocolVersions          []ProtocolVersionRecord `json:"protocol_versions"`
+		ContainerProtocolVersions []ProtocolVersionRecord `json:"container_protocol_versions"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	*d = HostedAgentDefinition(raw.Alias)
+	if len(raw.ProtocolVersions) > 0 {
+		d.ProtocolVersions = raw.ProtocolVersions
+	} else {
+		d.ProtocolVersions = raw.ContainerProtocolVersions
+	}
+	return nil
 }
 
 // CreateAgentVersionRequest represents a request to create an agent version
@@ -178,10 +233,19 @@ type AgentVersionObject struct {
 	CreatedAt          int64               `json:"created_at"`
 	Definition         any                 `json:"definition"` // Can be any of the agent definition types
 	Status             string              `json:"status,omitempty"`
+	Error              *AgentVersionError  `json:"error,omitempty"`
 	InstanceIdentity   *AgentIdentityInfo  `json:"instance_identity,omitempty"`
 	Blueprint          *BlueprintInfo      `json:"blueprint,omitempty"`
 	BlueprintReference *BlueprintReference `json:"blueprint_reference,omitempty"`
 	AgentGUID          string              `json:"agent_guid,omitempty"`
+	// RequestID is populated from the x-request-id response header (not from JSON).
+	RequestID string `json:"-"`
+}
+
+// AgentVersionError represents an error returned by the service for a failed agent version.
+type AgentVersionError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 // AgentObject represents an agent

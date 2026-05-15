@@ -9,10 +9,10 @@ This document outlines a **focused** extension (`azure.ai.models`) that handles 
 | Command | Status | Description |
 |---------|--------|-------------|
 | `azd ai models init` | ✅ Implemented | Initialize project, environment, and Azure context |
-| `azd ai models custom create` | ✅ Implemented | Upload (via AzCopy) + register model |
-| `azd ai models custom list` | ✅ Implemented | List all custom models |
-| `azd ai models custom show` | ✅ Implemented | Show model details |
-| `azd ai models custom delete` | ✅ Implemented | Delete model with confirmation |
+| `azd ai models create` | ✅ Implemented | Upload (via AzCopy) + register model |
+| `azd ai models list` | ✅ Implemented | List all custom models |
+| `azd ai models show` | ✅ Implemented | Show model details |
+| `azd ai models delete` | ✅ Implemented | Delete model with confirmation |
 
 ## Command Structure
 
@@ -24,8 +24,8 @@ azd ai models <entity> <action> [options]
 
 | Entity Keyword | Entity | Example |
 |----------------|--------|--------|
-| `custom` | Custom Model | `azd ai models custom create` |
-| `custom deployments` | Custom Model Deployment | `azd ai models custom deployments create` |
+| `custom` | Custom Model | `azd ai models create` |
+| `custom deployments` | Custom Model Deployment | `azd ai models deployments create` |
 | `base` | Base Model | `azd ai models base list` |
 | `base deployments` | Base Model Deployment | `azd ai models base deployments create` |
 
@@ -36,10 +36,10 @@ azd ai models <entity> <action> [options]
 | In Scope (Phase 1) — ✅ Implemented | Out of Scope (Future Phases) |
 |----------|--------------|
 | `azd ai models init` | Custom Model Deployments (Phase 2) |
-| `azd ai models custom create` | Base Models (Phase 3) |
-| `azd ai models custom list` | Base Model Deployments (Phase 4) |
-| `azd ai models custom show` | |
-| `azd ai models custom delete` | |
+| `azd ai models create` | Base Models (Phase 3) |
+| `azd ai models list` | Base Model Deployments (Phase 4) |
+| `azd ai models show` | |
+| `azd ai models delete` | |
 
 ## Entities & Operations
 
@@ -92,10 +92,10 @@ User-uploaded model weights registered in FDP custom registry.
 
 | Operation | Supported | Command | Description |
 |-----------|:---------:|---------|-------------|
-| **Create** | ✅ | `azd ai models custom create` | Upload weights + register model |
-| **List** | ✅ | `azd ai models custom list` | List all custom models |
-| **Show** | ✅ | `azd ai models custom show` | View model details |
-| **Delete** | ✅ | `azd ai models custom delete` | Remove model and weights |
+| **Create** | ✅ | `azd ai models create` | Upload weights + register model |
+| **List** | ✅ | `azd ai models list` | List all custom models |
+| **Show** | ✅ | `azd ai models show` | View model details |
+| **Delete** | ✅ | `azd ai models delete` | Remove model and weights |
 
 #### 2. Custom Model Deployment
 
@@ -103,10 +103,10 @@ Deployed instance of a custom model for inference.
 
 | Operation | Supported | Command | Description |
 |-----------|:---------:|---------|-------------|
-| **Deploy** | ✅ | `azd ai models custom deployments create` | Deploy custom model |
-| **List** | ✅ | `azd ai models custom deployments list` | List deployments |
-| **Show** | ✅ | `azd ai models custom deployments show` | View deployment details |
-| **Delete** | ✅ | `azd ai models custom deployments delete` | Remove deployment |
+| **Deploy** | ✅ | `azd ai models deployments create` | Deploy custom model |
+| **List** | ✅ | `azd ai models deployments list` | List deployments |
+| **Show** | ✅ | `azd ai models deployments show` | View deployment details |
+| **Delete** | ✅ | `azd ai models deployments delete` | Remove deployment |
 
 #### 3. Base Model
 
@@ -162,8 +162,8 @@ Deployed instance of a base model for inference.
 │   │   │              │    │              │   │      │ │              │ │   │
 │   │   └──────────────┘    └──────────────┘   │      │ └──────────────┘ │   │
 │   │                                          │      │                  │   │
-│   │   azd ai models custom create            │      │ azd ai models    │   │
-│   │   azd ai models custom list              │      │ custom deployments│   │
+│   │   azd ai models create            │      │ azd ai models    │   │
+│   │   azd ai models list              │      │ custom deployments│   │
 │   │                                          │      │ create           │   │
 │   └──────────────────────────────────────────┘      └──────────────────┘   │
 │                                                                             │
@@ -286,28 +286,28 @@ SUCCESS: AI models project initialized!
   Resource Group: rg-myproject
 
 You can now use commands like:
-  azd ai models custom list
-  azd ai models custom create --name <model-name> --model <path>
+  azd ai models list
+  azd ai models create --name <model-name> --model <path>
 ```
 
 ### Write Operations
 
 ```bash
 # Upload weights AND register model in one step
-azd ai models custom create --name <model-name> --source <local-path-or-url> [options]
+azd ai models create --name <model-name> --source <local-path-or-url> [options]
 
 # Delete a custom model
-azd ai models custom delete --name <model-name> [--force]
+azd ai models delete --name <model-name> [--force]
 ```
 
 ### Read Operations
 
 ```bash
 # List all custom models in the registry
-azd ai models custom list [--output table|json]
+azd ai models list [--output table|json]
 
 # Show details of a specific custom model
-azd ai models custom show --name <model-name> [--output table|json]
+azd ai models show --name <model-name> [--output table|json]
 ```
 
 ## Command Details
@@ -317,7 +317,7 @@ azd ai models custom show --name <model-name> [--output table|json]
 Combines the upload and register steps into a single user-friendly command.
 
 ```bash
-azd ai models custom create --name my-model --source ./model-weights/ --base-model FW-DeepSeek-v3.1
+azd ai models create --name my-model --source ./model-weights/ --base-model FW-DeepSeek-v3.1
 ```
 
 **Workflow:**
@@ -348,12 +348,12 @@ are interpreted by the shell. Use `--source-file` to provide a file containing t
 
 ```bash
 echo "https://account.blob.core.windows.net/container/path?sv=...&sig=..." > source_url.txt
-azd ai models custom create --name my-model --source-file source_url.txt
+azd ai models create --name my-model --source-file source_url.txt
 ```
 
 **Output:**
 ```
-$ azd ai models custom create --name my-model --source ./model-weights/ --base-model FW-DeepSeek-v3.1
+$ azd ai models create --name my-model --source ./model-weights/ --base-model FW-DeepSeek-v3.1
 
   Using azcopy: C:\Users\user\.azd\bin\azcopy.exe
 
@@ -382,12 +382,12 @@ Step 2/3: Uploading model files...
 ### `list` - List Custom Models
 
 ```bash
-azd ai models custom list [--output table|json]
+azd ai models list [--output table|json]
 ```
 
 **Output (table):**
 ```
-$ azd ai models custom list
+$ azd ai models list
 
 NAME             VERSION    CREATED                  CREATED BY
 my-model         1          2026-02-14T10:30:00Z     user@contoso.com
@@ -398,13 +398,13 @@ test-model       1          2026-02-13T08:15:00Z     user@contoso.com
 
 **Output (json):**
 ```bash
-azd ai models custom list --output json
+azd ai models list --output json
 ```
 
 ### `show` - Show Custom Model Details
 
 ```bash
-azd ai models custom show --name my-model [--version 1] [--output table|json]
+azd ai models show --name my-model [--version 1] [--output table|json]
 ```
 
 **Flags:**
@@ -417,7 +417,7 @@ azd ai models custom show --name my-model [--version 1] [--output table|json]
 
 **Output:**
 ```
-$ azd ai models custom show --name my-model
+$ azd ai models show --name my-model
 
 Custom Model: my-model
 ──────────────────────────────────────────────────
@@ -451,12 +451,12 @@ To deploy this model, use Azure CLI:
 ### `delete` - Delete Custom Model
 
 ```bash
-azd ai models custom delete --name my-model [--version 1] [--force]
+azd ai models delete --name my-model [--version 1] [--force]
 ```
 
 **Output:**
 ```
-$ azd ai models custom delete --name my-model
+$ azd ai models delete --name my-model
 
 Delete custom model 'my-model' (version 1)? This action cannot be undone.
 Type the model name to confirm: my-model
@@ -593,7 +593,7 @@ Speed: 142 MB/s | Elapsed: 2m 45s | ETA: 5m 20s
 #### Interruption Handling
 
 ```
-$ azd ai models custom create --source ./large-model.bin --name my-model
+$ azd ai models create --source ./large-model.bin --name my-model
 
 Uploading model: large-model.bin (120 GB)
 ━━━━━━━━━━━━━━━━━ 28% (33.6 GB / 120 GB)
@@ -604,7 +604,7 @@ Speed: 98 MB/s | Elapsed: 5m 42s | ETA: 14m 38s
 Upload interrupted at 28% (33.6 GB uploaded).
 
 To resume, run the same command again:
-  azd ai models custom create --source ./large-model.bin --name my-model
+  azd ai models create --source ./large-model.bin --name my-model
 
 Note: A new SAS token will be obtained, but AzCopy will attempt to resume 
 from where it left off using its journal files.
@@ -669,7 +669,7 @@ Keep the upload in foreground but **keep user engaged** with:
 
 **Initial Warning:**
 ```
-$ azd ai models custom create --source ./llama-70b.safetensors --name my-llama
+$ azd ai models create --source ./llama-70b.safetensors --name my-llama
 
 ⚠️  Large file detected: 68.5 GB
     Estimated upload time: 8-15 minutes (depending on network speed)
@@ -723,7 +723,7 @@ Model Details:
 - Previous partial/orphaned uploads are cleaned up by FDP service (TTL-based)
 
 ```
-$ azd ai models custom create --source ./llama-70b.safetensors --name my-llama
+$ azd ai models create --source ./llama-70b.safetensors --name my-llama
 
 ⚠️  Previous upload may exist but was not registered.
     Starting fresh upload...
@@ -863,10 +863,10 @@ Implementation follows a **phased approach** across 4 phases, with each phase fo
 
 **Commands Delivered:**
 - `azd ai models init`
-- `azd ai models custom create`
-- `azd ai models custom list`
-- `azd ai models custom show`
-- `azd ai models custom delete`
+- `azd ai models create`
+- `azd ai models list`
+- `azd ai models show`
+- `azd ai models delete`
 
 ---
 
@@ -883,10 +883,10 @@ Implementation follows a **phased approach** across 4 phases, with each phase fo
 | **2.3 Delete** | Delete deployment | 🔲 |
 
 **Commands Delivered:**
-- `azd ai models custom deployments create`
-- `azd ai models custom deployments list`
-- `azd ai models custom deployments show`
-- `azd ai models custom deployments delete`
+- `azd ai models deployments create`
+- `azd ai models deployments list`
+- `azd ai models deployments show`
+- `azd ai models deployments delete`
 
 > **Note:** Until Phase 2, users can deploy custom models using Azure CLI: `az cognitiveservices account deployment create`
 
@@ -1000,7 +1000,7 @@ az cognitiveservices account deployment delete \
 
 ```bash
 # Step 1: Upload and register custom model (this extension)
-azd ai models custom create --source ./my-model.safetensors --name my-custom-llama
+azd ai models create --source ./my-model.safetensors --name my-custom-llama
 
 # Step 2: Deploy the model (Azure CLI)
 az cognitiveservices account deployment create \

@@ -74,6 +74,7 @@ type InitAction struct {
 
 	deploymentDetails   []project.Deployment
 	containerSettings   *project.ContainerSettings
+	isCodeDeploy        bool // true when user selects code deploy mode; skips ACR config
 	httpClient          *http.Client
 	serviceNameOverride string // when set, addToProject uses this instead of the manifest name
 }
@@ -570,6 +571,37 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("downloading agent.yaml: %w", err)
 		}
 
+		// Prompt for deploy mode (code vs container) for hosted agents.
+		// Code deploy is supported for Python and .NET projects.
+		if _, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
+			showCodeDeploy := isPythonProject(targetDir) || isDotnetProject(targetDir)
+			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy)
+			if err != nil {
+				return fmt.Errorf("prompting for deploy mode: %w", err)
+			}
+			a.isCodeDeploy = (deployMode == "code")
+
+			if a.isCodeDeploy {
+				// Prompt for code configuration and update the manifest
+				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt)
+				if err != nil {
+					return fmt.Errorf("prompting for code configuration: %w", err)
+				}
+
+				hostedAgent := agentManifest.Template.(agent_yaml.ContainerAgent)
+				hostedAgent.CodeConfiguration = codeConfig
+				agentManifest.Template = hostedAgent
+			} else {
+				// Container mode: ensure any pre-existing code_configuration is removed
+				// (e.g. when switching from code deploy back to container)
+				hostedAgent := agentManifest.Template.(agent_yaml.ContainerAgent)
+				if hostedAgent.CodeConfiguration != nil {
+					hostedAgent.CodeConfiguration = nil
+					agentManifest.Template = hostedAgent
+				}
+			}
+		}
+
 		// Model configuration: prompt user for "use existing" vs "deploy new"
 		agentManifest, err = a.configureModelChoice(ctx, agentManifest)
 		if err != nil {
@@ -792,6 +824,7 @@ func (a *InitAction) configureModelChoice(
 			selectedProject, err := selectFoundryProject(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
+				a.isCodeDeploy,
 			)
 			if err != nil {
 				return nil, err
@@ -840,6 +873,7 @@ func (a *InitAction) configureModelChoice(
 				selectedProject, err := selectFoundryProject(
 					ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 					a.azureContext.Scope.SubscriptionId, "",
+					a.isCodeDeploy,
 				)
 				if err != nil {
 					return nil, err
@@ -932,6 +966,7 @@ func (a *InitAction) configureModelChoice(
 		selectedProject, err := selectFoundryProject(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
+			a.isCodeDeploy,
 		)
 		if err != nil {
 			return nil, err
@@ -1453,6 +1488,16 @@ func writeAgentDefinitionFile(targetDir string, agentManifest *agent_yaml.AgentM
 }
 
 func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest) error {
+	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
+	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.
+	if targetDir == "." {
+		if cwd, err := os.Getwd(); err == nil && a.projectConfig != nil && a.projectConfig.Path != "" {
+			if relPath, err := filepath.Rel(a.projectConfig.Path, cwd); err == nil && relPath != "." {
+				targetDir = filepath.ToSlash(relPath)
+			}
+		}
+	}
+
 	// Convert the template to bytes
 	templateBytes, err := json.Marshal(agentManifest.Template)
 	if err != nil {
@@ -1558,11 +1603,16 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	}
 
 	// Detect startup command from the project source directory
-	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
-	if err != nil {
-		return err
+	if a.isCodeDeploy {
+		// For code deploy, auto-derive startupCommand from entry point in agent.yaml
+		agentConfig.StartupCommand = deriveStartupCommand(a.projectConfig.Path, targetDir)
+	} else {
+		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
+		if err != nil {
+			return err
+		}
+		agentConfig.StartupCommand = startupCmd
 	}
-	agentConfig.StartupCommand = startupCmd
 
 	var agentConfigStruct *structpb.Struct
 	if agentConfigStruct, err = project.MarshalStruct(&agentConfig); err != nil {
@@ -1577,10 +1627,20 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		Config:       agentConfigStruct,
 	}
 
-	// For hosted (container-based) agents, set remoteBuild to true by default
+	// For hosted agents, configure Docker or code deploy settings
 	if agentDef.Kind == agent_yaml.AgentKindHosted {
-		serviceConfig.Docker = &azdext.DockerProjectOptions{
-			RemoteBuild: true,
+		if a.isCodeDeploy {
+			serviceConfig.Language = "python"
+			// If the agent uses a dotnet runtime, set language to csharp
+			if ca, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok &&
+				ca.CodeConfiguration != nil &&
+				strings.HasPrefix(ca.CodeConfiguration.Runtime, "dotnet_") {
+				serviceConfig.Language = "csharp"
+			}
+		} else {
+			serviceConfig.Docker = &azdext.DockerProjectOptions{
+				RemoteBuild: true,
+			}
 		}
 	}
 
@@ -1837,7 +1897,7 @@ func (a *InitAction) populateContainerSettings(
 
 	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message:       "Select container resource allocation (CPU and Memory) for your agent. You can adjust these settings later in the azure.yaml file if needed.",
+			Message:       "Select resources (CPU and Memory) for your agent. You can adjust these settings later in the azure.yaml file if needed.",
 			Choices:       choices,
 			SelectedIndex: &defaultIndex,
 		},

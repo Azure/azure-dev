@@ -160,6 +160,8 @@ func azCLI() *ToolDefinition {
 				PackageId:      "azure-cli",
 			},
 			"linux": {
+				PackageManager: "apt",
+				PackageId:      "azure-cli",
 				InstallCommand: "curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash",
 				FallbackUrl:    "https://learn.microsoft.com/cli/azure/install-azure-cli",
 			},

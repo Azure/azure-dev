@@ -978,8 +978,18 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(func(
 		configManager config.UserConfigManager,
 		detector tool.Detector,
+		commandRunner exec.CommandRunner,
 	) *tool.UpdateChecker {
-		return tool.NewUpdateChecker(configManager, detector, config.GetUserConfigDir)
+		providers := tool.SelectVersionProviders(
+			tool.BuiltInTools(),
+			commandRunner,
+			tryNewRegistryCacheManager(),
+			http.DefaultClient,
+		)
+		return tool.NewUpdateChecker(
+			configManager, detector,
+			config.GetUserConfigDir, providers,
+		)
 	})
 	container.MustRegisterSingleton(func(
 		detector tool.Detector,
@@ -1091,4 +1101,18 @@ func (r *lazyEnvironmentResolver) Getenv(key string) string {
 		return ""
 	}
 	return env.Getenv(key)
+}
+
+// tryNewRegistryCacheManager attempts to create an extension registry
+// cache manager, returning nil on failure. This avoids blocking the
+// UpdateChecker when the extension registry is unavailable.
+func tryNewRegistryCacheManager() *extensions.RegistryCacheManager {
+	mgr, err := extensions.NewRegistryCacheManager()
+	if err != nil {
+		log.Printf(
+			"tool: skipping extension registry provider: %v", err,
+		)
+		return nil
+	}
+	return mgr
 }

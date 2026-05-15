@@ -4,8 +4,12 @@
 package agent_api
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"testing"
@@ -286,4 +290,105 @@ func TestPatchAgent_OmitsNilFields(t *testing.T) {
 	require.Contains(t, s, `"agent_endpoint"`)
 	require.NotContains(t, s, `"agent_card"`)
 	require.NotContains(t, s, `"definition"`)
+}
+
+// capturingTransport captures the last HTTP request and returns a canned JSON response.
+type capturingTransport struct {
+	lastReq    *http.Request
+	lastBody   []byte
+	statusCode int
+	respBody   string
+}
+
+func (c *capturingTransport) Do(req *http.Request) (*http.Response, error) {
+	c.lastReq = req
+	if req.Body != nil {
+		body, _ := io.ReadAll(req.Body)
+		c.lastBody = body
+		_ = req.Body.Close()
+	}
+	return &http.Response{
+		StatusCode: c.statusCode,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(c.respBody)),
+		Request:    req,
+	}, nil
+}
+
+func TestZipDeployRequest_MultipartFormat(t *testing.T) {
+	agentResp := `{"name":"test-agent","versions":{"latest":{"version":"1","status":"active"}}}`
+	transport := &capturingTransport{statusCode: http.StatusCreated, respBody: agentResp}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	desc := "test desc"
+	metadata := &CreateAgentVersionRequest{
+		Description: &desc,
+	}
+	zipData := []byte("PK\x03\x04fake-zip-content")
+	sha256Hex := "abcdef1234567890"
+
+	_, err := client.zipDeployRequest(
+		context.Background(),
+		"https://test.example.com/api/projects/proj/agents",
+		"test-agent",
+		metadata,
+		zipData,
+		sha256Hex,
+	)
+	require.NoError(t, err)
+
+	// Verify required headers
+	require.Equal(t, "CodeAgents=V1Preview,HostedAgents=V1Preview", transport.lastReq.Header.Get("Foundry-Features"))
+	require.Equal(t, sha256Hex, transport.lastReq.Header.Get("x-ms-code-zip-sha256"))
+	require.Equal(t, "test-agent", transport.lastReq.Header.Get("x-ms-agent-name"))
+
+	// Verify multipart content type with boundary
+	contentType := transport.lastReq.Header.Get("Content-Type")
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	require.NoError(t, err)
+	require.Equal(t, "multipart/form-data", mediaType)
+	require.NotEmpty(t, params["boundary"])
+
+	// Parse multipart body and verify parts
+	reader := multipart.NewReader(bytes.NewReader(transport.lastBody), params["boundary"])
+
+	// Part 1: metadata
+	part1, err := reader.NextPart()
+	require.NoError(t, err)
+	require.Equal(t, "metadata", part1.FormName())
+	require.Equal(t, "application/json", part1.Header.Get("Content-Type"))
+	part1Data, _ := io.ReadAll(part1)
+	var parsedMeta map[string]any
+	require.NoError(t, json.Unmarshal(part1Data, &parsedMeta))
+	require.Equal(t, "test desc", parsedMeta["description"])
+
+	// Part 2: code ZIP
+	part2, err := reader.NextPart()
+	require.NoError(t, err)
+	require.Equal(t, "code", part2.FormName())
+	require.Equal(t, "agent.zip", part2.FileName())
+	part2Data, _ := io.ReadAll(part2)
+	require.Equal(t, zipData, part2Data)
+}
+
+func TestZipDeployRequest_NoAgentNameHeader_OnUpdate(t *testing.T) {
+	agentResp := `{"name":"test-agent","versions":{"latest":{"version":"2","status":"active"}}}`
+	transport := &capturingTransport{statusCode: http.StatusOK, respBody: agentResp}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	_, err := client.zipDeployRequest(
+		context.Background(),
+		"https://test.example.com/api/projects/proj/agents/test-agent",
+		"", // empty = update, no x-ms-agent-name header
+		&CreateAgentVersionRequest{},
+		[]byte("zip"),
+		"sha",
+	)
+	require.NoError(t, err)
+
+	// x-ms-agent-name should NOT be set for updates
+	require.Empty(t, transport.lastReq.Header.Get("x-ms-agent-name"))
+	// But other required headers should still be present
+	require.Equal(t, "CodeAgents=V1Preview,HostedAgents=V1Preview", transport.lastReq.Header.Get("Foundry-Features"))
+	require.Equal(t, "sha", transport.lastReq.Header.Get("x-ms-code-zip-sha256"))
 }

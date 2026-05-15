@@ -23,15 +23,20 @@ import (
 )
 
 type customCreateFlags struct {
-	Name        string
-	Version     string
-	Source      string
-	SourceFile  string
-	Description string
-	BaseModel   string
-	Publisher   string
-	AzcopyPath  string
-	NoWait      bool
+	Name              string
+	Version           string
+	Source            string
+	SourceFile        string
+	Description       string
+	BaseModel         string
+	WeightType        string
+	Publisher         string
+	AzcopyPath        string
+	NoWait            bool
+	LoRARank          int
+	LoRAAlpha         int
+	LoRATargetModules string
+	LoRADropout       float64
 }
 
 func newCustomCreateCommand(parentFlags *customFlags) *cobra.Command {
@@ -76,7 +81,7 @@ provide a file containing the URL instead.`,
 				return fmt.Errorf("either --source or --source-file is required")
 			}
 
-			return runCustomCreate(ctx, parentFlags, flags)
+			return runCustomCreate(ctx, cmd, parentFlags, flags)
 		},
 	}
 
@@ -86,9 +91,15 @@ provide a file containing the URL instead.`,
 	cmd.Flags().StringVar(&flags.Version, "version", "1", "Model version")
 	cmd.Flags().StringVar(&flags.Description, "description", "", "Model description")
 	cmd.Flags().StringVar(&flags.BaseModel, "base-model", "", "Base model identifier (e.g., FW-GPT-OSS-120B or full azureml:// URI)")
-	cmd.Flags().StringVar(&flags.Publisher, "publisher", "Fireworks", "Model publisher ID for catalog info")
+	cmd.Flags().StringVar(&flags.WeightType, "weight-type", "FullWeight", "Weight type (e.g., FullWeight, LoRA)")
+	cmd.Flags().StringVar(&flags.Publisher, "publisher", "", "Model publisher ID for catalog info (e.g., Fireworks)")
 	cmd.Flags().StringVar(&flags.AzcopyPath, "azcopy-path", "", "Path to azcopy binary (auto-detected if not provided)")
 	cmd.Flags().BoolVar(&flags.NoWait, "no-wait", false, "Start async registration and return immediately with the operation URL")
+	cmd.Flags().IntVar(&flags.LoRARank, "lora-rank", 0, "LoRA rank (r) — required when --weight-type is LoRA")
+	cmd.Flags().IntVar(&flags.LoRAAlpha, "lora-alpha", 0, "LoRA scaling factor (alpha) — required when --weight-type is LoRA")
+	cmd.Flags().StringVar(&flags.LoRATargetModules, "lora-target-modules", "",
+		"Comma-separated list of target modules (e.g., \"q_proj,v_proj,k_proj,o_proj\")")
+	cmd.Flags().Float64Var(&flags.LoRADropout, "lora-dropout", 0, "LoRA dropout rate used during training (informational)")
 
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("base-model")
@@ -96,7 +107,7 @@ provide a file containing the URL instead.`,
 	return cmd
 }
 
-func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *customCreateFlags) error {
+func runCustomCreate(ctx context.Context, cmd *cobra.Command, parentFlags *customFlags, flags *customCreateFlags) error {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return fmt.Errorf("failed to create azd client: %w", err)
@@ -130,6 +141,19 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 		return err
 	}
 
+	// Validate LoRA flags early, before any uploads
+	var loraConfig *models.LoRAConfig
+	if strings.EqualFold(flags.WeightType, "LoRA") {
+		var err error
+		loraConfig, err = buildLoRAConfig(cmd, flags)
+		if err != nil {
+			return err
+		}
+	} else if cmd.Flags().Changed("lora-rank") || cmd.Flags().Changed("lora-alpha") ||
+		cmd.Flags().Changed("lora-target-modules") || cmd.Flags().Changed("lora-dropout") {
+		return fmt.Errorf("--lora-* flags are only valid when --weight-type is LoRA")
+	}
+
 	// ── Step 1: Start pending upload ──
 	fmt.Printf("Creating custom model: %s (version %s)\n\n", flags.Name, flags.Version)
 
@@ -145,17 +169,18 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 	fmt.Println()
 
 	if err != nil {
-		if strings.Contains(err.Error(), "409") || strings.Contains(err.Error(), "already exists") {
+		var apiErr *client.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == 409 {
 			fmt.Println()
 			color.Red("✗ Model '%s' version '%s' already exists.", flags.Name, flags.Version)
 			fmt.Println()
 			color.Yellow("To fetch the latest version, use show without --version:")
-			fmt.Printf("  azd ai models custom show --name %s\n\n", flags.Name)
+			fmt.Printf("  azd ai models show --name %s\n\n", flags.Name)
 			color.Yellow("Then create with a new version:")
-			fmt.Printf("  azd ai models custom create --name %s --version <next-version> ...\n", flags.Name)
+			fmt.Printf("  azd ai models create --name %s --version <next-version> ...\n", flags.Name)
 			return fmt.Errorf("model version already exists")
 		}
-		if strings.Contains(err.Error(), "403") {
+		if errors.As(err, &apiErr) && apiErr.StatusCode == 403 {
 			fmt.Println()
 			color.Red("✗ Permission denied: you do not have the required role to upload custom models.")
 			fmt.Println()
@@ -213,20 +238,33 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 		fmt.Printf("failed to start spinner: %v\n", err)
 	}
 
-	derivedURI := buildDerivedModelURI(flags.BaseModel)
 	regReq := &models.RegisterModelRequest{
 		BlobURI:     blob.BlobURI,
+		WeightType:  flags.WeightType,
 		Description: flags.Description,
-		CatalogInfo: &models.CatalogInfo{
-			PublisherID: flags.Publisher,
-		},
-		DerivedModelInformation: &models.DerivedModelInformation{
-			BaseModel: &derivedURI,
-		},
 	}
 
-	regReq.Tags = map[string]string{
-		"baseArchitecture": extractBaseModelName(flags.BaseModel),
+	if flags.BaseModel != "" {
+		derivedURI := buildDerivedModelURI(flags.BaseModel)
+		regReq.DerivedModelInformation = &models.DerivedModelInformation{
+			BaseModel: &derivedURI,
+		}
+		regReq.Tags = map[string]string{
+			"baseArchitecture": extractBaseModelName(flags.BaseModel),
+		}
+	} else {
+		regReq.Tags = map[string]string{}
+	}
+
+	if flags.Publisher != "" {
+		regReq.CatalogInfo = &models.CatalogInfo{
+			PublisherID: flags.Publisher,
+		}
+	}
+
+	// Attach pre-validated LoRA config
+	if loraConfig != nil {
+		regReq.LoRAConfig = loraConfig
 	}
 
 	operationURL, err := foundryClient.RegisterModelAsync(ctx, flags.Name, flags.Version, regReq)
@@ -323,4 +361,36 @@ func extractVersionFromURI(uri string) string {
 		}
 	}
 	return ""
+}
+
+// buildLoRAConfig validates LoRA flags and builds a LoRAConfig for the registration request.
+func buildLoRAConfig(cmd *cobra.Command, flags *customCreateFlags) (*models.LoRAConfig, error) {
+	if flags.LoRARank <= 0 {
+		return nil, fmt.Errorf("--lora-rank is required and must be a positive integer when --weight-type is LoRA")
+	}
+	if flags.LoRAAlpha <= 0 {
+		return nil, fmt.Errorf("--lora-alpha is required and must be a positive integer when --weight-type is LoRA")
+	}
+
+	config := &models.LoRAConfig{
+		Rank:  new(flags.LoRARank),
+		Alpha: new(flags.LoRAAlpha),
+	}
+
+	if flags.LoRATargetModules != "" {
+		modules := strings.Split(flags.LoRATargetModules, ",")
+		for i := range modules {
+			modules[i] = strings.TrimSpace(modules[i])
+			if modules[i] == "" {
+				return nil, fmt.Errorf("--lora-target-modules contains an empty entry")
+			}
+		}
+		config.TargetModules = modules
+	}
+
+	if cmd.Flags().Changed("lora-dropout") {
+		config.Dropout = new(flags.LoRADropout)
+	}
+
+	return config, nil
 }

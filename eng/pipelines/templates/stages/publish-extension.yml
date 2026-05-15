@@ -1,4 +1,8 @@
 parameters:
+  - name: AzdExtensionId
+    type: string
+  - name: AzdExtensionDirectory
+    type: string
   - name: SanitizedExtensionId
     type: string
 
@@ -69,3 +73,67 @@ stages:
                     PublishUploadLocations: $(StorageUploadLocations)
                     TagPrefix: azd-ext-${{ parameters.SanitizedExtensionId }}
                     TagVersion: $(EXT_VERSION)
+
+      # Updates cli/azd/extensions/registry.json (and snapshots) after the
+      # GitHub Release exists. Mirrors Increment_Version in
+      # eng/pipelines/templates/stages/publish.yml.
+      - job: Update_Registry
+        dependsOn: Publish_Release
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.RegistryUpdate'])
+          )
+
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+
+        steps:
+          - checkout: self
+
+          - template: /eng/pipelines/templates/steps/extension-set-metadata-variables.yml
+
+          - template: /eng/pipelines/templates/steps/setup-go.yml
+
+          - bash: |
+              set -euo pipefail
+              curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --verbose
+              azd version
+            displayName: Install azd
+
+          - bash: |
+              set -euo pipefail
+              azd ext install microsoft.azd.extensions --source azd
+            displayName: Install microsoft.azd.extensions
+
+          - bash: |
+              set -euo pipefail
+              cd "${{ parameters.AzdExtensionDirectory }}"
+              azd x publish \
+                --registry ../registry.json \
+                --repo "$(Build.Repository.Name)" \
+                --version "$(EXT_VERSION)"
+            displayName: Update registry.json (azd x publish)
+            env:
+              GH_TOKEN: $(azuresdk-github-pat)
+
+          - bash: |
+              set -euo pipefail
+              cd cli/azd
+              go build .
+              go test ./cmd -run 'TestFigSpec|TestUsage'
+            displayName: Refresh Fig/Usage snapshots
+            env:
+              UPDATE_SNAPSHOTS: "true"
+
+          - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+            parameters:
+              PRBranchName: ext-registry-update/${{ parameters.SanitizedExtensionId }}/$(EXT_VERSION)-$(Build.BuildId)
+              CommitMsg: "[${{ parameters.AzdExtensionId }}] Registry update for $(EXT_VERSION)"
+              PRTitle: "[${{ parameters.AzdExtensionId }}] Registry update for $(EXT_VERSION)"
+              PRBody: >-
+                Registry update for the
+                [azd-ext-${{ parameters.SanitizedExtensionId }}_$(EXT_VERSION)](https://github.com/$(Build.Repository.Name)/releases/tag/azd-ext-${{ parameters.SanitizedExtensionId }}_$(EXT_VERSION))
+                release.

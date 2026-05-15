@@ -39,6 +39,19 @@ const (
 	// template. Entries with any other (or empty) templateType belong to the
 	// standard awesome-azd gallery and are filtered out.
 	templateTypeExtensionAIAgent = "extension.ai.agent"
+
+	// featuredTag is the extensionTags value that marks a template for the
+	// curated starter list. These templates are shown first; the user can
+	// expand to see the full catalog.
+	featuredTag = "featured"
+
+	// recommendedTag is the extensionTags value that identifies the default
+	// pre-selected template in the featured list.
+	recommendedTag = "recommended"
+
+	// seeAllSentinel is the SelectChoice.Value used for the "See all
+	// templates..." option appended to the featured list.
+	seeAllSentinel = "__see_all__"
 )
 
 // AgentTemplate represents an agent template entry from the remote JSON catalog.
@@ -189,9 +202,25 @@ func fetchAgentTemplatesFromURL(
 	return filtered, nil
 }
 
+// isFeatured reports whether the template carries the "featured" extensionTag,
+// which marks it for the curated starter list.
+func (t *AgentTemplate) isFeatured() bool {
+	return slices.Contains(t.ExtensionTags, featuredTag)
+}
+
+// isRecommended reports whether the template carries the "recommended"
+// extensionTag, which marks it as the default pre-selected template.
+func (t *AgentTemplate) isRecommended() bool {
+	return slices.Contains(t.ExtensionTags, recommendedTag)
+}
+
 // promptAgentTemplate guides the user through language selection and template selection.
 // Returns the selected AgentTemplate. The caller should check EffectiveType() to determine
 // whether to use the agent.yaml manifest flow or the full azd template flow.
+//
+// Templates tagged "featured" are shown first in a curated list. The template
+// tagged "recommended" gets a (Recommended) suffix in the label and is
+// pre-selected. A "See all templates..." option expands to the full catalog.
 func promptAgentTemplate(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -240,37 +269,130 @@ func promptAgentTemplate(
 	selectedLanguage := languageChoices[*langResp.Value].Value
 
 	// Filter templates by selected language (entries can declare multiple).
-	filtered := make([]AgentTemplate, 0, len(templates))
+	langFiltered := make([]AgentTemplate, 0, len(templates))
 	for _, t := range templates {
 		if slices.Contains(t.Languages, selectedLanguage) {
-			filtered = append(filtered, t)
+			langFiltered = append(langFiltered, t)
 		}
 	}
 
-	if len(filtered) == 0 {
-		return nil, fmt.Errorf("no agent templates available for %s", languageChoices[*langResp.Value].Label)
+	if len(langFiltered) == 0 {
+		return nil, fmt.Errorf(
+			"no agent templates available for %s",
+			languageChoices[*langResp.Value].Label,
+		)
 	}
 
-	// Sort templates alphabetically by title
-	slices.SortFunc(filtered, func(a, b AgentTemplate) int {
+	// Partition into featured vs rest.
+	featured, rest := partitionFeatured(langFiltered)
+
+	// When there are both featured and non-featured templates, show the
+	// curated featured list first with a "See all templates…" escape hatch.
+	// When all templates are featured (len(rest) == 0) or none are
+	// (len(featured) == 0), skip the curated step and show the full list
+	// directly — a curated list that equals the full list adds no value.
+	if len(featured) > 0 && len(rest) > 0 {
+		defaultIdx := findRecommendedIndex(featured)
+
+		selected, err := promptSelectTemplate(
+			ctx, azdClient, featured,
+			"Select a starter template", &defaultIdx, true,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if selected != nil {
+			return selected, nil
+		}
+		// User chose "See all templates…" → fall through to full list.
+	}
+
+	// Show the complete catalog (featured + rest, sorted alphabetically).
+	allSorted := slices.Clone(langFiltered)
+	slices.SortFunc(allSorted, func(a, b AgentTemplate) int {
 		return strings.Compare(a.Title, b.Title)
 	})
 
-	// Build template choices with framework in label
-	templateChoices := make([]*azdext.SelectChoice, len(filtered))
-	for i, t := range filtered {
-		label := fmt.Sprintf("%s (%s)", t.Title, t.ExtensionFramework)
-		templateChoices[i] = &azdext.SelectChoice{
-			Label: label,
+	// Pre-select the recommended template in the full list too.
+	recommendedIdx := findRecommendedIndex(allSorted)
+
+	return promptSelectTemplate(
+		ctx, azdClient, allSorted,
+		"Select an agent template", &recommendedIdx, false,
+	)
+}
+
+// partitionFeatured splits templates into featured (tagged "featured") and
+// the rest. Both slices are sorted alphabetically by title.
+func partitionFeatured(templates []AgentTemplate) (featured, rest []AgentTemplate) {
+	for _, t := range templates {
+		if t.isFeatured() {
+			featured = append(featured, t)
+		} else {
+			rest = append(rest, t)
+		}
+	}
+
+	sortByTitle := func(a, b AgentTemplate) int {
+		return strings.Compare(a.Title, b.Title)
+	}
+	slices.SortFunc(featured, sortByTitle)
+	slices.SortFunc(rest, sortByTitle)
+
+	return featured, rest
+}
+
+// findRecommendedIndex returns the index of the recommended default template
+// in the given list. It looks for a template tagged "recommended"; if none
+// is found it returns 0 (first item in the list).
+func findRecommendedIndex(templates []AgentTemplate) int32 {
+	for i, t := range templates {
+		if t.isRecommended() {
+			return int32(i) //nolint:gosec // template list length is always small
+		}
+	}
+	return 0
+}
+
+// promptSelectTemplate presents a select prompt for the given templates.
+// defaultIdx, when non-nil, pre-selects that index in the list.
+// When includeSeeAll is true, a "See all templates…" option is appended;
+// selecting it causes the function to return (nil, nil) so the caller can
+// re-prompt with the full list.
+func promptSelectTemplate(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	templates []AgentTemplate,
+	message string,
+	defaultIdx *int32,
+	includeSeeAll bool,
+) (*AgentTemplate, error) {
+	choices := make([]*azdext.SelectChoice, len(templates))
+	for i, t := range templates {
+		choices[i] = &azdext.SelectChoice{
+			Label: t.Title,
 			Value: fmt.Sprintf("%d", i),
 		}
 	}
 
-	templateResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message: "Select an agent template",
-			Choices: templateChoices,
-		},
+	if includeSeeAll {
+		choices = append(choices, &azdext.SelectChoice{
+			Label: "See all templates...",
+			Value: seeAllSentinel,
+		})
+	}
+
+	opts := &azdext.SelectOptions{
+		Message: message,
+		Choices: choices,
+	}
+	if defaultIdx != nil {
+		opts.SelectedIndex = defaultIdx
+	}
+
+	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: opts,
 	})
 	if err != nil {
 		if exterrors.IsCancellation(err) {
@@ -279,8 +401,12 @@ func promptAgentTemplate(
 		return nil, fmt.Errorf("failed to prompt for template: %w", err)
 	}
 
-	selectedTemplate := filtered[*templateResp.Value]
-	return &selectedTemplate, nil
+	selected := choices[*resp.Value]
+	if selected.Value == seeAllSentinel {
+		return nil, nil
+	}
+
+	return &templates[*resp.Value], nil
 }
 
 // findAgentManifest searches the directory tree rooted at dir for the first

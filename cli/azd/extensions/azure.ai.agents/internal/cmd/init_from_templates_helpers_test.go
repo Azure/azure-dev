@@ -83,6 +83,158 @@ func TestEffectiveType(t *testing.T) {
 	}
 }
 
+func TestIsFeatured(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		tags     []string
+		expected bool
+	}{
+		{name: "tagged featured", tags: []string{"featured", "Responses Protocol"}, expected: true},
+		{name: "not tagged featured", tags: []string{"MCP", "Responses Protocol"}, expected: false},
+		{name: "nil tags", tags: nil, expected: false},
+		{name: "empty tags", tags: []string{}, expected: false},
+		{name: "featured only", tags: []string{"featured"}, expected: true},
+		{name: "example tag is not featured", tags: []string{"example"}, expected: false},
+		{name: "template tag is not featured", tags: []string{"template"}, expected: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tmpl := &AgentTemplate{ExtensionTags: tt.tags}
+			require.Equal(t, tt.expected, tmpl.isFeatured())
+		})
+	}
+}
+
+func TestIsRecommended(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		tags     []string
+		expected bool
+	}{
+		{name: "tagged recommended", tags: []string{"featured", "recommended"}, expected: true},
+		{name: "not tagged recommended", tags: []string{"featured"}, expected: false},
+		{name: "nil tags", tags: nil, expected: false},
+		{name: "empty tags", tags: []string{}, expected: false},
+		{name: "recommended without featured", tags: []string{"recommended"}, expected: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tmpl := &AgentTemplate{ExtensionTags: tt.tags}
+			require.Equal(t, tt.expected, tmpl.isRecommended())
+		})
+	}
+}
+
+func TestPartitionFeatured(t *testing.T) {
+	t.Parallel()
+
+	templates := []AgentTemplate{
+		{Title: "MCP Tools Agent", ExtensionTags: []string{"MCP"}},
+		{Title: "Basic Agent", ExtensionTags: []string{"featured"}},
+		{Title: "Workflow Agent", ExtensionTags: []string{"workflows"}},
+		{Title: "Hello World", ExtensionTags: []string{"featured"}},
+	}
+
+	featured, rest := partitionFeatured(templates)
+
+	require.Len(t, featured, 2)
+	require.Equal(t, "Basic Agent", featured[0].Title)
+	require.Equal(t, "Hello World", featured[1].Title)
+
+	require.Len(t, rest, 2)
+	require.Equal(t, "MCP Tools Agent", rest[0].Title)
+	require.Equal(t, "Workflow Agent", rest[1].Title)
+}
+
+func TestPartitionFeaturedAllFeatured(t *testing.T) {
+	t.Parallel()
+
+	templates := []AgentTemplate{
+		{Title: "B Agent", ExtensionTags: []string{"featured"}},
+		{Title: "A Agent", ExtensionTags: []string{"featured"}},
+	}
+
+	featured, rest := partitionFeatured(templates)
+
+	require.Len(t, featured, 2)
+	require.Equal(t, "A Agent", featured[0].Title)
+	require.Equal(t, "B Agent", featured[1].Title)
+	require.Empty(t, rest)
+}
+
+func TestPartitionFeaturedEmpty(t *testing.T) {
+	t.Parallel()
+
+	featured, rest := partitionFeatured(nil)
+	require.Empty(t, featured)
+	require.Empty(t, rest)
+
+	featured2, rest2 := partitionFeatured([]AgentTemplate{})
+	require.Empty(t, featured2)
+	require.Empty(t, rest2)
+}
+
+func TestPartitionFeaturedNoneFeatured(t *testing.T) {
+	t.Parallel()
+
+	templates := []AgentTemplate{
+		{Title: "MCP Tools Agent", ExtensionTags: []string{"MCP"}},
+		{Title: "Workflow Agent", ExtensionTags: []string{"workflows"}},
+	}
+
+	featured, rest := partitionFeatured(templates)
+
+	require.Empty(t, featured)
+	require.Len(t, rest, 2)
+}
+
+func TestFindRecommendedIndex(t *testing.T) {
+	t.Parallel()
+
+	t.Run("finds recommended tag", func(t *testing.T) {
+		t.Parallel()
+		templates := []AgentTemplate{
+			{Title: "Hello World", ExtensionTags: []string{"featured"}},
+			{Title: "Basic Agent", ExtensionTags: []string{"featured", "recommended"}},
+			{Title: "MCP Agent", ExtensionTags: []string{"featured"}},
+		}
+		require.Equal(t, int32(1), findRecommendedIndex(templates))
+	})
+
+	t.Run("returns first when multiple recommended", func(t *testing.T) {
+		t.Parallel()
+		templates := []AgentTemplate{
+			{Title: "Hello World", ExtensionTags: []string{"featured"}},
+			{Title: "Agent A", ExtensionTags: []string{"featured", "recommended"}},
+			{Title: "Agent B", ExtensionTags: []string{"featured", "recommended"}},
+		}
+		require.Equal(t, int32(1), findRecommendedIndex(templates))
+	})
+
+	t.Run("returns 0 when no recommended tag", func(t *testing.T) {
+		t.Parallel()
+		templates := []AgentTemplate{
+			{Title: "Hello World", ExtensionTags: []string{"featured"}},
+			{Title: "Basic Agent", ExtensionTags: []string{"featured"}},
+		}
+		require.Equal(t, int32(0), findRecommendedIndex(templates))
+	})
+
+	t.Run("returns 0 for empty list", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, int32(0), findRecommendedIndex(nil))
+		require.Equal(t, int32(0), findRecommendedIndex([]AgentTemplate{}))
+	})
+}
+
 func TestFetchAgentTemplates(t *testing.T) {
 	t.Parallel()
 

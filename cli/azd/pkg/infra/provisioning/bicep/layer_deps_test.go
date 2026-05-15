@@ -768,3 +768,121 @@ func TestExtractBicepParamReadEnvRefs_IgnoresComments(t *testing.T) {
 	refs, _ := extractBicepParamReadEnvRefs(content)
 	require.Equal(t, []string{"ACTIVE"}, refs)
 }
+
+// --- Non-Bicep (Terraform/Pulumi) layer support ---
+
+// TestAnalyzeLayerDependencies_TerraformLayers verifies that Terraform layers
+// are skipped by the Bicep-specific output/input analysis (no .bicep files
+// required) and that explicit dependsOn edges are still honored.
+func TestAnalyzeLayerDependencies_TerraformLayers(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create layer directories with NO .bicep files — only Terraform files.
+	backendDir := filepath.Join(dir, "backend")
+	mkTestDir(t, backendDir)
+	writeTestFile(t, filepath.Join(backendDir, "main.tf"), "# terraform backend\n")
+
+	resourcesDir := filepath.Join(dir, "resources")
+	mkTestDir(t, resourcesDir)
+	writeTestFile(t, filepath.Join(resourcesDir, "main.tf"), "# terraform resources\n")
+
+	layers := []provisioning.Options{
+		{
+			Name:     "backend",
+			Path:     "backend",
+			Module:   "main",
+			Provider: provisioning.Terraform,
+		},
+		{
+			Name:      "resources",
+			Path:      "resources",
+			Module:    "main",
+			Provider:  provisioning.Terraform,
+			DependsOn: []string{"backend"},
+		},
+	}
+
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
+	require.NoError(t, err)
+	// backend runs first, resources depends on it via dependsOn.
+	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
+	require.Contains(t, result.Edges[1], 0)
+}
+
+// TestAnalyzeLayerDependencies_TerraformLayersParallel verifies that two
+// independent Terraform layers with no dependsOn run in parallel.
+func TestAnalyzeLayerDependencies_TerraformLayersParallel(t *testing.T) {
+	dir := t.TempDir()
+
+	mkTestDir(t, filepath.Join(dir, "a"))
+	mkTestDir(t, filepath.Join(dir, "b"))
+
+	layers := []provisioning.Options{
+		{Name: "a", Path: "a", Module: "main", Provider: provisioning.Terraform},
+		{Name: "b", Path: "b", Module: "main", Provider: provisioning.Terraform},
+	}
+
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0, 1}}, result.Levels)
+	require.Empty(t, result.Edges)
+}
+
+// TestAnalyzeLayerDependencies_MixedProviders verifies that a project with
+// both Bicep and Terraform layers works: Bicep layers get static analysis,
+// Terraform layers are skipped for output/input scanning, and dependsOn
+// edges connect them correctly.
+func TestAnalyzeLayerDependencies_MixedProviders(t *testing.T) {
+	dir := t.TempDir()
+
+	// Bicep layer 0 — has a .bicep file with outputs.
+	bicepDir := filepath.Join(dir, "networking")
+	mkTestDir(t, bicepDir)
+	writeTestFile(t, filepath.Join(bicepDir, "main.bicep"),
+		"param location string\noutput VNET_ID string = 'id'\n")
+
+	// Terraform layer 1 — no .bicep files, depends on bicep layer.
+	tfDir := filepath.Join(dir, "compute")
+	mkTestDir(t, tfDir)
+	writeTestFile(t, filepath.Join(tfDir, "main.tf"), "# terraform\n")
+
+	layers := []provisioning.Options{
+		{Name: "networking", Path: "networking", Module: "main"},
+		{
+			Name:      "compute",
+			Path:      "compute",
+			Module:    "main",
+			Provider:  provisioning.Terraform,
+			DependsOn: []string{"networking"},
+		},
+	}
+
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
+	require.Contains(t, result.Edges[1], 0)
+}
+
+// TestIsBicepLayer verifies the helper classifies providers correctly.
+func TestIsBicepLayer(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		provider provisioning.ProviderKind
+		expected bool
+	}{
+		{"NotSpecified", provisioning.NotSpecified, true},
+		{"Bicep", provisioning.Bicep, true},
+		{"Terraform", provisioning.Terraform, false},
+		{"Pulumi", provisioning.Pulumi, false},
+		{"Arm", provisioning.Arm, false},
+		{"custom-ext", provisioning.ProviderKind("custom-ext"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := isBicepLayer(provisioning.Options{Provider: tt.provider})
+			require.Equal(t, tt.expected, got)
+		})
+	}
+}

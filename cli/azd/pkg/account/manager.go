@@ -37,6 +37,7 @@ type Manager interface {
 	GetSubscriptions(ctx context.Context) ([]Subscription, error)
 	GetSubscriptionsWithDefaultSet(ctx context.Context) ([]Subscription, error)
 	GetLocations(ctx context.Context, subscriptionId string) ([]Location, error)
+	GetTenantDisplayNames(ctx context.Context) (map[string]string, error)
 	SetDefaultSubscription(ctx context.Context, subscriptionId string) (*Subscription, error)
 	SetDefaultLocation(ctx context.Context, subscriptionId string, location string) (*Location, error)
 }
@@ -138,6 +139,11 @@ func (m *manager) GetSubscriptionsWithDefaultSet(ctx context.Context) ([]Subscri
 // Gets the available Azure subscriptions for the current logged in account, across all tenants the user has access to.
 func (m *manager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
 	return m.subManager.GetSubscriptions(ctx)
+}
+
+// GetTenantDisplayNames returns a map of tenant ID to display name.
+func (m *manager) GetTenantDisplayNames(ctx context.Context) (map[string]string, error) {
+	return m.subManager.GetTenantDisplayNames(ctx)
 }
 
 // Gets the available Azure locations for the specified Azure subscription.

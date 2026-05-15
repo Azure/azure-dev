@@ -17,6 +17,10 @@ const (
 	DefaultCpu    = "0.25"
 )
 
+// CodeDeployRegions lists the regions that currently support code deploy (ZIP upload).
+// TODO: replace with dynamic region discovery API when available.
+var CodeDeployRegions = []string{"westus2", "canadacentral", "northcentralus"}
+
 // ResourceTier defines a preset CPU and memory allocation for container resources.
 type ResourceTier struct {
 	Cpu    string

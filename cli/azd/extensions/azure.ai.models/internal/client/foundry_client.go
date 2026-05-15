@@ -21,9 +21,7 @@ import (
 
 const (
 	DefaultAPIVersion = "2025-11-15-preview"
-	TokenScope        = "https://ai.azure.com/.default"         //nolint:gosec // not credentials, OAuth scope URL
-	ARMTokenScope     = "https://management.azure.com/.default" //nolint:gosec // not credentials, OAuth scope URL
-	MLTokenScope      = "https://ml.azure.com/.default"         //nolint:gosec // not credentials, OAuth scope URL
+	TokenScope        = "https://ai.azure.com/.default" //nolint:gosec // not credentials, OAuth scope URL
 )
 
 // FoundryClient is an HTTP client for Azure AI Foundry project APIs.
@@ -76,9 +74,32 @@ func NewFoundryClient(projectEndpoint string, credential azcore.TokenCredential)
 	}, nil
 }
 
+// listModelsOptions holds optional parameters for ListModels.
+type listModelsOptions struct {
+	sourceJobID string
+}
+
+// ListModelsOption configures the ListModels call.
+type ListModelsOption func(*listModelsOptions)
+
+// WithSourceJobID filters models by the training job that created them.
+func WithSourceJobID(jobID string) ListModelsOption {
+	return func(o *listModelsOptions) {
+		o.sourceJobID = jobID
+	}
+}
+
 // ListModels lists all custom models in the project.
-func (c *FoundryClient) ListModels(ctx context.Context) (*models.ListModelsResponse, error) {
+func (c *FoundryClient) ListModels(ctx context.Context, opts ...ListModelsOption) (*models.ListModelsResponse, error) {
+	options := &listModelsOptions{}
+	for _, opt := range opts {
+		opt(options)
+	}
+
 	reqURL := fmt.Sprintf("%s%s/models?api-version=%s", c.baseURL, c.subPath, c.apiVersion)
+	if options.sourceJobID != "" {
+		reqURL += "&source.jobId=" + url.QueryEscape(options.sourceJobID)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
@@ -118,7 +139,8 @@ func (c *FoundryClient) StartPendingUpload(ctx context.Context, modelName, versi
 		c.apiVersion,
 	)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, strings.NewReader("{}"))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL,
+		strings.NewReader(`{"pendingUploadType":"TemporaryBlobReference"}`))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -266,9 +288,9 @@ func (c *FoundryClient) PollOperation(ctx context.Context, operationURL string, 
 			return nil, fmt.Errorf("failed to create poll request: %w", err)
 		}
 
-		// The operations endpoint on api.azureml.ms expects tokens with ml.azure.com audience
+		// The operations endpoint on api.azureml.ms accepts the same AI scope as the data plane
 		token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
-			Scopes: []string{MLTokenScope},
+			Scopes: []string{TokenScope},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to get ARM access token: %w", err)
@@ -439,6 +461,51 @@ func (c *FoundryClient) GetModel(ctx context.Context, modelName, version string)
 	return &result, nil
 }
 
+// UpdateModel applies a JSON Merge Patch (RFC 7396) to an existing model version.
+// PATCH {subPath}/models/{modelName}/versions/{version}
+func (c *FoundryClient) UpdateModel(
+	ctx context.Context, modelName, version string, req *models.UpdateModelRequest,
+) (*models.CustomModel, error) {
+	reqURL := fmt.Sprintf("%s%s/models/%s/versions/%s?api-version=%s",
+		c.baseURL, c.subPath,
+		url.PathEscape(modelName), url.PathEscape(version),
+		c.apiVersion,
+	)
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPatch, reqURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if err := c.addAuth(ctx, httpReq); err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/merge-patch+json")
+
+	//nolint:gosec // URL is constructed from validated project endpoint
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.handleError(resp)
+	}
+
+	var result models.CustomModel
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
 func (c *FoundryClient) addAuth(ctx context.Context, req *http.Request) error {
 	token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{TokenScope},
@@ -451,7 +518,21 @@ func (c *FoundryClient) addAuth(ctx context.Context, req *http.Request) error {
 	return nil
 }
 
-// handleError reads the error body and returns a formatted error.
+// APIError represents an error response from the Foundry API with a status code.
+type APIError struct {
+	StatusCode int
+	Code       string
+	Message    string
+}
+
+func (e *APIError) Error() string {
+	if e.Message != "" {
+		return fmt.Sprintf("API error (%d): %s - %s", e.StatusCode, e.Code, e.Message)
+	}
+	return fmt.Sprintf("API error (%d): %s", e.StatusCode, e.Code)
+}
+
+// handleError reads the error body and returns an *APIError.
 func (c *FoundryClient) handleError(resp *http.Response) error {
 	body, _ := io.ReadAll(resp.Body)
 
@@ -463,8 +544,15 @@ func (c *FoundryClient) handleError(resp *http.Response) error {
 	}
 
 	if json.Unmarshal(body, &apiErr) == nil && apiErr.Error.Message != "" {
-		return fmt.Errorf("API error (%d): %s - %s", resp.StatusCode, apiErr.Error.Code, apiErr.Error.Message)
+		return &APIError{
+			StatusCode: resp.StatusCode,
+			Code:       apiErr.Error.Code,
+			Message:    apiErr.Error.Message,
+		}
 	}
 
-	return fmt.Errorf("API error (%d): %s", resp.StatusCode, string(body))
+	return &APIError{
+		StatusCode: resp.StatusCode,
+		Code:       string(body),
+	}
 }

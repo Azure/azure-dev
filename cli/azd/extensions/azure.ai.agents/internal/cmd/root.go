@@ -60,6 +60,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newMonitorCommand(extCtx))
 	rootCmd.AddCommand(newFilesCommand(extCtx))
 	rootCmd.AddCommand(newSessionCommand(extCtx))
+	rootCmd.AddCommand(newProjectCommand(extCtx))
 
 	return rootCmd
 }

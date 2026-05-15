@@ -10,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/assert"
@@ -58,6 +59,7 @@ func passthroughNext(called *bool) NextFn {
 func TestToolFirstRunMiddleware_SkipConditions(t *testing.T) {
 	// These tests modify env vars via t.Setenv so they cannot be
 	// parallel with each other or with tests that read the same vars.
+	t.Setenv("AZD_ALPHA_ENABLE_TOOL", "true")
 
 	tests := []struct {
 		name     string
@@ -141,6 +143,7 @@ func TestToolFirstRunMiddleware_SkipConditions(t *testing.T) {
 			ucm := &mockUserConfigManager{cfg: cfg}
 
 			m := &ToolFirstRunMiddleware{
+				alphaManager:  alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 				configManager: ucm,
 				console:       console,
 				manager:       nil, // not needed for skip paths
@@ -177,6 +180,7 @@ func TestToolFirstRunMiddleware_TriggersWhenNoSkip(t *testing.T) {
 	clearCIVars(t)
 	t.Setenv(envKeySkipFirstRun, "")
 	os.Unsetenv(envKeySkipFirstRun)
+	t.Setenv("AZD_ALPHA_ENABLE_TOOL", "true")
 
 	console := mockinput.NewMockConsole()
 	cfg := config.NewEmptyConfig()
@@ -184,6 +188,7 @@ func TestToolFirstRunMiddleware_TriggersWhenNoSkip(t *testing.T) {
 	ucm := &mockUserConfigManager{cfg: cfg}
 
 	m := &ToolFirstRunMiddleware{
+		alphaManager:  alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 		configManager: ucm,
 		console:       console,
 		manager:       nil, // runFirstRunExperience will fail at prompt
@@ -204,4 +209,36 @@ func TestToolFirstRunMiddleware_TriggersWhenNoSkip(t *testing.T) {
 	// so it should appear in the console output.
 	assert.NotEmpty(t, console.Output(),
 		"triggered first-run experience should produce console output")
+}
+
+// TestToolFirstRunMiddleware_SkipsWhenAlphaDisabled verifies that the
+// middleware is a no-op when the tool alpha feature is not enabled.
+func TestToolFirstRunMiddleware_SkipsWhenAlphaDisabled(t *testing.T) {
+	clearCIVars(t)
+	t.Setenv(envKeySkipFirstRun, "")
+	os.Unsetenv(envKeySkipFirstRun)
+	t.Setenv("AZD_ALPHA_ENABLE_TOOL", "false")
+
+	console := mockinput.NewMockConsole()
+	cfg := config.NewEmptyConfig()
+	opts := &internal.GlobalCommandOptions{}
+	ucm := &mockUserConfigManager{cfg: cfg}
+
+	m := &ToolFirstRunMiddleware{
+		alphaManager:  alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		configManager: ucm,
+		console:       console,
+		manager:       nil,
+		options:       opts,
+	}
+
+	nextCalled := false
+	result, err := m.Run(t.Context(), passthroughNext(&nextCalled))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, nextCalled,
+		"nextFn must always be called even when alpha is disabled")
+	assert.Empty(t, console.Output(),
+		"alpha-disabled should skip the first-run experience entirely")
 }

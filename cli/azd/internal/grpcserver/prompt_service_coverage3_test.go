@@ -334,43 +334,44 @@ func TestConvertSessionEvent_BasicFields(t *testing.T) {
 	t.Parallel()
 	ts := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
 	event := agent.SessionEvent{
-		Type:      copilot.SessionEventType("test_event"),
+		Type:      copilot.SessionEventTypeAssistantMessage,
 		Timestamp: ts,
-		Data:      copilot.Data{},
+		Data:      &copilot.AssistantMessageData{Content: "hello"},
 	}
 	result := convertSessionEvent(event)
-	require.Equal(t, "test_event", result.Type)
+	require.Equal(t, "assistant.message", result.Type)
 	require.Equal(t, "2024-01-15T10:30:00.000Z", result.Timestamp)
 }
 
-func TestConvertSessionEvent_WithProducer(t *testing.T) {
+func TestConvertSessionEvent_WithToolStart(t *testing.T) {
 	t.Parallel()
-	producer := "test-agent"
 	event := agent.SessionEvent{
-		Type:      copilot.SessionEventType("init"),
+		Type:      copilot.SessionEventTypeToolExecutionStart,
 		Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		Data: copilot.Data{
-			Producer: &producer,
+		Data: &copilot.ToolExecutionStartData{
+			ToolName:   "read_file",
+			ToolCallID: "tc-123",
 		},
 	}
 	result := convertSessionEvent(event)
-	require.Equal(t, "init", result.Type)
+	require.Equal(t, "tool.execution_start", result.Type)
 	require.NotNil(t, result.Data)
-	require.Equal(t, producer, result.Data.Fields["producer"].GetStringValue())
+	require.Equal(t, "read_file", result.Data.Fields["toolName"].GetStringValue())
 }
 
-func TestConvertSessionEvent_WithSelectedModel(t *testing.T) {
+func TestConvertSessionEvent_WithUsageData(t *testing.T) {
 	t.Parallel()
-	model := "gpt-4o"
+	inputTokens := float64(500)
 	event := agent.SessionEvent{
-		Type:      copilot.SessionEventType("session_start"),
+		Type:      copilot.SessionEventTypeAssistantUsage,
 		Timestamp: time.Date(2024, 6, 15, 12, 0, 0, 0, time.UTC),
-		Data: copilot.Data{
-			SelectedModel: &model,
+		Data: &copilot.AssistantUsageData{
+			Model:       "gpt-4o",
+			InputTokens: &inputTokens,
 		},
 	}
 	result := convertSessionEvent(event)
-	require.Equal(t, "session_start", result.Type)
+	require.Equal(t, "assistant.usage", result.Type)
 	require.NotNil(t, result.Data)
 }
 

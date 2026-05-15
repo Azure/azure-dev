@@ -24,6 +24,14 @@ func (m *MockSubscriptionManager) ListLocations(ctx context.Context, subscriptio
 	return args.Get(0).([]account.Location), args.Error(1)
 }
 
+func (m *MockSubscriptionManager) GetTenantDisplayNames(ctx context.Context) (map[string]string, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]string), args.Error(1)
+}
+
 func (m *MockSubscriptionManager) GetLocations(ctx context.Context, subscriptionId string) ([]account.Location, error) {
 	args := m.Called(ctx, subscriptionId)
 	return args.Get(0).([]account.Location), args.Error(1)

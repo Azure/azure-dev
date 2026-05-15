@@ -13,7 +13,6 @@ import (
 	"log"
 	"net"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"strings"
 
@@ -23,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/errchain"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -40,173 +40,245 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
-// MapError maps the given error to a telemetry span, setting relevant status and attributes.
+// MapError maps the given error to a telemetry span, setting status (the
+// AppInsights ResultCode), a small set of error.* attributes, and the
+// full wrapped-type chain. The classification ladder lives in classify;
+// this function is responsible only for stamping its result onto the
+// span.
 func MapError(err error, span tracing.Span) {
-	var errCode string
-	var errDetails []attribute.KeyValue
+	code, attrs := classify(err)
+
+	// Always emit the wrapped-error type chain so engineers can see
+	// what hides behind a generic ResultCode like internal.unclassified
+	// without needing to repro. Type names are code-defined and PII-free.
+	span.SetAttributes(fields.ErrChainTypes.StringSlice(errchain.Types(err)))
+
+	if len(attrs) > 0 {
+		// Prefix all detail attributes with "error." so they group in
+		// AppInsights without colliding with span-scope keys.
+		for i, a := range attrs {
+			attrs[i].Key = fields.ErrorKey(a.Key)
+		}
+		span.SetAttributes(attrs...)
+	}
+
+	span.SetStatus(codes.Error, code)
+}
+
+// classify runs the typed/sentinel decision tree and returns the
+// telemetry ResultCode together with any structured attributes the
+// matched branch wants to expose. Attribute keys returned from this
+// function are NOT yet "error."-prefixed — MapError applies the prefix.
+//
+// Ordering matters: wrapper types that intentionally control outer
+// classification, such as ErrorWithSuggestion, must run before their
+// wrapped typed errors. The generic fallback must remain last.
+//
+// The branch count mirrors azd's typed error surface; splitting it
+// makes the telemetry contract harder to audit.
+//
+//nolint:gocyclo
+func classify(err error) (string, []attribute.KeyValue) {
+	if err == nil {
+		// Preserve historical behavior for the nil-error edge case.
+		return "internal.<nil>", []attribute.KeyValue{fields.ErrType.String("<nil>")}
+	}
 
 	if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {
-		errCode = updateErr.Code
-	} else if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
-		errCode = "auth.login_required"
-		errDetails = append(errDetails, fields.ErrCategory.String("auth"))
-	} else if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
-		errCode = "error.suggestion"
-		innerErr := errWithSuggestion.Unwrap()
-		span.SetAttributes(fields.ErrType.String(classifySuggestionType(innerErr)))
-		if authFailedErr, ok := errors.AsType[*auth.AuthFailedError](innerErr); ok {
-			errDetails = append(errDetails, authFailedTelemetryDetails(authFailedErr)...)
-		}
-	} else if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
-		serviceName := "other"
-		statusCode := -1
-		errDetails = append(errDetails, fields.ServiceErrorCode.String(respErr.ErrorCode))
-
-		if respErr.RawResponse != nil {
-			statusCode = respErr.RawResponse.StatusCode
-			errDetails = append(errDetails, fields.ServiceStatusCode.Int(statusCode))
-
-			if respErr.RawResponse.Request != nil {
-				var hostName string
-				serviceName, hostName = mapService(respErr.RawResponse.Request.Host)
-				errDetails = append(errDetails,
-					fields.ServiceHost.String(hostName),
-					fields.ServiceMethod.String(respErr.RawResponse.Request.Method),
-					fields.ServiceName.String(serviceName),
-				)
-			}
-		}
-
-		errCode = fmt.Sprintf("service.%s.%d", serviceName, statusCode)
-	} else if armDeployErr, ok := errors.AsType[*azapi.AzureDeploymentError](err); ok {
-		errDetails = append(errDetails, fields.ServiceName.String("arm"))
-		codes := []*deploymentErrorCode{}
-		var collect func(details []*azapi.DeploymentErrorLine, frame int)
-		collect = func(details []*azapi.DeploymentErrorLine, frame int) {
-			code := collectCode(details, frame)
-			if code != nil {
-				codes = append(codes, code)
-				frame = frame + 1
-			}
-
-			for _, detail := range details {
-				if detail.Inner != nil {
-					collect(detail.Inner, frame)
-				}
-			}
-		}
-
-		collect([]*azapi.DeploymentErrorLine{armDeployErr.Details}, 0)
-		if len(codes) > 0 {
-			if codesJson, err := json.Marshal(codes); err != nil {
-				log.Println("telemetry: failed to marshal arm error codes", err)
-			} else {
-				errDetails = append(errDetails, fields.ServiceErrorCode.String(string(codesJson)))
-			}
-		}
-
-		// Use operation-specific error code if available
-		operation := armDeployErr.Operation
-		if operation == azapi.DeploymentOperationDeploy {
-			// use 'deployment' instead of 'deploy' for consistency with prior naming
-			operation = "deployment"
-		}
-		errCode = fmt.Sprintf("service.arm.%s.failed", operation)
-	} else if extServiceErr, ok := errors.AsType[*azdext.ServiceError](err); ok {
-		// Handle structured service errors from extensions.
-		// Emit whatever details are available rather than requiring all fields.
-		serviceName := ""
-		if extServiceErr.ServiceName != "" {
-			var hostDomain string
-			serviceName, hostDomain = mapService(extServiceErr.ServiceName)
-			errDetails = append(errDetails,
-				fields.ServiceName.String(serviceName),
-				fields.ServiceHost.String(hostDomain),
-			)
-		}
-		if extServiceErr.StatusCode > 0 {
-			errDetails = append(errDetails, fields.ServiceStatusCode.Int(extServiceErr.StatusCode))
-		}
-		if extServiceErr.ErrorCode != "" {
-			errDetails = append(errDetails, fields.ServiceErrorCode.String(extServiceErr.ErrorCode))
-		}
-
-		// Use operation.errorCode (e.g. "ext.service.start_container.invalid_payload") for actionable
-		// classification instead of host.statusCode which groups unrelated failures together.
-		switch {
-		case extServiceErr.ErrorCode != "":
-			errCode = fmt.Sprintf("ext.service.%s", normalizeCodeSegment(extServiceErr.ErrorCode, "failed"))
-		case extServiceErr.StatusCode > 0 && serviceName != "":
-			errCode = fmt.Sprintf("ext.service.%s.%d", serviceName, extServiceErr.StatusCode)
-		case extServiceErr.StatusCode > 0:
-			errCode = fmt.Sprintf("ext.service.unknown.%d", extServiceErr.StatusCode)
-		default:
-			errCode = "ext.service.unknown.failed"
-		}
-	} else if extLocalErr, ok := errors.AsType[*azdext.LocalError](err); ok {
-		domain := string(azdext.NormalizeLocalErrorCategory(extLocalErr.Category))
-		code := normalizeCodeSegment(extLocalErr.Code, "failed")
-
-		errDetails = append(errDetails,
-			fields.ErrCategory.String(domain),
-			fields.ErrCode.String(code),
-		)
-
-		errCode = fmt.Sprintf("ext.%s.%s", domain, code)
-	} else if _, ok := errors.AsType[*extensions.ExtensionRunError](err); ok {
-		errCode = "ext.run.failed"
-	} else if toolExecErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		return updateErr.Code, nil
+	}
+	if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
+		return "auth.login_required", []attribute.KeyValue{fields.ErrCategory.String("auth")}
+	}
+	if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
+		return classifyErrorWithSuggestion(errWithSuggestion)
+	}
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
+		return classifyResponseError(respErr)
+	}
+	if armDeployErr, ok := errors.AsType[*azapi.AzureDeploymentError](err); ok {
+		return classifyArmDeployError(armDeployErr)
+	}
+	if extServiceErr, ok := errors.AsType[*azdext.ServiceError](err); ok {
+		return classifyExtServiceError(extServiceErr)
+	}
+	if extLocalErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+		return classifyExtLocalError(extLocalErr)
+	}
+	if _, ok := errors.AsType[*extensions.ExtensionRunError](err); ok {
+		return "ext.run.failed", nil
+	}
+	if toolExecErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		toolName := "other"
-		cmdName := cmdAsName(toolExecErr.Cmd)
-		if cmdName != "" {
+		if cmdName := cmdAsName(toolExecErr.Cmd); cmdName != "" {
 			toolName = cmdName
 		}
-
-		errDetails = append(errDetails,
+		return fmt.Sprintf("tool.%s.failed", toolName), []attribute.KeyValue{
 			fields.ToolExitCode.Int(toolExecErr.ExitCode),
-			fields.ToolName.String(toolName))
-
-		errCode = fmt.Sprintf("tool.%s.failed", toolName)
-	} else if toolCheckErr, ok := errors.AsType[*tools.MissingToolErrors](err); ok {
+			fields.ToolName.String(toolName),
+		}
+	}
+	if toolCheckErr, ok := errors.AsType[*tools.MissingToolErrors](err); ok {
 		if len(toolCheckErr.ToolNames) == 1 {
 			toolName := toolCheckErr.ToolNames[0]
-			errCode = fmt.Sprintf("tool.%s.missing", toolName)
-			errDetails = append(errDetails, fields.ToolName.String(toolName))
+			return fmt.Sprintf("tool.%s.missing", toolName),
+				[]attribute.KeyValue{fields.ToolName.String(toolName)}
+		}
+		return "tool.multiple.missing", []attribute.KeyValue{
+			fields.ToolName.String(strings.Join(toolCheckErr.ToolNames, ",")),
+		}
+	}
+	if authFailedErr, ok := errors.AsType[*auth.AuthFailedError](err); ok {
+		return "service.aad.failed", authFailedTelemetryDetails(authFailedErr)
+	}
+	if errors.Is(err, auth.ErrNoCurrentUser) {
+		return "auth.not_logged_in", []attribute.KeyValue{fields.ErrCategory.String("auth")}
+	}
+	if _, ok := errors.AsType[*azidentity.AuthenticationFailedError](err); ok {
+		return "auth.identity_failed", []attribute.KeyValue{fields.ErrCategory.String("auth")}
+	}
+	if code := classifySentinel(err); code != "" {
+		return code, nil
+	}
+	if isNetworkError(err) {
+		return "internal.network", []attribute.KeyValue{
+			fields.ErrType.String(errchain.DeepestNamedType(err)),
+		}
+	}
+
+	// Generic fallback: walk the chain and keep the deepest non-generic
+	// type so wrappers like *fmt.wrapError or *errorhandler.ErrorWithSuggestion
+	// don't mask the real error. internal.unclassified only fires
+	// when no chain entry has a meaningful named type.
+	deepest := errchain.DeepestNamedType(err)
+	if deepest == "" || errchain.IsGenericWrapper(deepest) {
+		return "internal.unclassified", []attribute.KeyValue{fields.ErrType.String(deepest)}
+	}
+	return fmt.Sprintf("internal.%s", errchain.SanitizeTypeName(deepest)),
+		[]attribute.KeyValue{fields.ErrType.String(deepest)}
+}
+
+// classifyErrorWithSuggestion handles *internal.ErrorWithSuggestion.
+// It preserves the historical narrow attribute set (only error.type
+// from the inner classification, plus the auth special case) and
+// emits the legacy `error.suggestion` ResultCode.
+func classifyErrorWithSuggestion(
+	ews *internal.ErrorWithSuggestion,
+) (string, []attribute.KeyValue) {
+	innerErr := ews.Unwrap()
+	innerCode, _ := classify(innerErr)
+
+	attrs := []attribute.KeyValue{fields.ErrType.String(innerCode)}
+
+	// Preserve the AAD-detail enrichment when an AuthFailedError is
+	// wrapped by a suggestion so it still surfaces on the outer span.
+	if authFailedErr, ok := errors.AsType[*auth.AuthFailedError](innerErr); ok {
+		attrs = append(attrs, authFailedTelemetryDetails(authFailedErr)...)
+	}
+
+	return "error.suggestion", attrs
+}
+
+func classifyResponseError(respErr *azcore.ResponseError) (string, []attribute.KeyValue) {
+	serviceName := "other"
+	statusCode := -1
+	attrs := []attribute.KeyValue{fields.ServiceErrorCode.String(respErr.ErrorCode)}
+
+	if respErr.RawResponse != nil {
+		statusCode = respErr.RawResponse.StatusCode
+		attrs = append(attrs, fields.ServiceStatusCode.Int(statusCode))
+
+		if respErr.RawResponse.Request != nil {
+			var hostName string
+			serviceName, hostName = mapService(respErr.RawResponse.Request.Host)
+			attrs = append(attrs,
+				fields.ServiceHost.String(hostName),
+				fields.ServiceMethod.String(respErr.RawResponse.Request.Method),
+				fields.ServiceName.String(serviceName),
+			)
+		}
+	}
+
+	return fmt.Sprintf("service.%s.%d", serviceName, statusCode), attrs
+}
+
+func classifyArmDeployError(armDeployErr *azapi.AzureDeploymentError) (string, []attribute.KeyValue) {
+	attrs := []attribute.KeyValue{fields.ServiceName.String("arm")}
+	codes := []*deploymentErrorCode{}
+	var collect func(details []*azapi.DeploymentErrorLine, frame int)
+	collect = func(details []*azapi.DeploymentErrorLine, frame int) {
+		code := collectCode(details, frame)
+		if code != nil {
+			codes = append(codes, code)
+			frame = frame + 1
+		}
+
+		for _, detail := range details {
+			if detail.Inner != nil {
+				collect(detail.Inner, frame)
+			}
+		}
+	}
+
+	collect([]*azapi.DeploymentErrorLine{armDeployErr.Details}, 0)
+	if len(codes) > 0 {
+		if codesJson, err := json.Marshal(codes); err != nil {
+			log.Println("telemetry: failed to marshal arm error codes", err)
 		} else {
-			errCode = "tool.multiple.missing"
-			errDetails = append(errDetails, fields.ToolName.String(strings.Join(toolCheckErr.ToolNames, ",")))
+			attrs = append(attrs, fields.ServiceErrorCode.String(string(codesJson)))
 		}
-	} else if authFailedErr, ok := errors.AsType[*auth.AuthFailedError](err); ok {
-		errDetails = append(errDetails, authFailedTelemetryDetails(authFailedErr)...)
-		errCode = "service.aad.failed"
-	} else if errors.Is(err, auth.ErrNoCurrentUser) {
-		errCode = "auth.not_logged_in"
-		errDetails = append(errDetails, fields.ErrCategory.String("auth"))
-	} else if _, ok := errors.AsType[*azidentity.AuthenticationFailedError](err); ok {
-		errCode = "auth.identity_failed"
-		errDetails = append(errDetails, fields.ErrCategory.String("auth"))
-	} else if code := classifySentinel(err); code != "" {
-		errCode = code
-	} else if isNetworkError(err) {
-		errCode = "internal.network"
-		errType := errorType(err)
-		span.SetAttributes(fields.ErrType.String(errType))
-	} else {
-		errType := errorType(err)
-		span.SetAttributes(fields.ErrType.String(errType))
-		errCode = fmt.Sprintf("internal.%s",
-			strings.ReplaceAll(strings.ReplaceAll(errType, ".", "_"), "*", ""))
 	}
 
-	if len(errDetails) > 0 {
-		for i, detail := range errDetails {
-			errDetails[i].Key = fields.ErrorKey(detail.Key)
-		}
+	// Use operation-specific error code if available
+	operation := armDeployErr.Operation
+	if operation == azapi.DeploymentOperationDeploy {
+		// use 'deployment' instead of 'deploy' for consistency with prior naming
+		operation = "deployment"
+	}
+	return fmt.Sprintf("service.arm.%s.failed", operation), attrs
+}
 
-		span.SetAttributes(errDetails...)
+func classifyExtServiceError(extServiceErr *azdext.ServiceError) (string, []attribute.KeyValue) {
+	// Handle structured service errors from extensions.
+	// Emit whatever details are available rather than requiring all fields.
+	serviceName := ""
+	var attrs []attribute.KeyValue
+	if extServiceErr.ServiceName != "" {
+		var hostDomain string
+		serviceName, hostDomain = mapService(extServiceErr.ServiceName)
+		attrs = append(attrs,
+			fields.ServiceName.String(serviceName),
+			fields.ServiceHost.String(hostDomain),
+		)
+	}
+	if extServiceErr.StatusCode > 0 {
+		attrs = append(attrs, fields.ServiceStatusCode.Int(extServiceErr.StatusCode))
+	}
+	if extServiceErr.ErrorCode != "" {
+		attrs = append(attrs, fields.ServiceErrorCode.String(extServiceErr.ErrorCode))
 	}
 
-	span.SetStatus(codes.Error, errCode)
+	// Use operation.errorCode (e.g. "ext.service.start_container.invalid_payload") for actionable
+	// classification instead of host.statusCode which groups unrelated failures together.
+	switch {
+	case extServiceErr.ErrorCode != "":
+		return fmt.Sprintf("ext.service.%s", normalizeCodeSegment(extServiceErr.ErrorCode, "failed")), attrs
+	case extServiceErr.StatusCode > 0 && serviceName != "":
+		return fmt.Sprintf("ext.service.%s.%d", serviceName, extServiceErr.StatusCode), attrs
+	case extServiceErr.StatusCode > 0:
+		return fmt.Sprintf("ext.service.unknown.%d", extServiceErr.StatusCode), attrs
+	default:
+		return "ext.service.unknown.failed", attrs
+	}
+}
+
+func classifyExtLocalError(extLocalErr *azdext.LocalError) (string, []attribute.KeyValue) {
+	domain := string(azdext.NormalizeLocalErrorCategory(extLocalErr.Category))
+	code := normalizeCodeSegment(extLocalErr.Code, "failed")
+	return fmt.Sprintf("ext.%s.%s", domain, code), []attribute.KeyValue{
+		fields.ErrCategory.String(domain),
+		fields.ErrCode.String(code),
+	}
 }
 
 func authFailedTelemetryDetails(authFailedErr *auth.AuthFailedError) []attribute.KeyValue {
@@ -320,148 +392,19 @@ func classifySentinel(err error) string {
 	}
 }
 
-// classifySuggestionType returns a telemetry error type string for an inner error wrapped by ErrorWithSuggestion.
-// It preserves the suggestion result code while improving the error.type attribute when the inner error is structured.
+// deploymentErrorCode is the per-frame ARM error breakdown that gets
+// JSON-encoded into the service.errorCode telemetry property.
 //
-// The check order here should match MapError to ensure consistent classification.
-// Structured error types are checked first, then sentinels, then network errors, then fallback.
-func classifySuggestionType(err error) string {
-	if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {
-		return updateErr.Code
-	}
-
-	if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
-		return "auth.login_required"
-	}
-
-	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
-		serviceName := "other"
-		statusCode := -1
-
-		if respErr.RawResponse != nil {
-			statusCode = respErr.RawResponse.StatusCode
-			if respErr.RawResponse.Request != nil {
-				serviceName, _ = mapService(respErr.RawResponse.Request.Host)
-			}
-		}
-
-		return fmt.Sprintf("service.%s.%d", serviceName, statusCode)
-	}
-
-	if armDeployErr, ok := errors.AsType[*azapi.AzureDeploymentError](err); ok {
-		operationName := armDeployErr.Operation
-		if operationName == azapi.DeploymentOperationDeploy {
-			operationName = "deployment"
-		}
-
-		return fmt.Sprintf("service.arm.%s.failed", operationName)
-	}
-
-	if extServiceErr, ok := errors.AsType[*azdext.ServiceError](err); ok {
-		serviceName := ""
-		if extServiceErr.ServiceName != "" {
-			serviceName, _ = mapService(extServiceErr.ServiceName)
-		}
-
-		switch {
-		case extServiceErr.ErrorCode != "":
-			return fmt.Sprintf("ext.service.%s", normalizeCodeSegment(extServiceErr.ErrorCode, "failed"))
-		case extServiceErr.StatusCode > 0 && serviceName != "":
-			return fmt.Sprintf("ext.service.%s.%d", serviceName, extServiceErr.StatusCode)
-		case extServiceErr.StatusCode > 0:
-			return fmt.Sprintf("ext.service.unknown.%d", extServiceErr.StatusCode)
-		default:
-			return "ext.service.unknown.failed"
-		}
-	}
-
-	if extLocalErr, ok := errors.AsType[*azdext.LocalError](err); ok {
-		domain := string(azdext.NormalizeLocalErrorCategory(extLocalErr.Category))
-		code := normalizeCodeSegment(extLocalErr.Code, "failed")
-
-		return fmt.Sprintf("ext.%s.%s", domain, code)
-	}
-
-	if _, ok := errors.AsType[*extensions.ExtensionRunError](err); ok {
-		return "ext.run.failed"
-	}
-
-	if toolExecErr, ok := errors.AsType[*exec.ExitError](err); ok {
-		toolName := "other"
-		if cmdName := cmdAsName(toolExecErr.Cmd); cmdName != "" {
-			toolName = cmdName
-		}
-
-		return fmt.Sprintf("tool.%s.failed", toolName)
-	}
-
-	if toolCheckErr, ok := errors.AsType[*tools.MissingToolErrors](err); ok {
-		if len(toolCheckErr.ToolNames) == 1 {
-			return fmt.Sprintf("tool.%s.missing", toolCheckErr.ToolNames[0])
-		}
-
-		return "tool.multiple.missing"
-	}
-
-	if _, ok := errors.AsType[*auth.AuthFailedError](err); ok {
-		return "service.aad.failed"
-	}
-
-	if errors.Is(err, auth.ErrNoCurrentUser) {
-		return "auth.not_logged_in"
-	}
-
-	if _, ok := errors.AsType[*azidentity.AuthenticationFailedError](err); ok {
-		return "auth.identity_failed"
-	}
-
-	if code := classifySentinel(err); code != "" {
-		return code
-	}
-
-	if isNetworkError(err) {
-		return "internal.network"
-	}
-
-	return errorType(err)
-}
-
-// errorType returns the type name of the given error, unwrapping as needed to find the root cause(s).
-func errorType(err error) string {
-	if err == nil {
-		return "<nil>"
-	}
-
-	//nolint:errorlint // Type switch is intentionally used to check for Unwrap() methods
-	for {
-		switch x := err.(type) {
-		case interface{ Unwrap() error }:
-			err = x.Unwrap()
-			if err == nil {
-				return reflect.TypeOf(x).String()
-			}
-		case interface{ Unwrap() []error }:
-			result := ""
-			for _, err := range x.Unwrap() {
-				if err == nil {
-					continue
-				}
-				if result != "" {
-					result += ","
-				}
-
-				result += reflect.TypeOf(err).String()
-			}
-			return result
-		default:
-			return reflect.TypeOf(x).String()
-		}
-	}
-}
-
+// "error.arm.frame_index" is an integer encoding the depth of the
+// current line within the ARM deployment-error tree, not a Go runtime
+// frame. It used to be named "error.frame", which conflicted with the
+// (now removed) fields.ErrFrame attribute key.
+//
+// Field declaration order matches the alphabetical order of the json
+// tags so encoding/json output matches map[string]any output in tests.
 type deploymentErrorCode struct {
+	Frame int    `json:"error.arm.frame_index"`
 	Code  string `json:"error.code"`
-	Frame int    `json:"error.frame"`
 }
 
 func collectCode(lines []*azapi.DeploymentErrorLine, frame int) *deploymentErrorCode {

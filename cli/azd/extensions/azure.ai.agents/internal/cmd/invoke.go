@@ -41,6 +41,8 @@ type invokeFlags struct {
 	agentEndpoint   string
 }
 
+const defaultInvokeTimeoutSeconds = 30 * 60
+
 type InvokeAction struct {
 	flags    *invokeFlags
 	noPrompt bool
@@ -173,7 +175,13 @@ session automatically. Pass --new-session to force a reset.`,
 	cmd.Flags().StringVarP(&flags.inputFile, "input-file", "f", "", "Path to a file whose contents are sent as the request body")
 	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "", "Protocol to use: responses (default) or invocations")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
-	cmd.Flags().IntVarP(&flags.timeout, "timeout", "t", 120, "Request timeout in seconds (0 for no timeout)")
+	cmd.Flags().IntVarP(
+		&flags.timeout,
+		"timeout",
+		"t",
+		defaultInvokeTimeoutSeconds,
+		"Request timeout in seconds (0 for no timeout)",
+	)
 	cmd.Flags().StringVarP(&flags.session, "session-id", "s", "", "Explicit session ID override")
 	cmd.Flags().BoolVar(&flags.newSession, "new-session", false, "Force a new session (discard saved one)")
 	cmd.Flags().StringVar(&flags.conversation, "conversation-id", "", "Explicit conversation ID override")

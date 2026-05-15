@@ -42,6 +42,7 @@ words:
   - mcpservertoolalwaysrequireapprovalmode
   - mcpservertoolneverrequireapprovalmode
   - mcpservertoolspecifyapprovalmode
+  - mypy
   - myregistry
   - normalises
   - openapitool

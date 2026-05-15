@@ -17,10 +17,13 @@ import (
 
 	// Importing for infrastructure provider plugin registrations
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
+	"github.com/azure/azure-dev/cli/azd/pkg/tool"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
@@ -196,7 +199,14 @@ func newRootCmd(
 	hooksActions(root)
 	mcpActions(root)
 	copilotActions(root)
-	toolActions(root)
+	execActions(root)
+
+	// Create a FeatureManager for command-tree gating.
+	// User config is loaded best-effort; env vars (AZD_ALPHA_ENABLE_TOOL) always work.
+	alphaManager := newAlphaManagerForCommandTree()
+	if alphaManager.IsEnabled(tool.FeatureAlphaTool) {
+		toolActions(root)
+	}
 
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
@@ -561,6 +571,20 @@ var workflowCommands = map[string]struct{}{
 	"build":     {},
 	"package":   {},
 	"restore":   {},
+}
+
+// newAlphaManagerForCommandTree creates a FeatureManager for use during
+// command-tree construction (before DI is available).  It loads the
+// user config best-effort so that `azd config set alpha.tool on` works;
+// env-var overrides (AZD_ALPHA_ENABLE_TOOL) always work regardless.
+func newAlphaManagerForCommandTree() *alpha.FeatureManager {
+	ucm := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+	cfg, err := ucm.Load()
+	if err != nil {
+		log.Printf("warning: failed to load user config for alpha feature gating: %v", err)
+		cfg = config.NewEmptyConfig()
+	}
+	return alpha.NewFeaturesManagerWithConfig(cfg)
 }
 
 // isWorkflowCommand reports whether the command is a primary workflow

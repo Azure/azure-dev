@@ -118,7 +118,8 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		}
 
 		// Add the agent to the azd project (azure.yaml) services
-		if err := a.addToProject(ctx, srcDir, localDefinition.Name); err != nil {
+		isCodeDeploy := localDefinition.CodeConfiguration != nil
+		if err := a.addToProject(ctx, srcDir, localDefinition.Name, isCodeDeploy); err != nil {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 
@@ -468,6 +469,27 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	// TODO: Prompt user for agent kind
 	agentKind := agent_yaml.AgentKindHosted
 
+	// Prompt user for deploy mode (container vs code)
+	// Code deploy is available for Python and .NET projects
+	srcDir := a.flags.src
+	if srcDir == "" {
+		srcDir, _ = os.Getwd()
+	}
+	showCodeDeploy := isPythonProject(srcDir) || isDotnetProject(srcDir)
+	deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy)
+	if err != nil {
+		return nil, err
+	}
+
+	// If code deploy, prompt for code configuration details
+	var codeConfig *agent_yaml.CodeConfiguration
+	if deployMode == "code" {
+		codeConfig, err = a.promptCodeConfiguration(ctx, a.flags.src)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Prompt user for supported protocols
 	protocols, err := promptProtocols(ctx, a.azdClient.Prompt(), a.flags.noPrompt, a.flags.protocols)
 	if err != nil {
@@ -539,7 +561,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		a.credential = newCred
 
 		// Select a Foundry project
-		selectedProject, err := selectFoundryProject(ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name, a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId)
+		selectedProject, err := selectFoundryProject(ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name, a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId, deployMode == "code")
 		if err != nil {
 			return nil, err
 		}
@@ -587,7 +609,8 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			Name: agentName,
 			Kind: agentKind,
 		},
-		Protocols: protocols,
+		Protocols:         protocols,
+		CodeConfiguration: codeConfig,
 	}
 
 	// Add model resource if a model was selected
@@ -793,9 +816,20 @@ func (a *InitFromCodeAction) writeDefinitionToSrcDir(definition *agent_yaml.Cont
 	return definitionPath, nil
 }
 
-func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string, agentName string) error {
+func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string, agentName string, isCodeDeploy bool) error {
+	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
+	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.
+	if targetDir == "." {
+		if cwd, err := os.Getwd(); err == nil && a.projectConfig != nil && a.projectConfig.Path != "" {
+			if relPath, err := filepath.Rel(a.projectConfig.Path, cwd); err == nil && relPath != "." {
+				targetDir = filepath.ToSlash(relPath)
+			}
+		}
+	}
+
 	var agentConfig = project.ServiceTargetAgentConfig{}
 
+	// Both code and container modes need container resources for local run
 	agentConfig.Container = &project.ContainerSettings{
 		Resources: &project.ResourceSettings{
 			Memory: project.DefaultMemory,
@@ -805,29 +839,54 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 
 	agentConfig.Deployments = a.deploymentDetails
 
-	// Detect startup command from the project source directory
-	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
-	if err != nil {
-		return err
+	// Detect startup command from the project source directory (container mode only for prompt)
+	if !isCodeDeploy {
+		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
+		if err != nil {
+			return err
+		}
+		agentConfig.StartupCommand = startupCmd
+	} else {
+		// For code deploy, auto-derive startupCommand from entry point in agent.yaml
+		agentConfig.StartupCommand = deriveStartupCommand(a.projectConfig.Path, targetDir)
 	}
-	agentConfig.StartupCommand = startupCmd
 
 	var agentConfigStruct *structpb.Struct
+	var err error
 	if agentConfigStruct, err = project.MarshalStruct(&agentConfig); err != nil {
 		return fmt.Errorf("failed to marshal agent config: %w", err)
+	}
+
+	language := "python"
+	if !isCodeDeploy {
+		language = "docker"
+	} else {
+		// Detect language from agent.yaml runtime
+		// Re-read agent.yaml to detect the language for azure.yaml service config
+		langDetectPath := filepath.Join(a.projectConfig.Path, targetDir, "agent.yaml")
+		if data, err := os.ReadFile(langDetectPath); err == nil { //nolint:gosec // path from project config
+			var langDef agent_yaml.ContainerAgent
+			if err := yaml.Unmarshal(data, &langDef); err == nil &&
+				langDef.CodeConfiguration != nil &&
+				strings.HasPrefix(langDef.CodeConfiguration.Runtime, "dotnet_") {
+				language = "csharp"
+			}
+		}
 	}
 
 	serviceConfig := &azdext.ServiceConfig{
 		Name:         strings.ReplaceAll(agentName, " ", ""),
 		RelativePath: targetDir,
 		Host:         AiAgentHost,
-		Language:     "docker",
+		Language:     language,
 		Config:       agentConfigStruct,
 	}
 
-	// For hosted (container-based) agents, set remoteBuild to true by default
-	serviceConfig.Docker = &azdext.DockerProjectOptions{
-		RemoteBuild: true,
+	// For hosted container-based agents, set remoteBuild to true by default
+	if !isCodeDeploy {
+		serviceConfig.Docker = &azdext.DockerProjectOptions{
+			RemoteBuild: true,
+		}
 	}
 
 	req := &azdext.AddServiceRequest{Service: serviceConfig}
@@ -838,6 +897,24 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 
 	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentName)
 	return nil
+}
+
+// promptCodeConfiguration prompts the user for code deploy configuration settings.
+func (a *InitFromCodeAction) promptCodeConfiguration(ctx context.Context, srcDir string) (*agent_yaml.CodeConfiguration, error) {
+	return promptCodeConfig(ctx, a.azdClient, srcDir, a.flags.noPrompt)
+}
+
+// deriveStartupCommand derives the startup command for code deploy from the agent.yaml
+// entry point. Falls back to "python main.py" if the entry point cannot be determined.
+func deriveStartupCommand(projectPath, targetDir string) string {
+	agentYamlPath := filepath.Join(projectPath, targetDir, "agent.yaml")
+	if data, err := os.ReadFile(agentYamlPath); err == nil { //nolint:gosec // path is constructed from project config
+		var agentDef agent_yaml.ContainerAgent
+		if err := yaml.Unmarshal(data, &agentDef); err == nil && agentDef.CodeConfiguration != nil {
+			return agent_yaml.RuntimeCmdPrefix(agentDef.CodeConfiguration.Runtime) + " " + agentDef.CodeConfiguration.EntryPoint
+		}
+	}
+	return "python main.py"
 }
 
 // protocolInfo pairs a protocol name with the default version used when generating agent.yaml.
@@ -961,4 +1038,252 @@ func knownProtocolNames() string {
 		names = append(names, p.Name)
 	}
 	return strings.Join(names, ", ")
+}
+
+// promptDeployMode asks the user to choose between code deploy and container deploy.
+// When noPrompt is true, defaults to "container" for backward compatibility.
+// When showCodeDeploy is false, code deploy is not offered (e.g. for non-Python languages).
+func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool, showCodeDeploy bool) (string, error) {
+	if !showCodeDeploy {
+		return "container", nil
+	}
+
+	deployModeChoices := []*azdext.SelectChoice{
+		{Label: "Container Image (Docker)", Value: "container"},
+		{Label: "Source Code (ZIP upload)", Value: "code"},
+	}
+
+	if noPrompt {
+		return "container", nil
+	}
+
+	defaultIdx := int32(0) // Container is the default for backward compatibility
+	deployModeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "How would you like to deploy your agent?",
+			Choices:       deployModeChoices,
+			SelectedIndex: &defaultIdx,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", exterrors.Cancelled("deploy mode selection was cancelled")
+		}
+		return "", fmt.Errorf("failed to prompt for deploy mode: %w", err)
+	}
+	return deployModeChoices[*deployModeResp.Value].Value, nil
+}
+
+// detectDefaultEntryPoint returns a sensible default entry point based on the runtime and source directory.
+// TODO: reuse this logic in the `run` command (tracked as future work item).
+func detectDefaultEntryPoint(srcDir, runtime string) string {
+	if strings.HasPrefix(runtime, "dotnet_") {
+		// Look for .csproj file and derive DLL name from <AssemblyName> or project filename
+		entries, err := os.ReadDir(srcDir)
+		if err == nil {
+			for _, e := range entries {
+				if !e.IsDir() && strings.HasSuffix(e.Name(), ".csproj") {
+					dllName := strings.TrimSuffix(e.Name(), ".csproj") + ".dll"
+					// Try to parse <AssemblyName> from the csproj
+					csprojPath := filepath.Join(srcDir, e.Name())
+					if data, readErr := os.ReadFile(csprojPath); readErr == nil { //nolint:gosec // path from user project
+						if asmName := extractAssemblyName(string(data)); asmName != "" {
+							dllName = asmName + ".dll"
+						}
+					}
+					return dllName
+				}
+			}
+		}
+		return "App.dll"
+	}
+
+	// Python default
+	if _, err := os.Stat(filepath.Join(srcDir, "app.py")); err == nil {
+		return "app.py"
+	}
+	return "main.py"
+}
+
+// extractAssemblyName parses the <AssemblyName> property from a .csproj file content.
+// Returns empty string if not found.
+func extractAssemblyName(csprojContent string) string {
+	const startTag = "<AssemblyName>"
+	const endTag = "</AssemblyName>"
+	start := strings.Index(csprojContent, startTag)
+	if start < 0 {
+		return ""
+	}
+	start += len(startTag)
+	end := strings.Index(csprojContent[start:], endTag)
+	if end < 0 {
+		return ""
+	}
+	name := strings.TrimSpace(csprojContent[start : start+end])
+	if name == "" || strings.ContainsAny(name, "$()") {
+		// Skip MSBuild property references like $(MSBuildProjectName)
+		return ""
+	}
+	return name
+}
+
+// promptCodeConfig prompts for code deploy configuration (runtime, entry point,
+// dependency resolution). When noPrompt is true, defaults are used without prompting.
+func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir string, noPrompt bool) (*agent_yaml.CodeConfiguration, error) {
+	if srcDir == "" {
+		srcDir = "."
+	}
+
+	// Prompt for runtime — filter choices based on detected project type
+	var runtimeChoices []*azdext.SelectChoice
+	isDotnet := isDotnetProject(srcDir)
+	isPython := isPythonProject(srcDir)
+
+	if isDotnet && !isPython {
+		runtimeChoices = []*azdext.SelectChoice{
+			{Label: ".NET 9", Value: "dotnet_9"},
+			{Label: ".NET 8", Value: "dotnet_8"},
+			{Label: ".NET 10", Value: "dotnet_10"},
+		}
+	} else if isPython && !isDotnet {
+		runtimeChoices = []*azdext.SelectChoice{
+			{Label: "Python 3.11", Value: "python_3_11"},
+			{Label: "Python 3.12", Value: "python_3_12"},
+			{Label: "Python 3.13", Value: "python_3_13"},
+		}
+	} else {
+		// Mixed or unknown — show all options
+		runtimeChoices = []*azdext.SelectChoice{
+			{Label: "Python 3.11", Value: "python_3_11"},
+			{Label: "Python 3.12", Value: "python_3_12"},
+			{Label: "Python 3.13", Value: "python_3_13"},
+			{Label: ".NET 9", Value: "dotnet_9"},
+			{Label: ".NET 8", Value: "dotnet_8"},
+			{Label: ".NET 10", Value: "dotnet_10"},
+		}
+	}
+
+	var runtime string
+	if noPrompt {
+		if isDotnet && !isPython {
+			runtime = "dotnet_9"
+		} else {
+			runtime = "python_3_12" // default to python for backward compatibility (including mixed repos)
+		}
+	} else {
+		defaultIdx := int32(0) // First item in the filtered list
+		if isPython && !isDotnet {
+			defaultIdx = 1 // Python 3.12
+		}
+		runtimeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message:       "Select the runtime for your agent",
+				Choices:       runtimeChoices,
+				SelectedIndex: &defaultIdx,
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("runtime selection was cancelled")
+			}
+			return nil, fmt.Errorf("failed to prompt for runtime: %w", err)
+		}
+		runtime = runtimeChoices[*runtimeResp.Value].Value
+	}
+
+	// Prompt for entry point
+	defaultEntryPoint := detectDefaultEntryPoint(srcDir, runtime)
+
+	var entryPoint string
+	if noPrompt {
+		entryPoint = defaultEntryPoint
+	} else {
+		entryPointResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:      "Enter the file path for the entry point of the agent",
+				DefaultValue: defaultEntryPoint,
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("entry point prompt was cancelled")
+			}
+			return nil, fmt.Errorf("failed to prompt for entry point: %w", err)
+		}
+		entryPoint = entryPointResp.Value
+	}
+
+	// Prompt for dependency resolution
+	depResChoices := []*azdext.SelectChoice{
+		{Label: "Remote build (dependencies installed on server during deployment)", Value: "remote_build"},
+		{Label: "Bundled (dependencies pre-installed locally and included in ZIP)", Value: "bundled"},
+	}
+
+	var depResolution string
+	if noPrompt {
+		depResolution = "remote_build"
+	} else {
+		depDefaultIdx := int32(0)
+		depResResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message:       "How should dependencies be resolved?",
+				Choices:       depResChoices,
+				SelectedIndex: &depDefaultIdx,
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("dependency resolution selection was cancelled")
+			}
+			return nil, fmt.Errorf("failed to prompt for dependency resolution: %w", err)
+		}
+		depResolution = depResChoices[*depResResp.Value].Value
+	}
+
+	return &agent_yaml.CodeConfiguration{
+		Runtime:              runtime,
+		EntryPoint:           entryPoint,
+		DependencyResolution: &depResolution,
+	}, nil
+}
+
+// isPythonProject returns true if the directory appears to be a Python project,
+// determined by the presence of requirements.txt or any .py file.
+func isPythonProject(dir string) bool {
+	if dir == "" {
+		dir = "."
+	}
+	// Check for requirements.txt
+	if _, err := os.Stat(filepath.Join(dir, "requirements.txt")); err == nil {
+		return true
+	}
+	// Check for any .py file (shallow scan)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".py") {
+			return true
+		}
+	}
+	return false
+}
+
+// isDotnetProject returns true if the directory contains a .csproj file.
+// NOTE: .fsproj (F#) is not yet supported by the packaging path (packageDotnetBundled/detectDefaultEntryPoint).
+func isDotnetProject(dir string) bool {
+	if dir == "" {
+		dir = "."
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".csproj") {
+			return true
+		}
+	}
+	return false
 }

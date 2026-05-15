@@ -49,8 +49,8 @@ func TestDefaultPrompter_PromptSubscription_HappyPath(t *testing.T) {
 
 	mockAccount := &mockaccount.MockAccountManager{
 		Subscriptions: []account.Subscription{
-			{Id: "sub-alpha", Name: "Alpha", TenantId: "tenant-1"},
-			{Id: "sub-bravo", Name: "Bravo", TenantId: "tenant-2"},
+			{Id: "sub-alpha", Name: "Alpha", TenantId: "tenant-1", UserAccessTenantId: "tenant-1"},
+			{Id: "sub-bravo", Name: "Bravo", TenantId: "tenant-1", UserAccessTenantId: "tenant-1"},
 		},
 	}
 	p, mockCtx := newTestPrompter(t, mockAccount)
@@ -224,18 +224,14 @@ func TestDefaultPrompter_PromptLocation_WithDefaultSelectedLocation(t *testing.T
 	require.Contains(t, defaultValue.(string), "West US")
 }
 
-func TestDefaultPrompter_GetSubscriptionOptions_DemoMode(t *testing.T) {
+func TestDefaultPrompter_FormatSubscriptionOptions_DemoMode(t *testing.T) {
 	t.Setenv("AZD_DEMO_MODE", "true")
 
-	mockAccount := &mockaccount.MockAccountManager{
-		Subscriptions: []account.Subscription{
-			{Id: "sub-secret", Name: "Display Only"},
-		},
+	subscriptions := []account.Subscription{
+		{Id: "sub-secret", Name: "Display Only"},
 	}
-	p, _ := newTestPrompter(t, mockAccount)
 
-	opts, subs, _, err := p.getSubscriptionOptions(t.Context())
-	require.NoError(t, err)
+	opts, subs, _ := formatSubscriptionOptions(subscriptions, "")
 	require.Len(t, opts, 1)
 	require.Len(t, subs, 1)
 	// In demo mode, id must not be exposed.
@@ -243,20 +239,14 @@ func TestDefaultPrompter_GetSubscriptionOptions_DemoMode(t *testing.T) {
 	require.Contains(t, opts[0], "Display Only")
 }
 
-func TestDefaultPrompter_GetSubscriptionOptions_EnvVarDefault(t *testing.T) {
-	t.Setenv(environment.SubscriptionIdEnvVarName, "sub-env")
-
-	mockAccount := &mockaccount.MockAccountManager{
-		DefaultSubscription: "sub-config", // env var takes precedence
-		Subscriptions: []account.Subscription{
-			{Id: "sub-env", Name: "From Env"},
-			{Id: "sub-config", Name: "From Config"},
-		},
+func TestDefaultPrompter_FormatSubscriptionOptions_EnvVarDefault(t *testing.T) {
+	subscriptions := []account.Subscription{
+		{Id: "sub-env", Name: "From Env"},
+		{Id: "sub-config", Name: "From Config"},
 	}
-	p, _ := newTestPrompter(t, mockAccount)
 
-	_, _, def, err := p.getSubscriptionOptions(t.Context())
-	require.NoError(t, err)
+	// env var default takes precedence
+	_, _, def := formatSubscriptionOptions(subscriptions, "sub-env")
 	require.NotNil(t, def)
 	require.Contains(t, def.(string), "From Env")
 }

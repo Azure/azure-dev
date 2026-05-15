@@ -169,16 +169,34 @@ type ContainerResources struct {
 	Memory string `json:"memory" yaml:"memory"`
 }
 
+// CodeConfiguration represents the code deploy configuration for a hosted agent.
+// When present in a ContainerAgent, it signals code deploy mode (ZIP upload)
+// instead of container/image-based deploy.
+type CodeConfiguration struct {
+	Runtime              string  `json:"runtime" yaml:"runtime"`
+	EntryPoint           string  `json:"entryPoint" yaml:"entry_point"`
+	DependencyResolution *string `json:"dependencyResolution,omitempty" yaml:"dependency_resolution,omitempty"`
+}
+
 // ContainerAgent This represents a container based agent hosted by the provider/publisher.
 // The intent is to represent a container application that the user wants to run
 // in a hosted environment that the provider manages.
+//
+// When Image is set, deploy can use the pre-built container image instead of
+// building from a Dockerfile:
+//   - Interactive mode: the user is prompted whether to use the configured
+//     image or build from a Dockerfile. The default is to build.
+//   - Non-interactive mode (`--no-prompt`): the default selection (build from
+//     Dockerfile) is used automatically.
 type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
+	Image                string                  `json:"image,omitempty" yaml:"image,omitempty"`
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
 	Resources            *ContainerResources     `json:"resources,omitempty" yaml:"resources,omitempty"`
 	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environment_variables,omitempty"`
 	AgentEndpoint        *AgentEndpoint          `json:"agentEndpoint,omitempty" yaml:"agentEndpoint,omitempty"`
 	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agentCard,omitempty"`
+	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.

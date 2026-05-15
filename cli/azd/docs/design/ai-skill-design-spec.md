@@ -1,4 +1,4 @@
-<!-- cspell:ignore foundry gzip tarball zipslip orderby foundrysdk -->
+<!-- cspell:ignore exterrors foundry gzip tarball zipslip orderby foundrysdk -->
 
 # Design Spec: `azd ai agent skill` Commands
 
@@ -16,7 +16,7 @@ extension:
 
 These commands are pure CLI integration on top of the existing Foundry Skills
 data plane. No new server work is required; packaged update is conditional on
-Open Question 2 (§12).
+Open Question 1 (§12).
 
 A Skill on the Foundry platform is a reusable behavioral guideline that an
 agent can attach at runtime. The Skill payload is either inline JSON
@@ -29,7 +29,7 @@ In scope:
 
 - The six subcommands above and their flag surface.
 - File-input handling for `--file`: `SKILL.md` and packaged archives on
-  `create`, `SKILL.md` on `update`, and packaged update only if OQ2 (§12)
+  `create`, `SKILL.md` on `update`, and packaged update only if OQ1 (§12)
   resolves to a supported service endpoint.
 - Gzip extraction behavior for `download`, including safe extraction guarantees.
 - Reuse of the existing endpoint-resolution cascade and cross-cutting flags.
@@ -78,7 +78,7 @@ and allow `table` as an opt-in view. Verb-specific flags layer on top.
 | Create (package) | POST | `/skills:import` | `application/gzip` body |
 | Show | GET | `/skills/{name}` | Metadata only |
 | Update (inline / parsed) | POST | `/skills/{name}` | JSON body |
-| Update (package) | POST | `/skills/{name}:import` (TBC) | Conditional on OQ2 (§12). |
+| Update (package) | POST | `/skills/{name}:import` (TBC) | Conditional on OQ1 (§12). |
 | List | GET | `/skills` | Paginated; supports `top`, `orderby`, `skip`, etc. |
 | Delete | DELETE | `/skills/{name}` | |
 | Download | GET | `/skills/{name}:download` | Returns `application/gzip` |
@@ -168,7 +168,7 @@ Behavior:
    the merged payload to `/skills/{name}`.
 2. `--file` follows the same `.md` versus `.tar.gz` rule as `create`. For `.md`, the CLI
    parses front matter and body into the JSON update payload.
-   Gzip `--file` is conditional on OQ2 (§12); until confirmed, `.tar.gz` /
+   Gzip `--file` is conditional on OQ1 (§12); until confirmed, `.tar.gz` /
    `.tgz` on `update` fails with a validation error suggesting `create --force`.
 3. If no field flags and no `--file` are supplied, the command exits non-zero
    with a validation error.
@@ -361,11 +361,7 @@ debugging, are hashed.
 
 ## 12. Open Questions
 
-1. **`create --force` semantics: delete-then-recreate versus a future server upsert.**
-   The Skills surface today has no explicit upsert verb, so the CLI implements `--force`
-   as delete-then-create. If the service later gains a true upsert (PUT-style) endpoint,
-   `--force` should flip to it transparently. Confirm this is acceptable before lock.
-2. **Gzip update wire path.** Section 6.2 allows a gzip `--file` on `update`
+1. **Gzip update wire path.** Section 6.2 allows a gzip `--file` on `update`
     only if the service exposes a named package update route. The documented
     Skills data-plane surface currently lists `POST /skills:import` for create
     and `POST /skills/{name}` (JSON body) for update. Confirm whether the
@@ -386,7 +382,7 @@ azd ai agent skill create <name> --file ./skill.tar.gz \
   [-p <url>] [--output table|json] [--no-prompt] [--debug] [--force]
 
 # Update (any subset of fields; --file mutually exclusive with inline flags;
-# packaged .tar.gz update is pending Open Question 2)
+# packaged .tar.gz update is pending Open Question 1)
 azd ai agent skill update <name> [--description "..."] [--instructions "..."] \
   [--file <path>] [-p <url>] [--output table|json] [--no-prompt] [--debug]
 

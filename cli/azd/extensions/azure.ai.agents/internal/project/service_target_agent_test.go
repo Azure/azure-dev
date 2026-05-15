@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
@@ -133,7 +134,7 @@ func TestAgentExists(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			exists, err := agentExists(t.Context(), fakeAgentExistenceClient{err: tt.err}, "my-agent")
+			exists, err := agents.AgentExists(t.Context(), fakeAgentExistenceClient{err: tt.err}, "my-agent", agentAPIVersion)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error")
@@ -153,7 +154,7 @@ func TestAgentExists(t *testing.T) {
 func TestExistingAgentVersionWarning(t *testing.T) {
 	t.Parallel()
 
-	warning := existingAgentVersionWarning("my-agent")
+	warning := agents.ExistingAgentWarning("my-agent")
 	for _, want := range []string{
 		"my-agent",
 		"create a new version of the existing agent",

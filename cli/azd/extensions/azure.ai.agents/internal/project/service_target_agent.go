@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
@@ -763,34 +764,8 @@ type deployPrepResult struct {
 	protocols       []agent_yaml.ProtocolVersionRecord
 }
 
-type agentExistenceClient interface {
-	GetAgent(ctx context.Context, agentName, apiVersion string) (*agent_api.AgentObject, error)
-}
-
-func agentExists(ctx context.Context, client agentExistenceClient, agentName string) (bool, error) {
-	_, err := client.GetAgent(ctx, agentName, agentAPIVersion)
-	if err == nil {
-		return true, nil
-	}
-
-	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
-		respErr.StatusCode == http.StatusNotFound {
-		return false, nil
-	}
-
-	return false, err
-}
-
-func existingAgentVersionWarning(agentName string) string {
-	return output.WithWarningFormat(
-		"An agent named '%s' already exists in this Foundry project. "+
-			"Deploying with this name will create a new version of the existing agent, not a separate agent.\n",
-		agentName,
-	)
-}
-
 func writeExistingAgentVersionWarning(agentName string) {
-	fmt.Fprintf(os.Stderr, "%s", existingAgentVersionWarning(agentName))
+	fmt.Fprintf(os.Stderr, "%s", agents.ExistingAgentWarning(agentName))
 }
 
 // prepareDeploy handles the common pre-deploy logic shared by container and code
@@ -1600,7 +1575,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 		p.credential,
 	)
 
-	exists, err := agentExists(ctx, agentClient, request.Name)
+	exists, err := agents.AgentExists(ctx, agentClient, request.Name, agentAPIVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if agent exists: %w", err)
 	}

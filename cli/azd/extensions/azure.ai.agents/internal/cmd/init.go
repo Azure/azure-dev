@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
@@ -319,32 +320,6 @@ func updateAgentDefinition(
 	}
 }
 
-type agentGetter interface {
-	GetAgent(ctx context.Context, agentName, apiVersion string) (*agent_api.AgentObject, error)
-}
-
-func foundryAgentExists(ctx context.Context, client agentGetter, agentName string) (bool, error) {
-	_, err := client.GetAgent(ctx, agentName, DefaultAgentAPIVersion)
-	if err == nil {
-		return true, nil
-	}
-
-	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
-		respErr.StatusCode == http.StatusNotFound {
-		return false, nil
-	}
-
-	return false, err
-}
-
-func existingAgentWarning(agentName string) string {
-	return output.WithWarningFormat(
-		"An agent named '%s' already exists in this Foundry project. "+
-			"Deploying with this name will create a new version of the existing agent, not a separate agent.\n",
-		agentName,
-	)
-}
-
 func nextAgentNameSuggestion(agentName string) string {
 	const suffix = "-2"
 	base := strings.TrimRight(agentName, "-")
@@ -380,7 +355,7 @@ func resolveExistingAgentNameConflict(
 
 	agentClient := agent_api.NewAgentClient(endpointResp.Value, credential)
 	for {
-		exists, err := foundryAgentExists(ctx, agentClient, agentName)
+		exists, err := agents.AgentExists(ctx, agentClient, agentName, DefaultAgentAPIVersion)
 		if err != nil {
 			return "", fmt.Errorf("checking whether agent %q exists: %w", agentName, err)
 		}
@@ -388,7 +363,7 @@ func resolveExistingAgentNameConflict(
 			return agentName, nil
 		}
 
-		fmt.Printf("%s", existingAgentWarning(agentName))
+		fmt.Printf("%s", agents.ExistingAgentWarning(agentName))
 		if noPrompt {
 			fmt.Printf("%s", output.WithGrayFormat(
 				"To create a separate agent, re-run init with --agent-name <unique-name>.\n",

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
@@ -196,7 +197,7 @@ func TestFoundryAgentExists(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			exists, err := foundryAgentExists(t.Context(), fakeAgentGetter{err: tt.err}, "my-agent")
+			exists, err := agents.AgentExists(t.Context(), fakeAgentGetter{err: tt.err}, "my-agent", DefaultAgentAPIVersion)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error")

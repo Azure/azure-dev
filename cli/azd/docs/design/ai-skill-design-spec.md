@@ -339,7 +339,9 @@ One event per command, reusing the extension's existing telemetry surface:
 
 - `azd.ai.agent.skill.create` (`mode`: `inline` / `file-md` / `file-gzip`,
   `forced`: bool).
-- `azd.ai.agent.skill.update` (`mode`: as above, `fieldsTouched`: count).
+- `azd.ai.agent.skill.update` (`mode`: `inline` / `file-md`,
+  `fieldsTouched`: count). Gzip updates are rejected at the flag layer
+  (§6.2), so `file-gzip` is not a valid emitted value here.
 - `azd.ai.agent.skill.show` / `azd.ai.agent.skill.list` (`resolvedSource`).
 - `azd.ai.agent.skill.download` (`raw`: bool, `forced`: bool, `extractedFileCount`).
 - `azd.ai.agent.skill.delete` (`forced`: bool, `cancelled`: bool).
@@ -353,7 +355,15 @@ debugging, are hashed.
 - **Tar extraction.** Full rejection rules and decompression limits in §6.5.
 - **File write permissions.** User's umask; executable bits dropped.
 - **Auth.** Reuses the existing bearer-token pipeline; no new secret writes.
-- **Argument echoing.** Debug logger sanitizes request bodies (same as `agent_api`).
+- **Argument echoing.** `agent_api` sets `IncludeBody: true` on the Azure SDK
+  logging policy, and the current `setupDebugLogging` sanitizer only redacts
+  JSON connection-string fields. Skill request bodies carry user-authored
+  `description` and `instructions`, so this work extends the sanitizer with
+  JSON-field redaction rules for those fields (and any new free-text fields
+  the skill service exposes) before the skill client participates in
+  `IncludeBody` logging under `--debug`. Until the extended sanitizer is in
+  place, the skill client opts out of body logging so descriptions and
+  instructions are never written to `azd-ai-agents-<date>.log`.
 
 ## 12. Reference: Command Summary
 

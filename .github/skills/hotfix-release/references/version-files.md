@@ -1,6 +1,6 @@
 # Version Files — Hotfix Update
 
-When creating a hotfix release, three files must be updated to the new version.
+When creating a hotfix release, two version files must be updated.
 
 ## 1. `cli/version.txt`
 
@@ -34,27 +34,13 @@ Use `sed` or direct file edit. Verify:
 grep 'const Version' cli/azd/pkg/azdext/version.go
 ```
 
-## 3. `cli/azd/CHANGELOG.md`
-
-Add a new release section at the top (below the `# Changelog` header and any `## Unreleased` section):
-
-```markdown
-## 1.24.4 (2026-05-07) — Hotfix
-
-### Bugs Fixed
-
-- PR title here [[#NNNN]](https://github.com/Azure/azure-dev/pull/NNNN)
-```
-
-Place **above** the previous release entry (e.g., above `## 1.24.3`).
-
 ## Validation
 
-After updating all three files, verify consistency:
+After updating both files, verify consistency:
 
 ```bash
 VERSION_TXT=$(cat cli/version.txt | tr -d '\n')
-VERSION_GO=$(grep 'const Version' cli/azd/pkg/azdext/version.go | grep -oP '"[^"]*"' | tr -d '"')
+VERSION_GO=$(grep 'const Version' cli/azd/pkg/azdext/version.go | sed 's/.*"\(.*\)".*/\1/')
 echo "version.txt: $VERSION_TXT"
 echo "version.go:  $VERSION_GO"
 

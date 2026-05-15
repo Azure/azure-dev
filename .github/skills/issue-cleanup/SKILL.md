@@ -90,7 +90,7 @@ gh issue list --repo Azure/azure-dev --state open --milestone "May 2026" --limit
 
 **No milestone:**
 ```bash
-gh issue list --repo Azure/azure-dev --state open --milestone "" --limit 500 \
+gh issue list --repo Azure/azure-dev --state open --search "no:milestone" --limit 500 \
   --json number,title,labels,milestone,assignees,createdAt,updatedAt
 ```
 
@@ -197,7 +197,7 @@ For each issue being fixed:
 
 4. **Assign**: offer to assign to the user or someone else
    ```bash
-   gh issue edit NUMBER --repo Azure/azure-dev --add-assignee "rajeshkamal5050"
+   gh issue edit NUMBER --repo Azure/azure-dev --add-assignee "@me"
    ```
 
 ### Step 7 — Stale Milestone Check

@@ -31,6 +31,7 @@ INVOKES: `git` CLI, `gh` CLI, GitHub MCP tools, `ask_user`.
 |------|---------|
 | `git` | Git CLI — push access to Azure/azure-dev |
 | `gh` | GitHub CLI — authenticated with repo access |
+| `go` | Go toolchain — to verify build after cherry-pick (optional) |
 
 ## Preflight
 
@@ -229,12 +230,37 @@ Print a summary with next steps:
 
   Next steps:
     1. Review the branch: git log --oneline azure-dev-cli_1.24.3..hotfix/azd-1.24.4
-    2. Trigger the ADO release pipeline targeting branch: hotfix/azd-1.24.4
-    3. After release, tag the commit: git tag azure-dev-cli_1.24.4
-    4. Push the tag: git push origin azure-dev-cli_1.24.4
+    2. Trigger the release pipeline (see "Triggering the Release" below)
+    3. After release, add the hotfix changelog entry to main's CHANGELOG.md
 ```
 
 **Do NOT** create a PR to main. The hotfix branch is released directly via the ADO pipeline.
+
+**Do NOT** create tags manually. The release pipeline creates both `azure-dev-cli_X.Y.Z` and `cli/azd/vX.Y.Z` tags automatically.
+
+---
+
+## Triggering the Release
+
+Open the [azure-dev - cli](https://dev.azure.com/azure-sdk/internal/_build?definitionId=4643) pipeline in ADO:
+
+1. Click **Run pipeline**
+2. Select the `hotfix/*` branch (e.g., `hotfix/azd-1.24.4`)
+3. ✅ Check **"Check to run a release build"**
+4. Leave Azure Record Mode as **live** (default)
+5. Click **Run**
+
+The pipeline builds, signs, and publishes the release — including GitHub release, tags, storage upload, Chocolatey, WinGet, and Homebrew.
+
+> **Tip**: Set the pipeline variable `Skip.IncrementVersion = true` before running. The default increment job creates a version-bump PR targeting the source branch, which is unnecessary for a hotfix branch.
+
+---
+
+## Post-Release
+
+1. Add the hotfix changelog section (e.g., `## 1.24.4`) to `main`'s CHANGELOG.md so the release history is complete
+2. Do **not** merge version file changes back — main's version is already ahead
+3. The hotfix branch can be kept for reference or deleted per team preference
 
 ---
 

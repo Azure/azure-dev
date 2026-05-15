@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
+capabilities:
+    - custom-commands
+    - mcp-server
+    - metadata
+description: Manage Microsoft Foundry Routines from your terminal. (Preview)
+displayName: Foundry Routines (Preview)
+id: azure.ai.routines
+language: go
+namespace: ai.routine
+tags:
+    - ai
+    - routine
+usage: azd ai routine <command> [options]
+version: 0.0.1-preview

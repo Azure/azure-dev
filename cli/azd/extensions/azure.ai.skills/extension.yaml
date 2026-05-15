@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
+capabilities:
+    - custom-commands
+    - mcp-server
+    - metadata
+description: Manage Microsoft Foundry Skills from your terminal. (Preview)
+displayName: Foundry Skills (Preview)
+id: azure.ai.skills
+language: go
+namespace: ai.skill
+tags:
+    - ai
+    - skill
+usage: azd ai skill <command> [options]
+version: 0.0.1-preview

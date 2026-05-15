@@ -142,6 +142,7 @@ overrides:
           - remotebuild
           - resourcegroup
           - rollups
+          - springapp
           - startswith
           - staticwebapp
           - toreal

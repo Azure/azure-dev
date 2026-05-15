@@ -173,11 +173,43 @@ These are set once at process startup and attached to **every** span.
 | `project.template.id` | string | ✅ SHA-256 | Template identifier from `azure.yaml` metadata |
 | `project.template.version` | string | ✅ SHA-256 | Template version |
 | `project.name` | string | ✅ SHA-256 | Project name |
-| `project.service.hosts` | string[] | ❌ | Host types (e.g., `appservice`, `containerapp`) |
-| `project.service.targets` | string[] | ❌ | Resolved deployment targets |
-| `project.service.languages` | string[] | ❌ | Languages across all services |
-| `project.service.language` | string | ❌ | Language of specific service being executed |
+| `project.service.hosts` | string[] | ❌ | Host types — see [Service Targets](#service-targets) |
+| `project.service.targets` | string[] | ❌ | Resolved deployment targets — see [Service Targets](#service-targets) |
+| `project.service.languages` | string[] | ❌ | Languages across all services — see [Service Languages](#service-languages) |
+| `project.service.language` | string | ❌ | Language of specific service being executed — see [Service Languages](#service-languages) |
 | `platform.type` | string | ❌ | Platform integration (e.g., `aca`, `aks`) |
+
+#### Service Targets
+
+Valid values for `project.service.hosts` and `project.service.targets`:
+
+| Value | Description |
+|-------|-------------|
+| `appservice` | Azure App Service |
+| `containerapp` | Azure Container Apps |
+| `containerapp-dotnet` | Azure Container Apps (.NET Aspire) |
+| `function` | Azure Functions |
+| `staticwebapp` | Azure Static Web Apps |
+| `springapp` | Azure Spring Apps |
+| `aks` | Azure Kubernetes Service |
+| `ai.endpoint` | Azure AI endpoint |
+
+#### Service Languages
+
+Valid values for `project.service.languages` and `project.service.language`:
+
+| Value | Description |
+|-------|-------------|
+| `dotnet` | .NET |
+| `csharp` | C# |
+| `fsharp` | F# |
+| `python` | Python |
+| `js` | JavaScript |
+| `ts` | TypeScript |
+| `java` | Java |
+| `docker` | Docker (containerized) |
+| `swa` | Static Web App |
+| `custom` | Custom framework |
 | `env.name` | string | ✅ SHA-256 | Environment name |
 
 > **Joining with template names:** Template IDs are hashed. To resolve to human-readable names,
@@ -585,6 +617,30 @@ See [Dashboards & Reports](telemetry-dashboards.md) for full details.
 | `calcAzdOperations(...)` | Calculates operation-level metrics |
 | `calcFirstSuccessfulExecution(...)` | Finds first successful execution per user |
 | `calcNeverBeforeSeenUsersForAzd(...)` | Identifies new users |
+
+## Feature → Telemetry Mapping
+
+How to find telemetry for a given feature area. Start here if you know the feature and want to know what to query.
+
+| Feature Area | Key Events | Key Fields / Filters | What You Can Measure |
+|-------------|------------|---------------------|---------------------|
+| **Core Workflows (init/up/deploy/provision/down)** | `cmd.init`, `cmd.up`, `cmd.deploy`, `cmd.provision`, `cmd.down` | `cmd.entry`, `cmd.flags` | Adoption, success rate, duration, error patterns |
+| **Deployment Targets** | `cmd.deploy`, `cmd.package` | `project.service.targets` (`appservice`, `containerapp`, `aks`, etc.) | Usage by target, success rate per target |
+| **Container Apps (.NET / Aspire)** | `cmd.deploy`, `cmd.provision` | `project.service.targets` = `containerapp-dotnet`, `platform.type` = `aca` | Aspire-specific adoption and success |
+| **Language Support** | `cmd.deploy`, `cmd.package`, `cmd.restore` | `project.service.languages`, `project.service.language` (`dotnet`, `python`, `java`, etc.) | Usage by language |
+| **Templates** | `cmd.init`, `cmd.up` | `project.template.id` (hashed — use `addTemplateColumns` to resolve) | Template adoption, success by template |
+| **Provisioning (IaC)** | `cmd.provision`, `arm.deploy.*`, `arm.validate.*` | `project.infra.type` (`bicep`, `terraform`), ARM event details | Provision success, ARM errors, duration |
+| **Authentication** | `cmd.auth.login` | `auth.login.method`, `auth.login.result` | Auth method usage, failure rates |
+| **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
+| **Extensions** | `ext.run`, `ext.install`, `ext.upgrade` | `extension.id`, `extension.version`, `extension.installed` | Extension adoption, install/upgrade rates, errors |
+| **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client, call volume |
+| **Agentic (Copilot)** | `copilot.initialize`, `copilot.session`, `cmd.copilot.chat` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage, model selection |
+| **Agent Troubleshooting** | `agent.troubleshoot` | `agent.fix.attempts` | Auto-fix adoption, retry counts |
+| **VS Code Extension** | `azure-dev.*` | `azure-dev.commands.<cmd>` | VS Code usage, activation, command usage |
+| **Execution Environment** | All events | `ExecutionEnvironment` (`Desktop`, `GitHub Actions`, `Claude Code`, etc.) | Usage by environment, CI vs local |
+| **Self-Update** | `cmd.update` | `update.installMethod`, `update.availableVersion` | Update adoption |
+| **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type and executor |
+| **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `packaging.type` | Build method usage, success rates |
 
 ## See Also
 

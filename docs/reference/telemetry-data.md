@@ -210,6 +210,11 @@ Valid values for `project.service.languages` and `project.service.language`:
 | `docker` | Docker (containerized) |
 | `swa` | Static Web App |
 | `custom` | Custom framework |
+
+#### Other Project Fields
+
+| Field Key | Type | Hashed? | Description |
+|-----------|------|---------|-------------|
 | `env.name` | string | ✅ SHA-256 | Environment name |
 
 > **Joining with template names:** Template IDs are hashed. To resolve to human-readable names,
@@ -555,7 +560,7 @@ getAzdEvents(...) | invoke flagTestAzSubs()
 ```kql
 getAzdEvents(startDate=ago(30d), endDate=now(), true, true)
 | where Name startswith "cmd."
-| summarize Users = dcount(MachineId), Executions = count() by Name
+| summarize Users = dcount(tostring(Properties['machine.id'])), Executions = count() by Name
 | order by Users desc
 ```
 
@@ -564,7 +569,7 @@ getAzdEvents(startDate=ago(30d), endDate=now(), true, true)
 getAzdEvents(startDate=ago(30d), endDate=now(), true, true)
 | where Name == 'cmd.up' and Success
 | invoke addTemplateColumns()
-| summarize Users = dcount(MachineId) by TemplateName
+| summarize Users = dcount(tostring(Properties['machine.id'])) by TemplateName
 | order by Users desc
 ```
 
@@ -588,9 +593,9 @@ getAzdEvents(startDate=ago(30d), endDate=now(), true, true)
 ```kql
 let timeRange = ago(30d);
 let events = getAzdEvents(startDate=timeRange, endDate=now(), true, true);
-let initUsers = events | where Name == 'cmd.init' | summarize by MachineId;
-let provisionUsers = events | where Name == 'cmd.provision' and Success | summarize by MachineId;
-let deployUsers = events | where Name == 'cmd.deploy' and Success | summarize by MachineId;
+let initUsers = events | where Name == 'cmd.init' | summarize by MachineId = tostring(Properties['machine.id']);
+let provisionUsers = events | where Name == 'cmd.provision' and Success | summarize by MachineId = tostring(Properties['machine.id']);
+let deployUsers = events | where Name == 'cmd.deploy' and Success | summarize by MachineId = tostring(Properties['machine.id']);
 print
     Init = toscalar(initUsers | count),
     Provision = toscalar(provisionUsers | count),
@@ -627,18 +632,18 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Container Apps (.NET / Aspire)** | `cmd.deploy`, `cmd.provision` | `project.service.targets` = `containerapp-dotnet`, `platform.type` = `aca` | Aspire-specific adoption and success |
 | **Language Support** | `cmd.deploy`, `cmd.package`, `cmd.restore` | `project.service.languages`, `project.service.language` (`dotnet`, `python`, `java`, etc.) | Usage by language |
 | **Templates** | `cmd.init`, `cmd.up` | `project.template.id` (hashed — use `addTemplateColumns` to resolve) | Template adoption, success by template |
-| **Provisioning (IaC)** | `cmd.provision`, `arm.deploy.*`, `arm.validate.*` | `project.infra.type` (`bicep`, `terraform`), ARM event details | Provision success, ARM errors, duration |
-| **Authentication** | `cmd.auth.login` | `auth.login.method`, `auth.login.result` | Auth method usage, failure rates |
+| **Provisioning (IaC)** | `cmd.provision`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`, `terraform`), ARM event details | Provision success, ARM errors, duration |
+| **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
 | **Extensions** | `ext.run`, `ext.install`, `ext.upgrade` | `extension.id`, `extension.version`, `extension.installed` | Extension adoption, install/upgrade rates, errors |
 | **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client, call volume |
 | **Agentic (Copilot)** | `copilot.initialize`, `copilot.session`, `cmd.copilot.chat` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage, model selection |
 | **Agent Troubleshooting** | `agent.troubleshoot` | `agent.fix.attempts` | Auto-fix adoption, retry counts |
 | **VS Code Extension** | `azure-dev.*` | `azure-dev.commands.<cmd>` | VS Code usage, activation, command usage |
-| **Execution Environment** | All events | `ExecutionEnvironment` (`Desktop`, `GitHub Actions`, `Claude Code`, etc.) | Usage by environment, CI vs local |
-| **Self-Update** | `cmd.update` | `update.installMethod`, `update.availableVersion` | Update adoption |
+| **Execution Environment** | All events | `execution.environment` (`Desktop`, `GitHub Actions`, `Claude Code`, etc.) | Usage by environment, CI vs local |
+| **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion`, `update.toVersion` | Update adoption |
 | **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type and executor |
-| **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `packaging.type` | Build method usage, success rates |
+| **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image`, `pack.builder.tag` | Build method usage, success rates |
 
 ## See Also
 

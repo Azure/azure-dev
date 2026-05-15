@@ -97,7 +97,7 @@ The telemetry pipeline spans multiple layers. Depending on what you need:
 
 ## Privacy and Compliance
 
-- All telemetry is anonymous — no PII is collected
+- Telemetry contains no direct PII — sensitive identifiers are one-way hashed or classified
 - Identifiers (machine ID, project name, etc.) are one-way hashed
 - Users can opt out at any time
 - GDPR classification pipeline automatically processes all telemetry fields

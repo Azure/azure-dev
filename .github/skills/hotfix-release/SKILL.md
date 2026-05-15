@@ -78,7 +78,7 @@ If either is missing, ask via `ask_user`.
 
 ```bash
 git fetch --tags
-git tag -l "azure-dev-cli_VERSION"
+git tag -l "azure-dev-cli_${BASE_VERSION}"
 ```
 
 The tag format is `azure-dev-cli_X.Y.Z` (e.g., `azure-dev-cli_1.24.3`).
@@ -99,14 +99,17 @@ For each PR:
 - Record `mergeCommit.oid` — this is what we cherry-pick
 - If PR is not merged, warn and skip it
 
-**Determine merge strategy per PR:**
+**Determine if merge commit:**
+
+After fetching, check the parent count of the merge commit SHA:
 
 ```bash
-gh pr view PR_NUMBER --repo Azure/azure-dev --json commits
+git fetch origin MERGE_SHA
+git show --no-patch --pretty=%P MERGE_SHA
 ```
 
-- If `commits` count is 1 → squash merge (cherry-pick the merge commit directly)
-- If `commits` count > 1 → could be merge commit (use `git cherry-pick -m 1 MERGE_SHA`)
+- If 1 parent → squash merge (cherry-pick directly)
+- If 2+ parents → merge commit (use `git cherry-pick -m 1 MERGE_SHA`)
 
 **Compute hotfix version:**
 - Parse base version X.Y.Z → hotfix version X.Y.(Z+1)

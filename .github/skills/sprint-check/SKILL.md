@@ -5,7 +5,7 @@ metadata:
   version: "1.0"
   # Bump major on breaking prompt/trigger changes; bump minor on new references or fix strategies.
 description: >-
-  **WORKFLOW SKILL** — Validates sprint readiness for issues and PRs.
+  **WORKFLOW SKILL** — Validates sprint readiness for issues.
   Checks labels, milestones, project fields (Sprint, Priority, Initiative),
   EPIC parents, and assignments. Can fix fields interactively with user confirmation.
 
@@ -149,7 +149,7 @@ gh api graphql -f query='{
       labels(first: 20) { nodes { name } }
       milestone { title number }
       parent { number title }
-      projectItems(first: 10) {
+      projectItems(first: 100) {
         nodes {
           project { number }
           id

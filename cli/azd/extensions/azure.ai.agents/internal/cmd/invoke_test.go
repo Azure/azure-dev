@@ -272,6 +272,46 @@ func TestInvokeCommandTimeoutDefault(t *testing.T) {
 	}
 }
 
+func TestInvokeCommandIsolationFlags(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInvokeCommand(nil)
+	for _, name := range []string{"user-isolation-key", "chat-isolation-key"} {
+		flag := cmd.Flags().Lookup(name)
+		if flag == nil {
+			t.Fatalf("%s flag not registered", name)
+		}
+		if flag.DefValue != "" {
+			t.Errorf("%s default = %q, want empty", name, flag.DefValue)
+		}
+	}
+}
+
+func TestApplyIsolationHeaders(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodPost, "https://example.com/invocations", nil)
+	req.Header.Set("Authorization", "Bearer unchanged")
+
+	applyIsolationHeaders(req, &isolationHeaderFlags{
+		userIsolationKey: "user-1",
+		chatIsolationKey: "chat-1",
+	})
+
+	if got := req.Header.Get("Authorization"); got != "Bearer unchanged" {
+		t.Errorf("Authorization = %q, want unchanged", got)
+	}
+	if got := req.Header.Get(agent_api.AgentUserIsolationKeyHeader); got != "user-1" {
+		t.Errorf("%s = %q, want user-1", agent_api.AgentUserIsolationKeyHeader, got)
+	}
+	if got := req.Header.Get(agent_api.AgentChatIsolationKeyHeader); got != "chat-1" {
+		t.Errorf("%s = %q, want chat-1", agent_api.AgentChatIsolationKeyHeader, got)
+	}
+	if got := req.Header.Values(agent_api.SessionIsolationKeyHeader); len(got) != 0 {
+		t.Errorf("%s values = %v, want none", agent_api.SessionIsolationKeyHeader, got)
+	}
+}
+
 func TestResolveProtocol_ExplicitFlag(t *testing.T) {
 	t.Parallel()
 
@@ -659,7 +699,7 @@ func TestHandleInvocationResponse_Routing(t *testing.T) {
 				resp.Header.Set(k, v)
 			}
 
-			err := handleInvocationResponse(t.Context(), resp, "", "", "test-agent", 10*time.Second)
+			err := handleInvocationResponse(t.Context(), resp, "", "", "test-agent", 10*time.Second, nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -912,7 +952,7 @@ func TestHandleInvocationLRO(t *testing.T) {
 				resp.Header.Set("x-agent-invocation-id", tt.initial202Header)
 			}
 
-			err := handleInvocationLRO(t.Context(), resp, "", "", "test-agent", tt.timeout)
+			err := handleInvocationLRO(t.Context(), resp, "", "", "test-agent", tt.timeout, nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -925,6 +965,59 @@ func TestHandleInvocationLRO(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestHandleInvocationLRO_PropagatesIsolationHeaders(t *testing.T) {
+	origInterval := defaultLROPollInterval
+	defaultLROPollInterval = time.Millisecond
+	t.Cleanup(func() { defaultLROPollInterval = origInterval })
+
+	var pollRequest *http.Request
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pollRequest = r
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"completed"}`))
+	}))
+	defer srv.Close()
+
+	reqURL, _ := url.Parse(srv.URL + "/invocations?api-version=test")
+	resp := &http.Response{
+		StatusCode: http.StatusAccepted,
+		Status:     "202 Accepted",
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader(`{"status":"accepted"}`)),
+		Request:    &http.Request{URL: reqURL},
+	}
+	resp.Header.Set("x-agent-invocation-id", "inv-headers")
+
+	err := handleInvocationLRO(
+		t.Context(),
+		resp,
+		"",
+		"token",
+		"test-agent",
+		time.Second,
+		&agent_api.SessionRequestOptions{
+			UserIsolationKey: "user-1",
+			ChatIsolationKey: "chat-1",
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if pollRequest == nil {
+		t.Fatal("expected poll request")
+	}
+	if got := pollRequest.Header.Get("Authorization"); got != "Bearer token" {
+		t.Errorf("Authorization = %q, want Bearer token", got)
+	}
+	if got := pollRequest.Header.Get(agent_api.AgentUserIsolationKeyHeader); got != "user-1" {
+		t.Errorf("%s = %q, want user-1", agent_api.AgentUserIsolationKeyHeader, got)
+	}
+	if got := pollRequest.Header.Get(agent_api.AgentChatIsolationKeyHeader); got != "chat-1" {
+		t.Errorf("%s = %q, want chat-1", agent_api.AgentChatIsolationKeyHeader, got)
 	}
 }
 
@@ -1033,7 +1126,7 @@ func TestCreateConversation(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			id, err := createConversation(t.Context(), srv.URL, tt.agentName, "test-token")
+			id, err := createConversation(t.Context(), srv.URL, tt.agentName, "test-token", nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -1054,5 +1147,44 @@ func TestCreateConversation(t *testing.T) {
 				t.Errorf("id = %q, want %q", id, tt.wantID)
 			}
 		})
+	}
+}
+
+func TestCreateConversation_PropagatesIsolationHeaders(t *testing.T) {
+	t.Parallel()
+
+	var request *http.Request
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		request = r
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"conv-headers"}`))
+	}))
+	defer srv.Close()
+
+	id, err := createConversation(
+		t.Context(),
+		srv.URL,
+		"my-agent",
+		"test-token",
+		&agent_api.SessionRequestOptions{
+			UserIsolationKey: "user-1",
+			ChatIsolationKey: "chat-1",
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != "conv-headers" {
+		t.Fatalf("id = %q, want conv-headers", id)
+	}
+
+	if request == nil {
+		t.Fatal("expected request")
+	}
+	if got := request.Header.Get(agent_api.AgentUserIsolationKeyHeader); got != "user-1" {
+		t.Errorf("%s = %q, want user-1", agent_api.AgentUserIsolationKeyHeader, got)
+	}
+	if got := request.Header.Get(agent_api.AgentChatIsolationKeyHeader); got != "chat-1" {
+		t.Errorf("%s = %q, want chat-1", agent_api.AgentChatIsolationKeyHeader, got)
 	}
 }

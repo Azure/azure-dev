@@ -102,6 +102,12 @@ func TestMonitorCommand_DefaultValues(t *testing.T) {
 
 	session, _ := cmd.Flags().GetString("session-id")
 	assert.Equal(t, "", session)
+
+	userIsolationKey, _ := cmd.Flags().GetString("user-isolation-key")
+	assert.Equal(t, "", userIsolationKey)
+
+	chatIsolationKey, _ := cmd.Flags().GetString("chat-isolation-key")
+	assert.Equal(t, "", chatIsolationKey)
 }
 
 func TestMonitorCommand_SessionFlagRegistered(t *testing.T) {

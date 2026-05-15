@@ -11,9 +11,12 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/stretchr/testify/require"
@@ -33,6 +36,37 @@ func (f *fakeTransport) Do(req *http.Request) (*http.Response, error) {
 	}, nil
 }
 
+type captureTransport struct {
+	statusCode int
+	body       string
+	requests   []*http.Request
+}
+
+func (f *captureTransport) Do(req *http.Request) (*http.Response, error) {
+	f.requests = append(f.requests, req)
+
+	body := f.body
+	if body == "" {
+		body = "{}"
+	}
+
+	return &http.Response{
+		StatusCode: f.statusCode,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    req,
+	}, nil
+}
+
+type fakeCredential struct{}
+
+func (fakeCredential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return azcore.AccessToken{
+		Token:     "test-token",
+		ExpiresOn: time.Now().Add(time.Hour),
+	}, nil
+}
+
 // newTestClient creates an AgentClient backed by fakeTransport (no auth).
 func newTestClient(endpoint string, transport policy.Transporter) *AgentClient {
 	pipeline := runtime.NewPipeline(
@@ -46,6 +80,57 @@ func newTestClient(endpoint string, transport policy.Transporter) *AgentClient {
 	}
 }
 
+func newCaptureClient(statusCode int, body string) (*AgentClient, *captureTransport) {
+	transport := &captureTransport{statusCode: statusCode, body: body}
+	return newTestClient(
+		"https://test.example.com/api/projects/proj",
+		transport,
+	), transport
+}
+
+func requireIsolationHeaders(
+	t *testing.T,
+	req *http.Request,
+	wantUser, wantChat, wantSession string,
+) {
+	t.Helper()
+
+	if wantUser == "" {
+		require.Empty(t, req.Header.Values(AgentUserIsolationKeyHeader))
+	} else {
+		require.Equal(t, wantUser, req.Header.Get(AgentUserIsolationKeyHeader))
+	}
+
+	if wantChat == "" {
+		require.Empty(t, req.Header.Values(AgentChatIsolationKeyHeader))
+	} else {
+		require.Equal(t, wantChat, req.Header.Get(AgentChatIsolationKeyHeader))
+	}
+
+	if wantSession == "" {
+		require.Empty(t, req.Header.Values(SessionIsolationKeyHeader))
+	} else {
+		require.Equal(t, wantSession, req.Header.Get(SessionIsolationKeyHeader))
+	}
+}
+
+func TestSessionRequestOptions_ApplyHeaders(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer unchanged")
+
+	options := &SessionRequestOptions{
+		UserIsolationKey: "user-1",
+		ChatIsolationKey: "chat-1",
+	}
+
+	options.ApplyHeaders(headers)
+
+	require.Equal(t, "Bearer unchanged", headers.Get("Authorization"))
+	require.Equal(t, "user-1", headers.Get(AgentUserIsolationKeyHeader))
+	require.Equal(t, "chat-1", headers.Get(AgentChatIsolationKeyHeader))
+	require.Empty(t, headers.Values(SessionIsolationKeyHeader))
+}
+
 func TestDeleteSession_Accepts200(t *testing.T) {
 	client := newTestClient(
 		"https://test.example.com/api/projects/proj",
@@ -53,7 +138,7 @@ func TestDeleteSession_Accepts200(t *testing.T) {
 	)
 
 	err := client.DeleteSession(
-		t.Context(), "my-agent", "sess-1", "", "2025-11-15-preview",
+		t.Context(), "my-agent", "sess-1", "2025-11-15-preview", nil,
 	)
 	require.NoError(t, err, "200 OK should be treated as success")
 }
@@ -65,7 +150,7 @@ func TestDeleteSession_Accepts204(t *testing.T) {
 	)
 
 	err := client.DeleteSession(
-		t.Context(), "my-agent", "sess-1", "", "2025-11-15-preview",
+		t.Context(), "my-agent", "sess-1", "2025-11-15-preview", nil,
 	)
 	require.NoError(t, err, "204 No Content should be treated as success")
 }
@@ -77,7 +162,7 @@ func TestDeleteSession_Rejects500(t *testing.T) {
 	)
 
 	err := client.DeleteSession(
-		t.Context(), "my-agent", "sess-1", "", "2025-11-15-preview",
+		t.Context(), "my-agent", "sess-1", "2025-11-15-preview", nil,
 	)
 	require.Error(t, err, "500 should be an error")
 }
@@ -89,7 +174,7 @@ func TestGetSession_404ReturnsError(t *testing.T) {
 	)
 
 	_, err := client.GetSession(
-		t.Context(), "my-agent", "sess-1", "2025-11-15-preview",
+		t.Context(), "my-agent", "sess-1", "2025-11-15-preview", nil,
 	)
 	require.Error(t, err, "404 should be an error from GetSession")
 }
@@ -128,7 +213,7 @@ func TestCreateSession_Returns201WithBody(t *testing.T) {
 	)
 
 	session, err := client.CreateSession(
-		t.Context(), "my-agent", "",
+		t.Context(), "my-agent",
 		&CreateAgentSessionRequest{
 			VersionIndicator: &VersionIndicator{
 				Type:         "version_ref",
@@ -136,6 +221,7 @@ func TestCreateSession_Returns201WithBody(t *testing.T) {
 			},
 		},
 		"2025-11-15-preview",
+		nil,
 	)
 
 	require.NoError(t, err)
@@ -168,7 +254,7 @@ func TestListSessions_Returns200WithPagination(t *testing.T) {
 	)
 
 	result, err := client.ListSessions(
-		t.Context(), "my-agent", nil, nil, "2025-11-15-preview",
+		t.Context(), "my-agent", nil, nil, "2025-11-15-preview", nil,
 	)
 
 	require.NoError(t, err)
@@ -176,6 +262,256 @@ func TestListSessions_Returns200WithPagination(t *testing.T) {
 	require.Equal(t, "sess-1", result.Data[0].AgentSessionID)
 	require.NotNil(t, result.PaginationToken)
 	require.Equal(t, "next-page-abc", *result.PaginationToken)
+}
+
+func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
+	sessionBody := `{
+		"agent_session_id": "sess-1",
+		"version_indicator": {"type": "version_ref", "agent_version": "3"},
+		"status": "running",
+		"created_at": 1700000000,
+		"last_accessed_at": 1700000100,
+		"expires_at": 1700086400
+	}`
+
+	tests := []struct {
+		name        string
+		statusCode  int
+		body        string
+		call        func(*AgentClient, *SessionRequestOptions) error
+		wantSession string
+	}{
+		{
+			name:       "create",
+			statusCode: http.StatusCreated,
+			body:       sessionBody,
+			call: func(client *AgentClient, options *SessionRequestOptions) error {
+				_, err := client.CreateSession(
+					t.Context(),
+					"my-agent",
+					&CreateAgentSessionRequest{},
+					"2025-11-15-preview",
+					options,
+				)
+				return err
+			},
+			wantSession: "session-1",
+		},
+		{
+			name:       "get",
+			statusCode: http.StatusOK,
+			body:       sessionBody,
+			call: func(client *AgentClient, options *SessionRequestOptions) error {
+				_, err := client.GetSession(
+					t.Context(),
+					"my-agent",
+					"sess-1",
+					"2025-11-15-preview",
+					options,
+				)
+				return err
+			},
+		},
+		{
+			name:       "delete",
+			statusCode: http.StatusNoContent,
+			call: func(client *AgentClient, options *SessionRequestOptions) error {
+				return client.DeleteSession(
+					t.Context(),
+					"my-agent",
+					"sess-1",
+					"2025-11-15-preview",
+					options,
+				)
+			},
+			wantSession: "session-1",
+		},
+		{
+			name:       "list",
+			statusCode: http.StatusOK,
+			body:       `{"data":[]}`,
+			call: func(client *AgentClient, options *SessionRequestOptions) error {
+				_, err := client.ListSessions(
+					t.Context(),
+					"my-agent",
+					nil,
+					nil,
+					"2025-11-15-preview",
+					options,
+				)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, transport := newCaptureClient(tt.statusCode, tt.body)
+			options := &SessionRequestOptions{
+				SessionIsolationKey: tt.wantSession,
+				UserIsolationKey:    "user-1",
+				ChatIsolationKey:    "chat-1",
+			}
+
+			require.NoError(t, tt.call(client, options))
+			require.Len(t, transport.requests, 1)
+			requireIsolationHeaders(t, transport.requests[0], "user-1", "chat-1", tt.wantSession)
+		})
+	}
+}
+
+func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		call       func(*AgentClient, *SessionRequestOptions) error
+	}{
+		{
+			name:       "upload",
+			statusCode: http.StatusOK,
+			call: func(client *AgentClient, options *SessionRequestOptions) error {
+				return client.UploadSessionFile(
+					t.Context(),
+					"my-agent",
+					"sess-1",
+					"/data/input.txt",
+					"2025-11-15-preview",
+					bytes.NewReader([]byte("hello")),
+					options,
+				)
+			},
+		},
+		{
+			name:       "download",
+			statusCode: http.StatusOK,
+			body:       "hello",
+			call: func(client *AgentClient, options *SessionRequestOptions) error {
+				body, err := client.DownloadSessionFile(
+					t.Context(),
+					"my-agent",
+					"sess-1",
+					"/data/input.txt",
+					"2025-11-15-preview",
+					options,
+				)
+				if err != nil {
+					return err
+				}
+				return body.Close()
+			},
+		},
+		{
+			name:       "list",
+			statusCode: http.StatusOK,
+			body:       `{"path":"/","entries":[]}`,
+			call: func(client *AgentClient, options *SessionRequestOptions) error {
+				_, err := client.ListSessionFiles(
+					t.Context(),
+					"my-agent",
+					"sess-1",
+					"",
+					"2025-11-15-preview",
+					options,
+				)
+				return err
+			},
+		},
+		{
+			name:       "remove",
+			statusCode: http.StatusNoContent,
+			call: func(client *AgentClient, options *SessionRequestOptions) error {
+				return client.RemoveSessionFile(
+					t.Context(),
+					"my-agent",
+					"sess-1",
+					"/data/input.txt",
+					false,
+					"2025-11-15-preview",
+					options,
+				)
+			},
+		},
+		{
+			name:       "mkdir",
+			statusCode: http.StatusNoContent,
+			call: func(client *AgentClient, options *SessionRequestOptions) error {
+				return client.MkdirSessionFile(
+					t.Context(),
+					"my-agent",
+					"sess-1",
+					"/data",
+					"2025-11-15-preview",
+					options,
+				)
+			},
+		},
+		{
+			name:       "stat",
+			statusCode: http.StatusOK,
+			body:       `{"name":"input.txt","path":"/data/input.txt","is_dir":false}`,
+			call: func(client *AgentClient, options *SessionRequestOptions) error {
+				_, err := client.StatSessionFile(
+					t.Context(),
+					"my-agent",
+					"sess-1",
+					"/data/input.txt",
+					"2025-11-15-preview",
+					options,
+				)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, transport := newCaptureClient(tt.statusCode, tt.body)
+			options := &SessionRequestOptions{
+				UserIsolationKey: "user-1",
+				ChatIsolationKey: "chat-1",
+			}
+
+			require.NoError(t, tt.call(client, options))
+			require.Len(t, transport.requests, 1)
+			requireIsolationHeaders(t, transport.requests[0], "user-1", "chat-1", "")
+		})
+	}
+}
+
+func TestGetAgentSessionLogStream_ApplyIsolationHeaders(t *testing.T) {
+	var request *http.Request
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		request = r
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("event: log\n\n"))
+	}))
+	defer server.Close()
+
+	client := &AgentClient{
+		endpoint:   server.URL,
+		credential: fakeCredential{},
+	}
+
+	body, err := client.GetAgentSessionLogStream(
+		t.Context(),
+		"my-agent",
+		"sess-1",
+		"2025-11-15-preview",
+		"console",
+		50,
+		false,
+		&SessionRequestOptions{
+			UserIsolationKey: "user-1",
+			ChatIsolationKey: "chat-1",
+		},
+	)
+	require.NoError(t, err)
+	defer body.Close()
+
+	require.NotNil(t, request)
+	require.Equal(t, "Bearer test-token", request.Header.Get("Authorization"))
+	requireIsolationHeaders(t, request, "user-1", "chat-1", "")
 }
 
 func TestPatchAgent_Success(t *testing.T) {

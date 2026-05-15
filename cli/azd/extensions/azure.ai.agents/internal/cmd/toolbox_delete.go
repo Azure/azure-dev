@@ -1,0 +1,261 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"azureaiagent/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
+)
+
+// toolboxDeleteFlags carries the verb-specific flags for `toolbox delete`.
+type toolboxDeleteFlags struct {
+	version string
+	force   bool
+}
+
+// newToolboxDeleteCommand returns the `azd ai agent toolbox delete <name>` command.
+func newToolboxDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	extCtx = ensureExtensionContext(extCtx)
+	flags := &toolboxDeleteFlags{}
+
+	cmd := &cobra.Command{
+		Use:   "delete <name>",
+		Short: "Delete a toolbox or a single version.",
+		Long: `Delete a toolbox or one of its versions.
+
+Without --version the whole toolbox is removed (cascades to every version).
+With --version the named version is deleted; the CLI refuses to delete the
+default version while others exist (retarget first) or — without --force —
+when it is the only remaining version (which would cascade and remove the
+toolbox).`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runToolboxDelete(cmd.Context(), args[0], *flags, readToolboxFlags(cmd, extCtx))
+		},
+	}
+
+	cmd.Flags().StringVar(
+		&flags.version, "version", "",
+		"Delete a single version instead of the whole toolbox.",
+	)
+	cmd.Flags().BoolVar(
+		&flags.force, "force", false,
+		"Skip confirmation prompts and override safety checks where allowed.",
+	)
+	registerToolboxOutputFlag(cmd)
+
+	return cmd
+}
+
+func runToolboxDelete(
+	ctx context.Context, name string, verb toolboxDeleteFlags, parent toolboxFlags,
+) error {
+	if err := validateToolboxName(name); err != nil {
+		return err
+	}
+	if err := validateOutputFormat(parent.output); err != nil {
+		return err
+	}
+	if parent.noPrompt && !verb.force {
+		return exterrors.Validation(
+			exterrors.CodeMissingForceFlag,
+			"--no-prompt requires --force on destructive operations",
+			"add --force to confirm the deletion non-interactively",
+		)
+	}
+
+	client, resolved, err := resolveToolboxAndClient(ctx, parent)
+	if err != nil {
+		return err
+	}
+	logResolvedEndpoint("toolbox delete", resolved)
+
+	return runToolboxDeleteWith(ctx, client, resolved.Endpoint, name, verb, parent)
+}
+
+// runToolboxDeleteWith is the testable core. It accepts a toolboxClient
+// interface so unit tests can drive the branches without an HTTP server.
+func runToolboxDeleteWith(
+	ctx context.Context, client toolboxClient, endpoint, name string,
+	verb toolboxDeleteFlags, parent toolboxFlags,
+) error {
+	if verb.version == "" {
+		return runDeleteToolbox(ctx, client, endpoint, name, verb, parent)
+	}
+	return runDeleteToolboxVersion(ctx, client, endpoint, name, verb, parent)
+}
+
+// runDeleteToolbox handles `toolbox delete <name>` (no --version).
+func runDeleteToolbox(
+	ctx context.Context, client toolboxClient, endpoint, name string,
+	verb toolboxDeleteFlags, parent toolboxFlags,
+) error {
+	return withAzdClient(func(azdClient *azdext.AzdClient) error {
+		// Best-effort pending lookup; a read failure is logged but non-fatal.
+		pending, err := getPendingToolbox(ctx, azdClient, endpoint, name)
+		if err != nil {
+			log.Printf("toolbox delete: pending-toolbox read failed for %q: %v", name, err)
+		}
+
+		_, getErr := client.GetToolbox(ctx, name)
+		switch {
+		case getErr == nil:
+			// Live toolbox.
+			if !verb.force {
+				confirmed, err := confirmToolboxDelete(ctx, azdClient,
+					fmt.Sprintf("Delete toolbox %q (cascades to every version)?", name))
+				if err != nil {
+					return err
+				}
+				if !confirmed {
+					fmt.Println("Aborted.")
+					return nil
+				}
+			}
+			if err := client.DeleteToolbox(ctx, name); err != nil && !isAzureNotFound(err) {
+				return exterrors.ServiceFromAzure(err, exterrors.OpDeleteToolbox)
+			}
+			// Best-effort clear of any local pending record (non-fatal).
+			if _, err := clearPendingToolbox(ctx, azdClient, endpoint, name); err != nil {
+				log.Printf("toolbox delete: failed to clear pending record for %q: %v", name, err)
+			}
+			return emitDeleteResult(name, "", "deleted", parent.output)
+
+		case isAzureNotFound(getErr):
+			if pending != nil {
+				if _, err := clearPendingToolbox(ctx, azdClient, endpoint, name); err != nil {
+					return exterrors.Internal(exterrors.CodePendingToolboxStoreFailed, err.Error())
+				}
+				if parent.output == "json" {
+					return emitDeleteResult(name, "", "pending_cleared", parent.output)
+				}
+				fmt.Printf("Cleared pending toolbox %s.\n", name)
+				return nil
+			}
+			return exterrors.Dependency(
+				exterrors.CodeToolboxNotFound,
+				fmt.Sprintf("toolbox %q not found at %s", name, endpoint),
+				"run 'azd ai agent toolbox list' to see available toolboxes",
+			)
+
+		default:
+			return exterrors.ServiceFromAzure(getErr, exterrors.OpGetToolbox)
+		}
+	})
+}
+
+// runDeleteToolboxVersion handles `toolbox delete <name> --version <n>`.
+func runDeleteToolboxVersion(
+	ctx context.Context, client toolboxClient, endpoint, name string,
+	verb toolboxDeleteFlags, parent toolboxFlags,
+) error {
+	tb, err := client.GetToolbox(ctx, name)
+	if err != nil {
+		return toolboxNotFoundOrService(err, name, exterrors.OpGetToolbox)
+	}
+
+	cascaded := false
+	if verb.version == tb.DefaultVersion {
+		versions, err := client.ListToolboxVersions(ctx, name)
+		if err != nil {
+			return exterrors.ServiceFromAzure(err, exterrors.OpListToolboxVersions)
+		}
+
+		if len(versions) > 1 {
+			return exterrors.Validation(
+				exterrors.CodeDefaultVersionDelete,
+				fmt.Sprintf(
+					"version %q is the default for toolbox %q and other versions exist",
+					verb.version, name,
+				),
+				"retarget the default with `azd ai agent toolbox update --default-version <other>` first",
+			)
+		}
+
+		// Only remaining version → cascading delete; require --force.
+		if !verb.force {
+			return exterrors.Validation(
+				exterrors.CodeOnlyVersionDelete,
+				fmt.Sprintf(
+					"version %q is the only remaining version of toolbox %q; "+
+						"deleting it removes the toolbox", verb.version, name,
+				),
+				fmt.Sprintf(
+					"run `azd ai agent toolbox delete %q` to delete the toolbox, "+
+						"or pass --force to confirm",
+					name,
+				),
+			)
+		}
+		cascaded = true
+	}
+	// NOTE: spec § 5.3 row 3 specifies DELETE /toolboxes/{name}/versions/{n}
+	// with no prompt for non-default versions. We intentionally do not add a
+	// confirmation here even when not running with --force, to match the spec.
+
+	if err := client.DeleteToolboxVersion(ctx, name, verb.version); err != nil {
+		return exterrors.ServiceFromAzure(err, exterrors.OpDeleteToolboxVersion)
+	}
+
+	if cascaded {
+		// Server cascaded the parent toolbox away — best-effort clear of any
+		// local pending record so the name doesn't linger in `toolbox list`.
+		_ = withAzdClient(func(azdClient *azdext.AzdClient) error {
+			if _, err := clearPendingToolbox(ctx, azdClient, endpoint, name); err != nil {
+				log.Printf(
+					"toolbox delete: failed to clear pending record after cascade for %q: %v",
+					name, err,
+				)
+			}
+			return nil
+		})
+		if parent.output == "json" {
+			return emitDeleteResult(name, verb.version, "toolbox_cascaded", parent.output)
+		}
+		fmt.Printf("Deleted toolbox %s (last version removed).\n", name)
+		return nil
+	}
+	return emitDeleteResult(name, verb.version, "version_deleted", parent.output)
+}
+
+// confirmToolboxDelete shows a destructive-action confirmation prompt.
+func confirmToolboxDelete(ctx context.Context, azdClient *azdext.AzdClient, message string) (bool, error) {
+	resp, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message:      message,
+			DefaultValue: new(false),
+		},
+	})
+	if err != nil {
+		return false, exterrors.FromPrompt(err, "delete confirmation")
+	}
+	if resp == nil || resp.Value == nil {
+		return false, nil
+	}
+	return *resp.Value, nil
+}
+
+func emitDeleteResult(name, version, outcome, output string) error {
+	if output == "json" {
+		payload := map[string]any{
+			"name":    name,
+			"version": version,
+			"outcome": outcome,
+		}
+		return emitJSON(payload)
+	}
+	switch outcome {
+	case "deleted":
+		fmt.Printf("Deleted toolbox %s.\n", name)
+	case "version_deleted":
+		fmt.Printf("Deleted version %s of toolbox %s.\n", version, name)
+	}
+	return nil
+}

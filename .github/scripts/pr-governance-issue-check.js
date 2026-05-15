@@ -11,7 +11,7 @@ module.exports = async ({ github, context, core }) => {
   }
 
   // Skip for dependabot and automated PRs
-  const skipAuthors = ['dependabot[bot]', 'dependabot', 'app/dependabot'];
+  const skipAuthors = ['dependabot[bot]', 'dependabot', 'app/dependabot', 'azure-sdk'];
   if (skipAuthors.includes(pr.user.login)) {
     console.log(`Skipping: automated PR by ${pr.user.login}`);
     core.setOutput('skipped', 'true');

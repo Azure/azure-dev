@@ -253,8 +253,8 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | `internal.errors_errorString` | Legacy catch-all (being replaced by `internal.unclassified`) | — |
 
 > **⚠️ Known gap:** Many errors historically fall into `internal.errors_errorString` / `internal.unclassified`
-> because the error classifier only inspects the leaf error type. Work to improve this is tracked in
-> [azure-dev#8011](https://github.com/Azure/azure-dev/issues/8011) (error chain + classifier + origin context).
+> because the error classifier only inspects the leaf error type. The `error.chain.types` field improves this
+> by capturing the full error type chain.
 
 ### Service Attributes (Azure API Calls)
 
@@ -479,8 +479,6 @@ Important things to know when querying azd telemetry data. These are sourced fro
 
 ### OperationId Reuse in Retry/Troubleshoot Flows
 
-**Issue:** [azure-dev-pr#1771](https://github.com/Azure/azure-dev-pr/issues/1771)
-
 When `cmd.up` triggers `agent.troubleshoot` after a failure, the troubleshoot agent may retry the failed operation (e.g., `cmd.deploy`). These retries share the **same OperationId** as the parent `cmd.up` span.
 
 This means you may see multiple rows with the same `OperationId` and `Name` (e.g., two `cmd.deploy` rows). These are **not duplicate events** — they are retry attempts within a single user session.
@@ -518,7 +516,7 @@ getAzdEvents(...)
 Many failed commands produce the catch-all result code `internal.errors_errorString` (being renamed to `internal.unclassified`). This happens because the error classifier inspects only the leaf error type, and `errors.New()` / `fmt.Errorf()` without `%w` produce `*errors.errorString`, which has no domain meaning.
 
 **To investigate these errors:**
-1. Check `error.chain.types` (if available, added in [#8011](https://github.com/Azure/azure-dev/issues/8011)) for the full error type chain
+1. Check `error.chain.types` (if available) for the full error type chain
 2. Correlate with `service.errorCode` or `service.statusCode` for Azure API failures
 3. Look at surrounding span context (same `OperationId`) for additional detail
 

@@ -96,10 +96,12 @@ Store the sprint `id`, `title`, and the field `id` for later mutations.
 
 ### Step 3 — Query Sprint Issues
 
-**For team/personal scope** — query all project items in the current sprint:
+**For team/personal scope** — query all project items in the current sprint.
+
+**Note**: `--paginate` does not work reliably for this query. Use manual cursor-based pagination — fetch 100 items at a time, pass the `endCursor` to the next query until `hasNextPage` is false.
 
 ```bash
-gh api graphql --paginate -f query='
+gh api graphql -f query='
 query($cursor: String) {
   organization(login: "Azure") {
     projectV2(number: 182) {
@@ -278,13 +280,22 @@ This is the "given an issue being pulled into this sprint, make it ready" flow.
 ```
 Sprint closing: May 04 - May 10 → Next: May 11 - May 17
 
-Open issues to resolve:
-  #8033 — Create skills for weekly reports...        → Move to May 11-17? [Y/n]
-  #8026 — RBAC propagation race causes 403...        → Move to May 11-17? [Y/n]
-  #7712 — Emergency hotfix release process...        → Move to May 11-17? [Y/n]
+Open issues to resolve (5 issues):
+  #8033 — Create skills for weekly reports...
+  #8026 — RBAC propagation race causes 403...
+  #7712 — Emergency hotfix release process...
+  #7680 — Add extension telemetry...
+  #7317 — Improve error messages...
 ```
 
-4. **Ask user for each issue** via `ask_user`:
+4. **Ask user how to handle** via `ask_user`:
+
+Choices:
+   - **Move all to next sprint** (Recommended) — bulk move everything
+   - **Decide per issue** — go through each one individually
+   - **Skip** — leave everything as-is
+
+If "Decide per issue", for each issue ask:
    - **Move to next sprint** (default) — update Sprint field to next iteration
    - **Keep in current sprint** — leave as-is (will show as overdue)
    - **Remove from sprint** — clear Sprint field (back to backlog)

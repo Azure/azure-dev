@@ -51,7 +51,7 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 			ImprovementThreshold: 0.05,
 			PassThreshold:        0.8,
 			EvalModel:            "gpt-4o-mini",
-			Strategies:           []string{"prompt_mutation"},
+			TargetAttributes:     []string{"prompt_mutation"},
 			KeepVersions:         true,
 			TasksPerIteration:    10,
 			MaxReflectionTasks:   3,
@@ -71,7 +71,7 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 		`"options"`, `"evalModel"`, `"maxIterations"`, `"minImprovement"`,
 		`"improvementThreshold"`, `"passThreshold"`, `"keepVersions"`,
 		`"tasksPerIteration"`, `"maxReflectionTasks"`, `"reflectionModel"`,
-		`"groundTruth"`, `"systemPrompt"`, `"skills"`,
+		`"targetAttributes"`, `"groundTruth"`, `"systemPrompt"`, `"skills"`,
 	} {
 		assert.True(t, strings.Contains(s, field), "JSON should contain %s", field)
 	}

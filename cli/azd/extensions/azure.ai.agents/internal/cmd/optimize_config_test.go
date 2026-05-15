@@ -282,7 +282,7 @@ options:
 	require.NotNil(t, cfg.Options)
 	assert.Equal(t, "gpt-4o", cfg.Options.EvalModel)
 	assert.Equal(t, "evaluate", cfg.Options.Mode)
-	assert.Equal(t, []string{"instruction"}, cfg.Options.Strategies)
+	assert.Equal(t, []string{"instruction"}, cfg.Options.TargetAttributes)
 	assert.Equal(t, 3, cfg.Options.Budget)
 
 	// Validate + ToRequest

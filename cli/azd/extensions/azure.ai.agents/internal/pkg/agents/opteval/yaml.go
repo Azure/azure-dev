@@ -49,7 +49,7 @@ type DatasetRef struct {
 type Options struct {
 	EvalModel            string   `yaml:"eval_model,omitempty"`
 	Mode                 string   `yaml:"mode,omitempty"`
-	Strategies           []string `yaml:"strategies,omitempty"`
+	TargetAttributes     []string `yaml:"target_attributes,omitempty"`
 	Budget               int      `yaml:"budget,omitempty"`
 	MaxIterations        int      `yaml:"max_iterations,omitempty"`
 	MinImprovement       float64  `yaml:"min_improvement,omitempty"`
@@ -60,18 +60,35 @@ type Options struct {
 	ReflectionModel      string   `yaml:"reflection_model,omitempty"`
 }
 
-// DefaultStrategies are the default optimization strategies.
-var DefaultStrategies = []string{"instruction", "skill", "agents-optimization-job"}
+// DefaultTargetAttributes are the default optimization target attributes.
+var DefaultTargetAttributes = []string{"instruction", "skill", "agents-optimization-job"}
 
-// UnmarshalYAML populates default strategies when the field is absent in YAML.
+// Deprecated: DefaultStrategies is an alias for backward compatibility.
+var DefaultStrategies = DefaultTargetAttributes
+
+// UnmarshalYAML populates default target attributes when the field is absent in YAML.
+// For backward compatibility, the legacy "strategies" key is also accepted.
 func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	// Alias avoids infinite recursion.
 	type raw Options
 	if err := value.Decode((*raw)(o)); err != nil {
 		return err
 	}
-	if len(o.Strategies) == 0 {
-		o.Strategies = slices.Clone(DefaultStrategies)
+
+	// Backward compatibility: if "strategies" is present and target_attributes is not,
+	// migrate the value.
+	if len(o.TargetAttributes) == 0 {
+		var legacy struct {
+			Strategies []string `yaml:"strategies"`
+		}
+		_ = value.Decode(&legacy)
+		if len(legacy.Strategies) > 0 {
+			o.TargetAttributes = legacy.Strategies
+		}
+	}
+
+	if len(o.TargetAttributes) == 0 {
+		o.TargetAttributes = slices.Clone(DefaultTargetAttributes)
 		o.MaxIterations = 2
 	}
 	return nil

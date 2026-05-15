@@ -82,10 +82,10 @@ func defaultOptimizeConfig(agentName string) *OptimizeConfig {
 		},
 		InlineDataset: defaultDataset,
 		Options: &opteval.Options{
-			EvalModel:  "gpt-4o",
-			Mode:       "optimize",
-			Strategies: []string{"instruction", "skill", "agents-optimization-job"},
-			Budget:     5,
+			EvalModel:        "gpt-4o",
+			Mode:             "optimize",
+			TargetAttributes: []string{"instruction", "skill", "agents-optimization-job"},
+			Budget:           5,
 		},
 	}
 }
@@ -141,7 +141,7 @@ func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.Optimi
 			MinImprovement:       c.Options.MinImprovement,
 			ImprovementThreshold: c.Options.ImprovementThreshold,
 			PassThreshold:        c.Options.PassThreshold,
-			Strategies:           c.Options.Strategies,
+			TargetAttributes:     c.Options.TargetAttributes,
 			KeepVersions:         c.Options.KeepVersions,
 			TasksPerIteration:    c.Options.TasksPerIteration,
 			ReflectionModel:      c.Options.ReflectionModel,

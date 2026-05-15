@@ -136,7 +136,7 @@ func TestOptions_YAMLFields(t *testing.T) {
 	input := `
 eval_model: gpt-4.1
 mode: full
-strategies:
+target_attributes:
   - prompt
   - tool
 budget: 500
@@ -153,7 +153,7 @@ reflection_model: gpt-4o
 
 	assert.Equal(t, "gpt-4.1", opts.EvalModel)
 	assert.Equal(t, "full", opts.Mode)
-	assert.Equal(t, []string{"prompt", "tool"}, opts.Strategies)
+	assert.Equal(t, []string{"prompt", "tool"}, opts.TargetAttributes)
 	assert.Equal(t, 500, opts.Budget)
 	assert.Equal(t, 10, opts.MaxIterations)
 	assert.InDelta(t, 0.05, opts.MinImprovement, 0.001)
@@ -162,4 +162,19 @@ reflection_model: gpt-4o
 	assert.True(t, opts.KeepVersions)
 	assert.Equal(t, 20, opts.TasksPerIteration)
 	assert.Equal(t, "gpt-4o", opts.ReflectionModel)
+}
+
+func TestOptions_LegacyStrategiesBackwardCompat(t *testing.T) {
+	t.Parallel()
+
+	input := `
+eval_model: gpt-4.1
+strategies:
+  - prompt
+  - tool
+`
+	var opts Options
+	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
+
+	assert.Equal(t, []string{"prompt", "tool"}, opts.TargetAttributes)
 }

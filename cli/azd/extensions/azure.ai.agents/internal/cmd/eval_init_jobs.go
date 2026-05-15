@@ -18,6 +18,7 @@ import (
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opteval"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 )
 
@@ -177,12 +178,17 @@ func pollAndFinalizeJobs(
 		!eval_api.ParseJobStatus(state.EvalGenStatus).IsTerminal()
 
 	// When both jobs run in parallel, disable individual spinners to avoid
-	// overlapping terminal output. Print status lines upfront instead.
+	// overlapping terminal output. Show a single combined spinner instead.
 	parallel := pollDataset && pollEval
 	if parallel {
-		fmt.Println("  Waiting for generation jobs...")
-		fmt.Printf("    - Dataset generation:   %s\n", state.DatasetGenOpID)
-		fmt.Printf("    - Evaluator generation: %s\n", state.EvalGenOpID)
+		spinner := ux.NewSpinner(&ux.SpinnerOptions{
+			Text:        "Generating dataset and evaluators...",
+			ClearOnStop: true,
+		})
+		if err := spinner.Start(ctx); err != nil {
+			fmt.Println("  Generating dataset and evaluators...")
+		}
+		defer func() { _ = spinner.Stop(ctx) }()
 	}
 
 	if pollDataset {

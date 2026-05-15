@@ -66,13 +66,13 @@ func resolveOptimizeAgent(ctx context.Context, flagValue string, noPrompt bool) 
 }
 
 type optimizeFlags struct {
-	configFile   string
-	agent        string
-	evalModel    string
-	strategies   []string
-	noWait       bool
-	watch        bool
-	pollInterval int
+	configFile       string
+	agent            string
+	evalModel        string
+	targetAttributes []string
+	noWait           bool
+	watch            bool
+	pollInterval     int
 	optimizeConnectionFlags
 }
 
@@ -93,11 +93,11 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
   # Optimize a specific agent
   azd ai agent optimize my-agent
 
-  # Optimize with skill strategy
-  azd ai agent optimize --strategy skill
+  # Optimize with skill target
+  azd ai agent optimize --target skill
 
-  # Optimize with both strategies
-  azd ai agent optimize --strategy instruction --strategy skill
+  # Optimize with multiple target attributes
+  azd ai agent optimize --target instruction --target skill
 
   # Full control via config file
   azd ai agent optimize --config spec.yaml
@@ -124,7 +124,7 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
 	cmd.Flags().StringVarP(&flags.configFile, "config", "c", "", "Path to YAML config file (optional — uses defaults if omitted)")
 	cmd.Flags().StringVarP(&flags.agent, "agent", "a", "", "Agent name (auto-detected from azd project if omitted)")
 	cmd.Flags().StringVarP(&flags.evalModel, "eval-model", "m", "gpt-4.1-mini", "Model for evaluation")
-	cmd.Flags().StringArrayVarP(&flags.strategies, "strategy", "s", nil, "Optimization strategy: instruction, skill (repeatable)")
+	cmd.Flags().StringArrayVarP(&flags.targetAttributes, "target", "s", nil, "Target attribute for optimization: instruction, skill (repeatable)")
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Submit job and return immediately without waiting for completion")
 	cmd.Flags().BoolVar(&flags.watch, "watch", true, "Watch for job completion (opposite of --no-wait)")
 	cmd.Flags().IntVar(&flags.pollInterval, "poll-interval", 5, "Polling interval in seconds")
@@ -205,8 +205,8 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 	if a.flags.evalModel != "" {
 		cfg.Options.EvalModel = a.flags.evalModel
 	}
-	if len(a.flags.strategies) > 0 {
-		cfg.Options.Strategies = a.flags.strategies
+	if len(a.flags.targetAttributes) > 0 {
+		cfg.Options.TargetAttributes = a.flags.targetAttributes
 	}
 
 	out := cmd.OutOrStdout()

@@ -86,7 +86,7 @@ type OptimizeOptions struct {
 	ImprovementThreshold float64  `json:"improvementThreshold,omitempty"`
 	PassThreshold        float64  `json:"passThreshold,omitempty"`
 	EvalModel            string   `json:"evalModel"`
-	Strategies           []string `json:"strategies,omitempty"`
+	TargetAttributes     []string `json:"targetAttributes,omitempty"`
 	KeepVersions         bool     `json:"keepVersions,omitempty"`
 	TasksPerIteration    int      `json:"tasksPerIteration,omitempty"`
 	MaxReflectionTasks   int      `json:"maxReflectionTasks,omitempty"`

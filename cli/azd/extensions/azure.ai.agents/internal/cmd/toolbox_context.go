@@ -44,21 +44,21 @@ func newProjectsClientFromEndpoint(endpoint string) (*azure.FoundryProjectsClien
 func parseAccountProjectFromEndpoint(endpoint string) (account, project string, err error) {
 	trimmed := trimEndpoint(endpoint)
 	const marker = ".services.ai.azure.com/api/projects/"
-	idx := strings.Index(trimmed, marker)
-	if idx < 0 {
+	before, after, ok := strings.Cut(trimmed, marker)
+	if !ok {
 		return "", "", fmt.Errorf(
 			"endpoint %q does not match the expected pattern <account>.services.ai.azure.com/api/projects/<project>",
 			endpoint,
 		)
 	}
-	hostPart := trimmed[:idx]
+	hostPart := before
 	if schemeIdx := strings.Index(hostPart, "://"); schemeIdx >= 0 {
 		hostPart = hostPart[schemeIdx+3:]
 	}
-	rest := trimmed[idx+len(marker):]
+	rest := after
 	projectName := rest
-	if slash := strings.Index(rest, "/"); slash >= 0 {
-		projectName = rest[:slash]
+	if before, _, ok := strings.Cut(rest, "/"); ok {
+		projectName = before
 	}
 	if hostPart == "" || projectName == "" {
 		return "", "", fmt.Errorf("endpoint %q is missing the account or project segment", endpoint)

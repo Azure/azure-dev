@@ -73,11 +73,11 @@ func (d *detector) DetectTool(
 	switch tool.Category {
 	case ToolCategoryCLI:
 		return d.detectCLI(ctx, tool), nil
-	case ToolCategoryExtension:
+	case ToolCategoryVSCodeExtension:
 		return d.detectExtension(ctx, tool), nil
 	case ToolCategoryServer:
 		return d.detectCommandBased(ctx, tool), nil
-	case ToolCategoryLibrary:
+	case ToolCategoryAzdExtension:
 		return d.detectLibrary(ctx, tool), nil
 	default:
 		return &ToolStatus{Tool: tool}, nil

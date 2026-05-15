@@ -432,7 +432,7 @@ func TestInstall_NonCLI_ExhaustsRetries(t *testing.T) {
 	tool := &ToolDefinition{
 		Id:       "ext-tool",
 		Name:     "VS Code Extension",
-		Category: ToolCategoryExtension,
+		Category: ToolCategoryVSCodeExtension,
 		InstallStrategies: allPlatforms(InstallStrategy{
 			PackageManager: "npm",
 			PackageId:      "@test/ext",
@@ -490,7 +490,7 @@ func TestInstall_NonCLI_RespectsContextCancellation(t *testing.T) {
 	tool := &ToolDefinition{
 		Id:       "lib-tool",
 		Name:     "Lib Tool",
-		Category: ToolCategoryLibrary,
+		Category: ToolCategoryAzdExtension,
 		InstallStrategies: allPlatforms(InstallStrategy{
 			PackageManager: "npm",
 			PackageId:      "@test/lib",

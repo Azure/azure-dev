@@ -80,9 +80,9 @@ func TestBuiltInTools(t *testing.T) {
 
 		validCategories := map[ToolCategory]bool{
 			ToolCategoryCLI:       true,
-			ToolCategoryExtension: true,
+			ToolCategoryVSCodeExtension: true,
 			ToolCategoryServer:    true,
-			ToolCategoryLibrary:   true,
+			ToolCategoryAzdExtension:   true,
 		}
 
 		tools := BuiltInTools()
@@ -221,11 +221,11 @@ func TestFindToolsByCategory(t *testing.T) {
 	t.Run("ReturnsExtensionTools", func(t *testing.T) {
 		t.Parallel()
 
-		tools := FindToolsByCategory(ToolCategoryExtension)
+		tools := FindToolsByCategory(ToolCategoryVSCodeExtension)
 		require.NotEmpty(t, tools)
 
 		for _, tool := range tools {
-			assert.Equal(t, ToolCategoryExtension, tool.Category)
+			assert.Equal(t, ToolCategoryVSCodeExtension, tool.Category)
 		}
 	})
 
@@ -243,11 +243,11 @@ func TestFindToolsByCategory(t *testing.T) {
 	t.Run("ReturnsLibraryTools", func(t *testing.T) {
 		t.Parallel()
 
-		tools := FindToolsByCategory(ToolCategoryLibrary)
+		tools := FindToolsByCategory(ToolCategoryAzdExtension)
 		require.NotEmpty(t, tools)
 
 		for _, tool := range tools {
-			assert.Equal(t, ToolCategoryLibrary, tool.Category)
+			assert.Equal(t, ToolCategoryAzdExtension, tool.Category)
 		}
 	})
 
@@ -263,9 +263,9 @@ func TestFindToolsByCategory(t *testing.T) {
 
 		allTools := BuiltInTools()
 		cli := FindToolsByCategory(ToolCategoryCLI)
-		ext := FindToolsByCategory(ToolCategoryExtension)
+		ext := FindToolsByCategory(ToolCategoryVSCodeExtension)
 		srv := FindToolsByCategory(ToolCategoryServer)
-		lib := FindToolsByCategory(ToolCategoryLibrary)
+		lib := FindToolsByCategory(ToolCategoryAzdExtension)
 
 		total := len(cli) + len(ext) + len(srv) + len(lib)
 		assert.Equal(t, len(allTools), total,
@@ -306,8 +306,8 @@ func TestSpecificToolDefinitions(t *testing.T) {
 
 		assert.Equal(t, "azure.ai.agents", tool.Id,
 			"Id must match the JSON id emitted by `azd extension list`")
-		assert.Equal(t, ToolCategoryLibrary, tool.Category,
-			"Category must be Library so DetectTool routes to detectLibrary")
+		assert.Equal(t, ToolCategoryAzdExtension, tool.Category,
+			"Category must be AzdExtension so DetectTool routes to detectLibrary")
 		assert.Equal(t, "azd", tool.DetectCommand,
 			"DetectCommand must be 'azd' for the extension-list probe")
 		assert.Equal(t,
@@ -330,7 +330,7 @@ func TestSpecificToolDefinitions(t *testing.T) {
 	t.Run("VSCodeExtensionsUseCodeDetectCommand", func(t *testing.T) {
 		t.Parallel()
 
-		extensions := FindToolsByCategory(ToolCategoryExtension)
+		extensions := FindToolsByCategory(ToolCategoryVSCodeExtension)
 		for _, ext := range extensions {
 			assert.Equal(t, "code", ext.DetectCommand,
 				"extension %q should detect via 'code'", ext.Id)

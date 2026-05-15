@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/paths"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
@@ -383,12 +384,14 @@ func collectServices(
 // ProtocolInvocations so the suggested payload works on the broadest set of
 // agents.
 func loadServiceProtocol(projectPath, relativePath string) string {
-	if projectPath == "" || relativePath == "" {
+	if projectPath == "" {
 		return ""
 	}
-	manifestPath := filepath.Join(projectPath, relativePath, "agent.yaml")
-	//nolint:gosec // G304: path constructed from azd project root, not user input.
-	data, err := os.ReadFile(manifestPath)
+	manifestPath, err := paths.JoinAllowRoot(projectPath, relativePath, "agent.yaml")
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(manifestPath) //nolint:gosec // path is validated under the project root
 	if err != nil {
 		return ""
 	}
@@ -538,12 +541,14 @@ func bicepOutputSet(projectPath string) map[string]struct{} {
 // manifests return nil for both — consistent with loadServiceProtocol's
 // best-effort contract.
 func extractAgentYamlEnvRefs(projectPath, relativePath string) (refs, placeholders []string) {
-	if projectPath == "" || relativePath == "" {
+	if projectPath == "" {
 		return nil, nil
 	}
-	manifestPath := filepath.Join(projectPath, relativePath, "agent.yaml")
-	//nolint:gosec // G304: path constructed from azd project root, not user input.
-	data, err := os.ReadFile(manifestPath)
+	manifestPath, err := paths.JoinAllowRoot(projectPath, relativePath, "agent.yaml")
+	if err != nil {
+		return nil, nil
+	}
+	data, err := os.ReadFile(manifestPath) //nolint:gosec // path is validated under the project root
 	if err != nil {
 		return nil, nil
 	}

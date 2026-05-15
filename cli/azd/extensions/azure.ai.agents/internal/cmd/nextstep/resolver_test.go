@@ -739,6 +739,34 @@ func TestResolveAfterDeploy(t *testing.T) {
 		assert.Equal(t, "test with the sample-specific payload", out[2].Description)
 	})
 
+	t.Run("single root agent, README on disk → root README hint", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			rel  string
+		}{
+			{name: "empty", rel: ""},
+			{name: "dot", rel: "."},
+			{name: "dot slash", rel: "./"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				state := &State{Services: []ServiceState{{Name: "echo", RelativePath: tt.rel, Protocol: ProtocolResponses}}}
+				readme := func(p string) bool { return p == tt.rel }
+
+				out := ResolveAfterDeploy(state, nil, readme)
+
+				require.Len(t, out, 3)
+				assert.Equal(t, "see README.md", out[1].Command)
+				assert.Equal(t, "find the sample-specific payload", out[1].Description)
+				assert.Equal(t, `azd ai agent invoke echo '<payload>'`, out[2].Command)
+			})
+		}
+	})
+
 	t.Run("multi-agent → all shows first, then all invokes, with per-agent descriptions", func(t *testing.T) {
 		// Spec source: issue #7975 lines 238-241 — multi-agent layout
 		// groups shows before invokes (not interleaved) and bakes the

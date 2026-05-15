@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -18,6 +17,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/envkey"
+	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -180,7 +180,10 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 // isHostedAgentService checks if a service is a hosted (container) agent by reading
 // the agent.yaml kind from the service directory.
 func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig) bool {
-	agentYamlPath := filepath.Join(proj.Path, svc.RelativePath, "agent.yaml")
+	agentYamlPath, err := paths.JoinAllowRoot(proj.Path, svc.RelativePath, "agent.yaml")
+	if err != nil {
+		return false
+	}
 	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // path from azd project config
 	if err != nil {
 		return false
@@ -401,9 +404,10 @@ func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azd
 }
 
 func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig, envName string) error {
-	servicePath := svc.RelativePath
-	fullPath := filepath.Join(project.Path, servicePath)
-	agentYamlPath := filepath.Join(fullPath, "agent.yaml")
+	agentYamlPath, err := paths.JoinAllowRoot(project.Path, svc.RelativePath, "agent.yaml")
+	if err != nil {
+		return fmt.Errorf("invalid service path: %w", err)
+	}
 
 	//nolint:gosec // agentYamlPath is resolved from project/service paths in current workspace
 	data, err := os.ReadFile(agentYamlPath)

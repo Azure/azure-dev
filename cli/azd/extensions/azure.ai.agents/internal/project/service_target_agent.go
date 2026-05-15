@@ -30,6 +30,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
+	"azureaiagent/internal/pkg/paths"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -134,7 +135,14 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 		)
 	}
 	servicePath := serviceConfig.RelativePath
-	fullPath := filepath.Join(proj.Project.Path, servicePath)
+	fullPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid service path for %s: %s", serviceConfig.Name, err),
+			"update azure.yaml so the agent service path stays within the project directory",
+		)
+	}
 
 	// Get and store environment
 	azdEnvClient := p.azdClient.Environment()
@@ -223,8 +231,22 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	}
 
 	// Look for agent.yaml or agent.yml in the service directory root
-	agentYamlPath := filepath.Join(fullPath, "agent.yaml")
-	agentYmlPath := filepath.Join(fullPath, "agent.yml")
+	agentYamlPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath, "agent.yaml")
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid agent definition path for %s: %s", serviceConfig.Name, err),
+			"update azure.yaml so the agent definition stays within the project directory",
+		)
+	}
+	agentYmlPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath, "agent.yml")
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid agent definition path for %s: %s", serviceConfig.Name, err),
+			"update azure.yaml so the agent definition stays within the project directory",
+		)
+	}
 
 	if _, err := os.Stat(agentYamlPath); err == nil {
 		p.agentDefinitionPath = agentYamlPath
@@ -1592,7 +1614,7 @@ func augmentDeployNote(state *nextstep.State, artifacts []*azdext.Artifact, proj
 	}
 
 	readmeExists := func(relativePath string) bool {
-		if projectRoot == "" || relativePath == "" {
+		if projectRoot == "" {
 			return false
 		}
 		// Only consider the canonical casing — ResolveAfterDeploy emits
@@ -1600,7 +1622,11 @@ func augmentDeployNote(state *nextstep.State, artifacts []*azdext.Artifact, proj
 		// would yield a broken pointer on case-sensitive filesystems and,
 		// because suggestionsIncludeReadme triggers the replace branch,
 		// would silently discard the working aka.ms fallback.
-		_, err := os.Stat(filepath.Join(projectRoot, relativePath, "README.md"))
+		readmePath, err := paths.JoinAllowRoot(projectRoot, relativePath, "README.md")
+		if err != nil {
+			return false
+		}
+		_, err = os.Stat(readmePath)
 		return err == nil
 	}
 

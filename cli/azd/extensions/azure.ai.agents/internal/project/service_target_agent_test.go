@@ -231,6 +231,69 @@ func newServiceTargetTestClient(
 	return client
 }
 
+type stubProjectServer struct {
+	azdext.UnimplementedProjectServiceServer
+	project *azdext.ProjectConfig
+}
+
+func (s *stubProjectServer) Get(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.GetProjectResponse, error) {
+	return &azdext.GetProjectResponse{Project: s.project}, nil
+}
+
+type stubInitializeEnvServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+}
+
+func (s *stubInitializeEnvServer) GetCurrent(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: "test-env"}}, nil
+}
+
+func (s *stubInitializeEnvServer) GetValue(
+	context.Context, *azdext.GetEnvRequest,
+) (*azdext.KeyValueResponse, error) {
+	return &azdext.KeyValueResponse{Value: "00000000-0000-0000-0000-000000000000"}, nil
+}
+
+type stubAccountServer struct {
+	azdext.UnimplementedAccountServiceServer
+}
+
+func (s *stubAccountServer) LookupTenant(
+	context.Context, *azdext.LookupTenantRequest,
+) (*azdext.LookupTenantResponse, error) {
+	return &azdext.LookupTenantResponse{TenantId: "00000000-0000-0000-0000-000000000000"}, nil
+}
+
+func newInitializeTestClient(t *testing.T, projectRoot string) *azdext.AzdClient {
+	t.Helper()
+
+	srv := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(srv, &stubProjectServer{
+		project: &azdext.ProjectConfig{Path: projectRoot},
+	})
+	azdext.RegisterEnvironmentServiceServer(srv, &stubInitializeEnvServer{})
+	azdext.RegisterAccountServiceServer(srv, &stubAccountServer{})
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(func() {
+		srv.Stop()
+		_ = lis.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(lis.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+
+	return client
+}
+
 type stubPromptServer struct {
 	azdext.UnimplementedPromptServiceServer
 	selectedIndex int32
@@ -254,6 +317,60 @@ func (s *stubPromptServer) Select(
 func newPromptTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *azdext.AzdClient {
 	t.Helper()
 	return newServiceTargetTestClient(t, nil, promptSrv)
+}
+
+func TestInitializeAcceptsProjectLocalAgentYaml(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "svc")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(serviceDir, "agent.yaml"), []byte("kind: hostedAgent\n"), 0o600))
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	err := provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"})
+
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(serviceDir, "agent.yaml"), provider.agentDefinitionPath)
+}
+
+func TestInitializeRejectsAgentYamlSymlinkEscapingRoot(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	parent := t.TempDir()
+	projectRoot := filepath.Join(parent, "project")
+	serviceDir := filepath.Join(projectRoot, "svc")
+	outside := filepath.Join(parent, "outside")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.MkdirAll(outside, 0o750))
+
+	outsideAgentYaml := filepath.Join(outside, "agent.yaml")
+	require.NoError(t, os.WriteFile(outsideAgentYaml, []byte("kind: hostedAgent\n"), 0o600))
+	createSymlinkOrSkip(t, outsideAgentYaml, filepath.Join(serviceDir, "agent.yaml"))
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	err := provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "escapes project root")
+	require.Empty(t, provider.agentDefinitionPath)
+}
+
+func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
+	t.Helper()
+
+	if err := os.Symlink(oldname, newname); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("symlink creation not permitted: %v", err)
+		}
+		t.Fatalf("create symlink: %v", err)
+	}
 }
 
 // stubEnvServer records SetValue calls for testing registerAgentEnvironmentVariables.
@@ -1139,6 +1256,81 @@ func TestAugmentDeployNote_WithReadme_ReplacesAkaMsLink(t *testing.T) {
 		"aka.ms line must be replaced when a local README provides richer guidance")
 	require.Contains(t, got, "Next:", "Next: block should be present")
 	require.Contains(t, got, "see src/echo/README.md", "README pointer should be present")
+}
+
+func TestAugmentDeployNote_WithRootReadme_ReplacesAkaMsLink(t *testing.T) {
+	t.Parallel()
+
+	for _, rel := range []string{"", "."} {
+		t.Run(fmt.Sprintf("rel=%q", rel), func(t *testing.T) {
+			t.Parallel()
+
+			tmp := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(tmp, "README.md"), []byte("sample"), 0o600))
+
+			state := &nextstep.State{
+				Services: []nextstep.ServiceState{
+					{
+						Name:         "echo",
+						RelativePath: rel,
+						Protocol:     "invocations",
+						IsDeployed:   true,
+					},
+				},
+			}
+
+			artifact := &azdext.Artifact{
+				Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+				Metadata: map[string]string{
+					"label": "Agent endpoint (invocations)",
+					"note":  "static aka.ms link",
+				},
+			}
+
+			augmentDeployNote(state, []*azdext.Artifact{artifact}, tmp, "")
+
+			got := artifact.Metadata["note"]
+			require.NotContains(t, got, "static aka.ms link",
+				"aka.ms line must be replaced when a local README provides richer guidance")
+			require.Contains(t, got, "see README.md", "README pointer should be present")
+		})
+	}
+}
+
+func TestAugmentDeployNote_ReadmeTraversalDoesNotReplaceAkaMsLink(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	projectRoot := filepath.Join(parent, "project")
+	outside := filepath.Join(parent, "outside")
+	require.NoError(t, os.MkdirAll(projectRoot, 0o750))
+	require.NoError(t, os.MkdirAll(outside, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "README.md"), []byte("outside"), 0o600))
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{
+				Name:         "echo",
+				RelativePath: "../outside",
+				Protocol:     "invocations",
+				IsDeployed:   true,
+			},
+		},
+	}
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+
+	augmentDeployNote(state, []*azdext.Artifact{artifact}, projectRoot, "")
+
+	got := artifact.Metadata["note"]
+	require.Contains(t, got, "static aka.ms link")
+	require.Contains(t, got, "Next:")
 }
 
 func TestAugmentDeployNote_CachedSpecYieldsPayloadOverride(t *testing.T) {

@@ -6,10 +6,10 @@ package nextstep
 import (
 	"cmp"
 	"os"
-	"path/filepath"
 	"slices"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/paths"
 )
 
 // manifestFileNames are the candidate manifest filenames the walker
@@ -130,13 +130,15 @@ func populateManifestResources(projectPath string, state *State) {
 // consumer treats nil as "no manifest discovered for this service"
 // and degrades gracefully.
 func readManifestBytes(projectPath, relativePath string) []byte {
-	if projectPath == "" || relativePath == "" {
+	if projectPath == "" {
 		return nil
 	}
 	for _, name := range manifestFileNames {
-		path := filepath.Join(projectPath, relativePath, name)
-		//nolint:gosec // G304: path constructed from azd project root, not user input.
-		data, err := os.ReadFile(path)
+		manifestPath, err := paths.JoinAllowRoot(projectPath, relativePath, name)
+		if err != nil {
+			return nil
+		}
+		data, err := os.ReadFile(manifestPath) //nolint:gosec // path is validated under the project root
 		if err == nil && len(data) > 0 {
 			return data
 		}

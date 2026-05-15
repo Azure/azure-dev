@@ -644,7 +644,37 @@ func TestLoadServiceProtocol_EmptyArgs(t *testing.T) {
 	t.Parallel()
 
 	assert.Equal(t, "", loadServiceProtocol("", "echo"))
-	assert.Equal(t, "", loadServiceProtocol("/some/path", ""))
+}
+
+func TestLoadServiceProtocol_RootRelativePath(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "agent.yaml"),
+		[]byte("kind: hostedAgent\nprotocols:\n  - protocol: invocations\n    version: \"1.0.0\"\n"),
+		0o600,
+	))
+
+	assert.Equal(t, ProtocolInvocations, loadServiceProtocol(projectRoot, ""))
+	assert.Equal(t, ProtocolInvocations, loadServiceProtocol(projectRoot, "."))
+}
+
+func TestLoadServiceProtocol_RejectsTraversal(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	projectRoot := filepath.Join(parent, "project")
+	outside := filepath.Join(parent, "outside")
+	require.NoError(t, os.MkdirAll(projectRoot, 0o750))
+	require.NoError(t, os.MkdirAll(outside, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(outside, "agent.yaml"),
+		[]byte("kind: hostedAgent\nprotocols:\n  - protocol: invocations\n    version: \"1.0.0\"\n"),
+		0o600,
+	))
+
+	assert.Equal(t, "", loadServiceProtocol(projectRoot, "../outside"))
 }
 
 func TestAssembleState_PopulatesProtocolFromAgentYaml(t *testing.T) {
@@ -872,6 +902,44 @@ func TestExtractAgentYamlEnvRefs_MissingFileOrArgs(t *testing.T) {
 	} {
 		refs, placeholders := extractAgentYamlEnvRefs(args[0], args[1])
 		assert.Nil(t, refs)
+		assert.Nil(t, placeholders)
+	}
+}
+
+func TestExtractAgentYamlEnvRefs_RejectsTraversal(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	projectRoot := filepath.Join(parent, "project")
+	outside := filepath.Join(parent, "outside")
+	require.NoError(t, os.MkdirAll(projectRoot, 0o750))
+	require.NoError(t, os.MkdirAll(outside, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(outside, "agent.yaml"),
+		[]byte("kind: hostedAgent\nenvironment_variables:\n  - name: SECRET\n    value: ${OUTSIDE_SECRET}\n"),
+		0o600,
+	))
+
+	refs, placeholders := extractAgentYamlEnvRefs(projectRoot, "../outside")
+
+	assert.Nil(t, refs)
+	assert.Nil(t, placeholders)
+}
+
+func TestExtractAgentYamlEnvRefs_RootRelativePath(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "agent.yaml"),
+		[]byte("kind: hostedAgent\nenvironment_variables:\n  - name: SECRET\n    value: ${ROOT_SECRET}\n"),
+		0o600,
+	))
+
+	for _, rel := range []string{"", "."} {
+		refs, placeholders := extractAgentYamlEnvRefs(projectRoot, rel)
+
+		assert.Equal(t, []string{"ROOT_SECRET"}, refs)
 		assert.Nil(t, placeholders)
 	}
 }

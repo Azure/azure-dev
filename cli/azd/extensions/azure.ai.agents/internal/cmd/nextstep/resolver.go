@@ -5,6 +5,7 @@ package nextstep
 
 import (
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 )
@@ -520,7 +521,6 @@ func ResolveAfterDeploy(
 			payload = cachedPayload(svc.Name)
 		}
 		hasReadme := payload == "" &&
-			svc.RelativePath != "" &&
 			readmeExists != nil &&
 			readmeExists(svc.RelativePath)
 
@@ -543,7 +543,7 @@ func ResolveAfterDeploy(
 					desc = "test with the sample-specific payload"
 				}
 				out = append(out, Suggestion{
-					Command:     fmt.Sprintf("see %s/README.md", strings.TrimPrefix(svc.RelativePath, "./")),
+					Command:     readmeCommand(svc.RelativePath),
 					Description: "find the sample-specific payload",
 					Priority:    priority,
 				})
@@ -565,6 +565,15 @@ func ResolveAfterDeploy(
 	}
 
 	return out
+}
+
+func readmeCommand(relativePath string) string {
+	rel := path.Clean(strings.ReplaceAll(relativePath, "\\", "/"))
+	if rel == "" || rel == "." {
+		return "see README.md"
+	}
+	rel = strings.TrimPrefix(rel, "./")
+	return fmt.Sprintf("see %s/README.md", rel)
 }
 
 // findService returns a pointer to the named service in state, or nil.

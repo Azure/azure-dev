@@ -12,6 +12,7 @@ import (
 
 	"azureaiagent/internal/cmd/doctor"
 	"azureaiagent/internal/cmd/nextstep"
+	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/version"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -406,10 +407,14 @@ func doctorCachedPayload(ctx context.Context, azdClient *azdext.AzdClient) func(
 func doctorReadmeExists(ctx context.Context, azdClient *azdext.AzdClient) func(string) bool {
 	projectRoot := resolveProjectPath(ctx, azdClient)
 	return func(relativePath string) bool {
-		if projectRoot == "" || relativePath == "" {
+		if projectRoot == "" {
 			return false
 		}
-		_, err := os.Stat(filepath.Join(projectRoot, relativePath, "README.md"))
+		readmePath, err := paths.JoinAllowRoot(projectRoot, relativePath, "README.md")
+		if err != nil {
+			return false
+		}
+		_, err = os.Stat(readmePath)
 		return err == nil
 	}
 }

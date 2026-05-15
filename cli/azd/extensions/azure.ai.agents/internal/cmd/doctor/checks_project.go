@@ -7,11 +7,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/paths"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -217,7 +217,11 @@ func newCheckAgentYAMLValid(deps Dependencies) Check {
 			var validatedPaths []string
 			var failures []string
 			for _, a := range agents {
-				yamlPath := filepath.Join(projectPath, a.rel, "agent.yaml")
+				yamlPath, err := paths.JoinAllowRoot(projectPath, a.rel, "agent.yaml")
+				if err != nil {
+					failures = append(failures, fmt.Sprintf("%s: %v", a.name, err))
+					continue
+				}
 				if pathErr := validateAgentYAML(yamlPath); pathErr != nil {
 					failures = append(failures, fmt.Sprintf("%s: %v", a.name, pathErr))
 					continue
@@ -257,7 +261,8 @@ func newCheckAgentYAMLValid(deps Dependencies) Check {
 // structural problems. Returns the underlying read/validate error
 // verbatim so the caller can attribute it to the offending service.
 func validateAgentYAML(path string) error {
-	data, err := os.ReadFile(path) //nolint:gosec // G304: path is constructed from azd-resolved project root + service-relative path
+	//nolint:gosec // path is validated under the project root before this helper is called.
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}

@@ -5,6 +5,7 @@ package nextstep
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -96,6 +97,36 @@ func TestAssembleState_ManifestWalker_AllThreeKinds(t *testing.T) {
 	assert.Equal(t, "BingLLMSearch | https://api.bing.microsoft.com/", state.Connections[0].Detail)
 }
 
+func TestAssembleState_ManifestWalker_RootRelativePath(t *testing.T) {
+	t.Parallel()
+
+	for _, rel := range []string{"", "."} {
+		t.Run(fmt.Sprintf("rel=%q", rel), func(t *testing.T) {
+			t.Parallel()
+
+			projectRoot := t.TempDir()
+			writeManifest(t, projectRoot, rel, manifestModelsOnly)
+
+			src := &fakeSource{
+				envName: "dev",
+				project: &azdext.ProjectConfig{
+					Path: projectRoot,
+					Services: map[string]*azdext.ServiceConfig{
+						"echo": {Name: "echo", Host: agentHost, RelativePath: rel},
+					},
+				},
+			}
+
+			state, errs := assembleState(context.Background(), src)
+
+			require.Empty(t, errs)
+			assert.True(t, state.HasModels)
+			require.Len(t, state.ModelRefs, 1)
+			assert.Equal(t, "gpt-4o-mini", state.ModelRefs[0].Name)
+		})
+	}
+}
+
 func TestAssembleState_ManifestWalker_MissingManifestNoError(t *testing.T) {
 	t.Parallel()
 
@@ -125,6 +156,34 @@ func TestAssembleState_ManifestWalker_MissingManifestNoError(t *testing.T) {
 	assert.Nil(t, state.ModelRefs)
 	assert.Nil(t, state.Toolboxes)
 	assert.Nil(t, state.Connections)
+}
+
+func TestAssembleState_ManifestWalker_RejectsTraversal(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	projectRoot := filepath.Join(parent, "project")
+	outside := filepath.Join(parent, "outside")
+	require.NoError(t, os.MkdirAll(projectRoot, 0o750))
+	require.NoError(t, os.MkdirAll(outside, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "agent.manifest.yaml"), []byte(manifestThreeKinds), 0o600))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "../outside"},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+
+	require.Empty(t, errs)
+	assert.False(t, state.HasModels)
+	assert.False(t, state.HasToolboxes)
+	assert.False(t, state.HasConnections)
 }
 
 func TestAssembleState_ManifestWalker_MalformedManifestNoError(t *testing.T) {

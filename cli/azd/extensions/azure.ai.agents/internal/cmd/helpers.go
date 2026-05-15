@@ -21,6 +21,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/paths"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -682,7 +683,14 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 		return nil, err
 	}
 
-	projectDir := filepath.Join(project.Path, svc.RelativePath)
+	projectDir, err := paths.JoinAllowRoot(project.Path, svc.RelativePath)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid service path for %s: %s", svc.Name, err),
+			"update azure.yaml so the agent service path stays within the project directory",
+		)
+	}
 
 	var startupCmd string
 	if svc.Config != nil {
@@ -767,9 +775,14 @@ func resolveAgentProtocol(
 		)
 	}
 
-	agentYamlPath := filepath.Join(
-		project.Path, svc.RelativePath, "agent.yaml",
-	)
+	agentYamlPath, err := paths.JoinAllowRoot(project.Path, svc.RelativePath, "agent.yaml")
+	if err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid service path for %s: %s", svc.Name, err),
+			"update azure.yaml so the agent service path stays within the project directory",
+		)
+	}
 	return protocolFromAgentYaml(agentYamlPath)
 }
 

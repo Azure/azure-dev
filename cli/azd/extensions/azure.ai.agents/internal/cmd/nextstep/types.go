@@ -41,21 +41,6 @@ type Suggestion struct {
 	Trailing    bool
 }
 
-// AuthState captures whether a doctor-style auth probe has been run and
-// what it found. AuthUnknown (the zero value) means the probe was not run;
-// resolvers treat that as "skip auth-conditional advice" rather than
-// emitting login-prompt noise on every successful command.
-type AuthState int
-
-const (
-	// AuthUnknown indicates the auth probe was not run for this state.
-	AuthUnknown AuthState = iota
-	// AuthAuthed indicates the probe confirmed a usable token.
-	AuthAuthed
-	// AuthUnauthed indicates the probe confirmed login is needed.
-	AuthUnauthed
-)
-
 // State is the snapshot resolvers operate on. AssembleState builds one per
 // call; there is no shared singleton or cross-command cache. Fields
 // marked optional below are populated only by the resolver paths that
@@ -123,12 +108,6 @@ type State struct {
 	// agent's OpenAPI spec, suitable for an `azd ai agent invoke '...'`
 	// example. Empty when HasOpenAPI is false.
 	OpenAPIPayload string
-
-	// IsAuthenticated is populated only by the full-sweep `doctor` path.
-	// Every other resolver receives AuthUnknown and treats
-	// auth-conditional suggestions as "skip" rather than "tell user to
-	// log in".
-	IsAuthenticated AuthState
 
 	// HasModels, HasToolboxes, HasConnections are aggregate flags
 	// derived from each azure.ai.agent service's agent.manifest.yaml

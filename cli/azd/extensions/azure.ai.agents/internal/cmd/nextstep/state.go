@@ -147,8 +147,6 @@ func (s *clientSource) EnvValue(ctx context.Context, envName, key string) (strin
 type Option func(*config)
 
 type config struct {
-	authProbe bool
-
 	// openAPIAgent and openAPISuffix together enable a cache-only OpenAPI
 	// payload lookup. The zero value (empty strings) disables the probe.
 	openAPIAgent  string
@@ -163,29 +161,9 @@ type config struct {
 	openAPILiveFetch func(context.Context) ([]byte, error)
 }
 
-// WithAuthProbe enables a token-introspection step that populates
-// State.IsAuthenticated. Default false. Only the full-sweep doctor path
-// should enable this; every other resolver receives AuthUnknown and
-// suppresses login-prompt advice in success paths.
-func WithAuthProbe(enabled bool) Option {
-	return func(c *config) { c.authProbe = enabled }
-}
-
-// WithOpenAPIProbe enables a cache-only OpenAPI lookup that populates
-// State.OpenAPIPayload with a sample invoke payload extracted from the most
-// recent on-disk cache for (agentName, suffix). suffix is "local" or
-// "remote", matching fetchOpenAPISpec's filename convention.
-//
-// When agentName or suffix is empty the probe is disabled (the zero value).
-// The probe is strictly cache-only: it never contacts the network. The
-// cache is produced by `azd ai agent invoke` (and future `run` callers)
-// when they fetch the agent's OpenAPI spec. On cache miss, malformed
-// spec, or any read error the probe leaves State.HasOpenAPI false and
-// the resolver falls back to the protocol-generic <payload> literal.
-//
-// Combine with WithLiveOpenAPIProbe to prefer a fresh in-process fetch
-// (e.g., from a freshly-bound `run` server) while keeping the cache as
-// a fallback for offline / failed-fetch cases.
+// WithOpenAPIProbe enables a cache-only OpenAPI lookup for (agentName, suffix).
+// Empty inputs disable the probe; misses or malformed specs leave HasOpenAPI
+// false. Combine with WithLiveOpenAPIProbe to prefer a fresh in-process fetch.
 func WithOpenAPIProbe(agentName, suffix string) Option {
 	return func(c *config) {
 		c.openAPIAgent = agentName
@@ -293,10 +271,6 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 	if project != nil && len(state.Services) > 0 {
 		populateManifestResources(project.Path, state)
 	}
-
-	// authProbe lands in a later commit; the flag is already plumbed so
-	// call sites and tests can be written against the final API.
-	_ = cfg.authProbe
 
 	return state, errs
 }

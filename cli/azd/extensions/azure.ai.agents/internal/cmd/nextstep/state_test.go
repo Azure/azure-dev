@@ -275,10 +275,8 @@ func TestOptionsApplyCleanly(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config{}
-	WithAuthProbe(true)(cfg)
 	WithOpenAPIProbe("echo", "local")(cfg)
 	WithLiveOpenAPIProbe(func(context.Context) ([]byte, error) { return nil, nil })(cfg)
-	assert.True(t, cfg.authProbe)
 	assert.Equal(t, "echo", cfg.openAPIAgent)
 	assert.Equal(t, "local", cfg.openAPISuffix)
 	assert.NotNil(t, cfg.openAPILiveFetch)

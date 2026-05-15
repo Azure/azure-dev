@@ -69,7 +69,7 @@ direct agent call (does not). Both must keep working.
 Every `routine` subcommand resolves the Foundry project endpoint through the
 standard 5-level cascade: `-p` / `--project-endpoint` flag → active azd env
 (`AZURE_AI_PROJECT_ENDPOINT`) → global config (`extensions.ai-agents.context.endpoint`)
-→ `FOUNDRY_PROJECT_ENDPOINT` env var → structured `exterrors.Dependency` error
+→ `FOUNDRY_PROJECT_ENDPOINT` env var → structured dependency error
 (code `CodeMissingProjectEndpoint`).
 
 Standalone usability is required: every `routine` subcommand must work outside an
@@ -108,7 +108,7 @@ Optional flags:
 **Prompt / no-prompt** — mirrors `connection create`:
 
 - Interactive: missing required per-trigger / per-action flags are prompted for.
-- `--no-prompt`: exits non-zero with `exterrors.Validation` listing missing flags.
+- `--no-prompt`: exits non-zero with a structured validation error listing missing flags.
 
 **Output:**
 
@@ -140,7 +140,7 @@ the merged body against the existing trigger/action type:
   exclusive: specifying one clears the other; specifying both is a validation
   error.
 - If the merged body no longer satisfies required fields for its trigger/action
-  type, the command exits with `exterrors.Validation` before calling the service.
+  type, the command exits with a structured validation error before calling the service.
 
 ### 4.3 `routine show <name>` / `routine list`
 
@@ -152,8 +152,8 @@ all pages are drained).
 ### 4.4 `routine delete <name>`
 
 Confirmation prompt by default. `--force` skips it. In `--no-prompt` mode,
-`--force` is required; without it the command exits non-zero with
-`exterrors.Validation`. Matches `connection delete`.
+`--force` is required; without it the command exits non-zero with a structured
+validation error. Matches `connection delete`.
 
 ### 4.5 `routine enable | disable <name>`
 
@@ -310,7 +310,7 @@ endpoints hashed.
 - `dispatch` sync vs. `--async` route selection; leading GET triggered/skipped
   based on payload flags; `actionType` telemetry `unknown` in the no-payload path.
 - `run list` query-param mapping and pagination; JSON output is one stable object.
-- `delete --no-prompt` without `--force` produces `exterrors.Validation`.
+- `delete --no-prompt` without `--force` produces a structured validation error.
 - Output shapes match [§4 table](#output-shapes-for-state-changing-verbs) in both
   table and JSON modes.
 

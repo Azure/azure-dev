@@ -281,9 +281,6 @@ overrides:
       - println
       - myext
       - Fatalf
-  - filename: docs/design/ai-routine-design-spec.md
-    words:
-      - exterrors
   - filename: extensions/microsoft.azd.ai.builder/internal/cmd/start.go
     words:
       - dall

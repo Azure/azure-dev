@@ -137,7 +137,7 @@ Mode selection logic:
 - If the front matter `name` is present and differs from the positional
   `<name>`, the positional wins and a one-line warning is printed to stderr.
   Suppressed under `--no-prompt` or `--output json`.
-- If the front matter is missing or unparseable, the command fails with a
+- If the front matter is missing or unparsable, the command fails with a
   validation error that points to the problematic line.
 
 `--force` semantics on create:

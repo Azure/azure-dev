@@ -31,8 +31,6 @@ and optional metadata.`,
 	cmd.AddCommand(newConnectionCreateCommand(extCtx))
 	cmd.AddCommand(newConnectionUpdateCommand(extCtx))
 	cmd.AddCommand(newConnectionDeleteCommand(extCtx))
-	cmd.AddCommand(newConnectionMetadataCommand(extCtx))
-	cmd.AddCommand(newConnectionKeyCommand(extCtx))
 
 	return cmd
 }

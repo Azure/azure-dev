@@ -264,49 +264,59 @@ func validateInitAgentName(name string) (string, error) {
 }
 
 func agentNameFromTemplate(template any) (string, error) {
-	switch t := template.(type) {
-	case agent_yaml.ContainerAgent:
-		return t.Name, nil
-	case *agent_yaml.ContainerAgent:
-		if t == nil {
-			return "", fmt.Errorf("agent template is nil")
-		}
-		return t.Name, nil
-	case agent_yaml.Workflow:
-		return t.Name, nil
-	case *agent_yaml.Workflow:
-		if t == nil {
-			return "", fmt.Errorf("agent template is nil")
-		}
-		return t.Name, nil
-	default:
-		return "", fmt.Errorf("unsupported agent template type %T", template)
+	var agentName string
+	_, err := updateAgentDefinition(template, func(def *agent_yaml.AgentDefinition) {
+		agentName = def.Name
+	})
+	if err != nil {
+		return "", err
 	}
+
+	return agentName, nil
 }
 
 func setAgentNameOnTemplate(agentManifest *agent_yaml.AgentManifest, agentName string) error {
-	switch t := agentManifest.Template.(type) {
-	case agent_yaml.ContainerAgent:
-		t.Name = agentName
-		agentManifest.Template = t
-	case *agent_yaml.ContainerAgent:
-		if t == nil {
-			return fmt.Errorf("agent template is nil")
-		}
-		t.Name = agentName
-	case agent_yaml.Workflow:
-		t.Name = agentName
-		agentManifest.Template = t
-	case *agent_yaml.Workflow:
-		if t == nil {
-			return fmt.Errorf("agent template is nil")
-		}
-		t.Name = agentName
-	default:
-		return fmt.Errorf("unsupported agent template type %T", agentManifest.Template)
+	if agentManifest == nil {
+		return fmt.Errorf("agent manifest is nil")
 	}
 
+	template, err := updateAgentDefinition(agentManifest.Template, func(def *agent_yaml.AgentDefinition) {
+		def.Name = agentName
+	})
+	if err != nil {
+		return err
+	}
+
+	agentManifest.Template = template
 	return nil
+}
+
+func updateAgentDefinition(
+	template any,
+	update func(*agent_yaml.AgentDefinition),
+) (any, error) {
+	switch t := template.(type) {
+	case agent_yaml.ContainerAgent:
+		update(&t.AgentDefinition)
+		return t, nil
+	case *agent_yaml.ContainerAgent:
+		if t == nil {
+			return nil, fmt.Errorf("agent template is nil")
+		}
+		update(&t.AgentDefinition)
+		return t, nil
+	case agent_yaml.Workflow:
+		update(&t.AgentDefinition)
+		return t, nil
+	case *agent_yaml.Workflow:
+		if t == nil {
+			return nil, fmt.Errorf("agent template is nil")
+		}
+		update(&t.AgentDefinition)
+		return t, nil
+	default:
+		return nil, fmt.Errorf("unsupported agent template type %T", template)
+	}
 }
 
 type agentGetter interface {

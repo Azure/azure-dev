@@ -4,18 +4,31 @@
 package project
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
+	"time"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
@@ -81,6 +94,17 @@ type AgentServiceTargetProvider struct {
 	env                 *azdext.Environment
 	foundryProject      *arm.ResourceID
 }
+
+const (
+	preBuiltImageArtifactSourceKey = "azure.ai.agents.imageSource"
+	preBuiltImageArtifactSource    = "agent.yaml"
+)
+
+// containerImageRefRe is a basic pattern for container image references:
+// [registry/]repository[:tag|@digest]
+var containerImageRefRe = regexp.MustCompile(
+	`^[a-zA-Z0-9]([a-zA-Z0-9._-]*/)*[a-zA-Z0-9][a-zA-Z0-9._-]*(:[a-zA-Z0-9._-]+|@sha256:[0-9a-fA-F]{64})?$`,
+)
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
 func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
@@ -355,8 +379,46 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	if !p.isContainerAgent() {
+	// Code deploy: ZIP the source directory
+	if p.isCodeDeployAgent() {
+		progress("Packaging code")
+		zipPath, sha256Hex, err := p.packageCodeDeploy(serviceConfig)
+		if err != nil {
+			return nil, exterrors.Internal(exterrors.OpContainerPackage, fmt.Sprintf("code packaging failed: %s", err))
+		}
+
+		return &azdext.ServicePackageResult{
+			Artifacts: []*azdext.Artifact{
+				{
+					Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ARCHIVE,
+					Location:     zipPath,
+					LocationKind: azdext.LocationKind_LOCATION_KIND_LOCAL,
+					Metadata: map[string]string{
+						"type":   "code-zip",
+						"sha256": sha256Hex,
+					},
+				},
+			},
+		}, nil
+	}
+
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
+	if err != nil {
+		return nil, err
+	}
+	if !isContainerAgent {
 		return &azdext.ServicePackageResult{}, nil
+	}
+
+	usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx, agentDef)
+	if err != nil {
+		return nil, err
+	}
+	if usePreBuiltImage {
+		progress("Using pre-built container image, skipping package")
+		return &azdext.ServicePackageResult{
+			Artifacts: []*azdext.Artifact{preBuiltImageArtifact(agentDef.Image)},
+		}, nil
 	}
 
 	var packageArtifact *azdext.Artifact
@@ -420,7 +482,23 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	if !p.isContainerAgent() {
+	// Code deploy skips Publish (no ACR needed)
+	if p.isCodeDeployAgent() {
+		return &azdext.ServicePublishResult{}, nil
+	}
+
+	if preBuiltArtifact := findPreBuiltImageArtifact(serviceContext.Package); preBuiltArtifact != nil {
+		progress("Using pre-built container image, skipping publish")
+		return &azdext.ServicePublishResult{
+			Artifacts: []*azdext.Artifact{preBuiltArtifact},
+		}, nil
+	}
+
+	_, isContainerAgent, err := p.loadContainerAgentDefinition()
+	if err != nil {
+		return nil, err
+	}
+	if !isContainerAgent {
 		return &azdext.ServicePublishResult{}, nil
 	}
 
@@ -439,6 +517,112 @@ func (p *AgentServiceTargetProvider) Publish(
 	return &azdext.ServicePublishResult{
 		Artifacts: publishResponse.Result.Artifacts,
 	}, nil
+}
+
+func preBuiltImageArtifact(imageURL string) *azdext.Artifact {
+	return &azdext.Artifact{
+		Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+		Location:     imageURL,
+		LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+		Metadata: map[string]string{
+			preBuiltImageArtifactSourceKey: preBuiltImageArtifactSource,
+		},
+	}
+}
+
+func findPreBuiltImageArtifact(artifacts []*azdext.Artifact) *azdext.Artifact {
+	for _, artifact := range artifacts {
+		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
+			artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE &&
+			artifact.Location != "" &&
+			artifact.Metadata[preBuiltImageArtifactSourceKey] == preBuiltImageArtifactSource {
+			return artifact
+		}
+	}
+
+	return nil
+}
+
+func findPreBuiltImageArtifactInContext(serviceContext *azdext.ServiceContext) *azdext.Artifact {
+	if serviceContext == nil {
+		return nil
+	}
+
+	if artifact := findPreBuiltImageArtifact(serviceContext.Publish); artifact != nil {
+		return artifact
+	}
+
+	return findPreBuiltImageArtifact(serviceContext.Package)
+}
+
+func hasContainerArtifact(artifacts []*azdext.Artifact) bool {
+	for _, artifact := range artifacts {
+		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.ContainerAgent, bool, error) {
+	data, err := os.ReadFile(p.agentDefinitionPath)
+	if err != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("failed to read agent manifest file: %s", err),
+			"verify the agent.yaml file exists and is readable",
+		)
+	}
+
+	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("agent.yaml is not valid: %s", err),
+			"fix the agent.yaml file according to the schema",
+		)
+	}
+
+	var genericTemplate map[string]any
+	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("YAML content is not valid: %s", err),
+			"verify the agent.yaml has valid YAML syntax",
+		)
+	}
+
+	kind, ok := genericTemplate["kind"].(string)
+	if !ok {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeMissingAgentKind,
+			"kind field is missing or not a valid string in agent.yaml",
+			"add a valid 'kind' field (e.g., 'hosted') to agent.yaml",
+		)
+	}
+
+	if kind != string(agent_yaml.AgentKindHosted) {
+		return agent_yaml.ContainerAgent{}, false, nil
+	}
+
+	var agentDef agent_yaml.ContainerAgent
+	if err := yaml.Unmarshal(data, &agentDef); err != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("YAML content is not valid for hosted agent: %s", err),
+			"fix the agent.yaml to match the hosted agent schema",
+		)
+	}
+
+	if agentDef.Image != "" && !containerImageRefRe.MatchString(agentDef.Image) {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("invalid container image reference in agent.yaml: %q", agentDef.Image),
+			"use a valid image reference, e.g. 'myregistry.azurecr.io/image:v1'",
+		)
+	}
+
+	return agentDef, true, nil
 }
 
 // Deploy performs the deployment operation for the agent service
@@ -486,71 +670,69 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	warnDeprecatedScaleSettings(serviceConfig.Config)
 
-	// Load and validate the agent manifest
-	data, err := os.ReadFile(p.agentDefinitionPath)
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
 	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("failed to read agent manifest file: %s", err),
-			"verify the agent.yaml file exists and is readable",
-		)
+		return nil, err
 	}
-
-	err = agent_yaml.ValidateAgentDefinition(data)
-	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent.yaml is not valid: %s", err),
-			"fix the agent.yaml file according to the schema",
-		)
-	}
-
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("YAML content is not valid for deploy: %s", err),
-			"verify the agent.yaml has valid YAML syntax",
-		)
-	}
-
-	kind, ok := genericTemplate["kind"].(string)
-	if !ok {
-		return nil, exterrors.Validation(
-			exterrors.CodeMissingAgentKind,
-			"kind field is missing or not a valid string in agent.yaml",
-			"add a valid 'kind' field (e.g., 'hosted') to agent.yaml",
-		)
-	}
-
-	switch kind {
-	case string(agent_yaml.AgentKindHosted):
-		var agentDef agent_yaml.ContainerAgent
-		if err := yaml.Unmarshal(data, &agentDef); err != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("YAML content is not valid for hosted agent deploy: %s", err),
-				"fix the agent.yaml to match the hosted agent schema",
-			)
-		}
-		return p.deployHostedAgent(ctx, serviceConfig, serviceContext, progress, agentDef, azdEnv)
-	default:
+	if !isContainerAgent {
 		return nil, exterrors.Validation(
 			exterrors.CodeUnsupportedAgentKind,
-			fmt.Sprintf("unsupported agent kind: %s", kind),
+			"unsupported agent kind in agent.yaml",
 			"use a supported kind: 'hosted'",
 		)
 	}
-}
 
-func (p *AgentServiceTargetProvider) isContainerAgent() bool {
-	// Load and validate the agent manifest
-	data, err := os.ReadFile(p.agentDefinitionPath)
-	if err != nil {
-		return false
+	// Branch: code deploy vs container deploy
+	if agentDef.CodeConfiguration != nil {
+		return p.deployHostedCodeAgent(ctx, serviceConfig, serviceContext, progress, agentDef, azdEnv)
 	}
 
-	err = agent_yaml.ValidateAgentDefinition(data)
+	return p.deployHostedAgent(ctx, serviceConfig, serviceContext, progress, agentDef, azdEnv)
+}
+
+// shouldUsePreBuiltImage determines whether to use a pre-built image.
+//
+// Behavior:
+//   - If no image is configured in agent.yaml, always build from Dockerfile.
+//   - In non-interactive mode (--no-prompt), the prompt returns the default
+//     selection (index 0 = build from Dockerfile) automatically.
+//   - In interactive mode, prompt the user. The default is to build, so users
+//     who happen to have an image in agent.yaml are not silently switched onto
+//     the pre-built path.
+func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
+	ctx context.Context,
+	agentDef agent_yaml.ContainerAgent,
+) (bool, error) {
+	imageURL := agentDef.Image
+	if imageURL == "" {
+		return false, nil
+	}
+
+	// Default to build so the pre-built path requires an explicit choice.
+	// In non-interactive mode (--no-prompt), the framework returns the default
+	// selection (index 0 = build) automatically.
+	choices := []*azdext.SelectChoice{
+		{Value: "build", Label: "Build a new image for me"},
+		{Value: "prebuilt", Label: fmt.Sprintf("Create hosted agent from %s", imageURL)},
+	}
+	defaultIndex := int32(0)
+	resp, err := p.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "A container image is configured. How would you like to deploy?",
+			Choices:       choices,
+			SelectedIndex: &defaultIndex,
+		},
+	})
+	if err != nil {
+		return false, exterrors.FromPrompt(err, "failed to select hosted agent container image source")
+	}
+
+	return resp.Value != nil && choices[*resp.Value].Value == "prebuilt", nil
+}
+
+// isCodeDeployAgent returns true if the agent.yaml has code_configuration (code deploy mode)
+func (p *AgentServiceTargetProvider) isCodeDeployAgent() bool {
+	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {
 		return false
 	}
@@ -565,19 +747,32 @@ func (p *AgentServiceTargetProvider) isContainerAgent() bool {
 		return false
 	}
 
-	return kind == string(agent_yaml.AgentKindHosted)
+	if kind != string(agent_yaml.AgentKindHosted) {
+		return false
+	}
+
+	_, hasCodeConfig := genericTemplate["code_configuration"]
+	return hasCodeConfig
 }
 
-// deployHostedAgent deploys a container-based hosted agent to the Foundry service.
-func (p *AgentServiceTargetProvider) deployHostedAgent(
-	ctx context.Context,
+// deployPrepResult holds the common outputs from prepareDeploy, used by both
+// container and code deploy paths.
+type deployPrepResult struct {
+	resolvedEnvVars map[string]string
+	request         *agent_api.CreateAgentRequest
+	protocols       []agent_yaml.ProtocolVersionRecord
+}
+
+// prepareDeploy handles the common pre-deploy logic shared by container and code
+// deploy: endpoint validation, environment variable resolution, service config
+// parsing, and API request building. The caller provides extra build options
+// (e.g. WithImageURL for container, WithCPU/WithMemory for code).
+func (p *AgentServiceTargetProvider) prepareDeploy(
 	serviceConfig *azdext.ServiceConfig,
-	serviceContext *azdext.ServiceContext,
-	progress azdext.ProgressReporter,
 	agentDef agent_yaml.ContainerAgent,
 	azdEnv map[string]string,
-) (*azdext.ServiceDeployResult, error) {
-	// Check if environment variable is set
+	extraOptions []agent_yaml.AgentBuildOption,
+) (*deployPrepResult, error) {
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingAiProjectEndpoint,
@@ -586,30 +781,11 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		)
 	}
 
-	progress("Deploying hosted agent")
-
-	// Step 1: Build container image
-	var fullImageURL string
-	for _, artifact := range serviceContext.Publish {
-		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
-			artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE {
-			fullImageURL = artifact.Location
-			break
-		}
-	}
-	if fullImageURL == "" {
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingPublishedContainer,
-			"published container artifact not found: no remote container artifact was found in service publish artifacts",
-			"run 'azd package' and 'azd publish' (or 'azd deploy') to produce container artifacts",
-		)
-	}
-
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
-	// Step 2: Resolve environment variables from YAML using azd environment values
+	// Resolve environment variables from YAML using azd environment values
 	resolvedEnvVars := make(map[string]string)
 	if agentDef.EnvironmentVariables != nil {
 		for _, envVar := range *agentDef.EnvironmentVariables {
@@ -617,7 +793,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		}
 	}
 
-	// Step 3: Create agent request with image URL and resolved environment variables
+	// Parse service config for container resource overrides
 	var foundryAgentConfig *ServiceTargetAgentConfig
 	if err := UnmarshalStruct(serviceConfig.Config, &foundryAgentConfig); err != nil {
 		return nil, exterrors.Validation(
@@ -630,24 +806,22 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	warnDeprecatedScaleSettings(serviceConfig.Config)
 
 	var cpu, memory string
-	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
+	if foundryAgentConfig != nil && foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
 		cpu = foundryAgentConfig.Container.Resources.Cpu
 		memory = foundryAgentConfig.Container.Resources.Memory
 	}
 
-	// Build options list starting with required options
+	// Build options: env vars + cpu/memory (if set) + caller-provided extras
 	options := []agent_yaml.AgentBuildOption{
-		agent_yaml.WithImageURL(fullImageURL),
 		agent_yaml.WithEnvironmentVariables(resolvedEnvVars),
 	}
-
-	// Conditionally add CPU and memory options if they're not empty
 	if cpu != "" {
 		options = append(options, agent_yaml.WithCPU(cpu))
 	}
 	if memory != "" {
 		options = append(options, agent_yaml.WithMemory(memory))
 	}
+	options = append(options, extraOptions...)
 
 	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef, options...)
 	if err != nil {
@@ -658,21 +832,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		)
 	}
 
-	// Set experience metadata on the request
 	applyAgentMetadata(request)
-
-	// Display agent information
-	p.displayAgentInfo(request)
-
-	// Step 4: Create agent
-	progress("Creating agent")
-	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv)
-	if err != nil {
-		return nil, err
-	}
-
-	// Register agent info in environment
-	progress("Registering agent environment variables")
 
 	// Default to "responses" protocol when none specified in agent.yaml.
 	protocols := agentDef.Protocols
@@ -682,14 +842,33 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		}
 	}
 
-	err = p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersionResponse, protocols)
+	return &deployPrepResult{
+		resolvedEnvVars: resolvedEnvVars,
+		request:         request,
+		protocols:       protocols,
+	}, nil
+}
+
+// finalizeDeploy handles the common post-deploy logic: registering environment
+// variables and building the deploy result artifacts.
+func (p *AgentServiceTargetProvider) finalizeDeploy(
+	ctx context.Context,
+	progress azdext.ProgressReporter,
+	serviceConfig *azdext.ServiceConfig,
+	azdEnv map[string]string,
+	agentVersion *agent_api.AgentVersionObject,
+	protocols []agent_yaml.ProtocolVersionRecord,
+) (*azdext.ServiceDeployResult, error) {
+	progress("Registering agent environment variables")
+
+	err := p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersion, protocols)
 	if err != nil {
 		return nil, err
 	}
 
 	artifacts := p.deployArtifacts(
-		agentVersionResponse.Name,
-		agentVersionResponse.Version,
+		agentVersion.Name,
+		agentVersion.Version,
 		azdEnv["AZURE_AI_PROJECT_ID"],
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
 		protocols,
@@ -698,6 +877,549 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	return &azdext.ServiceDeployResult{
 		Artifacts: artifacts,
 	}, nil
+}
+
+// deployHostedAgent deploys a container-based hosted agent to the Foundry service.
+func (p *AgentServiceTargetProvider) deployHostedAgent(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+	serviceContext *azdext.ServiceContext,
+	progress azdext.ProgressReporter,
+	agentDef agent_yaml.ContainerAgent,
+	azdEnv map[string]string,
+) (*azdext.ServiceDeployResult, error) {
+	progress("Deploying hosted agent")
+
+	fullImageURL := ""
+	if preBuiltArtifact := findPreBuiltImageArtifactInContext(serviceContext); preBuiltArtifact != nil {
+		fullImageURL = preBuiltArtifact.Location
+	} else if !hasContainerArtifact(serviceContext.Publish) {
+		usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx, agentDef)
+		if err != nil {
+			return nil, err
+		}
+		if usePreBuiltImage {
+			fullImageURL = agentDef.Image
+		}
+	}
+
+	if fullImageURL != "" {
+		progress(fmt.Sprintf("Using pre-built container image: %s", fullImageURL))
+	} else {
+		for _, artifact := range serviceContext.Publish {
+			if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
+				artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE {
+				fullImageURL = artifact.Location
+				break
+			}
+		}
+		if fullImageURL == "" {
+			return nil, exterrors.Dependency(
+				exterrors.CodeMissingPublishedContainer,
+				"published container artifact not found: no remote container artifact was found in service "+
+					"publish artifacts and no pre-built image was specified",
+				"either set 'image' in agent.yaml, "+
+					"or run 'azd package' and 'azd publish' to build from a Dockerfile",
+			)
+		}
+	}
+
+	prep, err := p.prepareDeploy(serviceConfig, agentDef, azdEnv, []agent_yaml.AgentBuildOption{
+		agent_yaml.WithImageURL(fullImageURL),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Display agent information
+	p.displayAgentInfo(prep.request)
+
+	// Create agent
+	progress("Creating agent")
+	agentVersionResponse, err := p.createAgent(ctx, prep.request, azdEnv)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, agentVersionResponse, prep.protocols)
+}
+
+// packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
+// and computes its SHA-256. Returns the temp file path and SHA-256 hex string.
+func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.ServiceConfig) (string, string, error) {
+	// Source directory is the service's relative path
+	srcDir := filepath.Dir(p.agentDefinitionPath)
+
+	// Load agent.yaml to check runtime and dependency resolution for dotnet bundled mode
+	if data, err := os.ReadFile(p.agentDefinitionPath); err == nil { //nolint:gosec // path from internal state
+		var agentDef agent_yaml.ContainerAgent
+		if err := yaml.Unmarshal(data, &agentDef); err == nil && agentDef.CodeConfiguration != nil {
+			isDotnet := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "dotnet_")
+			isBundled := false // default is remote_build (matches promptCodeConfig and deployHostedCodeAgent defaults)
+			if agentDef.CodeConfiguration.DependencyResolution != nil {
+				isBundled = *agentDef.CodeConfiguration.DependencyResolution == "bundled"
+			}
+			if isDotnet && isBundled {
+				return p.packageDotnetBundled(srcDir)
+			}
+		}
+	}
+
+	// Exclusion patterns
+	// TODO: support a .azdignore or similar ignore file for user-configurable exclusions.
+	excludeDirs := map[string]bool{
+		"__pycache__":   true,
+		".venv":         true,
+		"venv":          true,
+		".git":          true,
+		"node_modules":  true,
+		".mypy_cache":   true,
+		".pytest_cache": true,
+		".azure":        true,
+		// .NET directories (for remote_build, exclude build artifacts)
+		"bin": true,
+		"obj": true,
+		".vs": true,
+	}
+	excludeExts := map[string]bool{
+		".pyc":  true,
+		".pyo":  true,
+		".user": true,
+		".suo":  true,
+	}
+	excludeFiles := map[string]bool{
+		".env": true,
+	}
+
+	// Create temp file and write ZIP directly to it while computing SHA-256
+	tmpFile, err := os.CreateTemp("", "azd-code-deploy-*.zip")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create temp file for ZIP: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	// Clean up on error
+	success := false
+	defer func() {
+		if !success {
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	hasher := sha256.New()
+	multiWriter := io.MultiWriter(tmpFile, hasher)
+	zipWriter := zip.NewWriter(multiWriter)
+
+	err = filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Get relative path
+		relPath, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return err
+		}
+
+		// Skip root
+		if relPath == "." {
+			return nil
+		}
+
+		// Normalize to forward slashes for ZIP
+		relPath = filepath.ToSlash(relPath)
+
+		// Check directory exclusions
+		if d.IsDir() {
+			if excludeDirs[d.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Skip symlinks to avoid including files outside the agent directory
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+
+		// Check file extension exclusions
+		if excludeExts[filepath.Ext(path)] {
+			return nil
+		}
+
+		// Check file name exclusions (.env, .env.*)
+		if excludeFiles[d.Name()] || strings.HasPrefix(d.Name(), ".env.") {
+			return nil
+		}
+
+		// Skip agent.yaml itself from the ZIP (metadata is sent separately)
+		if d.Name() == "agent.yaml" {
+			return nil
+		}
+
+		// Add file to ZIP
+		fileData, err := os.ReadFile(path) //nolint:gosec // path is constructed from filepath.WalkDir within the service directory
+		if err != nil {
+			return fmt.Errorf("failed to read %s: %w", relPath, err)
+		}
+
+		writer, err := zipWriter.Create(relPath)
+		if err != nil {
+			return fmt.Errorf("failed to create ZIP entry %s: %w", relPath, err)
+		}
+
+		if _, err := writer.Write(fileData); err != nil {
+			return fmt.Errorf("failed to write ZIP entry %s: %w", relPath, err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return "", "", fmt.Errorf("failed to walk source directory: %w", err)
+	}
+
+	if err := zipWriter.Close(); err != nil {
+		return "", "", fmt.Errorf("failed to close ZIP: %w", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return "", "", fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	// Enforce maximum ZIP size (250 MB)
+	const maxZipSize = 250 * 1024 * 1024
+	fi, err := os.Stat(tmpPath)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to stat ZIP file: %w", err)
+	}
+	if fi.Size() > maxZipSize {
+		return "", "", fmt.Errorf(
+			"code package too large: %d MB (max 250 MB). Reduce package size by excluding unnecessary files or using remote_build for dependency resolution",
+			fi.Size()/(1024*1024),
+		)
+	}
+
+	sha256Hex := hex.EncodeToString(hasher.Sum(nil))
+	success = true
+
+	return tmpPath, sha256Hex, nil
+}
+
+// packageDotnetBundled runs "dotnet publish" for the .NET project and creates a ZIP of the published output.
+func (p *AgentServiceTargetProvider) packageDotnetBundled(srcDir string) (string, string, error) {
+	// Find the .csproj file
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read source directory: %w", err)
+	}
+
+	var csprojPath string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".csproj") {
+			csprojPath = filepath.Join(srcDir, e.Name())
+			break
+		}
+	}
+	if csprojPath == "" {
+		return "", "", fmt.Errorf("no .csproj file found in %s; required for dotnet bundled packaging", srcDir)
+	}
+
+	// Create temp directory for publish output
+	publishDir, err := os.MkdirTemp("", "azd-dotnet-publish-*")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create temp dir for dotnet publish: %w", err)
+	}
+	defer os.RemoveAll(publishDir)
+
+	// Run dotnet publish targeting linux (hosted agents run on linux)
+	fmt.Fprintf(os.Stderr, "Running 'dotnet publish' for bundled packaging...\n")
+	cmd := exec.Command("dotnet", "publish", csprojPath, //nolint:gosec // csprojPath is derived from user's project directory
+		"-c", "Release",
+		"-r", "linux-x64",
+		"--self-contained", "false",
+		"-o", publishDir,
+	)
+	cmd.Dir = srcDir
+	var publishOutput bytes.Buffer
+	cmd.Stdout = io.MultiWriter(os.Stderr, &publishOutput)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &publishOutput)
+	if err := cmd.Run(); err != nil {
+		return "", "", fmt.Errorf("dotnet publish failed: %w\nOutput:\n%s", err, publishOutput.String())
+	}
+
+	// ZIP the publish output
+	tmpFile, err := os.CreateTemp("", "azd-code-deploy-*.zip")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create temp file for ZIP: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	success := false
+	defer func() {
+		if !success {
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	hasher := sha256.New()
+	multiWriter := io.MultiWriter(tmpFile, hasher)
+	zipWriter := zip.NewWriter(multiWriter)
+
+	err = filepath.WalkDir(publishDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+
+		relPath, relErr := filepath.Rel(publishDir, path)
+		if relErr != nil {
+			return relErr
+		}
+
+		if relPath == "." {
+			return nil
+		}
+
+		relPath = filepath.ToSlash(relPath)
+
+		if d.IsDir() {
+			return nil
+		}
+
+		fileData, readErr := os.ReadFile(path) //nolint:gosec // path from WalkDir within temp publish dir
+		if readErr != nil {
+			return fmt.Errorf("failed to read %s: %w", relPath, readErr)
+		}
+
+		w, createErr := zipWriter.Create(relPath)
+		if createErr != nil {
+			return fmt.Errorf("failed to create ZIP entry %s: %w", relPath, createErr)
+		}
+
+		if _, writeErr := w.Write(fileData); writeErr != nil {
+			return fmt.Errorf("failed to write ZIP entry %s: %w", relPath, writeErr)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return "", "", fmt.Errorf("failed to walk publish directory: %w", err)
+	}
+
+	if err := zipWriter.Close(); err != nil {
+		return "", "", fmt.Errorf("failed to close ZIP: %w", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return "", "", fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	// Enforce maximum ZIP size (250 MB) — same limit as packageCodeDeploy
+	const maxZipSizeBundled = 250 * 1024 * 1024
+	if fi, statErr := os.Stat(tmpPath); statErr == nil && fi.Size() > maxZipSizeBundled {
+		return "", "", fmt.Errorf(
+			"bundled package too large: %d MB (max 250 MB). Consider using remote_build for dependency resolution",
+			fi.Size()/(1024*1024),
+		)
+	}
+
+	sha256Hex := hex.EncodeToString(hasher.Sum(nil))
+	success = true
+
+	return tmpPath, sha256Hex, nil
+}
+
+// deployHostedCodeAgent deploys a code-based hosted agent via multipart ZIP upload.
+func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+	serviceContext *azdext.ServiceContext,
+	progress azdext.ProgressReporter,
+	agentDef agent_yaml.ContainerAgent,
+	azdEnv map[string]string,
+) (*azdext.ServiceDeployResult, error) {
+	progress("Deploying hosted agent (code deploy)")
+
+	// Validate that the Foundry project's region supports code deploy.
+	projectLocation := strings.ToLower(strings.TrimSpace(azdEnv["AZURE_LOCATION"]))
+	if projectLocation == "" {
+		return nil, exterrors.Dependency(
+			exterrors.CodeAgentCreateFailed,
+			"AZURE_LOCATION is not set; the Foundry project region is required for code deploy",
+			"run 'azd provision' or 'azd ai agent init' to set the project location",
+		)
+	}
+	if !slices.Contains(CodeDeployRegions, projectLocation) {
+		return nil, exterrors.Dependency(
+			exterrors.CodeAgentCreateFailed,
+			fmt.Sprintf(
+				"code deploy is not supported in region %q; supported regions: %s",
+				azdEnv["AZURE_LOCATION"],
+				strings.Join(CodeDeployRegions, ", "),
+			),
+			"select a Foundry project in a supported region or use container deploy instead",
+		)
+	}
+
+	// Find the ZIP artifact from Package phase
+	var zipPath, sha256Hex string
+	for _, artifact := range serviceContext.Package {
+		if artifact.Metadata != nil && artifact.Metadata["type"] == "code-zip" {
+			zipPath = artifact.Location
+			sha256Hex = artifact.Metadata["sha256"]
+			break
+		}
+	}
+	if zipPath == "" {
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingCodeZipArtifact,
+			"code ZIP artifact not found: no code-zip artifact was found in service package artifacts",
+			"run 'azd package' to produce the code ZIP artifact",
+		)
+	}
+
+	zipData, err := os.ReadFile(zipPath) //nolint:gosec // zipPath comes from the artifact location set during packaging
+	if err != nil {
+		return nil, fmt.Errorf("failed to read ZIP artifact: %w", err)
+	}
+	// Clean up temp file
+	defer os.Remove(zipPath)
+
+	prep, err := p.prepareDeploy(serviceConfig, agentDef, azdEnv, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if agentDef.CodeConfiguration != nil {
+		fmt.Fprintf(os.Stderr, "Runtime: %s\n", agentDef.CodeConfiguration.Runtime)
+		cmdPrefix := agent_yaml.RuntimeCmdPrefix(agentDef.CodeConfiguration.Runtime)
+		fmt.Fprintf(os.Stderr, "Entry Point: [\"%s\", \"%s\"]\n", cmdPrefix, agentDef.CodeConfiguration.EntryPoint)
+		depRes := "remote_build"
+		if agentDef.CodeConfiguration.DependencyResolution != nil {
+			depRes = *agentDef.CodeConfiguration.DependencyResolution
+		}
+		fmt.Fprintf(os.Stderr, "Packaging: %s\n", depRes)
+	}
+
+	// Display agent information
+	p.displayAgentInfo(prep.request)
+
+	// Build the metadata for multipart upload
+	versionRequest := &agent_api.CreateAgentVersionRequest{
+		Description: prep.request.Description,
+		Metadata:    prep.request.Metadata,
+		Definition:  prep.request.Definition,
+	}
+
+	// Create agent client
+	agentClient := agent_api.NewAgentClient(
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		p.credential,
+	)
+
+	// Check if agent already exists (GET /agents/{name})
+	progress("Creating agent")
+	_, getErr := agentClient.GetAgent(ctx, agentDef.Name, agentAPIVersion)
+	var agentResp *agent_api.AgentObject
+
+	if getErr != nil {
+		// Only fall back to create on 404; propagate other errors (auth, 5xx, network)
+		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
+			return nil, fmt.Errorf("failed to check if agent exists: %w", getErr)
+		}
+		// Agent doesn't exist — create
+		fmt.Fprintf(os.Stderr, "Creating new agent: %s\n", agentDef.Name)
+		agentResp, err = agentClient.CreateAgentFromZip(ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agentAPIVersion)
+		if err != nil {
+			return nil, exterrors.Internal(
+				exterrors.CodeAgentCreateFailed,
+				fmt.Sprintf("failed to create agent from ZIP: %s; check the agent definition and try again", err),
+			)
+		}
+	} else {
+		// Agent exists — update
+		fmt.Fprintf(os.Stderr, "Updating existing agent: %s\n", agentDef.Name)
+		agentResp, err = agentClient.UpdateAgentFromZip(ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agentAPIVersion)
+		if err != nil {
+			return nil, exterrors.Internal(
+				exterrors.CodeAgentCreateFailed,
+				fmt.Sprintf("failed to update agent from ZIP: %s; check the agent definition and try again", err),
+			)
+		}
+	}
+
+	// Poll for status if remote build
+	latestVersion := &agentResp.Versions.Latest
+	depRes := "remote_build"
+	if agentDef.CodeConfiguration != nil && agentDef.CodeConfiguration.DependencyResolution != nil {
+		depRes = *agentDef.CodeConfiguration.DependencyResolution
+	}
+	if depRes == "remote_build" && latestVersion.Status == "creating" {
+		fmt.Fprintf(os.Stderr, "Waiting for remote build to complete...\n")
+		pollTimeout := 5 * time.Minute
+		pollInterval := 5 * time.Second
+		deadline := time.Now().Add(pollTimeout)
+
+		for time.Now().Before(deadline) {
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("deployment cancelled: %w", ctx.Err())
+			case <-time.After(pollInterval):
+			}
+			versionResp, err := agentClient.GetAgentVersion(ctx, agentDef.Name, latestVersion.Version, agentAPIVersion)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: poll failed: %s\n", err)
+				continue
+			}
+			latestVersion = versionResp
+			if versionResp.Status == "active" {
+				fmt.Fprintf(os.Stderr, "Agent is active!\n")
+				break
+			} else if versionResp.Status == "failed" {
+				errMsg := "agent deployment failed during remote build; check agent logs or try local packaging (dependency_resolution: bundled)"
+				if versionResp.Error != nil {
+					errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", versionResp.Error.Code, versionResp.Error.Message)
+				}
+				if versionResp.RequestID != "" {
+					errMsg += fmt.Sprintf(" (request-id: %s)", versionResp.RequestID)
+				}
+				return nil, exterrors.Internal(
+					exterrors.CodeAgentCreateFailed,
+					errMsg,
+				)
+			}
+			fmt.Fprintf(os.Stderr, "  Status: %s...\n", versionResp.Status)
+		}
+
+		if latestVersion.Status != "active" {
+			return nil, exterrors.Internal(
+				exterrors.CodeAgentCreateFailed,
+				"agent deployment timed out waiting for remote build; check agent status manually or try local packaging",
+			)
+		}
+	}
+
+	// Patch agent-level fields (agent_endpoint, agent_card) if present.
+	if prep.request.AgentEndpoint != nil || prep.request.AgentCard != nil {
+		patchRequest := &agent_api.PatchAgentRequest{
+			AgentEndpoint: prep.request.AgentEndpoint,
+			AgentCard:     prep.request.AgentCard,
+		}
+
+		_, err := agentClient.PatchAgent(ctx, agentDef.Name, patchRequest, agentAPIVersion)
+		if err != nil {
+			fmt.Fprintf(os.Stderr,
+				"WARNING: Agent was created/updated, but patching agent endpoint/card failed: %s\n", err,
+			)
+			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+		}
+		fmt.Fprintf(os.Stderr, "Agent endpoint/card updated.\n")
+	}
+
+	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, latestVersion, prep.protocols)
 }
 
 // deployArtifacts constructs the artifacts list for deployment results.
@@ -909,11 +1631,13 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 	fmt.Fprintf(os.Stderr, "Description: %s\n", description)
 
 	// Display agent-specific information
-	if imageHostedDef, ok := request.Definition.(agent_api.ImageBasedHostedAgentDefinition); ok {
-		fmt.Fprintf(os.Stderr, "Image: %s\n", imageHostedDef.Image)
-		fmt.Fprintf(os.Stderr, "CPU: %s\n", imageHostedDef.CPU)
-		fmt.Fprintf(os.Stderr, "Memory: %s\n", imageHostedDef.Memory)
-		fmt.Fprintf(os.Stderr, "Protocol Versions: %+v\n", imageHostedDef.ContainerProtocolVersions)
+	if hostedDef, ok := request.Definition.(agent_api.HostedAgentDefinition); ok {
+		if hostedDef.Image != "" {
+			fmt.Fprintf(os.Stderr, "Image: %s\n", hostedDef.Image)
+		}
+		fmt.Fprintf(os.Stderr, "CPU: %s\n", hostedDef.CPU)
+		fmt.Fprintf(os.Stderr, "Memory: %s\n", hostedDef.Memory)
+		fmt.Fprintf(os.Stderr, "Protocol Versions: %+v\n", hostedDef.ProtocolVersions)
 	}
 	fmt.Fprintln(os.Stderr)
 }

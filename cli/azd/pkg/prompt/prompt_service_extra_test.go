@@ -252,6 +252,27 @@ func TestPromptCustomResource_NilSelectorOptions_UsesDefaultsAndForce(t *testing
 	require.Equal(t, 42, *result)
 }
 
+func TestPromptCustomResource_SkipLoadingSpinner(t *testing.T) {
+	t.Parallel()
+
+	loaded := false
+	_, err := PromptCustomResource(t.Context(), CustomResourceOptions[string]{
+		SelectorOptions: &SelectOptions{
+			SkipLoadingSpinner: true,
+			AllowNewResource:   new(false),
+		},
+		LoadData: func(ctx context.Context) ([]*string, error) {
+			loaded = true
+			return nil, nil
+		},
+	})
+
+	// LoadData should have been called directly (without spinner)
+	require.True(t, loaded)
+	// No resources and AllowNewResource=false returns the sentinel error
+	require.ErrorIs(t, err, ErrNoResourcesFound)
+}
+
 // helpers
 
 func emptySubs() []account.Subscription { return []account.Subscription{} }

@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 	"slices"
-	"strconv"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -71,12 +70,12 @@ func NewDefaultPrompter(
 }
 
 func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {
-	subscriptionOptions, subscriptions, defaultSubscription, err := p.getSubscriptionOptions(ctx)
+	subscriptionInfos, err := p.accountManager.GetSubscriptions(ctx)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("listing subscriptions: %w", err)
 	}
 
-	if len(subscriptionOptions) == 0 {
+	if len(subscriptionInfos) == 0 {
 		// NOTE: Error text must contain "no subscriptions found" to match the
 		// pattern in error_suggestions.yaml. Update both if rewording.
 		return "", errors.New(heredoc.Docf(
@@ -86,6 +85,32 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 			p.portalUrlBase,
 		))
 	}
+
+	// Filter by AZURE_TENANT_ID if set (works in both prompt and no-prompt modes)
+	subscriptionInfos = filterByTenantEnvVar(subscriptionInfos)
+
+	// Tenant selection: if multiple tenants, prompt user to pick one
+	if !p.console.IsNoPromptMode() {
+		subscriptionInfos, err = promptAndFilterByTenant(
+			ctx, p.console, subscriptionInfos, p.accountManager.GetTenantDisplayNames)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	slices.SortFunc(subscriptionInfos, func(a, b account.Subscription) int {
+		return stringutil.CompareLower(a.Name, b.Name)
+	})
+
+	// The default value is based on AZURE_SUBSCRIPTION_ID, falling back to whatever default subscription in
+	// set in azd's config.
+	defaultSubscriptionId := os.Getenv(environment.SubscriptionIdEnvVarName)
+	if defaultSubscriptionId == "" {
+		defaultSubscriptionId = p.accountManager.GetDefaultSubscriptionID(ctx)
+	}
+
+	subscriptionOptions, subscriptions, defaultSubscription :=
+		formatSubscriptionOptions(subscriptionInfos, defaultSubscriptionId)
 
 	for subscriptionId == "" {
 		subscriptionSelectionIndex, err := p.console.Select(ctx, input.ConsoleOptions{
@@ -108,6 +133,34 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 	}
 
 	return subscriptionId, nil
+}
+
+// formatSubscriptionOptions formats subscription infos into display options.
+func formatSubscriptionOptions(
+	subscriptionInfos []account.Subscription,
+	defaultSubscriptionId string,
+) (options []string, ids []string, defaultOption any) {
+	options = make([]string, len(subscriptionInfos))
+	ids = make([]string, len(subscriptionInfos))
+
+	hideId := isDemoModeEnabled()
+
+	for index, info := range subscriptionInfos {
+		if hideId {
+			options[index] = fmt.Sprintf("%2d. %s", index+1, info.Name)
+		} else {
+			options[index] = fmt.Sprintf(
+				"%2d. %s (%s)", index+1, info.Name, info.Id)
+		}
+
+		ids[index] = info.Id
+
+		if info.Id == defaultSubscriptionId {
+			defaultOption = options[index]
+		}
+	}
+
+	return options, ids, defaultOption
 }
 
 func (p *DefaultPrompter) PromptLocation(
@@ -244,44 +297,6 @@ func (p *DefaultPrompter) PromptResourceGroupFrom(
 	}
 
 	return name, nil
-}
-
-func (p *DefaultPrompter) getSubscriptionOptions(ctx context.Context) ([]string, []string, any, error) {
-	subscriptionInfos, err := p.accountManager.GetSubscriptions(ctx)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("listing accounts: %w", err)
-	}
-
-	slices.SortFunc(subscriptionInfos, func(a, b account.Subscription) int {
-		return stringutil.CompareLower(a.Name, b.Name)
-	})
-
-	// The default value is based on AZURE_SUBSCRIPTION_ID, falling back to whatever default subscription in
-	// set in azd's config.
-	defaultSubscriptionId := os.Getenv(environment.SubscriptionIdEnvVarName)
-	if defaultSubscriptionId == "" {
-		defaultSubscriptionId = p.accountManager.GetDefaultSubscriptionID(ctx)
-	}
-
-	var subscriptionOptions = make([]string, len(subscriptionInfos))
-	var subscriptions = make([]string, len(subscriptionInfos))
-	var defaultSubscription any
-
-	for index, info := range subscriptionInfos {
-		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
-			subscriptionOptions[index] = fmt.Sprintf("%2d. %s", index+1, info.Name)
-		} else {
-			subscriptionOptions[index] = fmt.Sprintf("%2d. %s (%s)", index+1, info.Name, info.Id)
-		}
-
-		subscriptions[index] = info.Id
-
-		if info.Id == defaultSubscriptionId {
-			defaultSubscription = subscriptionOptions[index]
-		}
-	}
-
-	return subscriptionOptions, subscriptions, defaultSubscription, nil
 }
 
 func (p *DefaultPrompter) IsNoPromptMode() bool {

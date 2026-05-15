@@ -100,6 +100,23 @@ func (a *MockAccountManager) SetDefaultLocation(
 	return nil, nil
 }
 
+func (a *MockAccountManager) GetTenantDisplayNames(ctx context.Context) (map[string]string, error) {
+	result := make(map[string]string)
+	for _, sub := range a.Subscriptions {
+		tid := sub.UserAccessTenantId
+		if tid == "" {
+			tid = sub.TenantId
+		}
+		if tid == "" {
+			continue
+		}
+		if _, exists := result[tid]; !exists {
+			result[tid] = tid
+		}
+	}
+	return result, nil
+}
+
 // SubscriptionCredentialProviderFunc implements [account.SubscriptionCredentialProvider] using the provided function.
 type SubscriptionCredentialProviderFunc func(ctx context.Context, subscriptionId string) (azcore.TokenCredential, error)
 

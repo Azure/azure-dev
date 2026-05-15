@@ -986,7 +986,7 @@ func addToPathUnix(dir string) error {
 //	mage coverage:html    — generate and open an HTML report
 //	mage coverage:check   — enforce minimum coverage threshold
 //	mage coverage:diff    — compare current branch vs main baseline
-//	mage coverage:pr      — diff + post as PR comment
+//	mage coverage:pr      — preview the CI PR coverage gate (fail-loud)
 //
 // See cli/azd/docs/code-coverage-guide.md for prerequisites and details.
 type Coverage mg.Namespace
@@ -1090,6 +1090,18 @@ func (Coverage) Check() error {
 // Uses cover-local.out as the current profile (run coverage:unit first) and downloads
 // the main baseline from CI when needed.
 //
+// By default this is purely advisory: it prints a per-package report without enforcing
+// any gates, so local invocations like `mage coverage:diff` don't show noisy
+// "RESULT: FAIL" lines just because a single package drifted past CI's 0.5 pp tolerance
+// during exploration. To preview the CI gate locally, either set
+// COVERAGE_FAIL_ON_DECREASE=1 (which activates CI defaults: 0.5 pp per package +
+// 69% floor) or use `mage coverage:pr`.
+//
+// On a feature branch (not main / detached HEAD), Diff resolves PR-touched .go files
+// via `git fetch origin main` + `git diff origin/main...HEAD` and passes them to the
+// underlying script so the per-package report is scoped to packages containing
+// touched files — matching the CI gate run by code-coverage-upload.yml.
+//
 // To avoid the CI download (which requires 'az login'), run coverage on main first
 // and point to it:
 //
@@ -1097,8 +1109,14 @@ func (Coverage) Check() error {
 //
 // Environment variables (optional):
 //
-//	COVERAGE_BASELINE — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
-//	COVERAGE_CURRENT  — path to current coverage profile (default: cover-local.out)
+//	COVERAGE_BASELINE                   — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
+//	COVERAGE_CURRENT                    — path to current coverage profile (default: cover-local.out)
+//	COVERAGE_MAX_PACKAGE_DECREASE       — per-package coverage decrease tolerance in percentage points
+//	                                      (defaults: 0.5 when COVERAGE_FAIL_ON_DECREASE=1; gate disabled otherwise)
+//	COVERAGE_MIN_OVERALL                — absolute floor for overall coverage in percent
+//	                                      (defaults: 69.0 when COVERAGE_FAIL_ON_DECREASE=1; gate disabled otherwise)
+//	COVERAGE_FAIL_ON_DECREASE           — "1" or "true" to exit non-zero when EITHER gate is breached
+//	                                      (per-package decrease or absolute floor); also activates default thresholds
 //
 // Usage: mage coverage:diff
 func (Coverage) Diff() error {
@@ -1121,22 +1139,74 @@ func (Coverage) Diff() error {
 		return err
 	}
 
-	diffScript := filepath.Join(repoRoot, "eng", "scripts", "Get-CoverageDiff.ps1")
-	return runPwshScript(azdDir, diffScript,
+	args := []string{
 		"-BaselineFile", baselineFile,
 		"-CurrentFile", currentFile,
-	)
+	}
+
+	failOnDecrease := false
+	if fail := os.Getenv("COVERAGE_FAIL_ON_DECREASE"); fail == "1" || strings.EqualFold(fail, "true") {
+		failOnDecrease = true
+	}
+
+	changedFiles, err := resolveChangedFilesForDiff(azdDir, failOnDecrease)
+	if err != nil {
+		return err
+	}
+	if changedFiles != "" {
+		args = append(args, "-ChangedFilesFromFile", changedFiles)
+	}
+
+	// Pass user-supplied thresholds explicitly. When the user opts into
+	// fail-loud mode (COVERAGE_FAIL_ON_DECREASE=1) and hasn't set a
+	// threshold, omit the flag entirely so the script's own defaults rule —
+	// keeps a single source of truth (Get-CoverageDiff.ps1) and prevents
+	// drift between mage and CI.
+	// In advisory mode (default), neutralize the gates (max=100 / min=0) so
+	// local exploration runs don't print "RESULT: FAIL" noise just because
+	// a single package drifted past CI's defaults during exploration.
+	if maxPkg := os.Getenv("COVERAGE_MAX_PACKAGE_DECREASE"); maxPkg != "" {
+		args = append(args, "-MaxPackageDecrease", maxPkg)
+	} else if !failOnDecrease {
+		args = append(args, "-MaxPackageDecrease", "100")
+	}
+
+	if minOverall := os.Getenv("COVERAGE_MIN_OVERALL"); minOverall != "" {
+		args = append(args, "-MinOverallCoverage", minOverall)
+	} else if !failOnDecrease {
+		args = append(args, "-MinOverallCoverage", "0")
+	}
+
+	if failOnDecrease {
+		args = append(args, "-FailOnGate")
+	}
+
+	diffScript := filepath.Join(repoRoot, "eng", "scripts", "Get-CoverageDiff.ps1")
+	return runPwshScript(azdDir, diffScript, args...)
 }
 
-// PR generates a coverage diff and posts it as a comment on the current pull request.
-// Requires: gh CLI authenticated, current branch must have an open PR.
+// PR previews the CI PR coverage gate locally: same fail-loud per-package
+// decrease and absolute-floor gates that code-coverage-upload.yml runs
+// against the latest successful main build. No PR comment is posted (the CI
+// gate surfaces breaches in the build log; this target lets contributors
+// repro the gate locally before pushing).
 //
-// Re-running replaces the previous coverage comment (uses a tag for replacement).
+// Resolves changed files via `git fetch origin main` + `git merge-base origin/main HEAD`
+// + `git diff` so the per-package report is scoped to packages containing PR-touched
+// files. Requires a feature branch with origin/main reachable; on main or detached
+// HEAD, or when git resolution fails (e.g. no remote / shallow clone), the target
+// returns an actionable error rather than silently passing — the "preview"
+// guarantee depends on the same package set CI displays.
 //
 // Environment variables (optional):
 //
-//	COVERAGE_BASELINE — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
-//	COVERAGE_CURRENT  — path to current coverage profile (default: cover-local.out)
+//	COVERAGE_BASELINE             — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
+//	COVERAGE_CURRENT              — path to current coverage profile (default: cover-local.out)
+//	COVERAGE_MAX_PACKAGE_DECREASE — per-package coverage decrease tolerance in pp (default: from Get-CoverageDiff.ps1, currently 0.5)
+//	COVERAGE_MIN_OVERALL          — absolute floor for overall coverage in percent (default: from Get-CoverageDiff.ps1, currently 69)
+//
+// Defaults intentionally come from the underlying script so both `mage coverage:pr`
+// and the CI pipeline read from a single source of truth.
 //
 // Usage: mage coverage:pr
 func (Coverage) PR() error {
@@ -1159,40 +1229,208 @@ func (Coverage) PR() error {
 		return err
 	}
 
-	// Generate diff markdown to a file
-	diffFile := filepath.Join(azdDir, "coverage-diff.md")
-	diffScript := filepath.Join(repoRoot, "eng", "scripts", "Get-CoverageDiff.ps1")
-	if err := runPwshScript(azdDir, diffScript,
-		"-BaselineFile", baselineFile,
-		"-CurrentFile", currentFile,
-		"-OutputFile", diffFile,
-	); err != nil {
+	changedFiles, err := resolveChangedFilesForDiff(azdDir, true)
+	if err != nil {
 		return err
 	}
-
-	// Determine PR number from current branch
-	prNumRaw, err := runCapture(azdDir, "gh", "pr", "view", "--json", "number", "--jq", ".number")
-	if err != nil {
-		return fmt.Errorf("no open PR for current branch (is 'gh' authenticated?): %w", err)
+	if changedFiles == "" {
+		return fmt.Errorf(
+			"coverage:pr requires a feature branch with origin/main reachable; " +
+				"run on a feature branch and ensure 'git fetch origin main' succeeds",
+		)
 	}
-	prNum := strings.TrimSpace(prNumRaw)
 
-	// Determine repository slug (owner/repo)
-	repoRaw, err := runCapture(azdDir, "gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner")
-	if err != nil {
-		return fmt.Errorf("cannot determine repository: %w", err)
+	args := []string{
+		"-BaselineFile", baselineFile,
+		"-CurrentFile", currentFile,
+		"-FailOnGate",
+		"-ChangedFilesFromFile", changedFiles,
 	}
-	repo := strings.TrimSpace(repoRaw)
 
-	// Post coverage diff as a PR comment (replaces previous tagged comment)
-	fmt.Printf("Posting coverage diff to %s#%s...\n", repo, prNum)
-	updateScript := filepath.Join(repoRoot, "eng", "scripts", "Update-PRComment.ps1")
-	return runPwshScript(azdDir, updateScript,
-		"-Repo", repo,
-		"-PRNumber", prNum,
-		"-BodyFile", diffFile,
-		"-Tag", "<!-- coverage-diff -->",
-	)
+	// Only forward thresholds when the user explicitly set them. Otherwise
+	// let Get-CoverageDiff.ps1's own defaults rule so there's a single
+	// source of truth shared between mage and CI.
+	if v := os.Getenv("COVERAGE_MAX_PACKAGE_DECREASE"); v != "" {
+		args = append(args, "-MaxPackageDecrease", v)
+	}
+	if v := os.Getenv("COVERAGE_MIN_OVERALL"); v != "" {
+		args = append(args, "-MinOverallCoverage", v)
+	}
+
+	diffScript := filepath.Join(repoRoot, "eng", "scripts", "Get-CoverageDiff.ps1")
+	return runPwshScript(azdDir, diffScript, args...)
+}
+
+// Report merges Go cover-data inputs and writes a textfmt cover.out, mirroring
+// the same `go tool covdata merge` + `go tool covdata textfmt` plumbing that
+// `mage coverage:ci` uses internally. CI invokes this target so the upload
+// stage and the local `mage coverage:*` targets share one coverage-reporting
+// path — no second source of truth.
+//
+// Environment variables:
+//
+//	COVERAGE_REPORT_UNIT_INPUTS — comma-separated paths to per-platform unit covdata directories (required)
+//	COVERAGE_REPORT_INT_INPUTS  — comma-separated paths to per-platform integration covdata directories (optional)
+//	COVERAGE_REPORT_OUTPUT      — path to the textfmt output file (required, e.g. cover.out)
+//	COVERAGE_REPORT_MERGED_DIR  — directory to write the merged covdata into (default: <azdDir>/cover-merged)
+//
+// Usage: mage coverage:report
+func (Coverage) Report() error {
+	unitInputs := os.Getenv("COVERAGE_REPORT_UNIT_INPUTS")
+	if unitInputs == "" {
+		return fmt.Errorf("COVERAGE_REPORT_UNIT_INPUTS is required (comma-separated covdata directories)")
+	}
+	output := os.Getenv("COVERAGE_REPORT_OUTPUT")
+	if output == "" {
+		return fmt.Errorf("COVERAGE_REPORT_OUTPUT is required (path to textfmt cover.out)")
+	}
+
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+	azdDir := filepath.Join(repoRoot, "cli", "azd")
+
+	mergedDir := os.Getenv("COVERAGE_REPORT_MERGED_DIR")
+	if mergedDir == "" {
+		mergedDir = filepath.Join(azdDir, "cover-merged")
+	}
+
+	if err := os.MkdirAll(mergedDir, 0o755); err != nil {
+		return fmt.Errorf("creating merged dir %q: %w", mergedDir, err)
+	}
+
+	intInputs := os.Getenv("COVERAGE_REPORT_INT_INPUTS")
+
+	// Per-stream merge: when integration inputs are provided we merge each
+	// stream individually first so the final merge can combine both streams.
+	// Place intermediate dirs INSIDE mergedDir so concurrent invocations
+	// with different mergedDir values (e.g. PR pipeline merging current and
+	// baseline coverage in the same job) don't share intermediate paths and
+	// contaminate each other's covdata.
+	tmpUnit := filepath.Join(mergedDir, "unit-tmp")
+	tmpInt := filepath.Join(mergedDir, "int-tmp")
+
+	if intInputs != "" {
+		// Clean any stale intermediate dir from a prior run before merging
+		// to avoid mixing previous covcounters/covmeta into this run.
+		if err := os.RemoveAll(tmpUnit); err != nil {
+			return fmt.Errorf("cleaning stale unit merge dir %q: %w", tmpUnit, err)
+		}
+		if err := os.RemoveAll(tmpInt); err != nil {
+			return fmt.Errorf("cleaning stale int merge dir %q: %w", tmpInt, err)
+		}
+		if err := os.MkdirAll(tmpUnit, 0o755); err != nil {
+			return fmt.Errorf("creating unit merge dir: %w", err)
+		}
+		if err := os.MkdirAll(tmpInt, 0o755); err != nil {
+			return fmt.Errorf("creating int merge dir: %w", err)
+		}
+		if err := runGoTool(azdDir, "covdata", "merge", "-i="+unitInputs, "-o="+tmpUnit); err != nil {
+			return fmt.Errorf("merging unit covdata: %w", err)
+		}
+		if err := runGoTool(azdDir, "covdata", "merge", "-i="+intInputs, "-o="+tmpInt); err != nil {
+			return fmt.Errorf("merging integration covdata: %w", err)
+		}
+		combined := tmpUnit + "," + tmpInt
+		if err := runGoTool(azdDir, "covdata", "merge", "-i="+combined, "-o="+mergedDir); err != nil {
+			return fmt.Errorf("merging combined covdata: %w", err)
+		}
+	} else {
+		if err := runGoTool(azdDir, "covdata", "merge", "-i="+unitInputs, "-o="+mergedDir); err != nil {
+			return fmt.Errorf("merging unit covdata: %w", err)
+		}
+	}
+
+	if err := runGoTool(azdDir, "covdata", "textfmt", "-i="+mergedDir, "-o="+output); err != nil {
+		return fmt.Errorf("converting covdata to textfmt: %w", err)
+	}
+
+	fmt.Printf("Wrote merged textfmt coverage profile to %s\n", output)
+	return nil
+}
+
+// runGoTool runs `go tool <args...>` inside the given directory and streams
+// stdout/stderr through the parent process. Used by Coverage.Report to wrap
+// `go tool covdata` invocations so the same pipeline plumbing is exercised
+// in CI and locally.
+func runGoTool(dir string, args ...string) error {
+	full := append([]string{"tool"}, args...)
+	cmd := exec.Command("go", full...)
+	cmd.Dir = dir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// resolveChangedFilesForDiff returns the path to a file listing PR-touched
+// files used to scope the per-package coverage gate, or an
+// empty string when changed-file mode should be skipped (on main, detached
+// HEAD, or when git resolution fails).
+//
+// When strict is false, git resolution failures degrade silently to advisory
+// mode. When strict is true, failures return an actionable error so the caller
+// (e.g. `mage coverage:pr`, which always enforces the floor) doesn't pass with
+// a green-when-CI-is-red false positive.
+//
+// Mirrors the resolution done by code-coverage-upload.yml so local
+// `mage coverage:diff` / `coverage:pr` runs against the same file set CI checks.
+func resolveChangedFilesForDiff(azdDir string, strict bool) (string, error) {
+	skipOrFail := func(reason string) (string, error) {
+		if strict {
+			return "", fmt.Errorf("cannot resolve changed files for coverage gate: %s", reason)
+		}
+		return "", nil
+	}
+
+	branch, err := runCapture(azdDir, "git", "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return skipOrFail(fmt.Sprintf("git rev-parse failed: %v", err))
+	}
+	branch = strings.TrimSpace(branch)
+	if branch == "" || branch == "HEAD" {
+		return skipOrFail("detached HEAD or empty branch name")
+	}
+	if branch == "main" {
+		return skipOrFail("on main branch (no PR diff to compute)")
+	}
+
+	// Best-effort fetch so origin/main is fresh; mirrors code-coverage-upload.yml.
+	// Any error here is non-fatal — the next step will surface a usable error if
+	// origin/main truly isn't reachable.
+	_, _ = runCapture(azdDir, "git", "fetch", "--no-tags", "--depth=200", "origin", "main")
+
+	base, err := runCapture(azdDir, "git", "merge-base", "origin/main", "HEAD")
+	if err != nil {
+		return skipOrFail(fmt.Sprintf("git merge-base origin/main HEAD failed: %v", err))
+	}
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return skipOrFail("empty merge-base result")
+	}
+
+	diff, err := runCapture(azdDir, "git", "diff", "--name-only", "--no-renames", "--diff-filter=AMRD", base+"...HEAD")
+	if err != nil {
+		return skipOrFail(fmt.Sprintf("git diff failed: %v", err))
+	}
+	diff = strings.TrimSpace(diff)
+	if diff == "" {
+		return skipOrFail("no files changed vs origin/main")
+	}
+
+	// Use os.CreateTemp (not a fixed name in TempDir) so two concurrent
+	// `mage coverage:diff` / `coverage:pr` runs on the same machine can't
+	// clobber each other's file list and silently produce wrong gate results.
+	f, err := os.CreateTemp("", "azd-coverage-changed-files-*.txt")
+	if err != nil {
+		return "", fmt.Errorf("creating changed-files temp file: %w", err)
+	}
+	out := f.Name()
+	f.Close()
+	if err := os.WriteFile(out, []byte(diff+"\n"), 0o644); err != nil {
+		return "", fmt.Errorf("writing changed files list: %w", err)
+	}
+	return out, nil
 }
 
 // resolveCoverageFile returns envOverride if non-empty and existing,

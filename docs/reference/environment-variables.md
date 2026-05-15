@@ -41,6 +41,12 @@ Override the path to external tools that azd invokes:
 |---|---|
 | `AZD_BUILDER_IMAGE` | Builder image for Dockerfile-less container builds |
 
+## Provisioning
+
+| Variable | Description |
+|---|---|
+| `AZD_DEPLOYMENT_ID_FILE` | Absolute path to a file where `azd` writes ARM deployment resource IDs in NDJSON format (one JSON line per layer) during Bicep provisioning. The file is truncated at the start of each run; each layer appends `{"deploymentId":"...","layer":"<name>"}`. Enables external tooling (e.g., VS Code extension) to track all in-flight deployments without scraping console output. See [cli/azd/docs/environment-variables.md](../../cli/azd/docs/environment-variables.md) for the full contract. |
+
 ## IDE Integration
 
 Set by IDE hosts (VS Code, Visual Studio) when spawning azd as a subprocess. Users do not set these manually.

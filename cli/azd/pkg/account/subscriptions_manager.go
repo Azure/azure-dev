@@ -167,14 +167,27 @@ func (m *SubscriptionsManager) getSubscriptions(ctx context.Context) (getSubscri
 
 	subscriptions, err := m.cache.Load(ctx, uid)
 	if err != nil {
-		subscriptions, err = m.ListSubscriptions(ctx)
-		if err != nil {
-			return getSubscriptionsResult{}, fmt.Errorf("listing subscriptions: %w", err)
-		}
+		// When running in playback mode with a synthetic subscription, skip the real ARM call
+		// to list subscriptions. The synthetic subscription is sufficient for the test to proceed,
+		// and the recording cassette won't contain the /tenants API responses needed by ListSubscriptions.
+		syntheticId := os.Getenv("AZD_DEBUG_SYNTHETIC_SUBSCRIPTION")
+		if syntheticId != "" {
+			subscriptions = []Subscription{{
+				Id:                 syntheticId,
+				Name:               "AZD Synthetic Test Subscription",
+				TenantId:           claims.TenantId,
+				UserAccessTenantId: claims.TenantId,
+			}}
+		} else {
+			subscriptions, err = m.ListSubscriptions(ctx)
+			if err != nil {
+				return getSubscriptionsResult{}, fmt.Errorf("listing subscriptions: %w", err)
+			}
 
-		err = m.cache.Save(ctx, uid, subscriptions)
-		if err != nil {
-			return getSubscriptionsResult{}, fmt.Errorf("saving subscriptions to cache: %w", err)
+			err = m.cache.Save(ctx, uid, subscriptions)
+			if err != nil {
+				return getSubscriptionsResult{}, fmt.Errorf("saving subscriptions to cache: %w", err)
+			}
 		}
 	}
 
@@ -406,6 +419,28 @@ func (m *SubscriptionsManager) getSubscription(ctx context.Context, subscription
 
 	sub := toSubscription(*azSub, tenantId)
 	return &sub, nil
+}
+
+// GetTenantDisplayNames returns a map of tenant ID to display name for all tenants
+// accessible by the current account.
+func (m *SubscriptionsManager) GetTenantDisplayNames(ctx context.Context) (map[string]string, error) {
+	tenants, err := m.service.ListTenants(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing tenants: %w", err)
+	}
+
+	result := make(map[string]string, len(tenants))
+	for _, t := range tenants {
+		if t.TenantID != nil {
+			name := *t.TenantID
+			if t.DisplayName != nil && *t.DisplayName != "" {
+				name = *t.DisplayName
+			}
+			result[*t.TenantID] = name
+		}
+	}
+
+	return result, nil
 }
 
 func toSubscriptions(azSubs []*armsubscriptions.Subscription, userAccessTenantId string) []Subscription {

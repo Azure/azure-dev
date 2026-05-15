@@ -6,6 +6,7 @@ package cmd
 import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/azure"
+	"azureaiagent/internal/project"
 	"context"
 	"fmt"
 	"regexp"
@@ -308,6 +309,7 @@ func lookupAcrResourceId(
 
 // configureFoundryProjectEnv sets all Foundry project environment variables and discovers
 // ACR and AppInsights connections. This is the shared implementation used by both init flows.
+// When skipACR is true, ACR connection discovery and configuration is skipped (used for code deploy).
 func configureFoundryProjectEnv(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -315,6 +317,7 @@ func configureFoundryProjectEnv(
 	envName string,
 	project FoundryProjectInfo,
 	subscriptionId string,
+	skipACR bool,
 ) error {
 	resourceId := project.ResourceId
 	if resourceId == "" {
@@ -365,7 +368,9 @@ func configureFoundryProjectEnv(
 	for _, conn := range connections {
 		switch conn.Type {
 		case azure.ConnectionTypeContainerRegistry:
-			acrConnections = append(acrConnections, conn)
+			if !skipACR {
+				acrConnections = append(acrConnections, conn)
+			}
 		case azure.ConnectionTypeAppInsights:
 			connWithCreds, err := foundryClient.GetConnectionWithCredentials(ctx, conn.Name)
 			if err != nil {
@@ -379,8 +384,10 @@ func configureFoundryProjectEnv(
 		}
 	}
 
-	if err := configureAcrConnection(ctx, azdClient, credential, envName, subscriptionId, acrConnections); err != nil {
-		return err
+	if !skipACR {
+		if err := configureAcrConnection(ctx, azdClient, credential, envName, subscriptionId, acrConnections); err != nil {
+			return err
+		}
 	}
 
 	if err := configureAppInsightsConnection(ctx, azdClient, envName, appInsightsConnections); err != nil {
@@ -999,6 +1006,7 @@ func selectFoundryProject(
 	envName string,
 	subscriptionId string,
 	projectResourceId string,
+	skipACR bool,
 ) (*FoundryProjectInfo, error) {
 	spinnerText := "Searching for Foundry projects in your subscription..."
 	if projectResourceId != "" {
@@ -1034,6 +1042,13 @@ func selectFoundryProject(
 			return nil, err
 		}
 		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
+	}
+
+	// When code deploy is selected, restrict to regions that support it.
+	if skipACR {
+		projects = slices.DeleteFunc(projects, func(p FoundryProjectInfo) bool {
+			return !locationAllowed(p.Location, project.CodeDeployRegions)
+		})
 	}
 
 	if len(projects) == 0 {
@@ -1095,7 +1110,7 @@ func selectFoundryProject(
 	}
 
 	// Configure all Foundry project environment variables
-	if err := configureFoundryProjectEnv(ctx, azdClient, credential, envName, selectedProject, subscriptionId); err != nil {
+	if err := configureFoundryProjectEnv(ctx, azdClient, credential, envName, selectedProject, subscriptionId, skipACR); err != nil {
 		return nil, fmt.Errorf("failed to configure Foundry project environment: %w", err)
 	}
 

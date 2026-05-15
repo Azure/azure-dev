@@ -101,6 +101,9 @@ type SelectOptions struct {
 	HelpMessage string
 	// LoadingMessage is the loading message to display to the user.
 	LoadingMessage string
+	// SkipLoadingSpinner skips the loading spinner in PromptCustomResource.
+	// Use this when data is pre-loaded and LoadData returns immediately.
+	SkipLoadingSpinner bool
 	// DisplayNumbers specifies whether to display numbers next to the choices.
 	DisplayNumbers *bool
 	// DisplayCount is the number of choices to display at a time.
@@ -157,6 +160,7 @@ type ResourceService interface {
 type SubscriptionManager interface {
 	GetSubscriptions(ctx context.Context) ([]account.Subscription, error)
 	GetLocations(ctx context.Context, subscriptionId string) ([]account.Location, error)
+	GetTenantDisplayNames(ctx context.Context) (map[string]string, error)
 }
 
 // PromptServiceInterface defines the methods that the PromptService must implement.
@@ -211,6 +215,8 @@ func NewPromptService(
 }
 
 // PromptSubscription prompts the user to select an Azure subscription.
+// If the user has access to multiple tenants, a tenant selection prompt is shown first
+// to scope down the subscription list.
 func (ps *promptService) PromptSubscription(
 	ctx context.Context,
 	selectorOptions *SelectOptions,
@@ -235,6 +241,31 @@ func (ps *promptService) PromptSubscription(
 		return nil, err
 	}
 
+	// Load subscriptions under a spinner first
+	var subscriptionList []account.Subscription
+	loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: mergedOptions.LoadingMessage,
+	})
+
+	err := loadingSpinner.Run(ctx, func(ctx context.Context) error {
+		var loadErr error
+		subscriptionList, loadErr = ps.subscriptionManager.GetSubscriptions(ctx)
+		return loadErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing subscriptions: %w", err)
+	}
+
+	// Apply tenant filtering (after spinner is done so the prompt doesn't overlap)
+	subscriptionList = filterByTenantEnvVar(subscriptionList)
+	if !ps.console.IsNoPromptMode() {
+		subscriptionList, err = promptAndFilterByTenant(
+			ctx, ps.console, subscriptionList, ps.subscriptionManager.GetTenantDisplayNames)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Get default subscription from user config
 	var defaultSubscriptionId = ""
 	userConfig, err := ps.userConfigManager.Load()
@@ -247,19 +278,19 @@ func (ps *promptService) PromptSubscription(
 
 	hideId := isDemoModeEnabled()
 
+	// Use PromptCustomResource with pre-loaded data
+	subscriptions := make([]*account.Subscription, len(subscriptionList))
+	for i := range subscriptionList {
+		subscriptions[i] = &subscriptionList[i]
+	}
+
+	// Create selector options with spinner disabled since data is already loaded
+	resourceSelectorOptions := *mergedOptions
+	resourceSelectorOptions.SkipLoadingSpinner = true
+
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Subscription]{
-		SelectorOptions: mergedOptions,
+		SelectorOptions: &resourceSelectorOptions,
 		LoadData: func(ctx context.Context) ([]*account.Subscription, error) {
-			subscriptionList, err := ps.subscriptionManager.GetSubscriptions(ctx)
-			if err != nil {
-				return nil, err
-			}
-
-			subscriptions := make([]*account.Subscription, len(subscriptionList))
-			for i, subscription := range subscriptionList {
-				subscriptions[i] = &subscription
-			}
-
 			return subscriptions, nil
 		},
 		DisplayResource: func(subscription *account.Subscription) (string, error) {
@@ -768,21 +799,29 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 		allowNewResource = true
 		selectedIndex = new(0)
 	} else {
-		loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
-			Text: options.SelectorOptions.LoadingMessage,
-		})
-
-		err := loadingSpinner.Run(ctx, func(ctx context.Context) error {
+		loadData := func(ctx context.Context) error {
 			resourceList, err := options.LoadData(ctx)
 			if err != nil {
 				return err
 			}
-
 			resources = resourceList
 			return nil
-		})
-		if err != nil {
-			return nil, err
+		}
+
+		// Skip the spinner when data is pre-loaded
+		if mergedSelectorOptions.SkipLoadingSpinner {
+			if err := loadData(ctx); err != nil {
+				return nil, err
+			}
+		} else {
+			loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
+				Text: mergedSelectorOptions.LoadingMessage,
+			})
+			if err := loadingSpinner.Run(ctx, func(ctx context.Context) error {
+				return loadData(ctx)
+			}); err != nil {
+				return nil, err
+			}
 		}
 
 		if !allowNewResource && len(resources) == 0 {

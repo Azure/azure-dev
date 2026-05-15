@@ -10,12 +10,13 @@
     specified minimum.
 
     This script is called automatically by Get-LocalCoverageReport.ps1
-    (when -MinCoverage is set) and by the CI pipeline (release-cli.yml) to
-    enforce the coverage gate. It can also be run standalone on any Go
-    coverage profile.
+    (when -MinCoverage is set) for local coverage checks. It can also be
+    run standalone on any Go coverage profile.
 
-    See cli/azd/docs/code-coverage-guide.md for details on the CI gate
-    and ratchet policy.
+    Note: this script is no longer wired into the CI pipeline. PR coverage
+    enforcement is handled by Get-CoverageDiff.ps1, which runs a two-gate
+    check (per-package decrease + overall floor) — see
+    cli/azd/docs/code-coverage-guide.md for details.
 
 .PARAMETER CoverageFile
     Path to the Go coverage profile (typically cover.out).

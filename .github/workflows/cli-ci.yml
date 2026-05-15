@@ -6,6 +6,7 @@ on:
       - "cli/**"
       - "!cli/azd/extensions/**"
       - ".github/workflows/cli-ci.yml"
+      - "eng/scripts/Get-CoverageDiff*.ps1"
     branches: [main]
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event
@@ -44,3 +45,34 @@ jobs:
 
   bicep-lint:
     uses: ./.github/workflows/lint-bicep.yml
+
+  coverage-script-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run Pester tests for coverage scripts
+        shell: pwsh
+        run: |
+          # Pin Pester to a specific signed release for deterministic, supply-chain-safe installs.
+          Install-Module -Name Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
+          Import-Module Pester -RequiredVersion 5.7.1
+          $config = New-PesterConfiguration
+          $config.Run.Path = './eng/scripts/Get-CoverageDiff.Tests.ps1'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $config
+
+  magefile-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/azd/go.mod
+      - name: Run mage helper tests (resolveCoverageFile, resolveBaselineFile, resolveChangedFilesForDiff)
+        working-directory: cli/azd
+        run: go test -tags mage -run '^TestResolve' -v .

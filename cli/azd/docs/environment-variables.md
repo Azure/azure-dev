@@ -160,6 +160,7 @@ specific version of the tool installed on the machine.
 | `ENABLE_HOSTED_AGENTS` | If set, indicates that hosted agents are enabled for the current azd environment. |
 | `ENABLE_CONTAINER_AGENTS` | If set, indicates that container agents are enabled for the current azd environment. |
 | `AGENT_DEFINITION_PATH` | Path to an agent definition file for AI agent workflows. |
+| `FOUNDRY_PROJECT_ENDPOINT` | A host environment variable specifying the Microsoft Foundry project endpoint. Used as a fallback in the endpoint resolution cascade when no azd environment or global config is available. Not read from the azd env, only from the host shell environment. |
 
 ## UI Prompt Integration
 

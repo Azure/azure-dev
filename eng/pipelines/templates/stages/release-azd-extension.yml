@@ -83,4 +83,6 @@ stages:
 
     - template: /eng/pipelines/templates/stages/publish-extension.yml
       parameters:
+        AzdExtensionId: ${{ parameters.AzdExtensionId }}
+        AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
         SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}

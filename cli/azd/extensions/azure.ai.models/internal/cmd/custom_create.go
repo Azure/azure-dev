@@ -23,16 +23,20 @@ import (
 )
 
 type customCreateFlags struct {
-	Name        string
-	Version     string
-	Source      string
-	SourceFile  string
-	Description string
-	BaseModel   string
-	WeightType  string
-	Publisher   string
-	AzcopyPath  string
-	NoWait      bool
+	Name              string
+	Version           string
+	Source            string
+	SourceFile        string
+	Description       string
+	BaseModel         string
+	WeightType        string
+	Publisher         string
+	AzcopyPath        string
+	NoWait            bool
+	LoRARank          int
+	LoRAAlpha         int
+	LoRATargetModules string
+	LoRADropout       float64
 }
 
 func newCustomCreateCommand(parentFlags *customFlags) *cobra.Command {
@@ -77,7 +81,7 @@ provide a file containing the URL instead.`,
 				return fmt.Errorf("either --source or --source-file is required")
 			}
 
-			return runCustomCreate(ctx, parentFlags, flags)
+			return runCustomCreate(ctx, cmd, parentFlags, flags)
 		},
 	}
 
@@ -91,6 +95,11 @@ provide a file containing the URL instead.`,
 	cmd.Flags().StringVar(&flags.Publisher, "publisher", "", "Model publisher ID for catalog info (e.g., Fireworks)")
 	cmd.Flags().StringVar(&flags.AzcopyPath, "azcopy-path", "", "Path to azcopy binary (auto-detected if not provided)")
 	cmd.Flags().BoolVar(&flags.NoWait, "no-wait", false, "Start async registration and return immediately with the operation URL")
+	cmd.Flags().IntVar(&flags.LoRARank, "lora-rank", 0, "LoRA rank (r) — required when --weight-type is LoRA")
+	cmd.Flags().IntVar(&flags.LoRAAlpha, "lora-alpha", 0, "LoRA scaling factor (alpha) — required when --weight-type is LoRA")
+	cmd.Flags().StringVar(&flags.LoRATargetModules, "lora-target-modules", "",
+		"Comma-separated list of target modules (e.g., \"q_proj,v_proj,k_proj,o_proj\")")
+	cmd.Flags().Float64Var(&flags.LoRADropout, "lora-dropout", 0, "LoRA dropout rate used during training (informational)")
 
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("base-model")
@@ -98,7 +107,7 @@ provide a file containing the URL instead.`,
 	return cmd
 }
 
-func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *customCreateFlags) error {
+func runCustomCreate(ctx context.Context, cmd *cobra.Command, parentFlags *customFlags, flags *customCreateFlags) error {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return fmt.Errorf("failed to create azd client: %w", err)
@@ -130,6 +139,19 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 	foundryClient, err := client.NewFoundryClient(parentFlags.projectEndpoint, credential)
 	if err != nil {
 		return err
+	}
+
+	// Validate LoRA flags early, before any uploads
+	var loraConfig *models.LoRAConfig
+	if strings.EqualFold(flags.WeightType, "LoRA") {
+		var err error
+		loraConfig, err = buildLoRAConfig(cmd, flags)
+		if err != nil {
+			return err
+		}
+	} else if cmd.Flags().Changed("lora-rank") || cmd.Flags().Changed("lora-alpha") ||
+		cmd.Flags().Changed("lora-target-modules") || cmd.Flags().Changed("lora-dropout") {
+		return fmt.Errorf("--lora-* flags are only valid when --weight-type is LoRA")
 	}
 
 	// ── Step 1: Start pending upload ──
@@ -240,6 +262,11 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 		}
 	}
 
+	// Attach pre-validated LoRA config
+	if loraConfig != nil {
+		regReq.LoRAConfig = loraConfig
+	}
+
 	operationURL, err := foundryClient.RegisterModelAsync(ctx, flags.Name, flags.Version, regReq)
 	_ = regSpinner.Stop(ctx)
 	fmt.Println()
@@ -334,4 +361,36 @@ func extractVersionFromURI(uri string) string {
 		}
 	}
 	return ""
+}
+
+// buildLoRAConfig validates LoRA flags and builds a LoRAConfig for the registration request.
+func buildLoRAConfig(cmd *cobra.Command, flags *customCreateFlags) (*models.LoRAConfig, error) {
+	if flags.LoRARank <= 0 {
+		return nil, fmt.Errorf("--lora-rank is required and must be a positive integer when --weight-type is LoRA")
+	}
+	if flags.LoRAAlpha <= 0 {
+		return nil, fmt.Errorf("--lora-alpha is required and must be a positive integer when --weight-type is LoRA")
+	}
+
+	config := &models.LoRAConfig{
+		Rank:  new(flags.LoRARank),
+		Alpha: new(flags.LoRAAlpha),
+	}
+
+	if flags.LoRATargetModules != "" {
+		modules := strings.Split(flags.LoRATargetModules, ",")
+		for i := range modules {
+			modules[i] = strings.TrimSpace(modules[i])
+			if modules[i] == "" {
+				return nil, fmt.Errorf("--lora-target-modules contains an empty entry")
+			}
+		}
+		config.TargetModules = modules
+	}
+
+	if cmd.Flags().Changed("lora-dropout") {
+		config.Dropout = new(flags.LoRADropout)
+	}
+
+	return config, nil
 }

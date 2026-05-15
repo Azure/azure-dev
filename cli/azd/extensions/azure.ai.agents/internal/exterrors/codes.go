@@ -53,9 +53,15 @@ const (
 	CodeMissingAiProjectId        = "missing_ai_project_id"
 	CodeMissingAzureSubscription  = "missing_azure_subscription_id"
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
+	CodeMissingProjectEndpoint    = "missing_project_endpoint"
 	CodeGitHubDownloadFailed      = "github_download_failed"
 	CodeScaffoldTemplateFailed    = "scaffold_template_failed"
 	CodePromptFailed              = "prompt_failed"
+)
+
+// Error codes for ACR dependency errors.
+const (
+	CodePrivateACRNetworkAccessFailed = "private_acr_network_access_failed"
 )
 
 // Error codes commonly used for auth errors.

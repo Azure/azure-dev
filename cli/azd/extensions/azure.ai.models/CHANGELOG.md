@@ -1,6 +1,14 @@
 # Release History
 
 
+## 0.0.7-preview (Unreleased)
+
+### Features
+
+- Added LoRA adapter support to `create` command with `--lora-rank`, `--lora-alpha`, `--lora-target-modules`, and `--lora-dropout` flags for registering LoRA adapters (`--weight-type LoRA`)
+- `show` command now displays LoRA Configuration section (rank, alpha, target modules, dropout) for LoRA adapters
+- `list` command now shows Weight Type column to distinguish FullWeight and LoRA models
+
 ## 0.0.6-preview (Unreleased)
 
 ### Features

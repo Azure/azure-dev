@@ -731,7 +731,7 @@ func emitNextAfterBind(
 	// Honor the nextstep call-site TTY-gating contract: when stdout
 	// is redirected (e.g., `azd ai agent run > log`), the human-only
 	// "Agent ready"/Next: block must not contaminate the capture.
-	if !isTerminal(os.Stdout.Fd()) {
+	if !stdoutIsTerminal() {
 		return
 	}
 	if !waitForPortReady(ctx, port, portReadyBudget) {
@@ -752,7 +752,7 @@ func emitNextAfterBind(
 		return
 	}
 	fmt.Println("\nAgent ready. In another terminal, try:")
-	_ = nextstep.PrintNext(os.Stdout, nextstep.ResolveAfterRun(state, serviceName))
+	_ = printNextIfTerminal(os.Stdout, nextstep.ResolveAfterRun(state, serviceName))
 }
 
 // portReadyBudget is the wall-clock ceiling for waitForPortReady;

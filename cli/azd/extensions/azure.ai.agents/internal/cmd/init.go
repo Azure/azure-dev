@@ -2132,7 +2132,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	// trailing line. State-assembly errors are intentionally ignored: the
 	// resolver degrades gracefully on partial state per the design spec.
 	state, _ := nextstep.AssembleState(ctx, a.azdClient)
-	_ = nextstep.PrintAllNext(os.Stdout, nextstep.ResolveAfterInit(state))
+	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state))
 	return nil
 }
 

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 
 	"azureaiagent/internal/cmd/doctor"
 	"azureaiagent/internal/cmd/nextstep"
@@ -33,20 +32,6 @@ func renderDoctorReport(
 	}
 }
 
-// writerIsTerminal reports whether w is the OS stdout AND that fd is
-// attached to an interactive terminal. The Next: block is suppressed
-// for non-stdout writers (test capture, file redirection, pipes) so
-// scripted consumers of the text output never see surprise trailing
-// lines. Callers that want the block unconditionally (tests) construct
-// the rendered string directly via printDoctorReportText with
-// showNext=true.
-func writerIsTerminal(w io.Writer) bool {
-	if w == os.Stdout {
-		return isTerminal(os.Stdout.Fd())
-	}
-	return false
-}
-
 // printDoctorReportJSON emits the structured envelope defined in the
 // design spec (`docs/design/azd-ai-agent-nextsteps.md`, "Exit codes &
 // JSON output"). The envelope is `{schemaVersion, remote, redacted,
@@ -66,8 +51,7 @@ func printDoctorReportJSON(w io.Writer, report doctor.Report) error {
 	return err
 }
 
-// printDoctorReportText renders the human-readable doctor report. The
-// shape mirrors the design spec at "Doctor output shape":
+// printDoctorReportText renders the human-readable doctor report:
 //
 //	azd ai agent doctor
 //	  ✓ PASS  <check name>

@@ -368,9 +368,7 @@ func printShowResultTable(result *showResult, suggestions []nextstep.Suggestion)
 	// see surprise trailing lines. PrintNext owns the leading blank-line
 	// separator (see nextstep/format.go renderBlock), so we don't
 	// pre-emit one here.
-	if len(suggestions) > 0 && isTerminal(os.Stdout.Fd()) {
-		_ = nextstep.PrintNext(os.Stdout, suggestions)
-	}
+	_ = printNextIfTerminal(os.Stdout, suggestions)
 
 	return nil
 }

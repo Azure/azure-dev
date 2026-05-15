@@ -367,13 +367,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 // CI capture) would receive the human-only guidance block mixed in with
 // the agent's reply.
 func (a *InvokeAction) emitInvokeSuccessNextStep(mode nextstep.InvokeMode, agentName string) {
-	if !isTerminal(os.Stdout.Fd()) {
-		return
-	}
-	_ = nextstep.PrintNext(
-		os.Stdout,
-		nextstep.ResolveAfterInvoke(nil, mode, agentName, nil),
-	)
+	_ = printNextIfTerminal(os.Stdout, nextstep.ResolveAfterInvoke(nil, mode, agentName, nil))
 }
 
 // emitInvokeFailureNextStep prints the resolver-driven Next: block when
@@ -402,16 +396,10 @@ func (a *InvokeAction) emitInvokeSuccessNextStep(mode nextstep.InvokeMode, agent
 // gymnastics that would be needed to flip the order. Revisit if user
 // feedback says the block should print after the error.
 func (a *InvokeAction) emitInvokeFailureNextStep(mode nextstep.InvokeMode, agentName, sessionCode string) {
-	if !isTerminal(os.Stdout.Fd()) {
-		return
-	}
 	failure := &nextstep.InvokeFailure{
 		SessionCode: nextstep.SessionErrorCode(sessionCode),
 	}
-	_ = nextstep.PrintNext(
-		os.Stdout,
-		nextstep.ResolveAfterInvoke(nil, mode, agentName, failure),
-	)
+	_ = printNextIfTerminal(os.Stdout, nextstep.ResolveAfterInvoke(nil, mode, agentName, failure))
 }
 
 // resolveProtocol returns the protocol to use for this invocation.

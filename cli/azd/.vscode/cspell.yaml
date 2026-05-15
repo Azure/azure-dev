@@ -238,16 +238,6 @@ overrides:
     words:
       - intarray
       - stringarray
-  - filename: extensions/azure.ai.agents/internal/cmd/root.go
-    words:
-      - conncmd
-  - filename: extensions/azure.ai.agents/internal/connections/cmd/connection.go
-    words:
-      - tavily
-      - tvly
-  - filename: extensions/azure.ai.agents/internal/cmd/connection_credentials.go
-    words:
-      - tavily
   - filename: CHANGELOG.md
     words:
       - aistudio

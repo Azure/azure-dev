@@ -145,7 +145,7 @@ func listPagedFromClient[T any](
 
 	out := []T{}
 	target := initialURL
-	for i := 0; i < maxPaginationPages; i++ {
+	for range maxPaginationPages {
 		var p page
 		if err := c.doJSON(ctx, http.MethodGet, target, nil, &p); err != nil {
 			return nil, err

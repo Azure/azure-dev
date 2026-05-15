@@ -66,13 +66,14 @@ an explicit update to retarget the default.`,
 }
 
 // readToolboxFlags extracts the persistent flag values from a subcommand. The
-// reserved azd globals `--output` and `--no-prompt` come from extCtx.
+// reserved azd globals `--output` and `--no-prompt` come from extCtx. `output`
+// is normalized to lowercase so downstream branches can compare with `== "json"`.
 func readToolboxFlags(cmd *cobra.Command, extCtx *azdext.ExtensionContext) toolboxFlags {
 	pe, _ := cmd.Flags().GetString("project-endpoint")
 	out := ""
 	np := false
 	if extCtx != nil {
-		out = extCtx.OutputFormat
+		out = strings.ToLower(extCtx.OutputFormat)
 		np = extCtx.NoPrompt
 	}
 	return toolboxFlags{projectEndpoint: pe, output: out, noPrompt: np}

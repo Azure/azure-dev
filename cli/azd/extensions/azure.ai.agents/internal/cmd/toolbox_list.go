@@ -65,9 +65,9 @@ func runToolboxListWith(
 		log.Printf("toolbox list: azd client unavailable, skipping pending merge: %v", azdErr)
 	} else {
 		defer azdClient.Close()
-		items, perr := listPendingToolboxes(ctx, azdClient, endpoint)
-		if perr != nil {
-			log.Printf("toolbox list: pending-toolbox read failed: %v", perr)
+		items, readErr := listPendingToolboxes(ctx, azdClient, endpoint)
+		if readErr != nil {
+			log.Printf("toolbox list: pending-toolbox read failed: %v", readErr)
 		} else {
 			pending = items
 		}
@@ -129,7 +129,7 @@ func emitListTable(
 	})
 
 	for _, t := range sortedLive {
-		fmt.Fprintf(w, "%s\t%s\t\t\n", t.Name, t.DefaultVersion)
+		fmt.Fprintf(w, "%s\t%s\tlive\t-\n", t.Name, t.DefaultVersion)
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(pending)) {

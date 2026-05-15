@@ -194,6 +194,36 @@ func TestTaskList_Render_warning(t *testing.T) {
 	assert.Contains(t, output, "partial failure")
 }
 
+func TestTaskList_Run_warningContinues(t *testing.T) {
+	var buf bytes.Buffer
+	ranNextTask := false
+
+	tl := NewTaskList(&TaskListOptions{Writer: &buf})
+	tl.AddTask(TaskOptions{
+		Title: "Warn task",
+		Action: func(sp SetProgressFunc) (TaskState, error) {
+			return Warning, errors.New("validation warning")
+		},
+	}).AddTask(TaskOptions{
+		Title: "Next task",
+		Action: func(sp SetProgressFunc) (TaskState, error) {
+			ranNextTask = true
+			return Success, nil
+		},
+	})
+
+	err := tl.Run()
+	require.NoError(t, err)
+	assert.True(t, ranNextTask)
+	assert.Equal(t, Warning, tl.allTasks[0].State)
+	assert.Equal(t, Success, tl.allTasks[1].State)
+
+	output := buf.String()
+	assert.Contains(t, output, "Warn task")
+	assert.Contains(t, output, "validation warning")
+	assert.Contains(t, output, "Next task")
+}
+
 func TestTaskList_Render_ordering(t *testing.T) {
 	var buf bytes.Buffer
 	printer := NewPrinter(&buf)

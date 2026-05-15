@@ -39,6 +39,11 @@ type initFlags struct {
 	namespace      string
 }
 
+// extensionSchemaHeader is prepended to generated extension.yaml files so editor
+// tooling (VS Code YAML extension) can resolve and validate against the schema.
+const extensionSchemaHeader = "# yaml-language-server: $schema=" +
+	"https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json\n"
+
 func newInitCommand(noPrompt *bool) *cobra.Command {
 	flags := &initFlags{}
 
@@ -175,8 +180,8 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 			Confirm(ctx, &azdext.ConfirmRequest{
 				Options: &azdext.ConfirmOptions{
 					Message:      fmt.Sprintf("Continue creating the extension at %s?", extensionMetadata.Id),
-					DefaultValue: new(false),
-					Placeholder:  "no",
+					DefaultValue: new(true),
+					Placeholder:  "yes",
 					HelpMessage:  "Confirm if you want to continue creating the extension.",
 				},
 			})
@@ -218,11 +223,8 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 		return fmt.Errorf("failed to check extension directory: %w", err)
 	}
 
-	localRegistryExists := false
-
 	createLocalExtensionSourceAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 		if has, err := internal.HasLocalRegistry(); err == nil && has {
-			localRegistryExists = true
 			return ux.Skipped, nil
 		}
 
@@ -247,11 +249,39 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 		return ux.Success, nil
 	}
 
+	var buildWarnings []string
+	validateExtensionAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+		warnings, validationErrors := validateExtensionMetadata(extensionMetadata)
+		if len(validationErrors) > 0 {
+			return ux.Error, common.NewDetailedError(
+				"Validation failed",
+				fmt.Errorf(
+					"extension contains validation failures: %s",
+					strings.Join(validationErrors, "; "),
+				),
+			)
+		}
+
+		if len(warnings) > 0 {
+			buildWarnings = warnings
+			noun := "warning"
+			if len(warnings) != 1 {
+				noun = "warnings"
+			}
+			return ux.Warning, fmt.Errorf("%d %s — see details below", len(warnings), noun)
+		}
+
+		return ux.Success, nil
+	}
+
+	var buildCommandOutput []byte
 	buildExtensionAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 		cmd := exec.Command("azd", "x", "build", "--skip-install")
 		cmd.Dir = extensionMetadata.Path
 
-		if err := cmd.Run(); err != nil {
+		result, err := cmd.CombinedOutput()
+		if err != nil {
+			buildCommandOutput = result
 			return ux.Error, common.NewDetailedError(
 				"Build failed",
 				fmt.Errorf("failed to build extension: %w", err),
@@ -319,6 +349,10 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 				Action: createExtensionDirectoryAction,
 			}).
 			AddTask(ux.TaskOptions{
+				Title:  "Validate extension metadata",
+				Action: validateExtensionAction,
+			}).
+			AddTask(ux.TaskOptions{
 				Title:  "Build extension",
 				Action: buildExtensionAction,
 			}).
@@ -337,19 +371,19 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 	}
 
 	if err := taskList.Run(); err != nil {
+		if len(buildCommandOutput) > 0 {
+			writeFailedCommandOutput(buildCommandOutput)
+		}
 		return fmt.Errorf("failed running init tasks: %w", err)
 	}
 
-	if localRegistryExists {
-		fmt.Println(output.WithWarningFormat("Local extension source already exists."))
-		fmt.Println()
-	}
+	writeCollectedWarnings(buildWarnings)
 
 	if !flags.createRegistry {
 		fmt.Println(output.WithBold("Try out the extension"))
 		fmt.Printf(
 			"- Run %s to try your extension now.\n",
-			output.WithHighLightFormat("azd %s -h", extensionMetadata.Namespace),
+			output.WithHighLightFormat("azd %s -h", namespaceCommandPath(extensionMetadata.Namespace)),
 		)
 		fmt.Println()
 		fmt.Println(output.WithBold("Next Steps"))
@@ -434,7 +468,7 @@ func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchem
 		Capabilities: capabilities,
 		Language:     flags.language,
 		Tags:         tags,
-		Usage:        fmt.Sprintf("azd %s <command> [options]", namespace),
+		Usage:        formatUsage(namespace),
 		Version:      "0.0.1",
 		Path:         absExtensionPath,
 	}, nil
@@ -490,12 +524,10 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 
 	tagsPrompt, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
-			Message:         "Enter tags for your extension (comma-separated)",
-			Placeholder:     "tag1, tag2",
-			RequiredMessage: "Tags are required",
-			Required:        true,
+			Message:     "Enter tags for your extension (comma-separated, optional)",
+			Placeholder: "tag1, tag2",
 			HelpMessage: "Tags are used to categorize your extension. " +
-				"You can enter multiple tags separated by commas.",
+				"You can enter multiple tags separated by commas, or leave empty to skip.",
 		},
 	})
 	if err != nil {
@@ -508,7 +540,8 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 			RequiredMessage: "Namespace is required",
 			Required:        true,
 			HelpMessage: "Namespace is used to group custom commands into a single command " +
-				"group used for executing the extension.",
+				"group used for executing the extension. " +
+				"Use dots to create nested command groups (e.g. 'ai.project' becomes 'azd ai project').",
 		},
 	})
 	if err != nil {
@@ -567,9 +600,8 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 		capabilities[i] = extensions.CapabilityType(capability.Value)
 	}
 
-	tags := []string{}
-	strings.Split(tagsPrompt.Value, ",")
-	for _, tag := range tags {
+	var tags []string
+	for tag := range strings.SplitSeq(tagsPrompt.Value, ",") {
 		tag = strings.TrimSpace(tag)
 		if tag != "" {
 			tags = append(tags, tag)
@@ -589,7 +621,7 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 		Capabilities: capabilities,
 		Language:     languageChoices[*programmingLanguagePrompt.Value].Value,
 		Tags:         tags,
-		Usage:        fmt.Sprintf("azd %s <command> [options]", namespacePrompt.Value),
+		Usage:        formatUsage(namespacePrompt.Value),
 		Version:      "0.0.1",
 		Path:         absExtensionPath,
 	}, nil
@@ -602,6 +634,19 @@ func validCapabilityNames() []string {
 	}
 
 	return names
+}
+
+// namespaceCommandPath converts an extension namespace (e.g. "ai.project") into the
+// command path used to invoke it from azd (e.g. "ai project"). Dots in a namespace
+// represent nested command groups; see bindExtension in cli/azd/cmd/extensions.go.
+func namespaceCommandPath(namespace string) string {
+	return strings.ReplaceAll(namespace, ".", " ")
+}
+
+// formatUsage returns the usage hint string for an extension with the given namespace,
+// translating dotted namespaces into the equivalent nested-command form.
+func formatUsage(namespace string) string {
+	return fmt.Sprintf("azd %s <command> [options]", namespaceCommandPath(namespace))
 }
 
 func capabilityPromptChoices() []*azdext.MultiSelectChoice {
@@ -657,8 +702,10 @@ func createExtensionDirectory(
 	// If directory already exists (err == nil), continue to create/update files
 
 	// Create project from template.
+	namespaceParts := strings.Split(extensionMetadata.Namespace, ".")
 	templateMetadata := &ExtensionTemplate{
-		Metadata: extensionMetadata,
+		Metadata:      extensionMetadata,
+		LeafNamespace: namespaceParts[len(namespaceParts)-1],
 		DotNet: &DotNetTemplate{
 			Namespace: internal.ToPascalCase(extensionMetadata.Id),
 			ExeName:   extensionMetadata.SafeDashId(),
@@ -688,7 +735,8 @@ func createExtensionDirectory(
 	}
 
 	extensionFilePath := filepath.Join(extensionPath, "extension.yaml")
-	if err := os.WriteFile(extensionFilePath, yamlBytes, internal.PermissionFile); err != nil {
+	yamlContents := append([]byte(extensionSchemaHeader), yamlBytes...)
+	if err := os.WriteFile(extensionFilePath, yamlContents, internal.PermissionFile); err != nil {
 		return fmt.Errorf("failed to create extension.yaml file: %w", err)
 	}
 
@@ -743,9 +791,40 @@ func copyAndProcessTemplates(srcFS fs.FS, srcDir, destDir string, data any) erro
 	})
 }
 
+// writeCollectedWarnings prints collected validation warnings after the task list canvas is complete.
+func writeCollectedWarnings(warnings []string) {
+	if len(warnings) == 0 {
+		return
+	}
+
+	fmt.Println(output.WithWarningFormat("WARNING: Extension contains validation warnings:"))
+	for _, warning := range warnings {
+		fmt.Printf("  - %s\n", warning)
+	}
+	fmt.Println()
+}
+
+// writeFailedCommandOutput prints captured subprocess output after the task list canvas is complete.
+// It is only intended for failure diagnostics; the contents are echoed verbatim.
+func writeFailedCommandOutput(result []byte) {
+	if len(result) == 0 {
+		return
+	}
+
+	fmt.Print(string(result))
+	if !bytes.HasSuffix(result, []byte("\n")) {
+		fmt.Println()
+	}
+}
+
 type ExtensionTemplate struct {
 	Metadata *models.ExtensionSchema
-	DotNet   *DotNetTemplate
+	// LeafNamespace is the final dot-separated segment of Metadata.Namespace, used as the
+	// cobra Use/Name for the extension's root command. For nested namespaces like
+	// "ai.agents", users invoke the extension via "azd ai agents" (azd splits on '.'),
+	// so the extension's own root command name is the leaf ("agents").
+	LeafNamespace string
+	DotNet        *DotNetTemplate
 }
 
 type DotNetTemplate struct {

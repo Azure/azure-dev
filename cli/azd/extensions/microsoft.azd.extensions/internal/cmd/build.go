@@ -119,66 +119,20 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 			Action: func(progress ux.SetProgressFunc) (ux.TaskState, error) {
 				progress("Checking required fields...")
 
-				var errors []string
-				var warnings []string
-
-				// Check required fields per schema - these are errors
-				if schema.Id == "" {
-					errors = append(errors, "Missing required field: id")
-				}
-				if schema.Version == "" {
-					errors = append(errors, "Missing required field: version")
-				}
-				if len(schema.Capabilities) == 0 {
-					errors = append(errors, "Missing required field: capabilities")
-				}
-				if schema.DisplayName == "" {
-					errors = append(errors, "Missing required field: displayName")
-				}
-				if schema.Description == "" {
-					errors = append(errors, "Missing required field: description")
-				}
-
-				progress("Validating capability-specific requirements...")
-
-				// Capability-specific validations - these are warnings
-				hasCustomCommands := slices.Contains(schema.Capabilities, extensions.CustomCommandCapability)
-				hasServiceTarget := slices.Contains(schema.Capabilities, extensions.ServiceTargetProviderCapability)
-
-				// Only validate namespace if custom-commands capability is defined
-				if hasCustomCommands && schema.Namespace == "" {
-					warnings = append(warnings, "Missing namespace - recommended when using custom-commands capability")
-				}
-
-				// Only validate providers if service-target-provider capability is defined
-				if hasServiceTarget && len(schema.Providers) == 0 {
-					warnings = append(warnings, "Missing providers - recommended when using custom providers capability")
-				}
-
-				// Check for missing optional but generally recommended fields
-				if schema.Usage == "" {
-					warnings = append(warnings, "Missing usage information")
-				}
+				warnings, validationErrors := validateExtensionMetadata(schema)
 
 				progress("Validation complete")
 
-				// If we have errors, this is a failure
-				if len(errors) > 0 {
-					// Create aggregated error
+				if len(validationErrors) > 0 {
 					aggregatedError := fmt.Errorf(
 						"Extension contains validation failures: %s",
-						strings.Join(errors, "; "),
+						strings.Join(validationErrors, "; "),
 					)
 					return ux.Error, common.NewDetailedError("Validation failed", aggregatedError)
 				}
 
-				// If we have warnings, return warning state but no error
 				if len(warnings) > 0 {
-					aggregatedWarning := fmt.Errorf(
-						"Extension contains validation warnings: %s",
-						strings.Join(warnings, "\n - "),
-					)
-					return ux.Warning, common.NewDetailedError("Validation warnings", aggregatedWarning)
+					return ux.Warning, errors.New(validationWarningsMessage(warnings))
 				}
 
 				return ux.Success, nil
@@ -317,6 +271,68 @@ func copyBinaryFiles(extensionId, sourcePath, destPath string) error {
 
 		return nil
 	})
+}
+
+// validateExtensionMetadata returns validation warnings and required-field errors
+// for the given extension schema. Errors indicate missing required fields. Warnings
+// flag recommended but optional fields that improve the extension experience.
+func validateExtensionMetadata(schema *models.ExtensionSchema) (warnings, errs []string) {
+	// Required fields - missing values are errors.
+	if schema.Id == "" {
+		errs = append(errs, "Missing required field: id")
+	}
+	if schema.Version == "" {
+		errs = append(errs, "Missing required field: version")
+	}
+	if len(schema.Capabilities) == 0 {
+		errs = append(errs, "Missing required field: capabilities")
+	}
+	if schema.DisplayName == "" {
+		errs = append(errs, "Missing required field: displayName")
+	}
+	if schema.Description == "" {
+		errs = append(errs, "Missing required field: description")
+	}
+
+	// Capability-specific recommendations - missing values are warnings.
+	hasCustomCommands := slices.Contains(schema.Capabilities, extensions.CustomCommandCapability)
+	hasServiceTarget := slices.Contains(schema.Capabilities, extensions.ServiceTargetProviderCapability)
+
+	if hasCustomCommands && schema.Namespace == "" {
+		warnings = append(warnings,
+			"Missing 'namespace' field in extension.yaml - "+
+				"required by the 'custom-commands' capability. "+
+				"Set it to the prefix users will type after 'azd' (e.g. 'demo' to expose 'azd demo <command>').",
+		)
+	}
+
+	if hasServiceTarget && len(schema.Providers) == 0 {
+		warnings = append(warnings,
+			"Missing 'providers' field in extension.yaml - "+
+				"required by the 'service-target-provider' capability. "+
+				"List the providers your extension contributes (each entry needs a name, type, and description).",
+		)
+	}
+
+	if schema.Usage == "" {
+		warnings = append(warnings,
+			"Missing 'usage' field in extension.yaml - shown to users as a usage hint in 'azd <namespace> --help'.",
+		)
+	}
+
+	return warnings, errs
+}
+
+// validationWarningsMessage formats validation warnings into a multi-line message with bullet points.
+func validationWarningsMessage(warnings []string) string {
+	var message strings.Builder
+	message.WriteString("validation warnings:")
+	for _, warning := range warnings {
+		message.WriteString("\n  - ")
+		message.WriteString(warning)
+	}
+
+	return message.String()
 }
 
 // escapePowerShellSingleQuotes escapes single quotes for use in PowerShell single-quoted strings.

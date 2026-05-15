@@ -130,13 +130,14 @@ agent spans so that error status and attributes stay consistent.
 | `error.service.statusCode` | Status code returned by an external service, after `fields.ErrorKey` prefixes `service.statusCode`. | `403` |
 
 For nested ARM deployment failures, `MapError` walks the inner error tree and encodes each level as an entry in the
-JSON array stored on `error.service.errorCode`. Each entry has the shape `{"error.code": "<code>", "error.frame": <n>}`,
-where `error.frame` is the depth in the nested chain (0 for the outermost error). For example:
+JSON array stored on `error.service.errorCode`. Each entry has the shape
+`{"error.code": "<code>", "error.arm.frame_index": <n>}`, where `error.arm.frame_index` is the depth in the nested
+chain (0 for the outermost error). For example:
 
 ```json
 [
-  {"error.code": "InvalidTemplateDeployment", "error.frame": 0},
-  {"error.code": "AuthorizationFailed", "error.frame": 1}
+  {"error.code": "InvalidTemplateDeployment", "error.arm.frame_index": 0},
+  {"error.code": "AuthorizationFailed", "error.arm.frame_index": 1}
 ]
 ```
 

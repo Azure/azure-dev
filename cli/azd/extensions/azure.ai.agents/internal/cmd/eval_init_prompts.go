@@ -293,7 +293,7 @@ func promptRegenerateChoices(
 		}
 	}
 
-	// Ask about evaluator — only generated (non-builtin) evaluators can be regenerated.
+	// Ask about evaluator.
 	generated, builtin := eval_api.SplitEvaluators(existingCfg.Evaluators)
 	if len(generated) > 0 {
 		generatedLabel := strings.Join(generated, ", ")
@@ -312,6 +312,20 @@ func promptRegenerateChoices(
 		})
 		if err != nil {
 			return fmt.Errorf("prompting for evaluator regeneration: %w", err)
+		}
+		if resp.Value != nil && *resp.Value {
+			flags.regenerateEvaluator = true
+		}
+	} else {
+		// No generated evaluators exist — ask whether to generate one.
+		resp, err := prompt.Confirm(ctx, &azdext.ConfirmRequest{
+			Options: &azdext.ConfirmOptions{
+				Message:      "No custom evaluator found. Do you want to generate one?",
+				DefaultValue: new(true),
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("prompting for evaluator generation: %w", err)
 		}
 		if resp.Value != nil && *resp.Value {
 			flags.regenerateEvaluator = true

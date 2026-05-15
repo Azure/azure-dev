@@ -8,7 +8,6 @@ This spec covers the toolbox CRUD surface for the agents extension:
 
 - `azd ai agent toolbox create | update | delete | show | list` — manage versioned toolboxes against a Foundry project.
 - `azd ai agent toolbox connection add | remove | list` — manage the connection-backed tools attached to a toolbox (MCP servers, Azure AI Search; tool shape inferred from the connection's ARM category — see § 5.6).
-- `azd ai agent toolbox tag set | remove | list` — Azure resource tags (Compatibility stub in v1; see § 4.4).
 
 A Foundry **toolbox** is a versioned, named collection of connection-backed tools that an agent references at run time. Each version carries a `tools[]` array of MCP tools (for `RemoteTool` connections) and Azure AI Search tools (for `CognitiveSearch` connections), each pointing at an existing project connection.
 
@@ -16,7 +15,7 @@ A Foundry **toolbox** is a versioned, named collection of connection-backed tool
 
 In scope:
 
-- The eleven verbs listed in § 1.
+- The eight verbs listed in § 1.
 - Cross-cutting flags (`--output table|json`, `--no-prompt`, `--debug`, `--project-endpoint`) on every new command.
 - Extending the existing `FoundryToolboxClient` (`cli/azd/extensions/azure.ai.agents/internal/pkg/azure/foundry_toolsets_client.go`) with the additional methods the CLI surface needs but the agent runtime does not (§ 5). The client's existing methods (`CreateToolboxVersion`, `GetToolbox`, `DeleteToolbox`) and its pipeline are reused as-is.
 
@@ -39,6 +38,7 @@ All `internal/...` paths in §§ 3, 5, 8, 9, and 11 are inside `cli/azd/extensio
 1. All toolbox command files live under `internal/cmd/toolbox*.go`. No toolbox logic is added to existing command files.
 2. All toolbox data-plane access goes through the existing `FoundryToolboxClient` in `internal/pkg/azure/foundry_toolsets_client.go`. The new CLI verbs append the missing methods (`ListToolboxes`, `GetToolboxVersion`, `ListToolboxVersions`, `DeleteToolboxVersion`, `SetDefaultVersion`, plus the local-state helper `RegisterPending`) to this same client. The pipeline (auth scope, `Foundry-Features` header) is reused as-is.
 3. Imports are one-way: `cmd/toolbox*.go` → `internal/pkg/azure` (`FoundryToolboxClient`) → `internal/exterrors`. Shared helpers carry a `// SHARED: <reason>` comment.
+4. Toolbox commands do not call into other `internal/cmd/*.go` files (besides shared helpers). This avoids creating reverse dependencies that would block a future lift-out.
 
 ### 3.2 Shared Code Touchpoints
 
@@ -76,14 +76,6 @@ Data plane: scope `https://ai.azure.com/.default`, header `Foundry-Features: Too
 - `tool.name` must match `^[A-Za-z0-9_-]+$`.
 - Supported `type` values: `mcp`, `azure_ai_search`, `file_search`, `code_interpreter`, `web_search`. Built-ins and connection-backed tools coexist freely.
 - For `mcp`, `azure_ai_search`, and similar connection-backed entries, `project_connection_id` must be the full ARM resource ID (e.g. `/subscriptions/.../accounts/{account}/projects/{project}/connections/{name}`), not the short name. The CLI resolves names to ARM IDs before POST.
-
-### 4.3 Missing Surfaces
-
-No data-plane `/tags` endpoint, and toolboxes are not exposed as ARM resources (no `subscriptions/…` IDs in any toolbox response). ARM `TagsClient` is unavailable. The `tag` subgroup ships as a Compatibility stub (§ 4.4, § 5.7).
-
-### 4.4 Tags
-
-All three tag verbs return `exterrors.Compatibility(CodeToolboxTagsUnavailable, ...)`. The CLI surface contract (positional args, flags, output shape) is final and does not change when the verbs are activated.
 
 ## 5. Command Behavior
 
@@ -182,11 +174,13 @@ When `show` resolves to a pending record (no service-side toolbox yet), output r
 
 #### 5.4.2 Runtime consumption
 
-The `endpoint` field is the contract for wiring a toolbox into agent code via env vars:
+The `endpoint` field is the contract for wiring a toolbox into agent code via the active azd environment:
 
 ```bash
-export TOOLBOX_RESEARCH_ENDPOINT=$(azd ai agent toolbox show research --output json | jq -r '.endpoint')
+azd env set TOOLBOX_RESEARCH_ENDPOINT $(azd ai agent toolbox show research --output json | jq -r '.endpoint')
 ```
+
+`azd env set` persists the value into the active azd env so subsequent `azd` runs (including `azd up`) pick it up automatically.
 
 ### 5.5 `azd ai agent toolbox list`
 
@@ -245,18 +239,6 @@ If the ARM lookup in step 1 returns 404, the CLI returns `CodeConnectionNotFound
 The fetch-mutate-POST-PATCH flow has a gap between GET and POST. Two concurrent `connection add` calls against the same toolbox can both fetch the same default version, both POST a new version with their own appended tool, and the last `PATCH default_version` wins. The losing call's tool ends up on an orphan version that is not the default and is invisible to consumers.
 
 The service does not expose primitives to prevent this race — no `If-Match` on POST, no compare-and-swap, no atomic add-tool endpoint. Any client-side mitigation (post-write re-GET, retry) is itself subject to a TOCTOU window between the verification and the PATCH, so v1 does not attempt one. The race is documented as a known limitation; a follow-up will revisit if the service grows conditional-write support (e.g. `If-Match` on POST against the parent's `default_version`). Users running concurrent `connection add` / `connection remove` against the same toolbox today should serialize their calls.
-
-### 5.7 `azd ai agent toolbox tag set | remove | list`
-
-All three verbs return `exterrors.Compatibility(CodeToolboxTagsUnavailable, ...)` with the message *"Toolbox tags are not yet supported on the Foundry data plane."* Help text mirrors `az resource tag` conventions:
-
-| Verb | Positional args |
-| --- | --- |
-| `set` | `<toolbox> KEY=VALUE [KEY=VALUE …]` |
-| `remove` | `<toolbox> KEY [KEY …]` |
-| `list` | `<toolbox>` |
-
-Flags on all three: `--project-endpoint`, `--output`, `--no-prompt`, `--debug`.
 
 ## 6. Endpoint Resolution
 
@@ -331,7 +313,6 @@ Unit tests (table-driven, no network; inject a `toolboxClient` interface that is
   - Missing connection → `CodeConnectionNotInToolbox`.
   - Removing a tool that would leave `tools[]` with zero entries (including any built-ins carried through) → `CodeLastToolRemoval` with the "delete the toolbox instead" suggestion; service is not called.
 - **`connection list`** — emits entries with `project_connection_id` set (top-level on `mcp`, nested under `azure_ai_search.indexes[]`); table `TYPE` column shows each entry's tool `type`; respects `--output`.
-- **`tag set | remove | list`** — assert `Compatibility` error code and stable help text.
 
 E2E:
 
@@ -361,7 +342,6 @@ One event per command, reusing the extension's existing telemetry surface. All i
 | `azd.ai.toolbox.connection.add` | `promotedFromPending` (bool), `armResolveOk` (bool) |
 | `azd.ai.toolbox.connection.remove` | — |
 | `azd.ai.toolbox.connection.list` | `count` (int) |
-| `azd.ai.toolbox.tag.{set,remove,list}` | `outcome=compatibility_stub` |
 
 No PII. `endpointHostHash` is sha256 of the project endpoint hostname; toolbox names are sent as-is (user-chosen labels with no credential value).
 
@@ -382,7 +362,6 @@ New codes added to `internal/exterrors/codes.go`. Each code maps to a single fai
 | `CodeConnectionNotInToolbox` | `connection remove` for a connection not present in the current default version. |
 | `CodeLastToolRemoval` | `connection remove` whose resulting `tools[]` would have zero entries (including any carried-through built-ins). |
 | `CodeMissingForceFlag` | `delete` with `--no-prompt` and without `--force`. |
-| `CodeToolboxTagsUnavailable` | All `tag` verbs (Compatibility). |
 
 New `Op*` constants for `exterrors.ServiceFromAzure` (added to `internal/exterrors/codes.go` alongside the existing `OpCreateToolboxVersion` and `OpGetToolbox`, which are reused):
 
@@ -421,10 +400,6 @@ azd ai agent toolbox list                                                       
 azd ai agent toolbox connection add    <toolbox> <connection> [--index <name>]                          [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
 azd ai agent toolbox connection remove <toolbox> <connection>                                            [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
 azd ai agent toolbox connection list   <toolbox>                                                         [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
-
-azd ai agent toolbox tag set    <toolbox> KEY=VALUE [KEY=VALUE …]                                        [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
-azd ai agent toolbox tag remove <toolbox> KEY [KEY …]                                                    [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
-azd ai agent toolbox tag list   <toolbox>                                                                [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
 ```
 
 Resolution cascade: `--project-endpoint` flag → azd env (`AZURE_AI_PROJECT_ENDPOINT`) → `~/.azd/config.json` (`extensions.ai-agents.context.endpoint`) → `FOUNDRY_PROJECT_ENDPOINT` → structured error.

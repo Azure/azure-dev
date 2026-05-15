@@ -205,9 +205,8 @@ Auto-pagination via `pageToken` / `next_page_token`, same rules as `routine list
 
 **Not registered in v1.** The data-plane endpoints are not in
 [TypeSpec PR #42779](https://github.com/Azure/azure-rest-api-specs/pull/42779).
-Registering cobra stubs that always error would degrade the `--help` surface for
-coding agents. These will be added as a strictly additive change when the APIs
-land — no churn on already-shipped verbs. See [§7 OQ-4](#7-open-questions).
+These will be added as a strictly additive change when the APIs land, with no
+churn on already-shipped verbs.
 
 ### Output shapes for state-changing verbs
 
@@ -296,7 +295,6 @@ endpoints hashed.
 | 1 | **Trigger / action enum names.** CLI aliases (`recurring`, `agent-response`, `agent-invoke`) vs. 1:1 API parity (`schedule`, `invoke_agent_responses_api`, …). Note: feature issue [#8159](https://github.com/Azure/azure-dev/issues/8159) uses `schedule`; this spec proposes `recurring`. | Ship CLI aliases. API names are verbose on the command line; a single mapping table absorbs upstream renames. |
 | 2 | **Multi-trigger routines.** TypeSpec `triggers` is `Record<RoutineTrigger>`. Add `routine trigger add | remove | list` now? | Defer. All hero scenarios use one trigger, keyed as `"default"`. Re-evaluate when a real multi-trigger scenario lands. |
 | 3 | **`--conversation-id` on dispatch.** Field is in the routines conceptual spec but not in TypeSpec PR #42779. | Ship the flag, mark preview-only in `--help`. If the service rejects unknown fields, the user sees a service error and re-runs without it. Revisit on TypeSpec lock. |
-| 4 | **`routine run show` / `routine run delete`.** Register stubs now or omit until APIs ship? | Omit. Stubs that always error degrade `--help` for coding agents. Registration is strictly additive when endpoints land. |
 
 ## 8. Test Plan
 

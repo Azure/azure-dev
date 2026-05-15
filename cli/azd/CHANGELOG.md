@@ -10,17 +10,24 @@
 
 ### Other Changes
 
-## 1.25.0-beta.1 (Unreleased)
+## 1.25.1 (2026-05-15)
 
 ### Features Added
 
-
-### Breaking Changes
+- [[#8047]](https://github.com/Azure/azure-dev/pull/8047) Expose ARM deployment IDs via `AZD_DEPLOYMENT_ID_FILE` environment variable during provision, written in NDJSON format for programmatic consumption.
+- [[#8059]](https://github.com/Azure/azure-dev/pull/8059) Add actionable suggestions and links to preflight warnings with multi-line formatting for better readability.
+- [[#8083]](https://github.com/Azure/azure-dev/pull/8083) Add tenant picker before subscription prompt for multi-tenant users, scoping the subscription list to the selected tenant.
+- [[#8144]](https://github.com/Azure/azure-dev/pull/8144) Upgrade 7 CLI list commands (`azd ext source list`, `azd tool list`, `azd tool check`, `azd template list`, `azd template source list`, `azd copilot consent list`, `azd config options`) to responsive table output with full, compact, and card layouts based on terminal width.
 
 ### Bugs Fixed
 
+- [[#8114]](https://github.com/Azure/azure-dev/pull/8114) Fix `azd init` Copilot Preview silently falling back to an older model by upgrading the bundled Copilot SDK to v0.3.0 and CLI to v1.0.36-0.
+- [[#8136]](https://github.com/Azure/azure-dev/pull/8136) Fix `azd provision` crash when infrastructure layers use Terraform or other non-Bicep providers.
+- [[#8195]](https://github.com/Azure/azure-dev/pull/8195) Fix parallel `dotnet publish` race condition in Aspire deploys by isolating build artifacts per service.
 
 ### Other Changes
+
+- [[#8148]](https://github.com/Azure/azure-dev/pull/8148) Update bundled Bicep CLI from v0.42.1 to v0.43.8.
 
 
 ## 1.25.0 (2026-05-08)

@@ -345,22 +345,6 @@ func TestSaveEvaluatorResult_EmptyName(t *testing.T) {
 	assert.Empty(t, matches)
 }
 
-func TestSaveDatasetGenerationResult(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	require.NoError(t, ensureFoundryDirs(dir))
-
-	result := json.RawMessage(`{"name":"my-dataset","version":"v2"}`)
-	saveDatasetGenerationResult(dir, "my-dataset", result)
-
-	path := filepath.Join(dir, ".azure", ".foundry", "datasets", "my-dataset.json")
-	assert.FileExists(t, path)
-	data, err := os.ReadFile(path)
-	require.NoError(t, err)
-	assert.Contains(t, string(data), `"name": "my-dataset"`)
-	assert.Contains(t, string(data), `"version": "v2"`)
-}
-
 func TestWriteEvalReviewArtifacts_SkipsWhenResultExists(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

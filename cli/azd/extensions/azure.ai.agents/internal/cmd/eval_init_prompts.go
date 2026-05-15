@@ -23,10 +23,14 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 	}
 
 	if flags.name == "" {
+		defaultName := defaultEvalName
+		if resolved.agentName != "" {
+			defaultName = resolved.agentName
+		}
 		resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:        "Eval suite name",
-				DefaultValue:   defaultEvalName,
+				DefaultValue:   defaultName,
 				IgnoreHintKeys: true,
 			},
 		})
@@ -168,7 +172,7 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 	if !flags.maxSamplesSet {
 		resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
-				Message:        "Max samples",
+				Message:        "Max samples (between 15 and 1000)",
 				DefaultValue:   strconv.Itoa(defaultEvalSamples),
 				IgnoreHintKeys: true,
 			},

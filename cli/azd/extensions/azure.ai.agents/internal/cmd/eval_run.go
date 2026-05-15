@@ -145,6 +145,10 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 	if reportURL != "" {
 		fmt.Printf("   Report: %s\n", color.CyanString(reportURL))
 	}
+	fmt.Printf("\n   To view result summary, run:\n     %s\n     %s\n",
+		color.CyanString("azd ai agent eval list"),
+		color.CyanString("azd ai agent eval show"),
+	)
 	return nil
 }
 

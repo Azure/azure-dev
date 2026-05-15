@@ -89,7 +89,8 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 
 	if len(o.TargetAttributes) == 0 {
 		o.TargetAttributes = slices.Clone(DefaultTargetAttributes)
-		o.MaxIterations = 2
+		// o.MaxIterations = 5
+		// o.Budget = 100
 	}
 	return nil
 }

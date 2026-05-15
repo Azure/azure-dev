@@ -78,7 +78,7 @@ func defaultOptimizeConfig(agentName string) *OptimizeConfig {
 	return &OptimizeConfig{
 		Config: opteval.Config{
 			Agent:      opteval.AgentRef{Name: agentName},
-			Evaluators: []string{"task_adherence"},
+			Evaluators: []string{"builtin.task_adherence"},
 		},
 		InlineDataset: defaultDataset,
 		Options: &opteval.Options{

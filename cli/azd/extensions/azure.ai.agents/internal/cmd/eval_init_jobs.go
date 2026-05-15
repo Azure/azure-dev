@@ -18,7 +18,6 @@ import (
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opteval"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 )
 
@@ -180,19 +179,16 @@ func pollAndFinalizeJobs(
 	pollEval := state.EvalGenOpID != "" &&
 		!eval_api.ParseJobStatus(state.EvalGenStatus).IsTerminal()
 
-	// When both jobs run in parallel, disable individual spinners to avoid
-	// overlapping terminal output. Show a single combined spinner instead.
-	parallel := pollDataset && pollEval
-	if parallel {
-		spinner := ux.NewSpinner(&ux.SpinnerOptions{
-			Text:        "Generating ...",
-			ClearOnStop: true,
-		})
-		if err := spinner.Start(ctx); err != nil {
-			fmt.Println("  Generating ...")
-		}
-		defer func() { _ = spinner.Stop(ctx) }()
+	// Build progress display labels.
+	var labels []string
+	if pollDataset {
+		labels = append(labels, "Dataset generation")
 	}
+	if pollEval {
+		labels = append(labels, "Evaluator generation")
+	}
+	progress := newEvalProgress(labels...)
+	progress.Start()
 
 	if pollDataset {
 		wg.Add(1)
@@ -201,7 +197,7 @@ func pollAndFinalizeJobs(
 			completed, err := pollEvalOperationWithSpinner(
 				ctx, "Dataset generation", state.DatasetGenOpID,
 				resolved.evalClient.GetDataGenerationJob, DataGenerationAPIVersion,
-				!parallel,
+				progress,
 			)
 			if err != nil {
 				datasetPollErr = err
@@ -212,9 +208,6 @@ func pollAndFinalizeJobs(
 			dsRef := datasetFromJob(completed)
 			evalCfg.DatasetReference = dsRef
 			if resolved.hasProject {
-				saveDatasetGenerationResult(
-					resolved.projectRoot, completed.ResolvedDatasetName(), completed.Result,
-				)
 				if err := downloadDatasetArtifact(
 					ctx, resolved.datasetClient, resolved.projectRoot, dsRef, DefaultAgentAPIVersion,
 				); err != nil {
@@ -232,7 +225,7 @@ func pollAndFinalizeJobs(
 			completed, err := pollEvalOperationWithSpinner(
 				ctx, "Evaluator generation", state.EvalGenOpID,
 				resolved.evalClient.GetEvaluatorGenerationJob, DefaultAgentAPIVersion,
-				!parallel,
+				progress,
 			)
 			if err != nil {
 				evalPollErr = err
@@ -249,6 +242,7 @@ func pollAndFinalizeJobs(
 	}
 
 	wg.Wait()
+	progress.Stop()
 
 	// If either job timed out, return a timeout error so the caller can
 	// persist the YAML and operation IDs for later resume.

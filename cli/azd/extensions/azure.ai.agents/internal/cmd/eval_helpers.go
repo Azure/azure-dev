@@ -39,35 +39,12 @@ func resolveEvalConfigPath(config, agentProject string) string {
 // subdirectories (datasets, evaluators, results).
 func ensureFoundryDirs(projectRoot string) error {
 	base := filepath.Join(projectRoot, ".azure", ".foundry")
-	for _, sub := range []string{"datasets", "evaluators", "results"} {
+	for _, sub := range []string{"datasets", "evaluators"} {
 		if err := os.MkdirAll(filepath.Join(base, sub), 0750); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// saveDatasetGenerationResult saves the raw dataset generation result JSON.
-func saveDatasetGenerationResult(projectRoot, datasetName string, result json.RawMessage) {
-	if datasetName == "" || len(result) == 0 {
-		return
-	}
-	dir := filepath.Join(projectRoot, ".azure", ".foundry", "datasets")
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		log.Printf("[debug] failed to create dataset dir: %v", err)
-		return
-	}
-	// Pretty-print the JSON for human review.
-	var pretty json.RawMessage
-	if err := json.Unmarshal(result, &pretty); err == nil {
-		if formatted, err := json.MarshalIndent(pretty, "", "  "); err == nil {
-			result = formatted
-		}
-	}
-	path := filepath.Join(dir, datasetName+".json")
-	if err := os.WriteFile(path, result, 0600); err != nil {
-		log.Printf("[debug] failed to save dataset result: %v", err)
-	}
 }
 
 // downloadDatasetArtifact downloads the dataset and writes it locally.
@@ -92,20 +69,19 @@ func downloadDatasetArtifact(
 	// Attempt full download via the dataset API.
 	cred, credErr := client.GetDatasetCredential(ctx, ref.Name, ref.Version, apiVersion)
 	if credErr != nil {
-		// Gracefully write a placeholder when credential fetch fails.
-		log.Printf("[debug] dataset credential fetch failed: %v — writing placeholder", credErr)
-		return os.WriteFile(dest, []byte("{}\n"), 0600)
+		log.Printf("[debug] dataset credential fetch failed: %v", credErr)
+		return nil
 	}
 
 	downloadURL := cred.ResolvedDownloadURI()
 	if downloadURL == "" {
-		return os.WriteFile(dest, []byte("{}\n"), 0600)
+		return nil
 	}
 
 	data, dlErr := client.DownloadDataset(ctx, downloadURL)
 	if dlErr != nil {
-		log.Printf("[debug] dataset download failed: %v — writing placeholder", dlErr)
-		return os.WriteFile(dest, []byte("{}\n"), 0600)
+		log.Printf("[debug] dataset download failed: %v", dlErr)
+		return nil
 	}
 
 	return os.WriteFile(dest, data, 0600)
@@ -157,7 +133,7 @@ func writeEvalReviewArtifacts(projectRoot string, cfg *eval_api.EvalConfig) {
 		return
 	}
 	for _, evaluator := range cfg.Evaluators {
-		if evaluator == "" {
+		if evaluator == "" || eval_api.IsBuiltinEvaluator(evaluator) {
 			continue
 		}
 		// Skip if a result JSON already exists.
@@ -183,7 +159,7 @@ func writeEvalReviewArtifacts(projectRoot string, cfg *eval_api.EvalConfig) {
 		fmt.Printf("               datasets/%s.jsonl\n", name)
 	}
 	for _, evaluator := range cfg.Evaluators {
-		if evaluator != "" {
+		if evaluator != "" && !eval_api.IsBuiltinEvaluator(evaluator) {
 			fmt.Printf("               evaluators/%s.json\n", evaluator)
 		}
 	}

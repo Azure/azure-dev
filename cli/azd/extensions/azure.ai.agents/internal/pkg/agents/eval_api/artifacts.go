@@ -42,23 +42,6 @@ func EnsureFoundryDirs(projectRoot string) error {
 	return os.MkdirAll(dir, 0750)
 }
 
-// SaveDatasetGenerationResult saves the raw JSON result of a dataset generation
-// job under .azure/.foundry/datasets/<name>.json.
-func SaveDatasetGenerationResult(projectRoot, datasetName string, result json.RawMessage) {
-	if datasetName == "" || len(result) == 0 {
-		return
-	}
-	dir := filepath.Join(projectRoot, foundryDir, "datasets")
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		log.Printf("[debug] failed to create dataset dir: %v", err)
-		return
-	}
-	path := filepath.Join(dir, datasetName+".json")
-	if err := os.WriteFile(path, result, 0600); err != nil {
-		log.Printf("[debug] failed to save dataset result: %v", err)
-	}
-}
-
 // DownloadDatasetArtifact downloads the dataset referenced by dsRef and saves
 // it under .azure/.foundry/datasets/<name>.jsonl.
 func DownloadDatasetArtifact(

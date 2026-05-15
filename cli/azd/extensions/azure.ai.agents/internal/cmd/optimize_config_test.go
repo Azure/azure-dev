@@ -205,7 +205,7 @@ dataset_reference:
   name: eval-dataset
   version: "1"
 evaluators:
-  - task_adherence
+  - builtin.task_adherence
 options:
   eval_model: gpt-4o
 `
@@ -219,7 +219,7 @@ options:
 	require.NotNil(t, cfg.Options)
 	assert.Equal(t, "gpt-4o", cfg.Options.EvalModel)
 	assert.Len(t, cfg.Evaluators, 1)
-	assert.Equal(t, "task_adherence", cfg.Evaluators[0])
+	assert.Equal(t, "builtin.task_adherence", cfg.Evaluators[0])
 	require.NotNil(t, cfg.DatasetReference)
 	assert.Equal(t, "eval-dataset", cfg.DatasetReference.Name)
 }
@@ -236,7 +236,7 @@ agent:
 dataset_file: eval.jsonl
 
 evaluators:
-  - task_adherence
+  - builtin.task_adherence
 
 options:
   eval_model: gpt-4o
@@ -254,7 +254,7 @@ agent:
   name: my-test-agent
 dataset_file: ` + datasetPath + `
 evaluators:
-  - task_adherence
+  - builtin.task_adherence
 options:
   eval_model: gpt-4o
   mode: evaluate
@@ -276,7 +276,7 @@ options:
 
 	// Evaluator — scalar string without builtin. prefix resolves as custom.
 	require.Len(t, cfg.Evaluators, 1)
-	assert.Equal(t, "task_adherence", cfg.Evaluators[0])
+	assert.Equal(t, "builtin.task_adherence", cfg.Evaluators[0])
 
 	// Options
 	require.NotNil(t, cfg.Options)
@@ -291,5 +291,5 @@ options:
 	require.NoError(t, err)
 	assert.Equal(t, "my-test-agent", req.Agent.AgentName)
 	assert.Len(t, req.Dataset, 1)
-	assert.Equal(t, []string{"task_adherence"}, req.Evaluators)
+	assert.Equal(t, []string{"builtin.task_adherence"}, req.Evaluators)
 }

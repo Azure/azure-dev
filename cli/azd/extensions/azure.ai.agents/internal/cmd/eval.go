@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -22,7 +21,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
@@ -429,64 +427,40 @@ func endpointFromProjectID(projectID string) (string, error) {
 	return buildAgentEndpoint(project.AccountName, project.ProjectName), nil
 }
 
-func pollEvalOperation(
-	ctx context.Context,
-	label string,
-	operationID string,
-	get eval_api.GetJobFunc,
-	apiVersion string,
-) (*eval_api.GenerationJob, error) {
-	return pollEvalOperationWithSpinner(ctx, label, operationID, get, apiVersion, true)
-}
-
 func pollEvalOperationWithSpinner(
 	ctx context.Context,
 	label string,
 	operationID string,
 	get eval_api.GetJobFunc,
 	apiVersion string,
-	showSpinner bool,
+	progress *evalProgress,
 ) (*eval_api.GenerationJob, error) {
 	if operationID == "" {
 		return nil, fmt.Errorf("%s did not return an operation ID", strings.ToLower(label))
 	}
 
-	start := time.Now()
-	if showSpinner {
-		spinner := ux.NewSpinner(&ux.SpinnerOptions{
-			Text:        label + "...",
-			ClearOnStop: true,
-		})
-		if err := spinner.Start(ctx); err != nil {
-			fmt.Printf("%s: running\n", label)
-		}
-		defer func() { _ = spinner.Stop(ctx) }()
-	}
-
+	progress.setRunning(label)
 	poller := eval_api.NewPoller(operationID, apiVersion, get)
 	job, err := poller.Poll(ctx)
 
-	elapsed := time.Since(start).Round(time.Second)
-
 	if err != nil {
 		if _, ok := errors.AsType[*eval_api.PollerTimeoutError](err); ok {
-			fmt.Printf("  %s  %s  (%s)\n",
-				color.YellowString("(!) Timed out"), label, elapsed)
+			progress.setTimedOut(label)
 			return nil, err
 		}
 		if jfe, ok := errors.AsType[*eval_api.JobFailedError](err); ok {
 			if body, marshalErr := json.MarshalIndent(jfe.Job, "", "  "); marshalErr == nil {
 				log.Printf("[debug] %s: failed response:\n%s", label, body)
 			}
-			fmt.Printf("  %s  %s  (%s)\n", color.RedString("(x) Failed"), label, elapsed)
+			progress.setFailed(label)
 			return nil, fmt.Errorf("%s failed with status %q", strings.ToLower(label), jfe.Status)
 		}
-		fmt.Printf("  %s  %s\n", color.RedString("(x) Failed"), label)
+		progress.setFailed(label)
 		return nil, err
 	}
 
 	log.Printf("[debug] %s: completed successfully", label)
-	fmt.Printf("  %s  %s  (%s)\n", color.GreenString("(✓) Done"), label, elapsed)
+	progress.setDone(label)
 	return job, nil
 }
 

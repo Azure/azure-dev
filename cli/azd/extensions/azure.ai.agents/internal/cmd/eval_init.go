@@ -279,6 +279,6 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 			fmt.Printf("   Evaluator:  %s\n", evaluator)
 		}
 	}
-	fmt.Printf("\n   Review the generated assets, then run:\n     %s\n", "azd ai agent eval run")
+	fmt.Printf("\n   Review the generated assets, then run:\n     %s\n", color.CyanString("azd ai agent eval run"))
 	return nil
 }

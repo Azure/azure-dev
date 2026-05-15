@@ -141,6 +141,19 @@ func runCustomCreate(ctx context.Context, cmd *cobra.Command, parentFlags *custo
 		return err
 	}
 
+	// Validate LoRA flags early, before any uploads
+	var loraConfig *models.LoRAConfig
+	if strings.EqualFold(flags.WeightType, "LoRA") {
+		var err error
+		loraConfig, err = buildLoRAConfig(cmd, flags)
+		if err != nil {
+			return err
+		}
+	} else if cmd.Flags().Changed("lora-rank") || cmd.Flags().Changed("lora-alpha") ||
+		cmd.Flags().Changed("lora-target-modules") || cmd.Flags().Changed("lora-dropout") {
+		return fmt.Errorf("--lora-* flags are only valid when --weight-type is LoRA")
+	}
+
 	// ── Step 1: Start pending upload ──
 	fmt.Printf("Creating custom model: %s (version %s)\n\n", flags.Name, flags.Version)
 
@@ -249,20 +262,9 @@ func runCustomCreate(ctx context.Context, cmd *cobra.Command, parentFlags *custo
 		}
 	}
 
-	// Build LoRA config when weight type is LoRA
-	if strings.EqualFold(flags.WeightType, "LoRA") {
-		loraConfig, err := buildLoRAConfig(cmd, flags)
-		if err != nil {
-			_ = regSpinner.Stop(ctx)
-			fmt.Println()
-			return err
-		}
+	// Attach pre-validated LoRA config
+	if loraConfig != nil {
 		regReq.LoRAConfig = loraConfig
-	} else if cmd.Flags().Changed("lora-rank") || cmd.Flags().Changed("lora-alpha") ||
-		cmd.Flags().Changed("lora-target-modules") || cmd.Flags().Changed("lora-dropout") {
-		_ = regSpinner.Stop(ctx)
-		fmt.Println()
-		return fmt.Errorf("--lora-* flags are only valid when --weight-type is LoRA")
 	}
 
 	operationURL, err := foundryClient.RegisterModelAsync(ctx, flags.Name, flags.Version, regReq)

@@ -669,24 +669,12 @@ func buildNpmCommand(
 }
 
 func buildCodeCommand(
-	packageID string, _ bool,
+	packageID string, upgrade bool,
 ) (string, []string) {
-	// Always pass --force.
-	//
-	// When a VS Code extension is uninstalled, its folder is added to the
-	// `.obsolete` file under ~/.vscode/extensions/ but is not deleted until
-	// VS Code restarts. The default `code --install-extension <id>` codepath
-	// scans folder names and reports "is already installed" if it sees the
-	// stale folder, exits 0, and performs no work. azd then fails to detect
-	// the extension and surfaces "installed but verification failed".
-	//
-	// `--force` bypasses the folder-scan fast-path: it consults the
-	// marketplace, installs the latest version if newer (or no-ops if
-	// already current), and cleans up stale `.obsolete` entries. It is
-	// safe on the clean-install path (no-op cost is ~180ms) and is the
-	// behavior VS Code's own CLI help text recommends to recover from this
-	// state. See https://github.com/Azure/azure-dev/issues/8150.
-	args := []string{"--install-extension", packageID, "--force"}
+	args := []string{"--install-extension", packageID}
+	if upgrade {
+		args = append(args, "--force")
+	}
 	return "code", args
 }
 

@@ -642,92 +642,92 @@ func TestBuildManagerCommand(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		manager    string
-		packageID  string
-		upgrade    bool
-		expectCmd  string
-		expectArgs []string // action keyword to find in args
+		name      string
+		manager   string
+		packageID string
+		upgrade   bool
+		expectCmd string
+		expectArg string // action keyword to find in args
 	}{
 		{
-			name:       "WingetInstall",
-			manager:    "winget",
-			packageID:  "Microsoft.AzureCLI",
-			upgrade:    false,
-			expectCmd:  "winget",
-			expectArgs: []string{"install"},
+			name:      "WingetInstall",
+			manager:   "winget",
+			packageID: "Microsoft.AzureCLI",
+			upgrade:   false,
+			expectCmd: "winget",
+			expectArg: "install",
 		},
 		{
-			name:       "WingetUpgrade",
-			manager:    "winget",
-			packageID:  "Microsoft.AzureCLI",
-			upgrade:    true,
-			expectCmd:  "winget",
-			expectArgs: []string{"upgrade"},
+			name:      "WingetUpgrade",
+			manager:   "winget",
+			packageID: "Microsoft.AzureCLI",
+			upgrade:   true,
+			expectCmd: "winget",
+			expectArg: "upgrade",
 		},
 		{
-			name:       "BrewInstall",
-			manager:    "brew",
-			packageID:  "azure-cli",
-			upgrade:    false,
-			expectCmd:  "brew",
-			expectArgs: []string{"install"},
+			name:      "BrewInstall",
+			manager:   "brew",
+			packageID: "azure-cli",
+			upgrade:   false,
+			expectCmd: "brew",
+			expectArg: "install",
 		},
 		{
-			name:       "BrewUpgrade",
-			manager:    "brew",
-			packageID:  "azure-cli",
-			upgrade:    true,
-			expectCmd:  "brew",
-			expectArgs: []string{"upgrade"},
+			name:      "BrewUpgrade",
+			manager:   "brew",
+			packageID: "azure-cli",
+			upgrade:   true,
+			expectCmd: "brew",
+			expectArg: "upgrade",
 		},
 		{
-			name:       "AptInstall",
-			manager:    "apt",
-			packageID:  "azure-cli",
-			upgrade:    false,
-			expectCmd:  "sudo",
-			expectArgs: []string{"install"},
+			name:      "AptInstall",
+			manager:   "apt",
+			packageID: "azure-cli",
+			upgrade:   false,
+			expectCmd: "sudo",
+			expectArg: "install",
 		},
 		{
-			name:       "AptUpgrade",
-			manager:    "apt",
-			packageID:  "azure-cli",
-			upgrade:    true,
-			expectCmd:  "sudo",
-			expectArgs: []string{"--only-upgrade"},
+			name:      "AptUpgrade",
+			manager:   "apt",
+			packageID: "azure-cli",
+			upgrade:   true,
+			expectCmd: "sudo",
+			expectArg: "--only-upgrade",
 		},
 		{
-			name:       "NpmInstall",
-			manager:    "npm",
-			packageID:  "@azure/mcp",
-			upgrade:    false,
-			expectCmd:  "npm",
-			expectArgs: []string{"install"},
+			name:      "NpmInstall",
+			manager:   "npm",
+			packageID: "@azure/mcp",
+			upgrade:   false,
+			expectCmd: "npm",
+			expectArg: "install",
 		},
 		{
-			name:       "NpmUpgrade",
-			manager:    "npm",
-			packageID:  "@azure/mcp",
-			upgrade:    true,
-			expectCmd:  "npm",
-			expectArgs: []string{"update"},
+			name:      "NpmUpgrade",
+			manager:   "npm",
+			packageID: "@azure/mcp",
+			upgrade:   true,
+			expectCmd: "npm",
+			expectArg: "update",
 		},
 		{
-			name:       "CodeInstall",
-			manager:    "code",
-			packageID:  "ms-azuretools.vscode-bicep",
-			upgrade:    false,
-			expectCmd:  "code",
-			expectArgs: []string{"--install-extension", "--force"},
+			name:      "CodeInstall",
+			manager:   "code",
+			packageID: "ms-azuretools.vscode-bicep",
+			upgrade:   false,
+			expectCmd: "code",
+			expectArg: "--install-extension",
 		},
 		{
-			name:       "CodeUpgrade",
-			manager:    "code",
-			packageID:  "ms-azuretools.vscode-bicep",
-			upgrade:    true,
-			expectCmd:  "code",
-			expectArgs: []string{"--install-extension", "--force"},
+			name:      "CodeUpgrade",
+			manager:   "code",
+			packageID: "ms-azuretools.vscode-bicep",
+			upgrade:   true,
+			expectCmd: "code",
+			expectArg: "--force",
 		},
 		{
 			name:      "UnknownManagerReturnsEmpty",
@@ -747,8 +747,8 @@ func TestBuildManagerCommand(t *testing.T) {
 			)
 
 			assert.Equal(t, tt.expectCmd, cmd)
-			for _, want := range tt.expectArgs {
-				assert.Contains(t, args, want)
+			if tt.expectArg != "" {
+				assert.Contains(t, args, tt.expectArg)
 			}
 		})
 	}

@@ -139,11 +139,14 @@ func (a *OptimizeApplyAction) apply(
 		fmt.Fprintf(out, "  Downloaded %d skill file(s)\n", n)
 	}
 
-	// Step 3: Write OPTIMIZATION_LOCAL_DIR into agent.yaml so the deploy
-	// pipeline knows a local optimization config exists.
+	// Step 3: Write OPTIMIZATION_LOCAL_DIR and OPTIMIZATION_CANDIDATE_ID into agent.yaml
+	// so the deploy pipeline knows which local optimization config to use.
 	agentYamlPath := filepath.Join(serviceDir, "agent.yaml")
 	fmt.Fprintf(out, "  Updating %s...\n", agentYamlPath)
 	if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_LOCAL_DIR", optimizationDir); err != nil {
+		return fmt.Errorf("failed to update agent.yaml: %w", err)
+	}
+	if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_CANDIDATE_ID", a.flags.candidate); err != nil {
 		return fmt.Errorf("failed to update agent.yaml: %w", err)
 	}
 

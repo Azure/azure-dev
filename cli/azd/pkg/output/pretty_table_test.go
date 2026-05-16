@@ -698,6 +698,10 @@ func TestDisplayWidth(t *testing.T) {
 		{"ansi gray", "\033[90m-\033[0m", 1},
 		{"no ansi unicode", "日本語", 6},
 		{"ansi with unicode", "\033[31m日本語\033[0m", 6},
+		{"osc8 hyperlink ST", "\x1b]8;;https://example.com\x1b\\Click Here\x1b]8;;\x1b\\", 10},
+		{"osc8 hyperlink BEL", "\x1b]8;;https://example.com\aClick Here\x1b]8;;\a", 10},
+		{"osc8 with ansi color", "\033[36m\x1b]8;;https://example.com\x1b\\Click Here\x1b]8;;\x1b\\\033[0m", 10},
+		{"plain text unchanged", "no escapes here", 15},
 	}
 
 	for _, tt := range tests {

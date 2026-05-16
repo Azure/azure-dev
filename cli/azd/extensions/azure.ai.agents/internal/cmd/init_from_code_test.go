@@ -817,3 +817,64 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 		})
 	}
 }
+
+func TestDetectDefaultEntryPoint(t *testing.T) {
+	tests := []struct {
+		name    string
+		files   []string
+		runtime string
+		want    string
+	}{
+		{
+			name:    "dotnet with csproj",
+			files:   []string{"MyAgent.csproj", "Program.cs"},
+			runtime: "dotnet_9",
+			want:    "MyAgent.dll",
+		},
+		{
+			name:    "dotnet_8 with csproj",
+			files:   []string{"EchoAgent.csproj", "Program.cs", "NuGet.config"},
+			runtime: "dotnet_8",
+			want:    "EchoAgent.dll",
+		},
+		{
+			name:    "dotnet_10 no csproj fallback",
+			files:   []string{"Program.cs"},
+			runtime: "dotnet_10",
+			want:    "App.dll",
+		},
+		{
+			name:    "python with app.py",
+			files:   []string{"app.py", "requirements.txt"},
+			runtime: "python_3_12",
+			want:    "app.py",
+		},
+		{
+			name:    "python without app.py",
+			files:   []string{"requirements.txt"},
+			runtime: "python_3_12",
+			want:    "main.py",
+		},
+		{
+			name:    "python with main.py",
+			files:   []string{"main.py", "requirements.txt"},
+			runtime: "python_3_11",
+			want:    "main.py",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, f := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, f), []byte(""), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := detectDefaultEntryPoint(dir, tt.runtime)
+			if got != tt.want {
+				t.Errorf("detectDefaultEntryPoint() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

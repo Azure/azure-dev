@@ -5,6 +5,7 @@ package project
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -15,6 +16,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -509,12 +511,84 @@ func (p *AgentServiceTargetProvider) Publish(
 		})
 
 	if err != nil {
-		return nil, exterrors.Internal(exterrors.OpContainerPublish, fmt.Sprintf("container publish failed: %s", err))
+		return nil, classifyContainerPublishError(err)
 	}
 
 	return &azdext.ServicePublishResult{
 		Artifacts: publishResponse.Result.Artifacts,
 	}, nil
+}
+
+func classifyContainerPublishError(err error) error {
+	if isPrivateACRNetworkAccessError(err) {
+		return exterrors.Dependency(
+			exterrors.CodePrivateACRNetworkAccessFailed,
+			fmt.Sprintf(
+				"container publish failed because the Azure Container Registry may be blocking network access: %s",
+				err,
+			),
+			"allowlist the public outbound IP/CIDR of the dev environment running `azd deploy` in the ACR "+
+				"firewall/network settings. If `docker.remoteBuild: true` is enabled, first set "+
+				"`docker.remoteBuild: false` for this service because remote build worker IPs are not predictable. "+
+				"Ensure Docker or Podman is installed and running, then run `azd deploy` again.",
+		)
+	}
+
+	if actionable := azdext.ActionableErrorDetailFromError(err); actionable != nil && actionable.GetSuggestion() != "" {
+		return err
+	}
+
+	return exterrors.Internal(exterrors.OpContainerPublish, fmt.Sprintf("container publish failed: %s", err))
+}
+
+func isPrivateACRNetworkAccessError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	message := strings.ToLower(err.Error())
+	acrContext := []string{
+		".azurecr.io",
+		"azure container registry",
+		"container registry",
+	}
+	hasACRContext := containsAny(message, acrContext...)
+
+	networkSignals := []string{
+		"public network access",
+		"private endpoint",
+		"network rule",
+		"firewall",
+		"not allowed access",
+		"forbidden",
+		"i/o timeout",
+		"connection timed out",
+		"tls handshake timeout",
+		"connection refused",
+		"no such host",
+	}
+	hasNetworkSignal := containsAny(message, networkSignals...)
+
+	if strings.Contains(message, "client with ip address") &&
+		strings.Contains(message, "not allowed access") {
+		return true
+	}
+
+	if strings.Contains(message, "remote build failed") &&
+		strings.Contains(message, "local fallback unavailable") {
+		return hasNetworkSignal || hasACRContext
+	}
+
+	return hasACRContext && hasNetworkSignal
+}
+
+func containsAny(s string, values ...string) bool {
+	for _, value := range values {
+		if strings.Contains(s, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func preBuiltImageArtifact(imageURL string) *azdext.Artifact {
@@ -939,6 +1013,21 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, err
 	}
 
+	// Poll until agent version is active
+	if agentVersionResponse.Status != "active" {
+		agentClient := agent_api.NewAgentClient(
+			azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+			p.credential,
+		)
+		polledVersion, pollErr := p.waitForAgentActive(ctx, agentClient, prep.request.Name, agentVersionResponse.Version, progress)
+		if pollErr != nil {
+			return nil, pollErr
+		}
+		agentVersionResponse = polledVersion
+	} else {
+		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", agentVersionResponse.Version)
+	}
+
 	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, agentVersionResponse, prep.protocols)
 }
 
@@ -948,7 +1037,23 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 	// Source directory is the service's relative path
 	srcDir := filepath.Dir(p.agentDefinitionPath)
 
+	// Load agent.yaml to check runtime and dependency resolution for dotnet bundled mode
+	if data, err := os.ReadFile(p.agentDefinitionPath); err == nil { //nolint:gosec // path from internal state
+		var agentDef agent_yaml.ContainerAgent
+		if err := yaml.Unmarshal(data, &agentDef); err == nil && agentDef.CodeConfiguration != nil {
+			isDotnet := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "dotnet_")
+			isBundled := false // default is remote_build (matches promptCodeConfig and deployHostedCodeAgent defaults)
+			if agentDef.CodeConfiguration.DependencyResolution != nil {
+				isBundled = *agentDef.CodeConfiguration.DependencyResolution == "bundled"
+			}
+			if isDotnet && isBundled {
+				return p.packageDotnetBundled(srcDir)
+			}
+		}
+	}
+
 	// Exclusion patterns
+	// TODO: support a .azdignore or similar ignore file for user-configurable exclusions.
 	excludeDirs := map[string]bool{
 		"__pycache__":   true,
 		".venv":         true,
@@ -958,10 +1063,16 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 		".mypy_cache":   true,
 		".pytest_cache": true,
 		".azure":        true,
+		// .NET directories (for remote_build, exclude build artifacts)
+		"bin": true,
+		"obj": true,
+		".vs": true,
 	}
 	excludeExts := map[string]bool{
-		".pyc": true,
-		".pyo": true,
+		".pyc":  true,
+		".pyo":  true,
+		".user": true,
+		".suo":  true,
 	}
 	excludeFiles := map[string]bool{
 		".env": true,
@@ -1064,6 +1175,144 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 		return "", "", fmt.Errorf("failed to close temp file: %w", err)
 	}
 
+	// Enforce maximum ZIP size (250 MB)
+	const maxZipSize = 250 * 1024 * 1024
+	fi, err := os.Stat(tmpPath)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to stat ZIP file: %w", err)
+	}
+	if fi.Size() > maxZipSize {
+		return "", "", fmt.Errorf(
+			"code package too large: %d MB (max 250 MB). Reduce package size by excluding unnecessary files or using remote_build for dependency resolution",
+			fi.Size()/(1024*1024),
+		)
+	}
+
+	sha256Hex := hex.EncodeToString(hasher.Sum(nil))
+	success = true
+
+	return tmpPath, sha256Hex, nil
+}
+
+// packageDotnetBundled runs "dotnet publish" for the .NET project and creates a ZIP of the published output.
+func (p *AgentServiceTargetProvider) packageDotnetBundled(srcDir string) (string, string, error) {
+	// Find the .csproj file
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read source directory: %w", err)
+	}
+
+	var csprojPath string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".csproj") {
+			csprojPath = filepath.Join(srcDir, e.Name())
+			break
+		}
+	}
+	if csprojPath == "" {
+		return "", "", fmt.Errorf("no .csproj file found in %s; required for dotnet bundled packaging", srcDir)
+	}
+
+	// Create temp directory for publish output
+	publishDir, err := os.MkdirTemp("", "azd-dotnet-publish-*")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create temp dir for dotnet publish: %w", err)
+	}
+	defer os.RemoveAll(publishDir)
+
+	// Run dotnet publish targeting linux (hosted agents run on linux)
+	fmt.Fprintf(os.Stderr, "Running 'dotnet publish' for bundled packaging...\n")
+	cmd := exec.Command("dotnet", "publish", csprojPath, //nolint:gosec // csprojPath is derived from user's project directory
+		"-c", "Release",
+		"-r", "linux-x64",
+		"--self-contained", "false",
+		"-o", publishDir,
+	)
+	cmd.Dir = srcDir
+	var publishOutput bytes.Buffer
+	cmd.Stdout = io.MultiWriter(os.Stderr, &publishOutput)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &publishOutput)
+	if err := cmd.Run(); err != nil {
+		return "", "", fmt.Errorf("dotnet publish failed: %w\nOutput:\n%s", err, publishOutput.String())
+	}
+
+	// ZIP the publish output
+	tmpFile, err := os.CreateTemp("", "azd-code-deploy-*.zip")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create temp file for ZIP: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	success := false
+	defer func() {
+		if !success {
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	hasher := sha256.New()
+	multiWriter := io.MultiWriter(tmpFile, hasher)
+	zipWriter := zip.NewWriter(multiWriter)
+
+	err = filepath.WalkDir(publishDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+
+		relPath, relErr := filepath.Rel(publishDir, path)
+		if relErr != nil {
+			return relErr
+		}
+
+		if relPath == "." {
+			return nil
+		}
+
+		relPath = filepath.ToSlash(relPath)
+
+		if d.IsDir() {
+			return nil
+		}
+
+		fileData, readErr := os.ReadFile(path) //nolint:gosec // path from WalkDir within temp publish dir
+		if readErr != nil {
+			return fmt.Errorf("failed to read %s: %w", relPath, readErr)
+		}
+
+		w, createErr := zipWriter.Create(relPath)
+		if createErr != nil {
+			return fmt.Errorf("failed to create ZIP entry %s: %w", relPath, createErr)
+		}
+
+		if _, writeErr := w.Write(fileData); writeErr != nil {
+			return fmt.Errorf("failed to write ZIP entry %s: %w", relPath, writeErr)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return "", "", fmt.Errorf("failed to walk publish directory: %w", err)
+	}
+
+	if err := zipWriter.Close(); err != nil {
+		return "", "", fmt.Errorf("failed to close ZIP: %w", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return "", "", fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	// Enforce maximum ZIP size (250 MB) — same limit as packageCodeDeploy
+	const maxZipSizeBundled = 250 * 1024 * 1024
+	if fi, statErr := os.Stat(tmpPath); statErr == nil && fi.Size() > maxZipSizeBundled {
+		return "", "", fmt.Errorf(
+			"bundled package too large: %d MB (max 250 MB). Consider using remote_build for dependency resolution",
+			fi.Size()/(1024*1024),
+		)
+	}
+
 	sha256Hex := hex.EncodeToString(hasher.Sum(nil))
 	success = true
 
@@ -1133,7 +1382,8 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	if agentDef.CodeConfiguration != nil {
 		fmt.Fprintf(os.Stderr, "Runtime: %s\n", agentDef.CodeConfiguration.Runtime)
-		fmt.Fprintf(os.Stderr, "Entry Point: [\"python\", \"%s\"]\n", agentDef.CodeConfiguration.EntryPoint)
+		cmdPrefix := agent_yaml.RuntimeCmdPrefix(agentDef.CodeConfiguration.Runtime)
+		fmt.Fprintf(os.Stderr, "Entry Point: [\"%s\", \"%s\"]\n", cmdPrefix, agentDef.CodeConfiguration.EntryPoint)
 		depRes := "remote_build"
 		if agentDef.CodeConfiguration.DependencyResolution != nil {
 			depRes = *agentDef.CodeConfiguration.DependencyResolution
@@ -1188,55 +1438,16 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 	}
 
-	// Poll for status if remote build
+	// Poll for agent version to become active
 	latestVersion := &agentResp.Versions.Latest
-	depRes := "remote_build"
-	if agentDef.CodeConfiguration != nil && agentDef.CodeConfiguration.DependencyResolution != nil {
-		depRes = *agentDef.CodeConfiguration.DependencyResolution
-	}
-	if depRes == "remote_build" && latestVersion.Status == "creating" {
-		fmt.Fprintf(os.Stderr, "Waiting for remote build to complete...\n")
-		pollTimeout := 5 * time.Minute
-		pollInterval := 5 * time.Second
-		deadline := time.Now().Add(pollTimeout)
-
-		for time.Now().Before(deadline) {
-			select {
-			case <-ctx.Done():
-				return nil, fmt.Errorf("deployment cancelled: %w", ctx.Err())
-			case <-time.After(pollInterval):
-			}
-			versionResp, err := agentClient.GetAgentVersion(ctx, agentDef.Name, latestVersion.Version, agentAPIVersion)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: poll failed: %s\n", err)
-				continue
-			}
-			latestVersion = versionResp
-			if versionResp.Status == "active" {
-				fmt.Fprintf(os.Stderr, "Agent is active!\n")
-				break
-			} else if versionResp.Status == "failed" {
-				errMsg := "agent deployment failed during remote build; check agent logs or try local packaging (dependency_resolution: bundled)"
-				if versionResp.Error != nil {
-					errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", versionResp.Error.Code, versionResp.Error.Message)
-				}
-				if versionResp.RequestID != "" {
-					errMsg += fmt.Sprintf(" (request-id: %s)", versionResp.RequestID)
-				}
-				return nil, exterrors.Internal(
-					exterrors.CodeAgentCreateFailed,
-					errMsg,
-				)
-			}
-			fmt.Fprintf(os.Stderr, "  Status: %s...\n", versionResp.Status)
+	if latestVersion.Status != "active" {
+		polledVersion, err := p.waitForAgentActive(ctx, agentClient, agentDef.Name, latestVersion.Version, progress)
+		if err != nil {
+			return nil, err
 		}
-
-		if latestVersion.Status != "active" {
-			return nil, exterrors.Internal(
-				exterrors.CodeAgentCreateFailed,
-				"agent deployment timed out waiting for remote build; check agent status manually or try local packaging",
-			)
-		}
+		latestVersion = polledVersion
+	} else {
+		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", latestVersion.Version)
 	}
 
 	// Patch agent-level fields (agent_endpoint, agent_card) if present.
@@ -1393,6 +1604,85 @@ func AgentPlaygroundURL(projectResourceID, agentName, agentVersion string) (stri
 		agentName, agentVersion,
 	)
 	return url, nil
+}
+
+// waitForAgentActive polls the agent version until it reaches a confirmed terminal state.
+// It requires 2 consecutive polls with the same terminal status ("active" or "failed") to confirm,
+// avoiding transient service-side flickers. Returns the final AgentVersionObject or an error.
+func (p *AgentServiceTargetProvider) waitForAgentActive(
+	ctx context.Context,
+	agentClient *agent_api.AgentClient,
+	agentName string,
+	version string,
+	progress azdext.ProgressReporter,
+) (*agent_api.AgentVersionObject, error) {
+	const pollInterval = 10 * time.Second
+	const pollTimeout = 5 * time.Minute
+	const confirmCount = 2 // consecutive times a terminal status must be seen
+
+	deadline := time.Now().Add(pollTimeout)
+	progress("Waiting for agent to become active")
+
+	var consecutiveActive int
+	var consecutiveFailed int
+	var lastVersion *agent_api.AgentVersionObject
+
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("deployment cancelled: %w", ctx.Err())
+		case <-time.After(pollInterval):
+		}
+
+		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agentAPIVersion)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
+			// Reset counters on error — don't count transient failures
+			consecutiveActive = 0
+			consecutiveFailed = 0
+			continue
+		}
+		lastVersion = versionResp
+
+		switch versionResp.Status {
+		case "active":
+			consecutiveActive++
+			consecutiveFailed = 0
+			if consecutiveActive >= confirmCount {
+				fmt.Fprintf(os.Stderr, "Agent version %s is active!\n", version)
+				return versionResp, nil
+			}
+			fmt.Fprintf(os.Stderr, "  Status: active (confirming...)\n")
+		case "failed":
+			consecutiveFailed++
+			consecutiveActive = 0
+			if consecutiveFailed >= confirmCount {
+				errMsg := "agent deployment failed"
+				if versionResp.Error != nil {
+					errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", versionResp.Error.Code, versionResp.Error.Message)
+				}
+				if versionResp.RequestID != "" {
+					errMsg += fmt.Sprintf(" (request-id: %s)", versionResp.RequestID)
+				}
+				return nil, exterrors.Internal(exterrors.CodeAgentCreateFailed, errMsg)
+			}
+			fmt.Fprintf(os.Stderr, "  Status: failed (confirming...)\n")
+		default:
+			consecutiveActive = 0
+			consecutiveFailed = 0
+			fmt.Fprintf(os.Stderr, "  Status: %s...\n", versionResp.Status)
+		}
+	}
+
+	// Timeout
+	lastStatus := "unknown"
+	if lastVersion != nil {
+		lastStatus = lastVersion.Status
+	}
+	return nil, exterrors.Internal(
+		exterrors.CodeAgentCreateFailed,
+		fmt.Sprintf("agent deployment timed out (last status: %s); check agent status manually", lastStatus),
+	)
 }
 
 // createAgent creates a new version of the agent using the API

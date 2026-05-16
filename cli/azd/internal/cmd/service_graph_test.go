@@ -5,10 +5,12 @@ package cmd
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
@@ -237,4 +239,125 @@ func TestDeployGraphState_StoreLoadContext(t *testing.T) {
 	sc := project.NewServiceContext()
 	state.StoreContext("svc", sc)
 	require.Same(t, sc, state.LoadContext("svc"))
+}
+
+// TestBuildGateParallelWithArtifactsPath verifies that when a buildGateKey
+// is set, deploy steps still execute in PARALLEL at the graph level (no chain
+// edges). The build-race prevention is handled at runtime via --artifacts-path
+// and fallback mutex, not via graph topology. This is the fix for GitHub issue
+// #8177: full parallelism preserved while isolating intermediate build outputs.
+func TestBuildGateParallelWithArtifactsPath(t *testing.T) {
+	t.Parallel()
+
+	services := []*project.ServiceConfig{
+		{Name: "api", DotNetContainerApp: &project.DotNetContainerAppOptions{
+			Manifest: &apphost.Manifest{},
+		}},
+		{Name: "worker", DotNetContainerApp: &project.DotNetContainerAppOptions{
+			Manifest: &apphost.Manifest{},
+		}},
+		{Name: "web", DotNetContainerApp: &project.DotNetContainerAppOptions{
+			Manifest: &apphost.Manifest{},
+		}},
+		{Name: "free"}, // non-Aspire, should not be gated
+	}
+
+	opts, g := newGraphOpts(services)
+	opts.buildGateKey = aspireBuildGateKey
+	handles, err := addServiceStepsToGraph(g, opts)
+	require.NoError(t, err)
+	require.Len(t, handles.DeploySteps, 4)
+	require.NoError(t, g.Validate())
+
+	// Run the graph to confirm it completes without deadlock.
+	var order []string
+	var mu sync.Mutex
+	err = exegraph.Run(t.Context(), g, exegraph.RunOptions{
+		OnStepDone: func(name string, stepErr error) {
+			if stepErr == nil && strings.HasPrefix(name, "deploy-") {
+				mu.Lock()
+				order = append(order, name)
+				mu.Unlock()
+			}
+		},
+	})
+	require.NoError(t, err)
+
+	// All 4 services should have completed.
+	require.Len(t, order, 4, "all deploy steps should complete")
+	require.Contains(t, order, "deploy-api")
+	require.Contains(t, order, "deploy-worker")
+	require.Contains(t, order, "deploy-web")
+	require.Contains(t, order, "deploy-free")
+
+	// Verify graph topology: no Aspire deploy step should depend on another.
+	steps := g.Steps()
+	for _, s := range steps {
+		if !strings.HasPrefix(s.Name, "deploy-") {
+			continue
+		}
+		for _, dep := range s.DependsOn {
+			if strings.HasPrefix(dep, "deploy-") {
+				t.Errorf("deploy step %q has graph-level dependency on %q; "+
+					"build gate should NOT produce graph edges", s.Name, dep)
+			}
+		}
+	}
+}
+
+// TestBuildGateMultipleKeys verifies that multiple independent gate keys
+// produce distinct mutexes per key and no graph-level deploy edges. This
+// ensures services in different gate groups are isolated from each other
+// (e.g. two different Aspire app hosts in the same project).
+func TestBuildGateMultipleKeys(t *testing.T) {
+	t.Parallel()
+
+	services := []*project.ServiceConfig{
+		{Name: "groupA-1", DotNetContainerApp: &project.DotNetContainerAppOptions{
+			Manifest: &apphost.Manifest{},
+		}},
+		{Name: "groupA-2", DotNetContainerApp: &project.DotNetContainerAppOptions{
+			Manifest: &apphost.Manifest{},
+		}},
+		{Name: "groupB-1", DotNetContainerApp: &project.DotNetContainerAppOptions{
+			Manifest: &apphost.Manifest{},
+		}},
+		{Name: "groupB-2", DotNetContainerApp: &project.DotNetContainerAppOptions{
+			Manifest: &apphost.Manifest{},
+		}},
+	}
+
+	opts, g := newGraphOpts(services)
+	// Two distinct gate keys: "gate-A" and "gate-B".
+	opts.buildGateKey = func(svc *project.ServiceConfig) string {
+		if strings.HasPrefix(svc.Name, "groupA") {
+			return "gate-A"
+		}
+		if strings.HasPrefix(svc.Name, "groupB") {
+			return "gate-B"
+		}
+		return ""
+	}
+
+	handles, err := addServiceStepsToGraph(g, opts)
+	require.NoError(t, err)
+	require.Len(t, handles.DeploySteps, 4)
+	require.NoError(t, g.Validate())
+
+	// Run the graph to verify no deadlock (which would occur if independent
+	// gate groups accidentally shared a mutex with blocking semantics).
+	err = exegraph.Run(t.Context(), g, exegraph.RunOptions{})
+	require.NoError(t, err)
+
+	// Verify no deploy→deploy edges exist for any gate group.
+	for _, s := range g.Steps() {
+		if !strings.HasPrefix(s.Name, "deploy-") {
+			continue
+		}
+		for _, dep := range s.DependsOn {
+			if strings.HasPrefix(dep, "deploy-") {
+				t.Errorf("deploy step %q depends on %q; multi-key gates should NOT produce edges", s.Name, dep)
+			}
+		}
+	}
 }

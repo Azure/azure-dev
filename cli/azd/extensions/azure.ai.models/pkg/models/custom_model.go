@@ -21,6 +21,7 @@ type CustomModel struct {
 	DerivedModelInformation *DerivedModelInformation `json:"derivedModelInformation,omitempty"`
 	Source                  *ModelSource             `json:"source,omitempty"`
 	ArtifactProfile         *ArtifactProfile         `json:"artifactProfile,omitempty"`
+	LoRAConfig              *LoRAConfig              `json:"loraConfig,omitempty"`
 	ProvisioningState       string                   `json:"provisioningState,omitempty"`
 }
 
@@ -57,6 +58,14 @@ type ArtifactProfile struct {
 	Signals  []string `json:"signals,omitempty"`
 }
 
+// LoRAConfig contains adapter-specific metadata for LoRA models.
+type LoRAConfig struct {
+	Rank          *int     `json:"rank,omitempty"`
+	Alpha         *int     `json:"alpha,omitempty"`
+	TargetModules []string `json:"targetModules,omitempty"`
+	Dropout       *float64 `json:"dropout,omitempty"`
+}
+
 // ListModelsResponse is the API response for listing custom models.
 type ListModelsResponse struct {
 	Value    []CustomModel `json:"value"`
@@ -65,17 +74,19 @@ type ListModelsResponse struct {
 
 // CustomModelListView is the table-friendly view of a custom model.
 type CustomModelListView struct {
-	Name      string `table:"Name"`
-	Version   string `table:"Version"`
-	CreatedAt string `table:"Created"`
-	CreatedBy string `table:"Created By"`
+	Name       string `table:"Name"`
+	Version    string `table:"Version"`
+	WeightType string `table:"Weight Type"`
+	CreatedAt  string `table:"Created"`
+	CreatedBy  string `table:"Created By"`
 }
 
 // ToListView converts a CustomModel to a table-friendly view.
 func (m *CustomModel) ToListView() CustomModelListView {
 	view := CustomModelListView{
-		Name:    m.Name,
-		Version: m.Version,
+		Name:       m.Name,
+		Version:    m.Version,
+		WeightType: m.WeightType,
 	}
 
 	if m.SystemData != nil {

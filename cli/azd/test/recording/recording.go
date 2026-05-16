@@ -332,7 +332,11 @@ func Start(t *testing.T, opts ...Options) *Session {
 			strings.Contains(req.URL.Host, "azuresdkartifacts.z5.web.core.windows.net") ||
 			strings.Contains(req.URL.Host, "default.exp-tas.com") ||
 			(strings.Contains(req.URL.Host, "dev.azure.com") &&
-				strings.Contains(req.URL.Path, "/oidctoken"))
+				strings.Contains(req.URL.Path, "/oidctoken")) ||
+			// Passthrough requests to the local test credential server (AZD_AUTH_ENDPOINT).
+			// In playback mode, RemoteCredential calls this server for tokens.
+			(strings.Contains(req.URL.Host, "127.0.0.1") &&
+				req.URL.Path == "/token")
 	})
 
 	proxy := &connectHandler{

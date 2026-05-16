@@ -532,6 +532,62 @@ func Test_Cli_PublishContainer(t *testing.T) {
 	})
 }
 
+func Test_Cli_ArtifactsPathContext(t *testing.T) {
+	t.Parallel()
+
+	t.Run("PublishContainer appends --artifacts-path from context", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		var captured exec.RunArgs
+		runner.When(matchDotnetArg0("publish")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				captured = args
+				return exec.NewRunResult(0, successContainerOutput, ""), nil
+			})
+
+		ctx := ContextWithArtifactsPath(t.Context(), "/tmp/artifacts-svc1")
+		_, err := cli.PublishContainer(ctx, "p.csproj", "Release", "img", "r", "u", "p")
+		require.NoError(t, err)
+		joined := strings.Join(captured.Args, " ")
+		require.Contains(t, joined, "--artifacts-path")
+		require.Contains(t, joined, "/tmp/artifacts-svc1")
+	})
+
+	t.Run("BuildContainerLocal appends --artifacts-path from context", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		var captured exec.RunArgs
+		runner.When(matchDotnetArg0("publish")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				captured = args
+				return exec.NewRunResult(0, successContainerOutput, ""), nil
+			})
+
+		ctx := ContextWithArtifactsPath(t.Context(), "/tmp/artifacts-svc2")
+		_, _, err := cli.BuildContainerLocal(ctx, "p.csproj", "Release", "img")
+		require.NoError(t, err)
+		joined := strings.Join(captured.Args, " ")
+		require.Contains(t, joined, "--artifacts-path")
+		require.Contains(t, joined, "/tmp/artifacts-svc2")
+	})
+
+	t.Run("no artifacts-path when context has none", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		var captured exec.RunArgs
+		runner.When(matchDotnetArg0("publish")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				captured = args
+				return exec.NewRunResult(0, successContainerOutput, ""), nil
+			})
+
+		_, err := cli.PublishContainer(t.Context(), "p.csproj", "Release", "img", "r", "u", "p")
+		require.NoError(t, err)
+		joined := strings.Join(captured.Args, " ")
+		require.NotContains(t, joined, "--artifacts-path")
+	})
+}
+
 func Test_Cli_getTargetPort_Branches(t *testing.T) {
 	t.Parallel()
 

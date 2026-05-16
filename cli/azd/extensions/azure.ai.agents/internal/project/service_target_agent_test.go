@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -12,12 +13,15 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestApplyAgentMetadata(t *testing.T) {
@@ -106,6 +110,7 @@ type stubContainerServer struct {
 	buildCalls   atomic.Int32
 	packageCalls atomic.Int32
 	publishCalls atomic.Int32
+	publishErr   error
 }
 
 func (s *stubContainerServer) Build(
@@ -143,6 +148,10 @@ func (s *stubContainerServer) Publish(
 	_ *azdext.ContainerPublishRequest,
 ) (*azdext.ContainerPublishResponse, error) {
 	s.publishCalls.Add(1)
+	if s.publishErr != nil {
+		return nil, s.publishErr
+	}
+
 	return &azdext.ContainerPublishResponse{
 		Result: &azdext.ServicePublishResult{
 			Artifacts: []*azdext.Artifact{{
@@ -889,4 +898,145 @@ func TestPublish_PublishesWhenPackageBuiltFromDockerfile(t *testing.T) {
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.Artifacts, "expected published container artifacts")
 	require.Equal(t, int32(1), containerStub.publishCalls.Load())
+}
+
+func TestPublish_PrivateACRNetworkAccessGuidance(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "remote build failed and local fallback unavailable",
+			err: errors.New(
+				"remote build failed: registry firewall blocked source upload\n\n" +
+					"Local fallback unavailable: Docker is not installed",
+			),
+		},
+		{
+			name: "acr client ip denied",
+			err: errors.New(
+				"pushing image: denied: client with IP address '203.0.113.10' " +
+					"is not allowed access to registry myregistry.azurecr.io",
+			),
+		},
+		{
+			name: "generic host docker login suggestion is overridden",
+			err: actionableStatusError(
+				t,
+				"pushing image to myregistry.azurecr.io failed: Forbidden",
+				"When pushing to an external registry, run 'docker login' and try again",
+			),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := publishWithContainerError(t, tt.err)
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected LocalError, got %T: %v", err, err)
+			require.Equal(t, exterrors.CodePrivateACRNetworkAccessFailed, localErr.Code)
+			require.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+			require.Contains(t, localErr.Message, tt.err.Error())
+			require.Contains(t, localErr.Suggestion, "allowlist the public outbound IP/CIDR")
+			require.Contains(t, localErr.Suggestion, "docker.remoteBuild: false")
+			require.Contains(t, localErr.Suggestion, "Docker or Podman")
+			require.NotContains(t, localErr.Suggestion, "docker login")
+		})
+	}
+}
+
+func TestPublish_GenericPublishErrorsAreNotClassifiedAsPrivateACR(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "generic publish failure",
+			err:  errors.New("registry returned unexpected 500"),
+		},
+		{
+			name: "non-acr denied failure",
+			err:  errors.New("denied: requested access to the resource is denied"),
+		},
+		{
+			name: "remote build dockerfile failure without acr network signal",
+			err: errors.New(
+				"remote build failed: Dockerfile parse error\n\n" +
+					"Local fallback unavailable: Docker is not installed",
+			),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := publishWithContainerError(t, tt.err)
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected LocalError, got %T: %v", err, err)
+			require.Equal(t, exterrors.OpContainerPublish, localErr.Code)
+			require.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
+			require.Contains(t, localErr.Message, "container publish failed")
+		})
+	}
+}
+
+func TestPublish_PreservesNonACRHostActionableGuidance(t *testing.T) {
+	t.Parallel()
+
+	const suggestion = "run the custom remediation and try again"
+	err := publishWithContainerError(t, actionableStatusError(t, "publish failed", suggestion))
+
+	actionable := azdext.ActionableErrorDetailFromError(err)
+	require.NotNil(t, actionable)
+	require.Equal(t, suggestion, actionable.GetSuggestion())
+}
+
+func publishWithContainerError(t *testing.T, publishErr error) error {
+	t.Helper()
+
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, "myregistry.azurecr.io/myimage:v1")
+	containerStub := &stubContainerServer{publishErr: publishErr}
+	client := newContainerTestClient(t, containerStub)
+
+	provider := &AgentServiceTargetProvider{
+		azdClient:           client,
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+	}
+
+	_, err := provider.Publish(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc"},
+		&azdext.ServiceContext{Package: []*azdext.Artifact{{
+			Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+			Location:     "test-image:latest",
+			LocationKind: azdext.LocationKind_LOCATION_KIND_LOCAL,
+		}}},
+		&azdext.TargetResource{},
+		&azdext.PublishOptions{},
+		func(string) {},
+	)
+	require.Error(t, err)
+	require.Equal(t, int32(1), containerStub.publishCalls.Load())
+
+	return err
+}
+
+func actionableStatusError(t *testing.T, message, suggestion string) error {
+	t.Helper()
+
+	st := status.New(codes.Unknown, message)
+	stWithDetails, err := st.WithDetails(&azdext.ActionableErrorDetail{Suggestion: suggestion})
+	require.NoError(t, err)
+	return stWithDetails.Err()
 }

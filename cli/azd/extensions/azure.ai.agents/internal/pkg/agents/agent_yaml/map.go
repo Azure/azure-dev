@@ -14,6 +14,15 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+// RuntimeCmdPrefix returns the command prefix for a given runtime string.
+// For example, "python_3_12" -> "python", "dotnet_9" -> "dotnet".
+func RuntimeCmdPrefix(runtime string) string {
+	if strings.HasPrefix(runtime, "dotnet_") {
+		return "dotnet"
+	}
+	return "python"
+}
+
 // AgentBuildOption represents an option for building agent definitions
 type AgentBuildOption func(*AgentBuildConfig)
 
@@ -357,7 +366,8 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 
 	// Code deploy path
 	if hostedAgent.CodeConfiguration != nil {
-		entryPoint := []string{"python", hostedAgent.CodeConfiguration.EntryPoint}
+		cmdPrefix := RuntimeCmdPrefix(hostedAgent.CodeConfiguration.Runtime)
+		entryPoint := []string{cmdPrefix, hostedAgent.CodeConfiguration.EntryPoint}
 		depRes := ""
 		if hostedAgent.CodeConfiguration.DependencyResolution != nil {
 			depRes = *hostedAgent.CodeConfiguration.DependencyResolution

@@ -54,8 +54,8 @@ configuration and the current azd environment. Optionally specify the service na
   # Show status for a specific agent service
   azd ai agent show my-agent
 
-  # Show status in table format
-  azd ai agent show --output table`,
+  # Show status as JSON
+  azd ai agent show --output json`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
@@ -117,7 +117,7 @@ configuration and the current azd environment. Optionally specify the service na
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"json", "table"},
-		Default:       "json",
+		Default:       "table",
 	})
 
 	return cmd
@@ -152,11 +152,17 @@ func (a *ShowAction) Run(ctx context.Context) error {
 	// Resolve deployed endpoint URLs from env vars (best-effort)
 	result.Endpoints = a.resolveEndpointURLs(ctx)
 
-	switch a.flags.output {
-	case "table":
+	return printShowResult(result, a.flags.output)
+}
+
+func printShowResult(result *showResult, output string) error {
+	switch output {
+	case "", "table":
 		return printShowResultTable(result)
-	default:
+	case "json":
 		return printShowResultJSON(result)
+	default:
+		return fmt.Errorf("unsupported output format %q", output)
 	}
 }
 

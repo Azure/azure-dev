@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
+	"path/filepath"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/eval_api"
@@ -23,21 +23,21 @@ const DataGenerationAPIVersion = "v1"
 
 // EvalInitFlags defines the customized flags for the eval init command.
 type evalInitFlags struct {
-	name               string
-	agent              string
-	projectEndpoint    string
-	genInstruction     string
-	genInstructionFile string
-	evalModel          string
-	dataset            string
-	output             string
-	maxSamples         int
-	evaluators         []string
-	noWait             bool
-	resetDefaults      bool
-	evalModelSet       bool
-	maxSamplesSet      bool
-	traceDays          int
+	name             string
+	agent            string
+	projectEndpoint  string
+	systemPrompt     string
+	systemPromptFile string
+	evalModel        string
+	dataset          string
+	output           string
+	maxSamples       int
+	evaluators       []string
+	noWait           bool
+	resetDefaults    bool
+	evalModelSet     bool
+	maxSamplesSet    bool
+	traceDays        int
 	// Internal flags set during interactive prompts.
 	regenerateDataset   bool
 	regenerateEvaluator bool
@@ -54,8 +54,8 @@ By default, this command submits dataset and evaluator generation jobs, waits fo
 completion, downloads review artifacts under .azure/.foundry, and writes eval.yaml at
 the agent project root. Use --no-wait to write pending operation IDs and return.`,
 		Example: `  azd ai agent eval init
-  azd ai agent eval init --gen-instruction "This agent handles restaurant reservations." --eval-model gpt-4o --max-samples 50
-  azd ai agent eval init --gen-instruction-file ./instructions.md --eval-model gpt-4o
+  azd ai agent eval init --system-prompt "This agent handles restaurant reservations." --eval-model gpt-4o --max-samples 50
+  azd ai agent eval init --system-prompt-file ./instructions.md --eval-model gpt-4o
   azd ai agent eval init --dataset ./tests/golden.jsonl --evaluator builtin.intent_resolution`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -72,8 +72,8 @@ the agent project root. Use --no-wait to write pending operation IDs and return.
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Submit generation jobs and return immediately")
 	cmd.Flags().StringVar(&flags.agent, "agent", "", "Target agent name")
 	cmd.Flags().StringVarP(&flags.projectEndpoint, "project-endpoint", "p", "", "Microsoft Foundry project endpoint URL")
-	cmd.Flags().StringVarP(&flags.genInstruction, "gen-instruction", "g", "", "Inline instruction for dataset and evaluator generation")
-	cmd.Flags().StringVarP(&flags.genInstructionFile, "gen-instruction-file", "G", "", "Path to a file containing the generation instruction")
+	cmd.Flags().StringVarP(&flags.systemPrompt, "system-prompt", "g", "", "Agent system prompt used for dataset and evaluator generation")
+	cmd.Flags().StringVarP(&flags.systemPromptFile, "system-prompt-file", "G", "", "Path to a file containing the agent system prompt")
 	cmd.Flags().StringVar(&flags.evalModel, "eval-model", defaultEvalModel, "Model used for evaluation and generation, and also as the default model for evaluation")
 	cmd.Flags().StringVar(&flags.dataset, "dataset", "", "Existing local file or registered dataset name to use for evaluation (instead of generating a new dataset)")
 	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", defaultEvalSamples, "Number of samples to generate (15-1000)")
@@ -87,17 +87,9 @@ the agent project root. Use --no-wait to write pending operation IDs and return.
 
 // runEvalInit executes the eval init command logic. It resolves context, prompts for missing options, submits generation jobs, polls for completion (unless --no-wait), writes the eval config, and prints next steps.
 func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error {
-	if flags.genInstruction != "" && flags.genInstructionFile != "" {
-		return fmt.Errorf("cannot use both --gen-instruction and --gen-instruction-file; provide one or the other")
+	if flags.systemPrompt != "" && flags.systemPromptFile != "" {
+		return fmt.Errorf("cannot use both --system-prompt and --system-prompt-file; provide one or the other")
 	}
-	if flags.genInstructionFile != "" {
-		data, err := os.ReadFile(flags.genInstructionFile) //nolint:gosec // user-provided instruction file path
-		if err != nil {
-			return fmt.Errorf("reading instruction file %q: %w", flags.genInstructionFile, err)
-		}
-		flags.genInstruction = strings.TrimSpace(string(data))
-	}
-
 	resolved, err := resolveEvalContext(ctx, evalContextOptions{
 		agent:           flags.agent,
 		projectEndpoint: flags.projectEndpoint,
@@ -108,6 +100,16 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		return err
 	}
 	defer resolved.azdClient.Close()
+
+	// Resolve relative system_prompt_file paths against the agent project directory.
+	if flags.systemPromptFile != "" {
+		if !filepath.IsAbs(flags.systemPromptFile) && resolved.projectRoot != "" {
+			flags.systemPromptFile = filepath.Join(resolved.projectRoot, flags.systemPromptFile)
+		}
+		if _, err := os.Stat(flags.systemPromptFile); err != nil {
+			return fmt.Errorf("system prompt file %q is not accessible: %w", flags.systemPromptFile, err)
+		}
+	}
 
 	configPath := resolveEvalOutputPath(flags.output, resolved.agentProject)
 	printEvalDetectedContext(resolved, configPath)
@@ -144,8 +146,9 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		if existingCfg.Options != nil && !flags.evalModelSet {
 			flags.evalModel = existingCfg.Options.EvalModel
 		}
-		if flags.genInstruction == "" {
-			flags.genInstruction = existingCfg.GenerationInstruction
+		if flags.systemPrompt == "" && flags.systemPromptFile == "" {
+			flags.systemPrompt = existingCfg.Agent.SystemPrompt
+			flags.systemPromptFile = existingCfg.Agent.SystemPromptFile
 		}
 		if !flags.maxSamplesSet && existingCfg.MaxSamples > 0 {
 			flags.maxSamples = existingCfg.MaxSamples
@@ -176,10 +179,10 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 	// Finalize the eval suite name with a random suffix to avoid collisions.
 	flags.name = resolveEvalName(flags) + "-" + randomSuffix()
 
-	// Prompt agents use the agent source directly; hosted agents require a gen-instruction.
+	// Prompt agents use the agent source directly; hosted agents require a system-prompt.
 	if resolved.agentKind != agent_yaml.AgentKindPrompt &&
-		flags.genInstruction == "" && (flags.dataset == "" || len(flags.evaluators) == 0) {
-		return fmt.Errorf("--gen-instruction is required when generating eval assets for a hosted agent")
+		flags.systemPrompt == "" && flags.systemPromptFile == "" && (flags.dataset == "" || len(flags.evaluators) == 0) {
+		return fmt.Errorf("--system-prompt is required when generating eval assets for a hosted agent")
 	}
 	if flags.maxSamples < 15 || flags.maxSamples > 1000 {
 		return fmt.Errorf("--max-samples must be between 15 and 1000")

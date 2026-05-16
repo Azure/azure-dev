@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/pkg/agents/opteval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -154,6 +155,7 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 	var cfg *OptimizeConfig
 	configSource := "" // tracks where the config came from for user messaging
 	hasProject := false
+	agentProject := ""
 
 	if a.flags.configFile != "" {
 		cfg, err = LoadOptimizeConfig(a.flags.configFile)
@@ -167,6 +169,7 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 			return err
 		}
 		hasProject = resolved.agentProject != ""
+		agentProject = resolved.agentProject
 
 		// Check if eval.yaml exists in the agent project and offer to use it
 		if resolved.agentProject != "" {
@@ -209,6 +212,33 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 		cfg.Options.TargetAttributes = a.flags.targetAttributes
 	}
 
+	// Resolve relative skill_dir against agent project directory.
+	if cfg.Agent.SkillDir != "" && hasProject && !filepath.IsAbs(cfg.Agent.SkillDir) {
+		cfg.Agent.SkillDir = filepath.Join(agentProject, cfg.Agent.SkillDir)
+	}
+
+	// Resolve system prompt using a well-defined lifecycle:
+	//  1. Config file (eval.yaml / --config) — system_prompt or system_prompt_file in agent section
+	//  2. Baseline config — .agent_optimization/baseline/config.json from a prior optimize run
+	//  3. Interactive prompt — ask the user to provide inline text or a file path
+	if err := resolveOptimizeSystemPrompt(ctx, cfg, agentProject, hasProject, a.noPrompt); err != nil {
+		return err
+	}
+
+	// Resolve skill_dir: auto-detect, check baseline, or prompt user.
+	if cfg.Agent.SkillDir == "" && hasProject {
+		if err := resolveOptimizeSkillDir(ctx, cfg, agentProject, a.noPrompt); err != nil {
+			return err
+		}
+	}
+
+	// Resolve target_config.model: prompt user if not set.
+	if (cfg.Options.TargetConfig == nil || len(cfg.Options.TargetConfig.Model) == 0) && !a.noPrompt {
+		if err := resolveOptimizeTargetModels(ctx, cfg); err != nil {
+			return err
+		}
+	}
+
 	out := cmd.OutOrStdout()
 	bold := color.New(color.Bold)
 
@@ -231,6 +261,16 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 		return fmt.Errorf("failed to build optimization request: %w", err)
 	}
 
+	// Save baseline config before starting optimization.
+	if hasProject {
+		if err := saveBaselineConfig(agentProject, cfg.Agent.SkillDir, optimizeReq); err != nil {
+			fmt.Fprintf(out, "  warning: failed to save baseline config: %s\n", err)
+		} else {
+			fmt.Fprintf(out, "  Baseline saved to %s\n",
+				filepath.Join(optimizationDir, "baseline", "config.json"))
+		}
+	}
+
 	resp, err := client.StartOptimize(ctx, optimizeReq)
 	if err != nil {
 		return fmt.Errorf("failed to submit optimization job: %w\n\nCheck that the endpoint %q is reachable", err, endpoint)
@@ -251,6 +291,354 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 	}
 
 	return nil
+}
+
+// resolveOptimizeSystemPrompt resolves the agent's system prompt using a well-defined lifecycle:
+//
+//  1. Config (eval.yaml / --config): system_prompt or system_prompt_file in the agent section.
+//  2. Baseline: .agent_optimization/baseline/config.json from a prior optimization run.
+//  3. Interactive prompt: ask the user to provide inline text or a file path.
+//
+// Relative file paths in system_prompt_file are resolved against agentProject.
+func resolveOptimizeSystemPrompt(
+	ctx context.Context,
+	cfg *OptimizeConfig,
+	agentProject string,
+	hasProject bool,
+	noPrompt bool,
+) error {
+	// Resolve relative system_prompt_file paths against the agent project directory.
+	if cfg.Agent.SystemPromptFile != "" && hasProject && !filepath.IsAbs(cfg.Agent.SystemPromptFile) {
+		cfg.Agent.SystemPromptFile = filepath.Join(agentProject, cfg.Agent.SystemPromptFile)
+	}
+
+	// Step 1: Config explicitly declares a system_prompt_file — validate it's readable.
+	if cfg.Agent.SystemPromptFile != "" {
+		if _, err := os.Stat(cfg.Agent.SystemPromptFile); err != nil {
+			return fmt.Errorf("system_prompt_file %q from config is not accessible: %w",
+				cfg.Agent.SystemPromptFile, err)
+		}
+		return nil
+	}
+
+	// Step 1b: Config already has inline system_prompt — nothing to do.
+	if cfg.Agent.SystemPrompt != "" {
+		return nil
+	}
+
+	// Step 2: Check baseline config from a prior optimization run.
+	if hasProject {
+		if baseline, loadErr := loadBaselineConfig(agentProject); loadErr == nil && baseline.Instructions != "" {
+			if noPrompt {
+				cfg.Agent.SystemPrompt = baseline.Instructions
+				return nil
+			}
+
+			azdClient, clientErr := azdext.NewAzdClient()
+			if clientErr == nil {
+				defer azdClient.Close()
+				resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+					Options: &azdext.ConfirmOptions{
+						Message: "No system prompt in config. " +
+							"Found one in baseline (.agent_optimization/baseline/config.json). Use it?",
+						DefaultValue: new(true),
+					},
+				})
+				if promptErr == nil && resp.Value != nil && *resp.Value {
+					cfg.Agent.SystemPrompt = baseline.Instructions
+					return nil
+				}
+			}
+		}
+	}
+
+	// Step 3: Interactive prompt — ask user to provide inline text or a file path.
+	if noPrompt {
+		return fmt.Errorf("system prompt is required for optimization.\n\n" +
+			"Provide it via one of:\n" +
+			"  1. system_prompt or system_prompt_file in eval.yaml (agent section)\n" +
+			"  2. Run a prior optimization to create a baseline (.agent_optimization/baseline/config.json)\n" +
+			"  3. Run without --no-prompt to enter it interactively")
+	}
+
+	azdClient, clientErr := azdext.NewAzdClient()
+	if clientErr != nil {
+		return fmt.Errorf("system prompt is required but could not open interactive prompt: %w", clientErr)
+	}
+	defer azdClient.Close()
+
+	inputChoices := []*azdext.SelectChoice{
+		{Label: "Type inline", Value: "inline"},
+		{Label: "Load from file", Value: "file"},
+	}
+	defaultIdx := int32(0)
+	selResp, selErr := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message: "No system prompt found in config or baseline. " +
+				"How would you like to provide the system prompt?",
+			Choices:       inputChoices,
+			SelectedIndex: &defaultIdx,
+		},
+	})
+	if selErr != nil {
+		return fmt.Errorf("prompting for system prompt input method: %w", selErr)
+	}
+
+	if inputChoices[int(*selResp.Value)].Value == "file" {
+		pathResp, pathErr := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:        "Path to system prompt file",
+				IgnoreHintKeys: true,
+			},
+		})
+		if pathErr != nil {
+			return fmt.Errorf("prompting for system prompt file path: %w", pathErr)
+		}
+		filePath := strings.TrimSpace(pathResp.Value)
+		// Resolve relative paths against the agent project directory.
+		if !filepath.IsAbs(filePath) && hasProject {
+			filePath = filepath.Join(agentProject, filePath)
+		}
+		if _, err := os.Stat(filePath); err != nil {
+			return fmt.Errorf("system prompt file %q is not accessible: %w", filePath, err)
+		}
+		cfg.Agent.SystemPromptFile = filePath
+	} else {
+		resp, promptErr := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:        "Enter the agent's system prompt instructions",
+				IgnoreHintKeys: true,
+			},
+		})
+		if promptErr != nil {
+			return fmt.Errorf("prompting for system prompt: %w", promptErr)
+		}
+		cfg.Agent.SystemPrompt = strings.TrimSpace(resp.Value)
+	}
+
+	return nil
+}
+
+// resolveOptimizeSkillDir resolves the agent's skill directory:
+//  1. Auto-detect: look for a "skills/" folder in the agent project — confirm with user.
+//  2. Baseline: check .agent_optimization/baseline/config.json for a saved skill_dir.
+//  3. Interactive prompt: ask the user to provide a path or skip.
+func resolveOptimizeSkillDir(
+	ctx context.Context,
+	cfg *OptimizeConfig,
+	agentProject string,
+	noPrompt bool,
+) error {
+	// Step 1: Auto-detect common skill directory names.
+	var detectedDir string
+	for _, candidate := range []string{"skills", "skill"} {
+		dir := filepath.Join(agentProject, candidate)
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			detectedDir = dir
+			break
+		}
+	}
+
+	// Step 2: Check baseline config.
+	if detectedDir == "" {
+		if baseline, loadErr := loadBaselineConfig(agentProject); loadErr == nil && baseline.SkillDir != "" {
+			if _, err := os.Stat(baseline.SkillDir); err == nil {
+				detectedDir = baseline.SkillDir
+			}
+		}
+	}
+
+	if noPrompt {
+		// In no-prompt mode, use whatever was detected (may be empty).
+		cfg.Agent.SkillDir = detectedDir
+		return nil
+	}
+
+	azdClient, clientErr := azdext.NewAzdClient()
+	if clientErr != nil {
+		cfg.Agent.SkillDir = detectedDir
+		return nil
+	}
+	defer azdClient.Close()
+
+	if detectedDir != "" {
+		// Found a skill directory — ask user to confirm or provide a different one.
+		choices := []*azdext.SelectChoice{
+			{Label: fmt.Sprintf("Use detected: %s", detectedDir), Value: "use"},
+			{Label: "Provide a different path", Value: "other"},
+			{Label: "Skip (no skills)", Value: "skip"},
+		}
+		defaultIdx := int32(0)
+		selResp, selErr := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message:       fmt.Sprintf("Found skills directory: %s", detectedDir),
+				Choices:       choices,
+				SelectedIndex: &defaultIdx,
+			},
+		})
+		if selErr != nil {
+			cfg.Agent.SkillDir = detectedDir
+			return nil
+		}
+
+		switch choices[int(*selResp.Value)].Value {
+		case "use":
+			cfg.Agent.SkillDir = detectedDir
+			return nil
+		case "skip":
+			return nil
+		case "other":
+			// Fall through to path prompt below.
+		}
+	} else {
+		// No skill directory found — ask if they want to provide one.
+		resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+			Options: &azdext.ConfirmOptions{
+				Message:      "No skills directory found. Would you like to provide one?",
+				DefaultValue: new(bool), // default false
+			},
+		})
+		if promptErr != nil || !resp.GetValue() {
+			return nil // skip skills
+		}
+	}
+
+	// Prompt for a custom path.
+	pathResp, pathErr := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:        "Path to skills directory",
+			IgnoreHintKeys: true,
+		},
+	})
+	if pathErr != nil {
+		return fmt.Errorf("prompting for skills directory: %w", pathErr)
+	}
+
+	dir := strings.TrimSpace(pathResp.Value)
+	if dir == "" {
+		return nil
+	}
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(agentProject, dir)
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return fmt.Errorf("skills directory %q is not accessible or not a directory", dir)
+	}
+
+	cfg.Agent.SkillDir = dir
+	return nil
+}
+
+// knownOptimizationModels is the list of models commonly used for optimization.
+var knownOptimizationModels = []string{
+	"gpt-4.1",
+	"gpt-4.1-mini",
+	"gpt-4.1-nano",
+	"gpt-4o",
+	"gpt-4o-mini",
+}
+
+// resolveOptimizeTargetModels prompts the user to select model candidates
+// for optimization (target_config.model). Shows the current deployed model
+// and allows multi-select from known models.
+func resolveOptimizeTargetModels(
+	ctx context.Context,
+	cfg *OptimizeConfig,
+) error {
+	azdClient, clientErr := azdext.NewAzdClient()
+	if clientErr != nil {
+		return nil
+	}
+	defer azdClient.Close()
+
+	currentModel := cfg.Agent.Model
+
+	message := "Select target models for optimization"
+	if currentModel != "" {
+		message = fmt.Sprintf("Select target models for optimization (current: %s)", currentModel)
+	}
+
+	resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message:      "Would you like to specify target models for optimization?",
+			DefaultValue: new(bool), // default false
+		},
+	})
+	if promptErr != nil || !resp.GetValue() {
+		return nil
+	}
+
+	// Build choices — include current model if not already in the known list.
+	choices := buildOptimizeModelChoices(currentModel)
+
+	multiResp, multiErr := azdClient.Prompt().MultiSelect(ctx, &azdext.MultiSelectRequest{
+		Options: &azdext.MultiSelectOptions{
+			Message: message,
+			Choices: choices,
+		},
+	})
+	if multiErr != nil {
+		return fmt.Errorf("prompting for target models: %w", multiErr)
+	}
+
+	var models []string
+	for _, v := range multiResp.Values {
+		models = append(models, v.Value)
+	}
+
+	if len(models) > 0 {
+		if cfg.Options.TargetConfig == nil {
+			cfg.Options.TargetConfig = &opteval.TargetConfig{}
+		}
+		cfg.Options.TargetConfig.Model = models
+	}
+
+	return nil
+}
+
+// buildOptimizeModelChoices returns MultiSelectChoice items for model selection.
+// The current deployed model is included and pre-selected; placed first if not in the known list.
+func buildOptimizeModelChoices(currentModel string) []*azdext.MultiSelectChoice {
+	seen := make(map[string]bool)
+	var choices []*azdext.MultiSelectChoice
+
+	// If the current model is not in the known list, prepend it.
+	if currentModel != "" {
+		found := false
+		for _, m := range knownOptimizationModels {
+			if m == currentModel {
+				found = true
+				break
+			}
+		}
+		if !found {
+			choices = append(choices, &azdext.MultiSelectChoice{
+				Label:    currentModel + " (current)",
+				Value:    currentModel,
+				Selected: true,
+			})
+			seen[currentModel] = true
+		}
+	}
+
+	for _, m := range knownOptimizationModels {
+		if seen[m] {
+			continue
+		}
+		label := m
+		selected := false
+		if m == currentModel {
+			label = m + " (current)"
+			selected = true
+		}
+		choices = append(choices, &azdext.MultiSelectChoice{
+			Label:    label,
+			Value:    m,
+			Selected: selected,
+		})
+	}
+
+	return choices
 }
 
 func pollOptimizeJob(

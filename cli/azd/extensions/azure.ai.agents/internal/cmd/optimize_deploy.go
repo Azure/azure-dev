@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -257,62 +256,6 @@ func isReservedEnvVarError(err error) bool {
 // isSkillFile returns true if the manifest entry represents a skill file.
 func isSkillFile(f optimize_api.CandidateFile) bool {
 	return f.Type == "skill" || strings.HasPrefix(f.Path, "skills/")
-}
-
-// downloadSkillFiles fetches the candidate manifest, downloads all skill files,
-// and writes them into serviceDir. Returns the number of files written.
-func downloadSkillFiles(
-	ctx context.Context,
-	client *optimize_api.OptimizeClient,
-	candidateID string,
-	serviceDir string,
-	out io.Writer,
-) (int, error) {
-	manifest, err := client.GetCandidate(ctx, candidateID)
-	if err != nil {
-		return 0, fmt.Errorf("fetching candidate manifest: %w", err)
-	}
-
-	var skillFiles []optimize_api.CandidateFile
-	for _, f := range manifest.Files {
-		if isSkillFile(f) {
-			skillFiles = append(skillFiles, f)
-		}
-	}
-	if len(skillFiles) == 0 {
-		return 0, nil
-	}
-
-	count := 0
-	for _, f := range skillFiles {
-		if f.Path == "" {
-			continue
-		}
-
-		content, err := client.GetCandidateFile(ctx, candidateID, f.Path)
-		if err != nil {
-			fmt.Fprintf(out, "  warning: failed to download skill file %s: %s\n", f.Path, err)
-			continue
-		}
-
-		// Write relative to serviceDir.
-		// "skills/math/SKILL.md" becomes "<serviceDir>/skills/math/SKILL.md".
-		outPath := filepath.Join(serviceDir, filepath.FromSlash(f.Path))
-
-		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-			return count, fmt.Errorf("creating directory for %s: %w", f.Path, err)
-		}
-
-		//nolint:gosec // G306: skill files should be readable
-		if err := os.WriteFile(outPath, []byte(content), 0644); err != nil {
-			return count, fmt.Errorf("writing skill file %s: %w", f.Path, err)
-		}
-
-		fmt.Fprintf(out, "  → %s (%d bytes)\n", outPath, len(content))
-		count++
-	}
-
-	return count, nil
 }
 
 // extractLatestDefinition gets the latest version's definition as a map for flexible field access.

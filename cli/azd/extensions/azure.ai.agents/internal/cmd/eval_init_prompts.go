@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -45,7 +46,7 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 	needsGeneration := true // adaptive evaluator is always generated
 	needsEvalGen := true
 
-	if flags.genInstruction == "" && needsGeneration && resolved.agentKind != agent_yaml.AgentKindPrompt {
+	if flags.systemPrompt == "" && flags.systemPromptFile == "" && needsGeneration && resolved.agentKind != agent_yaml.AgentKindPrompt {
 		// Let the user choose between inline text or loading from a file.
 		inputChoices := []*azdext.SelectChoice{
 			{Label: "Type inline", Value: "inline"},
@@ -54,32 +55,35 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 		defaultIdx := int32(0)
 		selResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
-				Message:       "How would you like to provide the generation instruction?",
+				Message:       "How would you like to provide the system prompt?",
 				Choices:       inputChoices,
 				SelectedIndex: &defaultIdx,
 			},
 		})
 		if err != nil {
-			return fmt.Errorf("prompting for instruction input method: %w", err)
+			return fmt.Errorf("prompting for system prompt input method: %w", err)
 		}
 
 		if inputChoices[int(*selResp.Value)].Value == "file" {
 			// Prompt for the file path.
 			pathResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 				Options: &azdext.PromptOptions{
-					Message:        "Path to instruction file",
+					Message:        "Path to system prompt file",
 					IgnoreHintKeys: true,
 				},
 			})
 			if err != nil {
-				return fmt.Errorf("prompting for instruction file path: %w", err)
+				return fmt.Errorf("prompting for system prompt file path: %w", err)
 			}
 			filePath := strings.TrimSpace(pathResp.Value)
-			data, err := os.ReadFile(filePath) //nolint:gosec // user-provided instruction file path
-			if err != nil {
-				return fmt.Errorf("reading instruction file %q: %w", filePath, err)
+			// Resolve relative paths against the agent project directory.
+			if !filepath.IsAbs(filePath) && resolved.projectRoot != "" {
+				filePath = filepath.Join(resolved.projectRoot, filePath)
 			}
-			flags.genInstruction = strings.TrimSpace(string(data))
+			if _, err := os.Stat(filePath); err != nil {
+				return fmt.Errorf("system prompt file %q is not accessible: %w", filePath, err)
+			}
+			flags.systemPromptFile = filePath
 		} else {
 			// Inline text input.
 			resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
@@ -89,9 +93,9 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 				},
 			})
 			if err != nil {
-				return fmt.Errorf("prompting for generation instruction: %w", err)
+				return fmt.Errorf("prompting for system prompt: %w", err)
 			}
-			flags.genInstruction = strings.TrimSpace(resp.Value)
+			flags.systemPrompt = strings.TrimSpace(resp.Value)
 		}
 	}
 

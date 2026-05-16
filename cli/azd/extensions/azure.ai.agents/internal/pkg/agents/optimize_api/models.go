@@ -54,7 +54,8 @@ type AgentDefinition struct {
 // SkillDefinition describes a skill attached to an agent.
 type SkillDefinition struct {
 	Name        string `json:"name"`
-	Description string `json:"description"`
+	Description string `json:"description,omitempty"`
+	Body        string `json:"body,omitempty"`
 }
 
 // DatasetTask is a single task in an inline dataset.
@@ -78,6 +79,11 @@ type Criterion struct {
 	Instruction string `json:"instruction"`
 }
 
+// TargetConfig specifies model candidates and other target-specific configuration.
+type TargetConfig struct {
+	Model []string `json:"model,omitempty"`
+}
+
 // OptimizeOptions controls the optimization run.
 type OptimizeOptions struct {
 	Budget               int     `json:"budget,omitempty"`
@@ -87,13 +93,14 @@ type OptimizeOptions struct {
 	PassThreshold        float64 `json:"passThreshold,omitempty"`
 	EvalModel            string  `json:"evalModel"`
 	// Send as both "strategies" (current server) and "targetAttributes" (future).
-	Strategies         []string `json:"strategies,omitempty"`
-	TargetAttributes   []string `json:"targetAttributes,omitempty"`
-	KeepVersions       bool     `json:"keepVersions,omitempty"`
-	TasksPerIteration  int      `json:"tasksPerIteration,omitempty"`
-	MaxReflectionTasks int      `json:"maxReflectionTasks,omitempty"`
-	ReflectionModel    string   `json:"reflectionModel,omitempty"`
-	Mode               string   `json:"mode,omitempty"`
+	Strategies         []string      `json:"strategies,omitempty"`
+	TargetAttributes   []string      `json:"targetAttributes,omitempty"`
+	TargetConfig       *TargetConfig `json:"targetConfig,omitempty"`
+	KeepVersions       bool          `json:"keepVersions,omitempty"`
+	TasksPerIteration  int           `json:"tasksPerIteration,omitempty"`
+	MaxReflectionTasks int           `json:"maxReflectionTasks,omitempty"`
+	ReflectionModel    string        `json:"reflectionModel,omitempty"`
+	Mode               string        `json:"mode,omitempty"`
 }
 
 // --- Response models ---

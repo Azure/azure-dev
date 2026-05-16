@@ -34,8 +34,8 @@ func TestNewEvalInitCommand_Flags(t *testing.T) {
 		{"no-wait", "false"},
 		{"agent", ""},
 		{"project-endpoint", ""},
-		{"gen-instruction", ""},
-		{"gen-instruction-file", ""},
+		{"system-prompt", ""},
+		{"system-prompt-file", ""},
 		{"eval-model", defaultEvalModel},
 		{"dataset", ""},
 		{"max-samples", "100"},
@@ -68,44 +68,46 @@ func TestNewEvalInitCommand_ShortOutFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// gen-instruction / gen-instruction-file mutual exclusion
+// system-prompt / system-prompt-file mutual exclusion
 // ---------------------------------------------------------------------------
 
 func TestRunEvalInit_MutualExclusion(t *testing.T) {
 	t.Parallel()
 	flags := &evalInitFlags{
-		genInstruction:     "inline text",
-		genInstructionFile: "some-file.txt",
+		systemPrompt:     "inline text",
+		systemPromptFile: "some-file.txt",
 	}
 	err := runEvalInit(t.Context(), flags, true)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot use both --gen-instruction and --gen-instruction-file")
+	assert.Contains(t, err.Error(), "cannot use both --system-prompt and --system-prompt-file")
 }
 
-func TestRunEvalInit_InstructionFromFile(t *testing.T) {
+func TestRunEvalInit_SystemPromptFile(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	instrFile := filepath.Join(tmpDir, "instruction.md")
 	require.NoError(t, os.WriteFile(instrFile, []byte("  Test booking agent  \n"), 0600))
 
 	flags := &evalInitFlags{
-		genInstructionFile: instrFile,
-		evalModel:          defaultEvalModel,
-		maxSamples:         10,
+		systemPromptFile: instrFile,
+		evalModel:        defaultEvalModel,
+		maxSamples:       10,
 	}
-	// runEvalInit will fail later (no azd client), but genInstruction should be populated first.
+	// runEvalInit will fail later (no azd client), but file validation should pass.
 	_ = runEvalInit(t.Context(), flags, true)
-	assert.Equal(t, "Test booking agent", flags.genInstruction)
+	// File path remains on the flag — content is NOT inlined.
+	assert.Equal(t, instrFile, flags.systemPromptFile)
+	assert.Empty(t, flags.systemPrompt)
 }
 
-func TestRunEvalInit_InstructionFileMissing(t *testing.T) {
+func TestRunEvalInit_SystemPromptFileMissing(t *testing.T) {
 	t.Parallel()
 	flags := &evalInitFlags{
-		genInstructionFile: "/nonexistent/path/instruction.txt",
+		systemPromptFile: "/nonexistent/path/instruction.txt",
 	}
 	err := runEvalInit(t.Context(), flags, true)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "reading instruction file")
+	assert.Contains(t, err.Error(), "not accessible")
 }
 
 // ---------------------------------------------------------------------------
@@ -118,9 +120,9 @@ func TestNewEvalConfig(t *testing.T) {
 	t.Run("uses default name", func(t *testing.T) {
 		t.Parallel()
 		flags := &evalInitFlags{
-			genInstruction: "Test the booking agent",
-			evalModel:      "gpt-4.1",
-			maxSamples:     50,
+			systemPrompt: "Test the booking agent",
+			evalModel:    "gpt-4.1",
+			maxSamples:   50,
 		}
 		resolved := &evalResolvedContext{
 			agentName: "booking-agent",
@@ -135,7 +137,7 @@ func TestNewEvalConfig(t *testing.T) {
 		assert.Equal(t, agent_yaml.AgentKindHosted, cfg.Agent.Kind)
 		assert.Equal(t, "v2", cfg.Agent.Version)
 		assert.Equal(t, "gpt-4.1", cfg.Options.EvalModel)
-		assert.Equal(t, "Test the booking agent", cfg.GenerationInstruction)
+		assert.Equal(t, "Test the booking agent", cfg.Agent.SystemPrompt)
 		assert.Equal(t, 50, cfg.MaxSamples)
 	})
 
@@ -148,6 +150,25 @@ func TestNewEvalConfig(t *testing.T) {
 		resolved := &evalResolvedContext{agentName: "a"}
 		cfg := newEvalConfig(flags, resolved)
 		assert.Equal(t, "my-suite", cfg.Name)
+	})
+
+	t.Run("stores system_prompt_file when file provided", func(t *testing.T) {
+		t.Parallel()
+		flags := &evalInitFlags{
+			systemPromptFile: "./prompts/system.md",
+			evalModel:        "gpt-4o",
+			maxSamples:       20,
+		}
+		resolved := &evalResolvedContext{
+			agentName: "my-agent",
+			agentKind: agent_yaml.AgentKindHosted,
+			version:   "v1",
+		}
+
+		cfg := newEvalConfig(flags, resolved)
+
+		assert.Empty(t, cfg.Agent.SystemPrompt)
+		assert.Equal(t, "./prompts/system.md", cfg.Agent.SystemPromptFile)
 	})
 }
 

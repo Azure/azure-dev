@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"azureaiagent/internal/pkg/agents/opteval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
@@ -132,6 +134,7 @@ func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.Optimi
 			AgentName:         c.Agent.Name,
 			AgentVersion:      c.Agent.Version,
 			Model:             c.Agent.Model,
+			SystemPrompt:      c.Agent.ResolvedSystemPrompt(),
 		},
 		Evaluators: c.Evaluators,
 		Options: optimize_api.OptimizeOptions{
@@ -148,6 +151,13 @@ func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.Optimi
 			ReflectionModel:      c.Options.ReflectionModel,
 			Mode:                 c.Options.Mode,
 		},
+	}
+
+	// Map target_config from YAML to API format.
+	if c.Options.TargetConfig != nil {
+		req.Options.TargetConfig = &optimize_api.TargetConfig{
+			Model: c.Options.TargetConfig.Model,
+		}
 	}
 
 	// Map criteria from config schema to API schema.
@@ -180,6 +190,15 @@ func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.Optimi
 		req.Dataset = tasks
 	} else if len(c.InlineDataset) > 0 {
 		req.Dataset = c.InlineDataset
+	}
+
+	// Load skills from skill_dir if specified.
+	if c.Agent.SkillDir != "" {
+		skills, err := loadSkillsFromDir(c.Agent.SkillDir)
+		if err != nil {
+			return nil, fmt.Errorf("loading skills from %s: %w", c.Agent.SkillDir, err)
+		}
+		req.Agent.Skills = skills
 	}
 
 	return req, nil
@@ -218,4 +237,42 @@ func loadDatasetFile(path string) ([]optimize_api.DatasetTask, error) {
 	}
 
 	return tasks, nil
+}
+
+// loadSkillsFromDir reads skill files from a directory and returns SkillDefinitions.
+// Each file in the directory is treated as a skill: the filename (without extension)
+// becomes the skill name, and the file content becomes the skill body.
+// Subdirectories are recursed into — each file within is also loaded as a skill.
+func loadSkillsFromDir(dir string) ([]optimize_api.SkillDefinition, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("reading skill directory: %w", err)
+	}
+
+	var skills []optimize_api.SkillDefinition
+	for _, entry := range entries {
+		entryPath := filepath.Join(dir, entry.Name())
+
+		if entry.IsDir() {
+			subSkills, err := loadSkillsFromDir(entryPath)
+			if err != nil {
+				return nil, err
+			}
+			skills = append(skills, subSkills...)
+			continue
+		}
+
+		data, err := os.ReadFile(entryPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading skill file %s: %w", entry.Name(), err)
+		}
+
+		name := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+		skills = append(skills, optimize_api.SkillDefinition{
+			Name: name,
+			Body: string(data),
+		})
+	}
+
+	return skills, nil
 }

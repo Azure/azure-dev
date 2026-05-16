@@ -21,10 +21,6 @@ type EvalConfig struct {
 	// Options holds run-time options (eval_model, etc.).
 	Options *opteval.Options `yaml:"options,omitempty"`
 
-	// GenerationInstruction is the prompt used to generate adaptive evaluators
-	// and synthetic eval datasets.
-	GenerationInstruction string `yaml:"generation_instruction,omitempty"`
-
 	// MaxSamples is the maximum number of data samples to generate.
 	MaxSamples int `yaml:"max_samples,omitempty"`
 

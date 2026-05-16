@@ -32,10 +32,26 @@ type Config struct {
 
 // AgentRef references the agent under evaluation/optimization.
 type AgentRef struct {
-	Name    string               `yaml:"name"`
-	Kind    agent_yaml.AgentKind `yaml:"kind,omitempty"`
-	Version string               `yaml:"version,omitempty"`
-	Model   string               `yaml:"model,omitempty"`
+	Name             string               `yaml:"name"`
+	Kind             agent_yaml.AgentKind `yaml:"kind,omitempty"`
+	Version          string               `yaml:"version,omitempty"`
+	Model            string               `yaml:"model,omitempty"`
+	SystemPrompt     string               `yaml:"system_prompt,omitempty"`
+	SystemPromptFile string               `yaml:"system_prompt_file,omitempty"`
+	SkillDir         string               `yaml:"skill_dir,omitempty"`
+}
+
+// ResolvedSystemPrompt returns the system prompt text. If SystemPromptFile is
+// set, its contents are read and returned; otherwise SystemPrompt is returned.
+func (a *AgentRef) ResolvedSystemPrompt() string {
+	if a.SystemPromptFile != "" {
+		data, err := os.ReadFile(a.SystemPromptFile)
+		if err != nil {
+			return a.SystemPrompt
+		}
+		return string(data)
+	}
+	return a.SystemPrompt
 }
 
 // DatasetRef references a named/versioned dataset.
@@ -44,20 +60,26 @@ type DatasetRef struct {
 	Version string `yaml:"version,omitempty"`
 }
 
+// TargetConfig specifies model candidates and other target-specific configuration.
+type TargetConfig struct {
+	Model []string `yaml:"model,omitempty"`
+}
+
 // Options holds run-time options for eval and optimize.
 // Eval only uses EvalModel; optimize uses all fields.
 type Options struct {
-	EvalModel            string   `yaml:"eval_model,omitempty"`
-	Mode                 string   `yaml:"mode,omitempty"`
-	TargetAttributes     []string `yaml:"target_attributes,omitempty"`
-	Budget               int      `yaml:"budget,omitempty"`
-	MaxIterations        int      `yaml:"max_iterations,omitempty"`
-	MinImprovement       float64  `yaml:"min_improvement,omitempty"`
-	ImprovementThreshold float64  `yaml:"improvement_threshold,omitempty"`
-	PassThreshold        float64  `yaml:"pass_threshold,omitempty"`
-	KeepVersions         bool     `yaml:"keep_versions,omitempty"`
-	TasksPerIteration    int      `yaml:"tasks_per_iteration,omitempty"`
-	ReflectionModel      string   `yaml:"reflection_model,omitempty"`
+	EvalModel            string        `yaml:"eval_model,omitempty"`
+	Mode                 string        `yaml:"mode,omitempty"`
+	TargetAttributes     []string      `yaml:"target_attributes,omitempty"`
+	TargetConfig         *TargetConfig `yaml:"target_config,omitempty"`
+	Budget               int           `yaml:"budget,omitempty"`
+	MaxIterations        int           `yaml:"max_iterations,omitempty"`
+	MinImprovement       float64       `yaml:"min_improvement,omitempty"`
+	ImprovementThreshold float64       `yaml:"improvement_threshold,omitempty"`
+	PassThreshold        float64       `yaml:"pass_threshold,omitempty"`
+	KeepVersions         bool          `yaml:"keep_versions,omitempty"`
+	TasksPerIteration    int           `yaml:"tasks_per_iteration,omitempty"`
+	ReflectionModel      string        `yaml:"reflection_model,omitempty"`
 }
 
 // DefaultTargetAttributes are the default optimization target attributes.
@@ -89,9 +111,10 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 
 	if len(o.TargetAttributes) == 0 {
 		o.TargetAttributes = slices.Clone(DefaultTargetAttributes)
-		// o.MaxIterations = 5
-		// o.Budget = 100
 	}
+
+	o.MaxIterations = 3
+	o.Budget = 30
 	return nil
 }
 

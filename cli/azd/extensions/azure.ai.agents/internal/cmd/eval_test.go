@@ -481,9 +481,10 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 		Config: opteval.Config{
 			Name: "smoke-core",
 			Agent: evalAgentRef{
-				Name:    "my-agent",
-				Kind:    agent_yaml.AgentKindHosted,
-				Version: "v1",
+				Name:         "my-agent",
+				Kind:         agent_yaml.AgentKindHosted,
+				Version:      "v1",
+				SystemPrompt: "Test this agent",
 			},
 			DatasetReference: &evalDatasetRef{Name: "ds", Version: "v1"},
 			Evaluators:       []string{"builtin.task_adherence"},
@@ -491,8 +492,7 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 		Options: &opteval.Options{
 			EvalModel: "gpt-4o",
 		},
-		GenerationInstruction: "Test this agent",
-		MaxSamples:            50,
+		MaxSamples: 50,
 	}
 
 	err := writeEvalConfig(path, original)
@@ -506,7 +506,7 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 	assert.Equal(t, original.Agent.Kind, loaded.Agent.Kind)
 	assert.Equal(t, original.Agent.Version, loaded.Agent.Version)
 	assert.Equal(t, "gpt-4o", loaded.Options.EvalModel)
-	assert.Equal(t, original.GenerationInstruction, loaded.GenerationInstruction)
+	assert.Equal(t, original.Agent.SystemPrompt, loaded.Agent.SystemPrompt)
 	assert.Equal(t, original.MaxSamples, loaded.MaxSamples)
 	require.NotNil(t, loaded.DatasetReference)
 	assert.Equal(t, "ds", loaded.DatasetReference.Name)

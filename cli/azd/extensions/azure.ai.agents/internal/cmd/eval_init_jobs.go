@@ -37,23 +37,41 @@ func randomSuffix() string {
 	return hex.EncodeToString(b)
 }
 
+// resolvedSystemPrompt returns the system prompt content from flags, reading
+// from file if systemPromptFile is set.
+func resolvedSystemPrompt(flags *evalInitFlags) string {
+	if flags.systemPromptFile != "" {
+		data, err := os.ReadFile(flags.systemPromptFile) //nolint:gosec // user-provided path validated earlier
+		if err != nil {
+			return flags.systemPrompt
+		}
+		return string(data)
+	}
+	return flags.systemPrompt
+}
+
 func newEvalConfig(flags *evalInitFlags, resolved *evalResolvedContext) *evalConfig {
+	agent := evalAgentRef{
+		Name:    resolved.agentName,
+		Kind:    resolved.agentKind,
+		Version: resolved.version,
+	}
+	if flags.systemPromptFile != "" {
+		agent.SystemPromptFile = flags.systemPromptFile
+	} else {
+		agent.SystemPrompt = flags.systemPrompt
+	}
 	return &evalConfig{
 		Config: opteval.Config{
-			Name: resolveEvalName(flags),
-			Agent: evalAgentRef{
-				Name:    resolved.agentName,
-				Kind:    resolved.agentKind,
-				Version: resolved.version,
-			},
+			Name:  resolveEvalName(flags),
+			Agent: agent,
 		},
 		Options: &opteval.Options{
 			EvalModel:        flags.evalModel,
 			TargetAttributes: opteval.DefaultTargetAttributes,
 		},
-		GenerationInstruction: flags.genInstruction,
-		MaxSamples:            flags.maxSamples,
-		TraceDays:             flags.traceDays,
+		MaxSamples: flags.maxSamples,
+		TraceDays:  flags.traceDays,
 	}
 }
 
@@ -63,8 +81,9 @@ func submitDatasetGeneration(
 	flags *evalInitFlags,
 ) (*eval_api.GenerationJob, error) {
 	// Traces are only supported for evaluator generation, not dataset generation.
+	prompt := resolvedSystemPrompt(flags)
 	sources := eval_api.BuildGenerationSources(
-		string(resolved.agentKind), resolved.agentName, resolved.version, flags.genInstruction, nil,
+		string(resolved.agentKind), resolved.agentName, resolved.version, prompt, nil,
 	)
 	request := eval_api.NewDataGenerationJobRequest(
 		resolveEvalName(flags), flags.evalModel, flags.maxSamples, sources,
@@ -84,8 +103,9 @@ func submitEvaluatorGeneration(
 	if flags.traceDays > 0 {
 		traces = &eval_api.TraceOptions{Days: flags.traceDays}
 	}
+	prompt := resolvedSystemPrompt(flags)
 	sources := eval_api.BuildGenerationSources(
-		string(resolved.agentKind), resolved.agentName, resolved.version, flags.genInstruction, traces,
+		string(resolved.agentKind), resolved.agentName, resolved.version, prompt, traces,
 	)
 	request := eval_api.NewEvaluatorGenerationJobRequest(
 		resolveEvalName(flags), flags.evalModel, sources,

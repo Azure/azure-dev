@@ -1,3 +1,3 @@
-# `azd` Demo Extension
+# Foundry Agent Inspector
 
-An azd Demo extension
+Agent Inspector tool. (Preview)

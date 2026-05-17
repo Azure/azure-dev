@@ -1,3 +1,3 @@
-# `azd` Demo Extension
+# Foundry Routines
 
-An azd Demo extension
+Manage Microsoft Foundry Routines from your terminal. (Preview)

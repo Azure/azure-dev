@@ -1,3 +1,3 @@
-# `azd` Demo Extension
+# Foundry Skills
 
-An azd Demo extension
+Manage Microsoft Foundry Skills from your terminal. (Preview)

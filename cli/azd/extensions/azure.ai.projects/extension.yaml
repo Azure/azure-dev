@@ -1,7 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
 capabilities:
     - custom-commands
-    - mcp-server
     - metadata
 description: Manage Microsoft Foundry Project resources from your terminal. (Preview)
 displayName: Foundry Projects (Preview)

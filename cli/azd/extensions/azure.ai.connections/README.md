@@ -1,3 +1,3 @@
-# `azd` Demo Extension
+# Foundry Connections
 
-An azd Demo extension
+Manage Microsoft Foundry Connections from your terminal. (Preview)

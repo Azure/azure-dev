@@ -12,7 +12,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:  "toolbox",
 		Use:   "toolbox <command> [options]",
-		Short: "Managed Microsoft Foundry Toolboxes from your terminal. (Preview)",
+		Short: "Manage Microsoft Foundry Toolboxes from your terminal. (Preview)",
 	})
 
 	rootCmd.SilenceUsage = true

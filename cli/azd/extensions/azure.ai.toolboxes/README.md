@@ -1,3 +1,3 @@
-# `azd` Demo Extension
+# Foundry Toolboxes
 
-An azd Demo extension
+Manage Microsoft Foundry Toolboxes from your terminal. (Preview)

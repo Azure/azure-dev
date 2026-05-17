@@ -1,3 +1,3 @@
-# `azd` Demo Extension
+# Foundry Projects
 
-An azd Demo extension
+Manage Microsoft Foundry Project resources from your terminal. (Preview)

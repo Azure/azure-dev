@@ -1,0 +1,57 @@
+# Required Approval Gate for azure.ai.toolboxes Extension
+#
+# Ensures at least one designated team member approves PRs that modify
+# the azure.ai.toolboxes extension before they can merge.
+#
+# Uses the shared approval script at .github/scripts/pr-approval-foundry-extensions-shared.js.
+# To change the required approvers list, update the REQUIRED_APPROVERS env var below
+# or modify the default list in the shared script.
+
+name: ext-azure-ai-toolboxes-approval
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/azure.ai.toolboxes/**"
+      - ".github/workflows/approval-ext-azure-ai-toolboxes.yml"
+      - ".github/scripts/pr-approval-foundry-extensions-shared.js"
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  statuses: write
+
+jobs:
+  required-approval:
+    name: Required Approval
+    if: |
+      github.event_name == 'pull_request' ||
+      github.event_name == 'pull_request_review' ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/toolboxes-extension-approval override'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check for required team approval
+        uses: actions/github-script@v9
+        env:
+          EXTENSION_PATH: "cli/azd/extensions/azure.ai.toolboxes/"
+          WORKFLOW_PATH: ".github/workflows/approval-ext-azure-ai-toolboxes.yml"
+          OVERRIDE_COMMAND: "/toolboxes-extension-approval override"
+        with:
+          script: |
+            const script = require('./.github/scripts/pr-approval-foundry-extensions-shared.js');
+            await script({ github, context, core });

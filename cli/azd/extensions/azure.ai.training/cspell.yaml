@@ -1,0 +1,12 @@
+import: ../../.vscode/cspell.yaml
+words:
+  - azcopy
+  - azureml
+  - azuremlschemas
+  - foundry
+  - hyperparameter
+  - hyperparameters
+  - jupyter
+  - mlflow
+  - tensorboard
+  - uami

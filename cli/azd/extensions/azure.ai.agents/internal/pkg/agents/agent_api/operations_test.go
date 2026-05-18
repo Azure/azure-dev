@@ -115,20 +115,69 @@ func requireIsolationHeaders(
 }
 
 func TestSessionRequestOptions_ApplyHeaders(t *testing.T) {
-	headers := http.Header{}
-	headers.Set("Authorization", "Bearer unchanged")
-
-	options := &SessionRequestOptions{
-		UserIsolationKey: "user-1",
-		ChatIsolationKey: "chat-1",
+	tests := []struct {
+		name        string
+		options     *SessionRequestOptions
+		wantUser    string
+		wantChat    string
+		wantSession string
+	}{
+		{name: "nil options"},
+		{
+			name:    "empty options",
+			options: &SessionRequestOptions{},
+		},
+		{
+			name: "user only",
+			options: &SessionRequestOptions{
+				UserIsolationKey: "user-1",
+			},
+			wantUser: "user-1",
+		},
+		{
+			name: "chat only",
+			options: &SessionRequestOptions{
+				ChatIsolationKey: "chat-1",
+			},
+			wantChat: "chat-1",
+		},
+		{
+			name: "session only",
+			options: &SessionRequestOptions{
+				SessionIsolationKey: "session-1",
+			},
+			wantSession: "session-1",
+		},
+		{
+			name: "all headers",
+			options: &SessionRequestOptions{
+				SessionIsolationKey: "session-1",
+				UserIsolationKey:    "user-1",
+				ChatIsolationKey:    "chat-1",
+			},
+			wantUser:    "user-1",
+			wantChat:    "chat-1",
+			wantSession: "session-1",
+		},
 	}
 
-	options.ApplyHeaders(headers)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			headers := http.Header{}
+			headers.Set("Authorization", "Bearer unchanged")
 
-	require.Equal(t, "Bearer unchanged", headers.Get("Authorization"))
-	require.Equal(t, "user-1", headers.Get(AgentUserIsolationKeyHeader))
-	require.Equal(t, "chat-1", headers.Get(AgentChatIsolationKeyHeader))
-	require.Empty(t, headers.Values(SessionIsolationKeyHeader))
+			tt.options.ApplyHeaders(headers)
+
+			require.Equal(t, "Bearer unchanged", headers.Get("Authorization"))
+			requireIsolationHeaders(
+				t,
+				&http.Request{Header: headers},
+				tt.wantUser,
+				tt.wantChat,
+				tt.wantSession,
+			)
+		})
+	}
 }
 
 func TestDeleteSession_Accepts200(t *testing.T) {

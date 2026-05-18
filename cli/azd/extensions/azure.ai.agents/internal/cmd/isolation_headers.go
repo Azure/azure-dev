@@ -22,13 +22,15 @@ func addIsolationHeaderFlags(cmd *cobra.Command, flags *isolationHeaderFlags) {
 		&flags.userIsolationKey,
 		"user-isolation-key",
 		"",
-		"Foundry user isolation key header value ("+agent_api.AgentUserIsolationKeyHeader+")",
+		"Foundry user isolation key header value ("+agent_api.AgentUserIsolationKeyHeader+
+			"); independent of session ownership --isolation-key",
 	)
 	cmd.Flags().StringVar(
 		&flags.chatIsolationKey,
 		"chat-isolation-key",
 		"",
-		"Foundry chat isolation key header value ("+agent_api.AgentChatIsolationKeyHeader+")",
+		"Foundry chat isolation key header value ("+agent_api.AgentChatIsolationKeyHeader+
+			"); independent of session ownership --isolation-key",
 	)
 }
 

@@ -72,6 +72,18 @@ func (a *createAction) Run(ctx context.Context) error {
 		return err
 	}
 
+	// In package mode, --force is destructive: it deletes the existing skill
+	// by positional name before we have any guarantee that the archive being
+	// uploaded targets the same skill. Peek into the archive's SKILL.md and
+	// verify the embedded `name` matches the positional argument *before*
+	// any destructive call. If the archive omits `name`, we accept it (the
+	// positional argument wins, matching inline/file-md behavior).
+	if mode == modeFilePackage && a.flags.force {
+		if err := verifyPackageNameMatches(a.flags.file, a.flags.name); err != nil {
+			return err
+		}
+	}
+
 	// Honor --force by deleting the existing skill first.
 	if a.flags.force {
 		if _, delErr := skillCtx.client.Delete(ctx, a.flags.name); delErr != nil {
@@ -199,6 +211,49 @@ func printCreateResult(s *skill_api.Skill, format string) error {
 	}
 	fmt.Printf("Skill %q created.\n", s.Name)
 	return printSkillDetail(s, outputTable)
+}
+
+// verifyPackageNameMatches peeks SKILL.md from a .tar.gz archive and ensures
+// its front-matter `name` (when present) matches the positional argument the
+// user supplied. This guards `--force` in package mode against the
+// destructive sequence "delete positional name, then upload archive that
+// targets a different skill": without this check, a typo in the positional
+// argument can wipe out an unrelated skill before the import is even
+// attempted.
+//
+// Returns nil when the archive's SKILL.md is missing a `name` field (legacy
+// archives), or when the embedded name matches positionalName. Returns a
+// structured validation error otherwise.
+func verifyPackageNameMatches(archivePath, positionalName string) error {
+	f, openErr := os.Open(archivePath) //nolint:gosec // user-supplied path opened on their behalf
+	if openErr != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("cannot open %s: %s", archivePath, openErr),
+			"verify the file is readable",
+		)
+	}
+	defer f.Close()
+
+	archiveName, peekErr := skill_api.PeekArchiveSkillName(f)
+	if peekErr != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("cannot inspect %s: %s", archivePath, peekErr),
+			"ensure the archive is a valid .tar.gz containing a SKILL.md file",
+		)
+	}
+	if archiveName == "" || archiveName == positionalName {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidSkillFile,
+		fmt.Sprintf(
+			"--force refused: archive declares name %q which does not match positional argument %q",
+			archiveName, positionalName,
+		),
+		"re-run without --force, or fix the positional name / archive so they agree",
+	)
 }
 
 // --- mode selection ---

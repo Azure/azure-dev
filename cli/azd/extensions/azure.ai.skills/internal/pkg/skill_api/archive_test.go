@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -202,4 +203,43 @@ func TestValidateEntryName(t *testing.T) {
 		require.Equal(t, c.wantOK, ok, "input=%q", c.in)
 		require.Equal(t, c.want, got, "input=%q", c.in)
 	}
+}
+
+// TestSafeExtract_RejectsSymlinkParentEscape verifies that SafeExtract refuses
+// to write a file when a path component of the destination is a pre-existing
+// symlink that points outside opts.OutputDir.
+func TestSafeExtract_RejectsSymlinkParentEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks on Windows requires elevated privileges")
+	}
+
+	outDir := t.TempDir()
+	escapeTarget := t.TempDir() // outside outDir
+
+	// Create a legitimate subdirectory name inside outDir that is actually a
+	// symlink pointing to escapeTarget.
+	symlinkPath := filepath.Join(outDir, "subdir")
+	require.NoError(t, os.Symlink(escapeTarget, symlinkPath))
+
+	// Build a tar.gz with an entry "subdir/secret.txt". After extraction the
+	// copy phase would try to write outDir/subdir/secret.txt, which resolves
+	// via the symlink to escapeTarget/secret.txt — outside outDir.
+	archive := makeTarGz(t, []tar.Header{
+		{Name: "subdir/secret.txt", Typeflag: tar.TypeReg, Mode: 0600},
+	}, map[string][]byte{
+		"subdir/secret.txt": []byte("secret"),
+	})
+
+	opts := ExtractOptions{
+		OutputDir:            outDir,
+		MaxEntries:           10,
+		MaxTotalUncompressed: 1 << 20,
+	}
+	_, err := SafeExtract(bytes.NewReader(archive), opts)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrUnsafeEntry), "expected ErrUnsafeEntry, got %v", err)
+
+	// Verify the file was NOT written to the symlink target.
+	_, statErr := os.Stat(filepath.Join(escapeTarget, "secret.txt"))
+	require.True(t, os.IsNotExist(statErr), "file must not be written through symlink to escape target")
 }

@@ -88,21 +88,46 @@ func (a *downloadAction) writeRaw(body io.Reader, outputDir string) error {
 
 	archivePath := filepath.Join(outputDir, a.flags.name+".tar.gz")
 
-	if !a.flags.force {
-		if _, statErr := os.Lstat(archivePath); statErr == nil {
+	// Always Lstat (even with --force) so we never follow a symlink and so we
+	// refuse to overwrite a non-regular file (directory, device, socket, ...).
+	if statInfo, statErr := os.Lstat(archivePath); statErr == nil {
+		if statInfo.Mode()&os.ModeSymlink != 0 {
+			return exterrors.Validation(
+				exterrors.CodeSkillOutputCollision,
+				fmt.Sprintf("%s is a symlink; refusing to follow", archivePath),
+				"remove the symlink and re-run",
+			)
+		}
+		if !statInfo.Mode().IsRegular() {
+			return exterrors.Validation(
+				exterrors.CodeSkillOutputCollision,
+				fmt.Sprintf("%s exists and is not a regular file", archivePath),
+				"remove or rename the existing entry and re-run",
+			)
+		}
+		if !a.flags.force {
 			return exterrors.Validation(
 				exterrors.CodeSkillOutputCollision,
 				fmt.Sprintf("%s already exists", archivePath),
 				"pass --force to overwrite",
 			)
-		} else if !errors.Is(statErr, os.ErrNotExist) {
-			return fmt.Errorf("stat %s: %w", archivePath, statErr)
 		}
+		// --force: remove the existing regular file so the subsequent O_EXCL
+		// open creates a fresh file owned by this process. This avoids any
+		// TOCTOU window where the path could be swapped for a symlink between
+		// the Lstat and the open.
+		if rmErr := os.Remove(archivePath); rmErr != nil {
+			return fmt.Errorf("remove existing archive: %w", rmErr)
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return fmt.Errorf("stat %s: %w", archivePath, statErr)
 	}
 
-	// O_TRUNC ensures --force overwrites cleanly.
+	// O_EXCL guarantees we create the file ourselves; if anything appeared
+	// at archivePath in the meantime (e.g. a freshly-planted symlink), the
+	// open fails rather than silently following it.
 	//nolint:gosec // archivePath is built from user-supplied --output-dir + skill name, written on user behalf
-	f, err := os.OpenFile(archivePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	f, err := os.OpenFile(archivePath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0600)
 	if err != nil {
 		return fmt.Errorf("create archive: %w", err)
 	}

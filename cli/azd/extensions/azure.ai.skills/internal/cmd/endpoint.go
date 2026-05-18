@@ -5,8 +5,11 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"net/url"
 	"os"
+	"strings"
 
 	"azureaiskills/internal/exterrors"
 
@@ -48,12 +51,14 @@ const (
 //  4. Host env var FOUNDRY_PROJECT_ENDPOINT.
 //  5. Structured error.
 //
-// The endpoint string is returned verbatim; URL validation is left to the
-// caller (the existing agents extension validates against a Foundry-host
-// suffix list, but the skills surface accepts any reachable HTTPS endpoint
-// against the data plane, so we defer that check to the actual HTTP call).
+// Each resolved value is validated to be an absolute https:// URL.
+// Host-suffix validation is intentionally deferred to the HTTP layer — the
+// skills data plane accepts any reachable HTTPS Foundry endpoint.
 func resolveProjectEndpoint(ctx context.Context, flagEndpoint string) (string, endpointSource, error) {
 	if flagEndpoint != "" {
+		if err := validateEndpoint(flagEndpoint); err != nil {
+			return "", "", err
+		}
 		return flagEndpoint, sourceFlag, nil
 	}
 
@@ -69,6 +74,9 @@ func resolveProjectEndpoint(ctx context.Context, flagEndpoint string) (string, e
 				EnvName: envResp.Environment.Name,
 				Key:     azdEnvKey,
 			}); valErr == nil && valResp.Value != "" {
+				if err := validateEndpoint(valResp.Value); err != nil {
+					return "", "", err
+				}
 				return valResp.Value, sourceAzdEnv, nil
 			}
 		}
@@ -81,6 +89,9 @@ func resolveProjectEndpoint(ctx context.Context, flagEndpoint string) (string, e
 					if key == agentsContextEndpointKey {
 						log.Printf("resolveProjectEndpoint: using fallback global config key %q", agentsContextEndpointKey)
 					}
+					if err := validateEndpoint(endpoint); err != nil {
+						return "", "", err
+					}
 					return endpoint, sourceGlobalConfig, nil
 				}
 			}
@@ -89,6 +100,9 @@ func resolveProjectEndpoint(ctx context.Context, flagEndpoint string) (string, e
 
 	// 4. Host env var.
 	if ep := os.Getenv(foundryEnvKey); ep != "" {
+		if err := validateEndpoint(ep); err != nil {
+			return "", "", err
+		}
 		return ep, sourceFoundryEnv, nil
 	}
 
@@ -100,4 +114,21 @@ func resolveProjectEndpoint(ctx context.Context, flagEndpoint string) (string, e
 			"persist a workspace default with `azd ai agent project set <endpoint>`, "+
 			"or export "+foundryEnvKey+" in your shell",
 	)
+}
+
+// validateEndpoint returns an error when the endpoint is not an absolute
+// https:// URL.  Host-suffix validation is intentionally deferred to the
+// SDK layer; the skills surface accepts any reachable HTTPS Foundry endpoint.
+func validateEndpoint(endpoint string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid project endpoint %q: %w", endpoint, err)
+	}
+	if !strings.EqualFold(u.Scheme, "https") {
+		return fmt.Errorf("invalid project endpoint %q: must use https scheme", endpoint)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("invalid project endpoint %q: missing host", endpoint)
+	}
+	return nil
 }

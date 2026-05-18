@@ -1135,11 +1135,19 @@ func captureInvocationLROPollRequests(
 
 	// Use two-poll scenario: first poll returns "running", second returns "completed".
 	// Verify that isolation headers are sent on every poll, not just the first.
-	const numPolls = 2
+	if len(pollBodies) == 0 {
+		pollBodies = []string{
+			`{"status":"running"}`,
+			`{"status":"completed"}`,
+		}
+	}
+
+	numPolls := len(pollBodies)
 	pollReqCh := make(chan *http.Request, numPolls)
 	respQueue := make(chan string, numPolls)
-	respQueue <- `{"status":"running"}`
-	respQueue <- `{"status":"completed"}`
+	for _, body := range pollBodies {
+		respQueue <- body
+	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		pollReqCh <- r
@@ -1173,21 +1181,36 @@ func captureInvocationLROPollRequests(
 	}
 
 	close(pollReqCh)
-	var count int
+	pollRequests := make([]*http.Request, 0, numPolls)
 	for r := range pollReqCh {
-		count++
-		if got := r.Header.Get("Authorization"); got != "Bearer token" {
-			t.Errorf("poll %d: Authorization = %q, want Bearer token", count, got)
-		}
-		if got := r.Header.Get(agent_api.AgentUserIsolationKeyHeader); got != "user-1" {
-			t.Errorf("poll %d: %s = %q, want user-1", count, agent_api.AgentUserIsolationKeyHeader, got)
-		}
-		if got := r.Header.Get(agent_api.AgentChatIsolationKeyHeader); got != "chat-1" {
-			t.Errorf("poll %d: %s = %q, want chat-1", count, agent_api.AgentChatIsolationKeyHeader, got)
-		}
+		pollRequests = append(pollRequests, r)
 	}
-	if count != numPolls {
-		t.Errorf("expected %d poll requests, got %d", numPolls, count)
+	if len(pollRequests) != numPolls {
+		t.Errorf("expected %d poll requests, got %d", numPolls, len(pollRequests))
+	}
+
+	return pollRequests
+}
+
+func assertPollRequestsHaveHeaders(
+	t *testing.T,
+	pollRequests []*http.Request,
+	wantUser string,
+	wantChat string,
+) {
+	t.Helper()
+
+	for i, r := range pollRequests {
+		pollNumber := i + 1
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Errorf("poll %d: Authorization = %q, want Bearer token", pollNumber, got)
+		}
+		if got := r.Header.Get(agent_api.AgentUserIsolationKeyHeader); got != wantUser {
+			t.Errorf("poll %d: %s = %q, want %q", pollNumber, agent_api.AgentUserIsolationKeyHeader, got, wantUser)
+		}
+		if got := r.Header.Get(agent_api.AgentChatIsolationKeyHeader); got != wantChat {
+			t.Errorf("poll %d: %s = %q, want %q", pollNumber, agent_api.AgentChatIsolationKeyHeader, got, wantChat)
+		}
 	}
 }
 

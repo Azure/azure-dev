@@ -15,7 +15,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
@@ -268,7 +268,7 @@ func ensureAzdProject(ctx context.Context, flags *initFlags, azdClient *azdext.A
 		return nil
 	}
 
-	fmt.Println("Lets get your project initialized.")
+	fmt.Println("Let's get your project initialized.")
 
 	initArgs := []string{"init", "--minimal"}
 	if flags.NoPrompt {

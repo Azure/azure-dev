@@ -66,6 +66,34 @@ func TestApplyAgentMetadata(t *testing.T) {
 	}
 }
 
+type fakeProjectAgentChecker struct {
+	err error
+}
+
+func (f fakeProjectAgentChecker) GetAgent(
+	context.Context,
+	string,
+	string,
+) (*agent_api.AgentObject, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+
+	return &agent_api.AgentObject{}, nil
+}
+
+func TestWriteExistingAgentVersionWarningIfPresentSkipsErrors(t *testing.T) {
+	t.Parallel()
+
+	wroteWarning := writeExistingAgentVersionWarningIfPresent(
+		t.Context(),
+		fakeProjectAgentChecker{err: errors.New("lookup failed")},
+		"test-agent",
+	)
+
+	require.False(t, wroteWarning)
+}
+
 func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {
 	t.Parallel()
 

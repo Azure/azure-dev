@@ -408,8 +408,18 @@ func resolveExistingAgentNameConflict(
 	}
 
 	agentClient := agent_api.NewAgentClient(endpointResp.Value, credential)
+	return resolveExistingAgentNameConflictWithChecker(ctx, azdClient, agentClient, noPrompt, agentName)
+}
+
+func resolveExistingAgentNameConflictWithChecker(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentChecker agents.AgentChecker,
+	noPrompt bool,
+	agentName string,
+) (string, error) {
 	for {
-		exists, err := agents.AgentExists(ctx, agentClient, agentName, DefaultAgentAPIVersion)
+		exists, err := agents.AgentExists(ctx, agentChecker, agentName, DefaultAgentAPIVersion)
 		if err != nil {
 			return "", fmt.Errorf("checking whether agent %q exists: %w", agentName, err)
 		}
@@ -417,9 +427,9 @@ func resolveExistingAgentNameConflict(
 			return agentName, nil
 		}
 
-		fmt.Printf("%s", agents.ExistingAgentWarning(agentName))
+		fmt.Fprintf(os.Stderr, "%s", agents.ExistingAgentWarning(agentName))
 		if noPrompt {
-			fmt.Printf("%s", output.WithGrayFormat(
+			fmt.Fprintf(os.Stderr, "%s", output.WithGrayFormat(
 				"To create a separate agent, re-run init with --agent-name <unique-name>.\n",
 			))
 			return agentName, nil
@@ -429,7 +439,7 @@ func resolveExistingAgentNameConflict(
 			Options: &azdext.ConfirmOptions{
 				Message:      "Continue with this existing agent name?",
 				DefaultValue: new(false),
-				HelpMessage:  "Choose no to enter a different Foundry agent name before agent.yaml is written.",
+				HelpMessage:  "Choose no to enter a different Foundry agent name.",
 			},
 		})
 		if err != nil {
@@ -439,6 +449,15 @@ func resolveExistingAgentNameConflict(
 			return agentName, nil
 		}
 
+		agentName, err = promptForReplacementAgentName(ctx, azdClient, agentName)
+		if err != nil {
+			return "", err
+		}
+	}
+}
+
+func promptForReplacementAgentName(ctx context.Context, azdClient *azdext.AzdClient, agentName string) (string, error) {
+	for {
 		promptResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:      "Enter a different name for your agent",
@@ -455,11 +474,28 @@ func resolveExistingAgentNameConflict(
 			nextName = nextAgentNameSuggestion(agentName)
 		}
 
-		agentName, err = validateInitAgentName(nextName)
+		validName, err := validateInitAgentName(nextName)
 		if err != nil {
-			return "", err
+			writeValidationRetryError(err)
+			continue
 		}
+
+		return validName, nil
 	}
+}
+
+func writeValidationRetryError(err error) {
+	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok && localErr.Suggestion != "" {
+		fmt.Fprintf(
+			os.Stderr,
+			"%s\n%s\n",
+			output.WithErrorFormat(localErr.Message),
+			output.WithGrayFormat(localErr.Suggestion),
+		)
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "%s\n", output.WithErrorFormat(err.Error()))
 }
 
 // runInitFromManifest sets up Azure context, credentials, console, and runs the

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -838,6 +839,24 @@ type deployPrepResult struct {
 
 func writeExistingAgentVersionWarning(agentName string) {
 	fmt.Fprintf(os.Stderr, "%s", agents.ExistingAgentWarning(agentName))
+}
+
+func writeExistingAgentVersionWarningIfPresent(
+	ctx context.Context,
+	agentChecker agents.AgentChecker,
+	agentName string,
+) bool {
+	exists, err := agents.AgentExists(ctx, agentChecker, agentName, agentAPIVersion)
+	if err != nil {
+		log.Printf("existing agent name check skipped for %q: %v", agentName, err)
+		return false
+	}
+	if exists {
+		writeExistingAgentVersionWarning(agentName)
+		return true
+	}
+
+	return false
 }
 
 // prepareDeploy handles the common pre-deploy logic shared by container and code
@@ -1702,13 +1721,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 		p.credential,
 	)
 
-	exists, err := agents.AgentExists(ctx, agentClient, request.Name, agentAPIVersion)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check if agent exists: %w", err)
-	}
-	if exists {
-		writeExistingAgentVersionWarning(request.Name)
-	}
+	writeExistingAgentVersionWarningIfPresent(ctx, agentClient, request.Name)
 
 	// Extract CreateAgentVersionRequest from CreateAgentRequest
 	versionRequest := &agent_api.CreateAgentVersionRequest{

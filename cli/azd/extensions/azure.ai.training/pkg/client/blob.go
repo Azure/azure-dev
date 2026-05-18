@@ -20,7 +20,7 @@ func (c *Client) GetBlobContent(ctx context.Context, sasURI string) (string, int
 		return "", 0, fmt.Errorf("failed to create blob request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, nil)
 	if err != nil {
 		return "", 0, fmt.Errorf("blob request failed: %w", err)
 	}

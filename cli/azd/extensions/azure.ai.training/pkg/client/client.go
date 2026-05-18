@@ -7,10 +7,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -92,7 +95,7 @@ func (c *Client) doDataPlaneWithVersion(ctx context.Context, method, path, apiVe
 		fmt.Printf("[DEBUG] %s %s\n", method, reqURL)
 	}
 
-	var bodyReader io.Reader
+	var bodyBytes []byte
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
@@ -101,9 +104,13 @@ func (c *Client) doDataPlaneWithVersion(ctx context.Context, method, path, apiVe
 		if c.debugBody {
 			fmt.Printf("[DEBUG] Request body: %s\n", string(data))
 		}
-		bodyReader = bytes.NewReader(data)
+		bodyBytes = data
 	}
 
+	var bodyReader io.Reader
+	if bodyBytes != nil {
+		bodyReader = bytes.NewReader(bodyBytes)
+	}
 	req, err := http.NewRequestWithContext(ctx, method, reqURL, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -114,12 +121,110 @@ func (c *Client) doDataPlaneWithVersion(ctx context.Context, method, path, apiVe
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, bodyBytes)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
 	return resp, nil
+}
+
+// do executes req with a small retry policy. It retries on transient network
+// errors and HTTP 429 / 502 / 503 / 504 responses with exponential backoff and
+// jitter, honoring Retry-After on 429 / 503 responses. bodyBytes, when non-nil,
+// is used to reset the request body between attempts. Max 3 attempts.
+func (c *Client) do(req *http.Request, bodyBytes []byte) (*http.Response, error) {
+	const maxAttempts = 3
+	const baseDelay = 500 * time.Millisecond
+	const maxDelay = 8 * time.Second
+
+	var lastResp *http.Response
+	var lastErr error
+	ctx := req.Context()
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if bodyBytes != nil {
+			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		}
+
+		resp, err := c.httpClient.Do(req)
+		lastResp, lastErr = resp, err
+
+		if err == nil && !isRetriableStatus(resp.StatusCode) {
+			return resp, nil
+		}
+		if err != nil && !isRetriableNetError(err) {
+			return nil, err
+		}
+		if attempt == maxAttempts {
+			break
+		}
+
+		delay := backoffDelay(attempt, baseDelay, maxDelay)
+		if resp != nil {
+			if ra := parseRetryAfter(resp.Header.Get("Retry-After")); ra > 0 {
+				delay = ra
+			}
+			// Drain and close so the connection can be reused.
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+			_ = resp.Body.Close()
+			lastResp = nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return lastResp, nil
+}
+
+func isRetriableStatus(code int) bool {
+	return code == http.StatusTooManyRequests ||
+		code == http.StatusBadGateway ||
+		code == http.StatusServiceUnavailable ||
+		code == http.StatusGatewayTimeout
+}
+
+func isRetriableNetError(err error) bool {
+	// Don't retry on context cancellation/timeout; those are caller-driven.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	// All other transport-level errors (DNS, reset, EOF, transient TLS) are
+	// worth one more attempt.
+	return true
+}
+
+func backoffDelay(attempt int, base, max time.Duration) time.Duration {
+	// Exponential: base * 2^(attempt-1)
+	delay := base << (attempt - 1)
+	if delay <= 0 || delay > max {
+		delay = max
+	}
+	// Full jitter in [delay/2, delay].
+	jitter := time.Duration(rand.Int63n(int64(delay) / 2))
+	return delay/2 + jitter
+}
+
+func parseRetryAfter(h string) time.Duration {
+	if h == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(strings.TrimSpace(h)); err == nil && secs >= 0 {
+		return time.Duration(secs) * time.Second
+	}
+	if t, err := http.ParseTime(h); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d
+		}
+	}
+	return 0
 }
 
 // doDataPlane executes an authenticated HTTP request against the data plane.

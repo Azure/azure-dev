@@ -125,7 +125,7 @@ func (c *Client) ListRunArtifacts(
 		fmt.Printf("[DEBUG] GET %s\n", reqURL)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, nil)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -170,7 +170,7 @@ func (c *Client) GetRunArtifactContentInfo(
 		fmt.Printf("[DEBUG] GET %s\n", reqURL)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req, nil)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}

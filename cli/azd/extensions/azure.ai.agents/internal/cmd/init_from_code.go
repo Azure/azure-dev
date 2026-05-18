@@ -21,6 +21,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -822,8 +823,7 @@ func (a *InitFromCodeAction) writeDefinitionToSrcDir(definition *agent_yaml.Cont
 	// Generate .agentignore if it doesn't already exist
 	agentIgnorePath := filepath.Join(srcDir, ".agentignore")
 	if _, err := os.Stat(agentIgnorePath); os.IsNotExist(err) {
-		//nolint:gosec // generated ignore file should be readable by tooling and users
-		if err := os.WriteFile(agentIgnorePath, []byte(project.DefaultAgentIgnoreContent()), 0644); err != nil {
+		if err := os.WriteFile(agentIgnorePath, []byte(project.DefaultAgentIgnoreContent()), osutil.PermissionFile); err != nil {
 			return "", fmt.Errorf("writing .agentignore: %w", err)
 		}
 	}

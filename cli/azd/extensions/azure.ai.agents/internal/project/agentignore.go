@@ -37,36 +37,9 @@ var metadataExclusions = []string{
 	agentIgnoreFileName,
 }
 
-// defaultExclusions are the built-in exclusion patterns applied when no .agentignore file exists.
-var defaultExclusions = []string{
-	// azd tooling files
-	"agent.yaml",
-	"agent.manifest.yaml",
-	"azure.yaml",
-	".agentignore",
-
-	// Python
-	"__pycache__/",
-	".venv/",
-	"venv/",
-	"*.pyc",
-	"*.pyo",
-	".mypy_cache/",
-	".pytest_cache/",
-
-	// .NET
-	"bin/",
-	"obj/",
-	"*.user",
-	"*.suo",
-	".vs/",
-
-	// Node
-	"node_modules/",
-
-	// Git
-	".git/",
-}
+// defaultExclusions are applied when no .agentignore file exists.
+// Generated from DefaultAgentIgnoreContent() to maintain a single source of truth.
+var defaultExclusionsContent = DefaultAgentIgnoreContent()
 
 // utf8BOM is the byte order mark that some Windows editors prepend to UTF-8 files.
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
@@ -77,14 +50,12 @@ type agentIgnoreMatcher struct {
 	securityPaths []string            // always excluded, non-negotiable
 	defaultIgnore gitignore.GitIgnore // used when no .agentignore file exists
 	hasUserIgnore bool
-	srcDir        string
 }
 
 // newAgentIgnoreMatcher creates a matcher by reading .agentignore from srcDir.
 // If no .agentignore exists, defaults are used.
 func newAgentIgnoreMatcher(srcDir string) (*agentIgnoreMatcher, error) {
 	m := &agentIgnoreMatcher{
-		srcDir:        srcDir,
 		securityPaths: securityExclusions,
 	}
 
@@ -100,7 +71,7 @@ func newAgentIgnoreMatcher(srcDir string) (*agentIgnoreMatcher, error) {
 	} else {
 		// No .agentignore file — use defaults
 		m.defaultIgnore = gitignore.New(
-			strings.NewReader(strings.Join(defaultExclusions, "\n")),
+			strings.NewReader(defaultExclusionsContent),
 			srcDir,
 			nil,
 		)

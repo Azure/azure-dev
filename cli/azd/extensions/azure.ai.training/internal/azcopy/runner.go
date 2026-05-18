@@ -206,10 +206,25 @@ func (r *Runner) copy(ctx context.Context, source, sasURI string, forceContents 
 		}
 	}
 
+	// Capture any scanner error (e.g. truncated pipe, read failure) before waiting
+	// on the process. We always call cmd.Wait so the child is reaped and its exit
+	// status is authoritative, but if the scanner failed we surface that too —
+	// otherwise a mid-stream pipe error could hide a real upload failure.
+	scanErr := scanner.Err()
+
 	if err := cmd.Wait(); err != nil {
 		elapsed := time.Since(startTime)
 		fmt.Fprintf(os.Stdout, "\n  Upload failed after %s\n", formatDuration(elapsed))
+		if scanErr != nil {
+			return fmt.Errorf("azcopy failed: %w (also: error reading azcopy output: %v)", err, scanErr)
+		}
 		return fmt.Errorf("azcopy failed: %w", err)
+	}
+
+	if scanErr != nil {
+		elapsed := time.Since(startTime)
+		fmt.Fprintf(os.Stdout, "\n  Upload status uncertain after %s\n", formatDuration(elapsed))
+		return fmt.Errorf("azcopy exited successfully but its output stream failed mid-transfer: %w", scanErr)
 	}
 
 	elapsed := time.Since(startTime)

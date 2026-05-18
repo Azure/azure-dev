@@ -22,9 +22,10 @@ import (
 
 const (
 	// DataPlaneAPIVersion is the api-version query parameter applied to every
-	// request. Pinned to the preview that exposes the Skills surface; bump in
-	// lockstep with the rest of the AI extension surface.
-	DataPlaneAPIVersion = "2025-11-15-preview"
+	// request. The Skills surface lives under the `v1` data-plane API version;
+	// the preview opt-in is communicated separately via the `Foundry-Features`
+	// header (see SkillsPreviewOptIn below).
+	DataPlaneAPIVersion = "v1"
 
 	// FoundryFeaturesHeader is the HTTP header that carries the preview opt-in.
 	FoundryFeaturesHeader = "Foundry-Features"

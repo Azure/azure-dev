@@ -14,7 +14,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newJobDeleteCommand() *cobra.Command {
+func newJobDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	extCtx = ensureExtensionContext(extCtx)
 	var name string
 	var yes bool
 
@@ -39,7 +40,7 @@ func newJobDeleteCommand() *cobra.Command {
 			// mode (global --no-prompt or non-TTY) we refuse to delete without --yes
 			// rather than blocking on stdin, matching azd's convention.
 			if !yes {
-				if rootFlags.NoPrompt {
+				if extCtx.NoPrompt {
 					return fmt.Errorf(
 						"refusing to delete job '%s' without confirmation; pass --yes to skip the prompt", name)
 				}

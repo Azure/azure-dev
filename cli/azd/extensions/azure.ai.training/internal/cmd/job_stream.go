@@ -15,7 +15,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newJobStreamCommand() *cobra.Command {
+func newJobStreamCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	extCtx = ensureExtensionContext(extCtx)
 	var name string
 
 	cmd := &cobra.Command{
@@ -64,7 +65,7 @@ func newJobStreamCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to create API client: %w", err)
 			}
-			apiClient.SetDebugBody(rootFlags.Debug)
+			apiClient.SetDebugBody(extCtx.Debug)
 
 			streamSvc := service.NewStreamService(apiClient)
 			result, err := streamSvc.StreamJobLogs(ctx, name)

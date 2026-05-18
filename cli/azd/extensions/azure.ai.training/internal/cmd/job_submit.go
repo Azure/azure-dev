@@ -19,9 +19,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newJobSubmitCommand() *cobra.Command {
+func newJobSubmitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	extCtx = ensureExtensionContext(extCtx)
 	var filePath string
-	var outputFormat string
 
 	cmd := &cobra.Command{
 		Use:   "submit",
@@ -90,7 +90,7 @@ func newJobSubmitCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to create API client: %w", err)
 			}
-			apiClient.SetDebugBody(rootFlags.Debug)
+			apiClient.SetDebugBody(extCtx.Debug)
 
 			// Auto-generate job name if not provided (same pattern as AML SDK)
 			if jobDef.Name == "" {
@@ -130,7 +130,7 @@ func newJobSubmitCommand() *cobra.Command {
 
 			fmt.Printf("✓ Job '%s' submitted successfully\n\n", jobDef.Name)
 
-			if err := utils.PrintObject(result, utils.OutputFormat(outputFormat)); err != nil {
+			if err := utils.PrintObject(result, utils.OutputFormat(extCtx.OutputFormat)); err != nil {
 				return err
 			}
 
@@ -139,7 +139,14 @@ func newJobSubmitCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to YAML job definition file (required)")
-	cmd.Flags().StringVarP(&outputFormat, "output", "o", "json", "Output format (table|json)")
+
+	// Configure the SDK-managed --output flag: default to "json" for this
+	// subcommand and constrain to the formats we support.
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"table", "json"},
+		Default:       "json",
+	})
 
 	return cmd
 }

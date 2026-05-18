@@ -17,8 +17,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newJobListCommand() *cobra.Command {
-	var outputFormat string
+func newJobListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	extCtx = ensureExtensionContext(extCtx)
 	var skipToken string
 	var tag string
 	var properties string
@@ -80,7 +80,7 @@ func newJobListCommand() *cobra.Command {
 				return fmt.Errorf("failed to list jobs: %w", err)
 			}
 
-			format := utils.OutputFormat(outputFormat)
+			format := utils.OutputFormat(extCtx.OutputFormat)
 
 			if format == utils.FormatJSON {
 				return utils.PrintObject(result.Value, format)
@@ -125,11 +125,18 @@ func newJobListCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&outputFormat, "output", "o", "table", "Output format (table|json)")
 	cmd.Flags().StringVar(&skipToken, "skip-token", "", "Continuation token for next page of results")
 	cmd.Flags().StringVar(&tag, "tag", "", "Filter results by tag key (e.g., --tag team)")
 	cmd.Flags().StringVar(&properties, "properties", "", "Filter results by properties (comma-separated, e.g., --properties \"prop1,prop2=value2\")")
 	cmd.Flags().BoolVar(&includeArchived, "include-archived", false, "Include archived jobs in the results (default: active only)")
+
+	// Configure the SDK-managed --output flag for this subcommand: default to
+	// "table" output and constrain to the formats we support.
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"table", "json"},
+		Default:       "table",
+	})
 
 	return cmd
 }

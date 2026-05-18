@@ -28,7 +28,8 @@ var terminalStatuses = []string{"Completed", "Failed", "Canceled", "NotRespondin
 // defaultOutputName is the sentinel value treated identically to "no output-name flag".
 const defaultOutputName = "default"
 
-func newJobDownloadCommand() *cobra.Command {
+func newJobDownloadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	extCtx = ensureExtensionContext(extCtx)
 	var (
 		name         string
 		all          bool
@@ -79,7 +80,7 @@ func newJobDownloadCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			apiClient.SetDebugBody(rootFlags.Debug)
+			apiClient.SetDebugBody(extCtx.Debug)
 
 			// Step 1 — GET job, check status
 			job, err := apiClient.GetJob(ctx, name)

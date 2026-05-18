@@ -225,7 +225,7 @@ func implicitInit(ctx context.Context, azdClient *azdext.AzdClient, subscription
 		projectEndpoint: projectEndpoint,
 		env:             envName,
 	}
-	initFlags.NoPrompt = true
+	initFlags.noPrompt = true
 
 	azureContext, err := ensureProject(ctx, initFlags, azdClient)
 	if err != nil {

@@ -4,45 +4,27 @@
 package cmd
 
 import (
+	"fmt"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
-type rootFlagsDefinition struct {
-	Debug    bool
-	NoPrompt bool
-}
-
-var rootFlags rootFlagsDefinition
-
 func NewRootCommand() *cobra.Command {
-	rootCmd := &cobra.Command{
-		Use:           "training <command> [options]",
-		Short:         "Extension for Microsoft Foundry training jobs. (Preview)",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		CompletionOptions: cobra.CompletionOptions{
-			DisableDefaultCmd: true,
-		},
-	}
-
+	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
+		Name:  "training",
+		Use:   "training <command> [options]",
+		Short: fmt.Sprintf("Extension for Microsoft Foundry training jobs. %s", color.YellowString("(Preview)")),
+	})
+	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
-	rootCmd.PersistentFlags().BoolVar(
-		&rootFlags.Debug,
-		"debug",
-		false,
-		"Enable debug mode",
-	)
-
-	rootCmd.PersistentFlags().BoolVar(
-		&rootFlags.NoPrompt,
-		"no-prompt",
-		false,
-		"accepts the default value instead of prompting, or fails if there is no default",
-	)
 
 	rootCmd.AddCommand(newVersionCommand())
-	rootCmd.AddCommand(newInitCommand(rootFlags))
-	rootCmd.AddCommand(newJobCommand())
+	rootCmd.AddCommand(newInitCommand(extCtx))
+	rootCmd.AddCommand(newJobCommand(extCtx))
 	rootCmd.AddCommand(newMetadataCommand())
 
 	return rootCmd

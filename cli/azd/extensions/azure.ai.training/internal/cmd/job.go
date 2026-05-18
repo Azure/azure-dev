@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
@@ -13,7 +14,8 @@ type jobsFlags struct {
 	projectEndpoint string
 }
 
-func newJobCommand() *cobra.Command {
+func newJobCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	extCtx = ensureExtensionContext(extCtx)
 	flags := &jobsFlags{}
 
 	cmd := &cobra.Command{
@@ -26,19 +28,21 @@ func newJobCommand() *cobra.Command {
 
 	cmd.PersistentFlags().StringVarP(&flags.subscriptionId, "subscription", "s", "",
 		"Azure subscription ID (enables implicit init if environment not configured)")
-	cmd.PersistentFlags().StringVarP(&flags.projectEndpoint, "project-endpoint", "e", "",
+	// --project-endpoint: keep long form only; -e short collides with azd's
+	// reserved -e/--environment global flag and was removed in the SDK migration.
+	cmd.PersistentFlags().StringVar(&flags.projectEndpoint, "project-endpoint", "",
 		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
 
-	cmd.AddCommand(newJobListCommand())
-	cmd.AddCommand(newJobSubmitCommand())
-	cmd.AddCommand(newJobShowCommand())
-	cmd.AddCommand(newJobDeleteCommand())
+	cmd.AddCommand(newJobListCommand(extCtx))
+	cmd.AddCommand(newJobSubmitCommand(extCtx))
+	cmd.AddCommand(newJobShowCommand(extCtx))
+	cmd.AddCommand(newJobDeleteCommand(extCtx))
 	cmd.AddCommand(newJobCancelCommand())
 	cmd.AddCommand(newJobValidateCommand())
-	cmd.AddCommand(newJobStreamCommand())
-	cmd.AddCommand(newJobConnectSSHCommand())
+	cmd.AddCommand(newJobStreamCommand(extCtx))
+	cmd.AddCommand(newJobConnectSSHCommand(extCtx))
 	cmd.AddCommand(newJobSSHProxyCommand())
-	cmd.AddCommand(newJobDownloadCommand())
+	cmd.AddCommand(newJobDownloadCommand(extCtx))
 	cmd.AddCommand(newJobShowServicesCommand())
 
 	return cmd

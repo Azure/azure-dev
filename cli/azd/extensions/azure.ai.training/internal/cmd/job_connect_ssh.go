@@ -26,7 +26,8 @@ import (
 // when the endpoint is embedded in an SSH ProxyCommand string.
 var proxyEndpointPattern = regexp.MustCompile(`^(wss?|https?)://[a-zA-Z0-9_.:/\-@%?=+,\[\]~]+$`)
 
-func newJobConnectSSHCommand() *cobra.Command {
+func newJobConnectSSHCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	extCtx = ensureExtensionContext(extCtx)
 	var name string
 	var nodeIndex int
 	var privateKeyFile string
@@ -65,6 +66,7 @@ func newJobConnectSSHCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			apiClient.SetDebugBody(extCtx.Debug)
 
 			// 1. Get job → tracking endpoint
 			job, err := apiClient.GetJob(ctx, name)
@@ -110,7 +112,7 @@ func newJobConnectSSHCommand() *cobra.Command {
 			}
 
 			// 6. Build and exec ssh
-			return runSSH(ctx, sshPath, selfPath, proxyEndpoint, privateKeyFile)
+			return runSSH(ctx, sshPath, selfPath, proxyEndpoint, privateKeyFile, extCtx.Debug)
 		},
 	}
 
@@ -190,7 +192,7 @@ func resolveSSHProxyEndpoint(instance *models.ServiceInstance, nodeIndex int) (s
 }
 
 // runSSH constructs and executes the ssh command with our binary as ProxyCommand.
-func runSSH(ctx context.Context, sshPath, selfPath, proxyEndpoint, privateKeyFile string) error {
+func runSSH(ctx context.Context, sshPath, selfPath, proxyEndpoint, privateKeyFile string, debug bool) error {
 	// ProxyCommand: ssh executes our binary, which opens the WebSocket and pipes stdio.
 	// Quote the binary path to handle spaces; the proxy endpoint is passed verbatim.
 	// The extension binary's root command is "training" (azd strips the
@@ -211,7 +213,7 @@ func runSSH(ctx context.Context, sshPath, selfPath, proxyEndpoint, privateKeyFil
 	if privateKeyFile != "" {
 		args = append(args, "-i", privateKeyFile)
 	}
-	if rootFlags.Debug {
+	if debug {
 		args = append(args, "-vvv")
 		fmt.Fprintf(os.Stderr, "DEBUG: ssh %s azureuser@%s\n", strings.Join(args, " "), destAlias)
 	}
@@ -268,7 +270,6 @@ func buildJobAPIClient(ctx context.Context) (*client.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
-	apiClient.SetDebugBody(rootFlags.Debug)
 	return apiClient, nil
 }
 

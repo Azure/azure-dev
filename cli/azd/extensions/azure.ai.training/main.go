@@ -3,26 +3,11 @@
 package main
 
 import (
-	"context"
-	"os"
-
 	"azure.ai.training/internal/cmd"
-	"github.com/fatih/color"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-func init() {
-	forceColorVal, has := os.LookupEnv("FORCE_COLOR")
-	if has && forceColorVal == "1" {
-		color.NoColor = false
-	}
-}
-
 func main() {
-	ctx := context.Background()
-	rootCmd := cmd.NewRootCommand()
-
-	if err := rootCmd.ExecuteContext(ctx); err != nil {
-		color.Red("Error: %v", err)
-		os.Exit(1)
-	}
+	azdext.Run(cmd.NewRootCommand())
 }

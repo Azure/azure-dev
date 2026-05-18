@@ -22,9 +22,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newJobShowCommand() *cobra.Command {
+func newJobShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	extCtx = ensureExtensionContext(extCtx)
 	var name string
-	var outputFormat string
 
 	cmd := &cobra.Command{
 		Use:   "show",
@@ -87,13 +87,13 @@ func newJobShowCommand() *cobra.Command {
 			}
 
 			// JSON mode: return raw job response only (backward compatible)
-			if utils.OutputFormat(outputFormat) == utils.FormatJSON {
+			if utils.OutputFormat(extCtx.OutputFormat) == utils.FormatJSON {
 				_ = spinner.Stop(ctx)
 				return utils.PrintObject(job, utils.FormatJSON)
 			}
 
 			// Rich display: fetch supplementary data with progress updates
-			details := fetchJobDetails(ctx, apiClient, name, spinner)
+			details := fetchJobDetails(ctx, apiClient, name, spinner, extCtx.Debug)
 			details.Job = job
 
 			_ = spinner.Stop(ctx)
@@ -104,10 +104,14 @@ func newJobShowCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Job name/ID (required)")
-	cmd.Flags().StringVarP(
-		&outputFormat, "output", "o", "table",
-		"Output format (table|json)",
-	)
+
+	// Configure the SDK-managed --output flag for this subcommand: default to
+	// "table" output and constrain to the formats we support.
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"table", "json"},
+		Default:       "table",
+	})
 
 	return cmd
 }
@@ -123,12 +127,11 @@ type jobDetails struct {
 // fetchJobDetails fetches run history, metrics, and artifacts concurrently
 // while updating the spinner text to show progress.
 func fetchJobDetails(
-	ctx context.Context, apiClient *client.Client, jobID string, spinner *ux.Spinner,
+	ctx context.Context, apiClient *client.Client, jobID string, spinner *ux.Spinner, debug bool,
 ) *jobDetails {
 	details := &jobDetails{
 		Metrics: make(map[string]*models.MetricsFullResponse),
 	}
-	debug := rootFlags.Debug
 
 	type step struct {
 		name string

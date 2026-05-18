@@ -22,12 +22,12 @@ import (
 )
 
 type initFlags struct {
-	rootFlagsDefinition
 	subscriptionId   string
 	projectEndpoint  string
 	env              string
 	template         string
 	workingDirectory string
+	noPrompt         bool
 }
 
 type FoundryProject struct {
@@ -43,10 +43,9 @@ type FoundryProject struct {
 	HasUAMI bool
 }
 
-func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
-	flags := &initFlags{
-		rootFlagsDefinition: rootFlags,
-	}
+func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	extCtx = ensureExtensionContext(extCtx)
+	flags := &initFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -54,6 +53,14 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
+
+			// Pick up azd's global flags (--no-prompt, --environment) through the
+			// SDK-managed ExtensionContext. These replace the previously extension-
+			// owned --no-prompt and --environment/-n flags.
+			flags.noPrompt = extCtx.NoPrompt
+			if flags.env == "" {
+				flags.env = extCtx.Environment
+			}
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
@@ -193,9 +200,12 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&flags.subscriptionId, "subscription", "s", "", "Azure subscription ID")
-	cmd.Flags().StringVarP(&flags.projectEndpoint, "project-endpoint", "e", "",
+	// --project-endpoint: keep long form only; the -e short collides with azd's
+	// reserved -e/--environment global flag and was removed in the SDK migration.
+	cmd.Flags().StringVar(&flags.projectEndpoint, "project-endpoint", "",
 		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
-	cmd.Flags().StringVarP(&flags.env, "environment", "n", "", "The name of the azd environment to use.")
+	// --environment: removed in favor of azd's reserved global --environment/-e flag,
+	// which is read above via extCtx.Environment.
 	cmd.Flags().StringVarP(&flags.template, "template", "t", "",
 		"GitHub URL or local directory path to a training job template. "+
 			"If omitted, a minimal job.yaml is scaffolded interactively.")
@@ -320,7 +330,7 @@ func ensureAzdProject(ctx context.Context, flags *initFlags, azdClient *azdext.A
 	fmt.Println("Let's get your project initialized.")
 
 	initArgs := []string{"init", "--minimal"}
-	if flags.NoPrompt {
+	if flags.noPrompt {
 		initArgs = append(initArgs, "--no-prompt")
 	}
 
@@ -389,7 +399,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		envArgs = append(envArgs, flags.env)
 	}
 
-	if flags.NoPrompt {
+	if flags.noPrompt {
 		envArgs = append(envArgs, "--no-prompt")
 	}
 

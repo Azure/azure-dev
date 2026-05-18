@@ -20,10 +20,10 @@ const (
 	agentIgnoreMaxSize  = 1 << 20 // 1 MB
 )
 
-// securityExclusions are paths that are always excluded regardless of .agentignore content.
+// securityExclusions are directory paths that are always excluded regardless of .agentignore content.
 // Users cannot negate these with "!" patterns.
+// Note: .env/.env.* files are handled separately in isSecurityExcluded.
 var securityExclusions = []string{
-	".env",
 	".azure/",
 	".git/",
 }

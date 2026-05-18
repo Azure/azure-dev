@@ -60,6 +60,14 @@ func TestAgentIgnore_SecurityAlwaysExcluded(t *testing.T) {
 	require.True(t, m.ShouldExclude(".env.production", false))
 	require.True(t, m.ShouldExclude(".azure", true))
 	require.True(t, m.ShouldExclude(".git", true))
+
+	// Nested .env files are also excluded
+	require.True(t, m.ShouldExclude("config/.env", false))
+	require.True(t, m.ShouldExclude("config/.env.local", false))
+
+	// Files inside .azure/ and .git/ are excluded
+	require.True(t, m.ShouldExclude(".azure/config", false))
+	require.True(t, m.ShouldExclude(".git/HEAD", false))
 }
 
 func TestAgentIgnore_UserFileOverridesDefaults(t *testing.T) {

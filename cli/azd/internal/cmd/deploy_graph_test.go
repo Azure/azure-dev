@@ -14,12 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestDeployServicesGraph_AspireOrdering verifies that the Aspire build-gate
-// policy (supplied by [aspireBuildGateKey]) produces the expected "first wins,
-// rest wait" serialization: the first Aspire service has no extra deps, every
-// subsequent Aspire service depends on that first step, and non-Aspire
-// services run with no inter-service edges.
-func TestDeployServicesGraph_AspireOrdering(t *testing.T) {
+// TestDeployServicesGraph_AspireParallel verifies that the Aspire build-gate
+// policy does NOT add graph-level dependency edges between Aspire deploy steps.
+// Serialization of the dotnet publish phase is handled at runtime via a mutex
+// (see build_gate.go), so all Aspire services deploy in parallel at the graph
+// level while only their image-preparation phases are serialized.
+func TestDeployServicesGraph_AspireParallel(t *testing.T) {
 	services := []*project.ServiceConfig{
 		{Name: "api", DotNetContainerApp: &project.DotNetContainerAppOptions{
 			Manifest: &apphost.Manifest{},
@@ -33,7 +33,7 @@ func TestDeployServicesGraph_AspireOrdering(t *testing.T) {
 		}},
 	}
 
-	g := buildDeployGraph(t, services, aspireBuildGateKey)
+	g := buildDeployGraph(t, services)
 
 	require.Equal(t, 4, g.Len())
 
@@ -43,23 +43,19 @@ func TestDeployServicesGraph_AspireOrdering(t *testing.T) {
 		stepMap[s.Name] = s
 	}
 
-	// First Aspire service — no dependencies.
+	// All Aspire services should have NO inter-service deploy edges.
+	// Build serialization is handled at runtime, not via graph topology.
 	require.Empty(t, stepMap["deploy-api"].DependsOn,
-		"first Aspire service should have no dependencies")
+		"Aspire service should have no graph-level deploy dependencies")
+	require.Empty(t, stepMap["deploy-worker"].DependsOn,
+		"Aspire service should have no graph-level deploy dependencies")
+	require.Empty(t, stepMap["deploy-backend"].DependsOn,
+		"Aspire service should have no graph-level deploy dependencies")
 
-	// Second Aspire service — depends on first.
-	require.Equal(t, []string{"deploy-api"}, stepMap["deploy-worker"].DependsOn,
-		"subsequent Aspire service should depend on the first Aspire service")
-
-	// Third Aspire service — also depends on first.
-	require.Equal(t, []string{"deploy-api"}, stepMap["deploy-backend"].DependsOn,
-		"subsequent Aspire service should depend on the first Aspire service")
-
-	// Non-Aspire service — no dependencies.
+	// Non-Aspire service — also no dependencies.
 	require.Empty(t, stepMap["deploy-web"].DependsOn,
 		"non-Aspire service should have no dependencies")
 
-	// The graph must be valid (no cycles, no missing refs).
 	require.NoError(t, g.Validate())
 }
 
@@ -72,7 +68,7 @@ func TestDeployServicesDAG_NoAspire(t *testing.T) {
 		{Name: "worker"},
 	}
 
-	g := buildDeployGraph(t, services, aspireBuildGateKey)
+	g := buildDeployGraph(t, services)
 
 	require.Equal(t, 3, g.Len())
 
@@ -94,7 +90,7 @@ func TestDeployServicesDAG_SingleAspireNoDeps(t *testing.T) {
 		{Name: "web"},
 	}
 
-	g := buildDeployGraph(t, services, aspireBuildGateKey)
+	g := buildDeployGraph(t, services)
 
 	require.Equal(t, 2, g.Len())
 
@@ -112,57 +108,6 @@ func TestDeployServicesDAG_SingleAspireNoDeps(t *testing.T) {
 	require.NoError(t, g.Validate())
 }
 
-// TestDeployServicesGraph_BuildGateKeyIsGeneric verifies that the build-gate
-// policy is opaque to the graph builder: multiple independent gate keys
-// coexist, each serializing only its own group, and services returning "" run
-// in full parallelism alongside both groups. No Aspire-specific knowledge is
-// required of the graph layer.
-func TestDeployServicesGraph_BuildGateKeyIsGeneric(t *testing.T) {
-	services := []*project.ServiceConfig{
-		{Name: "a1"},
-		{Name: "a2"},
-		{Name: "b1"},
-		{Name: "free"},
-		{Name: "a3"},
-		{Name: "b2"},
-	}
-
-	// Two disjoint gate groups plus an ungated service.
-	gate := func(s *project.ServiceConfig) string {
-		switch s.Name {
-		case "a1", "a2", "a3":
-			return "group-a"
-		case "b1", "b2":
-			return "group-b"
-		default:
-			return ""
-		}
-	}
-
-	g := buildDeployGraph(t, services, gate)
-	require.Equal(t, 6, g.Len())
-
-	steps := g.Steps()
-	stepMap := make(map[string]*exegraph.Step, len(steps))
-	for _, s := range steps {
-		stepMap[s.Name] = s
-	}
-
-	// group-a: a1 is the gate; a2 and a3 depend on a1 only.
-	require.Empty(t, stepMap["deploy-a1"].DependsOn)
-	require.Equal(t, []string{"deploy-a1"}, stepMap["deploy-a2"].DependsOn)
-	require.Equal(t, []string{"deploy-a1"}, stepMap["deploy-a3"].DependsOn)
-
-	// group-b: b1 is the gate; b2 depends on b1 — crucially, NOT on a1.
-	require.Empty(t, stepMap["deploy-b1"].DependsOn)
-	require.Equal(t, []string{"deploy-b1"}, stepMap["deploy-b2"].DependsOn)
-
-	// Ungated service has no cross-group edges.
-	require.Empty(t, stepMap["deploy-free"].DependsOn)
-
-	require.NoError(t, g.Validate())
-}
-
 // TestDeployServicesGraph_UsesDependencies verifies that declared
 // `services.<name>.uses:` entries that target other services produce
 // deploy-step edges, so hooks that pass values between services retain
@@ -176,7 +121,7 @@ func TestDeployServicesGraph_UsesDependencies(t *testing.T) {
 		{Name: "independent"},
 	}
 
-	g := buildDeployGraph(t, services, nil)
+	g := buildDeployGraph(t, services)
 
 	require.Equal(t, 4, g.Len())
 
@@ -187,20 +132,21 @@ func TestDeployServicesGraph_UsesDependencies(t *testing.T) {
 	}
 
 	require.Empty(t, stepMap["deploy-api"].DependsOn,
-		"api has no uses — no deps")
+		"api has no uses - no deps")
 	require.Equal(t, []string{"deploy-api"}, stepMap["deploy-web"].DependsOn,
 		"web uses api (service); cosmos (resource) must be ignored")
 	require.Equal(t, []string{"deploy-api"}, stepMap["deploy-worker"].DependsOn,
 		"worker uses api (service)")
 	require.Empty(t, stepMap["deploy-independent"].DependsOn,
-		"independent has no uses — no deps")
+		"independent has no uses - no deps")
 
 	require.NoError(t, g.Validate())
 }
 
-// TestDeployServicesGraph_UsesWithBuildGate verifies that `uses:` edges
-// coexist with Aspire build-gate edges — the deploy step depends on both.
-func TestDeployServicesGraph_UsesWithBuildGate(t *testing.T) {
+// TestDeployServicesGraph_UsesWithAspire verifies that `uses:` edges
+// still work alongside Aspire services. The build gate no longer adds
+// graph edges, so only `uses:` produces deploy-step dependencies.
+func TestDeployServicesGraph_UsesWithAspire(t *testing.T) {
 	services := []*project.ServiceConfig{
 		{Name: "api", DotNetContainerApp: &project.DotNetContainerAppOptions{
 			Manifest: &apphost.Manifest{},
@@ -210,7 +156,7 @@ func TestDeployServicesGraph_UsesWithBuildGate(t *testing.T) {
 		}},
 	}
 
-	g := buildDeployGraph(t, services, aspireBuildGateKey)
+	g := buildDeployGraph(t, services)
 
 	steps := g.Steps()
 	stepMap := make(map[string]*exegraph.Step, len(steps))
@@ -219,30 +165,26 @@ func TestDeployServicesGraph_UsesWithBuildGate(t *testing.T) {
 	}
 
 	require.Empty(t, stepMap["deploy-api"].DependsOn)
-	// web depends on api — the build-gate and uses edges dedupe to a
-	// single entry.
+	// web depends on api via `uses:` only (build gate no longer adds edges).
 	require.Equal(t, []string{"deploy-api"},
 		stepMap["deploy-web"].DependsOn,
-		"web should depend on api exactly once (deduped across build-gate and uses)")
+		"web should depend on api via uses: edge")
 
 	require.NoError(t, g.Validate())
 }
 
 // buildDeployGraph mirrors the deploy-step wiring in
 // [addServiceStepsToGraph] without pulling in the full DeployAction wiring,
-// so tests can focus on graph topology. The gate policy is injected to match
-// the production contract on [serviceGraphOptions.buildGateKey]. Declared
-// `services.<name>.uses:` edges to other services in the set are wired too,
-// mirroring production so tests cover the use-edge path.
+// so tests can focus on graph topology. Only `uses:` edges between services
+// are wired; build-gate serialization is handled at runtime (not in the
+// graph), so it is not reflected here.
 func buildDeployGraph(
 	t *testing.T,
 	services []*project.ServiceConfig,
-	buildGateKey func(*project.ServiceConfig) string,
 ) *exegraph.Graph {
 	t.Helper()
 
 	g := exegraph.NewGraph()
-	firstByGate := map[string]string{}
 	serviceNames := make(map[string]struct{}, len(services))
 	for _, svc := range services {
 		serviceNames[svc.Name] = struct{}{}
@@ -252,15 +194,6 @@ func buildDeployGraph(
 		stepName := "deploy-" + svc.Name
 		var deps []string
 
-		if buildGateKey != nil {
-			if key := buildGateKey(svc); key != "" {
-				if first, ok := firstByGate[key]; ok {
-					deps = append(deps, first)
-				} else {
-					firstByGate[key] = stepName
-				}
-			}
-		}
 		for _, dep := range svc.Uses {
 			if dep == svc.Name {
 				continue

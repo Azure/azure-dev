@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
+capabilities:
+    - custom-commands
+    - metadata
+description: Manage Microsoft Foundry Project resources from your terminal. (Preview)
+displayName: Foundry Projects (Preview)
+id: azure.ai.projects
+language: go
+namespace: ai.project
+tags:
+    - ai
+    - project
+usage: azd ai project <command> [options]
+version: 0.0.1-preview

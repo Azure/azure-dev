@@ -160,17 +160,22 @@ func runPublishAction(ctx context.Context, flags *publishFlags, defaultRegistryU
 		release, err = ghCli.ViewRelease(absExtensionPath, flags.repository, tagName)
 		if err != nil {
 			if errors.Is(err, github.ErrReleaseNotFound) {
-				return internal.NewUserFriendlyError("Github Release not found", strings.Join([]string{
-					fmt.Sprintf(
-						"The %s extension does not have a release tagged with version %s.",
-						output.WithHighLightFormat(extensionMetadata.Id),
-						output.WithHighLightFormat(flags.version),
-					),
-					fmt.Sprintf(
-						"To create a new release, run: %s and then try again.",
-						output.WithHighLightFormat("azd x release --repo {owner}/{repo}"),
-					),
-				}, "\n"))
+				return &azdext.LocalError{
+					Message:  "GitHub release not found",
+					Code:     "github_release_not_found",
+					Category: azdext.LocalErrorCategoryDependency,
+					Suggestion: strings.Join([]string{
+						fmt.Sprintf(
+							"The %s extension does not have a release tagged with version %s.",
+							output.WithHighLightFormat(extensionMetadata.Id),
+							output.WithHighLightFormat(flags.version),
+						),
+						fmt.Sprintf(
+							"To create a new release, run: %s and then try again.",
+							output.WithHighLightFormat("azd x release --repo {owner}/{repo}"),
+						),
+					}, "\n"),
+				}
 			}
 
 			return err

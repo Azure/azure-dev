@@ -6,6 +6,8 @@ package cmd
 import (
 	"fmt"
 
+	conncmd "azureaiagent/internal/connections/cmd"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -61,6 +63,11 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newFilesCommand(extCtx))
 	rootCmd.AddCommand(newSessionCommand(extCtx))
 	rootCmd.AddCommand(newProjectCommand(extCtx))
+
+	// Connection commands — in separate package for easy lift-and-shift later.
+	// When the azd core namespace change lands, move this AddCommand call
+	// to the new root and update the import path.
+	rootCmd.AddCommand(conncmd.NewConnectionRootCommand(extCtx))
 
 	return rootCmd
 }

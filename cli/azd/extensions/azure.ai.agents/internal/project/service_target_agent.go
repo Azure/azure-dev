@@ -1615,6 +1615,8 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	const confirmCount = 2 // consecutive times a terminal status must be seen
 
 	deadline := time.Now().Add(pollTimeout)
+	maxAttempts := int(pollTimeout / pollInterval)
+	attempt := 0
 	progress("Waiting for agent to become active")
 
 	var consecutiveActive int
@@ -1627,6 +1629,9 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 			return nil, fmt.Errorf("deployment cancelled: %w", ctx.Err())
 		case <-time.After(pollInterval):
 		}
+
+		attempt++
+		progress(fmt.Sprintf("Waiting for agent to become active, attempt %d/%d", attempt, maxAttempts))
 
 		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agentAPIVersion)
 		if err != nil {

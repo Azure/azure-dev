@@ -14,6 +14,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/models"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -21,7 +23,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
-	"github.com/spf13/cobra"
 )
 
 type buildFlags struct {
@@ -36,6 +37,8 @@ func newBuildCommand(outputPath *string) *cobra.Command {
 	buildCmd := &cobra.Command{
 		Use:   "build",
 		Short: "Build the azd extension project",
+		Long: "Builds the azd extension project for one or more platforms.\n\n" +
+			"Extension metadata validation warnings are non-fatal and are printed after the build completes.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			internal.WriteCommandHeader(
 				"Build and azd extension (azd x build)",
@@ -113,6 +116,7 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 	fmt.Println()
 	fmt.Printf("%s: %s\n", output.WithBold("Output Path"), output.WithHyperlink(absOutputPath, absOutputPath))
 
+	var buildWarnings []string
 	taskList := ux.NewTaskList(nil).
 		AddTask(ux.TaskOptions{
 			Title: "Validating extension metadata",
@@ -124,15 +128,12 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 				progress("Validation complete")
 
 				if len(validationErrors) > 0 {
-					aggregatedError := fmt.Errorf(
-						"Extension contains validation failures: %s",
-						strings.Join(validationErrors, "; "),
-					)
-					return ux.Error, common.NewDetailedError("Validation failed", aggregatedError)
+					return ux.Error, validationFailureError(validationErrors)
 				}
 
 				if len(warnings) > 0 {
-					return ux.Warning, errors.New(validationWarningsMessage(warnings))
+					buildWarnings = warnings
+					return ux.Warning, fmt.Errorf("%s; see details below", validationWarningSummary(warnings))
 				}
 
 				return ux.Success, nil
@@ -226,7 +227,13 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 			},
 		})
 
-	return taskList.Run()
+	if err := taskList.Run(); err != nil {
+		writeCollectedWarnings(os.Stdout, buildWarnings)
+		return err
+	}
+
+	writeCollectedWarnings(os.Stdout, buildWarnings)
+	return nil
 }
 
 func copyBinaryFiles(extensionId, sourcePath, destPath string) error {
@@ -273,9 +280,9 @@ func copyBinaryFiles(extensionId, sourcePath, destPath string) error {
 	})
 }
 
-// validateExtensionMetadata returns validation warnings and required-field errors
-// for the given extension schema. Errors indicate missing required fields. Warnings
-// flag recommended but optional fields that improve the extension experience.
+// validateExtensionMetadata returns validation warnings and errors for the given extension schema.
+// Errors include missing required fields and capability-specific metadata that would create
+// unusable extensions. Warnings flag recommended metadata that improves the extension experience.
 func validateExtensionMetadata(schema *models.ExtensionSchema) (warnings, errs []string) {
 	// Required fields - missing values are errors.
 	if schema.Id == "" {
@@ -329,16 +336,23 @@ func validateExtensionMetadata(schema *models.ExtensionSchema) (warnings, errs [
 	return warnings, errs
 }
 
-// validationWarningsMessage formats validation warnings into a multi-line message with bullet points.
-func validationWarningsMessage(warnings []string) string {
-	var message strings.Builder
-	message.WriteString("validation warnings:")
-	for _, warning := range warnings {
-		message.WriteString("\n  - ")
-		message.WriteString(warning)
+func validationFailureError(validationErrors []string) error {
+	return common.NewDetailedError(
+		"Validation failed",
+		fmt.Errorf(
+			"extension contains validation failures: %s",
+			strings.Join(validationErrors, "; "),
+		),
+	)
+}
+
+func validationWarningSummary(warnings []string) string {
+	noun := "warning"
+	if len(warnings) != 1 {
+		noun = "warnings"
 	}
 
-	return message.String()
+	return fmt.Sprintf("%d validation %s", len(warnings), noun)
 }
 
 // escapePowerShellSingleQuotes escapes single quotes for use in PowerShell single-quoted strings.

@@ -1,5 +1,14 @@
 # Release History
 
+## 0.11.0 (2026-05-19)
+
+- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Treat extension metadata warnings as non-fatal during `azd x build` and document the behavior in help text.
+- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Improve `azd x init` validation ordering, warning output, namespace validation, tag validation, and generated Go command metadata.
+- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Report missing `namespace` as a validation error for hand-edited `custom-commands` extension manifests.
+- [[#7956]](https://github.com/Azure/azure-dev/pull/7956) Migrate the extension developer kit to the `azdext` runtime and refresh generated Go extension scaffolding.
+- [[#7982]](https://github.com/Azure/azure-dev/pull/7982) Add `secret` prompt option support to the scaffolded extension gRPC prompt contract.
+- [[#7697]](https://github.com/Azure/azure-dev/pull/7697) Add `.azdxignore` and `.gitignore` support to `azd x watch`.
+
 ## 0.10.0 (2026-03-04)
 
 - [[#6826]](https://github.com/Azure/azure-dev/pull/6826) Handle locked files on Windows during `azd x build` by terminating stale extension processes.

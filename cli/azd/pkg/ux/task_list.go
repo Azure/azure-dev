@@ -86,11 +86,18 @@ type Task struct {
 type TaskState int
 
 const (
+	// Pending indicates a task has not started yet.
 	Pending TaskState = iota
+	// Running indicates a task is currently executing.
 	Running
+	// Skipped indicates a task was not executed.
 	Skipped
+	// Warning indicates a task completed with a non-fatal issue. If the task
+	// returns an error with this state, it is displayed but not returned by Run.
 	Warning
+	// Error indicates a task failed.
 	Error
+	// Success indicates a task completed successfully.
 	Success
 )
 

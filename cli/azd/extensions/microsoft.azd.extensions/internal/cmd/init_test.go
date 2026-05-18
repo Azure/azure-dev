@@ -4,12 +4,15 @@
 package cmd
 
 import (
+	"bytes"
+	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/models"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCapabilityPromptChoicesMatchValidCapabilities(t *testing.T) {
@@ -53,10 +56,12 @@ func TestFormatUsage(t *testing.T) {
 
 func TestValidateExtensionMetadata(t *testing.T) {
 	tests := []struct {
-		name         string
-		schema       *models.ExtensionSchema
-		wantWarnings []string
-		wantErrors   []string
+		name                string
+		schema              *models.ExtensionSchema
+		wantWarningCount    int
+		wantWarningContains []string
+		wantErrorCount      int
+		wantErrorContains   []string
 	}{
 		{
 			name: "complete schema produces no warnings or errors",
@@ -71,12 +76,14 @@ func TestValidateExtensionMetadata(t *testing.T) {
 			},
 		},
 		{
-			name:   "empty schema reports all required-field errors",
-			schema: &models.ExtensionSchema{},
-			wantWarnings: []string{
-				"Missing 'usage' field in extension.yaml - shown to users as a usage hint in 'azd <namespace> --help'.",
+			name:             "empty schema reports all required-field errors",
+			schema:           &models.ExtensionSchema{},
+			wantWarningCount: 1,
+			wantWarningContains: []string{
+				"Missing 'usage' field in extension.yaml",
 			},
-			wantErrors: []string{
+			wantErrorCount: 5,
+			wantErrorContains: []string{
 				"Missing required field: id",
 				"Missing required field: version",
 				"Missing required field: capabilities",
@@ -95,10 +102,10 @@ func TestValidateExtensionMetadata(t *testing.T) {
 				Usage:        "azd test <command>",
 				Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
 			},
-			wantWarnings: []string{
-				"Missing 'providers' field in extension.yaml - " +
-					"required by the 'service-target-provider' capability. " +
-					"List the providers your extension contributes (each entry needs a name, type, and description).",
+			wantWarningCount: 1,
+			wantWarningContains: []string{
+				"Missing 'providers' field in extension.yaml",
+				"service-target-provider",
 			},
 		},
 		{
@@ -111,10 +118,10 @@ func TestValidateExtensionMetadata(t *testing.T) {
 				Usage:        "azd test <command>",
 				Capabilities: []extensions.CapabilityType{extensions.CustomCommandCapability},
 			},
-			wantErrors: []string{
-				"Missing 'namespace' field in extension.yaml - " +
-					"required by the 'custom-commands' capability. " +
-					"Set it to the prefix users will type after 'azd' (e.g. 'demo' to expose 'azd demo <command>').",
+			wantErrorCount: 1,
+			wantErrorContains: []string{
+				"Missing 'namespace' field in extension.yaml",
+				"custom-commands",
 			},
 		},
 	}
@@ -122,8 +129,93 @@ func TestValidateExtensionMetadata(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			warnings, errs := validateExtensionMetadata(tt.schema)
-			assert.Equal(t, tt.wantWarnings, warnings)
-			assert.Equal(t, tt.wantErrors, errs)
+			assert.Len(t, warnings, tt.wantWarningCount)
+			for _, want := range tt.wantWarningContains {
+				assert.True(t, slicesContainSubstring(warnings, want), "expected warning containing %q in %v", want, warnings)
+			}
+
+			assert.Len(t, errs, tt.wantErrorCount)
+			for _, want := range tt.wantErrorContains {
+				assert.True(t, slicesContainSubstring(errs, want), "expected error containing %q in %v", want, errs)
+			}
 		})
 	}
+}
+
+func TestValidateExtensionNamespace(t *testing.T) {
+	tests := []struct {
+		namespace string
+		wantErr   bool
+	}{
+		{namespace: "demo"},
+		{namespace: "ai.project"},
+		{namespace: "company1.team2.tool3"},
+		{namespace: "", wantErr: true},
+		{namespace: "a..b", wantErr: true},
+		{namespace: ".demo", wantErr: true},
+		{namespace: "demo.", wantErr: true},
+		{namespace: "Demo", wantErr: true},
+		{namespace: "demo-tool", wantErr: true},
+		{namespace: "demo.tool_name", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.namespace, func(t *testing.T) {
+			err := validateExtensionNamespace(tt.namespace)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestParseTags(t *testing.T) {
+	tags, err := parseTags("alpha, beta,,gamma")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"alpha", "beta", "gamma"}, tags)
+
+	_, err = parseTags(strings.Join([]string{
+		"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven",
+	}, ","))
+	require.ErrorContains(t, err, "too many tags")
+
+	_, err = parseTags(strings.Repeat("a", maxExtensionTagLength+1))
+	require.ErrorContains(t, err, "too long")
+
+	_, err = parseTags("valid,ba\nd")
+	require.ErrorContains(t, err, "control characters")
+}
+
+func TestWriteCollectedWarnings(t *testing.T) {
+	var buf bytes.Buffer
+	writeCollectedWarnings(&buf, []string{"first warning", "second warning"})
+
+	output := buf.String()
+	assert.Contains(t, output, "(!) Warning Extension contains validation warnings:")
+	assert.Contains(t, output, "  - first warning")
+	assert.Contains(t, output, "  - second warning")
+}
+
+func TestWriteCommandOutputAddsMissingTrailingNewline(t *testing.T) {
+	var buf bytes.Buffer
+	writeCommandOutput(&buf, []byte("command output"))
+
+	assert.Equal(t, "command output\n", buf.String())
+}
+
+func TestValidationWarningSummary(t *testing.T) {
+	assert.Equal(t, "1 validation warning", validationWarningSummary([]string{"first"}))
+	assert.Equal(t, "2 validation warnings", validationWarningSummary([]string{"first", "second"}))
+}
+
+func slicesContainSubstring(values []string, substring string) bool {
+	for _, value := range values {
+		if strings.Contains(value, substring) {
+			return true
+		}
+	}
+
+	return false
 }

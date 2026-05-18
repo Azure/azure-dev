@@ -9,8 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	outputpkg "github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // --- TaskList tests ---
@@ -171,6 +174,10 @@ func TestTaskList_Render_skipped_with_and_without_error(t *testing.T) {
 }
 
 func TestTaskList_Render_warning(t *testing.T) {
+	originalNoColor := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() { color.NoColor = originalNoColor })
+
 	var buf bytes.Buffer
 	printer := NewPrinter(&buf)
 
@@ -192,6 +199,8 @@ func TestTaskList_Render_warning(t *testing.T) {
 	output := buf.String()
 	assert.Contains(t, output, "Warn task")
 	assert.Contains(t, output, "partial failure")
+	assert.Contains(t, output, outputpkg.WithWarningFormat("(partial failure)"))
+	assert.NotContains(t, output, outputpkg.WithErrorFormat("(partial failure)"))
 }
 
 func TestTaskList_Run_warningContinues(t *testing.T) {
@@ -217,11 +226,36 @@ func TestTaskList_Run_warningContinues(t *testing.T) {
 	assert.True(t, ranNextTask)
 	assert.Equal(t, Warning, tl.allTasks[0].State)
 	assert.Equal(t, Success, tl.allTasks[1].State)
+	assert.Empty(t, tl.errors)
 
 	output := buf.String()
 	assert.Contains(t, output, "Warn task")
 	assert.Contains(t, output, "validation warning")
 	assert.Contains(t, output, "Next task")
+}
+
+func TestShouldCollectTaskError(t *testing.T) {
+	taskErr := errors.New("task failed")
+	tests := []struct {
+		name  string
+		state TaskState
+		err   error
+		want  bool
+	}{
+		{name: "nil error", state: Error, err: nil, want: false},
+		{name: "pending error", state: Pending, err: taskErr, want: true},
+		{name: "running error", state: Running, err: taskErr, want: true},
+		{name: "skipped error", state: Skipped, err: taskErr, want: true},
+		{name: "warning error", state: Warning, err: taskErr, want: false},
+		{name: "error error", state: Error, err: taskErr, want: true},
+		{name: "success error", state: Success, err: taskErr, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, shouldCollectTaskError(tt.err, tt.state))
+		})
+	}
 }
 
 func TestTaskList_Render_ordering(t *testing.T) {

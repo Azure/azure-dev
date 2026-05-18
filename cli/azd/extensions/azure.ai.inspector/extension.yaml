@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
+capabilities:
+    - custom-commands
+    - metadata
+description: Agent Inspector tool. (Preview)
+displayName: Foundry Agent Inspector (Preview)
+id: azure.ai.inspector
+language: go
+namespace: ai.inspector
+tags:
+    - ai
+    - inspector
+usage: azd ai inspector <command> [options]
+version: 0.0.1-preview

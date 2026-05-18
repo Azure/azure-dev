@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"text/template"
 	"unicode"
@@ -216,13 +217,31 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 
 		// Skip confirmation prompt in headless mode
 		if !flags.noPrompt {
+			nonEmpty, err := isDirNonEmpty(extensionPath)
+			if err != nil {
+				return fmt.Errorf("failed to inspect existing extension directory: %w", err)
+			}
+
+			message := fmt.Sprintf(
+				"The extension directory '%s' already exists. Continue?",
+				extensionMetadata.Id,
+			)
+			helpMessage := ""
+			if nonEmpty {
+				message = fmt.Sprintf(
+					"The extension directory '%s' already exists and is not empty. "+
+						"Existing files may be overwritten. Continue?",
+					extensionMetadata.Id,
+				)
+				helpMessage = "Scaffolded files will overwrite any existing files at the same paths " +
+					"(e.g. extension.yaml, main.go, README.md). Other files will be left untouched."
+			}
+
 			confirmResponse, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 				Options: &azdext.ConfirmOptions{
-					Message: fmt.Sprintf(
-						"The extension directory '%s' already exists. Do you want to continue?",
-						extensionMetadata.Id,
-					),
+					Message:      message,
 					DefaultValue: new(false),
+					HelpMessage:  helpMessage,
 				},
 			})
 			if err != nil {
@@ -718,6 +737,24 @@ func capabilityLabel(cap extensions.CapabilityType) string {
 	return strings.Join(words, " ")
 }
 
+// isDirNonEmpty reports whether dir contains at least one entry. It returns
+// (false, nil) for an empty directory and propagates the underlying error
+// otherwise. Implemented via Readdirnames(1) to avoid reading the entire
+// directory listing into memory.
+func isDirNonEmpty(dir string) (bool, error) {
+	f, err := os.Open(dir)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	names, err := f.Readdirnames(1)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+	return len(names) > 0, nil
+}
+
 func createExtensionDirectory(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -808,7 +845,7 @@ func copyAndProcessTemplates(srcFS fs.FS, srcDir, destDir string, data any) erro
 		}
 
 		if strings.HasSuffix(path, ".tmpl") {
-			tmpl, err := template.New(filepath.Base(path)).Parse(string(fileBytes))
+			tmpl, err := template.New(filepath.Base(path)).Funcs(templateFuncs).Parse(string(fileBytes))
 			if err != nil {
 				return fmt.Errorf("failed to parse template %s: %w", path, err)
 			}
@@ -888,6 +925,17 @@ type ExtensionTemplate struct {
 	// so the extension's own root command name is the leaf ("agents").
 	LeafNamespace string
 	DotNet        *DotNetTemplate
+}
+
+// templateFuncs are template helpers exposed to .tmpl files when rendering
+// extension scaffolds. They allow user-supplied strings (e.g. extension
+// description) to be safely embedded in generated source code.
+var templateFuncs = template.FuncMap{
+	// goString quotes a string as a Go double-quoted literal, escaping any
+	// characters that would otherwise produce invalid Go source (quotes,
+	// backslashes, newlines, control characters, etc.). The returned value
+	// includes the surrounding quotes.
+	"goString": strconv.Quote,
 }
 
 type DotNetTemplate struct {

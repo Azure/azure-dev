@@ -6,8 +6,11 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"text/template"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -152,24 +155,29 @@ func TestValidateExtensionMetadata(t *testing.T) {
 }
 
 func TestValidateExtensionNamespace(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
+		name      string
 		namespace string
 		wantErr   bool
 	}{
-		{namespace: "demo"},
-		{namespace: "ai.project"},
-		{namespace: "company1.team2.tool3"},
-		{namespace: "", wantErr: true},
-		{namespace: "a..b", wantErr: true},
-		{namespace: ".demo", wantErr: true},
-		{namespace: "demo.", wantErr: true},
-		{namespace: "Demo", wantErr: true},
-		{namespace: "demo-tool", wantErr: true},
-		{namespace: "demo.tool_name", wantErr: true},
+		{name: "single segment", namespace: "demo"},
+		{name: "two segments", namespace: "ai.project"},
+		{name: "three segments with digits", namespace: "company1.team2.tool3"},
+		{name: "empty", namespace: "", wantErr: true},
+		{name: "consecutive dots", namespace: "a..b", wantErr: true},
+		{name: "leading dot", namespace: ".demo", wantErr: true},
+		{name: "trailing dot", namespace: "demo.", wantErr: true},
+		{name: "uppercase", namespace: "Demo", wantErr: true},
+		{name: "hyphen", namespace: "demo-tool", wantErr: true},
+		{name: "underscore", namespace: "demo.tool_name", wantErr: true},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.namespace, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			err := validateExtensionNamespace(tt.namespace)
 			if tt.wantErr {
 				require.Error(t, err)
@@ -250,6 +258,80 @@ func TestSubprocessErrorTail(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, subprocessErrorTail([]byte(tt.in)))
+		})
+	}
+}
+
+func TestIsDirNonEmpty(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		nonEmpty, err := isDirNonEmpty(dir)
+		require.NoError(t, err)
+		assert.False(t, nonEmpty)
+	})
+
+	t.Run("non-empty", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "file.txt"), []byte("x"), 0o600))
+
+		nonEmpty, err := isDirNonEmpty(dir)
+		require.NoError(t, err)
+		assert.True(t, nonEmpty)
+	})
+
+	t.Run("missing path", func(t *testing.T) {
+		t.Parallel()
+		_, err := isDirNonEmpty(filepath.Join(t.TempDir(), "does-not-exist"))
+		assert.Error(t, err)
+	})
+}
+
+func TestTemplateGoStringQuotesDescription(t *testing.T) {
+	t.Parallel()
+
+	const tmplSrc = `Short: {{goString .Description}},`
+	tmpl, err := template.New("test").Funcs(templateFuncs).Parse(tmplSrc)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		description string
+		want        string
+	}{
+		{name: "plain", description: "A test extension", want: `Short: "A test extension",`},
+		{
+			name:        "embedded double quotes",
+			description: `says "hi"`,
+			want:        `Short: "says \"hi\"",`,
+		},
+		{
+			name:        "backslash",
+			description: `a\b`,
+			want:        `Short: "a\\b",`,
+		},
+		{
+			name:        "newline and tab",
+			description: "line1\nline2\t!",
+			want:        `Short: "line1\nline2\t!",`,
+		},
+		{
+			name:        "trailing backslash injection attempt",
+			description: `boom",}{`,
+			want:        `Short: "boom\",}{",`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			require.NoError(t, tmpl.Execute(&buf, struct{ Description string }{tt.description}))
+			assert.Equal(t, tt.want, buf.String())
 		})
 	}
 }

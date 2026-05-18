@@ -6,6 +6,7 @@
 - [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Improve `azd x init` validation ordering, warning output, namespace validation, tag validation, and generated Go command metadata.
 - [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Report missing `namespace` as a validation error for hand-edited `custom-commands` extension manifests.
 - [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Inline the child process error message when an `azd x init` build, package, publish, or install step fails.
+- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Warn before overwriting files in a non-empty existing target directory during `azd x init`, and Go-string-escape the extension description embedded in scaffolded `root.go`.
 - [[#7956]](https://github.com/Azure/azure-dev/pull/7956) Migrate the extension developer kit to the `azdext` runtime and refresh generated Go extension scaffolding.
 - [[#7982]](https://github.com/Azure/azure-dev/pull/7982) Add `secret` prompt option support to the scaffolded extension gRPC prompt contract.
 - [[#7697]](https://github.com/Azure/azure-dev/pull/7697) Add `.azdxignore` and `.gitignore` support to `azd x watch`.

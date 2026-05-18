@@ -480,9 +480,12 @@ func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
 }
 
 func TestGetAgentSessionLogStream_ApplyIsolationHeaders(t *testing.T) {
-	var request *http.Request
+	reqCh := make(chan *http.Request, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		request = r
+		select {
+		case reqCh <- r:
+		default:
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("event: log\n\n"))
 	}))
@@ -509,6 +512,11 @@ func TestGetAgentSessionLogStream_ApplyIsolationHeaders(t *testing.T) {
 	require.NoError(t, err)
 	defer body.Close()
 
+	var request *http.Request
+	select {
+	case request = <-reqCh:
+	default:
+	}
 	require.NotNil(t, request)
 	require.Equal(t, "Bearer test-token", request.Header.Get("Authorization"))
 	requireIsolationHeaders(t, request, "user-1", "chat-1", "")

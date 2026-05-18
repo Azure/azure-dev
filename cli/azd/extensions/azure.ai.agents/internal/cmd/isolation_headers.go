@@ -6,9 +6,9 @@ package cmd
 import (
 	"net/http"
 
-	"azureaiagent/internal/pkg/agents/agent_api"
-
 	"github.com/spf13/cobra"
+
+	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
 // isolationHeaderFlags holds Foundry user/chat isolation header flag values.

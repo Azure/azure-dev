@@ -973,9 +973,12 @@ func TestHandleInvocationLRO_PropagatesIsolationHeaders(t *testing.T) {
 	defaultLROPollInterval = time.Millisecond
 	t.Cleanup(func() { defaultLROPollInterval = origInterval })
 
-	var pollRequest *http.Request
+	pollReqCh := make(chan *http.Request, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		pollRequest = r
+		select {
+		case pollReqCh <- r:
+		default:
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"completed"}`))
 	}))
@@ -1007,6 +1010,11 @@ func TestHandleInvocationLRO_PropagatesIsolationHeaders(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	var pollRequest *http.Request
+	select {
+	case pollRequest = <-pollReqCh:
+	default:
+	}
 	if pollRequest == nil {
 		t.Fatal("expected poll request")
 	}
@@ -1153,9 +1161,12 @@ func TestCreateConversation(t *testing.T) {
 func TestCreateConversation_PropagatesIsolationHeaders(t *testing.T) {
 	t.Parallel()
 
-	var request *http.Request
+	reqCh := make(chan *http.Request, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		request = r
+		select {
+		case reqCh <- r:
+		default:
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"id":"conv-headers"}`))
 	}))
@@ -1178,6 +1189,11 @@ func TestCreateConversation_PropagatesIsolationHeaders(t *testing.T) {
 		t.Fatalf("id = %q, want conv-headers", id)
 	}
 
+	var request *http.Request
+	select {
+	case request = <-reqCh:
+	default:
+	}
 	if request == nil {
 		t.Fatal("expected request")
 	}

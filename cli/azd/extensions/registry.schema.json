@@ -80,6 +80,7 @@
                             "mcp-server",
                             "service-target-provider",
                             "framework-service-provider",
+                            "provisioning-provider",
                             "metadata"
                         ]
                     }

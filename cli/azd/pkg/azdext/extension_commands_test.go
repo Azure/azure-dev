@@ -29,7 +29,21 @@ func TestRegisterFlagOptions_HelpRendering(t *testing.T) {
 			return nil
 		},
 	}, FlagOptions{Name: "output", AllowedValues: []string{"json"}, Default: "json"})
-	root.AddCommand(showCmd, versionCmd)
+	pathCmd := RegisterFlagOptions(&cobra.Command{
+		Use:   "pack",
+		Short: "pack",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
+	}, FlagOptions{Name: "output", Usage: "Path to the output directory."})
+	hiddenDefaultCmd := RegisterFlagOptions(&cobra.Command{
+		Use:   "pack-hidden",
+		Short: "pack-hidden",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
+	}, FlagOptions{Name: "output", Usage: "Computed output path.", HideDefault: true})
+	root.AddCommand(showCmd, versionCmd, pathCmd, hiddenDefaultCmd)
 
 	showHelp := captureStdout(t, func() {
 		root.SetArgs([]string{"show", "--help"})
@@ -46,6 +60,22 @@ func TestRegisterFlagOptions_HelpRendering(t *testing.T) {
 	})
 	require.Contains(t, string(versionHelp), `The output format (supported: json)`)
 	require.NotContains(t, string(versionHelp), `supported: json, table`)
+
+	pathHelp := captureStdout(t, func() {
+		root.SetArgs([]string{"pack", "--help"})
+		err := root.Execute()
+		require.NoError(t, err)
+	})
+	require.Contains(t, string(pathHelp), `Path to the output directory.`)
+	require.NotContains(t, string(pathHelp), defaultOutputFlagUsage)
+
+	hiddenDefaultHelp := captureStdout(t, func() {
+		root.SetArgs([]string{"pack-hidden", "--help"})
+		err := root.Execute()
+		require.NoError(t, err)
+	})
+	require.Contains(t, string(hiddenDefaultHelp), `Computed output path.`)
+	require.NotContains(t, string(hiddenDefaultHelp), `(default "default")`)
 
 	rootHelp := captureStdout(t, func() {
 		root.SetArgs([]string{"--help"})

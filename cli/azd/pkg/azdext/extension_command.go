@@ -26,6 +26,12 @@ const (
 	// flagDefaultAnnotationPrefix prefixes cobra annotation keys that record
 	// the per-command default for an inherited flag. See [RegisterFlagOptions].
 	flagDefaultAnnotationPrefix = "azdext.default/"
+	// flagUsageAnnotationPrefix prefixes cobra annotation keys that record
+	// the per-command usage text for an inherited flag. See [RegisterFlagOptions].
+	flagUsageAnnotationPrefix = "azdext.usage/"
+	// flagHideDefaultAnnotationPrefix prefixes cobra annotation keys that mark
+	// inherited flag defaults as hidden for a command. See [RegisterFlagOptions].
+	flagHideDefaultAnnotationPrefix = "azdext.hide-default/"
 
 	defaultOutputFlagUsage = "The output format"
 )
@@ -231,16 +237,24 @@ type FlagOptions struct {
 	// (e.g. [ExtensionContext.OutputFormat]) when the user does not pass
 	// the flag. Substitution preserves cmd.Flags().Changed(name) == false.
 	Default string
+
+	// Usage, when non-empty, replaces the inherited flag usage text for this
+	// subcommand's help and metadata.
+	Usage string
+
+	// HideDefault suppresses the inherited flag default in help and metadata
+	// without changing the bound runtime value.
+	HideDefault bool
 }
 
 // RegisterFlagOptions configures per-subcommand behavior for an inherited
 // persistent flag (typically one registered by [NewExtensionRootCommand],
 // such as -o/--output). One declaration drives:
 //
-//   - help/usage rendering — flag usage gets "(supported: ...)" appended and
-//     shows the per-command default
+//   - help/usage rendering — flag usage gets "(supported: ...)" appended,
+//     and shows the per-command usage/default behavior
 //   - extension metadata (see [GenerateExtensionMetadata]) — populates the
-//     flag's ValidValues field and overrides its Default field
+//     flag's ValidValues field and overrides its Default/Description fields
 //   - parse-time validation — values outside AllowedValues are rejected
 //     before the command's RunE runs
 //   - shell completion — AllowedValues are suggested for the flag
@@ -248,8 +262,8 @@ type FlagOptions struct {
 //     bound variable is set to Default before RunE runs
 //
 // Empty AllowedValues skips validation/completion. Empty Default leaves the
-// SDK default in place. Repeat calls for the same flag overwrite. A nil
-// command is a no-op.
+// SDK default in place unless HideDefault is true. Repeat calls for the same
+// flag overwrite. A nil command is a no-op.
 //
 // Panics if Name is empty, or if Default is set but not in a non-empty
 // AllowedValues. Returns an error from PersistentPreRunE if Name does not
@@ -294,6 +308,16 @@ func RegisterFlagOptions(cmd *cobra.Command, opts FlagOptions) *cobra.Command {
 	} else {
 		delete(cmd.Annotations, flagDefaultAnnotationPrefix+opts.Name)
 	}
+	if opts.Usage != "" {
+		cmd.Annotations[flagUsageAnnotationPrefix+opts.Name] = opts.Usage
+	} else {
+		delete(cmd.Annotations, flagUsageAnnotationPrefix+opts.Name)
+	}
+	if opts.HideDefault {
+		cmd.Annotations[flagHideDefaultAnnotationPrefix+opts.Name] = "true"
+	} else {
+		delete(cmd.Annotations, flagHideDefaultAnnotationPrefix+opts.Name)
+	}
 	return cmd
 }
 
@@ -302,6 +326,8 @@ func RegisterFlagOptions(cmd *cobra.Command, opts FlagOptions) *cobra.Command {
 type flagOverride struct {
 	AllowedValues []string
 	Default       string
+	Usage         string
+	HideDefault   bool
 }
 
 // flagOptionsCompletion returns a delegating completion func for flagName
@@ -343,6 +369,16 @@ func flagOverridesForCommand(cmd *cobra.Command) map[string]flagOverride {
 			o := out[name]
 			o.Default = val
 			out[name] = o
+		case strings.HasPrefix(key, flagUsageAnnotationPrefix):
+			name := strings.TrimPrefix(key, flagUsageAnnotationPrefix)
+			o := out[name]
+			o.Usage = val
+			out[name] = o
+		case strings.HasPrefix(key, flagHideDefaultAnnotationPrefix):
+			name := strings.TrimPrefix(key, flagHideDefaultAnnotationPrefix)
+			o := out[name]
+			o.HideDefault = true
+			out[name] = o
 		}
 	}
 	if len(out) == 0 {
@@ -372,10 +408,15 @@ func applyFlagOverridesForCommand(cmd *cobra.Command) func() {
 			continue
 		}
 		savedFlags = append(savedFlags, saved{flag, flag.Usage, flag.DefValue})
+		if ov.Usage != "" {
+			flag.Usage = ov.Usage
+		}
 		if len(ov.AllowedValues) > 0 {
 			flag.Usage = fmt.Sprintf("%s (supported: %s)", flag.Usage, strings.Join(ov.AllowedValues, ", "))
 		}
-		if ov.Default != "" {
+		if ov.HideDefault {
+			flag.DefValue = ""
+		} else if ov.Default != "" {
 			flag.DefValue = ov.Default
 		}
 	}

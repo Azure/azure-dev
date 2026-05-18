@@ -85,11 +85,12 @@ func TestCheckAuth_RunsWhenEnvironmentSelectedPassed(t *testing.T) {
 		Status: StatusPass,
 	}}
 
-	got := check.Fn(t.Context(), Options{}, prior)
+	got := check.Fn(t.Context(), Options{Unredacted: true}, prior)
 
 	require.Equal(t, StatusPass, got.Status)
 	require.Equal(t, "user@contoso.com · token valid for 47 minutes", got.Message)
 	require.Equal(t, 47, got.Details["validForMinutes"])
+	require.Equal(t, "user@contoso.com", got.Details["upn"])
 }
 
 func TestCheckAuth_FailsOnTokenAcquisitionError(t *testing.T) {
@@ -129,7 +130,7 @@ func TestCheckAuth_FailsOnExpiredToken(t *testing.T) {
 		validFor: -2 * time.Minute,
 	}))
 
-	got := check.Fn(t.Context(), Options{}, nil)
+	got := check.Fn(t.Context(), Options{Unredacted: true}, nil)
 
 	require.Equal(t, StatusFail, got.Status)
 	require.Contains(t, got.Message, "user@contoso.com")
@@ -147,12 +148,13 @@ func TestCheckAuth_WarnsWhenTokenExpiresSoon(t *testing.T) {
 		validFor: 2 * time.Minute,
 	}))
 
-	got := check.Fn(t.Context(), Options{}, nil)
+	got := check.Fn(t.Context(), Options{Unredacted: true}, nil)
 
 	require.Equal(t, StatusWarn, got.Status)
 	require.Contains(t, got.Message, "token expires in 2 minutes")
 	require.Contains(t, got.Suggestion, "Run `azd auth login`")
 	require.Equal(t, 2, got.Details["validForMinutes"])
+	require.Equal(t, "user@contoso.com", got.Details["upn"])
 }
 
 func TestCheckAuth_WarnsAtExactlyOneMinute(t *testing.T) {
@@ -165,7 +167,7 @@ func TestCheckAuth_WarnsAtExactlyOneMinute(t *testing.T) {
 		validFor: 90 * time.Second, // int(Minutes()) == 1
 	}))
 
-	got := check.Fn(t.Context(), Options{}, nil)
+	got := check.Fn(t.Context(), Options{Unredacted: true}, nil)
 
 	require.Equal(t, StatusWarn, got.Status)
 	require.Contains(t, got.Message, "token expires in 1 minute")
@@ -186,7 +188,7 @@ func TestCheckAuth_WarnSubMinuteRendersLessThanOneMinute(t *testing.T) {
 		validFor: 30 * time.Second,
 	}))
 
-	got := check.Fn(t.Context(), Options{}, nil)
+	got := check.Fn(t.Context(), Options{Unredacted: true}, nil)
 
 	require.Equal(t, StatusWarn, got.Status,
 		"30s of validity is positive — must be Warn, not Fail")
@@ -217,7 +219,7 @@ func TestCheckAuth_WarnPassBoundaryAtFiveMinutes(t *testing.T) {
 				upn:      "user@contoso.com",
 				validFor: tc.validFor,
 			}))
-			got := check.Fn(t.Context(), Options{}, nil)
+			got := check.Fn(t.Context(), Options{Unredacted: true}, nil)
 			require.Equal(t, tc.want, got.Status)
 		})
 	}
@@ -283,6 +285,99 @@ func TestCheckAuth_PassesWithoutUPN(t *testing.T) {
 	require.Equal(t, StatusPass, got.Status)
 	require.Equal(t, "token valid for 60 minutes", got.Message,
 		"with no UPN the message should not have the ` · ` separator")
+}
+
+// TestCheckAuth_RedactsUPNByDefault pins the doctor redaction contract for
+// the auth check: with --unredacted absent (Options{Unredacted: false}) the
+// raw UPN must not appear in Message or Details on any of the PASS / WARN /
+// expired-FAIL branches that surface it. The placeholder substitutes so
+// readers can still see that a UPN was discovered.
+func TestCheckAuth_RedactsUPNByDefault(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		validFor   time.Duration
+		wantStatus Status
+	}{
+		{"pass branch", 60 * time.Minute, StatusPass},
+		{"warn branch", 2 * time.Minute, StatusWarn},
+		{"expired fail branch", -2 * time.Minute, StatusFail},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			check := newCheckAuth(authProbeStub(authProbeResult{
+				upn:      "user@contoso.com",
+				validFor: tc.validFor,
+			}))
+
+			got := check.Fn(t.Context(), Options{}, nil)
+
+			require.Equal(t, tc.wantStatus, got.Status)
+			require.NotContains(t, got.Message, "user@contoso.com",
+				"raw UPN must not appear in Message without --unredacted")
+			require.Contains(t, got.Message, redactedPlaceholder,
+				"redacted placeholder must signal that a UPN was found")
+			if tc.wantStatus != StatusFail {
+				require.NotContains(t, got.Details, "upn",
+					"raw UPN must not appear in Details without --unredacted")
+			}
+		})
+	}
+}
+
+// TestCheckAuth_UnredactedKeepsUPN confirms the --unredacted flag still
+// surfaces the raw UPN in both Message and Details on the same branches.
+func TestCheckAuth_UnredactedKeepsUPN(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		validFor time.Duration
+		wantStat Status
+	}{
+		{"pass branch", 60 * time.Minute, StatusPass},
+		{"warn branch", 2 * time.Minute, StatusWarn},
+		{"expired fail branch", -2 * time.Minute, StatusFail},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			check := newCheckAuth(authProbeStub(authProbeResult{
+				upn:      "user@contoso.com",
+				validFor: tc.validFor,
+			}))
+
+			got := check.Fn(t.Context(), Options{Unredacted: true}, nil)
+
+			require.Equal(t, tc.wantStat, got.Status)
+			require.Contains(t, got.Message, "user@contoso.com")
+			require.NotContains(t, got.Message, redactedPlaceholder)
+			if tc.wantStat != StatusFail {
+				require.Equal(t, "user@contoso.com", got.Details["upn"])
+			}
+		})
+	}
+}
+
+// TestCheckAuth_RedactionWithoutUPNDropsPrefix ensures the redacted
+// placeholder is not added when no UPN was found at all — the message
+// must remain "token valid for 60 minutes" without any " · " separator.
+func TestCheckAuth_RedactionWithoutUPNDropsPrefix(t *testing.T) {
+	t.Parallel()
+
+	check := newCheckAuth(authProbeStub(authProbeResult{
+		validFor: 60 * time.Minute,
+	}))
+
+	got := check.Fn(t.Context(), Options{}, nil)
+
+	require.Equal(t, StatusPass, got.Status)
+	require.Equal(t, "token valid for 60 minutes", got.Message)
+	require.NotContains(t, got.Message, redactedPlaceholder,
+		"no placeholder should appear when no UPN was found")
+	require.NotContains(t, got.Details, "upn")
 }
 
 func TestCheckAuth_UsesDefaultProbeWhenSeamNotInjected(t *testing.T) {
@@ -436,6 +531,33 @@ func TestComposeAuthMessage(t *testing.T) {
 		composeAuthMessage("", "token valid for 5 minutes"))
 	require.Equal(t, "alice@contoso.com · token valid for 5 minutes",
 		composeAuthMessage("alice@contoso.com", "token valid for 5 minutes"))
+}
+
+func TestRedactUPN(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "", redactUPN("", false))
+	require.Equal(t, "", redactUPN("", true))
+	require.Equal(t, redactedPlaceholder, redactUPN("alice@contoso.com", false))
+	require.Equal(t, "alice@contoso.com", redactUPN("alice@contoso.com", true))
+}
+
+func TestAuthDetails(t *testing.T) {
+	t.Parallel()
+
+	redacted := authDetails("alice@contoso.com", 42, false)
+	require.Equal(t, 42, redacted["validForMinutes"])
+	require.NotContains(t, redacted, "upn",
+		"upn key must be omitted when --unredacted is false")
+
+	unredacted := authDetails("alice@contoso.com", 42, true)
+	require.Equal(t, 42, unredacted["validForMinutes"])
+	require.Equal(t, "alice@contoso.com", unredacted["upn"])
+
+	missing := authDetails("", 42, true)
+	require.Equal(t, 42, missing["validForMinutes"])
+	require.NotContains(t, missing, "upn",
+		"upn key must be omitted when no UPN was found, even with --unredacted")
 }
 
 func TestFirstLine(t *testing.T) {

@@ -94,7 +94,7 @@ func newCheckAuth(deps Dependencies) Check {
 		ID:     "remote.auth",
 		Name:   "authentication",
 		Remote: true,
-		Fn: func(ctx context.Context, _ Options, prior []Result) Result {
+		Fn: func(ctx context.Context, opts Options, prior []Result) Result {
 			if priorBlocked(prior, "local.environment-selected") {
 				return Result{
 					Status: StatusSkip,
@@ -110,6 +110,8 @@ func newCheckAuth(deps Dependencies) Check {
 			probeCtx, cancel := context.WithTimeout(ctx, authProbeTimeout)
 			defer cancel()
 			res := probe(probeCtx)
+
+			displayUPN := redactUPN(res.upn, opts.Unredacted)
 
 			if res.err != nil {
 				// Classify cancellation / timeout separately so we
@@ -149,7 +151,7 @@ func newCheckAuth(deps Dependencies) Check {
 			if res.validFor <= 0 {
 				return Result{
 					Status:     StatusFail,
-					Message:    composeAuthMessage(res.upn, "token has expired"),
+					Message:    composeAuthMessage(displayUPN, "token has expired"),
 					Suggestion: "Run `azd auth login` to refresh the token.",
 					Links:      []string{authLoginLink},
 				}
@@ -158,25 +160,19 @@ func newCheckAuth(deps Dependencies) Check {
 			if res.validFor < authWarnThreshold {
 				return Result{
 					Status: StatusWarn,
-					Message: composeAuthMessage(res.upn,
+					Message: composeAuthMessage(displayUPN,
 						"token expires in "+formatTokenWindow(res.validFor)),
 					Suggestion: "Run `azd auth login` to refresh the token " +
 						"before it expires.",
-					Links: []string{authLoginLink},
-					Details: map[string]any{
-						"validForMinutes": minutes,
-						"upn":             res.upn,
-					},
+					Links:   []string{authLoginLink},
+					Details: authDetails(res.upn, minutes, opts.Unredacted),
 				}
 			}
 			return Result{
 				Status: StatusPass,
-				Message: composeAuthMessage(res.upn,
+				Message: composeAuthMessage(displayUPN,
 					"token valid for "+formatTokenWindow(res.validFor)),
-				Details: map[string]any{
-					"validForMinutes": minutes,
-					"upn":             res.upn,
-				},
+				Details: authDetails(res.upn, minutes, opts.Unredacted),
 			}
 		},
 	}
@@ -258,9 +254,32 @@ func composeAuthMessage(upn, body string) string {
 	return upn + " · " + body
 }
 
-// formatMinutes renders a minute count with correct singular /
-// plural unit. "1 minute" vs "47 minutes" reads less awkward than a
-// fixed "minute(s)" suffix in the doctor report.
+// redactUPN returns the value to surface in user-facing messages: the
+// raw UPN when --unredacted, the shared <redacted> placeholder when a
+// UPN was discovered but should be scrubbed, and empty when none was
+// found (drops the prefix in composeAuthMessage).
+func redactUPN(upn string, unredacted bool) string {
+	if upn == "" {
+		return ""
+	}
+	if unredacted {
+		return upn
+	}
+	return redactedPlaceholder
+}
+
+// authDetails builds the structured Details map for the auth check.
+// The raw UPN only appears when --unredacted is set; otherwise the
+// key is omitted entirely so machine consumers do not see the value.
+func authDetails(upn string, minutes int, unredacted bool) map[string]any {
+	details := map[string]any{"validForMinutes": minutes}
+	if unredacted && upn != "" {
+		details["upn"] = upn
+	}
+	return details
+}
+
+// formatMinutes renders a minute count with the correct singular/plural unit.
 func formatMinutes(n int) string {
 	if n == 1 {
 		return "1 minute"

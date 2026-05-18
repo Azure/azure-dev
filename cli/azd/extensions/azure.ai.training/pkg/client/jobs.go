@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"azure.ai.training/pkg/models"
 )
@@ -58,7 +59,7 @@ func (c *Client) ListJobs(ctx context.Context, opts *ListJobsOptions) (*models.P
 // GetJob retrieves a specific job by ID.
 // GET .../jobs/{id}
 func (c *Client) GetJob(ctx context.Context, id string) (*models.JobResource, error) {
-	resp, err := c.doDataPlane(ctx, http.MethodGet, fmt.Sprintf("jobs/%s", id), nil)
+	resp, err := c.doDataPlane(ctx, http.MethodGet, fmt.Sprintf("jobs/%s", url.PathEscape(id)), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get job: %w", err)
 	}
@@ -79,7 +80,7 @@ func (c *Client) GetJob(ctx context.Context, id string) (*models.JobResource, er
 // CreateOrUpdateJob creates or updates a job.
 // PUT .../jobs/{id}
 func (c *Client) CreateOrUpdateJob(ctx context.Context, id string, job *models.JobResource) (*models.JobResource, error) {
-	resp, err := c.doDataPlane(ctx, http.MethodPut, fmt.Sprintf("jobs/%s", id), job)
+	resp, err := c.doDataPlane(ctx, http.MethodPut, fmt.Sprintf("jobs/%s", url.PathEscape(id)), job)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create job: %w", err)
 	}
@@ -100,7 +101,7 @@ func (c *Client) CreateOrUpdateJob(ctx context.Context, id string, job *models.J
 // CancelJob cancels a running job.
 // POST .../jobs/{id}/cancel
 func (c *Client) CancelJob(ctx context.Context, id string) error {
-	resp, err := c.doDataPlane(ctx, http.MethodPost, fmt.Sprintf("jobs/%s/cancel", id), nil)
+	resp, err := c.doDataPlane(ctx, http.MethodPost, fmt.Sprintf("jobs/%s/cancel", url.PathEscape(id)), nil)
 	if err != nil {
 		return fmt.Errorf("failed to cancel job: %w", err)
 	}
@@ -116,7 +117,7 @@ func (c *Client) CancelJob(ctx context.Context, id string) error {
 // DeleteJob deletes a job.
 // DELETE .../jobs/{id}
 func (c *Client) DeleteJob(ctx context.Context, id string) error {
-	resp, err := c.doDataPlane(ctx, http.MethodDelete, fmt.Sprintf("jobs/%s", id), nil)
+	resp, err := c.doDataPlane(ctx, http.MethodDelete, fmt.Sprintf("jobs/%s", url.PathEscape(id)), nil)
 	if err != nil {
 		return fmt.Errorf("failed to delete job: %w", err)
 	}

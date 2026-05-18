@@ -18,7 +18,7 @@ import (
 // GET .../jobs/{id}/artifacts
 func (c *Client) ListArtifacts(ctx context.Context, jobID string) (*models.ArtifactList, error) {
 	resp, err := c.doDataPlane(
-		ctx, http.MethodGet, fmt.Sprintf("jobs/%s/artifacts", jobID), nil,
+		ctx, http.MethodGet, fmt.Sprintf("jobs/%s/artifacts", url.PathEscape(jobID)), nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list artifacts: %w", err)
@@ -47,7 +47,7 @@ func (c *Client) ListArtifactsInPath(
 	ctx context.Context, jobID string, pathPrefix string,
 ) (*models.ArtifactList, error) {
 	resp, err := c.doDataPlane(
-		ctx, http.MethodGet, fmt.Sprintf("jobs/%s/artifacts/path", jobID), nil,
+		ctx, http.MethodGet, fmt.Sprintf("jobs/%s/artifacts/path", url.PathEscape(jobID)), nil,
 		"path", pathPrefix,
 	)
 	if err != nil {
@@ -96,7 +96,7 @@ func (c *Client) GetArtifactContent(
 	escapedPath := url.PathEscape(artifactPath)
 	resp, err := c.doDataPlane(
 		ctx, http.MethodGet,
-		fmt.Sprintf("jobs/%s/artifacts/getcontent/%s", jobID, escapedPath),
+		fmt.Sprintf("jobs/%s/artifacts/getcontent/%s", url.PathEscape(jobID), escapedPath),
 		nil, queryParams...,
 	)
 	if err != nil {
@@ -140,7 +140,7 @@ func (c *Client) GetArtifactContentInfo(
 	ctx context.Context, jobID string, artifactPath string,
 ) (*models.ArtifactContentInfo, error) {
 	resp, err := c.doDataPlane(
-		ctx, http.MethodGet, fmt.Sprintf("jobs/%s/artifacts/contentinfo", jobID), nil,
+		ctx, http.MethodGet, fmt.Sprintf("jobs/%s/artifacts/contentinfo", url.PathEscape(jobID)), nil,
 		"path", artifactPath,
 	)
 	if err != nil {
@@ -175,7 +175,7 @@ func (c *Client) GetArtifactSASForPath(
 	}
 
 	resp, err := c.doDataPlane(
-		ctx, http.MethodGet, fmt.Sprintf("jobs/%s/artifacts/prefix/contentinfo", jobID), nil,
+		ctx, http.MethodGet, fmt.Sprintf("jobs/%s/artifacts/prefix/contentinfo", url.PathEscape(jobID)), nil,
 		queryParams...,
 	)
 	if err != nil {

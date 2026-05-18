@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"azure.ai.training/pkg/models"
 )
@@ -20,7 +21,7 @@ func (c *Client) ListMetrics(ctx context.Context, jobID string) (*models.Metrics
 		ContinuationToken: nil,
 	}
 
-	resp, err := c.doDataPlane(ctx, http.MethodPost, fmt.Sprintf("metrics/%s/list", jobID), reqBody)
+	resp, err := c.doDataPlane(ctx, http.MethodPost, fmt.Sprintf("metrics/%s/list", url.PathEscape(jobID)), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list metrics: %w", err)
 	}
@@ -55,7 +56,7 @@ func (c *Client) GetMetricsFull(
 		EndTime:           nil,
 	}
 
-	resp, err := c.doDataPlane(ctx, http.MethodPost, fmt.Sprintf("metrics/%s/full", jobID), reqBody)
+	resp, err := c.doDataPlane(ctx, http.MethodPost, fmt.Sprintf("metrics/%s/full", url.PathEscape(jobID)), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get metrics: %w", err)
 	}

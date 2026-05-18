@@ -73,7 +73,7 @@ func newJobDownloadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				}
 				destRoot = filepath.Join(cwd, name)
 			}
-			if err := os.MkdirAll(destRoot, 0o755); err != nil {
+			if err := os.MkdirAll(destRoot, 0o750); err != nil {
 				return fmt.Errorf("failed to create download path: %w", err)
 			}
 
@@ -114,7 +114,7 @@ func newJobDownloadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 					)
 				}
 				dest := filepath.Join(destRoot, "named-outputs", outputName)
-				if err := os.MkdirAll(dest, 0o755); err != nil {
+				if err := os.MkdirAll(dest, 0o750); err != nil {
 					return fmt.Errorf("failed to create output dir: %w", err)
 				}
 				return downloadNamedOutput(ctx, apiClient, azRunner, outputName, &output, dest)
@@ -128,7 +128,7 @@ func newJobDownloadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 					}
 					out := out
 					dest := filepath.Join(destRoot, "named-outputs", outName)
-					if err := os.MkdirAll(dest, 0o755); err != nil {
+					if err := os.MkdirAll(dest, 0o750); err != nil {
 						return fmt.Errorf("failed to create output dir: %w", err)
 					}
 					if err := downloadNamedOutput(ctx, apiClient, azRunner, outName, &out, dest); err != nil {
@@ -141,7 +141,7 @@ func newJobDownloadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			// Default artifacts path (no flags, output-name=default, or --all tail)
 			if wantDefault || wantAll {
 				artifactsDest := filepath.Join(destRoot, "artifacts")
-				if err := os.MkdirAll(artifactsDest, 0o755); err != nil {
+				if err := os.MkdirAll(artifactsDest, 0o750); err != nil {
 					return fmt.Errorf("failed to create artifacts dir: %w", err)
 				}
 				if err := downloadDefaultArtifacts(ctx, apiClient, job, name, artifactsDest); err != nil {

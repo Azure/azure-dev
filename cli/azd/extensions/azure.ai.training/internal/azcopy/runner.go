@@ -216,7 +216,7 @@ func (r *Runner) copy(ctx context.Context, source, sasURI string, forceContents 
 		elapsed := time.Since(startTime)
 		fmt.Fprintf(os.Stdout, "\n  Upload failed after %s\n", formatDuration(elapsed))
 		if scanErr != nil {
-			return fmt.Errorf("azcopy failed: %w (also: error reading azcopy output: %v)", err, scanErr)
+			return fmt.Errorf("azcopy failed: %w (also: error reading azcopy output: %s)", err, scanErr.Error())
 		}
 		return fmt.Errorf("azcopy failed: %w", err)
 	}

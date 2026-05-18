@@ -149,7 +149,7 @@ func downloadOne(ctx context.Context, contentURI, destDir, relPath string) (int6
 	if err != nil {
 		return 0, err
 	}
-	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o750); err != nil {
 		return 0, fmt.Errorf("create dir: %w", err)
 	}
 
@@ -178,6 +178,7 @@ func downloadOne(ctx context.Context, contentURI, destDir, relPath string) (int6
 		// for a successful download. os.Rename is atomic on the same filesystem
 		// across Linux, macOS, and Windows; tmp + final live in the same dir.
 		tmpPath := outPath + ".tmp"
+		// #nosec G304 -- tmpPath is derived from safeJoin(destDir, relPath); destDir is controlled
 		f, err := os.Create(tmpPath)
 		if err != nil {
 			return 0, err
@@ -224,6 +225,7 @@ func SweepTempFiles(root string) {
 			return nil // best-effort; ignore unreadable dirs
 		}
 		if !d.IsDir() && strings.HasSuffix(path, ".tmp") {
+			// #nosec G122 -- best-effort cleanup of .tmp files under caller-controlled root
 			_ = os.Remove(path)
 		}
 		return nil

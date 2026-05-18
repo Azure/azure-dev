@@ -300,7 +300,7 @@ func printJobDetails(d *jobDetails) {
 	if props.Description != "" {
 		fmt.Fprintf(w, "Description:\t%s\n", props.Description)
 	}
-	w.Flush()
+	_ = w.Flush()
 	fmt.Println()
 
 	// Timing — prefer run history (more detailed), fall back to job properties
@@ -323,7 +323,7 @@ func printJobDetails(d *jobDetails) {
 	if codeID != "" {
 		fmt.Fprintf(w, "Code:\t%s\n", codeID)
 	}
-	w.Flush()
+	_ = w.Flush()
 
 	// Distribution
 	if props.Distribution != nil {
@@ -336,7 +336,7 @@ func printJobDetails(d *jobDetails) {
 				props.Distribution.ProcessCountPerInstance,
 			)
 		}
-		w.Flush()
+		_ = w.Flush()
 	}
 
 	// Resources — only show when the user did NOT submit gpuCount.
@@ -358,7 +358,7 @@ func printJobDetails(d *jobDetails) {
 		if props.Resources.ShmSize != "" {
 			fmt.Fprintf(w, "Shared Memory:\t%s\n", props.Resources.ShmSize)
 		}
-		w.Flush()
+		_ = w.Flush()
 	}
 
 	// Inputs — merge job inputs with run history inputs for asset IDs
@@ -414,7 +414,7 @@ func printTimingSection(d *jobDetails) {
 		}
 	}
 
-	w.Flush()
+	_ = w.Flush()
 	fmt.Println()
 }
 
@@ -454,7 +454,7 @@ func printComputeSection(d *jobDetails) {
 		}
 	}
 
-	w.Flush()
+	_ = w.Flush()
 	fmt.Println()
 }
 
@@ -546,7 +546,7 @@ func printInputsSection(inputs map[string]models.JobInput, history *models.RunHi
 			valueOrDash(val),
 		)
 	}
-	w.Flush()
+	_ = w.Flush()
 }
 
 func printOutputsSection(outputs map[string]models.JobOutput, history *models.RunHistory) {
@@ -631,7 +631,7 @@ func printOutputsSection(outputs map[string]models.JobOutput, history *models.Ru
 			valueOrDash(val),
 		)
 	}
-	w.Flush()
+	_ = w.Flush()
 }
 
 func printErrorSection(d *jobDetails) {
@@ -686,7 +686,7 @@ func printMetricsSection(metrics map[string]*models.MetricsFullResponse) {
 		}
 		fmt.Fprintf(w, "  %s\t%s\t%d\n", name, val, latest.Step)
 	}
-	w.Flush()
+	_ = w.Flush()
 }
 
 func printArtifactsSection(artifacts *models.ArtifactList) {
@@ -697,7 +697,7 @@ func printArtifactsSection(artifacts *models.ArtifactList) {
 	for _, a := range artifacts.Value {
 		fmt.Fprintf(w, "  %s\n", a.Path)
 	}
-	w.Flush()
+	_ = w.Flush()
 }
 
 func valueOrDash(s string) string {

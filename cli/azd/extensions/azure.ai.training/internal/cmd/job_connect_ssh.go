@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -42,7 +43,9 @@ func newJobConnectSSHCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			"      type: ssh\n" +
 			"      ssh_public_keys: |\n" +
 			"        ssh-ed25519 AAAA... user@host\n\n" +
-			"The SSH service must reach 'Running' status before this command can connect; that typically takes 30s\u2013120s after the job enters Running. If --private-key-file-path is omitted, the OpenSSH client falls back to the default identities under ~/.ssh/.\n\n" +
+			"The SSH service must reach 'Running' status before this command can connect; " +
+			"that typically takes 30s\u2013120s after the job enters Running. " +
+			"If --private-key-file-path is omitted, the OpenSSH client falls back to the default identities under ~/.ssh/.\n\n" +
 			"Example:\n" +
 			"  azd ai training job connect-ssh --name my-job --node-index 0 --private-key-file-path ~/.ssh/id_ed25519",
 		Args: cobra.NoArgs,
@@ -132,6 +135,7 @@ func lookupSSHBinary() (string, error) {
 		systemRoot := os.Getenv("SystemRoot")
 		if systemRoot != "" {
 			candidate := filepath.Join(systemRoot, "System32", "OpenSSH", "ssh.exe")
+			// #nosec G304 G703 -- candidate is derived from %SystemRoot%, not user input
 			if _, err := os.Stat(candidate); err == nil {
 				return candidate, nil
 			}
@@ -219,6 +223,7 @@ func runSSH(ctx context.Context, sshPath, selfPath, proxyEndpoint, privateKeyFil
 	}
 	args = append(args, "azureuser@"+destAlias)
 
+	// #nosec G204 -- sshPath is resolved by lookupSSHBinary; args are constructed from validated proxy endpoint
 	sshCmd := exec.CommandContext(ctx, sshPath, args...)
 	sshCmd.Stdin = os.Stdin
 	sshCmd.Stdout = os.Stdout
@@ -228,7 +233,8 @@ func runSSH(ctx context.Context, sshPath, selfPath, proxyEndpoint, privateKeyFil
 		// Pass ssh's exit code through transparently so callers/scripts can
 		// react to it. ssh already prints its own diagnostics on stderr;
 		// re-run with --debug to get verbose ssh output (-vvv).
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			os.Exit(exitErr.ExitCode())
 		}
 		return fmt.Errorf("ssh failed: %w", err)

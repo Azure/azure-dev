@@ -45,6 +45,7 @@ func TestCopyFile(t *testing.T) {
 		if err := copyFile(src, dst); err != nil {
 			t.Fatalf("copyFile: %v", err)
 		}
+		// #nosec G304 -- dst is built from t.TempDir(); test-only file read
 		got, err := os.ReadFile(dst)
 		if err != nil {
 			t.Fatalf("read dst: %v", err)
@@ -71,7 +72,7 @@ func TestCopyDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("a"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(src, "sub"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(src, "sub"), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(src, "sub", "b.txt"), []byte("b"), 0600); err != nil {
@@ -83,10 +84,12 @@ func TestCopyDirectory(t *testing.T) {
 		t.Fatalf("copyDirectory: %v", err)
 	}
 
+	// #nosec G304 -- dst is t.TempDir(); test-only file read
 	a, err := os.ReadFile(filepath.Join(dst, "a.txt"))
 	if err != nil || string(a) != "a" {
 		t.Errorf("a.txt: got %q err %v", string(a), err)
 	}
+	// #nosec G304 -- dst is t.TempDir(); test-only file read
 	b, err := os.ReadFile(filepath.Join(dst, "sub", "b.txt"))
 	if err != nil || string(b) != "b" {
 		t.Errorf("sub/b.txt: got %q err %v", string(b), err)

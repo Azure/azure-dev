@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -207,7 +208,7 @@ func runSSHProxy(ctx context.Context, proxyEndpoint string) error {
 	// EOF and orderly close are clean exits from the user's perspective.
 	// CloseAbnormalClosure (1006) is intentionally NOT treated as success so
 	// that abrupt disconnects surface as a non-zero exit to OpenSSH.
-	if pipeErr == nil || pipeErr == io.EOF || websocket.IsCloseError(pipeErr,
+	if pipeErr == nil || errors.Is(pipeErr, io.EOF) || websocket.IsCloseError(pipeErr,
 		websocket.CloseNormalClosure,
 		websocket.CloseGoingAway) {
 		return nil

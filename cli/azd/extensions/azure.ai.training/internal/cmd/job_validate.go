@@ -30,6 +30,7 @@ func newJobValidateCommand() *cobra.Command {
 			}
 
 			// Read and parse the YAML file
+			// #nosec G304 -- filePath is the user-supplied --file argument; reading it is the command's purpose
 			data, err := os.ReadFile(filePath)
 			if err != nil {
 				return fmt.Errorf("failed to read job file '%s': %w", filePath, err)

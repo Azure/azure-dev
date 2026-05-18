@@ -149,6 +149,7 @@ func (c *Client) do(req *http.Request, bodyBytes []byte) (*http.Response, error)
 			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		}
 
+		// #nosec G107 G704 -- req.URL is constructed by this client from configured baseURL and known paths
 		resp, err := c.httpClient.Do(req)
 		lastResp, lastErr = resp, err
 
@@ -210,6 +211,7 @@ func backoffDelay(attempt int, base, max time.Duration) time.Duration {
 		delay = max
 	}
 	// Full jitter in [delay/2, delay].
+	// #nosec G404 -- non-cryptographic jitter for retry backoff
 	jitter := time.Duration(rand.Int63n(int64(delay) / 2))
 	return delay/2 + jitter
 }

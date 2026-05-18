@@ -95,7 +95,9 @@ func TestValidate_GitPaths(t *testing.T) {
 // Tests local path existence for code and input paths.
 func TestValidate_LocalPaths(t *testing.T) {
 	dir := t.TempDir()
-	os.Mkdir(filepath.Join(dir, "src"), 0o755)
+	if err := os.Mkdir(filepath.Join(dir, "src"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 
 	// YAML:  code: src  — src/ exists on disk → no error
 	job := validJob()

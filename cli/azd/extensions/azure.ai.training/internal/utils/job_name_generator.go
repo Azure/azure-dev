@@ -72,11 +72,14 @@ var allowedNouns = []string{
 // GenerateJobName generates a human-friendly job name in the format {adjective}_{noun}_{suffix}.
 // This matches the Azure ML SDK name generation pattern.
 func GenerateJobName() string {
+	// #nosec G404 -- non-cryptographic job-name generation; collisions are tolerated
 	adj := allowedAdjectives[rand.Intn(len(allowedAdjectives))]
+	// #nosec G404 -- non-cryptographic job-name generation; collisions are tolerated
 	noun := allowedNouns[rand.Intn(len(allowedNouns))]
 
 	suffix := make([]byte, suffixLength)
 	for i := range suffix {
+		// #nosec G404 -- non-cryptographic job-name suffix; collisions are tolerated
 		suffix[i] = allowedChars[rand.Intn(len(allowedChars))]
 	}
 

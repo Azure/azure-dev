@@ -74,6 +74,7 @@ type OutputDefinition struct {
 
 // ParseJobFile reads and parses a YAML job definition file.
 func ParseJobFile(path string) (*JobDefinition, error) {
+	// #nosec G304 -- path is a user-supplied YAML job definition; reading is the command's purpose
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read job file: %w", err)

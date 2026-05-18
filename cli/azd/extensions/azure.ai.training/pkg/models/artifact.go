@@ -18,8 +18,8 @@ type Artifact struct {
 // ArtifactList represents a paginated list of artifacts.
 type ArtifactList struct {
 	Value             []Artifact `json:"value"`
-	ContinuationToken *string   `json:"continuationToken,omitempty"`
-	NextLink          *string   `json:"nextLink,omitempty"`
+	ContinuationToken *string    `json:"continuationToken,omitempty"`
+	NextLink          *string    `json:"nextLink,omitempty"`
 }
 
 // ArtifactContentInfo represents content information for an artifact, including a SAS URI.
@@ -35,6 +35,6 @@ type ArtifactContentInfo struct {
 // ArtifactContentInfoList represents a paginated list of artifact content info with SAS URIs.
 type ArtifactContentInfoList struct {
 	Value             []ArtifactContentInfo `json:"value"`
-	ContinuationToken *string              `json:"continuationToken,omitempty"`
-	NextLink          *string              `json:"nextLink,omitempty"`
+	ContinuationToken *string               `json:"continuationToken,omitempty"`
+	NextLink          *string               `json:"nextLink,omitempty"`
 }

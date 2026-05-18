@@ -84,10 +84,10 @@ func ComputeDirectoryHash(dirPath string) (string, error) {
 			return "", fmt.Errorf("failed to open %s: %w", f.absPath, err)
 		}
 		if _, err := io.Copy(h, file); err != nil {
-			file.Close()
+			_ = file.Close()
 			return "", fmt.Errorf("failed to hash contents of %s: %w", f.relPath, err)
 		}
-		file.Close()
+		_ = file.Close()
 	}
 
 	return fmt.Sprintf("%x", h.Sum(nil)), nil

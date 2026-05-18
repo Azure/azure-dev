@@ -104,7 +104,7 @@ func (c *Client) GetArtifactContent(
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, nil
 	}
 

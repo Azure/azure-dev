@@ -40,9 +40,7 @@ func TestRootCmd_CwdRelativePathResolvedToAbsolute(t *testing.T) {
 
 	// PersistentPreRunE triggers on Execute
 	err := rootCmd.Execute()
-	// version command should succeed (or we just care about prerun)
-	// The key assertion is that opts.Cwd is now absolute
-	_ = err
+	require.NoError(t, err)
 
 	require.Equal(t, absExpected, opts.Cwd,
 		"relative -C path should be resolved to absolute before chdir")
@@ -76,7 +74,8 @@ func TestRootCmd_CwdAbsolutePathUnchanged(t *testing.T) {
 	rootCmd.SetArgs([]string{"version"})
 	rootCmd.SetContext(t.Context())
 
-	_ = rootCmd.Execute()
+	err := rootCmd.Execute()
+	require.NoError(t, err)
 
 	require.Equal(t, subDir, opts.Cwd,
 		"absolute path should remain unchanged")

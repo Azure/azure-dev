@@ -51,8 +51,13 @@ func stripCwdFlag(args []string) []string {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 
-		// --cwd=value or -C=value (combined form)
+		// --cwd=value or -C=value (combined form with equals)
 		if strings.HasPrefix(arg, "--cwd=") || strings.HasPrefix(arg, "-C=") {
+			continue
+		}
+
+		// -Cvalue (combined shorthand without equals, e.g. -CmyFolder)
+		if len(arg) > 2 && strings.HasPrefix(arg, "-C") && arg[2] != '-' {
 			continue
 		}
 

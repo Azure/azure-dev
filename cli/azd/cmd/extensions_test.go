@@ -214,6 +214,11 @@ func TestStripCwdFlag(t *testing.T) {
 			want: []string{"init", "--no-prompt"},
 		},
 		{
+			name: "ShortFormCombinedValue",
+			args: []string{"init", "-CmyFolder", "--no-prompt"},
+			want: []string{"init", "--no-prompt"},
+		},
+		{
 			name: "EmptyArgs",
 			args: []string{},
 			want: []string{},

@@ -201,15 +201,24 @@ func printCreateResult(s *skill_api.Skill, format string) error {
 // wiping an unrelated skill on a typo. Returns nil when the archive omits
 // `name` (no claim) or when the names agree.
 func verifyPackageNameMatches(archivePath, positionalName string) error {
-	data, readErr := os.ReadFile(archivePath) //nolint:gosec // user-supplied path read on user's behalf
-	if readErr != nil {
+	f, openErr := os.Open(archivePath) //nolint:gosec // user-supplied path opened on user's behalf
+	if openErr != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("cannot read %s: %s", archivePath, readErr),
+			fmt.Sprintf("cannot open %s: %s", archivePath, openErr),
 			"verify the file is readable",
 		)
 	}
-	archiveName, peekErr := skill_api.PeekArchiveSkillName(data)
+	defer f.Close()
+	info, statErr := f.Stat()
+	if statErr != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("cannot stat %s: %s", archivePath, statErr),
+			"verify the file is readable",
+		)
+	}
+	archiveName, peekErr := skill_api.PeekArchiveSkillName(f, info.Size())
 	if peekErr != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidSkillFile,
@@ -393,8 +402,7 @@ func shouldSuppressWarning(noPrompt bool, format string) bool {
 }
 
 func isNotFound(err error) bool {
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		return respErr.StatusCode == 404
 	}
 	return false

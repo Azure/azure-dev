@@ -366,7 +366,26 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600) //nolint:gosec // user-supplied output dir, written on user behalf
+
+	// Even with --force, never follow a symlink at the destination: O_TRUNC
+	// would otherwise overwrite whatever the link points at, potentially
+	// outside OutputDir. Lstat first, reject non-regular entries, and remove
+	// any pre-existing regular file so the O_EXCL open below owns the path.
+	if info, lstatErr := os.Lstat(dst); lstatErr == nil {
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf(
+				"%w: destination %q already exists and is not a regular file",
+				ErrUnsafeEntry, dst,
+			)
+		}
+		if rmErr := os.Remove(dst); rmErr != nil {
+			return fmt.Errorf("remove existing destination %q: %w", dst, rmErr)
+		}
+	} else if !errors.Is(lstatErr, os.ErrNotExist) {
+		return fmt.Errorf("stat destination %q: %w", dst, lstatErr)
+	}
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0600) //nolint:gosec // user-supplied output dir, written on user behalf
 	if err != nil {
 		return err
 	}

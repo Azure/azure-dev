@@ -4,7 +4,6 @@
 package skill_api
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"strings"
@@ -91,9 +90,6 @@ const frontMatterDelimiter = "---"
 // (exclusive of the delimiter lines themselves). Leading blank lines are
 // allowed.
 func findFrontMatterBounds(data []byte) (open, close int, err error) {
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(make([]byte, 0, 4096), 1<<20)
-
 	sawOpen := false
 	lineOffset := 0
 	cur := data

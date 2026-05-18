@@ -22,9 +22,12 @@ const (
 // than the positional argument, we refuse the delete-then-create.
 //
 // Looks for SKILL.md at the archive root or one directory below.
-// ZIP-only — the upload surface is ZIP.
-func PeekArchiveSkillName(data []byte) (string, error) {
-	zr, err := zip.NewReader(newBytesReaderAt(data), int64(len(data)))
+// ZIP-only — the upload surface is ZIP. The caller passes an io.ReaderAt
+// + size (typically an *os.File and its stat size) so the archive is not
+// slurped into memory: zip.NewReader streams central-directory and entry
+// payloads via ReadAt as needed.
+func PeekArchiveSkillName(r io.ReaderAt, size int64) (string, error) {
+	zr, err := zip.NewReader(r, size)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", ErrInvalidArchive, err)
 	}

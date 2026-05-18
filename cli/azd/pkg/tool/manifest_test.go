@@ -79,10 +79,10 @@ func TestBuiltInTools(t *testing.T) {
 		t.Parallel()
 
 		validCategories := map[ToolCategory]bool{
-			ToolCategoryCLI:       true,
+			ToolCategoryCLI:             true,
 			ToolCategoryVSCodeExtension: true,
-			ToolCategoryServer:    true,
-			ToolCategoryAzdExtension:   true,
+			ToolCategoryServer:          true,
+			ToolCategoryAzdExtension:    true,
 		}
 
 		tools := BuiltInTools()

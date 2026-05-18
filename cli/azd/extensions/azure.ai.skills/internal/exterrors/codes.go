@@ -32,6 +32,7 @@ const (
 	CodeMissingForceFlag       = "missing_force_flag"
 	CodeSkillNotFound          = "skill_not_found"
 	CodeSkillAlreadyExists     = "skill_already_exists"
+	CodeSkillNoPackage         = "skill_no_package"
 )
 
 // Error codes for auth.

@@ -69,6 +69,26 @@ func (a *downloadAction) Run(ctx context.Context) error {
 		return err
 	}
 
+	// Pre-flight via Get so we can detect the "no associated package" case
+	// before issuing the :download call. The service returns 404 with a
+	// dedicated error code when the skill was created from inline JSON (or a
+	// SKILL.md file) rather than a gzip package, but the message is opaque —
+	// surfacing the HasBlob check up front gives the user a clearer answer.
+	skill, err := skillCtx.client.Get(ctx, a.flags.name)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, exterrors.OpGetSkill)
+	}
+	if !skill.HasBlob {
+		return exterrors.Validation(
+			exterrors.CodeSkillNoPackage,
+			fmt.Sprintf("skill %q has no downloadable package", a.flags.name),
+			"only skills created from a `.tar.gz` / `.tgz` archive have a downloadable "+
+				"package. Use `azd ai skill show <name>` to inspect metadata; "+
+				"re-create with `azd ai skill create <name> --file <archive>.tar.gz --force` "+
+				"if you want a downloadable copy.",
+		)
+	}
+
 	body, err := skillCtx.client.Download(ctx, a.flags.name)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpDownloadSkill)

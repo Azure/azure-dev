@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"azure.ai.training/pkg/models"
@@ -61,7 +62,7 @@ func (c *Client) GetRunHistoryDetails(ctx context.Context, trackingEndpoint stri
 	req.Header.Set("Content-Type", "application/json")
 
 	if c.debugBody {
-		fmt.Printf("[DEBUG] GET %s\n", reqURL)
+		fmt.Fprintf(os.Stderr, "[DEBUG] GET %s\n", reqURL)
 	}
 
 	resp, err := c.do(req, nil)

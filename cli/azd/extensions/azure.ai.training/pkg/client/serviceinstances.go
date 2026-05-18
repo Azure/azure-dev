@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 
 	"azure.ai.training/pkg/models"
@@ -51,7 +52,7 @@ func (c *Client) GetServiceInstance(
 	req.Header.Set("Content-Type", "application/json")
 
 	if c.debugBody {
-		fmt.Printf("[DEBUG] GET %s\n", reqURL)
+		fmt.Fprintf(os.Stderr, "[DEBUG] GET %s\n", reqURL)
 	}
 
 	resp, err := c.do(req, nil)
@@ -110,7 +111,7 @@ func (c *Client) GetServiceInstanceRaw(
 	req.Header.Set("Content-Type", "application/json")
 
 	if c.debugBody {
-		fmt.Printf("[DEBUG] GET %s\n", reqURL)
+		fmt.Fprintf(os.Stderr, "[DEBUG] GET %s\n", reqURL)
 	}
 
 	resp, err := c.do(req, nil)

@@ -13,6 +13,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -92,7 +93,7 @@ func (c *Client) doDataPlaneWithVersion(ctx context.Context, method, path, apiVe
 	}
 
 	if c.debugBody {
-		fmt.Printf("[DEBUG] %s %s\n", method, reqURL)
+		fmt.Fprintf(os.Stderr, "[DEBUG] %s %s\n", method, reqURL)
 	}
 
 	var bodyBytes []byte
@@ -102,7 +103,7 @@ func (c *Client) doDataPlaneWithVersion(ctx context.Context, method, path, apiVe
 			return nil, fmt.Errorf("failed to marshal request body: %w", err)
 		}
 		if c.debugBody {
-			fmt.Printf("[DEBUG] Request body: %s\n", string(data))
+			fmt.Fprintf(os.Stderr, "[DEBUG] Request body: %s\n", string(data))
 		}
 		bodyBytes = data
 	}

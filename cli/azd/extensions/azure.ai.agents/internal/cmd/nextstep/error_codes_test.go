@@ -104,6 +104,7 @@ func TestErrorCodeWireValues(t *testing.T) {
 		"AgentVersionProvisioningFailed": string(SessionAgentVersionProvisioningFailed),
 		"creating":                       string(AgentVersionCreating),
 		"active":                         string(AgentVersionActive),
+		"idle":                           string(AgentVersionIdle),
 		"failed":                         string(AgentVersionFailed),
 		"deleting":                       string(AgentVersionDeleting),
 		"deleted":                        string(AgentVersionDeleted),

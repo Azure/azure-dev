@@ -258,6 +258,8 @@ func (cli *Cli) BuildContainerLocal(
 		"--getProperty:GeneratedContainerConfiguration",
 	)
 
+	runArgs = appendArtifactsPath(ctx, runArgs)
+
 	result, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return 0, "", fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
@@ -302,6 +304,8 @@ func (cli *Cli) PublishContainer(
 		"--getProperty:GeneratedContainerConfiguration",
 	)
 
+	runArgs = appendArtifactsPath(ctx, runArgs)
+
 	runArgs = runArgs.WithEnv([]string{
 		fmt.Sprintf("DOTNET_CONTAINER_REGISTRY_UNAME=%s", username),
 		fmt.Sprintf("DOTNET_CONTAINER_REGISTRY_PWORD=%s", password),
@@ -321,6 +325,40 @@ func (cli *Cli) PublishContainer(
 	}
 
 	return port, nil
+}
+
+// appendArtifactsPath checks the context for a per-service artifacts path
+// (set by [ContextWithArtifactsPath]) and, if present, appends
+// --artifacts-path to the dotnet publish command. This redirects all
+// intermediate build outputs (obj/, bin/) to a service-specific directory,
+// preventing file races when multiple services that share <ProjectReference>
+// dependencies are published in parallel.
+func appendArtifactsPath(ctx context.Context, runArgs exec.RunArgs) exec.RunArgs {
+	if ap := ArtifactsPathFromContext(ctx); ap != "" {
+		runArgs = runArgs.AppendParams("--artifacts-path", ap)
+	}
+	return runArgs
+}
+
+type artifactsPathContextKey struct{}
+
+// ContextWithArtifactsPath returns a new context carrying a per-service
+// artifacts path. When set, dotnet publish commands append
+// `--artifacts-path <path>` to redirect all intermediate build outputs
+// (obj/, bin/) to a service-specific directory, preventing file races when
+// multiple services sharing <ProjectReference> dependencies are published
+// in parallel.
+func ContextWithArtifactsPath(ctx context.Context, path string) context.Context {
+	return context.WithValue(ctx, artifactsPathContextKey{}, path)
+}
+
+// ArtifactsPathFromContext retrieves the per-service artifacts path from
+// the context, or "" if none was set.
+func ArtifactsPathFromContext(ctx context.Context) string {
+	if p, ok := ctx.Value(artifactsPathContextKey{}).(string); ok {
+		return p
+	}
+	return ""
 }
 
 // getTargetPort parses the output of `dotnet publish` with `/t:PublishContainer` to get the port the container exposes.

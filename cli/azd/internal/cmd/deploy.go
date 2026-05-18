@@ -272,10 +272,12 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 // deployServicesGraph builds an execution graph of service deployments and runs them in
 // parallel via the execution graph scheduler. Services that share a non-empty
-// [serviceGraphOptions.buildGateKey] serialize on the first one to act as a
-// shared build gate; today that policy only fires for Aspire services
-// (DotNetContainerApp != nil), which share a single .NET AppHost build. Every
-// other service runs fully in parallel with no inter-service edges.
+// [serviceGraphOptions.buildGateKey] share a runtime mutex that serializes only
+// their image-preparation phase (dotnet publish); the Azure deployment portion
+// runs fully in parallel. Today that policy only fires for Aspire services
+// (DotNetContainerApp != nil), which share .NET project references whose obj/
+// directories collide under parallel `dotnet publish`. Every other service runs
+// fully in parallel with no inter-service edges.
 func (da *DeployAction) deployServicesGraph(
 	ctx context.Context,
 	stableServices []*project.ServiceConfig,

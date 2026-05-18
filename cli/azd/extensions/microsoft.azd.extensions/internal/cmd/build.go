@@ -30,7 +30,7 @@ type buildFlags struct {
 	skipInstall  bool
 }
 
-func newBuildCommand() *cobra.Command {
+func newBuildCommand(outputPath *string) *cobra.Command {
 	flags := &buildFlags{}
 
 	buildCmd := &cobra.Command{
@@ -42,6 +42,9 @@ func newBuildCommand() *cobra.Command {
 				"Builds the azd extension project for one or more platforms",
 			)
 
+			if outputPath != nil {
+				flags.outputPath = *outputPath
+			}
 			defaultBuildFlags(flags)
 			err := runBuildAction(cmd.Context(), flags)
 			if err != nil {
@@ -53,11 +56,11 @@ func newBuildCommand() *cobra.Command {
 		},
 	}
 
-	buildCmd.Flags().StringVarP(
-		&flags.outputPath,
-		"output", "o", "./bin",
-		"Path to the output directory. Defaults to ./bin folder.",
-	)
+	azdext.RegisterFlagOptions(buildCmd, azdext.FlagOptions{
+		Name:    "output",
+		Default: "./bin",
+		Usage:   "Path to the output directory.",
+	})
 	buildCmd.Flags().BoolVar(
 		&flags.allPlatforms, "all", false,
 		"When set builds for all os/platforms. Defaults to the current os/platform only.",

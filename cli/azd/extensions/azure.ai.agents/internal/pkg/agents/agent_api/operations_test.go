@@ -122,60 +122,47 @@ func TestSessionRequestOptions_ApplyHeaders(t *testing.T) {
 		wantChat    string
 		wantSession string
 	}{
-		{name: "nil options"},
 		{
-			name:    "empty options",
-			options: &SessionRequestOptions{},
-		},
-		{
-			name: "user only",
-			options: &SessionRequestOptions{
-				UserIsolationKey: "user-1",
-			},
+			name:     "both user and chat set",
+			options:  &SessionRequestOptions{UserIsolationKey: "user-1", ChatIsolationKey: "chat-1"},
 			wantUser: "user-1",
-		},
-		{
-			name: "chat only",
-			options: &SessionRequestOptions{
-				ChatIsolationKey: "chat-1",
-			},
 			wantChat: "chat-1",
 		},
 		{
-			name: "session only",
-			options: &SessionRequestOptions{
-				SessionIsolationKey: "session-1",
-			},
-			wantSession: "session-1",
+			name:     "user key only",
+			options:  &SessionRequestOptions{UserIsolationKey: "user-only"},
+			wantUser: "user-only",
 		},
 		{
-			name: "all headers",
-			options: &SessionRequestOptions{
-				SessionIsolationKey: "session-1",
-				UserIsolationKey:    "user-1",
-				ChatIsolationKey:    "chat-1",
-			},
-			wantUser:    "user-1",
-			wantChat:    "chat-1",
-			wantSession: "session-1",
+			name:     "chat key only",
+			options:  &SessionRequestOptions{ChatIsolationKey: "chat-only"},
+			wantChat: "chat-only",
+		},
+		{
+			name:        "session key with user key",
+			options:     &SessionRequestOptions{SessionIsolationKey: "sess-1", UserIsolationKey: "u"},
+			wantUser:    "u",
+			wantSession: "sess-1",
+		},
+		{
+			name:    "nil options is a no-op",
+			options: nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			headers := http.Header{}
 			headers.Set("Authorization", "Bearer unchanged")
 
 			tt.options.ApplyHeaders(headers)
 
 			require.Equal(t, "Bearer unchanged", headers.Get("Authorization"))
-			requireIsolationHeaders(
-				t,
-				&http.Request{Header: headers},
-				tt.wantUser,
-				tt.wantChat,
-				tt.wantSession,
-			)
+			require.Equal(t, tt.wantUser, headers.Get(AgentUserIsolationKeyHeader))
+			require.Equal(t, tt.wantChat, headers.Get(AgentChatIsolationKeyHeader))
+			require.Equal(t, tt.wantSession, headers.Get(SessionIsolationKeyHeader))
 		})
 	}
 }

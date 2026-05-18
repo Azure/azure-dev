@@ -391,9 +391,8 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	}
 
 	if resp.StatusCode >= 400 {
-		requestID := resp.Header.Get("apim-request-id")
-		if requestID != "" {
-			fmt.Printf("Trace ID: %s\n", requestID)
+		if traceID := responseTraceID(resp); traceID != "" {
+			fmt.Printf("Trace ID:     %s\n", traceID)
 		}
 		return fmt.Errorf(
 			"POST %s failed with HTTP %d: %s\n%s",
@@ -635,9 +634,8 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	requestID := resp.Header.Get("apim-request-id")
-	if requestID != "" {
-		fmt.Printf("Trace ID: %s\n", requestID)
+	if traceID := responseTraceID(resp); traceID != "" {
+		fmt.Printf("Trace ID:     %s\n", traceID)
 	}
 
 	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, "Session:      ")
@@ -847,9 +845,8 @@ func handleInvocationResponse(
 	timeout time.Duration,
 	options *agent_api.SessionRequestOptions,
 ) error {
-	requestID := resp.Header.Get("apim-request-id")
-	if requestID != "" {
-		fmt.Printf("Trace ID: %s\n", requestID)
+	if traceID := responseTraceID(resp); traceID != "" {
+		fmt.Printf("Trace ID:     %s\n", traceID)
 	}
 
 	if resp.StatusCode >= 400 {
@@ -1161,6 +1158,23 @@ func createConversation(
 		return id, nil
 	}
 	return "", fmt.Errorf("conversation response missing 'id' field")
+}
+
+// responseTraceID returns the trace ID from the response, preferring x-request-id
+// and falling back to apim-request-id. If a header value is comma-folded (which
+// can happen when an intermediary like APIM combines duplicate headers per
+// RFC 7230 §3.2.2), the first non-empty token is returned.
+func responseTraceID(resp *http.Response) string {
+	raw := resp.Header.Get("x-request-id")
+	if raw == "" {
+		raw = resp.Header.Get("apim-request-id")
+	}
+	for part := range strings.SplitSeq(raw, ",") {
+		if id := strings.TrimSpace(part); id != "" {
+			return id
+		}
+	}
+	return ""
 }
 
 // readSSEStream reads a Server-Sent Events stream from the Foundry Responses API,

@@ -14,8 +14,8 @@
 # - Fork PRs: External contributors from forks have restricted token permissions.
 #   If API calls fail with 403, the check reports a clear error rather than crashing.
 #
-# To change the required approvers list, update the array in
-# .github/scripts/approval-ext-azure-ai-agents.js.
+# To change the required approvers list, update the REQUIRED_APPROVERS env var below
+# or modify the default list in .github/scripts/pr-approval-foundry-extensions-shared.js.
 
 name: ext-azure-ai-agents-approval
 
@@ -24,13 +24,9 @@ on:
     paths:
       - "cli/azd/extensions/azure.ai.agents/**"
       - ".github/workflows/approval-ext-azure-ai-agents.yml"
-      - ".github/scripts/approval-ext-azure-ai-agents.js"
+      - ".github/scripts/pr-approval-foundry-extensions-shared.js"
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
-  # GitHub Actions does not support `paths:` filters on pull_request_review or
-  # issue_comment events. The script performs a runtime path check to compensate.
-  pull_request_review:
-    types: [submitted]
   issue_comment:
     types: [created]
 
@@ -53,7 +49,6 @@ jobs:
     # match and authorization checks.
     if: |
       github.event_name == 'pull_request' ||
-      github.event_name == 'pull_request_review' ||
       (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/agents-extension-approval override'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -63,7 +58,11 @@ jobs:
 
       - name: Check for required team approval
         uses: actions/github-script@v9
+        env:
+          EXTENSION_PATH: "cli/azd/extensions/azure.ai.agents/"
+          WORKFLOW_PATH: ".github/workflows/approval-ext-azure-ai-agents.yml"
+          OVERRIDE_COMMAND: "/agents-extension-approval override"
         with:
           script: |
-            const script = require('./.github/scripts/approval-ext-azure-ai-agents.js');
+            const script = require('./.github/scripts/pr-approval-foundry-extensions-shared.js');
             await script({ github, context, core });

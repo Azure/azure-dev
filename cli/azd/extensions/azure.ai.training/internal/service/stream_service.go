@@ -289,7 +289,7 @@ func (s *StreamService) flushLogs(
 }
 
 // extractServiceEndpoint extracts the endpoint URL from the job services map.
-func extractServiceEndpoint(services map[string]interface{}, serviceName string) string {
+func extractServiceEndpoint(services map[string]any, serviceName string) string {
 	if services == nil {
 		return ""
 	}
@@ -297,7 +297,7 @@ func extractServiceEndpoint(services map[string]interface{}, serviceName string)
 	if !ok {
 		return ""
 	}
-	svcMap, ok := svc.(map[string]interface{})
+	svcMap, ok := svc.(map[string]any)
 	if !ok {
 		return ""
 	}

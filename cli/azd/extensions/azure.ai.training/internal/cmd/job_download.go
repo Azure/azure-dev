@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -424,7 +425,6 @@ func fetchContentInfosParallel(
 	done := make(chan int, len(artifacts))
 
 	for i, a := range artifacts {
-		i, a := i, a
 		sem <- struct{}{}
 		go func() {
 			defer func() { <-sem; done <- i }()
@@ -499,12 +499,7 @@ func extractSasURI(creds *models.CredentialsResponse) string {
 
 // isTerminalStatus reports whether the job state allows downloads.
 func isTerminalStatus(status string) bool {
-	for _, s := range terminalStatuses {
-		if s == status {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(terminalStatuses, status)
 }
 
 // listOutputNames returns the sorted user-defined output names (excluding "default") for error messages.

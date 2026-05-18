@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 	"strings"
 
@@ -234,7 +235,7 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 	// Services (e.g., SSH). ValidateJobOffline restricts type to "ssh"
 	// and ensures ssh_public_keys is non-empty.
 	if len(def.Services) > 0 {
-		job.Services = make(map[string]interface{}, len(def.Services))
+		job.Services = make(map[string]any, len(def.Services))
 		for name, svc := range def.Services {
 			job.Services[name] = buildServiceRequest(svc)
 		}
@@ -262,9 +263,7 @@ func buildServiceRequest(svc utils.ServiceDefinition) *models.JobServiceRequest 
 
 	// Merge ssh_public_keys into properties (API uses properties.sshPublicKeys).
 	props := make(map[string]any)
-	for k, v := range svc.Properties {
-		props[k] = v
-	}
+	maps.Copy(props, svc.Properties)
 	props["sshPublicKeys"] = svc.SshPublicKeys
 	req.Properties = props
 

@@ -112,8 +112,8 @@ func parseTrackingEndpoint(trackingEndpoint string) (string, string, error) {
 	// Extract workspace path: everything after /mlflow/v1.0/ or /mlflow/v2.0/
 	path := parsed.Path
 	for _, prefix := range []string{"/mlflow/v1.0", "/mlflow/v2.0"} {
-		if strings.HasPrefix(path, prefix) {
-			workspacePath := strings.TrimPrefix(path, prefix)
+		if after, ok := strings.CutPrefix(path, prefix); ok {
+			workspacePath := after
 			return "https://" + host, workspacePath, nil
 		}
 	}

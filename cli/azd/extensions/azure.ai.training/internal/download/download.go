@@ -117,7 +117,6 @@ func DownloadArtifacts(
 	seen := make(map[string]struct{}, len(infos))
 
 	for i, info := range infos {
-		i, info := i, info
 		if info == nil || info.ContentURI == "" || info.Path == "" {
 			results[i] = ArtifactDownloadResult{Path: "", Err: fmt.Errorf("missing content uri or path")}
 			continue

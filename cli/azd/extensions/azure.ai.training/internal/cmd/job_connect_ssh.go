@@ -276,7 +276,7 @@ func buildJobAPIClient(ctx context.Context) (*client.Client, error) {
 // extractServiceEndpointStr is a small helper to read a service endpoint URL
 // from the job services map. Duplicates the logic from the stream service to
 // avoid a cross-package dependency.
-func extractServiceEndpointStr(services map[string]interface{}, serviceName string) string {
+func extractServiceEndpointStr(services map[string]any, serviceName string) string {
 	if services == nil {
 		return ""
 	}
@@ -284,7 +284,7 @@ func extractServiceEndpointStr(services map[string]interface{}, serviceName stri
 	if !ok {
 		return ""
 	}
-	svcMap, ok := svc.(map[string]interface{})
+	svcMap, ok := svc.(map[string]any)
 	if !ok {
 		return ""
 	}

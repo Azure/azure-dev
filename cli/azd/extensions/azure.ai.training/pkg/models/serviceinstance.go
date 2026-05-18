@@ -11,9 +11,9 @@ type ServiceInstance struct {
 
 // ServiceInstanceDetail describes a single service running on a node.
 type ServiceInstanceDetail struct {
-	Type       string                 `json:"type"`   // e.g., "SSH"
-	Status     string                 `json:"status"` // e.g., "Running"
-	Endpoint   string                 `json:"endpoint,omitempty"`
-	Port       int                    `json:"port,omitempty"`
-	Properties map[string]interface{} `json:"properties,omitempty"` // contains ProxyEndpoint
+	Type       string         `json:"type"`   // e.g., "SSH"
+	Status     string         `json:"status"` // e.g., "Running"
+	Endpoint   string         `json:"endpoint,omitempty"`
+	Port       int            `json:"port,omitempty"`
+	Properties map[string]any `json:"properties,omitempty"` // contains ProxyEndpoint
 }

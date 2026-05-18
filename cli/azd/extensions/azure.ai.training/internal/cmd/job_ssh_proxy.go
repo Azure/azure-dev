@@ -131,19 +131,15 @@ func runSSHProxy(ctx context.Context, proxyEndpoint string) error {
 	// per ssh session, so process exit reaps any stdin goroutine that is still
 	// blocked on a blank read.
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		<-sessionCtx.Done()
 		_ = conn.Close()
-	}()
+	})
 
 	// Pinger: periodic WebSocket ping to keep the tunnel alive and surface
 	// dead peers via the read deadline. WriteControl is documented safe to
 	// call concurrently with the writer goroutine, so no mutex is needed.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		ticker := time.NewTicker(pingInterval)
 		defer ticker.Stop()
 		for {
@@ -161,7 +157,7 @@ func runSSHProxy(ctx context.Context, proxyEndpoint string) error {
 				}
 			}
 		}
-	}()
+	})
 
 	// Upstream: stdin -> websocket
 	go func() {
@@ -182,9 +178,7 @@ func runSSHProxy(ctx context.Context, proxyEndpoint string) error {
 	}()
 
 	// Downstream: websocket -> stdout
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for {
 			_, msg, rerr := conn.ReadMessage()
 			if len(msg) > 0 {
@@ -199,7 +193,7 @@ func runSSHProxy(ctx context.Context, proxyEndpoint string) error {
 				return
 			}
 		}
-	}()
+	})
 
 	var pipeErr error
 	select {
@@ -226,10 +220,10 @@ func runSSHProxy(ctx context.Context, proxyEndpoint string) error {
 // must dial. Schemes are normalised to ws/wss and the NIP path is appended.
 func buildTunnelWSURL(proxyEndpoint string) string {
 	wsURL := proxyEndpoint
-	if strings.HasPrefix(wsURL, "https://") {
-		wsURL = "wss://" + strings.TrimPrefix(wsURL, "https://")
-	} else if strings.HasPrefix(wsURL, "http://") {
-		wsURL = "ws://" + strings.TrimPrefix(wsURL, "http://")
+	if after, ok := strings.CutPrefix(wsURL, "https://"); ok {
+		wsURL = "wss://" + after
+	} else if after, ok := strings.CutPrefix(wsURL, "http://"); ok {
+		wsURL = "ws://" + after
 	}
 	return strings.TrimRight(wsURL, "/") + sshTunnelWSPath
 }

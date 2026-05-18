@@ -167,9 +167,7 @@ func fetchJobDetails(
 	var wg sync.WaitGroup
 
 	// Fetch run history
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		history, err := apiClient.GetRunHistory(ctx, jobID)
 		if debug {
 			if err != nil {
@@ -187,12 +185,10 @@ func fetchJobDetails(
 		details.History = history
 		updateSpinner("run history")
 		mu.Unlock()
-	}()
+	})
 
 	// Fetch artifacts
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		artifacts, err := apiClient.ListArtifacts(ctx, jobID)
 		if debug {
 			if err != nil {
@@ -210,12 +206,10 @@ func fetchJobDetails(
 		details.Artifacts = artifacts
 		updateSpinner("artifacts")
 		mu.Unlock()
-	}()
+	})
 
 	// Fetch metric names, then fetch each metric's latest values
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		metricsList, err := apiClient.ListMetrics(ctx, jobID)
 		if err != nil && debug {
 			fmt.Fprintf(os.Stderr, "[DEBUG] metrics list: %v\n", err)
@@ -240,9 +234,7 @@ func fetchJobDetails(
 		var metricsWg sync.WaitGroup
 		for _, def := range metricsList.Value {
 			for colName := range def.Columns {
-				metricsWg.Add(1)
-				go func() {
-					defer metricsWg.Done()
+				metricsWg.Go(func() {
 					full, mErr := apiClient.GetMetricsFull(
 						ctx, jobID, colName,
 					)
@@ -257,7 +249,7 @@ func fetchJobDetails(
 						details.Metrics[colName] = full
 						mu.Unlock()
 					}
-				}()
+				})
 			}
 		}
 		metricsWg.Wait()
@@ -265,7 +257,7 @@ func fetchJobDetails(
 		mu.Lock()
 		updateSpinner("metrics")
 		mu.Unlock()
-	}()
+	})
 
 	wg.Wait()
 	return details

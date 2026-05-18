@@ -18,9 +18,9 @@ type MetricsListResponse struct {
 
 // MetricDefinition describes a single metric series available for a job.
 type MetricDefinition struct {
-	MetricKey  map[string]interface{} `json:"metricKey,omitempty"`
-	Columns    map[string]string      `json:"columns,omitempty"`
-	Properties map[string]string      `json:"properties,omitempty"`
+	MetricKey  map[string]any    `json:"metricKey,omitempty"`
+	Columns    map[string]string `json:"columns,omitempty"`
+	Properties map[string]string `json:"properties,omitempty"`
 }
 
 // MetricsFullRequest is the request body for retrieving full metric data.
@@ -34,20 +34,20 @@ type MetricsFullRequest struct {
 
 // MetricsFullResponse is the response containing full metric data points.
 type MetricsFullResponse struct {
-	DataContainerID   string                 `json:"dataContainerId,omitempty"`
-	Name              string                 `json:"name,omitempty"`
-	Columns           map[string]string      `json:"columns,omitempty"`
-	Properties        map[string]string      `json:"properties,omitempty"`
-	Namespace         *string                `json:"namespace,omitempty"`
-	Value             []MetricValue          `json:"value"`
-	ContinuationToken *string                `json:"continuationToken,omitempty"`
-	NextLink          *string                `json:"nextLink,omitempty"`
+	DataContainerID   string            `json:"dataContainerId,omitempty"`
+	Name              string            `json:"name,omitempty"`
+	Columns           map[string]string `json:"columns,omitempty"`
+	Properties        map[string]string `json:"properties,omitempty"`
+	Namespace         *string           `json:"namespace,omitempty"`
+	Value             []MetricValue     `json:"value"`
+	ContinuationToken *string           `json:"continuationToken,omitempty"`
+	NextLink          *string           `json:"nextLink,omitempty"`
 }
 
 // MetricValue represents a single metric data point.
 type MetricValue struct {
-	MetricID   string                 `json:"metricId,omitempty"`
-	CreatedUTC string                 `json:"createdUtc,omitempty"`
-	Step       int                    `json:"step,omitempty"`
-	Data       map[string]interface{} `json:"data,omitempty"`
+	MetricID   string         `json:"metricId,omitempty"`
+	CreatedUTC string         `json:"createdUtc,omitempty"`
+	Step       int            `json:"step,omitempty"`
+	Data       map[string]any `json:"data,omitempty"`
 }

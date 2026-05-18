@@ -63,7 +63,7 @@ func TestResolveSSHProxyEndpoint(t *testing.T) {
 					"my_ssh": {
 						Type:       "SSH",
 						Status:     "Running",
-						Properties: map[string]interface{}{"OtherKey": "x"},
+						Properties: map[string]any{"OtherKey": "x"},
 					},
 				},
 			},
@@ -76,7 +76,7 @@ func TestResolveSSHProxyEndpoint(t *testing.T) {
 					"my_ssh": {
 						Type:       "SSH",
 						Status:     "Running",
-						Properties: map[string]interface{}{"ProxyEndpoint": 42},
+						Properties: map[string]any{"ProxyEndpoint": 42},
 					},
 				},
 			},
@@ -89,7 +89,7 @@ func TestResolveSSHProxyEndpoint(t *testing.T) {
 					"my_ssh": {
 						Type:       "SSH",
 						Status:     "Running",
-						Properties: map[string]interface{}{"ProxyEndpoint": ""},
+						Properties: map[string]any{"ProxyEndpoint": ""},
 					},
 				},
 			},
@@ -102,7 +102,7 @@ func TestResolveSSHProxyEndpoint(t *testing.T) {
 					"my_ssh": {
 						Type:       "SSH",
 						Status:     "Running",
-						Properties: map[string]interface{}{"ProxyEndpoint": wantURL},
+						Properties: map[string]any{"ProxyEndpoint": wantURL},
 					},
 				},
 			},
@@ -116,7 +116,7 @@ func TestResolveSSHProxyEndpoint(t *testing.T) {
 					"my_ssh": {
 						Type:       "SSH",
 						Status:     "Running",
-						Properties: map[string]interface{}{"ProxyEndpoint": wantURL},
+						Properties: map[string]any{"ProxyEndpoint": wantURL},
 					},
 				},
 			},
@@ -188,23 +188,23 @@ func TestProxyEndpointPattern(t *testing.T) {
 func TestExtractServiceEndpointStr(t *testing.T) {
 	tests := []struct {
 		name     string
-		services map[string]interface{}
+		services map[string]any
 		key      string
 		want     string
 	}{
 		{"nil services", nil, "Tracking", ""},
-		{"missing key", map[string]interface{}{"X": "y"}, "Tracking", ""},
+		{"missing key", map[string]any{"X": "y"}, "Tracking", ""},
 		{
 			name: "happy path",
-			services: map[string]interface{}{
-				"Tracking": map[string]interface{}{"endpoint": "https://t.example/"},
+			services: map[string]any{
+				"Tracking": map[string]any{"endpoint": "https://t.example/"},
 			},
 			key:  "Tracking",
 			want: "https://t.example/",
 		},
 		{
 			name: "service is not a map",
-			services: map[string]interface{}{
+			services: map[string]any{
 				"Tracking": "https://t.example/",
 			},
 			key:  "Tracking",
@@ -212,16 +212,16 @@ func TestExtractServiceEndpointStr(t *testing.T) {
 		},
 		{
 			name: "endpoint key missing",
-			services: map[string]interface{}{
-				"Tracking": map[string]interface{}{"other": "x"},
+			services: map[string]any{
+				"Tracking": map[string]any{"other": "x"},
 			},
 			key:  "Tracking",
 			want: "",
 		},
 		{
 			name: "endpoint is non-string",
-			services: map[string]interface{}{
-				"Tracking": map[string]interface{}{"endpoint": 42},
+			services: map[string]any{
+				"Tracking": map[string]any{"endpoint": 42},
 			},
 			key:  "Tracking",
 			want: "",

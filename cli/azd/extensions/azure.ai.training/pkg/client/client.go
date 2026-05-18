@@ -86,14 +86,15 @@ func NewClient(projectEndpoint string, credential azcore.TokenCredential) (*Clie
 }
 
 // doDataPlaneWithVersion executes an authenticated HTTP request with a specific API version.
-func (c *Client) doDataPlaneWithVersion(ctx context.Context, method, path, apiVersion string, body interface{}, queryParams ...string) (*http.Response, error) {
-	reqURL := fmt.Sprintf("%s%s/%s?api-version=%s", c.baseURL, c.subPath, path, apiVersion)
+func (c *Client) doDataPlaneWithVersion(ctx context.Context, method, path, apiVersion string, body any, queryParams ...string) (*http.Response, error) {
+	var reqURL strings.Builder
+	reqURL.WriteString(fmt.Sprintf("%s%s/%s?api-version=%s", c.baseURL, c.subPath, path, apiVersion))
 	for i := 0; i+1 < len(queryParams); i += 2 {
-		reqURL += fmt.Sprintf("&%s=%s", queryParams[i], url.QueryEscape(queryParams[i+1]))
+		reqURL.WriteString(fmt.Sprintf("&%s=%s", queryParams[i], url.QueryEscape(queryParams[i+1])))
 	}
 
 	if c.debugBody {
-		fmt.Fprintf(os.Stderr, "[DEBUG] %s %s\n", method, reqURL)
+		fmt.Fprintf(os.Stderr, "[DEBUG] %s %s\n", method, reqURL.String())
 	}
 
 	var bodyBytes []byte
@@ -112,7 +113,7 @@ func (c *Client) doDataPlaneWithVersion(ctx context.Context, method, path, apiVe
 	if bodyBytes != nil {
 		bodyReader = bytes.NewReader(bodyBytes)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, reqURL, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, reqURL.String(), bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -229,7 +230,7 @@ func parseRetryAfter(h string) time.Duration {
 }
 
 // doDataPlane executes an authenticated HTTP request against the data plane.
-func (c *Client) doDataPlane(ctx context.Context, method, path string, body interface{}, queryParams ...string) (*http.Response, error) {
+func (c *Client) doDataPlane(ctx context.Context, method, path string, body any, queryParams ...string) (*http.Response, error) {
 	return c.doDataPlaneWithVersion(ctx, method, path, c.apiVersion, body, queryParams...)
 }
 

@@ -140,6 +140,7 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 					return fmt.Errorf("failed to prompt for subscription: %w", err)
 				}
 				flags.subscriptionId = subResponse.Subscription.Id
+				azureContext.Scope.TenantId = subResponse.Subscription.UserTenantId
 			}
 
 			// Prompt for project endpoint
@@ -319,7 +320,7 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 
 	return &azdext.AzureContext{
 		Scope: &azdext.AzureScope{
-			TenantId:       subResponse.Subscription.TenantId,
+			TenantId:       subResponse.Subscription.UserTenantId,
 			SubscriptionId: subResponse.Subscription.Id,
 		},
 	}, nil

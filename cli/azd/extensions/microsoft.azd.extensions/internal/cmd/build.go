@@ -117,6 +117,10 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 	fmt.Printf("%s: %s\n", output.WithBold("Output Path"), output.WithHyperlink(absOutputPath, absOutputPath))
 
 	var buildWarnings []string
+	// Flush collected validation warnings after the live TaskList canvas completes,
+	// regardless of whether a later task fails.
+	defer func() { writeCollectedWarnings(os.Stdout, buildWarnings) }()
+
 	taskList := ux.NewTaskList(nil).
 		AddTask(ux.TaskOptions{
 			Title: "Validating extension metadata",
@@ -227,13 +231,7 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 			},
 		})
 
-	if err := taskList.Run(); err != nil {
-		writeCollectedWarnings(os.Stdout, buildWarnings)
-		return err
-	}
-
-	writeCollectedWarnings(os.Stdout, buildWarnings)
-	return nil
+	return taskList.Run()
 }
 
 func copyBinaryFiles(extensionId, sourcePath, destPath string) error {

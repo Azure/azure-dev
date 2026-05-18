@@ -150,7 +150,7 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 	return initCmd
 }
 
-func runInitAction(ctx context.Context, flags *initFlags) error {
+func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 	// Create a new context that includes the azd access token
 	ctx = azdext.WithAccessToken(ctx)
 
@@ -264,6 +264,16 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 	}
 
 	var buildWarnings []string
+	var buildCommandOutput []byte
+	// Ensure validation warnings and (on failure) captured subprocess output are flushed
+	// after the live TaskList canvas completes, regardless of which task returned the error.
+	defer func() {
+		writeCollectedWarnings(os.Stdout, buildWarnings)
+		if err != nil {
+			writeCommandOutput(os.Stdout, buildCommandOutput)
+		}
+	}()
+
 	validateExtensionAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 		warnings, validationErrors := validateExtensionMetadata(extensionMetadata)
 		if len(validationErrors) > 0 {
@@ -278,7 +288,6 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 		return ux.Success, nil
 	}
 
-	var buildCommandOutput []byte
 	buildExtensionAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 		cmd := exec.Command("azd", "x", "build", "--skip-install")
 		cmd.Dir = extensionMetadata.Path
@@ -345,12 +354,12 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 	} else {
 		taskList.
 			AddTask(ux.TaskOptions{
-				Title:  "Create local azd extension source",
-				Action: createLocalExtensionSourceAction,
-			}).
-			AddTask(ux.TaskOptions{
 				Title:  "Validate extension metadata",
 				Action: validateExtensionAction,
+			}).
+			AddTask(ux.TaskOptions{
+				Title:  "Create local azd extension source",
+				Action: createLocalExtensionSourceAction,
 			}).
 			AddTask(ux.TaskOptions{
 				Title:  fmt.Sprintf("Creating extension directory %s", output.WithHighLightFormat(extensionMetadata.Id)),
@@ -374,16 +383,10 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 			})
 	}
 
-	if err := taskList.Run(); err != nil {
-		writeCollectedWarnings(os.Stdout, buildWarnings)
-		if len(buildCommandOutput) > 0 {
-			writeCommandOutput(os.Stdout, buildCommandOutput)
-		}
-		return fmt.Errorf("failed running init tasks: %w", err)
+	if runErr := taskList.Run(); runErr != nil {
+		err = fmt.Errorf("failed running init tasks: %w", runErr)
+		return err
 	}
-
-	writeCollectedWarnings(os.Stdout, buildWarnings)
-	writeCommandOutput(os.Stdout, buildCommandOutput)
 
 	if !flags.createRegistry {
 		fmt.Println(output.WithBold("Try out the extension"))
@@ -857,7 +860,7 @@ func writeCollectedWarnings(writer io.Writer, warnings []string) {
 		return
 	}
 
-	fmt.Fprintln(writer, output.WithWarningFormat("(!) Warning Extension contains validation warnings:"))
+	fmt.Fprintln(writer, output.WithWarningFormat("Validation warnings:"))
 	for _, warning := range warnings {
 		fmt.Fprintf(writer, "  - %s\n", warning)
 	}

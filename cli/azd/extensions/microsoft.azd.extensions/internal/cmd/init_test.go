@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -131,12 +132,20 @@ func TestValidateExtensionMetadata(t *testing.T) {
 			warnings, errs := validateExtensionMetadata(tt.schema)
 			assert.Len(t, warnings, tt.wantWarningCount)
 			for _, want := range tt.wantWarningContains {
-				assert.True(t, slicesContainSubstring(warnings, want), "expected warning containing %q in %v", want, warnings)
+				assert.True(
+					t,
+					slicesContainSubstring(warnings, want),
+					"expected warning containing %q in %v", want, warnings,
+				)
 			}
 
 			assert.Len(t, errs, tt.wantErrorCount)
 			for _, want := range tt.wantErrorContains {
-				assert.True(t, slicesContainSubstring(errs, want), "expected error containing %q in %v", want, errs)
+				assert.True(
+					t,
+					slicesContainSubstring(errs, want),
+					"expected error containing %q in %v", want, errs,
+				)
 			}
 		})
 	}
@@ -176,9 +185,16 @@ func TestParseTags(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"alpha", "beta", "gamma"}, tags)
 
-	_, err = parseTags(strings.Join([]string{
-		"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven",
-	}, ","))
+	// Boundary: exactly maxExtensionTags must succeed.
+	boundary := make([]string, maxExtensionTags)
+	for i := range maxExtensionTags {
+		boundary[i] = fmt.Sprintf("tag%d", i)
+	}
+	tags, err = parseTags(strings.Join(boundary, ","))
+	require.NoError(t, err)
+	assert.Len(t, tags, maxExtensionTags)
+
+	_, err = parseTags(strings.Join(append(boundary, "overflow"), ","))
 	require.ErrorContains(t, err, "too many tags")
 
 	_, err = parseTags(strings.Repeat("a", maxExtensionTagLength+1))
@@ -193,7 +209,8 @@ func TestWriteCollectedWarnings(t *testing.T) {
 	writeCollectedWarnings(&buf, []string{"first warning", "second warning"})
 
 	output := buf.String()
-	assert.Contains(t, output, "(!) Warning Extension contains validation warnings:")
+	assert.Contains(t, output, "Validation warnings:")
+	assert.NotContains(t, output, "(!) Warning")
 	assert.Contains(t, output, "  - first warning")
 	assert.Contains(t, output, "  - second warning")
 }

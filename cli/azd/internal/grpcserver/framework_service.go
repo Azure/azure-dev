@@ -58,9 +58,7 @@ func (s *FrameworkService) Stream(stream azdext.FrameworkService_StreamServer) e
 		return status.Errorf(codes.FailedPrecondition, "failed to get extension: %s", err.Error())
 	}
 
-	// For framework services, we'll create a custom capability check similar to service targets
-	// Extensions providing framework services should declare this capability
-	if !extension.HasCapability("framework-service-provider") {
+	if !extension.HasCapability(extensions.FrameworkServiceProviderCapability) {
 		return status.Errorf(codes.PermissionDenied, "extension does not support framework-service-provider capability")
 	}
 

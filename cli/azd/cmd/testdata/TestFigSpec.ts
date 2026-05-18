@@ -1440,6 +1440,42 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--lora-alpha'],
+									description: 'LoRA scaling factor (alpha) — required when --weight-type is LoRA',
+									args: [
+										{
+											name: 'lora-alpha',
+										},
+									],
+								},
+								{
+									name: ['--lora-dropout'],
+									description: 'LoRA dropout rate used during training (informational)',
+									args: [
+										{
+											name: 'lora-dropout',
+										},
+									],
+								},
+								{
+									name: ['--lora-rank'],
+									description: 'LoRA rank (r) — required when --weight-type is LoRA',
+									args: [
+										{
+											name: 'lora-rank',
+										},
+									],
+								},
+								{
+									name: ['--lora-target-modules'],
+									description: 'Comma-separated list of target modules (e.g., "q_proj,v_proj,k_proj,o_proj")',
+									args: [
+										{
+											name: 'lora-target-modules',
+										},
+									],
+								},
+								{
 									name: ['--name', '-n'],
 									description: 'Model name (required)',
 									args: [
@@ -1549,6 +1585,42 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'description',
+												},
+											],
+										},
+										{
+											name: ['--lora-alpha'],
+											description: 'LoRA scaling factor (alpha) — required when --weight-type is LoRA',
+											args: [
+												{
+													name: 'lora-alpha',
+												},
+											],
+										},
+										{
+											name: ['--lora-dropout'],
+											description: 'LoRA dropout rate used during training (informational)',
+											args: [
+												{
+													name: 'lora-dropout',
+												},
+											],
+										},
+										{
+											name: ['--lora-rank'],
+											description: 'LoRA rank (r) — required when --weight-type is LoRA',
+											args: [
+												{
+													name: 'lora-rank',
+												},
+											],
+										},
+										{
+											name: ['--lora-target-modules'],
+											description: 'Comma-separated list of target modules (e.g., "q_proj,v_proj,k_proj,o_proj")',
+											args: [
+												{
+													name: 'lora-target-modules',
 												},
 											],
 										},

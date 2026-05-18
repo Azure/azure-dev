@@ -115,20 +115,56 @@ func requireIsolationHeaders(
 }
 
 func TestSessionRequestOptions_ApplyHeaders(t *testing.T) {
-	headers := http.Header{}
-	headers.Set("Authorization", "Bearer unchanged")
-
-	options := &SessionRequestOptions{
-		UserIsolationKey: "user-1",
-		ChatIsolationKey: "chat-1",
+	tests := []struct {
+		name        string
+		options     *SessionRequestOptions
+		wantUser    string
+		wantChat    string
+		wantSession string
+	}{
+		{
+			name:    "both user and chat set",
+			options: &SessionRequestOptions{UserIsolationKey: "user-1", ChatIsolationKey: "chat-1"},
+			wantUser: "user-1",
+			wantChat: "chat-1",
+		},
+		{
+			name:     "user key only",
+			options:  &SessionRequestOptions{UserIsolationKey: "user-only"},
+			wantUser: "user-only",
+		},
+		{
+			name:     "chat key only",
+			options:  &SessionRequestOptions{ChatIsolationKey: "chat-only"},
+			wantChat: "chat-only",
+		},
+		{
+			name:        "session key with user key",
+			options:     &SessionRequestOptions{SessionIsolationKey: "sess-1", UserIsolationKey: "u"},
+			wantUser:    "u",
+			wantSession: "sess-1",
+		},
+		{
+			name:    "nil options is a no-op",
+			options: nil,
+		},
 	}
 
-	options.ApplyHeaders(headers)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	require.Equal(t, "Bearer unchanged", headers.Get("Authorization"))
-	require.Equal(t, "user-1", headers.Get(AgentUserIsolationKeyHeader))
-	require.Equal(t, "chat-1", headers.Get(AgentChatIsolationKeyHeader))
-	require.Empty(t, headers.Values(SessionIsolationKeyHeader))
+			headers := http.Header{}
+			headers.Set("Authorization", "Bearer unchanged")
+
+			tt.options.ApplyHeaders(headers)
+
+			require.Equal(t, "Bearer unchanged", headers.Get("Authorization"))
+			require.Equal(t, tt.wantUser, headers.Get(AgentUserIsolationKeyHeader))
+			require.Equal(t, tt.wantChat, headers.Get(AgentChatIsolationKeyHeader))
+			require.Equal(t, tt.wantSession, headers.Get(SessionIsolationKeyHeader))
+		})
+	}
 }
 
 func TestDeleteSession_Accepts200(t *testing.T) {

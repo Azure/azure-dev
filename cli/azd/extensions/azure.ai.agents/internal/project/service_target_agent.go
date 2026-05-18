@@ -1013,6 +1013,21 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, err
 	}
 
+	// Poll until agent version is active
+	if agentVersionResponse.Status != "active" {
+		agentClient := agent_api.NewAgentClient(
+			azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+			p.credential,
+		)
+		polledVersion, pollErr := p.waitForAgentActive(ctx, agentClient, prep.request.Name, agentVersionResponse.Version, progress)
+		if pollErr != nil {
+			return nil, pollErr
+		}
+		agentVersionResponse = polledVersion
+	} else {
+		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", agentVersionResponse.Version)
+	}
+
 	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, agentVersionResponse, prep.protocols)
 }
 
@@ -1423,55 +1438,16 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 	}
 
-	// Poll for status if remote build
+	// Poll for agent version to become active
 	latestVersion := &agentResp.Versions.Latest
-	depRes := "remote_build"
-	if agentDef.CodeConfiguration != nil && agentDef.CodeConfiguration.DependencyResolution != nil {
-		depRes = *agentDef.CodeConfiguration.DependencyResolution
-	}
-	if depRes == "remote_build" && latestVersion.Status == "creating" {
-		fmt.Fprintf(os.Stderr, "Waiting for remote build to complete...\n")
-		pollTimeout := 5 * time.Minute
-		pollInterval := 5 * time.Second
-		deadline := time.Now().Add(pollTimeout)
-
-		for time.Now().Before(deadline) {
-			select {
-			case <-ctx.Done():
-				return nil, fmt.Errorf("deployment cancelled: %w", ctx.Err())
-			case <-time.After(pollInterval):
-			}
-			versionResp, err := agentClient.GetAgentVersion(ctx, agentDef.Name, latestVersion.Version, agentAPIVersion)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: poll failed: %s\n", err)
-				continue
-			}
-			latestVersion = versionResp
-			if versionResp.Status == "active" {
-				fmt.Fprintf(os.Stderr, "Agent is active!\n")
-				break
-			} else if versionResp.Status == "failed" {
-				errMsg := "agent deployment failed during remote build; check agent logs or try local packaging (dependency_resolution: bundled)"
-				if versionResp.Error != nil {
-					errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", versionResp.Error.Code, versionResp.Error.Message)
-				}
-				if versionResp.RequestID != "" {
-					errMsg += fmt.Sprintf(" (request-id: %s)", versionResp.RequestID)
-				}
-				return nil, exterrors.Internal(
-					exterrors.CodeAgentCreateFailed,
-					errMsg,
-				)
-			}
-			fmt.Fprintf(os.Stderr, "  Status: %s...\n", versionResp.Status)
+	if latestVersion.Status != "active" {
+		polledVersion, err := p.waitForAgentActive(ctx, agentClient, agentDef.Name, latestVersion.Version, progress)
+		if err != nil {
+			return nil, err
 		}
-
-		if latestVersion.Status != "active" {
-			return nil, exterrors.Internal(
-				exterrors.CodeAgentCreateFailed,
-				"agent deployment timed out waiting for remote build; check agent status manually or try local packaging",
-			)
-		}
+		latestVersion = polledVersion
+	} else {
+		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", latestVersion.Version)
 	}
 
 	// Patch agent-level fields (agent_endpoint, agent_card) if present.
@@ -1628,6 +1604,85 @@ func AgentPlaygroundURL(projectResourceID, agentName, agentVersion string) (stri
 		agentName, agentVersion,
 	)
 	return url, nil
+}
+
+// waitForAgentActive polls the agent version until it reaches a confirmed terminal state.
+// It requires 2 consecutive polls with the same terminal status ("active" or "failed") to confirm,
+// avoiding transient service-side flickers. Returns the final AgentVersionObject or an error.
+func (p *AgentServiceTargetProvider) waitForAgentActive(
+	ctx context.Context,
+	agentClient *agent_api.AgentClient,
+	agentName string,
+	version string,
+	progress azdext.ProgressReporter,
+) (*agent_api.AgentVersionObject, error) {
+	const pollInterval = 10 * time.Second
+	const pollTimeout = 5 * time.Minute
+	const confirmCount = 2 // consecutive times a terminal status must be seen
+
+	deadline := time.Now().Add(pollTimeout)
+	progress("Waiting for agent to become active")
+
+	var consecutiveActive int
+	var consecutiveFailed int
+	var lastVersion *agent_api.AgentVersionObject
+
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("deployment cancelled: %w", ctx.Err())
+		case <-time.After(pollInterval):
+		}
+
+		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agentAPIVersion)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
+			// Reset counters on error — don't count transient failures
+			consecutiveActive = 0
+			consecutiveFailed = 0
+			continue
+		}
+		lastVersion = versionResp
+
+		switch versionResp.Status {
+		case "active":
+			consecutiveActive++
+			consecutiveFailed = 0
+			if consecutiveActive >= confirmCount {
+				fmt.Fprintf(os.Stderr, "Agent version %s is active!\n", version)
+				return versionResp, nil
+			}
+			fmt.Fprintf(os.Stderr, "  Status: active (confirming...)\n")
+		case "failed":
+			consecutiveFailed++
+			consecutiveActive = 0
+			if consecutiveFailed >= confirmCount {
+				errMsg := "agent deployment failed"
+				if versionResp.Error != nil {
+					errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", versionResp.Error.Code, versionResp.Error.Message)
+				}
+				if versionResp.RequestID != "" {
+					errMsg += fmt.Sprintf(" (request-id: %s)", versionResp.RequestID)
+				}
+				return nil, exterrors.Internal(exterrors.CodeAgentCreateFailed, errMsg)
+			}
+			fmt.Fprintf(os.Stderr, "  Status: failed (confirming...)\n")
+		default:
+			consecutiveActive = 0
+			consecutiveFailed = 0
+			fmt.Fprintf(os.Stderr, "  Status: %s...\n", versionResp.Status)
+		}
+	}
+
+	// Timeout
+	lastStatus := "unknown"
+	if lastVersion != nil {
+		lastStatus = lastVersion.Status
+	}
+	return nil, exterrors.Internal(
+		exterrors.CodeAgentCreateFailed,
+		fmt.Sprintf("agent deployment timed out (last status: %s); check agent status manually", lastStatus),
+	)
 }
 
 // createAgent creates a new version of the agent using the API

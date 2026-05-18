@@ -129,6 +129,9 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 			fmt.Printf("  %s  %s\n", color.GreenString("+"), color.GreenString("%s/agent.yaml", srcDir))
 		}
 
+		// Run post-init validations (advisory warnings only)
+		validatePostInit(srcDir, localDefinition.CodeConfiguration)
+
 		fmt.Println("\nYou can customize environment variables and other settings in the agent.yaml.")
 		if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: a.environment.Name,
@@ -1150,6 +1153,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 			{Label: "Python 3.11", Value: "python_3_11"},
 			{Label: "Python 3.12", Value: "python_3_12"},
 			{Label: "Python 3.13", Value: "python_3_13"},
+			{Label: "Python 3.14", Value: "python_3_14"},
 		}
 	} else {
 		// Mixed or unknown — show all options
@@ -1157,6 +1161,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 			{Label: "Python 3.11", Value: "python_3_11"},
 			{Label: "Python 3.12", Value: "python_3_12"},
 			{Label: "Python 3.13", Value: "python_3_13"},
+			{Label: "Python 3.14", Value: "python_3_14"},
 			{Label: ".NET 9", Value: "dotnet_9"},
 			{Label: ".NET 8", Value: "dotnet_8"},
 			{Label: ".NET 10", Value: "dotnet_10"},

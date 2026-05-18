@@ -9,6 +9,7 @@ import (
 	"log"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -95,6 +96,21 @@ func newRootCmd(
 			}
 
 			if opts.Cwd != "" {
+				// Resolve to absolute path before any usage so downstream
+				// consumers (error messages, AZD_CWD for extensions) receive
+				// a canonical path and don't double-resolve relative paths.
+				absPath, err := filepath.Abs(opts.Cwd)
+				if err != nil {
+					return fmt.Errorf("failed to resolve path '%s': %w", opts.Cwd, err)
+				}
+				opts.Cwd = absPath
+
+				// Update the cobra flag so middleware that reads from
+				// Flags.GetString("cwd") also sees the absolute path.
+				if f := cmd.Root().PersistentFlags().Lookup("cwd"); f != nil {
+					f.Value.Set(absPath) //nolint:errcheck
+				}
+
 				current, err := os.Getwd()
 
 				if err != nil {

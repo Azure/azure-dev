@@ -155,10 +155,15 @@ func generateFlags(cmd *cobra.Command) []extensions.Flag {
 		}
 
 		if ov, ok := overrides[flag.Name]; ok {
+			if ov.Usage != "" {
+				flagMeta.Description = ov.Usage
+			}
 			if len(ov.AllowedValues) > 0 {
 				flagMeta.ValidValues = ov.AllowedValues
 			}
-			if ov.Default != "" {
+			if ov.HideDefault {
+				flagMeta.Default = ""
+			} else if ov.Default != "" {
 				flagMeta.Default = ov.Default
 			}
 		}

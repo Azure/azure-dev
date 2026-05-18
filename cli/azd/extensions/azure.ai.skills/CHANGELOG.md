@@ -10,8 +10,10 @@
   - `azd ai skill show <name>` — metadata only.
   - `azd ai skill list` — paginated, supports `--top` and `--orderby`.
   - `azd ai skill download <name>` — extracts to `./.agents/skills/<name>/` by
-    default, `--raw` keeps the ZIP archive.
+    default; `--raw` keeps the archive as-is. The downloader auto-detects ZIP
+    vs gzip-tar via magic bytes because the Foundry surface is asymmetric:
+    uploads require `application/zip`, downloads return `application/gzip`.
   - `azd ai skill delete <name>` — confirmation by default, `--force` to skip.
 - Shares the Foundry project-endpoint resolution cascade with `azure.ai.agents`,
-  reading `extensions.ai-skills.project.context.endpoint` first and falling back to
-  `extensions.ai-agents.project.context.endpoint`.
+  reading `extensions.ai-skills.project.context.endpoint` first and falling
+  back to `extensions.ai-agents.project.context.endpoint`.

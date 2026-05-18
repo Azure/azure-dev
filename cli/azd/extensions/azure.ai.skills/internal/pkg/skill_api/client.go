@@ -37,12 +37,15 @@ const (
 	// ContentTypeJSON is the request/response content type used for the JSON
 	// surface.
 	ContentTypeJSON = "application/json"
-	// ContentTypeZip is the content type used by POST /skills:import (request)
-	// and by GET /skills/{name}:download (response). The TypeSpec describes
-	// the body as `bytes` with `Content-Type: application/gzip`, but the live
-	// service implements ZIP per the public docs — verified via 415 on gzip.
+	// ContentTypeZip is the upload content type for POST /skills:import. The
+	// TypeSpec declares `application/gzip`, but the live service returns
+	// 415 Unsupported Media Type on gzip and accepts ZIP per the public docs.
 	// See https://learn.microsoft.com/azure/foundry/agents/how-to/tools/skills.
 	ContentTypeZip = "application/zip"
+	// ContentTypeGzip is the response content type observed on
+	// GET /skills/{name}:download. The same TypeSpec / docs mismatch applies
+	// in reverse: docs say zip, server returns gzip. We accept either.
+	ContentTypeGzip = "application/gzip"
 
 	// BearerScope is the Azure AD scope used for the bearer-token policy.
 	// Matches the scope used by the rest of the Foundry AI extension surface.
@@ -312,18 +315,22 @@ func (c *Client) ListAll(ctx context.Context, opts ListOptions, limit int) ([]Sk
 	}
 }
 
-// Download fetches the ZIP archive for a skill. Returns the raw bytes for
-// in-memory processing — zip needs an io.ReaderAt so streaming the body
-// directly into archive/zip is not possible without buffering anyway.
-// The Content-Type header is validated to start with `application/zip`.
+// Download fetches the skill package and returns the raw bytes.
+//
+// The Foundry Skills service is asymmetric about archive format: uploads
+// (`POST /skills:import`) reject `application/gzip` with 415 and require
+// `application/zip`, but downloads return `application/gzip`. Rather than
+// pin a single Content-Type, this client accepts either and leaves format
+// detection (via magic bytes) to the caller — see DetectArchiveFormat.
 func (c *Client) Download(ctx context.Context, name string) ([]byte, error) {
 	httpReq, err := runtime.NewRequest(ctx, http.MethodGet, c.skillURL(name, ":download", nil))
 	if err != nil {
 		return nil, fmt.Errorf("new request: %w", err)
 	}
 	addStandardHeaders(httpReq)
-	// Override the JSON Accept default with the archive content type.
-	httpReq.Raw().Header.Set("Accept", ContentTypeZip)
+	// Accept both formats; service ignores the value but the negotiation
+	// matters for intermediaries that might transform the body.
+	httpReq.Raw().Header.Set("Accept", ContentTypeZip+", "+ContentTypeGzip)
 
 	resp, err := c.pipeline.Do(httpReq)
 	if err != nil {
@@ -335,8 +342,11 @@ func (c *Client) Download(ctx context.Context, name string) ([]byte, error) {
 		return nil, runtime.NewResponseError(resp)
 	}
 
-	if ct := resp.Header.Get("Content-Type"); ct != "" && !strings.HasPrefix(strings.ToLower(ct), ContentTypeZip) {
-		return nil, fmt.Errorf("unexpected download content type %q (want %s)", ct, ContentTypeZip)
+	if ct := resp.Header.Get("Content-Type"); ct != "" {
+		lc := strings.ToLower(ct)
+		if !strings.HasPrefix(lc, ContentTypeZip) && !strings.HasPrefix(lc, ContentTypeGzip) {
+			return nil, fmt.Errorf("unexpected download content type %q (want %s or %s)", ct, ContentTypeZip, ContentTypeGzip)
+		}
 	}
 
 	body, err := io.ReadAll(resp.Body)

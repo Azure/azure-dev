@@ -4,6 +4,8 @@
 package skill_api
 
 import (
+	"archive/zip"
+	"fmt"
 	"io"
 	"path"
 	"strings"
@@ -36,13 +38,12 @@ const peekMaxEntries = 1024
 // destructive `--force` guard only fires when the archive makes a name claim
 // that disagrees with the positional argument.
 //
-// PeekArchiveSkillName never writes to disk and reads at most peekMaxSkillMdBytes
-// bytes from any single entry. It returns an error only for unrecoverable
-// stream problems (invalid zip).
+// PeekArchiveSkillName accepts only ZIP archives — the upload surface is
+// ZIP-only, so this is the only format relevant to the `--force` guard.
 func PeekArchiveSkillName(data []byte) (string, error) {
-	zr, err := newZipReader(data)
+	zr, err := zip.NewReader(newBytesReaderAt(data), int64(len(data)))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %w", ErrInvalidArchive, err)
 	}
 
 	for i, entry := range zr.File {

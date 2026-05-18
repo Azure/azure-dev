@@ -4,8 +4,10 @@
 package skill_api
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"errors"
 	"os"
 	"path/filepath"
@@ -49,6 +51,29 @@ func makeZip(t *testing.T, entries []zipEntry) []byte {
 		}
 	}
 	require.NoError(t, zw.Close())
+	return buf.Bytes()
+}
+
+// tarEntry describes a tar entry for test archives.
+type tarEntry struct {
+	Name string
+	Body []byte
+}
+
+// makeTarGz builds an in-memory gzip-compressed tar archive.
+func makeTarGz(t *testing.T, entries []tarEntry) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for _, e := range entries {
+		hdr := &tar.Header{Name: e.Name, Mode: 0644, Typeflag: tar.TypeReg, Size: int64(len(e.Body))}
+		require.NoError(t, tw.WriteHeader(hdr))
+		_, err := tw.Write(e.Body)
+		require.NoError(t, err)
+	}
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
 	return buf.Bytes()
 }
 
@@ -154,16 +179,38 @@ func TestSafeExtract_ForceOverwrites(t *testing.T) {
 	require.Equal(t, "new", string(got))
 }
 
-func TestSafeExtract_InvalidZip(t *testing.T) {
+func TestSafeExtract_InvalidArchive(t *testing.T) {
 	_, err := SafeExtract([]byte("not a zip stream"), ExtractOptions{OutputDir: t.TempDir()})
 	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrInvalidZip))
+	require.True(t, errors.Is(err, ErrInvalidArchive))
 }
 
 func TestSafeExtract_EmptyBody(t *testing.T) {
 	_, err := SafeExtract(nil, ExtractOptions{OutputDir: t.TempDir()})
 	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrInvalidZip))
+	require.True(t, errors.Is(err, ErrInvalidArchive))
+}
+
+func TestSafeExtract_TarGzHappyPath(t *testing.T) {
+	archive := makeTarGz(t, []tarEntry{
+		{Name: "SKILL.md", Body: []byte("---\nname: foo\n---\nbody\n")},
+		{Name: "assets/icon.svg", Body: []byte("<svg/>")},
+	})
+	dir := t.TempDir()
+	res, err := SafeExtract(archive, ExtractOptions{OutputDir: dir})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"SKILL.md", "assets/icon.svg"}, res.Files)
+}
+
+func TestDetectArchiveFormat(t *testing.T) {
+	zipBytes := makeZip(t, []zipEntry{{Name: "SKILL.md", Body: []byte("body")}})
+	require.Equal(t, ArchiveZip, DetectArchiveFormat(zipBytes))
+
+	tarGzBytes := makeTarGz(t, []tarEntry{{Name: "SKILL.md", Body: []byte("body")}})
+	require.Equal(t, ArchiveTarGz, DetectArchiveFormat(tarGzBytes))
+
+	require.Equal(t, ArchiveUnknown, DetectArchiveFormat([]byte("not an archive")))
+	require.Equal(t, ArchiveUnknown, DetectArchiveFormat(nil))
 }
 
 func TestValidateEntryName(t *testing.T) {

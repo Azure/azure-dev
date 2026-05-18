@@ -104,7 +104,12 @@ func (a *downloadAction) writeRaw(body []byte, outputDir string) error {
 		return fmt.Errorf("create output dir: %w", err)
 	}
 
-	archivePath := filepath.Join(outputDir, a.flags.name+".zip")
+	// Pick a file extension that matches the actual archive bytes the service
+	// returned. The Foundry surface is asymmetric (uploads ZIP, downloads
+	// gzip) so we can't assume one extension.
+	ext := archiveExtension(skill_api.DetectArchiveFormat(body))
+	archiveName := a.flags.name + ext
+	archivePath := filepath.Join(outputDir, archiveName)
 
 	// Always Lstat (even with --force) so we never follow a symlink and so we
 	// refuse to overwrite a non-regular file (directory, device, socket, ...).
@@ -160,10 +165,24 @@ func (a *downloadAction) writeRaw(body []byte, outputDir string) error {
 	res := downloadResult{
 		Skill:     a.flags.name,
 		OutputDir: outputDir,
-		Archive:   a.flags.name + ".zip",
+		Archive:   archiveName,
 		Raw:       true,
 	}
 	return a.printResult(res)
+}
+
+// archiveExtension returns the on-disk file extension to use when writing a
+// raw downloaded skill package. Falls back to ".bin" when the magic bytes
+// don't match a known archive format so the file is still preserved.
+func archiveExtension(format skill_api.ArchiveFormat) string {
+	switch format {
+	case skill_api.ArchiveZip:
+		return ".zip"
+	case skill_api.ArchiveTarGz:
+		return ".tar.gz"
+	default:
+		return ".bin"
+	}
 }
 
 func (a *downloadAction) writeExtracted(body []byte, outputDir string) error {
@@ -222,11 +241,11 @@ func classifyExtractError(err error, outputDir string) error {
 			err.Error(),
 			fmt.Sprintf("pass --force to overwrite existing files in %s", outputDir),
 		)
-	case errors.Is(err, skill_api.ErrInvalidZip):
+	case errors.Is(err, skill_api.ErrInvalidArchive):
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			err.Error(),
-			"the service did not return a valid zip archive; retry or contact support",
+			"the service did not return a recognizable ZIP or gzip archive; retry or contact support",
 		)
 	}
 	return err

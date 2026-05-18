@@ -25,8 +25,12 @@ type toolboxFlags struct {
 	noPrompt        bool
 }
 
-// toolboxNamePattern is the validation regex for toolbox and tool names per § 4.2.
+// toolboxNamePattern is the validation regex for toolbox and tool names.
 var toolboxNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// maxToolboxNameLength caps positional names. Mirrors the 63-char ceiling used
+// by agent names (see parse.go:validNamePattern).
+const maxToolboxNameLength = 63
 
 // newToolboxCommand builds the `azd ai agent toolbox` parent.
 func newToolboxCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -39,7 +43,7 @@ func newToolboxCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 A toolbox is a versioned, named collection of connection-backed tools that
 agents reference at run time. Each version is immutable and carries the full
-tool list; mutations publish a new version and (after the first POST) require
+tool list; mutations publish a new version and (after the first one) require
 an explicit update to retarget the default.`,
 	}
 
@@ -106,13 +110,14 @@ func registerToolboxOutputFlag(cmd *cobra.Command) {
 	})
 }
 
-// validateToolboxName enforces ^[A-Za-z0-9_-]+$ on the positional `<name>`.
+// validateToolboxName enforces ^[A-Za-z0-9_-]+$ on the positional `<name>`
+// and caps length at maxToolboxNameLength.
 func validateToolboxName(name string) error {
-	if !toolboxNamePattern.MatchString(name) {
+	if !toolboxNamePattern.MatchString(name) || len(name) > maxToolboxNameLength {
 		return exterrors.Validation(
 			exterrors.CodeInvalidToolboxName,
 			fmt.Sprintf("toolbox name %q is invalid", name),
-			"names must match ^[A-Za-z0-9_-]+$",
+			fmt.Sprintf("names must match ^[A-Za-z0-9_-]+$ and be at most %d characters", maxToolboxNameLength),
 		)
 	}
 	return nil
@@ -121,13 +126,13 @@ func validateToolboxName(name string) error {
 // validateToolName enforces the same regex on tool-entry names. Failing here
 // avoids a service round trip that would yield a generic 400.
 func validateToolName(name string) error {
-	if !toolboxNamePattern.MatchString(name) {
+	if !toolboxNamePattern.MatchString(name) || len(name) > maxToolboxNameLength {
 		return exterrors.Validation(
 			exterrors.CodeInvalidToolboxName,
 			fmt.Sprintf(
 				"tool entry name %q is invalid; the Foundry service requires names "+
-					"to match ^[A-Za-z0-9_-]+$",
-				name,
+					"to match ^[A-Za-z0-9_-]+$ (max %d characters)",
+				name, maxToolboxNameLength,
 			),
 			"rename the project connection so its short name matches the regex",
 		)

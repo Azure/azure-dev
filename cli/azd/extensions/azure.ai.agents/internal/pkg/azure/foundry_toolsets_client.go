@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -159,7 +160,12 @@ func listPagedFromClient[T any](
 			last = pickLastID(p.Data[len(p.Data)-1])
 		}
 		if last == "" {
-			// HasMore=true with no cursor: bail rather than spin.
+			// HasMore=true with no cursor: log a warning and return the partial
+			// results rather than spin. Callers may receive incomplete data.
+			log.Printf(
+				"foundry_toolsets_client: pagination has_more=true but no cursor for %s; returning %d items",
+				initialURL, len(out),
+			)
 			return out, nil
 		}
 		sep := "&"

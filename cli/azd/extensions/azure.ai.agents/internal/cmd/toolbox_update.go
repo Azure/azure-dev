@@ -20,7 +20,7 @@ type toolboxUpdateFlags struct {
 }
 
 // newToolboxUpdateCommand returns the `azd ai agent toolbox update <name>` command.
-// Only --default-version is supported (§ 5.2).
+// Only --default-version is supported.
 func newToolboxUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	flags := &toolboxUpdateFlags{}
@@ -30,9 +30,8 @@ func newToolboxUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Update a toolbox (currently: retarget the default version).",
 		Long: `Update a toolbox.
 
-Only --default-version is mutable through PATCH today (§ 4.1). To edit the
-description or the tool list, publish a new version with 'connection add' or
-'connection remove'.`,
+Only --default-version is supported today. To change the tool list, publish a
+new version with 'connection add' or 'connection remove'.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runToolboxUpdate(cmd.Context(), args[0], *flags, readToolboxFlags(cmd, extCtx))

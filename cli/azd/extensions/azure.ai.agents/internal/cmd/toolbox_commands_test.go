@@ -94,7 +94,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 		assert.Equal(t, "3", client.deleteVersionCalls[0].version)
 	})
 
-	// § 5.3 row 3: non-default version delete has no confirmation prompt.
+	// Non-default version delete has no confirmation prompt.
 	t.Run("non_default_version_without_force_does_not_prompt", func(t *testing.T) {
 		client := newMockToolboxClient("https://e/")
 		client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
@@ -111,8 +111,10 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 }
 
 func TestRunToolboxDelete_NoPromptWithoutForce(t *testing.T) {
-	err := runToolboxDelete(
-		t.Context(), "x",
+	client := newMockToolboxClient("https://e/")
+	// Parent-toolbox delete with --no-prompt and no --force must reject.
+	err := runDeleteToolbox(
+		t.Context(), client, "https://e/", "tb",
 		toolboxDeleteFlags{},
 		toolboxFlags{output: "table", noPrompt: true},
 	)
@@ -346,7 +348,7 @@ func TestRunToolboxUpdate_MissingDefaultVersion(t *testing.T) {
 	requireLocalError(t, err, exterrors.CodeMissingUpdateField)
 }
 
-// Pending-record promotion path (§ 8): POST v1 with the carried-forward
+// Pending-record promotion path: POST v1 with the carried-forward
 // description, then clear the record.
 func TestRunConnectionAddWith_PendingPromotion(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
@@ -400,7 +402,7 @@ func TestRunConnectionAddWith_PendingStoreFailureSurfaces(t *testing.T) {
 		"existing-toolbox branch must not be entered when the pending store fails")
 }
 
-// Client-side ^[A-Za-z0-9_-]+$ enforcement on tool entry names (§ 4.2).
+// Client-side ^[A-Za-z0-9_-]+$ enforcement on tool entry names.
 func TestBuildToolEntry_RejectsInvalidName(t *testing.T) {
 	_, err := buildToolEntry(&projectConnection{
 		ID:       "/c/x",

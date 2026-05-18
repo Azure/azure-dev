@@ -121,6 +121,7 @@ const (
 	CodeMissingForceFlag              = "missing_force_flag"
 	CodeInvalidToolboxName            = "invalid_toolbox_name"
 	CodePendingToolboxStoreFailed     = "pending_toolbox_store_failed"
+	CodeSetDefaultVersionFailed       = "set_default_version_failed"
 )
 
 // Error codes for connection operations.

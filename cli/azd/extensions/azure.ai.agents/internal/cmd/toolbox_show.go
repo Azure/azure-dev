@@ -113,7 +113,7 @@ func runToolboxShowWith(
 }
 
 // showPendingOrNotFound handles the 404 branch: either render the pending-toolbox
-// view (§ 5.4.1) or surface a structured Dependency(CodeToolboxNotFound).
+// view or surface a structured Dependency(CodeToolboxNotFound).
 func showPendingOrNotFound(
 	ctx context.Context, endpoint, name string,
 	verb toolboxShowFlags, parent toolboxFlags,
@@ -135,7 +135,7 @@ func showPendingOrNotFound(
 	})
 }
 
-// renderPendingShow emits the pending-toolbox view (§ 5.4.1).
+// renderPendingShow emits the pending-toolbox view.
 func renderPendingShow(
 	name string, verb toolboxShowFlags, parent toolboxFlags, pending *PendingToolbox,
 ) error {
@@ -185,7 +185,7 @@ func renderPendingShow(
 	return nil
 }
 
-// buildToolboxMcpURL computes the runtime MCP consumption URL (§ 4.1).
+// buildToolboxMcpURL computes the runtime MCP consumption URL.
 // version is service-supplied so both segments are PathEscaped.
 func buildToolboxMcpURL(endpoint, name, version string) string {
 	return fmt.Sprintf(
@@ -196,7 +196,7 @@ func buildToolboxMcpURL(endpoint, name, version string) string {
 	)
 }
 
-// emitShowJSON prints the JSON envelope expected by § 5.4.
+// emitShowJSON prints the JSON envelope for `toolbox show`.
 func emitShowJSON(
 	tb *azure.ToolboxObject, version *azure.ToolboxVersionObject, mcpURL string,
 ) error {
@@ -207,7 +207,7 @@ func emitShowJSON(
 	})
 }
 
-// emitShowTable renders the table format defined in § 5.4.
+// emitShowTable renders the table form of `toolbox show`.
 func emitShowTable(
 	tb *azure.ToolboxObject, version *azure.ToolboxVersionObject, mcpURL string,
 ) error {

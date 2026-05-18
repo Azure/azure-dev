@@ -73,7 +73,10 @@ func runToolboxListWith(
 		}
 	}
 
-	// Drop pending records that already exist live-side to avoid duplicates.
+	// Drop pending records that already exist live-side. The pending record
+	// is normally cleared when `connection add` publishes v1, but a clear
+	// failure (logged in connection add) can leave a stale entry. This dedup
+	// makes the list output self-healing.
 	liveNames := map[string]struct{}{}
 	for _, t := range live {
 		liveNames[t.Name] = struct{}{}
@@ -112,9 +115,9 @@ func emitListJSON(live []azure.ToolboxObject, pending map[string]PendingToolbox)
 	return emitJSON(map[string]any{"toolboxes": toolboxes})
 }
 
-// emitListTable produces NAME / DEFAULT-VERSION / STATE / CREATED. Per spec
-// § 13 Decision 2, the table intentionally omits a TOOLS count to avoid an
-// extra GET /versions per row; `toolbox show` reports it for one toolbox.
+// emitListTable produces NAME / DEFAULT-VERSION / STATE / CREATED. The table
+// intentionally omits a TOOLS count to avoid an extra fetch per row; use
+// `toolbox show` to see tools for a single toolbox.
 func emitListTable(
 	_ context.Context, _ toolboxClient,
 	live []azure.ToolboxObject, pending map[string]PendingToolbox,

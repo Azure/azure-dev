@@ -63,13 +63,6 @@ func runToolboxDelete(
 	if err := validateOutputFormat(parent.output); err != nil {
 		return err
 	}
-	if parent.noPrompt && !verb.force {
-		return exterrors.Validation(
-			exterrors.CodeMissingForceFlag,
-			"--no-prompt requires --force on destructive operations",
-			"add --force to confirm the deletion non-interactively",
-		)
-	}
 
 	client, resolved, err := resolveToolboxAndClient(ctx, parent)
 	if err != nil {
@@ -97,6 +90,16 @@ func runDeleteToolbox(
 	ctx context.Context, client toolboxClient, endpoint, name string,
 	verb toolboxDeleteFlags, parent toolboxFlags,
 ) error {
+	// Only the parent-toolbox delete prompts for confirmation; --no-prompt
+	// without --force is rejected here, not in runDeleteToolboxVersion which
+	// does not prompt.
+	if parent.noPrompt && !verb.force {
+		return exterrors.Validation(
+			exterrors.CodeMissingForceFlag,
+			"--no-prompt requires --force when deleting a toolbox",
+			"add --force to confirm the deletion non-interactively",
+		)
+	}
 	return withAzdClient(func(azdClient *azdext.AzdClient) error {
 		// Best-effort pending lookup; a read failure is logged but non-fatal.
 		pending, err := getPendingToolbox(ctx, azdClient, endpoint, name)
@@ -196,9 +199,8 @@ func runDeleteToolboxVersion(
 		}
 		cascaded = true
 	}
-	// NOTE: spec § 5.3 row 3 specifies DELETE /toolboxes/{name}/versions/{n}
-	// with no prompt for non-default versions. We intentionally do not add a
-	// confirmation here even when not running with --force, to match the spec.
+	// NOTE: non-default version delete has no confirmation prompt by design.
+	// We intentionally do not add one here even without --force.
 
 	if err := client.DeleteToolboxVersion(ctx, name, verb.version); err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpDeleteToolboxVersion)

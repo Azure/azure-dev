@@ -33,7 +33,7 @@ type pendingToolboxBucket struct {
 }
 
 // endpointBucketKey returns the 16-hex-char opaque key used to bucket pending
-// records per endpoint, per spec § 7. The key shape (hex.EncodeToString of the
+// records per endpoint. The key shape (hex.EncodeToString of the
 // first 8 bytes of the sha256 digest) is part of the persisted config schema:
 // changing it would orphan every existing record.
 func endpointBucketKey(endpoint string) string {

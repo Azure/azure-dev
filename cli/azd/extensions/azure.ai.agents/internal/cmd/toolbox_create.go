@@ -21,7 +21,7 @@ type toolboxCreateFlags struct {
 
 // newToolboxCreateCommand returns the `azd ai agent toolbox create <name>` command.
 // `create` records a local pending entry; v1 is POSTed on the first
-// `connection add` (§ 5.1 / § 4.2).
+// `connection add`.
 func newToolboxCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	flags := &toolboxCreateFlags{}
@@ -31,10 +31,9 @@ func newToolboxCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Register a new toolbox locally (publishes on first `connection add`).",
 		Long: `Register a new toolbox locally.
 
-Foundry requires a non-empty tool list on the first POST, so 'create' does not
-contact the service. Instead it records a local pending entry. The first
-'connection add' against the same toolbox name publishes v1 and clears the
-pending record.`,
+A toolbox must have at least one tool before it can be published, so 'create'
+only records a local pending entry. The first 'connection add' against the
+same toolbox name publishes v1 and clears the pending record.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runToolboxCreate(cmd.Context(), args[0], *flags, readToolboxFlags(cmd, extCtx))
@@ -95,7 +94,7 @@ func runToolboxCreate(
 	return emitCreateResult(name, false, parent.output, verb, resolved.Endpoint)
 }
 
-// emitCreateResult prints the standard one-liner or JSON envelope (§ 5.1).
+// emitCreateResult prints the standard one-liner or JSON envelope.
 func emitCreateResult(
 	name string, alreadyExists bool, output string, verb toolboxCreateFlags, endpoint string,
 ) error {
@@ -113,16 +112,14 @@ func emitCreateResult(
 	}
 
 	if alreadyExists {
-		fmt.Printf(
-			"Toolbox %s already exists. Run 'connection add' to publish a new version, "+
-				"or 'update --default-version <n>' to retarget.\n", name,
-		)
+		fmt.Printf("Toolbox %s already exists.\n", name)
+		fmt.Println("Next steps:")
+		fmt.Println("  - Run 'azd ai agent toolbox connection add' to publish a new version.")
+		fmt.Println("  - Run 'azd ai agent toolbox update --default-version <n>' to retarget the default.")
 		return nil
 	}
-	fmt.Printf(
-		"Registered toolbox %s (pending tools). "+
-			"Run 'azd ai agent toolbox connection add %s <connection>' to publish v1.\n",
-		name, name,
-	)
+	fmt.Printf("Registered toolbox %s (pending tools).\n", name)
+	fmt.Println("Next step:")
+	fmt.Printf("  Run 'azd ai agent toolbox connection add %s <connection>' to publish v1.\n", name)
 	return nil
 }

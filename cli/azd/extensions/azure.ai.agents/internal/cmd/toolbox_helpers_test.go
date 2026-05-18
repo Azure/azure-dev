@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
@@ -35,10 +36,12 @@ func TestValidateToolboxName(t *testing.T) {
 		{"with dash", "my-tools", false},
 		{"with underscore", "my_tools", false},
 		{"mixed", "Tools_v2-alpha", false},
+		{"max length", strings.Repeat("a", maxToolboxNameLength), false},
 		{"empty", "", true},
 		{"slash", "a/b", true},
 		{"space", "my tools", true},
 		{"dot", "tools.v1", true},
+		{"too long", strings.Repeat("a", maxToolboxNameLength+1), true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -223,5 +226,5 @@ func TestEndpointBucketKey(t *testing.T) {
 	a := endpointBucketKey("https://acct.example.com/api/projects/p")
 	b := endpointBucketKey("https://acct.example.com/api/projects/p/") // trailing slash
 	assert.Equal(t, a, b, "trailing slash must not change bucket key")
-	assert.Len(t, a, 16, "spec § 7 pins the key length to 16 hex chars")
+	assert.Len(t, a, 16, "bucket key length is pinned to 16 hex chars")
 }

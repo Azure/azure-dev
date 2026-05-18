@@ -294,18 +294,24 @@ func validateExtensionMetadata(schema *models.ExtensionSchema) (warnings, errs [
 		errs = append(errs, "Missing required field: description")
 	}
 
-	// Capability-specific recommendations - missing values are warnings.
+	// Capability-specific recommendations.
 	hasCustomCommands := slices.Contains(schema.Capabilities, extensions.CustomCommandCapability)
 	hasServiceTarget := slices.Contains(schema.Capabilities, extensions.ServiceTargetProviderCapability)
 
+	// Missing namespace is fatal for custom-commands extensions: bindExtension
+	// uses the last '.'-segment of Namespace as the cobra command name, so an
+	// empty namespace silently installs an unreachable command. The init wizard
+	// always populates namespace, so this only triggers on hand-edited files.
 	if hasCustomCommands && schema.Namespace == "" {
-		warnings = append(warnings,
+		errs = append(errs,
 			"Missing 'namespace' field in extension.yaml - "+
 				"required by the 'custom-commands' capability. "+
 				"Set it to the prefix users will type after 'azd' (e.g. 'demo' to expose 'azd demo <command>').",
 		)
 	}
 
+	// Kept as a warning: the init wizard doesn't yet prompt for providers, so
+	// promoting this to an error would block every service-target-provider scaffold.
 	if hasServiceTarget && len(schema.Providers) == 0 {
 		warnings = append(warnings,
 			"Missing 'providers' field in extension.yaml - "+

@@ -102,7 +102,7 @@ func TestValidateExtensionMetadata(t *testing.T) {
 			},
 		},
 		{
-			name: "custom commands without namespace emits warning",
+			name: "custom commands without namespace is a fatal error",
 			schema: &models.ExtensionSchema{
 				Id:           "test.extension",
 				Version:      "0.0.1",
@@ -111,7 +111,7 @@ func TestValidateExtensionMetadata(t *testing.T) {
 				Usage:        "azd test <command>",
 				Capabilities: []extensions.CapabilityType{extensions.CustomCommandCapability},
 			},
-			wantWarnings: []string{
+			wantErrors: []string{
 				"Missing 'namespace' field in extension.yaml - " +
 					"required by the 'custom-commands' capability. " +
 					"Set it to the prefix users will type after 'azd' (e.g. 'demo' to expose 'azd demo <command>').",

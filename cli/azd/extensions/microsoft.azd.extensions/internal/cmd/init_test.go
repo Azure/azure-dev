@@ -215,16 +215,43 @@ func TestWriteCollectedWarnings(t *testing.T) {
 	assert.Contains(t, output, "  - second warning")
 }
 
-func TestWriteCommandOutputAddsMissingTrailingNewline(t *testing.T) {
-	var buf bytes.Buffer
-	writeCommandOutput(&buf, []byte("command output"))
-
-	assert.Equal(t, "command output\n", buf.String())
-}
-
 func TestValidationWarningSummary(t *testing.T) {
 	assert.Equal(t, "1 validation warning", validationWarningSummary([]string{"first"}))
 	assert.Equal(t, "2 validation warnings", validationWarningSummary([]string{"first", "second"}))
+}
+
+func TestSubprocessErrorTail(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "empty", in: "", want: ""},
+		{name: "whitespace only", in: "   \n\n\t\n", want: ""},
+		{
+			name: "ERROR line wins over later content",
+			in: "Installing extension\n" +
+				"ERROR: namespace 'test.ext' conflicts with 'ext.agent'\n" +
+				"Suggestion: uninstall first",
+			want: ": namespace 'test.ext' conflicts with 'ext.agent'",
+		},
+		{
+			name: "falls back to last non-empty line",
+			in:   "first\nsecond\n\n",
+			want: ": second",
+		},
+		{
+			name: "strips ANSI escapes",
+			in:   "\x1b[31mERROR:\x1b[0m boom",
+			want: ": boom",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, subprocessErrorTail([]byte(tt.in)))
+		})
+	}
 }
 
 func slicesContainSubstring(values []string, substring string) bool {

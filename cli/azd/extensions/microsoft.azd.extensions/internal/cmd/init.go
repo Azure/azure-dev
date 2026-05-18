@@ -264,15 +264,9 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 	}
 
 	var buildWarnings []string
-	var buildCommandOutput []byte
-	// Ensure validation warnings and (on failure) captured subprocess output are flushed
-	// after the live TaskList canvas completes, regardless of which task returned the error.
-	defer func() {
-		writeCollectedWarnings(os.Stdout, buildWarnings)
-		if err != nil {
-			writeCommandOutput(os.Stdout, buildCommandOutput)
-		}
-	}()
+	// Ensure validation warnings are flushed after the live TaskList canvas
+	// completes, regardless of whether a later task fails.
+	defer func() { writeCollectedWarnings(os.Stdout, buildWarnings) }()
 
 	validateExtensionAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 		warnings, validationErrors := validateExtensionMetadata(extensionMetadata)
@@ -288,60 +282,42 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 		return ux.Success, nil
 	}
 
-	buildExtensionAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-		cmd := exec.Command("azd", "x", "build", "--skip-install")
+	runSubprocess := func(description string, args ...string) (ux.TaskState, error) {
+		/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments */
+		cmd := exec.Command("azd", args...)
 		cmd.Dir = extensionMetadata.Path
 
+		// Capture combined output so we can surface the child's own error message
+		// inline in the wrapped error instead of letting the child's TaskList canvas
+		// stream into our terminal alongside ours.
 		result, err := cmd.CombinedOutput()
-		buildCommandOutput = result
 		if err != nil {
 			return ux.Error, common.NewDetailedError(
-				"Build failed",
-				fmt.Errorf("failed to build extension: %w", err),
+				description,
+				fmt.Errorf("%s: %w%s", description, err, subprocessErrorTail(result)),
 			)
 		}
 
 		return ux.Success, nil
+	}
+
+	buildExtensionAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+		return runSubprocess("Build failed", "x", "build", "--skip-install")
 	}
 
 	packageExtensionAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-		cmd := exec.Command("azd", "x", "pack")
-		cmd.Dir = extensionMetadata.Path
-
-		if err := cmd.Run(); err != nil {
-			return ux.Error, common.NewDetailedError(
-				"Package failed",
-				fmt.Errorf("failed to package extension: %w", err),
-			)
-		}
-		return ux.Success, nil
+		return runSubprocess("Package failed", "x", "pack")
 	}
 
 	publishExtensionAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-		cmd := exec.Command("azd", "x", "publish")
-		cmd.Dir = extensionMetadata.Path
-
-		if err := cmd.Run(); err != nil {
-			return ux.Error, common.NewDetailedError(
-				"Publish failed",
-				fmt.Errorf("failed to package extension: %w", err),
-			)
-		}
-		return ux.Success, nil
+		return runSubprocess("Publish failed", "x", "publish")
 	}
 
 	installExtensionAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-		/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments */
-		cmd := exec.Command("azd", "ext", "install", extensionMetadata.Id, "--source", "local")
-		cmd.Dir = extensionMetadata.Path
-
-		if err := cmd.Run(); err != nil {
-			return ux.Error, common.NewDetailedError(
-				"Install failed",
-				fmt.Errorf("failed to install extension: %w", err),
-			)
-		}
-		return ux.Success, nil
+		return runSubprocess(
+			"Install failed",
+			"ext", "install", extensionMetadata.Id, "--source", "local",
+		)
 	}
 
 	taskList := ux.NewTaskList(nil)
@@ -867,17 +843,40 @@ func writeCollectedWarnings(writer io.Writer, warnings []string) {
 	fmt.Fprintln(writer)
 }
 
-// writeCommandOutput prints captured subprocess output after the task list canvas is complete.
-// The contents are echoed verbatim.
-func writeCommandOutput(writer io.Writer, result []byte) {
-	if len(result) == 0 {
-		return
+// ansiEscapeRegex matches ANSI CSI escape sequences (e.g. color codes) commonly
+// emitted by child azd processes.
+var ansiEscapeRegex = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
+
+// subprocessErrorTail extracts a short, human-friendly summary line from captured
+// subprocess output to inline into a wrapped error message. It prefers the first
+// line beginning with "ERROR:"/"Error:" and falls back to the last non-empty line.
+// The returned string is prefixed with ": " when non-empty, or empty otherwise.
+func subprocessErrorTail(output []byte) string {
+	if len(output) == 0 {
+		return ""
 	}
 
-	fmt.Fprint(writer, string(result))
-	if !bytes.HasSuffix(result, []byte("\n")) {
-		fmt.Fprintln(writer)
+	cleaned := ansiEscapeRegex.ReplaceAllString(string(output), "")
+
+	var fallback string
+	for line := range strings.SplitSeq(cleaned, "\n") {
+		line = strings.TrimRight(line, "\r")
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "ERROR:") || strings.HasPrefix(trimmed, "Error:") {
+			return ": " + strings.TrimSpace(
+				strings.TrimPrefix(strings.TrimPrefix(trimmed, "ERROR:"), "Error:"),
+			)
+		}
+		fallback = trimmed
 	}
+
+	if fallback == "" {
+		return ""
+	}
+	return ": " + fallback
 }
 
 // ExtensionTemplate contains values used when rendering extension project templates.

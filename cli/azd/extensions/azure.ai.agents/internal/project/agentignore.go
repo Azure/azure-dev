@@ -28,6 +28,15 @@ var securityExclusions = []string{
 	".git/",
 }
 
+// metadataExclusions are files that are always excluded because they are deployment metadata
+// sent separately or not relevant inside the code package.
+var metadataExclusions = []string{
+	"agent.yaml",
+	"agent.manifest.yaml",
+	"azure.yaml",
+	agentIgnoreFileName,
+}
+
 // defaultExclusions are the built-in exclusion patterns applied when no .agentignore file exists.
 var defaultExclusions = []string{
 	// azd tooling files
@@ -125,13 +134,22 @@ func (m *agentIgnoreMatcher) ShouldExclude(relPath string, isDir bool) bool {
 	return false
 }
 
-// isSecurityExcluded checks if a path matches the non-negotiable security exclusions.
+// isSecurityExcluded checks if a path matches the non-negotiable security or metadata exclusions.
 func (m *agentIgnoreMatcher) isSecurityExcluded(relPath string, isDir bool) bool {
 	name := filepath.Base(relPath)
 
 	// .env and .env.* files
 	if !isDir && (name == ".env" || strings.HasPrefix(name, ".env.")) {
 		return true
+	}
+
+	// Metadata files (agent.yaml, azure.yaml, etc.) — only at the root level
+	if !isDir && filepath.Dir(relPath) == "." {
+		for _, meta := range metadataExclusions {
+			if name == meta {
+				return true
+			}
+		}
 	}
 
 	// .azure/ and .git/ directories

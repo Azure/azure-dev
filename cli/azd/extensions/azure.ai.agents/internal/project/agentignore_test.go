@@ -160,3 +160,25 @@ func TestDefaultAgentIgnoreContent(t *testing.T) {
 	require.Contains(t, content, ".agentignore")
 	require.Contains(t, content, "bin/")
 }
+
+func TestAgentIgnore_MetadataFilesAlwaysExcluded(t *testing.T) {
+	dir := t.TempDir()
+	// User .agentignore that only excludes *.log — does NOT list agent.yaml etc.
+	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte("*.log\n"), 0600)
+	require.NoError(t, err)
+
+	m, err := newAgentIgnoreMatcher(dir)
+	require.NoError(t, err)
+
+	// Metadata files at root are always excluded
+	require.True(t, m.ShouldExclude("agent.yaml", false))
+	require.True(t, m.ShouldExclude("agent.manifest.yaml", false))
+	require.True(t, m.ShouldExclude("azure.yaml", false))
+	require.True(t, m.ShouldExclude(".agentignore", false))
+
+	// But agent.yaml in a subdirectory is NOT excluded (only root level)
+	require.False(t, m.ShouldExclude("subdir/agent.yaml", false))
+
+	// Regular files still allowed
+	require.False(t, m.ShouldExclude("main.py", false))
+}

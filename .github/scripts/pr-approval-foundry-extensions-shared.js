@@ -115,28 +115,6 @@ module.exports = async ({ github, context, core }) => {
     }
   }
 
-  // --- pull_request_review: runtime path-scope check ---
-  // GitHub Actions does not support `paths:` filters on pull_request_review or
-  // issue_comment events. This runtime check compensates for that limitation.
-  if (context.eventName === 'pull_request_review') {
-    const files = await safeCall(
-      () => github.paginate(
-        github.rest.pulls.listFiles,
-        { owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber }
-      ),
-      'list PR files'
-    );
-    if (files === null) return;
-
-    const touchesExtension = files.some(f =>
-      f.filename.startsWith(EXTENSION_PATH) || f.filename === WORKFLOW_PATH
-    );
-    if (!touchesExtension) {
-      core.info('PR does not touch this extension — skipping approval check.');
-      return;
-    }
-  }
-
   // --- Check for an existing override comment (break-glass, fallback scan) ---
   const comments = await safeCall(
     () => github.paginate(

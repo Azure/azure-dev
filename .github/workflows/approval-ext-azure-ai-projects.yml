@@ -17,8 +17,6 @@ on:
       - ".github/scripts/pr-approval-foundry-extensions-shared.js"
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
-  pull_request_review:
-    types: [submitted]
   issue_comment:
     types: [created]
 
@@ -37,7 +35,6 @@ jobs:
     name: Required Approval
     if: |
       github.event_name == 'pull_request' ||
-      github.event_name == 'pull_request_review' ||
       (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/projects-extension-approval override'))
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -2,6 +2,7 @@ import: ../../../.vscode/cspell.global.yaml
 words:
   - agentcopilot
   - agentdetect
+  - agentignore
   - Authenticode
   - azdignore
   - gofmt

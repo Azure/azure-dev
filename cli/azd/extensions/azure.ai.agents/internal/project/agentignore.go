@@ -5,6 +5,7 @@ package project
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -135,9 +136,9 @@ func (m *agentIgnoreMatcher) isSecurityExcluded(relPath string, isDir bool) bool
 
 	// .azure/ and .git/ directories
 	for _, sec := range m.securityPaths {
-		if strings.HasSuffix(sec, "/") {
+		if before, ok := strings.CutSuffix(sec, "/"); ok {
 			// Directory exclusion
-			dirName := strings.TrimSuffix(sec, "/")
+			dirName := before
 			if isDir && name == dirName {
 				return true
 			}
@@ -156,7 +157,7 @@ func (m *agentIgnoreMatcher) isSecurityExcluded(relPath string, isDir bool) bool
 func loadAgentIgnore(srcDir string) (gitignore.GitIgnore, error) {
 	path := filepath.Join(srcDir, agentIgnoreFileName)
 	info, err := os.Lstat(path)
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
@@ -169,7 +170,7 @@ func loadAgentIgnore(srcDir string) (gitignore.GitIgnore, error) {
 		return nil, fmt.Errorf("%s exceeds maximum size (%d bytes)", agentIgnoreFileName, agentIgnoreMaxSize)
 	}
 
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // path is constructed from a known directory + constant filename
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", agentIgnoreFileName, err)
 	}

@@ -47,7 +47,7 @@ func TestAgentIgnore_NoFile_UsesDefaults(t *testing.T) {
 func TestAgentIgnore_SecurityAlwaysExcluded(t *testing.T) {
 	dir := t.TempDir()
 	// Create .agentignore that tries to negate security files
-	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte("!.env\n!.azure/\n!.git/\n"), 0644)
+	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte("!.env\n!.azure/\n!.git/\n"), 0600)
 	require.NoError(t, err)
 
 	m, err := newAgentIgnoreMatcher(dir)
@@ -65,7 +65,7 @@ func TestAgentIgnore_SecurityAlwaysExcluded(t *testing.T) {
 func TestAgentIgnore_UserFileOverridesDefaults(t *testing.T) {
 	dir := t.TempDir()
 	// User only excludes *.log — defaults like __pycache__ should NOT apply
-	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte("*.log\n"), 0644)
+	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte("*.log\n"), 0600)
 	require.NoError(t, err)
 
 	m, err := newAgentIgnoreMatcher(dir)
@@ -89,7 +89,7 @@ func TestAgentIgnore_NegationWorks(t *testing.T) {
 	dir := t.TempDir()
 	// Exclude all .txt but keep important.txt
 	content := "*.txt\n!important.txt\n"
-	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte(content), 0644)
+	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte(content), 0600)
 	require.NoError(t, err)
 
 	m, err := newAgentIgnoreMatcher(dir)
@@ -102,7 +102,7 @@ func TestAgentIgnore_NegationWorks(t *testing.T) {
 func TestAgentIgnore_SymlinkRejected(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "real_ignore")
-	err := os.WriteFile(target, []byte("*.log\n"), 0644)
+	err := os.WriteFile(target, []byte("*.log\n"), 0600)
 	require.NoError(t, err)
 
 	link := filepath.Join(dir, ".agentignore")
@@ -120,7 +120,7 @@ func TestAgentIgnore_UTF8BOM(t *testing.T) {
 	dir := t.TempDir()
 	// Write file with UTF-8 BOM
 	content := append([]byte{0xEF, 0xBB, 0xBF}, []byte("*.log\n")...)
-	err := os.WriteFile(filepath.Join(dir, ".agentignore"), content, 0644)
+	err := os.WriteFile(filepath.Join(dir, ".agentignore"), content, 0600)
 	require.NoError(t, err)
 
 	m, err := newAgentIgnoreMatcher(dir)
@@ -131,7 +131,7 @@ func TestAgentIgnore_UTF8BOM(t *testing.T) {
 
 func TestAgentIgnore_EmptyFile(t *testing.T) {
 	dir := t.TempDir()
-	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte(""), 0644)
+	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte(""), 0600)
 	require.NoError(t, err)
 
 	m, err := newAgentIgnoreMatcher(dir)

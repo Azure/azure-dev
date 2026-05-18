@@ -65,7 +65,6 @@ direct agent call (does not). Both must keep working.
 - Multi-trigger routines via the CLI — deferred ([§7 OQ-2](#7-open-questions)).
 - Changing `--trigger` or `--action` *type* on an existing routine — delete and
   recreate, mirroring the `connection` auth-type rule ([§4.2](#42-create-vs-update)).
-- Creating routines from a file (`--file`) — tracked as [#8187](https://github.com/Azure/azure-dev/issues/8187).
 
 ## 3. Endpoint Resolution
 
@@ -97,7 +96,7 @@ Cross-cutting flags on every subcommand: `--output table|json`, `--no-prompt`,
 ### 4.1 `routine create <name>`
 
 Required positional: `<name>`.\
-Required flags (always): `--trigger <recurring|timer|github-issue>` (enum, not free-form; see [§5.1](#51-trigger-flags--routinetrigger-discriminator) for the supported types and per-type required flags).\
+Required flags (always): one of `--trigger <recurring|timer|github-issue>` (enum, not free-form; see [§5.1](#51-trigger-flags--routinetrigger-discriminator) for the supported types and per-type required flags) **or** `--file <path>` (see [§4.1.1](#411---file-source-controlled-routines)).\
 Conditionally required flags: per trigger/action type (see [§5.1](#51-trigger-flags--routinetrigger-discriminator) / [§5.2](#52-action-flags--routineaction-discriminator)).
 
 Optional flags:
@@ -119,6 +118,29 @@ Optional flags:
 - Table: `Routine 'daily-ops-report' created.` plus a short summary block.
 - JSON: the server's `Routine` body, normalized.
 
+#### 4.1.1 `--file` (source-controlled routines)
+
+Routines are first-class repo artifacts: a `routine.yaml` (or `.json`) checked
+in next to `agent.yaml` keeps the trigger/action definition reviewable in
+source control. `routine create` and `routine update` accept `--file <path>`
+as an alternative to the per-trigger/per-action flag set.
+
+- **Schema.** The file shape is the same `Routine` body the CLI emits on the
+  wire (single-trigger keyed as `"default"`, see [§5](#5-wire-format-mapping)),
+  with one optional top-level `name` field. CLI flags override file fields
+  on a key-by-key basis, so `--file routine.yaml --description "..."` is
+  valid; the positional `<name>` (or `--name` in `update`) wins over a
+  `name` field inside the file.
+- **Discovery.** `--file` is mutually exclusive with `--trigger` (you provide
+  the trigger inside the file) but cooperates with all other scalar overrides
+  (`--description`, `--cron`, `--agent-name`, ...). Same `--no-prompt` rule
+  applies: if the file is missing or fails schema validation, the command
+  exits non-zero with a structured validation error and a path/line hint.
+- **Tracking.** Schema details (and any `agent.yaml` cross-reference) are
+  tracked in [#8187](https://github.com/Azure/azure-dev/issues/8187); the
+  implementation PR is expected to land the validator + JSON Schema entry in
+  the same change as the `--file` flag.
+
 ### 4.2 Create vs. Update
 
 The data plane exposes a single idempotent `PUT /routines/{name}`. The CLI splits
@@ -130,7 +152,8 @@ an upsert (matches `connection create --force`).
 **Update semantics.** GET-then-PUT internally — only the named flags change; all
 other fields are preserved verbatim. Accepted flags: `--description`, `--cron`,
 `--time-zone`, `--at`, `--agent-name`, `--agent-endpoint-id`, `--conversation-id`,
-`--session-id`.
+`--session-id`, `--file` (replaces all mergeable fields with the file
+body; per-flag overrides still win over the file, see [§4.1.1](#411---file-source-controlled-routines)).
 
 **Type-switch guard.** `--trigger` and `--action` are registered on `update`
 solely to surface a friendly client-side error when supplied: the command exits
@@ -236,6 +259,39 @@ verbs.
 | `enable`  | `Routine '<name>' enabled.`    | Updated `Routine` body              |
 | `disable` | `Routine '<name>' disabled.`   | Updated `Routine` body              |
 
+### 4.9 Error Behavior
+
+All `routine` subcommands surface errors through the same extension-wide
+typed-error package used by `connection`, `toolbox`, and `skill`: structured
+typed errors (`Validation`, `Dependency`, `Auth`, `ServiceFromAzure`, ...) that
+the host CLI renders as `ErrorWithSuggestion` and that map onto the codes
+defined in the shared error-codes file under
+`extensions/azure.ai.agents/internal` (see the `connection` and `toolbox`
+commands for the established pattern). Implementers should reuse these codes
+rather than minting new strings.
+
+| Scenario                                                                  | Type                       | Code (or new code suggestion)            | Suggested next step in the message                                                       |
+| ------------------------------------------------------------------------- | -------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `create <name>` when `<name>` already exists and `--force` not set        | `Validation`               | new `CodeRoutineAlreadyExists`           | `Use --force to overwrite the existing routine, or pick a different <name>.`              |
+| `create` / `update` schema validation fails (missing/unknown flag combos) | `Validation`               | `CodeConflictingArguments` / `CodeInvalidParameter` | List the offending flag(s) and the expected combo for the current `--trigger` / `--action`. |
+| `--file` references a missing file                                        | `Dependency`               | `CodeFileNotFound`                       | `Verify the path or rerun without --file.`                                              |
+| `--file` parses but fails schema validation                               | `Validation`               | new `CodeInvalidRoutineManifest`         | Include the JSONPath / line and the failing rule.                                       |
+| `update` with `--trigger` / `--action` (type switch)                      | `Validation`               | `CodeConflictingArguments`               | `Trigger and action types are immutable. Run 'azd ai agent routine delete <name>' then recreate.` |
+| `show` / `delete` / `dispatch` / `enable` / `disable` on a missing routine | `ServiceFromAzure` (404)   | `OpGetRoutine.NotFound` (op-prefixed)    | `Verify the name with 'azd ai agent routine list'.`                                     |
+| `update`: GET succeeds, PUT returns 404 (deleted between calls)           | `ServiceFromAzure` (404)   | `OpUpdateRoutine.NotFound`               | `The routine was deleted before the update completed. Recreate it with 'routine create'.` |
+| `delete --no-prompt` without `--force`                                    | `Validation`               | `CodeConflictingArguments`               | `Add --force to skip confirmation in --no-prompt mode.`                                 |
+| Endpoint cannot be resolved (no flag / env / global config)               | `Dependency`               | `CodeMissingProjectEndpoint`             | `Run 'azd ai agent project set --endpoint <url>' or pass -p.`                           |
+| Auth failure (401 / expired token / wrong tenant)                         | `Auth`                     | `CodeNotLoggedIn` / `CodeLoginExpired` / `CodeAuthFailed` | `Run 'azd auth login' and retry.`                                                       |
+| Server returns 5xx                                                        | `ServiceFromAzure`         | op-prefixed (e.g. `OpDispatchRoutine.5xx`) | Surface Azure correlation/request id verbatim and suggest retrying.                     |
+
+`enable` / `disable` are idempotent; calling them on a routine already in the
+target state must not be treated as an error ([§4.5](#45-routine-enable--disable-name)).
+
+Operation names follow the existing `Op*` convention in the typed-error codes
+file; the implementation PR adds `OpGetRoutine`, `OpListRoutines`,
+`OpCreateRoutine`, `OpUpdateRoutine`, `OpDeleteRoutine`, `OpEnableRoutine`,
+`OpDisableRoutine`, `OpDispatchRoutine`, and `OpListRoutineRuns`.
+
 ## 5. Wire Format Mapping
 
 ### 5.1 Trigger flags → `RoutineTrigger` discriminator
@@ -310,8 +366,8 @@ endpoints hashed.
 
 | Event                          | Properties                                                                |
 | ------------------------------ | ------------------------------------------------------------------------- |
-| `azd.ai.routine.create`        | `trigger`, `action`, `forced` (bool), `hasAzdProject` (bool)              |
-| `azd.ai.routine.update`        | `fieldsChanged` (count), `hasAzdProject`                                  |
+| `azd.ai.routine.create`        | `trigger`, `action`, `forced` (bool), `hasFile` (bool), `hasAzdProject` (bool) |
+| `azd.ai.routine.update`        | `fieldsChanged` (count), `hasFile` (bool), `hasAzdProject`                |
 | `azd.ai.routine.show`          | `source` (resolver), `resolved` (bool)                                    |
 | `azd.ai.routine.list`          | `pageCount`, `resolved`                                                   |
 | `azd.ai.routine.delete`        | `forced`, `existed` (bool)                                                |
@@ -344,6 +400,12 @@ endpoints hashed.
   based on payload flags; `actionType` telemetry `unknown` in the no-payload path.
 - `run list` query-param mapping (`--top` → `maxResults`, `--filter` → `filter`) and pagination; JSON output is one stable object.
 - `delete --no-prompt` without `--force` produces a structured validation error.
+- `--file` happy path (`create` and `update`): YAML / JSON parse, schema
+  validation, flag-level overrides win over file fields, mutual exclusivity
+  with `--trigger`.
+- Error mapping for every row in [§4.9](#49-error-behavior): each scenario
+  surfaces the documented typed-error type/code and suggestion (404 / 409 /
+  auth / endpoint / schema-validation / type-switch / `--no-prompt` `--force`).
 - Output shapes match [§4 table](#output-shapes-for-state-changing-verbs) in both
   table and JSON modes.
 
@@ -366,10 +428,14 @@ azd ai agent routine create <name> \
   [--conversation-id <id>] [--session-id <id>] \
   [--description "..."] [--enabled=false] [--force]
 
+# Or from a source-controlled file (see §4.1.1):
+azd ai agent routine create <name> --file ./routine.yaml [--description "..."] [--force]
+
 azd ai agent routine update <name> \
   [--description ...] [--cron ...] [--time-zone ...] [--at ...] \
   [--agent-name ...] [--agent-endpoint-id ...] \
-  [--conversation-id ...] [--session-id ...]
+  [--conversation-id ...] [--session-id ...] \
+  [--file ./routine.yaml]
 
 azd ai agent routine show <name>
 azd ai agent routine list

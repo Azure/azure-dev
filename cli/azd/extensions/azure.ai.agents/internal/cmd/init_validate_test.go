@@ -6,6 +6,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -24,6 +25,7 @@ func TestExtractTargetFrameworkVersion(t *testing.T) {
 		{"empty", "", 0},
 		{"netstandard", `<TargetFramework>netstandard2.0</TargetFramework>`, 0},
 		{"netcoreapp3.1", `<TargetFramework>netcoreapp3.1</TargetFramework>`, 0},
+		{"net8.0-windows", `<TargetFramework>net8.0-windows</TargetFramework>`, 8},
 	}
 
 	for _, tt := range tests {
@@ -37,7 +39,6 @@ func TestExtractTargetFrameworkVersion(t *testing.T) {
 }
 
 func TestValidateDotnetRuntimeVsCsproj_Mismatch(t *testing.T) {
-	// Create temp dir with a .csproj targeting net10.0
 	dir := t.TempDir()
 	csproj := `<Project><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>`
 	err := os.WriteFile(filepath.Join(dir, "MyAgent.csproj"), []byte(csproj), 0600)
@@ -45,8 +46,13 @@ func TestValidateDotnetRuntimeVsCsproj_Mismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Should not panic; prints ERROR to stdout (non-blocking)
-	validateDotnetRuntimeVsCsproj(dir, "dotnet_9")
+	output, _ := captureStdout(t, func() error {
+		validateDotnetRuntimeVsCsproj(dir, "dotnet_9")
+		return nil
+	})
+	if !strings.Contains(output, "ERROR") {
+		t.Errorf("expected ERROR in output, got: %s", output)
+	}
 }
 
 func TestValidateDotnetRuntimeVsCsproj_Match(t *testing.T) {
@@ -57,8 +63,13 @@ func TestValidateDotnetRuntimeVsCsproj_Match(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Should not panic; prints OK to stdout
-	validateDotnetRuntimeVsCsproj(dir, "dotnet_9")
+	output, _ := captureStdout(t, func() error {
+		validateDotnetRuntimeVsCsproj(dir, "dotnet_9")
+		return nil
+	})
+	if !strings.Contains(output, "OK") {
+		t.Errorf("expected OK in output, got: %s", output)
+	}
 }
 
 func TestValidateDotnetRuntimeVsCsproj_HigherRuntime(t *testing.T) {

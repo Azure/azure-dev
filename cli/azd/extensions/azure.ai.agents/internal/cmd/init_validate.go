@@ -111,7 +111,7 @@ func validateDotnetRuntimeVsCsproj(srcDir string, runtime string) {
 // e.g. "<TargetFramework>net10.0</TargetFramework>" -> 10
 // Returns 0 if not found or not parsable.
 func extractTargetFrameworkVersion(csprojContent string) int {
-	re := regexp.MustCompile(`<TargetFramework>net(\d+)\.\d+</TargetFramework>`)
+	re := regexp.MustCompile(`<TargetFramework>net(\d+)\.\d+[^<]*</TargetFramework>`)
 	matches := re.FindStringSubmatch(csprojContent)
 	if len(matches) < 2 {
 		return 0

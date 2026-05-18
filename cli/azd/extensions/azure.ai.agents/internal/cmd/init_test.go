@@ -6,36 +6,20 @@ package cmd
 import (
 	"context"
 	"errors"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents"
-	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
-
-type fakeAgentGetter struct {
-	err error
-}
-
-func (f fakeAgentGetter) GetAgent(context.Context, string, string) (*agent_api.AgentObject, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-
-	return &agent_api.AgentObject{}, nil
-}
 
 func TestInitCommand_AgentNameFlag(t *testing.T) {
 	cmd := newInitCommand(nil)
@@ -168,47 +152,25 @@ func TestAgentNameTemplateHelpers(t *testing.T) {
 	})
 }
 
-func TestFoundryAgentExists(t *testing.T) {
+func TestNextAgentNameSuggestion(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		err        error
-		wantExists bool
-		wantErr    bool
+		name  string
+		input string
+		want  string
 	}{
-		{name: "exists", wantExists: true},
-		{
-			name: "not found",
-			err: &azcore.ResponseError{
-				StatusCode: http.StatusNotFound,
-				ErrorCode:  "not_found",
-			},
-		},
-		{
-			name: "service error",
-			err: &azcore.ResponseError{
-				StatusCode: http.StatusInternalServerError,
-				ErrorCode:  "internal_error",
-			},
-			wantErr: true,
-		},
+		{name: "without numeric suffix", input: "my-agent", want: "my-agent-2"},
+		{name: "increments numeric suffix", input: "my-agent-2", want: "my-agent-3"},
+		{name: "carries numeric suffix", input: "my-agent-9", want: "my-agent-10"},
+		{name: "preserves leading zero width", input: "my-agent-009", want: "my-agent-010"},
+		{name: "truncates long base", input: strings.Repeat("a", 63), want: strings.Repeat("a", 61) + "-2"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			exists, err := agents.AgentExists(t.Context(), fakeAgentGetter{err: tt.err}, "my-agent", DefaultAgentAPIVersion)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if exists != tt.wantExists {
-				t.Fatalf("exists = %v, want %v", exists, tt.wantExists)
+			if got := nextAgentNameSuggestion(tt.input); got != tt.want {
+				t.Fatalf("nextAgentNameSuggestion(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}

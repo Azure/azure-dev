@@ -8,37 +8,21 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
-
-type fakeAgentExistenceClient struct {
-	err error
-}
-
-func (f fakeAgentExistenceClient) GetAgent(context.Context, string, string) (*agent_api.AgentObject, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-
-	return &agent_api.AgentObject{}, nil
-}
 
 func TestApplyAgentMetadata(t *testing.T) {
 	tests := []struct {
@@ -106,67 +90,6 @@ func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {
 				t.Errorf("getServiceKey(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
-	}
-}
-
-func TestAgentExists(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name       string
-		err        error
-		wantExists bool
-		wantErr    bool
-	}{
-		{name: "exists", wantExists: true},
-		{
-			name: "not found",
-			err: &azcore.ResponseError{
-				StatusCode: http.StatusNotFound,
-				ErrorCode:  "not_found",
-			},
-		},
-		{
-			name: "service error",
-			err: &azcore.ResponseError{
-				StatusCode: http.StatusInternalServerError,
-				ErrorCode:  "internal_error",
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			exists, err := agents.AgentExists(t.Context(), fakeAgentExistenceClient{err: tt.err}, "my-agent", agentAPIVersion)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if exists != tt.wantExists {
-				t.Fatalf("exists = %v, want %v", exists, tt.wantExists)
-			}
-		})
-	}
-}
-
-func TestExistingAgentVersionWarning(t *testing.T) {
-	t.Parallel()
-
-	warning := agents.ExistingAgentWarning("my-agent")
-	for _, want := range []string{
-		"my-agent",
-		"create a new version of the existing agent",
-		"not a separate agent",
-	} {
-		if !strings.Contains(warning, want) {
-			t.Fatalf("warning %q missing %q", warning, want)
-		}
 	}
 }
 

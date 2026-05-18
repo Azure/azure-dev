@@ -321,16 +321,58 @@ func updateAgentDefinition(
 }
 
 func nextAgentNameSuggestion(agentName string) string {
-	const suffix = "-2"
+	const maxAgentNameLength = 63
+	const defaultAgentName = "agent"
+
 	base := strings.TrimRight(agentName, "-")
-	if len(base)+len(suffix) > 63 {
-		base = strings.TrimRight(base[:63-len(suffix)], "-")
+	suffixNumber := "2"
+	if dashIndex := strings.LastIndex(base, "-"); dashIndex >= 0 && dashIndex < len(base)-1 {
+		if candidate := base[dashIndex+1:]; isDecimalString(candidate) {
+			suffixNumber = incrementDecimalString(candidate)
+			base = strings.TrimRight(base[:dashIndex], "-")
+		}
+	}
+
+	suffix := "-" + suffixNumber
+	if len(suffix) >= maxAgentNameLength {
+		suffix = "-2"
+	}
+
+	maxBaseLength := maxAgentNameLength - len(suffix)
+	if len(base) > maxBaseLength {
+		base = strings.TrimRight(base[:maxBaseLength], "-")
 	}
 	if base == "" {
-		base = "agent"
+		base = defaultAgentName
+		if len(base) > maxBaseLength {
+			base = base[:maxBaseLength]
+		}
 	}
 
 	return base + suffix
+}
+
+func isDecimalString(value string) bool {
+	for _, ch := range value {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+
+	return value != ""
+}
+
+func incrementDecimalString(value string) string {
+	digits := []byte(value)
+	for i := len(digits) - 1; i >= 0; i-- {
+		if digits[i] < '9' {
+			digits[i]++
+			return string(digits)
+		}
+		digits[i] = '0'
+	}
+
+	return "1" + string(digits)
 }
 
 func resolveExistingAgentNameConflict(
@@ -349,7 +391,19 @@ func resolveExistingAgentNameConflict(
 		EnvName: environment.Name,
 		Key:     "AZURE_AI_PROJECT_ENDPOINT",
 	})
-	if err != nil || endpointResp == nil || endpointResp.Value == "" {
+	if err != nil {
+		log.Printf(
+			"existing agent name check skipped: failed to read AZURE_AI_PROJECT_ENDPOINT for environment %q: %v",
+			environment.Name,
+			err,
+		)
+		return agentName, nil
+	}
+	if endpointResp == nil || endpointResp.Value == "" {
+		log.Printf(
+			"existing agent name check skipped: AZURE_AI_PROJECT_ENDPOINT is empty for environment %q",
+			environment.Name,
+		)
 		return agentName, nil
 	}
 

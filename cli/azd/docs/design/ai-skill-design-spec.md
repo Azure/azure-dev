@@ -1,18 +1,18 @@
 <!-- cspell:ignore exterrors foundry gzip tarball zipslip orderby foundrysdk -->
 
-# Design Spec: `azd ai agent skill` Commands
+# Design Spec: `azd ai skill` Commands
 
 ## 1. Summary
 
-This spec covers the Foundry Skill commands that ship in the `azure.ai.agents`
-extension:
+This spec covers the Foundry Skill commands that ship in the new
+`azure.ai.skills` extension:
 
-- `azd ai agent skill create <name>` (three mutually exclusive input modes).
-- `azd ai agent skill update <name>` (in-place metadata or body update).
-- `azd ai agent skill show <name>` (metadata only).
-- `azd ai agent skill list` (paginated).
-- `azd ai agent skill download <name>` (default extracts the server gzip; `--raw` keeps it).
-- `azd ai agent skill delete <name>` (confirmation by default; `--force` to skip).
+- `azd ai skill create <name>` (three mutually exclusive input modes).
+- `azd ai skill update <name>` (in-place metadata or body update).
+- `azd ai skill show <name>` (metadata only).
+- `azd ai skill list` (paginated).
+- `azd ai skill download <name>` (default extracts the server gzip; `--raw` keeps it).
+- `azd ai skill delete <name>` (confirmation by default; `--force` to skip).
 
 These commands are pure CLI integration on top of the existing Foundry Skills
 data plane. No new server work is required.
@@ -41,16 +41,16 @@ Out of scope:
 
 ## 3. Extension Placement and Surface
 
-The skill subtree lives inside the existing `azure.ai.agents` extension (no
-new module, no change to `registry.json`). Commands surface as
-`azd ai agent skill <verb>`. The layout is designed so that a future move to a
-standalone `azd ai skill` extension is registration-only with no behavior diff.
+Skill commands ship in a new, standalone `azure.ai.skills` extension
+(namespace `ai.skill`), separate from `azure.ai.agents`. Commands surface as
+`azd ai skill <verb>`. Publishing the extension adds one new entry to
+`registry.json`; no changes to `azure.ai.agents` are required.
 
 Internally, files land under
-`cli/azd/extensions/azure.ai.agents/internal/cmd/skill_*.go`, mirroring the
-`project_*.go` layout. A new typed client lives at
-`internal/pkg/agents/skill_api/` so the agent client is not overloaded with
-skill operations.
+`cli/azd/extensions/azure.ai.skills/internal/cmd/skill_*.go`. A typed client
+lives at `cli/azd/extensions/azure.ai.skills/internal/pkg/skill_api/`. The
+extension owns no persistent state of its own; project context resolution is
+covered in §4.
 
 ## 4. Endpoint Resolution and Cross-Cutting Flags
 
@@ -59,8 +59,11 @@ All skill commands resolve the Foundry project endpoint via the standard
 
 1. `-p` / `--project-endpoint` flag on the invoked command.
 2. Active azd env value (`AZURE_AI_PROJECT_ENDPOINT`).
-3. Global config under `extensions.ai-agents.project.context.endpoint`
-   in `~/.azd/config.json`.
+3. Global config under `extensions.ai-skills.project.context.endpoint`
+   in `~/.azd/config.json`, falling back to
+   `extensions.ai-agents.project.context.endpoint` when the skills-owned key
+   is unset (so users who configured the endpoint via `azure.ai.agents` are
+   not forced to re-run `set`).
 4. Host environment variable `FOUNDRY_PROJECT_ENDPOINT`.
 5. Structured error with an actionable suggestion.
 
@@ -80,13 +83,13 @@ and allow `table` as an opt-in view. Verb-specific flags layer on top.
 | Delete | DELETE | `/skills/{name}` | |
 | Download | GET | `/skills/{name}:download` | Returns `application/gzip` |
 
-Auth uses the same bearer-token policy the existing agent client uses
+Auth uses the same bearer-token policy the agent client uses
 (scope `https://ai.azure.com/.default`). The User-Agent header carries the
-extension version, consistent with `agent_api`.
+extension version, consistent with the rest of the AI extension surface.
 
 ## 6. Command Behavior
 
-### 6.1 `azd ai agent skill create <name>`
+### 6.1 `azd ai skill create <name>`
 
 Three mutually exclusive input modes. The CLI rejects (does not silently
 merge) any combination that supplies more than one mode.
@@ -148,7 +151,7 @@ Mode selection logic:
   create call. The two requests are not transactional; if the delete succeeds
   but the create fails, the original skill is gone and the error message says so.
 
-### 6.2 `azd ai agent skill update <name>`
+### 6.2 `azd ai skill update <name>`
 
 Flags:
 
@@ -173,7 +176,7 @@ Behavior:
 
 `--force` is not available on `update`; the target skill must already exist.
 
-### 6.3 `azd ai agent skill show <name>`
+### 6.3 `azd ai skill show <name>`
 
 Returns metadata only. The Skill body lives behind `download`; `show` keeps
 its output focused so that humans and coding agents can scan it without
@@ -183,7 +186,7 @@ JSON output is the verbatim metadata returned by the service. Table output
 prints a fixed key/value layout (`Name`, `Description`, `Created`, `Updated`,
 plus any additional first-class fields the service exposes).
 
-### 6.4 `azd ai agent skill list`
+### 6.4 `azd ai skill list`
 
 Flags:
 
@@ -202,7 +205,7 @@ Behavior:
 3. Pagination errors mid-iteration surface as a normal error; partial results
    are not printed.
 
-### 6.5 `azd ai agent skill download <name>`
+### 6.5 `azd ai skill download <name>`
 
 Flags:
 
@@ -243,7 +246,7 @@ Default behavior (no `--raw`):
 - Default `./.agents/skills/<name>/` groups downloads under one directory.
   Projects can add `.agents/` to `.gitignore`.
 
-### 6.6 `azd ai agent skill delete <name>`
+### 6.6 `azd ai skill delete <name>`
 
 Flags:
 
@@ -265,8 +268,11 @@ Behavior:
 The CLI validates `<name>` on every command that takes it:
 
 - Non-empty after trim.
-- Matches the service-documented regex, or the conservative fallback
-  `^[a-zA-Z][a-zA-Z0-9-_]{0,62}$`. The service makes the final decision.
+- Matches the service-documented regex, or the fallback
+  `^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$` (1–63 characters,
+  alphanumeric with internal hyphens only). This aligns with the agent name
+  pattern in `azure.ai.agents` (`agent_yaml/parse.go`) so users see one rule
+  across resource kinds. The service makes the final decision.
 
 ## 7. Output Contracts
 
@@ -330,21 +336,23 @@ End-to-end (against a recorded fixture):
 ## 9. Impact on Existing Commands
 
 No existing command's behavior, flags, or resolver logic changes. The new
-`skill_api` package is a sibling of `agent_api`; the existing `AgentCardSkill`
-type (agent-card capability) is unrelated and has no symbol conflict.
+`azure.ai.skills` extension introduces its own `skill_api` package and does
+not modify `azure.ai.agents`. The `AgentCardSkill` type in `azure.ai.agents`
+(agent-card capability) is unrelated, lives in a different module, and has no
+symbol conflict with the new client.
 
 ## 10. Telemetry
 
 One event per command, reusing the extension's existing telemetry surface:
 
-- `azd.ai.agent.skill.create` (`mode`: `inline` / `file-md` / `file-gzip`,
+- `azd.ai.skill.create` (`mode`: `inline` / `file-md` / `file-gzip`,
   `forced`: bool).
-- `azd.ai.agent.skill.update` (`mode`: `inline` / `file-md`,
+- `azd.ai.skill.update` (`mode`: `inline` / `file-md`,
   `fieldsTouched`: count). Gzip updates are rejected at the flag layer
   (§6.2), so `file-gzip` is not a valid emitted value here.
-- `azd.ai.agent.skill.show` / `azd.ai.agent.skill.list` (`resolvedSource`).
-- `azd.ai.agent.skill.download` (`raw`: bool, `forced`: bool, `extractedFileCount`).
-- `azd.ai.agent.skill.delete` (`forced`: bool, `cancelled`: bool).
+- `azd.ai.skill.show` / `azd.ai.skill.list` (`resolvedSource`).
+- `azd.ai.skill.download` (`raw`: bool, `forced`: bool, `extractedFileCount`).
+- `azd.ai.skill.delete` (`forced`: bool, `cancelled`: bool).
 
 No skill names, no descriptions, no instructions, no file paths, no project
 endpoint values are emitted. Project-endpoint hostnames, if needed for
@@ -355,41 +363,40 @@ debugging, are hashed.
 - **Tar extraction.** Full rejection rules and decompression limits in §6.5.
 - **File write permissions.** User's umask; executable bits dropped.
 - **Auth.** Reuses the existing bearer-token pipeline; no new secret writes.
-- **Argument echoing.** `agent_api` sets `IncludeBody: true` on the Azure SDK
-  logging policy, and the current `setupDebugLogging` sanitizer only redacts
-  JSON connection-string fields. Skill request bodies carry user-authored
-  `description` and `instructions`, so this work extends the sanitizer with
-  JSON-field redaction rules for those fields (and any new free-text fields
-  the skill service exposes) before the skill client participates in
-  `IncludeBody` logging under `--debug`. Until the extended sanitizer is in
-  place, the skill client opts out of body logging so descriptions and
-  instructions are never written to `azd-ai-agents-<date>.log`.
+- **Argument echoing.** The Azure SDK Go logging policy supports
+  `IncludeBody: true` under `--debug`, which writes request and response
+  bodies to the extension's debug log. The new `skill_api` client opts out
+  of body logging until the extension ships a sanitizer that redacts
+  user-authored `description` and `instructions` fields (and any other
+  free-text fields the skill service exposes). Until that sanitizer is in
+  place, skill request bodies are never written to
+  `azd-ai-skills-<date>.log`.
 
 ## 12. Reference: Command Summary
 
 ```bash
 # Create (three mutually exclusive modes)
-azd ai agent skill create <name> --description "..." --instructions "..." \
+azd ai skill create <name> --description "..." --instructions "..." \
   [-p <url>] [--output table|json] [--no-prompt] [--debug] [--force]
-azd ai agent skill create <name> --file ./SKILL.md \
+azd ai skill create <name> --file ./SKILL.md \
   [-p <url>] [--output table|json] [--no-prompt] [--debug] [--force]
-azd ai agent skill create <name> --file ./skill.tar.gz \
+azd ai skill create <name> --file ./skill.tar.gz \
   [-p <url>] [--output table|json] [--no-prompt] [--debug] [--force]
 
 # Update (any subset of fields; --file accepts .md only, mutually exclusive with inline flags)
-azd ai agent skill update <name> [--description "..."] [--instructions "..."] \
+azd ai skill update <name> [--description "..."] [--instructions "..."] \
   [--file <path>] [-p <url>] [--output table|json] [--no-prompt] [--debug]
 
 # Show / list / delete
-azd ai agent skill show <name>   [-p <url>] [--output table|json] [--no-prompt] [--debug]
-azd ai agent skill list          [--top N] [--orderby <field>] \
-                                 [-p <url>] [--output table|json] [--no-prompt] [--debug]
-azd ai agent skill delete <name> [--force] [-p <url>] [--output table|json] \
-                                 [--no-prompt] [--debug]
+azd ai skill show <name>   [-p <url>] [--output table|json] [--no-prompt] [--debug]
+azd ai skill list          [--top N] [--orderby <field>] \
+                           [-p <url>] [--output table|json] [--no-prompt] [--debug]
+azd ai skill delete <name> [--force] [-p <url>] [--output table|json] \
+                           [--no-prompt] [--debug]
 
 # Download (default extracts; --raw keeps the gzip archive)
-azd ai agent skill download <name> [--output-dir <path>] [--raw] [--force] \
-                                   [-p <url>] [--output table|json] [--no-prompt] [--debug]
+azd ai skill download <name> [--output-dir <path>] [--raw] [--force] \
+                             [-p <url>] [--output table|json] [--no-prompt] [--debug]
 ```
 
 Resolution cascade: see §4.

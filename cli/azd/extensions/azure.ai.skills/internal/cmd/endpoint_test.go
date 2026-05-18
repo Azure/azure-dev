@@ -26,6 +26,26 @@ func TestResolveProjectEndpoint_HostEnvVar(t *testing.T) {
 	require.Equal(t, sourceFoundryEnv, src)
 }
 
+func TestResolveProjectEndpoint_InvalidScheme(t *testing.T) {
+	cases := []struct {
+		name     string
+		endpoint string
+		wantMsg  string
+	}{
+		{"http scheme", "http://example.com", "must use https scheme"},
+		{"no scheme", "example.com/foo", "must use https scheme"},
+		{"empty host", "https:///path", "missing host"},
+		{"ftp scheme", "ftp://example.com", "must use https scheme"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := resolveProjectEndpoint(context.Background(), tc.endpoint)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.wantMsg)
+		})
+	}
+}
+
 func TestResolveProjectEndpoint_MissingAll(t *testing.T) {
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
 

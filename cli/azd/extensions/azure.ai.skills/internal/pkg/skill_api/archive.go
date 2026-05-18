@@ -221,12 +221,36 @@ func SafeExtract(r io.Reader, opts ExtractOptions) (*ExtractResult, error) {
 		}
 	}
 
+	// Resolve the real output directory path once so we can detect symlink
+	// escapes: if opts.OutputDir already contains a subdirectory that is a
+	// symlink pointing outside opts.OutputDir, an archive entry whose cleaned
+	// path starts with that component would silently write outside the
+	// intended destination.
+	realOutDir, evalErr := filepath.EvalSymlinks(opts.OutputDir)
+	if evalErr != nil {
+		cleanupStaging()
+		return nil, fmt.Errorf("resolve output dir path: %w", evalErr)
+	}
+
 	for _, rel := range files {
 		src := filepath.Join(staging, filepath.FromSlash(rel))
 		dst := filepath.Join(opts.OutputDir, filepath.FromSlash(rel))
-		if mkErr := os.MkdirAll(filepath.Dir(dst), 0700); mkErr != nil {
+		dstDir := filepath.Dir(dst)
+		if mkErr := os.MkdirAll(dstDir, 0700); mkErr != nil {
 			cleanupStaging()
 			return nil, fmt.Errorf("create output dir for %q: %w", rel, mkErr)
+		}
+		// Guard against symlink escape: verify the resolved destination
+		// directory is still under opts.OutputDir even when existing path
+		// components are symlinks.
+		realDstDir, evalErr := filepath.EvalSymlinks(dstDir)
+		if evalErr != nil {
+			cleanupStaging()
+			return nil, fmt.Errorf("resolve destination path for %q: %w", rel, evalErr)
+		}
+		if !isUnder(realDstDir, realOutDir) {
+			cleanupStaging()
+			return nil, fmt.Errorf("%w: %q destination escapes output directory via symlink", ErrUnsafeEntry, rel)
 		}
 		if err := copyFile(src, dst); err != nil {
 			cleanupStaging()
@@ -281,6 +305,15 @@ func validateEntryName(name string) (string, bool) {
 		return "", false
 	}
 	return cleaned, true
+}
+
+// isUnder reports whether child is the same as or nested within parent.
+// Both paths must be cleaned real paths (output of filepath.EvalSymlinks).
+func isUnder(child, parent string) bool {
+	if child == parent {
+		return true
+	}
+	return strings.HasPrefix(child, parent+string(filepath.Separator))
 }
 
 func copyFile(src, dst string) error {

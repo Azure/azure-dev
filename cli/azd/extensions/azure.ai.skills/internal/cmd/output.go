@@ -19,8 +19,6 @@ const (
 	outputTable = "table"
 )
 
-// printJSON marshals v to indented JSON on stdout. Returns any marshaling
-// error so the caller can surface it to the user.
 func printJSON(v any) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
@@ -28,8 +26,6 @@ func printJSON(v any) error {
 	return enc.Encode(v)
 }
 
-// printSkillDetail renders one skill in either JSON (passthrough) or table
-// (key/value) form.
 func printSkillDetail(s *skill_api.Skill, format string) error {
 	if format == outputJSON {
 		return printJSON(s)
@@ -53,7 +49,6 @@ func printSkillDetail(s *skill_api.Skill, format string) error {
 	return nil
 }
 
-// printSkillList renders a flat slice of skills.
 func printSkillList(items []skill_api.Skill, format string) error {
 	if format == outputJSON {
 		if items == nil {

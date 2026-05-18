@@ -11,19 +11,11 @@ import (
 	"azureaiskills/internal/exterrors"
 )
 
-// skillNamePattern is the fallback skill name regex used when the service
-// does not publish a separate constraint. Matches `agent_yaml.ValidateAgentName`
-// in `azure.ai.agents` so users see one consistent rule across resource kinds.
-//
-//   - Must start with an alphanumeric character.
-//   - May contain alphanumerics and hyphens in the middle.
-//   - Must end with an alphanumeric character (when more than 1 character).
-//   - Length 1-63 (matches the service's @maxLength on `name`).
+// skillNamePattern matches the agent name pattern in azure.ai.agents so users
+// see one rule across resource kinds: 1-63 alphanumerics with hyphens only
+// in the middle. The service makes the final decision.
 var skillNamePattern = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
 
-// validateSkillName returns a structured validation error when name does not
-// satisfy [skillNamePattern]. The service has the final say; this function is
-// a fast-fail guard to avoid round-tripping obviously invalid names.
 func validateSkillName(name string) error {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {

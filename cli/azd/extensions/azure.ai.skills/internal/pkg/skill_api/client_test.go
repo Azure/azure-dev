@@ -18,17 +18,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeCredential is a no-op token credential for tests. It returns a static
-// token without contacting any service.
 type fakeCredential struct{}
 
 func (fakeCredential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	return azcore.AccessToken{Token: "test-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
 }
 
-// newTestClient builds a Skills client rooted at the given httptest server URL.
-// Uses the unexported insecure-http constructor so the bearer policy doesn't
-// reject the plain-HTTP httptest endpoint.
+// newTestClient uses the insecure-http constructor so the bearer policy
+// doesn't reject the plain-HTTP httptest endpoint.
 func newTestClient(t *testing.T, srv *httptest.Server) *Client {
 	t.Helper()
 	return newClient(srv.URL, fakeCredential{}, "test", true)

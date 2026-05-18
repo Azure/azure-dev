@@ -21,53 +21,36 @@ import (
 )
 
 const (
-	// DataPlaneAPIVersion is the api-version query parameter applied to every
-	// request. The Skills surface lives under the `v1` data-plane API version;
-	// the preview opt-in is communicated separately via the `Foundry-Features`
-	// header (see SkillsPreviewOptIn below).
+	// DataPlaneAPIVersion: skills live under v1; preview opt-in is via the
+	// Foundry-Features header (SkillsPreviewOptIn).
 	DataPlaneAPIVersion = "v1"
 
-	// FoundryFeaturesHeader is the HTTP header that carries the preview opt-in.
 	FoundryFeaturesHeader = "Foundry-Features"
-	// SkillsPreviewOptIn is the required Foundry-Features value for all skill
-	// operations in this preview. The TypeSpec marks every skill route with
-	// WithRequiredFoundryPreviewHeader<FoundryFeaturesOptInKeys.skills_v1_preview>.
-	SkillsPreviewOptIn = "Skills=V1Preview"
+	SkillsPreviewOptIn    = "Skills=V1Preview"
 
-	// ContentTypeJSON is the request/response content type used for the JSON
-	// surface.
 	ContentTypeJSON = "application/json"
 	// ContentTypeZip is the upload content type for POST /skills:import. The
-	// TypeSpec declares `application/gzip`, but the live service returns
-	// 415 Unsupported Media Type on gzip and accepts ZIP per the public docs.
-	// See https://learn.microsoft.com/azure/foundry/agents/how-to/tools/skills.
+	// TypeSpec declares application/gzip, but the live service returns 415 on
+	// gzip and accepts ZIP per the public docs:
+	// https://learn.microsoft.com/azure/foundry/agents/how-to/tools/skills.
 	ContentTypeZip = "application/zip"
-	// ContentTypeGzip is the response content type observed on
-	// GET /skills/{name}:download. The same TypeSpec / docs mismatch applies
-	// in reverse: docs say zip, server returns gzip. We accept either.
+	// ContentTypeGzip is the observed response content type on
+	// GET /skills/{name}:download. We accept either format on the wire.
 	ContentTypeGzip = "application/gzip"
 
-	// BearerScope is the Azure AD scope used for the bearer-token policy.
-	// Matches the scope used by the rest of the Foundry AI extension surface.
 	//nolint:gosec // OAuth scope identifier, not a credential
 	BearerScope = "https://ai.azure.com/.default"
 
-	// userAgentPrefix is the User-Agent value baseline; callers append their
-	// own version via the userAgent parameter to NewClient.
 	userAgentPrefix = "azd-ext-azure-ai-skills"
 )
 
-// Client is the typed REST client for the Foundry Skills data-plane surface.
-// All methods include the required preview header and api-version query
-// parameter automatically.
 type Client struct {
 	endpoint string
 	pipeline runtime.Pipeline
 }
 
-// NewClient returns a Skills client rooted at endpoint (already validated by
-// the caller), using cred for bearer-token auth. extensionVersion is appended
-// to the User-Agent value emitted by the pipeline.
+// NewClient returns a Skills client rooted at endpoint, using cred for
+// bearer-token auth.
 func NewClient(endpoint string, cred azcore.TokenCredential, extensionVersion string) *Client {
 	return newClient(endpoint, cred, extensionVersion, false)
 }
@@ -79,9 +62,8 @@ func newClient(endpoint string, cred azcore.TokenCredential, extensionVersion st
 	}
 
 	clientOptions := &policy.ClientOptions{
-		// IncludeBody is intentionally false: skill create/update bodies carry
-		// user-authored description and instructions. Body logging will be
-		// enabled in a follow-up once a sanitizer is in place.
+		// IncludeBody is intentionally false: skill bodies carry user-authored
+		// description / instructions and we don't yet have a sanitizer.
 		Logging:                         policy.LogOptions{IncludeBody: false},
 		InsecureAllowCredentialWithHTTP: allowHTTP,
 		PerCallPolicies: []policy.Policy{
@@ -131,13 +113,10 @@ func (c *Client) CreateInline(ctx context.Context, req CreateRequest) (*Skill, e
 	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
 		return nil, runtime.NewResponseError(resp)
 	}
-
 	return decodeSkill(resp.Body)
 }
 
-// CreatePackage uploads a ZIP archive to POST /skills:import. The CLI does
-// not inspect the archive's contents beyond an optional name-claim peek for
-// the --force guard; server-side validation owns archive contents otherwise.
+// CreatePackage uploads a ZIP archive to POST /skills:import.
 func (c *Client) CreatePackage(ctx context.Context, archive io.ReadSeeker, archiveSize int64) (*Skill, error) {
 	httpReq, err := runtime.NewRequest(ctx, http.MethodPost, c.buildURL("/skills:import", nil))
 	if err != nil {
@@ -159,7 +138,6 @@ func (c *Client) CreatePackage(ctx context.Context, archive io.ReadSeeker, archi
 	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
 		return nil, runtime.NewResponseError(resp)
 	}
-
 	return decodeSkill(resp.Body)
 }
 
@@ -180,13 +158,10 @@ func (c *Client) Get(ctx context.Context, name string) (*Skill, error) {
 	if !runtime.HasStatusCode(resp, http.StatusOK) {
 		return nil, runtime.NewResponseError(resp)
 	}
-
 	return decodeSkill(resp.Body)
 }
 
-// Update merges req into the existing skill via POST /skills/{name}.
-// The caller is responsible for the GET-merge-POST pattern; this method
-// simply sends the supplied body.
+// Update sends req as POST /skills/{name}. Caller does GET-merge-POST.
 func (c *Client) Update(ctx context.Context, name string, req UpdateRequest) (*Skill, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -211,12 +186,10 @@ func (c *Client) Update(ctx context.Context, name string, req UpdateRequest) (*S
 	if !runtime.HasStatusCode(resp, http.StatusOK) {
 		return nil, runtime.NewResponseError(resp)
 	}
-
 	return decodeSkill(resp.Body)
 }
 
-// Delete removes a skill. The service returns a small JSON body describing
-// the deletion which the caller may use.
+// Delete removes a skill.
 func (c *Client) Delete(ctx context.Context, name string) (*DeleteResponse, error) {
 	httpReq, err := runtime.NewRequest(ctx, http.MethodDelete, c.skillURL(name, "", nil))
 	if err != nil {
@@ -256,8 +229,7 @@ func (c *Client) Delete(ctx context.Context, name string) (*DeleteResponse, erro
 	return &dr, nil
 }
 
-// List fetches one page of skills using the supplied options. The returned
-// PagedSkills includes pagination cursors the caller can use to fetch more.
+// List fetches one page of skills.
 func (c *Client) List(ctx context.Context, opts ListOptions, afterCursor string) (*PagedSkills, error) {
 	q := url.Values{}
 	if opts.Top > 0 {
@@ -294,8 +266,8 @@ func (c *Client) List(ctx context.Context, opts ListOptions, afterCursor string)
 	return &paged, nil
 }
 
-// ListAll fetches every page transparently and returns the flattened slice.
-// If limit is positive, ListAll stops as soon as that many items are collected.
+// ListAll fetches every page and returns the flattened slice. If limit is
+// positive, ListAll stops once that many items are collected.
 func (c *Client) ListAll(ctx context.Context, opts ListOptions, limit int) ([]Skill, error) {
 	var all []Skill
 	cursor := ""
@@ -315,21 +287,15 @@ func (c *Client) ListAll(ctx context.Context, opts ListOptions, limit int) ([]Sk
 	}
 }
 
-// Download fetches the skill package and returns the raw bytes.
-//
-// The Foundry Skills service is asymmetric about archive format: uploads
-// (`POST /skills:import`) reject `application/gzip` with 415 and require
-// `application/zip`, but downloads return `application/gzip`. Rather than
-// pin a single Content-Type, this client accepts either and leaves format
-// detection (via magic bytes) to the caller — see DetectArchiveFormat.
+// Download fetches the skill package and returns the raw bytes. Accepts
+// either ContentTypeZip or ContentTypeGzip (the service is asymmetric); the
+// caller uses DetectArchiveFormat to interpret the bytes.
 func (c *Client) Download(ctx context.Context, name string) ([]byte, error) {
 	httpReq, err := runtime.NewRequest(ctx, http.MethodGet, c.skillURL(name, ":download", nil))
 	if err != nil {
 		return nil, fmt.Errorf("new request: %w", err)
 	}
 	addStandardHeaders(httpReq)
-	// Accept both formats; service ignores the value but the negotiation
-	// matters for intermediaries that might transform the body.
 	httpReq.Raw().Header.Set("Accept", ContentTypeZip+", "+ContentTypeGzip)
 
 	resp, err := c.pipeline.Do(httpReq)
@@ -356,8 +322,6 @@ func (c *Client) Download(ctx context.Context, name string) ([]byte, error) {
 	return body, nil
 }
 
-// --- URL and header helpers ---
-
 func (c *Client) buildURL(path string, extraQuery url.Values) string {
 	q := url.Values{}
 	q.Set("api-version", DataPlaneAPIVersion)
@@ -369,9 +333,6 @@ func (c *Client) buildURL(path string, extraQuery url.Values) string {
 	return c.endpoint + path + "?" + q.Encode()
 }
 
-// skillURL builds a per-skill URL with optional action suffix
-// (e.g. ":download"). The skill name is URL-path-escaped to handle service-
-// accepted characters safely; CLI-side validation rejects most of these.
 func (c *Client) skillURL(name, suffix string, extraQuery url.Values) string {
 	path := "/skills/" + url.PathEscape(name) + suffix
 	return c.buildURL(path, extraQuery)
@@ -401,9 +362,6 @@ func decodeSkill(body io.Reader) (*Skill, error) {
 	return &s, nil
 }
 
-// streaming wraps an io.ReadSeeker into the io.ReadSeekCloser required by
-// runtime.NewRequest's SetBody. We never close the underlying reader; the
-// caller owns its lifecycle (the SDK reads then ignores Close on this shim).
 type readSeekNopCloser struct{ io.ReadSeeker }
 
 func (readSeekNopCloser) Close() error { return nil }

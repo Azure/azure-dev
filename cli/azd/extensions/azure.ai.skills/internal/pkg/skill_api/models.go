@@ -3,33 +3,20 @@
 
 // Package skill_api provides a typed REST client for the Foundry Skills
 // data-plane surface, plus helpers for parsing SKILL.md files and safely
-// extracting downloaded ZIP skill packages.
+// extracting downloaded skill packages.
 package skill_api
 
-// Skill is the metadata representation of a Foundry skill returned by
-// the Skills data-plane surface. Fields are camelCase in JSON to match the
-// published JSON contract for the CLI; the wire format from the service is
-// snake_case and is translated by the wire-to-public conversions below.
+// Skill is the metadata representation of a Foundry skill. JSON fields are
+// camelCase for the published output of the CLI; the wire format is
+// snake_case and is translated via skillWire.
 type Skill struct {
-	// SkillID is the unique service-assigned identifier.
-	SkillID string `json:"skillId,omitempty"`
-	// Name is the unique skill name (validated client-side against the
-	// alphanumeric-with-hyphens pattern; final decision lives in the service).
-	Name string `json:"name"`
-	// HasBlob reports whether the skill was created from a ZIP package.
-	// Determines whether `download` returns useful content.
-	HasBlob bool `json:"hasBlob"`
-	// Description is a human-readable summary; optional.
-	Description string `json:"description,omitempty"`
-	// Metadata is the freeform string-to-string map the service stores
-	// alongside the skill. May be nil.
-	Metadata map[string]string `json:"metadata,omitempty"`
+	SkillID     string            `json:"skillId,omitempty"`
+	Name        string            `json:"name"`
+	HasBlob     bool              `json:"hasBlob"`
+	Description string            `json:"description,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
-// skillWire mirrors Skill but uses the snake_case wire field names that the
-// Foundry Skills surface returns. Decoding into Skill goes through this struct
-// so the public JSON contract for the CLI stays camelCase regardless of how
-// the service evolves.
 type skillWire struct {
 	SkillID     string            `json:"skill_id,omitempty"`
 	Name        string            `json:"name"`
@@ -48,10 +35,8 @@ func (w skillWire) toSkill() Skill {
 	}
 }
 
-// CreateRequest is the inline JSON body for `POST /skills`. Either both of
-// Description and Instructions are set (inline mode) or they come from a
-// parsed SKILL.md file. The CLI populates Name from the positional argument
-// and never trusts the front-matter value.
+// CreateRequest is the JSON body for POST /skills. The CLI populates Name
+// from the positional argument and never trusts a value from front matter.
 type CreateRequest struct {
 	Name         string            `json:"name"`
 	Description  string            `json:"description,omitempty"`
@@ -59,21 +44,20 @@ type CreateRequest struct {
 	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
-// UpdateRequest is the merged JSON body for `POST /skills/{name}`. Only
-// non-empty fields are sent; the action layer performs the GET-merge-POST.
+// UpdateRequest is the merged JSON body for POST /skills/{name}.
 type UpdateRequest struct {
 	Description  string            `json:"description,omitempty"`
 	Instructions string            `json:"instructions,omitempty"`
 	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
-// DeleteResponse is the JSON body returned by `DELETE /skills/{name}`.
+// DeleteResponse is the JSON body returned by DELETE /skills/{name}.
 type DeleteResponse struct {
 	Name    string `json:"name"`
 	Deleted bool   `json:"deleted"`
 }
 
-// PagedSkills is one page of the `GET /skills` response.
+// PagedSkills is one page of the GET /skills response.
 type PagedSkills struct {
 	Data    []Skill `json:"data"`
 	FirstID string  `json:"firstId,omitempty"`
@@ -81,7 +65,6 @@ type PagedSkills struct {
 	HasMore bool    `json:"hasMore"`
 }
 
-// pagedSkillsWire is the snake_case wire form of PagedSkills.
 type pagedSkillsWire struct {
 	Data    []skillWire `json:"data"`
 	FirstID string      `json:"first_id,omitempty"`
@@ -104,12 +87,8 @@ func (w pagedSkillsWire) toPagedSkills() PagedSkills {
 	return out
 }
 
-// ListOptions configures a `GET /skills` request. Zero values mean "let the
-// service apply its defaults".
+// ListOptions configures a GET /skills request. Zero values use service defaults.
 type ListOptions struct {
-	// Top is the per-page item limit. The service caps this at 100.
-	Top int
-	// OrderBy is forwarded to the `order` query parameter
-	// (typically `asc` or `desc`).
+	Top     int
 	OrderBy string
 }

@@ -11,13 +11,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewRootCommand builds the `azd ai skill` root command and its subcommand
-// graph. The cobra root is constructed by [azdext.NewExtensionRootCommand]
-// so that azd's global flags (`--debug`, `--no-prompt`, `--cwd`,
-// `-e/--environment`, `--output`) are pre-registered.
-//
-// The cobra `Name` is `skill`. The extension's namespace `ai.skill` maps it
-// under the existing `azd ai` group at install time.
 func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:  "skill",
@@ -35,9 +28,6 @@ a Foundry project.`,
 	rootCmd.SilenceErrors = true
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
-	// Configure debug logging once on the root command so every subcommand
-	// inherits it. The cleanup func is intentionally discarded: log writes
-	// are unbuffered and the OS closes the file on exit.
 	sdkPreRun := rootCmd.PersistentPreRunE
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		if sdkPreRun != nil {
@@ -51,19 +41,15 @@ a Foundry project.`,
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
-	// Register -p / --project-endpoint as a persistent flag so all subcommands
-	// inherit it without redeclaring.
 	rootCmd.PersistentFlags().StringP("project-endpoint", "p", "",
 		"Foundry project endpoint URL (overrides env vars and global config)")
 
-	// Standard extension commands.
 	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(azdext.NewMetadataCommand("1.0", "azure.ai.skills", func() *cobra.Command {
 		return rootCmd
 	}))
 
-	// Skill subcommands.
 	rootCmd.AddCommand(newCreateCommand(extCtx))
 	rootCmd.AddCommand(newUpdateCommand(extCtx))
 	rootCmd.AddCommand(newShowCommand(extCtx))
@@ -74,8 +60,6 @@ a Foundry project.`,
 	return rootCmd
 }
 
-// configureExtensionHost is the `listen` configuration callback. Skills do not
-// need to register any lifecycle hooks, so the callback is a no-op.
-func configureExtensionHost(host *azdext.ExtensionHost) {
-	_ = host
-}
+// configureExtensionHost is the listen callback. Skills register no
+// lifecycle hooks, so it's a no-op.
+func configureExtensionHost(host *azdext.ExtensionHost) { _ = host }

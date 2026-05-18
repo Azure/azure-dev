@@ -16,8 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// endpointSource identifies where the resolved Foundry project endpoint came
-// from. Used for telemetry and debug logging only — never echoed to the user.
 type endpointSource string
 
 const (
@@ -28,32 +26,16 @@ const (
 )
 
 const (
-	// skillsContextEndpointKey is the global-config path this extension owns.
 	skillsContextEndpointKey = "extensions.ai-skills.project.context.endpoint"
-	// agentsContextEndpointKey is the global-config path owned by
-	// `azure.ai.agents`. We read it as a fallback so users who configured the
-	// endpoint via the agents extension do not have to re-run `set`.
+	// Read-only fallback to the ai-agents key so users who configured the
+	// endpoint via that extension don't have to re-run `set`.
 	agentsContextEndpointKey = "extensions.ai-agents.project.context.endpoint"
-	// azdEnvKey is the active azd environment value that supplies the
-	// Foundry project endpoint.
-	azdEnvKey = "AZURE_AI_PROJECT_ENDPOINT"
-	// foundryEnvKey is the host environment variable that supplies the
-	// Foundry project endpoint as a last-resort fallback.
-	foundryEnvKey = "FOUNDRY_PROJECT_ENDPOINT"
+	azdEnvKey                = "AZURE_AI_PROJECT_ENDPOINT"
+	foundryEnvKey            = "FOUNDRY_PROJECT_ENDPOINT"
 )
 
-// resolveProjectEndpoint implements the 5-level cascade from the design spec.
-//
-//  1. flagEndpoint (from -p / --project-endpoint).
-//  2. Active azd env value AZURE_AI_PROJECT_ENDPOINT.
-//  3. Global config extensions.ai-skills.project.context.endpoint, falling
-//     back to extensions.ai-agents.project.context.endpoint.
-//  4. Host env var FOUNDRY_PROJECT_ENDPOINT.
-//  5. Structured error.
-//
-// Each resolved value is validated to be an absolute https:// URL.
-// Host-suffix validation is intentionally deferred to the HTTP layer — the
-// skills data plane accepts any reachable HTTPS Foundry endpoint.
+// resolveProjectEndpoint implements the 5-level cascade from the design spec:
+// flag, azd env, global config (skills then agents), host env, error.
 func resolveProjectEndpoint(ctx context.Context, flagEndpoint string) (string, endpointSource, error) {
 	if flagEndpoint != "" {
 		if err := validateEndpoint(flagEndpoint); err != nil {
@@ -62,13 +44,9 @@ func resolveProjectEndpoint(ctx context.Context, flagEndpoint string) (string, e
 		return flagEndpoint, sourceFlag, nil
 	}
 
-	// Levels 2 & 3 require the azd client. If azd is not running this
-	// extension as a child process (unlikely in practice), skip both and fall
-	// through to the host env var.
 	if azdClient, err := azdext.NewAzdClient(); err == nil {
 		defer azdClient.Close()
 
-		// 2. Active azd env value.
 		if envResp, envErr := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); envErr == nil {
 			if valResp, valErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 				EnvName: envResp.Environment.Name,
@@ -81,7 +59,6 @@ func resolveProjectEndpoint(ctx context.Context, flagEndpoint string) (string, e
 			}
 		}
 
-		// 3. Global config: skills key first, then agents fallback.
 		if ch, chErr := azdext.NewConfigHelper(azdClient); chErr == nil {
 			for _, key := range []string{skillsContextEndpointKey, agentsContextEndpointKey} {
 				var endpoint string
@@ -98,7 +75,6 @@ func resolveProjectEndpoint(ctx context.Context, flagEndpoint string) (string, e
 		}
 	}
 
-	// 4. Host env var.
 	if ep := os.Getenv(foundryEnvKey); ep != "" {
 		if err := validateEndpoint(ep); err != nil {
 			return "", "", err
@@ -106,7 +82,6 @@ func resolveProjectEndpoint(ctx context.Context, flagEndpoint string) (string, e
 		return ep, sourceFoundryEnv, nil
 	}
 
-	// 5. Structured error.
 	return "", "", exterrors.Dependency(
 		exterrors.CodeMissingProjectEndpoint,
 		"no Foundry project endpoint resolved",
@@ -116,9 +91,6 @@ func resolveProjectEndpoint(ctx context.Context, flagEndpoint string) (string, e
 	)
 }
 
-// validateEndpoint returns an error when the endpoint is not an absolute
-// https:// URL.  Host-suffix validation is intentionally deferred to the
-// SDK layer; the skills surface accepts any reachable HTTPS Foundry endpoint.
 func validateEndpoint(endpoint string) error {
 	u, err := url.Parse(endpoint)
 	if err != nil {

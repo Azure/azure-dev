@@ -11,8 +11,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newVersionCommand returns a `version` subcommand that prints the extension
-// version, commit, and build date populated at build time via ldflags.
 func newVersionCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",

@@ -3,9 +3,9 @@
 
 package version
 
+// Populated at build time via ldflags.
 var (
-	// Populated at build time
-	Version   = "dev" // Default value for development builds
+	Version   = "dev"
 	Commit    = "none"
 	BuildDate = "unknown"
 )

@@ -15,22 +15,10 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// setupDebugLogging configures debug logging for the extension.
-//
-// When debug mode is disabled, the standard Go logger writes to io.Discard and
-// the Azure SDK logger is silenced. When enabled, both write into
-// `azd-ai-skills-<date>.log` in the current working directory (or stderr if
-// the file cannot be opened).
-//
-// The Azure SDK pipeline is configured with `Logging.IncludeBody: false` for
-// every skill request — see `skill_api/client.go` and §11 of the design spec
-// for the rationale (request bodies carry user-authored description /
-// instructions, and there is no sanitizer in place yet).
-//
-// Returns a cleanup function that should be deferred by the caller. The
-// extension currently discards the cleanup because log writes are unbuffered
-// and the OS closes the file on exit; the cleanup is provided so callers that
-// care can deterministically close the file.
+// setupDebugLogging routes the standard logger and the Azure SDK logger to a
+// per-day file when --debug is set, and to io.Discard otherwise. The SDK
+// pipeline runs with IncludeBody=false so request/response bodies (which can
+// carry user-authored description / instructions) never reach the log.
 func setupDebugLogging(flags *pflag.FlagSet) func() {
 	if !isDebug(flags) {
 		log.SetOutput(io.Discard)
@@ -38,8 +26,7 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 		return func() {}
 	}
 
-	currentDate := time.Now().Format("2006-01-02")
-	logFileName := fmt.Sprintf("azd-ai-skills-%s.log", currentDate)
+	logFileName := fmt.Sprintf("azd-ai-skills-%s.log", time.Now().Format("2006-01-02"))
 
 	//nolint:gosec // log file name is generated locally from date and not user-controlled
 	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
@@ -56,8 +43,6 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 
 	log.SetOutput(w)
 	azcorelog.SetListener(func(event azcorelog.Event, msg string) {
-		// Body logging is disabled in the pipeline, so msg never contains
-		// request/response bodies. Even so, never log raw skill content.
 		fmt.Fprintf(w, "[%s] %s: %s\n", time.Now().Format(time.RFC3339), event, msg)
 	})
 
@@ -68,8 +53,6 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 	}
 }
 
-// isDebug reports whether --debug is set on the command line or
-// AZD_EXT_DEBUG is enabled in the environment.
 func isDebug(flags *pflag.FlagSet) bool {
 	if flags != nil {
 		if v, err := flags.GetBool("debug"); err == nil && v {

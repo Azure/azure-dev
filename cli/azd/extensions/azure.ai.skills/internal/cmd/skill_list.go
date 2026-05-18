@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// listFlags holds parsed input for the `skill list` command.
 type listFlags struct {
 	top             int
 	orderBy         string
@@ -21,34 +20,24 @@ type listFlags struct {
 	projectEndpoint string
 }
 
-// listAction is the list-command implementation.
-type listAction struct {
-	flags *listFlags
-}
+type listAction struct{ flags *listFlags }
 
-// Run executes the list operation.
 func (a *listAction) Run(ctx context.Context) error {
 	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint)
 	if err != nil {
 		return err
 	}
-
 	items, err := skillCtx.client.ListAll(
 		ctx,
-		skill_api.ListOptions{
-			Top:     a.flags.top,
-			OrderBy: a.flags.orderBy,
-		},
+		skill_api.ListOptions{Top: a.flags.top, OrderBy: a.flags.orderBy},
 		a.flags.top,
 	)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpListSkills)
 	}
-
 	return printSkillList(items, a.flags.output)
 }
 
-// newListCommand constructs the `skill list` Cobra command.
 func newListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &listFlags{}
 	action := &listAction{flags: flags}
@@ -64,16 +53,12 @@ With --top, the CLI stops once that many items have been collected.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
-
-			ctx := azdext.WithAccessToken(cmd.Context())
-			return action.Run(ctx)
+			return action.Run(azdext.WithAccessToken(cmd.Context()))
 		},
 	}
 
-	cmd.Flags().IntVar(&flags.top, "top", 0,
-		"Return up to N skills (default: all)")
-	cmd.Flags().StringVar(&flags.orderBy, "orderby", "",
-		"Sort order forwarded to the service (e.g. 'asc' or 'desc')")
+	cmd.Flags().IntVar(&flags.top, "top", 0, "Return up to N skills (default: all)")
+	cmd.Flags().StringVar(&flags.orderBy, "orderby", "", "Sort order forwarded to the service (e.g. 'asc' or 'desc')")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{outputJSON, outputTable}, Default: outputTable,
 	})

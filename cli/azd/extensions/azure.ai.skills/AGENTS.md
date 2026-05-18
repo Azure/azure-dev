@@ -54,7 +54,7 @@ Skill-specific error codes live in `internal/exterrors/codes.go`:
 
 - `CodeInvalidSkillName` — name fails the alphanumeric-with-hyphens regex
 - `CodeInvalidSkillFile` — SKILL.md front matter unparsable, or `--file` extension unsupported
-- `CodeSkillArchiveUnsafe` — `download` rejected a tar entry (zip-slip, symlink, oversized, etc.)
+- `CodeSkillArchiveUnsafe` — `download` rejected an archive entry (zip-slip, symlink, oversized, etc.)
 - `CodeSkillOutputCollision` — `download` would overwrite an existing file without `--force`
 
 ## Debug logging

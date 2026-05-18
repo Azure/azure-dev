@@ -12,38 +12,20 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// SkillMd represents the parsed contents of a SKILL.md file.
-//
-// SKILL.md files are Markdown files with a YAML front matter block delimited
-// by three-dash lines. The CLI extracts the structured fields it knows about
-// (Name, Description, Metadata) and uses the remaining Markdown body as the
-// skill's `instructions`. Any unrecognized front matter keys are preserved
-// verbatim in RawFrontMatter so callers can forward them to the service.
+// SkillMd is the parsed form of a SKILL.md document: a YAML front matter block
+// delimited by `---` lines, followed by a Markdown body that becomes the
+// skill's `instructions`.
 type SkillMd struct {
-	// Name is the optional `name` value from the YAML front matter. If the
-	// positional command argument differs, the positional value wins and
-	// the caller prints a one-line warning to stderr.
-	Name string
-	// Description is the optional human-readable summary.
-	Description string
-	// Metadata is the optional string-to-string map from front matter.
-	Metadata map[string]string
-	// Instructions is the Markdown body that follows the closing `---`. Leading
-	// whitespace and a single trailing newline are preserved verbatim.
-	Instructions string
-	// RawFrontMatter contains every parsed front-matter key (including those
-	// already exposed as named fields). Useful for forwarding unknown
-	// service-recognized fields without losing information.
+	Name           string
+	Description    string
+	Metadata       map[string]string
+	Instructions   string
 	RawFrontMatter map[string]any
 }
 
-// ParseSkillMd reads a SKILL.md document from data and returns its components.
-//
-// The document must start with a YAML front matter block delimited by lines
-// containing only `---`. Both the opening and closing delimiters are
-// required. Empty input, missing/unparsable front matter, and YAML errors
-// all return a non-nil error that callers should wrap in a structured
-// validation error.
+// ParseSkillMd parses a SKILL.md document. Both `---` delimiters are required.
+// Missing or unparsable front matter returns an error suitable for wrapping
+// in a structured validation error.
 func ParseSkillMd(data []byte) (*SkillMd, error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, fmt.Errorf("SKILL.md is empty")
@@ -56,8 +38,8 @@ func ParseSkillMd(data []byte) (*SkillMd, error) {
 
 	fmBytes := data[openIdx:closeIdx]
 	bodyStart := closeIdx + len(frontMatterDelimiter)
-	// Skip a single newline after the closing delimiter so the body does not
-	// start with a leading blank line that the user did not write.
+	// Strip a single newline after the closing delimiter so the body doesn't
+	// start with a blank line the user didn't write.
 	if bodyStart < len(data) {
 		if data[bodyStart] == '\r' && bodyStart+1 < len(data) && data[bodyStart+1] == '\n' {
 			bodyStart += 2
@@ -71,8 +53,6 @@ func ParseSkillMd(data []byte) (*SkillMd, error) {
 		return nil, fmt.Errorf("parse SKILL.md front matter: %w", err)
 	}
 	if raw == nil {
-		// `---\n---` with no body is technically valid YAML (null document)
-		// but useless for skill creation. Treat as missing.
 		return nil, fmt.Errorf("SKILL.md front matter is empty")
 	}
 
@@ -82,51 +62,40 @@ func ParseSkillMd(data []byte) (*SkillMd, error) {
 	}
 
 	if v, ok := raw["name"]; ok {
-		s, sErr := frontMatterString("name", v)
-		if sErr != nil {
-			return nil, sErr
+		s, err := frontMatterString("name", v)
+		if err != nil {
+			return nil, err
 		}
 		out.Name = s
 	}
 	if v, ok := raw["description"]; ok {
-		s, sErr := frontMatterString("description", v)
-		if sErr != nil {
-			return nil, sErr
+		s, err := frontMatterString("description", v)
+		if err != nil {
+			return nil, err
 		}
 		out.Description = s
 	}
 	if v, ok := raw["metadata"]; ok {
-		m, mErr := frontMatterStringMap("metadata", v)
-		if mErr != nil {
-			return nil, mErr
+		m, err := frontMatterStringMap("metadata", v)
+		if err != nil {
+			return nil, err
 		}
 		out.Metadata = m
 	}
-
 	return out, nil
 }
 
 const frontMatterDelimiter = "---"
 
-// findFrontMatterBounds locates the opening `---` and closing `---` markers
-// for the YAML front matter block. The returned indices bracket the YAML body
-// (exclusive of the delimiter lines themselves).
-//
-// The opening delimiter must be the first non-empty line of the file. Any
-// leading whitespace lines are skipped to be tolerant of UTF-8 BOMs and
-// editor-introduced blank lines.
+// findFrontMatterBounds returns the byte offsets that bracket the YAML body
+// (exclusive of the delimiter lines themselves). Leading blank lines are
+// allowed.
 func findFrontMatterBounds(data []byte) (open, close int, err error) {
 	scanner := bufio.NewScanner(bytes.NewReader(data))
-	// Allow up to 1 MiB per line so giant front matter blocks do not hit the
-	// default 64 KiB cap. Skills bodies are bounded by the server; front
-	// matter is small, but we set a roomy limit anyway.
 	scanner.Buffer(make([]byte, 0, 4096), 1<<20)
 
 	sawOpen := false
 	lineOffset := 0
-	// We need the byte offset of each line's start, including its newline
-	// terminator. bufio.Scanner doesn't expose offsets directly, so we
-	// recompute them by tracking how many bytes we've advanced.
 	cur := data
 	lineNum := 0
 	for {
@@ -174,7 +143,6 @@ func findFrontMatterBounds(data []byte) (open, close int, err error) {
 			break
 		}
 	}
-
 	return 0, 0, fmt.Errorf("SKILL.md front matter is missing its closing '---' delimiter")
 }
 

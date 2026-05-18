@@ -41,7 +41,6 @@ var (
 	ErrInvalidArchive = errors.New("invalid archive")
 )
 
-// ArchiveFormat identifies the wire format of a downloaded skill package.
 type ArchiveFormat int
 
 const (
@@ -61,16 +60,16 @@ func (f ArchiveFormat) String() string {
 	}
 }
 
-// DetectArchiveFormat sniffs the first bytes of data to identify the archive
-// format. The Foundry Skills service is asymmetric: it accepts ZIP on
-// POST /skills:import but returns gzip on GET /skills/{name}:download, so we
-// detect both rather than trust the Content-Type header.
+// DetectArchiveFormat sniffs the first bytes of data. The Foundry Skills
+// service is asymmetric: POST /skills:import requires ZIP (gzip yields 415),
+// but GET /skills/{name}:download returns gzip — so we sniff rather than
+// trust Content-Type.
 func DetectArchiveFormat(data []byte) ArchiveFormat {
 	switch {
 	case len(data) >= 4 && bytes.Equal(data[:4], []byte{'P', 'K', 0x03, 0x04}):
 		return ArchiveZip
 	case len(data) >= 4 && bytes.Equal(data[:4], []byte{'P', 'K', 0x05, 0x06}):
-		return ArchiveZip // empty zip
+		return ArchiveZip
 	case len(data) >= 2 && data[0] == 0x1f && data[1] == 0x8b:
 		return ArchiveTarGz
 	default:
@@ -78,27 +77,17 @@ func DetectArchiveFormat(data []byte) ArchiveFormat {
 	}
 }
 
-// SafeExtract reads an archive (ZIP or gzip-compressed tar) from data and
-// writes its regular-file contents under opts.OutputDir.
+// SafeExtract extracts a ZIP or gzip-tar archive into opts.OutputDir.
 //
-// The implementation is two-phase: every entry is first written into a
-// temporary staging directory under the OS temp dir, validated against the
-// safety rules, then copied into OutputDir. A failed extraction leaves
-// nothing in OutputDir.
+// Two-phase: entries are first written into a temp staging directory and
+// validated against the safety rules below; then symlink-escape checks run
+// and files are copied into OutputDir. A failed extraction leaves nothing
+// in OutputDir.
 //
-// Safety rules (each rejection returns ErrUnsafeEntry):
-//
-//   - Absolute paths or paths containing `..` components are rejected.
-//   - Empty names, or names that collapse to "/" or "." after cleaning, are
-//     rejected.
-//   - Non-regular files (symlinks, hard links, devices, sockets) are
-//     rejected.
-//   - Total entry count is capped at opts.MaxEntries (default 10,000).
-//   - Total uncompressed byte count is capped at opts.MaxTotalUncompressed
-//     (default 512 MB).
-//
-// Executable bits from archive headers are dropped; written files use
-// 0600 / 0700 modes against the process umask.
+// Rejections (ErrUnsafeEntry): absolute paths, `..` segments, empty names,
+// non-regular entries (symlinks, hard links, devices, sockets).
+// Caps (ErrLimitExceeded): MaxEntries (default 10,000),
+// MaxTotalUncompressed (default 512 MB).
 func SafeExtract(data []byte, opts ExtractOptions) (*ExtractResult, error) {
 	if opts.OutputDir == "" {
 		return nil, fmt.Errorf("SafeExtract: OutputDir is required")
@@ -146,13 +135,9 @@ func SafeExtract(data []byte, opts ExtractOptions) (*ExtractResult, error) {
 	}
 
 	cleanupStaging()
-	return &ExtractResult{
-		Files:      files,
-		TotalBytes: totalBytes,
-	}, nil
+	return &ExtractResult{Files: files, TotalBytes: totalBytes}, nil
 }
 
-// stageFromZip extracts validated entries of a ZIP archive into staging.
 func stageFromZip(data []byte, staging string, maxEntries int, maxBytes int64) ([]string, int64, error) {
 	zr, err := zip.NewReader(newBytesReaderAt(data), int64(len(data)))
 	if err != nil {
@@ -173,8 +158,7 @@ func stageFromZip(data []byte, staging string, maxEntries int, maxBytes int64) (
 		mode := entry.Mode()
 		switch {
 		case mode.IsDir() || strings.HasSuffix(entry.Name, "/"):
-			dirPath := filepath.Join(staging, filepath.FromSlash(cleaned))
-			if mkErr := os.MkdirAll(dirPath, 0700); mkErr != nil {
+			if mkErr := os.MkdirAll(filepath.Join(staging, filepath.FromSlash(cleaned)), 0700); mkErr != nil {
 				return nil, 0, fmt.Errorf("create staging dir %q: %w", cleaned, mkErr)
 			}
 			continue
@@ -200,7 +184,6 @@ func stageFromZip(data []byte, staging string, maxEntries int, maxBytes int64) (
 	return files, totalBytes, nil
 }
 
-// stageFromTarGz extracts validated entries of a gzip+tar archive into staging.
 func stageFromTarGz(data []byte, staging string, maxEntries int, maxBytes int64) ([]string, int64, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
@@ -234,8 +217,7 @@ func stageFromTarGz(data []byte, staging string, maxEntries int, maxBytes int64)
 		switch hdr.Typeflag {
 		case tar.TypeReg, tar.TypeRegA:
 		case tar.TypeDir:
-			dirPath := filepath.Join(staging, filepath.FromSlash(cleaned))
-			if mkErr := os.MkdirAll(dirPath, 0700); mkErr != nil {
+			if mkErr := os.MkdirAll(filepath.Join(staging, filepath.FromSlash(cleaned)), 0700); mkErr != nil {
 				return nil, 0, fmt.Errorf("create staging dir %q: %w", cleaned, mkErr)
 			}
 			continue
@@ -255,10 +237,9 @@ func stageFromTarGz(data []byte, staging string, maxEntries int, maxBytes int64)
 	return files, totalBytes, nil
 }
 
-// writeStagingEntry creates parent directories and writes a single file
-// entry into staging via writeBody. writeBody must copy at most `limit+1`
-// bytes from its source; if it writes more than `remaining`, ErrLimitExceeded
-// is returned.
+// writeStagingEntry creates parent directories and writes one entry into
+// staging via writeBody. writeBody must copy at most limit+1 bytes; if it
+// writes more than `remaining`, ErrLimitExceeded is returned.
 func writeStagingEntry(
 	staging, relName string,
 	writeBody func(w io.Writer, limit int64) (int64, error),
@@ -272,7 +253,7 @@ func writeStagingEntry(
 	if advertisedSize > 0 && advertisedSize > remaining {
 		return 0, fmt.Errorf("%w: uncompressed size would exceed budget", ErrLimitExceeded)
 	}
-	f, fErr := os.OpenFile(stagingPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600) //nolint:gosec // stagingPath is inside our trusted staging dir
+	f, fErr := os.OpenFile(stagingPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600) //nolint:gosec // staging is our trusted temp dir
 	if fErr != nil {
 		return 0, fmt.Errorf("create staging file %q: %w", relName, fErr)
 	}
@@ -289,8 +270,6 @@ func writeStagingEntry(
 	return written, nil
 }
 
-// publishToOutputDir checks for collisions, verifies no destination escapes
-// OutputDir via symlinks, then copies every staged file into OutputDir.
 func publishToOutputDir(staging string, files []string, opts ExtractOptions) error {
 	if mkErr := os.MkdirAll(opts.OutputDir, 0700); mkErr != nil {
 		return fmt.Errorf("create output dir: %w", mkErr)
@@ -307,14 +286,17 @@ func publishToOutputDir(staging string, files []string, opts ExtractOptions) err
 		}
 	}
 
+	// Resolve OutputDir's real path so we can reject entries that would
+	// escape through a pre-existing symlink in OutputDir.
 	realOutDir, evalErr := filepath.EvalSymlinks(opts.OutputDir)
 	if evalErr != nil {
 		return fmt.Errorf("resolve output dir path: %w", evalErr)
 	}
 
+	// Preflight: create destination directories and verify every resolved
+	// destination stays inside OutputDir, before any file is copied.
 	for _, rel := range files {
-		dst := filepath.Join(opts.OutputDir, filepath.FromSlash(rel))
-		dstDir := filepath.Dir(dst)
+		dstDir := filepath.Dir(filepath.Join(opts.OutputDir, filepath.FromSlash(rel)))
 		if mkErr := os.MkdirAll(dstDir, 0700); mkErr != nil {
 			return fmt.Errorf("create output dir for %q: %w", rel, mkErr)
 		}
@@ -323,10 +305,7 @@ func publishToOutputDir(staging string, files []string, opts ExtractOptions) err
 			return fmt.Errorf("resolve destination path for %q: %w", rel, evalErr)
 		}
 		if !isUnder(realDstDir, realOutDir) {
-			return fmt.Errorf(
-				"%w: %q destination escapes output directory via symlink",
-				ErrUnsafeEntry, rel,
-			)
+			return fmt.Errorf("%w: %q destination escapes output directory via symlink", ErrUnsafeEntry, rel)
 		}
 	}
 
@@ -340,6 +319,10 @@ func publishToOutputDir(staging string, files []string, opts ExtractOptions) err
 	return nil
 }
 
+// validateEntryName cleans and validates an archive entry name. Returns the
+// cleaned, slash-separated relative path. Rejects `..` even when surrounding
+// segments cancel it out (e.g. `a/../b`) — defense against future bugs in
+// path.Clean.
 func validateEntryName(name string) (string, bool) {
 	if name == "" {
 		return "", false
@@ -378,12 +361,12 @@ func isUnder(child, parent string) bool {
 }
 
 func copyFile(src, dst string) error {
-	in, err := os.Open(src) //nolint:gosec // src is inside our trusted staging dir
+	in, err := os.Open(src) //nolint:gosec // staging is our trusted temp dir
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600) //nolint:gosec // dst is inside the user-supplied output dir, written on user behalf
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600) //nolint:gosec // user-supplied output dir, written on user behalf
 	if err != nil {
 		return err
 	}
@@ -394,13 +377,9 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
-type bytesReaderAt struct {
-	data []byte
-}
+type bytesReaderAt struct{ data []byte }
 
-func newBytesReaderAt(data []byte) *bytesReaderAt {
-	return &bytesReaderAt{data: data}
-}
+func newBytesReaderAt(data []byte) *bytesReaderAt { return &bytesReaderAt{data: data} }
 
 func (b *bytesReaderAt) ReadAt(p []byte, off int64) (int, error) {
 	if off < 0 || off > int64(len(b.data)) {

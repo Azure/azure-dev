@@ -19,7 +19,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// createFlags holds parsed input for the `skill create` command.
 type createFlags struct {
 	name            string
 	description     string
@@ -34,12 +33,8 @@ type createFlags struct {
 	instructionsSet bool
 }
 
-// createAction is the create-command implementation.
-type createAction struct {
-	flags *createFlags
-}
+type createAction struct{ flags *createFlags }
 
-// Run executes the create operation.
 func (a *createAction) Run(ctx context.Context) error {
 	if err := validateSkillName(a.flags.name); err != nil {
 		return err
@@ -50,9 +45,6 @@ func (a *createAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Resolve interactive prompts (mode==modeNone with prompting available)
-	// before doing any IO so the user sees a fast validation error if neither
-	// inline nor file mode was supplied with --no-prompt.
 	if mode == modeNone {
 		if a.flags.noPrompt {
 			return exterrors.Validation(
@@ -72,26 +64,18 @@ func (a *createAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	// In package mode, --force is destructive: it deletes the existing skill
-	// by positional name before we have any guarantee that the archive being
-	// uploaded targets the same skill. Peek into the archive's SKILL.md and
-	// verify the embedded `name` matches the positional argument *before*
-	// any destructive call. If the archive omits `name`, we accept it (the
-	// positional argument wins, matching inline/file-md behavior).
+	// --force in package mode is destructive: we delete the existing skill by
+	// positional name before any guarantee the archive targets the same one.
+	// Peek the embedded SKILL.md `name` and bail if it disagrees.
 	if mode == modeFilePackage && a.flags.force {
 		if err := verifyPackageNameMatches(a.flags.file, a.flags.name); err != nil {
 			return err
 		}
 	}
 
-	// Honor --force by deleting the existing skill first.
 	if a.flags.force {
-		if _, delErr := skillCtx.client.Delete(ctx, a.flags.name); delErr != nil {
-			// Only swallow 404 — anything else means the upcoming create would
-			// likely fail too, so surface it now.
-			if !isNotFound(delErr) {
-				return exterrors.ServiceFromAzure(delErr, exterrors.OpDeleteSkill)
-			}
+		if _, delErr := skillCtx.client.Delete(ctx, a.flags.name); delErr != nil && !isNotFound(delErr) {
+			return exterrors.ServiceFromAzure(delErr, exterrors.OpDeleteSkill)
 		}
 	}
 
@@ -158,13 +142,12 @@ func (a *createAction) runFileMd(ctx context.Context, client *skill_api.Client) 
 		)
 	}
 
-	req := skill_api.CreateRequest{
+	created, err := client.CreateInline(ctx, skill_api.CreateRequest{
 		Name:         a.flags.name,
 		Description:  parsed.Description,
 		Instructions: parsed.Instructions,
 		Metadata:     parsed.Metadata,
-	}
-	created, err := client.CreateInline(ctx, req)
+	})
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
 	}
@@ -188,7 +171,7 @@ func (a *createAction) runFilePackage(ctx context.Context, client *skill_api.Cli
 		)
 	}
 
-	f, openErr := os.Open(a.flags.file) //nolint:gosec // path supplied by the user, opened for the user
+	f, openErr := os.Open(a.flags.file) //nolint:gosec // user-supplied path opened on user's behalf
 	if openErr != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidSkillFile,
@@ -213,19 +196,12 @@ func printCreateResult(s *skill_api.Skill, format string) error {
 	return printSkillDetail(s, outputTable)
 }
 
-// verifyPackageNameMatches peeks SKILL.md from a .zip archive and ensures
-// its front-matter `name` (when present) matches the positional argument the
-// user supplied. This guards `--force` in package mode against the
-// destructive sequence "delete positional name, then upload archive that
-// targets a different skill": without this check, a typo in the positional
-// argument can wipe out an unrelated skill before the import is even
-// attempted.
-//
-// Returns nil when the archive's SKILL.md is missing a `name` field (legacy
-// archives), or when the embedded name matches positionalName. Returns a
-// structured validation error otherwise.
+// verifyPackageNameMatches refuses --force when the archive's SKILL.md
+// declares a different `name` than the positional argument, to avoid
+// wiping an unrelated skill on a typo. Returns nil when the archive omits
+// `name` (no claim) or when the names agree.
 func verifyPackageNameMatches(archivePath, positionalName string) error {
-	data, readErr := os.ReadFile(archivePath) //nolint:gosec // user-supplied path read on their behalf
+	data, readErr := os.ReadFile(archivePath) //nolint:gosec // user-supplied path read on user's behalf
 	if readErr != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidSkillFile,
@@ -233,7 +209,6 @@ func verifyPackageNameMatches(archivePath, positionalName string) error {
 			"verify the file is readable",
 		)
 	}
-
 	archiveName, peekErr := skill_api.PeekArchiveSkillName(data)
 	if peekErr != nil {
 		return exterrors.Validation(
@@ -247,15 +222,10 @@ func verifyPackageNameMatches(archivePath, positionalName string) error {
 	}
 	return exterrors.Validation(
 		exterrors.CodeInvalidSkillFile,
-		fmt.Sprintf(
-			"--force refused: archive declares name %q which does not match positional argument %q",
-			archiveName, positionalName,
-		),
+		fmt.Sprintf("--force refused: archive declares name %q which does not match positional argument %q", archiveName, positionalName),
 		"re-run without --force, or fix the positional name / archive so they agree",
 	)
 }
-
-// --- mode selection ---
 
 type createMode int
 
@@ -279,9 +249,7 @@ func selectCreateMode(f *createFlags) (createMode, error) {
 	}
 
 	if fileProvided {
-		ext := strings.ToLower(filepath.Ext(f.file))
-		// `.zip` for packages; `.md` for SKILL.md inline body.
-		switch ext {
+		switch strings.ToLower(filepath.Ext(f.file)) {
 		case ".md":
 			return modeFileMd, nil
 		case ".zip":
@@ -289,7 +257,7 @@ func selectCreateMode(f *createFlags) (createMode, error) {
 		default:
 			return modeNone, exterrors.Validation(
 				exterrors.CodeInvalidSkillFile,
-				fmt.Sprintf("unsupported --file extension %q", ext),
+				fmt.Sprintf("unsupported --file extension %q", filepath.Ext(f.file)),
 				"use .md for inline metadata or .zip for a package upload",
 			)
 		}
@@ -313,41 +281,37 @@ func promptForInline(ctx context.Context, f *createFlags) error {
 	defer azdClient.Close()
 
 	if strings.TrimSpace(f.description) == "" {
-		resp, promptErr := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
-				Message: "Skill description",
-				HelpMessage: "A short human-readable summary of what this skill " +
-					"does. Sent to the service as `description`.",
-				Required: true,
+				Message:     "Skill description",
+				HelpMessage: "Short human-readable summary. Sent to the service as `description`.",
+				Required:    true,
 			},
 		})
-		if promptErr != nil {
-			return promptErr
+		if err != nil {
+			return err
 		}
 		f.description = resp.Value
 		f.descriptionSet = true
 	}
 
 	if strings.TrimSpace(f.instructions) == "" {
-		resp, promptErr := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
-				Message: "Skill instructions (Markdown body)",
-				HelpMessage: "The Markdown body that defines the skill's " +
-					"behavior. Sent to the service as `instructions`.",
-				Required: true,
+				Message:     "Skill instructions (Markdown body)",
+				HelpMessage: "Markdown body that defines the skill's behavior. Sent as `instructions`.",
+				Required:    true,
 			},
 		})
-		if promptErr != nil {
-			return promptErr
+		if err != nil {
+			return err
 		}
 		f.instructions = resp.Value
 		f.instructionsSet = true
 	}
-
 	return nil
 }
 
-// newCreateCommand constructs the `skill create` Cobra command.
 func newCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &createFlags{}
 	action := &createAction{flags: flags}
@@ -373,31 +337,22 @@ Pass --force to delete an existing skill of the same name before creating.`,
 			flags.descriptionSet = cmd.Flags().Changed("description")
 			flags.instructionsSet = cmd.Flags().Changed("instructions")
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
-
-			ctx := azdext.WithAccessToken(cmd.Context())
-			return action.Run(ctx)
+			return action.Run(azdext.WithAccessToken(cmd.Context()))
 		},
 	}
 
-	cmd.Flags().StringVar(&flags.description, "description", "",
-		"Inline mode: human-readable summary of the skill")
-	cmd.Flags().StringVar(&flags.instructions, "instructions", "",
-		"Inline mode: Markdown body defining skill behavior")
-	cmd.Flags().StringVar(&flags.file, "file", "",
-		"Path to SKILL.md (.md) or a ZIP package (.zip)")
-	cmd.Flags().BoolVar(&flags.force, "force", false,
-		"Delete an existing skill of the same name before creating")
+	cmd.Flags().StringVar(&flags.description, "description", "", "Inline mode: human-readable summary of the skill")
+	cmd.Flags().StringVar(&flags.instructions, "instructions", "", "Inline mode: Markdown body defining skill behavior")
+	cmd.Flags().StringVar(&flags.file, "file", "", "Path to SKILL.md (.md) or a ZIP package (.zip)")
+	cmd.Flags().BoolVar(&flags.force, "force", false, "Delete an existing skill of the same name before creating")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{outputJSON, outputTable}, Default: outputJSON,
 	})
 	return cmd
 }
 
-// --- shared helpers ---
-
-// readFileWithLimit reads up to 1 MiB from path. SKILL.md should be well under
-// the service's 100 KiB+1 KiB description/instruction caps, so 1 MiB is a
-// generous bound that still defends against accidentally reading a giant file.
+// readFileWithLimit reads up to 1 MiB from path. SKILL.md is small in practice;
+// the cap guards against reading a giant file by accident.
 func readFileWithLimit(path string) ([]byte, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -422,7 +377,7 @@ func readFileWithLimit(path string) ([]byte, error) {
 			"split the file into smaller assets and use a package upload",
 		)
 	}
-	data, err := os.ReadFile(path) //nolint:gosec // user-supplied path read on their behalf
+	data, err := os.ReadFile(path) //nolint:gosec // user-supplied path read on user's behalf
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidSkillFile,
@@ -433,13 +388,10 @@ func readFileWithLimit(path string) ([]byte, error) {
 	return data, nil
 }
 
-// shouldSuppressWarning reports whether interactive warnings (e.g., front
-// matter name mismatch) should be suppressed.
 func shouldSuppressWarning(noPrompt bool, format string) bool {
 	return noPrompt || format == outputJSON
 }
 
-// isNotFound reports whether err looks like an HTTP 404 from the service.
 func isNotFound(err error) bool {
 	var respErr *azcore.ResponseError
 	if errors.As(err, &respErr) {

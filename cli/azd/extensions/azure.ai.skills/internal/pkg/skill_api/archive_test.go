@@ -16,17 +16,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// zipEntry describes a single file or directory entry to add to a test
-// archive. Body is ignored for directories (where Name ends with "/").
 type zipEntry struct {
 	Name string
 	Body []byte
-	// Mode is the file mode; when zero we default to 0644 for files and
-	// 0755 for directories.
-	Mode os.FileMode
+	Mode os.FileMode // 0 defaults to 0644 (files) / 0755 (dirs)
 }
 
-// makeZip builds an in-memory ZIP archive from entries.
 func makeZip(t *testing.T, entries []zipEntry) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -54,13 +49,11 @@ func makeZip(t *testing.T, entries []zipEntry) []byte {
 	return buf.Bytes()
 }
 
-// tarEntry describes a tar entry for test archives.
 type tarEntry struct {
 	Name string
 	Body []byte
 }
 
-// makeTarGz builds an in-memory gzip-compressed tar archive.
 func makeTarGz(t *testing.T, entries []tarEntry) []byte {
 	t.Helper()
 	var buf bytes.Buffer

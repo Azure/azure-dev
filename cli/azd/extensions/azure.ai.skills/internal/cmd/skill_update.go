@@ -16,7 +16,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// updateFlags holds parsed input for the `skill update` command.
 type updateFlags struct {
 	name            string
 	description     string
@@ -29,17 +28,12 @@ type updateFlags struct {
 	instructionsSet bool
 }
 
-// updateAction is the update-command implementation.
-type updateAction struct {
-	flags *updateFlags
-}
+type updateAction struct{ flags *updateFlags }
 
-// Run executes the update operation.
 func (a *updateAction) Run(ctx context.Context) error {
 	if err := validateSkillName(a.flags.name); err != nil {
 		return err
 	}
-
 	if err := a.validateFlags(); err != nil {
 		return err
 	}
@@ -49,8 +43,7 @@ func (a *updateAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	// GET-merge-POST so the user can update a single field without losing
-	// the others.
+	// GET-merge-POST so a single-field update doesn't drop the others.
 	current, err := skillCtx.client.Get(ctx, a.flags.name)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetSkill)
@@ -60,8 +53,6 @@ func (a *updateAction) Run(ctx context.Context) error {
 		Description: current.Description,
 		Metadata:    current.Metadata,
 	}
-
-	// Apply inline overrides.
 	if a.flags.descriptionSet {
 		req.Description = a.flags.description
 	}
@@ -69,7 +60,6 @@ func (a *updateAction) Run(ctx context.Context) error {
 		req.Instructions = a.flags.instructions
 	}
 
-	// Apply --file (SKILL.md only) overrides.
 	if a.flags.file != "" {
 		data, readErr := readFileWithLimit(a.flags.file)
 		if readErr != nil {
@@ -106,7 +96,6 @@ func (a *updateAction) Run(ctx context.Context) error {
 	return printSkillDetail(updated, outputTable)
 }
 
-// validateFlags enforces the update-specific flag rules.
 func (a *updateAction) validateFlags() error {
 	inlineProvided := a.flags.descriptionSet || a.flags.instructionsSet
 	fileProvided := a.flags.file != ""
@@ -128,10 +117,10 @@ func (a *updateAction) validateFlags() error {
 
 	if fileProvided {
 		ext := strings.ToLower(filepath.Ext(a.flags.file))
-		switch {
-		case ext == ".md":
+		switch ext {
+		case ".md":
 			return nil
-		case ext == ".zip":
+		case ".zip":
 			return exterrors.Validation(
 				exterrors.CodeInvalidSkillFile,
 				"ZIP packages cannot be applied via `skill update`",
@@ -148,7 +137,6 @@ func (a *updateAction) validateFlags() error {
 	return nil
 }
 
-// newUpdateCommand constructs the `skill update` Cobra command.
 func newUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &updateFlags{}
 	action := &updateAction{flags: flags}
@@ -174,18 +162,13 @@ merged payload to the service.`,
 			flags.descriptionSet = cmd.Flags().Changed("description")
 			flags.instructionsSet = cmd.Flags().Changed("instructions")
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
-
-			ctx := azdext.WithAccessToken(cmd.Context())
-			return action.Run(ctx)
+			return action.Run(azdext.WithAccessToken(cmd.Context()))
 		},
 	}
 
-	cmd.Flags().StringVar(&flags.description, "description", "",
-		"New human-readable summary")
-	cmd.Flags().StringVar(&flags.instructions, "instructions", "",
-		"New Markdown instructions body")
-	cmd.Flags().StringVar(&flags.file, "file", "",
-		"Path to a SKILL.md file whose values override the current skill")
+	cmd.Flags().StringVar(&flags.description, "description", "", "New human-readable summary")
+	cmd.Flags().StringVar(&flags.instructions, "instructions", "", "New Markdown instructions body")
+	cmd.Flags().StringVar(&flags.file, "file", "", "Path to a SKILL.md file whose values override the current skill")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{outputJSON, outputTable}, Default: outputJSON,
 	})

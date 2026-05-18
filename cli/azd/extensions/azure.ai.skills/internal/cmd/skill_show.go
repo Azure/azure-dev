@@ -12,38 +12,29 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// showFlags holds parsed input for the `skill show` command.
 type showFlags struct {
 	name            string
 	output          string
 	projectEndpoint string
 }
 
-// showAction is the show-command implementation.
-type showAction struct {
-	flags *showFlags
-}
+type showAction struct{ flags *showFlags }
 
-// Run executes the show operation.
 func (a *showAction) Run(ctx context.Context) error {
 	if err := validateSkillName(a.flags.name); err != nil {
 		return err
 	}
-
 	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint)
 	if err != nil {
 		return err
 	}
-
 	s, err := skillCtx.client.Get(ctx, a.flags.name)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetSkill)
 	}
-
 	return printSkillDetail(s, a.flags.output)
 }
 
-// newShowCommand constructs the `skill show` Cobra command.
 func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &showFlags{}
 	action := &showAction{flags: flags}
@@ -60,9 +51,7 @@ This command returns metadata only. To retrieve the skill body, use
 			flags.name = args[0]
 			flags.output = extCtx.OutputFormat
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
-
-			ctx := azdext.WithAccessToken(cmd.Context())
-			return action.Run(ctx)
+			return action.Run(azdext.WithAccessToken(cmd.Context()))
 		},
 	}
 

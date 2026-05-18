@@ -3,7 +3,7 @@
 
 // Package skill_api provides a typed REST client for the Foundry Skills
 // data-plane surface, plus helpers for parsing SKILL.md files and safely
-// extracting downloaded gzip skill packages.
+// extracting downloaded ZIP skill packages.
 package skill_api
 
 // Skill is the metadata representation of a Foundry skill returned by
@@ -16,7 +16,7 @@ type Skill struct {
 	// Name is the unique skill name (validated client-side against the
 	// alphanumeric-with-hyphens pattern; final decision lives in the service).
 	Name string `json:"name"`
-	// HasBlob reports whether the skill was created from a gzip package.
+	// HasBlob reports whether the skill was created from a ZIP package.
 	// Determines whether `download` returns useful content.
 	HasBlob bool `json:"hasBlob"`
 	// Description is a human-readable summary; optional.

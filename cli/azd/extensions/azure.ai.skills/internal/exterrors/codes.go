@@ -15,7 +15,7 @@ const (
 	// unreadable, or unsupported file, or when SKILL.md front matter
 	// fails to parse.
 	CodeInvalidSkillFile = "invalid_skill_file"
-	// CodeSkillArchiveUnsafe is used when a downloaded gzip archive
+	// CodeSkillArchiveUnsafe is used when a downloaded ZIP archive
 	// contains an unsafe entry (zip-slip, symlink, oversized, etc.).
 	CodeSkillArchiveUnsafe = "skill_archive_unsafe"
 	// CodeSkillOutputCollision is used when `skill download` would

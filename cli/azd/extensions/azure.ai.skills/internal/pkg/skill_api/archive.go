@@ -4,8 +4,7 @@
 package skill_api
 
 import (
-	"archive/tar"
-	"compress/gzip"
+	"archive/zip"
 	"errors"
 	"fmt"
 	"io"
@@ -30,7 +29,7 @@ type ExtractOptions struct {
 	// SafeExtract returns ErrCollision listing the first collision encountered
 	// and writes nothing.
 	Force bool
-	// MaxEntries caps the number of tar entries processed. Zero falls back to
+	// MaxEntries caps the number of zip entries processed. Zero falls back to
 	// DefaultMaxEntries.
 	MaxEntries int
 	// MaxTotalUncompressed caps the total uncompressed byte count across all
@@ -50,9 +49,9 @@ type ExtractResult struct {
 // Sentinel errors. Each wraps additional context describing the offending
 // entry / collision so callers can include it in the user-facing message.
 
-// ErrUnsafeEntry indicates a tar entry was rejected (absolute path,
-// `..` component, symlink, hard link, non-regular file, or empty/`/`-only name).
-var ErrUnsafeEntry = errors.New("unsafe tar entry")
+// ErrUnsafeEntry indicates a zip entry was rejected (absolute path,
+// `..` component, irregular file mode, or empty/`/`-only name).
+var ErrUnsafeEntry = errors.New("unsafe zip entry")
 
 // ErrLimitExceeded indicates the entry count or uncompressed byte limit was
 // exceeded mid-extraction.
@@ -62,34 +61,35 @@ var ErrLimitExceeded = errors.New("archive exceeds safety limit")
 // exists in OutputDir and Force was not set.
 var ErrCollision = errors.New("output collision")
 
-// ErrInvalidGzip is returned when the response is not a valid gzip stream.
-var ErrInvalidGzip = errors.New("invalid gzip stream")
+// ErrInvalidZip is returned when the response body is not a valid zip stream.
+var ErrInvalidZip = errors.New("invalid zip stream")
 
-// SafeExtract reads a gzipped tar stream from r and writes its regular-file
-// contents under opts.OutputDir. The implementation is two-phase:
+// SafeExtract reads a ZIP archive from data (already buffered in memory or
+// backed by a ReaderAt) and writes its regular-file contents under
+// opts.OutputDir. The implementation is two-phase:
 //
-//  1. Stream the archive entries into a temporary staging directory under the
-//     OS temp dir, validating each entry against the safety rules before
+//  1. Walk every zip entry into a temporary staging directory under the OS
+//     temp dir, validating each entry against the safety rules before
 //     writing anything.
-//  2. After every entry has been written to staging, copy each file into the
+//  2. After every entry has been written to staging, verify no destination
+//     escapes opts.OutputDir via symlinks, then copy each file into the
 //     final OutputDir. If anything fails partway, the staging directory is
 //     removed and nothing is left behind in OutputDir.
 //
 // Safety rules (each rejection returns ErrUnsafeEntry):
 //
 //   - Absolute paths or paths containing `..` components are rejected.
-//   - Symbolic links and hard links are rejected.
-//   - Non-regular and non-directory entries (devices, FIFOs, sockets) are
-//     rejected.
 //   - Empty names, or names that collapse to "/" or "." after cleaning, are
+//     rejected.
+//   - Non-regular files (modes with symlink/device/socket bits set) are
 //     rejected.
 //   - Total entry count is capped at opts.MaxEntries (default 10,000).
 //   - Total uncompressed byte count is capped at opts.MaxTotalUncompressed
 //     (default 512 MB).
 //
-// Executable bits from tar headers are dropped; written files use 0600 / 0700
+// Executable bits from zip headers are dropped; written files use 0600 / 0700
 // modes against the process umask.
-func SafeExtract(r io.Reader, opts ExtractOptions) (*ExtractResult, error) {
+func SafeExtract(data []byte, opts ExtractOptions) (*ExtractResult, error) {
 	if opts.OutputDir == "" {
 		return nil, fmt.Errorf("SafeExtract: OutputDir is required")
 	}
@@ -102,11 +102,14 @@ func SafeExtract(r io.Reader, opts ExtractOptions) (*ExtractResult, error) {
 		maxBytes = DefaultMaxTotalUncompressed
 	}
 
-	gz, err := gzip.NewReader(r)
+	zr, err := newZipReader(data)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrInvalidGzip, err)
+		return nil, err
 	}
-	defer gz.Close()
+
+	if len(zr.File) > maxEntries {
+		return nil, fmt.Errorf("%w: entry count %d exceeds %d", ErrLimitExceeded, len(zr.File), maxEntries)
+	}
 
 	staging, err := os.MkdirTemp("", "azd-skill-extract-*")
 	if err != nil {
@@ -116,52 +119,32 @@ func SafeExtract(r io.Reader, opts ExtractOptions) (*ExtractResult, error) {
 		_ = os.RemoveAll(staging)
 	}
 
-	tr := tar.NewReader(gz)
 	var files []string
 	var totalBytes int64
-	entryCount := 0
 
-	for {
-		hdr, hdrErr := tr.Next()
-		if errors.Is(hdrErr, io.EOF) {
-			break
-		}
-		if hdrErr != nil {
-			cleanupStaging()
-			return nil, fmt.Errorf("read tar entry: %w", hdrErr)
-		}
-
-		entryCount++
-		if entryCount > maxEntries {
-			cleanupStaging()
-			return nil, fmt.Errorf("%w: entry count exceeds %d", ErrLimitExceeded, maxEntries)
-		}
-
-		cleaned, ok := validateEntryName(hdr.Name)
+	for _, entry := range zr.File {
+		cleaned, ok := validateEntryName(entry.Name)
 		if !ok {
 			cleanupStaging()
-			return nil, fmt.Errorf("%w: %q", ErrUnsafeEntry, hdr.Name)
+			return nil, fmt.Errorf("%w: %q", ErrUnsafeEntry, entry.Name)
 		}
 
-		switch hdr.Typeflag {
-		case tar.TypeReg, tar.TypeRegA:
-			// Fall through.
-		case tar.TypeDir:
+		mode := entry.Mode()
+		switch {
+		case mode.IsDir() || strings.HasSuffix(entry.Name, "/"):
 			dirPath := filepath.Join(staging, filepath.FromSlash(cleaned))
 			if mkErr := os.MkdirAll(dirPath, 0700); mkErr != nil {
 				cleanupStaging()
 				return nil, fmt.Errorf("create staging dir %q: %w", cleaned, mkErr)
 			}
 			continue
+		case mode.IsRegular():
+			// Fall through.
 		default:
 			cleanupStaging()
-			return nil, fmt.Errorf("%w: %q has unsupported tar type %c", ErrUnsafeEntry, hdr.Name, hdr.Typeflag)
+			return nil, fmt.Errorf("%w: %q has irregular file mode %v", ErrUnsafeEntry, entry.Name, mode)
 		}
 
-		// Reject explicit zero-size entries that the spec only allows for
-		// directories. Regular files with hdr.Size == 0 are fine (empty files).
-
-		// Pre-create parent directory in staging.
 		stagingPath := filepath.Join(staging, filepath.FromSlash(cleaned))
 		if mkErr := os.MkdirAll(filepath.Dir(stagingPath), 0700); mkErr != nil {
 			cleanupStaging()
@@ -169,31 +152,42 @@ func SafeExtract(r io.Reader, opts ExtractOptions) (*ExtractResult, error) {
 		}
 
 		remaining := maxBytes - totalBytes
-		if hdr.Size > 0 && hdr.Size > remaining {
+		// entry.UncompressedSize64 is advisory; we cap the actual reader so a
+		// lying header cannot exhaust disk.
+		if entry.UncompressedSize64 > 0 && int64(entry.UncompressedSize64) > remaining { //nolint:gosec // bound-checked just above
 			cleanupStaging()
 			return nil, fmt.Errorf("%w: uncompressed size would exceed %d bytes", ErrLimitExceeded, maxBytes)
 		}
 
-		// Cap reading at the remaining budget so a lying header cannot run away.
-		limited := io.LimitReader(tr, remaining+1)
+		rc, openErr := entry.Open()
+		if openErr != nil {
+			cleanupStaging()
+			return nil, fmt.Errorf("open zip entry %q: %w", cleaned, openErr)
+		}
 
 		f, fErr := os.OpenFile(stagingPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600) //nolint:gosec // stagingPath is inside our trusted staging dir
 		if fErr != nil {
+			_ = rc.Close()
 			cleanupStaging()
 			return nil, fmt.Errorf("create staging file %q: %w", cleaned, fErr)
 		}
 
-		written, copyErr := io.Copy(f, limited)
-		closeErr := f.Close()
-		if copyErr != nil {
+		// Cap reading at remaining+1: if we copy more than `remaining` the
+		// limit was violated.
+		written, copyErr := io.Copy(f, io.LimitReader(rc, remaining+1))
+		closeRcErr := rc.Close()
+		closeFErr := f.Close()
+		switch {
+		case copyErr != nil:
 			cleanupStaging()
 			return nil, fmt.Errorf("write %q: %w", cleaned, copyErr)
-		}
-		if closeErr != nil {
+		case closeRcErr != nil:
 			cleanupStaging()
-			return nil, fmt.Errorf("close staging file %q: %w", cleaned, closeErr)
-		}
-		if written > remaining {
+			return nil, fmt.Errorf("close zip entry %q: %w", cleaned, closeRcErr)
+		case closeFErr != nil:
+			cleanupStaging()
+			return nil, fmt.Errorf("close staging file %q: %w", cleaned, closeFErr)
+		case written > remaining:
 			cleanupStaging()
 			return nil, fmt.Errorf("%w: uncompressed size would exceed %d bytes", ErrLimitExceeded, maxBytes)
 		}
@@ -275,7 +269,20 @@ func SafeExtract(r io.Reader, opts ExtractOptions) (*ExtractResult, error) {
 	}, nil
 }
 
-// validateEntryName cleans and validates a tar entry name. It returns the
+// newZipReader builds an in-memory zip.Reader from data. Returns ErrInvalidZip
+// wrapped in any underlying parse error.
+func newZipReader(data []byte) (*zip.Reader, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("%w: empty body", ErrInvalidZip)
+	}
+	zr, err := zip.NewReader(newBytesReaderAt(data), int64(len(data)))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidZip, err)
+	}
+	return zr, nil
+}
+
+// validateEntryName cleans and validates a zip entry name. It returns the
 // cleaned, slash-rooted relative path on success (no leading slash, no `..`
 // segments).
 //
@@ -287,27 +294,33 @@ func validateEntryName(name string) (string, bool) {
 	if name == "" {
 		return "", false
 	}
-	// Tar entry names use forward slashes. Normalize to slashes before cleaning
+	// Zip entry names use forward slashes. Normalize to slashes before cleaning
 	// so we behave the same on Windows and Unix.
 	slashed := strings.ReplaceAll(name, "\\", "/")
+	// Strip a single trailing slash for directory entries — keep the form for
+	// detection but don't fail validation on the slash itself.
+	withoutTrailing := strings.TrimSuffix(slashed, "/")
+	if withoutTrailing == "" {
+		return "", false
+	}
 	// Reject Windows drive-letter syntax masquerading as a relative path.
-	if len(slashed) >= 2 && slashed[1] == ':' {
+	if len(withoutTrailing) >= 2 && withoutTrailing[1] == ':' {
 		return "", false
 	}
 	// Reject absolute paths.
-	if strings.HasPrefix(slashed, "/") {
+	if strings.HasPrefix(withoutTrailing, "/") {
 		return "", false
 	}
 	// Reject any `..` segment in the *raw* name. This is stricter than
 	// path.Clean — we want to refuse archives that even attempt traversal.
-	for _, part := range strings.Split(slashed, "/") {
+	for _, part := range strings.Split(withoutTrailing, "/") {
 		if part == ".." {
 			return "", false
 		}
 	}
 	// path.Clean to remove redundant separators and resolve `.` segments
 	// without traversing the filesystem.
-	cleaned := path.Clean(slashed)
+	cleaned := path.Clean(withoutTrailing)
 	if cleaned == "" || cleaned == "." || cleaned == "/" {
 		return "", false
 	}
@@ -341,4 +354,26 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// bytesReaderAt is a tiny io.ReaderAt over a byte slice. We avoid pulling in
+// bytes.Reader so callers can pass slices that may grow without re-allocating
+// the wrapper (zip.NewReader only needs ReadAt + length).
+type bytesReaderAt struct {
+	data []byte
+}
+
+func newBytesReaderAt(data []byte) *bytesReaderAt {
+	return &bytesReaderAt{data: data}
+}
+
+func (b *bytesReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	if off < 0 || off > int64(len(b.data)) {
+		return 0, io.EOF
+	}
+	n := copy(p, b.data[off:])
+	if n < len(p) {
+		return n, io.EOF
+	}
+	return n, nil
 }

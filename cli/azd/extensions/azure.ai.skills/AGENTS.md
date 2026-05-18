@@ -9,7 +9,7 @@ Use this file together with `cli/azd/AGENTS.md`. This guide supplements the root
 Useful places to start:
 
 - `internal/cmd/`: Cobra commands and top-level orchestration
-- `internal/pkg/skill_api/`: typed Foundry Skills REST client, models, SKILL.md parser, and safe tar.gz extractor
+- `internal/pkg/skill_api/`: typed Foundry Skills REST client, models, SKILL.md parser, and safe ZIP extractor
 - `internal/exterrors/`: structured error factories and extension-specific codes
 
 ## Relationship to `azure.ai.agents`
@@ -64,9 +64,9 @@ Each `--debug` run writes to `azd-ai-skills-<date>.log` in the current working d
 ## File handling
 
 - `--file` is **not** a manifest. It is read at invocation time only; the CLI does not track or re-read it after the command returns.
-- `create`: accepts `.md`, `.tar.gz`, or `.tgz`. Mode is inferred from extension; conflicting modes (inline + `--file`) are rejected.
-- `update`: accepts `.md` only. `.tar.gz`/`.tgz` is rejected with a structured suggestion to use `create --force`.
-- `download`: writes either an extracted directory (default) or the unmodified gzip archive (`--raw`).
+- `create`: accepts `.md` or `.zip`. Mode is inferred from extension; conflicting modes (inline + `--file`) are rejected.
+- `update`: accepts `.md` only. `.zip` is rejected with a structured suggestion to use `create --force`.
+- `download`: writes either an extracted directory (default) or the unmodified ZIP archive (`--raw`).
 
 ## Release preparation
 

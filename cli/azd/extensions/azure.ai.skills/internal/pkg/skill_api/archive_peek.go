@@ -4,10 +4,6 @@
 package skill_api
 
 import (
-	"archive/tar"
-	"compress/gzip"
-	"errors"
-	"fmt"
 	"io"
 	"path"
 	"strings"
@@ -19,65 +15,56 @@ import (
 // exhaust memory during the front-matter peek.
 const peekMaxSkillMdBytes = 1 << 20 // 1 MiB
 
-// peekMaxEntries caps how many tar entries PeekArchiveSkillName scans before
+// peekMaxEntries caps how many zip entries PeekArchiveSkillName scans before
 // giving up. SKILL.md is conventionally at the archive root, so scanning
 // every entry of a deeply-nested archive is unnecessary and would let a
 // malicious archive stall the CLI.
 const peekMaxEntries = 1024
 
-// PeekArchiveSkillName reads the gzipped tar stream from r and returns the
-// `name` field declared in the archive's SKILL.md front matter.
+// PeekArchiveSkillName reads the ZIP archive in data and returns the `name`
+// field declared in the archive's SKILL.md front matter.
 //
 // Lookup rules (first match wins):
 //
-//   - A file whose cleaned tar entry name equals `SKILL.md`.
-//   - A file whose cleaned tar entry name is `<single-top-level-dir>/SKILL.md`,
-//     i.e. a SKILL.md exactly one directory below the archive root. This
-//     matches the layout produced by `azd ai skill package`.
+//   - A file whose cleaned entry name equals `SKILL.md`.
+//   - A file whose cleaned entry name is `<single-top-level-dir>/SKILL.md`,
+//     i.e. a SKILL.md exactly one directory below the archive root.
 //
 // Returns ("", nil) when no SKILL.md is found, when SKILL.md exists but does
-// not declare a `name`, or when the front matter cannot be parsed. The
-// caller is expected to treat an empty result as "no claim", not as an
-// error: the destructive `--force` guard only fires when the archive makes
-// a name claim that disagrees with the positional argument.
+// not declare a `name`, or when the front matter cannot be parsed. The caller
+// is expected to treat an empty result as "no claim", not as an error: the
+// destructive `--force` guard only fires when the archive makes a name claim
+// that disagrees with the positional argument.
 //
 // PeekArchiveSkillName never writes to disk and reads at most peekMaxSkillMdBytes
 // bytes from any single entry. It returns an error only for unrecoverable
-// stream problems (invalid gzip, truncated tar header).
-func PeekArchiveSkillName(r io.Reader) (string, error) {
-	gz, err := gzip.NewReader(r)
+// stream problems (invalid zip).
+func PeekArchiveSkillName(data []byte) (string, error) {
+	zr, err := newZipReader(data)
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", ErrInvalidGzip, err)
+		return "", err
 	}
-	defer gz.Close()
 
-	tr := tar.NewReader(gz)
-	entryCount := 0
-	for {
-		hdr, hdrErr := tr.Next()
-		if errors.Is(hdrErr, io.EOF) {
+	for i, entry := range zr.File {
+		if i >= peekMaxEntries {
 			return "", nil
 		}
-		if hdrErr != nil {
-			return "", fmt.Errorf("read tar entry: %w", hdrErr)
+		if !entry.Mode().IsRegular() {
+			continue
 		}
-		entryCount++
-		if entryCount > peekMaxEntries {
+		if !isSkillMdEntry(entry.Name) {
+			continue
+		}
+		rc, openErr := entry.Open()
+		if openErr != nil {
 			return "", nil
 		}
-		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA {
-			continue
-		}
-		if !isSkillMdEntry(hdr.Name) {
-			continue
-		}
-		// Limit how much we read so a malicious archive cannot make us
-		// allocate gigabytes for a SKILL.md "file".
-		data, readErr := io.ReadAll(io.LimitReader(tr, peekMaxSkillMdBytes))
+		raw, readErr := io.ReadAll(io.LimitReader(rc, peekMaxSkillMdBytes))
+		_ = rc.Close()
 		if readErr != nil {
-			return "", fmt.Errorf("read SKILL.md from archive: %w", readErr)
+			return "", nil
 		}
-		md, parseErr := ParseSkillMd(data)
+		md, parseErr := ParseSkillMd(raw)
 		if parseErr != nil {
 			// SKILL.md is present but malformed. The upload itself will fail
 			// validation; for the --force guard we treat this as "no claim"
@@ -87,16 +74,16 @@ func PeekArchiveSkillName(r io.Reader) (string, error) {
 		}
 		return md.Name, nil
 	}
+	return "", nil
 }
 
-// isSkillMdEntry reports whether the given tar entry name refers to a
+// isSkillMdEntry reports whether the given zip entry name refers to a
 // SKILL.md file at the archive root or exactly one directory below it.
 func isSkillMdEntry(name string) bool {
 	cleaned := path.Clean(strings.TrimLeft(name, "/"))
 	if cleaned == "SKILL.md" {
 		return true
 	}
-	// Match `<dir>/SKILL.md` (exactly one directory deep).
 	dir, file := path.Split(cleaned)
 	if file != "SKILL.md" {
 		return false

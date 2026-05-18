@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
@@ -72,7 +71,7 @@ func (a *downloadAction) Run(ctx context.Context) error {
 	// Pre-flight via Get so we can detect the "no associated package" case
 	// before issuing the :download call. The service returns 404 with a
 	// dedicated error code when the skill was created from inline JSON (or a
-	// SKILL.md file) rather than a gzip package, but the message is opaque —
+	// SKILL.md file) rather than a ZIP package, but the message is opaque —
 	// surfacing the HasBlob check up front gives the user a clearer answer.
 	skill, err := skillCtx.client.Get(ctx, a.flags.name)
 	if err != nil {
@@ -82,9 +81,9 @@ func (a *downloadAction) Run(ctx context.Context) error {
 		return exterrors.Validation(
 			exterrors.CodeSkillNoPackage,
 			fmt.Sprintf("skill %q has no downloadable package", a.flags.name),
-			"only skills created from a `.tar.gz` / `.tgz` archive have a downloadable "+
+			"only skills created from a `.zip` archive have a downloadable "+
 				"package. Use `azd ai skill show <name>` to inspect metadata; "+
-				"re-create with `azd ai skill create <name> --file <archive>.tar.gz --force` "+
+				"re-create with `azd ai skill create <name> --file <archive>.zip --force` "+
 				"if you want a downloadable copy.",
 		)
 	}
@@ -93,7 +92,6 @@ func (a *downloadAction) Run(ctx context.Context) error {
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpDownloadSkill)
 	}
-	defer body.Close()
 
 	if a.flags.raw {
 		return a.writeRaw(body, absOut)
@@ -101,12 +99,12 @@ func (a *downloadAction) Run(ctx context.Context) error {
 	return a.writeExtracted(body, absOut)
 }
 
-func (a *downloadAction) writeRaw(body io.Reader, outputDir string) error {
+func (a *downloadAction) writeRaw(body []byte, outputDir string) error {
 	if err := os.MkdirAll(outputDir, 0700); err != nil {
 		return fmt.Errorf("create output dir: %w", err)
 	}
 
-	archivePath := filepath.Join(outputDir, a.flags.name+".tar.gz")
+	archivePath := filepath.Join(outputDir, a.flags.name+".zip")
 
 	// Always Lstat (even with --force) so we never follow a symlink and so we
 	// refuse to overwrite a non-regular file (directory, device, socket, ...).
@@ -151,7 +149,7 @@ func (a *downloadAction) writeRaw(body io.Reader, outputDir string) error {
 	if err != nil {
 		return fmt.Errorf("create archive: %w", err)
 	}
-	if _, copyErr := io.Copy(f, body); copyErr != nil {
+	if _, copyErr := f.Write(body); copyErr != nil {
 		_ = f.Close()
 		return fmt.Errorf("write archive: %w", copyErr)
 	}
@@ -162,13 +160,13 @@ func (a *downloadAction) writeRaw(body io.Reader, outputDir string) error {
 	res := downloadResult{
 		Skill:     a.flags.name,
 		OutputDir: outputDir,
-		Archive:   a.flags.name + ".tar.gz",
+		Archive:   a.flags.name + ".zip",
 		Raw:       true,
 	}
 	return a.printResult(res)
 }
 
-func (a *downloadAction) writeExtracted(body io.Reader, outputDir string) error {
+func (a *downloadAction) writeExtracted(body []byte, outputDir string) error {
 	result, err := skill_api.SafeExtract(body, skill_api.ExtractOptions{
 		OutputDir: outputDir,
 		Force:     a.flags.force,
@@ -224,11 +222,11 @@ func classifyExtractError(err error, outputDir string) error {
 			err.Error(),
 			fmt.Sprintf("pass --force to overwrite existing files in %s", outputDir),
 		)
-	case errors.Is(err, skill_api.ErrInvalidGzip):
+	case errors.Is(err, skill_api.ErrInvalidZip):
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			err.Error(),
-			"the service did not return a gzip archive; retry or contact support",
+			"the service did not return a valid zip archive; retry or contact support",
 		)
 	}
 	return err
@@ -242,15 +240,15 @@ func newDownloadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "download <name>",
 		Short: "Download a Foundry skill package.",
-		Long: `Download a skill's gzip package.
+		Long: `Download a skill's ZIP package.
 
 By default the CLI extracts the archive into --output-dir (which defaults to
-'./.agents/skills/<name>/'). Pass --raw to write the unmodified gzip archive
+'./.agents/skills/<name>/'). Pass --raw to write the unmodified ZIP archive
 into --output-dir instead.
 
 Extraction enforces strict safety rules: no absolute paths, no '..' segments,
-no symlinks, no hard links, no non-regular files, and a 10,000-entry /
-512 MB cap on the total uncompressed size.`,
+no symlinks / non-regular entries, and a 10,000-entry / 512 MB cap on the
+total uncompressed size.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
@@ -266,7 +264,7 @@ no symlinks, no hard links, no non-regular files, and a 10,000-entry /
 	cmd.Flags().StringVar(&flags.outputDir, "output-dir", "",
 		"Directory to write the extracted skill (default: ./.agents/skills/<name>/)")
 	cmd.Flags().BoolVar(&flags.raw, "raw", false,
-		"Skip extraction; write the gzip archive as-is to --output-dir")
+		"Skip extraction; write the ZIP archive as-is to --output-dir")
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite existing files in --output-dir")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{

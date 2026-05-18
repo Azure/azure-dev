@@ -37,9 +37,12 @@ const (
 	// ContentTypeJSON is the request/response content type used for the JSON
 	// surface.
 	ContentTypeJSON = "application/json"
-	// ContentTypeGzip is the content type used by POST /skills:import (request)
-	// and by GET /skills/{name}:download (response).
-	ContentTypeGzip = "application/gzip"
+	// ContentTypeZip is the content type used by POST /skills:import (request)
+	// and by GET /skills/{name}:download (response). The TypeSpec describes
+	// the body as `bytes` with `Content-Type: application/gzip`, but the live
+	// service implements ZIP per the public docs — verified via 415 on gzip.
+	// See https://learn.microsoft.com/azure/foundry/agents/how-to/tools/skills.
+	ContentTypeZip = "application/zip"
 
 	// BearerScope is the Azure AD scope used for the bearer-token policy.
 	// Matches the scope used by the rest of the Foundry AI extension surface.
@@ -129,21 +132,19 @@ func (c *Client) CreateInline(ctx context.Context, req CreateRequest) (*Skill, e
 	return decodeSkill(resp.Body)
 }
 
-// CreatePackage uploads a gzip archive to POST /skills:import. The CLI does
-// not inspect the contents; server-side validation owns the archive.
-// nameHint is currently unused because the service derives the skill name
-// from the archive's SKILL.md, but it is forwarded as a query parameter when
-// non-empty so future server-side enforcement can match it against the URL.
+// CreatePackage uploads a ZIP archive to POST /skills:import. The CLI does
+// not inspect the archive's contents beyond an optional name-claim peek for
+// the --force guard; server-side validation owns archive contents otherwise.
 func (c *Client) CreatePackage(ctx context.Context, archive io.ReadSeeker, archiveSize int64) (*Skill, error) {
 	httpReq, err := runtime.NewRequest(ctx, http.MethodPost, c.buildURL("/skills:import", nil))
 	if err != nil {
 		return nil, fmt.Errorf("new request: %w", err)
 	}
-	if err := httpReq.SetBody(streaming(archive), ContentTypeGzip); err != nil {
+	if err := httpReq.SetBody(streaming(archive), ContentTypeZip); err != nil {
 		return nil, fmt.Errorf("set request body: %w", err)
 	}
 	httpReq.Raw().ContentLength = archiveSize
-	httpReq.Raw().Header.Set("Content-Type", ContentTypeGzip)
+	httpReq.Raw().Header.Set("Content-Type", ContentTypeZip)
 	addStandardHeaders(httpReq)
 
 	resp, err := c.pipeline.Do(httpReq)
@@ -311,35 +312,38 @@ func (c *Client) ListAll(ctx context.Context, opts ListOptions, limit int) ([]Sk
 	}
 }
 
-// Download streams the gzip archive for a skill. The returned ReadCloser
-// surfaces the raw bytes returned by the service; the caller is responsible
-// for closing it. The Content-Type header is validated to start with
-// `application/gzip`.
-func (c *Client) Download(ctx context.Context, name string) (io.ReadCloser, error) {
+// Download fetches the ZIP archive for a skill. Returns the raw bytes for
+// in-memory processing — zip needs an io.ReaderAt so streaming the body
+// directly into archive/zip is not possible without buffering anyway.
+// The Content-Type header is validated to start with `application/zip`.
+func (c *Client) Download(ctx context.Context, name string) ([]byte, error) {
 	httpReq, err := runtime.NewRequest(ctx, http.MethodGet, c.skillURL(name, ":download", nil))
 	if err != nil {
 		return nil, fmt.Errorf("new request: %w", err)
 	}
 	addStandardHeaders(httpReq)
-	// Accept: */* (gzip). We do not want runtime to ask for JSON.
-	httpReq.Raw().Header.Set("Accept", ContentTypeGzip)
+	// Override the JSON Accept default with the archive content type.
+	httpReq.Raw().Header.Set("Accept", ContentTypeZip)
 
 	resp, err := c.pipeline.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("http: %w", err)
 	}
+	defer resp.Body.Close()
 
 	if !runtime.HasStatusCode(resp, http.StatusOK) {
-		defer resp.Body.Close()
 		return nil, runtime.NewResponseError(resp)
 	}
 
-	if ct := resp.Header.Get("Content-Type"); ct != "" && !strings.HasPrefix(strings.ToLower(ct), ContentTypeGzip) {
-		defer resp.Body.Close()
-		return nil, fmt.Errorf("unexpected download content type %q (want %s)", ct, ContentTypeGzip)
+	if ct := resp.Header.Get("Content-Type"); ct != "" && !strings.HasPrefix(strings.ToLower(ct), ContentTypeZip) {
+		return nil, fmt.Errorf("unexpected download content type %q (want %s)", ct, ContentTypeZip)
 	}
 
-	return resp.Body, nil
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read download body: %w", err)
+	}
+	return body, nil
 }
 
 // --- URL and header helpers ---

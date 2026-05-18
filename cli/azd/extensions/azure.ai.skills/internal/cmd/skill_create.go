@@ -183,8 +183,8 @@ func (a *createAction) runFilePackage(ctx context.Context, client *skill_api.Cli
 	if info.IsDir() {
 		return exterrors.Validation(
 			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("--file %s is a directory; expected a .tar.gz / .tgz archive", a.flags.file),
-			"pass a single gzip archive path",
+			fmt.Sprintf("--file %s is a directory; expected a .zip archive", a.flags.file),
+			"pass a single .zip archive path",
 		)
 	}
 
@@ -213,7 +213,7 @@ func printCreateResult(s *skill_api.Skill, format string) error {
 	return printSkillDetail(s, outputTable)
 }
 
-// verifyPackageNameMatches peeks SKILL.md from a .tar.gz archive and ensures
+// verifyPackageNameMatches peeks SKILL.md from a .zip archive and ensures
 // its front-matter `name` (when present) matches the positional argument the
 // user supplied. This guards `--force` in package mode against the
 // destructive sequence "delete positional name, then upload archive that
@@ -225,22 +225,21 @@ func printCreateResult(s *skill_api.Skill, format string) error {
 // archives), or when the embedded name matches positionalName. Returns a
 // structured validation error otherwise.
 func verifyPackageNameMatches(archivePath, positionalName string) error {
-	f, openErr := os.Open(archivePath) //nolint:gosec // user-supplied path opened on their behalf
-	if openErr != nil {
+	data, readErr := os.ReadFile(archivePath) //nolint:gosec // user-supplied path read on their behalf
+	if readErr != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("cannot open %s: %s", archivePath, openErr),
+			fmt.Sprintf("cannot read %s: %s", archivePath, readErr),
 			"verify the file is readable",
 		)
 	}
-	defer f.Close()
 
-	archiveName, peekErr := skill_api.PeekArchiveSkillName(f)
+	archiveName, peekErr := skill_api.PeekArchiveSkillName(data)
 	if peekErr != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidSkillFile,
 			fmt.Sprintf("cannot inspect %s: %s", archivePath, peekErr),
-			"ensure the archive is a valid .tar.gz containing a SKILL.md file",
+			"ensure the archive is a valid .zip containing a SKILL.md file",
 		)
 	}
 	if archiveName == "" || archiveName == positionalName {
@@ -281,19 +280,17 @@ func selectCreateMode(f *createFlags) (createMode, error) {
 
 	if fileProvided {
 		ext := strings.ToLower(filepath.Ext(f.file))
-		// `.tgz` and `.tar.gz` both work for packages; `.md` for inline.
-		switch {
-		case ext == ".md":
+		// `.zip` for packages; `.md` for SKILL.md inline body.
+		switch ext {
+		case ".md":
 			return modeFileMd, nil
-		case ext == ".tgz":
-			return modeFilePackage, nil
-		case strings.HasSuffix(strings.ToLower(f.file), ".tar.gz"):
+		case ".zip":
 			return modeFilePackage, nil
 		default:
 			return modeNone, exterrors.Validation(
 				exterrors.CodeInvalidSkillFile,
 				fmt.Sprintf("unsupported --file extension %q", ext),
-				"use .md for inline metadata, or .tar.gz / .tgz for a package upload",
+				"use .md for inline metadata or .zip for a package upload",
 			)
 		}
 	}
@@ -362,12 +359,12 @@ func newCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
   1. Inline:   --description "..." --instructions "..."
   2. SKILL.md: --file ./SKILL.md   (CLI parses YAML front matter + body)
-  3. Package:  --file ./skill.tar.gz   (CLI uploads the archive as-is)
+  3. Package:  --file ./skill.zip   (CLI uploads the archive as-is)
 
 Pass --force to delete an existing skill of the same name before creating.`,
 		Example: `  azd ai skill create greet-user --description "Welcomes a new user" --instructions "Greet ..."
   azd ai skill create greet-user --file ./SKILL.md
-  azd ai skill create greet-user --file ./skill.tar.gz --force`,
+  azd ai skill create greet-user --file ./skill.zip --force`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
@@ -387,7 +384,7 @@ Pass --force to delete an existing skill of the same name before creating.`,
 	cmd.Flags().StringVar(&flags.instructions, "instructions", "",
 		"Inline mode: Markdown body defining skill behavior")
 	cmd.Flags().StringVar(&flags.file, "file", "",
-		"Path to SKILL.md (.md) or a gzip package (.tar.gz / .tgz)")
+		"Path to SKILL.md (.md) or a ZIP package (.zip)")
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Delete an existing skill of the same name before creating")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{

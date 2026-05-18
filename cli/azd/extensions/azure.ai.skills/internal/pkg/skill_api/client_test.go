@@ -74,7 +74,7 @@ func TestClient_CreateInline_SendsRequiredHeadersAndQuery(t *testing.T) {
 	require.Equal(t, "from-server", skill.Description)
 }
 
-func TestClient_CreatePackage_SendsGzipContentType(t *testing.T) {
+func TestClient_CreatePackage_SendsZipContentType(t *testing.T) {
 	var capturedCT string
 	var capturedPath string
 	var capturedBytes []byte
@@ -88,12 +88,12 @@ func TestClient_CreatePackage_SendsGzipContentType(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	payload := []byte("\x1f\x8b\x08\x00fake-gzip")
+	payload := []byte("PK\x03\x04fake-zip")
 	c := newTestClient(t, srv)
 	skill, err := c.CreatePackage(context.Background(), strings.NewReader(string(payload)), int64(len(payload)))
 	require.NoError(t, err)
 	require.Equal(t, "/skills:import", capturedPath)
-	require.Equal(t, ContentTypeGzip, capturedCT)
+	require.Equal(t, ContentTypeZip, capturedCT)
 	require.Equal(t, payload, capturedBytes)
 	require.True(t, skill.HasBlob)
 }
@@ -158,7 +158,7 @@ func TestClient_Download_ValidatesContentType(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/skills/my-skill:download", r.URL.Path)
 		w.Header().Set("Content-Type", "text/plain")
-		_, _ = io.WriteString(w, "not gzip")
+		_, _ = io.WriteString(w, "not zip")
 	}))
 	defer srv.Close()
 
@@ -168,19 +168,17 @@ func TestClient_Download_ValidatesContentType(t *testing.T) {
 	require.Contains(t, err.Error(), "unexpected download content type")
 }
 
-func TestClient_Download_PassesThroughGzipStream(t *testing.T) {
-	payload := []byte("fake-gzip-bytes")
+func TestClient_Download_ReturnsZipBytes(t *testing.T) {
+	payload := []byte("PK\x03\x04fake-zip-bytes")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", ContentTypeGzip)
+		w.Header().Set("Content-Type", ContentTypeZip)
 		_, _ = w.Write(payload)
 	}))
 	defer srv.Close()
 
 	c := newTestClient(t, srv)
-	rc, err := c.Download(context.Background(), "my-skill")
+	got, err := c.Download(context.Background(), "my-skill")
 	require.NoError(t, err)
-	got, _ := io.ReadAll(rc)
-	_ = rc.Close()
 	require.Equal(t, payload, got)
 }
 

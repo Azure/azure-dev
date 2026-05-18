@@ -131,11 +131,11 @@ func (a *updateAction) validateFlags() error {
 		switch {
 		case ext == ".md":
 			return nil
-		case ext == ".tgz", strings.HasSuffix(strings.ToLower(a.flags.file), ".tar.gz"):
+		case ext == ".zip":
 			return exterrors.Validation(
 				exterrors.CodeInvalidSkillFile,
-				"gzip packages cannot be applied via `skill update`",
-				"use `azd ai skill create <name> --file <path>.tar.gz --force` to replace the skill",
+				"ZIP packages cannot be applied via `skill update`",
+				"use `azd ai skill create <name> --file <path>.zip --force` to replace the skill",
 			)
 		default:
 			return exterrors.Validation(
@@ -161,7 +161,7 @@ func newUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 Pass any subset of:
   --description "..."  --instructions "..."
 or:
-  --file ./SKILL.md    (parsed locally; .tar.gz / .tgz is not accepted here)
+  --file ./SKILL.md    (parsed locally; .zip is not accepted here)
 
 The CLI fetches the current skill, merges your changes locally, then POSTs the
 merged payload to the service.`,

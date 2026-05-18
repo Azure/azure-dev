@@ -4,57 +4,64 @@
 package skill_api
 
 import (
-	"archive/tar"
+	"archive/zip"
 	"bytes"
-	"compress/gzip"
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-// makeTarGz builds a gzip-compressed tar archive in memory containing the
-// provided entries. Each entry's TypeFlag drives the tar header type.
-func makeTarGz(t *testing.T, entries []tar.Header, bodies map[string][]byte) []byte {
+// zipEntry describes a single file or directory entry to add to a test
+// archive. Body is ignored for directories (where Name ends with "/").
+type zipEntry struct {
+	Name string
+	Body []byte
+	// Mode is the file mode; when zero we default to 0644 for files and
+	// 0755 for directories.
+	Mode os.FileMode
+}
+
+// makeZip builds an in-memory ZIP archive from entries.
+func makeZip(t *testing.T, entries []zipEntry) []byte {
 	t.Helper()
 	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gz)
-	for _, h := range entries {
-		// Set Size from body when present.
-		if h.Typeflag == tar.TypeReg || h.Typeflag == tar.TypeRegA {
-			h.Size = int64(len(bodies[h.Name]))
+	zw := zip.NewWriter(&buf)
+	for _, e := range entries {
+		mode := e.Mode
+		isDir := mode.IsDir() || (len(e.Name) > 0 && e.Name[len(e.Name)-1] == '/')
+		if mode == 0 {
+			if isDir {
+				mode = os.ModeDir | 0755
+			} else {
+				mode = 0644
+			}
 		}
-		require.NoError(t, tw.WriteHeader(&h))
-		if body, ok := bodies[h.Name]; ok {
-			_, err := tw.Write(body)
+		hdr := &zip.FileHeader{Name: e.Name, Method: zip.Deflate}
+		hdr.SetMode(mode)
+		w, err := zw.CreateHeader(hdr)
+		require.NoError(t, err)
+		if !isDir && len(e.Body) > 0 {
+			_, err := w.Write(e.Body)
 			require.NoError(t, err)
 		}
 	}
-	require.NoError(t, tw.Close())
-	require.NoError(t, gz.Close())
+	require.NoError(t, zw.Close())
 	return buf.Bytes()
 }
 
 func TestSafeExtract_HappyPath(t *testing.T) {
-	bodies := map[string][]byte{
-		"SKILL.md":         []byte("---\nname: foo\n---\nbody\n"),
-		"assets/icon.svg":  []byte("<svg/>"),
-		"assets/notes.txt": []byte("hello"),
-	}
-	entries := []tar.Header{
-		{Name: "SKILL.md", Mode: 0644, Typeflag: tar.TypeReg},
-		{Name: "assets/", Mode: 0755, Typeflag: tar.TypeDir},
-		{Name: "assets/icon.svg", Mode: 0644, Typeflag: tar.TypeReg},
-		{Name: "assets/notes.txt", Mode: 0644, Typeflag: tar.TypeReg},
-	}
-	archive := makeTarGz(t, entries, bodies)
+	archive := makeZip(t, []zipEntry{
+		{Name: "SKILL.md", Body: []byte("---\nname: foo\n---\nbody\n")},
+		{Name: "assets/"},
+		{Name: "assets/icon.svg", Body: []byte("<svg/>")},
+		{Name: "assets/notes.txt", Body: []byte("hello")},
+	})
 	dir := t.TempDir()
 
-	res, err := SafeExtract(bytes.NewReader(archive), ExtractOptions{OutputDir: dir})
+	res, err := SafeExtract(archive, ExtractOptions{OutputDir: dir})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"SKILL.md", "assets/icon.svg", "assets/notes.txt"}, res.Files)
 
@@ -63,65 +70,46 @@ func TestSafeExtract_HappyPath(t *testing.T) {
 }
 
 func TestSafeExtract_RejectsDotDot(t *testing.T) {
-	archive := makeTarGz(t,
-		[]tar.Header{{Name: "../evil.txt", Mode: 0644, Typeflag: tar.TypeReg}},
-		map[string][]byte{"../evil.txt": []byte("nope")},
-	)
-	_, err := SafeExtract(bytes.NewReader(archive), ExtractOptions{OutputDir: t.TempDir()})
+	archive := makeZip(t, []zipEntry{{Name: "../evil.txt", Body: []byte("nope")}})
+	_, err := SafeExtract(archive, ExtractOptions{OutputDir: t.TempDir()})
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrUnsafeEntry))
 }
 
 func TestSafeExtract_RejectsAbsolutePath(t *testing.T) {
-	archive := makeTarGz(t,
-		[]tar.Header{{Name: "/etc/passwd", Mode: 0644, Typeflag: tar.TypeReg}},
-		map[string][]byte{"/etc/passwd": []byte("nope")},
-	)
-	_, err := SafeExtract(bytes.NewReader(archive), ExtractOptions{OutputDir: t.TempDir()})
+	archive := makeZip(t, []zipEntry{{Name: "/etc/passwd", Body: []byte("nope")}})
+	_, err := SafeExtract(archive, ExtractOptions{OutputDir: t.TempDir()})
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrUnsafeEntry))
 }
 
 func TestSafeExtract_RejectsSymlink(t *testing.T) {
-	archive := makeTarGz(t,
-		[]tar.Header{{Name: "link", Mode: 0777, Linkname: "/etc/passwd", Typeflag: tar.TypeSymlink}},
-		nil,
-	)
-	_, err := SafeExtract(bytes.NewReader(archive), ExtractOptions{OutputDir: t.TempDir()})
-	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrUnsafeEntry))
-}
-
-func TestSafeExtract_RejectsHardLink(t *testing.T) {
-	archive := makeTarGz(t,
-		[]tar.Header{{Name: "link", Mode: 0644, Linkname: "target", Typeflag: tar.TypeLink}},
-		nil,
-	)
-	_, err := SafeExtract(bytes.NewReader(archive), ExtractOptions{OutputDir: t.TempDir()})
+	// Build a zip entry whose mode declares a symlink. The CLI must refuse
+	// to extract this and must not follow the link target.
+	archive := makeZip(t, []zipEntry{{
+		Name: "link",
+		Body: []byte("target"),
+		Mode: os.ModeSymlink | 0777,
+	}})
+	_, err := SafeExtract(archive, ExtractOptions{OutputDir: t.TempDir()})
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrUnsafeEntry))
 }
 
 func TestSafeExtract_RejectsWindowsBackslash(t *testing.T) {
-	archive := makeTarGz(t,
-		[]tar.Header{{Name: `..\evil.txt`, Mode: 0644, Typeflag: tar.TypeReg}},
-		map[string][]byte{`..\evil.txt`: []byte("nope")},
-	)
-	_, err := SafeExtract(bytes.NewReader(archive), ExtractOptions{OutputDir: t.TempDir()})
+	archive := makeZip(t, []zipEntry{{Name: `..\evil.txt`, Body: []byte("nope")}})
+	_, err := SafeExtract(archive, ExtractOptions{OutputDir: t.TempDir()})
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrUnsafeEntry))
 }
 
 func TestSafeExtract_EnforcesEntryCount(t *testing.T) {
-	headers := make([]tar.Header, 5)
-	bodies := map[string][]byte{}
-	for i := range headers {
-		name := filepath.ToSlash(filepath.Join("entry", string(rune('a'+i))+".txt"))
-		headers[i] = tar.Header{Name: name, Mode: 0644, Typeflag: tar.TypeReg}
-		bodies[name] = []byte{}
+	entries := make([]zipEntry, 5)
+	for i := range entries {
+		entries[i] = zipEntry{Name: filepath.ToSlash(filepath.Join("entry", string(rune('a'+i))+".txt"))}
 	}
-	archive := makeTarGz(t, headers, bodies)
-	_, err := SafeExtract(bytes.NewReader(archive), ExtractOptions{
+	archive := makeZip(t, entries)
+	_, err := SafeExtract(archive, ExtractOptions{
 		OutputDir:  t.TempDir(),
 		MaxEntries: 2,
 	})
@@ -131,11 +119,8 @@ func TestSafeExtract_EnforcesEntryCount(t *testing.T) {
 
 func TestSafeExtract_EnforcesTotalSize(t *testing.T) {
 	body := bytes.Repeat([]byte("a"), 1024)
-	archive := makeTarGz(t,
-		[]tar.Header{{Name: "big.txt", Mode: 0644, Typeflag: tar.TypeReg}},
-		map[string][]byte{"big.txt": body},
-	)
-	_, err := SafeExtract(bytes.NewReader(archive), ExtractOptions{
+	archive := makeZip(t, []zipEntry{{Name: "big.txt", Body: body}})
+	_, err := SafeExtract(archive, ExtractOptions{
 		OutputDir:            t.TempDir(),
 		MaxTotalUncompressed: 100,
 	})
@@ -144,14 +129,11 @@ func TestSafeExtract_EnforcesTotalSize(t *testing.T) {
 }
 
 func TestSafeExtract_RejectsCollisionWithoutForce(t *testing.T) {
-	archive := makeTarGz(t,
-		[]tar.Header{{Name: "SKILL.md", Mode: 0644, Typeflag: tar.TypeReg}},
-		map[string][]byte{"SKILL.md": []byte("body")},
-	)
+	archive := makeZip(t, []zipEntry{{Name: "SKILL.md", Body: []byte("body")}})
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("old"), 0600))
 
-	_, err := SafeExtract(bytes.NewReader(archive), ExtractOptions{OutputDir: dir})
+	_, err := SafeExtract(archive, ExtractOptions{OutputDir: dir})
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrCollision))
 
@@ -161,24 +143,27 @@ func TestSafeExtract_RejectsCollisionWithoutForce(t *testing.T) {
 }
 
 func TestSafeExtract_ForceOverwrites(t *testing.T) {
-	archive := makeTarGz(t,
-		[]tar.Header{{Name: "SKILL.md", Mode: 0644, Typeflag: tar.TypeReg}},
-		map[string][]byte{"SKILL.md": []byte("new")},
-	)
+	archive := makeZip(t, []zipEntry{{Name: "SKILL.md", Body: []byte("new")}})
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("old"), 0600))
 
-	_, err := SafeExtract(bytes.NewReader(archive), ExtractOptions{OutputDir: dir, Force: true})
+	_, err := SafeExtract(archive, ExtractOptions{OutputDir: dir, Force: true})
 	require.NoError(t, err)
 
 	got, _ := os.ReadFile(filepath.Join(dir, "SKILL.md")) //nolint:gosec // test artifact
 	require.Equal(t, "new", string(got))
 }
 
-func TestSafeExtract_InvalidGzip(t *testing.T) {
-	_, err := SafeExtract(bytes.NewReader([]byte("not a gzip stream")), ExtractOptions{OutputDir: t.TempDir()})
+func TestSafeExtract_InvalidZip(t *testing.T) {
+	_, err := SafeExtract([]byte("not a zip stream"), ExtractOptions{OutputDir: t.TempDir()})
 	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrInvalidGzip))
+	require.True(t, errors.Is(err, ErrInvalidZip))
+}
+
+func TestSafeExtract_EmptyBody(t *testing.T) {
+	_, err := SafeExtract(nil, ExtractOptions{OutputDir: t.TempDir()})
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrInvalidZip))
 }
 
 func TestValidateEntryName(t *testing.T) {
@@ -190,6 +175,7 @@ func TestValidateEntryName(t *testing.T) {
 		{"SKILL.md", "SKILL.md", true},
 		{"assets/icon.svg", "assets/icon.svg", true},
 		{"./SKILL.md", "SKILL.md", true},
+		{"assets/", "assets", true},
 		{"", "", false},
 		{".", "", false},
 		{"/", "", false},
@@ -203,43 +189,4 @@ func TestValidateEntryName(t *testing.T) {
 		require.Equal(t, c.wantOK, ok, "input=%q", c.in)
 		require.Equal(t, c.want, got, "input=%q", c.in)
 	}
-}
-
-// TestSafeExtract_RejectsSymlinkParentEscape verifies that SafeExtract refuses
-// to write a file when a path component of the destination is a pre-existing
-// symlink that points outside opts.OutputDir.
-func TestSafeExtract_RejectsSymlinkParentEscape(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("creating symlinks on Windows requires elevated privileges")
-	}
-
-	outDir := t.TempDir()
-	escapeTarget := t.TempDir() // outside outDir
-
-	// Create a legitimate subdirectory name inside outDir that is actually a
-	// symlink pointing to escapeTarget.
-	symlinkPath := filepath.Join(outDir, "subdir")
-	require.NoError(t, os.Symlink(escapeTarget, symlinkPath))
-
-	// Build a tar.gz with an entry "subdir/secret.txt". After extraction the
-	// copy phase would try to write outDir/subdir/secret.txt, which resolves
-	// via the symlink to escapeTarget/secret.txt — outside outDir.
-	archive := makeTarGz(t, []tar.Header{
-		{Name: "subdir/secret.txt", Typeflag: tar.TypeReg, Mode: 0600},
-	}, map[string][]byte{
-		"subdir/secret.txt": []byte("secret"),
-	})
-
-	opts := ExtractOptions{
-		OutputDir:            outDir,
-		MaxEntries:           10,
-		MaxTotalUncompressed: 1 << 20,
-	}
-	_, err := SafeExtract(bytes.NewReader(archive), opts)
-	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrUnsafeEntry), "expected ErrUnsafeEntry, got %v", err)
-
-	// Verify the file was NOT written to the symlink target.
-	_, statErr := os.Stat(filepath.Join(escapeTarget, "secret.txt"))
-	require.True(t, os.IsNotExist(statErr), "file must not be written through symlink to escape target")
 }

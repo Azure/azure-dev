@@ -71,7 +71,7 @@ func TestSelectCreateMode_FileMd(t *testing.T) {
 }
 
 func TestSelectCreateMode_FilePackage(t *testing.T) {
-	for _, f := range []string{"./pkg.tar.gz", "./pkg.tgz", "./PKG.TGZ"} {
+	for _, f := range []string{"./pkg.zip", "./PKG.ZIP"} {
 		mode, err := selectCreateMode(&createFlags{file: f})
 		require.NoError(t, err, "file %q", f)
 		require.Equal(t, modeFilePackage, mode, "file %q", f)
@@ -116,8 +116,8 @@ func TestUpdateAction_ConflictingArgs(t *testing.T) {
 	require.Equal(t, exterrors.CodeConflictingArguments, le.Code)
 }
 
-func TestUpdateAction_RejectsGzipFile(t *testing.T) {
-	for _, f := range []string{"./pkg.tar.gz", "./pkg.tgz"} {
+func TestUpdateAction_RejectsZipFile(t *testing.T) {
+	for _, f := range []string{"./pkg.zip", "./PKG.ZIP"} {
 		a := &updateAction{flags: &updateFlags{file: f}}
 		err := a.validateFlags()
 		require.Errorf(t, err, "file %q", f)

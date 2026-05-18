@@ -27,7 +27,7 @@ func NewRootCommand() *cobra.Command {
 at runtime — from your terminal.
 
 Skills carry either inline JSON (description + Markdown instructions) or a
-packaged gzip tarball bundling SKILL.md plus any sibling assets. Use this
+packaged ZIP archive bundling SKILL.md plus any sibling assets. Use this
 command group to create, update, show, list, download, and delete skills in
 a Foundry project.`,
 	})

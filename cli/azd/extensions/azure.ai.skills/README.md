@@ -9,7 +9,7 @@ terminal.
 ```bash
 azd ai skill create <name> [--description "..." --instructions "..."]
 azd ai skill create <name> --file ./SKILL.md
-azd ai skill create <name> --file ./skill.tar.gz
+azd ai skill create <name> --file ./skill.zip
 
 azd ai skill update <name> [--description "..."] [--instructions "..."] [--file ./SKILL.md]
 azd ai skill show <name>

@@ -1,5 +1,18 @@
 # Release History
 
+## 0.1.32-preview (2026-05-18)
+
+- [[#8184]](https://github.com/Azure/azure-dev/pull/8184) Default `azd ai agent show` output to table format.
+- [[#8182]](https://github.com/Azure/azure-dev/pull/8182) Add guidance for deploying with private ACR images.
+- [[#8181]](https://github.com/Azure/azure-dev/pull/8181) Increase timeout used by `azd ai agent invoke`.
+- [[#8175]](https://github.com/Azure/azure-dev/pull/8175) Wait for deployed agents to reach active state before command completion.
+- [[#8174]](https://github.com/Azure/azure-dev/pull/8174) Add `azd ai agent connection` commands and credential resolution for local run.
+- [[#8162]](https://github.com/Azure/azure-dev/pull/8162) Add `azd ai agent project` commands for managing Foundry project endpoints.
+- [[#8161]](https://github.com/Azure/azure-dev/pull/8161) Add .NET code deploy support (dotnet 8/9/10 runtimes).
+- [[#8146]](https://github.com/Azure/azure-dev/pull/8146) Support code deploy zip uploads.
+- [[#8104]](https://github.com/Azure/azure-dev/pull/8104) Add support for deploying from an existing ACR image.
+- [[#8075]](https://github.com/Azure/azure-dev/pull/8075) Show featured templates first during `azd ai agent init`.
+
 ## 0.1.31-preview (2026-05-07)
 
 - [[#8096]](https://github.com/Azure/azure-dev/pull/8096) Fix for bug introduced with #8034. Properly storing root agent endpoint since sessions are independent of protocol.

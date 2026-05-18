@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -272,6 +273,75 @@ func TestInvokeCommandTimeoutDefault(t *testing.T) {
 	}
 }
 
+func TestInvokeCommandVersionFlagRegistered(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInvokeCommand(nil)
+	versionFlag := cmd.Flags().Lookup("version")
+	if versionFlag == nil {
+		t.Fatal("version flag not registered")
+	}
+	if versionFlag.DefValue != "" {
+		t.Errorf("version default = %q, want empty", versionFlag.DefValue)
+	}
+}
+
+func TestInvokeVersionFlagValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		args   []string
+		errSub string
+	}{
+		{
+			name:   "rejects empty version",
+			args:   []string{"--version", "   ", "hi"},
+			errSub: "requires a non-empty agent version",
+		},
+		{
+			name:   "rejects local",
+			args:   []string{"--version", "3", "--local", "hi"},
+			errSub: "cannot use --version with --local",
+		},
+		{
+			name:   "rejects explicit session id",
+			args:   []string{"--version", "3", "--session-id", "existing-session", "hi"},
+			errSub: "cannot use --version with --session-id",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := newInvokeCommand(nil)
+			cmd.SetArgs(tt.args)
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.errSub) {
+				t.Errorf("error %q should contain %q", err.Error(), tt.errSub)
+			}
+		})
+	}
+}
+
+func TestAgentEndpointAllowsVersionFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInvokeCommand(nil)
+	err := validateAgentEndpointFlags(cmd, &invokeFlags{
+		agentEndpoint: "https://acct.services.ai.azure.com/api/projects/proj/agents/" +
+			"hello/endpoint/protocols/invocations",
+		version: "3",
+	})
+	if err != nil {
+		t.Fatalf("validateAgentEndpointFlags rejected --version: %v", err)
+	}
+}
+
 func TestResolveProtocol_ExplicitFlag(t *testing.T) {
 	t.Parallel()
 
@@ -433,6 +503,82 @@ func TestAgentEndpointFlagValidation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestResolveRemoteSessionID_CreatesSessionForExplicitVersion(t *testing.T) {
+	orig := createInvokeVersionSession
+	t.Cleanup(func() { createInvokeVersionSession = orig })
+
+	var calls int
+	createInvokeVersionSession = func(
+		ctx context.Context,
+		projectEndpoint string,
+		agentName string,
+		agentVersion string,
+	) (*agent_api.AgentSessionResource, error) {
+		calls++
+		if projectEndpoint != "https://acct.services.ai.azure.com/api/projects/proj" {
+			t.Errorf("projectEndpoint = %q", projectEndpoint)
+		}
+		if agentName != "hello" {
+			t.Errorf("agentName = %q", agentName)
+		}
+		if agentVersion != "3" {
+			t.Errorf("agentVersion = %q", agentVersion)
+		}
+		return &agent_api.AgentSessionResource{AgentSessionID: "session-v3"}, nil
+	}
+
+	action := &InvokeAction{flags: &invokeFlags{version: "3"}}
+	rc := &remoteContext{
+		name:            "hello",
+		projectEndpoint: "https://acct.services.ai.azure.com/api/projects/proj",
+		version:         "3",
+		agentKey:        buildAgentKey("https://acct.services.ai.azure.com/api/projects/proj", "hello", "3", false),
+	}
+
+	sid, err := action.resolveRemoteSessionID(t.Context(), rc)
+	if err != nil {
+		t.Fatalf("resolveRemoteSessionID: %v", err)
+	}
+	if sid != "session-v3" {
+		t.Errorf("session id = %q, want session-v3", sid)
+	}
+	if calls != 1 {
+		t.Errorf("createInvokeVersionSession calls = %d, want 1", calls)
+	}
+}
+
+func TestResolveRemoteSessionID_ExplicitSessionPreservedWithoutVersion(t *testing.T) {
+	t.Parallel()
+
+	action := &InvokeAction{flags: &invokeFlags{session: "existing-session"}}
+	rc := &remoteContext{
+		name:            "hello",
+		projectEndpoint: "https://acct.services.ai.azure.com/api/projects/proj",
+	}
+
+	sid, err := action.resolveRemoteSessionID(t.Context(), rc)
+	if err != nil {
+		t.Fatalf("resolveRemoteSessionID: %v", err)
+	}
+	if sid != "existing-session" {
+		t.Errorf("session id = %q, want existing-session", sid)
+	}
+}
+
+func TestRemoteContextLegacyKeysSkippedForExplicitVersion(t *testing.T) {
+	t.Parallel()
+
+	rc := &remoteContext{name: "hello", version: "3"}
+	if got := rc.legacyKeys(); len(got) != 0 {
+		t.Errorf("legacyKeys = %v, want none for explicit version", got)
+	}
+
+	rc.version = ""
+	if got := rc.legacyKeys(); len(got) != 1 || got[0] != "hello" {
+		t.Errorf("legacyKeys = %v, want [hello]", got)
 	}
 }
 

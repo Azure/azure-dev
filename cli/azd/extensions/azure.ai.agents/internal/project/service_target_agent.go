@@ -1076,30 +1076,10 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 		}
 	}
 
-	// Exclusion patterns
-	// TODO: support a .azdignore or similar ignore file for user-configurable exclusions.
-	excludeDirs := map[string]bool{
-		"__pycache__":   true,
-		".venv":         true,
-		"venv":          true,
-		".git":          true,
-		"node_modules":  true,
-		".mypy_cache":   true,
-		".pytest_cache": true,
-		".azure":        true,
-		// .NET directories (for remote_build, exclude build artifacts)
-		"bin": true,
-		"obj": true,
-		".vs": true,
-	}
-	excludeExts := map[string]bool{
-		".pyc":  true,
-		".pyo":  true,
-		".user": true,
-		".suo":  true,
-	}
-	excludeFiles := map[string]bool{
-		".env": true,
+	// Load .agentignore (or use defaults if no file exists)
+	ignoreMatcher, err := newAgentIgnoreMatcher(srcDir)
+	if err != nil {
+		return "", "", fmt.Errorf("loading %s: %w", agentIgnoreFileName, err)
 	}
 
 	// Create temp file and write ZIP directly to it while computing SHA-256
@@ -1143,7 +1123,7 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 
 		// Check directory exclusions
 		if d.IsDir() {
-			if excludeDirs[d.Name()] {
+			if ignoreMatcher.ShouldExclude(relPath, true) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -1154,18 +1134,8 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 			return nil
 		}
 
-		// Check file extension exclusions
-		if excludeExts[filepath.Ext(path)] {
-			return nil
-		}
-
-		// Check file name exclusions (.env, .env.*)
-		if excludeFiles[d.Name()] || strings.HasPrefix(d.Name(), ".env.") {
-			return nil
-		}
-
-		// Skip agent.yaml itself from the ZIP (metadata is sent separately)
-		if d.Name() == "agent.yaml" {
+		// Check file exclusions
+		if ignoreMatcher.ShouldExclude(relPath, false) {
 			return nil
 		}
 

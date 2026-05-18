@@ -1835,6 +1835,15 @@ func writeAgentDefinitionFile(targetDir string, agentManifest *agent_yaml.AgentM
 	}
 
 	fmt.Println(output.WithGrayFormat("Processed agent.yaml at %s", filePath))
+
+	// Generate .agentignore if it doesn't already exist
+	agentIgnorePath := filepath.Join(targetDir, ".agentignore")
+	if _, err := os.Stat(agentIgnorePath); os.IsNotExist(err) {
+		if err := os.WriteFile(agentIgnorePath, []byte(project.DefaultAgentIgnoreContent()), osutil.PermissionFile); err != nil {
+			return fmt.Errorf("writing .agentignore: %w", err)
+		}
+	}
+
 	return nil
 }
 

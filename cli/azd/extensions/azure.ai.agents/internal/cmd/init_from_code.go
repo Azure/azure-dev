@@ -819,6 +819,15 @@ func (a *InitFromCodeAction) writeDefinitionToSrcDir(definition *agent_yaml.Cont
 		return "", fmt.Errorf("writing definition to file: %w", err)
 	}
 
+	// Generate .agentignore if it doesn't already exist
+	agentIgnorePath := filepath.Join(srcDir, ".agentignore")
+	if _, err := os.Stat(agentIgnorePath); os.IsNotExist(err) {
+		//nolint:gosec // generated ignore file should be readable by tooling and users
+		if err := os.WriteFile(agentIgnorePath, []byte(project.DefaultAgentIgnoreContent()), 0644); err != nil {
+			return "", fmt.Errorf("writing .agentignore: %w", err)
+		}
+	}
+
 	return definitionPath, nil
 }
 

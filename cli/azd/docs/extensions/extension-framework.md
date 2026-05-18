@@ -641,7 +641,7 @@ Usage: `azd x init`
 
 Usage: `azd x build`
 
-- `--cwd` - The extension directory, defaults to `.`.
+- `-C, --cwd` - The extension directory, inherited from azd's global flag (defaults to the current directory).
 - `--all` - Builds binaries for all supported operating systems and architecture.
 - `--output, -o` - Path to the output directory, defaults to `./bin`.
 - `--skip-install` - When skips local installation after successful build.
@@ -652,7 +652,7 @@ Usage: `azd x build`
 
 Usage: `azd x watch`
 
-- `--cwd` - The extension directory, defaults to `.`.
+- `-C, --cwd` - The extension directory, inherited from azd's global flag (defaults to the current directory).
 
 ---
 
@@ -660,7 +660,7 @@ Usage: `azd x watch`
 
 Usage: `azd x pack`
 
-- `--cwd` - The extension directory, defaults to `.`.
+- `-C, --cwd` - The extension directory, inherited from azd's global flag (defaults to the current directory).
 - `--input, -i` - Path to the input directory that contains binary files.
 - `--output, -o` - Path to the artifacts output directory, defaults to local `azd` artifacts path, `~/.azd/registry`.
 - `--rebuild` - When set forces a rebuild before packaging.
@@ -671,7 +671,7 @@ Usage: `azd x pack`
 
 Usage: `azd x release --repo {owner}/{name}`
 
-- `--cwd` - The extension directory, defaults to `.`.
+- `-C, --cwd` - The extension directory, inherited from azd's global flag (defaults to the current directory).
 - `--artifacts` - Path to the artifacts to upload for the release, defaults to local `azd` artifacts path, `~/.azd/registry`.
 - `--repo` - The Github repo name in `{owner}/{repo}` format.
 - `--title, -t` - The name of the release, defaults to extension name plus version.
@@ -687,7 +687,7 @@ Usage: `azd x release --repo {owner}/{name}`
 
 Usage: `azd x publish --repo {owner}/{name}`
 
-- `--cwd` - The extension directory, defaults to `.`.
+- `-C, --cwd` - The extension directory, inherited from azd's global flag (defaults to the current directory).
 - `--registry, -r` - The path to the registry.json file to update, defaults to local extension registry
 - `--repo` - The Github repo name in `{owner}/{repo}` format.
 - `--version, -v` - The version of the release, defaults to extension version from extension manifest
@@ -1026,6 +1026,7 @@ Extensions can declare the following capabilities in their manifest:
 - **`mcp-server`**: Provide Model Context Protocol tools for AI agents
 - **`service-target-provider`**: Provide custom service deployment targets
 - **`framework-service-provider`**: Provide custom language frameworks and build systems
+- **`provisioning-provider`**: Provide a custom infrastructure provisioning experience (alternative to Bicep / Terraform)
 - **`metadata`**: Provide comprehensive metadata about commands and configuration schemas
 
 #### Complete Extension Manifest Example

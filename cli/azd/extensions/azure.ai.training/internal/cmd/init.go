@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
 	"azure.ai.training/internal/utils"
@@ -17,7 +16,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -125,13 +123,7 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 				return nil
 			}
 
-			// Interactive mode: prompt for subscription and endpoint
-			console := input.NewConsole(
-				false, true,
-				input.Writers{Output: os.Stdout},
-				input.ConsoleHandles{Stderr: os.Stderr, Stdin: os.Stdin, Stdout: os.Stdout},
-				nil, nil,
-			)
+			// Interactive mode: prompt for subscription and Foundry project
 
 			// Prompt for subscription
 			if flags.subscriptionId == "" {
@@ -143,32 +135,41 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 				azureContext.Scope.TenantId = subResponse.Subscription.UserTenantId
 			}
 
-			// Prompt for project endpoint
-			endpoint, err := console.Prompt(ctx, input.ConsoleOptions{
-				Message: "Enter the Azure AI Foundry project endpoint URL:",
+			// Prompt for Foundry project from the selected subscription. This uses the
+			// extension framework's resource picker so users don't have to copy the
+			// project endpoint URL from the portal manually.
+			azureContext.Scope.SubscriptionId = flags.subscriptionId
+			allowNew := false
+			resp, err := azdClient.Prompt().PromptSubscriptionResource(ctx, &azdext.PromptSubscriptionResourceRequest{
+				AzureContext: azureContext,
+				Options: &azdext.PromptResourceOptions{
+					ResourceType:            "Microsoft.CognitiveServices/accounts/projects",
+					ResourceTypeDisplayName: "AI Foundry project",
+					SelectOptions: &azdext.PromptResourceSelectOptions{
+						AllowNewResource: &allowNew,
+						Message:          "Select an Azure AI Foundry project",
+						LoadingMessage:   "Fetching Foundry projects...",
+					},
+				},
 			})
 			if err != nil {
-				return fmt.Errorf("failed to prompt for endpoint: %w", err)
-			}
-			flags.projectEndpoint = endpoint
-
-			accountName, projectName, err := parseProjectEndpoint(flags.projectEndpoint)
-			if err != nil {
-				return fmt.Errorf("invalid endpoint URL: %w", err)
+				return fmt.Errorf("failed to select Foundry project: %w", err)
 			}
 
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{
-				Text: fmt.Sprintf("Searching for project '%s'...", projectName),
+				Text: "Resolving selected project...",
 			})
 			if startErr := spinner.Start(ctx); startErr != nil {
 				fmt.Printf("failed to start spinner: %v\n", startErr)
 			}
 
-			project, err := findProjectByEndpoint(ctx, flags.subscriptionId, accountName, projectName, credential)
+			project, err := findProjectByResourceID(ctx, resp.Resource.Id, credential)
 			_ = spinner.Stop(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to find project: %w", err)
+				return fmt.Errorf("failed to resolve selected project: %w", err)
 			}
+			projectName := project.AiProjectName
+			flags.projectEndpoint = buildProjectEndpoint(project.AiAccountName, project.AiProjectName)
 
 			if err := setEnvValues(ctx, azdClient, env.Name, map[string]string{
 				utils.EnvAzureTenantID:       azureContext.Scope.TenantId,
@@ -256,6 +257,53 @@ func findProjectByEndpoint(
 	return &FoundryProject{
 		SubscriptionId:    subscriptionId,
 		ResourceGroupName: accountResourceId.ResourceGroupName,
+		AiAccountName:     accountName,
+		AiProjectName:     projectName,
+		Location:          *projectResp.Location,
+		HasUAMI:           utils.ProjectHasUAMI(projectResp.Identity),
+	}, nil
+}
+
+// findProjectByResourceID resolves a Foundry project's full details (location, UAMI status, etc.)
+// from a project ARM resource ID, e.g.
+// /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.CognitiveServices/accounts/{account}/projects/{project}.
+// Used by the interactive init flow after the user picks a project via PromptSubscriptionResource.
+func findProjectByResourceID(
+	ctx context.Context,
+	projectResourceId string,
+	credential azcore.TokenCredential,
+) (*FoundryProject, error) {
+	resourceId, err := arm.ParseResourceID(projectResourceId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse project resource ID: %w", err)
+	}
+
+	if resourceId.ResourceType.Namespace != "Microsoft.CognitiveServices" ||
+		len(resourceId.ResourceType.Types) != 2 ||
+		resourceId.ResourceType.Types[0] != "accounts" ||
+		resourceId.ResourceType.Types[1] != "projects" {
+		return nil, fmt.Errorf(
+			"not a Foundry project resource ID: expected " +
+				"/subscriptions/{sub}/resourceGroups/{rg}/providers/" +
+				"Microsoft.CognitiveServices/accounts/{account}/projects/{project}")
+	}
+
+	accountName := resourceId.Parent.Name
+	projectName := resourceId.Name
+
+	projectsClient, err := armcognitiveservices.NewProjectsClient(resourceId.SubscriptionID, credential, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
+	}
+
+	projectResp, err := projectsClient.Get(ctx, resourceId.ResourceGroupName, accountName, projectName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("could not get project '%s' under account '%s': %w", projectName, accountName, err)
+	}
+
+	return &FoundryProject{
+		SubscriptionId:    resourceId.SubscriptionID,
+		ResourceGroupName: resourceId.ResourceGroupName,
 		AiAccountName:     accountName,
 		AiProjectName:     projectName,
 		Location:          *projectResp.Location,

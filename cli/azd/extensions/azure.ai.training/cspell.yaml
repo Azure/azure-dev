@@ -1,12 +1,87 @@
 import: ../../.vscode/cspell.yaml
 words:
-  - azcopy
+  # Build / Go toolchain / repo conventions
+  - CODEOWNERS
+  - gochecknoglobals
+  - gopkg
+
+  # Azure ML / Foundry training API surface
+  - amlignore
   - azureml
-  - azuremlschemas
+  - contentinfo
+  - dcid
+  - executionlogs
+  - experimentids
   - foundry
+  - getcontent
+  - hyperdrive
   - hyperparameter
   - hyperparameters
+  - jobid
+  - serviceinstances
+  - userassigned
+  - wasbs
+  - workspaceblobstore
+
+  # ML / training ecosystem
+  - azcopy
+  - cifar
+  - cuda
+  - cudnn
+  - imagenet
   - jupyter
   - mlflow
+  - NCCL
+  - openmpi
+  - PYTHONPATH
+  - safetensors
+  - scikit
+  - sklearn
+  - streamable
   - tensorboard
+
+  # Networking / SSH / sample identifiers
+  - ADLS
+  - azureuser
+  - myimage
+  - myproject
+  - myregistry
+  - nbip
+  - notresponding
+  - notstarted
+  - redirector
   - uami
+  - unconfigured
+  - userinfo
+  - WSURL
+
+  # Design-doc authors / handles
+  - Garg
+  - Jamiable
+  - Mittal
+  - Rajat
+  - Savitha
+
+  # Misc prose / identifiers used in design docs
+  - dedupe
+  - FINETUNING
+  - normalised
+  - Parallelizable
+  - rerr
+  - tmap
+  - trunc
+  - werr
+
+  # Test-fixture vocabulary (random sample data)
+  - atemoya
+  - bcdfghjklmnpqrstvwxyz
+  - boniato
+  - chaconia
+  - feijoa
+  - jicama
+  - malanga
+  - pummelo
+  - roti
+  - soca
+  - steelpan
+  - yuca

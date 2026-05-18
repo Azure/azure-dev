@@ -127,7 +127,11 @@ func (c *Client) GetServiceInstanceRaw(
 		return nil, c.HandleError(resp)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// Cap the response body to guard against a misbehaving server streaming an
+	// unbounded payload. 4 MiB easily covers any realistic service-instance
+	// listing while keeping memory use bounded.
+	const maxServiceInstanceBodyBytes = 4 * 1024 * 1024
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxServiceInstanceBodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read service instance response: %w", err)
 	}

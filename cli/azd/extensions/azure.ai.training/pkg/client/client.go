@@ -150,9 +150,14 @@ func (c *Client) getToken(ctx context.Context, scope string) (string, error) {
 	return token.Token, nil
 }
 
+// maxErrorBodyBytes caps how much of an error response body we read into memory.
+// Error envelopes are tiny JSON documents; 64 KiB gives generous headroom while
+// protecting against a misbehaving server returning an unbounded body.
+const maxErrorBodyBytes = 64 * 1024
+
 // HandleError reads the error body and returns a formatted error.
 func (c *Client) HandleError(resp *http.Response) error {
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 
 	var apiErr struct {
 		Error struct {

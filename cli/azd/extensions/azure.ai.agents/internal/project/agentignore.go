@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	gitignore "github.com/denormal/go-gitignore"
@@ -116,10 +117,8 @@ func (m *agentIgnoreMatcher) isSecurityExcluded(relPath string, isDir bool) bool
 
 	// Metadata files (agent.yaml, azure.yaml, etc.) — only at the root level
 	if !isDir && filepath.Dir(relPath) == "." {
-		for _, meta := range metadataExclusions {
-			if name == meta {
-				return true
-			}
+		if slices.Contains(metadataExclusions, name) {
+			return true
 		}
 	}
 

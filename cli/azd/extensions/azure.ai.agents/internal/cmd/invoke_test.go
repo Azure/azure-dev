@@ -6,18 +6,101 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/grpc"
 )
+
+type invokeUserConfigServer struct {
+	azdext.UnimplementedUserConfigServiceServer
+	mu     sync.Mutex
+	values map[string][]byte
+}
+
+func newInvokeUserConfigServer() *invokeUserConfigServer {
+	return &invokeUserConfigServer{values: make(map[string][]byte)}
+}
+
+func (s *invokeUserConfigServer) Get(
+	_ context.Context,
+	req *azdext.GetUserConfigRequest,
+) (*azdext.GetUserConfigResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	value, found := s.values[req.Path]
+	return &azdext.GetUserConfigResponse{Value: value, Found: found}, nil
+}
+
+func (s *invokeUserConfigServer) Set(
+	_ context.Context,
+	req *azdext.SetUserConfigRequest,
+) (*azdext.EmptyResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.values[req.Path] = req.Value
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *invokeUserConfigServer) setJSON(t *testing.T, path string, value any) {
+	t.Helper()
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal user config value: %v", err)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.values[path] = data
+}
+
+func newInvokeTestAzdClient(t *testing.T, userConfigServer azdext.UserConfigServiceServer) *azdext.AzdClient {
+	t.Helper()
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterUserConfigServiceServer(grpcServer, userConfigServer)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	go func() {
+		_ = grpcServer.Serve(listener)
+	}()
+
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+
+	azdClient, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	if err != nil {
+		t.Fatalf("NewAzdClient: %v", err)
+	}
+
+	t.Cleanup(func() {
+		azdClient.Close()
+	})
+
+	return azdClient
+}
 
 func TestReadSSEStream(t *testing.T) {
 	t.Parallel()
@@ -309,6 +392,21 @@ func TestInvokeVersionFlagValidation(t *testing.T) {
 			args:   []string{"--version", "3", "--session-id", "existing-session", "hi"},
 			errSub: "cannot use --version with --session-id",
 		},
+		{
+			name:   "rejects explicit conversation id",
+			args:   []string{"--version", "3", "--conversation-id", "existing-conversation", "hi"},
+			errSub: "cannot use --version with --conversation-id",
+		},
+		{
+			name:   "rejects unsupported version characters",
+			args:   []string{"--version", "3?api-version=evil", "hi"},
+			errSub: "unsupported characters",
+		},
+		{
+			name:   "rejects oversized version",
+			args:   []string{"--version", strings.Repeat("a", maxInvokeVersionLength+1), "hi"},
+			errSub: "at most 128 characters",
+		},
 	}
 
 	for _, tt := range tests {
@@ -328,6 +426,20 @@ func TestInvokeVersionFlagValidation(t *testing.T) {
 	}
 }
 
+func TestValidateInvokeVersionFlagsAllowsNewConversation(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInvokeCommand(nil)
+	flags := &invokeFlags{
+		version:         "3",
+		newConversation: true,
+	}
+
+	if err := validateInvokeVersionFlags(cmd, flags); err != nil {
+		t.Fatalf("validateInvokeVersionFlags rejected --new-conversation with --version: %v", err)
+	}
+}
+
 func TestAgentEndpointAllowsVersionFlag(t *testing.T) {
 	t.Parallel()
 
@@ -339,6 +451,37 @@ func TestAgentEndpointAllowsVersionFlag(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("validateAgentEndpointFlags rejected --version: %v", err)
+	}
+}
+
+func TestValidateInvokeVersionValue(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		version string
+		wantErr bool
+	}{
+		{name: "integer", version: "3"},
+		{name: "semver", version: "1.2.3-beta_1"},
+		{name: "question mark", version: "3?api-version=evil", wantErr: true},
+		{name: "slash", version: "path/to/version", wantErr: true},
+		{name: "unicode", version: "v三", wantErr: true},
+		{name: "too long", version: strings.Repeat("a", maxInvokeVersionLength+1), wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateInvokeVersionValue(tt.version)
+			if tt.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 
@@ -436,7 +579,8 @@ func TestProtocolFlagValidation(t *testing.T) {
 func TestAgentEndpointFlagValidation(t *testing.T) {
 	t.Parallel()
 
-	const validURL = "https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/invocations?api-version=2025-11-15-preview"
+	const validURL = "https://acct.services.ai.azure.com/api/projects/proj/agents/" +
+		"hello/endpoint/protocols/invocations?api-version=2025-11-15-preview"
 
 	tests := []struct {
 		name    string
@@ -506,6 +650,86 @@ func TestAgentEndpointFlagValidation(t *testing.T) {
 	}
 }
 
+func TestResolveRemoteSessionID_ReusesCachedVersionSession(t *testing.T) {
+	orig := createInvokeVersionSession
+	t.Cleanup(func() { createInvokeVersionSession = orig })
+
+	createInvokeVersionSession = func(
+		context.Context,
+		string,
+		string,
+		string,
+	) (*agent_api.AgentSessionResource, error) {
+		t.Fatal("createInvokeVersionSession should not be called when a cached session exists")
+		return nil, nil
+	}
+
+	userConfig := newInvokeUserConfigServer()
+	azdClient := newInvokeTestAzdClient(t, userConfig)
+	projectEndpoint := "https://acct.services.ai.azure.com/api/projects/proj"
+	agentKey := buildAgentKey(projectEndpoint, "hello", "3", false)
+	userConfig.setJSON(t, configPath("sessions"), map[string]string{agentKey: "cached-session"})
+
+	action := &InvokeAction{flags: &invokeFlags{version: "3"}}
+	rc := &remoteContext{
+		name:            "hello",
+		projectEndpoint: projectEndpoint,
+		version:         "3",
+		agentKey:        agentKey,
+		azdClient:       azdClient,
+	}
+
+	sid, err := action.resolveRemoteSessionID(t.Context(), rc)
+	if err != nil {
+		t.Fatalf("resolveRemoteSessionID: %v", err)
+	}
+	if sid != "cached-session" {
+		t.Errorf("session id = %q, want cached-session", sid)
+	}
+}
+
+func TestResolveRemoteSessionID_NewSessionSkipsCachedVersionSession(t *testing.T) {
+	orig := createInvokeVersionSession
+	t.Cleanup(func() { createInvokeVersionSession = orig })
+
+	var calls int
+	createInvokeVersionSession = func(
+		context.Context,
+		string,
+		string,
+		string,
+	) (*agent_api.AgentSessionResource, error) {
+		calls++
+		return &agent_api.AgentSessionResource{AgentSessionID: "fresh-session"}, nil
+	}
+
+	userConfig := newInvokeUserConfigServer()
+	azdClient := newInvokeTestAzdClient(t, userConfig)
+	projectEndpoint := "https://acct.services.ai.azure.com/api/projects/proj"
+	agentKey := buildAgentKey(projectEndpoint, "hello", "3", false)
+	userConfig.setJSON(t, configPath("sessions"), map[string]string{agentKey: "cached-session"})
+
+	action := &InvokeAction{flags: &invokeFlags{version: "3", newSession: true}}
+	rc := &remoteContext{
+		name:            "hello",
+		projectEndpoint: projectEndpoint,
+		version:         "3",
+		agentKey:        agentKey,
+		azdClient:       azdClient,
+	}
+
+	sid, err := action.resolveRemoteSessionID(t.Context(), rc)
+	if err != nil {
+		t.Fatalf("resolveRemoteSessionID: %v", err)
+	}
+	if sid != "fresh-session" {
+		t.Errorf("session id = %q, want fresh-session", sid)
+	}
+	if calls != 1 {
+		t.Errorf("createInvokeVersionSession calls = %d, want 1", calls)
+	}
+}
+
 func TestResolveRemoteSessionID_CreatesSessionForExplicitVersion(t *testing.T) {
 	orig := createInvokeVersionSession
 	t.Cleanup(func() { createInvokeVersionSession = orig })
@@ -565,6 +789,31 @@ func TestResolveRemoteSessionID_ExplicitSessionPreservedWithoutVersion(t *testin
 	}
 	if sid != "existing-session" {
 		t.Errorf("session id = %q, want existing-session", sid)
+	}
+}
+
+func TestVersionedConversationLookupDoesNotUseLegacyAgentName(t *testing.T) {
+	t.Parallel()
+
+	userConfig := newInvokeUserConfigServer()
+	azdClient := newInvokeTestAzdClient(t, userConfig)
+	projectEndpoint := "https://acct.services.ai.azure.com/api/projects/proj"
+	versionedKey := buildAgentKey(projectEndpoint, "hello", "3", false)
+	userConfig.setJSON(t, configPath("conversations"), map[string]string{"hello": "legacy-conversation"})
+
+	rc := &remoteContext{name: "hello", version: "3"}
+	got, err := getContextValueWithFallback(
+		t.Context(),
+		azdClient,
+		"conversations",
+		versionedKey,
+		rc.legacyKeys(),
+	)
+	if err != nil {
+		t.Fatalf("getContextValueWithFallback: %v", err)
+	}
+	if got != "" {
+		t.Errorf("conversation = %q, want empty because versioned lookup must not use legacy fallback", got)
 	}
 }
 

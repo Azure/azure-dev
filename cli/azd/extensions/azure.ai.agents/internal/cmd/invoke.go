@@ -43,6 +43,7 @@ type invokeFlags struct {
 }
 
 const defaultInvokeTimeoutSeconds = 30 * 60
+const maxInvokeVersionLength = 128
 
 var createInvokeVersionSession = createInvokeVersionSessionImpl
 
@@ -229,6 +230,13 @@ func validateInvokeVersionFlags(cmd *cobra.Command, flags *invokeFlags) error {
 			"provide an agent version, for example: azd ai agent invoke --version 3 \"Hello\"",
 		)
 	}
+	if err := validateInvokeVersionValue(flags.version); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentVersion,
+			fmt.Sprintf("invalid --version value %q: %s", flags.version, err),
+			"agent versions may contain only letters, numbers, dots, underscores, and hyphens",
+		)
+	}
 	if flags.local {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
@@ -244,8 +252,38 @@ func validateInvokeVersionFlags(cmd *cobra.Command, flags *invokeFlags) error {
 				"or use --session-id without --version to invoke an existing session",
 		)
 	}
+	if flags.conversation != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"cannot use --version with --conversation-id; conversations can contain version-specific context",
+			"use --version without --conversation-id to create or reuse a version-specific conversation, "+
+				"or use --new-conversation to reset it",
+		)
+	}
 
 	return nil
+}
+
+func validateInvokeVersionValue(version string) error {
+	if len(version) > maxInvokeVersionLength {
+		return fmt.Errorf("must be at most %d characters", maxInvokeVersionLength)
+	}
+	if strings.ContainsFunc(version, func(r rune) bool {
+		return !isInvokeVersionChar(r)
+	}) {
+		return fmt.Errorf("contains unsupported characters")
+	}
+
+	return nil
+}
+
+func isInvokeVersionChar(r rune) bool {
+	return r >= 'A' && r <= 'Z' ||
+		r >= 'a' && r <= 'z' ||
+		r >= '0' && r <= '9' ||
+		r == '.' ||
+		r == '_' ||
+		r == '-'
 }
 
 // validateAgentEndpointFlags rejects flags that have no effect (or conflict) when --agent-endpoint
@@ -487,7 +525,7 @@ type remoteContext struct {
 // and avoid unnecessary token round-trips on invalid input. Callers must close
 // rc.azdClient when non-nil.
 func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext, error) {
-	rc := &remoteContext{apiVersion: DefaultAgentAPIVersion}
+	rc := &remoteContext{apiVersion: DefaultAgentAPIVersion, version: a.flags.version}
 
 	if a.endpoint != nil {
 		rc.name = a.endpoint.AgentName
@@ -495,8 +533,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		if a.endpoint.APIVersion != "" {
 			rc.apiVersion = a.endpoint.APIVersion
 		}
-		if a.flags.version != "" {
-			rc.version = a.flags.version
+		if rc.version != "" {
 			rc.agentKey = buildAgentKey(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, rc.version, false)
 		} else {
 			rc.agentKey = buildAgentKey(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, "", false)
@@ -539,8 +576,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		return nil, err
 	}
 	rc.projectEndpoint = ep
-	if a.flags.version != "" {
-		rc.version = a.flags.version
+	if rc.version != "" {
 		rc.agentKey = buildAgentKey(rc.projectEndpoint, rc.name, rc.version, false)
 	}
 	return rc, nil
@@ -570,13 +606,13 @@ func (a *InvokeAction) resolveRemoteSessionID(ctx context.Context, rc *remoteCon
 		return a.flags.session, nil
 	}
 
-	if rc.agentKey != "" && rc.azdClient != nil {
+	if rc.agentKey != "" && rc.azdClient != nil && !a.flags.newSession {
 		sid, err := resolveStoredID(
 			ctx,
 			rc.azdClient,
 			rc.agentKey,
 			"",
-			a.flags.newSession,
+			false,
 			"sessions",
 			false,
 		)

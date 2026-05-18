@@ -103,7 +103,9 @@ func (s *UploadService) UploadDirectory(
 	}
 
 	// Step 3–5: Upload via the core flow (POST → azcopy → PATCH with sentinel tag)
-	return s.doUploadWithTag(ctx, absPath, datasetName, version, description, fullHash)
+	return s.doUpload(ctx, absPath, datasetName, version, description, map[string]string{
+		"contentHash": fullHash,
+	})
 }
 
 // UploadDirectoryNoDedup uploads a local directory without content-based dedup.
@@ -121,66 +123,21 @@ func (s *UploadService) UploadDirectoryNoDedup(
 		return nil, fmt.Errorf("failed to resolve local path %s: %w", localPath, err)
 	}
 
-	return s.doUpload(ctx, absPath, datasetName, version, description)
-}
-
-// doUploadWithTag performs the core upload flow with a sentinel tag on PATCH.
-// Used by the dedup path to mark uploads as complete.
-func (s *UploadService) doUploadWithTag(
-	ctx context.Context,
-	absPath string,
-	datasetName string,
-	version string,
-	description string,
-	fullHash string,
-) (*UploadResult, error) {
-	uploadResp, err := s.client.StartPendingUpload(ctx, datasetName, version)
-	if err != nil {
-		return nil, fmt.Errorf("failed to start pending upload: %w", err)
-	}
-
-	if uploadResp.BlobReference == nil || uploadResp.BlobReference.Credential.SASUri == "" {
-		return nil, fmt.Errorf("no SAS URI returned from pending upload")
-	}
-
-	sasURI := uploadResp.BlobReference.Credential.SASUri
-	blobURI := uploadResp.BlobReference.BlobURI
-
-	if err := s.azcopyRunner.Copy(ctx, absPath, sasURI); err != nil {
-		return nil, fmt.Errorf("failed to upload files from %s: %w", absPath, err)
-	}
-
-	// Include the full content hash as a sentinel tag. This serves as a completion
-	// marker — if this tag is present on GET, we know both azcopy and PATCH succeeded.
-	// Absence of this tag indicates a zombie (incomplete) upload.
-	datasetReq := &models.DatasetVersion{
-		DataURI:     blobURI,
-		DataType:    "uri_folder",
-		Description: description,
-		Tags: map[string]string{
-			"contentHash": fullHash,
-		},
-	}
-
-	datasetResp, err := s.client.CreateOrUpdateDatasetVersion(ctx, datasetName, version, datasetReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to confirm dataset version: %w", err)
-	}
-
-	return &UploadResult{
-		DatasetResourceID: datasetResp.ID,
-		DatasetName:       datasetName,
-		DatasetVersion:    version,
-	}, nil
+	return s.doUpload(ctx, absPath, datasetName, version, description, nil)
 }
 
 // doUpload performs the core upload flow: POST startPendingUpload → azcopy → PATCH confirm.
+// If tags is non-nil, they are set on the dataset version on PATCH. The dedup path uses
+// this to write a sentinel "contentHash" tag that serves as a completion marker —
+// presence of the tag on a subsequent GET indicates azcopy + PATCH both succeeded;
+// absence indicates a zombie (incomplete) upload.
 func (s *UploadService) doUpload(
 	ctx context.Context,
 	absPath string,
 	datasetName string,
 	version string,
 	description string,
+	tags map[string]string,
 ) (*UploadResult, error) {
 	uploadResp, err := s.client.StartPendingUpload(ctx, datasetName, version)
 	if err != nil {
@@ -202,6 +159,7 @@ func (s *UploadService) doUpload(
 		DataURI:     blobURI,
 		DataType:    "uri_folder",
 		Description: description,
+		Tags:        tags,
 	}
 
 	datasetResp, err := s.client.CreateOrUpdateDatasetVersion(ctx, datasetName, version, datasetReq)

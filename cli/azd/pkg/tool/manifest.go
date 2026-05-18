@@ -20,11 +20,11 @@ const (
 	// ToolCategoryCLI is a standalone command-line binary (e.g. az, copilot).
 	ToolCategoryCLI ToolCategory = "cli"
 	// ToolCategoryVSCodeExtension is a VS Code extension.
-	ToolCategoryVSCodeExtension ToolCategory = "VS Code extension"
+	ToolCategoryVSCodeExtension ToolCategory = "vscode-extension"
 	// ToolCategoryServer is a long-running background process or server (e.g. MCP server).
 	ToolCategoryServer ToolCategory = "server"
 	// ToolCategoryAzdExtension is an azd extension installed via `azd extension install`.
-	ToolCategoryAzdExtension ToolCategory = "azd extension"
+	ToolCategoryAzdExtension ToolCategory = "azd-extension"
 )
 
 // ToolPriority indicates how strongly a tool is recommended.

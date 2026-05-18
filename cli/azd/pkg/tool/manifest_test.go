@@ -308,6 +308,8 @@ func TestSpecificToolDefinitions(t *testing.T) {
 			"Id must match the JSON id emitted by `azd extension list`")
 		assert.Equal(t, ToolCategoryAzdExtension, tool.Category,
 			"Category must be AzdExtension so DetectTool routes to detectLibrary")
+		assert.Equal(t, "azd-extension", string(tool.Category),
+			"wire format must remain stable for `azd tool list --output json` consumers")
 		assert.Equal(t, "azd", tool.DetectCommand,
 			"DetectCommand must be 'azd' for the extension-list probe")
 		assert.Equal(t,
@@ -329,6 +331,9 @@ func TestSpecificToolDefinitions(t *testing.T) {
 
 	t.Run("VSCodeExtensionsUseCodeDetectCommand", func(t *testing.T) {
 		t.Parallel()
+
+		assert.Equal(t, "vscode-extension", string(ToolCategoryVSCodeExtension),
+			"wire format must remain stable for `azd tool list --output json` consumers")
 
 		extensions := FindToolsByCategory(ToolCategoryVSCodeExtension)
 		for _, ext := range extensions {

@@ -1,0 +1,13 @@
+import: ../../.vscode/cspell.yaml
+words:
+  # Skill commands
+  - azureaiskills
+  - exterrors
+  - foundry
+  - foundrysdk
+  - orderby
+  - tarball
+  - zipslip
+  - gzip
+  - skill
+  - skills

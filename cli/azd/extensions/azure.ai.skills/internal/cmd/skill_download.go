@@ -1,0 +1,231 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+
+	"azureaiskills/internal/exterrors"
+	"azureaiskills/internal/pkg/skill_api"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
+)
+
+// downloadFlags holds parsed input for the `skill download` command.
+type downloadFlags struct {
+	name            string
+	outputDir       string
+	raw             bool
+	force           bool
+	output          string
+	projectEndpoint string
+
+	outputDirSet bool
+}
+
+// downloadAction is the download-command implementation.
+type downloadAction struct {
+	flags *downloadFlags
+}
+
+// downloadResult is the JSON shape printed when --output=json. The shape is
+// part of the published contract: callers depend on it.
+type downloadResult struct {
+	Skill     string   `json:"skill"`
+	OutputDir string   `json:"outputDir"`
+	Files     []string `json:"files,omitempty"`
+	Archive   string   `json:"archive,omitempty"`
+	Raw       bool     `json:"raw"`
+}
+
+// Run executes the download operation.
+func (a *downloadAction) Run(ctx context.Context) error {
+	if err := validateSkillName(a.flags.name); err != nil {
+		return err
+	}
+
+	outputDir := a.flags.outputDir
+	if outputDir == "" {
+		outputDir = filepath.Join(".agents", "skills", a.flags.name)
+	}
+	absOut, err := filepath.Abs(outputDir)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("invalid --output-dir: %s", err),
+			"pass a valid filesystem path",
+		)
+	}
+
+	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint)
+	if err != nil {
+		return err
+	}
+
+	body, err := skillCtx.client.Download(ctx, a.flags.name)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, exterrors.OpDownloadSkill)
+	}
+	defer body.Close()
+
+	if a.flags.raw {
+		return a.writeRaw(body, absOut)
+	}
+	return a.writeExtracted(body, absOut)
+}
+
+func (a *downloadAction) writeRaw(body io.Reader, outputDir string) error {
+	if err := os.MkdirAll(outputDir, 0700); err != nil {
+		return fmt.Errorf("create output dir: %w", err)
+	}
+
+	archivePath := filepath.Join(outputDir, a.flags.name+".tar.gz")
+
+	if !a.flags.force {
+		if _, statErr := os.Lstat(archivePath); statErr == nil {
+			return exterrors.Validation(
+				exterrors.CodeSkillOutputCollision,
+				fmt.Sprintf("%s already exists", archivePath),
+				"pass --force to overwrite",
+			)
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return fmt.Errorf("stat %s: %w", archivePath, statErr)
+		}
+	}
+
+	// O_TRUNC ensures --force overwrites cleanly.
+	//nolint:gosec // archivePath is built from user-supplied --output-dir + skill name, written on user behalf
+	f, err := os.OpenFile(archivePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return fmt.Errorf("create archive: %w", err)
+	}
+	if _, copyErr := io.Copy(f, body); copyErr != nil {
+		_ = f.Close()
+		return fmt.Errorf("write archive: %w", copyErr)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close archive: %w", err)
+	}
+
+	res := downloadResult{
+		Skill:     a.flags.name,
+		OutputDir: outputDir,
+		Archive:   a.flags.name + ".tar.gz",
+		Raw:       true,
+	}
+	return a.printResult(res)
+}
+
+func (a *downloadAction) writeExtracted(body io.Reader, outputDir string) error {
+	result, err := skill_api.SafeExtract(body, skill_api.ExtractOptions{
+		OutputDir: outputDir,
+		Force:     a.flags.force,
+	})
+	if err != nil {
+		return classifyExtractError(err, outputDir)
+	}
+
+	res := downloadResult{
+		Skill:     a.flags.name,
+		OutputDir: outputDir,
+		Files:     result.Files,
+		Raw:       false,
+	}
+	return a.printResult(res)
+}
+
+func (a *downloadAction) printResult(res downloadResult) error {
+	if a.flags.output == outputJSON {
+		return printJSON(res)
+	}
+	if res.Raw {
+		fmt.Printf("Skill %q downloaded to %s\n", res.Skill, filepath.Join(res.OutputDir, res.Archive))
+	} else {
+		fmt.Printf("Skill %q extracted into %s (%d files)\n", res.Skill, res.OutputDir, len(res.Files))
+		for _, name := range res.Files {
+			fmt.Printf("  %s\n", name)
+		}
+	}
+	return nil
+}
+
+// classifyExtractError converts a SafeExtract error into a structured
+// extension error when possible. Unknown errors propagate unchanged so the
+// gRPC layer surfaces them with a default Internal category.
+func classifyExtractError(err error, outputDir string) error {
+	switch {
+	case errors.Is(err, skill_api.ErrUnsafeEntry):
+		return exterrors.Validation(
+			exterrors.CodeSkillArchiveUnsafe,
+			err.Error(),
+			"the downloaded archive contains an unsafe entry; do not extract it",
+		)
+	case errors.Is(err, skill_api.ErrLimitExceeded):
+		return exterrors.Validation(
+			exterrors.CodeSkillArchiveUnsafe,
+			err.Error(),
+			"the archive exceeds the per-skill decompression safety limit",
+		)
+	case errors.Is(err, skill_api.ErrCollision):
+		return exterrors.Validation(
+			exterrors.CodeSkillOutputCollision,
+			err.Error(),
+			fmt.Sprintf("pass --force to overwrite existing files in %s", outputDir),
+		)
+	case errors.Is(err, skill_api.ErrInvalidGzip):
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			err.Error(),
+			"the service did not return a gzip archive; retry or contact support",
+		)
+	}
+	return err
+}
+
+// newDownloadCommand constructs the `skill download` Cobra command.
+func newDownloadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	flags := &downloadFlags{}
+	action := &downloadAction{flags: flags}
+
+	cmd := &cobra.Command{
+		Use:   "download <name>",
+		Short: "Download a Foundry skill package.",
+		Long: `Download a skill's gzip package.
+
+By default the CLI extracts the archive into --output-dir (which defaults to
+'./.agents/skills/<name>/'). Pass --raw to write the unmodified gzip archive
+into --output-dir instead.
+
+Extraction enforces strict safety rules: no absolute paths, no '..' segments,
+no symlinks, no hard links, no non-regular files, and a 10,000-entry /
+512 MB cap on the total uncompressed size.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags.name = args[0]
+			flags.output = extCtx.OutputFormat
+			flags.outputDirSet = cmd.Flags().Changed("output-dir")
+			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
+
+			ctx := azdext.WithAccessToken(cmd.Context())
+			return action.Run(ctx)
+		},
+	}
+
+	cmd.Flags().StringVar(&flags.outputDir, "output-dir", "",
+		"Directory to write the extracted skill (default: ./.agents/skills/<name>/)")
+	cmd.Flags().BoolVar(&flags.raw, "raw", false,
+		"Skip extraction; write the gzip archive as-is to --output-dir")
+	cmd.Flags().BoolVar(&flags.force, "force", false,
+		"Overwrite existing files in --output-dir")
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name: "output", AllowedValues: []string{outputJSON, outputTable}, Default: outputTable,
+	})
+	return cmd
+}

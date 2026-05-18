@@ -53,13 +53,15 @@ direct agent call (does not). Both must keep working.
 ### In scope
 
 - The commands listed in [§1](#1-summary).
-- Mapping from CLI flags onto the wire format in [TypeSpec PR #42779](https://github.com/Azure/azure-rest-api-specs/pull/42779).
+- Mapping from CLI flags onto the wire format in [TypeSpec PR #43186](https://github.com/Azure/azure-rest-api-specs/pull/43186) (merged into `feature/foundry-release`).
 - Reuse of the 5-level project endpoint resolver (flag → azd env → global config → `FOUNDRY_PROJECT_ENDPOINT` → structured error).
 
 ### Out of scope
 
 - Declarative routines (`routine.yaml`, `azd provision` integration, `azd up`) —
-  belong to the orchestrated config-driven model.
+  the imperative `routine create`/`update` verbs in this spec cover the v1 jobs-to-be-done;
+  the declarative `routine.yaml` + `provision`/`up` story belongs to the future
+  orchestrated config-driven model and is intentionally out of scope here.
 - Multi-trigger routines via the CLI — deferred ([§7 OQ-2](#7-open-questions)).
 - Changing `--trigger` or `--action` *type* on an existing routine — delete and
   recreate, mirroring the `connection` auth-type rule ([§4.2](#42-create-vs-update)).
@@ -95,7 +97,7 @@ Cross-cutting flags on every subcommand: `--output table|json`, `--no-prompt`,
 ### 4.1 `routine create <name>`
 
 Required positional: `<name>`.\
-Required flags (always): `--trigger`.\
+Required flags (always): `--trigger <recurring|timer|github-issue>` (enum, not free-form; see [§5.1](#51-trigger-flags--routinetrigger-discriminator) for the supported types and per-type required flags).\
 Conditionally required flags: per trigger/action type (see [§5.1](#51-trigger-flags--routinetrigger-discriminator) / [§5.2](#52-action-flags--routineaction-discriminator)).
 
 Optional flags:
@@ -127,7 +129,7 @@ an upsert (matches `connection create --force`).
 
 **Update semantics.** GET-then-PUT internally — only the named flags change; all
 other fields are preserved verbatim. Accepted flags: `--description`, `--cron`,
-`--time-zone`, `--at`, `--agent-id`, `--agent-endpoint-id`, `--conversation-id`,
+`--time-zone`, `--at`, `--agent-name`, `--agent-endpoint-id`, `--conversation-id`,
 `--session-id`.
 
 **Type-switch guard.** `--trigger` and `--action` are registered on `update`
@@ -139,7 +141,7 @@ This mirrors the `connection` auth-type rule.
 the merged body against the existing trigger/action type:
 - Action-specific flags are accepted only for the current action type
   (`--conversation-id` → `agent-response`; `--session-id` → `agent-invoke`).
-- For `agent-response`, `--agent-id` and `--agent-endpoint-id` remain mutually
+- For `agent-response`, `--agent-name` and `--agent-endpoint-id` remain mutually
   exclusive: specifying one clears the other; specifying both is a validation
   error.
 - If the merged body no longer satisfies required fields for its trigger/action
@@ -160,9 +162,11 @@ validation error. Matches `connection delete`.
 
 ### 4.5 `routine enable | disable <name>`
 
-Dedicated verbs that hide the wire format. Today: GET-then-PUT toggling
-`enabled: true | false`. If the service later adds `:enable` / `:disable` action
-routes, the CLI flips silently — the verb contract does not change.
+Dedicated verbs that map directly to the service's dedicated action routes
+defined in [TypeSpec PR #43186](https://github.com/Azure/azure-rest-api-specs/pull/43186):
+`POST /routines/{name}:enable` and `POST /routines/{name}:disable`. Calling
+these routes directly avoids the TOCTOU race that a client-side GET-then-PUT
+toggle would introduce.
 
 Both are idempotent: enabling an already-enabled routine (or disabling an
 already-disabled one) is a no-op success. Non-existent routines surface the
@@ -170,12 +174,15 @@ service's 404.
 
 ### 4.6 `routine dispatch <name>`
 
-Sync by default → `POST /routines/{name}:dispatch`.
+The only dispatch route in [TypeSpec PR #43186](https://github.com/Azure/azure-rest-api-specs/pull/43186)
+is `POST /routines/{name}:dispatch_async`; both sync (default) and `--async`
+modes call it. The `--async` flag controls only client-side waiting behavior,
+not which route is used.
 
 | Flag                  | Notes                                                                |
 | --------------------- | -------------------------------------------------------------------- |
-| `--async`             | Switches to `:dispatchAsync`. Returns `dispatch_id` immediately.     |
-| `--input "<text>"`    | User-message payload wrapped into `RoutineDispatchPayload`.          |
+| `--async`             | Returns `dispatch_id` immediately after the `:dispatch_async` call.  |
+| `--input "<text>"`    | Plain-text user-message payload wrapped into `RoutineDispatchPayload`. The string is passed through verbatim; JSON content is not parsed by the CLI. |
 | `--conversation-id`   | Preview — forwarded as `conversation_id` for `agent-response` routines. Not yet in TypeSpec ([§7 OQ-3](#7-open-questions)). |
 
 > **Implementation note.** A leading `GET /routines/{name}` is performed when
@@ -184,12 +191,14 @@ Sync by default → `POST /routines/{name}:dispatch`.
 > (`{}`) and skips the GET; dispatch telemetry records `actionType` as `unknown`
 > in that path.
 
-**Output:**
+**Output:** both modes hit `:dispatch_async`; the default mode polls the
+returned `dispatch_id` and streams the agent response back to the user, while
+`--async` returns the raw `DispatchRoutineResponse` immediately.
 
-| Mode  | Table                                  | JSON                             |
-| ----- | -------------------------------------- | -------------------------------- |
-| Sync  | Agent response streamed + `dispatch_id` / `action_correlation_id` trailer | `DispatchRoutineResponse` body |
-| Async | `DispatchRoutineResponse` (no streaming) | Same                            |
+| Mode    | Table                                                                          | JSON                             |
+| ------- | ------------------------------------------------------------------------------ | -------------------------------- |
+| Default | Agent response streamed + `dispatch_id` / `action_correlation_id` trailer      | `DispatchRoutineResponse` body   |
+| `--async` | `DispatchRoutineResponse` (no streaming)                                     | Same                             |
 
 ### 4.7 `routine run list <routine>`
 
@@ -198,8 +207,12 @@ Maps onto `GET /routines/{routine_name}/runs`:
 | CLI flag      | Query param        |
 | ------------- | ------------------ |
 | `--top N`     | `maxResults` per page; CLI stops auto-paging once `N` items have been returned |
-| `--orderby`   | `orderBy` (repeatable) |
 | `--filter`    | `filter`           |
+
+`--orderby` is intentionally **not** registered in v1: `ListRoutineRunsParameters`
+in [TypeSpec PR #43186](https://github.com/Azure/azure-rest-api-specs/pull/43186)
+only exposes pagination plus `filter`. The flag will be added when (and if) the
+service grows an `orderBy` query parameter.
 
 Auto-pagination via `pageToken` / `next_page_token`, same rules as `routine list`
 ([§4.3](#43-routine-show-name--routine-list)). When `--top N` is set the CLI
@@ -207,10 +220,11 @@ caps the total returned at `N` items across all drained pages.
 
 ### 4.8 `routine run show` / `routine run delete`
 
-**Not registered in v1.** The data-plane endpoints are not in
-[TypeSpec PR #42779](https://github.com/Azure/azure-rest-api-specs/pull/42779).
-These will be added as a strictly additive change when the APIs land, with no
-churn on already-shipped verbs.
+**Not registered in v1.** The `GET /routines/{name}/runs/{run-id}` endpoint
+needed for `run show` was [added in TypeSpec PR #43186](https://github.com/Azure/azure-rest-api-specs/pull/43186/files#diff-0920b2f67a7816e1e9ef440782ce714e40358a2a5c161b322271b19c19fb1e9fR163);
+`run delete` is still not in the TypeSpec. Both verbs will be added as a
+strictly additive change in a follow-up PR, with no churn on already-shipped
+verbs.
 
 ### Output shapes for state-changing verbs
 
@@ -236,21 +250,28 @@ churn on already-shipped verbs.
 | --------------- | ---------------- | -------------------------------------------------------------------- | ------ |
 | `recurring`     | `schedule`       | `--cron "<expr>"`, `--time-zone <tz>`                                | v1     |
 | `timer`         | `timer`          | `--at "<ISO 8601>"`, `--time-zone <tz>`                              | v1     |
-| `github-issue`  | `github_issue`   | `--connection <id>`, `--owner <o>`, `--repository <r>`, `--event-action <a>` (repeatable) | Deferred — pending workspace connection model |
+| `github-issue`  | `github_issue`   | `--connection <id>`, `--assignee <a>`, `--repository <r>`                                 | Deferred — pending workspace connection model |
 
 CLI emits `triggers: { "default": { "type": "<wire>", ... } }` to match the
 TypeSpec `Record<RoutineTrigger>` shape. The key `"default"` is an implementation
 detail (single-trigger CLI shape) and is not surfaced to the user.
 
+> **Heads-up.** The Foundry team is adding a generic event-based trigger plus
+> additional strong-typed triggers to the TypeSpec shortly after #43186. The
+> mapping table absorbs new rows additively; CLI aliases will be added as those
+> trigger types land, without churn on the verbs above.
+
 ### 5.2 Action flags → `RoutineAction` discriminator
 
 | CLI `--action`          | TypeSpec `type`                  | Required CLI flags                              | Optional CLI flags    |
 | ----------------------- | -------------------------------- | ----------------------------------------------- | --------------------- |
-| `agent-response` (def.) | `invoke_agent_responses_api`     | one of `--agent-id` / `--agent-endpoint-id`     | `--conversation-id`   |
+| `agent-response` (def.) | `invoke_agent_responses_api`     | one of `--agent-name` / `--agent-endpoint-id`   | `--conversation-id`   |
 | `agent-invoke`          | `invoke_agent_invocations_api`   | `--agent-endpoint-id`                           | `--session-id`        |
 
-For `agent-response`, the CLI validates "exactly one of `--agent-id` /
-`--agent-endpoint-id`" locally before the PUT.
+`--agent-name` maps to the TypeSpec `agent_name` field (the project-scoped
+agent name, max 256 chars) — not an opaque ID. For `agent-response`, the CLI
+validates "exactly one of `--agent-name` / `--agent-endpoint-id`" locally
+before the PUT.
 
 ### 5.3 Routes and API status
 
@@ -268,11 +289,11 @@ extension (for example
 | `routine show`                        | `GET  {endpoint}/routines/{name}`                             | Ready           |
 | `routine list`                        | `GET  {endpoint}/routines` (with `continuationToken`)         | Ready           |
 | `routine delete`                      | `DELETE {endpoint}/routines/{name}`                           | Ready           |
-| `routine enable` / `routine disable`  | GET-then-PUT toggling `enabled` ([§4.5](#45-routine-enable--disable-name)) | Ready (field on PUT) |
-| `routine dispatch`                    | `POST {endpoint}/routines/{name}:dispatch`                    | Ready           |
-| `routine dispatch --async`            | `POST {endpoint}/routines/{name}:dispatchAsync`               | Ready           |
+| `routine enable`                      | `POST {endpoint}/routines/{name}:enable`                      | Ready           |
+| `routine disable`                     | `POST {endpoint}/routines/{name}:disable`                     | Ready           |
+| `routine dispatch` (default and `--async`) | `POST {endpoint}/routines/{name}:dispatch_async` ([§4.6](#46-routine-dispatch-name)) | Ready           |
 | `routine run list`                    | `GET  {endpoint}/routines/{name}/runs`                        | Ready           |
-| `routine run show` *(deferred)*       | `GET  {endpoint}/routines/{name}/runs/{run-id}`               | Not in TypeSpec |
+| `routine run show` *(deferred)*       | `GET  {endpoint}/routines/{name}/runs/{run-id}`               | Ready in TypeSpec; registration deferred |
 | `routine run delete` *(deferred)*     | `DELETE {endpoint}/routines/{name}/runs/{run-id}`             | Not in TypeSpec |
 
 Additional API gaps not captured in the routes table:
@@ -305,7 +326,7 @@ endpoints hashed.
 |---|----------|------------------|
 | 1 | **Trigger / action enum names.** CLI aliases (`recurring`, `agent-response`, `agent-invoke`) vs. 1:1 API parity (`schedule`, `invoke_agent_responses_api`, …). Note: feature issue [#8159](https://github.com/Azure/azure-dev/issues/8159) uses `schedule`; this spec proposes `recurring`. | Ship CLI aliases. API names are verbose on the command line; a single mapping table absorbs upstream renames. |
 | 2 | **Multi-trigger routines.** TypeSpec `triggers` is `Record<RoutineTrigger>`. Add `routine trigger add \| remove \| list` now? | Defer. All hero scenarios use one trigger, keyed as `"default"`. Re-evaluate when a real multi-trigger scenario lands. |
-| 3 | **`--conversation-id` on dispatch.** Field is in the routines conceptual spec but not in TypeSpec PR #42779. | Ship the flag, mark preview-only in `--help`. If the service rejects unknown fields, the user sees a service error and re-runs without it. Revisit on TypeSpec lock. |
+| 3 | **`--conversation-id` on dispatch.** Field is in the routines conceptual spec but not in TypeSpec PR #43186. | Ship the flag, mark preview-only in `--help`. If the service rejects unknown fields, the user sees a service error and re-runs without it. Revisit on TypeSpec lock. |
 
 ## 8. Test Plan
 
@@ -317,10 +338,11 @@ endpoints hashed.
   rejection; post-merge validation rejects wrong-action flags; `agent-response`
   identity updates clear the peer field.
 - `create` vs. `create --force` against a pre-existing routine.
-- `enable` / `disable` idempotency; GET-then-PUT `enabled` flip.
-- `dispatch` sync vs. `--async` route selection; leading GET triggered/skipped
+- `enable` / `disable` idempotency; dedicated `:enable` / `:disable` route calls (not GET-then-PUT).
+- `dispatch` default vs. `--async` both hit `:dispatch_async`; default mode polls
+  and streams while `--async` returns immediately; leading GET triggered/skipped
   based on payload flags; `actionType` telemetry `unknown` in the no-payload path.
-- `run list` query-param mapping and pagination; JSON output is one stable object.
+- `run list` query-param mapping (`--top` → `maxResults`, `--filter` → `filter`) and pagination; JSON output is one stable object.
 - `delete --no-prompt` without `--force` produces a structured validation error.
 - Output shapes match [§4 table](#output-shapes-for-state-changing-verbs) in both
   table and JSON modes.
@@ -340,13 +362,13 @@ azd ai agent routine create <name> \
   [--cron "0 8 * * *"] [--time-zone UTC] \
   [--at "2026-04-24T15:00:00Z"] \
   [--action <agent-response|agent-invoke>] \
-  [--agent-id <id>] [--agent-endpoint-id <id>] \
+  [--agent-name <name>] [--agent-endpoint-id <id>] \
   [--conversation-id <id>] [--session-id <id>] \
   [--description "..."] [--enabled=false] [--force]
 
 azd ai agent routine update <name> \
   [--description ...] [--cron ...] [--time-zone ...] [--at ...] \
-  [--agent-id ...] [--agent-endpoint-id ...] \
+  [--agent-name ...] [--agent-endpoint-id ...] \
   [--conversation-id ...] [--session-id ...]
 
 azd ai agent routine show <name>
@@ -358,7 +380,7 @@ azd ai agent routine disable <name>
 
 azd ai agent routine dispatch <name> [--async] [--input "<text>"] [--conversation-id <id>]
 
-azd ai agent routine run list <routine> [--top N] [--orderby ...] [--filter ...]
+azd ai agent routine run list <routine> [--top N] [--filter ...]
 ```
 
 Cross-cutting on every command: `--output table|json`, `--no-prompt`, `--debug`,

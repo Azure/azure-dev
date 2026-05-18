@@ -223,6 +223,261 @@ const completionSpec: Fig.Spec = {
 					description: 'Ship agents with Microsoft Foundry from your terminal. (Preview)',
 					subcommands: [
 						{
+							name: ['connection'],
+							description: 'Manage Foundry project connections. (Preview)',
+							subcommands: [
+								{
+									name: ['create'],
+									description: 'Create a new Foundry project connection.',
+									options: [
+										{
+											name: ['--auth-type'],
+											description: 'Auth type: api-key, custom-keys, none',
+											args: [
+												{
+													name: 'auth-type',
+												},
+											],
+										},
+										{
+											name: ['--custom-key'],
+											description: 'Custom key=value (repeatable, for custom-keys auth)',
+											isRepeatable: true,
+											args: [
+												{
+													name: 'custom-key',
+												},
+											],
+										},
+										{
+											name: ['--force'],
+											description: 'Replace existing connection (upsert)',
+											isDangerous: true,
+										},
+										{
+											name: ['--key'],
+											description: 'API key (for api-key auth)',
+											args: [
+												{
+													name: 'key',
+												},
+											],
+										},
+										{
+											name: ['--kind'],
+											description: 'Connection kind (e.g., remote-tool, cognitive-search)',
+											args: [
+												{
+													name: 'kind',
+												},
+											],
+										},
+										{
+											name: ['--metadata'],
+											description: 'Metadata key=value (repeatable)',
+											isRepeatable: true,
+											args: [
+												{
+													name: 'metadata',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL (overrides env var and config)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--target'],
+											description: 'Target URL or ARM resource ID',
+											args: [
+												{
+													name: 'target',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['delete'],
+									description: 'Delete a connection.',
+									options: [
+										{
+											name: ['--force'],
+											description: 'Skip confirmation prompt',
+											isDangerous: true,
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL (overrides env var and config)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['list'],
+									description: 'List connections in the Foundry project.',
+									options: [
+										{
+											name: ['--kind'],
+											description: 'Filter by connection kind (e.g., remote-tool)',
+											args: [
+												{
+													name: 'kind',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL (overrides env var and config)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['show'],
+									description: 'Show connection details.',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL (overrides env var and config)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--show-credentials'],
+											description: 'Fetch credential values from the data plane',
+										},
+									],
+								},
+								{
+									name: ['update'],
+									description: 'Update a connection\'s target or credentials.',
+									options: [
+										{
+											name: ['--custom-key'],
+											description: 'Update custom key=value (repeatable, for custom-keys auth)',
+											isRepeatable: true,
+											args: [
+												{
+													name: 'custom-key',
+												},
+											],
+										},
+										{
+											name: ['--key'],
+											description: 'New API key value (for api-key auth)',
+											args: [
+												{
+													name: 'key',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL (overrides env var and config)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--target'],
+											description: 'New target URL or ARM resource ID',
+											args: [
+												{
+													name: 'target',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['files'],
 							description: 'Manage files in a hosted agent session.',
 							subcommands: [
@@ -708,6 +963,71 @@ const completionSpec: Fig.Spec = {
 								{
 									name: ['--utc'],
 									description: 'Display timestamps in UTC instead of local time',
+								},
+							],
+						},
+						{
+							name: ['project'],
+							description: 'Manage the default Microsoft Foundry project endpoint.',
+							subcommands: [
+								{
+									name: ['set'],
+									description: 'Persist a default Foundry project endpoint.',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['show'],
+									description: 'Display the currently resolved Foundry project endpoint.',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['unset'],
+									description: 'Clear the persisted Foundry project endpoint.',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
 								},
 							],
 						},
@@ -4013,6 +4333,32 @@ const completionSpec: Fig.Spec = {
 							description: 'Ship agents with Microsoft Foundry from your terminal. (Preview)',
 							subcommands: [
 								{
+									name: ['connection'],
+									description: 'Manage Foundry project connections. (Preview)',
+									subcommands: [
+										{
+											name: ['create'],
+											description: 'Create a new Foundry project connection.',
+										},
+										{
+											name: ['delete'],
+											description: 'Delete a connection.',
+										},
+										{
+											name: ['list'],
+											description: 'List connections in the Foundry project.',
+										},
+										{
+											name: ['show'],
+											description: 'Show connection details.',
+										},
+										{
+											name: ['update'],
+											description: 'Update a connection\'s target or credentials.',
+										},
+									],
+								},
+								{
 									name: ['files'],
 									description: 'Manage files in a hosted agent session.',
 									subcommands: [
@@ -4053,6 +4399,24 @@ const completionSpec: Fig.Spec = {
 								{
 									name: ['monitor'],
 									description: 'Monitor logs from a hosted agent.',
+								},
+								{
+									name: ['project'],
+									description: 'Manage the default Microsoft Foundry project endpoint.',
+									subcommands: [
+										{
+											name: ['set'],
+											description: 'Persist a default Foundry project endpoint.',
+										},
+										{
+											name: ['show'],
+											description: 'Display the currently resolved Foundry project endpoint.',
+										},
+										{
+											name: ['unset'],
+											description: 'Clear the persisted Foundry project endpoint.',
+										},
+									],
 								},
 								{
 									name: ['run'],

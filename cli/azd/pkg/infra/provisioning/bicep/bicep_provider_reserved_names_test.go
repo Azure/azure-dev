@@ -257,6 +257,13 @@ func TestCheckReservedResourceNames(t *testing.T) {
 				Type: "microsoft.network/privatednszones",
 				Name: "another.windows.net",
 			},
+			// Issue #8239: Chaos Studio target names are service-mandated
+			// (e.g. "microsoft-azurekubernetesservicechaosmesh") and cannot
+			// be renamed; the reserved-word check should be suppressed.
+			{
+				Type: "Microsoft.Chaos/targets",
+				Name: "microsoft-azurekubernetesservicechaosmesh",
+			},
 		},
 	})
 
@@ -421,6 +428,16 @@ func TestIsReservedNameCheckExempt(t *testing.T) {
 		{
 			name:         "subnet delegation exempt",
 			resourceType: "Microsoft.Network/virtualNetworks/subnets/delegations",
+			want:         true,
+		},
+		{
+			name:         "Chaos Studio targets exempt (service-mandated names)",
+			resourceType: "Microsoft.Chaos/targets",
+			want:         true,
+		},
+		{
+			name:         "Chaos Studio target capabilities exempt via prefix",
+			resourceType: "Microsoft.Chaos/targets/capabilities",
 			want:         true,
 		},
 		{

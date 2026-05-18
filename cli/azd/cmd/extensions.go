@@ -42,6 +42,31 @@ func isJsonOutputFromArgs(args []string) bool {
 	return false
 }
 
+// stripCwdFlag removes --cwd/-C and its value from an argument list.
+// Core azd already processes -C (creates the directory, changes CWD, sets AZD_CWD
+// as an absolute path). Passing the raw flag through to extensions would cause them
+// to re-resolve a relative path against the already-changed CWD, doubling the path.
+func stripCwdFlag(args []string) []string {
+	result := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		// --cwd=value or -C=value (combined form)
+		if strings.HasPrefix(arg, "--cwd=") || strings.HasPrefix(arg, "-C=") {
+			continue
+		}
+
+		// --cwd value or -C value (separate value)
+		if (arg == "--cwd" || arg == "-C") && i+1 < len(args) {
+			i++ // skip the value
+			continue
+		}
+
+		result = append(result, arg)
+	}
+	return result
+}
+
 // bindExtension binds the extension to the root command
 func bindExtension(
 	root *actions.ActionDescriptor,
@@ -264,8 +289,15 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	// global flags like --debug, --cwd, or -e. The globalOptions were populated
 	// by ParseGlobalFlags() before command tree construction and are the only
 	// reliable source for these values.
+	//
+	// Strip --cwd/-C from args: core azd already handled it (created the
+	// directory, changed CWD, set AZD_CWD to absolute path). Passing the
+	// raw relative -C value through would cause the extension to resolve
+	// it again against the already-changed CWD, doubling the path.
+	extensionArgs := stripCwdFlag(a.args)
+
 	options := &extensions.InvokeOptions{
-		Args: a.args,
+		Args: extensionArgs,
 		Env:  allEnv,
 		// cmd extensions are always interactive (connected to terminal)
 		Interactive: true,

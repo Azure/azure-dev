@@ -180,3 +180,56 @@ func TestBindExtension_DeeplyNestedNamespace(t *testing.T) {
 	require.Equal(t, "Extension for fine tuning AI models.", finetuneCmd.Options.Command.Short)
 	require.Equal(t, "Extension for evaluating AI models.", evalCmd.Options.Command.Short)
 }
+
+func TestStripCwdFlag(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{
+			name: "NoFlag",
+			args: []string{"init", "--no-prompt"},
+			want: []string{"init", "--no-prompt"},
+		},
+		{
+			name: "LongFormSeparateValue",
+			args: []string{"init", "--cwd", "myFolder", "--no-prompt"},
+			want: []string{"init", "--no-prompt"},
+		},
+		{
+			name: "LongFormEqualsValue",
+			args: []string{"init", "--cwd=myFolder", "--no-prompt"},
+			want: []string{"init", "--no-prompt"},
+		},
+		{
+			name: "ShortFormSeparateValue",
+			args: []string{"init", "-C", "myFolder", "--no-prompt"},
+			want: []string{"init", "--no-prompt"},
+		},
+		{
+			name: "ShortFormEqualsValue",
+			args: []string{"init", "-C=myFolder", "--no-prompt"},
+			want: []string{"init", "--no-prompt"},
+		},
+		{
+			name: "EmptyArgs",
+			args: []string{},
+			want: []string{},
+		},
+		{
+			name: "OnlyCwdFlag",
+			args: []string{"-C", "/some/path"},
+			want: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := stripCwdFlag(tt.args)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}

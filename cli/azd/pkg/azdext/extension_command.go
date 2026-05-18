@@ -158,10 +158,13 @@ func NewExtensionRootCommand(opts ExtensionCommandOptions) (*cobra.Command, *Ext
 			}
 		}
 
-		if !cmd.Flags().Changed("cwd") {
-			if v := os.Getenv("AZD_CWD"); v != "" {
-				extCtx.Cwd = v
-			}
+		// AZD_CWD is set by the parent azd process which has already resolved
+		// the path to absolute and changed the working directory. Always prefer
+		// it over the flag parsed from args, which may be a stale relative path.
+		if v := os.Getenv("AZD_CWD"); v != "" {
+			extCtx.Cwd = v
+		} else if !cmd.Flags().Changed("cwd") {
+			// No env var fallback needed — cwd was not set by parent or flag.
 		}
 
 		if !cmd.Flags().Changed("environment") {

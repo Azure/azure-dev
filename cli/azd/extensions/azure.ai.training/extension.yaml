@@ -1,9 +1,11 @@
+# yaml-language-server: $schema=../extension.schema.json
 id: azure.ai.training
 namespace: ai.training
 displayName: Azure Foundry Training (Preview)
 description: Extension for Microsoft Foundry training jobs. (Preview)
 usage: azd ai training <command> [options]
 version: 0.0.1-preview
+requiredAzdVersion: ">=1.25.1"
 language: go
 capabilities:
     - custom-commands

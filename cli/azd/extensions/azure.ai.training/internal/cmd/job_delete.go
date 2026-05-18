@@ -4,10 +4,7 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
-	"os"
-	"strings"
 
 	"azure.ai.training/internal/utils"
 	"azure.ai.training/pkg/client"
@@ -32,26 +29,35 @@ func newJobDeleteCommand() *cobra.Command {
 				return fmt.Errorf("--name is required: provide the job name/ID to delete")
 			}
 
-			// Prompt for confirmation unless --yes is specified
-			if !yes {
-				fmt.Printf("? Are you sure you want to delete job '%s'? [y/N] ", name)
-				reader := bufio.NewReader(os.Stdin)
-				response, err := reader.ReadString('\n')
-				if err != nil {
-					return fmt.Errorf("failed to read input: %w", err)
-				}
-				response = strings.TrimSpace(strings.ToLower(response))
-				if response != "y" && response != "yes" {
-					fmt.Println("Delete cancelled.")
-					return nil
-				}
-			}
-
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
+			// Confirm destructive action. --yes skips the prompt. In non-interactive
+			// mode (global --no-prompt or non-TTY) we refuse to delete without --yes
+			// rather than blocking on stdin, matching azd's convention.
+			if !yes {
+				if rootFlags.NoPrompt {
+					return fmt.Errorf(
+						"refusing to delete job '%s' without confirmation; pass --yes to skip the prompt", name)
+				}
+				defaultNo := false
+				resp, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+					Options: &azdext.ConfirmOptions{
+						Message:      fmt.Sprintf("Are you sure you want to delete job '%s'?", name),
+						DefaultValue: &defaultNo,
+					},
+				})
+				if err != nil {
+					return fmt.Errorf("failed to prompt for confirmation: %w", err)
+				}
+				if !resp.GetValue() {
+					fmt.Println("Delete cancelled.")
+					return nil
+				}
+			}
 
 			envValues, err := utils.GetEnvironmentValues(ctx, azdClient)
 			if err != nil {

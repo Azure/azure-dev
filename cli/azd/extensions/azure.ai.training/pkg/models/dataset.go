@@ -52,14 +52,14 @@ type SASCredential struct {
 
 // DatasetVersion represents a dataset version resource in the Azure AI Foundry API.
 // Used for both:
-//   - PATCH request body: we send dataUri, dataType, description, tags
+//   - PATCH request body: we send dataUri, type, description, tags
 //   - GET/PATCH response: the API returns all fields including id, name, version
 //
 // Example PATCH request body:
 //
 //	{
 //	  "dataUri": "https://storage.blob.core.windows.net/.../code-myproject/v1",
-//	  "dataType": "uri_folder",
+//	  "type": "uri_folder",
 //	  "description": "Code for project myproject",
 //	  "tags": { "contentHash": "a1b2c3d4...full 64 char hash..." }
 //	}
@@ -71,7 +71,7 @@ type SASCredential struct {
 //	  "name": "code-myproject",
 //	  "version": "a1b2c3d4e5f6...",
 //	  "dataUri": "https://storage.blob.core.windows.net/...",
-//	  "dataType": "uri_folder",
+//	  "type": "uri_folder",
 //	  "tags": { "contentHash": "a1b2c3d4...full 64 char hash..." }
 //	}
 type DatasetVersion struct {

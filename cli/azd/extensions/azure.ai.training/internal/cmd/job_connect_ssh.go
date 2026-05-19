@@ -202,7 +202,12 @@ func runSSH(ctx context.Context, sshPath, selfPath, proxyEndpoint, privateKeyFil
 	// The extension binary's root command is "training" (azd strips the
 	// "ai training" prefix when dispatching), so the path here is just
 	// "job _ssh-proxy <url>".
-	proxyCmd := fmt.Sprintf(`"%s" job _ssh-proxy %s`, selfPath, proxyEndpoint)
+	//
+	// OpenSSH performs percent-token expansion on the ProxyCommand value
+	// (e.g. %h, %p, %r). Escape literal '%' in the URL as '%%' so URL
+	// percent-encoded segments survive without being rewritten by ssh.
+	escapedEndpoint := strings.ReplaceAll(proxyEndpoint, "%", "%%")
+	proxyCmd := fmt.Sprintf(`"%s" job _ssh-proxy %s`, selfPath, escapedEndpoint)
 
 	// The destination is just a label when ProxyCommand is used (the real TCP comes from
 	// the proxy). Use a fixed alias so ssh doesn't try to parse the proxy URL as host:port.

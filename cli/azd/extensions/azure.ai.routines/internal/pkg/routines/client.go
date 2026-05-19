@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -123,24 +124,8 @@ func (c *Client) ListRoutines(ctx context.Context) ([]Routine, error) {
 			return nil, err
 		}
 
-		req, err := runtime.NewRequest(ctx, http.MethodGet, nextURL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
-		}
-		addPreviewHeader(req)
-
-		resp, err := c.pipeline.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("HTTP request failed: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if !runtime.HasStatusCode(resp, http.StatusOK) {
-			return nil, runtime.NewResponseError(resp)
-		}
-
 		var page PagedRoutine
-		if err := decodeJSON(resp.Body, &page); err != nil {
+		if err := c.getPage(ctx, nextURL, &page); err != nil {
 			return nil, err
 		}
 
@@ -153,6 +138,29 @@ func (c *Client) ListRoutines(ctx context.Context) ([]Routine, error) {
 	}
 
 	return all, nil
+}
+
+// getPage performs a paginated GET and decodes the body into out.
+// It scopes resp.Body.Close() to a single iteration to avoid file-descriptor
+// accumulation when callers loop across many pages.
+func (c *Client) getPage(ctx context.Context, pageURL string, out any) error {
+	req, err := runtime.NewRequest(ctx, http.MethodGet, pageURL)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	addPreviewHeader(req)
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return runtime.NewResponseError(resp)
+	}
+
+	return decodeJSON(resp.Body, out)
 }
 
 // PutRoutine creates or replaces a routine (upsert via PUT).
@@ -288,39 +296,27 @@ func (c *Client) ListRoutineRuns(
 ) ([]RoutineRun, error) {
 	var all []RoutineRun
 
-	var extraQuery []string
-	if opts.Top > 0 {
-		extraQuery = append(extraQuery, fmt.Sprintf("maxResults=%d", opts.Top))
-	}
+	// baseQuery holds the original filter, preserved across pages. maxResults is
+	// only sent on the first page (we cap totals client-side via opts.Top).
+	var baseQuery []string
 	if opts.Filter != "" {
-		extraQuery = append(extraQuery, "filter="+url.QueryEscape(opts.Filter))
+		baseQuery = append(baseQuery, "filter="+url.QueryEscape(opts.Filter))
 	}
 
-	nextURL := c.routineRunsURL(routineName, extraQuery...)
+	firstPageQuery := slices.Clone(baseQuery)
+	if opts.Top > 0 {
+		firstPageQuery = append(firstPageQuery, fmt.Sprintf("maxResults=%d", opts.Top))
+	}
+
+	nextURL := c.routineRunsURL(routineName, firstPageQuery...)
 
 	for nextURL != "" {
 		if err := c.validateSameOrigin(nextURL); err != nil {
 			return nil, err
 		}
 
-		req, err := runtime.NewRequest(ctx, http.MethodGet, nextURL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
-		}
-		addPreviewHeader(req)
-
-		resp, err := c.pipeline.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("HTTP request failed: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if !runtime.HasStatusCode(resp, http.StatusOK) {
-			return nil, runtime.NewResponseError(resp)
-		}
-
 		var page PagedRoutineRun
-		if err := decodeJSON(resp.Body, &page); err != nil {
+		if err := c.getPage(ctx, nextURL, &page); err != nil {
 			return nil, err
 		}
 
@@ -333,7 +329,9 @@ func (c *Client) ListRoutineRuns(
 		}
 
 		if page.NextPageToken != "" {
-			nextURL = c.routineRunsURL(routineName, "pageToken="+url.QueryEscape(page.NextPageToken))
+			pageQuery := append(slices.Clone(baseQuery),
+				"pageToken="+url.QueryEscape(page.NextPageToken))
+			nextURL = c.routineRunsURL(routineName, pageQuery...)
 		} else {
 			nextURL = ""
 		}

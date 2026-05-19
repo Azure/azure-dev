@@ -25,10 +25,10 @@ func newRoutineDispatchCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Manually trigger a routine.",
 		Long: `Manually trigger a Foundry routine.
 
-By default, waits for the agent response and streams it back.
-Use --async to return the dispatch ID immediately without waiting.
-
-Both sync and async modes call the :dispatch_async route.`,
+The service runs the routine asynchronously. By default, the command prints
+the dispatch ID, action correlation ID, and initial status. Use --async to
+suppress the status field for scripting; use 'routine run list <name>' to
+inspect execution results.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			output = extCtx.OutputFormat
@@ -38,7 +38,7 @@ Both sync and async modes call the :dispatch_async route.`,
 	}
 
 	cmd.Flags().BoolVar(&asyncMode, "async", false,
-		"Return the dispatch ID immediately without waiting for the agent response")
+		"Suppress the status field; useful for scripting")
 	cmd.Flags().StringVar(&input, "input", "",
 		"Plain-text user-message payload for the routine dispatch")
 	cmd.Flags().StringVar(&conversationID, "conversation-id", "",

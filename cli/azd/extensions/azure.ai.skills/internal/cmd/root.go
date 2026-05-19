@@ -46,9 +46,8 @@ a Foundry project.`,
 
 	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
 	rootCmd.AddCommand(newVersionCommand())
-	rootCmd.AddCommand(azdext.NewMetadataCommand("1.0", "azure.ai.skills", func() *cobra.Command {
-		return rootCmd
-	}))
+	rootCmd.AddCommand(newMetadataCommand(rootCmd))
+	rootCmd.AddCommand(newContextCommand())
 
 	rootCmd.AddCommand(newCreateCommand(extCtx))
 	rootCmd.AddCommand(newUpdateCommand(extCtx))

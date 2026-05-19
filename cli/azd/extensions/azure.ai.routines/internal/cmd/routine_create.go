@@ -100,7 +100,7 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 
 	var body routines.Routine
 	body.Name = flags.name
-	body.Enabled = ptrBool(flags.enabled)
+	body.Enabled = new(flags.enabled)
 	if flags.description != "" {
 		body.Description = flags.description
 	}
@@ -136,7 +136,10 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 			routines.DefaultTriggerKey: trigger,
 		}
 
-		action, err := buildAction(flags.action, flags.agentName, flags.agentEndpointID, flags.conversationID, flags.sessionID)
+		action, err := buildAction(
+			flags.action, flags.agentName, flags.agentEndpointID,
+			flags.conversationID, flags.sessionID,
+		)
 		if err != nil {
 			return err
 		}

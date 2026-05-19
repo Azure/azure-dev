@@ -65,7 +65,8 @@ To change the trigger or action type, delete and recreate the routine.`,
 	cmd.Flags().StringVar(&flags.agentEndpointID, "agent-endpoint-id", "", "New agent endpoint ID")
 	cmd.Flags().StringVar(&flags.conversationID, "conversation-id", "", "New conversation ID (preview)")
 	cmd.Flags().StringVar(&flags.sessionID, "session-id", "", "New session ID")
-	cmd.Flags().StringVar(&flags.file, "file", "", "Path to a YAML/JSON manifest; merged fields win unless overridden by flags")
+	cmd.Flags().StringVar(&flags.file, "file", "",
+		"Path to a YAML/JSON manifest; merged fields win unless overridden by flags")
 
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{"json", "table"}, Default: "table",

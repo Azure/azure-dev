@@ -107,13 +107,21 @@ func TestMergeRoutineFromFile_BodyFieldsWinOverFile(t *testing.T) {
 		Name:        "from-cli",
 		Description: "cli description",
 		Enabled:     &enabled,
-		Triggers:    map[string]routines.RoutineTrigger{"default": {Type: "timer", At: "2026-01-01T00:00:00Z"}},
-		Actions:     map[string]routines.RoutineAction{"default": {Type: "invoke_agent_responses_api", AgentName: "cli-agent"}},
+		Triggers: map[string]routines.RoutineTrigger{
+			"default": {Type: "timer", At: "2026-01-01T00:00:00Z"},
+		},
+		Actions: map[string]routines.RoutineAction{
+			"default": {Type: "invoke_agent_responses_api", AgentName: "cli-agent"},
+		},
 	}
 	file := &routines.Routine{
 		Description: "file description",
-		Triggers:    map[string]routines.RoutineTrigger{"default": {Type: "schedule", Cron: "* * * * *"}},
-		Actions:     map[string]routines.RoutineAction{"default": {Type: "invoke_agent_invocations_api", AgentEndpointID: "ep"}},
+		Triggers: map[string]routines.RoutineTrigger{
+			"default": {Type: "schedule", Cron: "* * * * *"},
+		},
+		Actions: map[string]routines.RoutineAction{
+			"default": {Type: "invoke_agent_invocations_api", AgentEndpointID: "ep"},
+		},
 	}
 	mergeRoutineFromFile(body, file)
 

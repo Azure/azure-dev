@@ -1,2 +1,6 @@
 import: ../../.vscode/cspell.yaml
-words: []
+words:
+  - exterrors
+  - sess
+  - routineName
+  - azdProjectSources

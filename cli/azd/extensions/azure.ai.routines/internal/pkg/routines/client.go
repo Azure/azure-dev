@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	routinesAPIVersion      = "v1"
-	routinesPreviewHeader   = "x-ms-foundry-features-opt-in"
-	routinesPreviewValue    = "Routines=V1Preview"
+	routinesAPIVersion    = "v1"
+	routinesPreviewHeader = "x-ms-foundry-features-opt-in"
+	routinesPreviewValue  = "Routines=V1Preview"
 )
 
 // Client is the data-plane client for Foundry Routines API operations.
@@ -283,7 +283,9 @@ type ListRoutineRunsOptions struct {
 }
 
 // ListRoutineRuns retrieves runs for a routine, respecting Top and Filter options.
-func (c *Client) ListRoutineRuns(ctx context.Context, routineName string, opts ListRoutineRunsOptions) ([]RoutineRun, error) {
+func (c *Client) ListRoutineRuns(
+	ctx context.Context, routineName string, opts ListRoutineRunsOptions,
+) ([]RoutineRun, error) {
 	var all []RoutineRun
 
 	var extraQuery []string

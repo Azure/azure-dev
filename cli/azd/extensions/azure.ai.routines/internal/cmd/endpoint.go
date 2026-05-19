@@ -34,9 +34,6 @@ var foundryHostSuffixes = []string{
 	".services.ai.azure.com",
 }
 
-// projectEndpointPathPrefix is the expected path prefix for Foundry project endpoints.
-const projectEndpointPathPrefix = "/api/projects/"
-
 // projectContextConfigPath is the global config path for the persisted project context.
 // Matches the azure.ai.agents extension for cross-extension compatibility.
 const projectContextConfigPath = "extensions.ai-agents.project.context"

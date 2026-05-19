@@ -10,10 +10,10 @@ const (
 
 // Error codes for validation errors.
 const (
-	CodeInvalidParameter      = "invalid_parameter"
-	CodeConflictingArguments  = "conflicting_arguments"
+	CodeInvalidParameter       = "invalid_parameter"
+	CodeConflictingArguments   = "conflicting_arguments"
 	CodeInvalidRoutineManifest = "invalid_routine_manifest"
-	CodeRoutineAlreadyExists  = "routine_already_exists"
+	CodeRoutineAlreadyExists   = "routine_already_exists"
 )
 
 // Error codes for dependency errors.

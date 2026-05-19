@@ -75,9 +75,9 @@ type DispatchRoutineRequest struct {
 
 // DispatchRoutineResponse is the response from the dispatch_async route.
 type DispatchRoutineResponse struct {
-	DispatchID           string `json:"dispatch_id,omitempty"`
-	ActionCorrelationID  string `json:"action_correlation_id,omitempty"`
-	Status               string `json:"status,omitempty"`
+	DispatchID          string `json:"dispatch_id,omitempty"`
+	ActionCorrelationID string `json:"action_correlation_id,omitempty"`
+	Status              string `json:"status,omitempty"`
 }
 
 // TriggerCLIToWire maps CLI --trigger aliases to TypeSpec wire type values.

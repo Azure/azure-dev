@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -347,12 +348,24 @@ func validateExtensionMetadata(schema *models.ExtensionSchema) (warnings, errs [
 	return warnings, errs
 }
 
+// isExtensionPack detects dependency-only extension packs. The extension registry
+// treats versions with dependencies and no artifacts as packs; local extension.yaml
+// manifests do not have an explicit pack discriminator, so this intentionally
+// infers pack mode only when dependencies are present and executable metadata is absent.
 func isExtensionPack(schema *models.ExtensionSchema) bool {
-	return len(schema.Dependencies) > 0 &&
+	isPack := len(schema.Dependencies) > 0 &&
 		len(schema.Capabilities) == 0 &&
 		schema.Namespace == "" &&
 		schema.Language == "" &&
 		schema.EntryPoint == ""
+	if isPack {
+		log.Printf(
+			"debug: detected extension pack manifest for %s because it has dependencies and no executable metadata",
+			schema.Id,
+		)
+	}
+
+	return isPack
 }
 
 func validationFailureError(validationErrors []string) error {

@@ -2,11 +2,11 @@
 
 ## 0.11.0 (2026-05-19)
 
-- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Treat extension metadata warnings as non-fatal during `azd x build` and document the behavior in help text.
-- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Improve `azd x init` validation ordering, warning output, namespace validation, tag validation, and generated Go command metadata.
-- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Report missing `namespace` as a validation error for hand-edited `custom-commands` extension manifests.
-- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Inline the child process error message when an `azd x init` build, package, publish, or install step fails.
-- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Warn before overwriting files in a non-empty existing target directory during `azd x init`, and Go-string-escape the extension description embedded in scaffolded `root.go`.
+- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Treat extension metadata warnings as non-fatal during `azd x build`, while keeping required fields and unusable metadata as validation errors.
+- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Improve `azd x init` validation ordering, warning output, namespace/tag handling including `--tags` for `--no-prompt`, and child process error messages.
+- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Improve `azd x init` overwrite prompts and generated Go scaffolding, including command metadata and string-escaped extension descriptions.
+- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Support dependency-only extension packs in `azd x build`, `azd x pack`, and `azd x publish`, including direct dependency-only registry metadata publishing and clear no-artifact messaging.
+- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Fail `azd x publish` when executable extensions have no matching artifacts instead of publishing an empty artifact map.
 - [[#7956]](https://github.com/Azure/azure-dev/pull/7956) Migrate the extension developer kit to the `azdext` runtime and refresh generated Go extension scaffolding.
 - [[#7982]](https://github.com/Azure/azure-dev/pull/7982) Add `secret` prompt option support to the scaffolded extension gRPC prompt contract.
 - [[#7697]](https://github.com/Azure/azure-dev/pull/7697) Add `.azdxignore` and `.gitignore` support to `azd x watch`.

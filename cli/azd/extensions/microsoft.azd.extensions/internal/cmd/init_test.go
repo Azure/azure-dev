@@ -17,6 +17,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/models"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 )
 
 func TestCapabilityPromptChoicesMatchValidCapabilities(t *testing.T) {
@@ -214,6 +215,75 @@ func TestAddOrUpdateExtensionExtensionPack(t *testing.T) {
 	assert.Equal(t, schema.Dependencies, version.Dependencies)
 }
 
+func TestIsExtensionPack(t *testing.T) {
+	tests := []struct {
+		name string
+		in   *models.ExtensionSchema
+		want bool
+	}{
+		{
+			name: "dependency-only manifest is pack",
+			in: &models.ExtensionSchema{
+				Id: "test.pack",
+				Dependencies: []extensions.ExtensionDependency{
+					{Id: "test.extension", Version: "latest"},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "dependencies with capabilities is executable extension",
+			in: &models.ExtensionSchema{
+				Id:           "test.extension",
+				Capabilities: []extensions.CapabilityType{extensions.CustomCommandCapability},
+				Dependencies: []extensions.ExtensionDependency{
+					{Id: "test.dependency", Version: "latest"},
+				},
+			},
+		},
+		{
+			name: "dependencies with namespace is executable extension",
+			in: &models.ExtensionSchema{
+				Id:        "test.extension",
+				Namespace: "test",
+				Dependencies: []extensions.ExtensionDependency{
+					{Id: "test.dependency", Version: "latest"},
+				},
+			},
+		},
+		{
+			name: "dependencies with language is executable extension",
+			in: &models.ExtensionSchema{
+				Id:       "test.extension",
+				Language: "go",
+				Dependencies: []extensions.ExtensionDependency{
+					{Id: "test.dependency", Version: "latest"},
+				},
+			},
+		},
+		{
+			name: "dependencies with entry point is executable extension",
+			in: &models.ExtensionSchema{
+				Id:         "test.extension",
+				EntryPoint: "test-extension",
+				Dependencies: []extensions.ExtensionDependency{
+					{Id: "test.dependency", Version: "latest"},
+				},
+			},
+		},
+		{
+			name: "no dependencies is not pack",
+			in:   &models.ExtensionSchema{Id: "test.extension"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isExtensionPack(tt.in))
+		})
+	}
+}
+
 func TestValidatePublishOptionsExtensionPack(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -258,6 +328,69 @@ func TestValidatePublishOptionsExtensionPack(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidatePublishAssets(t *testing.T) {
+	tests := []struct {
+		name          string
+		extensionPack bool
+		assetCount    int
+		wantState     ux.TaskState
+		wantErr       string
+	}{
+		{
+			name:       "executable extension with assets succeeds",
+			assetCount: 1,
+			wantState:  ux.Success,
+		},
+		{
+			name:          "extension pack without assets skips",
+			extensionPack: true,
+			wantState:     ux.Skipped,
+		},
+		{
+			name:      "executable extension without assets errors",
+			wantState: ux.Error,
+			wantErr:   "no artifacts found for this extension version",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state, err := validatePublishAssets(tt.extensionPack, tt.assetCount)
+			assert.Equal(t, tt.wantState, state)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestCollectExtensionMetadataFromFlagsTags(t *testing.T) {
+	metadata, err := collectExtensionMetadataFromFlags(&initFlags{
+		id:           "test.extension",
+		name:         "Test Extension",
+		capabilities: []string{string(extensions.CustomCommandCapability)},
+		language:     "go",
+		tags:         []string{"alpha, beta", "gamma"},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"alpha", "beta", "gamma"}, metadata.Tags)
+}
+
+func TestCollectExtensionMetadataFromFlagsInvalidTags(t *testing.T) {
+	_, err := collectExtensionMetadataFromFlags(&initFlags{
+		id:           "test.extension",
+		name:         "Test Extension",
+		capabilities: []string{string(extensions.CustomCommandCapability)},
+		language:     "go",
+		tags:         []string{"valid", "ba\nd"},
+	})
+
+	require.ErrorContains(t, err, "control characters")
 }
 
 func TestValidateExtensionNamespace(t *testing.T) {

@@ -42,6 +42,7 @@ type initFlags struct {
 	capabilities   []string
 	language       string
 	namespace      string
+	tags           []string
 }
 
 // extensionSchemaHeader is prepended to generated extension.yaml files so editor
@@ -146,6 +147,16 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 		&flags.namespace,
 		"namespace", "",
 		"The namespace for the extension commands.",
+	)
+
+	initCmd.Flags().StringSliceVar(
+		&flags.tags,
+		"tags", []string{},
+		fmt.Sprintf(
+			"Optional tags for the extension, comma-separated or repeatable (max %d tags, %d characters each).",
+			maxExtensionTags,
+			maxExtensionTagLength,
+		),
 	)
 
 	return initCmd
@@ -454,8 +465,10 @@ func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchem
 		capabilities[i] = extensions.CapabilityType(cap)
 	}
 
-	// Use default empty tags
-	tags := []string{}
+	tags, err := parseTags(strings.Join(flags.tags, ","))
+	if err != nil {
+		return nil, err
+	}
 
 	// Set a default description
 	description := "An azd extension"

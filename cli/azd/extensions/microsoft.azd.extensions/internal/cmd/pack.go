@@ -37,7 +37,7 @@ func newPackCommand(outputPath *string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			internal.WriteCommandHeader(
 				"Package azd extension (azd x pack)",
-				"Packages the azd extension project into distributable artifacts",
+				"Prepares the azd extension project for publishing",
 			)
 
 			// For pack, an empty output path means "use the local registry artifacts path".
@@ -195,7 +195,7 @@ func runPackageAction(ctx context.Context, flags *packageFlags) (bool, error) {
 			Title: "Packaging extension",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 				if extensionPack {
-					spf("Extension packs are published directly to the registry")
+					spf("Extension packs contain no artifacts; nothing to package")
 					return ux.Skipped, nil
 				}
 

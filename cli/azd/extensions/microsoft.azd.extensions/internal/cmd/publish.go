@@ -296,16 +296,11 @@ func runPublishAction(ctx context.Context, flags *publishFlags, defaultRegistryU
 		AddTask(ux.TaskOptions{
 			Title: "Generating extension metadata",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-				if len(assets) == 0 {
-					if extensionPack {
-						spf("Extension packs do not contain artifacts")
-						return ux.Skipped, nil
-					}
-
-					return ux.Error, common.NewDetailedError(
-						"Artifacts not found",
-						errors.New("no artifacts found for this extension version"),
-					)
+				if state, err := validatePublishAssets(extensionPack, len(assets)); err != nil {
+					return state, err
+				} else if state == ux.Skipped {
+					spf("Extension packs do not contain artifacts")
+					return state, nil
 				}
 
 				for _, asset := range assets {
@@ -419,6 +414,21 @@ func validatePublishOptions(extensionPack bool, flags *publishFlags) error {
 	}
 
 	return nil
+}
+
+func validatePublishAssets(extensionPack bool, assetCount int) (ux.TaskState, error) {
+	if assetCount > 0 {
+		return ux.Success, nil
+	}
+
+	if extensionPack {
+		return ux.Skipped, nil
+	}
+
+	return ux.Error, common.NewDetailedError(
+		"Artifacts not found",
+		errors.New("no artifacts found for this extension version"),
+	)
 }
 
 func addOrUpdateExtension(

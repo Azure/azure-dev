@@ -26,6 +26,7 @@ var knownEnvVarPatterns = []envVarPattern{
 	// GitHub Copilot CLI
 	{envVar: "GITHUB_COPILOT_CLI", agentType: AgentTypeGitHubCopilotCLI},
 	{envVar: "GH_COPILOT", agentType: AgentTypeGitHubCopilotCLI},
+	{envVar: "COPILOT_CLI", agentType: AgentTypeGitHubCopilotCLI},
 
 	// Google Gemini CLI
 	{envVar: "GEMINI_CLI", agentType: AgentTypeGemini},

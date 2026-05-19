@@ -78,6 +78,12 @@ func TestDetectFromEnvVars(t *testing.T) {
 			detected:      true,
 		},
 		{
+			name:          "GitHub Copilot CLI via COPILOT_CLI",
+			envVars:       map[string]string{"COPILOT_CLI": "1"},
+			expectedAgent: AgentTypeGitHubCopilotCLI,
+			detected:      true,
+		},
+		{
 			name:          "Gemini CLI via GEMINI_CLI",
 			envVars:       map[string]string{"GEMINI_CLI": "1"},
 			expectedAgent: AgentTypeGemini,
@@ -324,7 +330,7 @@ func clearAgentEnvVars(t *testing.T) {
 		// Claude Code
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
 		// GitHub Copilot CLI
-		"GITHUB_COPILOT_CLI", "GH_COPILOT",
+		"GITHUB_COPILOT_CLI", "GH_COPILOT", "COPILOT_CLI",
 		// Gemini CLI
 		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH",
 		// OpenCode

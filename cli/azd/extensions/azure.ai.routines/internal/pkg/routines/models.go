@@ -6,11 +6,11 @@ package routines
 
 // Routine represents a Foundry routine resource.
 type Routine struct {
-	Name        string                    `json:"name,omitempty"`
-	Description string                    `json:"description,omitempty"`
-	Enabled     *bool                     `json:"enabled,omitempty"`
-	Triggers    map[string]RoutineTrigger `json:"triggers,omitempty"`
-	Actions     map[string]RoutineAction  `json:"actions,omitempty"`
+	Name        string                    `json:"name,omitempty"        yaml:"name,omitempty"`
+	Description string                    `json:"description,omitempty" yaml:"description,omitempty"`
+	Enabled     *bool                     `json:"enabled,omitempty"     yaml:"enabled,omitempty"`
+	Triggers    map[string]RoutineTrigger `json:"triggers,omitempty"    yaml:"triggers,omitempty"`
+	Actions     map[string]RoutineAction  `json:"actions,omitempty"     yaml:"actions,omitempty"`
 }
 
 // RoutineTrigger is the discriminated union for routine triggers.
@@ -19,19 +19,19 @@ type Routine struct {
 //   - "timer": one-shot timer trigger
 //   - "github_issue": GitHub issue event trigger (deferred)
 type RoutineTrigger struct {
-	Type string `json:"type"`
+	Type string `json:"type"               yaml:"type"`
 
 	// schedule / timer fields
-	Cron     string `json:"cron,omitempty"`
-	TimeZone string `json:"time_zone,omitempty"`
+	Cron     string `json:"cron,omitempty"      yaml:"cron,omitempty"`
+	TimeZone string `json:"time_zone,omitempty" yaml:"time_zone,omitempty"`
 
 	// timer-only fields
-	At string `json:"at,omitempty"`
+	At string `json:"at,omitempty" yaml:"at,omitempty"`
 
 	// github_issue fields (deferred in v1)
-	Connection string `json:"connection,omitempty"`
-	Assignee   string `json:"assignee,omitempty"`
-	Repository string `json:"repository,omitempty"`
+	Connection string `json:"connection,omitempty" yaml:"connection,omitempty"`
+	Assignee   string `json:"assignee,omitempty"   yaml:"assignee,omitempty"`
+	Repository string `json:"repository,omitempty" yaml:"repository,omitempty"`
 }
 
 // RoutineAction is the discriminated union for routine actions.
@@ -39,11 +39,11 @@ type RoutineTrigger struct {
 //   - "invoke_agent_responses_api" (CLI alias: "agent-response")
 //   - "invoke_agent_invocations_api" (CLI alias: "agent-invoke")
 type RoutineAction struct {
-	Type            string `json:"type"`
-	AgentName       string `json:"agent_name,omitempty"`
-	AgentEndpointID string `json:"agent_endpoint_id,omitempty"`
-	ConversationID  string `json:"conversation_id,omitempty"`
-	SessionID       string `json:"session_id,omitempty"`
+	Type            string `json:"type"                       yaml:"type"`
+	AgentName       string `json:"agent_name,omitempty"       yaml:"agent_name,omitempty"`
+	AgentEndpointID string `json:"agent_endpoint_id,omitempty" yaml:"agent_endpoint_id,omitempty"`
+	ConversationID  string `json:"conversation_id,omitempty"   yaml:"conversation_id,omitempty"`
+	SessionID       string `json:"session_id,omitempty"        yaml:"session_id,omitempty"`
 }
 
 // PagedRoutine represents a page of routine resources.

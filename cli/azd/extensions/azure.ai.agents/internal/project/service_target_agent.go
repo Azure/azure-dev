@@ -1631,7 +1631,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		}
 
 		attempt++
-		progress(fmt.Sprintf("Waiting for agent to become active, attempt %d/%d", attempt, maxAttempts))
+		progress(fmt.Sprintf("Polling agent status (%d/%d)", attempt, maxAttempts))
 
 		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agentAPIVersion)
 		if err != nil {

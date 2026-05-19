@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -338,10 +339,8 @@ func validateEntryName(name string) (string, bool) {
 	if strings.HasPrefix(withoutTrailing, "/") {
 		return "", false
 	}
-	for _, part := range strings.Split(withoutTrailing, "/") {
-		if part == ".." {
-			return "", false
-		}
+	if slices.Contains(strings.Split(withoutTrailing, "/"), "..") {
+		return "", false
 	}
 	cleaned := path.Clean(withoutTrailing)
 	if cleaned == "" || cleaned == "." || cleaned == "/" {

@@ -390,10 +390,7 @@ type cappedBuffer struct {
 func (c *cappedBuffer) Write(p []byte) (int, error) {
 	remaining := c.max - len(c.buf)
 	if remaining > 0 {
-		take := len(p)
-		if take > remaining {
-			take = remaining
-		}
+		take := min(len(p), remaining)
 		c.buf = append(c.buf, p[:take]...)
 		c.dropped += len(p) - take
 	} else {
@@ -420,7 +417,7 @@ func printCapturedStderr(buf *cappedBuffer) {
 		return
 	}
 	fmt.Fprintln(os.Stderr, "  azcopy stderr:")
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		fmt.Fprintf(os.Stderr, "    %s\n", strings.TrimRight(line, "\r"))
 	}
 	if buf.dropped > 0 {
@@ -436,7 +433,7 @@ func printCapturedStderr(buf *cappedBuffer) {
 func printAzcopyInfo(initMessage string, infoMessages []string) {
 	if initMessage != "" {
 		fmt.Fprintln(os.Stderr, "  azcopy init:")
-		for _, line := range strings.Split(initMessage, "\n") {
+		for line := range strings.SplitSeq(initMessage, "\n") {
 			line = strings.TrimRight(line, "\r")
 			if strings.TrimSpace(line) == "" {
 				continue
@@ -461,8 +458,8 @@ func printAzcopyInfo(initMessage string, infoMessages []string) {
 // path portion — which is what we usually need to diagnose scope problems —
 // is preserved verbatim.
 func redactSAS(u string) string {
-	if i := strings.Index(u, "?"); i >= 0 {
-		return u[:i] + "?[sas-redacted]"
+	if before, _, ok := strings.Cut(u, "?"); ok {
+		return before + "?[sas-redacted]"
 	}
 	return u
 }

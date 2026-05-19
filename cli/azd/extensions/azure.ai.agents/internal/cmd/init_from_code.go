@@ -869,6 +869,13 @@ func sanitizeAgentName(name string) string {
 	return name
 }
 
+func folderNameFromTitle(title string) string {
+	if idx := strings.IndexByte(title, '('); idx >= 0 {
+		title = strings.TrimSpace(title[:idx])
+	}
+	return sanitizeAgentName(title)
+}
+
 // normalizeForFuzzyMatch strips common separator characters (hyphens, dots, spaces, underscores)
 // and lowercases the string for fuzzy comparison.
 func normalizeForFuzzyMatch(s string) string {

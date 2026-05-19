@@ -247,6 +247,47 @@ func (c *Client) doDataPlane(ctx context.Context, method, path string, body any,
 	return c.doDataPlaneWithVersion(ctx, method, path, c.apiVersion, body, queryParams...)
 }
 
+// getAbsoluteDataPlane issues an authenticated GET against an absolute URL
+// (such as a Location header returned by a long-running operation). The host
+// must match the configured data-plane base URL host to avoid leaking the
+// bearer token to a foreign endpoint.
+func (c *Client) getAbsoluteDataPlane(ctx context.Context, rawURL string) (*http.Response, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid operation URL: %w", err)
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return nil, fmt.Errorf("invalid operation URL: scheme must be https")
+	}
+	baseParsed, err := url.Parse(c.baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid client base URL: %w", err)
+	}
+	if !strings.EqualFold(parsed.Host, baseParsed.Host) {
+		return nil, fmt.Errorf("refusing to follow operation URL on foreign host %q (expected %q)",
+			parsed.Host, baseParsed.Host)
+	}
+
+	if c.debugBody {
+		fmt.Fprintf(os.Stderr, "[DEBUG] GET %s\n", parsed.String())
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if err := c.addAuth(ctx, req, DataPlaneScope); err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.do(req, nil)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	return resp, nil
+}
+
 // addAuth adds a bearer token to the request.
 func (c *Client) addAuth(ctx context.Context, req *http.Request, scope string) error {
 	token, err := c.getToken(ctx, scope)

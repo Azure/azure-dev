@@ -87,11 +87,21 @@ func newJobDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				return fmt.Errorf("failed to create API client: %w", err)
 			}
 
-			if err := apiClient.DeleteJob(ctx, name); err != nil {
+			result, err := apiClient.DeleteJob(ctx, name)
+			if err != nil {
 				return fmt.Errorf("failed to delete job: %w", err)
 			}
 
-			fmt.Printf("✓ Job '%s' deleted.\n", name)
+			switch result.Status {
+			case client.DeleteJobCompleted:
+				fmt.Printf("✓ Job '%s' deleted.\n", name)
+			case client.DeleteJobNotFound:
+				fmt.Printf("Job '%s' was not found (nothing to delete).\n", name)
+			case client.DeleteJobInProgress:
+				fmt.Printf("Delete for job '%s' was accepted and is in progress.\n", name)
+			case client.DeleteJobAccepted:
+				fmt.Printf("Delete for job '%s' was accepted.\n", name)
+			}
 			return nil
 		},
 	}

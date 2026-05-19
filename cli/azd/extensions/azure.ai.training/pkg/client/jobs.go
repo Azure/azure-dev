@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 
@@ -114,18 +115,83 @@ func (c *Client) CancelJob(ctx context.Context, id string) error {
 	return nil
 }
 
+// DeleteJobStatus describes the outcome of a DeleteJob call.
+type DeleteJobStatus int
+
+const (
+	// DeleteJobCompleted: deletion finished (initial 200 OK, or 202 + operation poll 200).
+	DeleteJobCompleted DeleteJobStatus = iota
+	// DeleteJobNotFound: initial 204 No Content — job not found / already deleted (idempotent success).
+	DeleteJobNotFound
+	// DeleteJobInProgress: deletion is still running (operation poll returned 202).
+	DeleteJobInProgress
+	// DeleteJobAccepted: initial 202 with no usable Location header — deletion accepted but unverified.
+	DeleteJobAccepted
+)
+
+// DeleteJobResult is returned by DeleteJob.
+type DeleteJobResult struct {
+	Status DeleteJobStatus
+}
+
 // DeleteJob deletes a job.
-// DELETE .../jobs/{id}
-func (c *Client) DeleteJob(ctx context.Context, id string) error {
+//
+//	DELETE .../jobs/{id}
+//
+// Per the Foundry contract the initial DELETE returns:
+//   - 202 Accepted: deletion started; the Location header points to an
+//     operation-result URL. We make a single follow-up GET on that URL (no
+//     polling loop) so we can surface an accurate outcome to the caller.
+//   - 204 No Content: job was not found (or already deleted) — idempotent success.
+//   - 200 OK: synchronous ack with no Location to follow.
+//   - 4xx/5xx: surfaced as an error.
+//
+// On the operation-result follow-up:
+//   - 200 OK: deletion completed.
+//   - 202 Accepted: still in progress (we do not poll).
+//   - 4xx: typically means the job was not in a terminal state and cannot be
+//     deleted; surfaced as an error.
+func (c *Client) DeleteJob(ctx context.Context, id string) (*DeleteJobResult, error) {
 	resp, err := c.doDataPlane(ctx, http.MethodDelete, fmt.Sprintf("jobs/%s", url.PathEscape(id)), nil)
 	if err != nil {
-		return fmt.Errorf("failed to delete job: %w", err)
+		return nil, fmt.Errorf("failed to delete job: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return c.HandleError(resp)
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return &DeleteJobResult{Status: DeleteJobCompleted}, nil
+	case http.StatusNoContent:
+		return &DeleteJobResult{Status: DeleteJobNotFound}, nil
+	case http.StatusAccepted:
+		// Drain initial body so the connection can be reused.
+		_, _ = io.Copy(io.Discard, resp.Body)
+		location := resp.Header.Get("Location")
+		if location == "" {
+			return &DeleteJobResult{Status: DeleteJobAccepted}, nil
+		}
+		return c.pollDeleteOperationOnce(ctx, location)
+	default:
+		return nil, c.HandleError(resp)
 	}
+}
 
-	return nil
+// pollDeleteOperationOnce issues a single authenticated GET against the
+// operation-result URL returned in the DELETE Location header and maps the
+// response to a DeleteJobResult. It does NOT loop.
+func (c *Client) pollDeleteOperationOnce(ctx context.Context, locationURL string) (*DeleteJobResult, error) {
+	opResp, err := c.getAbsoluteDataPlane(ctx, locationURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to poll delete operation: %w", err)
+	}
+	defer opResp.Body.Close()
+
+	switch opResp.StatusCode {
+	case http.StatusOK:
+		return &DeleteJobResult{Status: DeleteJobCompleted}, nil
+	case http.StatusAccepted:
+		return &DeleteJobResult{Status: DeleteJobInProgress}, nil
+	default:
+		return nil, c.HandleError(opResp)
+	}
 }

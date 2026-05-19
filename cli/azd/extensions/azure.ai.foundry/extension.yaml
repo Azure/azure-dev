@@ -1,15 +1,10 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
-capabilities:
-    - metadata
 description: A meta-package, bundling together all of the Azure Foundry AZD extensions for easy install. (Preview)
 displayName: Azure AI Foundry (Preview)
 id: azure.ai.foundry
-language: go
-namespace: ai.foundry
 tags:
     - ai
     - foundry
-usage: azd ai foundry <command> [options]
 version: 0.1.0-preview
 dependencies:
   - id: azure.ai.agents

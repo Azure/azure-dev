@@ -71,7 +71,7 @@ func newJobConnectSSHCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			}
 			apiClient.SetDebugBody(extCtx.Debug)
 
-			// 1. Get job → tracking endpoint
+			// 1. Get job and validate it is still running.
 			job, err := apiClient.GetJob(ctx, name)
 			if err != nil {
 				return fmt.Errorf("failed to get job %q: %w", name, err)
@@ -86,13 +86,8 @@ func newJobConnectSSHCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 					name, job.Properties.Status)
 			}
 
-			trackingEndpoint := utils.ServiceEndpoint(job.Properties.Services, "Tracking")
-			if trackingEndpoint == "" {
-				return fmt.Errorf("job %q has no tracking endpoint yet; ensure the job has started", name)
-			}
-
 			// 2. Get service instance for the requested node
-			instance, err := apiClient.GetServiceInstance(ctx, trackingEndpoint, name, nodeIndex)
+			instance, err := apiClient.GetServiceInstance(ctx, name, nodeIndex)
 			if err != nil {
 				return fmt.Errorf("failed to get service instance for node %d: %w", nodeIndex, err)
 			}

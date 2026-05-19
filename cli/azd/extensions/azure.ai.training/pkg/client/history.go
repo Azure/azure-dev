@@ -9,16 +9,23 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
-	"strings"
 
 	"azure.ai.training/pkg/models"
 )
 
 // GetRunHistory retrieves run history details for a specific job.
-// GET .../history/runs/{runId}
-func (c *Client) GetRunHistory(ctx context.Context, runID string) (*models.RunHistory, error) {
-	resp, err := c.doDataPlane(ctx, http.MethodGet, fmt.Sprintf("history/runs/%s", url.PathEscape(runID)), nil)
+//
+//	GET .../jobs/{name}/history/runs/{runId}
+//
+// For Jobs, runId matches the job name.
+// Returns nil with no error when the run does not exist (404).
+func (c *Client) GetRunHistory(ctx context.Context, jobName string) (*models.RunHistory, error) {
+	path := fmt.Sprintf(
+		"jobs/%s/history/runs/%s",
+		url.PathEscape(jobName), url.PathEscape(jobName),
+	)
+
+	resp, err := c.doDataPlane(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get run history: %w", err)
 	}
@@ -41,33 +48,20 @@ func (c *Client) GetRunHistory(ctx context.Context, runID string) (*models.RunHi
 }
 
 // GetRunHistoryDetails retrieves detailed run information including log file SAS URIs.
-// This calls the AML history service directly using the tracking endpoint from the job response.
-// GET https://{region}.api.azureml.ms/history/v1.0/{workspace}/runs/{runId}/details
-func (c *Client) GetRunHistoryDetails(ctx context.Context, trackingEndpoint string, runID string) (*models.RunHistoryDetails, error) {
-	baseURL, workspacePath, err := parseTrackingEndpoint(trackingEndpoint)
+//
+//	GET .../jobs/{name}/history/runs/{runId}/details
+//
+// For Jobs, runId matches the job name.
+// Returns nil with no error when the run does not exist (404).
+func (c *Client) GetRunHistoryDetails(ctx context.Context, jobName string) (*models.RunHistoryDetails, error) {
+	path := fmt.Sprintf(
+		"jobs/%s/history/runs/%s/details",
+		url.PathEscape(jobName), url.PathEscape(jobName),
+	)
+
+	resp, err := c.doDataPlane(ctx, http.MethodGet, path, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse tracking endpoint: %w", err)
-	}
-
-	reqURL := fmt.Sprintf("%s/history/v1.0%s/runs/%s/details", baseURL, workspacePath, url.PathEscape(runID))
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	if err := c.addAuth(ctx, req, DataPlaneScope); err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	if c.debugBody {
-		fmt.Fprintf(os.Stderr, "[DEBUG] GET %s\n", reqURL)
-	}
-
-	resp, err := c.do(req, nil)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, fmt.Errorf("failed to get run history details: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -85,38 +79,4 @@ func (c *Client) GetRunHistoryDetails(ctx context.Context, trackingEndpoint stri
 	}
 
 	return &result, nil
-}
-
-// parseTrackingEndpoint extracts the base URL and workspace path from a tracking endpoint.
-// Input format:  azureml://{region}.api.azureml.ms/mlflow/v1.0/{workspace-path}?...
-// Returns:       https://{region}.api.azureml.ms, /{workspace-path}
-func parseTrackingEndpoint(trackingEndpoint string) (string, string, error) {
-	// Remove the azureml:// prefix
-	endpoint := strings.TrimPrefix(trackingEndpoint, "azureml://")
-	// Remove any trailing query params
-	if idx := strings.Index(endpoint, "?"); idx != -1 {
-		endpoint = endpoint[:idx]
-	}
-
-	// Parse: {host}/mlflow/v1.0/{subscription-path}
-	parsed, err := url.Parse("https://" + endpoint)
-	if err != nil {
-		return "", "", fmt.Errorf("invalid tracking endpoint: %w", err)
-	}
-
-	host := parsed.Host
-	if host == "" {
-		return "", "", fmt.Errorf("invalid tracking endpoint: missing host")
-	}
-
-	// Extract workspace path: everything after /mlflow/v1.0/ or /mlflow/v2.0/
-	path := parsed.Path
-	for _, prefix := range []string{"/mlflow/v1.0", "/mlflow/v2.0"} {
-		if after, ok := strings.CutPrefix(path, prefix); ok {
-			workspacePath := after
-			return "https://" + host, workspacePath, nil
-		}
-	}
-
-	return "", "", fmt.Errorf("invalid tracking endpoint: expected mlflow path prefix in %q", path)
 }

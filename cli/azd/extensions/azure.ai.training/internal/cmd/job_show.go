@@ -121,11 +121,12 @@ type jobDetails struct {
 	Job       *models.JobResource
 	History   *models.RunHistory
 	Metrics   map[string]*models.MetricsFullResponse
-	Artifacts *models.ArtifactList
+	Artifacts *models.RunArtifactList
 }
 
-// fetchJobDetails fetches run history, metrics, and artifacts concurrently
-// while updating the spinner text to show progress.
+// fetchJobDetails fetches run history first (so we know the experiment id),
+// then fetches metrics and artifacts concurrently while updating the spinner
+// text to show progress.
 func fetchJobDetails(
 	ctx context.Context, apiClient *client.Client, jobID string, spinner *ux.Spinner, debug bool,
 ) *jobDetails {
@@ -164,32 +165,37 @@ func fetchJobDetails(
 
 	spinner.UpdateText("Fetching run history, metrics, artifacts...")
 
+	// Fetch run history first — we need its experiment id to enumerate artifacts.
+	history, err := apiClient.GetRunHistory(ctx, jobID)
+	if debug {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[DEBUG] run history error: %v\n", err)
+		} else if history == nil {
+			fmt.Fprintf(os.Stderr, "[DEBUG] run history: not found (404)\n")
+		} else {
+			fmt.Fprintf(
+				os.Stderr, "[DEBUG] run history: status=%s duration=%s\n",
+				history.Status, history.Duration,
+			)
+		}
+	}
+	details.History = history
+	updateSpinner("run history")
+
 	var wg sync.WaitGroup
 
-	// Fetch run history
+	// Fetch artifacts (requires experiment id from run history)
 	wg.Go(func() {
-		history, err := apiClient.GetRunHistory(ctx, jobID)
-		if debug {
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[DEBUG] run history error: %v\n", err)
-			} else if history == nil {
-				fmt.Fprintf(os.Stderr, "[DEBUG] run history: not found (404)\n")
-			} else {
-				fmt.Fprintf(
-					os.Stderr, "[DEBUG] run history: status=%s duration=%s\n",
-					history.Status, history.Duration,
-				)
+		if history == nil || history.ExperimentID == "" {
+			if debug {
+				fmt.Fprintf(os.Stderr, "[DEBUG] artifacts: skipped (no experiment id)\n")
 			}
+			mu.Lock()
+			updateSpinner("artifacts")
+			mu.Unlock()
+			return
 		}
-		mu.Lock()
-		details.History = history
-		updateSpinner("run history")
-		mu.Unlock()
-	})
-
-	// Fetch artifacts
-	wg.Go(func() {
-		artifacts, err := apiClient.ListArtifacts(ctx, jobID)
+		artifacts, err := apiClient.ListRunArtifacts(ctx, jobID, history.ExperimentID, "", "")
 		if debug {
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "[DEBUG] artifacts error: %v\n", err)
@@ -689,7 +695,7 @@ func printMetricsSection(metrics map[string]*models.MetricsFullResponse) {
 	_ = w.Flush()
 }
 
-func printArtifactsSection(artifacts *models.ArtifactList) {
+func printArtifactsSection(artifacts *models.RunArtifactList) {
 	fmt.Println()
 	fmt.Printf("Artifacts: %d file(s)\n", len(artifacts.Value))
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)

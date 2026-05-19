@@ -74,7 +74,6 @@ func (s *StreamService) StreamJobLogs(ctx context.Context, jobName string) (*Str
 
 	startTime := time.Now()
 	consecutiveErrs := 0
-	trackingEndpoint := ""
 	firstPoll := true
 	multiFile := false // latches to true once >1 file is seen
 
@@ -100,13 +99,9 @@ func (s *StreamService) StreamJobLogs(ctx context.Context, jobName string) (*Str
 		jobStatus := job.Properties.Status
 		studioURL := utils.ServiceEndpoint(job.Properties.Services, "Studio")
 
-		if trackingEndpoint == "" {
-			trackingEndpoint = utils.ServiceEndpoint(job.Properties.Services, "Tracking")
-		}
-
 		if terminalStates[jobStatus] {
-			if trackingEndpoint != "" && !firstPoll {
-				s.flushLogs(ctx, trackingEndpoint, jobName, processedLines, multiFile)
+			if !firstPoll {
+				s.flushLogs(ctx, jobName, processedLines, multiFile)
 			}
 			return &StreamResult{
 				JobName:   jobName,
@@ -124,23 +119,19 @@ func (s *StreamService) StreamJobLogs(ctx context.Context, jobName string) (*Str
 			continue
 		}
 
-		// Stream logs if tracking endpoint is available
-		if trackingEndpoint != "" {
-			var newMultiFile bool
-			_, newMultiFile, err = s.pollAndPrintLogs(ctx, trackingEndpoint, jobName, processedLines, multiFile)
-			if newMultiFile {
-				multiFile = true
-			}
-			if err != nil {
-				consecutiveErrs++
-				if consecutiveErrs >= maxConsecutiveErrs {
-					return nil, fmt.Errorf("failed to stream logs after %d retries: %w", maxConsecutiveErrs, err)
-				}
-			} else {
-				consecutiveErrs = 0
+		// Stream logs
+		var newMultiFile bool
+		_, newMultiFile, err = s.pollAndPrintLogs(ctx, jobName, processedLines, multiFile)
+		if newMultiFile {
+			multiFile = true
+		}
+		if err != nil {
+			consecutiveErrs++
+			if consecutiveErrs >= maxConsecutiveErrs {
+				return nil, fmt.Errorf("failed to stream logs after %d retries: %w", maxConsecutiveErrs, err)
 			}
 		} else {
-			fmt.Fprintf(os.Stderr, "Waiting for job to initialize...\n")
+			consecutiveErrs = 0
 		}
 
 		firstPoll = false
@@ -213,12 +204,11 @@ func printFileHeader(fileName string) {
 // Returns whether new content was printed and whether multiple files were seen.
 func (s *StreamService) pollAndPrintLogs(
 	ctx context.Context,
-	trackingEndpoint string,
 	jobName string,
 	processedLines map[string]int,
 	multiFile bool,
 ) (bool, bool, error) {
-	details, err := s.client.GetRunHistoryDetails(ctx, trackingEndpoint, jobName)
+	details, err := s.client.GetRunHistoryDetails(ctx, jobName)
 	if err != nil {
 		return false, multiFile, err
 	}
@@ -278,12 +268,11 @@ func (s *StreamService) pollAndPrintLogs(
 // flushLogs does a final poll to capture any remaining log output.
 func (s *StreamService) flushLogs(
 	ctx context.Context,
-	trackingEndpoint string,
 	jobName string,
 	processedLines map[string]int,
 	multiFile bool,
 ) {
-	_, _, err := s.pollAndPrintLogs(ctx, trackingEndpoint, jobName, processedLines, multiFile)
+	_, _, err := s.pollAndPrintLogs(ctx, jobName, processedLines, multiFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to flush final logs: %v\n", err)
 	}

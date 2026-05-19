@@ -10,54 +10,32 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 
 	"azure.ai.training/pkg/models"
 )
 
 // GetServiceInstance retrieves service instance details for a specific node of a run.
-// Calls the AML history service:
 //
-//	GET https://{region}.api.azureml.ms/history/v1.0/{workspace}/runs/{runId}/serviceinstances/{nodeIndex}
+//	GET .../jobs/{name}/history/runs/{runId}/serviceinstances/{nodeId}
 //
+// For Jobs, runId matches the job name.
 // Returns nil with no error when the node does not exist (404).
 func (c *Client) GetServiceInstance(
 	ctx context.Context,
-	trackingEndpoint string,
-	runID string,
+	jobName string,
 	nodeIndex int,
 ) (*models.ServiceInstance, error) {
-	baseURL, workspacePath, err := parseTrackingEndpoint(trackingEndpoint)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse tracking endpoint: %w", err)
-	}
-
-	reqURL := fmt.Sprintf(
-		"%s/history/v1.0%s/runs/%s/serviceinstances/%s",
-		baseURL,
-		workspacePath,
-		url.PathEscape(runID),
+	path := fmt.Sprintf(
+		"jobs/%s/history/runs/%s/serviceinstances/%s",
+		url.PathEscape(jobName),
+		url.PathEscape(jobName),
 		strconv.Itoa(nodeIndex),
 	)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	resp, err := c.doDataPlane(ctx, http.MethodGet, path, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	if err := c.addAuth(ctx, req, DataPlaneScope); err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	if c.debugBody {
-		fmt.Fprintf(os.Stderr, "[DEBUG] GET %s\n", reqURL)
-	}
-
-	resp, err := c.do(req, nil)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, fmt.Errorf("failed to get service instance: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -83,40 +61,19 @@ func (c *Client) GetServiceInstance(
 // Returns nil with no error when the node does not exist (404).
 func (c *Client) GetServiceInstanceRaw(
 	ctx context.Context,
-	trackingEndpoint string,
-	runID string,
+	jobName string,
 	nodeIndex int,
 ) (json.RawMessage, error) {
-	baseURL, workspacePath, err := parseTrackingEndpoint(trackingEndpoint)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse tracking endpoint: %w", err)
-	}
-
-	reqURL := fmt.Sprintf(
-		"%s/history/v1.0%s/runs/%s/serviceinstances/%s",
-		baseURL,
-		workspacePath,
-		url.PathEscape(runID),
+	path := fmt.Sprintf(
+		"jobs/%s/history/runs/%s/serviceinstances/%s",
+		url.PathEscape(jobName),
+		url.PathEscape(jobName),
 		strconv.Itoa(nodeIndex),
 	)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	resp, err := c.doDataPlane(ctx, http.MethodGet, path, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	if err := c.addAuth(ctx, req, DataPlaneScope); err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	if c.debugBody {
-		fmt.Fprintf(os.Stderr, "[DEBUG] GET %s\n", reqURL)
-	}
-
-	resp, err := c.do(req, nil)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, fmt.Errorf("failed to get service instance: %w", err)
 	}
 	defer resp.Body.Close()
 

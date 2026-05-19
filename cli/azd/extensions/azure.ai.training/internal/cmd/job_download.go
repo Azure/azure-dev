@@ -144,7 +144,7 @@ func newJobDownloadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				if err := os.MkdirAll(artifactsDest, 0o750); err != nil {
 					return fmt.Errorf("failed to create artifacts dir: %w", err)
 				}
-				if err := downloadDefaultArtifacts(ctx, apiClient, job, name, artifactsDest); err != nil {
+				if err := downloadDefaultArtifacts(ctx, apiClient, name, artifactsDest); err != nil {
 					return err
 				}
 			}
@@ -318,19 +318,14 @@ func downloadDataAsset(
 	return nil
 }
 
-// downloadDefaultArtifacts pulls the run history (for experimentId), pages the artifacts list,
-// fetches contentinfo for each in parallel, then downloads each contentUri in parallel.
+// downloadDefaultArtifacts pulls the run history (for experimentId), pages the artifact
+// content-info listing (a single endpoint that yields SAS download URIs directly), and
+// downloads each contentUri in parallel.
 func downloadDefaultArtifacts(
 	ctx context.Context,
 	apiClient *client.Client,
-	job *models.JobResource,
 	jobName, dest string,
 ) error {
-	trackingEndpoint, err := extractTrackingEndpoint(job)
-	if err != nil {
-		return err
-	}
-
 	var history *models.RunHistory
 	if err := download.WithRetry(ctx, func() (int, error) {
 		h, err := apiClient.GetRunHistory(ctx, jobName)
@@ -346,51 +341,48 @@ func downloadDefaultArtifacts(
 		return fmt.Errorf("run metadata not found for job %q", jobName)
 	}
 	experimentID := history.ExperimentID
+	if experimentID == "" {
+		return fmt.Errorf("run metadata for job %q is missing experimentId; cannot list artifacts", jobName)
+	}
 
 	fmt.Printf("  artifacts: listing for experiment %s...\n", experimentID)
-	var artifacts []models.RunArtifact
+	var infos []*models.RunArtifactContentInfo
 	token := ""
 	for {
-		var page *models.RunArtifactList
+		var page *models.RunArtifactContentInfoList
 		tok := token
 		if err := download.WithRetry(ctx, func() (int, error) {
-			p, err := apiClient.ListRunArtifacts(ctx, trackingEndpoint, experimentID, jobName, tok)
+			p, err := apiClient.ListRunArtifactContentInfo(ctx, jobName, experimentID, "", tok)
 			if err != nil {
 				return 0, err
 			}
 			page = p
 			return 200, nil
 		}); err != nil {
-			return fmt.Errorf("could not list artifacts for job %q: %w", jobName, err)
+			return fmt.Errorf("could not list artifact content info for job %q: %w", jobName, err)
 		}
 		if page == nil {
 			break
 		}
-		artifacts = append(artifacts, page.Value...)
+		for i := range page.Value {
+			infos = append(infos, &page.Value[i])
+		}
 		if page.ContinuationToken == "" {
 			break
 		}
 		token = page.ContinuationToken
 	}
 
-	if len(artifacts) == 0 {
+	if len(infos) == 0 {
 		fmt.Println("  artifacts: none found")
 		return nil
-	}
-
-	fmt.Printf("  artifacts: fetching content info for %d artifact(s)...\n", len(artifacts))
-
-	const parallelism = download.DefaultParallelism
-	infos, err := fetchContentInfosParallel(ctx, apiClient, trackingEndpoint, experimentID, jobName, artifacts, parallelism)
-	if err != nil {
-		return err
 	}
 
 	fmt.Printf("  artifacts: downloading %d artifact(s) to %s...\n", len(infos), dest)
 	// Sweep any leftover .tmp files from a previously interrupted run so
 	// users don't see stale scratch files alongside their downloads.
 	download.SweepTempFiles(dest)
-	results := download.DownloadArtifacts(ctx, infos, dest, parallelism)
+	results := download.DownloadArtifacts(ctx, infos, dest, download.DefaultParallelism)
 
 	var failed int
 	var totalBytes int64
@@ -410,48 +402,6 @@ func downloadDefaultArtifacts(
 	return nil
 }
 
-// fetchContentInfosParallel calls GetRunArtifactContentInfo for each artifact path concurrently.
-func fetchContentInfosParallel(
-	ctx context.Context,
-	apiClient *client.Client,
-	trackingEndpoint, experimentID, runID string,
-	artifacts []models.RunArtifact,
-	parallelism int,
-) ([]*models.RunArtifactContentInfo, error) {
-	infos := make([]*models.RunArtifactContentInfo, len(artifacts))
-	errs := make([]error, len(artifacts))
-
-	sem := make(chan struct{}, parallelism)
-	done := make(chan int, len(artifacts))
-
-	for i, a := range artifacts {
-		sem <- struct{}{}
-		go func() {
-			defer func() { <-sem; done <- i }()
-			err := download.WithRetry(ctx, func() (int, error) {
-				info, err := apiClient.GetRunArtifactContentInfo(ctx, trackingEndpoint, experimentID, runID, a.Path)
-				if err != nil {
-					return 0, err
-				}
-				infos[i] = info
-				return 200, nil
-			})
-			if err != nil {
-				errs[i] = fmt.Errorf("contentinfo for %s: %w", a.Path, err)
-			}
-		}()
-	}
-	for range artifacts {
-		<-done
-	}
-	for _, e := range errs {
-		if e != nil {
-			return nil, e
-		}
-	}
-	return infos, nil
-}
-
 // selectDownloadMode resolves the three mutually-related download modes
 // from the user-provided flags. Cobra already enforces that --all and
 // --output-name are mutually exclusive, so this function only encodes the
@@ -467,26 +417,6 @@ func selectDownloadMode(outputName string, all bool) (bool, bool, bool) {
 	wantAll := all
 	wantDefault := !wantAll && !wantNamed
 	return wantNamed, wantAll, wantDefault
-}
-
-// extractTrackingEndpoint pulls properties.services.Tracking.endpoint from the job response.
-func extractTrackingEndpoint(job *models.JobResource) (string, error) {
-	if job == nil {
-		return "", fmt.Errorf("job is nil")
-	}
-	tracking, ok := job.Properties.Services["Tracking"]
-	if !ok {
-		return "", fmt.Errorf("job missing properties.services.Tracking; cannot resolve artifacts endpoint")
-	}
-	tmap, ok := tracking.(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("properties.services.Tracking has unexpected shape")
-	}
-	endpoint, ok := tmap["endpoint"].(string)
-	if !ok || endpoint == "" {
-		return "", fmt.Errorf("properties.services.Tracking.endpoint missing or not a string")
-	}
-	return endpoint, nil
 }
 
 // extractSasURI returns the sasUri from a credentials response, or "" if missing.

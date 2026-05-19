@@ -41,7 +41,7 @@ type RunArtifactList struct {
 	ContinuationToken string        `json:"continuationToken,omitempty"`
 }
 
-// RunArtifactContentInfo is the response shape for the AML contentinfo endpoint.
+// RunArtifactContentInfo is a single entry in the contentinfo prefix list.
 // ContentURI is a SAS URI that can be downloaded directly with no auth header.
 type RunArtifactContentInfo struct {
 	ArtifactID string `json:"artifactId,omitempty"`
@@ -49,4 +49,11 @@ type RunArtifactContentInfo struct {
 	Container  string `json:"container,omitempty"`
 	Path       string `json:"path,omitempty"`
 	ContentURI string `json:"contentUri,omitempty"`
+}
+
+// RunArtifactContentInfoList is the response shape for the contentinfo
+// prefix listing endpoint.
+type RunArtifactContentInfoList struct {
+	Value             []RunArtifactContentInfo `json:"value"`
+	ContinuationToken string                   `json:"continuationToken,omitempty"`
 }

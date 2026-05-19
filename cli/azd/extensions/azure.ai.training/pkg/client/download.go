@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 
 	"azure.ai.training/pkg/models"
 )
@@ -98,37 +97,34 @@ func (c *Client) GetDatasetCredentials(
 	return &result, nil
 }
 
-// ListRunArtifacts lists artifacts for a run via the AML history service.
-// GET https://{region}.api.azureml.ms/history/v1.0/{workspacePath}/experimentids/{expId}/runs/{runId}/artifacts[?continuationToken=...]
+// ListRunArtifacts lists artifacts for a run via the data-plane history endpoint.
+//
+//	GET .../jobs/{name}/history/experimentids/{experimentId}/runs/{runId}/artifacts
+//	    [?path=<prefix>&continuationToken=<token>]
+//
+// For Jobs, runId matches the job name. Pass an empty string for pathPrefix to
+// list all artifacts; pass continuationToken from a previous page to continue.
 func (c *Client) ListRunArtifacts(
-	ctx context.Context, trackingEndpoint, experimentID, runID, continuationToken string,
+	ctx context.Context, jobName, experimentID, pathPrefix, continuationToken string,
 ) (*models.RunArtifactList, error) {
-	baseURL, workspacePath, err := parseTrackingEndpoint(trackingEndpoint)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse tracking endpoint: %w", err)
-	}
+	path := fmt.Sprintf(
+		"jobs/%s/history/experimentids/%s/runs/%s/artifacts",
+		url.PathEscape(jobName),
+		url.PathEscape(experimentID),
+		url.PathEscape(jobName),
+	)
 
-	reqURL := fmt.Sprintf("%s/history/v1.0%s/experimentids/%s/runs/%s/artifacts",
-		baseURL, workspacePath, url.PathEscape(experimentID), url.PathEscape(runID))
+	var qp []string
+	if pathPrefix != "" {
+		qp = append(qp, "path", pathPrefix)
+	}
 	if continuationToken != "" {
-		reqURL += "?continuationToken=" + url.QueryEscape(continuationToken)
+		qp = append(qp, "continuationToken", continuationToken)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	resp, err := c.doDataPlane(ctx, http.MethodGet, path, nil, qp...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	if err := c.addAuth(ctx, req, DataPlaneScope); err != nil {
-		return nil, err
-	}
-
-	if c.debugBody {
-		fmt.Fprintf(os.Stderr, "[DEBUG] GET %s\n", reqURL)
-	}
-
-	resp, err := c.do(req, nil)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, fmt.Errorf("failed to list run artifacts: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -144,36 +140,36 @@ func (c *Client) ListRunArtifacts(
 	return &result, nil
 }
 
-// GetRunArtifactContentInfo fetches the content info (SAS URI) for a single run artifact.
-// GET https://{region}.api.azureml.ms/history/v1.0/{workspacePath}/experimentids/{expId}/runs/{runId}/artifacts/contentinfo?path={path}
-func (c *Client) GetRunArtifactContentInfo(
-	ctx context.Context, trackingEndpoint, experimentID, runID, artifactPath string,
-) (*models.RunArtifactContentInfo, error) {
-	baseURL, workspacePath, err := parseTrackingEndpoint(trackingEndpoint)
+// ListRunArtifactContentInfo lists artifact content info (SAS download URIs) for a run via
+// the data-plane history endpoint.
+//
+//	GET .../jobs/{name}/history/experimentids/{experimentId}/runs/{runId}/artifacts/prefix/contentinfo
+//	    [?path=<prefix>&continuationToken=<token>]
+//
+// For Jobs, runId matches the job name. Pass an empty string for pathPrefix to
+// fetch content info for all artifacts; pass continuationToken from a previous
+// page to continue.
+func (c *Client) ListRunArtifactContentInfo(
+	ctx context.Context, jobName, experimentID, pathPrefix, continuationToken string,
+) (*models.RunArtifactContentInfoList, error) {
+	path := fmt.Sprintf(
+		"jobs/%s/history/experimentids/%s/runs/%s/artifacts/prefix/contentinfo",
+		url.PathEscape(jobName),
+		url.PathEscape(experimentID),
+		url.PathEscape(jobName),
+	)
+
+	var qp []string
+	if pathPrefix != "" {
+		qp = append(qp, "path", pathPrefix)
+	}
+	if continuationToken != "" {
+		qp = append(qp, "continuationToken", continuationToken)
+	}
+
+	resp, err := c.doDataPlane(ctx, http.MethodGet, path, nil, qp...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse tracking endpoint: %w", err)
-	}
-
-	reqURL := fmt.Sprintf("%s/history/v1.0%s/experimentids/%s/runs/%s/artifacts/contentinfo?path=%s",
-		baseURL, workspacePath,
-		url.PathEscape(experimentID), url.PathEscape(runID),
-		url.QueryEscape(artifactPath))
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	if err := c.addAuth(ctx, req, DataPlaneScope); err != nil {
-		return nil, err
-	}
-
-	if c.debugBody {
-		fmt.Fprintf(os.Stderr, "[DEBUG] GET %s\n", reqURL)
-	}
-
-	resp, err := c.do(req, nil)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, fmt.Errorf("failed to list run artifact content info: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -181,9 +177,9 @@ func (c *Client) GetRunArtifactContentInfo(
 		return nil, c.HandleError(resp)
 	}
 
-	var result models.RunArtifactContentInfo
+	var result models.RunArtifactContentInfoList
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode contentinfo response: %w", err)
+		return nil, fmt.Errorf("failed to decode run artifact content info response: %w", err)
 	}
 
 	return &result, nil

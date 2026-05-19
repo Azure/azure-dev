@@ -14,14 +14,14 @@ import (
 )
 
 // ListMetrics lists all available metrics for a job.
-// POST .../metrics/{id}/list
+// POST .../jobs/{id}/metrics/list
 func (c *Client) ListMetrics(ctx context.Context, jobID string) (*models.MetricsListResponse, error) {
 	reqBody := &models.MetricsListRequest{
 		MetricNamespace:   nil,
 		ContinuationToken: nil,
 	}
 
-	resp, err := c.doDataPlane(ctx, http.MethodPost, fmt.Sprintf("metrics/%s/list", url.PathEscape(jobID)), reqBody)
+	resp, err := c.doDataPlane(ctx, http.MethodPost, fmt.Sprintf("jobs/%s/metrics/list", url.PathEscape(jobID)), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list metrics: %w", err)
 	}
@@ -44,7 +44,7 @@ func (c *Client) ListMetrics(ctx context.Context, jobID string) (*models.Metrics
 }
 
 // GetMetricsFull retrieves full metric data for a specific metric name.
-// POST .../metrics/{id}/full
+// POST .../jobs/{id}/metrics/full
 func (c *Client) GetMetricsFull(
 	ctx context.Context, jobID string, metricName string,
 ) (*models.MetricsFullResponse, error) {
@@ -56,7 +56,7 @@ func (c *Client) GetMetricsFull(
 		EndTime:           nil,
 	}
 
-	resp, err := c.doDataPlane(ctx, http.MethodPost, fmt.Sprintf("metrics/%s/full", url.PathEscape(jobID)), reqBody)
+	resp, err := c.doDataPlane(ctx, http.MethodPost, fmt.Sprintf("jobs/%s/metrics/full", url.PathEscape(jobID)), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get metrics: %w", err)
 	}

@@ -267,10 +267,8 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 		return fmt.Errorf("failed to check extension directory: %w", err)
 	}
 
-	localRegistryExists := false
 	createLocalExtensionSourceAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 		if has, err := internal.HasLocalRegistry(); err == nil && has {
-			localRegistryExists = true
 			return ux.Skipped, nil
 		}
 
@@ -314,7 +312,7 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 		return ux.Success, nil
 	}
 
-	runSubprocess := func(description string, args ...string) (ux.TaskState, error) {
+	runSubprocess := func(failureDescription string, args ...string) (ux.TaskState, error) {
 		/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments */
 		cmd := exec.Command("azd", args...)
 		cmd.Dir = extensionMetadata.Path
@@ -325,7 +323,7 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 		result, err := cmd.CombinedOutput()
 		if err != nil {
 			return ux.Error, common.NewDetailedError(
-				description,
+				failureDescription,
 				fmt.Errorf("%w%s", err, subprocessErrorTail(result)),
 			)
 		}
@@ -396,11 +394,6 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 		return err
 	}
 
-	if localRegistryExists {
-		fmt.Println("Local extension source already exists.")
-		fmt.Println()
-	}
-
 	if !flags.createRegistry {
 		fmt.Println(output.WithBold("Try out the extension"))
 		fmt.Printf(
@@ -465,6 +458,8 @@ func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchem
 		capabilities[i] = extensions.CapabilityType(cap)
 	}
 
+	// StringSlice accepts comma-separated values and repeated flags; normalize
+	// both forms through the same parser used by the interactive flow.
 	tags, err := parseTags(strings.Join(flags.tags, ","))
 	if err != nil {
 		return nil, err
@@ -956,11 +951,11 @@ type ExtensionTemplate struct {
 // extension scaffolds. They allow user-supplied strings (e.g. extension
 // description) to be safely embedded in generated source code.
 var templateFuncs = template.FuncMap{
-	// goString quotes a string as a Go double-quoted literal, escaping any
+	// strconvQuote quotes a string as a Go double-quoted literal, escaping any
 	// characters that would otherwise produce invalid Go source (quotes,
 	// backslashes, newlines, control characters, etc.). The returned value
 	// includes the surrounding quotes.
-	"goString": strconv.Quote,
+	"strconvQuote": strconv.Quote,
 }
 
 type DotNetTemplate struct {

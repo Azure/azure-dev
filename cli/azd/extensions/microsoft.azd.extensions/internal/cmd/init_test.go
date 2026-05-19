@@ -544,7 +544,7 @@ func TestIsDirNonEmpty(t *testing.T) {
 func TestTemplateGoStringQuotesDescription(t *testing.T) {
 	t.Parallel()
 
-	const tmplSrc = `Short: {{goString .Description}},`
+	const tmplSrc = `Short: {{strconvQuote .Description}},`
 	tmpl, err := template.New("test").Funcs(templateFuncs).Parse(tmplSrc)
 	require.NoError(t, err)
 

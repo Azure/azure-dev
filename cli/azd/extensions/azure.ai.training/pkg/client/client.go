@@ -149,20 +149,9 @@ func (c *Client) do(req *http.Request, bodyBytes []byte) (*http.Response, error)
 			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		}
 
-		// TEMP: unconditional API trace for manual testing — remove before merge.
-		fmt.Fprintf(os.Stderr, "\x1b[38;5;208m[API] %s %s (attempt %d/%d)\x1b[0m\n", req.Method, req.URL.String(), attempt, maxAttempts)
-		start := time.Now()
-
 		// #nosec G107 G704 -- req.URL is constructed by this client from configured baseURL and known paths
 		resp, err := c.httpClient.Do(req)
 		lastResp, lastErr = resp, err
-
-		// TEMP: unconditional API trace for manual testing — remove before merge.
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "\x1b[38;5;208m[API] -> ERROR %v (%s)\x1b[0m\n", err, time.Since(start).Round(time.Millisecond))
-		} else {
-			fmt.Fprintf(os.Stderr, "\x1b[38;5;208m[API] -> %d %s (%s)\x1b[0m\n", resp.StatusCode, http.StatusText(resp.StatusCode), time.Since(start).Round(time.Millisecond))
-		}
 
 		if err == nil && !isRetriableStatus(resp.StatusCode) {
 			return resp, nil

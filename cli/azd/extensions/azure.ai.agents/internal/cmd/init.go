@@ -670,8 +670,15 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				Timeout: 30 * time.Second,
 			}
 
-			// Track whether a new project folder was created so we can
-			// print a follow-up cd hint at the end of the command.
+			// Capture the original working directory so we can print an
+			// accurate cd hint after the process has chdir'd.
+			originalCwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("getting current directory: %w", err)
+			}
+
+			// Track the absolute path of a newly created project folder so we
+			// can print a follow-up cd hint at the end of the command.
 			createdFolder := ""
 
 			// Auto-detect an existing agent manifest in the target directory
@@ -850,7 +857,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 								folderName, err,
 							)
 						}
-						createdFolder = folderName
+						createdFolder = filepath.Join(originalCwd, folderName)
 
 						// Search for an agent manifest in the scaffolded project
 						cwd, err := os.Getwd()
@@ -883,6 +890,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 							title = strings.TrimSpace(title[:idx])
 						}
 						folderName := sanitizeAgentName(title)
+						// Check whether the target directory already exists so we
+						// only report "created" when a new directory was made.
+						_, dirExisted := os.Stat(folderName)
 						flags.manifestPointer = selectedTemplate.Source
 						if err := runInitFromManifest(
 							ctx, flags, azdClient, httpClient, folderName,
@@ -892,7 +902,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 							}
 							return err
 						}
-						createdFolder = folderName
+						if dirExisted != nil {
+							createdFolder = filepath.Join(originalCwd, folderName)
+						}
 					}
 
 				default:
@@ -913,7 +925,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			}
 
 			if createdFolder != "" {
-				fmt.Printf("\nYour project has been created in ./%s\n", createdFolder)
+				// Print relative to where the user invoked the command.
+				relPath, relErr := filepath.Rel(originalCwd, createdFolder)
+				if relErr != nil {
+					relPath = createdFolder
+				}
+				fmt.Printf("\nYour project has been created in ./%s\n", relPath)
 			}
 
 			return nil

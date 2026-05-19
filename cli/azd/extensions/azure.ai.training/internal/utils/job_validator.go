@@ -179,6 +179,31 @@ func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 		}
 	}
 
+	// 11. Distribution: when provided, type must be one of the four AML
+	// launcher types. Per-type fields are passed through without enforcement
+	// (mirrors the services policy — let the backend reject missing/invalid
+	// fields with its own error).
+	if job.Distribution != nil {
+		switch strings.ToLower(strings.TrimSpace(job.Distribution.Type)) {
+		case "pytorch", "tensorflow", "mpi", "ray":
+			// supported
+		case "":
+			result.Findings = append(result.Findings, ValidationFinding{
+				Field:    "distribution.type",
+				Severity: SeverityError,
+				Message:  "type is required when distribution is specified; expected one of: pytorch, tensorflow, mpi, ray",
+			})
+		default:
+			result.Findings = append(result.Findings, ValidationFinding{
+				Field:    "distribution.type",
+				Severity: SeverityError,
+				Message: fmt.Sprintf(
+					"type %q is not supported; expected one of: pytorch, tensorflow, mpi, ray",
+					job.Distribution.Type),
+			})
+		}
+	}
+
 	return result
 }
 

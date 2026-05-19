@@ -202,12 +202,11 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 		}
 	}
 
-	// Distribution
-	if def.Distribution != "" {
-		job.Distribution = &models.Distribution{
-			DistributionType:        def.Distribution,
-			ProcessCountPerInstance: def.ProcessPerNode,
-		}
+	// Distribution: nested AML schema with one of 4 launcher types.
+	// ValidateJobOffline restricts type to {pytorch, tensorflow, mpi, ray};
+	// per-type fields are passed through without further validation.
+	if def.Distribution != nil {
+		job.Distribution = buildDistribution(def.Distribution)
 	}
 
 	// Resources — prefer structured resources block, fall back to flat instance_count
@@ -298,6 +297,47 @@ func mapServiceType(t string) string {
 		return "VSCode"
 	case "custom":
 		return "Custom"
+	}
+	return t
+}
+
+// buildDistribution translates an AML YAML DistributionDefinition into the API request shape.
+// Only fields relevant to the chosen type are forwarded; everything else is dropped so we
+// don't accidentally send pytorch-specific fields on a ray job (and vice versa).
+func buildDistribution(d *utils.DistributionDefinition) *models.Distribution {
+	out := &models.Distribution{
+		DistributionType: mapDistributionType(d.Type),
+	}
+	switch strings.ToLower(strings.TrimSpace(d.Type)) {
+	case "pytorch", "mpi":
+		out.ProcessCountPerInstance = d.ProcessCountPerInstance
+	case "tensorflow":
+		out.ParameterServerCount = d.ParameterServerCount
+		out.WorkerCount = d.WorkerCount
+	case "ray":
+		out.Port = d.Port
+		out.Address = d.Address
+		out.IncludeDashboard = d.IncludeDashboard
+		out.DashboardPort = d.DashboardPort
+		out.HeadNodeAdditionalArgs = d.HeadNodeAdditionalArgs
+		out.WorkerNodeAdditionalArgs = d.WorkerNodeAdditionalArgs
+	}
+	return out
+}
+
+// mapDistributionType converts the AML YAML distribution type to the API distributionType.
+// Unknown values pass through unchanged so the server returns a clear error (offline
+// validation already restricts the accepted set).
+func mapDistributionType(t string) string {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "pytorch":
+		return "PyTorch"
+	case "tensorflow":
+		return "TensorFlow"
+	case "mpi":
+		return "Mpi"
+	case "ray":
+		return "Ray"
 	}
 	return t
 }

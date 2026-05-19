@@ -336,10 +336,50 @@ func printJobDetails(d *jobDetails) {
 		fmt.Println()
 		w = tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintf(w, "Distribution:\t%s\n", props.Distribution.DistributionType)
+		// PyTorch / Mpi
 		if props.Distribution.ProcessCountPerInstance > 0 {
 			fmt.Fprintf(
 				w, "Processes/Node:\t%d\n",
 				props.Distribution.ProcessCountPerInstance,
+			)
+		}
+		// TensorFlow
+		if props.Distribution.WorkerCount > 0 {
+			fmt.Fprintf(w, "Workers:\t%d\n", props.Distribution.WorkerCount)
+		}
+		if props.Distribution.ParameterServerCount > 0 {
+			fmt.Fprintf(
+				w, "Parameter Servers:\t%d\n",
+				props.Distribution.ParameterServerCount,
+			)
+		}
+		// Ray
+		if props.Distribution.Port != nil {
+			fmt.Fprintf(w, "Port:\t%d\n", *props.Distribution.Port)
+		}
+		if props.Distribution.Address != "" {
+			fmt.Fprintf(w, "Address:\t%s\n", props.Distribution.Address)
+		}
+		if props.Distribution.IncludeDashboard != nil {
+			fmt.Fprintf(
+				w, "Dashboard:\t%t\n", *props.Distribution.IncludeDashboard,
+			)
+		}
+		if props.Distribution.DashboardPort != nil {
+			fmt.Fprintf(
+				w, "Dashboard Port:\t%d\n", *props.Distribution.DashboardPort,
+			)
+		}
+		if props.Distribution.HeadNodeAdditionalArgs != "" {
+			fmt.Fprintf(
+				w, "Head Node Args:\t%s\n",
+				props.Distribution.HeadNodeAdditionalArgs,
+			)
+		}
+		if props.Distribution.WorkerNodeAdditionalArgs != "" {
+			fmt.Fprintf(
+				w, "Worker Node Args:\t%s\n",
+				props.Distribution.WorkerNodeAdditionalArgs,
 			)
 		}
 		_ = w.Flush()

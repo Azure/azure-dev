@@ -20,10 +20,28 @@ type JobOutput struct {
 	AssetVersion  string `json:"assetVersion,omitempty"`
 }
 
-// Distribution represents distributed training configuration.
+// Distribution represents distributed training configuration on the wire.
+// This is a union of the four AML distribution shapes (PyTorch, Mpi,
+// TensorFlow, Ray); the builder only populates the fields relevant to
+// DistributionType, and `omitempty` keeps the unused fields off the wire.
 type Distribution struct {
-	DistributionType        string `json:"distributionType"` // "PyTorch", "Mpi", "TensorFlow"
-	ProcessCountPerInstance int    `json:"processCountPerInstance,omitempty"`
+	DistributionType string `json:"distributionType"` // "PyTorch" | "Mpi" | "TensorFlow" | "Ray"
+
+	// PyTorch + Mpi
+	ProcessCountPerInstance int `json:"processCountPerInstance,omitempty"`
+
+	// TensorFlow
+	ParameterServerCount int `json:"parameterServerCount,omitempty"`
+	WorkerCount          int `json:"workerCount,omitempty"`
+
+	// Ray. Pointer types preserve the user's intent — nil means "don't send",
+	// explicit false / 0 still gets serialized.
+	Port                     *int   `json:"port,omitempty"`
+	Address                  string `json:"address,omitempty"`
+	IncludeDashboard         *bool  `json:"includeDashboard,omitempty"`
+	DashboardPort            *int   `json:"dashboardPort,omitempty"`
+	HeadNodeAdditionalArgs   string `json:"headNodeAdditionalArgs,omitempty"`
+	WorkerNodeAdditionalArgs string `json:"workerNodeAdditionalArgs,omitempty"`
 }
 
 // ResourceConfig represents compute resource specifications.

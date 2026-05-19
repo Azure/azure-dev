@@ -26,16 +26,40 @@ type JobDefinition struct {
 	Code                 string                       `yaml:"code"`
 	Inputs               map[string]InputDefinition   `yaml:"inputs"`
 	Outputs              map[string]OutputDefinition  `yaml:"outputs"`
-	Distribution         string                       `yaml:"distribution"`
+	Distribution         *DistributionDefinition      `yaml:"distribution"`
 	Resources            *ResourceDefinition          `yaml:"resources"`
 	InstanceCount        int                          `yaml:"instance_count"`
 	GPUCount             int                          `yaml:"gpu_count"`
-	ProcessPerNode       int                          `yaml:"process_per_node"`
 	EnvironmentVariables map[string]string            `yaml:"environment_variables"`
 	Identity             string                       `yaml:"identity"`
 	Timeout              string                       `yaml:"timeout"`
 	Tags                 map[string]string            `yaml:"tags"`
 	Services             map[string]ServiceDefinition `yaml:"services"`
+}
+
+// DistributionDefinition represents the distributed training launcher config in YAML.
+// Mirrors the AML CLI v2 distribution schemas: pytorch, tensorflow, mpi, ray.
+// Per-type fields are flat on this struct; only the fields relevant to the
+// chosen type are honored, the rest are ignored and not sent to the backend.
+type DistributionDefinition struct {
+	Type string `yaml:"type"` // "pytorch" | "tensorflow" | "mpi" | "ray"
+
+	// PyTorch + Mpi
+	ProcessCountPerInstance int `yaml:"process_count_per_instance"`
+
+	// TensorFlow
+	ParameterServerCount int `yaml:"parameter_server_count"`
+	WorkerCount          int `yaml:"worker_count"`
+
+	// Ray. Pointer types let an unset field stay nil so we don't send zero/false
+	// when the user didn't ask for it (the backend treats absent vs. explicit-0
+	// differently for some of these).
+	Port                     *int   `yaml:"port"`
+	Address                  string `yaml:"address"`
+	IncludeDashboard         *bool  `yaml:"include_dashboard"`
+	DashboardPort            *int   `yaml:"dashboard_port"`
+	HeadNodeAdditionalArgs   string `yaml:"head_node_additional_args"`
+	WorkerNodeAdditionalArgs string `yaml:"worker_node_additional_args"`
 }
 
 // ServiceDefinition represents a job service declared in YAML.

@@ -411,6 +411,54 @@ func TestValidate_Services(t *testing.T) {
 	}
 }
 
+// Tests distribution block validation:
+//   - omitted distribution → no error (it's optional)
+//   - supported types (pytorch, tensorflow, mpi, ray) → no error
+//   - missing type → error
+//   - unsupported type → error
+func TestValidate_Distribution(t *testing.T) {
+	// Omitted — no findings:
+	job := validJob()
+	job.Distribution = nil
+	result := ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "distribution"); f != nil {
+		t.Errorf("did not expect any distribution finding when omitted: %s", f.Message)
+	}
+
+	// Each supported type is accepted with no error:
+	for _, ty := range []string{"pytorch", "tensorflow", "mpi", "ray"} {
+		job = validJob()
+		job.Distribution = &DistributionDefinition{Type: ty}
+		result = ValidateJobOffline(job, ".")
+		if f := findFindingByMessage(result, "is not supported"); f != nil {
+			t.Errorf("did not expect type-not-supported finding for %q: %s", ty, f.Message)
+		}
+		if f := findFindingByMessage(result, "type is required"); f != nil {
+			t.Errorf("did not expect type-required finding for %q: %s", ty, f.Message)
+		}
+	}
+
+	// Missing type — error:
+	job = validJob()
+	job.Distribution = &DistributionDefinition{}
+	result = ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "type is required"); f == nil {
+		t.Error("expected error when distribution.type is missing")
+	} else if f.Severity != SeverityError {
+		t.Errorf("expected SeverityError for missing distribution.type, got %s", f.Severity)
+	}
+
+	// Unsupported type — error:
+	job = validJob()
+	job.Distribution = &DistributionDefinition{Type: "horovod"}
+	result = ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "is not supported"); f == nil {
+		t.Error("expected error for unsupported distribution type")
+	} else if f.Severity != SeverityError {
+		t.Errorf("expected SeverityError for unsupported distribution type, got %s", f.Severity)
+	}
+}
+
 // Tests that the reserved output name "default" is rejected. The backend rejects
 // it at submit time with a 400; we catch it offline so users don't have to wait
 // for the round-trip.

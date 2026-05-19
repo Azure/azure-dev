@@ -1026,6 +1026,15 @@ func (a *InitAction) configureModelChoice(
 	}
 	a.deploymentDetails = deploymentDetails
 
+	// Signal Bicep to skip ACR creation for code deploy (no container registry needed)
+	if a.isCodeDeploy {
+		if err := setEnvValue(
+			ctx, a.azdClient, a.environment.Name, "SKIP_ACR", "true",
+		); err != nil {
+			return nil, err
+		}
+	}
+
 	return agentManifest, nil
 }
 
@@ -1607,11 +1616,8 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		}
 	}
 
-	// Detect startup command from the project source directory
-	if a.isCodeDeploy {
-		// For code deploy, auto-derive startupCommand from entry point in agent.yaml
-		agentConfig.StartupCommand = deriveStartupCommand(a.projectConfig.Path, targetDir)
-	} else {
+	// Detect startup command (container deploy only; code deploy does not use startupCommand)
+	if !a.isCodeDeploy {
 		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
 		if err != nil {
 			return err

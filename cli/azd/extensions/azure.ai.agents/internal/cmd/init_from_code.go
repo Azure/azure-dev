@@ -842,16 +842,13 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 
 	agentConfig.Deployments = a.deploymentDetails
 
-	// Detect startup command from the project source directory (container mode only for prompt)
+	// Detect startup command (container deploy only; code deploy does not use startupCommand)
 	if !isCodeDeploy {
 		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
 		if err != nil {
 			return err
 		}
 		agentConfig.StartupCommand = startupCmd
-	} else {
-		// For code deploy, auto-derive startupCommand from entry point in agent.yaml
-		agentConfig.StartupCommand = deriveStartupCommand(a.projectConfig.Path, targetDir)
 	}
 
 	var agentConfigStruct *structpb.Struct
@@ -898,6 +895,13 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
 
+	// Signal Bicep to skip ACR creation for code deploy (no container registry needed)
+	if isCodeDeploy {
+		if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "SKIP_ACR", "true"); err != nil {
+			return err
+		}
+	}
+
 	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentName)
 	return nil
 }
@@ -905,19 +909,6 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 // promptCodeConfiguration prompts the user for code deploy configuration settings.
 func (a *InitFromCodeAction) promptCodeConfiguration(ctx context.Context, srcDir string) (*agent_yaml.CodeConfiguration, error) {
 	return promptCodeConfig(ctx, a.azdClient, srcDir, a.flags.noPrompt)
-}
-
-// deriveStartupCommand derives the startup command for code deploy from the agent.yaml
-// entry point. Falls back to "python main.py" if the entry point cannot be determined.
-func deriveStartupCommand(projectPath, targetDir string) string {
-	agentYamlPath := filepath.Join(projectPath, targetDir, "agent.yaml")
-	if data, err := os.ReadFile(agentYamlPath); err == nil { //nolint:gosec // path is constructed from project config
-		var agentDef agent_yaml.ContainerAgent
-		if err := yaml.Unmarshal(data, &agentDef); err == nil && agentDef.CodeConfiguration != nil {
-			return agent_yaml.RuntimeCmdPrefix(agentDef.CodeConfiguration.Runtime) + " " + agentDef.CodeConfiguration.EntryPoint
-		}
-	}
-	return "python main.py"
 }
 
 // protocolInfo pairs a protocol name with the default version used when generating agent.yaml.

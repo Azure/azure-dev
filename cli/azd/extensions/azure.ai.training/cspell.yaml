@@ -4,6 +4,7 @@ words:
   - CODEOWNERS
   - gochecknoglobals
   - gopkg
+  - Unparseable
 
   # Azure ML / Foundry training API surface
   - amlignore

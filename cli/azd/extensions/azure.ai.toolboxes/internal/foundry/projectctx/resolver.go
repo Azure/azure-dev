@@ -18,7 +18,7 @@ import (
 var ReadAzdHostedSourcesFunc = readAzdHostedSources
 
 // readAzdHostedSources dials the azd daemon (if reachable) and reads both the
-// active env's AZURE_AI_PROJECT_ENDPOINT and the global-config project context
+// active environment's AZURE_AI_PROJECT_ENDPOINT and the global-config project context
 // in a single client lifetime. Errors talking to the daemon are returned only
 // for non-Unavailable cases on the config read — Unavailable is treated as
 // "no daemon" and the caller falls through to subsequent levels.

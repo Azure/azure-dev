@@ -1166,11 +1166,8 @@ func ensureProject(
 					envBase = filepath.Base(cwd)
 				}
 			}
-			sanitizedDirectoryName := sanitizeAgentName(envBase)
-			initArgs = append(
-				sanitizedEnvName := sanitizeAgentName(envBase + "-dev")
-				initArgs, "--environment", sanitizedEnvName,
-			)
+			sanitizedEnvName := sanitizeAgentName(envBase + "-dev")
+			initArgs = append(initArgs, "--environment", sanitizedEnvName)
 		}
 
 		// We don't have a project yet

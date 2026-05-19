@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"azure.ai.training/internal/utils"
 	"azure.ai.training/pkg/client"
 )
 
@@ -97,10 +98,10 @@ func (s *StreamService) StreamJobLogs(ctx context.Context, jobName string) (*Str
 		consecutiveErrs = 0
 
 		jobStatus := job.Properties.Status
-		studioURL := extractServiceEndpoint(job.Properties.Services, "Studio")
+		studioURL := utils.ServiceEndpoint(job.Properties.Services, "Studio")
 
 		if trackingEndpoint == "" {
-			trackingEndpoint = extractServiceEndpoint(job.Properties.Services, "Tracking")
+			trackingEndpoint = utils.ServiceEndpoint(job.Properties.Services, "Tracking")
 		}
 
 		if terminalStates[jobStatus] {
@@ -286,28 +287,4 @@ func (s *StreamService) flushLogs(
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to flush final logs: %v\n", err)
 	}
-}
-
-// extractServiceEndpoint extracts the endpoint URL from the job services map.
-func extractServiceEndpoint(services map[string]any, serviceName string) string {
-	if services == nil {
-		return ""
-	}
-	svc, ok := services[serviceName]
-	if !ok {
-		return ""
-	}
-	svcMap, ok := svc.(map[string]any)
-	if !ok {
-		return ""
-	}
-	endpoint, ok := svcMap["endpoint"]
-	if !ok {
-		return ""
-	}
-	str, ok := endpoint.(string)
-	if !ok {
-		return ""
-	}
-	return str
 }

@@ -86,7 +86,7 @@ func newJobConnectSSHCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 					name, job.Properties.Status)
 			}
 
-			trackingEndpoint := extractServiceEndpointStr(job.Properties.Services, "Tracking")
+			trackingEndpoint := utils.ServiceEndpoint(job.Properties.Services, "Tracking")
 			if trackingEndpoint == "" {
 				return fmt.Errorf("job %q has no tracking endpoint yet; ensure the job has started", name)
 			}
@@ -277,27 +277,4 @@ func buildJobAPIClient(ctx context.Context) (*client.Client, error) {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
 	return apiClient, nil
-}
-
-// extractServiceEndpointStr is a small helper to read a service endpoint URL
-// from the job services map. Duplicates the logic from the stream service to
-// avoid a cross-package dependency.
-func extractServiceEndpointStr(services map[string]any, serviceName string) string {
-	if services == nil {
-		return ""
-	}
-	svc, ok := services[serviceName]
-	if !ok {
-		return ""
-	}
-	svcMap, ok := svc.(map[string]any)
-	if !ok {
-		return ""
-	}
-	endpoint, ok := svcMap["endpoint"]
-	if !ok {
-		return ""
-	}
-	str, _ := endpoint.(string)
-	return str
 }

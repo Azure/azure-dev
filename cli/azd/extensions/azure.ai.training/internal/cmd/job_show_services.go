@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"azure.ai.training/internal/utils"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -44,7 +46,7 @@ func newJobShowServicesCommand() *cobra.Command {
 				return fmt.Errorf("failed to get job %q: %w", name, err)
 			}
 
-			trackingEndpoint := extractServiceEndpointStr(job.Properties.Services, "Tracking")
+			trackingEndpoint := utils.ServiceEndpoint(job.Properties.Services, "Tracking")
 			if trackingEndpoint == "" {
 				return fmt.Errorf("job %q has no tracking endpoint yet; ensure the job has started", name)
 			}

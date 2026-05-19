@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/azure"
+	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/pkg/azure"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -95,7 +95,7 @@ func runConnectionRemoveWith(
 				"connection %q is not attached to toolbox %q's current default version",
 				connName, toolboxName,
 			),
-			fmt.Sprintf("run 'azd ai agent toolbox connection list %q'", toolboxName),
+			fmt.Sprintf("run 'azd ai toolbox connection list %q'", toolboxName),
 		)
 	}
 	if len(filtered) == 0 {
@@ -106,7 +106,7 @@ func runConnectionRemoveWith(
 				connName, toolboxName,
 			),
 			fmt.Sprintf(
-				"delete the toolbox with `azd ai agent toolbox delete %q` instead",
+				"delete the toolbox with `azd ai toolbox delete %q` instead",
 				toolboxName,
 			),
 		)
@@ -129,7 +129,7 @@ func runConnectionRemoveWith(
 				toolboxName, created.Version, err,
 			),
 			fmt.Sprintf(
-				"run `azd ai agent toolbox update %q --default-version %q` to retarget the default",
+				"run `azd ai toolbox update %q --default-version %q` to retarget the default",
 				toolboxName, created.Version,
 			),
 		)

@@ -7,8 +7,9 @@ import (
 	"context"
 	"fmt"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/azure"
+	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/foundry"
+	"azure.ai.toolboxes/internal/foundry/connections"
 )
 
 // projectConnection is the minimal slice of an Azure project connection that
@@ -17,12 +18,12 @@ import (
 // `target` (becomes `server_url` on MCP tool entries).
 type projectConnection struct {
 	ID       string
-	Category azure.ConnectionType
+	Category connections.ConnectionType
 	Name     string
 	Target   string
 }
 
-// connectionResolver is the seam that tests substitute with stubConnectionResolver.
+// connectionResolver is the seam that tests substitute with stub implementations.
 type connectionResolver interface {
 	resolveConnection(ctx context.Context, endpoint, name string) (*projectConnection, error)
 }
@@ -32,7 +33,15 @@ type defaultConnectionResolver struct{}
 func (defaultConnectionResolver) resolveConnection(
 	ctx context.Context, endpoint, name string,
 ) (*projectConnection, error) {
-	client, err := newProjectsClientFromEndpoint(endpoint)
+	cred, err := foundry.NewCredential()
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("failed to acquire credential: %s", err),
+			"run `azd auth login` and retry",
+		)
+	}
+	client, err := connections.New(endpoint, cred)
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
@@ -41,7 +50,7 @@ func (defaultConnectionResolver) resolveConnection(
 		)
 	}
 
-	conn, err := client.GetConnection(ctx, name)
+	conn, err := client.Get(ctx, name)
 	if err != nil {
 		if isAzureNotFound(err) {
 			return nil, connectionNotFoundError(name)

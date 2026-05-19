@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"azureaiagent/internal/exterrors"
+	"azure.ai.toolboxes/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -20,7 +20,7 @@ func toolboxNotFoundOrService(err error, name, op string) error {
 		return exterrors.Dependency(
 			exterrors.CodeToolboxNotFound,
 			fmt.Sprintf("toolbox %q not found", name),
-			"run 'azd ai agent toolbox list' to see available toolboxes",
+			"run 'azd ai toolbox list' to see available toolboxes",
 		)
 	}
 	return exterrors.ServiceFromAzure(err, op)

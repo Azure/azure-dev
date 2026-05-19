@@ -7,8 +7,9 @@ import (
 	"errors"
 	"testing"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/azure"
+	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/foundry/connections"
+	"azure.ai.toolboxes/internal/pkg/azure"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -195,7 +196,7 @@ func TestRunConnectionAddWith_DuplicateRejected(t *testing.T) {
 
 	resolver := newStubConnectionResolver()
 	resolver.byName["x"] = &projectConnection{
-		ID: "/c/x", Category: azure.ConnectionTypeRemoteTool, Name: "x", Target: "https://mcp",
+		ID: "/c/x", Category: connections.ConnectionTypeRemoteTool, Name: "x", Target: "https://mcp",
 	}
 
 	err := runConnectionAddWith(
@@ -219,7 +220,7 @@ func TestRunConnectionAddWith_AppendsAndPromotesDefault(t *testing.T) {
 
 	resolver := newStubConnectionResolver()
 	resolver.byName["b"] = &projectConnection{
-		ID: "/c/b", Category: azure.ConnectionTypeRemoteTool, Name: "b", Target: "https://mcp-b",
+		ID: "/c/b", Category: connections.ConnectionTypeRemoteTool, Name: "b", Target: "https://mcp-b",
 	}
 
 	err := runConnectionAddWith(
@@ -259,7 +260,7 @@ func TestRunConnectionRemoveWith_LastToolBlocks(t *testing.T) {
 	}}
 	resolver := newStubConnectionResolver()
 	resolver.byName["a"] = &projectConnection{
-		ID: "/c/a", Category: azure.ConnectionTypeRemoteTool, Name: "a",
+		ID: "/c/a", Category: connections.ConnectionTypeRemoteTool, Name: "a",
 	}
 
 	err := runConnectionRemoveWith(
@@ -281,7 +282,7 @@ func TestRunConnectionRemoveWith_FilteredAndPromoted(t *testing.T) {
 	}}
 	resolver := newStubConnectionResolver()
 	resolver.byName["a"] = &projectConnection{
-		ID: "/c/a", Category: azure.ConnectionTypeRemoteTool, Name: "a",
+		ID: "/c/a", Category: connections.ConnectionTypeRemoteTool, Name: "a",
 	}
 
 	err := runConnectionRemoveWith(
@@ -304,7 +305,7 @@ func TestRunConnectionRemoveWith_ConnectionNotInToolbox(t *testing.T) {
 	}}
 	resolver := newStubConnectionResolver()
 	resolver.byName["a"] = &projectConnection{
-		ID: "/c/a", Category: azure.ConnectionTypeRemoteTool, Name: "a",
+		ID: "/c/a", Category: connections.ConnectionTypeRemoteTool, Name: "a",
 	}
 
 	err := runConnectionRemoveWith(
@@ -355,7 +356,7 @@ func TestRunConnectionAddWith_PendingPromotion(t *testing.T) {
 	resolver := newStubConnectionResolver()
 	resolver.byName["my-mcp"] = &projectConnection{
 		ID:       "/c/my-mcp",
-		Category: azure.ConnectionTypeRemoteTool,
+		Category: connections.ConnectionTypeRemoteTool,
 		Name:     "my-mcp",
 		Target:   "https://mcp.example.com",
 	}
@@ -386,7 +387,7 @@ func TestRunConnectionAddWith_PendingStoreFailureSurfaces(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 	resolver := newStubConnectionResolver()
 	resolver.byName["c"] = &projectConnection{
-		ID: "/c/c", Category: azure.ConnectionTypeRemoteTool, Name: "c",
+		ID: "/c/c", Category: connections.ConnectionTypeRemoteTool, Name: "c",
 		Target: "https://mcp.example.com",
 	}
 
@@ -406,7 +407,7 @@ func TestRunConnectionAddWith_PendingStoreFailureSurfaces(t *testing.T) {
 func TestBuildToolEntry_RejectsInvalidName(t *testing.T) {
 	_, err := buildToolEntry(&projectConnection{
 		ID:       "/c/x",
-		Category: azure.ConnectionTypeRemoteTool,
+		Category: connections.ConnectionTypeRemoteTool,
 		Name:     "tools.v1", // dot is not in ^[A-Za-z0-9_-]+$
 		Target:   "https://mcp",
 	}, "")

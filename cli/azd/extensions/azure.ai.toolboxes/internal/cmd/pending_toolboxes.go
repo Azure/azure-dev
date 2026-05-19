@@ -15,11 +15,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// pendingToolboxesPath is the UserConfig root for per-endpoint pending toolbox buckets.
-const pendingToolboxesPath = configPathPrefix + ".pending-toolboxes"
+// pendingToolboxesPath is the UserConfig root for per-endpoint pending toolbox
+// buckets. This namespace is owned by the toolboxes extension and is distinct
+// from extensions.ai-agents (which owns the project-context endpoint key).
+const pendingToolboxesPath = "extensions.ai-toolboxes.pending-toolboxes"
 
 // PendingToolbox is the per-name record persisted under
-// extensions.ai-agents.pending-toolboxes.<endpointHash>.items.<name>.
+// extensions.ai-toolboxes.pending-toolboxes.<endpointHash>.items.<name>.
 type PendingToolbox struct {
 	Description string `json:"description,omitempty"`
 	CreatedAt   string `json:"createdAt"`
@@ -33,9 +35,9 @@ type pendingToolboxBucket struct {
 }
 
 // endpointBucketKey returns the 16-hex-char opaque key used to bucket pending
-// records per endpoint. The key shape (hex.EncodeToString of the
-// first 8 bytes of the sha256 digest) is part of the persisted config schema:
-// changing it would orphan every existing record.
+// records per endpoint. The key shape (hex.EncodeToString of the first 8 bytes
+// of the sha256 digest) is part of the persisted config schema: changing it
+// would orphan every existing record.
 func endpointBucketKey(endpoint string) string {
 	normalized := normalizePendingEndpoint(endpoint)
 	h := sha256.Sum256([]byte(normalized))

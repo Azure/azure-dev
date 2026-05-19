@@ -7,14 +7,14 @@ import (
 	"fmt"
 	"strings"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/azure"
+	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/foundry/connections"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
-// newToolboxConnectionCommand returns the `azd ai agent toolbox connection` parent.
+// newToolboxConnectionCommand returns the `azd ai toolbox connection` parent.
 func newToolboxConnectionCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	cmd := &cobra.Command{
@@ -39,7 +39,7 @@ func buildToolEntry(conn *projectConnection, index string) (map[string]any, erro
 		return nil, err
 	}
 	switch conn.Category {
-	case azure.ConnectionTypeRemoteTool:
+	case connections.ConnectionTypeRemoteTool:
 		if index != "" {
 			return nil, exterrors.Validation(
 				exterrors.CodeUnsupportedIndexFlag,
@@ -70,7 +70,7 @@ func buildToolEntry(conn *projectConnection, index string) (map[string]any, erro
 			"project_connection_id": conn.ID,
 		}, nil
 
-	case azure.ConnectionTypeCognitiveSearch:
+	case connections.ConnectionTypeCognitiveSearch:
 		if strings.TrimSpace(index) == "" {
 			return nil, exterrors.Validation(
 				exterrors.CodeMissingIndex,

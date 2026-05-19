@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/azure"
+	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/foundry/connections"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -63,23 +63,11 @@ func TestValidateOutputFormat(t *testing.T) {
 	requireLocalError(t, err, exterrors.CodeInvalidParameter)
 }
 
-func TestParseAccountProjectFromEndpoint(t *testing.T) {
-	account, project, err := parseAccountProjectFromEndpoint(
-		"https://my-acct.services.ai.azure.com/api/projects/my-project",
-	)
-	require.NoError(t, err)
-	assert.Equal(t, "my-acct", account)
-	assert.Equal(t, "my-project", project)
-
-	_, _, err = parseAccountProjectFromEndpoint("https://wrong.example.com/")
-	assert.Error(t, err)
-}
-
 func TestBuildToolEntry(t *testing.T) {
 	t.Run("RemoteTool builds mcp entry", func(t *testing.T) {
 		entry, err := buildToolEntry(&projectConnection{
 			ID:       "/subs/x/.../connections/my-mcp",
-			Category: azure.ConnectionTypeRemoteTool,
+			Category: connections.ConnectionTypeRemoteTool,
 			Name:     "my-mcp",
 			Target:   "https://mcp.example.com",
 		}, "")
@@ -93,7 +81,7 @@ func TestBuildToolEntry(t *testing.T) {
 
 	t.Run("RemoteTool rejects --index", func(t *testing.T) {
 		_, err := buildToolEntry(&projectConnection{
-			Category: azure.ConnectionTypeRemoteTool,
+			Category: connections.ConnectionTypeRemoteTool,
 			Name:     "my-mcp",
 		}, "idx")
 		requireLocalError(t, err, exterrors.CodeUnsupportedIndexFlag)
@@ -102,7 +90,7 @@ func TestBuildToolEntry(t *testing.T) {
 	t.Run("RemoteTool rejects empty target", func(t *testing.T) {
 		_, err := buildToolEntry(&projectConnection{
 			ID:       "/c/x",
-			Category: azure.ConnectionTypeRemoteTool,
+			Category: connections.ConnectionTypeRemoteTool,
 			Name:     "x",
 			Target:   "  ", // whitespace-only is treated as empty
 		}, "")
@@ -112,7 +100,7 @@ func TestBuildToolEntry(t *testing.T) {
 
 	t.Run("CognitiveSearch requires --index", func(t *testing.T) {
 		_, err := buildToolEntry(&projectConnection{
-			Category: azure.ConnectionTypeCognitiveSearch,
+			Category: connections.ConnectionTypeCognitiveSearch,
 			Name:     "search",
 		}, "")
 		requireLocalError(t, err, exterrors.CodeMissingIndex)
@@ -121,7 +109,7 @@ func TestBuildToolEntry(t *testing.T) {
 	t.Run("CognitiveSearch builds azure_ai_search entry", func(t *testing.T) {
 		entry, err := buildToolEntry(&projectConnection{
 			ID:       "/subs/x/.../connections/search",
-			Category: azure.ConnectionTypeCognitiveSearch,
+			Category: connections.ConnectionTypeCognitiveSearch,
 			Name:     "search",
 		}, "products")
 		require.NoError(t, err)
@@ -135,10 +123,10 @@ func TestBuildToolEntry(t *testing.T) {
 	})
 
 	t.Run("unsupported category rejected", func(t *testing.T) {
-		for _, cat := range []azure.ConnectionType{
-			azure.ConnectionTypeApiKey,
-			azure.ConnectionTypeCustomKeys,
-			azure.ConnectionTypeAppInsights,
+		for _, cat := range []connections.ConnectionType{
+			connections.ConnectionTypeApiKey,
+			connections.ConnectionTypeCustomKeys,
+			connections.ConnectionTypeAppInsights,
 		} {
 			_, err := buildToolEntry(&projectConnection{Category: cat, Name: "x"}, "")
 			le := requireLocalError(t, err, exterrors.CodeUnsupportedConnectionCategory)

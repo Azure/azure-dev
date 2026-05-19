@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"azureaiagent/internal/exterrors"
+	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/foundry/projectctx"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -19,7 +20,7 @@ type toolboxCreateFlags struct {
 	description string
 }
 
-// newToolboxCreateCommand returns the `azd ai agent toolbox create <name>` command.
+// newToolboxCreateCommand returns the `azd ai toolbox create <name>` command.
 // `create` records a local pending entry; v1 is POSTed on the first
 // `connection add`.
 func newToolboxCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -59,7 +60,7 @@ func runToolboxCreate(
 		return err
 	}
 
-	resolved, err := resolveProjectEndpoint(ctx, resolveProjectEndpointOpts{FlagValue: parent.projectEndpoint})
+	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{FlagValue: parent.projectEndpoint})
 	if err != nil {
 		return err
 	}
@@ -114,12 +115,12 @@ func emitCreateResult(
 	if alreadyExists {
 		fmt.Printf("Toolbox %s already exists.\n", name)
 		fmt.Println("Next steps:")
-		fmt.Println("  - Run 'azd ai agent toolbox connection add' to publish a new version.")
-		fmt.Println("  - Run 'azd ai agent toolbox update --default-version <n>' to retarget the default.")
+		fmt.Println("  - Run 'azd ai toolbox connection add' to publish a new version.")
+		fmt.Println("  - Run 'azd ai toolbox update --default-version <n>' to retarget the default.")
 		return nil
 	}
 	fmt.Printf("Registered toolbox %s (pending tools).\n", name)
 	fmt.Println("Next step:")
-	fmt.Printf("  Run 'azd ai agent toolbox connection add %s <connection>' to publish v1.\n", name)
+	fmt.Printf("  Run 'azd ai toolbox connection add %s <connection>' to publish v1.\n", name)
 	return nil
 }

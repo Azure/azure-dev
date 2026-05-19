@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/azure"
+	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/pkg/azure"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -151,7 +151,7 @@ func runConnectionAddWith(
 				exterrors.CodeToolboxNotFound,
 				fmt.Sprintf("toolbox %q not found", toolboxName),
 				fmt.Sprintf(
-					"run 'azd ai agent toolbox create %q' first, then re-run 'connection add'",
+					"run 'azd ai toolbox create %q' first, then re-run 'connection add'",
 					toolboxName,
 				),
 			)
@@ -199,7 +199,7 @@ func runConnectionAddWith(
 				toolboxName, created.Version, err,
 			),
 			fmt.Sprintf(
-				"run `azd ai agent toolbox update %q --default-version %q` to retarget the default",
+				"run `azd ai toolbox update %q --default-version %q` to retarget the default",
 				toolboxName, created.Version,
 			),
 		)

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"log"
 
-	"azureaiagent/internal/exterrors"
+	"azure.ai.toolboxes/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -20,7 +20,7 @@ type toolboxDeleteFlags struct {
 	force   bool
 }
 
-// newToolboxDeleteCommand returns the `azd ai agent toolbox delete <name>` command.
+// newToolboxDeleteCommand returns the `azd ai toolbox delete <name>` command.
 func newToolboxDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	flags := &toolboxDeleteFlags{}
@@ -102,9 +102,9 @@ func runDeleteToolbox(
 	}
 	return withAzdClient(func(azdClient *azdext.AzdClient) error {
 		// Best-effort pending lookup; a read failure is logged but non-fatal.
-		pending, err := getPendingToolbox(ctx, azdClient, endpoint, name)
-		if err != nil {
-			log.Printf("toolbox delete: pending-toolbox read failed for %q: %v", name, err)
+		pending, readErr := getPendingToolbox(ctx, azdClient, endpoint, name)
+		if readErr != nil {
+			log.Printf("toolbox delete: pending-toolbox read failed for %q: %v", name, readErr)
 		}
 
 		_, getErr := client.GetToolbox(ctx, name)
@@ -145,7 +145,7 @@ func runDeleteToolbox(
 			return exterrors.Dependency(
 				exterrors.CodeToolboxNotFound,
 				fmt.Sprintf("toolbox %q not found at %s", name, endpoint),
-				"run 'azd ai agent toolbox list' to see available toolboxes",
+				"run 'azd ai toolbox list' to see available toolboxes",
 			)
 
 		default:
@@ -178,7 +178,7 @@ func runDeleteToolboxVersion(
 					"version %q is the default for toolbox %q and other versions exist",
 					verb.version, name,
 				),
-				"retarget the default with `azd ai agent toolbox update --default-version <other>` first",
+				"retarget the default with `azd ai toolbox update --default-version <other>` first",
 			)
 		}
 
@@ -191,7 +191,7 @@ func runDeleteToolboxVersion(
 						"deleting it removes the toolbox", verb.version, name,
 				),
 				fmt.Sprintf(
-					"run `azd ai agent toolbox delete %q` to delete the toolbox, "+
+					"run `azd ai toolbox delete %q` to delete the toolbox, "+
 						"or pass --force to confirm",
 					name,
 				),

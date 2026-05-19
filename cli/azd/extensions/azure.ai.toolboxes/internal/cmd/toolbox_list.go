@@ -13,14 +13,14 @@ import (
 	"slices"
 	"text/tabwriter"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/azure"
+	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/pkg/azure"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
-// newToolboxListCommand returns the `azd ai agent toolbox list` command.
+// newToolboxListCommand returns the `azd ai toolbox list` command.
 func newToolboxListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	cmd := &cobra.Command{

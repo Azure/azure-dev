@@ -6,7 +6,7 @@ package cmd
 import (
 	"context"
 
-	"azureaiagent/internal/pkg/azure"
+	"azure.ai.toolboxes/internal/pkg/azure"
 )
 
 // toolboxClient is the subset of *azure.FoundryToolboxClient that the toolbox

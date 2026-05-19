@@ -9,7 +9,7 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"azureaiagent/internal/exterrors"
+	"azure.ai.toolboxes/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"

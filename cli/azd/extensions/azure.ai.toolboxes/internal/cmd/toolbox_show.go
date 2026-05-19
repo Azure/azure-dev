@@ -12,8 +12,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/azure"
+	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/pkg/azure"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -24,7 +24,7 @@ type toolboxShowFlags struct {
 	version string
 }
 
-// newToolboxShowCommand returns the `azd ai agent toolbox show <name>` command.
+// newToolboxShowCommand returns the `azd ai toolbox show <name>` command.
 func newToolboxShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	flags := &toolboxShowFlags{}
@@ -98,7 +98,7 @@ func runToolboxShowWith(
 			return exterrors.Dependency(
 				exterrors.CodeToolboxNotFound,
 				fmt.Sprintf("version %q of toolbox %q not found", shownVersion, name),
-				fmt.Sprintf("run 'azd ai agent toolbox show %q' to see the default version", name),
+				fmt.Sprintf("run 'azd ai toolbox show %q' to see the default version", name),
 			)
 		}
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolboxVersion)
@@ -127,7 +127,7 @@ func showPendingOrNotFound(
 			return exterrors.Dependency(
 				exterrors.CodeToolboxNotFound,
 				fmt.Sprintf("toolbox %q not found at %s", name, endpoint),
-				"run 'azd ai agent toolbox list' to see available toolboxes",
+				"run 'azd ai toolbox list' to see available toolboxes",
 			)
 		}
 
@@ -148,7 +148,7 @@ func renderPendingShow(
 				name,
 			),
 			fmt.Sprintf(
-				"run 'azd ai agent toolbox connection add %q <connection>' to publish v1 first",
+				"run 'azd ai toolbox connection add %q <connection>' to publish v1 first",
 				name,
 			),
 		)
@@ -179,7 +179,7 @@ func renderPendingShow(
 		return err
 	}
 	fmt.Printf(
-		"\nRun `azd ai agent toolbox connection add %q <connection>` to publish v1.\n",
+		"\nRun `azd ai toolbox connection add %q <connection>` to publish v1.\n",
 		name,
 	)
 	return nil

@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"sync"
 
-	"azureaiagent/internal/pkg/azure"
+	"azure.ai.toolboxes/internal/pkg/azure"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 )

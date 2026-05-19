@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"azureaiagent/internal/exterrors"
+	"azure.ai.toolboxes/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -19,7 +19,7 @@ type toolboxUpdateFlags struct {
 	defaultVersion string
 }
 
-// newToolboxUpdateCommand returns the `azd ai agent toolbox update <name>` command.
+// newToolboxUpdateCommand returns the `azd ai toolbox update <name>` command.
 // Only --default-version is supported.
 func newToolboxUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)

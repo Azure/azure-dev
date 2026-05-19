@@ -833,6 +833,12 @@ a reusable sample or manifest.`,
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
 		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
 
+	// Subcommand for catalog discovery. Lets coding agents enumerate manifest
+	// URLs they can pass back into `azd ai agent init -m <url>` without
+	// scraping documentation. Cobra resolves subcommands before positional
+	// args, so this does not conflict with the `init [<path>]` positional.
+	cmd.AddCommand(newInitListCommand(extCtx))
+
 	return cmd
 }
 
@@ -1582,6 +1588,19 @@ func (a *InitAction) downloadAgentYaml(
 
 			// Check if manifest is under src directory
 			if isSubpath(absManifestPath, srcDir) {
+				// In no-prompt mode, refuse to silently overwrite a manifest
+				// that lives inside the project's src tree. Headless callers
+				// can move the manifest, choose a different --src target, or
+				// run interactively to confirm.
+				if a.flags.noPrompt {
+					return nil, "", exterrors.Validation(
+						exterrors.CodeInvalidManifestPointer,
+						fmt.Sprintf("manifest %q is inside the project src directory %q and would be overwritten", manifestPointer, srcDir),
+						"move the manifest outside the src tree, pass a different --src directory, "+
+							"or run interactively to confirm the overwrite",
+					)
+				}
+
 				confirmResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 					Options: &azdext.ConfirmOptions{
 						Message:      "This operation will overwrite the provided manifest file. Continue?",

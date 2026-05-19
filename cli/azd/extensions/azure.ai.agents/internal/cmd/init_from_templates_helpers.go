@@ -231,7 +231,8 @@ func promptAgentTemplate(
 		return nil, exterrors.Validation(
 			exterrors.CodePromptFailed,
 			"template selection requires interactive mode",
-			"use 'azd ai agent init -m <manifest>' to initialize from a template non-interactively",
+			"run 'azd ai agent init list --output json' to discover available templates, "+
+				"then rerun 'azd ai agent init -m <manifestUrl>' (or 'azd init -t <repoUrl>' for full template repos)",
 		)
 	}
 

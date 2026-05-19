@@ -11,4 +11,4 @@ tags:
     - ai
     - skill
 usage: azd ai skill <command> [options]
-version: 0.0.1-preview
+version: 0.1.0-preview

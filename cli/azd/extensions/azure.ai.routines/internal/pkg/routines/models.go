@@ -35,7 +35,7 @@ type RoutineTrigger struct {
 	// timer-only fields
 	At string `json:"at,omitempty"                  yaml:"at,omitempty"`
 
-	// github_issue fields (deferred in v1)
+	// github_issue fields
 	ConnectionID string   `json:"connection_id,omitempty"       yaml:"connection_id,omitempty"`
 	Owner        string   `json:"owner,omitempty"               yaml:"owner,omitempty"`
 	Repository   string   `json:"repository,omitempty"          yaml:"repository,omitempty"`

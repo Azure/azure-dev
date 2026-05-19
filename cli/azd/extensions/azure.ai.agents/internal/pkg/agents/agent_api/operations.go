@@ -32,6 +32,38 @@ type AgentClient struct {
 	credential azcore.TokenCredential
 }
 
+const (
+	// SessionIsolationKeyHeader is the session ownership header used by session mutating operations.
+	SessionIsolationKeyHeader = "x-session-isolation-key"
+	// AgentUserIsolationKeyHeader is the Foundry user isolation key header.
+	AgentUserIsolationKeyHeader = "x-agent-user-isolation-key"
+	// AgentChatIsolationKeyHeader is the Foundry chat isolation key header.
+	AgentChatIsolationKeyHeader = "x-agent-chat-isolation-key"
+)
+
+// SessionRequestOptions holds optional headers shared by session-level agent operations.
+type SessionRequestOptions struct {
+	SessionIsolationKey string
+	UserIsolationKey    string
+	ChatIsolationKey    string
+}
+
+// ApplyHeaders applies non-empty session-level request headers.
+func (o *SessionRequestOptions) ApplyHeaders(headers http.Header) {
+	if o == nil {
+		return
+	}
+	if o.SessionIsolationKey != "" {
+		headers.Set(SessionIsolationKeyHeader, o.SessionIsolationKey)
+	}
+	if o.UserIsolationKey != "" {
+		headers.Set(AgentUserIsolationKeyHeader, o.UserIsolationKey)
+	}
+	if o.ChatIsolationKey != "" {
+		headers.Set(AgentChatIsolationKeyHeader, o.ChatIsolationKey)
+	}
+}
+
 // NewAgentClient creates a new AgentClient
 func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
@@ -739,6 +771,7 @@ func (c *AgentClient) GetAgentSessionLogStream(
 	kind string,
 	tail int,
 	follow bool,
+	options *SessionRequestOptions,
 ) (io.ReadCloser, error) {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -778,6 +811,7 @@ func (c *AgentClient) GetAgentSessionLogStream(
 
 	req.Header.Set("Authorization", "Bearer "+token.Token)
 	req.Header.Set("User-Agent", fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version))
+	options.ApplyHeaders(req.Header)
 
 	httpClient := &http.Client{}
 	//nolint:gosec // request URL is built from trusted SDK endpoint + path components
@@ -812,6 +846,7 @@ func (c *AgentClient) UploadSessionFile(
 	ctx context.Context,
 	agentName, sessionID, remotePath, apiVersion string,
 	body io.ReadSeeker,
+	options *SessionRequestOptions,
 ) error {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -838,6 +873,7 @@ func (c *AgentClient) UploadSessionFile(
 	}
 
 	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -858,6 +894,7 @@ func (c *AgentClient) UploadSessionFile(
 func (c *AgentClient) DownloadSessionFile(
 	ctx context.Context,
 	agentName, sessionID, remotePath, apiVersion string,
+	options *SessionRequestOptions,
 ) (io.ReadCloser, error) {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -882,6 +919,7 @@ func (c *AgentClient) DownloadSessionFile(
 	runtime.SkipBodyDownload(req)
 
 	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -901,6 +939,7 @@ func (c *AgentClient) DownloadSessionFile(
 func (c *AgentClient) ListSessionFiles(
 	ctx context.Context,
 	agentName, sessionID, remotePath, apiVersion string,
+	options *SessionRequestOptions,
 ) (*SessionFileList, error) {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -925,6 +964,7 @@ func (c *AgentClient) ListSessionFiles(
 	}
 
 	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -957,6 +997,7 @@ func (c *AgentClient) RemoveSessionFile(
 	agentName, sessionID, remotePath string,
 	recursive bool,
 	apiVersion string,
+	options *SessionRequestOptions,
 ) error {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -980,6 +1021,7 @@ func (c *AgentClient) RemoveSessionFile(
 	}
 
 	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -999,6 +1041,7 @@ func (c *AgentClient) MkdirSessionFile(
 	ctx context.Context,
 	agentName, sessionID, remotePath string,
 	apiVersion string,
+	options *SessionRequestOptions,
 ) error {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -1026,6 +1069,7 @@ func (c *AgentClient) MkdirSessionFile(
 
 	req.Raw().Header.Set("Content-Type", "application/json")
 	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+	options.ApplyHeaders(req.Raw().Header)
 
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(body)), "application/json"); err != nil {
 		return fmt.Errorf("failed to set request body: %w", err)
@@ -1048,6 +1092,7 @@ func (c *AgentClient) MkdirSessionFile(
 func (c *AgentClient) StatSessionFile(
 	ctx context.Context,
 	agentName, sessionID, remotePath, apiVersion string,
+	options *SessionRequestOptions,
 ) (*SessionFileInfo, error) {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -1070,6 +1115,7 @@ func (c *AgentClient) StatSessionFile(
 	}
 
 	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -1101,9 +1147,10 @@ func (c *AgentClient) StatSessionFile(
 // CreateSession creates a new session for an agent endpoint.
 func (c *AgentClient) CreateSession(
 	ctx context.Context,
-	agentName, isolationKey string,
+	agentName string,
 	request *CreateAgentSessionRequest,
 	apiVersion string,
+	options *SessionRequestOptions,
 ) (*AgentSessionResource, error) {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -1138,9 +1185,7 @@ func (c *AgentClient) CreateSession(
 	}
 
 	req.Raw().Header.Set("Foundry-Features", "AgentEndpoints=V1Preview")
-	if isolationKey != "" {
-		req.Raw().Header.Set("x-session-isolation-key", isolationKey)
-	}
+	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -1169,6 +1214,7 @@ func (c *AgentClient) CreateSession(
 func (c *AgentClient) GetSession(
 	ctx context.Context,
 	agentName, sessionID, apiVersion string,
+	options *SessionRequestOptions,
 ) (*AgentSessionResource, error) {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -1190,6 +1236,7 @@ func (c *AgentClient) GetSession(
 	}
 
 	req.Raw().Header.Set("Foundry-Features", "AgentEndpoints=V1Preview")
+	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -1217,7 +1264,8 @@ func (c *AgentClient) GetSession(
 // DeleteSession deletes a session synchronously.
 func (c *AgentClient) DeleteSession(
 	ctx context.Context,
-	agentName, sessionID, isolationKey, apiVersion string,
+	agentName, sessionID, apiVersion string,
+	options *SessionRequestOptions,
 ) error {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -1239,9 +1287,7 @@ func (c *AgentClient) DeleteSession(
 	}
 
 	req.Raw().Header.Set("Foundry-Features", "AgentEndpoints=V1Preview")
-	if isolationKey != "" {
-		req.Raw().Header.Set("x-session-isolation-key", isolationKey)
-	}
+	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -1265,6 +1311,7 @@ func (c *AgentClient) ListSessions(
 	limit *int32,
 	paginationToken *string,
 	apiVersion string,
+	options *SessionRequestOptions,
 ) (*SessionListResult, error) {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -1289,6 +1336,7 @@ func (c *AgentClient) ListSessions(
 	}
 
 	req.Raw().Header.Set("Foundry-Features", "AgentEndpoints=V1Preview")
+	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {

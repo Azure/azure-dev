@@ -16,6 +16,7 @@ import (
 )
 
 type monitorFlags struct {
+	isolationHeaderFlags
 	name      string
 	sessionID string
 	follow    bool
@@ -48,7 +49,10 @@ This is useful for troubleshooting agent issues or monitoring agent behavior.
 
 The agent name and version are resolved automatically from the azure.yaml service
 configuration and the current azd environment. Optionally specify the service name
-(from azure.yaml) as a positional argument when multiple agent services exist.`,
+(from azure.yaml) as a positional argument when multiple agent services exist.
+
+For agents configured with header-based isolation, pass --user-isolation-key
+and --chat-isolation-key when streaming session logs.`,
 		Example: `  # Monitor session logs (auto-resolves session from last invocation)
   azd ai agent monitor
 
@@ -135,6 +139,7 @@ configuration and the current azd environment. Optionally specify the service na
 		"Type of logs: 'console' (stdout/stderr) or 'system' (container events)")
 	cmd.Flags().BoolVar(&flags.utc, "utc", false, "Display timestamps in UTC instead of local time")
 	cmd.Flags().BoolVar(&flags.raw, "raw", false, "Print the raw SSE stream without formatting")
+	addIsolationHeaderFlags(cmd, &flags.isolationHeaderFlags)
 
 	return cmd
 }
@@ -155,6 +160,7 @@ func (a *MonitorAction) Run(ctx context.Context) error {
 		a.flags.logType,
 		a.flags.tail,
 		a.flags.follow,
+		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
 		// Suppress context deadline/cancellation errors (expected in non-follow timeout and Ctrl+C)

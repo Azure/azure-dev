@@ -27,6 +27,7 @@ import (
 )
 
 type invokeFlags struct {
+	isolationHeaderFlags
 	message         string
 	inputFile       string
 	local           bool
@@ -71,7 +72,10 @@ Use --local to target a locally running agent (started via 'azd ai agent run')
 instead of Foundry.
 
 Sessions are persisted per-agent — consecutive invokes reuse the same
-session automatically. Pass --new-session to force a reset.`,
+session automatically. Pass --new-session to force a reset.
+
+For agents configured with header-based isolation, pass --user-isolation-key
+and --chat-isolation-key on each remote invoke.`,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
 
@@ -186,6 +190,7 @@ session automatically. Pass --new-session to force a reset.`,
 	cmd.Flags().BoolVar(&flags.newSession, "new-session", false, "Force a new session (discard saved one)")
 	cmd.Flags().StringVar(&flags.conversation, "conversation-id", "", "Explicit conversation ID override")
 	cmd.Flags().BoolVar(&flags.newConversation, "new-conversation", false, "Force a new conversation (discard saved one)")
+	addIsolationHeaderFlags(cmd, &flags.isolationHeaderFlags)
 	cmd.Flags().StringVar(
 		&flags.agentEndpoint,
 		"agent-endpoint",
@@ -579,6 +584,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			rc.projectEndpoint,
 			rc.bearerToken,
 			rc.name,
+			a.flags.sessionRequestOptions(),
 			legacyKeysForRemote(rc.name)...,
 		)
 		if err != nil {
@@ -587,7 +593,13 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	} else if a.flags.conversation != "" {
 		convID = a.flags.conversation
 	} else {
-		convID, err = createConversation(ctx, rc.projectEndpoint, rc.name, rc.bearerToken)
+		convID, err = createConversation(
+			ctx,
+			rc.projectEndpoint,
+			rc.name,
+			rc.bearerToken,
+			a.flags.sessionRequestOptions(),
+		)
 		if err != nil {
 			return err
 		}
@@ -612,6 +624,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
+	applyIsolationHeaders(req, &a.flags.isolationHeaderFlags)
 
 	client := &http.Client{Timeout: a.httpTimeout()}
 	//nolint:gosec // G704: URL is built from a validated Foundry endpoint (env or --agent-endpoint)
@@ -708,7 +721,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		fmt.Printf("Invocation:   %s\n", invID)
 	}
 
-	return handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout())
+	return handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout(), nil)
 }
 
 // invocationsRemote sends the user's message to Foundry using
@@ -782,6 +795,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", contentTypeForBody(body))
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
+	applyIsolationHeaders(req, &a.flags.isolationHeaderFlags)
 
 	client := &http.Client{Timeout: a.httpTimeout()}
 	//nolint:gosec // G704: URL is built from a validated Foundry endpoint (env or --agent-endpoint)
@@ -802,7 +816,15 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 
 	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, "Session:  ")
 
-	if err := handleInvocationResponse(ctx, resp, rc.projectEndpoint, rc.bearerToken, rc.name, a.httpTimeout()); err != nil {
+	if err := handleInvocationResponse(
+		ctx,
+		resp,
+		rc.projectEndpoint,
+		rc.bearerToken,
+		rc.name,
+		a.httpTimeout(),
+		a.flags.sessionRequestOptions(),
+	); err != nil {
 		return err
 	}
 
@@ -821,6 +843,7 @@ func handleInvocationResponse(
 	bearerToken string,
 	agentName string,
 	timeout time.Duration,
+	options *agent_api.SessionRequestOptions,
 ) error {
 	if traceID := responseTraceID(resp); traceID != "" {
 		fmt.Printf("Trace ID:     %s\n", traceID)
@@ -839,7 +862,7 @@ func handleInvocationResponse(
 	}
 
 	if resp.StatusCode == http.StatusAccepted {
-		return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout)
+		return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout, options)
 	}
 
 	contentType := resp.Header.Get("Content-Type")
@@ -954,6 +977,7 @@ func handleInvocationLRO(
 	bearerToken string,
 	agentName string,
 	timeout time.Duration,
+	options *agent_api.SessionRequestOptions,
 ) error {
 	// Read the 202 body once — used for both invocation ID extraction and status display.
 	body202, _ := io.ReadAll(resp.Body)
@@ -1031,6 +1055,7 @@ func handleInvocationLRO(
 		if bearerToken != "" {
 			req.Header.Set("Authorization", "Bearer "+bearerToken)
 		}
+		options.ApplyHeaders(req.Header)
 
 		client := &http.Client{Timeout: 30 * time.Second}
 		pollResp, err := client.Do(req) //nolint:gosec // G704: endpoint from azd environment
@@ -1090,7 +1115,11 @@ func handleInvocationLRO(
 }
 
 // createConversation creates a new Foundry conversation for multi-turn memory.
-func createConversation(ctx context.Context, projectEndpoint, agentName, bearerToken string) (string, error) {
+func createConversation(
+	ctx context.Context,
+	projectEndpoint, agentName, bearerToken string,
+	options *agent_api.SessionRequestOptions,
+) (string, error) {
 	convURL := fmt.Sprintf(
 		"%s/agents/%s/endpoint/protocols/openai/conversations?api-version=%s",
 		projectEndpoint, agentName, ConversationsAPIVersion,
@@ -1101,6 +1130,7 @@ func createConversation(ctx context.Context, projectEndpoint, agentName, bearerT
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
+	options.ApplyHeaders(req.Header)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req) //nolint:gosec // G704: endpoint is resolved from azd environment configuration

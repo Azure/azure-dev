@@ -5,10 +5,12 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"azureaiskills/internal/exterrors"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
@@ -157,4 +159,8 @@ func TestTruncate(t *testing.T) {
 func TestIsNotFound(t *testing.T) {
 	require.False(t, isNotFound(nil))
 	require.False(t, isNotFound(errors.New("oops")))
+	require.True(t, isNotFound(&azcore.ResponseError{StatusCode: 404}))
+	require.False(t, isNotFound(&azcore.ResponseError{StatusCode: 500}))
+	wrapped := fmt.Errorf("get skill: %w", &azcore.ResponseError{StatusCode: 404})
+	require.True(t, isNotFound(wrapped), "wrapped 404 ResponseError must still match")
 }

@@ -14,8 +14,6 @@ import (
 )
 
 type listFlags struct {
-	top             int
-	orderBy         string
 	output          string
 	projectEndpoint string
 }
@@ -27,11 +25,7 @@ func (a *listAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	items, err := skillCtx.client.ListAll(
-		ctx,
-		skill_api.ListOptions{Top: a.flags.top, OrderBy: a.flags.orderBy},
-		a.flags.top,
-	)
+	items, err := skillCtx.client.ListAll(ctx, skill_api.ListOptions{}, 0)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpListSkills)
 	}
@@ -45,11 +39,8 @@ func newListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List Foundry skills in the project.",
-		Long: `List skills in the resolved Foundry project.
-
-Without --top, the CLI iterates all pages transparently into one flat list.
-With --top, the CLI stops once that many items have been collected.`,
-		Args: cobra.NoArgs,
+		Long:  `List all skills in the resolved Foundry project.`,
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
@@ -57,8 +48,6 @@ With --top, the CLI stops once that many items have been collected.`,
 		},
 	}
 
-	cmd.Flags().IntVar(&flags.top, "top", 0, "Return up to N skills (default: all)")
-	cmd.Flags().StringVar(&flags.orderBy, "orderby", "", "Sort order forwarded to the service (e.g. 'asc' or 'desc')")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{outputJSON, outputTable}, Default: outputTable,
 	})

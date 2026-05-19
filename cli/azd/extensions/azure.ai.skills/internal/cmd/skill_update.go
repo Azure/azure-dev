@@ -50,8 +50,9 @@ func (a *updateAction) Run(ctx context.Context) error {
 	}
 
 	req := skill_api.UpdateRequest{
-		Description: current.Description,
-		Metadata:    current.Metadata,
+		Description:  current.Description,
+		Instructions: current.Instructions,
+		Metadata:     current.Metadata,
 	}
 	if a.flags.descriptionSet {
 		req.Description = a.flags.description
@@ -124,7 +125,8 @@ func (a *updateAction) validateFlags() error {
 			return exterrors.Validation(
 				exterrors.CodeInvalidSkillFile,
 				"ZIP packages cannot be applied via `skill update`",
-				"use `azd ai skill create <name> --file <path>.zip --force` to replace the skill",
+				"use `azd ai skill create <name> --file <path>.zip --force` to replace the skill "+
+					"(this deletes the existing skill first; skills are not versioned)",
 			)
 		default:
 			return exterrors.Validation(

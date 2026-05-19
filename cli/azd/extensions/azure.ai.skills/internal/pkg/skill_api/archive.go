@@ -205,10 +205,10 @@ func stageFromTarGz(data []byte, staging string, maxEntries int, maxBytes int64)
 		if hdrErr != nil {
 			return nil, 0, fmt.Errorf("read tar entry: %w", hdrErr)
 		}
-		entryCount++
-		if entryCount > maxEntries {
+		if entryCount >= maxEntries {
 			return nil, 0, fmt.Errorf("%w: entry count exceeds %d", ErrLimitExceeded, maxEntries)
 		}
+		entryCount++
 
 		cleaned, ok := validateEntryName(hdr.Name)
 		if !ok {
@@ -217,6 +217,9 @@ func stageFromTarGz(data []byte, staging string, maxEntries int, maxBytes int64)
 
 		switch hdr.Typeflag {
 		case tar.TypeReg, tar.TypeRegA:
+			if hdr.Linkname != "" {
+				return nil, 0, fmt.Errorf("%w: %q regular-file entry has unexpected Linkname", ErrUnsafeEntry, hdr.Name)
+			}
 		case tar.TypeDir:
 			if mkErr := os.MkdirAll(filepath.Join(staging, filepath.FromSlash(cleaned)), 0700); mkErr != nil {
 				return nil, 0, fmt.Errorf("create staging dir %q: %w", cleaned, mkErr)
@@ -334,6 +337,10 @@ func validateEntryName(name string) (string, bool) {
 		return "", false
 	}
 	if len(withoutTrailing) >= 2 && withoutTrailing[1] == ':' {
+		return "", false
+	}
+	// Reject UNC paths (\\server\share normalizes to //server/share).
+	if strings.HasPrefix(withoutTrailing, "//") {
 		return "", false
 	}
 	if strings.HasPrefix(withoutTrailing, "/") {

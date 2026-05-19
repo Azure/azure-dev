@@ -41,18 +41,16 @@ func PeekArchiveSkillName(r io.ReaderAt, size int64) (string, error) {
 		}
 		rc, openErr := entry.Open()
 		if openErr != nil {
-			return "", nil
+			return "", fmt.Errorf("open SKILL.md entry: %w", openErr)
 		}
+		defer rc.Close() //nolint:gocritic // one entry opened per iteration; loop exits after first SKILL.md
 		raw, readErr := io.ReadAll(io.LimitReader(rc, peekMaxSkillMdBytes))
-		_ = rc.Close()
 		if readErr != nil {
-			return "", nil
+			return "", fmt.Errorf("read SKILL.md entry: %w", readErr)
 		}
 		md, parseErr := ParseSkillMd(raw)
 		if parseErr != nil {
-			// Malformed SKILL.md — let the server reject the upload; the
-			// --force guard only fires on an unambiguous name mismatch.
-			return "", nil
+			return "", fmt.Errorf("parse SKILL.md: %w", parseErr)
 		}
 		return md.Name, nil
 	}

@@ -223,10 +223,36 @@ func TestValidateEntryName(t *testing.T) {
 		{"../evil", "", false},
 		{"a/../b", "", false},
 		{`C:\Windows\Temp`, "", false},
+		// UNC paths
+		{"//server/share", "", false},
+		{`\\server\share`, "", false},
 	}
 	for _, c := range cases {
 		got, ok := validateEntryName(c.in)
 		require.Equal(t, c.wantOK, ok, "input=%q", c.in)
 		require.Equal(t, c.want, got, "input=%q", c.in)
 	}
+}
+
+func TestSafeExtract_TarGzRejectsEntryWithLinkname(t *testing.T) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	// Regular-file entry with a non-empty Linkname field (should be rejected).
+	hdr := &tar.Header{
+		Name:     "SKILL.md",
+		Mode:     0644,
+		Typeflag: tar.TypeReg,
+		Size:     5,
+		Linkname: "/etc/passwd",
+	}
+	require.NoError(t, tw.WriteHeader(hdr))
+	_, err := tw.Write([]byte("hello"))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
+
+	_, extractErr := SafeExtract(buf.Bytes(), ExtractOptions{OutputDir: t.TempDir()})
+	require.Error(t, extractErr)
+	require.True(t, errors.Is(extractErr, ErrUnsafeEntry))
 }

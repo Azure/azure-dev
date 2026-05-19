@@ -55,13 +55,12 @@ func TestPeekArchiveSkillName_MissingNameField(t *testing.T) {
 	require.Equal(t, "", got)
 }
 
-func TestPeekArchiveSkillName_MalformedYAMLReturnsEmpty(t *testing.T) {
+func TestPeekArchiveSkillName_MalformedYAMLReturnsError(t *testing.T) {
 	archive := makeZip(t, []zipEntry{
 		{Name: "SKILL.md", Body: []byte("not valid front matter")},
 	})
-	got, err := PeekArchiveSkillName(bytes.NewReader(archive), int64(len(archive)))
-	require.NoError(t, err)
-	require.Equal(t, "", got)
+	_, err := PeekArchiveSkillName(bytes.NewReader(archive), int64(len(archive)))
+	require.Error(t, err, "malformed SKILL.md must propagate a parse error")
 }
 
 func TestPeekArchiveSkillName_InvalidZip(t *testing.T) {

@@ -10,28 +10,31 @@ package skill_api
 // camelCase for the published output of the CLI; the wire format is
 // snake_case and is translated via skillWire.
 type Skill struct {
-	SkillID     string            `json:"skillId,omitempty"`
-	Name        string            `json:"name"`
-	HasBlob     bool              `json:"hasBlob"`
-	Description string            `json:"description,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
+	SkillID      string            `json:"skillId,omitempty"`
+	Name         string            `json:"name"`
+	HasBlob      bool              `json:"hasBlob"`
+	Description  string            `json:"description,omitempty"`
+	Instructions string            `json:"instructions,omitempty"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
 type skillWire struct {
-	SkillID     string            `json:"skill_id,omitempty"`
-	Name        string            `json:"name"`
-	HasBlob     bool              `json:"has_blob,omitempty"`
-	Description string            `json:"description,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
+	SkillID      string            `json:"skill_id,omitempty"`
+	Name         string            `json:"name"`
+	HasBlob      bool              `json:"has_blob,omitempty"`
+	Description  string            `json:"description,omitempty"`
+	Instructions string            `json:"instructions,omitempty"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
 func (w skillWire) toSkill() Skill {
 	return Skill{
-		SkillID:     w.SkillID,
-		Name:        w.Name,
-		HasBlob:     w.HasBlob,
-		Description: w.Description,
-		Metadata:    w.Metadata,
+		SkillID:      w.SkillID,
+		Name:         w.Name,
+		HasBlob:      w.HasBlob,
+		Description:  w.Description,
+		Instructions: w.Instructions,
+		Metadata:     w.Metadata,
 	}
 }
 

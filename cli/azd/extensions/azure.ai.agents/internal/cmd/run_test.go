@@ -267,7 +267,6 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 	t.Run("skips foundry key when already set in azd env", func(t *testing.T) {
 		t.Parallel()
 		azdEnv := map[string]string{
-			"FOUNDRY_PROJECT_ENDPOINT": "https://from-azd.services.ai.azure.com",
 			"FOUNDRY_PROJECT_ENDPOINT": "https://explicit.services.ai.azure.com",
 			"AGENT_MY_SVC_NAME":        "my-agent",
 			"FOUNDRY_AGENT_NAME":       "explicit-agent",

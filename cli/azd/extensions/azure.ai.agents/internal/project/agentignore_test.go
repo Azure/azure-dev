@@ -37,37 +37,16 @@ func TestAgentIgnore_NoFile_UsesDefaults(t *testing.T) {
 	require.True(t, m.ShouldExclude("agent.manifest.yaml", false))
 	require.True(t, m.ShouldExclude("azure.yaml", false))
 	require.True(t, m.ShouldExclude(".agentignore", false))
+	require.True(t, m.ShouldExclude(".env", false))
+	require.True(t, m.ShouldExclude(".env.local", false))
+	require.True(t, m.ShouldExclude(".azure", true))
+	require.True(t, m.ShouldExclude("Dockerfile", false))
+	require.True(t, m.ShouldExclude(".dockerignore", false))
 
 	// Should NOT exclude normal files
 	require.False(t, m.ShouldExclude("main.py", false))
 	require.False(t, m.ShouldExclude("requirements.txt", false))
 	require.False(t, m.ShouldExclude("src", true))
-}
-
-func TestAgentIgnore_SecurityAlwaysExcluded(t *testing.T) {
-	dir := t.TempDir()
-	// Create .agentignore that tries to negate security files
-	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte("!.env\n!.azure/\n!.git/\n"), 0600)
-	require.NoError(t, err)
-
-	m, err := newAgentIgnoreMatcher(dir)
-	require.NoError(t, err)
-	require.True(t, m.hasUserIgnore)
-
-	// Security exclusions cannot be overridden
-	require.True(t, m.ShouldExclude(".env", false))
-	require.True(t, m.ShouldExclude(".env.local", false))
-	require.True(t, m.ShouldExclude(".env.production", false))
-	require.True(t, m.ShouldExclude(".azure", true))
-	require.True(t, m.ShouldExclude(".git", true))
-
-	// Nested .env files are also excluded
-	require.True(t, m.ShouldExclude("config/.env", false))
-	require.True(t, m.ShouldExclude("config/.env.local", false))
-
-	// Files inside .azure/ and .git/ are excluded
-	require.True(t, m.ShouldExclude(".azure/config", false))
-	require.True(t, m.ShouldExclude(".git/HEAD", false))
 }
 
 func TestAgentIgnore_UserFileOverridesDefaults(t *testing.T) {
@@ -88,9 +67,9 @@ func TestAgentIgnore_UserFileOverridesDefaults(t *testing.T) {
 	require.False(t, m.ShouldExclude("node_modules", true))
 	require.False(t, m.ShouldExclude("foo.pyc", false))
 
-	// Security still applies
-	require.True(t, m.ShouldExclude(".env", false))
-	require.True(t, m.ShouldExclude(".git", true))
+	// Security files are also user-configurable now — not excluded unless user lists them
+	require.False(t, m.ShouldExclude(".env", false))
+	require.False(t, m.ShouldExclude(".git", true))
 }
 
 func TestAgentIgnore_NegationWorks(t *testing.T) {
@@ -146,10 +125,10 @@ func TestAgentIgnore_EmptyFile(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m.hasUserIgnore)
 
-	// Nothing excluded except security
+	// Nothing excluded — empty file means include everything
 	require.False(t, m.ShouldExclude("main.py", false))
 	require.False(t, m.ShouldExclude("__pycache__", true))
-	require.True(t, m.ShouldExclude(".env", false))
+	require.False(t, m.ShouldExclude(".env", false))
 }
 
 func TestDefaultAgentIgnoreContent(t *testing.T) {
@@ -159,26 +138,9 @@ func TestDefaultAgentIgnoreContent(t *testing.T) {
 	require.Contains(t, content, "agent.yaml")
 	require.Contains(t, content, ".agentignore")
 	require.Contains(t, content, "bin/")
-}
-
-func TestAgentIgnore_MetadataFilesAlwaysExcluded(t *testing.T) {
-	dir := t.TempDir()
-	// User .agentignore that only excludes *.log — does NOT list agent.yaml etc.
-	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte("*.log\n"), 0600)
-	require.NoError(t, err)
-
-	m, err := newAgentIgnoreMatcher(dir)
-	require.NoError(t, err)
-
-	// Metadata files at root are always excluded
-	require.True(t, m.ShouldExclude("agent.yaml", false))
-	require.True(t, m.ShouldExclude("agent.manifest.yaml", false))
-	require.True(t, m.ShouldExclude("azure.yaml", false))
-	require.True(t, m.ShouldExclude(".agentignore", false))
-
-	// But agent.yaml in a subdirectory is NOT excluded (only root level)
-	require.False(t, m.ShouldExclude("subdir/agent.yaml", false))
-
-	// Regular files still allowed
-	require.False(t, m.ShouldExclude("main.py", false))
+	require.Contains(t, content, ".env")
+	require.Contains(t, content, ".azure/")
+	require.Contains(t, content, ".git/")
+	require.Contains(t, content, "Dockerfile")
+	require.Contains(t, content, ".dockerignore")
 }

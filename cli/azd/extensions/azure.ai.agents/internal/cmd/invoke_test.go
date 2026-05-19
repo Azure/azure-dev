@@ -393,11 +393,6 @@ func TestInvokeVersionFlagValidation(t *testing.T) {
 			errSub: "cannot use --version with --session-id",
 		},
 		{
-			name:   "rejects explicit conversation id",
-			args:   []string{"--version", "3", "--conversation-id", "existing-conversation", "hi"},
-			errSub: "cannot use --version with --conversation-id",
-		},
-		{
 			name:   "rejects unsupported version characters",
 			args:   []string{"--version", "3?api-version=evil", "hi"},
 			errSub: "unsupported characters",
@@ -426,17 +421,38 @@ func TestInvokeVersionFlagValidation(t *testing.T) {
 	}
 }
 
-func TestValidateInvokeVersionFlagsAllowsNewConversation(t *testing.T) {
+func TestValidateInvokeVersionFlagsAllowsConversationFlags(t *testing.T) {
 	t.Parallel()
 
-	cmd := newInvokeCommand(nil)
-	flags := &invokeFlags{
-		version:         "3",
-		newConversation: true,
+	tests := []struct {
+		name  string
+		flags *invokeFlags
+	}{
+		{
+			name: "explicit conversation id",
+			flags: &invokeFlags{
+				version:      "3",
+				conversation: "existing-conversation",
+			},
+		},
+		{
+			name: "new conversation",
+			flags: &invokeFlags{
+				version:         "3",
+				newConversation: true,
+			},
+		},
 	}
 
-	if err := validateInvokeVersionFlags(cmd, flags); err != nil {
-		t.Fatalf("validateInvokeVersionFlags rejected --new-conversation with --version: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := newInvokeCommand(nil)
+			if err := validateInvokeVersionFlags(cmd, tt.flags); err != nil {
+				t.Fatalf("validateInvokeVersionFlags rejected %s with --version: %v", tt.name, err)
+			}
+		})
 	}
 }
 
@@ -814,6 +830,43 @@ func TestVersionedConversationLookupDoesNotUseLegacyAgentName(t *testing.T) {
 	}
 	if got != "" {
 		t.Errorf("conversation = %q, want empty because versioned lookup must not use legacy fallback", got)
+	}
+}
+
+func TestVersionedExplicitConversationPersistsUnderVersionKey(t *testing.T) {
+	t.Parallel()
+
+	userConfig := newInvokeUserConfigServer()
+	azdClient := newInvokeTestAzdClient(t, userConfig)
+	projectEndpoint := "https://acct.services.ai.azure.com/api/projects/proj"
+	versionedKey := buildAgentKey(projectEndpoint, "hello", "3", false)
+
+	got, err := resolveConversationID(
+		t.Context(),
+		azdClient,
+		versionedKey,
+		"existing-conversation",
+		false,
+		projectEndpoint,
+		"token",
+		"hello",
+	)
+	if err != nil {
+		t.Fatalf("resolveConversationID: %v", err)
+	}
+	if got != "existing-conversation" {
+		t.Fatalf("conversation = %q, want existing-conversation", got)
+	}
+
+	userConfig.mu.Lock()
+	defer userConfig.mu.Unlock()
+
+	var conversations map[string]string
+	if err := json.Unmarshal(userConfig.values[configPath("conversations")], &conversations); err != nil {
+		t.Fatalf("unmarshal persisted conversations: %v", err)
+	}
+	if got := conversations[versionedKey]; got != "existing-conversation" {
+		t.Fatalf("persisted conversation = %q, want existing-conversation", got)
 	}
 }
 

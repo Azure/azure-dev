@@ -252,14 +252,6 @@ func validateInvokeVersionFlags(cmd *cobra.Command, flags *invokeFlags) error {
 				"or use --session-id without --version to invoke an existing session",
 		)
 	}
-	if flags.conversation != "" {
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"cannot use --version with --conversation-id; conversations can contain version-specific context",
-			"use --version without --conversation-id to create or reuse a version-specific conversation, "+
-				"or use --new-conversation to reset it",
-		)
-	}
 
 	return nil
 }
@@ -533,11 +525,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		if a.endpoint.APIVersion != "" {
 			rc.apiVersion = a.endpoint.APIVersion
 		}
-		if rc.version != "" {
-			rc.agentKey = buildAgentKey(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, rc.version, false)
-		} else {
-			rc.agentKey = buildAgentKey(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, "", false)
-		}
+		rc.agentKey = buildAgentKey(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, rc.version, false)
 		// Best-effort attach to the parent azd daemon so session/conversation IDs
 		// persist across invokes via global UserConfig. When running the extension
 		// binary directly (standalone), this fails and we proceed without persistence.

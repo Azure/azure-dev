@@ -123,7 +123,8 @@ func TestGetDataGenerationJob_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "/data_generation_jobs/op-123", capturedPath)
 	assert.Equal(t, "completed", result.Status)
-	assert.Equal(t, "test-ds", result.ResolvedDatasetName())
+	name, _ := result.ResolvedNameVersion()
+	assert.Equal(t, "test-ds", name)
 }
 
 // ---------------------------------------------------------------------------
@@ -182,7 +183,8 @@ func TestGetEvaluatorGenerationJob_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "/evaluator_generation_jobs/eval-op-456", capturedPath)
 	assert.Equal(t, "completed", result.Status)
-	assert.Equal(t, "quality", result.ResolvedEvaluatorName())
+	name, _ := result.ResolvedNameVersion()
+	assert.Equal(t, "quality", name)
 }
 
 // ---------------------------------------------------------------------------

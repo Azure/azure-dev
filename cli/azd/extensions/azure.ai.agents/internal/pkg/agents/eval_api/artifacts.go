@@ -7,17 +7,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"azureaiagent/internal/pkg/agents/dataset_api"
 	"azureaiagent/internal/pkg/agents/opteval"
 )
 
-// foundryDir is the directory under .azure where eval artifacts are stored.
-const foundryDir = ".azure/.foundry"
+// Artifact directory names relative to the agent project root.
+const (
+	EvaluatorsDir         = "evaluators"
+	DatasetsDir           = "datasets"
+	EvaluatorContractFile = "rubric_dimensions.json"
+)
 
 // ResolveEvalOutputPath resolves the eval output config path. If output is
 // already absolute it is returned as-is; otherwise it is joined with the
@@ -35,107 +39,195 @@ func ResolveEvalConfigPath(config, agentProject string) string {
 	return ResolveEvalOutputPath(config, agentProject)
 }
 
-// EnsureFoundryDirs creates the .azure/.foundry directory tree under the
-// project root if it doesn't already exist.
-func EnsureFoundryDirs(projectRoot string) error {
-	dir := filepath.Join(projectRoot, foundryDir)
-	return os.MkdirAll(dir, 0750)
-}
-
-// DownloadDatasetArtifact downloads the dataset referenced by dsRef and saves
-// it under .azure/.foundry/datasets/<name>.jsonl.
+// DownloadDatasetArtifact downloads the dataset and writes it locally.
+// If the download fails (e.g., non-TLS test server), it returns nil gracefully.
+// On success it returns the relative local URI (datasets/<name>/<version>/) for the
+// downloaded directory. The SAS URI may point to a container (downloads all blobs)
+// or a single blob.
 func DownloadDatasetArtifact(
 	ctx context.Context,
 	client *dataset_api.DatasetClient,
-	projectRoot string,
-	dsRef *opteval.DatasetRef,
+	agentProject string,
+	ref *opteval.DatasetRef,
 	apiVersion string,
-) error {
-	if dsRef == nil || dsRef.Name == "" {
-		return fmt.Errorf("dataset reference is empty")
+) (string, error) {
+	if ref == nil || ref.Name == "" {
+		return "", nil
 	}
 
-	ds, err := client.GetDataset(ctx, dsRef.Name, dsRef.Version, apiVersion)
-	if err != nil {
-		return fmt.Errorf("failed to get dataset %q: %w", dsRef.Name, err)
-	}
-
-	cred, err := client.GetDatasetCredential(ctx, dsRef.Name, dsRef.Version, apiVersion)
-	if err != nil {
-		return fmt.Errorf("failed to get dataset credential: %w", err)
+	// Attempt full download via the dataset API.
+	cred, credErr := client.GetDatasetCredential(ctx, ref.Name, ref.Version, apiVersion)
+	if credErr != nil {
+		return "", nil
 	}
 
 	downloadURL := cred.ResolvedDownloadURI()
 	if downloadURL == "" {
-		downloadURL = ds.ResolvedBlobURI()
-	}
-	if downloadURL == "" {
-		return fmt.Errorf("no download URL available for dataset %q", dsRef.Name)
+		return "", nil
 	}
 
-	data, err := client.DownloadDataset(ctx, downloadURL)
-	if err != nil {
-		return fmt.Errorf("failed to download dataset: %w", err)
+	destDir := DatasetArtifactPath(agentProject, ref)
+	if err := os.MkdirAll(destDir, 0750); err != nil {
+		return "", fmt.Errorf("creating dataset artifact dir: %w", err)
 	}
 
-	dir := filepath.Join(projectRoot, foundryDir, "datasets")
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		return fmt.Errorf("failed to create dataset dir: %w", err)
+	// Determine if this is a container-level SAS (sr=c) or blob-level.
+	if isContainerSAS(downloadURL) {
+		blobs, err := client.ListContainerBlobs(ctx, downloadURL)
+		if err != nil {
+			return "", nil
+		}
+		if len(blobs) == 0 {
+			return "", nil
+		}
+		for _, blobName := range blobs {
+			data, dlErr := client.DownloadBlob(ctx, downloadURL, blobName)
+			if dlErr != nil {
+				continue
+			}
+			dest := filepath.Join(destDir, filepath.FromSlash(blobName))
+			if err := os.MkdirAll(filepath.Dir(dest), 0750); err != nil {
+				continue
+			}
+			if err := os.WriteFile(dest, data, 0600); err != nil {
+				continue
+			}
+		}
+	} else {
+		// Single blob download.
+		data, dlErr := client.DownloadDataset(ctx, downloadURL)
+		if dlErr != nil {
+			return "", nil
+		}
+		// Infer filename from URL.
+		filename := filenameFromURL(downloadURL)
+		dest := filepath.Join(destDir, filename)
+		if err := os.WriteFile(dest, data, 0600); err != nil {
+			return "", fmt.Errorf("writing dataset artifact: %w", err)
+		}
 	}
 
-	path := filepath.Join(dir, dsRef.Name+".jsonl")
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		return fmt.Errorf("failed to write dataset artifact: %w", err)
-	}
-
-	return nil
+	return DatasetLocalURI(ref.Name), nil
 }
 
-// DatasetArtifactPath returns the local path where a downloaded dataset
-// artifact is stored.
-func DatasetArtifactPath(projectRoot string, dsRef *opteval.DatasetRef) string {
-	if dsRef == nil || dsRef.Name == "" {
+// isContainerSAS checks if a SAS URI is container-scoped (sr=c in query).
+func isContainerSAS(rawURL string) bool {
+	idx := strings.IndexByte(rawURL, '?')
+	if idx == -1 {
+		return false
+	}
+	query := rawURL[idx+1:]
+	// Look for sr=c parameter.
+	for _, param := range strings.Split(query, "&") {
+		if param == "sr=c" {
+			return true
+		}
+	}
+	return false
+}
+
+// filenameFromURL extracts the filename from a blob URL path.
+// Falls back to "data.jsonl" if unable to determine.
+func filenameFromURL(rawURL string) string {
+	path := rawURL
+	if idx := strings.IndexByte(path, '?'); idx != -1 {
+		path = path[:idx]
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) > 0 {
+		name := parts[len(parts)-1]
+		if name != "" && strings.Contains(name, ".") {
+			return name
+		}
+	}
+	return "data.jsonl"
+}
+
+// DatasetArtifactPath returns the local filesystem path for a downloaded dataset directory.
+func DatasetArtifactPath(agentProject string, ref *opteval.DatasetRef) string {
+	if ref == nil || ref.Name == "" {
 		return ""
 	}
-	return filepath.Join(projectRoot, foundryDir, "datasets", dsRef.Name+".jsonl")
+	return filepath.Join(agentProject, DatasetsDir, ref.Name)
 }
 
-// SaveEvaluatorResult saves the raw JSON result of an evaluator generation job
-// under .azure/.foundry/evaluators/<name>.json.
-func SaveEvaluatorResult(projectRoot, evaluatorName string, result json.RawMessage) {
+// DatasetLocalURI returns the relative path (from the agent project root)
+// to a dataset artifact directory. This is the value stored in DatasetRef.LocalURI.
+func DatasetLocalURI(name string) string {
+	return filepath.Join(DatasetsDir, name)
+}
+
+// evaluatorDir returns the full path to an evaluator's local directory.
+func evaluatorDir(agentProject, name string) string {
+	return filepath.Join(agentProject, EvaluatorsDir, name)
+}
+
+// EvaluatorLocalURI returns the relative path (from the agent project root)
+// to an evaluator artifact file. This is the value stored in EvaluatorRef.LocalURI.
+func EvaluatorLocalURI(name string) string {
+	return filepath.Join(EvaluatorsDir, name, EvaluatorContractFile)
+}
+
+// SaveEvaluatorResult extracts the rubric dimensions from the evaluator result
+// and saves them as the local artifact. Only dimensions are persisted so that
+// users can edit weights/descriptions and upload a new evaluator version.
+func SaveEvaluatorResult(agentProject, evaluatorName string, result json.RawMessage) {
 	if evaluatorName == "" || len(result) == 0 {
 		return
 	}
-	dir := filepath.Join(projectRoot, foundryDir, "evaluators")
+	dir := evaluatorDir(agentProject, evaluatorName)
 	if err := os.MkdirAll(dir, 0750); err != nil {
-		log.Printf("[debug] failed to create evaluator dir: %v", err)
 		return
 	}
-	path := filepath.Join(dir, evaluatorName+".json")
-	if err := os.WriteFile(path, result, 0600); err != nil {
-		log.Printf("[debug] failed to save evaluator result: %v", err)
+
+	// Parse the evaluator result to extract the rubric dimensions.
+	parsed := ParseEvaluatorResult(result)
+	if parsed == nil || len(parsed.Definition.Dimensions) == 0 {
+		return
+	}
+
+	formatted, err := json.MarshalIndent(parsed.Definition.Dimensions, "", "  ")
+	if err != nil {
+		return
+	}
+
+	path := filepath.Join(dir, EvaluatorContractFile)
+	_ = os.WriteFile(path, formatted, 0600)
+}
+
+// PrintEvaluatorDimensions prints a compact table of rubric dimensions.
+func PrintEvaluatorDimensions(parsed *EvaluatorResult) {
+	dims := parsed.Definition.Dimensions
+	fmt.Printf("\n   Evaluator dimensions (%d):\n", len(dims))
+	fmt.Println("     Weight  Dimension")
+	fmt.Println("     ──────  ─────────")
+	for _, d := range dims {
+		fmt.Printf("     %6d  %s\n", d.Weight, d.ID)
 	}
 }
 
-// WriteEvalReviewArtifacts writes human-readable review artifacts for the eval
-// config under .azure/.foundry/review/.
-func WriteEvalReviewArtifacts(projectRoot string, cfg *EvalConfig) {
+// WriteEvalReviewArtifacts writes human-readable review artifacts for evaluators.
+// It writes a stub YAML file for each evaluator unless a result JSON already exists.
+func WriteEvalReviewArtifacts(agentProject string, cfg *EvalConfig) {
 	if cfg == nil {
 		return
 	}
-	dir := filepath.Join(projectRoot, foundryDir, "review")
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		log.Printf("[debug] failed to create review dir: %v", err)
-		return
-	}
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		log.Printf("[debug] failed to marshal eval config for review: %v", err)
-		return
-	}
-	path := filepath.Join(dir, "eval-config.json")
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		log.Printf("[debug] failed to write review artifact: %v", err)
+	for _, evaluator := range cfg.Evaluators {
+		if evaluator.Name == "" || IsBuiltinEvaluator(evaluator.Name) {
+			continue
+		}
+		dir := evaluatorDir(agentProject, evaluator.Name)
+		if err := os.MkdirAll(dir, 0750); err != nil {
+			continue
+		}
+		// Skip if a result JSON already exists.
+		jsonPath := filepath.Join(dir, EvaluatorContractFile)
+		if _, err := os.Stat(jsonPath); err == nil {
+			continue
+		}
+		yamlPath := filepath.Join(dir, evaluator.Name+".yaml")
+		stub := fmt.Sprintf("# Evaluator stub: %s\nname: %s\n", evaluator.Name, evaluator.Name)
+		_ = os.WriteFile(yamlPath, []byte(stub), 0600)
 	}
 }
 

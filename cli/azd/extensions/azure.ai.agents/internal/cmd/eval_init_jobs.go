@@ -37,17 +37,17 @@ func randomSuffix() string {
 	return hex.EncodeToString(b)
 }
 
-// resolvedSystemPrompt returns the system prompt content from flags, reading
-// from file if systemPromptFile is set.
-func resolvedSystemPrompt(flags *evalInitFlags) string {
-	if flags.systemPromptFile != "" {
-		data, err := os.ReadFile(flags.systemPromptFile) //nolint:gosec // user-provided path validated earlier
+// resolvedInstruction returns the instruction content from flags, reading
+// from file if instructionFile is set.
+func resolvedInstruction(flags *evalInitFlags) string {
+	if flags.instructionFile != "" {
+		data, err := os.ReadFile(flags.instructionFile) //nolint:gosec // user-provided path validated earlier
 		if err != nil {
-			return flags.systemPrompt
+			return flags.instruction
 		}
 		return string(data)
 	}
-	return flags.systemPrompt
+	return flags.instruction
 }
 
 func newEvalConfig(flags *evalInitFlags, resolved *evalResolvedContext) *evalConfig {
@@ -56,10 +56,10 @@ func newEvalConfig(flags *evalInitFlags, resolved *evalResolvedContext) *evalCon
 		Kind:    resolved.agentKind,
 		Version: resolved.version,
 	}
-	if flags.systemPromptFile != "" {
-		agent.SystemPromptFile = flags.systemPromptFile
-	} else {
-		agent.SystemPrompt = flags.systemPrompt
+	if flags.instructionFile != "" {
+		agent.Instruction = opteval.InstructionRef{File: flags.instructionFile}
+	} else if flags.instruction != "" {
+		agent.Instruction = opteval.InstructionRef{Value: flags.instruction}
 	}
 	return &evalConfig{
 		Config: opteval.Config{
@@ -81,7 +81,7 @@ func submitDatasetGeneration(
 	flags *evalInitFlags,
 ) (*eval_api.GenerationJob, error) {
 	// Traces are only supported for evaluator generation, not dataset generation.
-	prompt := resolvedSystemPrompt(flags)
+	prompt := resolvedInstruction(flags)
 	sources := eval_api.BuildGenerationSources(
 		string(resolved.agentKind), resolved.agentName, resolved.version, prompt, nil,
 	)
@@ -103,7 +103,7 @@ func submitEvaluatorGeneration(
 	if flags.traceDays > 0 {
 		traces = &eval_api.TraceOptions{Days: flags.traceDays}
 	}
-	prompt := resolvedSystemPrompt(flags)
+	prompt := resolvedInstruction(flags)
 	sources := eval_api.BuildGenerationSources(
 		string(resolved.agentKind), resolved.agentName, resolved.version, prompt, traces,
 	)
@@ -134,18 +134,26 @@ func resolveLocalDatasetFile(dataset string, agentProject string) (string, error
 }
 
 func datasetFromJob(job *eval_api.GenerationJob) *evalDatasetRef {
+	name, version := job.ResolvedNameVersion()
+	if name == "" {
+		return nil
+	}
 	return &evalDatasetRef{
-		Name:    job.ResolvedDatasetName(),
-		Version: job.ResolvedDatasetVersion(),
+		Name:    name,
+		Version: version,
 	}
 }
 
-func evaluatorFromJob(job *eval_api.GenerationJob) string {
-	return job.ResolvedEvaluatorName()
+func evaluatorFromJob(job *eval_api.GenerationJob) (string, string) {
+	return job.ResolvedNameVersion()
 }
 
-func evaluatorsFromFlags(values []string) []string {
-	return values
+func evaluatorsFromFlags(values []string) opteval.EvaluatorList {
+	refs := make(opteval.EvaluatorList, len(values))
+	for i, v := range values {
+		refs[i] = opteval.EvaluatorRef{Name: v}
+	}
+	return refs
 }
 
 func buildOpenAIEvalRequest(evalCfg *evalConfig) *eval_api.CreateOpenAIEvalRequest {
@@ -159,7 +167,7 @@ func resumeEvalInit(
 	evalCfg *evalConfig,
 	state *evalState,
 ) error {
-	if err := pollAndFinalizeJobs(ctx, resolved, evalCfg, state, nil); err != nil {
+	if _, err := pollAndFinalizeJobs(ctx, resolved, evalCfg, state, nil); err != nil {
 		if _, ok := errors.AsType[*initTimeoutError](err); ok {
 			return writeTimedOutEvalInit(ctx, resolved, configPath, evalCfg, state)
 		}
@@ -168,9 +176,15 @@ func resumeEvalInit(
 	state.InitStatus = "completed"
 	clearEvalState(ctx, resolved.azdClient, resolved.envName)
 	if resolved.hasProject {
-		writeEvalReviewArtifacts(resolved.projectRoot, evalCfg)
+		eval_api.WriteEvalReviewArtifacts(resolved.agentProject, evalCfg)
 	}
 	return writeEvalConfig(configPath, evalCfg)
+}
+
+// pollResults carries parsed outputs from completed generation jobs so that
+// the caller can display them after both jobs finish.
+type pollResults struct {
+	EvaluatorResult *eval_api.EvaluatorResult
 }
 
 // pollAndFinalizeJobs polls pending dataset and evaluator generation jobs in
@@ -183,8 +197,9 @@ func pollAndFinalizeJobs(
 	resolved *evalResolvedContext,
 	evalCfg *evalConfig,
 	state *evalState,
-	builtinEvals []string,
-) error {
+	builtinEvals opteval.EvaluatorList,
+) (*pollResults, error) {
+	results := &pollResults{}
 	// Each goroutine writes to distinct fields of evalCfg and state, so no
 	// mutex is needed for those. Only the error variables are shared across
 	// both goroutines and guarded by wg.Wait() (written before Wait, read after).
@@ -226,13 +241,21 @@ func pollAndFinalizeJobs(
 			// Dataset goroutine owns: state.DatasetGenStatus, evalCfg.DatasetReference, evalCfg.DatasetFile.
 			state.DatasetGenStatus = completed.NormalizedStatus()
 			dsRef := datasetFromJob(completed)
+			if dsRef == nil {
+				return
+			}
 			evalCfg.DatasetReference = dsRef
+
 			if resolved.hasProject {
-				if err := downloadDatasetArtifact(
-					ctx, resolved.datasetClient, resolved.projectRoot, dsRef, DefaultAgentAPIVersion,
-				); err != nil {
+				localURI, err := eval_api.DownloadDatasetArtifact(
+					ctx, resolved.datasetClient, resolved.agentProject, dsRef, DefaultAgentAPIVersion,
+				)
+				if err != nil {
 					datasetPollErr = err
 					return
+				}
+				if localURI != "" {
+					dsRef.LocalURI = localURI
 				}
 			}
 		}()
@@ -252,11 +275,19 @@ func pollAndFinalizeJobs(
 				return
 			}
 			// Evaluator goroutine owns: state.EvalGenStatus, evalCfg.Evaluators.
-			evalName := evaluatorFromJob(completed)
+			evalName, evalVersion := evaluatorFromJob(completed)
 			state.EvalGenStatus = completed.NormalizedStatus()
-			evalCfg.Evaluators = append(builtinEvals, evalName)
+			evalRef := opteval.EvaluatorRef{
+				Name:     evalName,
+				Version:  evalVersion,
+				LocalURI: eval_api.EvaluatorLocalURI(evalName),
+			}
+			evalCfg.Evaluators = append(builtinEvals, evalRef)
+
+			results.EvaluatorResult = eval_api.ParseEvaluatorResult(completed.Result)
+
 			if resolved.hasProject {
-				saveEvaluatorResult(resolved.projectRoot, evalName, completed.Result)
+				eval_api.SaveEvaluatorResult(resolved.agentProject, evalName, completed.Result)
 			}
 		}()
 	}
@@ -269,7 +300,7 @@ func pollAndFinalizeJobs(
 	dsTimeout := isPollerTimeout(datasetPollErr)
 	evalTimeout := isPollerTimeout(evalPollErr)
 	if dsTimeout || evalTimeout {
-		return &initTimeoutError{
+		return results, &initTimeoutError{
 			datasetOpID:       state.DatasetGenOpID,
 			evaluatorOpID:     state.EvalGenOpID,
 			datasetTimedOut:   dsTimeout,
@@ -278,9 +309,9 @@ func pollAndFinalizeJobs(
 	}
 
 	if datasetPollErr != nil {
-		return datasetPollErr
+		return results, datasetPollErr
 	}
-	return evalPollErr
+	return results, evalPollErr
 }
 
 // isPollerTimeout returns true when the error is a *eval_api.PollerTimeoutError.

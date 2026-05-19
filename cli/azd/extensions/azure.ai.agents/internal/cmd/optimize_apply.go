@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
@@ -174,6 +175,9 @@ func (a *OptimizeApplyAction) apply(
 	fmt.Fprintf(out, "  Run %s to deploy the optimized agent.\n",
 		color.CyanString("azd deploy --service %s", svc.Name))
 
+	// Show prompt diff (baseline → optimized).
+	printPromptDiff(out, serviceDir, a.flags.candidate, candidateConfig)
+
 	return nil
 }
 
@@ -304,4 +308,79 @@ func cleanOtherCandidates(optimizeDir, currentCandidate string, out io.Writer) {
 			fmt.Fprintf(out, "  Removed old candidate: %s\n", name)
 		}
 	}
+}
+
+// maxDiffPreviewLines is the max lines shown per section in the prompt diff preview.
+const maxDiffPreviewLines = 4
+
+// printPromptDiff displays an abbreviated prompt diff (baseline → optimized)
+// with a short preview and a suggested command for the full diff.
+func printPromptDiff(out io.Writer, serviceDir, candidateID string, candidateConfig any) {
+	optimized := extractInstructions(candidateConfig)
+	if optimized == "" {
+		return
+	}
+
+	baseline, err := loadBaselineConfig(serviceDir)
+	if err != nil || baseline.Instructions == "" {
+		return
+	}
+
+	baselineText := baseline.Instructions
+	baselineLines := strings.Split(baselineText, "\n")
+	optimizedLines := strings.Split(optimized, "\n")
+
+	fmt.Fprintf(out, "\n  Prompt diff (baseline → optimized):\n\n")
+
+	// Baseline preview (removed).
+	removed := color.New(color.FgRed)
+	removed.Fprintf(out, "    — Baseline (%d lines, %d chars):\n",
+		len(baselineLines), len(baselineText))
+	printPreviewLines(out, baselineLines, "- ", removed)
+
+	fmt.Fprintln(out)
+
+	// Optimized preview (added).
+	added := color.New(color.FgGreen)
+	added.Fprintf(out, "    — Optimized (%d lines, %d chars):\n",
+		len(optimizedLines), len(optimized))
+	printPreviewLines(out, optimizedLines, "+ ", added)
+
+	// Suggest command to see the full diff.
+	baselinePath := filepath.Join(optimizationDir, "baseline", "config.json")
+	candidatePath := filepath.Join(optimizationDir, candidateID, "config.json")
+	fmt.Fprintf(out, "\n  To see the full diff:\n")
+	fmt.Fprintf(out, "    %s\n",
+		color.CyanString("diff %s %s", baselinePath, candidatePath))
+}
+
+// printPreviewLines prints up to maxDiffPreviewLines with a prefix, then "..." if truncated.
+func printPreviewLines(out io.Writer, lines []string, prefix string, c *color.Color) {
+	limit := min(len(lines), maxDiffPreviewLines)
+	for _, line := range lines[:limit] {
+		c.Fprintf(out, "    %s%s\n", prefix, line)
+	}
+	if len(lines) > maxDiffPreviewLines {
+		c.Fprintf(out, "    %s... (%d more lines)\n", prefix, len(lines)-maxDiffPreviewLines)
+	}
+}
+
+// extractInstructions retrieves the system prompt string from a candidate config
+// returned by the optimization service.
+func extractInstructions(config any) string {
+	m, ok := config.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if v, exists := m["systemPrompt"]; exists {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	if v, exists := m["instructions"]; exists {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
 }

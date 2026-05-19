@@ -98,14 +98,14 @@ func TestEvalConfig_RoundTrip_FullFields(t *testing.T) {
 		Config: opteval.Config{
 			Name: "full-test",
 			Agent: opteval.AgentRef{
-				Name:         "booking-agent",
-				Kind:         "hosted",
-				Version:      "v3",
-				Model:        "gpt-4.1",
-				SystemPrompt: "This agent handles restaurant reservations",
+				Name:        "booking-agent",
+				Kind:        "hosted",
+				Version:     "v3",
+				Model:       "gpt-4.1",
+				Instruction: opteval.InstructionRef{Value: "This agent handles restaurant reservations"},
 			},
 			DatasetReference: &opteval.DatasetRef{Name: "golden-data", Version: "v2"},
-			Evaluators:       []string{"builtin.task_adherence", "custom-quality"},
+			Evaluators:       opteval.EvaluatorList{{Name: "builtin.task_adherence"}, {Name: "custom-quality"}},
 		},
 		Options: &opteval.Options{
 			EvalModel: "gpt-4o",
@@ -126,10 +126,10 @@ func TestEvalConfig_RoundTrip_FullFields(t *testing.T) {
 	assert.Equal(t, "golden-data", loaded.DatasetReference.Name)
 	assert.Equal(t, "v2", loaded.DatasetReference.Version)
 	require.Len(t, loaded.Evaluators, 2)
-	assert.Equal(t, "builtin.task_adherence", loaded.Evaluators[0])
-	assert.Equal(t, "custom-quality", loaded.Evaluators[1])
+	assert.Equal(t, "builtin.task_adherence", loaded.Evaluators[0].Name)
+	assert.Equal(t, "custom-quality", loaded.Evaluators[1].Name)
 	assert.Equal(t, "gpt-4o", loaded.Options.EvalModel)
-	assert.Equal(t, "This agent handles restaurant reservations", loaded.Agent.SystemPrompt)
+	assert.Equal(t, "This agent handles restaurant reservations", loaded.Agent.Instruction.Value)
 	assert.Equal(t, 75, loaded.MaxSamples)
 }
 
@@ -153,7 +153,7 @@ func TestEvalConfig_RoundTrip_MinimalFields(t *testing.T) {
 	assert.Equal(t, "data.jsonl", loaded.DatasetFile)
 	assert.Nil(t, loaded.DatasetReference)
 	assert.Empty(t, loaded.Evaluators)
-	assert.Empty(t, loaded.Agent.SystemPrompt)
+	assert.True(t, loaded.Agent.Instruction.IsEmpty())
 	assert.Zero(t, loaded.MaxSamples)
 }
 
@@ -199,7 +199,7 @@ func TestToAgentTargetAdaptableEvalGroupRequest_WithEvaluators(t *testing.T) {
 		Config: opteval.Config{
 			Name:        "test-eval",
 			Agent:       opteval.AgentRef{Name: "agent-1", Version: "v1"},
-			Evaluators:  []string{"builtin.quality", "custom-1"},
+			Evaluators:  opteval.EvaluatorList{{Name: "builtin.quality"}, {Name: "custom-1"}},
 			DatasetFile: "tasks.jsonl",
 		},
 		Options: &opteval.Options{EvalModel: "gpt-4o"},

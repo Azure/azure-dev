@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"azureaiagent/internal/version"
 
@@ -67,6 +68,114 @@ func (c *DatasetClient) CreateDataset(
 	apiVersion string,
 ) (*Dataset, error) {
 	return doRequestTyped[Dataset](c, ctx, http.MethodPost, pathDatasets, nil, request, apiVersion)
+}
+
+// UploadNewVersion reads the first JSONL file from localDir, computes the next
+// version from currentVersion, and uploads it as a new dataset version using
+// the 3-step pending upload flow:
+//  1. startPendingUpload → get SAS URI
+//  2. Upload blob to SAS URI
+//  3. Finalize dataset version with dataUri
+func (c *DatasetClient) UploadNewVersion(
+	ctx context.Context,
+	name string,
+	currentVersion string,
+	localDir string,
+	apiVersion string,
+) (*Dataset, error) {
+	content, err := ReadFirstJSONLFile(localDir)
+	if err != nil {
+		return nil, fmt.Errorf("reading dataset from %s: %w", localDir, err)
+	}
+
+	newVersion := NextVersion(currentVersion)
+
+	// Step 1: Start pending upload to get a SAS URI.
+	pending, err := c.StartPendingUpload(ctx, name, newVersion, apiVersion)
+	if err != nil {
+		return nil, fmt.Errorf("starting pending upload: %w", err)
+	}
+
+	uploadURI := pending.ResolvedUploadURI()
+	if uploadURI == "" {
+		return nil, fmt.Errorf("no upload SAS URI returned from startPendingUpload")
+	}
+
+	// Step 2: Upload the JSONL file to blob storage.
+	blobName := name + ".jsonl"
+	if err := c.UploadBlob(ctx, uploadURI, blobName, []byte(content)); err != nil {
+		return nil, fmt.Errorf("uploading blob: %w", err)
+	}
+
+	// Step 3: Finalize the dataset version.
+	dataURI := pending.ResolvedBlobURI()
+	return c.FinalizeDatasetVersion(ctx, name, newVersion, dataURI, apiVersion)
+}
+
+// StartPendingUpload initiates a pending upload for a dataset version.
+// Returns the SAS URI and blob reference for uploading data.
+func (c *DatasetClient) StartPendingUpload(
+	ctx context.Context,
+	name string,
+	version string,
+	apiVersion string,
+) (*PendingUploadResponse, error) {
+	path := fmt.Sprintf(
+		"%s/%s/versions/%s/startPendingUpload",
+		pathDatasets, url.PathEscape(name), url.PathEscape(version),
+	)
+	return doRequestTyped[PendingUploadResponse](c, ctx, http.MethodPost, path, nil, json.RawMessage(`{}`), apiVersion)
+}
+
+// UploadBlob uploads data to a container SAS URI as a block blob.
+func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobName string, data []byte) error {
+	u, err := url.Parse(containerSASUri)
+	if err != nil {
+		return fmt.Errorf("invalid container SAS URI: %w", err)
+	}
+
+	// Append blob name to the container path.
+	u.Path = strings.TrimSuffix(u.Path, "/") + "/" + blobName
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("failed to create upload request: %w", err)
+	}
+	req.Header.Set("x-ms-blob-type", "BlockBlob")
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	httpClient := &http.Client{}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to upload blob: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("blob upload failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// FinalizeDatasetVersion completes the dataset version after blob upload
+// by sending the metadata (name, version, dataUri) to the API.
+func (c *DatasetClient) FinalizeDatasetVersion(
+	ctx context.Context,
+	name string,
+	version string,
+	dataURI string,
+	apiVersion string,
+) (*Dataset, error) {
+	path := fmt.Sprintf("%s/%s/versions/%s", pathDatasets, url.PathEscape(name), url.PathEscape(version))
+	request := &FinalizeDatasetRequest{
+		Name:    name,
+		Version: version,
+		Type:    "uri_file",
+		DataURI: dataURI,
+	}
+	return doRequestTyped[Dataset](c, ctx, http.MethodPut, path, nil, request, apiVersion)
 }
 
 // GetDataset retrieves metadata for a dataset by name and version.
@@ -126,6 +235,109 @@ func (c *DatasetClient) DownloadDataset(ctx context.Context, downloadURL string)
 
 	log.Printf("[dataset_api] downloaded %d bytes", len(data))
 	return data, nil
+}
+
+// ListContainerBlobs lists blobs in a container using a container-level SAS URI.
+// The containerSASUri should include the SAS token (e.g., from credential.sasUri with sr=c).
+// Returns a list of blob names found in the container.
+func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri string) ([]string, error) {
+	// Parse the container URI and append list query parameters.
+	u, err := url.Parse(containerSASUri)
+	if err != nil {
+		return nil, fmt.Errorf("invalid container SAS URI: %w", err)
+	}
+
+	q := u.Query()
+	q.Set("restype", "container")
+	q.Set("comp", "list")
+	u.RawQuery = q.Encode()
+
+	log.Printf("[dataset_api] listing blobs: %s", u.String())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create list request: %w", err)
+	}
+
+	httpClient := &http.Client{}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list container blobs: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("container list failed with status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read list response: %w", err)
+	}
+
+	// Parse XML blob listing to extract blob names.
+	names := parseBlobNames(string(body))
+	log.Printf("[dataset_api] found %d blobs in container", len(names))
+	return names, nil
+}
+
+// DownloadBlob downloads a single blob from a container using the container SAS URI
+// and the blob name. Returns the blob content as bytes.
+func (c *DatasetClient) DownloadBlob(ctx context.Context, containerSASUri, blobName string) ([]byte, error) {
+	u, err := url.Parse(containerSASUri)
+	if err != nil {
+		return nil, fmt.Errorf("invalid container SAS URI: %w", err)
+	}
+
+	// Append blob name to the container path.
+	u.Path = strings.TrimSuffix(u.Path, "/") + "/" + blobName
+
+	log.Printf("[dataset_api] downloading blob: %s", u.String())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create blob download request: %w", err)
+	}
+
+	httpClient := &http.Client{}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download blob: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("blob download failed with status %d for %s", resp.StatusCode, blobName)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read blob content: %w", err)
+	}
+
+	log.Printf("[dataset_api] downloaded blob %s (%d bytes)", blobName, len(data))
+	return data, nil
+}
+
+// parseBlobNames extracts blob names from the Azure Blob Storage XML list response.
+func parseBlobNames(xmlBody string) []string {
+	var names []string
+	// Simple extraction — look for <Name>...</Name> within <Blob> elements.
+	remaining := xmlBody
+	for {
+		start := strings.Index(remaining, "<Name>")
+		if start == -1 {
+			break
+		}
+		remaining = remaining[start+len("<Name>"):]
+		end := strings.Index(remaining, "</Name>")
+		if end == -1 {
+			break
+		}
+		names = append(names, remaining[:end])
+		remaining = remaining[end:]
+	}
+	return names
 }
 
 // doRequest performs an HTTP request against the dataset API and returns the raw response body.

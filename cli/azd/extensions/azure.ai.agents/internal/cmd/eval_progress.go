@@ -85,12 +85,16 @@ func (p *evalProgress) clearSpinnerLine() {
 	}
 }
 
-func (p *evalProgress) setRunning(label string) {
+func (p *evalProgress) setRunning(label string, detail string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.starts[label] = time.Now()
 	p.clearSpinnerLine()
-	fmt.Printf("  %s  %s\n", color.BlueString("(–) Running"), label)
+	if detail != "" {
+		fmt.Printf("  %s  %s  %s\n", color.BlueString("(\u2013) Running"), label, color.HiBlackString("(%s)", detail))
+	} else {
+		fmt.Printf("  %s  %s\n", color.BlueString("(\u2013) Running"), label)
+	}
 }
 
 func (p *evalProgress) setDone(label string) {
@@ -101,6 +105,14 @@ func (p *evalProgress) setDone(label string) {
 	fmt.Printf("  %s  %s  (%s)\n", color.GreenString("(✓) Done"), label, elapsed)
 }
 
+// printDetail prints an indented detail line (e.g. a portal link) safely
+// without conflicting with the spinner.
+func (p *evalProgress) printDetail(text string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.clearSpinnerLine()
+	fmt.Printf("         · %s\n", text)
+}
 func (p *evalProgress) setFailed(label string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

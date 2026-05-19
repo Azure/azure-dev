@@ -5,8 +5,10 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -217,8 +219,8 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 		cfg.Agent.SkillDir = filepath.Join(agentProject, cfg.Agent.SkillDir)
 	}
 
-	// Resolve system prompt using a well-defined lifecycle:
-	//  1. Config file (eval.yaml / --config) — system_prompt or system_prompt_file in agent section
+	// Resolve agent instruction using a well-defined lifecycle:
+	//  1. Config file (eval.yaml / --config) — instruction in the agent section (inline or file reference)
 	//  2. Baseline config — .agent_optimization/baseline/config.json from a prior optimize run
 	//  3. Interactive prompt — ask the user to provide inline text or a file path
 	if err := resolveOptimizeSystemPrompt(ctx, cfg, agentProject, hasProject, a.noPrompt); err != nil {
@@ -261,6 +263,10 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 		return fmt.Errorf("failed to build optimization request: %w", err)
 	}
 
+	if body, jsonErr := json.MarshalIndent(optimizeReq, "", "  "); jsonErr == nil {
+		log.Printf("[debug] optimization request:\n%s", body)
+	}
+
 	// Save baseline config before starting optimization.
 	if hasProject {
 		if err := saveBaselineConfig(agentProject, cfg.Agent.SkillDir, optimizeReq); err != nil {
@@ -295,11 +301,11 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 
 // resolveOptimizeSystemPrompt resolves the agent's system prompt using a well-defined lifecycle:
 //
-//  1. Config (eval.yaml / --config): system_prompt or system_prompt_file in the agent section.
+//  1. Config (eval.yaml / --config): instruction in the agent section (inline or file).
 //  2. Baseline: .agent_optimization/baseline/config.json from a prior optimization run.
 //  3. Interactive prompt: ask the user to provide inline text or a file path.
 //
-// Relative file paths in system_prompt_file are resolved against agentProject.
+// Relative file paths are resolved against agentProject.
 func resolveOptimizeSystemPrompt(
 	ctx context.Context,
 	cfg *OptimizeConfig,
@@ -307,22 +313,22 @@ func resolveOptimizeSystemPrompt(
 	hasProject bool,
 	noPrompt bool,
 ) error {
-	// Resolve relative system_prompt_file paths against the agent project directory.
-	if cfg.Agent.SystemPromptFile != "" && hasProject && !filepath.IsAbs(cfg.Agent.SystemPromptFile) {
-		cfg.Agent.SystemPromptFile = filepath.Join(agentProject, cfg.Agent.SystemPromptFile)
+	// Resolve relative instruction file paths against the agent project directory.
+	if cfg.Agent.Instruction.File != "" && hasProject && !filepath.IsAbs(cfg.Agent.Instruction.File) {
+		cfg.Agent.Instruction.File = filepath.Join(agentProject, cfg.Agent.Instruction.File)
 	}
 
-	// Step 1: Config explicitly declares a system_prompt_file — validate it's readable.
-	if cfg.Agent.SystemPromptFile != "" {
-		if _, err := os.Stat(cfg.Agent.SystemPromptFile); err != nil {
-			return fmt.Errorf("system_prompt_file %q from config is not accessible: %w",
-				cfg.Agent.SystemPromptFile, err)
+	// Step 1: Config explicitly declares a file reference — validate it's readable.
+	if cfg.Agent.Instruction.File != "" {
+		if _, err := os.Stat(cfg.Agent.Instruction.File); err != nil {
+			return fmt.Errorf("instruction file %q from config is not accessible: %w",
+				cfg.Agent.Instruction.File, err)
 		}
 		return nil
 	}
 
-	// Step 1b: Config already has inline system_prompt — nothing to do.
-	if cfg.Agent.SystemPrompt != "" {
+	// Step 1b: Config already has inline instruction — nothing to do.
+	if cfg.Agent.Instruction.Value != "" {
 		return nil
 	}
 
@@ -330,7 +336,7 @@ func resolveOptimizeSystemPrompt(
 	if hasProject {
 		if baseline, loadErr := loadBaselineConfig(agentProject); loadErr == nil && baseline.Instructions != "" {
 			if noPrompt {
-				cfg.Agent.SystemPrompt = baseline.Instructions
+				cfg.Agent.Instruction.Value = baseline.Instructions
 				return nil
 			}
 
@@ -339,13 +345,13 @@ func resolveOptimizeSystemPrompt(
 				defer azdClient.Close()
 				resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 					Options: &azdext.ConfirmOptions{
-						Message: "No system prompt in config. " +
+						Message: "No instruction in config. " +
 							"Found one in baseline (.agent_optimization/baseline/config.json). Use it?",
 						DefaultValue: new(true),
 					},
 				})
 				if promptErr == nil && resp.Value != nil && *resp.Value {
-					cfg.Agent.SystemPrompt = baseline.Instructions
+					cfg.Agent.Instruction.Value = baseline.Instructions
 					return nil
 				}
 			}
@@ -354,16 +360,16 @@ func resolveOptimizeSystemPrompt(
 
 	// Step 3: Interactive prompt — ask user to provide inline text or a file path.
 	if noPrompt {
-		return fmt.Errorf("system prompt is required for optimization.\n\n" +
+		return fmt.Errorf("instruction is required for optimization.\n\n" +
 			"Provide it via one of:\n" +
-			"  1. system_prompt or system_prompt_file in eval.yaml (agent section)\n" +
+			"  1. instruction in eval.yaml (agent section): inline string or file reference\n" +
 			"  2. Run a prior optimization to create a baseline (.agent_optimization/baseline/config.json)\n" +
 			"  3. Run without --no-prompt to enter it interactively")
 	}
 
 	azdClient, clientErr := azdext.NewAzdClient()
 	if clientErr != nil {
-		return fmt.Errorf("system prompt is required but could not open interactive prompt: %w", clientErr)
+		return fmt.Errorf("instruction is required but could not open interactive prompt: %w", clientErr)
 	}
 	defer azdClient.Close()
 
@@ -374,25 +380,25 @@ func resolveOptimizeSystemPrompt(
 	defaultIdx := int32(0)
 	selResp, selErr := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: "No system prompt found in config or baseline. " +
-				"How would you like to provide the system prompt?",
+			Message: "No instruction found in config or baseline. " +
+				"How would you like to provide it?",
 			Choices:       inputChoices,
 			SelectedIndex: &defaultIdx,
 		},
 	})
 	if selErr != nil {
-		return fmt.Errorf("prompting for system prompt input method: %w", selErr)
+		return fmt.Errorf("prompting for instruction input method: %w", selErr)
 	}
 
 	if inputChoices[int(*selResp.Value)].Value == "file" {
 		pathResp, pathErr := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
-				Message:        "Path to system prompt file",
+				Message:        "Path to instruction file",
 				IgnoreHintKeys: true,
 			},
 		})
 		if pathErr != nil {
-			return fmt.Errorf("prompting for system prompt file path: %w", pathErr)
+			return fmt.Errorf("prompting for instruction file path: %w", pathErr)
 		}
 		filePath := strings.TrimSpace(pathResp.Value)
 		// Resolve relative paths against the agent project directory.
@@ -400,20 +406,20 @@ func resolveOptimizeSystemPrompt(
 			filePath = filepath.Join(agentProject, filePath)
 		}
 		if _, err := os.Stat(filePath); err != nil {
-			return fmt.Errorf("system prompt file %q is not accessible: %w", filePath, err)
+			return fmt.Errorf("instruction file %q is not accessible: %w", filePath, err)
 		}
-		cfg.Agent.SystemPromptFile = filePath
+		cfg.Agent.Instruction.File = filePath
 	} else {
 		resp, promptErr := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
-				Message:        "Enter the agent's system prompt instructions",
+				Message:        "Enter the agent's instruction",
 				IgnoreHintKeys: true,
 			},
 		})
 		if promptErr != nil {
-			return fmt.Errorf("prompting for system prompt: %w", promptErr)
+			return fmt.Errorf("prompting for instruction: %w", promptErr)
 		}
-		cfg.Agent.SystemPrompt = strings.TrimSpace(resp.Value)
+		cfg.Agent.Instruction.Value = strings.TrimSpace(resp.Value)
 	}
 
 	return nil

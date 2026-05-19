@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -219,7 +220,7 @@ options:
 	require.NotNil(t, cfg.Options)
 	assert.Equal(t, "gpt-4o", cfg.Options.EvalModel)
 	assert.Len(t, cfg.Evaluators, 1)
-	assert.Equal(t, "builtin.task_adherence", cfg.Evaluators[0])
+	assert.Equal(t, "builtin.task_adherence", cfg.Evaluators[0].Name)
 	require.NotNil(t, cfg.DatasetReference)
 	assert.Equal(t, "eval-dataset", cfg.DatasetReference.Name)
 }
@@ -276,7 +277,7 @@ options:
 
 	// Evaluator — scalar string without builtin. prefix resolves as custom.
 	require.Len(t, cfg.Evaluators, 1)
-	assert.Equal(t, "builtin.task_adherence", cfg.Evaluators[0])
+	assert.Equal(t, "builtin.task_adherence", cfg.Evaluators[0].Name)
 
 	// Options
 	require.NotNil(t, cfg.Options)
@@ -292,4 +293,88 @@ options:
 	assert.Equal(t, "my-test-agent", req.Agent.AgentName)
 	assert.Len(t, req.Dataset, 1)
 	assert.Equal(t, []string{"builtin.task_adherence"}, req.Evaluators)
+}
+
+// ---------------------------------------------------------------------------
+// parseSkillFile / loadSkillsFromDir
+// ---------------------------------------------------------------------------
+
+func TestParseSkillFile_MarkdownWithFrontmatter(t *testing.T) {
+	t.Parallel()
+	content := `---
+name: policy-reviewer
+description: Reviews a travel request against company travel policy.
+---
+
+# Policy Reviewer Skill
+
+Review travel requests and provide a friendly assessment.
+`
+	skill := parseSkillFile("SKILL.md", content)
+	assert.Equal(t, "policy-reviewer", skill.Name)
+	assert.Equal(t, "Reviews a travel request against company travel policy.", skill.Description)
+	assert.Contains(t, skill.Body, "# Policy Reviewer Skill")
+	assert.Contains(t, skill.Body, "friendly assessment")
+	assert.NotContains(t, skill.Body, "---")
+}
+
+func TestParseSkillFile_MarkdownWithoutFrontmatter(t *testing.T) {
+	t.Parallel()
+	content := "# Simple Skill\n\nDo something useful.\n"
+	skill := parseSkillFile("simple.md", content)
+	assert.Equal(t, "simple", skill.Name)
+	assert.Empty(t, skill.Description)
+	assert.Equal(t, content, skill.Body)
+}
+
+func TestParseSkillFile_NonMarkdown(t *testing.T) {
+	t.Parallel()
+	content := "You are a helpful assistant."
+	skill := parseSkillFile("assistant.txt", content)
+	assert.Equal(t, "assistant", skill.Name)
+	assert.Empty(t, skill.Description)
+	assert.Equal(t, content, skill.Body)
+}
+
+func TestParseSkillFile_FrontmatterNameOnly(t *testing.T) {
+	t.Parallel()
+	content := "---\nname: custom-name\n---\nBody content here.\n"
+	skill := parseSkillFile("ignored-filename.md", content)
+	assert.Equal(t, "custom-name", skill.Name)
+	assert.Empty(t, skill.Description)
+	assert.Equal(t, "Body content here.", skill.Body)
+}
+
+func TestLoadSkillsFromDir_WithMarkdownSkills(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	md := "---\nname: reviewer\ndescription: Reviews things\n---\n\nReview body.\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(md), 0600))
+
+	txt := "Plain text skill body."
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "helper.txt"), []byte(txt), 0600))
+
+	skills, err := loadSkillsFromDir(dir)
+	require.NoError(t, err)
+	require.Len(t, skills, 2)
+
+	// Find each skill by name.
+	var mdSkill, txtSkill *optimize_api.SkillDefinition
+	for i := range skills {
+		switch skills[i].Name {
+		case "reviewer":
+			mdSkill = &skills[i]
+		case "helper":
+			txtSkill = &skills[i]
+		}
+	}
+
+	require.NotNil(t, mdSkill)
+	assert.Equal(t, "Reviews things", mdSkill.Description)
+	assert.Contains(t, mdSkill.Body, "Review body.")
+
+	require.NotNil(t, txtSkill)
+	assert.Empty(t, txtSkill.Description)
+	assert.Equal(t, txt, txtSkill.Body)
 }

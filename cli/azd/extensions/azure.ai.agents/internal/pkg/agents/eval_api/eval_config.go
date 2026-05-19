@@ -108,11 +108,11 @@ func (c *EvalConfig) ToAgentTargetAdaptableEvalGroupRequest() *CreateOpenAIEvalR
 		evalModel = c.Options.EvalModel
 	}
 	for _, evaluator := range c.Evaluators {
-		apiName := strings.TrimPrefix(evaluator, "builtin.")
+		apiName := strings.TrimPrefix(evaluator.Name, "builtin.")
 		criterion := TestingCriterion{
 			Type:          "azure_ai_evaluator",
 			Name:          apiName,
-			EvaluatorName: evaluator,
+			EvaluatorName: evaluator.Name,
 			DataMapping: map[string]string{
 				//"messages": "{{item.messages}}",
 				"query":            "{{item.query}}",

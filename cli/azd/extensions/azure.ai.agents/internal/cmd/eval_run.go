@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opteval"
@@ -22,6 +23,8 @@ import (
 
 type evalRunFlags struct {
 	config string
+	name   string
+	noWait bool
 }
 
 func newEvalRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -38,6 +41,8 @@ func newEvalRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&flags.config, "config", defaultEvalConfigName, "Local eval config YAML")
+	cmd.Flags().StringVar(&flags.name, "name", "", "Name for the eval run (defaults to eval config name)")
+	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Start the run and return immediately without waiting for results")
 	return cmd
 }
 
@@ -100,7 +105,7 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 	}
 
 	runReq := &eval_api.CreateOpenAIEvalRunRequest{
-		Name:     evalCfg.Name,
+		Name:     resolveRunName(ctx, resolved.azdClient, flags.name, evalCfg.Name, noPrompt),
 		Metadata: map[string]string{"azd_agent": evalCfg.Agent.Name},
 	}
 
@@ -145,11 +150,113 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 	if reportURL != "" {
 		fmt.Printf("   Report: %s\n", color.CyanString(reportURL))
 	}
-	fmt.Printf("\n   To view result summary, run:\n     %s\n     %s\n",
-		color.CyanString("azd ai agent eval list"),
-		color.CyanString("azd ai agent eval show"),
+
+	if flags.noWait {
+		fmt.Printf("\n   To view result summary, run:\n     %s\n     %s\n",
+			color.CyanString("azd ai agent eval list"),
+			color.CyanString("azd ai agent eval show"),
+		)
+		return nil
+	}
+
+	// Poll until the eval run reaches a terminal state.
+	completed, err := pollEvalRun(ctx, resolved.evalClient, evalID, run.ID)
+	if err != nil {
+		return err
+	}
+
+	// Report URL was already printed above; clear it to avoid duplication.
+	completed.ReportURL = ""
+
+	fmt.Println()
+	return printEvalRunSummary(evalID, completed)
+}
+
+// resolveRunName determines the eval run name from the flag, interactive
+// prompt, or config default (in that priority order).
+func resolveRunName(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	flagName, configName string,
+	noPrompt bool,
+) string {
+	if flagName != "" {
+		return flagName
+	}
+
+	defaultName := configName
+	if defaultName == "" {
+		defaultName = defaultEvalName
+	}
+
+	if !noPrompt {
+		resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:        "Eval run name",
+				DefaultValue:   defaultName,
+				IgnoreHintKeys: true,
+			},
+		})
+		if err == nil {
+			if value := strings.TrimSpace(resp.Value); value != "" {
+				return value
+			}
+		}
+	}
+
+	return defaultName
+}
+
+// pollEvalRun polls an eval run until it reaches a terminal status.
+// Terminal statuses: "completed", "failed", "canceled".
+func pollEvalRun(
+	ctx context.Context,
+	client *eval_api.EvalClient,
+	evalID, runID string,
+) (*eval_api.OpenAIEvalRun, error) {
+	const (
+		interval    = 5 * time.Second
+		maxAttempts = 360 // ~30 minutes
 	)
-	return nil
+
+	progress := newEvalProgress()
+	progress.Start()
+	defer progress.Stop()
+
+	progress.setRunning("Eval run", runID)
+
+	for range maxAttempts {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(interval):
+		}
+
+		run, err := client.GetOpenAIEvalRun(ctx, evalID, runID, DefaultAgentAPIVersion)
+		if err != nil {
+			progress.setFailed("Eval run")
+			return nil, fmt.Errorf("failed to poll eval run: %w", err)
+		}
+
+		switch run.Status {
+		case "completed":
+			progress.setDone("Eval run")
+			return run, nil
+		case "failed":
+			progress.setFailed("Eval run")
+			errMsg := "eval run failed"
+			if run.Error != nil {
+				errMsg = fmt.Sprintf("eval run failed: %v", run.Error)
+			}
+			return nil, fmt.Errorf("%s", errMsg)
+		case "canceled", "cancelled":
+			progress.setFailed("Eval run")
+			return nil, fmt.Errorf("eval run was canceled")
+		}
+	}
+
+	progress.setTimedOut("Eval run")
+	return nil, fmt.Errorf("eval run %s did not complete within %d attempts", runID, maxAttempts)
 }
 
 // loadEvalDatasetFile reads a JSONL file and returns each line as a map.

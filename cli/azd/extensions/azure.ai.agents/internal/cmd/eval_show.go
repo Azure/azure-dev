@@ -71,7 +71,7 @@ func runEvalShow(ctx context.Context, evalID string, flags *evalShowFlags) error
 			return fmt.Errorf("failed to get eval run: %w", err)
 		}
 		if flags.output != "" {
-			return writeJSONFile(flags.output, run)
+			return eval_api.WriteJSONFile(flags.output, run)
 		}
 		return printEvalRunSummary(evalID, run)
 	}
@@ -85,7 +85,7 @@ func runEvalShow(ctx context.Context, evalID string, flags *evalShowFlags) error
 		return fmt.Errorf("failed to list eval runs: %w", err)
 	}
 	if flags.output != "" {
-		return writeJSONFile(flags.output, map[string]any{
+		return eval_api.WriteJSONFile(flags.output, map[string]any{
 			"eval": evalObj,
 			"runs": runs.Data,
 		})

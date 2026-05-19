@@ -80,7 +80,7 @@ func defaultOptimizeConfig(agentName string) *OptimizeConfig {
 	return &OptimizeConfig{
 		Config: opteval.Config{
 			Agent:      opteval.AgentRef{Name: agentName},
-			Evaluators: []string{"builtin.task_adherence"},
+			Evaluators: opteval.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
 		InlineDataset: defaultDataset,
 		Options: &opteval.Options{
@@ -136,7 +136,7 @@ func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.Optimi
 			Model:             c.Agent.Model,
 			SystemPrompt:      c.Agent.ResolvedSystemPrompt(),
 		},
-		Evaluators: c.Evaluators,
+		Evaluators: c.Evaluators.Names(),
 		Options: optimize_api.OptimizeOptions{
 			EvalModel:            c.Options.EvalModel,
 			Budget:               c.Options.Budget,
@@ -240,8 +240,10 @@ func loadDatasetFile(path string) ([]optimize_api.DatasetTask, error) {
 }
 
 // loadSkillsFromDir reads skill files from a directory and returns SkillDefinitions.
-// Each file in the directory is treated as a skill: the filename (without extension)
-// becomes the skill name, and the file content becomes the skill body.
+// For markdown files (.md), YAML frontmatter is parsed to extract name and description;
+// the content after the frontmatter becomes the skill body.
+// For other files, the filename (without extension) is used as the name and the full
+// content as the body.
 // Subdirectories are recursed into — each file within is also loaded as a skill.
 func loadSkillsFromDir(dir string) ([]optimize_api.SkillDefinition, error) {
 	entries, err := os.ReadDir(dir)
@@ -267,12 +269,83 @@ func loadSkillsFromDir(dir string) ([]optimize_api.SkillDefinition, error) {
 			return nil, fmt.Errorf("reading skill file %s: %w", entry.Name(), err)
 		}
 
-		name := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
-		skills = append(skills, optimize_api.SkillDefinition{
-			Name: name,
-			Body: string(data),
-		})
+		skill := parseSkillFile(entry.Name(), string(data))
+		skills = append(skills, skill)
 	}
 
 	return skills, nil
+}
+
+// skillFrontmatter represents the YAML frontmatter in a skill markdown file.
+type skillFrontmatter struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+}
+
+// parseSkillFile parses a skill file. For .md files it attempts to extract
+// YAML frontmatter (delimited by "---") for name and description; the body
+// is the content after the frontmatter. For other files, the filename (sans
+// extension) is the name and the full content is the body.
+func parseSkillFile(filename, content string) optimize_api.SkillDefinition {
+	ext := filepath.Ext(filename)
+	baseName := strings.TrimSuffix(filename, ext)
+
+	if !strings.EqualFold(ext, ".md") {
+		return optimize_api.SkillDefinition{
+			Name: baseName,
+			Body: content,
+		}
+	}
+
+	// Try to parse YAML frontmatter from markdown.
+	fm, body := splitFrontmatter(content)
+	skill := optimize_api.SkillDefinition{
+		Name: baseName,
+		Body: body,
+	}
+
+	if fm != "" {
+		var meta skillFrontmatter
+		if err := yaml.Unmarshal([]byte(fm), &meta); err == nil {
+			if meta.Name != "" {
+				skill.Name = meta.Name
+			}
+			skill.Description = meta.Description
+		}
+	}
+
+	return skill
+}
+
+// splitFrontmatter splits YAML frontmatter (between "---" delimiters) from
+// the rest of the content. Returns (frontmatter, body). If no frontmatter is
+// found, returns ("", original content).
+func splitFrontmatter(content string) (string, string) {
+	const delimiter = "---"
+
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	if !scanner.Scan() {
+		return "", content
+	}
+	if strings.TrimSpace(scanner.Text()) != delimiter {
+		return "", content
+	}
+
+	var fmLines []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == delimiter {
+			// Found closing delimiter — rest is the body.
+			var bodyLines []string
+			for scanner.Scan() {
+				bodyLines = append(bodyLines, scanner.Text())
+			}
+			body := strings.Join(bodyLines, "\n")
+			return strings.Join(fmLines, "\n"), strings.TrimSpace(body)
+		}
+		fmLines = append(fmLines, line)
+	}
+
+	// No closing delimiter found — treat entire content as body.
+	return "", content
 }

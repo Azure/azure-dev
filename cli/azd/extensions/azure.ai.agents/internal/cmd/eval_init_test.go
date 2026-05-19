@@ -34,11 +34,11 @@ func TestNewEvalInitCommand_Flags(t *testing.T) {
 		{"no-wait", "false"},
 		{"agent", ""},
 		{"project-endpoint", ""},
-		{"system-prompt", ""},
-		{"system-prompt-file", ""},
+		{"gen-instruction", ""},
+		{"gen-instruction-file", ""},
 		{"eval-model", defaultEvalModel},
 		{"dataset", ""},
-		{"max-samples", "100"},
+		{"max-samples", "15"},
 		{"out-file", defaultEvalConfigName},
 		{"reset-defaults", "false"},
 	}
@@ -68,42 +68,45 @@ func TestNewEvalInitCommand_ShortOutFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// system-prompt / system-prompt-file mutual exclusion
+// --agent-instruction / --agent-instruction-file mutual exclusion
 // ---------------------------------------------------------------------------
 
 func TestRunEvalInit_MutualExclusion(t *testing.T) {
 	t.Parallel()
 	flags := &evalInitFlags{
-		systemPrompt:     "inline text",
-		systemPromptFile: "some-file.txt",
+		instruction:     "inline text",
+		instructionFile: "some-file.txt",
 	}
 	err := runEvalInit(t.Context(), flags, true)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot use both --system-prompt and --system-prompt-file")
+	assert.Contains(t, err.Error(), "cannot use both --gen-instruction and --gen-instruction-file")
 }
 
-func TestRunEvalInit_SystemPromptFile(t *testing.T) {
+func TestRunEvalInit_InstructionFile(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	instrFile := filepath.Join(tmpDir, "instruction.md")
 	require.NoError(t, os.WriteFile(instrFile, []byte("  Test booking agent  \n"), 0600))
 
 	flags := &evalInitFlags{
-		systemPromptFile: instrFile,
-		evalModel:        defaultEvalModel,
-		maxSamples:       10,
+		instructionFile: instrFile,
+		evalModel:       defaultEvalModel,
+		maxSamples:      10,
 	}
 	// runEvalInit will fail later (no azd client), but file validation should pass.
 	_ = runEvalInit(t.Context(), flags, true)
 	// File path remains on the flag — content is NOT inlined.
-	assert.Equal(t, instrFile, flags.systemPromptFile)
-	assert.Empty(t, flags.systemPrompt)
+	assert.Equal(t, instrFile, flags.instructionFile)
+	assert.Empty(t, flags.instruction)
 }
 
-func TestRunEvalInit_SystemPromptFileMissing(t *testing.T) {
+func TestRunEvalInit_InstructionFileMissing(t *testing.T) {
 	t.Parallel()
+	// Use filepath.Join with TempDir to get a proper absolute path that doesn't exist.
+	missingFile := filepath.Join(t.TempDir(), "nonexistent", "instruction.txt")
 	flags := &evalInitFlags{
-		systemPromptFile: "/nonexistent/path/instruction.txt",
+		instructionFile: missingFile,
+		projectEndpoint: "https://example.ai.azure.com/",
 	}
 	err := runEvalInit(t.Context(), flags, true)
 	require.Error(t, err)
@@ -120,9 +123,9 @@ func TestNewEvalConfig(t *testing.T) {
 	t.Run("uses default name", func(t *testing.T) {
 		t.Parallel()
 		flags := &evalInitFlags{
-			systemPrompt: "Test the booking agent",
-			evalModel:    "gpt-4.1",
-			maxSamples:   50,
+			instruction: "Test the booking agent",
+			evalModel:   "gpt-4.1",
+			maxSamples:  50,
 		}
 		resolved := &evalResolvedContext{
 			agentName: "booking-agent",
@@ -137,7 +140,7 @@ func TestNewEvalConfig(t *testing.T) {
 		assert.Equal(t, agent_yaml.AgentKindHosted, cfg.Agent.Kind)
 		assert.Equal(t, "v2", cfg.Agent.Version)
 		assert.Equal(t, "gpt-4.1", cfg.Options.EvalModel)
-		assert.Equal(t, "Test the booking agent", cfg.Agent.SystemPrompt)
+		assert.Equal(t, "Test the booking agent", cfg.Agent.Instruction.Value)
 		assert.Equal(t, 50, cfg.MaxSamples)
 	})
 
@@ -152,12 +155,12 @@ func TestNewEvalConfig(t *testing.T) {
 		assert.Equal(t, "my-suite", cfg.Name)
 	})
 
-	t.Run("stores system_prompt_file when file provided", func(t *testing.T) {
+	t.Run("stores instruction_file when file provided", func(t *testing.T) {
 		t.Parallel()
 		flags := &evalInitFlags{
-			systemPromptFile: "./prompts/system.md",
-			evalModel:        "gpt-4o",
-			maxSamples:       20,
+			instructionFile: "./prompts/system.md",
+			evalModel:       "gpt-4o",
+			maxSamples:      20,
 		}
 		resolved := &evalResolvedContext{
 			agentName: "my-agent",
@@ -167,8 +170,8 @@ func TestNewEvalConfig(t *testing.T) {
 
 		cfg := newEvalConfig(flags, resolved)
 
-		assert.Empty(t, cfg.Agent.SystemPrompt)
-		assert.Equal(t, "./prompts/system.md", cfg.Agent.SystemPromptFile)
+		assert.Empty(t, cfg.Agent.Instruction.Value)
+		assert.Equal(t, "./prompts/system.md", cfg.Agent.Instruction.File)
 	})
 }
 
@@ -184,42 +187,46 @@ func TestDatasetFromJob(t *testing.T) {
 		job             *eval_api.GenerationJob
 		expectedName    string
 		expectedVersion string
+		expectedNil     bool
 	}{
 		{
 			"result fields",
 			&eval_api.GenerationJob{
 				Result: json.RawMessage(`{"name":"ds-1","version":"v2"}`),
 			},
-			"ds-1", "v2",
+			"ds-1", "v2", false,
 		},
 		{
-			"result name",
+			"result name defaults version to latest",
 			&eval_api.GenerationJob{
 				Result: json.RawMessage(`{"outputs":[{"name":"ds-2"}]}`),
 			},
-			"ds-2", "v1",
+			"ds-2", "latest", false,
 		},
 		{
 			"nested outputs format",
 			&eval_api.GenerationJob{
 				Result: json.RawMessage(`{"outputs":[{"name":"ds-3","version":"v3"}]}`),
 			},
-			"ds-3", "v3",
+			"ds-3", "v3", false,
 		},
 		{
-			"empty defaults version to v1",
-			&eval_api.GenerationJob{
-				Result: json.RawMessage(`{"outputs":[{"name":"ds-4"}]}`),
-			},
-			"ds-4", "v1",
+			"empty result returns nil",
+			&eval_api.GenerationJob{},
+			"", "", true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			ref := datasetFromJob(tt.job)
-			assert.Equal(t, tt.expectedName, ref.Name)
-			assert.Equal(t, tt.expectedVersion, ref.Version)
+			if tt.expectedNil {
+				assert.Nil(t, ref)
+			} else {
+				require.NotNil(t, ref)
+				assert.Equal(t, tt.expectedName, ref.Name)
+				assert.Equal(t, tt.expectedVersion, ref.Version)
+			}
 		})
 	}
 }
@@ -299,29 +306,32 @@ func TestBuildModelChoices(t *testing.T) {
 func TestEvaluatorFromJob(t *testing.T) {
 	t.Parallel()
 
-	t.Run("extracts name from result", func(t *testing.T) {
+	t.Run("extracts name and version from result", func(t *testing.T) {
 		t.Parallel()
 		job := &eval_api.GenerationJob{
-			Result: json.RawMessage(`{"name":"quality-eval"}`),
+			Result: json.RawMessage(`{"name":"quality-eval","version":"v2"}`),
 		}
-		name := evaluatorFromJob(job)
+		name, version := evaluatorFromJob(job)
 		assert.Equal(t, "quality-eval", name)
+		assert.Equal(t, "v2", version)
 	})
 
-	t.Run("extracts name from result display_name", func(t *testing.T) {
+	t.Run("defaults version to latest", func(t *testing.T) {
 		t.Parallel()
 		job := &eval_api.GenerationJob{
 			Result: json.RawMessage(`{"name":"smoke-core","display_name":"smoke-core"}`),
 		}
-		name := evaluatorFromJob(job)
+		name, version := evaluatorFromJob(job)
 		assert.Equal(t, "smoke-core", name)
+		assert.Equal(t, "latest", version)
 	})
 
-	t.Run("returns empty when no name", func(t *testing.T) {
+	t.Run("returns empty name when no result", func(t *testing.T) {
 		t.Parallel()
 		job := &eval_api.GenerationJob{}
-		name := evaluatorFromJob(job)
+		name, version := evaluatorFromJob(job)
 		assert.Empty(t, name)
+		assert.Empty(t, version)
 	})
 }
 
@@ -397,14 +407,14 @@ func TestEvaluatorsFromFlags(t *testing.T) {
 		t.Parallel()
 		result := evaluatorsFromFlags([]string{"builtin.task_adherence", "my-custom"})
 		require.Len(t, result, 2)
-		assert.Equal(t, "builtin.task_adherence", result[0])
-		assert.Equal(t, "my-custom", result[1])
+		assert.Equal(t, "builtin.task_adherence", result[0].Name)
+		assert.Equal(t, "my-custom", result[1].Name)
 	})
 
 	t.Run("nil returns nil", func(t *testing.T) {
 		t.Parallel()
 		result := evaluatorsFromFlags(nil)
-		assert.Nil(t, result)
+		assert.Empty(t, result)
 	})
 }
 
@@ -423,7 +433,7 @@ func TestBuildOpenAIEvalRequest(t *testing.T) {
 				Version: "v1",
 			},
 			DatasetReference: &evalDatasetRef{Name: "ds", Version: "v1"},
-			Evaluators:       []string{"builtin.quality"},
+			Evaluators:       opteval.EvaluatorList{{Name: "builtin.quality"}},
 		},
 		Options: &opteval.Options{EvalModel: "gpt-4o"},
 	}
@@ -509,7 +519,7 @@ func TestTryLoadExistingEvalConfig_Found(t *testing.T) {
 				Name: "my-agent",
 			},
 			DatasetFile: "data.jsonl",
-			Evaluators:  []string{"quality"},
+			Evaluators:  opteval.EvaluatorList{{Name: "quality"}},
 		},
 	}
 	require.NoError(t, writeEvalConfig(cfgPath, cfg))
@@ -518,7 +528,7 @@ func TestTryLoadExistingEvalConfig_Found(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "smoke-core", loaded.Name)
 	assert.Equal(t, "my-agent", loaded.Agent.Name)
-	assert.Equal(t, []string{"quality"}, loaded.Evaluators)
+	assert.Equal(t, opteval.EvaluatorList{{Name: "quality"}}, loaded.Evaluators)
 }
 
 func TestTryLoadExistingEvalConfig_NotFound(t *testing.T) {
@@ -567,26 +577,26 @@ func TestSplitEvaluators(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name              string
-		input             []string
-		expectedGenerated []string
-		expectedBuiltin   []string
+		input             opteval.EvaluatorList
+		expectedGenerated opteval.EvaluatorList
+		expectedBuiltin   opteval.EvaluatorList
 	}{
 		{
 			"mixed list",
-			[]string{"builtin.task_adherence", "my-quality", "builtin.safety"},
-			[]string{"my-quality"},
-			[]string{"builtin.task_adherence", "builtin.safety"},
+			opteval.EvaluatorList{{Name: "builtin.task_adherence"}, {Name: "my-quality"}, {Name: "builtin.safety"}},
+			opteval.EvaluatorList{{Name: "my-quality"}},
+			opteval.EvaluatorList{{Name: "builtin.task_adherence"}, {Name: "builtin.safety"}},
 		},
 		{
 			"all builtin",
-			[]string{"builtin.quality", "builtin.safety"},
+			opteval.EvaluatorList{{Name: "builtin.quality"}, {Name: "builtin.safety"}},
 			nil,
-			[]string{"builtin.quality", "builtin.safety"},
+			opteval.EvaluatorList{{Name: "builtin.quality"}, {Name: "builtin.safety"}},
 		},
 		{
 			"all generated",
-			[]string{"smoke-core", "custom-1"},
-			[]string{"smoke-core", "custom-1"},
+			opteval.EvaluatorList{{Name: "smoke-core"}, {Name: "custom-1"}},
+			opteval.EvaluatorList{{Name: "smoke-core"}, {Name: "custom-1"}},
 			nil,
 		},
 		{

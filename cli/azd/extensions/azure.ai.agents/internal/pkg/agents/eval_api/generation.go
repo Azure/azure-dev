@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"azureaiagent/internal/pkg/agents/opteval"
 )
 
 // ---------------------------------------------------------------------------
@@ -98,7 +100,6 @@ func NewEvaluatorGenerationJobRequest(
 	return &EvaluatorGenerationJobRequest{
 		Name:          name,
 		EvaluatorName: name,
-		Category:      "quality",
 		Model:         evalModel,
 		Sources:       sources,
 	}
@@ -116,9 +117,9 @@ func IsBuiltinEvaluator(name string) bool {
 
 // SplitEvaluators partitions evaluators into generated (non-builtin) and
 // built-in lists.
-func SplitEvaluators(evaluators []string) (generated, builtin []string) {
+func SplitEvaluators(evaluators opteval.EvaluatorList) (generated, builtin opteval.EvaluatorList) {
 	for _, e := range evaluators {
-		if IsBuiltinEvaluator(e) {
+		if IsBuiltinEvaluator(e.Name) {
 			builtin = append(builtin, e)
 		} else {
 			generated = append(generated, e)

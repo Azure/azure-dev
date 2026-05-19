@@ -20,7 +20,7 @@ import (
 
 func TestNewEvalRunCommand_Flags(t *testing.T) {
 	t.Parallel()
-	cmd := newEvalRunCommand()
+	cmd := newEvalRunCommand(nil)
 
 	f := cmd.Flags().Lookup("config")
 	require.NotNil(t, f)
@@ -29,14 +29,14 @@ func TestNewEvalRunCommand_Flags(t *testing.T) {
 
 func TestNewEvalRunCommand_NoArgs(t *testing.T) {
 	t.Parallel()
-	cmd := newEvalRunCommand()
+	cmd := newEvalRunCommand(nil)
 	assert.NoError(t, cmd.Args(cmd, nil))
 	assert.Error(t, cmd.Args(cmd, []string{"extra"}))
 }
 
 func TestNewEvalRunCommand_UseString(t *testing.T) {
 	t.Parallel()
-	cmd := newEvalRunCommand()
+	cmd := newEvalRunCommand(nil)
 	assert.Equal(t, "run", cmd.Use)
 }
 

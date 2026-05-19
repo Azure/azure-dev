@@ -63,24 +63,19 @@ func (j *GenerationJob) NormalizedStatus() string {
 	return j.Status
 }
 
-// ResolvedDatasetName returns the dataset name from the result JSON (top-level
-// or nested outputs[0]).
-func (j *GenerationJob) ResolvedDatasetName() string {
-	return j.resultStringField("name")
-}
-
-// ResolvedDatasetVersion returns the dataset version from the result JSON
-// (top-level or nested outputs[0]), defaulting to "v1".
-func (j *GenerationJob) ResolvedDatasetVersion() string {
-	if v := j.resultStringField("version"); v != "" {
-		return v
+// ResolvedNameVersion extracts the name and version from the generation job result.
+// If name is empty, both return values are empty (caller should treat as no result).
+// If version is empty, it defaults to "latest".
+func (j *GenerationJob) ResolvedNameVersion() (string, string) {
+	name := j.resultStringField("name")
+	if name == "" {
+		return "", ""
 	}
-	return "v1"
-}
-
-// ResolvedEvaluatorName returns the evaluator name from the result JSON.
-func (j *GenerationJob) ResolvedEvaluatorName() string {
-	return j.resultStringField("name")
+	version := j.resultStringField("version")
+	if version == "" {
+		version = "latest"
+	}
+	return name, version
 }
 
 // resultStringField extracts a string field from the raw Result JSON.
@@ -130,6 +125,58 @@ type EvaluatorGenerationJobRequest struct {
 	Category      string             `json:"category"`
 	Model         string             `json:"model"`
 	Sources       []GenerationSource `json:"sources"`
+}
+
+// ---------------------------------------------------------------------------
+// Evaluator Versions
+// ---------------------------------------------------------------------------
+
+// EvaluatorVersion is the response for evaluator version operations.
+type EvaluatorVersion struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
+// ---------------------------------------------------------------------------
+// Evaluator Definition (Rubric)
+// ---------------------------------------------------------------------------
+
+// EvaluatorResult is the top-level response from evaluator generation,
+// containing the evaluator's definition.
+type EvaluatorResult struct {
+	Name       string              `json:"name"`
+	Version    string              `json:"version,omitempty"`
+	Definition EvaluatorDefinition `json:"definition"`
+}
+
+// EvaluatorDefinition describes an evaluator's scoring rubric.
+type EvaluatorDefinition struct {
+	Type       string               `json:"type"`
+	Dimensions []EvaluatorDimension `json:"dimensions"`
+}
+
+// EvaluatorDimension is a single scoring dimension within a rubric evaluator.
+type EvaluatorDimension struct {
+	ID               string `json:"id"`
+	Description      string `json:"description,omitempty"`
+	Weight           int    `json:"weight"`
+	AlwaysApplicable bool   `json:"always_applicable,omitempty"`
+}
+
+// ParseEvaluatorResult parses a GenerationJob result into a structured EvaluatorResult.
+// Returns nil if the result cannot be parsed.
+func ParseEvaluatorResult(result json.RawMessage) *EvaluatorResult {
+	if len(result) == 0 {
+		return nil
+	}
+	var r EvaluatorResult
+	if err := json.Unmarshal(result, &r); err != nil {
+		return nil
+	}
+	if len(r.Definition.Dimensions) == 0 {
+		return nil
+	}
+	return &r
 }
 
 // ---------------------------------------------------------------------------

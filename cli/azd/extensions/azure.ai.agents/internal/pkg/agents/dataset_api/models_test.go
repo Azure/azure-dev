@@ -81,6 +81,29 @@ func TestDatasetCredential_ResolvedDownloadURI(t *testing.T) {
 			cred:     DatasetCredential{},
 			expected: "",
 		},
+		{
+			name: "prefers blobReferenceForConsumption",
+			cred: DatasetCredential{
+				BlobReference:            &BlobReference{Credential: &BlobCredential{SASUri: "https://blob.example/ref?sig=1"}},
+				BlobReferenceConsumption: &BlobReference{Credential: &BlobCredential{SASUri: "https://blob.example/consumption?sig=2"}},
+			},
+			expected: "https://blob.example/consumption?sig=2",
+		},
+		{
+			name: "falls back to blobReference",
+			cred: DatasetCredential{
+				BlobReference: &BlobReference{Credential: &BlobCredential{SASUri: "https://blob.example/ref?sig=1"}},
+			},
+			expected: "https://blob.example/ref?sig=1",
+		},
+		{
+			name: "nested takes priority over flat sas_uri",
+			cred: DatasetCredential{
+				SASUri:        "https://blob.example/flat?sig=flat",
+				BlobReference: &BlobReference{Credential: &BlobCredential{SASUri: "https://blob.example/nested?sig=nested"}},
+			},
+			expected: "https://blob.example/nested?sig=nested",
+		},
 	}
 
 	for _, tc := range tests {

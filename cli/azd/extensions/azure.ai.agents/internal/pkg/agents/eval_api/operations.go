@@ -27,6 +27,7 @@ import (
 const (
 	pathDataGenerationJobs      = "/data_generation_jobs"
 	pathEvaluatorGenerationJobs = "/evaluator_generation_jobs"
+	pathEvaluators              = "/evaluators"
 	pathDatasets                = "/datasets"
 	pathOpenAIEvals             = "/openai/evals"
 )
@@ -102,6 +103,33 @@ func (c *EvalClient) GetEvaluatorGenerationJob(
 ) (*GenerationJob, error) {
 	path := pathEvaluatorGenerationJobs + "/" + url.PathEscape(operationID)
 	return doRequestTyped[GenerationJob](c, ctx, http.MethodGet, path, nil, nil, apiVersion)
+}
+
+// CreateEvaluatorVersion creates a new version of a named evaluator.
+// The body should be the full evaluator JSON with the definition field updated.
+func (c *EvalClient) CreateEvaluatorVersion(
+	ctx context.Context,
+	name string,
+	body json.RawMessage,
+	apiVersion string,
+) (*EvaluatorVersion, error) {
+	path := pathEvaluators + "/" + url.PathEscape(name) + "/versions"
+	return doRequestTyped[EvaluatorVersion](c, ctx, http.MethodPost, path, nil, body, apiVersion)
+}
+
+// GetEvaluatorRaw gets an evaluator by name and version as raw JSON.
+// If version is empty, the latest version is fetched.
+func (c *EvalClient) GetEvaluatorRaw(
+	ctx context.Context,
+	name string,
+	version string,
+	apiVersion string,
+) (json.RawMessage, error) {
+	path := pathEvaluators + "/" + url.PathEscape(name)
+	if version != "" {
+		path += "/versions/" + url.PathEscape(version)
+	}
+	return c.doRequest(ctx, http.MethodGet, path, nil, nil, apiVersion)
 }
 
 // CreateOpenAIEval creates an OpenAI eval definition.

@@ -32,7 +32,7 @@ func TestConfig_RoundTrip(t *testing.T) {
 			Model:   "gpt-4o",
 		},
 		DatasetFile: "tasks.jsonl",
-		Evaluators:  []string{"builtin.quality", "custom-1"},
+		Evaluators:  EvaluatorList{{Name: "builtin.quality"}, {Name: "custom-1"}},
 	}
 
 	require.NoError(t, Write(path, original))
@@ -46,8 +46,62 @@ func TestConfig_RoundTrip(t *testing.T) {
 	assert.Equal(t, "gpt-4o", loaded.Agent.Model)
 	assert.Equal(t, "tasks.jsonl", loaded.DatasetFile)
 	require.Len(t, loaded.Evaluators, 2)
-	assert.Equal(t, "builtin.quality", loaded.Evaluators[0])
-	assert.Equal(t, "custom-1", loaded.Evaluators[1])
+	assert.Equal(t, "builtin.quality", loaded.Evaluators[0].Name)
+	assert.Equal(t, "custom-1", loaded.Evaluators[1].Name)
+}
+
+func TestConfig_RoundTrip_MixedEvaluators(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	original := &Config{
+		Agent: AgentRef{Name: "agent-x"},
+		Evaluators: EvaluatorList{
+			{Name: "builtin.task_adherence"},
+			{Name: "custom-quality", Version: "2", LocalURI: "evaluators/custom-quality_2.json"},
+		},
+	}
+
+	require.NoError(t, Write(path, original))
+	loaded, err := Read(path)
+	require.NoError(t, err)
+
+	require.Len(t, loaded.Evaluators, 2)
+	assert.Equal(t, "builtin.task_adherence", loaded.Evaluators[0].Name)
+	assert.Empty(t, loaded.Evaluators[0].Version)
+	assert.Empty(t, loaded.Evaluators[0].LocalURI)
+	assert.Equal(t, "custom-quality", loaded.Evaluators[1].Name)
+	assert.Equal(t, "2", loaded.Evaluators[1].Version)
+	assert.Equal(t, "evaluators/custom-quality_2.json", loaded.Evaluators[1].LocalURI)
+}
+
+func TestEvaluatorList_Names(t *testing.T) {
+	t.Parallel()
+	list := EvaluatorList{{Name: "a"}, {Name: "b"}, {Name: "c"}}
+	assert.Equal(t, []string{"a", "b", "c"}, list.Names())
+}
+
+func TestEvaluatorList_FindByLocalURI(t *testing.T) {
+	t.Parallel()
+	list := EvaluatorList{
+		{Name: "builtin.x"},
+		{Name: "custom", LocalURI: "/path/to/file.json"},
+		{Name: "other"},
+	}
+	found := list.FindByLocalURI()
+	require.Len(t, found, 1)
+	assert.Equal(t, "custom", found[0].Name)
+}
+
+func TestEvaluatorList_SetVersion(t *testing.T) {
+	t.Parallel()
+	list := EvaluatorList{{Name: "a", Version: "1"}, {Name: "b"}}
+	list.SetVersion("b", "3")
+	assert.Equal(t, "3", list[1].Version)
+	// Non-matching name is a no-op.
+	list.SetVersion("nonexistent", "99")
+	assert.Equal(t, "1", list[0].Version)
 }
 
 func TestConfig_RoundTrip_DatasetReference(t *testing.T) {

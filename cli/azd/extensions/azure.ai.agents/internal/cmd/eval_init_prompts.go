@@ -46,7 +46,7 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 	needsGeneration := true // adaptive evaluator is always generated
 	needsEvalGen := true
 
-	if flags.systemPrompt == "" && flags.systemPromptFile == "" && needsGeneration && resolved.agentKind != agent_yaml.AgentKindPrompt {
+	if flags.instruction == "" && flags.instructionFile == "" && needsGeneration && resolved.agentKind != agent_yaml.AgentKindPrompt {
 		// Let the user choose between inline text or loading from a file.
 		inputChoices := []*azdext.SelectChoice{
 			{Label: "Type inline", Value: "inline"},
@@ -55,25 +55,25 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 		defaultIdx := int32(0)
 		selResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
-				Message:       "How would you like to provide the system prompt?",
+				Message:       "How would you like to provide the agent instruction?",
 				Choices:       inputChoices,
 				SelectedIndex: &defaultIdx,
 			},
 		})
 		if err != nil {
-			return fmt.Errorf("prompting for system prompt input method: %w", err)
+			return fmt.Errorf("prompting for instruction input method: %w", err)
 		}
 
 		if inputChoices[int(*selResp.Value)].Value == "file" {
 			// Prompt for the file path.
 			pathResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 				Options: &azdext.PromptOptions{
-					Message:        "Path to system prompt file",
+					Message:        "Path to agent instruction file",
 					IgnoreHintKeys: true,
 				},
 			})
 			if err != nil {
-				return fmt.Errorf("prompting for system prompt file path: %w", err)
+				return fmt.Errorf("prompting for instruction file path: %w", err)
 			}
 			filePath := strings.TrimSpace(pathResp.Value)
 			// Resolve relative paths against the agent project directory.
@@ -81,9 +81,9 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 				filePath = filepath.Join(resolved.projectRoot, filePath)
 			}
 			if _, err := os.Stat(filePath); err != nil {
-				return fmt.Errorf("system prompt file %q is not accessible: %w", filePath, err)
+				return fmt.Errorf("instruction file %q is not accessible: %w", filePath, err)
 			}
-			flags.systemPromptFile = filePath
+			flags.instructionFile = filePath
 		} else {
 			// Inline text input.
 			resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
@@ -93,9 +93,9 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 				},
 			})
 			if err != nil {
-				return fmt.Errorf("prompting for system prompt: %w", err)
+				return fmt.Errorf("prompting for instruction: %w", err)
 			}
-			flags.systemPrompt = strings.TrimSpace(resp.Value)
+			flags.instruction = strings.TrimSpace(resp.Value)
 		}
 	}
 
@@ -300,12 +300,12 @@ func promptRegenerateChoices(
 	// Ask about evaluator.
 	generated, builtin := eval_api.SplitEvaluators(existingCfg.Evaluators)
 	if len(generated) > 0 {
-		generatedLabel := strings.Join(generated, ", ")
+		generatedLabel := strings.Join(generated.Names(), ", ")
 		msg := fmt.Sprintf("Existing evaluator: %s. Do you want to regenerate?", generatedLabel)
 		if len(builtin) > 0 {
 			msg = fmt.Sprintf(
 				"Existing evaluator: %s (built-in evaluators %s will be kept). Do you want to regenerate?",
-				generatedLabel, strings.Join(builtin, ", "),
+				generatedLabel, strings.Join(builtin.Names(), ", "),
 			)
 		}
 		resp, err := prompt.Confirm(ctx, &azdext.ConfirmRequest{

@@ -76,49 +76,37 @@ func TestGenerationJob_NormalizedStatus(t *testing.T) {
 	assert.Equal(t, "running", (&eval_api.GenerationJob{}).NormalizedStatus())
 }
 
-func TestGenerationJob_ResolvedDatasetName(t *testing.T) {
+func TestGenerationJob_ResolvedNameVersion(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "", (&eval_api.GenerationJob{}).ResolvedDatasetName())
 
-	// Extracts name from the result JSON.
+	// Empty job returns empty name and empty version.
+	name, version := (&eval_api.GenerationJob{}).ResolvedNameVersion()
+	assert.Equal(t, "", name)
+	assert.Equal(t, "", version)
+
+	// Extracts name and version from the result JSON.
 	job := &eval_api.GenerationJob{
 		Result: json.RawMessage(`{"name":"generated-ds","version":"v2"}`),
 	}
-	assert.Equal(t, "generated-ds", job.ResolvedDatasetName())
+	name, version = job.ResolvedNameVersion()
+	assert.Equal(t, "generated-ds", name)
+	assert.Equal(t, "v2", version)
 
-	// Extracts name from result.outputs[0] (nested API response format).
+	// Extracts from result.outputs[0] (nested API response format).
 	jobNested := &eval_api.GenerationJob{
 		Result: json.RawMessage(`{"outputs":[{"type":"dataset","name":"nested-ds","version":"36735"}]}`),
 	}
-	assert.Equal(t, "nested-ds", jobNested.ResolvedDatasetName())
-}
+	name, version = jobNested.ResolvedNameVersion()
+	assert.Equal(t, "nested-ds", name)
+	assert.Equal(t, "36735", version)
 
-func TestGenerationJob_ResolvedDatasetVersion(t *testing.T) {
-	t.Parallel()
-	assert.Equal(t, "v1", (&eval_api.GenerationJob{}).ResolvedDatasetVersion())
-
-	// Extracts version from the result JSON.
-	job := &eval_api.GenerationJob{
-		Result: json.RawMessage(`{"name":"ds","version":"v5"}`),
+	// Defaults version to "latest" when missing.
+	jobNoVer := &eval_api.GenerationJob{
+		Result: json.RawMessage(`{"name":"smoke-core"}`),
 	}
-	assert.Equal(t, "v5", job.ResolvedDatasetVersion())
-
-	// Extracts version from result.outputs[0] (nested API response format).
-	jobNested := &eval_api.GenerationJob{
-		Result: json.RawMessage(`{"outputs":[{"type":"dataset","name":"ds","version":"36735"}]}`),
-	}
-	assert.Equal(t, "36735", jobNested.ResolvedDatasetVersion())
-}
-
-func TestGenerationJob_ResolvedEvaluatorName(t *testing.T) {
-	t.Parallel()
-	assert.Equal(t, "", (&eval_api.GenerationJob{}).ResolvedEvaluatorName())
-
-	// Extracts name from the result JSON.
-	job := &eval_api.GenerationJob{
-		Result: json.RawMessage(`{"name":"smoke-core","display_name":"smoke-core"}`),
-	}
-	assert.Equal(t, "smoke-core", job.ResolvedEvaluatorName())
+	name, version = jobNoVer.ResolvedNameVersion()
+	assert.Equal(t, "smoke-core", name)
+	assert.Equal(t, "latest", version)
 }
 
 func TestOpenAIEval_ResolvedID(t *testing.T) {
@@ -240,33 +228,6 @@ func TestDetectEvalAgentKind(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ensureFoundryDirs
-// ---------------------------------------------------------------------------
-
-func TestEnsureFoundryDirs(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-
-	err := ensureFoundryDirs(dir)
-	require.NoError(t, err)
-
-	for _, sub := range []string{"datasets", "evaluators", "results"} {
-		path := filepath.Join(dir, ".azure", ".foundry", sub)
-		info, err := os.Stat(path)
-		require.NoError(t, err, "expected %s to exist", sub)
-		assert.True(t, info.IsDir())
-	}
-}
-
-func TestEnsureFoundryDirs_Idempotent(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-
-	require.NoError(t, ensureFoundryDirs(dir))
-	require.NoError(t, ensureFoundryDirs(dir))
-}
-
-// ---------------------------------------------------------------------------
 // evalState — stored in azd environment (integration-tested via eval init/run)
 // ---------------------------------------------------------------------------
 
@@ -277,31 +238,24 @@ func TestEnsureFoundryDirs_Idempotent(t *testing.T) {
 func TestWriteEvalReviewArtifacts(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	require.NoError(t, ensureFoundryDirs(dir))
 
 	cfg := &evalConfig{}
 	cfg.DatasetReference = &evalDatasetRef{Name: "test-data", Version: "v1"}
-	cfg.Evaluators = []string{"quality"}
+	cfg.Evaluators = opteval.EvaluatorList{{Name: "quality"}}
 
-	writeEvalReviewArtifacts(dir, cfg)
+	eval_api.WriteEvalReviewArtifacts(dir, cfg)
 
-	// writeEvalReviewArtifacts only writes evaluator stubs; dataset download
-	// is handled separately by downloadDatasetArtifact.
-	dsPath := filepath.Join(dir, ".azure", ".foundry", "datasets", "test-data-v1.jsonl")
-	assert.NoFileExists(t, dsPath)
-
-	evPath := filepath.Join(dir, ".azure", ".foundry", "evaluators", "quality.yaml")
+	evPath := filepath.Join(dir, "evaluators", "quality", "quality.yaml")
 	assert.FileExists(t, evPath)
 }
 
 func TestWriteEvalReviewArtifacts_NilDataset(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	require.NoError(t, ensureFoundryDirs(dir))
 
 	cfg := &evalConfig{}
 	// No dataset reference — should not panic.
-	writeEvalReviewArtifacts(dir, cfg)
+	eval_api.WriteEvalReviewArtifacts(dir, cfg)
 }
 
 // ---------------------------------------------------------------------------
@@ -311,54 +265,63 @@ func TestWriteEvalReviewArtifacts_NilDataset(t *testing.T) {
 func TestSaveEvaluatorResult(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	require.NoError(t, ensureFoundryDirs(dir))
 
-	result := json.RawMessage(`{"name":"smoke-core","description":"An evaluator"}`)
-	saveEvaluatorResult(dir, "smoke-core", result)
+	result := json.RawMessage(`{"name":"smoke-core","definition":{"type":"rubric","dimensions":[{"id":"quality","weight":10}]}}`)
+	eval_api.SaveEvaluatorResult(dir, "smoke-core", result)
 
-	path := filepath.Join(dir, ".azure", ".foundry", "evaluators", "smoke-core.json")
+	path := filepath.Join(dir, "evaluators", "smoke-core", "rubric_dimensions.json")
 	assert.FileExists(t, path)
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
-	assert.Contains(t, string(data), `"name": "smoke-core"`)
-	assert.Contains(t, string(data), `"description": "An evaluator"`)
+	// Only the dimensions array is saved, not the outer fields.
+	assert.Contains(t, string(data), `"id": "quality"`)
+	assert.Contains(t, string(data), `"weight": 10`)
+	assert.NotContains(t, string(data), `"name": "smoke-core"`)
+}
+
+func TestSaveEvaluatorResult_WithVersion(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	result := json.RawMessage(`{"name":"custom","definition":{"type":"rubric","dimensions":[{"id":"d1","weight":5}]}}`)
+	eval_api.SaveEvaluatorResult(dir, "custom", result)
+
+	path := filepath.Join(dir, "evaluators", "custom", "rubric_dimensions.json")
+	assert.FileExists(t, path)
 }
 
 func TestSaveEvaluatorResult_NilResult(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	require.NoError(t, ensureFoundryDirs(dir))
 
-	saveEvaluatorResult(dir, "test", nil)
-	path := filepath.Join(dir, ".azure", ".foundry", "evaluators", "test.json")
+	eval_api.SaveEvaluatorResult(dir, "test", nil)
+	path := filepath.Join(dir, "evaluators", "test", "rubric_dimensions.json")
 	assert.NoFileExists(t, path)
 }
 
 func TestSaveEvaluatorResult_EmptyName(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	require.NoError(t, ensureFoundryDirs(dir))
 
-	saveEvaluatorResult(dir, "", json.RawMessage(`{"name":"x"}`))
+	eval_api.SaveEvaluatorResult(dir, "", json.RawMessage(`{"name":"x"}`))
 	// Should not create any file.
-	matches, _ := filepath.Glob(filepath.Join(dir, ".azure", ".foundry", "evaluators", "*.json"))
+	matches, _ := filepath.Glob(filepath.Join(dir, "evaluators", "*.json"))
 	assert.Empty(t, matches)
 }
 
 func TestWriteEvalReviewArtifacts_SkipsWhenResultExists(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	require.NoError(t, ensureFoundryDirs(dir))
 
 	// Pre-save a result file.
-	saveEvaluatorResult(dir, "quality", json.RawMessage(`{"name":"quality"}`))
+	eval_api.SaveEvaluatorResult(dir, "quality", json.RawMessage(`{"name":"quality","definition":{"type":"rubric","dimensions":[{"id":"q","weight":1}]}}`))
 
 	cfg := &evalConfig{}
-	cfg.Evaluators = []string{"quality"}
-	writeEvalReviewArtifacts(dir, cfg)
+	cfg.Evaluators = opteval.EvaluatorList{{Name: "quality"}}
+	eval_api.WriteEvalReviewArtifacts(dir, cfg)
 
 	// Should NOT create a .yaml stub since .json result already exists.
-	yamlPath := filepath.Join(dir, ".azure", ".foundry", "evaluators", "quality.yaml")
+	yamlPath := filepath.Join(dir, "evaluators", "quality", "quality.yaml")
 	assert.NoFileExists(t, yamlPath)
 }
 
@@ -368,7 +331,7 @@ func TestWriteEvalReviewArtifacts_SkipsWhenResultExists(t *testing.T) {
 
 func TestDownloadDatasetArtifact_NilDataset(t *testing.T) {
 	t.Parallel()
-	err := downloadDatasetArtifact(t.Context(), nil, t.TempDir(), nil, "2025-11-15-preview")
+	_, err := eval_api.DownloadDatasetArtifact(t.Context(), nil, t.TempDir(), nil, "2025-11-15-preview")
 	require.NoError(t, err)
 }
 
@@ -376,8 +339,7 @@ func TestDownloadDatasetArtifact_WritesBlob(t *testing.T) {
 	t.Parallel()
 
 	// The Azure SDK bearer token policy rejects non-TLS test servers, so the
-	// credential call will fail. downloadDatasetArtifact gracefully writes a
-	// placeholder in that case — verify the placeholder is created.
+	// credential call will fail. downloadDatasetArtifact gracefully returns nil.
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -387,18 +349,14 @@ func TestDownloadDatasetArtifact_WritesBlob(t *testing.T) {
 
 	client := dataset_api.NewDatasetClient(apiServer.URL, &fakeTokenCredential{})
 	dir := t.TempDir()
-	require.NoError(t, ensureFoundryDirs(dir))
 
 	ref := &evalDatasetRef{Name: "test-ds", Version: "v1"}
-	err := downloadDatasetArtifact(t.Context(), client, dir, ref, "2025-11-15-preview")
+	_, err := eval_api.DownloadDatasetArtifact(t.Context(), client, dir, ref, "2025-11-15-preview")
 	require.NoError(t, err)
 
-	// Placeholder is written when credential fetch fails (non-TLS test server).
-	dest := datasetArtifactPath(dir, ref)
-	assert.FileExists(t, dest)
-	data, err := os.ReadFile(dest)
-	require.NoError(t, err)
-	assert.Equal(t, "{}\n", string(data))
+	// No file written when credential fetch fails (non-TLS test server).
+	dest := eval_api.DatasetArtifactPath(dir, ref)
+	assert.NoDirExists(t, dest)
 }
 
 // ---------------------------------------------------------------------------
@@ -408,8 +366,13 @@ func TestDownloadDatasetArtifact_WritesBlob(t *testing.T) {
 func TestDatasetArtifactPath(t *testing.T) {
 	t.Parallel()
 	ref := &evalDatasetRef{Name: "golden", Version: "v2"}
-	result := datasetArtifactPath("/project", ref)
-	assert.Equal(t, filepath.Join("/project", ".azure", ".foundry", "datasets", "golden-v2.jsonl"), result)
+	result := eval_api.DatasetArtifactPath("/project", ref)
+	assert.Equal(t, filepath.Join("/project", "datasets", "golden"), result)
+
+	// No version — same path
+	refNoVer := &evalDatasetRef{Name: "golden", Version: ""}
+	resultNoVer := eval_api.DatasetArtifactPath("/project", refNoVer)
+	assert.Equal(t, filepath.Join("/project", "datasets", "golden"), resultNoVer)
 }
 
 // ---------------------------------------------------------------------------
@@ -421,7 +384,7 @@ func TestWriteJSONFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "result.json")
 
-	err := writeJSONFile(path, map[string]string{"hello": "world"})
+	err := eval_api.WriteJSONFile(path, map[string]string{"hello": "world"})
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(path)
@@ -481,13 +444,13 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 		Config: opteval.Config{
 			Name: "smoke-core",
 			Agent: evalAgentRef{
-				Name:         "my-agent",
-				Kind:         agent_yaml.AgentKindHosted,
-				Version:      "v1",
-				SystemPrompt: "Test this agent",
+				Name:        "my-agent",
+				Kind:        agent_yaml.AgentKindHosted,
+				Version:     "v1",
+				Instruction: opteval.InstructionRef{Value: "Test this agent"},
 			},
 			DatasetReference: &evalDatasetRef{Name: "ds", Version: "v1"},
-			Evaluators:       []string{"builtin.task_adherence"},
+			Evaluators:       opteval.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
 		Options: &opteval.Options{
 			EvalModel: "gpt-4o",
@@ -506,12 +469,12 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 	assert.Equal(t, original.Agent.Kind, loaded.Agent.Kind)
 	assert.Equal(t, original.Agent.Version, loaded.Agent.Version)
 	assert.Equal(t, "gpt-4o", loaded.Options.EvalModel)
-	assert.Equal(t, original.Agent.SystemPrompt, loaded.Agent.SystemPrompt)
+	assert.Equal(t, original.Agent.Instruction.Value, loaded.Agent.Instruction.Value)
 	assert.Equal(t, original.MaxSamples, loaded.MaxSamples)
 	require.NotNil(t, loaded.DatasetReference)
 	assert.Equal(t, "ds", loaded.DatasetReference.Name)
 	require.Len(t, loaded.Evaluators, 1)
-	assert.Equal(t, "builtin.task_adherence", loaded.Evaluators[0])
+	assert.Equal(t, "builtin.task_adherence", loaded.Evaluators[0].Name)
 }
 
 func TestReadEvalConfig_MissingFile(t *testing.T) {

@@ -96,6 +96,7 @@ Use eval init to generate an eval config, then eval run to execute it.`,
 
 	cmd.AddCommand(newEvalInitCommand(extCtx))
 	cmd.AddCommand(newEvalRunCommand(extCtx))
+	cmd.AddCommand(newEvalUpdateCommand(extCtx))
 	cmd.AddCommand(newEvalListCommand())
 	cmd.AddCommand(newEvalShowCommand())
 
@@ -439,7 +440,7 @@ func pollEvalOperationWithSpinner(
 		return nil, fmt.Errorf("%s did not return an operation ID", strings.ToLower(label))
 	}
 
-	progress.setRunning(label)
+	progress.setRunning(label, operationID)
 	poller := eval_api.NewPoller(operationID, apiVersion, get)
 	job, err := poller.Poll(ctx)
 

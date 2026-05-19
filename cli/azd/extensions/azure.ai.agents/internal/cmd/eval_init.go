@@ -12,6 +12,7 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/eval_api"
+	"azureaiagent/internal/pkg/agents/opteval"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -23,21 +24,21 @@ const DataGenerationAPIVersion = "v1"
 
 // EvalInitFlags defines the customized flags for the eval init command.
 type evalInitFlags struct {
-	name             string
-	agent            string
-	projectEndpoint  string
-	systemPrompt     string
-	systemPromptFile string
-	evalModel        string
-	dataset          string
-	output           string
-	maxSamples       int
-	evaluators       []string
-	noWait           bool
-	resetDefaults    bool
-	evalModelSet     bool
-	maxSamplesSet    bool
-	traceDays        int
+	name            string
+	agent           string
+	projectEndpoint string
+	instruction     string
+	instructionFile string
+	evalModel       string
+	dataset         string
+	output          string
+	maxSamples      int
+	evaluators      []string
+	noWait          bool
+	resetDefaults   bool
+	evalModelSet    bool
+	maxSamplesSet   bool
+	traceDays       int
 	// Internal flags set during interactive prompts.
 	regenerateDataset   bool
 	regenerateEvaluator bool
@@ -51,11 +52,11 @@ func newEvalInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Generate a local eval suite for a deployed agent.
 
 By default, this command submits dataset and evaluator generation jobs, waits for
-completion, downloads review artifacts under .azure/.foundry, and writes eval.yaml at
+completion, downloads review artifacts, and writes eval.yaml at
 the agent project root. Use --no-wait to write pending operation IDs and return.`,
 		Example: `  azd ai agent eval init
-  azd ai agent eval init --system-prompt "This agent handles restaurant reservations." --eval-model gpt-4o --max-samples 50
-  azd ai agent eval init --system-prompt-file ./instructions.md --eval-model gpt-4o
+  azd ai agent eval init --gen-instruction "This agent handles restaurant reservations." --eval-model gpt-4o --max-samples 50
+  azd ai agent eval init --gen-instruction-file ./instructions.md --eval-model gpt-4o
   azd ai agent eval init --dataset ./tests/golden.jsonl --evaluator builtin.intent_resolution`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -72,8 +73,8 @@ the agent project root. Use --no-wait to write pending operation IDs and return.
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Submit generation jobs and return immediately")
 	cmd.Flags().StringVar(&flags.agent, "agent", "", "Target agent name")
 	cmd.Flags().StringVarP(&flags.projectEndpoint, "project-endpoint", "p", "", "Microsoft Foundry project endpoint URL")
-	cmd.Flags().StringVarP(&flags.systemPrompt, "system-prompt", "g", "", "Agent system prompt used for dataset and evaluator generation")
-	cmd.Flags().StringVarP(&flags.systemPromptFile, "system-prompt-file", "G", "", "Path to a file containing the agent system prompt")
+	cmd.Flags().StringVarP(&flags.instruction, "gen-instruction", "g", "", "Agent instruction used for dataset and evaluator generation")
+	cmd.Flags().StringVarP(&flags.instructionFile, "gen-instruction-file", "G", "", "Path to a file containing the agent instruction")
 	cmd.Flags().StringVar(&flags.evalModel, "eval-model", defaultEvalModel, "Model used for evaluation and generation, and also as the default model for evaluation")
 	cmd.Flags().StringVar(&flags.dataset, "dataset", "", "Existing local file or registered dataset name to use for evaluation (instead of generating a new dataset)")
 	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", defaultEvalSamples, "Number of samples to generate (15-1000)")
@@ -87,9 +88,17 @@ the agent project root. Use --no-wait to write pending operation IDs and return.
 
 // runEvalInit executes the eval init command logic. It resolves context, prompts for missing options, submits generation jobs, polls for completion (unless --no-wait), writes the eval config, and prints next steps.
 func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error {
-	if flags.systemPrompt != "" && flags.systemPromptFile != "" {
-		return fmt.Errorf("cannot use both --system-prompt and --system-prompt-file; provide one or the other")
+	if flags.instruction != "" && flags.instructionFile != "" {
+		return fmt.Errorf("cannot use both --gen-instruction and --gen-instruction-file; provide one or the other")
 	}
+
+	// Validate instruction file early when the path won't be resolved relative to a project.
+	if flags.instructionFile != "" {
+		if _, err := os.Stat(flags.instructionFile); err != nil && filepath.IsAbs(flags.instructionFile) {
+			return fmt.Errorf("instruction file %q is not accessible: %w", flags.instructionFile, err)
+		}
+	}
+
 	resolved, err := resolveEvalContext(ctx, evalContextOptions{
 		agent:           flags.agent,
 		projectEndpoint: flags.projectEndpoint,
@@ -101,13 +110,13 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 	}
 	defer resolved.azdClient.Close()
 
-	// Resolve relative system_prompt_file paths against the agent project directory.
-	if flags.systemPromptFile != "" {
-		if !filepath.IsAbs(flags.systemPromptFile) && resolved.projectRoot != "" {
-			flags.systemPromptFile = filepath.Join(resolved.projectRoot, flags.systemPromptFile)
+	// Resolve relative instruction file paths against the agent project directory.
+	if flags.instructionFile != "" && !filepath.IsAbs(flags.instructionFile) {
+		if resolved.projectRoot != "" {
+			flags.instructionFile = filepath.Join(resolved.projectRoot, flags.instructionFile)
 		}
-		if _, err := os.Stat(flags.systemPromptFile); err != nil {
-			return fmt.Errorf("system prompt file %q is not accessible: %w", flags.systemPromptFile, err)
+		if _, err := os.Stat(flags.instructionFile); err != nil {
+			return fmt.Errorf("instruction file %q is not accessible: %w", flags.instructionFile, err)
 		}
 	}
 
@@ -117,7 +126,7 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 	// When eval.yaml exists, decide whether to regenerate or create fresh.
 	existingCfg, hasExisting := tryLoadExistingEvalConfig(configPath)
 	isRegenerate := false
-	var builtinEvals []string
+	var builtinEvals opteval.EvaluatorList
 
 	if flags.resetDefaults && resolved.envName != "" {
 		clearEvalState(ctx, resolved.azdClient, resolved.envName)
@@ -146,9 +155,9 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		if existingCfg.Options != nil && !flags.evalModelSet {
 			flags.evalModel = existingCfg.Options.EvalModel
 		}
-		if flags.systemPrompt == "" && flags.systemPromptFile == "" {
-			flags.systemPrompt = existingCfg.Agent.SystemPrompt
-			flags.systemPromptFile = existingCfg.Agent.SystemPromptFile
+		if flags.instruction == "" && flags.instructionFile == "" {
+			flags.instruction = existingCfg.Agent.Instruction.Value
+			flags.instructionFile = existingCfg.Agent.Instruction.File
 		}
 		if !flags.maxSamplesSet && existingCfg.MaxSamples > 0 {
 			flags.maxSamples = existingCfg.MaxSamples
@@ -176,22 +185,19 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		return err
 	}
 
-	// Finalize the eval suite name with a random suffix to avoid collisions.
-	flags.name = resolveEvalName(flags) + "-" + randomSuffix()
+	// Finalize the eval suite name. On fresh init, add a random suffix to
+	// avoid collisions. On regeneration, keep the existing name.
+	if !isRegenerate {
+		flags.name = resolveEvalName(flags) + "-" + randomSuffix()
+	}
 
-	// Prompt agents use the agent source directly; hosted agents require a system-prompt.
+	// Prompt agents use the agent source directly; hosted agents require an instruction.
 	if resolved.agentKind != agent_yaml.AgentKindPrompt &&
-		flags.systemPrompt == "" && flags.systemPromptFile == "" && (flags.dataset == "" || len(flags.evaluators) == 0) {
-		return fmt.Errorf("--system-prompt is required when generating eval assets for a hosted agent")
+		flags.instruction == "" && flags.instructionFile == "" && (flags.dataset == "" || len(flags.evaluators) == 0) {
+		return fmt.Errorf("--gen-instruction is required when generating eval assets for a hosted agent")
 	}
 	if flags.maxSamples < 15 || flags.maxSamples > 1000 {
 		return fmt.Errorf("--max-samples must be between 15 and 1000")
-	}
-
-	if resolved.hasProject {
-		if err := ensureFoundryDirs(resolved.projectRoot); err != nil {
-			return err
-		}
 	}
 
 	evalCfg := newEvalConfig(flags, resolved)
@@ -252,7 +258,8 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		return writePendingEvalInit(ctx, resolved, configPath, evalCfg, state)
 	}
 
-	if err := pollAndFinalizeJobs(ctx, resolved, evalCfg, state, builtinEvals); err != nil {
+	pollRes, err := pollAndFinalizeJobs(ctx, resolved, evalCfg, state, builtinEvals)
+	if err != nil {
 		if _, ok := errors.AsType[*initTimeoutError](err); ok {
 			return writeTimedOutEvalInit(ctx, resolved, configPath, evalCfg, state)
 		}
@@ -266,22 +273,81 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 	}
 
 	if resolved.hasProject {
-		writeEvalReviewArtifacts(resolved.projectRoot, evalCfg)
+		eval_api.WriteEvalReviewArtifacts(resolved.agentProject, evalCfg)
 	}
 	if isRegenerate {
-		fmt.Println(color.GreenString("Eval suite regenerated"))
+		fmt.Println(color.GreenString("\nEval suite regenerated"))
 	} else {
-		fmt.Println(color.GreenString("Eval suite created"))
+		fmt.Println(color.GreenString("\nEval suite created"))
 	}
 	fmt.Printf("   Config:     %s\n", configPath)
 	if evalCfg.DatasetFile != "" {
 		fmt.Printf("   Dataset:    %s\n", evalCfg.DatasetFile)
-	}
-	for _, evaluator := range evalCfg.Evaluators {
-		if evaluator != "" {
-			fmt.Printf("   Evaluator:  %s\n", evaluator)
+	} else if evalCfg.DatasetReference != nil && evalCfg.DatasetReference.Name != "" {
+		ds := evalCfg.DatasetReference.Name
+		if evalCfg.DatasetReference.Version != "" {
+			ds += " (" + evalCfg.DatasetReference.Version + ")"
+		}
+		fmt.Printf("   Dataset:    %s\n", ds)
+		if resolved.hasProject {
+			fmt.Printf("               %s\n", eval_api.DatasetArtifactPath(resolved.agentProject, evalCfg.DatasetReference))
 		}
 	}
+	for _, evaluator := range evalCfg.Evaluators {
+		if evaluator.Name != "" {
+			ev := evaluator.Name
+			if evaluator.Version != "" {
+				ev += " (" + evaluator.Version + ")"
+			}
+			fmt.Printf("   Evaluator:  %s\n", ev)
+			if resolved.hasProject && !eval_api.IsBuiltinEvaluator(evaluator.Name) {
+				fmt.Printf("               %s\n",
+					filepath.Join(resolved.agentProject, eval_api.EvaluatorLocalURI(evaluator.Name)))
+			}
+		}
+	}
+
+	// Print evaluator rubric dimensions if available.
+	printEvalDimensions(pollRes)
+
+	// Print portal links.
+	printEvalPortalLinks(ctx, resolved, evalCfg)
+
 	fmt.Printf("\n   Review the generated assets, then run:\n     %s\n", color.CyanString("azd ai agent eval run"))
 	return nil
+}
+
+// printEvalDimensions prints rubric dimensions from the poll results if available.
+func printEvalDimensions(results *pollResults) {
+	if results == nil || results.EvaluatorResult == nil {
+		return
+	}
+	if len(results.EvaluatorResult.Definition.Dimensions) == 0 {
+		return
+	}
+	eval_api.PrintEvaluatorDimensions(results.EvaluatorResult)
+}
+
+// printEvalPortalLinks prints Foundry portal links for the generated dataset and evaluator.
+func printEvalPortalLinks(ctx context.Context, resolved *evalResolvedContext, evalCfg *evalConfig) {
+	prefix := resolvePortalPrefix(ctx, resolved.azdClient, resolved.envName)
+	if prefix == nil {
+		return
+	}
+	hasLink := false
+	if evalCfg.DatasetReference != nil && evalCfg.DatasetReference.Name != "" {
+		fmt.Printf("\n   "+color.HiBlackString("Portal:")+"\n     Dataset:   %s\n",
+			color.CyanString(prefix.DatasetURL(evalCfg.DatasetReference.Name, evalCfg.DatasetReference.Version)))
+		hasLink = true
+	}
+	for _, evaluator := range evalCfg.Evaluators {
+		if evaluator.Name != "" && !eval_api.IsBuiltinEvaluator(evaluator.Name) {
+			if !hasLink {
+				fmt.Println("\n   " + color.HiBlackString("Portal:"))
+				hasLink = true
+			}
+			fmt.Printf("     Evaluator: %s\n",
+				color.CyanString(prefix.EvaluatorURL(evaluator.Name, evaluator.Version)))
+		}
+	}
 }

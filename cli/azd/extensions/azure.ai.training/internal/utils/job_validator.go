@@ -151,23 +151,30 @@ func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 		}
 	}
 
-	// 10. Services: only "ssh" is supported, and ssh_public_keys is required.
-	// The backend currently does not enforce key presence — without keys the SSH
-	// service is provisioned but unusable, and users hit the failure later.
+	// 10. Services: validate type is one of the AML-CLI supported values, and
+	// require ssh_public_keys for ssh (omitting it provisions an unusable SSH
+	// service and the user only finds out when the ssh handshake hangs).
+	// Per-type extra fields beyond ssh_public_keys are passed through to the
+	// backend without client-side validation.
 	for name, svc := range job.Services {
-		if !strings.EqualFold(svc.Type, "ssh") {
+		switch strings.ToLower(strings.TrimSpace(svc.Type)) {
+		case "ssh":
+			if strings.TrimSpace(svc.SshPublicKeys) == "" {
+				result.Findings = append(result.Findings, ValidationFinding{
+					Field:    fmt.Sprintf("services.%s.ssh_public_keys", name),
+					Severity: SeverityError,
+					Message:  "ssh_public_keys is required when type is 'ssh'",
+				})
+			}
+		case "jupyter_lab", "tensor_board", "vs_code", "custom":
+			// no per-type required fields enforced client-side
+		default:
 			result.Findings = append(result.Findings, ValidationFinding{
 				Field:    fmt.Sprintf("services.%s.type", name),
 				Severity: SeverityError,
-				Message:  fmt.Sprintf("type %q is not supported; only 'ssh' is allowed", svc.Type),
-			})
-			continue
-		}
-		if strings.TrimSpace(svc.SshPublicKeys) == "" {
-			result.Findings = append(result.Findings, ValidationFinding{
-				Field:    fmt.Sprintf("services.%s.ssh_public_keys", name),
-				Severity: SeverityError,
-				Message:  "ssh_public_keys is required when type is 'ssh'",
+				Message: fmt.Sprintf(
+					"type %q is not supported; expected one of: ssh, jupyter_lab, tensor_board, vs_code, custom",
+					svc.Type),
 			})
 		}
 	}

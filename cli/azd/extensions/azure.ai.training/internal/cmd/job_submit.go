@@ -232,8 +232,10 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 		}
 	}
 
-	// Services (e.g., SSH). ValidateJobOffline restricts type to "ssh"
-	// and ensures ssh_public_keys is non-empty.
+	// Services (e.g., SSH, JupyterLab, TensorBoard, VSCode, Custom).
+	// ValidateJobOffline restricts type to the AML-CLI supported set and
+	// enforces ssh_public_keys for ssh; other per-type fields are passed
+	// through to the backend without client-side validation.
 	if len(def.Services) > 0 {
 		job.Services = make(map[string]any, len(def.Services))
 		for name, svc := range def.Services {
@@ -248,7 +250,7 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 }
 
 // buildServiceRequest translates an AML YAML ServiceDefinition into the API request shape.
-// Currently only SSH is supported (enforced by ValidateJobOffline).
+// Supported types mirror AML CLI v2: ssh, jupyter_lab, tensor_board, vs_code, custom.
 func buildServiceRequest(svc utils.ServiceDefinition) *models.JobServiceRequest {
 	req := &models.JobServiceRequest{
 		JobServiceType: mapServiceType(svc.Type),
@@ -261,20 +263,41 @@ func buildServiceRequest(svc utils.ServiceDefinition) *models.JobServiceRequest 
 		req.Nodes = &models.NodesValue{NodesValueType: "All"}
 	}
 
-	// Merge ssh_public_keys into properties (API uses properties.sshPublicKeys).
+	// Start with any user-supplied properties, then merge in well-known
+	// per-type fields (sshPublicKeys for ssh, logDir for tensor_board) so
+	// the user can write them at the top level of the service block.
 	props := make(map[string]any)
 	maps.Copy(props, svc.Properties)
-	props["sshPublicKeys"] = svc.SshPublicKeys
-	req.Properties = props
+	switch strings.ToLower(strings.TrimSpace(svc.Type)) {
+	case "ssh":
+		props["sshPublicKeys"] = svc.SshPublicKeys
+	case "tensor_board":
+		if strings.TrimSpace(svc.LogDir) != "" {
+			props["logDir"] = svc.LogDir
+		}
+	}
+	if len(props) > 0 {
+		req.Properties = props
+	}
 
 	return req
 }
 
-// mapServiceType converts AML YAML service type to API jobServiceType.
-// Only SSH is supported by Foundry training jobs today.
+// mapServiceType converts an AML CLI YAML service type to the API jobServiceType.
+// Unknown types pass through unchanged so the server can reject them with a
+// clear error message (offline validation already restricts the accepted set).
 func mapServiceType(t string) string {
-	if strings.EqualFold(t, "ssh") {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "ssh":
 		return "SSH"
+	case "jupyter_lab":
+		return "JupyterLab"
+	case "tensor_board":
+		return "TensorBoard"
+	case "vs_code":
+		return "VSCode"
+	case "custom":
+		return "Custom"
 	}
 	return t
 }

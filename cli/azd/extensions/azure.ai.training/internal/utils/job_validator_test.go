@@ -336,24 +336,40 @@ func TestValidate_MultilineCommand(t *testing.T) {
 }
 
 // Tests services block validation:
-//   - non-ssh service type → error
+//   - unsupported (non-AML-CLI) service type → error
+//   - supported non-ssh types (jupyter_lab, tensor_board, vs_code, custom) → no error
 //   - ssh service missing ssh_public_keys → error
 //   - ssh service with keys → no findings for that service
 func TestValidate_Services(t *testing.T) {
 	// Unsupported service type:
 	//   services:
-	//     jupyter:
-	//       type: jupyter_lab
-	//       ssh_public_keys: ssh-rsa AAA...
+	//     weird:
+	//       type: notebook
 	job := validJob()
 	job.Services = map[string]ServiceDefinition{
-		"jupyter": {Type: "jupyter_lab", SshPublicKeys: "ssh-rsa AAA..."},
+		"weird": {Type: "notebook"},
 	}
 	result := ValidateJobOffline(job, ".")
 	if f := findFindingByMessage(result, "is not supported"); f == nil {
 		t.Error("expected error for unsupported service type")
 	} else if f.Severity != SeverityError {
 		t.Errorf("expected SeverityError for unsupported service type, got %s", f.Severity)
+	}
+
+	// Supported non-ssh types should not be flagged as unsupported and should
+	// not require ssh_public_keys.
+	for _, ty := range []string{"jupyter_lab", "tensor_board", "vs_code", "custom"} {
+		job = validJob()
+		job.Services = map[string]ServiceDefinition{
+			"svc": {Type: ty},
+		}
+		result = ValidateJobOffline(job, ".")
+		if f := findFindingByMessage(result, "is not supported"); f != nil {
+			t.Errorf("did not expect type-not-supported finding for %q: %s", ty, f.Message)
+		}
+		if f := findFindingByMessage(result, "ssh_public_keys is required"); f != nil {
+			t.Errorf("did not expect ssh_public_keys finding for %q: %s", ty, f.Message)
+		}
 	}
 
 	// SSH service missing ssh_public_keys:

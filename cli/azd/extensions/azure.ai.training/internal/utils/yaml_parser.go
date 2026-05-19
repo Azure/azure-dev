@@ -38,11 +38,15 @@ type JobDefinition struct {
 	Services             map[string]ServiceDefinition `yaml:"services"`
 }
 
-// ServiceDefinition represents a job service (e.g., SSH) declared in YAML.
-// Mirrors the AML schema for SshJobServiceSchema.
+// ServiceDefinition represents a job service declared in YAML.
+// Mirrors the AML CLI v2 job service schemas: ssh, jupyter_lab, tensor_board,
+// vs_code, custom. Per-type required fields are flat at the top of this struct
+// (e.g. ssh_public_keys for ssh, log_dir for tensor_board); free-form per-type
+// settings can also be supplied via `properties`.
 type ServiceDefinition struct {
-	Type          string         `yaml:"type"`            // "ssh" (currently only ssh is supported)
-	SshPublicKeys string         `yaml:"ssh_public_keys"` // required: a single SSH public key string (e.g. "ssh-rsa AAAA...")
+	Type          string         `yaml:"type"`            // "ssh" | "jupyter_lab" | "tensor_board" | "vs_code" | "custom"
+	SshPublicKeys string         `yaml:"ssh_public_keys"` // ssh only: a single SSH public key string (required for ssh)
+	LogDir        string         `yaml:"log_dir"`         // tensor_board only: log directory path
 	Nodes         string         `yaml:"nodes"`           // "all" to run on all nodes; empty/unset → leader node only (index 0)
 	Port          int            `yaml:"port"`
 	Properties    map[string]any `yaml:"properties"`

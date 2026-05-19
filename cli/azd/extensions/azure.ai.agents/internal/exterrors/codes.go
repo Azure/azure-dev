@@ -59,6 +59,11 @@ const (
 	CodePromptFailed              = "prompt_failed"
 )
 
+// Error codes for ACR dependency errors.
+const (
+	CodePrivateACRNetworkAccessFailed = "private_acr_network_access_failed"
+)
+
 // Error codes commonly used for auth errors.
 //
 // These are usually paired with [Auth] for authentication/authorization failures.

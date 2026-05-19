@@ -511,12 +511,84 @@ func (p *AgentServiceTargetProvider) Publish(
 		})
 
 	if err != nil {
-		return nil, exterrors.Internal(exterrors.OpContainerPublish, fmt.Sprintf("container publish failed: %s", err))
+		return nil, classifyContainerPublishError(err)
 	}
 
 	return &azdext.ServicePublishResult{
 		Artifacts: publishResponse.Result.Artifacts,
 	}, nil
+}
+
+func classifyContainerPublishError(err error) error {
+	if isPrivateACRNetworkAccessError(err) {
+		return exterrors.Dependency(
+			exterrors.CodePrivateACRNetworkAccessFailed,
+			fmt.Sprintf(
+				"container publish failed because the Azure Container Registry may be blocking network access: %s",
+				err,
+			),
+			"allowlist the public outbound IP/CIDR of the dev environment running `azd deploy` in the ACR "+
+				"firewall/network settings. If `docker.remoteBuild: true` is enabled, first set "+
+				"`docker.remoteBuild: false` for this service because remote build worker IPs are not predictable. "+
+				"Ensure Docker or Podman is installed and running, then run `azd deploy` again.",
+		)
+	}
+
+	if actionable := azdext.ActionableErrorDetailFromError(err); actionable != nil && actionable.GetSuggestion() != "" {
+		return err
+	}
+
+	return exterrors.Internal(exterrors.OpContainerPublish, fmt.Sprintf("container publish failed: %s", err))
+}
+
+func isPrivateACRNetworkAccessError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	message := strings.ToLower(err.Error())
+	acrContext := []string{
+		".azurecr.io",
+		"azure container registry",
+		"container registry",
+	}
+	hasACRContext := containsAny(message, acrContext...)
+
+	networkSignals := []string{
+		"public network access",
+		"private endpoint",
+		"network rule",
+		"firewall",
+		"not allowed access",
+		"forbidden",
+		"i/o timeout",
+		"connection timed out",
+		"tls handshake timeout",
+		"connection refused",
+		"no such host",
+	}
+	hasNetworkSignal := containsAny(message, networkSignals...)
+
+	if strings.Contains(message, "client with ip address") &&
+		strings.Contains(message, "not allowed access") {
+		return true
+	}
+
+	if strings.Contains(message, "remote build failed") &&
+		strings.Contains(message, "local fallback unavailable") {
+		return hasNetworkSignal || hasACRContext
+	}
+
+	return hasACRContext && hasNetworkSignal
+}
+
+func containsAny(s string, values ...string) bool {
+	for _, value := range values {
+		if strings.Contains(s, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func preBuiltImageArtifact(imageURL string) *azdext.Artifact {
@@ -941,6 +1013,21 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, err
 	}
 
+	// Poll until agent version is active
+	if agentVersionResponse.Status != "active" {
+		agentClient := agent_api.NewAgentClient(
+			azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+			p.credential,
+		)
+		polledVersion, pollErr := p.waitForAgentActive(ctx, agentClient, prep.request.Name, agentVersionResponse.Version, progress)
+		if pollErr != nil {
+			return nil, pollErr
+		}
+		agentVersionResponse = polledVersion
+	} else {
+		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", agentVersionResponse.Version)
+	}
+
 	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, agentVersionResponse, prep.protocols)
 }
 
@@ -1351,55 +1438,16 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 	}
 
-	// Poll for status if remote build
+	// Poll for agent version to become active
 	latestVersion := &agentResp.Versions.Latest
-	depRes := "remote_build"
-	if agentDef.CodeConfiguration != nil && agentDef.CodeConfiguration.DependencyResolution != nil {
-		depRes = *agentDef.CodeConfiguration.DependencyResolution
-	}
-	if depRes == "remote_build" && latestVersion.Status == "creating" {
-		fmt.Fprintf(os.Stderr, "Waiting for remote build to complete...\n")
-		pollTimeout := 5 * time.Minute
-		pollInterval := 5 * time.Second
-		deadline := time.Now().Add(pollTimeout)
-
-		for time.Now().Before(deadline) {
-			select {
-			case <-ctx.Done():
-				return nil, fmt.Errorf("deployment cancelled: %w", ctx.Err())
-			case <-time.After(pollInterval):
-			}
-			versionResp, err := agentClient.GetAgentVersion(ctx, agentDef.Name, latestVersion.Version, agentAPIVersion)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: poll failed: %s\n", err)
-				continue
-			}
-			latestVersion = versionResp
-			if versionResp.Status == "active" {
-				fmt.Fprintf(os.Stderr, "Agent is active!\n")
-				break
-			} else if versionResp.Status == "failed" {
-				errMsg := "agent deployment failed during remote build; check agent logs or try local packaging (dependency_resolution: bundled)"
-				if versionResp.Error != nil {
-					errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", versionResp.Error.Code, versionResp.Error.Message)
-				}
-				if versionResp.RequestID != "" {
-					errMsg += fmt.Sprintf(" (request-id: %s)", versionResp.RequestID)
-				}
-				return nil, exterrors.Internal(
-					exterrors.CodeAgentCreateFailed,
-					errMsg,
-				)
-			}
-			fmt.Fprintf(os.Stderr, "  Status: %s...\n", versionResp.Status)
+	if latestVersion.Status != "active" {
+		polledVersion, err := p.waitForAgentActive(ctx, agentClient, agentDef.Name, latestVersion.Version, progress)
+		if err != nil {
+			return nil, err
 		}
-
-		if latestVersion.Status != "active" {
-			return nil, exterrors.Internal(
-				exterrors.CodeAgentCreateFailed,
-				"agent deployment timed out waiting for remote build; check agent status manually or try local packaging",
-			)
-		}
+		latestVersion = polledVersion
+	} else {
+		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", latestVersion.Version)
 	}
 
 	// Patch agent-level fields (agent_endpoint, agent_card) if present.
@@ -1556,6 +1604,85 @@ func AgentPlaygroundURL(projectResourceID, agentName, agentVersion string) (stri
 		agentName, agentVersion,
 	)
 	return url, nil
+}
+
+// waitForAgentActive polls the agent version until it reaches a confirmed terminal state.
+// It requires 2 consecutive polls with the same terminal status ("active" or "failed") to confirm,
+// avoiding transient service-side flickers. Returns the final AgentVersionObject or an error.
+func (p *AgentServiceTargetProvider) waitForAgentActive(
+	ctx context.Context,
+	agentClient *agent_api.AgentClient,
+	agentName string,
+	version string,
+	progress azdext.ProgressReporter,
+) (*agent_api.AgentVersionObject, error) {
+	const pollInterval = 10 * time.Second
+	const pollTimeout = 5 * time.Minute
+	const confirmCount = 2 // consecutive times a terminal status must be seen
+
+	deadline := time.Now().Add(pollTimeout)
+	progress("Waiting for agent to become active")
+
+	var consecutiveActive int
+	var consecutiveFailed int
+	var lastVersion *agent_api.AgentVersionObject
+
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("deployment cancelled: %w", ctx.Err())
+		case <-time.After(pollInterval):
+		}
+
+		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agentAPIVersion)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
+			// Reset counters on error — don't count transient failures
+			consecutiveActive = 0
+			consecutiveFailed = 0
+			continue
+		}
+		lastVersion = versionResp
+
+		switch versionResp.Status {
+		case "active":
+			consecutiveActive++
+			consecutiveFailed = 0
+			if consecutiveActive >= confirmCount {
+				fmt.Fprintf(os.Stderr, "Agent version %s is active!\n", version)
+				return versionResp, nil
+			}
+			fmt.Fprintf(os.Stderr, "  Status: active (confirming...)\n")
+		case "failed":
+			consecutiveFailed++
+			consecutiveActive = 0
+			if consecutiveFailed >= confirmCount {
+				errMsg := "agent deployment failed"
+				if versionResp.Error != nil {
+					errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", versionResp.Error.Code, versionResp.Error.Message)
+				}
+				if versionResp.RequestID != "" {
+					errMsg += fmt.Sprintf(" (request-id: %s)", versionResp.RequestID)
+				}
+				return nil, exterrors.Internal(exterrors.CodeAgentCreateFailed, errMsg)
+			}
+			fmt.Fprintf(os.Stderr, "  Status: failed (confirming...)\n")
+		default:
+			consecutiveActive = 0
+			consecutiveFailed = 0
+			fmt.Fprintf(os.Stderr, "  Status: %s...\n", versionResp.Status)
+		}
+	}
+
+	// Timeout
+	lastStatus := "unknown"
+	if lastVersion != nil {
+		lastStatus = lastVersion.Status
+	}
+	return nil, exterrors.Internal(
+		exterrors.CodeAgentCreateFailed,
+		fmt.Sprintf("agent deployment timed out (last status: %s); check agent status manually", lastStatus),
+	)
 }
 
 // createAgent creates a new version of the agent using the API

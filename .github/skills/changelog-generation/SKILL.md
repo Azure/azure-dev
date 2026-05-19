@@ -85,8 +85,9 @@ Per [references/pr-processing.md](references/pr-processing.md):
 1. **Remove empty category sections** — scan the new release entry and delete any `### <Category>` heading that has no bullet entries beneath it (i.e., the next line is blank followed by another `###` heading or `##` heading or end of section). This is mandatory — never leave empty `### Breaking Changes`, `### Features Added`, `### Bugs Fixed`, or `### Other Changes` sections in the final output.
 2. For extensions using flat bullet lists (no category headings), match the existing style.
 3. **Validate PR links**: verify that every `- ` bullet under a category heading contains a `[[#NNNN]]` link. If any entry is missing a link, flag it and require either adding the PR reference or explicitly justifying the omission. When a single large PR warrants multiple changelog bullets, each must reference the same PR number.
-4. **Cross-reference commit range**: verify every `[[#NNNN]]` PR number against the commit list from Step 3. Flag any PR that does not appear in the commit range — it may be a duplicate from a prior release or an incorrectly attributed entry.
-5. Present the **complete changelog entry** to the user for review via `ask_user`.
+4. **Cross-reference commit range (forward)**: verify every `[[#NNNN]]` PR number against the commit list from Step 3. Flag any PR that does not appear in the commit range — it may be a duplicate from a prior release or an incorrectly attributed entry.
+5. **Reverse cross-reference (coverage check)**: for every commit in the Step 3 range, verify it is either (a) included in the changelog entry, or (b) excluded with a documented reason (test-only, docs-only, CI, extension-only, dependency bump, duplicate PR, alpha-gated, or cross-release dedup). Present a summary table to the user listing each commit's PR number, title, and disposition (included / excluded with reason). Flag any commit that is neither included nor has a clear exclusion reason — these are potential misses that require explicit user confirmation before proceeding.
+6. Present the **complete changelog entry** to the user for review via `ask_user`.
 
    Choices:
    - **Approve** — accept and proceed to spell check

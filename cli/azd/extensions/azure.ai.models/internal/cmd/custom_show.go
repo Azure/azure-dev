@@ -165,6 +165,22 @@ func runCustomShow(ctx context.Context, parentFlags *customFlags, flags *customS
 			fmt.Printf("  URI: %s\n", *model.DerivedModelInformation.BaseModel)
 		}
 
+		if model.LoRAConfig != nil {
+			fmt.Println("\nLoRA Configuration:")
+			if model.LoRAConfig.Rank != nil {
+				fmt.Printf("  Rank:           %d\n", *model.LoRAConfig.Rank)
+			}
+			if model.LoRAConfig.Alpha != nil {
+				fmt.Printf("  Alpha:          %d\n", *model.LoRAConfig.Alpha)
+			}
+			if len(model.LoRAConfig.TargetModules) > 0 {
+				fmt.Printf("  Target Modules: %s\n", strings.Join(model.LoRAConfig.TargetModules, ", "))
+			}
+			if model.LoRAConfig.Dropout != nil {
+				fmt.Printf("  Dropout:        %g\n", *model.LoRAConfig.Dropout)
+			}
+		}
+
 		if model.Source != nil {
 			fmt.Println("\nSource:")
 			fmt.Printf("  Type: %s\n", model.Source.SourceType)

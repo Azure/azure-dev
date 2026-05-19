@@ -232,6 +232,7 @@ func TestHttpTimeout(t *testing.T) {
 		timeout int
 		want    time.Duration
 	}{
+		{name: "default value", timeout: defaultInvokeTimeoutSeconds, want: 30 * time.Minute},
 		{name: "positive value", timeout: 120, want: 120 * time.Second},
 		{name: "zero means no timeout", timeout: 0, want: 0},
 		{name: "negative means no timeout", timeout: -1, want: 0},
@@ -250,6 +251,24 @@ func TestHttpTimeout(t *testing.T) {
 				t.Errorf("httpTimeout() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestInvokeCommandTimeoutDefault(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInvokeCommand(nil)
+	timeoutFlag := cmd.Flags().Lookup("timeout")
+	if timeoutFlag == nil {
+		t.Fatal("timeout flag not registered")
+	}
+
+	const want = "1800"
+	if timeoutFlag.DefValue != want {
+		t.Errorf("timeout default = %q, want %q", timeoutFlag.DefValue, want)
+	}
+	if timeoutFlag.Value.String() != want {
+		t.Errorf("timeout value = %q, want %q", timeoutFlag.Value.String(), want)
 	}
 }
 
@@ -825,6 +844,18 @@ func TestHandleInvocationLRO(t *testing.T) {
 			errContains: "timed out",
 		},
 		{
+			name:             "no timeout polls until completion",
+			initial202Header: "inv-009",
+			initial202Body:   `{}`,
+			pollResponses: []pollStep{
+				{status: 200, body: `{"status":"running"}`},
+				{status: 200, body: `{"status":"running"}`},
+				{status: 200, body: `{"status":"completed","result":"ok"}`},
+			},
+			timeout: 0,
+			wantErr: false,
+		},
+		{
 			name:             "retry-after header is respected",
 			initial202Header: "inv-008",
 			initial202Body:   `{}`,
@@ -1021,6 +1052,72 @@ func TestCreateConversation(t *testing.T) {
 			}
 			if id != tt.wantID {
 				t.Errorf("id = %q, want %q", id, tt.wantID)
+			}
+		})
+	}
+}
+
+func TestResponseTraceID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		headers map[string]string
+		want    string
+	}{
+		{
+			name:    "prefers x-request-id when both present",
+			headers: map[string]string{"X-Request-ID": "trace-abc", "apim-request-id": "apim-xyz"},
+			want:    "trace-abc",
+		},
+		{
+			name:    "falls back to apim-request-id",
+			headers: map[string]string{"apim-request-id": "apim-xyz"},
+			want:    "apim-xyz",
+		},
+		{
+			name:    "returns empty when neither present",
+			headers: map[string]string{},
+			want:    "",
+		},
+		{
+			name:    "returns x-request-id when only it is present",
+			headers: map[string]string{"X-Request-ID": "trace-only"},
+			want:    "trace-only",
+		},
+		{
+			name:    "deduplicates comma-folded x-request-id",
+			headers: map[string]string{"X-Request-ID": "trace-abc,trace-abc"},
+			want:    "trace-abc",
+		},
+		{
+			name:    "returns first token when x-request-id is comma-list",
+			headers: map[string]string{"X-Request-ID": "trace-first, trace-second"},
+			want:    "trace-first",
+		},
+		{
+			name:    "skips leading empty token in comma-folded x-request-id",
+			headers: map[string]string{"X-Request-ID": ", trace-second"},
+			want:    "trace-second",
+		},
+		{
+			name:    "deduplicates comma-folded apim-request-id fallback",
+			headers: map[string]string{"apim-request-id": "apim-xyz, apim-xyz"},
+			want:    "apim-xyz",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp := &http.Response{Header: http.Header{}}
+			for k, v := range tt.headers {
+				resp.Header.Set(k, v)
+			}
+
+			if got := responseTraceID(resp); got != tt.want {
+				t.Errorf("responseTraceID() = %q, want %q", got, tt.want)
 			}
 		})
 	}

@@ -649,6 +649,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 
+		// Run post-init validations (advisory warnings only)
+		if ca, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
+			validatePostInit(targetDir, ca.CodeConfiguration)
+		}
+
 		color.Green("\nAI agent definition added to your azd project successfully!")
 	}
 

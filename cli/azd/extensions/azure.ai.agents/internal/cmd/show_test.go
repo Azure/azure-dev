@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"encoding/json"
+	"io"
+	"os"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -69,7 +71,46 @@ func TestNewAgentContext_PartialFlags(t *testing.T) {
 
 func TestShowCommand_DefaultOutputFormat(t *testing.T) {
 	cmd := newShowCommand(nil)
-	assertOutputFlagOptions(t, cmd, "json", []string{"json", "table"})
+	assertOutputFlagOptions(t, cmd, "table", []string{"json", "table"})
+}
+
+func TestPrintShowResult_DefaultsToTable(t *testing.T) {
+	output, err := captureStdout(t, func() error {
+		return printShowResult(sampleShowResult(), "")
+	})
+	require.NoError(t, err)
+
+	assert.Contains(t, output, "FIELD")
+	assert.Contains(t, output, "VALUE")
+	assert.Contains(t, output, "sample-agent")
+	assert.NotContains(t, output, `"object"`)
+}
+
+func TestPrintShowResult_JSONOptIn(t *testing.T) {
+	output, err := captureStdout(t, func() error {
+		return printShowResult(sampleShowResult(), "json")
+	})
+	require.NoError(t, err)
+
+	assert.Contains(t, output, `"object": "agent.version"`)
+	assert.Contains(t, output, `"name": "sample-agent"`)
+}
+
+func TestPrintShowResult_ExplicitTable(t *testing.T) {
+	output, err := captureStdout(t, func() error {
+		return printShowResult(sampleShowResult(), "table")
+	})
+	require.NoError(t, err)
+
+	assert.Contains(t, output, "FIELD")
+	assert.Contains(t, output, "VALUE")
+	assert.Contains(t, output, "sample-agent")
+	assert.NotContains(t, output, `"object"`)
+}
+
+func TestPrintShowResult_UnsupportedOutput(t *testing.T) {
+	err := printShowResult(sampleShowResult(), "yaml")
+	assert.EqualError(t, err, `unsupported output format "yaml"`)
 }
 
 func TestPrintAgentVersionJSON(t *testing.T) {
@@ -226,4 +267,36 @@ func TestPrintAgentVersionTable_MinimalFields(t *testing.T) {
 	result := &showResult{AgentVersionObject: version}
 	err := printShowResultTable(result)
 	require.NoError(t, err)
+}
+
+func sampleShowResult() *showResult {
+	return &showResult{
+		AgentVersionObject: &agent_api.AgentVersionObject{
+			Object:  "agent.version",
+			ID:      "ver-sample",
+			Name:    "sample-agent",
+			Version: "1",
+		},
+	}
+}
+
+func captureStdout(t *testing.T, run func() error) (string, error) {
+	t.Helper()
+
+	oldStdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	require.NoError(t, err)
+	defer func() {
+		os.Stdout = oldStdout
+	}()
+	defer reader.Close()
+
+	os.Stdout = writer
+	runErr := run()
+	require.NoError(t, writer.Close())
+
+	output, err := io.ReadAll(reader)
+	require.NoError(t, err)
+
+	return string(output), runErr
 }

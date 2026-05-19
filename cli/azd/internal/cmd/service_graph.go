@@ -156,20 +156,19 @@ type serviceGraphOptions struct {
 	// with hints) before the error bubbles up. Optional.
 	onDeployTimeout func(ctx context.Context, svc *project.ServiceConfig)
 
-	// buildGateKey groups services that must share a single sequential
-	// "first-wins" build lane: for each non-empty key, the first service
-	// encountered in slice order acts as the gate, and every later service
-	// returning the same key declares an edge to that first deploy step so
-	// their deploys wait for it. An empty key means "no gate" (full
-	// parallelism). Keys are opaque strings, so multiple independent gates
-	// can coexist (e.g. one group per shared build toolchain).
+	// buildGateKey groups services that share a concurrent-unsafe build
+	// phase: for each non-empty key, a shared mutex is created and injected
+	// into each gated deploy step's context. The service target acquires
+	// the mutex only during image preparation (dotnet publish) and releases
+	// it before the Azure deployment begins. An empty key means "no gate"
+	// (full parallelism). Keys are opaque strings, so multiple independent
+	// gates can coexist (e.g. one group per shared build toolchain).
 	//
 	// The graph builder itself is gate-agnostic: callers (including future
 	// extensions) inject the policy. `azd deploy` and `azd up` supply a
 	// callback that returns "aspire" for services owned by a .NET AppHost
-	// manifest, so the first Aspire deploy triggers the shared AppHost
-	// build and the rest wait — avoiding concurrent builds of the same
-	// AppHost. If nil, no gating is applied.
+	// manifest. The preferred approach is --artifacts-path (full
+	// parallelism); the mutex is a fallback. If nil, no gating is applied.
 	buildGateKey func(svc *project.ServiceConfig) string
 
 	// onPhaseProgress, if non-nil, is invoked with intra-phase progress
@@ -205,9 +204,9 @@ type serviceGraphHandles struct {
 //	opts.packageExtraDeps ──▶ package-<svc> ──▶ opts.publishExtraDeps ──▶ publish-<svc> ──▶ deploy-<svc>
 //	                                                                                            │
 //	                                                                     opts.buildGateKey:
-//	                                                             first service per non-empty key
-//	                                                           runs first; later services with the
-//	                                                            same key wait on that first step.
+//	                                                             services sharing a non-empty key
+//	                                                            get a runtime mutex in their context
+//	                                                              (no graph edges between deploys).
 //
 // Deploy ordering: when no service declares a `uses:` edge targeting
 // another service in this graph, deploy steps chain sequentially in the
@@ -246,12 +245,16 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 		DeploySteps:  make([]string, 0, len(opts.services)),
 	}
 
-	// firstByGate records, per non-empty gate key produced by
-	// opts.buildGateKey, the first deploy step seen in iteration order.
-	// Later services that return the same key take a dependency on that
-	// first step. Services whose gate key is "" (or when buildGateKey is
-	// nil) are unconstrained and run in full parallelism.
-	firstByGate := make(map[string]string)
+	// buildGateMu holds a per-gate-key mutex used to serialize only the
+	// image-preparation phase (dotnet publish) inside Aspire deploy steps,
+	// while leaving the Azure deployment portion fully parallel. The mutex
+	// is injected into the deploy step's context so the service target can
+	// acquire it during the build-only window. See build_gate.go in the
+	// project package.
+	//
+	// Services whose gate key is "" (or when buildGateKey is nil) are
+	// unconstrained and run in full parallelism.
+	buildGateMu := make(map[string]*sync.Mutex)
 
 	// serviceNames is the set of service names in this graph, used to
 	// resolve service-to-service edges declared via `services.<name>.uses`
@@ -291,8 +294,8 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 	}
 
 	// Check (b): buildGateKey policy — when any service produces a
-	// non-empty gate key, the gate itself provides the ordering constraint
-	// (first service builds, rest wait). The sequential fallback would be
+	// non-empty gate key, the gate provides runtime serialization of the
+	// build phase via a shared mutex. The sequential fallback would be
 	// redundant and would prevent parallelism for non-gated services.
 	if !hasExplicitOrdering && opts.buildGateKey != nil {
 		for _, svc := range opts.services {
@@ -452,16 +455,21 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 			return nil, fmt.Errorf("building publish step %s: %w", publishStepName, err)
 		}
 
-		// ── deploy-<svc> ── publish + build gate (if any) + declared
-		// service-to-service `uses:` edges + any caller-supplied fan-in.
-		deployDeps := make([]string, 0, 1+1+len(svc.Uses)+len(opts.deployExtraDeps))
+		// ── deploy-<svc> ── publish + declared service-to-service `uses:`
+		// edges + any caller-supplied fan-in.
+		//
+		// Build-gate synchronization is handled at RUNTIME, not via graph
+		// topology: the deploy step's context carries a per-gate-key mutex
+		// that the service target acquires only during image preparation
+		// (dotnet publish) and releases before the Azure deployment begins.
+		// This serializes the race-prone build phase while keeping the slow
+		// Azure deployment portion fully parallel.
+		deployDeps := make([]string, 0, 1+len(svc.Uses)+len(opts.deployExtraDeps))
 		deployDeps = append(deployDeps, publishStepName)
 		if opts.buildGateKey != nil {
 			if key := opts.buildGateKey(svc); key != "" {
-				if first, ok := firstByGate[key]; ok {
-					deployDeps = append(deployDeps, first)
-				} else {
-					firstByGate[key] = deployStepName
+				if _, ok := buildGateMu[key]; !ok {
+					buildGateMu[key] = &sync.Mutex{}
 				}
 			}
 		}
@@ -522,6 +530,16 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 
 				deployCtx, deployCancel := context.WithTimeout(stepCtx, opts.deployTimeout)
 				defer deployCancel()
+
+				// Inject the build gate mutex into the deploy context so the
+				// service target can serialize only the image-preparation phase.
+				if opts.buildGateKey != nil {
+					if key := opts.buildGateKey(depSvc); key != "" {
+						if mu, ok := buildGateMu[key]; ok {
+							deployCtx = project.ContextWithBuildGate(deployCtx, mu)
+						}
+					}
+				}
 
 				progress := newPhaseProgress(depSvc.Name, phaseDeploying)
 				defer progress.Wait()

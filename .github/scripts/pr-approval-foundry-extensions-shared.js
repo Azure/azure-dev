@@ -1,20 +1,36 @@
-// Required Approval Gate for azure.ai.agents Extension
+// Required Approval Gate for Foundry Extensions (Shared)
 //
 // Validates that at least one required approver has approved the current HEAD,
 // or that a valid break-glass override comment exists.
 //
-// See .github/workflows/approval-ext-azure-ai-agents.yml for full documentation.
+// This script is parameterized and called by per-extension approval workflows.
+// Parameters are passed via environment variables:
+//   EXTENSION_PATH    - e.g. 'cli/azd/extensions/azure.ai.connections/'
+//   WORKFLOW_PATH     - e.g. '.github/workflows/approval-ext-azure-ai-connections.yml'
+//   OVERRIDE_COMMAND  - e.g. '/connections-extension-approval override'
+//   REQUIRED_APPROVERS - JSON array of GitHub logins (optional, uses default list if not set)
 module.exports = async ({ github, context, core }) => {
-  const requiredApprovers = [
+  const DEFAULT_APPROVERS = [
     'trangevi',
     'trrwilson',
     'therealjohn',
     'glharper',
   ];
 
-  const EXTENSION_PATH = 'cli/azd/extensions/azure.ai.agents/';
-  const WORKFLOW_PATH = '.github/workflows/approval-ext-azure-ai-agents.yml';
-  const OVERRIDE_COMMAND = '/agents-extension-approval override';
+  const EXTENSION_PATH = process.env.EXTENSION_PATH;
+  const WORKFLOW_PATH = process.env.WORKFLOW_PATH;
+  const OVERRIDE_COMMAND = process.env.OVERRIDE_COMMAND;
+
+  if (!EXTENSION_PATH || !WORKFLOW_PATH || !OVERRIDE_COMMAND) {
+    core.setFailed(
+      'Missing required environment variables: EXTENSION_PATH, WORKFLOW_PATH, OVERRIDE_COMMAND'
+    );
+    return;
+  }
+
+  const requiredApprovers = process.env.REQUIRED_APPROVERS
+    ? JSON.parse(process.env.REQUIRED_APPROVERS)
+    : DEFAULT_APPROVERS;
 
   const prNumber =
     context.payload.pull_request?.number ??
@@ -99,28 +115,6 @@ module.exports = async ({ github, context, core }) => {
     }
   }
 
-  // --- pull_request_review: runtime path-scope check ---
-  // GitHub Actions does not support `paths:` filters on pull_request_review or
-  // issue_comment events. This runtime check compensates for that limitation.
-  if (context.eventName === 'pull_request_review') {
-    const files = await safeCall(
-      () => github.paginate(
-        github.rest.pulls.listFiles,
-        { owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber }
-      ),
-      'list PR files'
-    );
-    if (files === null) return;
-
-    const touchesExtension = files.some(f =>
-      f.filename.startsWith(EXTENSION_PATH) || f.filename === WORKFLOW_PATH
-    );
-    if (!touchesExtension) {
-      core.info('PR does not touch agents extension — skipping approval check.');
-      return;
-    }
-  }
-
   // --- Check for an existing override comment (break-glass, fallback scan) ---
   const comments = await safeCall(
     () => github.paginate(
@@ -177,7 +171,7 @@ module.exports = async ({ github, context, core }) => {
     core.setFailed(
       `Requires approval from at least one of: ${requiredApprovers.join(', ')}. ` +
       'No qualifying approval found on the current commit. ' +
-      'Break-glass: a required approver can post exactly "/agents-extension-approval override" to bypass.'
+      `Break-glass: a required approver can post exactly "${OVERRIDE_COMMAND}" to bypass.`
     );
   }
 };

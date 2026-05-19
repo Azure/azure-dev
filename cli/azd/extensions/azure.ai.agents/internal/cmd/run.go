@@ -407,7 +407,6 @@ func venvBinDir(venvDir string) string {
 //
 // The mapping is:
 //
-//	FOUNDRY_PROJECT_ENDPOINT          → FOUNDRY_PROJECT_ENDPOINT
 //	AZURE_AI_PROJECT_ID                → FOUNDRY_PROJECT_ARM_ID
 //	AGENT_{SVC}_NAME                   → FOUNDRY_AGENT_NAME
 //	AGENT_{SVC}_VERSION                → FOUNDRY_AGENT_VERSION
@@ -418,7 +417,6 @@ func appendFoundryEnvVars(env []string, azdEnv map[string]string, serviceName st
 		azdKey     string
 		foundryKey string
 	}{
-		{"FOUNDRY_PROJECT_ENDPOINT", "FOUNDRY_PROJECT_ENDPOINT"},
 		{"AZURE_AI_PROJECT_ID", "FOUNDRY_PROJECT_ARM_ID"},
 	}
 

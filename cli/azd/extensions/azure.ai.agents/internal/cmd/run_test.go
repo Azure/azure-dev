@@ -202,15 +202,14 @@ func createVenv(t *testing.T, projectDir string) string {
 func TestAppendFoundryEnvVars(t *testing.T) {
 	t.Parallel()
 
-	t.Run("maps FOUNDRY_PROJECT_ENDPOINT to FOUNDRY_PROJECT_ENDPOINT", func(t *testing.T) {
+	t.Run("does not map FOUNDRY_PROJECT_ENDPOINT to itself", func(t *testing.T) {
 		t.Parallel()
 		azdEnv := map[string]string{
 			"FOUNDRY_PROJECT_ENDPOINT": "https://myaccount.services.ai.azure.com/api/projects/myproject",
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "")
-		expected := "FOUNDRY_PROJECT_ENDPOINT=https://myaccount.services.ai.azure.com/api/projects/myproject"
-		if !slices.Contains(env, expected) {
-			t.Errorf("expected %q in env, got %v", expected, env)
+		if len(env) != 0 {
+			t.Errorf("expected no translated env vars, got %v", env)
 		}
 	})
 
@@ -259,8 +258,8 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 			"AGENT_AGENT1_VERSION":     "v1",
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "agent1")
-		if len(env) != 4 {
-			t.Errorf("expected 4 env vars, got %d: %v", len(env), env)
+		if len(env) != 3 {
+			t.Errorf("expected 3 env vars, got %d: %v", len(env), env)
 		}
 	})
 

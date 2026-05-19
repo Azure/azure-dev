@@ -10,6 +10,7 @@ import (
 )
 
 func TestTriggerCLIToWire_AllEntriesPresent(t *testing.T) {
+	t.Parallel()
 	expected := map[string]string{
 		"recurring":    "schedule",
 		"timer":        "timer",
@@ -20,6 +21,7 @@ func TestTriggerCLIToWire_AllEntriesPresent(t *testing.T) {
 }
 
 func TestActionCLIToWire_AllEntriesPresent(t *testing.T) {
+	t.Parallel()
 	expected := map[string]string{
 		"agent-response": "invoke_agent_responses_api",
 		"agent-invoke":   "invoke_agent_invocations_api",
@@ -29,11 +31,13 @@ func TestActionCLIToWire_AllEntriesPresent(t *testing.T) {
 }
 
 func TestDefaultKeys(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "default", DefaultTriggerKey)
 	assert.Equal(t, "default", DefaultActionKey)
 }
 
 func TestTriggerCLIToWire_NoUnknownEntries(t *testing.T) {
+	t.Parallel()
 	// Ensure no extra/typo entries sneak in.
 	for k := range TriggerCLIToWire {
 		switch k {
@@ -46,6 +50,7 @@ func TestTriggerCLIToWire_NoUnknownEntries(t *testing.T) {
 }
 
 func TestActionCLIToWire_NoUnknownEntries(t *testing.T) {
+	t.Parallel()
 	for k := range ActionCLIToWire {
 		switch k {
 		case "agent-response", "agent-invoke":

@@ -11,21 +11,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// isolateFromAzdDaemon replaces the readAzdProjectSourcesFunc seam with a
-// no-op stub so tests never dial a live azd gRPC server, and restores the
-// original on cleanup.
-func isolateFromAzdDaemon(t *testing.T) {
+// stubAzdProjectSources replaces readAzdProjectSourcesFunc for the duration of
+// the test with a function that returns the given sources/err.
+func stubAzdProjectSources(t *testing.T, sources azdProjectSources, err error) {
 	t.Helper()
 	orig := readAzdProjectSourcesFunc
-	readAzdProjectSourcesFunc = func(_ context.Context) (azdProjectSources, error) {
-		return azdProjectSources{}, nil
+	readAzdProjectSourcesFunc = func(context.Context) (azdProjectSources, error) {
+		return sources, err
 	}
 	t.Cleanup(func() { readAzdProjectSourcesFunc = orig })
+}
+
+// isolateFromAzdDaemon makes the test independent of any azd daemon that
+// might be reachable on the developer machine via AZD_SERVER. It does two
+// things:
+//   - Clears AZD_SERVER so azdext.NewAzdClient() cannot connect.
+//   - Stubs readAzdProjectSourcesFunc to return no project sources.
+//
+// Together this ensures the resolver under test only sees the flag and the
+// FOUNDRY_PROJECT_ENDPOINT host env var.
+func isolateFromAzdDaemon(t *testing.T) {
+	t.Helper()
+	t.Setenv("AZD_SERVER", "")
+	stubAzdProjectSources(t, azdProjectSources{}, nil)
 }
 
 // ─── isFoundryHost ────────────────────────────────────────────────────────────
 
 func TestIsFoundryHost(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		host string
 		want bool
@@ -39,6 +53,7 @@ func TestIsFoundryHost(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.host, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, isFoundryHost(tt.host))
 		})
 	}
@@ -47,10 +62,11 @@ func TestIsFoundryHost(t *testing.T) {
 // ─── validateProjectEndpoint ─────────────────────────────────────────────────
 
 func TestValidateProjectEndpoint_ValidURLs(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
-		name  string
-		raw   string
-		want  string
+		name string
+		raw  string
+		want string
 	}{
 		{
 			name: "basic endpoint",
@@ -80,6 +96,7 @@ func TestValidateProjectEndpoint_ValidURLs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := validateProjectEndpoint(tt.raw)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
@@ -88,6 +105,7 @@ func TestValidateProjectEndpoint_ValidURLs(t *testing.T) {
 }
 
 func TestValidateProjectEndpoint_Rejections(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		raw  string
@@ -100,6 +118,7 @@ func TestValidateProjectEndpoint_Rejections(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := validateProjectEndpoint(tt.raw)
 			assert.Error(t, err)
 		})
@@ -109,8 +128,12 @@ func TestValidateProjectEndpoint_Rejections(t *testing.T) {
 // ─── resolveProjectEndpoint cascade ──────────────────────────────────────────
 
 func TestResolveProjectEndpoint_FlagWins(t *testing.T) {
-	isolateFromAzdDaemon(t)
+	// Even with FOUNDRY_PROJECT_ENDPOINT and azd-hosted sources set, the flag should win.
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://other.services.ai.azure.com/api/projects/other")
+	stubAzdProjectSources(t, azdProjectSources{
+		EnvValue: "https://envaccount.services.ai.azure.com/api/projects/env",
+		EnvName:  "my-env",
+	}, nil)
 
 	got, err := resolveProjectEndpoint(t.Context(), "https://myaccount.services.ai.azure.com/api/projects/p")
 	require.NoError(t, err)
@@ -120,14 +143,10 @@ func TestResolveProjectEndpoint_FlagWins(t *testing.T) {
 
 func TestResolveProjectEndpoint_AzdEnv(t *testing.T) {
 	isolateFromAzdDaemon(t)
-
-	readAzdProjectSourcesFunc = func(_ context.Context) (azdProjectSources, error) {
-		return azdProjectSources{
-			EnvValue: "https://envaccount.services.ai.azure.com/api/projects/env",
-			EnvName:  "my-env",
-		}, nil
-	}
-	t.Cleanup(func() { isolateFromAzdDaemon(t) }) // not strictly needed; isolate cleans up
+	stubAzdProjectSources(t, azdProjectSources{
+		EnvValue: "https://envaccount.services.ai.azure.com/api/projects/env",
+		EnvName:  "my-env",
+	}, nil)
 
 	got, err := resolveProjectEndpoint(t.Context(), "")
 	require.NoError(t, err)
@@ -137,13 +156,10 @@ func TestResolveProjectEndpoint_AzdEnv(t *testing.T) {
 
 func TestResolveProjectEndpoint_GlobalConfig(t *testing.T) {
 	isolateFromAzdDaemon(t)
-
-	readAzdProjectSourcesFunc = func(_ context.Context) (azdProjectSources, error) {
-		return azdProjectSources{
-			CfgEndpoint: "https://cfgaccount.services.ai.azure.com/api/projects/cfg",
-			CfgFound:    true,
-		}, nil
-	}
+	stubAzdProjectSources(t, azdProjectSources{
+		CfgEndpoint: "https://cfgaccount.services.ai.azure.com/api/projects/cfg",
+		CfgFound:    true,
+	}, nil)
 
 	got, err := resolveProjectEndpoint(t.Context(), "")
 	require.NoError(t, err)

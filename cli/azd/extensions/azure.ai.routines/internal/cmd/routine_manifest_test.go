@@ -18,6 +18,7 @@ import (
 // ─── readRoutineManifest ──────────────────────────────────────────────────────
 
 func TestReadRoutineManifest_JSON(t *testing.T) {
+	t.Parallel()
 	r := &routines.Routine{
 		Name:        "test-routine",
 		Description: "a test routine",
@@ -44,6 +45,7 @@ func TestReadRoutineManifest_JSON(t *testing.T) {
 }
 
 func TestReadRoutineManifest_YAML(t *testing.T) {
+	t.Parallel()
 	yaml := `name: yaml-routine
 description: yaml desc
 triggers:
@@ -66,11 +68,13 @@ actions:
 }
 
 func TestReadRoutineManifest_FileNotFound(t *testing.T) {
+	t.Parallel()
 	_, err := readRoutineManifest("/nonexistent/path/routine.yaml")
 	assert.Error(t, err)
 }
 
 func TestReadRoutineManifest_UnsupportedExtension(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "routine.toml")
 	require.NoError(t, os.WriteFile(path, []byte("name = 'x'"), 0600))
 
@@ -81,6 +85,7 @@ func TestReadRoutineManifest_UnsupportedExtension(t *testing.T) {
 // ─── mergeRoutineFromFile ─────────────────────────────────────────────────────
 
 func TestMergeRoutineFromFile_FileFieldsMergedWhenBodyEmpty(t *testing.T) {
+	t.Parallel()
 	body := &routines.Routine{Name: "from-cli"}
 	file := &routines.Routine{
 		Description: "from file",
@@ -96,6 +101,7 @@ func TestMergeRoutineFromFile_FileFieldsMergedWhenBodyEmpty(t *testing.T) {
 }
 
 func TestMergeRoutineFromFile_BodyFieldsWinOverFile(t *testing.T) {
+	t.Parallel()
 	enabled := true
 	body := &routines.Routine{
 		Name:        "from-cli",
@@ -132,6 +138,7 @@ func routine_with_schedule_and_agentresp() *routines.Routine {
 }
 
 func TestApplyUpdateFlags_Description(t *testing.T) {
+	t.Parallel()
 	r := routine_with_schedule_and_agentresp()
 	n, err := applyUpdateFlags(r,
 		"new desc", "", "", "", "", "", "", "",
@@ -143,6 +150,7 @@ func TestApplyUpdateFlags_Description(t *testing.T) {
 }
 
 func TestApplyUpdateFlags_Cron(t *testing.T) {
+	t.Parallel()
 	r := routine_with_schedule_and_agentresp()
 	n, err := applyUpdateFlags(r,
 		"", "0 9 * * 1-5", "", "", "", "", "", "",
@@ -154,6 +162,7 @@ func TestApplyUpdateFlags_Cron(t *testing.T) {
 }
 
 func TestApplyUpdateFlags_TimeZone(t *testing.T) {
+	t.Parallel()
 	r := routine_with_schedule_and_agentresp()
 	n, err := applyUpdateFlags(r,
 		"", "", "America/New_York", "", "", "", "", "",
@@ -165,6 +174,7 @@ func TestApplyUpdateFlags_TimeZone(t *testing.T) {
 }
 
 func TestApplyUpdateFlags_AgentNameClearsEndpointID(t *testing.T) {
+	t.Parallel()
 	r := &routines.Routine{
 		Actions: map[string]routines.RoutineAction{
 			"default": {Type: "invoke_agent_responses_api", AgentEndpointID: "old-ep"},
@@ -182,6 +192,7 @@ func TestApplyUpdateFlags_AgentNameClearsEndpointID(t *testing.T) {
 }
 
 func TestApplyUpdateFlags_AgentEndpointIDClearsName(t *testing.T) {
+	t.Parallel()
 	r := &routines.Routine{
 		Actions: map[string]routines.RoutineAction{
 			"default": {Type: "invoke_agent_responses_api", AgentName: "old-agent"},
@@ -199,6 +210,7 @@ func TestApplyUpdateFlags_AgentEndpointIDClearsName(t *testing.T) {
 }
 
 func TestApplyUpdateFlags_MutuallyExclusiveAgentFields(t *testing.T) {
+	t.Parallel()
 	r := routine_with_schedule_and_agentresp()
 	_, err := applyUpdateFlags(r,
 		"", "", "", "", "new-agent", "new-ep", "", "",
@@ -208,6 +220,7 @@ func TestApplyUpdateFlags_MutuallyExclusiveAgentFields(t *testing.T) {
 }
 
 func TestApplyUpdateFlags_NoChangesReturnsZero(t *testing.T) {
+	t.Parallel()
 	r := routine_with_schedule_and_agentresp()
 	n, err := applyUpdateFlags(r,
 		"", "", "", "", "", "", "", "",
@@ -220,11 +233,13 @@ func TestApplyUpdateFlags_NoChangesReturnsZero(t *testing.T) {
 // ─── getTrigger / getAction ───────────────────────────────────────────────────
 
 func TestGetTrigger_NilWhenEmpty(t *testing.T) {
+	t.Parallel()
 	r := &routines.Routine{}
 	assert.Nil(t, getTrigger(r))
 }
 
 func TestGetTrigger_ReturnsCopy(t *testing.T) {
+	t.Parallel()
 	r := &routines.Routine{
 		Triggers: map[string]routines.RoutineTrigger{
 			"default": {Type: "schedule", Cron: "0 9 * * *"},
@@ -239,11 +254,13 @@ func TestGetTrigger_ReturnsCopy(t *testing.T) {
 }
 
 func TestGetAction_NilWhenEmpty(t *testing.T) {
+	t.Parallel()
 	r := &routines.Routine{}
 	assert.Nil(t, getAction(r))
 }
 
 func TestGetAction_ReturnsCopy(t *testing.T) {
+	t.Parallel()
 	r := &routines.Routine{
 		Actions: map[string]routines.RoutineAction{
 			"default": {Type: "invoke_agent_responses_api", AgentName: "orig-agent"},

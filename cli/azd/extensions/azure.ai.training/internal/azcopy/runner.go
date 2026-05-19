@@ -44,6 +44,30 @@ type progressContent struct {
 	JobStatus             string `json:"JobStatus"`
 }
 
+// endOfJobContent is the parsed inner JSON from MessageContent when
+// MessageType is "EndOfJob". This is azcopy's authoritative status record —
+// when a job fails partway, JobStatus and FailedTransfers are the only
+// place the actual reason surfaces (the process exit status is just 1).
+type endOfJobContent struct {
+	JobID              string           `json:"JobID"`
+	JobStatus          string           `json:"JobStatus"`
+	TotalTransfers     int              `json:"TotalTransfers"`
+	TransfersCompleted int              `json:"TransfersCompleted"`
+	TransfersFailed    int              `json:"TransfersFailed"`
+	TransfersSkipped   int              `json:"TransfersSkipped"`
+	FailedTransfers    []failedTransfer `json:"FailedTransfers"`
+	ErrorMsg           string           `json:"ErrorMsg"`
+}
+
+// failedTransfer is a single entry in EndOfJob.FailedTransfers.
+type failedTransfer struct {
+	Src               string `json:"Src"`
+	Dst               string `json:"Dst"`
+	TransferStatus    string `json:"TransferStatus"`
+	TransferStatusStr string `json:"TransferStatusStr"`
+	ErrorCode         int    `json:"ErrorCode"`
+}
+
 // NewRunner creates a new azcopy runner, discovering the azcopy binary.
 // Priority: explicit path > PATH > well-known locations > auto-download.
 func NewRunner(ctx context.Context, explicitPath string) (*Runner, error) {
@@ -142,7 +166,15 @@ func (r *Runner) copy(ctx context.Context, source, sasURI string, forceContents 
 
 	//nolint:gosec // azcopyPath is resolved from known install directory
 	cmd := exec.CommandContext(ctx, r.azcopyPath, args...)
-	cmd.Stderr = os.Stderr
+
+	// Capture azcopy stderr to a bounded buffer rather than piping it live to
+	// our own stderr. The progress bar uses "\r" repaints with no newline, so a
+	// stderr line that arrives mid-transfer would be silently overwritten by
+	// the next repaint. Buffering lets us dump the full text on any failure
+	// path, which is often the only signal we get when azcopy exits before
+	// emitting an EndOfJob record (e.g. SAS/auth failure during enumeration).
+	stderrBuf := &cappedBuffer{max: 16 * 1024}
+	cmd.Stderr = stderrBuf
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -159,62 +191,109 @@ func (r *Runner) copy(ctx context.Context, source, sasURI string, forceContents 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
-	var lastBytesOverWire int64
+	var (
+		lastBytesOverWire    int64
+		endOfJob             endOfJobContent
+		gotEndOfJob          bool
+		warnedUnparseable    bool
+		warnedProgressFormat bool
+		initMessage          string   // first "Init" content — contains log file path
+		infoMessages         []string // collected "Info" content — often the only failure clue
+	)
+	const maxInfoMessages = 20
 	for scanner.Scan() {
 		line := scanner.Text()
 
 		var msg azcopyMessage
-		if json.Unmarshal([]byte(line), &msg) != nil {
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+			// azcopy's NDJSON schema is stable, but if it ever drifts we want a
+			// breadcrumb instead of silent "0 bytes" progress. Log only the first
+			// occurrence to avoid spamming.
+			if !warnedUnparseable {
+				warnedUnparseable = true
+				fmt.Fprintf(os.Stderr, "\n  azcopy: unrecognized output line (%v): %s\n", err, truncate(line, 200))
+			}
 			continue
 		}
 
 		switch msg.MessageType {
 		case "Progress":
 			var progress progressContent
-			if json.Unmarshal([]byte(msg.MessageContent), &progress) == nil {
-				bytesOverWire, _ := strconv.ParseInt(progress.BytesOverWire, 10, 64)
-				totalExpected, _ := strconv.ParseInt(progress.TotalBytesExpected, 10, 64)
-				percent, _ := strconv.ParseFloat(progress.PercentComplete, 64)
+			if err := json.Unmarshal([]byte(msg.MessageContent), &progress); err != nil {
+				if !warnedProgressFormat {
+					warnedProgressFormat = true
+					fmt.Fprintf(os.Stderr, "\n  azcopy: unrecognized Progress payload (%v)\n", err)
+				}
+				continue
+			}
+			bytesOverWire, _ := strconv.ParseInt(progress.BytesOverWire, 10, 64)
+			totalExpected, _ := strconv.ParseInt(progress.TotalBytesExpected, 10, 64)
+			percent, _ := strconv.ParseFloat(progress.PercentComplete, 64)
 
-				// Use BytesOverWire for smoother progress since TotalBytesTransferred
-				// only updates when entire blocks complete
-				if totalExpected > 0 && bytesOverWire > 0 {
-					wirePercent := float64(bytesOverWire) / float64(totalExpected) * 100
-					if wirePercent > percent {
-						percent = wirePercent
-					}
+			// Use BytesOverWire for smoother progress since TotalBytesTransferred
+			// only updates when entire blocks complete
+			if totalExpected > 0 && bytesOverWire > 0 {
+				wirePercent := float64(bytesOverWire) / float64(totalExpected) * 100
+				if wirePercent > percent {
+					percent = wirePercent
 				}
+			}
 
-				// Cap at 100% — BytesOverWire includes protocol overhead
-				if percent > 100 {
-					percent = 100
-				}
-				displayBytes := bytesOverWire
-				if totalExpected > 0 && displayBytes > totalExpected {
-					displayBytes = totalExpected
-				}
+			// Cap at 100% — BytesOverWire includes protocol overhead
+			if percent > 100 {
+				percent = 100
+			}
+			displayBytes := bytesOverWire
+			if totalExpected > 0 && displayBytes > totalExpected {
+				displayBytes = totalExpected
+			}
 
-				if bytesOverWire > lastBytesOverWire {
-					lastBytesOverWire = bytesOverWire
-					printProgress(displayBytes, totalExpected, percent, startTime)
-				}
+			if bytesOverWire > lastBytesOverWire {
+				lastBytesOverWire = bytesOverWire
+				printProgress(displayBytes, totalExpected, percent, startTime)
 			}
 		case "Error":
 			fmt.Fprintf(os.Stderr, "\n  azcopy error: %s\n", msg.MessageContent)
+		case "Init":
+			// First Init message contains the on-disk log file path; remember
+			// it so we can surface it on failure even when no other diagnostic
+			// channel produces output.
+			if initMessage == "" {
+				initMessage = msg.MessageContent
+			}
+		case "Info":
+			// azcopy frequently routes failure context ("cannot list container...",
+			// auth errors, etc.) through Info messages when --output-type=json.
+			// Buffer the most recent few so we can dump them on failure.
+			if len(infoMessages) < maxInfoMessages {
+				infoMessages = append(infoMessages, msg.MessageContent)
+			} else {
+				// Keep the most recent maxInfoMessages by dropping the oldest.
+				infoMessages = append(infoMessages[1:], msg.MessageContent)
+			}
 		case "EndOfJob":
 			fmt.Fprintln(os.Stdout)
+			// Capture the payload; we surface details below only on failure
+			// so a successful run doesn't spam the user with diagnostic noise.
+			if err := json.Unmarshal([]byte(msg.MessageContent), &endOfJob); err == nil {
+				gotEndOfJob = true
+			}
 		}
 	}
 
 	// Capture any scanner error (e.g. truncated pipe, read failure) before waiting
 	// on the process. We always call cmd.Wait so the child is reaped and its exit
 	// status is authoritative, but if the scanner failed we surface that too —
-	// otherwise a mid-stream pipe error could hide a real upload failure.
+	// otherwise a mid-stream pipe error could hide a real azcopy failure.
 	scanErr := scanner.Err()
 
 	if err := cmd.Wait(); err != nil {
 		elapsed := time.Since(startTime)
-		fmt.Fprintf(os.Stdout, "\n  Upload failed after %s\n", formatDuration(elapsed))
+		fmt.Fprintf(os.Stdout, "\n  azcopy failed after %s\n", formatDuration(elapsed))
+		fmt.Fprintf(os.Stderr, "  azcopy source: %s\n", redactSAS(sourceArg))
+		printEndOfJobDiagnostics(gotEndOfJob, endOfJob)
+		printCapturedStderr(stderrBuf)
+		printAzcopyInfo(initMessage, infoMessages)
 		if scanErr != nil {
 			return fmt.Errorf("azcopy failed: %w (also: error reading azcopy output: %s)", err, scanErr.Error())
 		}
@@ -223,14 +302,169 @@ func (r *Runner) copy(ctx context.Context, source, sasURI string, forceContents 
 
 	if scanErr != nil {
 		elapsed := time.Since(startTime)
-		fmt.Fprintf(os.Stdout, "\n  Upload status uncertain after %s\n", formatDuration(elapsed))
+		fmt.Fprintf(os.Stdout, "\n  azcopy status uncertain after %s\n", formatDuration(elapsed))
+		fmt.Fprintf(os.Stderr, "  azcopy source: %s\n", redactSAS(sourceArg))
+		printEndOfJobDiagnostics(gotEndOfJob, endOfJob)
+		printCapturedStderr(stderrBuf)
+		printAzcopyInfo(initMessage, infoMessages)
 		return fmt.Errorf("azcopy exited successfully but its output stream failed mid-transfer: %w", scanErr)
+	}
+
+	// azcopy can exit 0 even when the job's JobStatus is "CompletedWithErrors"
+	// or "Failed" — surface that explicitly so failures aren't silently swallowed.
+	if gotEndOfJob && !isCompletedStatus(endOfJob.JobStatus) {
+		elapsed := time.Since(startTime)
+		fmt.Fprintf(os.Stdout, "\n  azcopy reported %s after %s\n", endOfJob.JobStatus, formatDuration(elapsed))
+		fmt.Fprintf(os.Stderr, "  azcopy source: %s\n", redactSAS(sourceArg))
+		printEndOfJobDiagnostics(gotEndOfJob, endOfJob)
+		printCapturedStderr(stderrBuf)
+		printAzcopyInfo(initMessage, infoMessages)
+		return fmt.Errorf("azcopy job ended with status %q (%d failed, %d skipped of %d transfers)",
+			endOfJob.JobStatus, endOfJob.TransfersFailed, endOfJob.TransfersSkipped, endOfJob.TotalTransfers)
 	}
 
 	elapsed := time.Since(startTime)
 	fmt.Fprintf(os.Stdout, "  Completed in %s\n", formatDuration(elapsed))
 
 	return nil
+}
+
+// isCompletedStatus reports whether the JobStatus value from azcopy's EndOfJob
+// payload represents a fully successful job. azcopy uses "Completed" for full
+// success; "CompletedWithErrors", "CompletedWithSkipped", "Failed", "Cancelled"
+// all indicate something the caller should know about.
+func isCompletedStatus(status string) bool {
+	// Empty status (couldn't parse EndOfJob) is treated as "don't know" — caller
+	// already handles the cmd.Wait() error path so we only reach this on a
+	// 0-exit + missing/empty EndOfJob, which we let pass.
+	return status == "" || status == "Completed"
+}
+
+// printEndOfJobDiagnostics writes a compact, human-readable summary of azcopy's
+// EndOfJob payload to stderr. Called on any failure path so the user sees the
+// actual reason ("404 on blob X") instead of a bare exit-status-1 message.
+func printEndOfJobDiagnostics(got bool, eoj endOfJobContent) {
+	if !got {
+		fmt.Fprintln(os.Stderr, "  azcopy: no EndOfJob diagnostics were emitted")
+		return
+	}
+	fmt.Fprintf(os.Stderr, "  azcopy job status: %s (transfers: %d total, %d completed, %d failed, %d skipped)\n",
+		eoj.JobStatus, eoj.TotalTransfers, eoj.TransfersCompleted, eoj.TransfersFailed, eoj.TransfersSkipped)
+	if eoj.ErrorMsg != "" {
+		fmt.Fprintf(os.Stderr, "  azcopy error: %s\n", eoj.ErrorMsg)
+	}
+	const maxShown = 5
+	for i, ft := range eoj.FailedTransfers {
+		if i >= maxShown {
+			fmt.Fprintf(os.Stderr, "  ... and %d more failed transfer(s)\n", len(eoj.FailedTransfers)-maxShown)
+			break
+		}
+		status := ft.TransferStatusStr
+		if status == "" {
+			status = ft.TransferStatus
+		}
+		fmt.Fprintf(os.Stderr, "    - %s [status=%s, code=%d]\n", ft.Src, status, ft.ErrorCode)
+	}
+}
+
+// truncate returns s shortened to at most n runes, appending an ellipsis
+// when truncation occurs. Used for safe inclusion of raw azcopy output in
+// diagnostic messages without flooding stderr.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
+// cappedBuffer is an io.Writer that retains the first `max` bytes written to
+// it and silently discards the rest. Used to capture azcopy's stderr without
+// risk of unbounded memory growth on a runaway child process; max is sized
+// for human-readable error messages, not bulk data.
+type cappedBuffer struct {
+	max     int
+	buf     []byte
+	dropped int
+}
+
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	remaining := c.max - len(c.buf)
+	if remaining > 0 {
+		take := len(p)
+		if take > remaining {
+			take = remaining
+		}
+		c.buf = append(c.buf, p[:take]...)
+		c.dropped += len(p) - take
+	} else {
+		c.dropped += len(p)
+	}
+	// Always report all bytes consumed so the child process doesn't block on
+	// a full pipe; the dropped count is preserved for diagnostics.
+	return len(p), nil
+}
+
+func (c *cappedBuffer) String() string {
+	return string(c.buf)
+}
+
+// printCapturedStderr writes any buffered azcopy stderr to our own stderr,
+// prefixed for readability. Called from failure paths so the user sees the
+// real cause even when azcopy died before emitting an EndOfJob record.
+func printCapturedStderr(buf *cappedBuffer) {
+	if buf == nil {
+		return
+	}
+	s := strings.TrimRight(buf.String(), "\r\n\t ")
+	if s == "" {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "  azcopy stderr:")
+	for _, line := range strings.Split(s, "\n") {
+		fmt.Fprintf(os.Stderr, "    %s\n", strings.TrimRight(line, "\r"))
+	}
+	if buf.dropped > 0 {
+		fmt.Fprintf(os.Stderr, "    ... (%d more bytes truncated)\n", buf.dropped)
+	}
+}
+
+// printAzcopyInfo writes the captured Init message (which carries the on-disk
+// log file path) and any buffered Info messages to stderr. With
+// --output-type=json azcopy often routes the real failure context through
+// these channels rather than through "Error" or stderr, so on failure we need
+// to surface them — otherwise the user is left with bare "exit status 1".
+func printAzcopyInfo(initMessage string, infoMessages []string) {
+	if initMessage != "" {
+		fmt.Fprintln(os.Stderr, "  azcopy init:")
+		for _, line := range strings.Split(initMessage, "\n") {
+			line = strings.TrimRight(line, "\r")
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "    %s\n", line)
+		}
+	}
+	if len(infoMessages) > 0 {
+		fmt.Fprintln(os.Stderr, "  azcopy info (most recent):")
+		for _, m := range infoMessages {
+			m = strings.TrimSpace(m)
+			if m == "" {
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "    %s\n", truncate(m, 500))
+		}
+	}
+}
+
+// redactSAS returns a URL with its query string replaced by "?[sas-redacted]"
+// so SAS tokens and other credentials are never written to logs/stderr. The
+// path portion — which is what we usually need to diagnose scope problems —
+// is preserved verbatim.
+func redactSAS(u string) string {
+	if i := strings.Index(u, "?"); i >= 0 {
+		return u[:i] + "?[sas-redacted]"
+	}
+	return u
 }
 
 func printProgress(transferred, total int64, percent float64, startTime time.Time) {

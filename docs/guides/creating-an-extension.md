@@ -11,6 +11,7 @@ azd extensions use a gRPC-based framework to add functionality. Extensions can p
 - **MCP server** — Provide Model Context Protocol tools for AI agents
 - **Framework service providers** — Add build/restore support for new languages
 - **Service target providers** — Add deployment support for new Azure hosting targets
+- **Provisioning providers** — Add custom infrastructure provisioning support
 - **Metadata** — Provide metadata about commands and capabilities
 
 ## Prerequisites

@@ -14,6 +14,7 @@
 
 ### Features Added
 
+- [[#7400]](https://github.com/Azure/azure-dev/pull/7400) Add `azd exec` — a cross-platform command and script execution engine that runs programs with full azd environment context (environment variables, Key Vault secret resolution).
 - [[#8047]](https://github.com/Azure/azure-dev/pull/8047) Expose ARM deployment IDs via `AZD_DEPLOYMENT_ID_FILE` environment variable during provision, written in NDJSON format for programmatic consumption.
 - [[#8059]](https://github.com/Azure/azure-dev/pull/8059) Add actionable suggestions and links to preflight warnings with multi-line formatting for better readability.
 - [[#8083]](https://github.com/Azure/azure-dev/pull/8083) Add tenant picker before subscription prompt for multi-tenant users, scoping the subscription list to the selected tenant.

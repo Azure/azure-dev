@@ -56,6 +56,7 @@ Extensions declare their capabilities in `extension.yaml`:
 | `mcp-server` | Provide Model Context Protocol tools for AI agents |
 | `framework-service-provider` | Add build/restore support for new languages |
 | `service-target-provider` | Add deployment support for new hosting targets |
+| `provisioning-provider` | Add custom infrastructure provisioning support |
 | `metadata` | Provide metadata about commands and capabilities |
 
 ## Available gRPC Services

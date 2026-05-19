@@ -129,6 +129,9 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 			fmt.Printf("  %s  %s\n", color.GreenString("+"), color.GreenString("%s/agent.yaml", srcDir))
 		}
 
+		// Run post-init validations (advisory warnings only)
+		validatePostInit(srcDir, localDefinition.CodeConfiguration)
+
 		fmt.Println("\nYou can customize environment variables and other settings in the agent.yaml.")
 		if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: a.environment.Name,

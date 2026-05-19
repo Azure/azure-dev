@@ -11,6 +11,9 @@ language: go
 capabilities:
   - custom-commands
   - metadata
+tags:
+  - ai
+  - skill
 examples:
   - name: list
     description: List skills in the current Foundry project.

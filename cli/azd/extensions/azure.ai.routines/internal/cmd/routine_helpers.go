@@ -66,11 +66,6 @@ func boolStr(b *bool) string {
 	return "false"
 }
 
-// ptrBool returns a pointer to b.
-//
-//go:fix inline
-func ptrBool(b bool) *bool { return new(b) }
-
 // routineSummaryTable prints a short summary of a routine in table format.
 func routineSummaryTable(r *routines.Routine) {
 	tw := newTabWriter()

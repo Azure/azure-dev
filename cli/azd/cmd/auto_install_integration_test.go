@@ -205,6 +205,13 @@ func TestAgentDetectionIntegration(t *testing.T) {
 			description:      "When running under GitHub Copilot CLI, --no-prompt should be auto-enabled",
 		},
 		{
+			name:             "GitHub Copilot CLI via COPILOT_CLI enables no-prompt automatically",
+			args:             []string{"deploy"},
+			envVars:          map[string]string{"COPILOT_CLI": "true"},
+			expectedNoPrompt: true,
+			description:      "When running under GitHub Copilot CLI (COPILOT_CLI), --no-prompt should be auto-enabled",
+		},
+		{
 			name:             "Gemini agent enables no-prompt automatically",
 			args:             []string{"init"},
 			envVars:          map[string]string{"GEMINI_CLI": "1"},
@@ -297,7 +304,7 @@ func clearAgentEnvVarsForTest(t *testing.T) {
 		// Claude Code
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
 		// GitHub Copilot CLI
-		"GITHUB_COPILOT_CLI", "GH_COPILOT",
+		"GITHUB_COPILOT_CLI", "GH_COPILOT", "COPILOT_CLI",
 		// Gemini CLI
 		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH",
 		// OpenCode

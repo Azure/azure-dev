@@ -808,8 +808,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						if flags.env != "" {
 							initArgs = append(initArgs, "--environment", flags.env)
 						} else {
+							defaultEnvName := sanitizeAgentName(title + "-dev")
 							initArgs = append(
-								initArgs, "--environment", folderName+"-dev",
+								initArgs, "--environment", defaultEnvName,
 							)
 						}
 
@@ -1150,7 +1151,8 @@ func ensureProject(
 			}
 			sanitizedDirectoryName := sanitizeAgentName(envBase)
 			initArgs = append(
-				initArgs, "--environment", sanitizedDirectoryName+"-dev",
+				sanitizedEnvName := sanitizeAgentName(envBase + "-dev")
+				initArgs, "--environment", sanitizedEnvName,
 			)
 		}
 

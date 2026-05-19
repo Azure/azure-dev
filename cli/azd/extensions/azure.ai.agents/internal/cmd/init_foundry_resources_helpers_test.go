@@ -233,12 +233,16 @@ func newTestAzdClient(
 	t *testing.T,
 	envServer azdext.EnvironmentServiceServer,
 	workflowServer azdext.WorkflowServiceServer,
+	promptServers ...azdext.PromptServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
 	grpcServer := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(grpcServer, envServer)
 	azdext.RegisterWorkflowServiceServer(grpcServer, workflowServer)
+	if len(promptServers) > 0 {
+		azdext.RegisterPromptServiceServer(grpcServer, promptServers[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

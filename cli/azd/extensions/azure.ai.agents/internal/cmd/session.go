@@ -24,6 +24,7 @@ import (
 
 // sessionFlags holds common flags shared by all session subcommands.
 type sessionFlags struct {
+	isolationHeaderFlags
 	agentName string
 	noPrompt  bool
 	output    string
@@ -43,7 +44,10 @@ hosted agent invocations.
 
 Agent details are automatically resolved from the azd environment.
 Use --agent-name to select a specific agent when the project has
-multiple azure.ai.agent services.`,
+multiple azure.ai.agent services.
+
+For agents configured with header-based isolation, pass --user-isolation-key
+and --chat-isolation-key on each session operation.`,
 	}
 
 	cmd.AddCommand(newSessionCreateCommand(extCtx))
@@ -61,6 +65,7 @@ func addSessionFlags(cmd *cobra.Command, flags *sessionFlags) {
 		"Agent name (matches azure.yaml service name; "+
 			"auto-detected when only one exists)",
 	)
+	addIsolationHeaderFlags(cmd, &flags.isolationHeaderFlags)
 }
 
 // sessionContext holds the resolved agent context for session operations.
@@ -148,7 +153,7 @@ is ready for invocations once the command completes.
 The agent name is auto-detected when only one azure.ai.agent service exists
 in azure.yaml. The version defaults to the deployed agent version from the
 azd environment (AGENT_{SERVICE}_VERSION) when omitted.
-The isolation key is derived from the Entra token by default.
+The session ownership isolation key is derived from the Entra token by default.
 
 Positional arguments can be used instead of flags:
   azd ai agent sessions create [agent-name] [version] [isolation-key]`,
@@ -213,8 +218,8 @@ Positional arguments can be used instead of flags:
 	)
 	cmd.Flags().StringVar(
 		&flags.isolationKey, "isolation-key", "",
-		"Isolation key for session ownership "+
-			"(derived from Entra token by default)",
+		"Session ownership isolation key header value "+
+			"("+agent_api.SessionIsolationKeyHeader+"; derived from Entra token by default)",
 	)
 
 	return cmd
@@ -267,9 +272,9 @@ func (a *SessionCreateAction) Run(ctx context.Context) error {
 	session, err := client.CreateSession(
 		ctx,
 		sc.agentName,
-		a.flags.isolationKey,
 		request,
 		DefaultAgentAPIVersion,
+		a.flags.sessionRequestOptionsWithSessionKey(a.flags.isolationKey),
 	)
 	if err != nil {
 		return exterrors.ServiceFromAzure(
@@ -355,6 +360,7 @@ func (a *SessionShowAction) Run(ctx context.Context) error {
 		sc.agentName,
 		a.sessionID,
 		DefaultAgentAPIVersion,
+		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
 		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
@@ -399,11 +405,11 @@ func newSessionDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 Terminates the hosted agent session and deletes the persistent filesystem
 volume. Returns once cleanup is complete.
 
-The isolation key is derived from the Entra token by default.`,
+The session ownership isolation key is derived from the Entra token by default.`,
 		Example: `  # Delete a session
   azd ai agent sessions delete my-session
 
-  # Delete with an explicit isolation key
+  # Delete with an explicit session ownership isolation key
   azd ai agent sessions delete my-session --isolation-key sk-abc123`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -425,9 +431,10 @@ The isolation key is derived from the Entra token by default.`,
 	)
 	cmd.Flags().StringVar(
 		&flags.isolationKey, "isolation-key", "",
-		"Isolation key for session ownership "+
-			"(derived from Entra token by default)",
+		"Session ownership isolation key header value "+
+			"("+agent_api.SessionIsolationKeyHeader+"; derived from Entra token by default)",
 	)
+	addIsolationHeaderFlags(cmd, &flags.isolationHeaderFlags)
 
 	return cmd
 }
@@ -455,8 +462,8 @@ func (a *SessionDeleteAction) Run(ctx context.Context) error {
 		ctx,
 		sc.agentName,
 		a.sessionID,
-		a.flags.isolationKey,
 		DefaultAgentAPIVersion,
+		a.flags.sessionRequestOptionsWithSessionKey(a.flags.isolationKey),
 	)
 	if err != nil {
 		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
@@ -591,6 +598,7 @@ func (a *SessionListAction) Run(ctx context.Context) error {
 		limit,
 		token,
 		DefaultAgentAPIVersion,
+		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
 		return exterrors.ServiceFromAzure(

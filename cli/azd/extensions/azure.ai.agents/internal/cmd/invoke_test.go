@@ -421,6 +421,84 @@ func TestInvokeVersionFlagValidation(t *testing.T) {
 	}
 }
 
+func TestInvokeCommandIsolationFlags(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInvokeCommand(nil)
+	for _, name := range []string{"user-isolation-key", "chat-isolation-key"} {
+		flag := cmd.Flags().Lookup(name)
+		if flag == nil {
+			t.Fatalf("%s flag not registered", name)
+		}
+		if flag.DefValue != "" {
+			t.Errorf("%s default = %q, want empty", name, flag.DefValue)
+		}
+	}
+}
+
+func TestIsolationHeaderFlags_SessionRequestOptions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		flags    *isolationHeaderFlags
+		wantNil  bool
+		wantUser string
+		wantChat string
+	}{
+		{
+			name:     "both keys set",
+			flags:    &isolationHeaderFlags{userIsolationKey: "u", chatIsolationKey: "c"},
+			wantUser: "u",
+			wantChat: "c",
+		},
+		{
+			name:     "user key only",
+			flags:    &isolationHeaderFlags{userIsolationKey: "u"},
+			wantUser: "u",
+			wantChat: "",
+		},
+		{
+			name:     "chat key only",
+			flags:    &isolationHeaderFlags{chatIsolationKey: "c"},
+			wantUser: "",
+			wantChat: "c",
+		},
+		{
+			name:    "neither key set returns nil",
+			flags:   &isolationHeaderFlags{},
+			wantNil: true,
+		},
+		{
+			name:    "nil flags returns nil",
+			flags:   nil,
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			opts := tt.flags.sessionRequestOptions()
+			if tt.wantNil {
+				if opts != nil {
+					t.Errorf("sessionRequestOptions() = %+v, want nil", opts)
+				}
+				return
+			}
+			if opts == nil {
+				t.Fatal("sessionRequestOptions() returned nil, want non-nil")
+			}
+			if opts.UserIsolationKey != tt.wantUser {
+				t.Errorf("UserIsolationKey = %q, want %q", opts.UserIsolationKey, tt.wantUser)
+			}
+			if opts.ChatIsolationKey != tt.wantChat {
+				t.Errorf("ChatIsolationKey = %q, want %q", opts.ChatIsolationKey, tt.wantChat)
+			}
+		})
+	}
+}
+
 func TestValidateInvokeVersionFlagsAllowsConversationFlags(t *testing.T) {
 	t.Parallel()
 
@@ -496,6 +574,75 @@ func TestValidateInvokeVersionValue(t *testing.T) {
 			}
 			if !tt.wantErr && err != nil {
 				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestIsolationHeaderFlags_SessionRequestOptionsWithSessionKey(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		flags       *isolationHeaderFlags
+		sessionKey  string
+		wantNil     bool
+		wantUser    string
+		wantChat    string
+		wantSession string
+	}{
+		{
+			name:        "session key appended to existing options",
+			flags:       &isolationHeaderFlags{userIsolationKey: "u"},
+			sessionKey:  "sess",
+			wantUser:    "u",
+			wantSession: "sess",
+		},
+		{
+			name:        "session key creates options when flags are empty",
+			flags:       &isolationHeaderFlags{},
+			sessionKey:  "sess",
+			wantSession: "sess",
+		},
+		{
+			name:    "no keys at all returns nil",
+			flags:   &isolationHeaderFlags{},
+			wantNil: true,
+		},
+		{
+			name:        "nil flags with session key creates options",
+			flags:       nil,
+			sessionKey:  "sess",
+			wantSession: "sess",
+		},
+		{
+			name:    "nil flags with empty session key returns nil",
+			flags:   nil,
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			opts := tt.flags.sessionRequestOptionsWithSessionKey(tt.sessionKey)
+			if tt.wantNil {
+				if opts != nil {
+					t.Errorf("sessionRequestOptionsWithSessionKey() = %+v, want nil", opts)
+				}
+				return
+			}
+			if opts == nil {
+				t.Fatal("sessionRequestOptionsWithSessionKey() returned nil, want non-nil")
+			}
+			if opts.UserIsolationKey != tt.wantUser {
+				t.Errorf("UserIsolationKey = %q, want %q", opts.UserIsolationKey, tt.wantUser)
+			}
+			if opts.ChatIsolationKey != tt.wantChat {
+				t.Errorf("ChatIsolationKey = %q, want %q", opts.ChatIsolationKey, tt.wantChat)
+			}
+			if opts.SessionIsolationKey != tt.wantSession {
+				t.Errorf("SessionIsolationKey = %q, want %q", opts.SessionIsolationKey, tt.wantSession)
 			}
 		})
 	}
@@ -850,6 +997,7 @@ func TestVersionedExplicitConversationPersistsUnderVersionKey(t *testing.T) {
 		projectEndpoint,
 		"token",
 		"hello",
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("resolveConversationID: %v", err)
@@ -1107,7 +1255,7 @@ func TestHandleInvocationResponse_Routing(t *testing.T) {
 				resp.Header.Set(k, v)
 			}
 
-			err := handleInvocationResponse(t.Context(), resp, "", "", "test-agent", 10*time.Second)
+			err := handleInvocationResponse(t.Context(), resp, "", "", "test-agent", 10*time.Second, nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -1360,7 +1508,7 @@ func TestHandleInvocationLRO(t *testing.T) {
 				resp.Header.Set("x-agent-invocation-id", tt.initial202Header)
 			}
 
-			err := handleInvocationLRO(t.Context(), resp, "", "", "test-agent", tt.timeout)
+			err := handleInvocationLRO(t.Context(), resp, "", "", "test-agent", tt.timeout, nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -1373,6 +1521,145 @@ func TestHandleInvocationLRO(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestHandleInvocationLRO_PropagatesIsolationHeaders(t *testing.T) {
+	pollRequests := captureInvocationLROPollRequests(
+		t,
+		&agent_api.SessionRequestOptions{
+			UserIsolationKey: "user-1",
+			ChatIsolationKey: "chat-1",
+		},
+		`{"status":"running"}`,
+		`{"status":"completed"}`,
+	)
+	if len(pollRequests) < 2 {
+		t.Fatalf("poll request count = %d, want at least 2", len(pollRequests))
+	}
+	assertPollRequestsHaveHeaders(t, pollRequests, "user-1", "chat-1")
+}
+
+func TestHandleInvocationLRO_PropagatesPartialIsolationHeaders(t *testing.T) {
+	tests := []struct {
+		name     string
+		options  *agent_api.SessionRequestOptions
+		wantUser string
+		wantChat string
+	}{
+		{
+			name: "user only",
+			options: &agent_api.SessionRequestOptions{
+				UserIsolationKey: "user-1",
+			},
+			wantUser: "user-1",
+		},
+		{
+			name: "chat only",
+			options: &agent_api.SessionRequestOptions{
+				ChatIsolationKey: "chat-1",
+			},
+			wantChat: "chat-1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pollRequests := captureInvocationLROPollRequests(t, tt.options)
+			assertPollRequestsHaveHeaders(t, pollRequests, tt.wantUser, tt.wantChat)
+		})
+	}
+}
+
+func captureInvocationLROPollRequests(
+	t *testing.T,
+	options *agent_api.SessionRequestOptions,
+	pollBodies ...string,
+) []*http.Request {
+	t.Helper()
+
+	origInterval := defaultLROPollInterval
+	defaultLROPollInterval = time.Millisecond
+	t.Cleanup(func() { defaultLROPollInterval = origInterval })
+
+	// Use two-poll scenario: first poll returns "running", second returns "completed".
+	// Verify that isolation headers are sent on every poll, not just the first.
+	if len(pollBodies) == 0 {
+		pollBodies = []string{
+			`{"status":"running"}`,
+			`{"status":"completed"}`,
+		}
+	}
+
+	numPolls := len(pollBodies)
+	pollReqCh := make(chan *http.Request, numPolls)
+	respQueue := make(chan string, numPolls)
+	for _, body := range pollBodies {
+		respQueue <- body
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pollReqCh <- r
+		body := <-respQueue
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	reqURL, _ := url.Parse(srv.URL + "/invocations?api-version=test")
+	resp := &http.Response{
+		StatusCode: http.StatusAccepted,
+		Status:     "202 Accepted",
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader(`{"status":"accepted"}`)),
+		Request:    &http.Request{URL: reqURL},
+	}
+	resp.Header.Set("x-agent-invocation-id", "inv-headers")
+
+	err := handleInvocationLRO(
+		t.Context(),
+		resp,
+		"",
+		"token",
+		"test-agent",
+		time.Second,
+		options,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	close(pollReqCh)
+	pollRequests := make([]*http.Request, 0, numPolls)
+	for r := range pollReqCh {
+		pollRequests = append(pollRequests, r)
+	}
+	if len(pollRequests) != numPolls {
+		t.Errorf("expected %d poll requests, got %d", numPolls, len(pollRequests))
+	}
+
+	return pollRequests
+}
+
+func assertPollRequestsHaveHeaders(
+	t *testing.T,
+	pollRequests []*http.Request,
+	wantUser string,
+	wantChat string,
+) {
+	t.Helper()
+
+	for i, r := range pollRequests {
+		pollNumber := i + 1
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Errorf("poll %d: Authorization = %q, want Bearer token", pollNumber, got)
+		}
+		if got := r.Header.Get(agent_api.AgentUserIsolationKeyHeader); got != wantUser {
+			t.Errorf("poll %d: %s = %q, want %q", pollNumber, agent_api.AgentUserIsolationKeyHeader, got, wantUser)
+		}
+		if got := r.Header.Get(agent_api.AgentChatIsolationKeyHeader); got != wantChat {
+			t.Errorf("poll %d: %s = %q, want %q", pollNumber, agent_api.AgentChatIsolationKeyHeader, got, wantChat)
+		}
 	}
 }
 
@@ -1481,7 +1768,7 @@ func TestCreateConversation(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			id, err := createConversation(t.Context(), srv.URL, tt.agentName, "test-token")
+			id, err := createConversation(t.Context(), srv.URL, tt.agentName, "test-token", nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -1500,6 +1787,109 @@ func TestCreateConversation(t *testing.T) {
 			}
 			if id != tt.wantID {
 				t.Errorf("id = %q, want %q", id, tt.wantID)
+			}
+		})
+	}
+}
+
+func TestCreateConversation_PropagatesIsolationHeaders(t *testing.T) {
+	t.Parallel()
+
+	reqCh := make(chan *http.Request, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqCh <- r
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"conv-headers"}`))
+	}))
+	defer srv.Close()
+
+	id, err := createConversation(
+		t.Context(),
+		srv.URL,
+		"my-agent",
+		"test-token",
+		&agent_api.SessionRequestOptions{
+			UserIsolationKey: "user-1",
+			ChatIsolationKey: "chat-1",
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != "conv-headers" {
+		t.Fatalf("id = %q, want conv-headers", id)
+	}
+
+	request := <-reqCh
+	if got := request.Header.Get(agent_api.AgentUserIsolationKeyHeader); got != "user-1" {
+		t.Errorf("%s = %q, want user-1", agent_api.AgentUserIsolationKeyHeader, got)
+	}
+	if got := request.Header.Get(agent_api.AgentChatIsolationKeyHeader); got != "chat-1" {
+		t.Errorf("%s = %q, want chat-1", agent_api.AgentChatIsolationKeyHeader, got)
+	}
+}
+
+func TestResponseTraceID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		headers map[string]string
+		want    string
+	}{
+		{
+			name:    "prefers x-request-id when both present",
+			headers: map[string]string{"X-Request-ID": "trace-abc", "apim-request-id": "apim-xyz"},
+			want:    "trace-abc",
+		},
+		{
+			name:    "falls back to apim-request-id",
+			headers: map[string]string{"apim-request-id": "apim-xyz"},
+			want:    "apim-xyz",
+		},
+		{
+			name:    "returns empty when neither present",
+			headers: map[string]string{},
+			want:    "",
+		},
+		{
+			name:    "returns x-request-id when only it is present",
+			headers: map[string]string{"X-Request-ID": "trace-only"},
+			want:    "trace-only",
+		},
+		{
+			name:    "deduplicates comma-folded x-request-id",
+			headers: map[string]string{"X-Request-ID": "trace-abc,trace-abc"},
+			want:    "trace-abc",
+		},
+		{
+			name:    "returns first token when x-request-id is comma-list",
+			headers: map[string]string{"X-Request-ID": "trace-first, trace-second"},
+			want:    "trace-first",
+		},
+		{
+			name:    "skips leading empty token in comma-folded x-request-id",
+			headers: map[string]string{"X-Request-ID": ", trace-second"},
+			want:    "trace-second",
+		},
+		{
+			name:    "deduplicates comma-folded apim-request-id fallback",
+			headers: map[string]string{"apim-request-id": "apim-xyz, apim-xyz"},
+			want:    "apim-xyz",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp := &http.Response{Header: http.Header{}}
+			for k, v := range tt.headers {
+				resp.Header.Set(k, v)
+			}
+
+			if got := responseTraceID(resp); got != tt.want {
+				t.Errorf("responseTraceID() = %q, want %q", got, tt.want)
 			}
 		})
 	}

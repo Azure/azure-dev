@@ -13,6 +13,8 @@ import (
 	"azureaiagent/internal/exterrors"
 )
 
+var validAgentNamePattern = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
+
 // LoadAndValidateAgentManifest parses YAML content and validates it as an AgentManifest
 // Returns the parsed manifest and any validation errors
 func LoadAndValidateAgentManifest(manifestYamlContent []byte) (*AgentManifest, error) {
@@ -421,15 +423,11 @@ func ValidateAgentName(name string) error {
 		return fmt.Errorf("name cannot be empty")
 	}
 
-	// Regex pattern: ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$
-	// - Must start with alphanumeric character
-	// - Can contain alphanumeric characters and hyphens
-	// - Must end with alphanumeric character (if more than 1 character)
-	// - Maximum length of 63 characters
-	validNamePattern := regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
-
-	if !validNamePattern.MatchString(name) {
-		return fmt.Errorf("name must start and end with an alphanumeric character, can contain hyphens in the middle, and be 1-63 characters long")
+	if !validAgentNamePattern.MatchString(name) {
+		return fmt.Errorf(
+			"name must start and end with an alphanumeric character, " +
+				"can contain hyphens in the middle, and be 1-63 characters long",
+		)
 	}
 
 	return nil

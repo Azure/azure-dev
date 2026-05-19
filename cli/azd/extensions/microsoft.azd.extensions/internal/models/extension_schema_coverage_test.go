@@ -5,10 +5,12 @@ package models
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/stretchr/testify/require"
 )
@@ -110,6 +112,12 @@ func TestLoadExtension_FileNotFound(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, ext)
 	require.Contains(t, err.Error(), "Extension manifest file not found")
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, "missing_extension_manifest", localErr.Code)
+	require.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+	require.Contains(t, localErr.Suggestion, "extension.yaml")
 }
 
 func TestLoadExtension_MissingId(t *testing.T) {

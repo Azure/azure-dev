@@ -70,8 +70,8 @@ func mergeRoutineFromFile(body *routines.Routine, file *routines.Routine) {
 	if len(file.Triggers) > 0 && len(body.Triggers) == 0 {
 		body.Triggers = file.Triggers
 	}
-	if len(file.Actions) > 0 && len(body.Actions) == 0 {
-		body.Actions = file.Actions
+	if file.Action != nil && body.Action == nil {
+		body.Action = file.Action
 	}
 }
 
@@ -79,8 +79,8 @@ func mergeRoutineFromFile(body *routines.Routine, file *routines.Routine) {
 // It returns the count of fields changed.
 func applyUpdateFlags(
 	existing *routines.Routine,
-	description, cron, timeZone, at, agentName, agentEndpointID, conversationID, sessionID string,
-	descChanged, cronChanged, tzChanged, atChanged, agentNameChanged, agentEpChanged, convIDChanged, sessIDChanged bool,
+	description, cron, timeZone, at, agentID, agentEndpointID, conversationID, sessionID string,
+	descChanged, cronChanged, tzChanged, atChanged, agentIDChanged, agentEpChanged, convIDChanged, sessIDChanged bool,
 ) (int, error) {
 	changed := 0
 
@@ -95,7 +95,7 @@ func applyUpdateFlags(
 		if trigger == nil {
 			return 0, fmt.Errorf("cannot set --cron: routine has no default trigger")
 		}
-		trigger.Cron = cron
+		trigger.CronExpression = cron
 		changed++
 	}
 	if tzChanged {
@@ -121,52 +121,49 @@ func applyUpdateFlags(
 
 	// Action field updates
 	action := getAction(existing)
-	if agentNameChanged || agentEpChanged {
+	if agentIDChanged || agentEpChanged {
 		if action == nil {
-			return 0, fmt.Errorf("cannot update agent fields: routine has no default action")
+			return 0, fmt.Errorf("cannot update agent fields: routine has no action")
 		}
-		// agent-name and agent-endpoint-id are mutually exclusive; specifying one clears the other.
-		if agentNameChanged && agentEpChanged && agentName != "" && agentEndpointID != "" {
+		// agent-id and agent-endpoint-id are mutually exclusive; specifying one clears the other.
+		if agentIDChanged && agentEpChanged && agentID != "" && agentEndpointID != "" {
 			return 0, exterrors.Validation(
 				exterrors.CodeConflictingArguments,
-				"--agent-name and --agent-endpoint-id are mutually exclusive",
-				"provide either --agent-name or --agent-endpoint-id, not both",
+				"--agent-id and --agent-endpoint-id are mutually exclusive",
+				"provide either --agent-id or --agent-endpoint-id, not both",
 			)
 		}
-		if agentNameChanged {
-			action.AgentName = agentName
-			if agentName != "" {
-				action.AgentEndpointID = "" // specifying agent-name clears agent-endpoint-id
+		if agentIDChanged {
+			action.AgentID = agentID
+			if agentID != "" {
+				action.AgentEndpointID = "" // specifying agent-id clears agent-endpoint-id
 			}
 			changed++
 		}
 		if agentEpChanged {
 			action.AgentEndpointID = agentEndpointID
 			if agentEndpointID != "" {
-				action.AgentName = "" // specifying agent-endpoint-id clears agent-name
+				action.AgentID = "" // specifying agent-endpoint-id clears agent-id
 			}
 			changed++
 		}
 	}
 	if convIDChanged {
 		if action == nil {
-			return 0, fmt.Errorf("cannot set --conversation-id: routine has no default action")
+			return 0, fmt.Errorf("cannot set --conversation-id: routine has no action")
 		}
 		action.ConversationID = conversationID
 		changed++
 	}
 	if sessIDChanged {
 		if action == nil {
-			return 0, fmt.Errorf("cannot set --session-id: routine has no default action")
+			return 0, fmt.Errorf("cannot set --session-id: routine has no action")
 		}
 		action.SessionID = sessionID
 		changed++
 	}
 	if action != nil {
-		if existing.Actions == nil {
-			existing.Actions = make(map[string]routines.RoutineAction)
-		}
-		existing.Actions[routines.DefaultActionKey] = *action
+		existing.Action = action
 	}
 
 	return changed, nil
@@ -181,11 +178,11 @@ func getTrigger(r *routines.Routine) *routines.RoutineTrigger {
 	return nil
 }
 
-// getAction returns a copy of the default action, or nil.
+// getAction returns a copy of the routine action, or nil.
 func getAction(r *routines.Routine) *routines.RoutineAction {
-	if a, ok := r.Actions[routines.DefaultActionKey]; ok {
-		cp := a
-		return &cp
+	if r.Action == nil {
+		return nil
 	}
-	return nil
+	cp := *r.Action
+	return &cp
 }

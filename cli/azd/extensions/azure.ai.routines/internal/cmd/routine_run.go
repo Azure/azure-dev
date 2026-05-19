@@ -89,11 +89,11 @@ func runRoutineRunList(ctx context.Context, cmd *cobra.Command, routineName stri
 
 	tw := newTabWriter()
 	defer tw.Flush()
-	fmt.Fprintln(tw, "ID\tSTATUS\tSTARTED\tENDED")
-	fmt.Fprintln(tw, "--\t------\t-------\t-----")
+	fmt.Fprintln(tw, "ID\tSTATUS\tPHASE\tSTARTED\tENDED")
+	fmt.Fprintln(tw, "--\t------\t-----\t-------\t-----")
 	for _, run := range items {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-			run.ID, run.Status, run.StartedAt, run.EndedAt)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+			run.ID, run.Status, run.Phase, run.StartedAt, run.EndedAt)
 	}
 	return nil
 }

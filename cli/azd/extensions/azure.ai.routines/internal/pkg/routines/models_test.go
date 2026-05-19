@@ -33,7 +33,6 @@ func TestActionCLIToWire_AllEntriesPresent(t *testing.T) {
 func TestDefaultKeys(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, "default", DefaultTriggerKey)
-	assert.Equal(t, "default", DefaultActionKey)
 }
 
 func TestTriggerCLIToWire_NoUnknownEntries(t *testing.T) {

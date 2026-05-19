@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"text/tabwriter"
 
 	"azure.ai.routines/internal/exterrors"
@@ -75,10 +76,13 @@ func routineSummaryTable(r *routines.Routine) {
 		fmt.Fprintf(tw, "Description:\t%s\n", r.Description)
 	}
 	fmt.Fprintf(tw, "Enabled:\t%s\n", boolStr(r.Enabled))
-	if t, ok := r.Triggers[routines.DefaultTriggerKey]; ok {
-		fmt.Fprintf(tw, "Trigger:\t%s\n", t.Type)
-		if t.Cron != "" {
-			fmt.Fprintf(tw, "  Cron:\t%s\n", t.Cron)
+	// Routine.triggers is a map keyed by user-defined identifiers; iterate
+	// in deterministic key order so multiple triggers render consistently.
+	for _, key := range sortedKeys(r.Triggers) {
+		t := r.Triggers[key]
+		fmt.Fprintf(tw, "Trigger (%s):\t%s\n", key, t.Type)
+		if t.CronExpression != "" {
+			fmt.Fprintf(tw, "  Cron:\t%s\n", t.CronExpression)
 		}
 		if t.At != "" {
 			fmt.Fprintf(tw, "  At:\t%s\n", t.At)
@@ -87,13 +91,27 @@ func routineSummaryTable(r *routines.Routine) {
 			fmt.Fprintf(tw, "  TimeZone:\t%s\n", t.TimeZone)
 		}
 	}
-	if a, ok := r.Actions[routines.DefaultActionKey]; ok {
+	if r.Action != nil {
+		a := r.Action
 		fmt.Fprintf(tw, "Action:\t%s\n", a.Type)
-		if a.AgentName != "" {
-			fmt.Fprintf(tw, "  AgentName:\t%s\n", a.AgentName)
+		if a.AgentID != "" {
+			fmt.Fprintf(tw, "  AgentID:\t%s\n", a.AgentID)
 		}
 		if a.AgentEndpointID != "" {
 			fmt.Fprintf(tw, "  AgentEndpointID:\t%s\n", a.AgentEndpointID)
 		}
 	}
+}
+
+// sortedKeys returns the keys of a string-keyed map in lexicographic order.
+func sortedKeys[V any](m map[string]V) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
 }

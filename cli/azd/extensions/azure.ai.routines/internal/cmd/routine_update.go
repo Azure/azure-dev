@@ -22,7 +22,7 @@ type routineUpdateFlags struct {
 	cron            string
 	timeZone        string
 	at              string
-	agentName       string
+	agentID         string
 	agentEndpointID string
 	conversationID  string
 	sessionID       string
@@ -61,7 +61,7 @@ To change the trigger or action type, delete and recreate the routine.`,
 	cmd.Flags().StringVar(&flags.cron, "cron", "", "New cron expression for recurring trigger")
 	cmd.Flags().StringVar(&flags.timeZone, "time-zone", "", "New time zone for the trigger")
 	cmd.Flags().StringVar(&flags.at, "at", "", "New ISO 8601 datetime for timer trigger")
-	cmd.Flags().StringVar(&flags.agentName, "agent-name", "", "New agent name")
+	cmd.Flags().StringVar(&flags.agentID, "agent-id", "", "New project-scoped agent ID")
 	cmd.Flags().StringVar(&flags.agentEndpointID, "agent-endpoint-id", "", "New agent endpoint ID")
 	cmd.Flags().StringVar(&flags.conversationID, "conversation-id", "", "New conversation ID (preview)")
 	cmd.Flags().StringVar(&flags.sessionID, "session-id", "", "New session ID")
@@ -121,7 +121,7 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 	cronChanged := cmd.Flags().Changed("cron")
 	tzChanged := cmd.Flags().Changed("time-zone")
 	atChanged := cmd.Flags().Changed("at")
-	agentNameChanged := cmd.Flags().Changed("agent-name")
+	agentIDChanged := cmd.Flags().Changed("agent-id")
 	agentEpChanged := cmd.Flags().Changed("agent-endpoint-id")
 	convIDChanged := cmd.Flags().Changed("conversation-id")
 	sessIDChanged := cmd.Flags().Changed("session-id")
@@ -129,9 +129,9 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 	changed, err := applyUpdateFlags(
 		existing,
 		flags.description, flags.cron, flags.timeZone, flags.at,
-		flags.agentName, flags.agentEndpointID, flags.conversationID, flags.sessionID,
+		flags.agentID, flags.agentEndpointID, flags.conversationID, flags.sessionID,
 		descChanged, cronChanged, tzChanged, atChanged,
-		agentNameChanged, agentEpChanged, convIDChanged, sessIDChanged,
+		agentIDChanged, agentEpChanged, convIDChanged, sessIDChanged,
 	)
 	if err != nil {
 		return err

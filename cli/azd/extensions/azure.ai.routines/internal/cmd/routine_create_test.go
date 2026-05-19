@@ -24,7 +24,7 @@ func TestBuildTrigger_Recurring(t *testing.T) {
 	got, err := buildTrigger(flags)
 	require.NoError(t, err)
 	assert.Equal(t, "schedule", got.Type)
-	assert.Equal(t, "0 8 * * 1-5", got.Cron)
+	assert.Equal(t, "0 8 * * 1-5", got.CronExpression)
 	assert.Equal(t, "America/New_York", got.TimeZone)
 }
 
@@ -64,12 +64,12 @@ func TestBuildTrigger_UnknownType(t *testing.T) {
 
 // ─── buildAction ──────────────────────────────────────────────────────────────
 
-func TestBuildAction_AgentResponseByName(t *testing.T) {
+func TestBuildAction_AgentResponseByID(t *testing.T) {
 	t.Parallel()
-	got, err := buildAction("agent-response", "my-agent", "", "conv-1", "")
+	got, err := buildAction("agent-response", "my-agent-id", "", "conv-1", "")
 	require.NoError(t, err)
 	assert.Equal(t, routines.ActionCLIToWire["agent-response"], got.Type)
-	assert.Equal(t, "my-agent", got.AgentName)
+	assert.Equal(t, "my-agent-id", got.AgentID)
 	assert.Empty(t, got.AgentEndpointID)
 	assert.Equal(t, "conv-1", got.ConversationID)
 }
@@ -78,14 +78,14 @@ func TestBuildAction_AgentResponseByEndpointID(t *testing.T) {
 	t.Parallel()
 	got, err := buildAction("agent-response", "", "ep-id-123", "", "")
 	require.NoError(t, err)
-	assert.Empty(t, got.AgentName)
+	assert.Empty(t, got.AgentID)
 	assert.Equal(t, "ep-id-123", got.AgentEndpointID)
 }
 
 func TestBuildAction_AgentResponseMutuallyExclusive(t *testing.T) {
 	t.Parallel()
-	_, err := buildAction("agent-response", "my-agent", "ep-id-123", "", "")
-	assert.Error(t, err, "agent-name and agent-endpoint-id must be mutually exclusive")
+	_, err := buildAction("agent-response", "my-agent-id", "ep-id-123", "", "")
+	assert.Error(t, err, "agent-id and agent-endpoint-id must be mutually exclusive")
 }
 
 func TestBuildAction_AgentResponseMissingBoth(t *testing.T) {

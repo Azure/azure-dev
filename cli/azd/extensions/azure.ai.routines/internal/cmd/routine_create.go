@@ -22,7 +22,7 @@ type routineCreateFlags struct {
 	timeZone        string
 	at              string
 	action          string
-	agentName       string
+	agentID         string
 	agentEndpointID string
 	conversationID  string
 	sessionID       string
@@ -64,8 +64,8 @@ Use --file to create from a YAML/JSON manifest file instead of individual flags.
 		"ISO 8601 datetime for timer trigger (e.g. '2026-04-24T15:00:00Z')")
 	cmd.Flags().StringVar(&flags.action, "action", "agent-response",
 		"Action type: agent-response (default), agent-invoke")
-	cmd.Flags().StringVar(&flags.agentName, "agent-name", "",
-		"Agent name (for agent-response action)")
+	cmd.Flags().StringVar(&flags.agentID, "agent-id", "",
+		"Project-scoped agent ID (for agent-response action)")
 	cmd.Flags().StringVar(&flags.agentEndpointID, "agent-endpoint-id", "",
 		"Agent endpoint ID (for agent-response or agent-invoke action)")
 	cmd.Flags().StringVar(&flags.conversationID, "conversation-id", "",
@@ -137,15 +137,13 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 		}
 
 		action, err := buildAction(
-			flags.action, flags.agentName, flags.agentEndpointID,
+			flags.action, flags.agentID, flags.agentEndpointID,
 			flags.conversationID, flags.sessionID,
 		)
 		if err != nil {
 			return err
 		}
-		body.Actions = map[string]routines.RoutineAction{
-			routines.DefaultActionKey: action,
-		}
+		body.Action = &action
 	}
 
 	client, _, err := newRoutineClient(ctx, cmd)
@@ -207,7 +205,7 @@ func buildTrigger(flags *routineCreateFlags) (routines.RoutineTrigger, error) {
 				"provide a cron expression, e.g. '0 8 * * 1-5'",
 			)
 		}
-		t.Cron = flags.cron
+		t.CronExpression = flags.cron
 	case "timer":
 		if flags.at == "" {
 			return t, exterrors.Validation(
@@ -223,7 +221,7 @@ func buildTrigger(flags *routineCreateFlags) (routines.RoutineTrigger, error) {
 }
 
 // buildAction constructs a RoutineAction from CLI flags.
-func buildAction(actionType, agentName, agentEndpointID, conversationID, sessionID string) (routines.RoutineAction, error) {
+func buildAction(actionType, agentID, agentEndpointID, conversationID, sessionID string) (routines.RoutineAction, error) {
 	wireType, ok := routines.ActionCLIToWire[actionType]
 	if !ok {
 		return routines.RoutineAction{}, exterrors.Validation(
@@ -237,21 +235,21 @@ func buildAction(actionType, agentName, agentEndpointID, conversationID, session
 
 	switch actionType {
 	case "agent-response":
-		if agentName != "" && agentEndpointID != "" {
+		if agentID != "" && agentEndpointID != "" {
 			return a, exterrors.Validation(
 				exterrors.CodeConflictingArguments,
-				"--agent-name and --agent-endpoint-id are mutually exclusive for agent-response action",
-				"provide either --agent-name or --agent-endpoint-id, not both",
+				"--agent-id and --agent-endpoint-id are mutually exclusive for agent-response action",
+				"provide either --agent-id or --agent-endpoint-id, not both",
 			)
 		}
-		if agentName == "" && agentEndpointID == "" {
+		if agentID == "" && agentEndpointID == "" {
 			return a, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
-				"one of --agent-name or --agent-endpoint-id is required for agent-response action",
-				"provide --agent-name <name> or --agent-endpoint-id <id>",
+				"one of --agent-id or --agent-endpoint-id is required for agent-response action",
+				"provide --agent-id <id> or --agent-endpoint-id <id>",
 			)
 		}
-		a.AgentName = agentName
+		a.AgentID = agentID
 		a.AgentEndpointID = agentEndpointID
 		a.ConversationID = conversationID
 	case "agent-invoke":

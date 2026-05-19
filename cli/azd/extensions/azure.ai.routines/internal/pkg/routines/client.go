@@ -22,7 +22,7 @@ import (
 
 const (
 	routinesAPIVersion    = "v1"
-	routinesPreviewHeader = "x-ms-foundry-features-opt-in"
+	routinesPreviewHeader = "Foundry-Features"
 	routinesPreviewValue  = "Routines=V1Preview"
 )
 
@@ -70,7 +70,9 @@ func (c *Client) routinesURL(extraQuery ...string) string {
 	return base
 }
 
-// routineActionURL returns the URL for a named routine action (enable/disable/dispatch_async).
+// routineActionURL returns the URL for a named routine action route
+// (e.g. :dispatch, :dispatchAsync). The action segment is case-sensitive
+// and must match the TypeSpec route exactly.
 func (c *Client) routineActionURL(name, action string) string {
 	return fmt.Sprintf("%s/routines/%s:%s?api-version=%s", c.endpoint, url.PathEscape(name), action, routinesAPIVersion)
 }
@@ -130,11 +132,10 @@ func (c *Client) ListRoutines(ctx context.Context) ([]Routine, error) {
 		}
 
 		all = append(all, page.Value...)
-		if page.ContinuationToken != "" {
-			nextURL = c.routinesURL("continuationToken=" + url.QueryEscape(page.ContinuationToken))
-		} else {
-			nextURL = ""
-		}
+		// The service returns an absolute nextLink URL when more pages exist
+		// (Azure.Core.Page<Routine>). We follow it verbatim after a same-origin
+		// check rather than re-deriving the continuation query string.
+		nextURL = page.NextLink
 	}
 
 	return all, nil
@@ -213,48 +214,42 @@ func (c *Client) DeleteRoutine(ctx context.Context, name string) error {
 	return nil
 }
 
-// EnableRoutine calls the :enable action route for a routine.
+// EnableRoutine flips `enabled` to true via PUT.
+// The Foundry Routines API does not expose a dedicated :enable route; the
+// client mutates the routine resource directly.
 func (c *Client) EnableRoutine(ctx context.Context, name string) (*Routine, error) {
-	return c.postAction(ctx, name, "enable")
+	return c.setEnabled(ctx, name, true)
 }
 
-// DisableRoutine calls the :disable action route for a routine.
+// DisableRoutine flips `enabled` to false via PUT.
 func (c *Client) DisableRoutine(ctx context.Context, name string) (*Routine, error) {
-	return c.postAction(ctx, name, "disable")
+	return c.setEnabled(ctx, name, false)
 }
 
-// postAction performs a POST to a named action route and returns the resulting routine.
-func (c *Client) postAction(ctx context.Context, name, action string) (*Routine, error) {
-	req, err := runtime.NewRequest(ctx, http.MethodPost, c.routineActionURL(name, action))
+// setEnabled performs a GET + PUT to mutate the `enabled` field. It returns
+// the current routine without an extra round-trip if the field is already
+// at the desired value (idempotent enable/disable).
+func (c *Client) setEnabled(ctx context.Context, name string, enabled bool) (*Routine, error) {
+	existing, err := c.GetRoutine(ctx, name)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	addPreviewHeader(req)
-
-	resp, err := c.pipeline.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if !runtime.HasStatusCode(resp, http.StatusOK) {
-		return nil, runtime.NewResponseError(resp)
-	}
-
-	var result Routine
-	if err := decodeJSON(resp.Body, &result); err != nil {
 		return nil, err
 	}
-	return &result, nil
+	if existing.Enabled != nil && *existing.Enabled == enabled {
+		return existing, nil
+	}
+	existing.Enabled = &enabled
+	return c.PutRoutine(ctx, name, existing)
 }
 
-// DispatchRoutineAsync calls the :dispatch_async action route.
+// DispatchRoutineAsync calls the :dispatchAsync action route.
+// The action segment is camelCase per TypeSpec; do not change it to
+// snake_case without first updating the Foundry Routines spec.
 func (c *Client) DispatchRoutineAsync(
 	ctx context.Context,
 	name string,
 	payload *DispatchRoutineRequest,
 ) (*DispatchRoutineResponse, error) {
-	req, err := runtime.NewRequest(ctx, http.MethodPost, c.routineActionURL(name, "dispatch_async"))
+	req, err := runtime.NewRequest(ctx, http.MethodPost, c.routineActionURL(name, "dispatchAsync"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

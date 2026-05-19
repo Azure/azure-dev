@@ -64,12 +64,16 @@ func runRoutineList(ctx context.Context, cmd *cobra.Command, output string) erro
 	fmt.Fprintln(tw, "----\t-------\t-------\t------")
 	for _, r := range items {
 		triggerType := ""
+		// Pick a representative trigger type for the table summary; use the
+		// "default" key if present, else fall back to the first sorted key.
 		if t, ok := r.Triggers[routines.DefaultTriggerKey]; ok {
 			triggerType = t.Type
+		} else if keys := sortedKeys(r.Triggers); len(keys) > 0 {
+			triggerType = r.Triggers[keys[0]].Type
 		}
 		actionType := ""
-		if a, ok := r.Actions[routines.DefaultActionKey]; ok {
-			actionType = a.Type
+		if r.Action != nil {
+			actionType = r.Action.Type
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
 			r.Name,

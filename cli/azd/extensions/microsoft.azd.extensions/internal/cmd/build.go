@@ -113,8 +113,14 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 		return fmt.Errorf("failed to load extension metadata: %w", err)
 	}
 
+	extensionPack := isExtensionPack(schema)
+
 	fmt.Println()
-	fmt.Printf("%s: %s\n", output.WithBold("Output Path"), output.WithHyperlink(absOutputPath, absOutputPath))
+	if extensionPack {
+		fmt.Printf("%s: Extension pack\n", output.WithBold("Extension Type"))
+	} else {
+		fmt.Printf("%s: %s\n", output.WithBold("Output Path"), output.WithHyperlink(absOutputPath, absOutputPath))
+	}
 
 	var buildWarnings []string
 	// Flush collected validation warnings after the live TaskList canvas completes,
@@ -146,6 +152,11 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 		AddTask(ux.TaskOptions{
 			Title: "Building extension artifacts",
 			Action: func(progress ux.SetProgressFunc) (ux.TaskState, error) {
+				if extensionPack {
+					progress("Extension packs do not contain build artifacts")
+					return ux.Skipped, nil
+				}
+
 				// Create output directory if it doesn't exist
 				if _, err := os.Stat(absOutputPath); os.IsNotExist(err) {
 					if err := os.MkdirAll(absOutputPath, os.ModePerm); err != nil {
@@ -205,7 +216,7 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 		AddTask(ux.TaskOptions{
 			Title: "Installing extension",
 			Action: func(progress ux.SetProgressFunc) (ux.TaskState, error) {
-				if flags.skipInstall {
+				if flags.skipInstall || extensionPack {
 					return ux.Skipped, nil
 				}
 
@@ -282,6 +293,8 @@ func copyBinaryFiles(extensionId, sourcePath, destPath string) error {
 // Errors include missing required fields and capability-specific metadata that would create
 // unusable extensions. Warnings flag recommended metadata that improves the extension experience.
 func validateExtensionMetadata(schema *models.ExtensionSchema) (warnings, errs []string) {
+	extensionPack := isExtensionPack(schema)
+
 	// Required fields - missing values are errors.
 	if schema.Id == "" {
 		errs = append(errs, "Missing required field: id")
@@ -289,7 +302,7 @@ func validateExtensionMetadata(schema *models.ExtensionSchema) (warnings, errs [
 	if schema.Version == "" {
 		errs = append(errs, "Missing required field: version")
 	}
-	if len(schema.Capabilities) == 0 {
+	if len(schema.Capabilities) == 0 && !extensionPack {
 		errs = append(errs, "Missing required field: capabilities")
 	}
 	if schema.DisplayName == "" {
@@ -325,13 +338,21 @@ func validateExtensionMetadata(schema *models.ExtensionSchema) (warnings, errs [
 		)
 	}
 
-	if schema.Usage == "" {
+	if schema.Usage == "" && !extensionPack {
 		warnings = append(warnings,
 			"Missing 'usage' field in extension.yaml - shown to users as a usage hint in 'azd <namespace> --help'.",
 		)
 	}
 
 	return warnings, errs
+}
+
+func isExtensionPack(schema *models.ExtensionSchema) bool {
+	return len(schema.Dependencies) > 0 &&
+		len(schema.Capabilities) == 0 &&
+		schema.Namespace == "" &&
+		schema.Language == "" &&
+		schema.EntryPoint == ""
 }
 
 func validationFailureError(validationErrors []string) error {

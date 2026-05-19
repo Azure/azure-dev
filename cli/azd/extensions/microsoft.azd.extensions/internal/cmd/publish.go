@@ -117,11 +117,16 @@ func runPublishAction(ctx context.Context, flags *publishFlags, defaultRegistryU
 		extensionMetadata.Version = flags.version
 	}
 
+	extensionPack := isExtensionPack(extensionMetadata)
+	if err := validatePublishOptions(extensionPack, flags); err != nil {
+		return err
+	}
+
 	// Use artifacts patterns from flag
 	artifactPatterns := flags.artifacts
 
 	// Setting remote repository overrides local artifacts
-	if flags.repository != "" {
+	if flags.repository != "" || extensionPack {
 		artifactPatterns = nil
 	}
 
@@ -151,7 +156,7 @@ func runPublishAction(ctx context.Context, flags *publishFlags, defaultRegistryU
 		}
 	}
 
-	if flags.repository != "" {
+	if flags.repository != "" && !extensionPack {
 		repo, err := ghCli.ViewRepository(absExtensionPath, flags.repository)
 		if err != nil {
 			return err
@@ -192,6 +197,8 @@ func runPublishAction(ctx context.Context, flags *publishFlags, defaultRegistryU
 			release.TagName,
 			output.WithHyperlink(release.Url, "View Release"),
 		)
+	} else if extensionPack {
+		fmt.Printf("%s: Extension pack\n", output.WithBold("Extension Type"))
 	} else {
 		// Show what artifacts will be processed
 		if len(artifactPatterns) > 0 {
@@ -212,7 +219,7 @@ func runPublishAction(ctx context.Context, flags *publishFlags, defaultRegistryU
 		AddTask(ux.TaskOptions{
 			Title: "Fetching local artifacts",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-				if flags.repository != "" {
+				if flags.repository != "" || extensionPack {
 					return ux.Skipped, nil
 				}
 
@@ -265,7 +272,7 @@ func runPublishAction(ctx context.Context, flags *publishFlags, defaultRegistryU
 		AddTask(ux.TaskOptions{
 			Title: "Fetching GitHub release assets",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-				if flags.repository == "" {
+				if flags.repository == "" || extensionPack {
 					return ux.Skipped, nil
 				}
 
@@ -289,6 +296,18 @@ func runPublishAction(ctx context.Context, flags *publishFlags, defaultRegistryU
 		AddTask(ux.TaskOptions{
 			Title: "Generating extension metadata",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+				if len(assets) == 0 {
+					if extensionPack {
+						spf("Extension packs do not contain artifacts")
+						return ux.Skipped, nil
+					}
+
+					return ux.Error, common.NewDetailedError(
+						"Artifacts not found",
+						errors.New("no artifacts found for this extension version"),
+					)
+				}
+
 				for _, asset := range assets {
 					spf(fmt.Sprintf("Processing %s", asset.Name))
 
@@ -385,6 +404,21 @@ func runPublishAction(ctx context.Context, flags *publishFlags, defaultRegistryU
 		})
 
 	return taskList.Run()
+}
+
+func validatePublishOptions(extensionPack bool, flags *publishFlags) error {
+	if !extensionPack {
+		return nil
+	}
+
+	if flags.repository != "" {
+		return fmt.Errorf("extension packs do not have release artifacts; omit --repo and publish directly to the registry")
+	}
+	if len(flags.artifacts) > 0 {
+		return fmt.Errorf("extension packs do not have artifacts; omit --artifacts and publish directly to the registry")
+	}
+
+	return nil
 }
 
 func addOrUpdateExtension(

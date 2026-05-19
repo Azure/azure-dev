@@ -54,7 +54,7 @@ const (
 	maxExtensionTagLength = 64
 )
 
-var extensionNamespacePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*$`)
+var extensionNamespacePattern = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$`)
 
 func newInitCommand(noPrompt *bool) *cobra.Command {
 	flags := &initFlags{}
@@ -256,8 +256,10 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 		return fmt.Errorf("failed to check extension directory: %w", err)
 	}
 
+	localRegistryExists := false
 	createLocalExtensionSourceAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 		if has, err := internal.HasLocalRegistry(); err == nil && has {
+			localRegistryExists = true
 			return ux.Skipped, nil
 		}
 
@@ -313,7 +315,7 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 		if err != nil {
 			return ux.Error, common.NewDetailedError(
 				description,
-				fmt.Errorf("%s: %w%s", description, err, subprocessErrorTail(result)),
+				fmt.Errorf("%w%s", err, subprocessErrorTail(result)),
 			)
 		}
 
@@ -381,6 +383,11 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 	if runErr := taskList.Run(); runErr != nil {
 		err = fmt.Errorf("failed running init tasks: %w", runErr)
 		return err
+	}
+
+	if localRegistryExists {
+		fmt.Println("Local extension source already exists.")
+		fmt.Println()
 	}
 
 	if !flags.createRegistry {
@@ -647,8 +654,8 @@ func formatUsage(namespace string) string {
 func validateExtensionNamespace(namespace string) error {
 	if !extensionNamespacePattern.MatchString(namespace) {
 		return fmt.Errorf(
-			"invalid namespace '%s': use lowercase letters and numbers separated by single dots "+
-				"(for example, 'foo.bar')",
+			"invalid namespace '%s': use lowercase letters, numbers, and hyphens separated by single dots "+
+				"(for example, 'foo.bar' or 'coding-agent')",
 			namespace,
 		)
 	}
@@ -667,7 +674,7 @@ func promptExtensionNamespace(ctx context.Context, azdClient *azdext.AzdClient) 
 				HelpMessage: "Namespace is used to group custom commands into a single command " +
 					"group used for executing the extension. " +
 					"Use dots to create nested command groups (e.g. 'foo.bar' becomes 'azd foo bar'). " +
-					"Use only lowercase letters and numbers separated by single dots; spaces are not allowed.",
+					"Use only lowercase letters, numbers, and hyphens separated by single dots; spaces are not allowed.",
 			},
 		})
 		if err != nil {
@@ -880,9 +887,9 @@ func writeCollectedWarnings(writer io.Writer, warnings []string) {
 	fmt.Fprintln(writer)
 }
 
-// ansiEscapeRegex matches ANSI CSI escape sequences (e.g. color codes) commonly
+// ansiEscapeRegex matches ANSI CSI escape sequences and OSC hyperlinks commonly
 // emitted by child azd processes.
-var ansiEscapeRegex = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
+var ansiEscapeRegex = regexp.MustCompile(`(?:\x1b\[[0-9;]*[A-Za-z])|(?:\x1b\][^\x07\x1b]*(?:\x07|\x1b\\))`)
 
 // subprocessErrorTail extracts a short, human-friendly summary line from captured
 // subprocess output to inline into a wrapped error message. It prefers the first
@@ -903,9 +910,14 @@ func subprocessErrorTail(output []byte) string {
 			continue
 		}
 		if strings.HasPrefix(trimmed, "ERROR:") || strings.HasPrefix(trimmed, "Error:") {
-			return ": " + strings.TrimSpace(
+			errorLine := strings.TrimSpace(
 				strings.TrimPrefix(strings.TrimPrefix(trimmed, "ERROR:"), "Error:"),
 			)
+			if errorLine == "" {
+				continue
+			}
+
+			return ": " + errorLine
 		}
 		fallback = trimmed
 	}

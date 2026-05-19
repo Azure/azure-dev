@@ -128,6 +128,39 @@ func TestValidateExtensionMetadata(t *testing.T) {
 				"custom-commands",
 			},
 		},
+		{
+			name: "extension pack without capabilities or usage is valid",
+			schema: &models.ExtensionSchema{
+				Id:          "test.pack",
+				Version:     "0.0.1",
+				DisplayName: "Test Pack",
+				Description: "A test extension pack",
+				Dependencies: []extensions.ExtensionDependency{
+					{Id: "test.extension", Version: "latest"},
+				},
+			},
+		},
+		{
+			name: "extension with dependencies and executable metadata still requires capabilities",
+			schema: &models.ExtensionSchema{
+				Id:          "test.extension",
+				Version:     "0.0.1",
+				DisplayName: "Test Extension",
+				Description: "A test extension",
+				Namespace:   "test",
+				Dependencies: []extensions.ExtensionDependency{
+					{Id: "test.dependency", Version: "latest"},
+				},
+			},
+			wantWarningCount: 1,
+			wantWarningContains: []string{
+				"Missing 'usage' field in extension.yaml",
+			},
+			wantErrorCount: 1,
+			wantErrorContains: []string{
+				"Missing required field: capabilities",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -154,6 +187,79 @@ func TestValidateExtensionMetadata(t *testing.T) {
 	}
 }
 
+func TestAddOrUpdateExtensionExtensionPack(t *testing.T) {
+	registry := &extensions.Registry{}
+	schema := &models.ExtensionSchema{
+		Id:          "test.pack",
+		Version:     "0.0.1",
+		DisplayName: "Test Pack",
+		Description: "A test extension pack",
+		Dependencies: []extensions.ExtensionDependency{
+			{Id: "test.extension", Version: "latest"},
+		},
+	}
+
+	addOrUpdateExtension(registry, schema, map[string]extensions.ExtensionArtifact{})
+
+	require.Len(t, registry.Extensions, 1)
+	extension := registry.Extensions[0]
+	assert.Equal(t, "test.pack", extension.Id)
+	assert.Empty(t, extension.Namespace)
+	require.Len(t, extension.Versions, 1)
+
+	version := extension.Versions[0]
+	assert.Equal(t, "0.0.1", version.Version)
+	assert.Empty(t, version.Capabilities)
+	assert.Empty(t, version.Artifacts)
+	assert.Equal(t, schema.Dependencies, version.Dependencies)
+}
+
+func TestValidatePublishOptionsExtensionPack(t *testing.T) {
+	tests := []struct {
+		name          string
+		extensionPack bool
+		flags         *publishFlags
+		wantErr       string
+	}{
+		{
+			name:          "extension pack without artifact flags is valid",
+			extensionPack: true,
+			flags:         &publishFlags{},
+		},
+		{
+			name:          "extension pack rejects repository",
+			extensionPack: true,
+			flags:         &publishFlags{repository: "owner/repo"},
+			wantErr:       "omit --repo",
+		},
+		{
+			name:          "extension pack rejects artifacts",
+			extensionPack: true,
+			flags:         &publishFlags{artifacts: []string{"./artifacts/*.zip"}},
+			wantErr:       "omit --artifacts",
+		},
+		{
+			name:          "executable extension allows repository and artifacts",
+			extensionPack: false,
+			flags: &publishFlags{
+				repository: "owner/repo",
+				artifacts:  []string{"./artifacts/*.zip"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePublishOptions(tt.extensionPack, tt.flags)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateExtensionNamespace(t *testing.T) {
 	t.Parallel()
 
@@ -165,12 +271,13 @@ func TestValidateExtensionNamespace(t *testing.T) {
 		{name: "single segment", namespace: "demo"},
 		{name: "two segments", namespace: "ai.project"},
 		{name: "three segments with digits", namespace: "company1.team2.tool3"},
+		{name: "hyphenated segment", namespace: "coding-agent"},
+		{name: "hyphenated nested segment", namespace: "azure.coding-agent"},
 		{name: "empty", namespace: "", wantErr: true},
 		{name: "consecutive dots", namespace: "a..b", wantErr: true},
 		{name: "leading dot", namespace: ".demo", wantErr: true},
 		{name: "trailing dot", namespace: "demo.", wantErr: true},
 		{name: "uppercase", namespace: "Demo", wantErr: true},
-		{name: "hyphen", namespace: "demo-tool", wantErr: true},
 		{name: "underscore", namespace: "demo.tool_name", wantErr: true},
 	}
 
@@ -244,6 +351,11 @@ func TestSubprocessErrorTail(t *testing.T) {
 			want: ": namespace 'test.ext' conflicts with 'ext.agent'",
 		},
 		{
+			name: "empty ERROR line falls back to later content",
+			in:   "ERROR:\nSuggestion: retry",
+			want: ": Suggestion: retry",
+		},
+		{
 			name: "falls back to last non-empty line",
 			in:   "first\nsecond\n\n",
 			want: ": second",
@@ -252,6 +364,11 @@ func TestSubprocessErrorTail(t *testing.T) {
 			name: "strips ANSI escapes",
 			in:   "\x1b[31mERROR:\x1b[0m boom",
 			want: ": boom",
+		},
+		{
+			name: "strips OSC hyperlinks",
+			in:   "\x1b]8;;file:///tmp/out\x07/tmp/out\x1b]8;;\x07",
+			want: ": /tmp/out",
 		},
 	}
 

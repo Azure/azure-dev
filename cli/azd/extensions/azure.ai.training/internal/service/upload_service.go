@@ -13,10 +13,27 @@ import (
 	"azure.ai.training/pkg/models"
 )
 
+// uploadClient is the subset of *client.Client used by UploadService.
+// Defined as an interface so tests can substitute a fake without spinning up
+// an HTTP server.
+type uploadClient interface {
+	GetDatasetVersion(ctx context.Context, datasetName, version string) (*models.DatasetVersion, error)
+	DeleteDatasetVersion(ctx context.Context, datasetName, version string) error
+	StartPendingUpload(ctx context.Context, datasetName, version string) (*models.PendingUploadResponse, error)
+	CreateOrUpdateDatasetVersion(
+		ctx context.Context, datasetName, version string, dataset *models.DatasetVersion,
+	) (*models.DatasetVersion, error)
+}
+
+// uploadRunner is the subset of *azcopy.Runner used by UploadService.
+type uploadRunner interface {
+	Copy(ctx context.Context, source, sasURI string) error
+}
+
 // UploadService handles uploading local directories as datasets via the dataset API + azcopy.
 type UploadService struct {
-	client       *client.Client
-	azcopyRunner *azcopy.Runner
+	client       uploadClient
+	azcopyRunner uploadRunner
 }
 
 // NewUploadService creates a new upload service.

@@ -149,10 +149,15 @@ func newUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 Pass any subset of:
   --description "..."  --instructions "..."
 or:
-  --file ./SKILL.md    (parsed locally; .zip is not accepted here)
+  --file ./SKILL.md    (parsed locally)
 
 The CLI fetches the current skill, merges your changes locally, then POSTs the
-merged payload to the service.`,
+merged payload to the service.
+
+ZIP packages are not accepted here. To replace a skill's package, use
+` + "`azd ai skill create <name> --file <archive>.zip --force`" + `. Skills are not
+versioned, so that path is destructive: it deletes the existing skill before
+re-creating it from the archive.`,
 		Example: `  azd ai skill update my-skill --description "Updated summary"
   azd ai skill update my-skill --file ./SKILL.md`,
 		Args: cobra.ExactArgs(1),

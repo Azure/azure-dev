@@ -73,9 +73,7 @@ func (a *downloadAction) Run(ctx context.Context) error {
 			exterrors.CodeSkillNoPackage,
 			fmt.Sprintf("skill %q has no downloadable package", a.flags.name),
 			"only skills created from a `.zip` archive have a downloadable "+
-				"package. Use `azd ai skill show <name>` to inspect metadata; "+
-				"re-create with `azd ai skill create <name> --file <archive>.zip --force` "+
-				"if you want a downloadable copy.",
+				"package. Use `azd ai skill show <name>` to inspect this skill's metadata.",
 		)
 	}
 

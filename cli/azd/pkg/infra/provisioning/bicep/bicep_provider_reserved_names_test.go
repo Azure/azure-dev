@@ -441,6 +441,11 @@ func TestIsReservedNameCheckExempt(t *testing.T) {
 			want:         true,
 		},
 		{
+			name:         "Chaos Studio targets exempt case-insensitive",
+			resourceType: "microsoft.chaos/targets",
+			want:         true,
+		},
+		{
 			// VM parent is NOT exempt — only the per-extension child names are.
 			name:         "VM parent NOT exempt",
 			resourceType: "Microsoft.Compute/virtualMachines",

@@ -310,7 +310,7 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 	}
 
 	azdEnv := map[string]string{
-		"AZURE_AI_PROJECT_ENDPOINT": "https://proj.azure.com",
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com",
 	}
 	protocols := []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "1.0.0"},
@@ -362,7 +362,7 @@ func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
 	}
 
 	azdEnv := map[string]string{
-		"AZURE_AI_PROJECT_ENDPOINT": "https://proj.azure.com/",
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com/",
 	}
 	protocols := []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "1.0.0"},
@@ -397,7 +397,7 @@ func TestRegisterAgentEnvironmentVariables_EmptyName(t *testing.T) {
 
 	err := provider.registerAgentEnvironmentVariables(
 		t.Context(),
-		map[string]string{"AZURE_AI_PROJECT_ENDPOINT": "https://proj.azure.com"},
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com"},
 		&azdext.ServiceConfig{Name: "my-svc"},
 		&agent_api.AgentVersionObject{Name: "", Version: "1.0.0"},
 		nil,
@@ -419,7 +419,7 @@ func TestRegisterAgentEnvironmentVariables_EmptyVersion(t *testing.T) {
 
 	err := provider.registerAgentEnvironmentVariables(
 		t.Context(),
-		map[string]string{"AZURE_AI_PROJECT_ENDPOINT": "https://proj.azure.com"},
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com"},
 		&azdext.ServiceConfig{Name: "my-svc"},
 		&agent_api.AgentVersionObject{Name: "my-agent", Version: ""},
 		nil,

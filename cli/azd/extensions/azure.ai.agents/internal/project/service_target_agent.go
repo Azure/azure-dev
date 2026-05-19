@@ -275,10 +275,10 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	}
 
 	// Check if required environment variables are set
-	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
+	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
+			"FOUNDRY_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
 			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
 		)
 	}
@@ -869,16 +869,16 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	azdEnv map[string]string,
 	extraOptions []agent_yaml.AgentBuildOption,
 ) (*deployPrepResult, error) {
-	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
+	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
+			"FOUNDRY_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
 			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
 		)
 	}
 
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
+	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
 	// Resolve environment variables from YAML using azd environment values
@@ -966,7 +966,7 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 		agentVersion.Name,
 		agentVersion.Version,
 		azdEnv["AZURE_AI_PROJECT_ID"],
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		protocols,
 	)
 
@@ -1040,7 +1040,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	// Poll until agent version is active
 	if agentVersionResponse.Status != "active" {
 		agentClient := agent_api.NewAgentClient(
-			azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+			azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 			p.credential,
 		)
 		polledVersion, pollErr := p.waitForAgentActive(ctx, agentClient, prep.request.Name, agentVersionResponse.Version, progress)
@@ -1427,7 +1427,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		p.credential,
 	)
 
@@ -1717,7 +1717,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 ) (*agent_api.AgentVersionObject, error) {
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		p.credential,
 	)
 
@@ -1821,13 +1821,13 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 
 	// Set the base agent endpoint used for session management (not protocol-specific).
 	baseEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
-	projectEndpoint := strings.TrimRight(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], "/")
+	projectEndpoint := strings.TrimRight(azdEnv["FOUNDRY_PROJECT_ENDPOINT"], "/")
 	envVars[baseEndpointKey] = fmt.Sprintf(
 		"%s/agents/%s/versions/%s", projectEndpoint, agentVersionResponse.Name, agentVersionResponse.Version,
 	)
 
 	endpoints := agentInvocationEndpoints(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		agentVersionResponse.Name,
 		protocols,
 	)

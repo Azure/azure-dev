@@ -148,7 +148,7 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	env := os.Environ()
 	env = appendPortEnvVars(env, pt, flags.port)
 
-	// Load azd environment variables (e.g., AZURE_AI_PROJECT_ENDPOINT)
+	// Load azd environment variables (e.g., FOUNDRY_PROJECT_ENDPOINT)
 	// so the agent can reach Azure services during local development.
 	// Also translate azd env keys to FOUNDRY_* env vars so the agent code
 	// works identically whether running locally or in a hosted container
@@ -407,7 +407,7 @@ func venvBinDir(venvDir string) string {
 //
 // The mapping is:
 //
-//	AZURE_AI_PROJECT_ENDPOINT          → FOUNDRY_PROJECT_ENDPOINT
+//	FOUNDRY_PROJECT_ENDPOINT          → FOUNDRY_PROJECT_ENDPOINT
 //	AZURE_AI_PROJECT_ID                → FOUNDRY_PROJECT_ARM_ID
 //	AGENT_{SVC}_NAME                   → FOUNDRY_AGENT_NAME
 //	AGENT_{SVC}_VERSION                → FOUNDRY_AGENT_VERSION
@@ -418,7 +418,7 @@ func appendFoundryEnvVars(env []string, azdEnv map[string]string, serviceName st
 		azdKey     string
 		foundryKey string
 	}{
-		{"AZURE_AI_PROJECT_ENDPOINT", "FOUNDRY_PROJECT_ENDPOINT"},
+		{"FOUNDRY_PROJECT_ENDPOINT", "FOUNDRY_PROJECT_ENDPOINT"},
 		{"AZURE_AI_PROJECT_ID", "FOUNDRY_PROJECT_ARM_ID"},
 	}
 

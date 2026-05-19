@@ -88,7 +88,7 @@ func (a *ProjectSetAction) Run(ctx context.Context) error {
 		); envErr == nil {
 			fmt.Fprintln(os.Stderr,
 				"warning: an active azd environment is present; "+
-					"its AZURE_AI_PROJECT_ENDPOINT takes precedence "+
+					"its FOUNDRY_PROJECT_ENDPOINT takes precedence "+
 					"over global context.")
 		}
 	}

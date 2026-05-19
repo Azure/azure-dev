@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"azure.ai.training/internal/azcopy"
 	"azure.ai.training/internal/download"
@@ -318,9 +319,16 @@ func downloadDataAsset(
 	return nil
 }
 
-// downloadDefaultArtifacts pulls the run history (for experimentId), pages the artifact
-// content-info listing (a single endpoint that yields SAS download URIs directly), and
-// downloads each contentUri in parallel.
+// downloadDefaultArtifacts pulls the run history (for experimentId), then:
+//  1. Pages the artifact LIST endpoint to enumerate every artifact path.
+//  2. Extracts the unique root folder of each path (first segment before "/",
+//     or the whole path for top-level files).
+//  3. For each unique root, in parallel, pages the contentinfo endpoint with
+//     that root as the ?path= prefix to collect SAS download URIs.
+//  4. Downloads every collected contentUri in parallel.
+//
+// Rationale: the contentinfo endpoint requires a non-empty ?path= filter and
+// accepts only one prefix per call, so we fan out by root folder.
 func downloadDefaultArtifacts(
 	ctx context.Context,
 	apiClient *client.Client,
@@ -345,27 +353,30 @@ func downloadDefaultArtifacts(
 		return fmt.Errorf("run metadata for job %q is missing experimentId; cannot list artifacts", jobName)
 	}
 
+	// 1. Enumerate every artifact path (paginated).
 	fmt.Printf("  artifacts: listing for experiment %s...\n", experimentID)
-	var infos []*models.RunArtifactContentInfo
+	var allPaths []string
 	token := ""
 	for {
-		var page *models.RunArtifactContentInfoList
+		var page *models.RunArtifactList
 		tok := token
 		if err := download.WithRetry(ctx, func() (int, error) {
-			p, err := apiClient.ListRunArtifactContentInfo(ctx, jobName, experimentID, "", tok)
+			p, err := apiClient.ListRunArtifacts(ctx, jobName, experimentID, "", tok)
 			if err != nil {
 				return 0, err
 			}
 			page = p
 			return 200, nil
 		}); err != nil {
-			return fmt.Errorf("could not list artifact content info for job %q: %w", jobName, err)
+			return fmt.Errorf("could not list artifacts for job %q: %w", jobName, err)
 		}
 		if page == nil {
 			break
 		}
-		for i := range page.Value {
-			infos = append(infos, &page.Value[i])
+		for _, a := range page.Value {
+			if a.Path != "" {
+				allPaths = append(allPaths, a.Path)
+			}
 		}
 		if page.ContinuationToken == "" {
 			break
@@ -373,11 +384,90 @@ func downloadDefaultArtifacts(
 		token = page.ContinuationToken
 	}
 
+	if len(allPaths) == 0 {
+		fmt.Println("  artifacts: none found")
+		return nil
+	}
+
+	// 2. Extract unique root segments (first segment of each path).
+	rootSet := make(map[string]struct{})
+	for _, p := range allPaths {
+		root := p
+		if i := strings.IndexAny(p, "/\\"); i >= 0 {
+			root = p[:i]
+		}
+		if root != "" {
+			rootSet[root] = struct{}{}
+		}
+	}
+	roots := make([]string, 0, len(rootSet))
+	for r := range rootSet {
+		roots = append(roots, r)
+	}
+	sort.Strings(roots)
+
+	// 3. Fetch contentinfo for each root in parallel; each fan-out is itself paginated.
+	fmt.Printf("  artifacts: resolving SAS URIs for %d root folder(s): %v\n", len(roots), roots)
+
+	type rootResult struct {
+		root  string
+		infos []*models.RunArtifactContentInfo
+		err   error
+	}
+	rootResults := make([]rootResult, len(roots))
+	sem := make(chan struct{}, download.DefaultParallelism)
+	var wg sync.WaitGroup
+	for i, r := range roots {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(idx int, root string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			var collected []*models.RunArtifactContentInfo
+			tok := ""
+			for {
+				var page *models.RunArtifactContentInfoList
+				if err := download.WithRetry(ctx, func() (int, error) {
+					p, err := apiClient.ListRunArtifactContentInfo(ctx, jobName, experimentID, root, tok)
+					if err != nil {
+						return 0, err
+					}
+					page = p
+					return 200, nil
+				}); err != nil {
+					rootResults[idx] = rootResult{root: root, err: err}
+					return
+				}
+				if page == nil {
+					break
+				}
+				for j := range page.Value {
+					collected = append(collected, &page.Value[j])
+				}
+				if page.ContinuationToken == "" {
+					break
+				}
+				tok = page.ContinuationToken
+			}
+			rootResults[idx] = rootResult{root: root, infos: collected}
+		}(i, r)
+	}
+	wg.Wait()
+
+	var infos []*models.RunArtifactContentInfo
+	for _, rr := range rootResults {
+		if rr.err != nil {
+			return fmt.Errorf("could not list content info for root %q: %w", rr.root, rr.err)
+		}
+		infos = append(infos, rr.infos...)
+	}
+
 	if len(infos) == 0 {
 		fmt.Println("  artifacts: none found")
 		return nil
 	}
 
+	// 4. Download all SAS URIs in parallel.
 	fmt.Printf("  artifacts: downloading %d artifact(s) to %s...\n", len(infos), dest)
 	// Sweep any leftover .tmp files from a previously interrupted run so
 	// users don't see stale scratch files alongside their downloads.

@@ -2,6 +2,7 @@
 
 ## 0.1.32-preview (2026-05-18)
 
+- [[#8223]](https://github.com/Azure/azure-dev/pull/8223) Add `.agentignore` support for controlling which files are excluded from agent code-deploy ZIP packaging. Uses `.gitignore` syntax with sensible defaults generated during `azd ai agent init`.
 - [[#8222]](https://github.com/Azure/azure-dev/pull/8222) Add post-init validation to check .NET runtime compatibility with project TargetFramework and show guidance when mismatched.
 - [[#7865]](https://github.com/Azure/azure-dev/pull/7865) Improve `azd ai agent invoke` trace ID handling for consistent responses, including deduping comma-folded request IDs.
 - [[#8184]](https://github.com/Azure/azure-dev/pull/8184) Default `azd ai agent show` output to table format.

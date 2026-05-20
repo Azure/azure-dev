@@ -476,6 +476,9 @@ overrides:
     words:
       - extensionquery
       - bitmask
+  - filename: pkg/infra/provisioning/bicep/bicep_provider.go
+    words:
+      - azurekubernetesservicechaosmesh
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

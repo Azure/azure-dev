@@ -20,6 +20,7 @@ import (
 
 // filesFlags holds the common flags shared by all file subcommands.
 type filesFlags struct {
+	isolationHeaderFlags
 	agentName string // optional: agent name (matches azure.yaml service name)
 	session   string // optional: explicit session ID override
 }
@@ -38,7 +39,10 @@ of a hosted agent. This is useful for debugging, seeding data, and agent setup.
 Agent details (name, endpoint) are automatically resolved from the
 azd environment. Use --agent-name to select a specific agent when the project
 has multiple azure.ai.agent services. The session ID is automatically resolved
-from the last invoke session, or can be overridden with --session-id.`,
+from the last invoke session, or can be overridden with --session-id.
+
+For agents configured with header-based isolation, pass --user-isolation-key
+and --chat-isolation-key on each file operation.`,
 	}
 
 	cmd.AddCommand(newFilesUploadCommand(extCtx))
@@ -55,6 +59,7 @@ from the last invoke session, or can be overridden with --session-id.`,
 func addFilesFlags(cmd *cobra.Command, flags *filesFlags) {
 	cmd.Flags().StringVarP(&flags.agentName, "agent-name", "n", "", "Agent name (matches azure.yaml service name; auto-detected when only one exists)")
 	cmd.Flags().StringVarP(&flags.session, "session-id", "s", "", "Session ID override (defaults to last invoke session)")
+	addIsolationHeaderFlags(cmd, &flags.isolationHeaderFlags)
 }
 
 // filesContext holds the resolved agent context and session for file operations.
@@ -211,6 +216,7 @@ func (a *FilesUploadAction) Run(ctx context.Context) error {
 		remotePath,
 		DefaultAgentAPIVersion,
 		file,
+		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to upload file: %w", err)
@@ -306,6 +312,7 @@ func (a *FilesDownloadAction) Run(ctx context.Context) error {
 		a.sessionID,
 		a.flags.file,
 		DefaultAgentAPIVersion,
+		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to download file: %w", err)
@@ -422,6 +429,7 @@ func (a *FilesListAction) Run(ctx context.Context) error {
 		a.sessionID,
 		a.remotePath,
 		DefaultAgentAPIVersion,
+		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to list files: %w", err)
@@ -553,6 +561,7 @@ func (a *FilesRemoveAction) Run(ctx context.Context) error {
 		a.remotePath,
 		a.flags.recursive,
 		DefaultAgentAPIVersion,
+		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to remove file: %w", err)
@@ -567,8 +576,9 @@ func (a *FilesRemoveAction) Run(ctx context.Context) error {
 // FilesMkdirAction handles creating a directory in a session.
 type FilesMkdirAction struct {
 	*AgentContext
-	sessionID  string
-	remotePath string
+	sessionID      string
+	remotePath     string
+	requestOptions *agent_api.SessionRequestOptions
 }
 
 func newFilesMkdirCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -610,9 +620,10 @@ Agent details are automatically resolved from the azd environment.`,
 			}
 
 			action := &FilesMkdirAction{
-				AgentContext: fc.AgentContext,
-				sessionID:    fc.sessionID,
-				remotePath:   dirPath,
+				AgentContext:   fc.AgentContext,
+				sessionID:      fc.sessionID,
+				remotePath:     dirPath,
+				requestOptions: flags.sessionRequestOptions(),
 			}
 
 			return action.Run(ctx)
@@ -638,6 +649,7 @@ func (a *FilesMkdirAction) Run(ctx context.Context) error {
 		a.sessionID,
 		a.remotePath,
 		DefaultAgentAPIVersion,
+		a.requestOptions,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
@@ -727,6 +739,7 @@ func (a *FilesStatAction) Run(ctx context.Context) error {
 		a.sessionID,
 		a.remotePath,
 		DefaultAgentAPIVersion,
+		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to stat file: %w", err)

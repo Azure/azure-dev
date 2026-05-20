@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
@@ -273,10 +275,10 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	}
 
 	// Check if required environment variables are set
-	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
+	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
+			"FOUNDRY_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
 			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
 		)
 	}
@@ -382,7 +384,7 @@ func (p *AgentServiceTargetProvider) Package(
 	// Code deploy: ZIP the source directory
 	if p.isCodeDeployAgent() {
 		progress("Packaging code")
-		zipPath, sha256Hex, err := p.packageCodeDeploy(serviceConfig)
+		zipPath, sha256Hex, err := p.packageCodeDeploy(ctx, serviceConfig)
 		if err != nil {
 			return nil, exterrors.Internal(exterrors.OpContainerPackage, fmt.Sprintf("code packaging failed: %s", err))
 		}
@@ -835,6 +837,28 @@ type deployPrepResult struct {
 	protocols       []agent_yaml.ProtocolVersionRecord
 }
 
+func writeExistingAgentVersionWarning(agentName string) {
+	fmt.Fprintf(os.Stderr, "%s", agents.ExistingAgentWarning(agentName))
+}
+
+func writeExistingAgentVersionWarningIfPresent(
+	ctx context.Context,
+	agentChecker agents.AgentChecker,
+	agentName string,
+) bool {
+	exists, err := agents.AgentExists(ctx, agentChecker, agentName, agentAPIVersion)
+	if err != nil {
+		log.Printf("existing agent name check skipped for %q: %v", agentName, err)
+		return false
+	}
+	if exists {
+		writeExistingAgentVersionWarning(agentName)
+		return true
+	}
+
+	return false
+}
+
 // prepareDeploy handles the common pre-deploy logic shared by container and code
 // deploy: endpoint validation, environment variable resolution, service config
 // parsing, and API request building. The caller provides extra build options
@@ -845,16 +869,16 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	azdEnv map[string]string,
 	extraOptions []agent_yaml.AgentBuildOption,
 ) (*deployPrepResult, error) {
-	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
+	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
+			"FOUNDRY_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
 			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
 		)
 	}
 
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
+	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
 	// Resolve environment variables from YAML using azd environment values
@@ -942,7 +966,7 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 		agentVersion.Name,
 		agentVersion.Version,
 		azdEnv["AZURE_AI_PROJECT_ID"],
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		protocols,
 	)
 
@@ -1016,7 +1040,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	// Poll until agent version is active
 	if agentVersionResponse.Status != "active" {
 		agentClient := agent_api.NewAgentClient(
-			azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+			azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 			p.credential,
 		)
 		polledVersion, pollErr := p.waitForAgentActive(ctx, agentClient, prep.request.Name, agentVersionResponse.Version, progress)
@@ -1033,7 +1057,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
 // and computes its SHA-256. Returns the temp file path and SHA-256 hex string.
-func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.ServiceConfig) (string, string, error) {
+func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serviceConfig *azdext.ServiceConfig) (string, string, error) {
 	// Source directory is the service's relative path
 	srcDir := filepath.Dir(p.agentDefinitionPath)
 
@@ -1052,30 +1076,14 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 		}
 	}
 
-	// Exclusion patterns
-	// TODO: support a .azdignore or similar ignore file for user-configurable exclusions.
-	excludeDirs := map[string]bool{
-		"__pycache__":   true,
-		".venv":         true,
-		"venv":          true,
-		".git":          true,
-		"node_modules":  true,
-		".mypy_cache":   true,
-		".pytest_cache": true,
-		".azure":        true,
-		// .NET directories (for remote_build, exclude build artifacts)
-		"bin": true,
-		"obj": true,
-		".vs": true,
-	}
-	excludeExts := map[string]bool{
-		".pyc":  true,
-		".pyo":  true,
-		".user": true,
-		".suo":  true,
-	}
-	excludeFiles := map[string]bool{
-		".env": true,
+	// Load .agentignore (or use defaults if no file exists)
+	ignoreMatcher, err := newAgentIgnoreMatcher(ctx, srcDir)
+	if err != nil {
+		return "", "", exterrors.Dependency(
+			exterrors.CodeInvalidFilePath,
+			fmt.Sprintf("failed to load %s: %s", agentIgnoreFileName, err),
+			"check that .agentignore is a valid file with gitignore syntax",
+		)
 	}
 
 	// Create temp file and write ZIP directly to it while computing SHA-256
@@ -1117,9 +1125,14 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 		// Normalize to forward slashes for ZIP
 		relPath = filepath.ToSlash(relPath)
 
+		// Skip symlinked directories to avoid traversing outside the project root
+		if d.IsDir() && d.Type()&fs.ModeSymlink != 0 {
+			return filepath.SkipDir
+		}
+
 		// Check directory exclusions
 		if d.IsDir() {
-			if excludeDirs[d.Name()] {
+			if ignoreMatcher.ShouldExclude(relPath, true) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -1130,18 +1143,8 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 			return nil
 		}
 
-		// Check file extension exclusions
-		if excludeExts[filepath.Ext(path)] {
-			return nil
-		}
-
-		// Check file name exclusions (.env, .env.*)
-		if excludeFiles[d.Name()] || strings.HasPrefix(d.Name(), ".env.") {
-			return nil
-		}
-
-		// Skip agent.yaml itself from the ZIP (metadata is sent separately)
-		if d.Name() == "agent.yaml" {
+		// Check file exclusions
+		if ignoreMatcher.ShouldExclude(relPath, false) {
 			return nil
 		}
 
@@ -1403,7 +1406,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		p.credential,
 	)
 
@@ -1428,7 +1431,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 	} else {
 		// Agent exists — update
-		fmt.Fprintf(os.Stderr, "Updating existing agent: %s\n", agentDef.Name)
+		writeExistingAgentVersionWarning(agentDef.Name)
 		agentResp, err = agentClient.UpdateAgentFromZip(ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agentAPIVersion)
 		if err != nil {
 			return nil, exterrors.Internal(
@@ -1621,6 +1624,8 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	const confirmCount = 2 // consecutive times a terminal status must be seen
 
 	deadline := time.Now().Add(pollTimeout)
+	maxAttempts := int(pollTimeout / pollInterval)
+	attempt := 0
 	progress("Waiting for agent to become active")
 
 	var consecutiveActive int
@@ -1633,6 +1638,9 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 			return nil, fmt.Errorf("deployment cancelled: %w", ctx.Err())
 		case <-time.After(pollInterval):
 		}
+
+		attempt++
+		progress(fmt.Sprintf("Polling agent status (%d/%d)", attempt, maxAttempts))
 
 		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agentAPIVersion)
 		if err != nil {
@@ -1693,9 +1701,11 @@ func (p *AgentServiceTargetProvider) createAgent(
 ) (*agent_api.AgentVersionObject, error) {
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		p.credential,
 	)
+
+	writeExistingAgentVersionWarningIfPresent(ctx, agentClient, request.Name)
 
 	// Extract CreateAgentVersionRequest from CreateAgentRequest
 	versionRequest := &agent_api.CreateAgentVersionRequest{
@@ -1795,13 +1805,13 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 
 	// Set the base agent endpoint used for session management (not protocol-specific).
 	baseEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
-	projectEndpoint := strings.TrimRight(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], "/")
+	projectEndpoint := strings.TrimRight(azdEnv["FOUNDRY_PROJECT_ENDPOINT"], "/")
 	envVars[baseEndpointKey] = fmt.Sprintf(
 		"%s/agents/%s/versions/%s", projectEndpoint, agentVersionResponse.Name, agentVersionResponse.Version,
 	)
 
 	endpoints := agentInvocationEndpoints(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		agentVersionResponse.Name,
 		protocols,
 	)

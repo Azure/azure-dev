@@ -928,10 +928,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 			if createdFolder != "" {
 				// Print relative to where the user invoked the command.
+				// Use ToSlash so the path is consistently forward-slash on all platforms.
 				displayPath := createdFolder
-				relPath, relErr := filepath.Rel(originalCwd, createdFolder)
-				if relErr == nil {
-					displayPath = "./" + relPath
+				if relPath, relErr := filepath.Rel(originalCwd, createdFolder); relErr == nil {
+					displayPath = filepath.ToSlash(relPath)
 				}
 				fmt.Printf("\nYour project has been created in %s\n", displayPath)
 

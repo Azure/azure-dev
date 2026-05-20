@@ -453,15 +453,52 @@ func printAzcopyInfo(initMessage string, infoMessages []string) {
 	}
 }
 
-// redactSAS returns a URL with its query string replaced by "?[sas-redacted]"
-// so SAS tokens and other credentials are never written to logs/stderr. The
-// path portion — which is what we usually need to diagnose scope problems —
-// is preserved verbatim.
+// redactSAS returns a URL safe to write to logs/stderr.
+//
+// Primary path: replace the query string with "?[sas-redacted]" so SAS tokens
+// and other credentials never leak. The path portion — which is what we usually
+// need to diagnose scope problems — is preserved verbatim.
+//
+// Defense-in-depth: if the input has no '?' (e.g. an encoder emitted '%3F'
+// instead of '?', or used a non-standard separator), we still scan for
+// well-known Azure Storage SAS parameter names. If any are present we cannot
+// safely localize the secret span, so we drop the entire URL rather than risk
+// surfacing a signature. Path-only URLs without SAS markers pass through
+// unchanged.
 func redactSAS(u string) string {
 	if before, _, ok := strings.Cut(u, "?"); ok {
 		return before + "?[sas-redacted]"
 	}
+	if containsSASMarker(u) {
+		return "[sas-redacted-url]"
+	}
 	return u
+}
+
+// sasParamMarkers lists Azure Storage SAS query parameter names whose presence
+// strongly indicates a SAS-bearing URL. Matched case-insensitively as
+// substrings with the trailing '=' so partial names ("svc=") don't false-hit.
+var sasParamMarkers = []string{
+	"sv=",    // signed version
+	"sig=",   // signature
+	"se=",    // signed expiry
+	"sp=",    // signed permissions
+	"st=",    // signed start
+	"sr=",    // signed resource
+	"ss=",    // signed services (account SAS)
+	"srt=",   // signed resource types (account SAS)
+	"skoid=", // signed key OID (user-delegation SAS)
+	"sktid=", // signed key tenant ID
+}
+
+func containsSASMarker(u string) bool {
+	lower := strings.ToLower(u)
+	for _, m := range sasParamMarkers {
+		if strings.Contains(lower, m) {
+			return true
+		}
+	}
+	return false
 }
 
 func printProgress(transferred, total int64, percent float64, startTime time.Time) {

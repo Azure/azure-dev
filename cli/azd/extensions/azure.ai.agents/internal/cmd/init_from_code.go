@@ -492,8 +492,8 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 
 	// Ask user how they want to configure a model
 	modelConfigChoices := []*azdext.SelectChoice{
-		{Label: "Deploy a new model from the catalog", Value: "new"},
-		{Label: "Select an existing model deployment from a Foundry project", Value: "existing"},
+		{Label: "Deploy new model(s) (with new Foundry project)", Value: "new"},
+		{Label: "Use an existing Foundry project", Value: "existing"},
 		{Label: "Skip model configuration", Value: "skip"},
 	}
 

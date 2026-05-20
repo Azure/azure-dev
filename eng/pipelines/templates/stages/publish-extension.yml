@@ -91,9 +91,9 @@ stages:
                     TagPrefix: azd-ext-${{ parameters.SanitizedExtensionId }}
                     TagVersion: $(EXT_VERSION)
 
-      # Updates the selected extension registry (and snapshots) after the
-      # GitHub Release exists. Mirrors Increment_Version in
-      # eng/pipelines/templates/stages/publish.yml.
+      # Updates the selected extension registry after the GitHub Release exists.
+      # Production registry updates also refresh global command snapshots.
+      # Mirrors Increment_Version in eng/pipelines/templates/stages/publish.yml.
       - job: Update_Registry
         dependsOn: Publish_Release
         condition: >-
@@ -136,14 +136,15 @@ stages:
             env:
               GH_TOKEN: $(azuresdk-github-pat)
 
-          - bash: |
-              set -euo pipefail
-              cd cli/azd
-              go build .
-              go test ./cmd -run 'TestFigSpec|TestUsage'
-            displayName: Refresh Fig/Usage snapshots
-            env:
-              UPDATE_SNAPSHOTS: "true"
+          - ${{ if ne(parameters.PublishToDevRegistry, true) }}:
+            - bash: |
+                set -euo pipefail
+                cd cli/azd
+                go build .
+                go test ./cmd -run 'TestFigSpec|TestUsage'
+              displayName: Refresh Fig/Usage snapshots
+              env:
+                UPDATE_SNAPSHOTS: "true"
 
           - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
             parameters:

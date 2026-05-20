@@ -418,9 +418,21 @@ func downloadDefaultArtifacts(
 	rootResults := make([]rootResult, len(roots))
 	sem := make(chan struct{}, download.DefaultParallelism)
 	var wg sync.WaitGroup
+spawn:
 	for i, r := range roots {
+		// Context-aware semaphore acquire: if ctx is cancelled while we're
+		// blocked waiting for a slot, stop spawning new work and mark every
+		// remaining root as cancelled so the aggregation loop below still
+		// reports a result per root (vs. silently dropping them).
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			for j := i; j < len(roots); j++ {
+				rootResults[j] = rootResult{root: roots[j], err: ctx.Err()}
+			}
+			break spawn
+		}
 		wg.Add(1)
-		sem <- struct{}{}
 		go func(idx int, root string) {
 			defer wg.Done()
 			defer func() { <-sem }()

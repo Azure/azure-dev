@@ -680,6 +680,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// Track the absolute path of a newly created project folder so we
 			// can print a follow-up cd hint at the end of the command.
 			createdFolder := ""
+			// Original template title, used to surface a notice when the
+			// sanitized folder name differs significantly from what the user selected.
+			createdFromTitle := ""
 
 			// Auto-detect an existing agent manifest in the target directory
 			// when no --manifest flag was provided.
@@ -858,6 +861,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 						if dirExisted != nil {
 							createdFolder = filepath.Join(originalCwd, folderName)
+							createdFromTitle = selectedTemplate.Title
 						}
 
 						// Search for an agent manifest in the scaffolded project
@@ -901,6 +905,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 						if dirExisted != nil {
 							createdFolder = filepath.Join(originalCwd, folderName)
+							createdFromTitle = selectedTemplate.Title
 						}
 					}
 
@@ -925,10 +930,20 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				// Print relative to where the user invoked the command.
 				displayPath := createdFolder
 				relPath, relErr := filepath.Rel(originalCwd, createdFolder)
-				if relErr != nil {
+				if relErr == nil {
 					displayPath = "./" + relPath
 				}
 				fmt.Printf("\nYour project has been created in %s\n", displayPath)
+
+				// Surface a notice when the folder name differs from the
+				// original template title (e.g. non-ASCII characters were
+				// stripped during sanitization).
+				if createdFromTitle != "" && filepath.Base(createdFolder) != createdFromTitle {
+					fmt.Printf(
+						"  (folder name derived from template %q)\n",
+						createdFromTitle,
+					)
+				}
 			}
 
 			return nil

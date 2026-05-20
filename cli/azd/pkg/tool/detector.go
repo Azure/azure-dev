@@ -74,11 +74,11 @@ func (d *detector) DetectTool(
 	case ToolCategoryCLI:
 		return d.detectCLI(ctx, tool), nil
 	case ToolCategoryVSCodeExtension:
-		return d.detectExtension(ctx, tool), nil
+		return d.detectVSCodeExtension(ctx, tool), nil
 	case ToolCategoryServer:
-		return d.detectCommandBased(ctx, tool), nil
+		return d.detectServer(ctx, tool), nil
 	case ToolCategoryAzdExtension:
-		return d.detectLibrary(ctx, tool), nil
+		return d.detectAzdExtension(ctx, tool), nil
 	default:
 		return &ToolStatus{Tool: tool}, nil
 	}
@@ -191,10 +191,10 @@ func (d *detector) detectCLI(
 	return status
 }
 
-// detectExtension checks for a VS Code extension by listing
+// detectVSCodeExtension checks for a VS Code extension by listing
 // installed extensions with `code --list-extensions --show-versions`
 // and matching the output against the tool's [ToolDefinition.VersionRegex].
-func (d *detector) detectExtension(
+func (d *detector) detectVSCodeExtension(
 	ctx context.Context,
 	tool *ToolDefinition,
 ) *ToolStatus {
@@ -262,10 +262,9 @@ func (d *detector) detectExtension(
 	return status
 }
 
-// detectCommandBased handles server tools that specify a
-// DetectCommand. If no DetectCommand is configured the tool is
-// reported as not installed.
-func (d *detector) detectCommandBased(
+// detectServer handles server tools that specify a DetectCommand.
+// If no DetectCommand is configured the tool is reported as not installed.
+func (d *detector) detectServer(
 	ctx context.Context,
 	tool *ToolDefinition,
 ) *ToolStatus {
@@ -355,11 +354,11 @@ type azdExtensionEntry struct {
 	InstalledVersion string `json:"installedVersion"`
 }
 
-// detectLibrary handles azd extension (library) tools by parsing JSON
+// detectAzdExtension handles azd extension tools by parsing JSON
 // output from `azd extension list --installed --output json`. It
 // looks for an entry whose `id` matches the tool's [ToolDefinition.Id]
 // and extracts the `installedVersion`.
-func (d *detector) detectLibrary(
+func (d *detector) detectAzdExtension(
 	ctx context.Context,
 	tool *ToolDefinition,
 ) *ToolStatus {

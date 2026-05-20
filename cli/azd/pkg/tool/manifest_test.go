@@ -307,7 +307,7 @@ func TestSpecificToolDefinitions(t *testing.T) {
 		assert.Equal(t, "azure.ai.agents", tool.Id,
 			"Id must match the JSON id emitted by `azd extension list`")
 		assert.Equal(t, ToolCategoryAzdExtension, tool.Category,
-			"Category must be AzdExtension so DetectTool routes to detectLibrary")
+			"Category must be AzdExtension so DetectTool routes to detectAzdExtension")
 		assert.Equal(t, "azd-extension", string(tool.Category),
 			"wire format must remain stable for `azd tool list --output json` consumers")
 		assert.Equal(t, "azd", tool.DetectCommand,
@@ -315,7 +315,7 @@ func TestSpecificToolDefinitions(t *testing.T) {
 		assert.Equal(t,
 			[]string{"extension", "list", "--installed", "--output", "json"},
 			tool.VersionArgs,
-			"VersionArgs must match the JSON command parsed by detectLibrary")
+			"VersionArgs must match the JSON command parsed by detectAzdExtension")
 		assert.Empty(t, tool.Dependencies,
 			"azd extensions are self-contained; must not depend on az-cli")
 

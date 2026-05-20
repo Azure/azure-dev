@@ -9,6 +9,8 @@ words:
   # Azure ML / Foundry training API surface
   - amlignore
   - azureml
+  - skoid
+  - sktid
   - contentinfo
   - dcid
   - executionlogs

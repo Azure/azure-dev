@@ -329,7 +329,7 @@ func (c *Client) pollLROLocation(
 
 		switch opResp.StatusCode {
 		case http.StatusOK:
-			opResp.Body.Close()
+			_ = opResp.Body.Close()
 			return lroCompleted, nil
 
 		case http.StatusAccepted:
@@ -337,7 +337,7 @@ func (c *Client) pollLROLocation(
 			if retryAfter <= 0 {
 				retryAfter = defaultLROPollInterval
 			}
-			opResp.Body.Close()
+			_ = opResp.Body.Close()
 			if noWait {
 				return lroInProgress, nil
 			}
@@ -354,7 +354,7 @@ func (c *Client) pollLROLocation(
 
 		default:
 			err := c.HandleError(opResp)
-			opResp.Body.Close()
+			_ = opResp.Body.Close()
 			return 0, err
 		}
 	}

@@ -4,20 +4,17 @@
 package cmd
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/tool"
-	"github.com/stretchr/testify/assert"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/tool"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
 
 func TestToolCommandGating(t *testing.T) {
@@ -62,7 +59,7 @@ func TestRunToolOperationUnsuccessfulResultReturnsError(t *testing.T) {
 	}
 	console := mockinput.NewMockConsole()
 
-	results, err := runToolOperation(
+	results, _, err := runToolOperation(
 		t.Context(),
 		[]*tool.ToolDefinition{toolDef},
 		func(ctx context.Context, ids []string) ([]*tool.InstallResult, error) {
@@ -92,7 +89,7 @@ func TestRunToolOperationSuccessfulResultReturnsNoError(t *testing.T) {
 	}
 	console := mockinput.NewMockConsole()
 
-	results, err := runToolOperation(
+	results, _, err := runToolOperation(
 		t.Context(),
 		[]*tool.ToolDefinition{toolDef},
 		func(ctx context.Context, ids []string) ([]*tool.InstallResult, error) {

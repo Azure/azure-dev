@@ -29,12 +29,14 @@ var (
 	ErrNoResourceSelected = fmt.Errorf("no resource selected")
 )
 
-func isDemoModeEnabled() bool {
+// IsDemoModeEnabled checks if AZD_DEMO_MODE is enabled.
+func IsDemoModeEnabled() bool {
 	v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE"))
 	return err == nil && v
 }
 
-func formatSubscriptionDisplayName(subscription *account.Subscription, hideId bool) string {
+// FormatSubscriptionDisplay formats a subscription for display in selection prompts.
+func FormatSubscriptionDisplay(subscription *account.Subscription, hideId bool) string {
 	if hideId {
 		return subscription.Name
 	}
@@ -258,8 +260,9 @@ func (ps *promptService) PromptSubscription(
 
 	// Apply tenant filtering (after spinner is done so the prompt doesn't overlap)
 	subscriptionList = filterByTenantEnvVar(subscriptionList)
+	var selectedTenantId string
 	if !ps.console.IsNoPromptMode() {
-		subscriptionList, err = promptAndFilterByTenant(
+		subscriptionList, selectedTenantId, err = promptAndFilterByTenant(
 			ctx, ps.console, subscriptionList, ps.subscriptionManager.GetTenantDisplayNames)
 		if err != nil {
 			return nil, err
@@ -276,7 +279,20 @@ func (ps *promptService) PromptSubscription(
 		}
 	}
 
-	hideId := isDemoModeEnabled()
+	// Apply subscription filter if one exists for the selected tenant
+	var filterApplied bool
+	if selectedTenantId != "" && userConfig != nil {
+		filterIds, hasFilter := LoadSubscriptionFilter(
+			userConfig, selectedTenantId,
+		)
+		if hasFilter {
+			subscriptionList, filterApplied = ApplySubscriptionFilter(
+				subscriptionList, filterIds,
+			)
+		}
+	}
+
+	hideId := IsDemoModeEnabled()
 
 	// Use PromptCustomResource with pre-loaded data
 	subscriptions := make([]*account.Subscription, len(subscriptionList))
@@ -284,22 +300,104 @@ func (ps *promptService) PromptSubscription(
 		subscriptions[i] = &subscriptionList[i]
 	}
 
+	// Show note when subscription filter is active
+	if filterApplied {
+		ps.console.Message(ctx, FilteredSubscriptionNote)
+	}
+
 	// Create selector options with spinner disabled since data is already loaded
 	resourceSelectorOptions := *mergedOptions
 	resourceSelectorOptions.SkipLoadingSpinner = true
 
-	return PromptCustomResource(ctx, CustomResourceOptions[account.Subscription]{
-		SelectorOptions: &resourceSelectorOptions,
-		LoadData: func(ctx context.Context) ([]*account.Subscription, error) {
-			return subscriptions, nil
-		},
-		DisplayResource: func(subscription *account.Subscription) (string, error) {
-			return formatSubscriptionDisplayName(subscription, hideId), nil
-		},
-		Selected: func(subscription *account.Subscription) bool {
-			return strings.EqualFold(subscription.Id, defaultSubscriptionId)
-		},
-	})
+	result, err := PromptCustomResource(
+		ctx, CustomResourceOptions[account.Subscription]{
+			SelectorOptions: &resourceSelectorOptions,
+			LoadData: func(
+				ctx context.Context,
+			) ([]*account.Subscription, error) {
+				if filterApplied {
+					// Append sentinel for "Show all subscriptions"
+					withShowAll := make(
+						[]*account.Subscription,
+						len(subscriptions)+1,
+					)
+					copy(withShowAll, subscriptions)
+					withShowAll[len(subscriptions)] = &account.Subscription{
+						Id:   ShowAllSubscriptionsOption,
+						Name: ShowAllSubscriptionsOption,
+					}
+					return withShowAll, nil
+				}
+				return subscriptions, nil
+			},
+			DisplayResource: func(
+				subscription *account.Subscription,
+			) (string, error) {
+				if subscription.Id == ShowAllSubscriptionsOption {
+					return ShowAllSubscriptionsOption, nil
+				}
+				return FormatSubscriptionDisplay(
+					subscription, hideId,
+				), nil
+			},
+			Selected: func(
+				subscription *account.Subscription,
+			) bool {
+				return strings.EqualFold(
+					subscription.Id, defaultSubscriptionId,
+				)
+			},
+		})
+	if err != nil {
+		return nil, err
+	}
+
+	// If user selected "Show all subscriptions", re-prompt with full list
+	if result != nil && result.Id == ShowAllSubscriptionsOption {
+		allSubs, loadErr := ps.subscriptionManager.GetSubscriptions(ctx)
+		if loadErr != nil {
+			return nil, fmt.Errorf(
+				"listing subscriptions: %w", loadErr,
+			)
+		}
+		allSubs = filterByTenantEnvVar(allSubs)
+		if selectedTenantId != "" {
+			allSubs = FilterSubscriptionsByTenantId(
+				allSubs, selectedTenantId,
+			)
+		}
+
+		allSubPtrs := make([]*account.Subscription, len(allSubs))
+		for i := range allSubs {
+			allSubPtrs[i] = &allSubs[i]
+		}
+
+		return PromptCustomResource(
+			ctx, CustomResourceOptions[account.Subscription]{
+				SelectorOptions: &resourceSelectorOptions,
+				LoadData: func(
+					ctx context.Context,
+				) ([]*account.Subscription, error) {
+					return allSubPtrs, nil
+				},
+				DisplayResource: func(
+					subscription *account.Subscription,
+				) (string, error) {
+					return FormatSubscriptionDisplay(
+						subscription, hideId,
+					), nil
+				},
+				Selected: func(
+					subscription *account.Subscription,
+				) bool {
+					return strings.EqualFold(
+						subscription.Id, defaultSubscriptionId,
+					)
+				},
+			})
+	}
+
+	return result, nil
 }
 
 // PromptLocation prompts the user to select an Azure location.

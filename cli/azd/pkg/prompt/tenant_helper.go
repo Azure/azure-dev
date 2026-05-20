@@ -18,8 +18,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
-// tenantInfo holds display metadata for a tenant extracted from the subscription list.
-type tenantInfo struct {
+// TenantInfo holds display metadata for a tenant extracted from the subscription list.
+type TenantInfo struct {
 	// Id is the tenant ID (GUID).
 	Id string
 	// DisplayName is the friendly name of the tenant, or the ID if no name is available.
@@ -28,16 +28,16 @@ type tenantInfo struct {
 	SubscriptionCount int
 }
 
-// extractUniqueTenants extracts unique tenants from a list of subscriptions,
+// ExtractUniqueTenants extracts unique tenants from a list of subscriptions,
 // grouped by UserAccessTenantId (falling back to TenantId when UserAccessTenantId is empty).
 // The returned list is sorted by DisplayName.
 // Tenant display names are resolved from the provided tenantDisplayNames map;
 // if a tenant ID is not in the map, the ID itself is used as the display name.
-func extractUniqueTenants(
+func ExtractUniqueTenants(
 	subscriptions []account.Subscription,
 	tenantDisplayNames map[string]string,
-) []tenantInfo {
-	tenantMap := make(map[string]*tenantInfo)
+) []TenantInfo {
+	tenantMap := make(map[string]*TenantInfo)
 
 	for _, sub := range subscriptions {
 		tid := sub.UserAccessTenantId
@@ -55,7 +55,7 @@ func extractUniqueTenants(
 			if name, ok := tenantDisplayNames[tid]; ok && name != "" {
 				displayName = name
 			}
-			tenantMap[tid] = &tenantInfo{
+			tenantMap[tid] = &TenantInfo{
 				Id:                tid,
 				DisplayName:       displayName,
 				SubscriptionCount: 1,
@@ -63,12 +63,12 @@ func extractUniqueTenants(
 		}
 	}
 
-	tenants := make([]tenantInfo, 0, len(tenantMap))
+	tenants := make([]TenantInfo, 0, len(tenantMap))
 	for _, info := range tenantMap {
 		tenants = append(tenants, *info)
 	}
 
-	slices.SortFunc(tenants, func(a, b tenantInfo) int {
+	slices.SortFunc(tenants, func(a, b TenantInfo) int {
 		if c := cmp.Compare(
 			strings.ToLower(a.DisplayName),
 			strings.ToLower(b.DisplayName),
@@ -81,9 +81,9 @@ func extractUniqueTenants(
 	return tenants
 }
 
-// filterSubscriptionsByTenant filters subscriptions to only those accessible
+// FilterSubscriptionsByTenantId filters subscriptions to only those accessible
 // through the specified tenant ID. If tenantId is empty, all subscriptions are returned.
-func filterSubscriptionsByTenant(
+func FilterSubscriptionsByTenantId(
 	subscriptions []account.Subscription,
 	tenantId string,
 ) []account.Subscription {
@@ -114,7 +114,7 @@ func filterByTenantEnvVar(subscriptions []account.Subscription) []account.Subscr
 		return subscriptions
 	}
 
-	filtered := filterSubscriptionsByTenant(subscriptions, tenantId)
+	filtered := FilterSubscriptionsByTenantId(subscriptions, tenantId)
 	// If filtering produces no results, fall back to showing all subscriptions
 	// rather than erroring out — the tenant ID may be stale
 	if len(filtered) == 0 {
@@ -131,7 +131,7 @@ func filterByTenantEnvVar(subscriptions []account.Subscription) []account.Subscr
 func promptTenantSelection(
 	ctx context.Context,
 	console input.Console,
-	tenants []tenantInfo,
+	tenants []TenantInfo,
 ) (string, error) {
 	if len(tenants) <= 1 {
 		if len(tenants) == 1 {
@@ -147,7 +147,7 @@ func promptTenantSelection(
 
 	options := make([]string, len(tenants)+1)
 	for i, t := range tenants {
-		options[i] = formatTenantOption(i+1, t)
+		options[i] = FormatTenantDisplay(i+1, t)
 	}
 	options[len(tenants)] = allTenantsLabel
 
@@ -171,17 +171,22 @@ func promptTenantSelection(
 type TenantDisplayNameProvider func(ctx context.Context) (map[string]string, error)
 
 // promptAndFilterByTenant prompts the user to select a tenant when subscriptions span multiple tenants.
-// It extracts unique tenants, fetches display names only when needed, and returns filtered subscriptions.
+// It extracts unique tenants, fetches display names only when needed, and returns filtered subscriptions
+// along with the selected tenant ID (empty if "All tenants" was chosen or only one tenant exists).
 func promptAndFilterByTenant(
 	ctx context.Context,
 	console input.Console,
 	subscriptions []account.Subscription,
 	getTenantNames TenantDisplayNameProvider,
-) ([]account.Subscription, error) {
+) ([]account.Subscription, string, error) {
 	// Quick check without display names to avoid unnecessary API call
-	tenants := extractUniqueTenants(subscriptions, nil)
+	tenants := ExtractUniqueTenants(subscriptions, nil)
 	if len(tenants) <= 1 {
-		return subscriptions, nil
+		tenantId := ""
+		if len(tenants) == 1 {
+			tenantId = tenants[0].Id
+		}
+		return subscriptions, tenantId, nil
 	}
 
 	// Only fetch tenant display names when we actually need to prompt
@@ -195,17 +200,20 @@ func promptAndFilterByTenant(
 		}
 	}
 
-	tenants = extractUniqueTenants(subscriptions, tenantNames)
+	tenants = ExtractUniqueTenants(subscriptions, tenantNames)
 
 	selectedTenantId, err := promptTenantSelection(ctx, console, tenants)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return filterSubscriptionsByTenant(subscriptions, selectedTenantId), nil
+	return FilterSubscriptionsByTenantId(
+		subscriptions, selectedTenantId,
+	), selectedTenantId, nil
 }
 
-func formatTenantOption(index int, t tenantInfo) string {
+// FormatTenantDisplay formats a tenant option for display in selection prompts.
+func FormatTenantDisplay(index int, t TenantInfo) string {
 	subCountLabel := fmt.Sprintf(
 		"%d subscription", t.SubscriptionCount,
 	)

@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/stringutil"
@@ -46,26 +47,29 @@ type Prompter interface {
 }
 
 type DefaultPrompter struct {
-	console         input.Console
-	env             *environment.Environment
-	accountManager  account.Manager
-	resourceService *azapi.ResourceService
-	portalUrlBase   string
+	console           input.Console
+	env               *environment.Environment
+	accountManager    account.Manager
+	userConfigManager config.UserConfigManager
+	resourceService   *azapi.ResourceService
+	portalUrlBase     string
 }
 
 func NewDefaultPrompter(
 	env *environment.Environment,
 	console input.Console,
 	accountManager account.Manager,
+	userConfigManager config.UserConfigManager,
 	resourceService *azapi.ResourceService,
 	cloud *cloud.Cloud,
 ) Prompter {
 	return &DefaultPrompter{
-		console:         console,
-		env:             env,
-		accountManager:  accountManager,
-		resourceService: resourceService,
-		portalUrlBase:   cloud.PortalUrlBase,
+		console:           console,
+		env:               env,
+		accountManager:    accountManager,
+		userConfigManager: userConfigManager,
+		resourceService:   resourceService,
+		portalUrlBase:     cloud.PortalUrlBase,
 	}
 }
 
@@ -90,11 +94,28 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 	subscriptionInfos = filterByTenantEnvVar(subscriptionInfos)
 
 	// Tenant selection: if multiple tenants, prompt user to pick one
+	var selectedTenantId string
 	if !p.console.IsNoPromptMode() {
-		subscriptionInfos, err = promptAndFilterByTenant(
+		subscriptionInfos, selectedTenantId, err = promptAndFilterByTenant(
 			ctx, p.console, subscriptionInfos, p.accountManager.GetTenantDisplayNames)
 		if err != nil {
 			return "", err
+		}
+	}
+
+	// Apply subscription filter if one exists for the selected tenant
+	var filterApplied bool
+	if selectedTenantId != "" && p.userConfigManager != nil {
+		userCfg, cfgErr := p.userConfigManager.Load()
+		if cfgErr == nil {
+			filterIds, hasFilter := LoadSubscriptionFilter(
+				userCfg, selectedTenantId,
+			)
+			if hasFilter {
+				subscriptionInfos, filterApplied = ApplySubscriptionFilter(
+					subscriptionInfos, filterIds,
+				)
+			}
 		}
 	}
 
@@ -109,8 +130,23 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 		defaultSubscriptionId = p.accountManager.GetDefaultSubscriptionID(ctx)
 	}
 
+	// Show note when subscription filter is active
+	if filterApplied {
+		p.console.Message(ctx, FilteredSubscriptionNote)
+	}
+
 	subscriptionOptions, subscriptions, defaultSubscription :=
 		formatSubscriptionOptions(subscriptionInfos, defaultSubscriptionId)
+
+	// Add "Show all subscriptions" option when filter is active
+	if filterApplied {
+		subscriptionOptions = append(
+			subscriptionOptions, ShowAllSubscriptionsOption,
+		)
+		subscriptions = append(
+			subscriptions, ShowAllSubscriptionsOption,
+		)
+	}
 
 	for subscriptionId == "" {
 		subscriptionSelectionIndex, err := p.console.Select(ctx, input.ConsoleOptions{
@@ -124,6 +160,44 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 		}
 
 		subscriptionId = subscriptions[subscriptionSelectionIndex]
+	}
+
+	// If "Show all subscriptions" was selected, re-prompt with full list
+	if subscriptionId == ShowAllSubscriptionsOption {
+		subscriptionId = ""
+		allSubs, loadErr := p.accountManager.GetSubscriptions(ctx)
+		if loadErr != nil {
+			return "", fmt.Errorf("listing subscriptions: %w", loadErr)
+		}
+		allSubs = filterByTenantEnvVar(allSubs)
+		if selectedTenantId != "" {
+			allSubs = FilterSubscriptionsByTenantId(
+				allSubs, selectedTenantId,
+			)
+		}
+
+		slices.SortFunc(allSubs, func(a, b account.Subscription) int {
+			return stringutil.CompareLower(a.Name, b.Name)
+		})
+
+		allOpts, allIds, allDefault := formatSubscriptionOptions(
+			allSubs, defaultSubscriptionId,
+		)
+
+		for subscriptionId == "" {
+			idx, selErr := p.console.Select(
+				ctx, input.ConsoleOptions{
+					Message:      msg,
+					Options:      allOpts,
+					DefaultValue: allDefault,
+				})
+			if selErr != nil {
+				return "", fmt.Errorf(
+					"reading subscription id: %w", selErr,
+				)
+			}
+			subscriptionId = allIds[idx]
+		}
 	}
 
 	if !p.accountManager.HasDefaultSubscription() {
@@ -143,7 +217,7 @@ func formatSubscriptionOptions(
 	options = make([]string, len(subscriptionInfos))
 	ids = make([]string, len(subscriptionInfos))
 
-	hideId := isDemoModeEnabled()
+	hideId := IsDemoModeEnabled()
 
 	for index, info := range subscriptionInfos {
 		if hideId {

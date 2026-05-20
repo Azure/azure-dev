@@ -26,7 +26,7 @@ func newTestPrompter(t *testing.T, mockAccount *mockaccount.MockAccountManager) 
 		mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 
 	p := NewDefaultPrompter(
-		env, mockContext.Console, mockAccount, resourceService, cloud.AzurePublic(),
+		env, mockContext.Console, mockAccount, nil, resourceService, cloud.AzurePublic(),
 	).(*DefaultPrompter)
 
 	return p, mockContext

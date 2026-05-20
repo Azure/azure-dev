@@ -140,7 +140,7 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 		env,
 		mockContext.Console,
 		&mockCurrentPrincipal{},
-		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, resourceService, cloud.AzurePublic()),
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, nil, resourceService, cloud.AzurePublic()),
 	)
 
 	err := provider.Initialize(*mockContext.Context, projectDir, options)
@@ -352,6 +352,7 @@ func TestIsRemoteBackendConfig(t *testing.T) {
 					env,
 					mockContext.Console,
 					accountManager,
+					nil,
 					resourceService,
 					cloud.AzurePublic(),
 				),

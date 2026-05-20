@@ -5,23 +5,12 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"azureaiagent/internal/pkg/agents/eval_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
-
-// resolveEvalOutputPath resolves the eval config output path.
-func resolveEvalOutputPath(output, agentProject string) string {
-	return eval_api.ResolveEvalOutputPath(output, agentProject)
-}
-
-// resolveEvalConfigPath resolves the eval config path for reading.
-func resolveEvalConfigPath(config, agentProject string) string {
-	return eval_api.ResolveEvalConfigPath(config, agentProject)
-}
 
 // resolvePortalPrefix reads AZURE_AI_PROJECT_ID from the azd environment and
 // returns a PortalPrefix for building Foundry portal URLs.
@@ -57,24 +46,4 @@ func buildEvalReportURL(ctx context.Context, azdClient *azdext.AzdClient, envNam
 		return ""
 	}
 	return prefix.EvalRunURL(evalID, runID)
-}
-
-// formatAny converts any value to a string for display.
-func formatAny(v any) string {
-	if v == nil {
-		return ""
-	}
-	switch val := v.(type) {
-	case string:
-		return val
-	case float64:
-		if val == float64(int64(val)) {
-			return fmt.Sprintf("%d", int64(val))
-		}
-		return fmt.Sprintf("%g", val)
-	case bool:
-		return fmt.Sprintf("%t", val)
-	default:
-		return fmt.Sprintf("%v", val)
-	}
 }

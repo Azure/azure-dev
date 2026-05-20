@@ -58,7 +58,7 @@ func runEvalUpdate(ctx context.Context, flags *evalUpdateFlags, noPrompt bool) e
 	defer resolved.azdClient.Close()
 
 	configPath := eval_api.ResolveEvalConfigPath(flags.config, resolved.agentProject)
-	evalCfg, err := readEvalConfig(configPath)
+	evalCfg, err := eval_api.LoadEvalConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load eval config: %w", err)
 	}
@@ -105,7 +105,7 @@ func runEvalUpdate(ctx context.Context, flags *evalUpdateFlags, noPrompt bool) e
 	}
 
 	if totalUpdated > 0 {
-		if err := writeEvalConfig(configPath, evalCfg); err != nil {
+		if err := eval_api.WriteEvalConfig(configPath, evalCfg); err != nil {
 			return fmt.Errorf("failed to save updated config: %w", err)
 		}
 		fmt.Printf("\n%s Updated config saved to %s\n", color.GreenString("Done."), flags.config)

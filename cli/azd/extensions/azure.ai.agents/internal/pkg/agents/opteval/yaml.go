@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
@@ -242,12 +241,6 @@ type Options struct {
 	ReflectionModel      string        `yaml:"reflection_model,omitempty"`
 }
 
-// DefaultTargetAttributes are the default optimization target attributes.
-var DefaultTargetAttributes = []string{"agents-optimization-job"}
-
-// Deprecated: DefaultStrategies is an alias for backward compatibility.
-var DefaultStrategies = DefaultTargetAttributes
-
 // UnmarshalYAML populates default target attributes when the field is absent in YAML.
 // For backward compatibility, the legacy "strategies" key is also accepted.
 func (o *Options) UnmarshalYAML(value *yaml.Node) error {
@@ -269,12 +262,12 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 		}
 	}
 
-	if len(o.TargetAttributes) == 0 {
-		o.TargetAttributes = slices.Clone(DefaultTargetAttributes)
+	if o.MaxIterations <= 0 {
+		o.MaxIterations = 4
 	}
-
-	o.MaxIterations = 4
-	o.Budget = 100
+	if o.Budget <= 0 {
+		o.Budget = 100
+	}
 	return nil
 }
 

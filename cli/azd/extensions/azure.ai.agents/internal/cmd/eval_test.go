@@ -117,30 +117,21 @@ func TestOpenAIEval_ResolvedID(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// formatAny / formatTimestamp
+// eval_api.FormatTimestamp
 // ---------------------------------------------------------------------------
-
-func TestFormatAny(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, "", formatAny(nil))
-	assert.Equal(t, "hello", formatAny("hello"))
-	assert.Equal(t, "42", formatAny(float64(42)))
-	assert.Equal(t, "true", formatAny(true))
-}
 
 func TestFormatTimestamp(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "2024-01-15 10:30 UTC", formatTimestamp("2024-01-15 10:30 UTC"))
-	assert.Contains(t, formatTimestamp(float64(1705312200)), "2024-01-15")
-	assert.Contains(t, formatTimestamp(int64(1705312200)), "2024-01-15")
-	assert.Equal(t, "", formatTimestamp(nil))
-	assert.Equal(t, "", formatTimestamp(true))
+	assert.Equal(t, "2024-01-15 10:30 UTC", eval_api.FormatTimestamp("2024-01-15 10:30 UTC"))
+	assert.Contains(t, eval_api.FormatTimestamp(float64(1705312200)), "2024-01-15")
+	assert.Contains(t, eval_api.FormatTimestamp(int64(1705312200)), "2024-01-15")
+	assert.Equal(t, "", eval_api.FormatTimestamp(nil))
+	assert.Equal(t, "", eval_api.FormatTimestamp(true))
 }
 
 // ---------------------------------------------------------------------------
-// resolveEvalOutputPath / resolveEvalConfigPath
+// eval_api.ResolveEvalOutputPath / eval_api.ResolveEvalConfigPath
 // ---------------------------------------------------------------------------
 
 func TestResolveEvalOutputPath(t *testing.T) {
@@ -149,12 +140,12 @@ func TestResolveEvalOutputPath(t *testing.T) {
 	t.Run("absolute path returned as-is", func(t *testing.T) {
 		t.Parallel()
 		abs := filepath.Join(os.TempDir(), "eval.yaml")
-		assert.Equal(t, abs, resolveEvalOutputPath(abs, "/project"))
+		assert.Equal(t, abs, eval_api.ResolveEvalOutputPath(abs, "/project"))
 	})
 
 	t.Run("relative path joined with agent project", func(t *testing.T) {
 		t.Parallel()
-		result := resolveEvalOutputPath("eval.yaml", "/project/agent")
+		result := eval_api.ResolveEvalOutputPath("eval.yaml", "/project/agent")
 		assert.Equal(t, filepath.Join("/project/agent", "eval.yaml"), result)
 	})
 }
@@ -165,12 +156,12 @@ func TestResolveEvalConfigPath(t *testing.T) {
 	t.Run("absolute path returned as-is", func(t *testing.T) {
 		t.Parallel()
 		abs := filepath.Join(os.TempDir(), "eval.yaml")
-		assert.Equal(t, abs, resolveEvalConfigPath(abs, "/project"))
+		assert.Equal(t, abs, eval_api.ResolveEvalConfigPath(abs, "/project"))
 	})
 
 	t.Run("relative path joined with agent project when file does not exist", func(t *testing.T) {
 		t.Parallel()
-		result := resolveEvalConfigPath("nonexistent.yaml", "/project/agent")
+		result := eval_api.ResolveEvalConfigPath("nonexistent.yaml", "/project/agent")
 		assert.Equal(t, filepath.Join("/project/agent", "nonexistent.yaml"), result)
 	})
 }
@@ -432,7 +423,7 @@ func TestRelPathForYaml(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// writeEvalConfig / readEvalConfig round-trip
+// eval_api.WriteEvalConfig / eval_api.LoadEvalConfig round-trip
 // ---------------------------------------------------------------------------
 
 func TestEvalConfigRoundTrip(t *testing.T) {
@@ -458,10 +449,10 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 		MaxSamples: 50,
 	}
 
-	err := writeEvalConfig(path, original)
+	err := eval_api.WriteEvalConfig(path, original)
 	require.NoError(t, err)
 
-	loaded, err := readEvalConfig(path)
+	loaded, err := eval_api.LoadEvalConfig(path)
 	require.NoError(t, err)
 
 	assert.Equal(t, original.Name, loaded.Name)
@@ -479,6 +470,6 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 
 func TestReadEvalConfig_MissingFile(t *testing.T) {
 	t.Parallel()
-	_, err := readEvalConfig("/nonexistent/path/eval.yaml")
+	_, err := eval_api.LoadEvalConfig("/nonexistent/path/eval.yaml")
 	assert.Error(t, err)
 }

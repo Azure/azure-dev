@@ -200,7 +200,6 @@ options:
   strategies:                                    # ([]string) Optimization strategies to try.
     - instruction                                #   Default: ["instruction", "skill", "agents-optimization-job"]
     - skill
-    - agents-optimization-job
   budget: 5                                      # (int) Max optimization budget (number of candidates). Default: 5
   max_iterations: 2                              # (int) Max iterations per strategy. Default: 2 (when strategies are default)
   min_improvement: 0.0                           # (float) Minimum score improvement to accept a candidate. Default: 0 (not set)

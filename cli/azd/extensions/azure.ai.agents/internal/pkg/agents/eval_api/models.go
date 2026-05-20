@@ -48,6 +48,13 @@ type GenerationJob struct {
 	ID     string          `json:"id"`
 	Status string          `json:"status"`
 	Result json.RawMessage `json:"result,omitempty"`
+	Error  *JobError       `json:"error,omitempty"`
+}
+
+// JobError captures error details from a failed generation job.
+type JobError struct {
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 // OperationID returns the job's operation identifier.

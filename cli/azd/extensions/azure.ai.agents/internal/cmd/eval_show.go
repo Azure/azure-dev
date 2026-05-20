@@ -101,7 +101,7 @@ func printEvalSummary(evalObj *eval_api.OpenAIEval, runs []eval_api.OpenAIEvalRu
 	if agent := evalObj.Metadata["azd_agent"]; agent != "" {
 		fmt.Printf("Agent:      %s\n", agent)
 	}
-	fmt.Printf("Created:    %s\n", formatTimestamp(evalObj.CreatedAt))
+	fmt.Printf("Created:    %s\n", eval_api.FormatTimestamp(evalObj.CreatedAt))
 	if evalObj.CreatedBy != "" {
 		fmt.Printf("Created by: %s\n", evalObj.CreatedBy)
 	}
@@ -121,7 +121,7 @@ func printEvalSummary(evalObj *eval_api.OpenAIEval, runs []eval_api.OpenAIEvalRu
 			run.Status,
 			passed,
 			failed,
-			formatTimestamp(run.CreatedAt),
+			eval_api.FormatTimestamp(run.CreatedAt),
 		)
 	}
 	if err := w.Flush(); err != nil {
@@ -138,7 +138,7 @@ func printEvalRunSummary(evalID string, run *eval_api.OpenAIEvalRun) error {
 		fmt.Printf("Name:       %s\n", run.Name)
 	}
 	fmt.Printf("Status:     %s\n", run.Status)
-	fmt.Printf("Created:    %s\n", formatTimestamp(run.CreatedAt))
+	fmt.Printf("Created:    %s\n", eval_api.FormatTimestamp(run.CreatedAt))
 	if run.CreatedBy != "" {
 		fmt.Printf("Created by: %s\n", run.CreatedBy)
 	}

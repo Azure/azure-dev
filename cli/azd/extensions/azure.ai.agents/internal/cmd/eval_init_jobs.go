@@ -67,8 +67,7 @@ func newEvalConfig(flags *evalInitFlags, resolved *evalResolvedContext) *evalCon
 			Agent: agent,
 		},
 		Options: &opteval.Options{
-			EvalModel:        flags.evalModel,
-			TargetAttributes: opteval.DefaultTargetAttributes,
+			EvalModel: flags.evalModel,
 		},
 		MaxSamples: flags.maxSamples,
 		TraceDays:  flags.traceDays,
@@ -178,7 +177,7 @@ func resumeEvalInit(
 	if resolved.hasProject {
 		eval_api.WriteEvalReviewArtifacts(resolved.agentProject, evalCfg)
 	}
-	return writeEvalConfig(configPath, evalCfg)
+	return eval_api.WriteEvalConfig(configPath, evalCfg)
 }
 
 // pollResults carries parsed outputs from completed generation jobs so that
@@ -209,36 +208,58 @@ func pollAndFinalizeJobs(
 		wg             sync.WaitGroup
 	)
 
-	pollDataset := state.DatasetGenOpID != "" &&
-		!eval_api.ParseJobStatus(state.DatasetGenStatus).IsTerminal()
-	pollEval := state.EvalGenOpID != "" &&
-		!eval_api.ParseJobStatus(state.EvalGenStatus).IsTerminal()
+	hasDataset := state.DatasetGenOpID != ""
+	hasEval := state.EvalGenOpID != ""
+	needPollDataset := hasDataset && !eval_api.ParseJobStatus(state.DatasetGenStatus).IsTerminal()
+	needPollEval := hasEval && !eval_api.ParseJobStatus(state.EvalGenStatus).IsTerminal()
 
-	// Build progress display labels.
+	// Build progress display labels (only for jobs that need polling).
 	var labels []string
-	if pollDataset {
+	if needPollDataset {
 		labels = append(labels, "Dataset generation")
 	}
-	if pollEval {
+	if needPollEval {
 		labels = append(labels, "Evaluator generation")
 	}
 	progress := newEvalProgress(labels...)
 	progress.Start()
 
-	if pollDataset {
+	if hasDataset {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			completed, err := pollEvalOperationWithSpinner(
-				ctx, "Dataset generation", state.DatasetGenOpID,
-				resolved.evalClient.GetDataGenerationJob, DataGenerationAPIVersion,
-				progress,
-			)
-			if err != nil {
-				datasetPollErr = err
-				return
+			var completed *eval_api.GenerationJob
+			if needPollDataset {
+				var err error
+				completed, err = pollEvalOperationWithSpinner(
+					ctx, "Dataset generation", state.DatasetGenOpID,
+					resolved.evalClient.GetDataGenerationJob, DataGenerationAPIVersion,
+					progress,
+				)
+				if err != nil {
+					datasetPollErr = fmt.Errorf("dataset generation job %s: %w", state.DatasetGenOpID, err)
+					return
+				}
+			} else {
+				// Job was already terminal at submission — fetch it directly.
+				var err error
+				completed, err = resolved.evalClient.GetDataGenerationJob(
+					ctx, state.DatasetGenOpID, DataGenerationAPIVersion,
+				)
+				if err != nil {
+					datasetPollErr = err
+					return
+				}
+				if eval_api.ParseJobStatus(completed.NormalizedStatus()).IsFailed() {
+					errMsg := fmt.Sprintf("dataset generation job %s failed", state.DatasetGenOpID)
+					if completed.Error != nil && completed.Error.Message != "" {
+						errMsg += ": " + completed.Error.Message
+					}
+					datasetPollErr = fmt.Errorf("%s", errMsg)
+					return
+				}
 			}
-			// Dataset goroutine owns: state.DatasetGenStatus, evalCfg.DatasetReference, evalCfg.DatasetFile.
+
 			state.DatasetGenStatus = completed.NormalizedStatus()
 			dsRef := datasetFromJob(completed)
 			if dsRef == nil {
@@ -261,19 +282,42 @@ func pollAndFinalizeJobs(
 		}()
 	}
 
-	if pollEval {
+	if hasEval {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			completed, err := pollEvalOperationWithSpinner(
-				ctx, "Evaluator generation", state.EvalGenOpID,
-				resolved.evalClient.GetEvaluatorGenerationJob, DefaultAgentAPIVersion,
-				progress,
-			)
-			if err != nil {
-				evalPollErr = err
-				return
+			var completed *eval_api.GenerationJob
+			if needPollEval {
+				var err error
+				completed, err = pollEvalOperationWithSpinner(
+					ctx, "Evaluator generation", state.EvalGenOpID,
+					resolved.evalClient.GetEvaluatorGenerationJob, DefaultAgentAPIVersion,
+					progress,
+				)
+				if err != nil {
+					evalPollErr = fmt.Errorf("evaluator generation job %s: %w", state.EvalGenOpID, err)
+					return
+				}
+			} else {
+				// Job was already terminal at submission — fetch it directly.
+				var err error
+				completed, err = resolved.evalClient.GetEvaluatorGenerationJob(
+					ctx, state.EvalGenOpID, DefaultAgentAPIVersion,
+				)
+				if err != nil {
+					evalPollErr = err
+					return
+				}
+				if eval_api.ParseJobStatus(completed.NormalizedStatus()).IsFailed() {
+					errMsg := fmt.Sprintf("evaluator generation job %s failed", state.EvalGenOpID)
+					if completed.Error != nil && completed.Error.Message != "" {
+						errMsg += ": " + completed.Error.Message
+					}
+					evalPollErr = fmt.Errorf("%s", errMsg)
+					return
+				}
 			}
+
 			// Evaluator goroutine owns: state.EvalGenStatus, evalCfg.Evaluators.
 			evalName, evalVersion := evaluatorFromJob(completed)
 			state.EvalGenStatus = completed.NormalizedStatus()
@@ -308,6 +352,9 @@ func pollAndFinalizeJobs(
 		}
 	}
 
+	if datasetPollErr != nil && evalPollErr != nil {
+		return results, fmt.Errorf("%w\n%w", datasetPollErr, evalPollErr)
+	}
 	if datasetPollErr != nil {
 		return results, datasetPollErr
 	}
@@ -344,7 +391,7 @@ func writePendingEvalInit(
 	if err := saveEvalState(ctx, resolved.azdClient, resolved.envName, state); err != nil {
 		return err
 	}
-	if err := writeEvalConfig(configPath, evalCfg); err != nil {
+	if err := eval_api.WriteEvalConfig(configPath, evalCfg); err != nil {
 		return err
 	}
 	fmt.Println(color.YellowString("Eval init submitted (async)"))
@@ -374,7 +421,7 @@ func writeTimedOutEvalInit(
 	if err := saveEvalState(ctx, resolved.azdClient, resolved.envName, state); err != nil {
 		return err
 	}
-	if err := writeEvalConfig(configPath, evalCfg); err != nil {
+	if err := eval_api.WriteEvalConfig(configPath, evalCfg); err != nil {
 		return err
 	}
 	fmt.Println(color.YellowString("\nGeneration jobs timed out but are still running on the server."))
@@ -396,7 +443,7 @@ func writeTimedOutEvalInit(
 // tryLoadExistingEvalConfig attempts to load an eval config from the given path.
 // Returns (config, true) if the file exists and parses successfully, or (nil, false) otherwise.
 func tryLoadExistingEvalConfig(configPath string) (*evalConfig, bool) {
-	cfg, err := readEvalConfig(configPath)
+	cfg, err := eval_api.LoadEvalConfig(configPath)
 	if err != nil {
 		return nil, false
 	}

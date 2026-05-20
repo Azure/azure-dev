@@ -53,16 +53,37 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 	}
 	defer resolved.azdClient.Close()
 
-	configPath := resolveEvalConfigPath(flags.config, resolved.agentProject)
-	evalCfg, err := readEvalConfig(configPath)
+	configPath := eval_api.ResolveEvalConfigPath(flags.config, resolved.agentProject)
+	evalCfg, err := eval_api.LoadEvalConfig(configPath)
 	if err != nil {
 		return err
 	}
+
+	// Reconcile agent name/version between environment and eval.yaml.
+	// Environment values take precedence; warn and update the config if they differ.
+	configChanged := false
 	if resolved.agentName == "" {
 		resolved.agentName = evalCfg.Agent.Name
+	} else if evalCfg.Agent.Name != "" && evalCfg.Agent.Name != resolved.agentName {
+		fmt.Printf("  %s agent name in %s (%q) differs from environment (%q) — using environment value\n",
+			color.YellowString("warning:"), flags.config, evalCfg.Agent.Name, resolved.agentName)
+		evalCfg.Agent.Name = resolved.agentName
+		configChanged = true
 	}
 	if resolved.version == "" {
 		resolved.version = evalCfg.Agent.Version
+	} else if evalCfg.Agent.Version != "" && evalCfg.Agent.Version != resolved.version {
+		fmt.Printf("  %s agent version in %s (%q) differs from environment (%q) — using environment value\n",
+			color.YellowString("warning:"), flags.config, evalCfg.Agent.Version, resolved.version)
+		evalCfg.Agent.Version = resolved.version
+		configChanged = true
+	}
+	if configChanged {
+		if err := eval_api.WriteEvalConfig(configPath, evalCfg); err != nil {
+			fmt.Printf("  %s failed to update %s: %s\n", color.YellowString("warning:"), flags.config, err)
+		} else {
+			fmt.Printf("  Updated %s with current environment values\n", flags.config)
+		}
 	}
 
 	state := loadEvalState(ctx, resolved.azdClient, resolved.envName)

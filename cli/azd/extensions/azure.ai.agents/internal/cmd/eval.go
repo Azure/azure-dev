@@ -454,7 +454,11 @@ func pollEvalOperationWithSpinner(
 				log.Printf("[debug] %s: failed response:\n%s", label, body)
 			}
 			progress.setFailed(label)
-			return nil, fmt.Errorf("%s failed with status %q", strings.ToLower(label), jfe.Status)
+			errMsg := fmt.Sprintf("%s failed with status %q", strings.ToLower(label), jfe.Status)
+			if jfe.Job != nil && jfe.Job.Error != nil && jfe.Job.Error.Message != "" {
+				errMsg += ": " + jfe.Job.Error.Message
+			}
+			return nil, fmt.Errorf("%s", errMsg)
 		}
 		progress.setFailed(label)
 		return nil, err
@@ -463,19 +467,6 @@ func pollEvalOperationWithSpinner(
 	log.Printf("[debug] %s: completed successfully", label)
 	progress.setDone(label)
 	return job, nil
-}
-
-func readEvalConfig(path string) (*evalConfig, error) {
-	return eval_api.LoadEvalConfig(path)
-}
-
-func writeEvalConfig(path string, cfg *evalConfig) error {
-	return eval_api.WriteEvalConfig(path, cfg)
-}
-
-// formatTimestamp formats a timestamp value for display in eval output.
-func formatTimestamp(ts any) string {
-	return eval_api.FormatTimestamp(ts)
 }
 
 // loadEvalState reads eval runtime state from the azd environment.

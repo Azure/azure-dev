@@ -522,7 +522,7 @@ func TestTryLoadExistingEvalConfig_Found(t *testing.T) {
 			Evaluators:  opteval.EvaluatorList{{Name: "quality"}},
 		},
 	}
-	require.NoError(t, writeEvalConfig(cfgPath, cfg))
+	require.NoError(t, eval_api.WriteEvalConfig(cfgPath, cfg))
 
 	loaded, ok := tryLoadExistingEvalConfig(cfgPath)
 	require.True(t, ok)

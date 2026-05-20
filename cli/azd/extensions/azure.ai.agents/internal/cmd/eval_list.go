@@ -10,6 +10,8 @@ import (
 	"sync"
 	"text/tabwriter"
 
+	"azureaiagent/internal/pkg/agents/eval_api"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -96,7 +98,7 @@ func runEvalList(ctx context.Context, flags *evalListFlags) error {
 		}
 		status := padColorizedStatus(summaries[i].lastRunStatus)
 		createdBy := item.CreatedBy
-		createdOn := formatTimestamp(item.CreatedAt)
+		createdOn := eval_api.FormatTimestamp(item.CreatedAt)
 
 		fmt.Fprintf(w, "%s \t%s\t%s\t%s\t%d\t%s\t%s\n",
 			marker,

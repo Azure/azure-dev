@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"go.yaml.in/yaml/v3"
 )
 
 // optimizeAgentContext holds the resolved agent name and project directory.
@@ -199,6 +200,16 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 
 		if cfg == nil {
 			cfg = defaultOptimizeConfig(resolved.agentName)
+		} else if resolved.agentName != "" && cfg.Agent.Name != "" && cfg.Agent.Name != resolved.agentName {
+			// Config loaded from eval.yaml but agent name differs from environment.
+			fmt.Printf("  %s agent name in %s (%q) differs from environment (%q) — using environment value\n",
+				color.YellowString("warning:"), configSource, cfg.Agent.Name, resolved.agentName)
+			cfg.Agent.Name = resolved.agentName
+			if data, mErr := yaml.Marshal(cfg); mErr == nil {
+				if wErr := os.WriteFile(configSource, data, 0600); wErr == nil {
+					fmt.Printf("  Updated %s with current environment values\n", configSource)
+				}
+			}
 		}
 	}
 

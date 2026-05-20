@@ -70,6 +70,9 @@ type JobFailedError struct {
 }
 
 func (e *JobFailedError) Error() string {
+	if e.Job != nil && e.Job.Error != nil && e.Job.Error.Message != "" {
+		return fmt.Sprintf("job failed with status %q: %s", e.Status, e.Job.Error.Message)
+	}
 	return fmt.Sprintf("job failed with status %q", e.Status)
 }
 

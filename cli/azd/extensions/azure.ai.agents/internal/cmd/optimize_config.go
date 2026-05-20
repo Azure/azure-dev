@@ -86,7 +86,7 @@ func defaultOptimizeConfig(agentName string) *OptimizeConfig {
 		Options: &opteval.Options{
 			EvalModel:        "gpt-4o",
 			Mode:             "optimize",
-			TargetAttributes: []string{"instruction", "skill", "agents-optimization-job"},
+			TargetAttributes: []string{"instruction", "skill"},
 			Budget:           5,
 		},
 	}

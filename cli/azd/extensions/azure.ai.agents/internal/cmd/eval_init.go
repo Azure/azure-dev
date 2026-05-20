@@ -120,7 +120,7 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		}
 	}
 
-	configPath := resolveEvalOutputPath(flags.output, resolved.agentProject)
+	configPath := eval_api.ResolveEvalOutputPath(flags.output, resolved.agentProject)
 	printEvalDetectedContext(resolved, configPath)
 
 	// When eval.yaml exists, decide whether to regenerate or create fresh.
@@ -268,7 +268,7 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 
 	state.InitStatus = "completed"
 	clearEvalState(ctx, resolved.azdClient, resolved.envName)
-	if err := writeEvalConfig(configPath, evalCfg); err != nil {
+	if err := eval_api.WriteEvalConfig(configPath, evalCfg); err != nil {
 		return err
 	}
 

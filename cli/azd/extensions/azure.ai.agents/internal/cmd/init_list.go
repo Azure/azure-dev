@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -149,9 +148,9 @@ The catalog is fetched from the same source the interactive template picker uses
 
 			switch normalizeOutputFormat(flags.output) {
 			case "json":
-				return printInitListJSON(os.Stdout, items)
+				return printInitListJSON(cmd.OutOrStdout(), items)
 			default:
-				return printInitListText(os.Stdout, items)
+				return printInitListText(cmd.OutOrStdout(), items)
 			}
 		},
 	}
@@ -273,7 +272,12 @@ func printInitListJSON(w io.Writer, items []TemplateListItem) error {
 	if err != nil {
 		return fmt.Errorf("marshaling templates to JSON: %w", err)
 	}
-	_, err = fmt.Fprintln(w, string(data))
+	// Write bytes directly to avoid an extra string allocation for what
+	// can be a large catalog payload.
+	if _, err := w.Write(data); err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{'\n'})
 	return err
 }
 

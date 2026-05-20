@@ -326,7 +326,9 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 		// interactively or delete the files themselves if they want the
 		// template versions.
 		if a.flags.noPrompt {
-			fmt.Println("--no-prompt: keeping existing files; template versions are skipped.")
+			// Diagnostic on stderr so scripted consumers can keep stdout
+			// clean for the regular init output stream.
+			fmt.Fprintln(os.Stderr, "--no-prompt: keeping existing files; template versions are skipped.")
 			overwriteCollisions = false
 		} else {
 			conflictChoices := []*azdext.SelectChoice{

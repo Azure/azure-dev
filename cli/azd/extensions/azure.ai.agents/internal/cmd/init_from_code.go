@@ -900,6 +900,10 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 		if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "SKIP_ACR", "true"); err != nil {
 			return err
 		}
+	} else {
+		if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "SKIP_ACR", "false"); err != nil {
+			return err
+		}
 	}
 
 	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentName)

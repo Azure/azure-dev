@@ -1033,6 +1033,12 @@ func (a *InitAction) configureModelChoice(
 		); err != nil {
 			return nil, err
 		}
+	} else {
+		if err := setEnvValue(
+			ctx, a.azdClient, a.environment.Name, "SKIP_ACR", "false",
+		); err != nil {
+			return nil, err
+		}
 	}
 
 	return agentManifest, nil

@@ -7,12 +7,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
+
+	"github.com/spf13/cobra"
 
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/models"
@@ -21,7 +24,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
-	"github.com/spf13/cobra"
 )
 
 type buildFlags struct {
@@ -36,6 +38,8 @@ func newBuildCommand(outputPath *string) *cobra.Command {
 	buildCmd := &cobra.Command{
 		Use:   "build",
 		Short: "Build the azd extension project",
+		Long: "Builds the azd extension project for one or more platforms.\n\n" +
+			"Extension metadata validation warnings are non-fatal and are printed after the build completes.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			internal.WriteCommandHeader(
 				"Build and azd extension (azd x build)",
@@ -110,8 +114,19 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 		return fmt.Errorf("failed to load extension metadata: %w", err)
 	}
 
+	extensionPack := isExtensionPack(schema)
+
 	fmt.Println()
-	fmt.Printf("%s: %s\n", output.WithBold("Output Path"), output.WithHyperlink(absOutputPath, absOutputPath))
+	if extensionPack {
+		fmt.Printf("%s: Extension pack\n", output.WithBold("Extension Type"))
+	} else {
+		fmt.Printf("%s: %s\n", output.WithBold("Output Path"), output.WithHyperlink(absOutputPath, absOutputPath))
+	}
+
+	var buildWarnings []string
+	// Flush collected validation warnings after the live TaskList canvas completes,
+	// regardless of whether a later task fails.
+	defer func() { writeCollectedWarnings(os.Stdout, buildWarnings) }()
 
 	taskList := ux.NewTaskList(nil).
 		AddTask(ux.TaskOptions{
@@ -119,66 +134,17 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 			Action: func(progress ux.SetProgressFunc) (ux.TaskState, error) {
 				progress("Checking required fields...")
 
-				var errors []string
-				var warnings []string
-
-				// Check required fields per schema - these are errors
-				if schema.Id == "" {
-					errors = append(errors, "Missing required field: id")
-				}
-				if schema.Version == "" {
-					errors = append(errors, "Missing required field: version")
-				}
-				if len(schema.Capabilities) == 0 {
-					errors = append(errors, "Missing required field: capabilities")
-				}
-				if schema.DisplayName == "" {
-					errors = append(errors, "Missing required field: displayName")
-				}
-				if schema.Description == "" {
-					errors = append(errors, "Missing required field: description")
-				}
-
-				progress("Validating capability-specific requirements...")
-
-				// Capability-specific validations - these are warnings
-				hasCustomCommands := slices.Contains(schema.Capabilities, extensions.CustomCommandCapability)
-				hasServiceTarget := slices.Contains(schema.Capabilities, extensions.ServiceTargetProviderCapability)
-
-				// Only validate namespace if custom-commands capability is defined
-				if hasCustomCommands && schema.Namespace == "" {
-					warnings = append(warnings, "Missing namespace - recommended when using custom-commands capability")
-				}
-
-				// Only validate providers if service-target-provider capability is defined
-				if hasServiceTarget && len(schema.Providers) == 0 {
-					warnings = append(warnings, "Missing providers - recommended when using custom providers capability")
-				}
-
-				// Check for missing optional but generally recommended fields
-				if schema.Usage == "" {
-					warnings = append(warnings, "Missing usage information")
-				}
+				warnings, validationErrors := validateExtensionMetadata(schema)
 
 				progress("Validation complete")
 
-				// If we have errors, this is a failure
-				if len(errors) > 0 {
-					// Create aggregated error
-					aggregatedError := fmt.Errorf(
-						"Extension contains validation failures: %s",
-						strings.Join(errors, "; "),
-					)
-					return ux.Error, common.NewDetailedError("Validation failed", aggregatedError)
+				if len(validationErrors) > 0 {
+					return ux.Error, validationFailureError(validationErrors)
 				}
 
-				// If we have warnings, return warning state but no error
 				if len(warnings) > 0 {
-					aggregatedWarning := fmt.Errorf(
-						"Extension contains validation warnings: %s",
-						strings.Join(warnings, "\n - "),
-					)
-					return ux.Warning, common.NewDetailedError("Validation warnings", aggregatedWarning)
+					buildWarnings = warnings
+					return ux.Warning, fmt.Errorf("%s; see details below", validationWarningSummary(warnings))
 				}
 
 				return ux.Success, nil
@@ -187,6 +153,11 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 		AddTask(ux.TaskOptions{
 			Title: "Building extension artifacts",
 			Action: func(progress ux.SetProgressFunc) (ux.TaskState, error) {
+				if extensionPack {
+					progress("Extension packs do not contain build artifacts")
+					return ux.Skipped, nil
+				}
+
 				// Create output directory if it doesn't exist
 				if _, err := os.Stat(absOutputPath); os.IsNotExist(err) {
 					if err := os.MkdirAll(absOutputPath, os.ModePerm); err != nil {
@@ -246,7 +217,7 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 		AddTask(ux.TaskOptions{
 			Title: "Installing extension",
 			Action: func(progress ux.SetProgressFunc) (ux.TaskState, error) {
-				if flags.skipInstall {
+				if flags.skipInstall || extensionPack {
 					return ux.Skipped, nil
 				}
 
@@ -317,6 +288,103 @@ func copyBinaryFiles(extensionId, sourcePath, destPath string) error {
 
 		return nil
 	})
+}
+
+// validateExtensionMetadata returns validation warnings and errors for the given extension schema.
+// Errors include missing required fields and capability-specific metadata that would create
+// unusable extensions. Warnings flag recommended metadata that improves the extension experience.
+func validateExtensionMetadata(schema *models.ExtensionSchema) (warnings, errs []string) {
+	extensionPack := isExtensionPack(schema)
+
+	// Required fields - missing values are errors.
+	if schema.Id == "" {
+		errs = append(errs, "Missing required field: id")
+	}
+	if schema.Version == "" {
+		errs = append(errs, "Missing required field: version")
+	}
+	if len(schema.Capabilities) == 0 && !extensionPack {
+		errs = append(errs, "Missing required field: capabilities")
+	}
+	if schema.DisplayName == "" {
+		errs = append(errs, "Missing required field: displayName")
+	}
+	if schema.Description == "" {
+		errs = append(errs, "Missing required field: description")
+	}
+
+	// Capability-specific recommendations.
+	hasCustomCommands := slices.Contains(schema.Capabilities, extensions.CustomCommandCapability)
+	hasServiceTarget := slices.Contains(schema.Capabilities, extensions.ServiceTargetProviderCapability)
+
+	// Missing namespace is fatal for custom-commands extensions: bindExtension
+	// uses the last '.'-segment of Namespace as the cobra command name, so an
+	// empty namespace silently installs an unreachable command. The init wizard
+	// always populates namespace, so this only triggers on hand-edited files.
+	if hasCustomCommands && schema.Namespace == "" {
+		errs = append(errs,
+			"Missing 'namespace' field in extension.yaml - "+
+				"required by the 'custom-commands' capability. "+
+				"Set it to the prefix users will type after 'azd' (e.g. 'demo' to expose 'azd demo <command>').",
+		)
+	}
+
+	// Kept as a warning: the init wizard doesn't yet prompt for providers, so
+	// promoting this to an error would block every service-target-provider scaffold.
+	if hasServiceTarget && len(schema.Providers) == 0 {
+		warnings = append(warnings,
+			"Missing 'providers' field in extension.yaml - "+
+				"required by the 'service-target-provider' capability. "+
+				"List the providers your extension contributes (each entry needs a name, type, and description).",
+		)
+	}
+
+	if schema.Usage == "" && !extensionPack {
+		warnings = append(warnings,
+			"Missing 'usage' field in extension.yaml - shown to users as a usage hint in 'azd <namespace> --help'.",
+		)
+	}
+
+	return warnings, errs
+}
+
+// isExtensionPack detects dependency-only extension packs. The extension registry
+// treats versions with dependencies and no artifacts as packs; local extension.yaml
+// manifests do not have an explicit pack discriminator, so this intentionally
+// infers pack mode only when dependencies are present and executable metadata is absent.
+func isExtensionPack(schema *models.ExtensionSchema) bool {
+	isPack := len(schema.Dependencies) > 0 &&
+		len(schema.Capabilities) == 0 &&
+		schema.Namespace == "" &&
+		schema.Language == "" &&
+		schema.EntryPoint == ""
+	if isPack {
+		log.Printf(
+			"debug: detected extension pack manifest for %s because it has dependencies and no executable metadata",
+			schema.Id,
+		)
+	}
+
+	return isPack
+}
+
+func validationFailureError(validationErrors []string) error {
+	return common.NewDetailedError(
+		"Validation failed",
+		fmt.Errorf(
+			"extension contains validation failures: %s",
+			strings.Join(validationErrors, "; "),
+		),
+	)
+}
+
+func validationWarningSummary(warnings []string) string {
+	noun := "warning"
+	if len(warnings) != 1 {
+		noun = "warnings"
+	}
+
+	return fmt.Sprintf("%d validation %s", len(warnings), noun)
 }
 
 // escapePowerShellSingleQuotes escapes single quotes for use in PowerShell single-quoted strings.

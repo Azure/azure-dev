@@ -37,7 +37,7 @@ func newPackCommand(outputPath *string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			internal.WriteCommandHeader(
 				"Package azd extension (azd x pack)",
-				"Packages the azd extension project and updates the registry",
+				"Prepares the azd extension project for publishing",
 			)
 
 			// For pack, an empty output path means "use the local registry artifacts path".
@@ -46,12 +46,17 @@ func newPackCommand(outputPath *string) *cobra.Command {
 				flags.outputPath = *outputPath
 			}
 			defaultPackageFlags(flags)
-			err := runPackageAction(cmd.Context(), flags)
+			extensionPack, err := runPackageAction(cmd.Context(), flags)
 			if err != nil {
 				return err
 			}
 
-			internal.WriteCommandSuccess("Extension packaged successfully")
+			if extensionPack {
+				internal.WriteCommandSuccess("Extension pack contains no artifacts to package")
+			} else {
+				internal.WriteCommandSuccess("Extension packaged successfully")
+			}
+
 			return nil
 		},
 	}
@@ -77,60 +82,72 @@ func newPackCommand(outputPath *string) *cobra.Command {
 	return packageCmd
 }
 
-func runPackageAction(ctx context.Context, flags *packageFlags) error {
+func runPackageAction(ctx context.Context, flags *packageFlags) (bool, error) {
 	// Create a new context that includes the AZD access token
 	ctx = azdext.WithAccessToken(ctx)
 
 	// Create a new AZD client
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return fmt.Errorf("failed to create azd client: %w", err)
+		return false, fmt.Errorf("failed to create azd client: %w", err)
 	}
 
 	defer azdClient.Close()
 
 	if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
-			return nil
+			return false, nil
 		}
-		return fmt.Errorf("failed waiting for debugger: %w", err)
+		return false, fmt.Errorf("failed waiting for debugger: %w", err)
 	}
 
 	absExtensionPath, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to get absolute path for extension directory: %w", err)
+		return false, fmt.Errorf("failed to get absolute path for extension directory: %w", err)
 	}
 
 	extensionMetadata, err := models.LoadExtension(absExtensionPath)
 	if err != nil {
-		return fmt.Errorf("failed to load extension metadata: %w", err)
+		return false, fmt.Errorf("failed to load extension metadata: %w", err)
 	}
 
-	if flags.outputPath == "" {
+	extensionPack := isExtensionPack(extensionMetadata)
+
+	if flags.outputPath == "" && !extensionPack {
 		localRegistryArtifactsPath, err := internal.LocalRegistryArtifactsPath()
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		flags.outputPath = filepath.Join(localRegistryArtifactsPath, extensionMetadata.Id, extensionMetadata.Version)
 	}
 
-	absInputPath := filepath.Join(extensionMetadata.Path, flags.inputPath)
-	absOutputPath, err := filepath.Abs(flags.outputPath)
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path for output directory: %w", err)
-	}
-
 	fmt.Println()
-	fmt.Printf("%s: %s\n", output.WithBold("Input Path"), output.WithHyperlink(absInputPath, absInputPath))
-	fmt.Printf("%s: %s\n", output.WithBold("Output Path"), output.WithHyperlink(absOutputPath, absOutputPath))
+	if extensionPack {
+		fmt.Printf("%s: Extension pack\n", output.WithBold("Extension Type"))
+	} else {
+		absInputPath := filepath.Join(extensionMetadata.Path, flags.inputPath)
+		absOutputPath, err := filepath.Abs(flags.outputPath)
+		if err != nil {
+			return false, fmt.Errorf("failed to get absolute path for output directory: %w", err)
+		}
+
+		fmt.Printf("%s: %s\n", output.WithBold("Input Path"), output.WithHyperlink(absInputPath, absInputPath))
+		fmt.Printf("%s: %s\n", output.WithBold("Output Path"), output.WithHyperlink(absOutputPath, absOutputPath))
+	}
 
 	taskList := ux.NewTaskList(nil).
 		AddTask(ux.TaskOptions{
 			Title: "Building extension",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+				if extensionPack {
+					spf("Extension packs do not contain build artifacts")
+					return ux.Skipped, nil
+				}
+
 				// Verify if we have any existing binaries
 				if !flags.rebuild {
+					absInputPath := filepath.Join(extensionMetadata.Path, flags.inputPath)
 					entires, err := os.ReadDir(absInputPath)
 					if err == nil {
 						binaries := []string{}
@@ -177,6 +194,11 @@ func runPackageAction(ctx context.Context, flags *packageFlags) error {
 		AddTask(ux.TaskOptions{
 			Title: "Packaging extension",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+				if extensionPack {
+					spf("Extension packs contain no artifacts; nothing to package")
+					return ux.Skipped, nil
+				}
+
 				if err := packExtensionBinaries(extensionMetadata, flags.outputPath); err != nil {
 					return ux.Error, common.NewDetailedError(
 						"Packaging failed",
@@ -188,7 +210,7 @@ func runPackageAction(ctx context.Context, flags *packageFlags) error {
 			},
 		})
 
-	return taskList.Run()
+	return extensionPack, taskList.Run()
 }
 
 func packExtensionBinaries(

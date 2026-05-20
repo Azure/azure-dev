@@ -1238,7 +1238,7 @@ func runToolOperation(
 						Action:  action,
 						Success: false,
 					})
-					return uxlib.Warning, fmt.Errorf(
+					return uxlib.Error, fmt.Errorf(
 						"%s did not succeed", action,
 					)
 				}
@@ -1293,7 +1293,7 @@ func runToolOperation(
 				})
 
 				if !depResult.Success {
-					return uxlib.Warning, fmt.Errorf("%s did not succeed", action)
+					return uxlib.Error, fmt.Errorf("%s did not succeed", action)
 				}
 				return uxlib.Success, nil
 			},

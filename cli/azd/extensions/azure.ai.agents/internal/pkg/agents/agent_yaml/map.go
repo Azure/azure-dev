@@ -482,8 +482,35 @@ func createAgentAPIRequest(
 			}
 			protocols = append(protocols, agent_api.AgentProtocol(trimmed))
 		}
+
+		var authSchemes []agent_api.AgentEndpointAuthorizationScheme
+		for _, scheme := range agentEndpoint.AuthorizationSchemes {
+			trimmedType := strings.TrimSpace(scheme.Type)
+			if trimmedType == "" {
+				return nil, fmt.Errorf(
+					"agentEndpoint authorization_schemes contains an entry with empty type",
+				)
+			}
+			apiScheme := agent_api.AgentEndpointAuthorizationScheme{
+				Type: agent_api.AgentEndpointAuthorizationSchemeType(trimmedType),
+			}
+			if scheme.IsolationKeySource != nil {
+				trimmedKind := strings.TrimSpace(scheme.IsolationKeySource.Kind)
+				if trimmedKind == "" {
+					return nil, fmt.Errorf(
+						"agentEndpoint authorization_schemes isolation_key_source has empty kind",
+					)
+				}
+				apiScheme.IsolationKeySource = &agent_api.IsolationKeySource{
+					Kind: agent_api.IsolationKeySourceKind(trimmedKind),
+				}
+			}
+			authSchemes = append(authSchemes, apiScheme)
+		}
+
 		request.AgentEndpoint = &agent_api.AgentEndpoint{
-			Protocols: protocols,
+			Protocols:            protocols,
+			AuthorizationSchemes: authSchemes,
 		}
 	}
 

@@ -79,9 +79,40 @@ type ProtocolVersionRecord struct {
 	Version  string        `json:"version"`
 }
 
-// AgentEndpoint describes the endpoint protocols an agent supports.
+// AgentEndpointAuthorizationSchemeType identifies the type of authorization scheme.
+type AgentEndpointAuthorizationSchemeType string
+
+const (
+	AgentEndpointAuthorizationSchemeTypeEntra          AgentEndpointAuthorizationSchemeType = "Entra"
+	AgentEndpointAuthorizationSchemeTypeBotService     AgentEndpointAuthorizationSchemeType = "BotService"
+	AgentEndpointAuthorizationSchemeTypeBotServiceRbac AgentEndpointAuthorizationSchemeType = "BotServiceRbac"
+)
+
+// IsolationKeySourceKind identifies the kind of isolation key source.
+type IsolationKeySourceKind string
+
+const (
+	IsolationKeySourceKindEntra  IsolationKeySourceKind = "Entra"
+	IsolationKeySourceKindHeader IsolationKeySourceKind = "Header"
+)
+
+// IsolationKeySource configures how the isolation key is derived for an agent endpoint.
+type IsolationKeySource struct {
+	Kind IsolationKeySourceKind `json:"kind"`
+}
+
+// AgentEndpointAuthorizationScheme describes an authorization scheme for an agent endpoint.
+// IsolationKeySource is only applicable when Type is "Entra".
+type AgentEndpointAuthorizationScheme struct {
+	Type               AgentEndpointAuthorizationSchemeType `json:"type"`
+	IsolationKeySource *IsolationKeySource                  `json:"isolation_key_source,omitempty"`
+}
+
+// AgentEndpoint describes the endpoint configuration an agent supports.
+// Corresponds to AgentEndpointConfig in the Foundry API.
 type AgentEndpoint struct {
-	Protocols []AgentProtocol `json:"protocols"`
+	Protocols            []AgentProtocol                    `json:"protocols,omitempty"`
+	AuthorizationSchemes []AgentEndpointAuthorizationScheme `json:"authorization_schemes,omitempty"`
 }
 
 // AgentCardSkill describes a single capability that an agent can perform.

@@ -617,9 +617,22 @@ type ProtocolVersionRecord struct {
 	Version  string `json:"version" yaml:"version"`
 }
 
-// AgentEndpoint describes the endpoint protocols an agent supports in agent.yaml.
+// IsolationKeySource configures how the isolation key is derived for an agent endpoint.
+type IsolationKeySource struct {
+	Kind string `json:"kind" yaml:"kind"`
+}
+
+// AgentEndpointAuthorizationScheme describes an authorization scheme for an agent endpoint.
+type AgentEndpointAuthorizationScheme struct {
+	Type               string              `json:"type" yaml:"type"`
+	IsolationKeySource *IsolationKeySource `json:"isolation_key_source,omitempty" yaml:"isolation_key_source,omitempty"`
+}
+
+// AgentEndpoint describes the endpoint configuration an agent supports in agent.yaml.
+// Corresponds to AgentEndpointConfig in the Foundry API.
 type AgentEndpoint struct {
-	Protocols []string `json:"protocols" yaml:"protocols"`
+	Protocols            []string                           `json:"protocols,omitempty" yaml:"protocols,omitempty"`
+	AuthorizationSchemes []AgentEndpointAuthorizationScheme `json:"authorization_schemes,omitempty" yaml:"authorization_schemes,omitempty"`
 }
 
 // AgentCardSkill describes a single capability that an agent can perform.

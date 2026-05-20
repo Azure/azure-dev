@@ -1436,3 +1436,138 @@ func TestCreateAgentAPIRequest_CodeDeploy_PythonRuntime(t *testing.T) {
 		t.Errorf("Runtime = %q, want %q", codeDef.CodeConfiguration.Runtime, "python_3_12")
 	}
 }
+
+func TestCreateHostedAgentAPIRequest_WithAuthorizationSchemes(t *testing.T) {
+	t.Parallel()
+
+	hostedAgent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "auth-agent",
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "responses", Version: "1.0.0"},
+		},
+		AgentEndpoint: &AgentEndpoint{
+			Protocols: []string{"responses"},
+			AuthorizationSchemes: []AgentEndpointAuthorizationScheme{
+				{
+					Type: "Entra",
+					IsolationKeySource: &IsolationKeySource{
+						Kind: "Header",
+					},
+				},
+				{
+					Type: "BotService",
+				},
+				{
+					Type: "BotServiceRbac",
+				},
+			},
+		},
+	}
+
+	buildConfig := &AgentBuildConfig{ImageURL: "myregistry.azurecr.io/agent:latest"}
+	request, err := CreateHostedAgentAPIRequest(hostedAgent, buildConfig)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if request.AgentEndpoint == nil {
+		t.Fatal("AgentEndpoint is nil")
+	}
+
+	schemes := request.AgentEndpoint.AuthorizationSchemes
+	if len(schemes) != 3 {
+		t.Fatalf("AuthorizationSchemes length = %d, want 3", len(schemes))
+	}
+
+	// Verify Entra scheme with isolation key source
+	if schemes[0].Type != agent_api.AgentEndpointAuthorizationSchemeTypeEntra {
+		t.Errorf("schemes[0].Type = %q, want %q",
+			schemes[0].Type, agent_api.AgentEndpointAuthorizationSchemeTypeEntra)
+	}
+	if schemes[0].IsolationKeySource == nil {
+		t.Fatal("schemes[0].IsolationKeySource is nil")
+	}
+	if schemes[0].IsolationKeySource.Kind != agent_api.IsolationKeySourceKindHeader {
+		t.Errorf("schemes[0].IsolationKeySource.Kind = %q, want %q",
+			schemes[0].IsolationKeySource.Kind, agent_api.IsolationKeySourceKindHeader)
+	}
+
+	// Verify BotService scheme (no isolation key source)
+	if schemes[1].Type != agent_api.AgentEndpointAuthorizationSchemeTypeBotService {
+		t.Errorf("schemes[1].Type = %q, want %q",
+			schemes[1].Type, agent_api.AgentEndpointAuthorizationSchemeTypeBotService)
+	}
+	if schemes[1].IsolationKeySource != nil {
+		t.Error("schemes[1].IsolationKeySource should be nil for BotService")
+	}
+
+	// Verify BotServiceRbac scheme
+	if schemes[2].Type != agent_api.AgentEndpointAuthorizationSchemeTypeBotServiceRbac {
+		t.Errorf("schemes[2].Type = %q, want %q",
+			schemes[2].Type, agent_api.AgentEndpointAuthorizationSchemeTypeBotServiceRbac)
+	}
+}
+
+func TestCreateHostedAgentAPIRequest_EmptyAuthSchemeTypeRejected(t *testing.T) {
+	t.Parallel()
+
+	hostedAgent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "bad-agent",
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "responses", Version: "1.0.0"},
+		},
+		AgentEndpoint: &AgentEndpoint{
+			Protocols: []string{"responses"},
+			AuthorizationSchemes: []AgentEndpointAuthorizationScheme{
+				{Type: ""},
+			},
+		},
+	}
+
+	buildConfig := &AgentBuildConfig{ImageURL: "myregistry.azurecr.io/agent:latest"}
+	_, err := CreateHostedAgentAPIRequest(hostedAgent, buildConfig)
+	if err == nil {
+		t.Fatal("expected error for empty authorization scheme type")
+	}
+	if !strings.Contains(err.Error(), "empty type") {
+		t.Errorf("error = %q, want it to mention 'empty type'", err.Error())
+	}
+}
+
+func TestCreateHostedAgentAPIRequest_EmptyIsolationKeyKindRejected(t *testing.T) {
+	t.Parallel()
+
+	hostedAgent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "bad-agent",
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "responses", Version: "1.0.0"},
+		},
+		AgentEndpoint: &AgentEndpoint{
+			Protocols: []string{"responses"},
+			AuthorizationSchemes: []AgentEndpointAuthorizationScheme{
+				{
+					Type:               "Entra",
+					IsolationKeySource: &IsolationKeySource{Kind: ""},
+				},
+			},
+		},
+	}
+
+	buildConfig := &AgentBuildConfig{ImageURL: "myregistry.azurecr.io/agent:latest"}
+	_, err := CreateHostedAgentAPIRequest(hostedAgent, buildConfig)
+	if err == nil {
+		t.Fatal("expected error for empty isolation key source kind")
+	}
+	if !strings.Contains(err.Error(), "empty kind") {
+		t.Errorf("error = %q, want it to mention 'empty kind'", err.Error())
+	}
+}

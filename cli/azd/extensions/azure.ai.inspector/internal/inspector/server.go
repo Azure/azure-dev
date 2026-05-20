@@ -37,6 +37,10 @@ type Config struct {
 	// SSESink, if non-nil, receives the raw bytes of each proxied SSE
 	// response so the caller can render it (e.g. echo to the terminal).
 	SSESink func(io.Reader)
+
+	// Silent suppresses terminal output that is useful for standalone
+	// inspector runs but noisy when azd ai agent run auto-launches it.
+	Silent bool
 }
 
 type Server struct {

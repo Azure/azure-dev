@@ -26,6 +26,7 @@ func NewRootCommand() *cobra.Command {
 	// traffic logs (gated on log.Default()) would surface as user-facing
 	// stderr noise. cobra.EnableTraverseRunHooks (set by the SDK) ensures
 	// this runs alongside any subcommand pre-runs.
+	var closeDebugLog func() error
 	sdkPreRun := rootCmd.PersistentPreRunE
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		if sdkPreRun != nil {
@@ -33,8 +34,22 @@ func NewRootCommand() *cobra.Command {
 				return err
 			}
 		}
-		setupDebugLogging(cmd.Flags())
+		closeDebugLog = setupDebugLogging(cmd.Flags())
 		return nil
+	}
+	sdkPostRun := rootCmd.PersistentPostRunE
+	rootCmd.PersistentPostRunE = func(cmd *cobra.Command, args []string) error {
+		var runErr error
+		if sdkPostRun != nil {
+			runErr = sdkPostRun(cmd, args)
+		}
+		if closeDebugLog != nil {
+			if err := closeDebugLog(); runErr == nil {
+				runErr = err
+			}
+			closeDebugLog = nil
+		}
+		return runErr
 	}
 
 	rootCmd.AddCommand(newLaunchCommand())

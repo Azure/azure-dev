@@ -20,11 +20,11 @@ import (
 // the inspector's verbose proxy/SSE traffic logs as noisy user-facing output.
 // In normal use we redirect log output to io.Discard; with --debug (or
 // AZD_EXT_DEBUG=true) we redirect it to a per-day log file in the current
-// working directory.
-func setupDebugLogging(flags *pflag.FlagSet) {
+// working directory. The returned function closes any opened log file.
+func setupDebugLogging(flags *pflag.FlagSet) func() error {
 	if !isDebug(flags) {
 		log.SetOutput(io.Discard)
-		return
+		return nil
 	}
 
 	currentDate := time.Now().Format("2006-01-02")
@@ -34,10 +34,14 @@ func setupDebugLogging(flags *pflag.FlagSet) {
 	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		log.SetOutput(os.Stderr)
-		return
+		return nil
 	}
 
 	log.SetOutput(logFile)
+	return func() error {
+		log.SetOutput(io.Discard)
+		return logFile.Close()
+	}
 }
 
 // isDebug checks if debug mode is enabled via --debug flag or

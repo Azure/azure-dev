@@ -177,7 +177,9 @@ func (s *rpcSession) handleFixRequested(raw json.RawMessage) {
 	}
 	// Collapse newlines/tabs/runs of spaces so the summary fits on one line.
 	summary = strings.Join(strings.Fields(summary), " ")
-	fmt.Fprintln(os.Stderr, "[inspector] [fix-with-ai] "+summary)
+	if !s.cfg.Silent {
+		fmt.Fprintln(os.Stderr, "[inspector] [fix-with-ai] "+summary)
+	}
 	s.logger.Printf("fix-with-ai: %s", summary)
 }
 

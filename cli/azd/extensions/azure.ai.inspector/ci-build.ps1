@@ -104,7 +104,7 @@ function PrintFlags() {
 }
 
 $oldGOEXPERIMENT = $env:GOEXPERIMENT
-# Enable the loopvar experiment, which makes the loop variaible for go loops like `range` behave as most folks would expect.
+# Enable the loopvar experiment, which makes the loop variable for go loops like `range` behave as most folks would expect.
 # the go team is exploring making this default in the future, and we'd like to opt into the behavior now.
 $env:GOEXPERIMENT = "loopvar"
 

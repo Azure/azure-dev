@@ -33,7 +33,9 @@ func (s *rpcSession) proxyFetchSSE(raw json.RawMessage) {
 		return
 	}
 
-	printUserInput(p.Body)
+	if !s.cfg.Silent {
+		printUserInput(p.Body)
+	}
 
 	method := p.Method
 	if method == "" {
@@ -70,12 +72,14 @@ func (s *rpcSession) proxyFetchSSE(raw json.RawMessage) {
 		defer resp.Body.Close()
 
 		if resp.StatusCode >= 400 {
-			if requestID := resp.Header.Get("apim-request-id"); requestID != "" {
+			if requestID := resp.Header.Get("apim-request-id"); requestID != "" && !s.cfg.Silent {
 				fmt.Printf("Trace ID: %s\n", requestID)
 			}
 			body, _ := io.ReadAll(resp.Body)
-			err := fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", p.URL, resp.StatusCode, resp.Status, string(body))
-			fmt.Fprintln(os.Stderr, "Error:", err)
+			err := fmt.Errorf("%s %s failed with HTTP %d: %s\n%s", method, p.URL, resp.StatusCode, resp.Status, string(body))
+			if !s.cfg.Silent {
+				fmt.Fprintln(os.Stderr, "Error:", err)
+			}
 			s.sendSSEDone(p.RequestID, err)
 			return
 		}

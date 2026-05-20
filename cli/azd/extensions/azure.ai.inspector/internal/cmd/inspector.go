@@ -105,6 +105,7 @@ func runInspector(ctx context.Context, flags *inspectorFlags) error {
 		SessionID:      flags.sessionID,
 		ConversationID: flags.conversationID,
 		SSESink:        sseSink,
+		Silent:         flags.silent,
 	})
 
 	url := srv.URL()
@@ -140,7 +141,6 @@ func runInspector(ctx context.Context, flags *inspectorFlags) error {
 func injectSSEEvents(r io.Reader) io.Reader {
 	pr, pw := io.Pipe()
 	go func() {
-		defer pw.Close()
 		scanner := bufio.NewScanner(r)
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		for scanner.Scan() {
@@ -154,11 +154,22 @@ func injectSSEEvents(r io.Reader) io.Reader {
 					if event == "response.failed" {
 						event = "response.completed"
 					}
-					fmt.Fprintf(pw, "event: %s\n", event)
+					if _, err := fmt.Fprintf(pw, "event: %s\n", event); err != nil {
+						_ = pw.CloseWithError(err)
+						return
+					}
 				}
 			}
-			fmt.Fprintln(pw, line)
+			if _, err := fmt.Fprintln(pw, line); err != nil {
+				_ = pw.CloseWithError(err)
+				return
+			}
 		}
+		if err := scanner.Err(); err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+		_ = pw.Close()
 	}()
 	return pr
 }

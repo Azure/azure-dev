@@ -966,7 +966,7 @@ func TestAgentEndpoint_RoundTrip(t *testing.T) {
 	t.Parallel()
 
 	original := AgentEndpoint{
-		Protocols: []AgentProtocol{AgentProtocolResponses, AgentProtocolA2A},
+		Protocols: []AgentEndpointProtocol{AgentEndpointProtocolResponses, AgentEndpointProtocolA2A},
 	}
 
 	data, err := json.Marshal(original)
@@ -989,11 +989,11 @@ func TestAgentEndpoint_RoundTrip(t *testing.T) {
 	if len(got.Protocols) != 2 {
 		t.Fatalf("Protocols length = %d, want 2", len(got.Protocols))
 	}
-	if got.Protocols[0] != AgentProtocolResponses {
-		t.Errorf("Protocols[0] = %q, want %q", got.Protocols[0], AgentProtocolResponses)
+	if got.Protocols[0] != AgentEndpointProtocolResponses {
+		t.Errorf("Protocols[0] = %q, want %q", got.Protocols[0], AgentEndpointProtocolResponses)
 	}
-	if got.Protocols[1] != AgentProtocolA2A {
-		t.Errorf("Protocols[1] = %q, want %q", got.Protocols[1], AgentProtocolA2A)
+	if got.Protocols[1] != AgentEndpointProtocolA2A {
+		t.Errorf("Protocols[1] = %q, want %q", got.Protocols[1], AgentEndpointProtocolA2A)
 	}
 }
 
@@ -1097,7 +1097,7 @@ func TestCreateAgentRequest_WithEndpointAndCard(t *testing.T) {
 	original := CreateAgentRequest{
 		Name: "a2a-agent",
 		AgentEndpoint: &AgentEndpoint{
-			Protocols: []AgentProtocol{AgentProtocolResponses, AgentProtocolA2A},
+			Protocols: []AgentEndpointProtocol{AgentEndpointProtocolResponses, AgentEndpointProtocolA2A},
 		},
 		AgentCard: &AgentCard{
 			Description: "test a2a agent",

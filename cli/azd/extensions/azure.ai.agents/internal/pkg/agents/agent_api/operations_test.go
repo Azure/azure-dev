@@ -583,8 +583,8 @@ func TestPatchAgent_Success(t *testing.T) {
 
 	req := &PatchAgentRequest{
 		AgentEndpoint: &AgentEndpoint{
-			Protocols: []AgentProtocol{
-				AgentProtocolResponses, AgentProtocolA2A,
+			Protocols: []AgentEndpointProtocol{
+				AgentEndpointProtocolResponses, AgentEndpointProtocolA2A,
 			},
 		},
 		AgentCard: &AgentCard{
@@ -614,7 +614,7 @@ func TestPatchAgent_400ReturnsError(t *testing.T) {
 
 	req := &PatchAgentRequest{
 		AgentEndpoint: &AgentEndpoint{
-			Protocols: []AgentProtocol{AgentProtocolA2A},
+			Protocols: []AgentEndpointProtocol{AgentEndpointProtocolA2A},
 		},
 	}
 
@@ -659,7 +659,7 @@ func TestPatchAgent_OmitsNilFields(t *testing.T) {
 	// does not serialize agent_card in the JSON body.
 	req := &PatchAgentRequest{
 		AgentEndpoint: &AgentEndpoint{
-			Protocols: []AgentProtocol{AgentProtocolResponses},
+			Protocols: []AgentEndpointProtocol{AgentEndpointProtocolResponses},
 		},
 	}
 

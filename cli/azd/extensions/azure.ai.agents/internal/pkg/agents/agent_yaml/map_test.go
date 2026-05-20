@@ -1163,13 +1163,13 @@ func TestCreateHostedAgentAPIRequest_WithAgentEndpointAndCard(t *testing.T) {
 		t.Fatalf("AgentEndpoint.Protocols length = %d, want 2",
 			len(request.AgentEndpoint.Protocols))
 	}
-	if request.AgentEndpoint.Protocols[0] != agent_api.AgentProtocolResponses {
+	if request.AgentEndpoint.Protocols[0] != agent_api.AgentEndpointProtocolResponses {
 		t.Errorf("AgentEndpoint.Protocols[0] = %q, want %q",
-			request.AgentEndpoint.Protocols[0], agent_api.AgentProtocolResponses)
+			request.AgentEndpoint.Protocols[0], agent_api.AgentEndpointProtocolResponses)
 	}
-	if request.AgentEndpoint.Protocols[1] != agent_api.AgentProtocolA2A {
+	if request.AgentEndpoint.Protocols[1] != agent_api.AgentEndpointProtocolA2A {
 		t.Errorf("AgentEndpoint.Protocols[1] = %q, want %q",
-			request.AgentEndpoint.Protocols[1], agent_api.AgentProtocolA2A)
+			request.AgentEndpoint.Protocols[1], agent_api.AgentEndpointProtocolA2A)
 	}
 
 	// Verify agent_card is populated

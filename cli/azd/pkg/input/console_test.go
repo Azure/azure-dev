@@ -542,14 +542,14 @@ func TestAskerConsole_Previewer_ConcurrentWriteStress(t *testing.T) {
 }
 
 // TestAskerConsole_PausePreviewer_DiscardsHookOutput reproduces the bug from GitHub issue #8237:
-// in azd 1.25.0+, azd up calls PausePreviewer() early in the execution graph setup (up_graph.go),
-// which causes ShowPreviewer to return io.Discard for the entire duration of the run. This means
-// lifecycle hook output (preprovision, postprovision, predeploy, postdeploy) is silently thrown away.
+// in azd 1.25.0+, azd up called PausePreviewer() early in the execution graph setup (up_graph.go),
+// which caused ShowPreviewer to return io.Discard for the entire duration of the run. This meant
+// lifecycle hook output (preprovision, postprovision, predeploy, postdeploy) was silently thrown away.
 //
 // Before 1.25.0, azd up used a workflow runner that invoked azd provision + azd deploy as
 // sub-commands. Each ran independently and hooks used ShowPreviewer normally — output was visible.
 //
-// The fix is to move PausePreviewer() to only be called when the deploy progress table ticker
+// The fix moved PausePreviewer() to only be called when the deploy progress table ticker
 // actually starts (publish/deploy phase), not upfront before any graph steps execute.
 func TestAskerConsole_PausePreviewer_DiscardsHookOutput(t *testing.T) {
 	formatter, err := output.NewFormatter(string(output.NoneFormat))
@@ -582,8 +582,8 @@ func TestAskerConsole_PausePreviewer_DiscardsHookOutput(t *testing.T) {
 		"ShowPreviewer should return a real writer when previewer is not paused")
 	c.StopPreviewer(ctx, false)
 
-	// Simulate what azd 1.25.0 up_graph.go does: PausePreviewer() is called early,
-	// before any graph steps execute (before preprovision/postprovision hooks run).
+	// Simulate what azd 1.25.0 up_graph.go did: PausePreviewer() was called early,
+	// before any graph steps executed (before preprovision/postprovision hooks ran).
 	ps, ok := c.(PreviewerPauser)
 	require.True(t, ok, "AskerConsole must implement PreviewerPauser")
 	ps.PausePreviewer()

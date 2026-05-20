@@ -16,8 +16,8 @@ import (
 )
 
 // stubReadAzdHostedSources returns a function suitable for the
-// resolveProjectEndpointOpts.ReadAzdHostedSources seam. Each test gets its own
-// captured closure, so parallel tests do not race on a shared global.
+// resolveProjectEndpointOpts.ReadAzdHostedSources seam. Each call returns a
+// fresh closure so no test mutates state shared with other tests.
 func stubReadAzdHostedSources(
 	sources azdHostedSources,
 	err error,
@@ -27,13 +27,10 @@ func stubReadAzdHostedSources(
 	}
 }
 
-// isolateFromAzdDaemon returns resolver opts that are isolated from any azd
-// daemon the developer machine might have running:
-//   - Clears AZD_SERVER on the test's env so any real-client paths cannot connect.
-//   - Returns opts whose ReadAzdHostedSources reports no hosted sources.
-//
-// Together this ensures the resolver under test only sees the flag and the
-// FOUNDRY_PROJECT_ENDPOINT host env var.
+// isolateFromAzdDaemon returns resolver opts whose ReadAzdHostedSources
+// reports no hosted sources, and clears AZD_SERVER so any code path that
+// bypasses the stub cannot reach a real daemon. The resolver under test then
+// only sees the flag and FOUNDRY_PROJECT_ENDPOINT.
 func isolateFromAzdDaemon(t *testing.T) resolveProjectEndpointOpts {
 	t.Helper()
 	t.Setenv("AZD_SERVER", "")

@@ -1,9 +1,5 @@
 # Release History
 
-## Unreleased
-
-- [[#8243]](https://github.com/Azure/azure-dev/pull/8243) **Removed** `azd ai agent project set|unset|show` commands. The functionality moved to the `azure.ai.projects` extension as `azd ai project set|unset|show`. The agents-internal project endpoint resolver now reads the new `extensions.ai-projects.context` key first and falls back to the legacy `extensions.ai-agents.project.context` key, so endpoints previously persisted by `azd ai agent project set` continue to resolve and endpoints set via the new `azd ai project set` are picked up by existing `azd ai agent ...` commands without re-export. `azd ai project show` surfaces a one-time notice prompting users to re-run `azd ai project set` to migrate.
-
 ## 0.1.32-preview (2026-05-18)
 
 - [[#8222]](https://github.com/Azure/azure-dev/pull/8222) Add post-init validation to check .NET runtime compatibility with project TargetFramework and show guidance when mismatched.

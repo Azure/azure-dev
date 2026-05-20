@@ -10,29 +10,25 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// projectsExtensionContextPath is the UserConfig path where the
-// `azure.ai.projects` extension persists the project endpoint via
-// `azd ai project set`. This is now the canonical location.
+// projectsExtensionContextPath is the canonical UserConfig path for the
+// project endpoint, written by `azd ai project set` in the azure.ai.projects
+// extension.
 const projectsExtensionContextPath = "extensions.ai-projects.context"
 
-// projectContextConfigPath is the legacy UserConfig path used by the (removed)
-// `azd ai agent project set` command. It is read as a fallback so existing
-// users who set their endpoint before the command moved keep working.
+// projectContextConfigPath is the legacy UserConfig path used by the removed
+// `azd ai agent project set` command. Read as a fallback only.
 const projectContextConfigPath = configPathPrefix + ".project.context"
 
-// projectContextState is the JSON shape stored at extensions.ai-projects.context
-// (and at the legacy extensions.ai-agents.project.context) in ~/.azd/config.json.
+// projectContextState is the JSON shape stored at both
+// projectsExtensionContextPath and projectContextConfigPath.
 type projectContextState struct {
 	Endpoint string `json:"endpoint"`
 	SetAt    string `json:"setAt"`
 }
 
-// getProjectContext reads the persisted project context from global config.
-// It prefers the new `extensions.ai-projects.context` key written by
-// `azd ai project set`, and falls back to the legacy
-// `extensions.ai-agents.project.context` key for users who set their endpoint
-// before the command moved to the azure.ai.projects extension.
-// Returns (state, true, nil) when present, (zero, false, nil) when absent.
+// getProjectContext reads the persisted project context, preferring the new
+// canonical key and falling back to the legacy key. Returns (state, true, nil)
+// when present, (zero, false, nil) when absent.
 func getProjectContext(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -42,7 +38,6 @@ func getProjectContext(
 		return projectContextState{}, false, fmt.Errorf("getProjectContext: %w", err)
 	}
 
-	// New canonical location (written by `azd ai project set`).
 	var state projectContextState
 	found, err := ch.GetUserJSON(ctx, projectsExtensionContextPath, &state)
 	if err != nil {
@@ -53,9 +48,8 @@ func getProjectContext(
 		return state, true, nil
 	}
 
-	// Legacy location (written by the removed `azd ai agent project set`).
-	// Read errors are best-effort: a malformed legacy blob must not break
-	// resolution from FOUNDRY_PROJECT_ENDPOINT or an explicit flag.
+	// Legacy fallback. Errors are swallowed so a malformed legacy blob does
+	// not block resolution from FOUNDRY_PROJECT_ENDPOINT or an explicit flag.
 	var legacy projectContextState
 	legacyFound, legacyErr := ch.GetUserJSON(ctx, projectContextConfigPath, &legacy)
 	if legacyErr != nil || !legacyFound || legacy.Endpoint == "" {

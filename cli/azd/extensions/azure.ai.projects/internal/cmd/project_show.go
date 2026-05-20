@@ -24,10 +24,8 @@ type projectShowResult struct {
 	SourceDetail string `json:"sourceDetail"`
 	AzdEnv       string `json:"azdEnv"`
 	SetAt        string `json:"setAt,omitempty"`
-	// FromLegacyAgentsConfig is true when the endpoint was sourced from the
-	// legacy `extensions.ai-agents.project.context` key (left behind by the
-	// removed `azd ai agent project set` command). Automation can detect this
-	// to prompt the user to re-run `azd ai project set` and migrate.
+	// FromLegacyAgentsConfig mirrors [resolvedEndpoint.FromLegacyAgentsConfig]
+	// so automation can detect the migration prompt without parsing stderr.
 	FromLegacyAgentsConfig bool `json:"fromLegacyAgentsConfig,omitempty"`
 }
 
@@ -69,10 +67,8 @@ that provided it. Useful for debugging which endpoint commands will use.`,
 func (a *ProjectShowAction) Run(ctx context.Context) error {
 	result, err := resolveProjectEndpoint(ctx, resolveProjectEndpointOpts{})
 	if err != nil {
-		// `noProjectEndpointError` already includes "persist a workspace default
-		// with `azd ai project set <endpoint>`" in its suggestion, so the
-		// structured error is already actionable for `show`. Return it unchanged
-		// rather than re-wrapping with a concatenated suggestion.
+		// noProjectEndpointError already suggests `azd ai project set`, so
+		// the structured error is actionable for `show` unchanged.
 		return err
 	}
 

@@ -46,14 +46,10 @@ func getProjectContext(
 	return state, true, nil
 }
 
-// getLegacyAgentsProjectContext reads the persisted project context written by
-// the (now-removed) `azd ai agent project set` command in the azure.ai.agents
-// extension. It is used as a one-time read-only fallback to keep existing
-// users working immediately after they upgrade.
-//
-// Returns (state, true, nil) when present, (zero, false, nil) when absent.
-// Errors reading the legacy key are best-effort and are not returned: a
-// malformed or unavailable legacy value should never break the new resolver.
+// getLegacyAgentsProjectContext reads the project context from
+// legacyAgentsContextPath. Read errors are swallowed: a malformed legacy
+// blob must never break resolution from the new key, explicit flag, or
+// FOUNDRY_PROJECT_ENDPOINT.
 func getLegacyAgentsProjectContext(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -98,14 +94,11 @@ func setProjectContext(
 }
 
 // clearProjectContext removes the context subtree from global config.
-// Returns the previously stored endpoint (empty if none was set, or if the
-// previous value could not be decoded).
-// The operation is idempotent — calling it when no context is set is not an error.
+// Returns the previously stored endpoint (empty if none was set or if the
+// stored value could not be decoded). The operation is idempotent.
 //
-// The previous-endpoint read is intentionally best-effort: if the persisted blob
-// is malformed (e.g. written by an older or buggy version), `unset` must still be
-// able to clear it. Surfacing the decode error here would block users from
-// recovering, so we only return errors from the actual `UnsetUser` write.
+// The read of the previous value is best-effort so a malformed persisted
+// blob does not block `unset` from clearing it.
 func clearProjectContext(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,

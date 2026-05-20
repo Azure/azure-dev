@@ -15,11 +15,9 @@ import (
 // persisted by this extension (stored in ~/.azd/config.json).
 const configPathPrefix = "extensions.ai-projects"
 
-// legacyAgentsContextPath is the UserConfig path where the (now-removed)
-// `azd ai agent project set` command persisted the project endpoint in the
-// `azure.ai.agents` extension. The resolver reads it as a one-time fallback
-// when no value exists at the new path, so users who set an endpoint via
-// the old command keep working after upgrading.
+// legacyAgentsContextPath is the UserConfig path used by the removed
+// `azd ai agent project set` command. The resolver reads it as a fallback
+// when the new path has no value.
 const legacyAgentsContextPath = "extensions.ai-agents.project.context"
 
 // EndpointSource identifies where the resolved project endpoint came from.

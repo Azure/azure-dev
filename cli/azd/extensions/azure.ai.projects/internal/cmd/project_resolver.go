@@ -19,11 +19,9 @@ type resolveProjectEndpointOpts struct {
 	// Empty means the flag was not provided.
 	FlagValue string
 
-	// ReadAzdHostedSources is a test-injected override for the azd-hosted
+	// ReadAzdHostedSources lets callers inject a stub for the azd-hosted
 	// lookup (levels 2 + 3). Production callers leave this nil; the resolver
-	// then falls back to the real [readAzdHostedSources]. Using an
-	// instance-scoped seam instead of a package-level var keeps the resolver
-	// safe to call from parallel tests.
+	// then uses the real [readAzdHostedSources].
 	ReadAzdHostedSources func(context.Context) (azdHostedSources, error)
 }
 
@@ -33,10 +31,10 @@ type resolvedEndpoint struct {
 	Source     EndpointSource
 	AzdEnvName string
 	SetAt      string // RFC3339 timestamp, only meaningful when Source == SourceGlobalConfig
-	// FromLegacyAgentsConfig is true when the endpoint was sourced from the
-	// legacy `extensions.ai-agents.project.context` key written by the removed
-	// `azd ai agent project set` command. Callers should surface a one-time
-	// notice so users re-run `azd ai project set` to migrate.
+	// FromLegacyAgentsConfig is true when Source == SourceGlobalConfig and the
+	// value was read from the legacy `extensions.ai-agents.project.context`
+	// key. Callers can surface a notice to prompt the user to re-run
+	// `azd ai project set` to migrate.
 	FromLegacyAgentsConfig bool
 }
 
@@ -55,9 +53,8 @@ type azdHostedSources struct {
 	// CfgFound indicates whether a non-empty endpoint was found in global config.
 	CfgFound bool
 	// CfgFromLegacyAgents reports whether CfgState was sourced from the
-	// legacy `extensions.ai-agents.project.context` key (left behind by the
-	// removed `azd ai agent project set` command). Callers can use this to
-	// surface a one-time migration notice. Only meaningful when CfgFound is true.
+	// legacy `extensions.ai-agents.project.context` key. Only meaningful
+	// when CfgFound is true.
 	CfgFromLegacyAgents bool
 }
 
@@ -103,11 +100,9 @@ func readAzdHostedSources(ctx context.Context) (azdHostedSources, error) {
 		out.CfgFound = found
 	}
 
-	// One-time legacy fallback: if the new key has no value, try the path
-	// written by the removed `azd ai agent project set` command. Read errors
-	// are swallowed (best-effort) so a malformed legacy blob never blocks the
-	// new resolver — users can still resolve via FOUNDRY_PROJECT_ENDPOINT or
-	// re-run `azd ai project set`.
+	// Legacy fallback: read the key written by the removed
+	// `azd ai agent project set` command. Errors are swallowed (best-effort)
+	// so a malformed legacy blob does not block FOUNDRY_PROJECT_ENDPOINT.
 	if !out.CfgFound {
 		if legacyState, legacyFound := getLegacyAgentsProjectContext(ctx, azdClient); legacyFound {
 			out.CfgState = legacyState

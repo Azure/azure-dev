@@ -889,21 +889,16 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 		}
 	}
 
+	// Set AZD_AGENT_SKIP_ACR so Bicep knows whether to create a container registry.
+	// Set before AddService so env state is consistent even if AddService fails.
+	if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, isCodeDeploy); err != nil {
+		return err
+	}
+
 	req := &azdext.AddServiceRequest{Service: serviceConfig}
 
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
-	}
-
-	// Signal Bicep to skip ACR creation for code deploy (no container registry needed)
-	if isCodeDeploy {
-		if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "SKIP_ACR", "true"); err != nil {
-			return err
-		}
-	} else {
-		if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "SKIP_ACR", "false"); err != nil {
-			return err
-		}
 	}
 
 	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentName)

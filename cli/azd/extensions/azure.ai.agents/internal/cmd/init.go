@@ -1026,19 +1026,9 @@ func (a *InitAction) configureModelChoice(
 	}
 	a.deploymentDetails = deploymentDetails
 
-	// Signal Bicep to skip ACR creation for code deploy (no container registry needed)
-	if a.isCodeDeploy {
-		if err := setEnvValue(
-			ctx, a.azdClient, a.environment.Name, "SKIP_ACR", "true",
-		); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := setEnvValue(
-			ctx, a.azdClient, a.environment.Name, "SKIP_ACR", "false",
-		); err != nil {
-			return nil, err
-		}
+	// Set AZD_AGENT_SKIP_ACR so Bicep knows whether to create a container registry.
+	if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, a.isCodeDeploy); err != nil {
+		return nil, err
 	}
 
 	return agentManifest, nil

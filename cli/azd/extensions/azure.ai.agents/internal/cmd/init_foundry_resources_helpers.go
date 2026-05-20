@@ -696,11 +696,23 @@ func ensureSubscription(
 			if exterrors.IsCancellation(err) {
 				return nil, exterrors.Cancelled("subscription selection was cancelled")
 			}
+			// Only attach the AZURE_SUBSCRIPTION_ID-specific guidance when the
+			// failure is the no-prompt / "prompt required" path. Other prompt
+			// failures (e.g. host transport errors) get a generic message so we
+			// don't mislead the user into setting an env var that wouldn't have
+			// helped.
+			if exterrors.IsPromptRequired(err) {
+				return nil, exterrors.Dependency(
+					exterrors.CodeMissingAzureSubscription,
+					fmt.Sprintf("failed to select an Azure subscription: %s", err),
+					"set AZURE_SUBSCRIPTION_ID in your azd environment "+
+						"(run `azd env set AZURE_SUBSCRIPTION_ID <id>`), or run interactively to pick one",
+				)
+			}
 			return nil, exterrors.Dependency(
 				exterrors.CodeMissingAzureSubscription,
 				fmt.Sprintf("failed to select an Azure subscription: %s", err),
-				"set AZURE_SUBSCRIPTION_ID in your azd environment "+
-					"(run `azd env set AZURE_SUBSCRIPTION_ID <id>`), or run interactively to pick one",
+				"retry, or run interactively to pick one",
 			)
 		}
 

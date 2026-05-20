@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -51,27 +52,27 @@ func fixtureTemplates() []AgentTemplate {
 	}
 }
 
-func TestValidateInitListFlags(t *testing.T) {
+func TestValidateSampleListFlags(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name    string
-		flags   initListFlags
+		flags   sampleListFlags
 		wantErr bool
 		errMsg  string
 	}{
-		{name: "all empty is valid", flags: initListFlags{}, wantErr: false},
-		{name: "known language", flags: initListFlags{language: "python"}, wantErr: false},
-		{name: "known type agent", flags: initListFlags{templateType: TemplateTypeAgent}, wantErr: false},
-		{name: "known type azd", flags: initListFlags{templateType: TemplateTypeAzd}, wantErr: false},
-		{name: "unknown language", flags: initListFlags{language: "rust"}, wantErr: true, errMsg: `unknown language "rust"`},
-		{name: "unknown type", flags: initListFlags{templateType: "bogus"}, wantErr: true, errMsg: `unknown template type "bogus"`},
+		{name: "all empty is valid", flags: sampleListFlags{}, wantErr: false},
+		{name: "known language", flags: sampleListFlags{language: "python"}, wantErr: false},
+		{name: "known type agent", flags: sampleListFlags{templateType: TemplateTypeAgent}, wantErr: false},
+		{name: "known type azd", flags: sampleListFlags{templateType: TemplateTypeAzd}, wantErr: false},
+		{name: "unknown language", flags: sampleListFlags{language: "rust"}, wantErr: true, errMsg: `unknown language "rust"`},
+		{name: "unknown type", flags: sampleListFlags{templateType: "bogus"}, wantErr: true, errMsg: `unknown template type "bogus"`},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err := validateInitListFlags(&tc.flags)
+			err := validateSampleListFlags(&tc.flags)
 			if tc.wantErr {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.errMsg)
@@ -105,7 +106,7 @@ func TestMapAgentTemplateToDTO_AgentType(t *testing.T) {
 	require.Equal(t, []string{"featured", "recommended"}, got.Tags)
 	require.True(t, got.Featured)
 	require.True(t, got.Recommended)
-	require.Equal(t, "azd ai agent init -m "+src, got.InitCommand)
+	require.Equal(t, fmt.Sprintf("azd ai agent init -m %q", src), got.InitCommand)
 }
 
 func TestMapAgentTemplateToDTO_AzdType(t *testing.T) {
@@ -127,7 +128,7 @@ func TestMapAgentTemplateToDTO_AzdType(t *testing.T) {
 	require.Equal(t, src, got.RepoURL)
 	require.False(t, got.Featured)
 	require.False(t, got.Recommended)
-	require.Equal(t, "azd init -t "+src, got.InitCommand)
+	require.Equal(t, fmt.Sprintf("azd init -t %q", src), got.InitCommand)
 }
 
 func TestMapAgentTemplateToDTO_ManifestUrlAndRepoUrlAreMutuallyExclusive(t *testing.T) {
@@ -147,7 +148,7 @@ func TestMapAgentTemplateToDTO_ManifestUrlAndRepoUrlAreMutuallyExclusive(t *test
 func TestBuildTemplateListItems_NoFilters(t *testing.T) {
 	t.Parallel()
 
-	items := buildTemplateListItems(fixtureTemplates(), &initListFlags{})
+	items := buildTemplateListItems(fixtureTemplates(), &sampleListFlags{})
 
 	require.Len(t, items, 4)
 	// Featured first, alphabetical within group.
@@ -165,14 +166,14 @@ func TestBuildTemplateListItems_NoFilters(t *testing.T) {
 func TestBuildTemplateListItems_LanguageFilter(t *testing.T) {
 	t.Parallel()
 
-	items := buildTemplateListItems(fixtureTemplates(), &initListFlags{language: "python"})
+	items := buildTemplateListItems(fixtureTemplates(), &sampleListFlags{language: "python"})
 
 	require.Len(t, items, 3)
 	for _, it := range items {
 		require.Contains(t, it.Languages, "python")
 	}
 
-	csItems := buildTemplateListItems(fixtureTemplates(), &initListFlags{language: "dotnetCsharp"})
+	csItems := buildTemplateListItems(fixtureTemplates(), &sampleListFlags{language: "dotnetCsharp"})
 	require.Len(t, csItems, 1)
 	require.Equal(t, "Calculator Agent", csItems[0].Title)
 }
@@ -180,7 +181,7 @@ func TestBuildTemplateListItems_LanguageFilter(t *testing.T) {
 func TestBuildTemplateListItems_FeaturedOnly(t *testing.T) {
 	t.Parallel()
 
-	items := buildTemplateListItems(fixtureTemplates(), &initListFlags{featuredOnly: true})
+	items := buildTemplateListItems(fixtureTemplates(), &sampleListFlags{featuredOnly: true})
 
 	require.Len(t, items, 2)
 	for _, it := range items {
@@ -191,14 +192,14 @@ func TestBuildTemplateListItems_FeaturedOnly(t *testing.T) {
 func TestBuildTemplateListItems_TypeFilter(t *testing.T) {
 	t.Parallel()
 
-	agentItems := buildTemplateListItems(fixtureTemplates(), &initListFlags{templateType: TemplateTypeAgent})
+	agentItems := buildTemplateListItems(fixtureTemplates(), &sampleListFlags{templateType: TemplateTypeAgent})
 	require.Len(t, agentItems, 3)
 	for _, it := range agentItems {
 		require.Equal(t, TemplateTypeAgent, it.Type)
 		require.NotEmpty(t, it.ManifestURL)
 	}
 
-	azdItems := buildTemplateListItems(fixtureTemplates(), &initListFlags{templateType: TemplateTypeAzd})
+	azdItems := buildTemplateListItems(fixtureTemplates(), &sampleListFlags{templateType: TemplateTypeAzd})
 	require.Len(t, azdItems, 1)
 	require.Equal(t, TemplateTypeAzd, azdItems[0].Type)
 	require.NotEmpty(t, azdItems[0].RepoURL)
@@ -207,7 +208,7 @@ func TestBuildTemplateListItems_TypeFilter(t *testing.T) {
 func TestBuildTemplateListItems_CombinedFilters(t *testing.T) {
 	t.Parallel()
 
-	items := buildTemplateListItems(fixtureTemplates(), &initListFlags{
+	items := buildTemplateListItems(fixtureTemplates(), &sampleListFlags{
 		language:     "python",
 		featuredOnly: true,
 		templateType: TemplateTypeAgent,
@@ -224,16 +225,16 @@ func TestBuildTemplateListItems_EmptyResultIsValid(t *testing.T) {
 
 	// Filter that matches nothing must return an empty slice, not nil, so the
 	// JSON envelope serializes as "templates":[] rather than "templates":null.
-	items := buildTemplateListItems(fixtureTemplates(), &initListFlags{language: "python", featuredOnly: true, templateType: TemplateTypeAzd})
+	items := buildTemplateListItems(fixtureTemplates(), &sampleListFlags{language: "python", featuredOnly: true, templateType: TemplateTypeAzd})
 
 	require.Empty(t, items)
 	require.NotNil(t, items, "must return [] not nil so JSON is templates:[]")
 }
 
-func TestInitListJSONShape_EmptyEnvelopeUsesArray(t *testing.T) {
+func TestSampleListJSONShape_EmptyEnvelopeUsesArray(t *testing.T) {
 	t.Parallel()
 
-	resp := initListResponse{Templates: buildTemplateListItems(nil, &initListFlags{})}
+	resp := sampleListResponse{Templates: buildTemplateListItems(nil, &sampleListFlags{})}
 	data, err := json.Marshal(resp)
 	require.NoError(t, err)
 
@@ -241,11 +242,11 @@ func TestInitListJSONShape_EmptyEnvelopeUsesArray(t *testing.T) {
 	require.Equal(t, `{"templates":[]}`, string(data))
 }
 
-func TestInitListJSONShape_StableFieldNames(t *testing.T) {
+func TestSampleListJSONShape_StableFieldNames(t *testing.T) {
 	t.Parallel()
 
-	items := buildTemplateListItems(fixtureTemplates(), &initListFlags{})
-	resp := initListResponse{Templates: items}
+	items := buildTemplateListItems(fixtureTemplates(), &sampleListFlags{})
+	resp := sampleListResponse{Templates: items}
 	data, err := json.Marshal(resp)
 	require.NoError(t, err)
 
@@ -287,11 +288,11 @@ func TestNormalizeOutputFormat(t *testing.T) {
 	}
 }
 
-// TestPrintInitListText_FormatContract asserts the exact format the user
+// TestPrintSampleListText_FormatContract asserts the exact format the user
 // asked for: each item is a "Sample: <title>" / "Description: <desc>" /
 // "Manifest: <url>" block separated by a blank line. No tabular columns,
 // no LANG / TYPE / TAGS surface in the text format.
-func TestPrintInitListText_FormatContract(t *testing.T) {
+func TestPrintSampleListText_FormatContract(t *testing.T) {
 	t.Parallel()
 
 	items := []TemplateListItem{
@@ -310,7 +311,7 @@ func TestPrintInitListText_FormatContract(t *testing.T) {
 	}
 
 	var buf strings.Builder
-	require.NoError(t, printInitListText(&buf, items))
+	require.NoError(t, printSampleListText(&buf, items))
 	got := buf.String()
 
 	// The exact paragraph for the first item, in order.
@@ -325,20 +326,20 @@ func TestPrintInitListText_FormatContract(t *testing.T) {
 	require.NotContains(t, got, "TAGS")
 }
 
-func TestPrintInitListText_EmptyShowsMessage(t *testing.T) {
+func TestPrintSampleListText_EmptyShowsMessage(t *testing.T) {
 	t.Parallel()
 	var buf strings.Builder
-	require.NoError(t, printInitListText(&buf, nil))
-	require.Contains(t, buf.String(), "No templates matched")
+	require.NoError(t, printSampleListText(&buf, nil))
+	require.Contains(t, buf.String(), "No samples matched")
 }
 
-func TestPrintInitListText_OmitsDescriptionWhenEmpty(t *testing.T) {
+func TestPrintSampleListText_OmitsDescriptionWhenEmpty(t *testing.T) {
 	t.Parallel()
 	items := []TemplateListItem{
 		{Title: "Bare", Type: TemplateTypeAgent, ManifestURL: "https://x/y.yaml"},
 	}
 	var buf strings.Builder
-	require.NoError(t, printInitListText(&buf, items))
+	require.NoError(t, printSampleListText(&buf, items))
 	got := buf.String()
 	require.Contains(t, got, "Sample: Bare\nManifest: https://x/y.yaml\n\n")
 	require.NotContains(t, got, "Description:")
@@ -350,7 +351,7 @@ func TestPrintInitListText_OmitsDescriptionWhenEmpty(t *testing.T) {
 func TestBuildTemplateListItems_InitCommandIsReadyToExecute(t *testing.T) {
 	t.Parallel()
 
-	items := buildTemplateListItems(fixtureTemplates(), &initListFlags{})
+	items := buildTemplateListItems(fixtureTemplates(), &sampleListFlags{})
 
 	for _, it := range items {
 		require.NotEmpty(t, it.InitCommand, "InitCommand must always be set for %q", it.Title)
@@ -364,5 +365,69 @@ func TestBuildTemplateListItems_InitCommandIsReadyToExecute(t *testing.T) {
 			require.True(t, strings.HasPrefix(it.InitCommand, "azd init -t "),
 				"azd-type InitCommand must use 'azd init -t': %q", it.InitCommand)
 		}
+	}
+}
+
+// TestMapAgentTemplateToDTO_InitCommandQuotesURLs asserts that the source
+// URL/slug is wrapped with Go's %q verb in the generated initCommand. This
+// keeps the URL a single argument under POSIX shells and PowerShell when it
+// contains whitespace or embedded double quotes, so coding agents and
+// copy-paste users do not silently fragment the argument list.
+//
+// The catalog is trusted upstream, so this is not a hardening boundary
+// against untrusted input -- %q does not neutralize shell expansion of `$`
+// or backticks. Cases below cover the tokenizer hazards we actually expect
+// to see in upstream catalog data.
+func TestMapAgentTemplateToDTO_InitCommandQuotesURLs(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		in   AgentTemplate
+		want string
+	}{
+		{
+			name: "agent type quotes the manifest URL",
+			in: AgentTemplate{
+				Source:        "https://example.com/path with space/agent.yaml",
+				TemplateType:  "extension.ai.agent",
+				ExtensionTags: nil,
+			},
+			want: `azd ai agent init -m "https://example.com/path with space/agent.yaml"`,
+		},
+		{
+			name: "agent type quotes a clean URL too",
+			in: AgentTemplate{
+				Source:        "https://example.com/clean/agent.yaml",
+				TemplateType:  "extension.ai.agent",
+				ExtensionTags: nil,
+			},
+			want: `azd ai agent init -m "https://example.com/clean/agent.yaml"`,
+		},
+		{
+			name: "azd type quotes the repo slug",
+			in: AgentTemplate{
+				Source:        "Azure-Samples/some thing",
+				TemplateType:  "azd.template",
+				ExtensionTags: nil,
+			},
+			want: `azd init -t "Azure-Samples/some thing"`,
+		},
+		{
+			name: "embedded double quotes are escaped via %q",
+			in: AgentTemplate{
+				Source:        `https://x/y "evil" path/agent.yaml`,
+				TemplateType:  "extension.ai.agent",
+				ExtensionTags: nil,
+			},
+			want: fmt.Sprintf(`azd ai agent init -m %q`, `https://x/y "evil" path/agent.yaml`),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mapAgentTemplateToDTO(tc.in)
+			require.Equal(t, tc.want, got.InitCommand)
+		})
 	}
 }

@@ -799,13 +799,13 @@ func findDefaultModelIndex(modelNames []string) int32 {
 	// Look for exact gpt-4o first
 	for i, name := range modelNames {
 		if name == "gpt-4o" {
-			return int32(i) //nolint:gosec // model name list length is always small
+			return boundedInt32Index(i)
 		}
 	}
 	// Fall back to first gpt-4 match
 	for i, name := range modelNames {
 		if strings.HasPrefix(name, "gpt-4") {
-			return int32(i) //nolint:gosec // model name list length is always small
+			return boundedInt32Index(i)
 		}
 	}
 	return 0

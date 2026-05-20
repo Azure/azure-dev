@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,8 +19,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// initListFlags holds the optional filters for `azd ai agent init list`.
-type initListFlags struct {
+// sampleListFlags holds the optional filters for `azd ai agent sample list`.
+type sampleListFlags struct {
 	language     string
 	featuredOnly bool
 	templateType string
@@ -27,7 +28,7 @@ type initListFlags struct {
 }
 
 // TemplateListItem is the public JSON contract for a single template emitted by
-// `azd ai agent init list -o json`.
+// `azd ai agent sample list -o json`.
 //
 // Consumers (especially AI coding agents) read this to discover which manifest
 // URLs and repo URLs they can pass to `azd ai agent init -m <url>` or
@@ -35,6 +36,17 @@ type initListFlags struct {
 //
 // Schema stability: fields added in future versions MUST be additive; existing
 // fields keep their semantics. Consumers must ignore unknown fields.
+//
+// URL discriminator invariant: exactly one of ManifestURL or RepoURL is
+// populated on each item; Type indicates which one:
+//
+//   - Type == "agent" => ManifestURL is set, RepoURL is empty.
+//   - Type == "azd"   => RepoURL is set, ManifestURL is empty.
+//
+// Consumers should switch on Type rather than testing both URL fields for
+// non-emptiness, so that adding future template types stays a single
+// additive change instead of a chain of fallback branches. The invariant is
+// asserted by TestMapAgentTemplateToDTO_ManifestUrlAndRepoUrlAreMutuallyExclusive.
 type TemplateListItem struct {
 	// Title is the human-readable template name from the upstream catalog.
 	Title string `json:"title"`
@@ -74,32 +86,60 @@ type TemplateListItem struct {
 
 	// InitCommand is the recommended next command to run. For Type == "agent"
 	// it is `azd ai agent init -m <ManifestURL>`. For Type == "azd" it is
-	// `azd init -t <RepoURL>` — note that the agent extension must be run
+	// `azd init -t <RepoURL>` -- note that the agent extension must be run
 	// separately after the core init completes.
+	//
+	// The URL segment is quoted with Go's %q verb so whitespace, embedded
+	// double quotes, and similar tokenizer-breaking characters survive a
+	// copy/paste into a POSIX or PowerShell prompt. The catalog is trusted
+	// (curated upstream), so this is not a hardening boundary against
+	// untrusted input; %q does NOT neutralize shell expansion of `$` or
+	// backticks. Coding agents that prefer pre-tokenized argv should reach
+	// for ManifestURL/RepoURL directly and skip InitCommand.
 	InitCommand string `json:"initCommand"`
 }
 
-// initListResponse is the top-level JSON envelope. Wrapping the list lets us
+// sampleListResponse is the top-level JSON envelope. Wrapping the list lets us
 // add metadata fields later without breaking consumers.
-type initListResponse struct {
+//
+// The JSON field is intentionally named `templates` (not `samples`): the
+// catalog source itself is "templates" in the upstream registry, and the
+// `sample` namespace is purely the CLI surface label. Keeping the wire field
+// stable means JSON consumers do not need to track CLI renames.
+type sampleListResponse struct {
 	Templates []TemplateListItem `json:"templates"`
 }
 
 // Known language tokens, kept in one place so error messages stay accurate.
-var knownInitListLanguages = []string{"python", "dotnetCsharp"}
+var knownSampleListLanguages = []string{"python", "dotnetCsharp"}
 
 // Known template type filter values.
-var knownInitListTypes = []string{TemplateTypeAgent, TemplateTypeAzd}
+var knownSampleListTypes = []string{TemplateTypeAgent, TemplateTypeAzd}
 
-func newInitListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	flags := &initListFlags{}
+// SampleListAction owns the catalog-fetch + render side of `sample list`.
+//
+// Mirrors the local action convention used elsewhere in this extension
+// (MonitorAction, ProjectShowAction): a small constructor in RunE builds
+// the action with validated flags, then calls Run(ctx) which does the I/O
+// and rendering. This separates command wiring (cobra plumbing) from
+// behavior (catalog fetch + output) so the behavior is unit-testable
+// without spinning up cobra.
+type SampleListAction struct {
+	flags *sampleListFlags
+	// out is the stdout writer for the action. RunE injects cmd.OutOrStdout()
+	// so tests can capture output without process-level redirection.
+	out io.Writer
+}
+
+func newSampleListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	flags := &sampleListFlags{}
 	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List available agent templates that can be used with `azd ai agent init -m`.",
-		Long: `List available agent templates from the curated catalog.
+		Short:   "List available agent samples that can be used with `azd ai agent init -m`.",
+		Long: `List available agent samples from the curated catalog.
 
 Each entry includes the manifest URL or repo URL that can be passed back into
 ` + "`azd ai agent init -m <url>`" + ` (for agent manifests) or ` + "`azd init -t <url>`" + `
@@ -107,60 +147,43 @@ Each entry includes the manifest URL or repo URL that can be passed back into
 string so coding agents don't have to compose flags.
 
 The catalog is fetched from the same source the interactive template picker uses.`,
-		Example: `  # List all templates in the default text format
-  azd ai agent init list
+		Example: `  # List all samples in the default text format
+  azd ai agent sample list
 
   # List as JSON for programmatic consumption
-  azd ai agent init list --output json
+  azd ai agent sample list --output json
 
-  # Only Python templates
-  azd ai agent init list --language python
+  # Only Python samples
+  azd ai agent sample list --language python
 
-  # Only featured (curated) templates as JSON
-  azd ai agent init list --featured-only --output json
+  # Only featured (curated) samples as JSON
+  azd ai agent sample list --featured-only --output json
 
-  # Only agent-manifest templates (ready for -m)
-  azd ai agent init list --type agent`,
+  # Only agent-manifest samples (ready for -m)
+  azd ai agent sample list --type agent`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.output = extCtx.OutputFormat
 
-			if err := validateInitListFlags(flags); err != nil {
+			if err := validateSampleListFlags(flags); err != nil {
 				return err
 			}
 
-			ctx := cmd.Context()
-
-			httpClient := &http.Client{
-				Timeout: 30 * time.Second,
+			action := &SampleListAction{
+				flags: flags,
+				out:   cmd.OutOrStdout(),
 			}
 
-			templates, err := fetchAgentTemplates(ctx, httpClient)
-			if err != nil {
-				return exterrors.Dependency(
-					exterrors.CodeGitHubDownloadFailed,
-					fmt.Sprintf("failed to fetch agent templates catalog: %s", err),
-					"check network connectivity and retry; the catalog is fetched from "+agentTemplatesURL,
-				)
-			}
-
-			items := buildTemplateListItems(templates, flags)
-
-			switch normalizeOutputFormat(flags.output) {
-			case "json":
-				return printInitListJSON(cmd.OutOrStdout(), items)
-			default:
-				return printInitListText(cmd.OutOrStdout(), items)
-			}
+			return action.Run(cmd.Context())
 		},
 	}
 
 	cmd.Flags().StringVar(&flags.language, "language", "",
-		fmt.Sprintf("Filter by language token. Supported values: %s.", strings.Join(knownInitListLanguages, ", ")))
+		fmt.Sprintf("Filter by language token. Supported values: %s.", strings.Join(knownSampleListLanguages, ", ")))
 	cmd.Flags().BoolVar(&flags.featuredOnly, "featured-only", false,
-		"Only include templates tagged 'featured' (the curated starter list).")
+		"Only include samples tagged 'featured' (the curated starter list).")
 	cmd.Flags().StringVar(&flags.templateType, "type", "",
-		fmt.Sprintf("Filter by template type. Supported values: %s.", strings.Join(knownInitListTypes, ", ")))
+		fmt.Sprintf("Filter by template type. Supported values: %s.", strings.Join(knownSampleListTypes, ", ")))
 
 	// Default human format is "text": a paragraph-style list with title,
 	// description, and manifest URL per entry. Wide tables collapse poorly
@@ -174,20 +197,46 @@ The catalog is fetched from the same source the interactive template picker uses
 	return cmd
 }
 
-// validateInitListFlags rejects unknown filter values before any network I/O.
-func validateInitListFlags(flags *initListFlags) error {
-	if flags.language != "" && !slices.Contains(knownInitListLanguages, flags.language) {
+// Run fetches the catalog, applies filters, and renders the result in the
+// selected output format.
+func (a *SampleListAction) Run(ctx context.Context) error {
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	templates, err := fetchAgentTemplates(ctx, httpClient)
+	if err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeGitHubDownloadFailed,
+			fmt.Sprintf("failed to fetch agent templates catalog from %s: %s", agentTemplatesURL, err),
+			"check network connectivity and retry",
+		)
+	}
+
+	items := buildTemplateListItems(templates, a.flags)
+
+	switch normalizeOutputFormat(a.flags.output) {
+	case "json":
+		return printSampleListJSON(a.out, items)
+	default:
+		return printSampleListText(a.out, items)
+	}
+}
+
+// validateSampleListFlags rejects unknown filter values before any network I/O.
+func validateSampleListFlags(flags *sampleListFlags) error {
+	if flags.language != "" && !slices.Contains(knownSampleListLanguages, flags.language) {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("unknown language %q", flags.language),
-			fmt.Sprintf("use one of: %s", strings.Join(knownInitListLanguages, ", ")),
+			fmt.Sprintf("use one of: %s", strings.Join(knownSampleListLanguages, ", ")),
 		)
 	}
-	if flags.templateType != "" && !slices.Contains(knownInitListTypes, flags.templateType) {
+	if flags.templateType != "" && !slices.Contains(knownSampleListTypes, flags.templateType) {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("unknown template type %q", flags.templateType),
-			fmt.Sprintf("use one of: %s", strings.Join(knownInitListTypes, ", ")),
+			fmt.Sprintf("use one of: %s", strings.Join(knownSampleListTypes, ", ")),
 		)
 	}
 	return nil
@@ -196,7 +245,7 @@ func validateInitListFlags(flags *initListFlags) error {
 // buildTemplateListItems converts AgentTemplate entries into the public DTO,
 // applying any filters from flags. The result is sorted: featured first, then
 // alphabetically by title within each group.
-func buildTemplateListItems(templates []AgentTemplate, flags *initListFlags) []TemplateListItem {
+func buildTemplateListItems(templates []AgentTemplate, flags *sampleListFlags) []TemplateListItem {
 	filtered := make([]AgentTemplate, 0, len(templates))
 	for _, t := range templates {
 		if flags.language != "" && !slices.Contains(t.Languages, flags.language) {
@@ -243,10 +292,10 @@ func mapAgentTemplateToDTO(t AgentTemplate) TemplateListItem {
 	switch effective {
 	case TemplateTypeAgent:
 		item.ManifestURL = t.Source
-		item.InitCommand = fmt.Sprintf("azd ai agent init -m %s", t.Source)
+		item.InitCommand = fmt.Sprintf("azd ai agent init -m %q", t.Source)
 	case TemplateTypeAzd:
 		item.RepoURL = t.Source
-		item.InitCommand = fmt.Sprintf("azd init -t %s", t.Source)
+		item.InitCommand = fmt.Sprintf("azd init -t %q", t.Source)
 	}
 
 	return item
@@ -266,11 +315,11 @@ func normalizeOutputFormat(s string) string {
 	}
 }
 
-func printInitListJSON(w io.Writer, items []TemplateListItem) error {
-	resp := initListResponse{Templates: items}
+func printSampleListJSON(w io.Writer, items []TemplateListItem) error {
+	resp := sampleListResponse{Templates: items}
 	data, err := json.MarshalIndent(resp, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshaling templates to JSON: %w", err)
+		return fmt.Errorf("marshaling samples to JSON: %w", err)
 	}
 	// Write bytes directly to avoid an extra string allocation for what
 	// can be a large catalog payload.
@@ -281,7 +330,7 @@ func printInitListJSON(w io.Writer, items []TemplateListItem) error {
 	return err
 }
 
-// printInitListText emits each template as a three-line paragraph:
+// printSampleListText emits each template as a three-line paragraph:
 //
 //	Sample: <title>
 //	Description: <description>
@@ -290,9 +339,9 @@ func printInitListJSON(w io.Writer, items []TemplateListItem) error {
 // followed by a blank line. Designed to stay readable when titles and URLs
 // each routinely exceed 80 columns, where a fixed-column table would wrap
 // or truncate badly.
-func printInitListText(w io.Writer, items []TemplateListItem) error {
+func printSampleListText(w io.Writer, items []TemplateListItem) error {
 	if len(items) == 0 {
-		_, err := fmt.Fprintln(w, "No templates matched the supplied filters.")
+		_, err := fmt.Fprintln(w, "No samples matched the supplied filters.")
 		return err
 	}
 
@@ -318,6 +367,6 @@ func printInitListText(w io.Writer, items []TemplateListItem) error {
 	}
 
 	_, err := fmt.Fprintln(w,
-		"Run `azd ai agent init list --output json` for the machine-readable form (includes ready-to-run initCommand).")
+		"Run `azd ai agent sample list --output json` for the machine-readable form (includes ready-to-run initCommand).")
 	return err
 }

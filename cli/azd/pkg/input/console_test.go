@@ -588,15 +588,16 @@ func TestAskerConsole_PausePreviewer_DiscardsHookOutput(t *testing.T) {
 	require.True(t, ok, "AskerConsole must implement PreviewerPauser")
 	ps.PausePreviewer()
 
-	// Bug: ShowPreviewer now returns io.Discard, silencing all hook output
-	// (preprovision, postprovision, predeploy, postdeploy hooks that call ShowPreviewer
-	// will have their stdout set to io.Discard, so their output is never seen).
+	// PausePreviewer is designed to suppress previewer output — ShowPreviewer returns
+	// io.Discard while paused. This is expected behavior. The actual bug (#8237) was that
+	// azd up called PausePreviewer too early (before hooks), not that PausePreviewer
+	// suppresses output.
 	writerWhilePaused := c.ShowPreviewer(ctx, &ShowPreviewerOptions{
 		Title:        "preprovision Hook Output",
 		MaxLineCount: 8,
 	})
 	require.Equal(t, io.Discard, writerWhilePaused,
-		"ShowPreviewer returns io.Discard when previewer is paused — this is the bug: hook output is silenced")
+		"ShowPreviewer returns io.Discard when previewer is paused (expected PausePreviewer behavior)")
 
 	// After ResumePreviewer, ShowPreviewer should work again.
 	ps.ResumePreviewer()

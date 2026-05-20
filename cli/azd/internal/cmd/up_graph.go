@@ -493,15 +493,17 @@ func (u *UpGraphAction) Run(
 		if deployTracker == nil {
 			return
 		}
-		stop := deployTracker.StartTicker(ctx)
+		// Pause the previewer before starting the ticker to avoid a window where
+		// the progress table renders while ShowPreviewer is still active.
 		if ps, ok := u.console.(input.PreviewerPauser); ok {
 			ps.PausePreviewer()
+			stop := deployTracker.StartTicker(ctx)
 			stopTicker = func() {
 				stop()
 				ps.ResumePreviewer()
 			}
 		} else {
-			stopTicker = stop
+			stopTicker = deployTracker.StartTicker(ctx)
 		}
 	}
 

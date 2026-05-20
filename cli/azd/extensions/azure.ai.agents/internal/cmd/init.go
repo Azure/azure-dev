@@ -807,6 +807,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						// Full azd template - dispatch azd init -t <repo>
 						// Create project in a new subdirectory derived from the template title.
 						folderName := sanitizeAgentName(selectedTemplate.Title)
+						// Check whether the target directory already exists so we
+						// only report "created" when a new directory was made.
+						_, dirExisted := os.Stat(folderName)
 						initArgs := []string{"init", "-t", selectedTemplate.Source, folderName}
 						if flags.env != "" {
 							initArgs = append(initArgs, "--environment", flags.env)
@@ -853,7 +856,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 								folderName, err,
 							)
 						}
-						createdFolder = filepath.Join(originalCwd, folderName)
+						if dirExisted != nil {
+							createdFolder = filepath.Join(originalCwd, folderName)
+						}
 
 						// Search for an agent manifest in the scaffolded project
 						cwd, err := os.Getwd()

@@ -21,7 +21,7 @@ description: >-
 
 # sprint-check
 
-**WORKFLOW SKILL** — Validates sprint readiness for issues and PRs in the current sprint.
+**WORKFLOW SKILL** — Validates sprint readiness for issues in the current sprint.
 
 INVOKES: `gh` CLI, GitHub MCP tools, `ask_user`.
 

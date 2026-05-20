@@ -91,13 +91,16 @@ git tag -l "azure-dev-cli_*" --sort=-version:refname | head -10
 **Validate each PR is merged:**
 
 ```bash
-gh pr view PR_NUMBER --repo Azure/azure-dev --json state,mergeCommit,mergedAt
+gh pr view PR_NUMBER --repo Azure/azure-dev --json state,mergeCommit,mergedAt,baseRefName
 ```
 
 For each PR:
 - Must be `state: "MERGED"`
+- Must have `baseRefName: "main"` — reject PRs merged into feature branches (they may contain unrelated changes)
 - Record `mergeCommit.oid` — this is what we cherry-pick
 - If PR is not merged, warn and skip it
+- If PR was merged into a non-main branch, warn:
+  > PR #NNNN was merged into `BRANCH`, not `main`. Cherry-picking its merge commit may include unrelated changes. Skip this PR?
 
 **Determine if merge commit:**
 
@@ -273,6 +276,6 @@ The pipeline builds, signs, and publishes the release — including GitHub relea
 - PR not merged → warn, skip, continue with others
 - Cherry-pick conflict → interactive resolution (Step 4)
 - Build failure after cherry-pick → warn, offer to continue or abort
-- Push rejected → suggest `git push --force-with-lease` if branch already exists (with user confirmation)
+- Push rejected → first try `git pull --rebase origin BRANCH` to incorporate any remote commits, then retry `git push`. Only suggest `git push --force-with-lease` as a last resort if rebase also fails, and warn the user that force-pushing may overwrite others' work on the branch
 - `gh` not authenticated → stop, tell user to run `gh auth login`
 - No write access → stop, explain requirement

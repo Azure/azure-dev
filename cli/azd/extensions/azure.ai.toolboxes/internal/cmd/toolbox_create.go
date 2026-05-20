@@ -6,10 +6,12 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"time"
+	"slices"
+	"strings"
 
 	"azure.ai.toolboxes/internal/exterrors"
 	"azure.ai.toolboxes/internal/foundry/projectctx"
+	"azure.ai.toolboxes/internal/pkg/azure"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -17,41 +19,56 @@ import (
 
 // toolboxCreateFlags holds the verb-specific flags for `toolbox create`.
 type toolboxCreateFlags struct {
-	description string
+	fromFile string
 }
 
 // newToolboxCreateCommand returns the `azd ai toolbox create <name>` command.
-// `create` records a local pending entry; v1 is POSTed on the first
-// `connection add`.
 func newToolboxCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	flags := &toolboxCreateFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "create <name>",
-		Short: "Register a new toolbox locally (publishes on first `connection add`).",
-		Long: `Register a new toolbox locally.
+		Use:   "create <name> --from-file <path>",
+		Short: "Create a toolbox and publish its initial version from a file.",
+		Long: `Create a toolbox and publish its initial version.
 
-A toolbox must have at least one tool before it can be published, so 'create'
-only records a local pending entry. The first 'connection add' against the
-same toolbox name publishes v1 and clears the pending record.`,
+The Foundry service requires the initial version to ship with a non-empty
+connection list, so 'create' takes its inputs from a JSON or YAML file via
+--from-file.
+
+` + fileShapeBlurb(true) + `
+
+At least one connection must be provided.
+
+Examples:
+
+  azd ai toolbox create research --from-file ./tools.json
+  azd ai toolbox create research --from-file ./tools.yaml --output json
+`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runToolboxCreate(cmd.Context(), args[0], *flags, readToolboxFlags(cmd, extCtx))
+			return runToolboxCreate(
+				cmd.Context(), args[0], *flags, readToolboxFlags(cmd, extCtx),
+				defaultConnectionResolver{},
+			)
 		},
 	}
 
 	cmd.Flags().StringVar(
-		&flags.description, "description", "",
-		"Optional description recorded with the toolbox.",
+		&flags.fromFile, "from-file", "",
+		"Path to a JSON/YAML file describing the initial version (see --help for the file shape).",
 	)
+	if err := cmd.MarkFlagRequired("from-file"); err != nil {
+		panic(err) // never fails; flag is registered above
+	}
 	registerToolboxOutputFlag(cmd)
 
 	return cmd
 }
 
 func runToolboxCreate(
-	ctx context.Context, name string, verb toolboxCreateFlags, parent toolboxFlags,
+	ctx context.Context, name string, verb toolboxCreateFlags,
+	parent toolboxFlags, resolver connectionResolver,
 ) error {
 	if err := validateToolboxName(name); err != nil {
 		return err
@@ -66,61 +83,137 @@ func runToolboxCreate(
 	}
 	logResolvedEndpoint("toolbox create", resolved)
 
-	// Check whether the toolbox already exists on the service.
 	client, err := newToolboxClient(resolved.Endpoint)
 	if err != nil {
 		return err
 	}
 
+	return runToolboxCreateWith(ctx, client, resolver, resolved.Endpoint, name, verb, parent)
+}
+
+// runToolboxCreateWith is the testable core. It accepts injected client and
+// resolver so unit tests can drive every branch without an HTTP server.
+func runToolboxCreateWith(
+	ctx context.Context,
+	client toolboxClient,
+	resolver connectionResolver,
+	endpoint, name string,
+	verb toolboxCreateFlags,
+	parent toolboxFlags,
+) error {
 	if _, err := client.GetToolbox(ctx, name); err == nil {
-		return emitCreateResult(name, true /* alreadyExists */, parent.output, verb, resolved.Endpoint)
+		return exterrors.Validation(
+			exterrors.CodeInvalidToolboxName,
+			fmt.Sprintf("toolbox %q already exists", name),
+			"run 'azd ai toolbox update' or 'connection add/remove' to change it",
+		)
 	} else if !isAzureNotFound(err) {
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolbox)
 	}
 
-	// New name → record a pending entry.
-	if err := withAzdClient(func(azdClient *azdext.AzdClient) error {
-		record := PendingToolbox{
-			Description: verb.description,
-			CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+	description := ""
+	entries := []map[string]any{}
+
+	if strings.TrimSpace(verb.fromFile) != "" {
+		var input toolboxCreateFile
+		if err := parseToolboxFile(verb.fromFile, &input); err != nil {
+			return err
 		}
-		if err := setPendingToolbox(ctx, azdClient, resolved.Endpoint, name, record); err != nil {
-			return exterrors.Internal(exterrors.CodePendingToolboxStoreFailed, err.Error())
+		description = input.Description
+		resolvedEntries, err := resolveConnectionSpecs(ctx, resolver, endpoint, input.Connections)
+		if err != nil {
+			return err
 		}
-		return nil
-	}); err != nil {
+		entries = append(entries, resolvedEntries...)
+	}
+
+	if len(entries) == 0 {
+		return exterrors.Validation(
+			exterrors.CodeInvalidToolboxName,
+			"toolbox create requires at least one connection",
+			"pass --from-file with a non-empty 'connections' list",
+		)
+	}
+
+	if err := validateNoDuplicateConnectionIDs(entries); err != nil {
 		return err
 	}
 
-	return emitCreateResult(name, false, parent.output, verb, resolved.Endpoint)
+	req := &azure.CreateToolboxVersionRequest{
+		Description: description,
+		Tools:       entries,
+	}
+	created, err := client.CreateToolboxVersion(ctx, name, req)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
+	}
+
+	return emitCreateResult(name, created.Version, parent.output, endpoint)
 }
 
-// emitCreateResult prints the standard one-liner or JSON envelope.
-func emitCreateResult(
-	name string, alreadyExists bool, output string, verb toolboxCreateFlags, endpoint string,
-) error {
+func emitCreateResult(name, version, output, endpoint string) error {
+	mcpURL := buildToolboxMcpURL(endpoint, name, version)
 	if output == "json" {
-		payload := map[string]any{
-			"toolbox": map[string]any{
-				"name":        name,
-				"pending":     !alreadyExists,
-				"description": verb.description,
-			},
-			"endpoint":      endpoint,
-			"alreadyExists": alreadyExists,
-		}
-		return emitJSON(payload)
+		return emitJSON(map[string]any{
+			"toolbox":  name,
+			"version":  version,
+			"endpoint": mcpURL,
+		})
 	}
 
-	if alreadyExists {
-		fmt.Printf("Toolbox %s already exists.\n", name)
-		fmt.Println("Next steps:")
-		fmt.Println("  - Run 'azd ai toolbox connection add' to publish a new version.")
-		fmt.Println("  - Run 'azd ai toolbox update --default-version <n>' to retarget the default.")
-		return nil
+	fmt.Printf("Created toolbox %s at version %s.\n", name, version)
+	fmt.Printf("Endpoint: %s\n", mcpURL)
+	return nil
+}
+
+// resolveConnectionSpecs walks the file's connection list and converts each
+// entry into a service tool entry via the connection resolver and buildToolEntry.
+func resolveConnectionSpecs(
+	ctx context.Context,
+	resolver connectionResolver,
+	endpoint string,
+	specs []toolboxConnectionSpec,
+) ([]map[string]any, error) {
+	entries := make([]map[string]any, 0, len(specs))
+	for _, spec := range specs {
+		if strings.TrimSpace(spec.Name) == "" {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"connection name must not be empty",
+				"set connections[].name in the input file",
+			)
+		}
+		conn, err := resolver.resolveConnection(ctx, endpoint, spec.Name)
+		if err != nil {
+			return nil, err
+		}
+		entry, err := buildToolEntry(conn, spec.Index)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
 	}
-	fmt.Printf("Registered toolbox %s (pending tools).\n", name)
-	fmt.Println("Next step:")
-	fmt.Printf("  Run 'azd ai toolbox connection add %s <connection>' to publish v1.\n", name)
+	return entries, nil
+}
+
+// validateNoDuplicateConnectionIDs rejects entries that reference the same
+// project_connection_id more than once.
+func validateNoDuplicateConnectionIDs(entries []map[string]any) error {
+	ids := []string{}
+	forEachToolConnectionID(entries, func(id string) bool {
+		ids = append(ids, id)
+		return false
+	})
+
+	slices.Sort(ids)
+	for i := 1; i < len(ids); i++ {
+		if ids[i] == ids[i-1] {
+			return exterrors.Validation(
+				exterrors.CodeDuplicateConnection,
+				fmt.Sprintf("connection %q appears more than once in the input", ids[i]),
+				"remove duplicate connection entries",
+			)
+		}
+	}
 	return nil
 }

@@ -209,10 +209,3 @@ func TestBuildToolboxMcpURL(t *testing.T) {
 	)
 	assert.Contains(t, escaped, "versions/v%201%2F2/mcp")
 }
-
-func TestEndpointBucketKey(t *testing.T) {
-	a := endpointBucketKey("https://acct.example.com/api/projects/p")
-	b := endpointBucketKey("https://acct.example.com/api/projects/p/") // trailing slash
-	assert.Equal(t, a, b, "trailing slash must not change bucket key")
-	assert.Len(t, a, 16, "bucket key length is pinned to 16 hex chars")
-}

@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"strings"
@@ -36,10 +35,7 @@ func newToolboxShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 By default shows the default version. Use --version to inspect a specific
 version. The output includes the toolbox's runtime MCP endpoint, which agents
-consume via the TOOLBOX_<NAME>_ENDPOINT environment variable convention.
-
-If the toolbox exists only as a pending local record (no version published
-yet), the command emits a pending-toolbox view and rejects --version.`,
+consume via the TOOLBOX_<NAME>_ENDPOINT environment variable convention.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runToolboxShow(cmd.Context(), args[0], *flags, readToolboxFlags(cmd, extCtx))
@@ -48,7 +44,7 @@ yet), the command emits a pending-toolbox view and rejects --version.`,
 
 	cmd.Flags().StringVar(
 		&flags.version, "version", "",
-		"Specific version to show. Defaults to the server's default_version.",
+		"Specific version to show. Defaults to the server's default version.",
 	)
 	registerToolboxOutputFlag(cmd)
 
@@ -81,10 +77,7 @@ func runToolboxShowWith(
 ) error {
 	tb, err := client.GetToolbox(ctx, name)
 	if err != nil {
-		if isAzureNotFound(err) {
-			return showPendingOrNotFound(ctx, endpoint, name, verb, parent)
-		}
-		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolbox)
+		return toolboxNotFoundOrService(err, name, exterrors.OpGetToolbox)
 	}
 
 	shownVersion := verb.version
@@ -110,79 +103,6 @@ func runToolboxShowWith(
 		return emitShowJSON(tb, version, mcpURL)
 	}
 	return emitShowTable(tb, version, mcpURL)
-}
-
-// showPendingOrNotFound handles the 404 branch: either render the pending-toolbox
-// view or surface a structured Dependency(CodeToolboxNotFound).
-func showPendingOrNotFound(
-	ctx context.Context, endpoint, name string,
-	verb toolboxShowFlags, parent toolboxFlags,
-) error {
-	return withAzdClient(func(azdClient *azdext.AzdClient) error {
-		pending, err := getPendingToolbox(ctx, azdClient, endpoint, name)
-		if err != nil {
-			log.Printf("toolbox show: pending-toolbox read failed for %q: %v", name, err)
-		}
-		if pending == nil {
-			return exterrors.Dependency(
-				exterrors.CodeToolboxNotFound,
-				fmt.Sprintf("toolbox %q not found at %s", name, endpoint),
-				"run 'azd ai toolbox list' to see available toolboxes",
-			)
-		}
-
-		return renderPendingShow(name, verb, parent, pending)
-	})
-}
-
-// renderPendingShow emits the pending-toolbox view.
-func renderPendingShow(
-	name string, verb toolboxShowFlags, parent toolboxFlags, pending *PendingToolbox,
-) error {
-
-	if verb.version != "" {
-		return exterrors.Validation(
-			exterrors.CodeMissingUpdateField,
-			fmt.Sprintf(
-				"toolbox %q has no published versions yet; --version cannot be used",
-				name,
-			),
-			fmt.Sprintf(
-				"run 'azd ai toolbox connection add %q <connection>' to publish v1 first",
-				name,
-			),
-		)
-	}
-
-	if parent.output == "json" {
-		payload := map[string]any{
-			"toolbox": map[string]any{
-				"name":        name,
-				"pending":     true,
-				"description": pending.Description,
-				"createdAt":   pending.CreatedAt,
-			},
-			"version":  nil,
-			"endpoint": nil,
-		}
-		return emitJSON(payload)
-	}
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "FIELD\tVALUE")
-	fmt.Fprintln(w, "-----\t-----")
-	fmt.Fprintf(w, "Name\t%s\n", name)
-	fmt.Fprintf(w, "State\tpending\n")
-	fmt.Fprintf(w, "Description\t%s\n", pending.Description)
-	fmt.Fprintf(w, "Created\t%s\n", pending.CreatedAt)
-	if err := w.Flush(); err != nil {
-		return err
-	}
-	fmt.Printf(
-		"\nRun `azd ai toolbox connection add %q <connection>` to publish v1.\n",
-		name,
-	)
-	return nil
 }
 
 // buildToolboxMcpURL computes the runtime MCP consumption URL.

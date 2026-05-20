@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"azure.ai.toolboxes/internal/exterrors"
 
@@ -70,24 +69,24 @@ func runToolboxDelete(
 	}
 	logResolvedEndpoint("toolbox delete", resolved)
 
-	return runToolboxDeleteWith(ctx, client, resolved.Endpoint, name, verb, parent)
+	return runToolboxDeleteWith(ctx, client, name, verb, parent)
 }
 
 // runToolboxDeleteWith is the testable core. It accepts a toolboxClient
 // interface so unit tests can drive the branches without an HTTP server.
 func runToolboxDeleteWith(
-	ctx context.Context, client toolboxClient, endpoint, name string,
+	ctx context.Context, client toolboxClient, name string,
 	verb toolboxDeleteFlags, parent toolboxFlags,
 ) error {
 	if verb.version == "" {
-		return runDeleteToolbox(ctx, client, endpoint, name, verb, parent)
+		return runDeleteToolbox(ctx, client, name, verb, parent)
 	}
-	return runDeleteToolboxVersion(ctx, client, endpoint, name, verb, parent)
+	return runDeleteToolboxVersion(ctx, client, name, verb, parent)
 }
 
 // runDeleteToolbox handles `toolbox delete <name>` (no --version).
 func runDeleteToolbox(
-	ctx context.Context, client toolboxClient, endpoint, name string,
+	ctx context.Context, client toolboxClient, name string,
 	verb toolboxDeleteFlags, parent toolboxFlags,
 ) error {
 	// Only the parent-toolbox delete prompts for confirmation; --no-prompt
@@ -101,16 +100,9 @@ func runDeleteToolbox(
 		)
 	}
 	return withAzdClient(func(azdClient *azdext.AzdClient) error {
-		// Best-effort pending lookup; a read failure is logged but non-fatal.
-		pending, readErr := getPendingToolbox(ctx, azdClient, endpoint, name)
-		if readErr != nil {
-			log.Printf("toolbox delete: pending-toolbox read failed for %q: %v", name, readErr)
-		}
-
 		_, getErr := client.GetToolbox(ctx, name)
 		switch {
 		case getErr == nil:
-			// Live toolbox.
 			if !verb.force {
 				confirmed, err := confirmToolboxDelete(ctx, azdClient,
 					fmt.Sprintf("Delete toolbox %q (cascades to every version)?", name))
@@ -125,26 +117,12 @@ func runDeleteToolbox(
 			if err := client.DeleteToolbox(ctx, name); err != nil && !isAzureNotFound(err) {
 				return exterrors.ServiceFromAzure(err, exterrors.OpDeleteToolbox)
 			}
-			// Best-effort clear of any local pending record (non-fatal).
-			if _, err := clearPendingToolbox(ctx, azdClient, endpoint, name); err != nil {
-				log.Printf("toolbox delete: failed to clear pending record for %q: %v", name, err)
-			}
 			return emitDeleteResult(name, "", "deleted", parent.output)
 
 		case isAzureNotFound(getErr):
-			if pending != nil {
-				if _, err := clearPendingToolbox(ctx, azdClient, endpoint, name); err != nil {
-					return exterrors.Internal(exterrors.CodePendingToolboxStoreFailed, err.Error())
-				}
-				if parent.output == "json" {
-					return emitDeleteResult(name, "", "pending_cleared", parent.output)
-				}
-				fmt.Printf("Cleared pending toolbox %s.\n", name)
-				return nil
-			}
 			return exterrors.Dependency(
 				exterrors.CodeToolboxNotFound,
-				fmt.Sprintf("toolbox %q not found at %s", name, endpoint),
+				fmt.Sprintf("toolbox %q not found", name),
 				"run 'azd ai toolbox list' to see available toolboxes",
 			)
 
@@ -156,7 +134,7 @@ func runDeleteToolbox(
 
 // runDeleteToolboxVersion handles `toolbox delete <name> --version <n>`.
 func runDeleteToolboxVersion(
-	ctx context.Context, client toolboxClient, endpoint, name string,
+	ctx context.Context, client toolboxClient, name string,
 	verb toolboxDeleteFlags, parent toolboxFlags,
 ) error {
 	tb, err := client.GetToolbox(ctx, name)
@@ -207,17 +185,6 @@ func runDeleteToolboxVersion(
 	}
 
 	if cascaded {
-		// Server cascaded the parent toolbox away — best-effort clear of any
-		// local pending record so the name doesn't linger in `toolbox list`.
-		_ = withAzdClient(func(azdClient *azdext.AzdClient) error {
-			if _, err := clearPendingToolbox(ctx, azdClient, endpoint, name); err != nil {
-				log.Printf(
-					"toolbox delete: failed to clear pending record after cascade for %q: %v",
-					name, err,
-				)
-			}
-			return nil
-		})
 		if parent.output == "json" {
 			return emitDeleteResult(name, verb.version, "toolbox_cascaded", parent.output)
 		}

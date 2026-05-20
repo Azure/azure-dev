@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	"azure.ai.toolboxes/internal/exterrors"
@@ -16,14 +17,13 @@ import (
 )
 
 // TestRunToolboxDeleteWith covers the live + per-version branches of
-// runToolboxDeleteWith that do not depend on the azd config store. The
-// pending-only path is exercised indirectly through TestEndpointBucketKey.
+// runToolboxDeleteWith.
 func TestRunToolboxDeleteWith_Branches(t *testing.T) {
-	t.Run("not_found_no_pending_returns_validation_error", func(t *testing.T) {
+	t.Run("not_found_returns_validation_error", func(t *testing.T) {
 		// The default getResults returns NotFound for unknown names.
 		client := newMockToolboxClient("https://e/")
 		err := runDeleteToolboxVersion(
-			t.Context(), client, "https://e/", "missing",
+			t.Context(), client, "missing",
 			toolboxDeleteFlags{version: "1", force: true}, toolboxFlags{output: "table"},
 		)
 		requireLocalError(t, err, exterrors.CodeToolboxNotFound)
@@ -39,7 +39,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 			{Name: "tb", Version: "1"}, {Name: "tb", Version: "2"},
 		}
 		err := runDeleteToolboxVersion(
-			t.Context(), client, "https://e/", "tb",
+			t.Context(), client, "tb",
 			toolboxDeleteFlags{version: "2", force: true}, toolboxFlags{output: "table"},
 		)
 		le := requireLocalError(t, err, exterrors.CodeDefaultVersionDelete)
@@ -56,7 +56,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 			{Name: "tb", Version: "1"},
 		}
 		err := runDeleteToolboxVersion(
-			t.Context(), client, "https://e/", "tb",
+			t.Context(), client, "tb",
 			toolboxDeleteFlags{version: "1", force: false}, toolboxFlags{output: "table"},
 		)
 		requireLocalError(t, err, exterrors.CodeOnlyVersionDelete)
@@ -72,7 +72,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 			{Name: "tb", Version: "1"},
 		}
 		err := runDeleteToolboxVersion(
-			t.Context(), client, "https://e/", "tb",
+			t.Context(), client, "tb",
 			toolboxDeleteFlags{version: "1", force: true}, toolboxFlags{output: "json"},
 		)
 		require.NoError(t, err)
@@ -87,7 +87,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 			Name: "tb", DefaultVersion: "5",
 		}}
 		err := runDeleteToolboxVersion(
-			t.Context(), client, "https://e/", "tb",
+			t.Context(), client, "tb",
 			toolboxDeleteFlags{version: "3", force: true}, toolboxFlags{output: "json"},
 		)
 		require.NoError(t, err)
@@ -102,7 +102,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 			Name: "tb", DefaultVersion: "5",
 		}}
 		err := runDeleteToolboxVersion(
-			t.Context(), client, "https://e/", "tb",
+			t.Context(), client, "tb",
 			toolboxDeleteFlags{version: "3", force: false}, toolboxFlags{output: "json"},
 		)
 		require.NoError(t, err)
@@ -115,7 +115,7 @@ func TestRunToolboxDelete_NoPromptWithoutForce(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 	// Parent-toolbox delete with --no-prompt and no --force must reject.
 	err := runDeleteToolbox(
-		t.Context(), client, "https://e/", "tb",
+		t.Context(), client, "tb",
 		toolboxDeleteFlags{},
 		toolboxFlags{output: "table", noPrompt: true},
 	)
@@ -162,23 +162,15 @@ func TestRunToolboxShowWith_LiveAndVersionMissing(t *testing.T) {
 	})
 }
 
-func TestRunToolboxListWith_MergesNoPending(t *testing.T) {
+func TestRunToolboxListWith(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 	client.listToolboxesResult = []azure.ToolboxObject{
 		{Name: "alpha", DefaultVersion: "1"},
 		{Name: "beta", DefaultVersion: "2"},
 	}
-	client.versionResults["alpha/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
-		Name: "alpha", Version: "1", Tools: []map[string]any{
-			{"type": "mcp", "name": "t1"},
-		},
-	}}
-	client.versionResults["beta/2"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
-		Name: "beta", Version: "2", Tools: []map[string]any{},
-	}}
 
 	err := runToolboxListWith(
-		t.Context(), client, "https://e/", toolboxFlags{output: "json"},
+		t.Context(), client, toolboxFlags{output: "json"},
 	)
 	require.NoError(t, err)
 }
@@ -200,7 +192,7 @@ func TestRunConnectionAddWith_DuplicateRejected(t *testing.T) {
 	}
 
 	err := runConnectionAddWith(
-		t.Context(), client, resolver, newStubPendingStore(), "https://e/",
+		t.Context(), client, resolver, "https://e/",
 		"tb", "x", connectionAddFlags{}, toolboxFlags{output: "json"},
 	)
 	requireLocalError(t, err, exterrors.CodeDuplicateConnection)
@@ -224,14 +216,14 @@ func TestRunConnectionAddWith_AppendsAndPromotesDefault(t *testing.T) {
 	}
 
 	err := runConnectionAddWith(
-		t.Context(), client, resolver, newStubPendingStore(), "https://e/",
+		t.Context(), client, resolver, "https://e/",
 		"tb", "b", connectionAddFlags{}, toolboxFlags{output: "json"},
 	)
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1)
 	assert.Equal(t, "first", client.createVersionCalls[0].req.Description, "description carried forward")
 	assert.Len(t, client.createVersionCalls[0].req.Tools, 2)
-	require.Len(t, client.setDefaultCalls, 1, "default_version must be retargeted")
+	require.Len(t, client.setDefaultCalls, 1, "default version must be retargeted")
 }
 
 func TestRunConnectionAddWith_ConnectionNotFound(t *testing.T) {
@@ -243,11 +235,66 @@ func TestRunConnectionAddWith_ConnectionNotFound(t *testing.T) {
 
 	resolver := newStubConnectionResolver()
 	err := runConnectionAddWith(
-		t.Context(), client, resolver, newStubPendingStore(), "https://e/",
+		t.Context(), client, resolver, "https://e/",
 		"tb", "missing", connectionAddFlags{}, toolboxFlags{output: "table"},
 	)
 	requireLocalError(t, err, exterrors.CodeConnectionNotFound)
 	assert.Empty(t, client.createVersionCalls)
+}
+
+// Batch path via --from-file: multiple connections should land in
+// a single new toolbox version (one CreateToolboxVersion, one SetDefaultVersion).
+func TestRunConnectionAddWith_FromFileAddsMultipleToolsSingleVersion(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{Name: "tb", DefaultVersion: "1"}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1", Tools: []map[string]any{
+			{"type": "mcp", "project_connection_id": "/c/existing"},
+		},
+	}}
+
+	resolver := newStubConnectionResolver()
+	resolver.byName["my-mcp"] = &projectConnection{
+		ID:       "/c/my-mcp",
+		Category: connections.ConnectionTypeRemoteTool,
+		Name:     "my-mcp",
+		Target:   "https://mcp.example.com",
+	}
+	resolver.byName["search"] = &projectConnection{
+		ID:       "/c/search",
+		Category: connections.ConnectionTypeCognitiveSearch,
+		Name:     "search",
+	}
+
+	inputPath := t.TempDir() + "/add-tools.json"
+	err := os.WriteFile(inputPath, []byte(`
+{
+  "connections": [
+    {"name":"my-mcp"},
+    {"name":"search", "index":"docs"}
+  ]
+}`), 0o600)
+	require.NoError(t, err)
+
+	err = runConnectionAddWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", "", connectionAddFlags{fromFile: inputPath}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1, "single version increment for batch input")
+	assert.Len(t, client.createVersionCalls[0].req.Tools, 3, "existing + 2 additions")
+	require.Len(t, client.setDefaultCalls, 1)
+}
+
+// Public entry-point validation: empty connection without --from-file.
+func TestRunConnectionAdd_RejectsEmptyConnectionWithoutFromFile(t *testing.T) {
+	err := runConnectionAdd(
+		t.Context(), "tb", "",
+		connectionAddFlags{},
+		toolboxFlags{output: "table"},
+		newStubConnectionResolver(),
+	)
+	requireLocalError(t, err, exterrors.CodeInvalidPositionalArg)
 }
 
 func TestRunConnectionRemoveWith_LastToolBlocks(t *testing.T) {
@@ -349,59 +396,57 @@ func TestRunToolboxUpdate_MissingDefaultVersion(t *testing.T) {
 	requireLocalError(t, err, exterrors.CodeMissingUpdateField)
 }
 
-// Pending-record promotion path: POST v1 with the carried-forward
-// description, then clear the record.
-func TestRunConnectionAddWith_PendingPromotion(t *testing.T) {
+func TestRunToolboxCreateWith_FromFileCreatesInitialVersion(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 	resolver := newStubConnectionResolver()
-	resolver.byName["my-mcp"] = &projectConnection{
-		ID:       "/c/my-mcp",
-		Category: connections.ConnectionTypeRemoteTool,
-		Name:     "my-mcp",
-		Target:   "https://mcp.example.com",
-	}
-
-	store := newStubPendingStore()
-	store.records[store.key("https://e/", "tb")] = &PendingToolbox{
-		Description: "Research-time toolset",
-		CreatedAt:   "2026-05-12T10:23:00Z",
-	}
-
-	err := runConnectionAddWith(
-		t.Context(), client, resolver, store, "https://e/",
-		"tb", "my-mcp", connectionAddFlags{}, toolboxFlags{output: "json"},
-	)
-	require.NoError(t, err)
-	require.Len(t, client.createVersionCalls, 1, "v1 must be POSTed")
-	assert.Equal(t, "Research-time toolset", client.createVersionCalls[0].req.Description,
-		"description from pending record must be carried forward")
-	assert.Len(t, client.createVersionCalls[0].req.Tools, 1)
-	assert.Empty(t, client.setDefaultCalls, "first version is default automatically; no PATCH")
-	assert.Equal(t, 1, store.clearCalls, "pending record must be cleared")
-	assert.Empty(t, store.records, "pending record must be removed after success")
-}
-
-// A pending-store read failure must surface as Internal, not silently fall
-// through to a misleading CodeToolboxNotFound.
-func TestRunConnectionAddWith_PendingStoreFailureSurfaces(t *testing.T) {
-	client := newMockToolboxClient("https://e/")
-	resolver := newStubConnectionResolver()
-	resolver.byName["c"] = &projectConnection{
-		ID: "/c/c", Category: connections.ConnectionTypeRemoteTool, Name: "c",
+	resolver.byName["mcp"] = &projectConnection{
+		ID: "/c/mcp", Category: connections.ConnectionTypeRemoteTool, Name: "mcp",
 		Target: "https://mcp.example.com",
 	}
 
-	store := newStubPendingStore()
-	store.getErr = errors.New("config read failed")
+	inputPath := t.TempDir() + "/create.yaml"
+	err := os.WriteFile(inputPath, []byte(`
+description: toolbox from file
+connections:
+  - name: mcp
+`), 0o600)
+	require.NoError(t, err)
 
-	err := runConnectionAddWith(
-		t.Context(), client, resolver, store, "https://e/",
-		"tb", "c", connectionAddFlags{}, toolboxFlags{output: "table"},
+	err = runToolboxCreateWith(
+		t.Context(), client, resolver, "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "json"},
 	)
-	requireLocalError(t, err, exterrors.CodePendingToolboxStoreFailed)
-	assert.Empty(t, client.createVersionCalls,
-		"existing-toolbox branch must not be entered when the pending store fails")
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	assert.Equal(t, "toolbox from file", client.createVersionCalls[0].req.Description)
+	assert.Len(t, client.createVersionCalls[0].req.Tools, 1)
 }
+
+func TestRunToolboxCreateWith_AlreadyExists(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{Name: "tb", DefaultVersion: "1"}}
+
+	err := runToolboxCreateWith(
+		t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
+		toolboxCreateFlags{}, toolboxFlags{output: "table"},
+	)
+	requireLocalError(t, err, exterrors.CodeInvalidToolboxName)
+}
+
+func TestRunToolboxCreateWith_NoConnectionsRejected(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+
+	err := runToolboxCreateWith(
+		t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
+		toolboxCreateFlags{}, toolboxFlags{output: "table"},
+	)
+	requireLocalError(t, err, exterrors.CodeInvalidToolboxName)
+	assert.Empty(t, client.createVersionCalls)
+}
+
+// Unused import guard so 'errors' stays referenced even if all err-injection
+// tests drop in the future.
+var _ = errors.New
 
 // Client-side ^[A-Za-z0-9_-]+$ enforcement on tool entry names.
 func TestBuildToolEntry_RejectsInvalidName(t *testing.T) {

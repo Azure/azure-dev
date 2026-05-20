@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 
@@ -19,7 +18,8 @@ import (
 
 // connectionAddFlags carries the verb-specific flags for `connection add`.
 type connectionAddFlags struct {
-	index string
+	index    string
+	fromFile string
 }
 
 // newToolboxConnectionAddCommand returns the `connection add` command.
@@ -28,24 +28,63 @@ func newToolboxConnectionAddCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
 	flags := &connectionAddFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "add <toolbox> <connection>",
-		Short: "Attach a project connection to a toolbox.",
-		Long: `Attach a project connection to a toolbox.
+		Use:   "add <toolbox> [connection]",
+		Short: "Attach one or more connections to a toolbox.",
+		Long: `Attach one or more tools to a toolbox and publish a new default version.
 
-The tool entry shape is inferred from the connection's category:
-  RemoteTool       → mcp tool wired to the connection's MCP server URL
-  CognitiveSearch  → azure_ai_search tool (requires --index)
-                     Note: "CognitiveSearch" is the category for Azure AI Search.
-Other categories are rejected.
+This command has two modes:
 
-If the toolbox has a local pending record (from 'toolbox create'), v1 is
-published with this connection as the only tool. Otherwise the current
-default version is fetched, the tool entry is appended, and a new default
-version is published.`,
-		Args: cobra.ExactArgs(2),
+Single-connection mode:
+
+  azd ai toolbox add <toolbox> <connection> [--index <name>]
+
+Pass the project connection's short name as the positional. --index is
+required when the connection's category is CognitiveSearch (Azure AI Search).
+Only one tool is appended; the new version becomes the default.
+
+File mode:
+
+  azd ai toolbox add <toolbox> --from-file <path>
+
+Provide a JSON or YAML file with multiple connections. All inputs from a
+single invocation publish exactly one new toolbox version, so adding three
+connections this way produces v(N+1), not v(N+3).
+
+` + fileShapeBlurb(false) + `
+
+At least one connection must be provided.
+
+Examples:
+
+  # Attach a single RemoteTool (MCP) connection
+  azd ai toolbox add research my-mcp
+
+  # Attach a CognitiveSearch connection with an explicit index
+  azd ai toolbox add research my-search --index products
+
+  # Attach several tools in one new version
+  azd ai toolbox add research --from-file ./tools.yaml --output json
+`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			fromFile, _ := cmd.Flags().GetString("from-file")
+			if strings.TrimSpace(fromFile) != "" {
+				if len(args) != 1 {
+					return cobra.ExactArgs(1)(cmd, args)
+				}
+				return nil
+			}
+			if len(args) != 2 {
+				return cobra.RangeArgs(2, 2)(cmd, args)
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			connName := ""
+			if len(args) > 1 {
+				connName = args[1]
+			}
 			return runConnectionAdd(
-				cmd.Context(), args[0], args[1], *flags,
+				cmd.Context(), args[0], connName, *flags,
 				readToolboxFlags(cmd, extCtx),
 				defaultConnectionResolver{},
 			)
@@ -54,7 +93,11 @@ version is published.`,
 
 	cmd.Flags().StringVar(
 		&flags.index, "index", "",
-		"Index name (required when the connection's category is CognitiveSearch, i.e. Azure AI Search).",
+		"Search index name. Required for CognitiveSearch (Azure AI Search) connections; ignored otherwise.",
+	)
+	cmd.Flags().StringVar(
+		&flags.fromFile, "from-file", "",
+		"Path to a JSON/YAML file describing the connections to add (see --help for the file shape).",
 	)
 	registerToolboxOutputFlag(cmd)
 	return cmd
@@ -71,11 +114,11 @@ func runConnectionAdd(
 	if err := validateOutputFormat(parent.output); err != nil {
 		return err
 	}
-	if strings.TrimSpace(connName) == "" {
+	if strings.TrimSpace(verb.fromFile) == "" && strings.TrimSpace(connName) == "" {
 		return exterrors.Validation(
 			exterrors.CodeInvalidPositionalArg,
-			"<connection> must not be empty",
-			"pass the short name of a project connection",
+			"<connection> must not be empty when --from-file is not set",
+			"pass a connection name or use --from-file",
 		)
 	}
 
@@ -85,75 +128,25 @@ func runConnectionAdd(
 	}
 	logResolvedEndpoint("toolbox connection add", resolved)
 
-	store, closer, err := newAzdPendingToolboxStore()
-	if err != nil {
-		return exterrors.Internal(exterrors.CodeAzdClientFailed,
-			fmt.Sprintf("failed to open the pending-toolbox store: %s", err))
-	}
-	defer closer()
-
-	return runConnectionAddWith(ctx, client, resolver, store, resolved.Endpoint,
-		toolboxName, connName, verb, parent)
+	return runConnectionAddWith(ctx, client, resolver, resolved.Endpoint, toolboxName, connName, verb, parent)
 }
 
 // runConnectionAddWith is the testable core.
 func runConnectionAddWith(
-	ctx context.Context, client toolboxClient, resolver connectionResolver,
-	store pendingToolboxStore,
+	ctx context.Context,
+	client toolboxClient,
+	resolver connectionResolver,
 	endpoint, toolboxName, connName string,
-	verb connectionAddFlags, parent toolboxFlags,
+	verb connectionAddFlags,
+	parent toolboxFlags,
 ) error {
-	conn, err := resolver.resolveConnection(ctx, endpoint, connName)
-	if err != nil {
-		return err
-	}
-
-	entry, err := buildToolEntry(conn, verb.index)
-	if err != nil {
-		return err
-	}
-
-	// Pending-promotion path: if a pending record exists, POST v1 directly.
-	// A store-read failure must not silently fall through to the live-toolbox
-	// branch (which would 404 and report CodeToolboxNotFound).
-	pending, err := store.Get(ctx, endpoint, toolboxName)
-	if err != nil {
-		return exterrors.Internal(
-			exterrors.CodePendingToolboxStoreFailed,
-			fmt.Sprintf("failed to read pending toolbox state: %s", err),
-		)
-	}
-	if pending != nil {
-		req := &azure.CreateToolboxVersionRequest{
-			Description: pending.Description,
-			Tools:       []map[string]any{entry},
-		}
-		created, err := client.CreateToolboxVersion(ctx, toolboxName, req)
-		if err != nil {
-			return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
-		}
-		// The version has been published. A pending-store clear failure is
-		// non-fatal: log it but proceed so the user sees the success path.
-		if _, err := store.Clear(ctx, endpoint, toolboxName); err != nil {
-			log.Printf(
-				"toolbox connection add: %q v%s was published, but the local pending record could not be cleared: %v",
-				toolboxName, created.Version, err,
-			)
-		}
-		return emitConnectionAddResult(toolboxName, created.Version, conn, parent.output, true, endpoint)
-	}
-
-	// Existing-toolbox path: fetch default → append → POST → PATCH default_version.
 	tb, err := client.GetToolbox(ctx, toolboxName)
 	if err != nil {
 		if isAzureNotFound(err) {
 			return exterrors.Dependency(
 				exterrors.CodeToolboxNotFound,
 				fmt.Sprintf("toolbox %q not found", toolboxName),
-				fmt.Sprintf(
-					"run 'azd ai toolbox create %q' first, then re-run 'connection add'",
-					toolboxName,
-				),
+				fmt.Sprintf("run 'azd ai toolbox create %q --from-file <file>' first", toolboxName),
 			)
 		}
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolbox)
@@ -164,19 +157,64 @@ func runConnectionAddWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolboxVersion)
 	}
 
-	if duplicateConnectionInTools(current.Tools, conn.ID) {
+	newEntries := []map[string]any{}
+	addedConnectionNames := []string{}
+
+	if strings.TrimSpace(verb.fromFile) != "" {
+		if strings.TrimSpace(connName) != "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidPositionalArg,
+				"do not pass <connection> when --from-file is set",
+				"either pass a single connection positional or use --from-file",
+			)
+		}
+		if verb.index != "" {
+			return exterrors.Validation(
+				exterrors.CodeUnsupportedIndexFlag,
+				"--index cannot be used together with --from-file",
+				"set connection indexes in the file under connections[].index",
+			)
+		}
+
+		var input toolboxToolsFile
+		if err := parseToolboxFile(verb.fromFile, &input); err != nil {
+			return err
+		}
+		resolvedEntries, err := resolveConnectionSpecs(ctx, resolver, endpoint, input.Connections)
+		if err != nil {
+			return err
+		}
+		for _, c := range input.Connections {
+			addedConnectionNames = append(addedConnectionNames, c.Name)
+		}
+		newEntries = append(newEntries, resolvedEntries...)
+	} else {
+		conn, err := resolver.resolveConnection(ctx, endpoint, connName)
+		if err != nil {
+			return err
+		}
+		entry, err := buildToolEntry(conn, verb.index)
+		if err != nil {
+			return err
+		}
+		newEntries = append(newEntries, entry)
+		addedConnectionNames = append(addedConnectionNames, conn.Name)
+	}
+
+	if len(newEntries) == 0 {
 		return exterrors.Validation(
-			exterrors.CodeDuplicateConnection,
-			fmt.Sprintf(
-				"connection %q (%s) is already attached to toolbox %q",
-				connName, conn.ID, toolboxName,
-			),
-			fmt.Sprintf("use 'connection list %q' to inspect current tools", toolboxName),
+			exterrors.CodeInvalidToolboxName,
+			"no connections to add",
+			"provide at least one connection in 'connections[]'",
 		)
 	}
 
+	if err := rejectDuplicatesAgainstCurrentAndBatch(current.Tools, newEntries); err != nil {
+		return err
+	}
+
 	newTools := slices.Clone(current.Tools)
-	newTools = append(newTools, entry)
+	newTools = append(newTools, newEntries...)
 
 	req := &azure.CreateToolboxVersionRequest{
 		Description: current.Description,
@@ -189,9 +227,6 @@ func runConnectionAddWith(
 	}
 
 	if _, err := client.SetDefaultVersion(ctx, toolboxName, created.Version); err != nil {
-		// The new version exists but isn't the default. Surface this so the
-		// user can recover with `toolbox update --default-version <v>` rather
-		// than silently losing the connection add.
 		return exterrors.Dependency(
 			exterrors.CodeSetDefaultVersionFailed,
 			fmt.Sprintf(
@@ -205,38 +240,63 @@ func runConnectionAddWith(
 		)
 	}
 
-	return emitConnectionAddResult(toolboxName, created.Version, conn, parent.output, false, endpoint)
+	return emitConnectionAddResult(toolboxName, created.Version, addedConnectionNames, parent.output, endpoint)
 }
 
-// emitConnectionAddResult prints the standard output for a successful add. The
-// resolved endpoint is included so the user can paste it into agent code.
+// rejectDuplicatesAgainstCurrentAndBatch flags a duplicate if any new entry
+// references a connection that's already in the current tools or appears more
+// than once within the new batch itself.
+func rejectDuplicatesAgainstCurrentAndBatch(current, added []map[string]any) error {
+	seenCurrent := map[string]struct{}{}
+	forEachToolConnectionID(current, func(id string) bool {
+		seenCurrent[id] = struct{}{}
+		return false
+	})
+
+	seenNew := map[string]struct{}{}
+	dupInNew := ""
+	forEachToolConnectionID(added, func(id string) bool {
+		if _, ok := seenNew[id]; ok {
+			dupInNew = id
+			return true
+		}
+		seenNew[id] = struct{}{}
+		if _, exists := seenCurrent[id]; exists {
+			dupInNew = id
+			return true
+		}
+		return false
+	})
+
+	if dupInNew != "" {
+		return exterrors.Validation(
+			exterrors.CodeDuplicateConnection,
+			fmt.Sprintf("connection %q is already attached or duplicated in input", dupInNew),
+			"remove duplicate connection entries",
+		)
+	}
+	return nil
+}
+
+// emitConnectionAddResult prints the standard output for a successful add.
 func emitConnectionAddResult(
-	toolboxName, newVersion string, conn *projectConnection, output string, promoted bool, endpoint string,
+	toolboxName, newVersion string, connectionNames []string, output, endpoint string,
 ) error {
 	mcpURL := buildToolboxMcpURL(endpoint, toolboxName, newVersion)
 	if output == "json" {
 		payload := map[string]any{
-			"toolbox":             toolboxName,
-			"version":             newVersion,
-			"connection":          conn.Name,
-			"connectionId":        conn.ID,
-			"category":            string(conn.Category),
-			"promotedFromPending": promoted,
-			"endpoint":            mcpURL,
+			"toolbox":     toolboxName,
+			"version":     newVersion,
+			"connections": connectionNames,
+			"endpoint":    mcpURL,
 		}
 		return emitJSON(payload)
 	}
-	if promoted {
-		fmt.Printf("Published toolbox %s version %s with connection %s.\n",
-			toolboxName, newVersion, conn.Name)
-	} else {
-		fmt.Printf("Attached connection %s to toolbox %s (now at version %s).\n",
-			conn.Name, toolboxName, newVersion)
+
+	fmt.Printf("Attached connection(s) to toolbox %s (now at version %s).\n", toolboxName, newVersion)
+	if len(connectionNames) > 0 {
+		fmt.Printf("Connections: %s\n", strings.Join(connectionNames, ", "))
 	}
-	// Surface the MCP endpoint so the dev can wire it into agent code. Suggest
-	// `azd env set` when running inside an azd project.
-	envVar := strings.ReplaceAll(strings.ToUpper(toolboxName), "-", "_") + "_MCP_ENDPOINT"
-	fmt.Printf("\nEndpoint: %s\n", mcpURL)
-	fmt.Printf("Save it as an env var:\n  azd env set %s %s\n", envVar, mcpURL)
+	fmt.Printf("Endpoint: %s\n", mcpURL)
 	return nil
 }

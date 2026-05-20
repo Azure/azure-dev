@@ -384,7 +384,7 @@ func (p *AgentServiceTargetProvider) Package(
 	// Code deploy: ZIP the source directory
 	if p.isCodeDeployAgent() {
 		progress("Packaging code")
-		zipPath, sha256Hex, err := p.packageCodeDeploy(serviceConfig)
+		zipPath, sha256Hex, err := p.packageCodeDeploy(ctx, serviceConfig)
 		if err != nil {
 			return nil, exterrors.Internal(exterrors.OpContainerPackage, fmt.Sprintf("code packaging failed: %s", err))
 		}
@@ -1057,7 +1057,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
 // and computes its SHA-256. Returns the temp file path and SHA-256 hex string.
-func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.ServiceConfig) (string, string, error) {
+func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serviceConfig *azdext.ServiceConfig) (string, string, error) {
 	// Source directory is the service's relative path
 	srcDir := filepath.Dir(p.agentDefinitionPath)
 
@@ -1076,30 +1076,14 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 		}
 	}
 
-	// Exclusion patterns
-	// TODO: support a .azdignore or similar ignore file for user-configurable exclusions.
-	excludeDirs := map[string]bool{
-		"__pycache__":   true,
-		".venv":         true,
-		"venv":          true,
-		".git":          true,
-		"node_modules":  true,
-		".mypy_cache":   true,
-		".pytest_cache": true,
-		".azure":        true,
-		// .NET directories (for remote_build, exclude build artifacts)
-		"bin": true,
-		"obj": true,
-		".vs": true,
-	}
-	excludeExts := map[string]bool{
-		".pyc":  true,
-		".pyo":  true,
-		".user": true,
-		".suo":  true,
-	}
-	excludeFiles := map[string]bool{
-		".env": true,
+	// Load .agentignore (or use defaults if no file exists)
+	ignoreMatcher, err := newAgentIgnoreMatcher(ctx, srcDir)
+	if err != nil {
+		return "", "", exterrors.Dependency(
+			exterrors.CodeInvalidFilePath,
+			fmt.Sprintf("failed to load %s: %s", agentIgnoreFileName, err),
+			"check that .agentignore is a valid file with gitignore syntax",
+		)
 	}
 
 	// Create temp file and write ZIP directly to it while computing SHA-256
@@ -1141,9 +1125,14 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 		// Normalize to forward slashes for ZIP
 		relPath = filepath.ToSlash(relPath)
 
+		// Skip symlinked directories to avoid traversing outside the project root
+		if d.IsDir() && d.Type()&fs.ModeSymlink != 0 {
+			return filepath.SkipDir
+		}
+
 		// Check directory exclusions
 		if d.IsDir() {
-			if excludeDirs[d.Name()] {
+			if ignoreMatcher.ShouldExclude(relPath, true) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -1154,18 +1143,8 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 			return nil
 		}
 
-		// Check file extension exclusions
-		if excludeExts[filepath.Ext(path)] {
-			return nil
-		}
-
-		// Check file name exclusions (.env, .env.*)
-		if excludeFiles[d.Name()] || strings.HasPrefix(d.Name(), ".env.") {
-			return nil
-		}
-
-		// Skip agent.yaml itself from the ZIP (metadata is sent separately)
-		if d.Name() == "agent.yaml" {
+		// Check file exclusions
+		if ignoreMatcher.ShouldExclude(relPath, false) {
 			return nil
 		}
 
@@ -1645,6 +1624,8 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	const confirmCount = 2 // consecutive times a terminal status must be seen
 
 	deadline := time.Now().Add(pollTimeout)
+	maxAttempts := int(pollTimeout / pollInterval)
+	attempt := 0
 	progress("Waiting for agent to become active")
 
 	var consecutiveActive int
@@ -1657,6 +1638,9 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 			return nil, fmt.Errorf("deployment cancelled: %w", ctx.Err())
 		case <-time.After(pollInterval):
 		}
+
+		attempt++
+		progress(fmt.Sprintf("Polling agent status (%d/%d)", attempt, maxAttempts))
 
 		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agentAPIVersion)
 		if err != nil {

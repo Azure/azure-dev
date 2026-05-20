@@ -21,6 +21,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -817,6 +818,14 @@ func (a *InitFromCodeAction) writeDefinitionToSrcDir(definition *agent_yaml.Cont
 	//nolint:gosec // generated manifest file should be readable by tooling and users
 	if err := os.WriteFile(definitionPath, content, 0644); err != nil {
 		return "", fmt.Errorf("writing definition to file: %w", err)
+	}
+
+	// Generate .agentignore if it doesn't already exist
+	agentIgnorePath := filepath.Join(srcDir, ".agentignore")
+	if _, err := os.Stat(agentIgnorePath); os.IsNotExist(err) {
+		if err := os.WriteFile(agentIgnorePath, []byte(project.DefaultAgentIgnoreContent()), osutil.PermissionFile); err != nil {
+			return "", fmt.Errorf("writing .agentignore: %w", err)
+		}
 	}
 
 	return definitionPath, nil

@@ -586,7 +586,10 @@ agents are unique by name within a project, so deploying with an existing name
 creates a new version of that existing agent instead of a separate agent.
 
 Use --agent-name to choose a unique Foundry agent name when initializing from
-a reusable sample or manifest.`,
+a reusable sample or manifest.
+
+A default .agentignore file is generated to control which files are excluded
+from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		Example: `  # Initialize from an agent manifest
   azd ai agent init -m ./agent.manifest.yaml
 
@@ -1835,6 +1838,15 @@ func writeAgentDefinitionFile(targetDir string, agentManifest *agent_yaml.AgentM
 	}
 
 	fmt.Println(output.WithGrayFormat("Processed agent.yaml at %s", filePath))
+
+	// Generate .agentignore if it doesn't already exist
+	agentIgnorePath := filepath.Join(targetDir, ".agentignore")
+	if _, err := os.Stat(agentIgnorePath); os.IsNotExist(err) {
+		if err := os.WriteFile(agentIgnorePath, []byte(project.DefaultAgentIgnoreContent()), osutil.PermissionFile); err != nil {
+			return fmt.Errorf("writing .agentignore: %w", err)
+		}
+	}
+
 	return nil
 }
 

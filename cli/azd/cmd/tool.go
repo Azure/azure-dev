@@ -26,6 +26,23 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+// singleResultCommonAttrs returns the usage attributes shared by single-target
+// `azd tool install` and `azd tool upgrade`: success, tool.id, and the
+// installation strategy. Callers append upgrade-specific version attrs
+// (tool.upgrade.{from,to}_version) on top.
+func singleResultCommonAttrs(r *tool.InstallResult) []attribute.KeyValue {
+	attrs := []attribute.KeyValue{
+		fields.ToolInstallSuccessKey.Bool(r.Success),
+	}
+	if r.Tool != nil {
+		attrs = append(attrs, fields.ToolIdKey.String(r.Tool.Id))
+	}
+	if r.Strategy != "" {
+		attrs = append(attrs, fields.ToolInstallStrategyKey.String(r.Strategy))
+	}
+	return attrs
+}
+
 // emitToolInstallTelemetry emits aggregate telemetry attributes for a batch
 // install or upgrade operation. When the batch contains exactly one tool the
 // caller is responsible for also emitting tool.id, tool.install.strategy, and
@@ -503,17 +520,7 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 	emitToolInstallTelemetry(rawResults, time.Since(start))
 
 	if len(rawResults) == 1 {
-		r := rawResults[0]
-		singleAttrs := []attribute.KeyValue{
-			fields.ToolInstallSuccessKey.Bool(r.Success),
-		}
-		if r.Tool != nil {
-			singleAttrs = append(singleAttrs, fields.ToolIdKey.String(r.Tool.Id))
-		}
-		if r.Strategy != "" {
-			singleAttrs = append(singleAttrs, fields.ToolInstallStrategyKey.String(r.Strategy))
-		}
-		tracing.SetUsageAttributes(singleAttrs...)
+		tracing.SetUsageAttributes(singleResultCommonAttrs(rawResults[0])...)
 	}
 
 	if a.formatter.Kind() == output.JsonFormat {
@@ -787,17 +794,11 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	if len(rawResults) == 1 {
 		r := rawResults[0]
-		singleAttrs := []attribute.KeyValue{
-			fields.ToolInstallSuccessKey.Bool(r.Success),
-		}
+		singleAttrs := singleResultCommonAttrs(r)
 		if r.Tool != nil {
-			singleAttrs = append(singleAttrs, fields.ToolIdKey.String(r.Tool.Id))
 			if from, ok := fromVersions[r.Tool.Id]; ok && from != "" {
 				singleAttrs = append(singleAttrs, fields.ToolUpgradeFromVersionKey.String(from))
 			}
-		}
-		if r.Strategy != "" {
-			singleAttrs = append(singleAttrs, fields.ToolInstallStrategyKey.String(r.Strategy))
 		}
 		if r.InstalledVersion != "" {
 			singleAttrs = append(singleAttrs, fields.ToolUpgradeToVersionKey.String(r.InstalledVersion))

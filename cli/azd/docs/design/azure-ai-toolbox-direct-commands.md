@@ -119,7 +119,7 @@ The same `connections[]` shape is reused by `connection add --from-file` (§ 5.6
 | `connections[].name` | required | Project connection short name. Looked up via `connections.Client.Get(name)`. |
 | `connections[].index` | required for `CognitiveSearch` connections, rejected otherwise | The search index name inside the AI Search service the connection points at. |
 
-There is no `metadata` field and no raw `tools[]` escape hatch (§ 2 Non-Goals). Both the YAML form (`.yaml`/`.yml`) and JSON (`.json`) are accepted; the file extension selects the parser.
+There is no `metadata` field and no raw `tools[]` escape hatch (§ 2 Non-Goals). Both the YAML form (`.yaml`/`.yml`) and JSON (`.json`) are accepted; the file extension selects the parser. The parser is strict: unknown top-level fields fail with `CodeInvalidParameter` so a typo (e.g. `conections` instead of `connections`) is caught locally rather than silently dropped.
 
 #### Behavior
 
@@ -260,7 +260,7 @@ Built-in tools (`code_interpreter`, `web_search`, `file_search`) are not authore
 | `connections[].name` | required | Project connection short name. |
 | `connections[].index` | required for `CognitiveSearch`, rejected otherwise | Search index name. |
 
-There is no raw `tools[]` field. Use `toolbox update` to change the default version; published versions inherit `description` from the previous default version when not explicitly set.
+There is no raw `tools[]` field, and `description` is not accepted in this file shape: a toolbox's description is set at create time and cannot be changed afterwards in v1 (the service `PATCH` surface only accepts `default_version`). Unknown fields in the file — including a stray `description` — are rejected by the parser with a clear error so a user typo can't silently propagate.
 
 #### Shared write flow (`add` and `remove`)
 
@@ -453,6 +453,7 @@ OpResolveProjectConnection
 6. **`toolbox list` does not report tool counts.** Avoids one extra `GET /versions` per toolbox (§ 5.5). Use `toolbox show` or `toolbox version list` to inspect tools/versions for a single toolbox.
 7. **`connection remove` prompts by default.** Symmetric with `toolbox delete`. `--force` skips; `--no-prompt` without `--force` rejects with `CodeMissingForceFlag`.
 8. **JSON output keys use snake_case.** Consistent within the toolbox surface (`default_version`, `connection_id`, `is_default`, `created_at`, `tools_count`).
+9. **Description is set at create time and immutable afterwards in v1.** The service `PATCH` accepts only `default_version`, so the CLI cannot retarget description. The `connection add --from-file` schema therefore does not accept `description`; the parser rejects unknown fields so the misuse can't be silent. A future `toolbox update --description` flag will land when the service grows the PATCH surface.
 
 ## 14. Reference: Command Summary
 

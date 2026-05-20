@@ -100,6 +100,16 @@ func TestSanitizeAgentName(t *testing.T) {
 			input:    "---",
 			expected: "my-agent",
 		},
+		{
+			name:     "non-ASCII characters stripped",
+			input:    "Ünö Ägent",
+			expected: "n-gent",
+		},
+		{
+			name:     "all non-ASCII falls back to default",
+			input:    "日本語エージェント",
+			expected: "my-agent",
+		},
 	}
 
 	for _, tt := range tests {

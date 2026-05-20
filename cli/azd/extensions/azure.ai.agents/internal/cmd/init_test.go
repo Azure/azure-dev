@@ -2501,3 +2501,31 @@ func TestCreatedFolderPath_ManifestTemplateExistingProject(t *testing.T) {
 		t.Error("newlyCreated should be false for existing project directory")
 	}
 }
+
+func TestFolderNameFromTitle(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		title string
+		want  string
+	}{
+		{name: "strips parenthetical suffix", title: "Basic Agent (Python)", want: "basic-agent"},
+		{name: "no parenthetical", title: "My Cool Agent", want: "my-cool-agent"},
+		{name: "parenthetical with spaces", title: "Agent  ( Preview )", want: "agent"},
+		{name: "non-ASCII title", title: "Ünö Agent (Test)", want: "n-agent"},
+		{name: "all non-ASCII before paren", title: "日本語 (Python)", want: "my-agent"},
+		{name: "empty title", title: "", want: "my-agent"},
+		{name: "only parenthetical", title: "(Python)", want: "my-agent"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := folderNameFromTitle(tt.title)
+			if got != tt.want {
+				t.Errorf("folderNameFromTitle(%q) = %q, want %q", tt.title, got, tt.want)
+			}
+		})
+	}
+}

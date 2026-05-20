@@ -6,11 +6,11 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"slices"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"azureaiagent/internal/exterrors"
@@ -108,7 +108,7 @@ Each entry includes the manifest URL or repo URL that can be passed back into
 string so coding agents don't have to compose flags.
 
 The catalog is fetched from the same source the interactive template picker uses.`,
-		Example: `  # List all templates as a table
+		Example: `  # List all templates in the default text format
   azd ai agent init list
 
   # List as JSON for programmatic consumption
@@ -149,9 +149,9 @@ The catalog is fetched from the same source the interactive template picker uses
 
 			switch normalizeOutputFormat(flags.output) {
 			case "json":
-				return printInitListJSON(items)
+				return printInitListJSON(os.Stdout, items)
 			default:
-				return printInitListTable(items)
+				return printInitListText(os.Stdout, items)
 			}
 		},
 	}
@@ -163,13 +163,13 @@ The catalog is fetched from the same source the interactive template picker uses
 	cmd.Flags().StringVar(&flags.templateType, "type", "",
 		fmt.Sprintf("Filter by template type. Supported values: %s.", strings.Join(knownInitListTypes, ", ")))
 
-	// Match the rest of the extension: only "table" and "json" are valid here,
-	// and "table" is the default for human consumption. The SDK substitutes
-	// the default when --output is not passed explicitly.
+	// Default human format is "text": a paragraph-style list with title,
+	// description, and manifest URL per entry. Wide tables collapse poorly
+	// because catalog titles and URLs both routinely exceed 80 columns.
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
-		AllowedValues: []string{"json", "table"},
-		Default:       "table",
+		AllowedValues: []string{"json", "text"},
+		Default:       "text",
 	})
 
 	return cmd
@@ -261,66 +261,58 @@ func normalizeOutputFormat(s string) string {
 		return "json"
 	default:
 		// The SDK uses "default" as its sentinel before substitution; treat it
-		// (and any unrecognized value the validator already accepted) as table.
-		return "table"
+		// (and any unrecognized value the validator already accepted) as text.
+		return "text"
 	}
 }
 
-func printInitListJSON(items []TemplateListItem) error {
+func printInitListJSON(w io.Writer, items []TemplateListItem) error {
 	resp := initListResponse{Templates: items}
 	data, err := json.MarshalIndent(resp, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling templates to JSON: %w", err)
 	}
-	fmt.Println(string(data))
-	return nil
+	_, err = fmt.Fprintln(w, string(data))
+	return err
 }
 
-func printInitListTable(items []TemplateListItem) error {
+// printInitListText emits each template as a three-line paragraph:
+//
+//	Sample: <title>
+//	Description: <description>
+//	Manifest: <manifestUrl or repoUrl>
+//
+// followed by a blank line. Designed to stay readable when titles and URLs
+// each routinely exceed 80 columns, where a fixed-column table would wrap
+// or truncate badly.
+func printInitListText(w io.Writer, items []TemplateListItem) error {
 	if len(items) == 0 {
-		fmt.Println("No templates matched the supplied filters.")
-		return nil
+		_, err := fmt.Fprintln(w, "No templates matched the supplied filters.")
+		return err
 	}
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "TITLE\tLANG\tTYPE\tTAGS\tURL")
-	fmt.Fprintln(w, "-----\t----\t----\t----\t---")
 
 	for _, it := range items {
 		url := it.ManifestURL
 		if url == "" {
 			url = it.RepoURL
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			it.Title,
-			strings.Join(it.Languages, ","),
-			it.Type,
-			summarizeTagsForTable(it),
-			url,
-		)
+		if _, err := fmt.Fprintf(w, "Sample: %s\n", it.Title); err != nil {
+			return err
+		}
+		if it.Description != "" {
+			if _, err := fmt.Fprintf(w, "Description: %s\n", it.Description); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintf(w, "Manifest: %s\n", url); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
 	}
 
-	if err := w.Flush(); err != nil {
-		return fmt.Errorf("writing template list table: %w", err)
-	}
-
-	fmt.Println()
-	fmt.Println("Run `azd ai agent init list --output json` for the machine-readable form (includes ready-to-run initCommand).")
-	return nil
-}
-
-// summarizeTagsForTable surfaces only the tags that matter for headless
-// consumers (featured, recommended) to keep the column narrow.
-func summarizeTagsForTable(it TemplateListItem) string {
-	tags := make([]string, 0, 2)
-	if it.Featured {
-		tags = append(tags, "featured")
-	}
-	if it.Recommended {
-		tags = append(tags, "recommended")
-	}
-	if len(tags) == 0 {
-		return "-"
-	}
-	return strings.Join(tags, ",")
+	_, err := fmt.Fprintln(w,
+		"Run `azd ai agent init list --output json` for the machine-readable form (includes ready-to-run initCommand).")
+	return err
 }

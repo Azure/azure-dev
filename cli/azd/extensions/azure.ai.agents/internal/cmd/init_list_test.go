@@ -276,36 +276,72 @@ func TestNormalizeOutputFormat(t *testing.T) {
 	tests := map[string]string{
 		"json":    "json",
 		"JSON":    "json",
-		"table":   "table",
-		"default": "table",
-		"":        "table",
-		"yaml":    "table", // unrecognized falls back to table since validator already ran
+		"text":    "text",
+		"default": "text",
+		"":        "text",
+		"yaml":    "text", // unrecognized falls back to text since validator already ran
+		"table":   "text", // legacy callers that may still pass "table" land on text
 	}
 	for in, want := range tests {
 		require.Equal(t, want, normalizeOutputFormat(in), "input=%q", in)
 	}
 }
 
-func TestSummarizeTagsForTable(t *testing.T) {
+// TestPrintInitListText_FormatContract asserts the exact format the user
+// asked for: each item is a "Sample: <title>" / "Description: <desc>" /
+// "Manifest: <url>" block separated by a blank line. No tabular columns,
+// no LANG / TYPE / TAGS surface in the text format.
+func TestPrintInitListText_FormatContract(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name string
-		item TemplateListItem
-		want string
-	}{
-		{name: "neither", item: TemplateListItem{}, want: "-"},
-		{name: "featured only", item: TemplateListItem{Featured: true}, want: "featured"},
-		{name: "recommended only", item: TemplateListItem{Recommended: true}, want: "recommended"},
-		{name: "both", item: TemplateListItem{Featured: true, Recommended: true}, want: "featured,recommended"},
+	items := []TemplateListItem{
+		{
+			Title:       "Echo Agent",
+			Description: "An agent that echoes input.",
+			Type:        TemplateTypeAgent,
+			ManifestURL: "https://example.com/echo/agent.yaml",
+		},
+		{
+			Title:       "Full Stack Starter",
+			Description: "A full azd template repo.",
+			Type:        TemplateTypeAzd,
+			RepoURL:     "Azure-Samples/azd-agent-starter",
+		},
 	}
-	for _, tc := range tests {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			require.Equal(t, tc.want, summarizeTagsForTable(tc.item))
-		})
+
+	var buf strings.Builder
+	require.NoError(t, printInitListText(&buf, items))
+	got := buf.String()
+
+	// The exact paragraph for the first item, in order.
+	require.Contains(t, got, "Sample: Echo Agent\nDescription: An agent that echoes input.\nManifest: https://example.com/echo/agent.yaml\n\n")
+
+	// The azd-type item uses RepoURL in the Manifest line.
+	require.Contains(t, got, "Sample: Full Stack Starter\nDescription: A full azd template repo.\nManifest: Azure-Samples/azd-agent-starter\n\n")
+
+	// Removed columns must not appear in the human format.
+	require.NotContains(t, got, "LANG")
+	require.NotContains(t, got, "TYPE")
+	require.NotContains(t, got, "TAGS")
+}
+
+func TestPrintInitListText_EmptyShowsMessage(t *testing.T) {
+	t.Parallel()
+	var buf strings.Builder
+	require.NoError(t, printInitListText(&buf, nil))
+	require.Contains(t, buf.String(), "No templates matched")
+}
+
+func TestPrintInitListText_OmitsDescriptionWhenEmpty(t *testing.T) {
+	t.Parallel()
+	items := []TemplateListItem{
+		{Title: "Bare", Type: TemplateTypeAgent, ManifestURL: "https://x/y.yaml"},
 	}
+	var buf strings.Builder
+	require.NoError(t, printInitListText(&buf, items))
+	got := buf.String()
+	require.Contains(t, got, "Sample: Bare\nManifest: https://x/y.yaml\n\n")
+	require.NotContains(t, got, "Description:")
 }
 
 // TestBuildTemplateListItems_InitCommandIsReadyToExecute verifies the

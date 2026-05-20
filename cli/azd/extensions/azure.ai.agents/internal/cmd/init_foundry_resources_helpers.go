@@ -700,7 +700,7 @@ func ensureSubscription(
 				exterrors.CodeMissingAzureSubscription,
 				fmt.Sprintf("failed to select an Azure subscription: %s", err),
 				"set AZURE_SUBSCRIPTION_ID in your azd environment "+
-					"(`azd env set AZURE_SUBSCRIPTION_ID <id>`) or run interactively to pick one",
+					"(run the command `azd env set AZURE_SUBSCRIPTION_ID <id>`).",
 			)
 		}
 

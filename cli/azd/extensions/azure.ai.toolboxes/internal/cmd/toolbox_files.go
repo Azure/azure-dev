@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -26,7 +27,8 @@ type toolboxConnectionSpec struct {
 //
 // Each connections[] item resolves through the project's connections
 // data-plane and is converted into a service tool entry. The toolbox's
-// existing description is carried forward; use `toolbox update` to change it.
+// existing description and metadata are carried forward; the file does not
+// accept `description` (set at create time only in v1).
 type toolboxToolsFile struct {
 	Connections []toolboxConnectionSpec `json:"connections,omitempty" yaml:"connections,omitempty"`
 }
@@ -40,7 +42,10 @@ type toolboxCreateFile struct {
 	Connections []toolboxConnectionSpec `json:"connections,omitempty" yaml:"connections,omitempty"`
 }
 
-// parseToolboxFile reads a JSON or YAML file into out.
+// parseToolboxFile reads a JSON or YAML file into out. Unknown fields are
+// rejected so a user typo (e.g. putting `description` in a `connection add`
+// file, or misspelling `connections`) produces a sharp local error rather
+// than being silently dropped.
 func parseToolboxFile(path string, out any) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -54,20 +59,24 @@ func parseToolboxFile(path string, out any) error {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".json":
-		if err := json.Unmarshal(content, out); err != nil {
+		dec := json.NewDecoder(bytes.NewReader(content))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(out); err != nil {
 			return exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				fmt.Sprintf("invalid JSON in %q: %v", path, err),
-				"fix the file and retry",
+				suggestionForParseError(out, err),
 			)
 		}
 		return nil
 	case ".yaml", ".yml":
-		if err := yaml.Unmarshal(content, out); err != nil {
+		dec := yaml.NewDecoder(bytes.NewReader(content))
+		dec.KnownFields(true)
+		if err := dec.Decode(out); err != nil {
 			return exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				fmt.Sprintf("invalid YAML in %q: %v", path, err),
-				"fix the file and retry",
+				suggestionForParseError(out, err),
 			)
 		}
 		return nil
@@ -78,4 +87,18 @@ func parseToolboxFile(path string, out any) error {
 			"use a .json, .yaml, or .yml file",
 		)
 	}
+}
+
+// suggestionForParseError returns a context-aware fix-it hint. The common
+// surprise is putting `description` in a `connection add` file (the field
+// only applies to `create`); call that out explicitly so the user does not
+// have to read the file-shape doc to know why their description was rejected.
+func suggestionForParseError(out any, err error) string {
+	msg := err.Error()
+	if _, ok := out.(*toolboxToolsFile); ok && strings.Contains(msg, "description") {
+		return "the 'description' field is only accepted by `toolbox create`; " +
+			"in v1 a toolbox's description is set at create time and cannot be changed later"
+	}
+	return "fix the file and retry; see `azd ai toolbox create --help` " +
+		"or `azd ai toolbox connection add --help` for the supported file shape"
 }

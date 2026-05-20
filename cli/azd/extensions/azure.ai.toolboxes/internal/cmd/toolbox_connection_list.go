@@ -88,10 +88,10 @@ func extractConnectionTools(tools []map[string]any) []map[string]string {
 		case "mcp":
 			if id, ok := t["project_connection_id"].(string); ok && id != "" {
 				rows = append(rows, map[string]string{
-					"name":         toolName,
-					"connection":   shortConnectionName(id),
-					"connectionId": id,
-					"type":         toolType,
+					"name":          toolName,
+					"connection":    shortConnectionName(id),
+					"connection_id": id,
+					"type":          toolType,
 				})
 			}
 		case "azure_ai_search":
@@ -105,11 +105,11 @@ func extractConnectionTools(tools []map[string]any) []map[string]string {
 						id, _ := m["project_connection_id"].(string)
 						idxName, _ := m["index_name"].(string)
 						rows = append(rows, map[string]string{
-							"name":         toolName,
-							"connection":   shortConnectionName(id),
-							"connectionId": id,
-							"type":         toolType,
-							"index":        idxName,
+							"name":          toolName,
+							"connection":    shortConnectionName(id),
+							"connection_id": id,
+							"type":          toolType,
+							"index":         idxName,
 						})
 					}
 				}

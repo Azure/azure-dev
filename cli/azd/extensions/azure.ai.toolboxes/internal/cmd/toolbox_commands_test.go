@@ -312,7 +312,7 @@ func TestRunConnectionRemoveWith_LastToolBlocks(t *testing.T) {
 
 	err := runConnectionRemoveWith(
 		t.Context(), client, resolver, "https://e/",
-		"tb", "a", toolboxFlags{output: "table"},
+		"tb", "a", connectionRemoveFlags{force: true}, toolboxFlags{output: "table"},
 	)
 	requireLocalError(t, err, exterrors.CodeLastToolRemoval)
 	assert.Empty(t, client.createVersionCalls)
@@ -334,7 +334,7 @@ func TestRunConnectionRemoveWith_FilteredAndPromoted(t *testing.T) {
 
 	err := runConnectionRemoveWith(
 		t.Context(), client, resolver, "https://e/",
-		"tb", "a", toolboxFlags{output: "json"},
+		"tb", "a", connectionRemoveFlags{force: true}, toolboxFlags{output: "json"},
 	)
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1)
@@ -357,7 +357,7 @@ func TestRunConnectionRemoveWith_ConnectionNotInToolbox(t *testing.T) {
 
 	err := runConnectionRemoveWith(
 		t.Context(), client, resolver, "https://e/",
-		"tb", "a", toolboxFlags{output: "table"},
+		"tb", "a", connectionRemoveFlags{force: true}, toolboxFlags{output: "table"},
 	)
 	requireLocalError(t, err, exterrors.CodeConnectionNotInToolbox)
 }
@@ -494,4 +494,14 @@ func TestRunToolboxVersionListWith_ListVersionsServiceError(t *testing.T) {
 	)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "list versions failed")
+}
+
+func TestRunConnectionRemove_NoPromptWithoutForce(t *testing.T) {
+	err := runConnectionRemove(
+		t.Context(), "tb", "conn",
+		connectionRemoveFlags{force: false},
+		toolboxFlags{output: "table", noPrompt: true},
+		newStubConnectionResolver(),
+	)
+	requireLocalError(t, err, exterrors.CodeMissingForceFlag)
 }

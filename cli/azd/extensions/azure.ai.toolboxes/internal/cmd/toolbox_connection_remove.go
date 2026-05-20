@@ -15,9 +15,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// connectionRemoveFlags carries the verb-specific flags for `connection remove`.
+type connectionRemoveFlags struct {
+	force bool
+}
+
 // newToolboxConnectionRemoveCommand returns the `connection remove` command.
 func newToolboxConnectionRemoveCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
+	flags := &connectionRemoveFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "remove <toolbox> <connection>",
@@ -31,17 +37,23 @@ instead).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runConnectionRemove(
 				cmd.Context(), args[0], args[1],
+				*flags,
 				readToolboxFlags(cmd, extCtx),
 				defaultConnectionResolver{},
 			)
 		},
 	}
+	cmd.Flags().BoolVar(
+		&flags.force, "force", false,
+		"Skip confirmation prompts and apply the removal immediately.",
+	)
 	registerToolboxOutputFlag(cmd)
 	return cmd
 }
 
 func runConnectionRemove(
 	ctx context.Context, toolboxName, connName string,
+	verb connectionRemoveFlags,
 	parent toolboxFlags, resolver connectionResolver,
 ) error {
 	if err := validateToolboxName(toolboxName); err != nil {
@@ -57,6 +69,13 @@ func runConnectionRemove(
 			"pass the short name of a project connection",
 		)
 	}
+	if parent.noPrompt && !verb.force {
+		return exterrors.Validation(
+			exterrors.CodeMissingForceFlag,
+			"--no-prompt requires --force for connection removal",
+			"add --force to confirm the operation non-interactively",
+		)
+	}
 
 	client, resolved, err := resolveToolboxAndClient(ctx, parent)
 	if err != nil {
@@ -65,12 +84,14 @@ func runConnectionRemove(
 	logResolvedEndpoint("toolbox connection remove", resolved)
 
 	return runConnectionRemoveWith(ctx, client, resolver, resolved.Endpoint,
-		toolboxName, connName, parent)
+		toolboxName, connName, verb, parent)
 }
 
 func runConnectionRemoveWith(
 	ctx context.Context, client toolboxClient, resolver connectionResolver,
-	endpoint, toolboxName, connName string, parent toolboxFlags,
+	endpoint, toolboxName, connName string,
+	verb connectionRemoveFlags,
+	parent toolboxFlags,
 ) error {
 	conn, err := resolver.resolveConnection(ctx, endpoint, connName)
 	if err != nil {
@@ -112,6 +133,35 @@ func runConnectionRemoveWith(
 		)
 	}
 
+	if !verb.force {
+		shouldProceed := true
+		err := withAzdClient(func(azdClient *azdext.AzdClient) error {
+			confirmed, err := confirmToolboxDelete(
+				ctx,
+				azdClient,
+				fmt.Sprintf(
+					"Detach connection %q from toolbox %q (publishes a new version)?",
+					connName,
+					toolboxName,
+				),
+			)
+			if err != nil {
+				return err
+			}
+			if !confirmed {
+				shouldProceed = false
+				fmt.Println("Aborted.")
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		if !shouldProceed {
+			return nil
+		}
+	}
+
 	req := &azure.CreateToolboxVersionRequest{
 		Description: current.Description,
 		Metadata:    current.Metadata,
@@ -143,10 +193,10 @@ func emitConnectionRemoveResult(
 ) error {
 	if output == "json" {
 		payload := map[string]any{
-			"toolbox":      toolboxName,
-			"version":      newVersion,
-			"connection":   conn.Name,
-			"connectionId": conn.ID,
+			"toolbox":       toolboxName,
+			"version":       newVersion,
+			"connection":    conn.Name,
+			"connection_id": conn.ID,
 		}
 		return emitJSON(payload)
 	}

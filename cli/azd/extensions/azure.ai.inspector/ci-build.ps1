@@ -1,5 +1,5 @@
 param(
-    [string] $Version = (Get-Content "$PSScriptRoot/../version.txt"),
+    [string] $Version = (Get-Content "$PSScriptRoot/version.txt"),
     [string] $SourceVersion = (git rev-parse HEAD),
     [switch] $CodeCoverageEnabled,
     [switch] $BuildRecordMode,
@@ -27,7 +27,7 @@ $buildFlags = @(
     # Use buildmode=pie (Position Independent Executable) for enhanced security across platforms
     # against memory corruption exploits across all major platforms.
     #
-    # On Windows, the -buildmode=pie flag enables Address Space Layout 
+    # On Windows, the -buildmode=pie flag enables Address Space Layout
     # Randomization (ASLR) and automatically sets DYNAMICBASE and HIGH-ENTROPY-VA flags in the PE header.
     "-buildmode=pie"
 )
@@ -55,9 +55,9 @@ if ($IsWindows) {
 }
 elseif ($IsLinux) {
     Write-Host "Building for linux"
-    
+
     # Disable cgo in the x64 Linux build. This will also statically
-    # link the resulting binary which increases backwards 
+    # link the resulting binary which increases backwards
     # compatibility with older versions of Linux.
     if ($env:GOARCH -ne "arm64") {
         $env:CGO_ENABLED = "0"

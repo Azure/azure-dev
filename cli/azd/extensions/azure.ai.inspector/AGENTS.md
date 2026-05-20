@@ -9,7 +9,7 @@ instructions with the conventions that are specific to this extension.
 `cli/azd/extensions/azure.ai.inspector/`. It runs as a separate Go binary and talks
 to the azd host over gRPC.
 
-The single user-facing command is `azd ai inspector`. It starts a local HTTP
+The single user-facing command is `azd ai inspector launch`. It starts a local HTTP
 server that serves an embedded single-page application and proxies HTTP/SSE
 traffic to a Foundry agent running locally on the target port.
 

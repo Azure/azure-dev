@@ -5,7 +5,7 @@ azd extension.
 
 ## What it does
 
-`azd ai inspector` starts a small local HTTP server that:
+`azd ai inspector launch` starts a small local HTTP server that:
 
 1. Serves an embedded single-page application in your default browser.
 2. Proxies the SPA's HTTP and Server-Sent Event (SSE) traffic to a locally running
@@ -21,13 +21,13 @@ on the target port (for example, started via `azd ai agent run`).
 
 ```bash
 # Launch with defaults (UI on :8087, target agent on localhost:8088)
-azd ai inspector
+azd ai inspector launch
 
 # Custom ports
-azd ai inspector --port 9000 --inspector-port 9001
+azd ai inspector launch --port 9000 --inspector-port 9001
 
 # Seed an explicit session/conversation (otherwise the SPA mints fresh UUIDs)
-azd ai inspector --session-id <uuid> --conversation-id <uuid>
+azd ai inspector launch --session-id <uuid> --conversation-id <uuid>
 ```
 
 | Flag | Default | Purpose |
@@ -110,7 +110,7 @@ In one terminal, start a local Foundry agent on the target port (for example,
 In a second terminal:
 
 ```bash
-azd ai inspector
+azd ai inspector launch
 ```
 
 Your default browser should open to `http://localhost:8087`. Send a message from the

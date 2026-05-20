@@ -28,7 +28,7 @@ const (
 	DefaultInspectorPort = 8087
 )
 
-// inspectorFlags holds the flags accepted by the `azd ai inspector` command.
+// inspectorFlags holds the flags accepted by the `azd ai inspector launch` command.
 type inspectorFlags struct {
 	port           int
 	inspectorPort  int
@@ -36,16 +36,16 @@ type inspectorFlags struct {
 	conversationID string
 }
 
-// newInspectorCommand returns the root command for `azd ai inspector`. The
+// newLaunchCommand returns the launch command for `azd ai inspector launch`. The
 // inspector is a local-only tool: it serves an embedded SPA in the user's
 // default browser and proxies the SPA's HTTP/SSE traffic to a Foundry
 // agent already running on `localhost:<port>` (typically started via
 // `azd ai agent run`).
-func newInspectorCommand() *cobra.Command {
+func newLaunchCommand() *cobra.Command {
 	flags := &inspectorFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "inspector",
+		Use:   "launch",
 		Short: "Launch the Agent Inspector UI in a browser, pointed at a local agent.",
 		Long: `Launch the Agent Inspector UI in a browser.
 
@@ -57,13 +57,13 @@ SSE chunks streamed to the SPA are also mirrored to your terminal so you can
 watch progress without focusing the browser.`,
 		Example: `  # Launch the inspector against a local agent on the default port (8088),
   # serving the UI on the default port (8087).
-  azd ai inspector
+  azd ai inspector launch
 
   # Launch with custom ports.
-  azd ai inspector --port 9000 --inspector-port 9001
+  azd ai inspector launch --port 9000 --inspector-port 9001
 
   # Seed an explicit session/conversation (otherwise the SPA mints fresh UUIDs).
-  azd ai inspector --session-id <uuid> --conversation-id <uuid>`,
+  azd ai inspector launch --session-id <uuid> --conversation-id <uuid>`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runInspector(cmd.Context(), flags)
 		},

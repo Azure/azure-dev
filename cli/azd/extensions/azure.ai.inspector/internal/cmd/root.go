@@ -9,13 +9,13 @@ import (
 )
 
 // NewRootCommand builds the cobra root command for the azure.ai.inspector
-// extension. The root command itself launches the inspector; subcommands
-// provide standard extension plumbing (listen, metadata, version).
+// extension. The root command groups inspector subcommands; launch is the
+// user-facing command that starts the inspector.
 func NewRootCommand() *cobra.Command {
 	rootCmd, _ := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:  "inspector",
-		Use:   "inspector [options]",
-		Short: "Launch the Foundry agent inspector UI in a browser. (Preview)",
+		Use:   "inspector <command> [options]",
+		Short: "Inspect locally running Foundry agents in a browser. (Preview)",
 	})
 	rootCmd.SilenceUsage = true
 	rootCmd.SilenceErrors = true
@@ -37,15 +37,7 @@ func NewRootCommand() *cobra.Command {
 		return nil
 	}
 
-	// `azd ai inspector` (with no subcommand) launches the inspector. The
-	// flag set, RunE, and help text live on the dedicated builder so the
-	// root command's behavior is co-located with its flags.
-	leaf := newInspectorCommand()
-	rootCmd.RunE = leaf.RunE
-	rootCmd.Long = leaf.Long
-	rootCmd.Example = leaf.Example
-	rootCmd.Flags().AddFlagSet(leaf.Flags())
-
+	rootCmd.AddCommand(newLaunchCommand())
 	rootCmd.AddCommand(azdext.NewListenCommand(nil))
 	rootCmd.AddCommand(azdext.NewMetadataCommand("1.0", "azure.ai.inspector", func() *cobra.Command {
 		return rootCmd

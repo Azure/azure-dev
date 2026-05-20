@@ -32,6 +32,9 @@ words:
   - errorhandler
   - extendee
   - eiannone
+  - firstrun
+  - CICD
+  - optin
   # CDN host name
   - gfgac2cmf7b8cuay
   - Getenv

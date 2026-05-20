@@ -10,10 +10,13 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -21,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tool"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // configKeyFirstRunCompleted is the user-config path that records
@@ -30,6 +34,24 @@ const configKeyFirstRunCompleted = "tool.firstRunCompleted"
 // envKeySkipFirstRun is the environment variable that, when set to
 // "true", suppresses the first-run tool check entirely.
 const envKeySkipFirstRun = "AZD_SKIP_FIRST_RUN"
+
+// Skip reason constants emitted via fields.ToolFirstRunSkipReasonKey so
+// downstream telemetry analysis can distinguish *why* the first-run experience
+// did not run. Keep in sync with the documentation on
+// fields.ToolFirstRunSkipReasonKey.
+//
+// Skip reasons are *not* emitted for the alpha-disabled and child-action
+// paths: when the alpha feature is off the user has no opportunity to opt in,
+// and child actions (e.g. workflow steps) inherit the parent's first-run
+// state.  Neither contributes useful signal to first-run adoption analysis.
+const (
+	skipReasonEnvVar           = "env_var"
+	skipReasonNoPrompt         = "no_prompt"
+	skipReasonCICD             = "ci_cd"
+	skipReasonNonInteractive   = "non_interactive"
+	skipReasonAlreadyCompleted = "already_completed"
+	skipReasonConfigError      = "config_error"
+)
 
 // ToolFirstRunMiddleware presents a one-time welcome experience
 // on the very first invocation of azd.  It detects the user's
@@ -75,7 +97,10 @@ func (m *ToolFirstRunMiddleware) Run(ctx context.Context, nextFn NextFn) (*actio
 		return nextFn(ctx)
 	}
 
-	if m.shouldSkip(ctx) {
+	if reason, skip := m.shouldSkip(ctx); skip {
+		tracing.SetUsageAttributes(
+			fields.ToolFirstRunSkipReasonKey.String(reason),
+		)
 		return nextFn(ctx)
 	}
 
@@ -88,42 +113,42 @@ func (m *ToolFirstRunMiddleware) Run(ctx context.Context, nextFn NextFn) (*actio
 	return nextFn(ctx)
 }
 
-// shouldSkip returns true when the first-run experience should be
-// bypassed.  The reasons are checked in order of cost (cheapest
+// shouldSkip returns the skip reason and true when the first-run experience
+// should be bypassed.  The reasons are checked in order of cost (cheapest
 // first).
-func (m *ToolFirstRunMiddleware) shouldSkip(ctx context.Context) bool {
+func (m *ToolFirstRunMiddleware) shouldSkip(ctx context.Context) (string, bool) {
 	// 1. Env-var opt-out.
 	if skip, _ := strconv.ParseBool(os.Getenv(envKeySkipFirstRun)); skip {
-		return true
+		return skipReasonEnvVar, true
 	}
 
 	// 2. Non-interactive mode (--no-prompt).
 	if m.options.NoPrompt {
-		return true
+		return skipReasonNoPrompt, true
 	}
 
 	// 3. CI/CD environment — never prompt in CI.
 	if resource.IsRunningOnCI() {
-		return true
+		return skipReasonCICD, true
 	}
 
 	// 4. Non-interactive terminal (piped stdin/stdout).
 	if m.console.IsNoPromptMode() {
-		return true
+		return skipReasonNonInteractive, true
 	}
 
 	// 5. Already completed.
 	cfg, err := m.configManager.Load()
 	if err != nil {
 		log.Printf("tool first-run: failed to load user config: %v", err)
-		return true // err on the side of not blocking the user
+		return skipReasonConfigError, true // err on the side of not blocking the user
 	}
 
 	if _, ok := cfg.Get(configKeyFirstRunCompleted); ok {
-		return true
+		return skipReasonAlreadyCompleted, true
 	}
 
-	return false
+	return "", false
 }
 
 // runFirstRunExperience drives the interactive welcome flow.
@@ -162,9 +187,15 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 	}
 
 	if runCheck == nil || !*runCheck {
+		tracing.SetUsageAttributes(
+			fields.ToolFirstRunOptInKey.Bool(false),
+			fields.ToolFirstRunCompletedKey.Bool(true),
+		)
 		m.markCompleted()
 		return nil
 	}
+
+	tracing.SetUsageAttributes(fields.ToolFirstRunOptInKey.Bool(true))
 
 	// ---------------------------------------------------------------
 	// Tool detection
@@ -192,6 +223,17 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 	m.console.Message(ctx, "")
 	m.displayToolStatuses(ctx, statuses)
 
+	// Count tools already installed at detection time.
+	installedCount := 0
+	for _, s := range statuses {
+		if s.Installed {
+			installedCount++
+		}
+	}
+	tracing.SetUsageAttributes(
+		fields.ToolFirstRunToolsDetectedKey.Int(installedCount),
+	)
+
 	// ---------------------------------------------------------------
 	// Offer to install missing recommended tools
 	// ---------------------------------------------------------------
@@ -206,8 +248,13 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 		if err := m.offerInstall(ctx, missingRecommended); err != nil {
 			log.Printf("tool first-run: install offer failed: %v", err)
 		}
+	} else {
+		tracing.SetUsageAttributes(
+			fields.ToolFirstRunToolsOfferedKey.Int(0),
+		)
 	}
 
+	tracing.SetUsageAttributes(fields.ToolFirstRunCompletedKey.Bool(true))
 	m.markCompleted()
 	return nil
 }
@@ -244,13 +291,19 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 	ctx context.Context,
 	missing []*tool.ToolStatus,
 ) error {
+	tracing.SetUsageAttributes(
+		fields.ToolFirstRunToolsOfferedKey.Int(len(missing)),
+	)
+
 	choices := make([]*uxlib.MultiSelectChoice, len(missing))
+	offeredIDs := make([]string, len(missing))
 	for i, s := range missing {
 		choices[i] = &uxlib.MultiSelectChoice{
 			Value:    s.Tool.Id,
 			Label:    fmt.Sprintf("%s — %s", s.Tool.Name, s.Tool.Description),
 			Selected: true, // pre-select all recommended
 		}
+		offeredIDs[i] = s.Tool.Id
 	}
 
 	multiSelect := uxlib.NewMultiSelect(&uxlib.MultiSelectOptions{
@@ -263,10 +316,35 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 	selected, err := multiSelect.Ask(ctx)
 	if err != nil {
 		if errors.Is(err, uxlib.ErrCancelled) {
+			tracing.SetUsageAttributes(
+				fields.ToolFirstRunToolsSelectedKey.Int(0),
+			)
 			return nil
 		}
 		return fmt.Errorf("prompting for tool selection: %w", err)
 	}
+
+	// Extract selected tool IDs.
+	selectedIDs := make([]string, 0, len(selected))
+	selectedSet := make(map[string]struct{}, len(selected))
+	for _, choice := range selected {
+		selectedIDs = append(selectedIDs, choice.Value)
+		selectedSet[choice.Value] = struct{}{}
+	}
+
+	// Compute deselected = offered \ selected (preserving offered order).
+	deselectedIDs := make([]string, 0, len(offeredIDs))
+	for _, id := range offeredIDs {
+		if _, ok := selectedSet[id]; !ok {
+			deselectedIDs = append(deselectedIDs, id)
+		}
+	}
+
+	tracing.SetUsageAttributes(
+		fields.ToolFirstRunToolsSelectedKey.Int(len(selectedIDs)),
+		fields.ToolFirstRunToolsSelectedNamesKey.String(strings.Join(selectedIDs, ",")),
+		fields.ToolFirstRunToolsDeselectedNamesKey.String(strings.Join(deselectedIDs, ",")),
+	)
 
 	if len(selected) == 0 {
 		m.console.Message(ctx, output.WithGrayFormat(
@@ -274,15 +352,10 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 		return nil
 	}
 
-	// Extract selected tool IDs.
-	selectedIDs := make([]string, 0, len(selected))
-	for _, choice := range selected {
-		selectedIDs = append(selectedIDs, choice.Value)
-	}
-
 	// Install selected tools.
 	m.console.Message(ctx, "")
 
+	installStart := time.Now()
 	var results []*tool.InstallResult
 	installSpinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
 		Text:        "Installing tools...",
@@ -293,8 +366,36 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 		results, installErr = m.manager.InstallTools(ctx, selectedIDs)
 		return installErr
 	}); err != nil {
+		tracing.SetUsageAttributes(
+			fields.ToolFirstRunInstallDurationMsKey.Int64(time.Since(installStart).Milliseconds()),
+		)
 		return fmt.Errorf("installing tools: %w", err)
 	}
+
+	successCount := 0
+	failureCount := 0
+	failedIDs := make([]string, 0)
+	for _, r := range results {
+		if r.Success {
+			successCount++
+			continue
+		}
+		failureCount++
+		if r.Tool != nil {
+			failedIDs = append(failedIDs, r.Tool.Id)
+		}
+	}
+	installAttrs := []attribute.KeyValue{
+		fields.ToolFirstRunInstallSuccessCountKey.Int(successCount),
+		fields.ToolFirstRunInstallFailureCountKey.Int(failureCount),
+		fields.ToolFirstRunInstallDurationMsKey.Int64(time.Since(installStart).Milliseconds()),
+	}
+	if len(failedIDs) > 0 {
+		installAttrs = append(installAttrs,
+			fields.ToolFirstRunInstallFailedIdsKey.String(strings.Join(failedIDs, ",")),
+		)
+	}
+	tracing.SetUsageAttributes(installAttrs...)
 
 	// Display install results.
 	m.console.Message(ctx, "")

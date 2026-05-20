@@ -413,6 +413,28 @@ func resolveConversationID(
 	return newConvID, nil
 }
 
+// setACREnvVar sets the AZD_AGENT_SKIP_ACR environment variable based on whether the
+// deployment is code-based (no container registry needed) or container-based.
+// This env var is consumed by the Bicep template in Azure-Samples/azd-ai-starter-basic
+// (infra/main.bicep) as `param skipAcr bool` to conditionally skip ACR resource creation.
+//
+// Cross-repo dependency: changes to this variable name must be coordinated with
+// the template parameter mapping in main.parameters.json of the starter template.
+func setACREnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string, isCodeDeploy bool) error {
+	value := "false"
+	if isCodeDeploy {
+		value = "true"
+	}
+
+	if err := setEnvValue(ctx, azdClient, envName, "AZD_AGENT_SKIP_ACR", value); err != nil {
+		if isCodeDeploy {
+			return fmt.Errorf("configuring ACR skip for code deploy: %w", err)
+		}
+		return fmt.Errorf("configuring ACR for container deploy: %w", err)
+	}
+	return nil
+}
+
 // detectProjectType detects the project type and suggests a start command.
 type ProjectType struct {
 	Language string // "python", "dotnet", "node", "unknown"

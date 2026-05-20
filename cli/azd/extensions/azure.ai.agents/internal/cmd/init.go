@@ -806,7 +806,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					case TemplateTypeAzd:
 						// Full azd template - dispatch azd init -t <repo>
 						// Create project in a new subdirectory derived from the template title.
-						folderName := sanitizeAgentName(selectedTemplate.Title)
+						folderName := folderNameFromTitle(selectedTemplate.Title)
 						// Check whether the target directory already exists so we
 						// only report "created" when a new directory was made.
 						_, dirExisted := os.Stat(folderName)

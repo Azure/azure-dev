@@ -18,6 +18,7 @@ func newJobDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	var name string
 	var yes bool
+	var noWait bool
 
 	cmd := &cobra.Command{
 		Use:   "delete",
@@ -87,7 +88,13 @@ func newJobDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				return fmt.Errorf("failed to create API client: %w", err)
 			}
 
-			result, err := apiClient.DeleteJob(ctx, name)
+			if noWait {
+				fmt.Printf("Deleting job '%s' (no-wait)...\n", name)
+			} else {
+				fmt.Printf("Deleting job '%s'...\n", name)
+			}
+
+			result, err := apiClient.DeleteJob(ctx, name, &client.DeleteJobOptions{NoWait: noWait})
 			if err != nil {
 				return fmt.Errorf("failed to delete job: %w", err)
 			}
@@ -98,7 +105,14 @@ func newJobDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			case client.DeleteJobNotFound:
 				fmt.Printf("Job '%s' was not found (nothing to delete).\n", name)
 			case client.DeleteJobInProgress:
-				fmt.Printf("Delete for job '%s' was accepted and is in progress.\n", name)
+				if noWait {
+					fmt.Printf("Delete for job '%s' was accepted and is in progress.\n", name)
+				} else {
+					fmt.Printf(
+						"Delete for job '%s' is still in progress after the maximum wait; run 'azd ai training job show --name %s' to check.\n",
+						name, name,
+					)
+				}
 			case client.DeleteJobAccepted:
 				fmt.Printf("Delete for job '%s' was accepted.\n", name)
 			}
@@ -108,6 +122,10 @@ func newJobDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd.Flags().StringVar(&name, "name", "", "Job name/ID to delete (required)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Skip confirmation prompt")
+	cmd.Flags().BoolVar(
+		&noWait, "no-wait", false,
+		"Do not wait for the deletion to complete; return immediately after the server accepts the request",
+	)
 
 	return cmd
 }

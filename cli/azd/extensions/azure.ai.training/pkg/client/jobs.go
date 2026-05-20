@@ -10,8 +10,16 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
 	"azure.ai.training/pkg/models"
+)
+
+// Polling defaults for DeleteJob. Foundry deletes are usually seconds; the
+// cap protects against a runaway poll loop if the backend gets wedged.
+const (
+	defaultDeletePollInterval = 3 * time.Second
+	maxDeletePollDuration     = 5 * time.Minute
 )
 
 // ListJobsOptions contains optional parameters for listing jobs.
@@ -134,24 +142,46 @@ type DeleteJobResult struct {
 	Status DeleteJobStatus
 }
 
+// DeleteJobOptions configures the behavior of DeleteJob.
+type DeleteJobOptions struct {
+	// NoWait, when true, peeks the operation-result URL exactly once and
+	// returns immediately — even if the deletion is still running. The
+	// single peek is preserved (vs. skipping it entirely) so callers can
+	// distinguish a fast synchronous completion from an in-progress
+	// deletion that was merely accepted.
+	//
+	// When false (default), DeleteJob polls the operation-result URL until
+	// the deletion reaches a terminal state, honoring server Retry-After,
+	// or until the maxDeletePollDuration cap elapses (in which case
+	// DeleteJobInProgress is returned without an error).
+	NoWait bool
+}
+
 // DeleteJob deletes a job.
 //
 //	DELETE .../jobs/{id}
 //
 // Per the Foundry contract the initial DELETE returns:
 //   - 202 Accepted: deletion started; the Location header points to an
-//     operation-result URL. We make a single follow-up GET on that URL (no
-//     polling loop) so we can surface an accurate outcome to the caller.
+//     operation-result URL. By default we poll that URL until the deletion
+//     reaches a terminal state (or maxDeletePollDuration elapses); pass
+//     opts.NoWait = true to peek exactly once and return immediately.
 //   - 204 No Content: job was not found (or already deleted) — idempotent success.
 //   - 200 OK: synchronous ack with no Location to follow.
 //   - 4xx/5xx: surfaced as an error.
 //
-// On the operation-result follow-up:
+// On the operation-result poll:
 //   - 200 OK: deletion completed.
-//   - 202 Accepted: still in progress (we do not poll).
-//   - 4xx: typically means the job was not in a terminal state and cannot be
-//     deleted; surfaced as an error.
-func (c *Client) DeleteJob(ctx context.Context, id string) (*DeleteJobResult, error) {
+//   - 202 Accepted: still in progress (poll again, or return InProgress in NoWait mode).
+//   - 4xx/5xx: surfaced as an error (e.g. 404 means the operation URL is no
+//     longer valid).
+func (c *Client) DeleteJob(
+	ctx context.Context, id string, opts *DeleteJobOptions,
+) (*DeleteJobResult, error) {
+	if opts == nil {
+		opts = &DeleteJobOptions{}
+	}
+
 	resp, err := c.doDataPlane(ctx, http.MethodDelete, fmt.Sprintf("jobs/%s", url.PathEscape(id)), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete job: %w", err)
@@ -170,28 +200,63 @@ func (c *Client) DeleteJob(ctx context.Context, id string) (*DeleteJobResult, er
 		if location == "" {
 			return &DeleteJobResult{Status: DeleteJobAccepted}, nil
 		}
-		return c.pollDeleteOperationOnce(ctx, location)
+		return c.pollDeleteOperation(ctx, location, opts.NoWait)
 	default:
 		return nil, c.HandleError(resp)
 	}
 }
 
-// pollDeleteOperationOnce issues a single authenticated GET against the
-// operation-result URL returned in the DELETE Location header and maps the
-// response to a DeleteJobResult. It does NOT loop.
-func (c *Client) pollDeleteOperationOnce(ctx context.Context, locationURL string) (*DeleteJobResult, error) {
-	opResp, err := c.getAbsoluteDataPlane(ctx, locationURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to poll delete operation: %w", err)
-	}
-	defer opResp.Body.Close()
+// pollDeleteOperation issues authenticated GETs against the operation-result
+// URL returned by the initial DELETE.
+//
+// When noWait is true, only the first peek is performed: a 202 maps to
+// DeleteJobInProgress and we return immediately. When noWait is false, 202
+// responses cause the loop to sleep (honoring Retry-After, defaulting to
+// defaultDeletePollInterval) and retry until the deletion completes or the
+// maxDeletePollDuration deadline is hit; on timeout we still return a
+// successful DeleteJobInProgress so the CLI can tell the user to check
+// status manually rather than failing the command.
+func (c *Client) pollDeleteOperation(
+	ctx context.Context, locationURL string, noWait bool,
+) (*DeleteJobResult, error) {
+	deadline := time.Now().Add(maxDeletePollDuration)
+	for {
+		opResp, err := c.getAbsoluteDataPlane(ctx, locationURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to poll delete operation: %w", err)
+		}
 
-	switch opResp.StatusCode {
-	case http.StatusOK:
-		return &DeleteJobResult{Status: DeleteJobCompleted}, nil
-	case http.StatusAccepted:
-		return &DeleteJobResult{Status: DeleteJobInProgress}, nil
-	default:
-		return nil, c.HandleError(opResp)
+		switch opResp.StatusCode {
+		case http.StatusOK:
+			opResp.Body.Close()
+			return &DeleteJobResult{Status: DeleteJobCompleted}, nil
+
+		case http.StatusAccepted:
+			retryAfter := parseRetryAfter(opResp.Header.Get("Retry-After"))
+			if retryAfter <= 0 {
+				retryAfter = defaultDeletePollInterval
+			}
+			opResp.Body.Close()
+			if noWait {
+				return &DeleteJobResult{Status: DeleteJobInProgress}, nil
+			}
+			if !time.Now().Add(retryAfter).Before(deadline) {
+				// Next sleep would push us past the cap — treat as still-in-progress
+				// rather than blocking longer or failing the command.
+				return &DeleteJobResult{Status: DeleteJobInProgress}, nil
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(retryAfter):
+			}
+
+		default:
+			err := c.HandleError(opResp)
+			opResp.Body.Close()
+			return nil, err
+		}
 	}
 }
+
+// parseRetryAfter lives in client.go and is reused here.

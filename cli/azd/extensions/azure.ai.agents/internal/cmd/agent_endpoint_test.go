@@ -312,3 +312,41 @@ func TestResolveRemoteContext_EphemeralMode(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveRemoteContext_EphemeralModeVersionKey(t *testing.T) {
+	t.Parallel()
+
+	parsed, err := parseAgentEndpoint(
+		"https://acct.services.ai.azure.com/api/projects/proj/agents/" +
+			"hello/endpoint/protocols/invocations?api-version=2025-09-01-preview",
+	)
+	if err != nil {
+		t.Fatalf("parseAgentEndpoint: %v", err)
+	}
+
+	action := &InvokeAction{
+		flags:    &invokeFlags{version: "3"},
+		endpoint: parsed,
+	}
+	rc, err := action.resolveRemoteContext(t.Context())
+	if err != nil {
+		t.Fatalf("resolveRemoteContext: %v", err)
+	}
+	if rc.azdClient != nil {
+		defer rc.azdClient.Close()
+	}
+
+	if rc.version != "3" {
+		t.Errorf("version = %q, want 3", rc.version)
+	}
+	wantKey := buildAgentKey("https://acct.services.ai.azure.com/api/projects/proj", "hello", "3", false)
+	if rc.agentKey != wantKey {
+		t.Errorf("agentKey = %q, want %q", rc.agentKey, wantKey)
+	}
+	if got := buildInvocationsURL(rc.projectEndpoint, rc.name, rc.apiVersion, "session-v3"); !strings.Contains(
+		got,
+		"agent_session_id=session-v3",
+	) {
+		t.Errorf("invocation URL did not include version-backed session id: %q", got)
+	}
+}

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
@@ -835,6 +837,28 @@ type deployPrepResult struct {
 	protocols       []agent_yaml.ProtocolVersionRecord
 }
 
+func writeExistingAgentVersionWarning(agentName string) {
+	fmt.Fprintf(os.Stderr, "%s", agents.ExistingAgentWarning(agentName))
+}
+
+func writeExistingAgentVersionWarningIfPresent(
+	ctx context.Context,
+	agentChecker agents.AgentChecker,
+	agentName string,
+) bool {
+	exists, err := agents.AgentExists(ctx, agentChecker, agentName, agentAPIVersion)
+	if err != nil {
+		log.Printf("existing agent name check skipped for %q: %v", agentName, err)
+		return false
+	}
+	if exists {
+		writeExistingAgentVersionWarning(agentName)
+		return true
+	}
+
+	return false
+}
+
 // prepareDeploy handles the common pre-deploy logic shared by container and code
 // deploy: endpoint validation, environment variable resolution, service config
 // parsing, and API request building. The caller provides extra build options
@@ -1428,7 +1452,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 	} else {
 		// Agent exists — update
-		fmt.Fprintf(os.Stderr, "Updating existing agent: %s\n", agentDef.Name)
+		writeExistingAgentVersionWarning(agentDef.Name)
 		agentResp, err = agentClient.UpdateAgentFromZip(ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agentAPIVersion)
 		if err != nil {
 			return nil, exterrors.Internal(
@@ -1696,6 +1720,8 @@ func (p *AgentServiceTargetProvider) createAgent(
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
 		p.credential,
 	)
+
+	writeExistingAgentVersionWarningIfPresent(ctx, agentClient, request.Name)
 
 	// Extract CreateAgentVersionRequest from CreateAgentRequest
 	versionRequest := &agent_api.CreateAgentVersionRequest{

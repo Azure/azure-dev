@@ -442,20 +442,10 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		defaultName = sanitizeAgentName(filepath.Base(cwd))
 	}
 
-	// Prompt user for agent name
-	promptResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter a name for your agent",
-			DefaultValue: defaultName,
-		},
-	})
+	agentName, err := resolveInitAgentName(ctx, a.azdClient, a.flags, defaultName)
 	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return nil, exterrors.Cancelled("agent name prompt was cancelled")
-		}
-		return nil, fmt.Errorf("failed to prompt for agent name: %w", err)
+		return nil, err
 	}
-	agentName := promptResp.Value
 
 	// Create the azd environment now that we have the agent name
 	if a.environment == nil {
@@ -668,6 +658,19 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			return nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
 		}
 	}
+
+	agentName, err = resolveExistingAgentNameConflict(
+		ctx,
+		a.azdClient,
+		a.environment,
+		a.credential,
+		a.flags.noPrompt,
+		agentName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	definition.Name = agentName
 
 	return definition, nil
 }

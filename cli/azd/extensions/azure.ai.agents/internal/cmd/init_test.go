@@ -6,20 +6,329 @@ package cmd
 import (
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func TestInitCommand_AgentNameFlag(t *testing.T) {
+	cmd := newInitCommand(nil)
+
+	flag := cmd.Flags().Lookup("agent-name")
+	if flag == nil {
+		t.Fatal("expected --agent-name flag to be registered")
+	}
+	if flag.Shorthand != "" {
+		t.Fatalf("expected --agent-name to have no shorthand, got %q", flag.Shorthand)
+	}
+}
+
+func TestValidateInitAgentName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{name: "valid", input: "my-agent", want: "my-agent"},
+		{name: "trims whitespace", input: "  my-agent  ", want: "my-agent"},
+		{name: "empty", input: "", wantErr: true},
+		{name: "underscore", input: "my_agent", wantErr: true},
+		{name: "trailing hyphen", input: "my-agent-", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := validateInitAgentName(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				var localErr *azdext.LocalError
+				if !errors.As(err, &localErr) {
+					t.Fatalf("expected LocalError, got %T", err)
+				}
+				if localErr.Code != exterrors.CodeInvalidAgentName {
+					t.Fatalf("code = %q, want %q", localErr.Code, exterrors.CodeInvalidAgentName)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("name = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveInitAgentName_UsesFlagWithoutPrompt(t *testing.T) {
+	t.Parallel()
+
+	name, err := resolveInitAgentName(t.Context(), nil, &initFlags{
+		agentName: "flag-agent",
+		noPrompt:  true,
+	}, "default-agent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "flag-agent" {
+		t.Fatalf("name = %q, want flag-agent", name)
+	}
+}
+
+func TestResolveInitAgentName_NoPromptUsesDefault(t *testing.T) {
+	t.Parallel()
+
+	name, err := resolveInitAgentName(t.Context(), nil, &initFlags{noPrompt: true}, "default-agent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "default-agent" {
+		t.Fatalf("name = %q, want default-agent", name)
+	}
+}
+
+func TestAgentNameTemplateHelpers(t *testing.T) {
+	t.Parallel()
+
+	t.Run("container agent", func(t *testing.T) {
+		manifest := &agent_yaml.AgentManifest{
+			Template: agent_yaml.ContainerAgent{
+				AgentDefinition: agent_yaml.AgentDefinition{
+					Kind: agent_yaml.AgentKindHosted,
+					Name: "original-agent",
+				},
+			},
+		}
+
+		name, err := agentNameFromTemplate(manifest.Template)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if name != "original-agent" {
+			t.Fatalf("name = %q, want original-agent", name)
+		}
+
+		if err := setAgentNameOnTemplate(manifest, "renamed-agent"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		renamed := manifest.Template.(agent_yaml.ContainerAgent)
+		if renamed.Name != "renamed-agent" {
+			t.Fatalf("name = %q, want renamed-agent", renamed.Name)
+		}
+	})
+
+	t.Run("workflow", func(t *testing.T) {
+		manifest := &agent_yaml.AgentManifest{
+			Template: agent_yaml.Workflow{
+				AgentDefinition: agent_yaml.AgentDefinition{
+					Kind: agent_yaml.AgentKindWorkflow,
+					Name: "workflow-agent",
+				},
+			},
+		}
+
+		if err := setAgentNameOnTemplate(manifest, "renamed-workflow"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		renamed := manifest.Template.(agent_yaml.Workflow)
+		if renamed.Name != "renamed-workflow" {
+			t.Fatalf("name = %q, want renamed-workflow", renamed.Name)
+		}
+	})
+}
+
+func TestNextAgentNameSuggestion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "without numeric suffix", input: "my-agent", want: "my-agent-2"},
+		{name: "increments numeric suffix", input: "my-agent-2", want: "my-agent-3"},
+		{name: "carries numeric suffix", input: "my-agent-9", want: "my-agent-10"},
+		{name: "preserves leading zero width", input: "my-agent-009", want: "my-agent-010"},
+		{name: "truncates long base", input: strings.Repeat("a", 63), want: strings.Repeat("a", 61) + "-2"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := nextAgentNameSuggestion(tt.input); got != tt.want {
+				t.Fatalf("nextAgentNameSuggestion(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+type fakeConflictAgentChecker struct {
+	exists map[string]bool
+	err    error
+	calls  []string
+}
+
+func (f *fakeConflictAgentChecker) GetAgent(
+	_ context.Context,
+	agentName string,
+	_ string,
+) (*agent_api.AgentObject, error) {
+	f.calls = append(f.calls, agentName)
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.exists[agentName] {
+		return &agent_api.AgentObject{}, nil
+	}
+
+	return nil, &azcore.ResponseError{StatusCode: http.StatusNotFound}
+}
+
+type testPromptServiceServer struct {
+	azdext.UnimplementedPromptServiceServer
+
+	confirmResponses []bool
+	promptResponses  []string
+	confirmRequests  []*azdext.ConfirmRequest
+	promptRequests   []*azdext.PromptRequest
+}
+
+func (s *testPromptServiceServer) Confirm(
+	_ context.Context,
+	req *azdext.ConfirmRequest,
+) (*azdext.ConfirmResponse, error) {
+	s.confirmRequests = append(s.confirmRequests, req)
+	if len(s.confirmResponses) == 0 {
+		return nil, status.Error(codes.Internal, "unexpected confirm prompt")
+	}
+
+	value := s.confirmResponses[0]
+	s.confirmResponses = s.confirmResponses[1:]
+	return &azdext.ConfirmResponse{Value: new(value)}, nil
+}
+
+func (s *testPromptServiceServer) Prompt(
+	_ context.Context,
+	req *azdext.PromptRequest,
+) (*azdext.PromptResponse, error) {
+	s.promptRequests = append(s.promptRequests, req)
+	if len(s.promptResponses) == 0 {
+		return nil, status.Error(codes.Internal, "unexpected text prompt")
+	}
+
+	value := s.promptResponses[0]
+	s.promptResponses = s.promptResponses[1:]
+	return &azdext.PromptResponse{Value: value}, nil
+}
+
+func TestResolveExistingAgentNameConflictWithChecker_NoPromptKeepsExistingName(t *testing.T) {
+	t.Parallel()
+
+	checker := &fakeConflictAgentChecker{
+		exists: map[string]bool{"my-agent": true},
+	}
+
+	got, err := resolveExistingAgentNameConflictWithChecker(t.Context(), nil, checker, true, "my-agent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "my-agent" {
+		t.Fatalf("name = %q, want my-agent", got)
+	}
+	if len(checker.calls) != 1 || checker.calls[0] != "my-agent" {
+		t.Fatalf("checked names = %v, want [my-agent]", checker.calls)
+	}
+}
+
+func TestResolveExistingAgentNameConflictWithChecker_PropagatesAgentCheckError(t *testing.T) {
+	t.Parallel()
+
+	checker := &fakeConflictAgentChecker{err: errors.New("service unavailable")}
+
+	_, err := resolveExistingAgentNameConflictWithChecker(t.Context(), nil, checker, false, "my-agent")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "checking whether agent \"my-agent\" exists") {
+		t.Fatalf("error = %q, want agent check context", err)
+	}
+}
+
+func TestResolveExistingAgentNameConflictWithChecker_ConflictAccepted(t *testing.T) {
+	t.Parallel()
+
+	checker := &fakeConflictAgentChecker{
+		exists: map[string]bool{"my-agent": true},
+	}
+	prompts := &testPromptServiceServer{confirmResponses: []bool{true}}
+	azdClient := newTestAzdClient(t, &testEnvironmentServiceServer{}, &testWorkflowServiceServer{}, prompts)
+
+	got, err := resolveExistingAgentNameConflictWithChecker(t.Context(), azdClient, checker, false, "my-agent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "my-agent" {
+		t.Fatalf("name = %q, want my-agent", got)
+	}
+	if len(prompts.confirmRequests) != 1 {
+		t.Fatalf("confirm prompts = %d, want 1", len(prompts.confirmRequests))
+	}
+	if len(prompts.promptRequests) != 0 {
+		t.Fatalf("text prompts = %d, want 0", len(prompts.promptRequests))
+	}
+
+	help := prompts.confirmRequests[0].Options.HelpMessage
+	if help != "Choose no to enter a different Foundry agent name." {
+		t.Fatalf("confirm help = %q", help)
+	}
+}
+
+func TestResolveExistingAgentNameConflictWithChecker_InvalidRetryThenUniqueName(t *testing.T) {
+	t.Parallel()
+
+	checker := &fakeConflictAgentChecker{
+		exists: map[string]bool{"my-agent": true},
+	}
+	prompts := &testPromptServiceServer{
+		confirmResponses: []bool{false},
+		promptResponses:  []string{"my_agent", "new-agent"},
+	}
+	azdClient := newTestAzdClient(t, &testEnvironmentServiceServer{}, &testWorkflowServiceServer{}, prompts)
+
+	got, err := resolveExistingAgentNameConflictWithChecker(t.Context(), azdClient, checker, false, "my-agent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "new-agent" {
+		t.Fatalf("name = %q, want new-agent", got)
+	}
+	if len(prompts.confirmRequests) != 1 {
+		t.Fatalf("confirm prompts = %d, want 1", len(prompts.confirmRequests))
+	}
+	if len(prompts.promptRequests) != 2 {
+		t.Fatalf("text prompts = %d, want 2", len(prompts.promptRequests))
+	}
+	if got, want := strings.Join(checker.calls, ","), "my-agent,new-agent"; got != want {
+		t.Fatalf("checked names = %s, want %s", got, want)
+	}
+}
 
 func TestIsRecoverableDeploymentSelectionError_StructuredReason(t *testing.T) {
 	t.Parallel()

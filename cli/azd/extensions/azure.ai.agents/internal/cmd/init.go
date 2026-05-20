@@ -817,7 +817,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						if flags.env != "" {
 							initArgs = append(initArgs, "--environment", flags.env)
 						} else {
-							defaultEnvName := sanitizeAgentName(folderName + "-dev")
+							base := sanitizeAgentName(folderName)
+							if len(base) > 59 {
+								base = strings.TrimRight(base[:59], "-")
+							}
+							defaultEnvName := base + "-dev"
 							initArgs = append(
 								initArgs, "--environment", defaultEnvName,
 							)
@@ -1176,8 +1180,12 @@ func ensureProject(
 					envBase = filepath.Base(cwd)
 				}
 			}
-			sanitizedEnvName := sanitizeAgentName(envBase + "-dev")
-			initArgs = append(initArgs, "--environment", sanitizedEnvName)
+			base := sanitizeAgentName(envBase)
+			if len(base) > 59 {
+				base = strings.TrimRight(base[:59], "-")
+			}
+			envName := base + "-dev"
+			initArgs = append(initArgs, "--environment", envName)
 		}
 
 		// We don't have a project yet

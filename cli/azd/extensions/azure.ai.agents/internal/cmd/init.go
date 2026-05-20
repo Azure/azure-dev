@@ -918,11 +918,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 			if createdFolder != "" {
 				// Print relative to where the user invoked the command.
+				displayPath := createdFolder
 				relPath, relErr := filepath.Rel(originalCwd, createdFolder)
 				if relErr != nil {
-					relPath = createdFolder
+					displayPath = "./" + relPath
 				}
-				fmt.Printf("\nYour project has been created in ./%s\n", relPath)
+				fmt.Printf("\nYour project has been created in %s\n", displayPath)
 			}
 
 			return nil

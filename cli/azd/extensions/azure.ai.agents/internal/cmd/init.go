@@ -1259,8 +1259,8 @@ func (a *InitAction) configureModelChoice(
 	}
 
 	modelConfigChoices := []*azdext.SelectChoice{
-		{Label: "Deploy new model(s) from the catalog", Value: "new"},
-		{Label: "Use existing model deployment(s) from a Foundry project", Value: "existing"},
+		{Label: "Deploy new model(s) (with new Foundry project)", Value: "new"},
+		{Label: "Use an existing Foundry project", Value: "existing"},
 	}
 
 	var modelConfigChoice string

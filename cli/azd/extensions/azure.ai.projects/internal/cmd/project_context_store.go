@@ -46,6 +46,32 @@ func getProjectContext(
 	return state, true, nil
 }
 
+// getLegacyAgentsProjectContext reads the persisted project context written by
+// the (now-removed) `azd ai agent project set` command in the azure.ai.agents
+// extension. It is used as a one-time read-only fallback to keep existing
+// users working immediately after they upgrade.
+//
+// Returns (state, true, nil) when present, (zero, false, nil) when absent.
+// Errors reading the legacy key are best-effort and are not returned: a
+// malformed or unavailable legacy value should never break the new resolver.
+func getLegacyAgentsProjectContext(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+) (projectContextState, bool) {
+	ch, err := azdext.NewConfigHelper(azdClient)
+	if err != nil {
+		return projectContextState{}, false
+	}
+
+	var state projectContextState
+	found, err := ch.GetUserJSON(ctx, legacyAgentsContextPath, &state)
+	if err != nil || !found || state.Endpoint == "" {
+		return projectContextState{}, false
+	}
+
+	return state, true
+}
+
 // setProjectContext persists a validated project endpoint to global config.
 // The caller is responsible for validating the endpoint before calling this function.
 // Returns the setAt timestamp that was written to config.
@@ -72,19 +98,19 @@ func setProjectContext(
 }
 
 // clearProjectContext removes the context subtree from global config.
-// Returns the previously stored endpoint (empty if none was set).
+// Returns the previously stored endpoint (empty if none was set, or if the
+// previous value could not be decoded).
 // The operation is idempotent — calling it when no context is set is not an error.
+//
+// The previous-endpoint read is intentionally best-effort: if the persisted blob
+// is malformed (e.g. written by an older or buggy version), `unset` must still be
+// able to clear it. Surfacing the decode error here would block users from
+// recovering, so we only return errors from the actual `UnsetUser` write.
 func clearProjectContext(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 ) (previousEndpoint string, err error) {
-	// Read existing state first so we can return the previous endpoint.
-	state, found, err := getProjectContext(ctx, azdClient)
-	if err != nil {
-		return "", err
-	}
-
-	if found {
+	if state, found, readErr := getProjectContext(ctx, azdClient); readErr == nil && found {
 		previousEndpoint = state.Endpoint
 	}
 

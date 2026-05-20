@@ -18,6 +18,13 @@ type resolveProjectEndpointOpts struct {
 	// FlagValue is the value of an explicit endpoint flag (level 1).
 	// Empty means the flag was not provided.
 	FlagValue string
+
+	// ReadAzdHostedSources is a test-injected override for the azd-hosted
+	// lookup (levels 2 + 3). Production callers leave this nil; the resolver
+	// then falls back to the real [readAzdHostedSources]. Using an
+	// instance-scoped seam instead of a package-level var keeps the resolver
+	// safe to call from parallel tests.
+	ReadAzdHostedSources func(context.Context) (azdHostedSources, error)
 }
 
 // resolvedEndpoint holds the result of resolveProjectEndpoint.
@@ -26,12 +33,17 @@ type resolvedEndpoint struct {
 	Source     EndpointSource
 	AzdEnvName string
 	SetAt      string // RFC3339 timestamp, only meaningful when Source == SourceGlobalConfig
+	// FromLegacyAgentsConfig is true when the endpoint was sourced from the
+	// legacy `extensions.ai-agents.project.context` key written by the removed
+	// `azd ai agent project set` command. Callers should surface a one-time
+	// notice so users re-run `azd ai project set` to migrate.
+	FromLegacyAgentsConfig bool
 }
 
 // azdHostedSources holds the values that the resolver reads from azd-managed
 // sources (the active azd environment and ~/.azd/config.json). It is returned
 // as a single struct so that tests can stub the whole lookup via
-// readAzdHostedSourcesFunc.
+// resolveProjectEndpointOpts.ReadAzdHostedSources.
 type azdHostedSources struct {
 	// EnvValue is the AZURE_AI_PROJECT_ENDPOINT value from the active azd
 	// env, or "" if not set / no active env / no azd client available.
@@ -42,11 +54,12 @@ type azdHostedSources struct {
 	CfgState projectContextState
 	// CfgFound indicates whether a non-empty endpoint was found in global config.
 	CfgFound bool
+	// CfgFromLegacyAgents reports whether CfgState was sourced from the
+	// legacy `extensions.ai-agents.project.context` key (left behind by the
+	// removed `azd ai agent project set` command). Callers can use this to
+	// surface a one-time migration notice. Only meaningful when CfgFound is true.
+	CfgFromLegacyAgents bool
 }
-
-// readAzdHostedSourcesFunc is a package-level seam so tests can stub the
-// daemon-backed lookup without spinning up a real azd gRPC server.
-var readAzdHostedSourcesFunc = readAzdHostedSources
 
 // readAzdHostedSources dials the azd daemon (if reachable) and reads both
 // the active env's AZURE_AI_PROJECT_ENDPOINT and the global-config project
@@ -88,6 +101,19 @@ func readAzdHostedSources(ctx context.Context) (azdHostedSources, error) {
 	} else {
 		out.CfgState = state
 		out.CfgFound = found
+	}
+
+	// One-time legacy fallback: if the new key has no value, try the path
+	// written by the removed `azd ai agent project set` command. Read errors
+	// are swallowed (best-effort) so a malformed legacy blob never blocks the
+	// new resolver — users can still resolve via FOUNDRY_PROJECT_ENDPOINT or
+	// re-run `azd ai project set`.
+	if !out.CfgFound {
+		if legacyState, legacyFound := getLegacyAgentsProjectContext(ctx, azdClient); legacyFound {
+			out.CfgState = legacyState
+			out.CfgFound = true
+			out.CfgFromLegacyAgents = true
+		}
 	}
 
 	return out, nil
@@ -133,7 +159,11 @@ func resolveProjectEndpoint(
 	}
 
 	// Levels 2 + 3: azd-hosted sources (active env, then global config).
-	sources, err := readAzdHostedSourcesFunc(ctx)
+	readSources := opts.ReadAzdHostedSources
+	if readSources == nil {
+		readSources = readAzdHostedSources
+	}
+	sources, err := readSources(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -158,9 +188,10 @@ func resolveProjectEndpoint(
 			return nil, err
 		}
 		return &resolvedEndpoint{
-			Endpoint: normalized,
-			Source:   SourceGlobalConfig,
-			SetAt:    sources.CfgState.SetAt,
+			Endpoint:               normalized,
+			Source:                 SourceGlobalConfig,
+			SetAt:                  sources.CfgState.SetAt,
+			FromLegacyAgentsConfig: sources.CfgFromLegacyAgents,
 		}, nil
 	}
 

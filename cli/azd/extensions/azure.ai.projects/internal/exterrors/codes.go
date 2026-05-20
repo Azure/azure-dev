@@ -16,4 +16,5 @@ const (
 // These are paired with [Dependency] when a required external value is missing.
 const (
 	CodeMissingProjectEndpoint = "missing_project_endpoint"
+	CodeAzdClientFailed        = "azd_client_failed"
 )

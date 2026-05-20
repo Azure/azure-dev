@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 
+	"azure.ai.projects/internal/exterrors"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -72,7 +74,13 @@ func (a *ProjectSetAction) Run(ctx context.Context) error {
 
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return fmt.Errorf("failed to create azd client: %w", err)
+		return exterrors.Dependency(
+			exterrors.CodeAzdClientFailed,
+			"could not connect to the azd daemon",
+			"ensure azd is installed and reachable; "+
+				"if you are running this command outside an azd extension host, "+
+				"the daemon endpoint may not be configured",
+		)
 	}
 	defer azdClient.Close()
 

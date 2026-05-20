@@ -6,12 +6,9 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"text/tabwriter"
-
-	"azure.ai.projects/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -27,6 +24,11 @@ type projectShowResult struct {
 	SourceDetail string `json:"sourceDetail"`
 	AzdEnv       string `json:"azdEnv"`
 	SetAt        string `json:"setAt,omitempty"`
+	// FromLegacyAgentsConfig is true when the endpoint was sourced from the
+	// legacy `extensions.ai-agents.project.context` key (left behind by the
+	// removed `azd ai agent project set` command). Automation can detect this
+	// to prompt the user to re-run `azd ai project set` and migrate.
+	FromLegacyAgentsConfig bool `json:"fromLegacyAgentsConfig,omitempty"`
 }
 
 // ProjectShowAction is the action for the `show` command.
@@ -67,15 +69,10 @@ that provided it. Useful for debugging which endpoint commands will use.`,
 func (a *ProjectShowAction) Run(ctx context.Context) error {
 	result, err := resolveProjectEndpoint(ctx, resolveProjectEndpointOpts{})
 	if err != nil {
-		// Re-wrap missing-endpoint errors to surface `project set` as the fix.
-		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
-			localErr.Code == exterrors.CodeMissingProjectEndpoint {
-			return exterrors.Dependency(
-				exterrors.CodeMissingProjectEndpoint,
-				localErr.Message,
-				"run `azd ai project set <endpoint>` to persist a default, or "+localErr.Suggestion,
-			)
-		}
+		// `noProjectEndpointError` already includes "persist a workspace default
+		// with `azd ai project set <endpoint>`" in its suggestion, so the
+		// structured error is already actionable for `show`. Return it unchanged
+		// rather than re-wrapping with a concatenated suggestion.
 		return err
 	}
 
@@ -84,11 +81,12 @@ func (a *ProjectShowAction) Run(ctx context.Context) error {
 	switch a.flags.outputFmt {
 	case "json":
 		out := projectShowResult{
-			Endpoint:     result.Endpoint,
-			Source:       string(result.Source),
-			SourceDetail: jsonSourceDetail(result.Source),
-			AzdEnv:       result.AzdEnvName,
-			SetAt:        result.SetAt,
+			Endpoint:               result.Endpoint,
+			Source:                 string(result.Source),
+			SourceDetail:           jsonSourceDetail(result.Source),
+			AzdEnv:                 result.AzdEnvName,
+			SetAt:                  result.SetAt,
+			FromLegacyAgentsConfig: result.FromLegacyAgentsConfig,
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -100,7 +98,18 @@ func (a *ProjectShowAction) Run(ctx context.Context) error {
 		if result.Source == SourceGlobalConfig && result.SetAt != "" {
 			fmt.Fprintf(w, "Set at:\t%s\n", result.SetAt)
 		}
-		return w.Flush()
+		if err := w.Flush(); err != nil {
+			return err
+		}
+		if result.FromLegacyAgentsConfig {
+			fmt.Fprintln(os.Stderr,
+				"notice: this endpoint was read from the legacy "+
+					"`extensions.ai-agents.project.context` key written by the "+
+					"removed `azd ai agent project set` command. Run "+
+					"`azd ai project set <endpoint>` to migrate it to the "+
+					"new `extensions.ai-projects.context` key.")
+		}
+		return nil
 	}
 }
 

@@ -15,41 +15,43 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// stubAzdHostedSources replaces readAzdHostedSourcesFunc for the duration of
-// the test with a function that returns the given sources/err.
-func stubAzdHostedSources(t *testing.T, sources azdHostedSources, err error) {
-	t.Helper()
-	orig := readAzdHostedSourcesFunc
-	readAzdHostedSourcesFunc = func(context.Context) (azdHostedSources, error) {
+// stubReadAzdHostedSources returns a function suitable for the
+// resolveProjectEndpointOpts.ReadAzdHostedSources seam. Each test gets its own
+// captured closure, so parallel tests do not race on a shared global.
+func stubReadAzdHostedSources(
+	sources azdHostedSources,
+	err error,
+) func(context.Context) (azdHostedSources, error) {
+	return func(context.Context) (azdHostedSources, error) {
 		return sources, err
 	}
-	t.Cleanup(func() { readAzdHostedSourcesFunc = orig })
 }
 
-// isolateFromAzdDaemon makes the test independent of any azd daemon that
-// might be reachable on the developer machine via AZD_SERVER. It does two
-// things:
-//   - Clears AZD_SERVER so azdext.NewAzdClient() cannot connect.
-//   - Stubs readAzdHostedSourcesFunc to return no hosted sources.
+// isolateFromAzdDaemon returns resolver opts that are isolated from any azd
+// daemon the developer machine might have running:
+//   - Clears AZD_SERVER on the test's env so any real-client paths cannot connect.
+//   - Returns opts whose ReadAzdHostedSources reports no hosted sources.
 //
 // Together this ensures the resolver under test only sees the flag and the
 // FOUNDRY_PROJECT_ENDPOINT host env var.
-func isolateFromAzdDaemon(t *testing.T) {
+func isolateFromAzdDaemon(t *testing.T) resolveProjectEndpointOpts {
 	t.Helper()
 	t.Setenv("AZD_SERVER", "")
-	stubAzdHostedSources(t, azdHostedSources{}, nil)
+	return resolveProjectEndpointOpts{
+		ReadAzdHostedSources: stubReadAzdHostedSources(azdHostedSources{}, nil),
+	}
 }
 
 func TestResolveProjectEndpoint_FlagWins(t *testing.T) {
 	// Even with FOUNDRY_PROJECT_ENDPOINT and azd-hosted sources set, the flag should win.
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://env.services.ai.azure.com/api/projects/env-proj")
-	stubAzdHostedSources(t, azdHostedSources{
-		EnvValue: "https://azdenv.services.ai.azure.com/api/projects/p",
-		EnvName:  "dev",
-	}, nil)
 
 	result, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{
 		FlagValue: "https://flag.services.ai.azure.com/api/projects/flag-proj",
+		ReadAzdHostedSources: stubReadAzdHostedSources(azdHostedSources{
+			EnvValue: "https://azdenv.services.ai.azure.com/api/projects/p",
+			EnvName:  "dev",
+		}, nil),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "https://flag.services.ai.azure.com/api/projects/flag-proj", result.Endpoint)
@@ -60,17 +62,18 @@ func TestResolveProjectEndpoint_AzdEnvResolves(t *testing.T) {
 	// Level 2: AZURE_AI_PROJECT_ENDPOINT from the active azd env wins over
 	// global config and FOUNDRY_PROJECT_ENDPOINT.
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.services.ai.azure.com/api/projects/p")
-	stubAzdHostedSources(t, azdHostedSources{
-		EnvValue: "  HTTPS://Azdenv.Services.AI.Azure.com/api/projects/p/  ",
-		EnvName:  "dev",
-		CfgState: projectContextState{
-			Endpoint: "https://cfg.services.ai.azure.com/api/projects/p",
-			SetAt:    "2025-01-01T00:00:00Z",
-		},
-		CfgFound: true,
-	}, nil)
 
-	result, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{})
+	result, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{
+		ReadAzdHostedSources: stubReadAzdHostedSources(azdHostedSources{
+			EnvValue: "  HTTPS://Azdenv.Services.AI.Azure.com/api/projects/p/  ",
+			EnvName:  "dev",
+			CfgState: projectContextState{
+				Endpoint: "https://cfg.services.ai.azure.com/api/projects/p",
+				SetAt:    "2025-01-01T00:00:00Z",
+			},
+			CfgFound: true,
+		}, nil),
+	})
 	require.NoError(t, err)
 	assert.Equal(t, "https://azdenv.services.ai.azure.com/api/projects/p", result.Endpoint)
 	assert.Equal(t, SourceAzdEnv, result.Source)
@@ -81,12 +84,13 @@ func TestResolveProjectEndpoint_AzdEnvInvalidRejected(t *testing.T) {
 	// Level 2 invalid values are hard errors (no silent fallback to lower levels).
 	// FOUNDRY_PROJECT_ENDPOINT is set, but resolver must NOT fall through to it.
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.services.ai.azure.com/api/projects/p")
-	stubAzdHostedSources(t, azdHostedSources{
-		EnvValue: "http://not-https.services.ai.azure.com/api/projects/p",
-		EnvName:  "dev",
-	}, nil)
 
-	_, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{})
+	_, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{
+		ReadAzdHostedSources: stubReadAzdHostedSources(azdHostedSources{
+			EnvValue: "http://not-https.services.ai.azure.com/api/projects/p",
+			EnvName:  "dev",
+		}, nil),
+	})
 	require.Error(t, err)
 
 	var localErr *azdext.LocalError
@@ -97,15 +101,16 @@ func TestResolveProjectEndpoint_AzdEnvInvalidRejected(t *testing.T) {
 func TestResolveProjectEndpoint_GlobalConfigResolves(t *testing.T) {
 	// Level 3: global config wins over FOUNDRY_PROJECT_ENDPOINT when no azd env value is set.
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.services.ai.azure.com/api/projects/p")
-	stubAzdHostedSources(t, azdHostedSources{
-		CfgState: projectContextState{
-			Endpoint: "  HTTPS://Cfg.Services.AI.Azure.com/api/projects/p/  ",
-			SetAt:    "2025-01-02T03:04:05Z",
-		},
-		CfgFound: true,
-	}, nil)
 
-	result, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{})
+	result, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{
+		ReadAzdHostedSources: stubReadAzdHostedSources(azdHostedSources{
+			CfgState: projectContextState{
+				Endpoint: "  HTTPS://Cfg.Services.AI.Azure.com/api/projects/p/  ",
+				SetAt:    "2025-01-02T03:04:05Z",
+			},
+			CfgFound: true,
+		}, nil),
+	})
 	require.NoError(t, err)
 	assert.Equal(t, "https://cfg.services.ai.azure.com/api/projects/p", result.Endpoint)
 	assert.Equal(t, SourceGlobalConfig, result.Source)
@@ -115,15 +120,16 @@ func TestResolveProjectEndpoint_GlobalConfigResolves(t *testing.T) {
 func TestResolveProjectEndpoint_GlobalConfigInvalidRejected(t *testing.T) {
 	// Level 3 invalid values are hard errors (no silent fallback to level 4).
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.services.ai.azure.com/api/projects/p")
-	stubAzdHostedSources(t, azdHostedSources{
-		CfgState: projectContextState{
-			Endpoint: "http://not-https.services.ai.azure.com/api/projects/p",
-			SetAt:    "2025-01-02T03:04:05Z",
-		},
-		CfgFound: true,
-	}, nil)
 
-	_, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{})
+	_, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{
+		ReadAzdHostedSources: stubReadAzdHostedSources(azdHostedSources{
+			CfgState: projectContextState{
+				Endpoint: "http://not-https.services.ai.azure.com/api/projects/p",
+				SetAt:    "2025-01-02T03:04:05Z",
+			},
+			CfgFound: true,
+		}, nil),
+	})
 	require.Error(t, err)
 
 	var localErr *azdext.LocalError
@@ -136,28 +142,29 @@ func TestResolveProjectEndpoint_HostedSourcesErrorPropagates(t *testing.T) {
 	// failure) must be surfaced and must not silently fall through to level 4.
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.services.ai.azure.com/api/projects/p")
 	sentinel := errors.New("boom")
-	stubAzdHostedSources(t, azdHostedSources{}, sentinel)
 
-	_, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{})
+	_, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{
+		ReadAzdHostedSources: stubReadAzdHostedSources(azdHostedSources{}, sentinel),
+	})
 	require.ErrorIs(t, err, sentinel)
 }
 
 func TestResolveProjectEndpoint_FoundryEnvFallback(t *testing.T) {
 	// No flag, no azd-hosted sources → falls back to FOUNDRY_PROJECT_ENDPOINT.
-	isolateFromAzdDaemon(t)
+	opts := isolateFromAzdDaemon(t)
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://env.services.ai.azure.com/api/projects/env-proj")
 
-	result, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{})
+	result, err := resolveProjectEndpoint(t.Context(), opts)
 	require.NoError(t, err)
 	assert.Equal(t, "https://env.services.ai.azure.com/api/projects/env-proj", result.Endpoint)
 	assert.Equal(t, SourceFoundryEnv, result.Source)
 }
 
 func TestResolveProjectEndpoint_NothingResolvable(t *testing.T) {
-	isolateFromAzdDaemon(t)
+	opts := isolateFromAzdDaemon(t)
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
 
-	_, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{})
+	_, err := resolveProjectEndpoint(t.Context(), opts)
 	require.Error(t, err)
 
 	var localErr *azdext.LocalError
@@ -166,10 +173,9 @@ func TestResolveProjectEndpoint_NothingResolvable(t *testing.T) {
 }
 
 func TestResolveProjectEndpoint_InvalidFlagRejected(t *testing.T) {
-	isolateFromAzdDaemon(t)
-	_, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{
-		FlagValue: "http://not-https.services.ai.azure.com/api/projects/p",
-	})
+	opts := isolateFromAzdDaemon(t)
+	opts.FlagValue = "http://not-https.services.ai.azure.com/api/projects/p"
+	_, err := resolveProjectEndpoint(t.Context(), opts)
 	require.Error(t, err)
 
 	var localErr *azdext.LocalError
@@ -178,10 +184,10 @@ func TestResolveProjectEndpoint_InvalidFlagRejected(t *testing.T) {
 }
 
 func TestResolveProjectEndpoint_InvalidFoundryEnvRejected(t *testing.T) {
-	isolateFromAzdDaemon(t)
+	opts := isolateFromAzdDaemon(t)
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "http://bad.services.ai.azure.com/api/projects/p")
 
-	_, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{})
+	_, err := resolveProjectEndpoint(t.Context(), opts)
 	require.Error(t, err)
 
 	var localErr *azdext.LocalError
@@ -190,11 +196,35 @@ func TestResolveProjectEndpoint_InvalidFoundryEnvRejected(t *testing.T) {
 }
 
 func TestResolveProjectEndpoint_FoundryEnvNormalized(t *testing.T) {
-	isolateFromAzdDaemon(t)
+	opts := isolateFromAzdDaemon(t)
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "  https://X.SERVICES.AI.AZURE.COM/api/projects/p/  ")
 
-	result, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{})
+	result, err := resolveProjectEndpoint(t.Context(), opts)
 	require.NoError(t, err)
 	assert.Equal(t, "https://x.services.ai.azure.com/api/projects/p", result.Endpoint)
 	assert.Equal(t, SourceFoundryEnv, result.Source)
+}
+
+func TestResolveProjectEndpoint_LegacyAgentsConfigResolves(t *testing.T) {
+	// Level 3 with the new key absent, but the legacy
+	// `extensions.ai-agents.project.context` key present. The resolver should
+	// surface the legacy value as SourceGlobalConfig and flag the result so
+	// callers can prompt the user to migrate.
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.services.ai.azure.com/api/projects/p")
+
+	result, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{
+		ReadAzdHostedSources: stubReadAzdHostedSources(azdHostedSources{
+			CfgState: projectContextState{
+				Endpoint: "https://legacy.services.ai.azure.com/api/projects/p",
+				SetAt:    "2024-12-31T23:59:59Z",
+			},
+			CfgFound:            true,
+			CfgFromLegacyAgents: true,
+		}, nil),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "https://legacy.services.ai.azure.com/api/projects/p", result.Endpoint)
+	assert.Equal(t, SourceGlobalConfig, result.Source)
+	assert.True(t, result.FromLegacyAgentsConfig,
+		"resolver must propagate the legacy flag so show can surface a migration notice")
 }

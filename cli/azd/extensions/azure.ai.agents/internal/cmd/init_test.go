@@ -2358,7 +2358,7 @@ func TestCreatedFolderPath_AfterChdir(t *testing.T) {
 		},
 		{
 			name:     "sanitized folder name",
-			folder:   folderNameFromTitle("Hello World (Python)"),
+			folder:   folderNameStrippingParenSuffix("Hello World (Python)"),
 			wantPath: "hello-world",
 		},
 		{
@@ -2449,7 +2449,7 @@ func TestCreatedFolderPath_AzdTemplateCase(t *testing.T) {
 	originalCwd := t.TempDir()
 
 	templateTitle := "Basic Agent (Python)"
-	folderName := folderNameFromTitle(templateTitle)
+	folderName := folderNameStrippingParenSuffix(templateTitle)
 
 	// folderNameFromTitle should strip parenthetical suffix
 	if strings.Contains(folderName, "python") {
@@ -2522,7 +2522,7 @@ func TestFolderNameFromTitle(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := folderNameFromTitle(tt.title)
+			got := folderNameStrippingParenSuffix(tt.title)
 			if got != tt.want {
 				t.Errorf("folderNameFromTitle(%q) = %q, want %q", tt.title, got, tt.want)
 			}

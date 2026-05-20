@@ -810,7 +810,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					case TemplateTypeAzd:
 						// Full azd template - dispatch azd init -t <repo>
 						// Create project in a new subdirectory derived from the template title.
-						folderName := folderNameFromTitle(selectedTemplate.Title)
+						folderName := folderNameStrippingParenSuffix(selectedTemplate.Title)
 						// Check whether the target directory already exists so we
 						// only report "created" when a new directory was made.
 						_, statErr := os.Stat(folderName)
@@ -896,7 +896,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					default:
 						// Agent manifest template - use existing -m flow.
 						// Create project in a new subdirectory derived from the template title.
-						folderName := folderNameFromTitle(selectedTemplate.Title)
+						folderName := folderNameStrippingParenSuffix(selectedTemplate.Title)
 						// Check whether the target directory already exists so we
 						// only report "created" when a new directory was made.
 						_, statErr := os.Stat(folderName)

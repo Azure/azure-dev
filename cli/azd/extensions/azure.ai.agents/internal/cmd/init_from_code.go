@@ -869,7 +869,7 @@ func sanitizeAgentName(name string) string {
 	return name
 }
 
-func folderNameFromTitle(title string) string {
+func folderNameStrippingParenSuffix(title string) string {
 	if idx := strings.IndexByte(title, '('); idx >= 0 {
 		title = strings.TrimSpace(title[:idx])
 	}

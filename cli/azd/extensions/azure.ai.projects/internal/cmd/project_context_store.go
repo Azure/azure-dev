@@ -14,6 +14,11 @@ import (
 // projectContextConfigPath is the UserConfig path for the persisted project context.
 const projectContextConfigPath = configPathPrefix + ".context"
 
+type projectContextConfig interface {
+	GetUserJSON(ctx context.Context, path string, out any) (bool, error)
+	UnsetUser(ctx context.Context, path string) error
+}
+
 // projectContextState is the JSON shape stored at extensions.ai-projects.context
 // in ~/.azd/config.json.
 type projectContextState struct {
@@ -32,8 +37,16 @@ func getProjectContext(
 		return projectContextState{}, false, fmt.Errorf("getProjectContext: %w", err)
 	}
 
+	return readProjectContext(ctx, ch, projectContextConfigPath)
+}
+
+func readProjectContext(
+	ctx context.Context,
+	ch projectContextConfig,
+	path string,
+) (projectContextState, bool, error) {
 	var state projectContextState
-	found, err := ch.GetUserJSON(ctx, projectContextConfigPath, &state)
+	found, err := ch.GetUserJSON(ctx, path, &state)
 	if err != nil {
 		return projectContextState{}, false,
 			fmt.Errorf("getProjectContext: failed to read config: %w", err)
@@ -59,13 +72,12 @@ func getLegacyAgentsProjectContext(
 		return projectContextState{}, false
 	}
 
-	var state projectContextState
-	found, err := ch.GetUserJSON(ctx, legacyAgentsContextPath, &state)
-	if err != nil || !found || state.Endpoint == "" {
+	state, found, err := readProjectContext(ctx, ch, legacyAgentsContextPath)
+	if err != nil {
 		return projectContextState{}, false
 	}
 
-	return state, true
+	return state, found
 }
 
 // setProjectContext persists a validated project endpoint to global config.
@@ -103,17 +115,28 @@ func clearProjectContext(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 ) (previousEndpoint string, err error) {
-	if state, found, readErr := getProjectContext(ctx, azdClient); readErr == nil && found {
-		previousEndpoint = state.Endpoint
-	}
-
 	ch, chErr := azdext.NewConfigHelper(azdClient)
 	if chErr != nil {
 		return "", fmt.Errorf("clearProjectContext: %w", chErr)
 	}
 
-	if err := ch.UnsetUser(ctx, projectContextConfigPath); err != nil {
-		return "", fmt.Errorf("clearProjectContext: failed to clear config: %w", err)
+	return clearProjectContextFromConfig(ctx, ch)
+}
+
+func clearProjectContextFromConfig(
+	ctx context.Context,
+	ch projectContextConfig,
+) (previousEndpoint string, err error) {
+	if state, found, readErr := readProjectContext(ctx, ch, projectContextConfigPath); readErr == nil && found {
+		previousEndpoint = state.Endpoint
+	} else if state, found, readErr := readProjectContext(ctx, ch, legacyAgentsContextPath); readErr == nil && found {
+		previousEndpoint = state.Endpoint
+	}
+
+	for _, path := range []string{projectContextConfigPath, legacyAgentsContextPath} {
+		if err := ch.UnsetUser(ctx, path); err != nil {
+			return "", fmt.Errorf("clearProjectContext: failed to clear config at %q: %w", path, err)
+		}
 	}
 
 	return previousEndpoint, nil

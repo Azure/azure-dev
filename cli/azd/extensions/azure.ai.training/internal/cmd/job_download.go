@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -455,11 +456,19 @@ func downloadDefaultArtifacts(
 	wg.Wait()
 
 	var infos []*models.RunArtifactContentInfo
+	var rootErrs []error
 	for _, rr := range rootResults {
 		if rr.err != nil {
-			return fmt.Errorf("could not list content info for root %q: %w", rr.root, rr.err)
+			rootErrs = append(rootErrs, fmt.Errorf("root %q: %w", rr.root, rr.err))
+			continue
 		}
 		infos = append(infos, rr.infos...)
+	}
+	if len(rootErrs) > 0 {
+		// Aggregate every failing root so the user can see all problems at once
+		// rather than only the first one in iteration order.
+		return fmt.Errorf("could not list content info for %d of %d root(s): %w",
+			len(rootErrs), len(roots), errors.Join(rootErrs...))
 	}
 
 	if len(infos) == 0 {

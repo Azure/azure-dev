@@ -57,7 +57,7 @@ func TestResolveProjectEndpoint_FlagWins(t *testing.T) {
 }
 
 func TestResolveProjectEndpoint_AzdEnvResolves(t *testing.T) {
-	// Level 2: AZURE_AI_PROJECT_ENDPOINT from the active azd env wins over
+	// Level 2: FOUNDRY_PROJECT_ENDPOINT from the active azd env wins over
 	// global config and FOUNDRY_PROJECT_ENDPOINT.
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.services.ai.azure.com/api/projects/p")
 	stubAzdHostedSources(t, azdHostedSources{

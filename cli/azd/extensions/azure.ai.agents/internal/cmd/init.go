@@ -389,11 +389,11 @@ func resolveExistingAgentNameConflict(
 
 	endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: environment.Name,
-		Key:     "AZURE_AI_PROJECT_ENDPOINT",
+		Key:     "FOUNDRY_PROJECT_ENDPOINT",
 	})
 	if err != nil {
 		log.Printf(
-			"existing agent name check skipped: failed to read AZURE_AI_PROJECT_ENDPOINT for environment %q: %v",
+			"existing agent name check skipped: failed to read FOUNDRY_PROJECT_ENDPOINT for environment %q: %v",
 			environment.Name,
 			err,
 		)
@@ -401,7 +401,7 @@ func resolveExistingAgentNameConflict(
 	}
 	if endpointResp == nil || endpointResp.Value == "" {
 		log.Printf(
-			"existing agent name check skipped: AZURE_AI_PROJECT_ENDPOINT is empty for environment %q",
+			"existing agent name check skipped: FOUNDRY_PROJECT_ENDPOINT is empty for environment %q",
 			environment.Name,
 		)
 		return agentName, nil

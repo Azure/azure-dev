@@ -102,6 +102,7 @@ jobs:
         parameters:
           CleanDocker: true
           CleanGoCache: true
+          Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
     
     templateContext: 
       outputs: 

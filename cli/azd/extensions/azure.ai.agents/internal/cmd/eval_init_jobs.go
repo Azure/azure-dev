@@ -56,10 +56,8 @@ func newEvalConfig(flags *evalInitFlags, resolved *evalResolvedContext) *evalCon
 		Kind:    resolved.agentKind,
 		Version: resolved.version,
 	}
-	if flags.instructionFile != "" {
-		agent.Instruction = opteval.InstructionRef{File: flags.instructionFile}
-	} else if flags.instruction != "" {
-		agent.Instruction = opteval.InstructionRef{Value: flags.instruction}
+	if flags.configFile != "" {
+		agent.ConfigFile = flags.configFile
 	}
 	return &evalConfig{
 		Config: opteval.Config{

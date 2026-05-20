@@ -201,6 +201,16 @@ func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.Optimi
 		req.Agent.Skills = skills
 	}
 
+	// Load tool definitions if a tools file is specified.
+	// TODO: re-enable when tools optimization is supported in the service.
+	// if c.Agent.ToolsFile != "" {
+	// 	tools, err := loadToolDefinitions(c.Agent.ToolsFile)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("loading tool definitions from %s: %w", c.Agent.ToolsFile, err)
+	// 	}
+	// 	req.Agent.ToolDefinitions = tools
+	// }
+
 	return req, nil
 }
 
@@ -348,4 +358,19 @@ func splitFrontmatter(content string) (string, string) {
 
 	// No closing delimiter found — treat entire content as body.
 	return "", content
+}
+
+// loadToolDefinitions reads a JSON file containing an array of OpenAI-format
+// function tool definitions and returns them as ToolDefinition structs.
+func loadToolDefinitions(path string) ([]optimize_api.ToolDefinition, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // user-provided path validated earlier
+	if err != nil {
+		return nil, fmt.Errorf("reading tool definitions file: %w", err)
+	}
+
+	var tools []optimize_api.ToolDefinition
+	if err := json.Unmarshal(data, &tools); err != nil {
+		return nil, fmt.Errorf("parsing tool definitions: %w", err)
+	}
+	return tools, nil
 }

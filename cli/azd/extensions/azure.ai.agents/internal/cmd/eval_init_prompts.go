@@ -46,7 +46,12 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 	needsGeneration := true // adaptive evaluator is always generated
 	needsEvalGen := true
 
-	if flags.instruction == "" && flags.instructionFile == "" && needsGeneration && resolved.agentKind != agent_yaml.AgentKindPrompt {
+	if flags.configFile != "" && needsGeneration && resolved.agentKind != agent_yaml.AgentKindPrompt {
+		// Config detected — show resolved values and let the user confirm or override.
+		if err := promptConfigConfirmation(ctx, azdClient, resolved, flags); err != nil {
+			return err
+		}
+	} else if flags.instruction == "" && flags.instructionFile == "" && needsGeneration && resolved.agentKind != agent_yaml.AgentKindPrompt {
 		// Let the user choose between inline text or loading from a file.
 		inputChoices := []*azdext.SelectChoice{
 			{Label: "Type inline", Value: "inline"},
@@ -337,4 +342,53 @@ func promptRegenerateChoices(
 	}
 
 	return nil
+}
+
+// promptConfigConfirmation shows the resolved instruction file from
+// metadata.yaml and lets the user confirm or override it.
+func promptConfigConfirmation(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	resolved *evalResolvedContext,
+	flags *evalInitFlags,
+) error {
+	prompt := azdClient.Prompt()
+	projectDir := resolved.agentProject
+
+	// Instruction file.
+	instrDefault := relativeDisplay(flags.instructionFile, projectDir)
+	resp, err := prompt.Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:        "Instruction file",
+			DefaultValue:   instrDefault,
+			IgnoreHintKeys: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("prompting for instruction file: %w", err)
+	}
+	if value := strings.TrimSpace(resp.Value); value != "" {
+		if !filepath.IsAbs(value) && projectDir != "" {
+			value = filepath.Join(projectDir, value)
+		}
+		if _, err := os.Stat(value); err != nil {
+			return fmt.Errorf("instruction file %q is not accessible: %w", value, err)
+		}
+		flags.instructionFile = value
+		flags.instruction = "" // file takes precedence
+	}
+
+	return nil
+}
+
+// relativeDisplay returns a project-relative path for display purposes.
+// Returns empty string for empty input.
+func relativeDisplay(absPath, projectDir string) string {
+	if absPath == "" || projectDir == "" {
+		return absPath
+	}
+	if rel, err := filepath.Rel(projectDir, absPath); err == nil {
+		return rel
+	}
+	return absPath
 }

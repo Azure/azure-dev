@@ -225,14 +225,44 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 		cfg.Options.TargetAttributes = a.flags.targetAttributes
 	}
 
+	// Resolve agent config directory pointer — fills in instruction, skill_dir,
+	// tools_file, and model from metadata.yaml if the config pointer is set.
+	if hasProject {
+		cfg.Agent.ResolveFromConfig(agentProject)
+	}
+
+	// Auto-detect baseline config if no config pointer is set yet.
+	if cfg.Agent.ConfigFile == "" && hasProject {
+		defaultConfigFile := filepath.Join(agentConfigsDir, "baseline", "metadata.yaml")
+		absConfigFile := filepath.Join(agentProject, defaultConfigFile)
+		if _, statErr := os.Stat(absConfigFile); statErr == nil {
+			cfg.Agent.ConfigFile = defaultConfigFile
+			cfg.Agent.ResolveFromConfig(agentProject)
+			fmt.Printf("  Baseline:    %s\n", absConfigFile)
+		}
+	}
+
+	// When baseline config is detected, show resolved values and let the user confirm.
+	if cfg.Agent.ConfigFile != "" && hasProject && !a.noPrompt {
+		if err := promptOptimizeConfigConfirmation(ctx, cfg, agentProject); err != nil {
+			return err
+		}
+	}
+
 	// Resolve relative skill_dir against agent project directory.
 	if cfg.Agent.SkillDir != "" && hasProject && !filepath.IsAbs(cfg.Agent.SkillDir) {
 		cfg.Agent.SkillDir = filepath.Join(agentProject, cfg.Agent.SkillDir)
 	}
 
+	// Resolve relative tools_file against agent project directory.
+	// TODO: re-enable when tools optimization is supported in the service.
+	// if cfg.Agent.ToolsFile != "" && hasProject && !filepath.IsAbs(cfg.Agent.ToolsFile) {
+	// 	cfg.Agent.ToolsFile = filepath.Join(agentProject, cfg.Agent.ToolsFile)
+	// }
+
 	// Resolve agent instruction using a well-defined lifecycle:
-	//  1. Config file (eval.yaml / --config) — instruction in the agent section (inline or file reference)
-	//  2. Baseline config — .agent_optimization/baseline/config.json from a prior optimize run
+	//  1. Config dir pointer (agent.config in eval.yaml) — resolves from metadata.yaml
+	//  2. Config file (eval.yaml / --config) — instruction in the agent section (inline or file reference)
 	//  3. Interactive prompt — ask the user to provide inline text or a file path
 	if err := resolveOptimizeSystemPrompt(ctx, cfg, agentProject, hasProject, a.noPrompt); err != nil {
 		return err
@@ -280,11 +310,15 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 
 	// Save baseline config before starting optimization.
 	if hasProject {
-		if err := saveBaselineConfig(agentProject, cfg.Agent.SkillDir, optimizeReq); err != nil {
+		if err := saveBaselineConfig(agentProject, cfg.Agent.SkillDir, cfg.Agent.ToolsFile, optimizeReq); err != nil {
 			fmt.Fprintf(out, "  warning: failed to save baseline config: %s\n", err)
 		} else {
-			fmt.Fprintf(out, "  Baseline saved to %s\n",
-				filepath.Join(optimizationDir, "baseline", "config.json"))
+			baselineMetaPath := filepath.Join(agentConfigsDir, "baseline", "metadata.yaml")
+			fmt.Fprintf(out, "  Baseline saved to %s\n", baselineMetaPath)
+			// Set config pointer so eval.yaml references the baseline.
+			if cfg.Agent.ConfigFile == "" {
+				cfg.Agent.ConfigFile = baselineMetaPath
+			}
 		}
 	}
 
@@ -294,7 +328,12 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 	}
 
 	fmt.Fprintf(out, "  Job ID: %s\n", color.CyanString(resp.OperationID))
-	fmt.Fprintf(out, "  Status: %s\n\n", resp.Status)
+	fmt.Fprintf(out, "  Status: %s\n", resp.Status)
+
+	// Print portal link for the optimization job.
+	printOptimizePortalLink(ctx, out, cfg.Agent.Name, resp.OperationID)
+
+	fmt.Fprintln(out)
 
 	// Store last operation ID in azd environment for use by status/deploy
 	saveLastOptimizeJobID(ctx, resp.OperationID)
@@ -310,10 +349,10 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 	return nil
 }
 
-// resolveOptimizeSystemPrompt resolves the agent's system prompt using a well-defined lifecycle:
+// resolveOptimizeSystemPrompt resolves the agent's system prompt:
 //
-//  1. Config (eval.yaml / --config): instruction in the agent section (inline or file).
-//  2. Baseline: .agent_optimization/baseline/config.json from a prior optimization run.
+//  1. Config dir pointer (agent.config): instruction from metadata.yaml (already resolved).
+//  2. Config (eval.yaml / --config): inline instruction or file reference.
 //  3. Interactive prompt: ask the user to provide inline text or a file path.
 //
 // Relative file paths are resolved against agentProject.
@@ -343,38 +382,12 @@ func resolveOptimizeSystemPrompt(
 		return nil
 	}
 
-	// Step 2: Check baseline config from a prior optimization run.
-	if hasProject {
-		if baseline, loadErr := loadBaselineConfig(agentProject); loadErr == nil && baseline.Instructions != "" {
-			if noPrompt {
-				cfg.Agent.Instruction.Value = baseline.Instructions
-				return nil
-			}
-
-			azdClient, clientErr := azdext.NewAzdClient()
-			if clientErr == nil {
-				defer azdClient.Close()
-				resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-					Options: &azdext.ConfirmOptions{
-						Message: "No instruction in config. " +
-							"Found one in baseline (.agent_optimization/baseline/config.json). Use it?",
-						DefaultValue: new(true),
-					},
-				})
-				if promptErr == nil && resp.Value != nil && *resp.Value {
-					cfg.Agent.Instruction.Value = baseline.Instructions
-					return nil
-				}
-			}
-		}
-	}
-
-	// Step 3: Interactive prompt — ask user to provide inline text or a file path.
+	// Step 2: Interactive prompt — ask user to provide inline text or a file path.
 	if noPrompt {
 		return fmt.Errorf("instruction is required for optimization.\n\n" +
 			"Provide it via one of:\n" +
-			"  1. instruction in eval.yaml (agent section): inline string or file reference\n" +
-			"  2. Run a prior optimization to create a baseline (.agent_optimization/baseline/config.json)\n" +
+			"  1. Set agent.config in eval.yaml to point to a config dir with metadata.yaml\n" +
+			"  2. Set instruction in eval.yaml (agent section): inline string or file reference\n" +
 			"  3. Run without --no-prompt to enter it interactively")
 	}
 
@@ -437,8 +450,8 @@ func resolveOptimizeSystemPrompt(
 }
 
 // resolveOptimizeSkillDir resolves the agent's skill directory:
-//  1. Auto-detect: look for a "skills/" folder in the agent project — confirm with user.
-//  2. Baseline: check .agent_optimization/baseline/config.json for a saved skill_dir.
+//  1. Config dir pointer (agent.config): skill_dir from metadata.yaml (already resolved).
+//  2. Auto-detect: look for a "skills/" folder in the agent project — confirm with user.
 //  3. Interactive prompt: ask the user to provide a path or skip.
 func resolveOptimizeSkillDir(
 	ctx context.Context,
@@ -453,15 +466,6 @@ func resolveOptimizeSkillDir(
 		if info, err := os.Stat(dir); err == nil && info.IsDir() {
 			detectedDir = dir
 			break
-		}
-	}
-
-	// Step 2: Check baseline config.
-	if detectedDir == "" {
-		if baseline, loadErr := loadBaselineConfig(agentProject); loadErr == nil && baseline.SkillDir != "" {
-			if _, err := os.Stat(baseline.SkillDir); err == nil {
-				detectedDir = baseline.SkillDir
-			}
 		}
 	}
 
@@ -544,6 +548,97 @@ func resolveOptimizeSkillDir(
 
 	cfg.Agent.SkillDir = dir
 	return nil
+}
+
+// promptOptimizeConfigConfirmation shows the resolved values from the baseline
+// config and lets the user confirm or override instruction file, skills
+// directory, and tools file.
+func promptOptimizeConfigConfirmation(ctx context.Context, cfg *OptimizeConfig, agentProject string) error {
+	azdClient, clientErr := azdext.NewAzdClient()
+	if clientErr != nil {
+		return nil // non-fatal — skip confirmation prompts
+	}
+	defer azdClient.Close()
+	prompt := azdClient.Prompt()
+
+	// Instruction file.
+	instrDefault := relativeOptDisplay(cfg.Agent.Instruction.File, agentProject)
+	resp, err := prompt.Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:        "Instruction file",
+			DefaultValue:   instrDefault,
+			IgnoreHintKeys: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("prompting for instruction file: %w", err)
+	}
+	if value := strings.TrimSpace(resp.Value); value != "" {
+		if !filepath.IsAbs(value) && agentProject != "" {
+			value = filepath.Join(agentProject, value)
+		}
+		if _, err := os.Stat(value); err != nil {
+			return fmt.Errorf("instruction file %q is not accessible: %w", value, err)
+		}
+		cfg.Agent.Instruction.File = value
+		cfg.Agent.Instruction.Value = ""
+	}
+
+	// Skills directory.
+	skillDefault := relativeOptDisplay(cfg.Agent.SkillDir, agentProject)
+	resp, err = prompt.Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:        "Skills directory (enter to skip)",
+			DefaultValue:   skillDefault,
+			IgnoreHintKeys: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("prompting for skills directory: %w", err)
+	}
+	if value := strings.TrimSpace(resp.Value); value != "" {
+		if !filepath.IsAbs(value) && agentProject != "" {
+			value = filepath.Join(agentProject, value)
+		}
+		cfg.Agent.SkillDir = value
+	} else {
+		cfg.Agent.SkillDir = ""
+	}
+
+	// TODO: re-enable tools file prompt when tools optimization is supported.
+	// // Tools file.
+	// toolsDefault := relativeOptDisplay(cfg.Agent.ToolsFile, agentProject)
+	// resp, err = prompt.Prompt(ctx, &azdext.PromptRequest{
+	// 	Options: &azdext.PromptOptions{
+	// 		Message:        "Tools file (enter to skip)",
+	// 		DefaultValue:   toolsDefault,
+	// 		IgnoreHintKeys: true,
+	// 	},
+	// })
+	// if err != nil {
+	// 	return fmt.Errorf("prompting for tools file: %w", err)
+	// }
+	// if value := strings.TrimSpace(resp.Value); value != "" {
+	// 	if !filepath.IsAbs(value) && agentProject != "" {
+	// 		value = filepath.Join(agentProject, value)
+	// 	}
+	// 	cfg.Agent.ToolsFile = value
+	// } else {
+	// 	cfg.Agent.ToolsFile = ""
+	// }
+
+	return nil
+}
+
+// relativeOptDisplay returns a project-relative path for display.
+func relativeOptDisplay(absPath, projectDir string) string {
+	if absPath == "" || projectDir == "" {
+		return absPath
+	}
+	if rel, err := filepath.Rel(projectDir, absPath); err == nil {
+		return rel
+	}
+	return absPath
 }
 
 // knownOptimizationModels is the list of models commonly used for optimization.

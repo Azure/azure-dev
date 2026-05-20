@@ -142,9 +142,72 @@ type AgentRef struct {
 	Name        string               `yaml:"name"`
 	Kind        agent_yaml.AgentKind `yaml:"kind,omitempty"`
 	Version     string               `yaml:"version,omitempty"`
+	ConfigFile  string               `yaml:"config,omitempty"`
 	Model       string               `yaml:"model,omitempty"`
 	Instruction InstructionRef       `yaml:"instruction,omitempty"`
 	SkillDir    string               `yaml:"skill_dir,omitempty"`
+	ToolsFile   string               `yaml:"tools_file,omitempty"`
+}
+
+// ResolveFromConfig loads the metadata.yaml pointed to by ConfigFile and fills
+// in empty fields (Model, Instruction, SkillDir). Relative paths are resolved
+// against projectDir. File pointers inside metadata.yaml (instruction_file,
+// skill_dir) are resolved relative to the directory containing the config file.
+// Returns the absolute directory containing the config file, or empty string
+// if ConfigFile is not set.
+func (a *AgentRef) ResolveFromConfig(projectDir string) string {
+	if a.ConfigFile == "" {
+		return ""
+	}
+
+	configPath := a.ConfigFile
+	if !filepath.IsAbs(configPath) {
+		configPath = filepath.Join(projectDir, configPath)
+	}
+	configDir := filepath.Dir(configPath)
+
+	data, err := os.ReadFile(configPath) //nolint:gosec // path from project config
+	if err != nil {
+		return configDir
+	}
+
+	var meta struct {
+		Name            string `yaml:"name"`
+		Model           string `yaml:"model"`
+		InstructionFile string `yaml:"instruction_file"`
+		SkillDir        string `yaml:"skill_dir"`
+		ToolsFile       string `yaml:"tools_file"`
+	}
+	if err := yaml.Unmarshal(data, &meta); err != nil {
+		return configDir
+	}
+
+	if a.Model == "" && meta.Model != "" {
+		a.Model = meta.Model
+	}
+	if a.Instruction.IsEmpty() && meta.InstructionFile != "" {
+		instrPath := meta.InstructionFile
+		if !filepath.IsAbs(instrPath) {
+			instrPath = filepath.Join(configDir, instrPath)
+		}
+		a.Instruction.File = instrPath
+	}
+	if a.SkillDir == "" && meta.SkillDir != "" {
+		skillDir := meta.SkillDir
+		if !filepath.IsAbs(skillDir) {
+			skillDir = filepath.Join(configDir, skillDir)
+		}
+		a.SkillDir = skillDir
+	}
+	if a.ToolsFile == "" && meta.ToolsFile != "" {
+		toolsFile := meta.ToolsFile
+		if !filepath.IsAbs(toolsFile) {
+			toolsFile = filepath.Join(configDir, toolsFile)
+		}
+		a.ToolsFile = toolsFile
+	}
+
+	return configDir
 }
 
 // ResolvedSystemPrompt returns the resolved instruction text.
@@ -265,9 +328,9 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	if o.MaxIterations <= 0 {
 		o.MaxIterations = 4
 	}
-	if o.Budget <= 0 {
-		o.Budget = 100
-	}
+	// if o.Budget <= 0 {
+	// 	o.Budget = 100
+	// }
 	return nil
 }
 

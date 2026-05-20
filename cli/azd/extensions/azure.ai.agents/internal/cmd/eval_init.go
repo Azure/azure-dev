@@ -29,6 +29,9 @@ type evalInitFlags struct {
 	projectEndpoint string
 	instruction     string
 	instructionFile string
+	configFile      string
+	skillDir        string
+	toolsFile       string
 	evalModel       string
 	dataset         string
 	output          string
@@ -123,6 +126,26 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 	configPath := eval_api.ResolveEvalOutputPath(flags.output, resolved.agentProject)
 	printEvalDetectedContext(resolved, configPath)
 
+	// Auto-detect agent config metadata if no instruction was provided.
+	// This looks for .agent_configs/baseline/metadata.yaml and resolves
+	// instruction and skill_dir from it.
+	if flags.instruction == "" && flags.instructionFile == "" && resolved.hasProject {
+		defaultConfigFile := filepath.Join(agentConfigsDir, "baseline", "metadata.yaml")
+		absConfigFile := filepath.Join(resolved.agentProject, defaultConfigFile)
+		if _, err := os.Stat(absConfigFile); err == nil {
+			// Found a default config — resolve all fields from it.
+			var agent opteval.AgentRef
+			agent.ConfigFile = defaultConfigFile
+			agent.ResolveFromConfig(resolved.agentProject)
+			flags.configFile = defaultConfigFile
+			flags.instructionFile = agent.Instruction.File
+			flags.instruction = agent.Instruction.Value
+			flags.skillDir = agent.SkillDir
+			flags.toolsFile = agent.ToolsFile
+			fmt.Printf("   Config:     %s\n", absConfigFile)
+		}
+	}
+
 	// When eval.yaml exists, decide whether to regenerate or create fresh.
 	existingCfg, hasExisting := tryLoadExistingEvalConfig(configPath)
 	isRegenerate := false
@@ -155,9 +178,22 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		if existingCfg.Options != nil && !flags.evalModelSet {
 			flags.evalModel = existingCfg.Options.EvalModel
 		}
-		if flags.instruction == "" && flags.instructionFile == "" {
-			flags.instruction = existingCfg.Agent.Instruction.Value
-			flags.instructionFile = existingCfg.Agent.Instruction.File
+		if flags.configFile == "" && existingCfg.Agent.ConfigFile != "" {
+			flags.configFile = existingCfg.Agent.ConfigFile
+			// Resolve all fields from the config for generation API calls.
+			var agentRef opteval.AgentRef
+			agentRef.ConfigFile = flags.configFile
+			agentRef.ResolveFromConfig(resolved.agentProject)
+			if flags.instruction == "" && flags.instructionFile == "" {
+				flags.instructionFile = agentRef.Instruction.File
+				flags.instruction = agentRef.Instruction.Value
+			}
+			if flags.skillDir == "" {
+				flags.skillDir = agentRef.SkillDir
+			}
+			if flags.toolsFile == "" {
+				flags.toolsFile = agentRef.ToolsFile
+			}
 		}
 		if !flags.maxSamplesSet && existingCfg.MaxSamples > 0 {
 			flags.maxSamples = existingCfg.MaxSamples
@@ -185,6 +221,26 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		return err
 	}
 
+	// If no baseline config exists yet and we have an instruction, write it
+	// so that optimize can use it later.
+	if flags.configFile == "" && resolved.hasProject &&
+		(flags.instruction != "" || flags.instructionFile != "") {
+		defaultConfigFile := filepath.Join(agentConfigsDir, "baseline", "metadata.yaml")
+		absConfigFile := filepath.Join(resolved.agentProject, defaultConfigFile)
+		if _, err := os.Stat(absConfigFile); err != nil {
+			// Baseline doesn't exist — create it.
+			instruction := resolvedInstruction(flags)
+			if writeErr := writeBaselineFromEvalInit(
+				resolved.agentProject, resolved.agentName, instruction,
+			); writeErr != nil {
+				fmt.Printf("   warning: failed to write baseline config: %s\n", writeErr)
+			} else {
+				flags.configFile = defaultConfigFile
+				fmt.Printf("   Baseline:   %s\n", absConfigFile)
+			}
+		}
+	}
+
 	// Finalize the eval suite name. On fresh init, add a random suffix to
 	// avoid collisions. On regeneration, keep the existing name.
 	if !isRegenerate {
@@ -193,7 +249,8 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 
 	// Prompt agents use the agent source directly; hosted agents require an instruction.
 	if resolved.agentKind != agent_yaml.AgentKindPrompt &&
-		flags.instruction == "" && flags.instructionFile == "" && (flags.dataset == "" || len(flags.evaluators) == 0) {
+		flags.instruction == "" && flags.instructionFile == "" && flags.configFile == "" &&
+		(flags.dataset == "" || len(flags.evaluators) == 0) {
 		return fmt.Errorf("--gen-instruction is required when generating eval assets for a hosted agent")
 	}
 	if flags.maxSamples < 15 || flags.maxSamples > 1000 {

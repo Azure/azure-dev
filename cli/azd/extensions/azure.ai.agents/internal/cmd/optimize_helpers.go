@@ -6,11 +6,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -112,4 +114,27 @@ func loadLastOptimizeJobID(ctx context.Context) string {
 		return ""
 	}
 	return resp.Value
+}
+
+// printOptimizePortalLink prints the Foundry portal URL for an optimization job.
+// Best-effort — silently skips if the portal prefix cannot be resolved.
+func printOptimizePortalLink(ctx context.Context, out io.Writer, agentName, operationID string) {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return
+	}
+	defer azdClient.Close()
+
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil || envResp == nil {
+		return
+	}
+
+	prefix := resolvePortalPrefix(ctx, azdClient, envResp.Environment.Name)
+	if prefix == nil {
+		return
+	}
+
+	url := prefix.OptimizationURL(agentName, operationID)
+	fmt.Fprintf(out, "  Portal: %s\n", color.CyanString(url))
 }

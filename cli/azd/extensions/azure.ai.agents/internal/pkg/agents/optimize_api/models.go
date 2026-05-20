@@ -49,6 +49,7 @@ type AgentDefinition struct {
 	Model             string            `json:"model,omitempty"`
 	SystemPrompt      string            `json:"systemPrompt,omitempty"`
 	Skills            []SkillDefinition `json:"skills,omitempty"`
+	ToolDefinitions   []ToolDefinition  `json:"tools,omitempty"`
 }
 
 // SkillDefinition describes a skill attached to an agent.
@@ -56,6 +57,22 @@ type SkillDefinition struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Body        string `json:"body,omitempty"`
+}
+
+// ToolDefinition is an OpenAI-format function tool definition.
+// The optimizer may mutate the function's description and per-parameter
+// descriptions; schema fields (name, types, required) are immutable.
+type ToolDefinition struct {
+	Type     string       `json:"type"`
+	Function ToolFunction `json:"function"`
+}
+
+// ToolFunction is the inner function definition of a ToolDefinition.
+type ToolFunction struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Parameters  map[string]any `json:"parameters,omitempty"`
+	Strict      *bool          `json:"strict,omitempty"`
 }
 
 // DatasetTask is a single task in an inline dataset.

@@ -463,9 +463,18 @@ func TestRunToolboxVersionListWith_Success(t *testing.T) {
 		Name: "tb", DefaultVersion: "2",
 	}}
 	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
-		{Name: "tb", Version: "1", CreatedAt: 1715600000, Description: "old", Tools: []map[string]any{{"type": "mcp"}}},
-		{Name: "tb", Version: "2", CreatedAt: 1715700000, Description: "current", Tools: []map[string]any{{"type": "mcp"}, {"type": "web_search"}}},
-		{Name: "tb", Version: "10", CreatedAt: 1715800000, Description: "new", Tools: []map[string]any{}},
+		{
+			Name: "tb", Version: "1", CreatedAt: 1715600000, Description: "old",
+			Tools: []map[string]any{{"type": "mcp"}},
+		},
+		{
+			Name: "tb", Version: "2", CreatedAt: 1715700000, Description: "current",
+			Tools: []map[string]any{{"type": "mcp"}, {"type": "web_search"}},
+		},
+		{
+			Name: "tb", Version: "10", CreatedAt: 1715800000, Description: "new",
+			Tools: []map[string]any{},
+		},
 	}
 
 	err := runToolboxVersionListWith(

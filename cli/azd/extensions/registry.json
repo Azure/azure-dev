@@ -1140,6 +1140,96 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.10.0/microsoft-azd-extensions-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "0.11.0",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd x \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new azd extension project.",
+              "usage": "azd x init"
+            },
+            {
+              "name": "build",
+              "description": "Build the azd extension project.",
+              "usage": "azd x build"
+            },
+            {
+              "name": "pack",
+              "description": "Package the azd extension project into a distributable format and add to local registry.",
+              "usage": "azd x pack"
+            },
+            {
+              "name": "publish",
+              "description": "Publish the azd extension project to an extension source.",
+              "usage": "azd x publish"
+            },
+            {
+              "name": "release",
+              "description": "Create a new release of the azd extension project to a GitHub repository.",
+              "usage": "azd x release"
+            },
+            {
+              "name": "watch",
+              "description": "Watch for changes in the extension project and automatically rebuild and reload the extension.",
+              "usage": "azd x watch"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "f6d47f6333f59e489c9f32c24f3abdb945235b8629abc6d2157e30f1b91814d9"
+              },
+              "entryPoint": "microsoft-azd-extensions-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.11.0/microsoft-azd-extensions-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "6d2f6823fdb3f2343cd5de9e0cd740af9b59faf48cfa07f9b4f8a96a0d7d51f9"
+              },
+              "entryPoint": "microsoft-azd-extensions-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.11.0/microsoft-azd-extensions-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "10a88883a3144e2d577755972cf9c958bb7bf99946c2ef09c9fbd7f6bc522418"
+              },
+              "entryPoint": "microsoft-azd-extensions-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.11.0/microsoft-azd-extensions-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "011e4433cb1e1ff15cd8b7b20e3b3db90ac86476ee1a6ee86b44a118b553a34c"
+              },
+              "entryPoint": "microsoft-azd-extensions-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.11.0/microsoft-azd-extensions-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "81e21c0591073af8759073cdc0aa5356350b29dfa565d4296d81770eb9250155"
+              },
+              "entryPoint": "microsoft-azd-extensions-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.11.0/microsoft-azd-extensions-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "29d7667e5c5fe398b2bc2d49d8cd50c4ec2d7a80af39b5dc2661e0a279096b07"
+              },
+              "entryPoint": "microsoft-azd-extensions-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.11.0/microsoft-azd-extensions-windows-arm64.zip"
+            }
+          }
         }
       ]
     },

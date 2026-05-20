@@ -933,17 +933,14 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if relPath, relErr := filepath.Rel(originalCwd, createdFolder); relErr == nil {
 					displayPath = filepath.ToSlash(relPath)
 				}
-				fmt.Printf("\nYour project has been created in %s\n", displayPath)
 
-				// Surface a notice when the folder name differs from the
-				// original template title (e.g. non-ASCII characters were
-				// stripped during sanitization).
+				msg := fmt.Sprintf("\nYour project has been created in %s", displayPath)
 				if createdFromTitle != "" && filepath.Base(createdFolder) != createdFromTitle {
-					fmt.Printf(
-						"  (folder name derived from template %q)\n",
-						createdFromTitle,
-					)
+					msg += fmt.Sprintf(" (from template %q)", createdFromTitle)
 				}
+				msg += fmt.Sprintf("\n  cd %s\n", displayPath)
+
+				fmt.Print(msg)
 			}
 
 			return nil

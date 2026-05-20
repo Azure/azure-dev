@@ -34,6 +34,10 @@ func TestRootCommandLaunchIsExplicitSubcommand(t *testing.T) {
 	if launch.Flags().Lookup("port") == nil {
 		t.Fatal("launch command should accept the agent port flag")
 	}
+	silentFlag := launch.Flags().Lookup("silent")
+	if silentFlag == nil || !silentFlag.Hidden {
+		t.Fatal("launch command should accept a hidden silent flag")
+	}
 }
 
 func TestMetadataExposesLaunchCommand(t *testing.T) {

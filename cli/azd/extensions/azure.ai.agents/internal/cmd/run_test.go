@@ -4,12 +4,20 @@
 package cmd
 
 import (
+	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestParseCommand(t *testing.T) {
@@ -169,6 +177,119 @@ func TestResolveVenvCommand(t *testing.T) {
 			t.Errorf("expected nil, got %v", got)
 		}
 	})
+}
+
+func TestRunCommandNoInspectorFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRunCommand(nil)
+	if cmd.Flags().Lookup("no-inspector") == nil {
+		t.Fatal("run command should expose --no-inspector")
+	}
+}
+
+func TestWaitForLocalPort(t *testing.T) {
+	t.Parallel()
+
+	t.Run("succeeds when port is listening", func(t *testing.T) {
+		t.Parallel()
+
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ln.Close()
+
+		port := ln.Addr().(*net.TCPAddr).Port
+		if err := waitForLocalPort(t.Context(), port, 10*time.Millisecond); err != nil {
+			t.Fatalf("waitForLocalPort returned error: %v", err)
+		}
+	})
+
+	t.Run("returns when context expires", func(t *testing.T) {
+		t.Parallel()
+
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		port := ln.Addr().(*net.TCPAddr).Port
+		if err := ln.Close(); err != nil {
+			t.Fatal(err)
+		}
+
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+		defer cancel()
+
+		if err := waitForLocalPort(ctx, port, 5*time.Millisecond); err == nil {
+			t.Fatal("waitForLocalPort should fail for a closed port")
+		}
+	})
+}
+
+func TestLaunchInspectorUsesWorkflowCommand(t *testing.T) {
+	t.Parallel()
+
+	workflow := &recordingWorkflowClient{}
+	if err := launchInspector(t.Context(), workflow, 9090); err != nil {
+		t.Fatalf("launchInspector returned error: %v", err)
+	}
+
+	if workflow.request == nil || workflow.request.Workflow == nil || len(workflow.request.Workflow.Steps) != 1 {
+		t.Fatalf("unexpected workflow request: %#v", workflow.request)
+	}
+
+	got := workflow.request.Workflow.Steps[0].Command.Args
+	want := []string{"ai", "inspector", "launch", "--port", "9090", "--silent"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("workflow args = %v, want %v", got, want)
+	}
+}
+
+func TestInspectorLaunchWarningForMissingExtension(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "unknown command",
+			err:  status.Error(codes.Internal, `failed to run workflow: unknown command "inspector" for "azd ai"`),
+		},
+		{
+			name: "unknown flag from unresolved extension command",
+			err: status.Error(
+				codes.Internal,
+				`error executing step command 'ai inspector launch --port 8088 --silent': unknown flag: --port`,
+			),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := inspectorLaunchWarning(tt.err)
+			if !strings.Contains(got, "azd extension install azure.ai.inspector") {
+				t.Fatalf("warning should include install guidance, got %q", got)
+			}
+		})
+	}
+}
+
+type recordingWorkflowClient struct {
+	request *azdext.RunWorkflowRequest
+	err     error
+}
+
+func (c *recordingWorkflowClient) Run(
+	_ context.Context,
+	request *azdext.RunWorkflowRequest,
+	_ ...grpc.CallOption,
+) (*azdext.EmptyResponse, error) {
+	c.request = request
+	return &azdext.EmptyResponse{}, c.err
 }
 
 // createVenv sets up a minimal .venv directory structure for testing.

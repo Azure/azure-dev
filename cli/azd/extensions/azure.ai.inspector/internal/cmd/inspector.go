@@ -34,6 +34,7 @@ type inspectorFlags struct {
 	inspectorPort  int
 	sessionID      string
 	conversationID string
+	silent         bool
 }
 
 // newLaunchCommand returns the launch command for `azd ai inspector launch`. The
@@ -77,6 +78,8 @@ watch progress without focusing the browser.`,
 		"Optional explicit session ID for the SPA. If omitted, the SPA mints a fresh UUID.")
 	cmd.Flags().StringVar(&flags.conversationID, "conversation-id", "",
 		"Optional explicit conversation ID for the SPA. If omitted, the SPA mints a fresh UUID.")
+	cmd.Flags().BoolVar(&flags.silent, "silent", false, "Suppress terminal output")
+	_ = cmd.Flags().MarkHidden("silent")
 
 	return cmd
 }
@@ -84,6 +87,16 @@ watch progress without focusing the browser.`,
 // runInspector launches the inspector UI against the local agent.
 func runInspector(ctx context.Context, flags *inspectorFlags) error {
 	logger := log.New(log.Writer(), "[inspector] ", log.LstdFlags)
+	var sseSink func(io.Reader)
+	if flags.silent {
+		logger = log.New(io.Discard, "", 0)
+	} else {
+		sseSink = func(r io.Reader) {
+			if err := readSSEStream(injectSSEEvents(r), "local"); err != nil {
+				fmt.Fprintln(os.Stderr, "Error:", err)
+			}
+		}
+	}
 
 	srv := inspector.New(inspector.Config{
 		Port:           flags.inspectorPort,
@@ -91,23 +104,21 @@ func runInspector(ctx context.Context, flags *inspectorFlags) error {
 		Logger:         logger,
 		SessionID:      flags.sessionID,
 		ConversationID: flags.conversationID,
-		SSESink: func(r io.Reader) {
-			if err := readSSEStream(injectSSEEvents(r), "local"); err != nil {
-				fmt.Fprintln(os.Stderr, "Error:", err)
-			}
-		},
+		SSESink:        sseSink,
 	})
 
 	url := srv.URL()
-	fmt.Printf("Inspector:    %s\n", url)
-	fmt.Printf("Target:       localhost:%d (local)\n", flags.port)
-	if flags.sessionID != "" {
-		fmt.Printf("Session:      %s\n", flags.sessionID)
+	if !flags.silent {
+		fmt.Printf("Inspector:    %s\n", url)
+		fmt.Printf("Target:       localhost:%d (local)\n", flags.port)
+		if flags.sessionID != "" {
+			fmt.Printf("Session:      %s\n", flags.sessionID)
+		}
+		if flags.conversationID != "" {
+			fmt.Printf("Conversation: %s\n", flags.conversationID)
+		}
+		fmt.Println("\nPress Ctrl+C to stop the inspector.")
 	}
-	if flags.conversationID != "" {
-		fmt.Printf("Conversation: %s\n", flags.conversationID)
-	}
-	fmt.Println("\nPress Ctrl+C to stop the inspector.")
 
 	ready := make(chan struct{})
 	go func() {

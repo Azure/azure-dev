@@ -218,8 +218,11 @@ func shouldIgnoreWatchEvent(
 	relPath := relativeWatchPath(root, eventName)
 
 	// Fast path: ignore events matching hardcoded glob patterns.
+	// relPath uses forward slashes (see relativeWatchPath), so use Match,
+	// which always splits on '/', instead of PathMatch, which would split on
+	// the OS separator (`\` on Windows) and break these patterns.
 	for _, pattern := range globIgnorePaths {
-		matched, _ := doublestar.PathMatch(pattern, relPath)
+		matched, _ := doublestar.Match(pattern, relPath)
 		if matched {
 			return true
 		}

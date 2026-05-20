@@ -12,7 +12,7 @@ import (
 // extension. The root command groups inspector subcommands; launch is the
 // user-facing command that starts the inspector.
 func NewRootCommand() *cobra.Command {
-	rootCmd, _ := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
+	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:  "inspector",
 		Use:   "inspector <command> [options]",
 		Short: "Inspect locally running Foundry agents in a browser. (Preview)",
@@ -42,7 +42,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(azdext.NewMetadataCommand("1.0", "azure.ai.inspector", func() *cobra.Command {
 		return rootCmd
 	}))
-	rootCmd.AddCommand(newVersionCommand())
+	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 

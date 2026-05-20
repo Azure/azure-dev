@@ -4,19 +4,12 @@
 package cmd
 
 import (
-	"fmt"
-
 	"azureaiinspector/internal/version"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
-func newVersionCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Prints the version of the application",
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("Version: %s\nCommit: %s\nBuild Date: %s\n", version.Version, version.Commit, version.BuildDate)
-		},
-	}
+func newVersionCommand(outputFormat *string) *cobra.Command {
+	return azdext.NewVersionCommand("azure.ai.inspector", version.Version, outputFormat)
 }

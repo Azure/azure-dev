@@ -444,10 +444,6 @@ func TestRunToolboxCreateWith_NoConnectionsRejected(t *testing.T) {
 	assert.Empty(t, client.createVersionCalls)
 }
 
-// Unused import guard so 'errors' stays referenced even if all err-injection
-// tests drop in the future.
-var _ = errors.New
-
 // Client-side ^[A-Za-z0-9_-]+$ enforcement on tool entry names.
 func TestBuildToolEntry_RejectsInvalidName(t *testing.T) {
 	_, err := buildToolEntry(&projectConnection{
@@ -459,4 +455,43 @@ func TestBuildToolEntry_RejectsInvalidName(t *testing.T) {
 	le := requireLocalError(t, err, exterrors.CodeInvalidToolboxName)
 	assert.Contains(t, le.Message, "tool entry name")
 	assert.Contains(t, le.Message, "tools.v1")
+}
+
+func TestRunToolboxVersionListWith_Success(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "2",
+	}}
+	client.listVersionsResults["tb"] = []azure.ToolboxVersionObject{
+		{Name: "tb", Version: "1", CreatedAt: 1715600000, Description: "old", Tools: []map[string]any{{"type": "mcp"}}},
+		{Name: "tb", Version: "2", CreatedAt: 1715700000, Description: "current", Tools: []map[string]any{{"type": "mcp"}, {"type": "web_search"}}},
+		{Name: "tb", Version: "10", CreatedAt: 1715800000, Description: "new", Tools: []map[string]any{}},
+	}
+
+	err := runToolboxVersionListWith(
+		t.Context(), client, "tb", toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+}
+
+func TestRunToolboxVersionListWith_ToolboxNotFound(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	err := runToolboxVersionListWith(
+		t.Context(), client, "missing", toolboxFlags{output: "table"},
+	)
+	requireLocalError(t, err, exterrors.CodeToolboxNotFound)
+}
+
+func TestRunToolboxVersionListWith_ListVersionsServiceError(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.listVersionsErr = errors.New("list versions failed")
+
+	err := runToolboxVersionListWith(
+		t.Context(), client, "tb", toolboxFlags{output: "json"},
+	)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "list versions failed")
 }

@@ -46,6 +46,7 @@ an explicit update to retarget the default.`,
 	rootCmd.AddCommand(newToolboxDeleteCommand(extCtx))
 	rootCmd.AddCommand(newToolboxShowCommand(extCtx))
 	rootCmd.AddCommand(newToolboxListCommand(extCtx))
+	rootCmd.AddCommand(newToolboxVersionCommand(extCtx))
 	rootCmd.AddCommand(newToolboxConnectionCommand(extCtx))
 
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))

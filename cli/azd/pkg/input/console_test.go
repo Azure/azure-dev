@@ -541,6 +541,74 @@ func TestAskerConsole_Previewer_ConcurrentWriteStress(t *testing.T) {
 	}
 }
 
+// TestAskerConsole_PausePreviewer_DiscardsHookOutput reproduces the bug from GitHub issue #8237:
+// in azd 1.25.0+, azd up calls PausePreviewer() early in the execution graph setup (up_graph.go),
+// which causes ShowPreviewer to return io.Discard for the entire duration of the run. This means
+// lifecycle hook output (preprovision, postprovision, predeploy, postdeploy) is silently thrown away.
+//
+// Before 1.25.0, azd up used a workflow runner that invoked azd provision + azd deploy as
+// sub-commands. Each ran independently and hooks used ShowPreviewer normally — output was visible.
+//
+// The fix is to move PausePreviewer() to only be called when the deploy progress table ticker
+// actually starts (publish/deploy phase), not upfront before any graph steps execute.
+func TestAskerConsole_PausePreviewer_DiscardsHookOutput(t *testing.T) {
+	formatter, err := output.NewFormatter(string(output.NoneFormat))
+	require.NoError(t, err)
+
+	lines := &lineCapturer{}
+	c := NewConsole(
+		false,
+		false,
+		Writers{Output: lines},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: lines,
+		},
+		formatter,
+		nil,
+	)
+
+	ctx := t.Context()
+
+	// Regression: ShowPreviewer should return a real writer before PausePreviewer is called.
+	// This simulates the pre-1.25.0 behavior where hooks ran via normal sequential sub-commands
+	// (no PausePreviewer call), so hook output was visible.
+	writerBeforePause := c.ShowPreviewer(ctx, &ShowPreviewerOptions{
+		Title:        "preprovision Hook Output",
+		MaxLineCount: 8,
+	})
+	require.NotEqual(t, io.Discard, writerBeforePause,
+		"ShowPreviewer should return a real writer when previewer is not paused")
+	c.StopPreviewer(ctx, false)
+
+	// Simulate what azd 1.25.0 up_graph.go does: PausePreviewer() is called early,
+	// before any graph steps execute (before preprovision/postprovision hooks run).
+	ps, ok := c.(PreviewerPauser)
+	require.True(t, ok, "AskerConsole must implement PreviewerPauser")
+	ps.PausePreviewer()
+
+	// Bug: ShowPreviewer now returns io.Discard, silencing all hook output
+	// (preprovision, postprovision, predeploy, postdeploy hooks that call ShowPreviewer
+	// will have their stdout set to io.Discard, so their output is never seen).
+	writerWhilePaused := c.ShowPreviewer(ctx, &ShowPreviewerOptions{
+		Title:        "preprovision Hook Output",
+		MaxLineCount: 8,
+	})
+	require.Equal(t, io.Discard, writerWhilePaused,
+		"ShowPreviewer returns io.Discard when previewer is paused — this is the bug: hook output is silenced")
+
+	// After ResumePreviewer, ShowPreviewer should work again.
+	ps.ResumePreviewer()
+	writerAfterResume := c.ShowPreviewer(ctx, &ShowPreviewerOptions{
+		Title:        "postprovision Hook Output",
+		MaxLineCount: 8,
+	})
+	require.NotEqual(t, io.Discard, writerAfterResume,
+		"ShowPreviewer should return a real writer after ResumePreviewer")
+	c.StopPreviewer(ctx, false)
+}
+
 // writerAdapter wraps *strings.Builder to satisfy io.Writer for test purposes.
 type writerAdapter struct {
 	*strings.Builder

@@ -337,13 +337,6 @@ func (u *UpGraphAction) Run(
 			serviceNames[i] = svc.Name
 		}
 		deployTracker = newDeployProgressTracker(w, u.console.IsSpinnerInteractive(), serviceNames)
-		// Suppress previewer output at the shared console level so that
-		// DI-injected consumers (e.g. ContainerHelper's Docker output)
-		// don't corrupt the progress table display.
-		if ps, ok := u.console.(input.PreviewerPauser); ok {
-			ps.PausePreviewer()
-			defer ps.ResumePreviewer()
-		}
 	}
 
 	updateDeployProgress := func(svcName string, phase deployPhase, detail string) {
@@ -490,6 +483,28 @@ func (u *UpGraphAction) Run(
 		stopTicker = func() {} // no-op until started
 	}
 
+	// startDeployTicker is called once (via tickerOnce) when the first publish or deploy
+	// step begins. It starts the progress table ticker and suppresses the console previewer
+	// so that DI-injected ShowPreviewer callers (e.g. ContainerHelper's Docker output)
+	// don't corrupt the progress table display.
+	// Previewer is not paused during the earlier provision + hook phases so that
+	// preprovision/postprovision hook output remains visible (fixes #8237).
+	startDeployTicker := func() {
+		if deployTracker == nil {
+			return
+		}
+		stop := deployTracker.StartTicker(ctx)
+		if ps, ok := u.console.(input.PreviewerPauser); ok {
+			ps.PausePreviewer()
+			stopTicker = func() {
+				stop()
+				ps.ResumePreviewer()
+			}
+		} else {
+			stopTicker = stop
+		}
+	}
+
 	opts := u.runOptions()
 	baseOnStepStart := opts.OnStepStart
 	baseOnStepDone := opts.OnStepDone
@@ -506,18 +521,10 @@ func (u *UpGraphAction) Run(
 		if svc, ok := strings.CutPrefix(stepName, "package-"); ok {
 			updateDeployProgress(svc, phasePackaging, "")
 		} else if svc, ok := strings.CutPrefix(stepName, "publish-"); ok {
-			tickerOnce.Do(func() {
-				if deployTracker != nil {
-					stopTicker = deployTracker.StartTicker(ctx)
-				}
-			})
+			tickerOnce.Do(startDeployTicker)
 			updateDeployProgress(svc, phasePublish, "")
 		} else if svc, ok := strings.CutPrefix(stepName, "deploy-"); ok {
-			tickerOnce.Do(func() {
-				if deployTracker != nil {
-					stopTicker = deployTracker.StartTicker(ctx)
-				}
-			})
+			tickerOnce.Do(startDeployTicker)
 			updateDeployProgress(svc, phaseDeploying, "")
 		}
 	}

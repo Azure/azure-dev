@@ -9,7 +9,6 @@ const (
 	CodeInvalidSkillFile     = "invalid_skill_file"
 	CodeSkillArchiveUnsafe   = "skill_archive_unsafe"
 	CodeSkillOutputCollision = "skill_output_collision"
-	CodeSkillNoPackage       = "skill_no_package"
 )
 
 // Codes shared across the extension surface.

@@ -62,19 +62,21 @@ func (a *downloadAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Pre-flight Get so we can give a clear error when the skill has no blob
-	// (created from JSON / SKILL.md). The server's 404 here is opaque.
+	// Pre-flight Get so we know whether to download the package blob or
+	// materialize a SKILL.md from the metadata returned by the service.
 	skill, err := skillCtx.client.Get(ctx, a.flags.name)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetSkill)
 	}
 	if !skill.HasBlob {
-		return exterrors.Validation(
-			exterrors.CodeSkillNoPackage,
-			fmt.Sprintf("skill %q has no downloadable package", a.flags.name),
-			"only skills created from a `.zip` archive have a downloadable "+
-				"package. Use `azd ai skill show <name>` to inspect this skill's metadata.",
-		)
+		if a.flags.raw {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("skill %q has no archive; --raw cannot be used", a.flags.name),
+				"omit --raw to materialize a SKILL.md from the skill metadata",
+			)
+		}
+		return a.writeSkillMd(skill, absOut)
 	}
 
 	body, err := skillCtx.client.Download(ctx, a.flags.name)
@@ -86,6 +88,76 @@ func (a *downloadAction) Run(ctx context.Context) error {
 		return a.writeRaw(body, absOut)
 	}
 	return a.writeExtracted(body, absOut)
+}
+
+// writeSkillMd materializes a SKILL.md from the metadata returned by GET
+// /skills/{name}. Used when the skill was created inline (no uploaded
+// archive) and the service has no blob to stream back.
+func (a *downloadAction) writeSkillMd(skill *skill_api.Skill, outputDir string) error {
+	data, err := skill_api.MarshalSkillMd(&skill_api.SkillMd{
+		Name:         skill.Name,
+		Description:  skill.Description,
+		Metadata:     skill.Metadata,
+		Instructions: skill.Instructions,
+	})
+	if err != nil {
+		return fmt.Errorf("materialize SKILL.md: %w", err)
+	}
+
+	if err := os.MkdirAll(outputDir, 0700); err != nil {
+		return fmt.Errorf("create output dir: %w", err)
+	}
+	skillMdPath := filepath.Join(outputDir, skill_api.SkillMdFileName)
+
+	// Always Lstat (even with --force) so we never follow a symlink and so we
+	// refuse to overwrite a non-regular file.
+	if statInfo, statErr := os.Lstat(skillMdPath); statErr == nil {
+		if statInfo.Mode()&os.ModeSymlink != 0 {
+			return exterrors.Validation(
+				exterrors.CodeSkillOutputCollision,
+				fmt.Sprintf("%s is a symlink; refusing to follow", skillMdPath),
+				"remove the symlink and re-run",
+			)
+		}
+		if !statInfo.Mode().IsRegular() {
+			return exterrors.Validation(
+				exterrors.CodeSkillOutputCollision,
+				fmt.Sprintf("%s exists and is not a regular file", skillMdPath),
+				"remove or rename the existing entry and re-run",
+			)
+		}
+		if !a.flags.force {
+			return exterrors.Validation(
+				exterrors.CodeSkillOutputCollision,
+				fmt.Sprintf("%s already exists", skillMdPath),
+				"pass --force to overwrite",
+			)
+		}
+		// Remove first so the subsequent O_EXCL open is atomic — closes the
+		// TOCTOU window where the path could be swapped for a symlink.
+		if rmErr := os.Remove(skillMdPath); rmErr != nil {
+			return fmt.Errorf("remove existing SKILL.md: %w", rmErr)
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return fmt.Errorf("stat %s: %w", skillMdPath, statErr)
+	}
+
+	//nolint:gosec // skillMdPath is built from user-supplied --output-dir + skill name, written on user behalf
+	f, err := os.OpenFile(skillMdPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0600)
+	if err != nil {
+		return fmt.Errorf("create SKILL.md: %w", err)
+	}
+	if _, copyErr := f.Write(data); copyErr != nil {
+		_ = f.Close()
+		return fmt.Errorf("write SKILL.md: %w", copyErr)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close SKILL.md: %w", err)
+	}
+
+	return a.printResult(downloadResult{
+		Skill: a.flags.name, OutputDir: outputDir, Files: []string{skill_api.SkillMdFileName},
+	})
 }
 
 func (a *downloadAction) writeRaw(body []byte, outputDir string) error {
@@ -228,11 +300,15 @@ func newDownloadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "download <name>",
 		Short: "Download a Foundry skill package.",
-		Long: `Download a skill's package.
+		Long: `Download a skill's package or materialize its SKILL.md.
 
-By default the CLI extracts the archive into --output-dir (default
-'./.agents/skills/<name>/'). Pass --raw to write the unmodified archive
-into --output-dir instead.
+If the skill was created from a ` + "`.zip`" + ` archive, the CLI extracts the
+archive into --output-dir (default './.agents/skills/<name>/') by default.
+Pass --raw to write the unmodified archive into --output-dir instead.
+
+If the skill was created inline (no uploaded archive), the CLI materializes a
+SKILL.md file from the skill's metadata into --output-dir. --raw is not
+supported in this mode because there is no archive to write.
 
 Extraction enforces strict safety rules: no absolute paths, no '..' segments,
 no symlinks / non-regular entries, and a 10,000-entry / 512 MB cap on the

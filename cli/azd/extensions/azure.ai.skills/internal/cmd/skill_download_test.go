@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"azureaiskills/internal/exterrors"
@@ -80,4 +82,53 @@ func TestDownloadAction_RejectsInvalidName(t *testing.T) {
 	var le *azdext.LocalError
 	require.True(t, errors.As(err, &le))
 	require.Equal(t, exterrors.CodeInvalidSkillName, le.Code)
+}
+
+func TestDownloadAction_WriteSkillMd(t *testing.T) {
+	dir := t.TempDir()
+	a := &downloadAction{flags: &downloadFlags{name: "my-skill", output: outputJSON}}
+	skill := &skill_api.Skill{
+		Name:         "my-skill",
+		Description:  "Greets the user",
+		Metadata:     map[string]string{"owner": "alice"},
+		Instructions: "# Body\n\nGreet warmly.\n",
+	}
+
+	require.NoError(t, a.writeSkillMd(skill, dir))
+
+	got, err := os.ReadFile(filepath.Join(dir, skill_api.SkillMdFileName))
+	require.NoError(t, err)
+	parsed, err := skill_api.ParseSkillMd(got)
+	require.NoError(t, err)
+	require.Equal(t, "my-skill", parsed.Name)
+	require.Equal(t, "Greets the user", parsed.Description)
+	require.Equal(t, map[string]string{"owner": "alice"}, parsed.Metadata)
+	require.Equal(t, "# Body\n\nGreet warmly.\n", parsed.Instructions)
+}
+
+func TestDownloadAction_WriteSkillMd_CollisionWithoutForce(t *testing.T) {
+	dir := t.TempDir()
+	skillMdPath := filepath.Join(dir, skill_api.SkillMdFileName)
+	require.NoError(t, os.WriteFile(skillMdPath, []byte("old"), 0600))
+
+	a := &downloadAction{flags: &downloadFlags{name: "my-skill", output: outputJSON}}
+	err := a.writeSkillMd(&skill_api.Skill{Name: "my-skill"}, dir)
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeSkillOutputCollision, le.Code)
+}
+
+func TestDownloadAction_WriteSkillMd_ForceOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	skillMdPath := filepath.Join(dir, skill_api.SkillMdFileName)
+	require.NoError(t, os.WriteFile(skillMdPath, []byte("old"), 0600))
+
+	a := &downloadAction{flags: &downloadFlags{name: "my-skill", output: outputJSON, force: true}}
+	require.NoError(t, a.writeSkillMd(&skill_api.Skill{Name: "my-skill", Description: "new"}, dir))
+
+	got, err := os.ReadFile(skillMdPath)
+	require.NoError(t, err)
+	require.NotEqual(t, "old", string(got), "force should overwrite existing file")
+	require.Contains(t, string(got), "name: my-skill")
 }

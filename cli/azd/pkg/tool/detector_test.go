@@ -214,7 +214,7 @@ func TestDetectTool_Extension(t *testing.T) {
 			name: "ExtensionFoundInList",
 			tool: &ToolDefinition{
 				Id:            "vscode-bicep",
-				Category:      ToolCategoryExtension,
+				Category:      ToolCategoryVSCodeExtension,
 				DetectCommand: "code",
 				VersionArgs: []string{
 					"--list-extensions", "--show-versions",
@@ -239,7 +239,7 @@ func TestDetectTool_Extension(t *testing.T) {
 			name: "ExtensionNotInList",
 			tool: &ToolDefinition{
 				Id:            "vscode-bicep",
-				Category:      ToolCategoryExtension,
+				Category:      ToolCategoryVSCodeExtension,
 				DetectCommand: "code",
 				VersionArgs: []string{
 					"--list-extensions", "--show-versions",
@@ -262,7 +262,7 @@ func TestDetectTool_Extension(t *testing.T) {
 			name: "CodeNotOnPATH",
 			tool: &ToolDefinition{
 				Id:            "vscode-bicep",
-				Category:      ToolCategoryExtension,
+				Category:      ToolCategoryVSCodeExtension,
 				DetectCommand: "code",
 				VersionArgs: []string{
 					"--list-extensions", "--show-versions",
@@ -279,7 +279,7 @@ func TestDetectTool_Extension(t *testing.T) {
 			name: "DefaultsDetectCommandToCode",
 			tool: &ToolDefinition{
 				Id:            "vscode-ext",
-				Category:      ToolCategoryExtension,
+				Category:      ToolCategoryVSCodeExtension,
 				DetectCommand: "", // empty => defaults to "code"
 				VersionArgs: []string{
 					"--list-extensions", "--show-versions",
@@ -302,7 +302,7 @@ func TestDetectTool_Extension(t *testing.T) {
 			name: "ContextCancelledReturnsError",
 			tool: &ToolDefinition{
 				Id:            "vscode-ext-timeout",
-				Category:      ToolCategoryExtension,
+				Category:      ToolCategoryVSCodeExtension,
 				DetectCommand: "code",
 				VersionArgs: []string{
 					"--list-extensions", "--show-versions",
@@ -322,7 +322,7 @@ func TestDetectTool_Extension(t *testing.T) {
 			name: "NonErrNotFoundPathError",
 			tool: &ToolDefinition{
 				Id:            "vscode-ext-perms",
-				Category:      ToolCategoryExtension,
+				Category:      ToolCategoryVSCodeExtension,
 				DetectCommand: "code",
 			},
 			setup: func(runner *mockexec.MockCommandRunner) {
@@ -337,7 +337,7 @@ func TestDetectTool_Extension(t *testing.T) {
 			name: "CopilotChatFoundCaseInsensitive",
 			tool: &ToolDefinition{
 				Id:            "GitHub.copilot-chat",
-				Category:      ToolCategoryExtension,
+				Category:      ToolCategoryVSCodeExtension,
 				DetectCommand: "code",
 				VersionArgs: []string{
 					"--list-extensions", "--show-versions",
@@ -362,7 +362,7 @@ func TestDetectTool_Extension(t *testing.T) {
 			name: "CopilotChatFoundLowerCase",
 			tool: &ToolDefinition{
 				Id:            "GitHub.copilot-chat",
-				Category:      ToolCategoryExtension,
+				Category:      ToolCategoryVSCodeExtension,
 				DetectCommand: "code",
 				VersionArgs: []string{
 					"--list-extensions", "--show-versions",
@@ -385,7 +385,7 @@ func TestDetectTool_Extension(t *testing.T) {
 			name: "CopilotChatNotInstalled",
 			tool: &ToolDefinition{
 				Id:            "GitHub.copilot-chat",
-				Category:      ToolCategoryExtension,
+				Category:      ToolCategoryVSCodeExtension,
 				DetectCommand: "code",
 				VersionArgs: []string{
 					"--list-extensions", "--show-versions",
@@ -600,7 +600,7 @@ func TestDetectTool_Library(t *testing.T) {
 			name: "ExtensionFoundInJSON",
 			tool: &ToolDefinition{
 				Id:            "azure.ai.agents",
-				Category:      ToolCategoryLibrary,
+				Category:      ToolCategoryAzdExtension,
 				DetectCommand: "azd",
 				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
 			},
@@ -622,7 +622,7 @@ func TestDetectTool_Library(t *testing.T) {
 			name: "ExtensionFoundAmongMultiple",
 			tool: &ToolDefinition{
 				Id:            "azure.ai.agents",
-				Category:      ToolCategoryLibrary,
+				Category:      ToolCategoryAzdExtension,
 				DetectCommand: "azd",
 				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
 			},
@@ -645,7 +645,7 @@ func TestDetectTool_Library(t *testing.T) {
 			name: "ExtensionNotInJSON",
 			tool: &ToolDefinition{
 				Id:            "azure.ai.agents",
-				Category:      ToolCategoryLibrary,
+				Category:      ToolCategoryAzdExtension,
 				DetectCommand: "azd",
 				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
 			},
@@ -665,7 +665,7 @@ func TestDetectTool_Library(t *testing.T) {
 			name: "EmptyJSONArray",
 			tool: &ToolDefinition{
 				Id:            "azure.ai.agents",
-				Category:      ToolCategoryLibrary,
+				Category:      ToolCategoryAzdExtension,
 				DetectCommand: "azd",
 				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
 			},
@@ -684,7 +684,7 @@ func TestDetectTool_Library(t *testing.T) {
 			name: "InvalidJSONReturnsNotInstalled",
 			tool: &ToolDefinition{
 				Id:            "azure.ai.agents",
-				Category:      ToolCategoryLibrary,
+				Category:      ToolCategoryAzdExtension,
 				DetectCommand: "azd",
 				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
 			},
@@ -703,7 +703,7 @@ func TestDetectTool_Library(t *testing.T) {
 			name: "PreReleaseSuffix",
 			tool: &ToolDefinition{
 				Id:            "azure.ai.agents",
-				Category:      ToolCategoryLibrary,
+				Category:      ToolCategoryAzdExtension,
 				DetectCommand: "azd",
 				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
 			},
@@ -724,7 +724,7 @@ func TestDetectTool_Library(t *testing.T) {
 			name: "LibraryWithNoVersionArgs",
 			tool: &ToolDefinition{
 				Id:            "simple-lib",
-				Category:      ToolCategoryLibrary,
+				Category:      ToolCategoryAzdExtension,
 				DetectCommand: "simple",
 			},
 			setup: func(runner *mockexec.MockCommandRunner) {
@@ -737,7 +737,7 @@ func TestDetectTool_Library(t *testing.T) {
 			name: "NoDetectCommandReturnsNotInstalled",
 			tool: &ToolDefinition{
 				Id:       "no-cmd",
-				Category: ToolCategoryLibrary,
+				Category: ToolCategoryAzdExtension,
 			},
 			setup:           func(_ *mockexec.MockCommandRunner) {},
 			expectInstalled: false,
@@ -746,7 +746,7 @@ func TestDetectTool_Library(t *testing.T) {
 			name: "AzdNotOnPATH",
 			tool: &ToolDefinition{
 				Id:            "azure.ai.agents",
-				Category:      ToolCategoryLibrary,
+				Category:      ToolCategoryAzdExtension,
 				DetectCommand: "azd",
 				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
 			},
@@ -759,7 +759,7 @@ func TestDetectTool_Library(t *testing.T) {
 			name: "ContextCancelledReturnsError",
 			tool: &ToolDefinition{
 				Id:            "azure.ai.agents",
-				Category:      ToolCategoryLibrary,
+				Category:      ToolCategoryAzdExtension,
 				DetectCommand: "azd",
 				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
 			},
@@ -777,7 +777,7 @@ func TestDetectTool_Library(t *testing.T) {
 			name: "NonErrNotFoundPathError",
 			tool: &ToolDefinition{
 				Id:            "azure.ai.agents",
-				Category:      ToolCategoryLibrary,
+				Category:      ToolCategoryAzdExtension,
 				DetectCommand: "azd",
 			},
 			setup: func(runner *mockexec.MockCommandRunner) {
@@ -792,7 +792,7 @@ func TestDetectTool_Library(t *testing.T) {
 			name: "NotFoundOnRunReturnsNotInstalled",
 			tool: &ToolDefinition{
 				Id:            "transient-lib",
-				Category:      ToolCategoryLibrary,
+				Category:      ToolCategoryAzdExtension,
 				DetectCommand: "transient",
 				VersionArgs:   []string{"--list"},
 			},
@@ -808,7 +808,7 @@ func TestDetectTool_Library(t *testing.T) {
 			name: "NonExitErrorReturnsError",
 			tool: &ToolDefinition{
 				Id:            "azure.ai.agents",
-				Category:      ToolCategoryLibrary,
+				Category:      ToolCategoryAzdExtension,
 				DetectCommand: "azd",
 				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
 			},

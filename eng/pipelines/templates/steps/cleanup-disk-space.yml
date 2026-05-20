@@ -22,29 +22,29 @@ steps:
     continueOnError: true
 
   - ${{ if eq(parameters.CleanDocker, true) }}:
-    - bash: docker system prune -af --volumes 2>/dev/null || true
+    - bash: docker system prune -af --volumes
       displayName: Cleanup Docker
       condition: and(${{ parameters.Condition }}, eq(variables['Agent.OS'], 'Linux'))
       continueOnError: true
 
   - ${{ if eq(parameters.CleanGoCache, true) }}:
     - bash: |
-        go clean -cache 2>/dev/null || true
-        go clean -testcache 2>/dev/null || true
+        go clean -cache
+        go clean -testcache
       displayName: Cleanup Go cache
       condition: and(${{ parameters.Condition }}, eq(variables['Agent.OS'], 'Linux'))
       continueOnError: true
 
   - ${{ if eq(parameters.CleanNuGet, true) }}:
-    - bash: dotnet nuget locals all --clear 2>/dev/null || true
+    - bash: dotnet nuget locals all --clear
       displayName: Cleanup NuGet cache
       condition: and(${{ parameters.Condition }}, eq(variables['Agent.OS'], 'Linux'))
       continueOnError: true
 
   - ${{ if eq(parameters.CleanDotNet, true) }}:
     - bash: |
-        rm -rf /tmp/NuGetScratch 2>/dev/null || true
-        rm -rf /tmp/.dotnet 2>/dev/null || true
+        rm -rf /tmp/NuGetScratch
+        rm -rf /tmp/.dotnet
       displayName: Cleanup .NET temp artifacts
       condition: and(${{ parameters.Condition }}, eq(variables['Agent.OS'], 'Linux'))
       continueOnError: true

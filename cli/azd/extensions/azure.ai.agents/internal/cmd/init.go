@@ -814,7 +814,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						if flags.env != "" {
 							initArgs = append(initArgs, "--environment", flags.env)
 						} else {
-							defaultEnvName := sanitizeAgentName(selectedTemplate.Title + "-dev")
+							defaultEnvName := sanitizeAgentName(folderName + "-dev")
 							initArgs = append(
 								initArgs, "--environment", defaultEnvName,
 							)

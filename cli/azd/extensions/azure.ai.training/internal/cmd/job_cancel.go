@@ -16,6 +16,7 @@ import (
 
 func newJobCancelCommand() *cobra.Command {
 	var name string
+	var noWait bool
 
 	cmd := &cobra.Command{
 		Use:   "cancel",
@@ -61,18 +62,43 @@ func newJobCancelCommand() *cobra.Command {
 				return fmt.Errorf("failed to create API client: %w", err)
 			}
 
-			fmt.Printf("Cancelling job '%s'...\n", name)
+			if noWait {
+				fmt.Printf("Cancelling job '%s' (no-wait)...\n", name)
+			} else {
+				fmt.Printf("Cancelling job '%s'...\n", name)
+			}
 
-			if err := apiClient.CancelJob(ctx, name); err != nil {
+			result, err := apiClient.CancelJob(ctx, name, &client.CancelJobOptions{NoWait: noWait})
+			if err != nil {
 				return fmt.Errorf("failed to cancel job: %w", err)
 			}
 
-			fmt.Printf("✓ Job '%s' cancel request submitted successfully\n", name)
+			switch result.Status {
+			case client.CancelJobCompleted:
+				fmt.Printf("✓ Job '%s' cancelled.\n", name)
+			case client.CancelJobNotFound:
+				fmt.Printf("Job '%s' was not found (nothing to cancel).\n", name)
+			case client.CancelJobInProgress:
+				if noWait {
+					fmt.Printf("Cancel for job '%s' was accepted and is in progress.\n", name)
+				} else {
+					fmt.Printf(
+						"Cancel for job '%s' is still in progress after the maximum wait; run 'azd ai training job show --name %s' to check.\n",
+						name, name,
+					)
+				}
+			case client.CancelJobAccepted:
+				fmt.Printf("Cancel for job '%s' was accepted.\n", name)
+			}
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Job name/ID to cancel (required)")
+	cmd.Flags().BoolVar(
+		&noWait, "no-wait", false,
+		"Do not wait for the cancel to complete; return immediately after the server accepts the request",
+	)
 
 	return cmd
 }

@@ -2380,9 +2380,7 @@ func TestCreatedFolderPath_AfterChdir(t *testing.T) {
 			}
 
 			// Simulate the chdir that happens after azd init
-			if err := os.Chdir(folderPath); err != nil {
-				t.Fatalf("Chdir: %v", err)
-			}
+			t.Chdir(folderPath)
 
 			// This mirrors the logic in the init command:
 			// createdFolder = filepath.Join(originalCwd, folderName)

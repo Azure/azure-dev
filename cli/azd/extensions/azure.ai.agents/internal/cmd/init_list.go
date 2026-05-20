@@ -254,14 +254,15 @@ func mapAgentTemplateToDTO(t AgentTemplate) TemplateListItem {
 }
 
 // normalizeOutputFormat collapses the SDK default placeholder to the human
-// format so callers can switch on a finite set of values.
+// format so callers can switch on a finite set of values. The flag set's
+// AllowedValues constrains `--output` to "json" or "text" at parse time,
+// so anything else reaching this function is either the SDK's pre-parse
+// sentinel ("default") or a programmatic caller.
 func normalizeOutputFormat(s string) string {
 	switch strings.ToLower(s) {
 	case "json":
 		return "json"
 	default:
-		// The SDK uses "default" as its sentinel before substitution; treat it
-		// (and any unrecognized value the validator already accepted) as text.
 		return "text"
 	}
 }

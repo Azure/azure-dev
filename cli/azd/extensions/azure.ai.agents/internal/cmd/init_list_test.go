@@ -273,14 +273,15 @@ func TestInitListJSONShape_StableFieldNames(t *testing.T) {
 func TestNormalizeOutputFormat(t *testing.T) {
 	t.Parallel()
 
+	// AllowedValues rejects anything other than "json" or "text" at flag
+	// parse time, so only those two and the SDK's pre-parse sentinel ever
+	// reach normalizeOutputFormat in practice.
 	tests := map[string]string{
 		"json":    "json",
 		"JSON":    "json",
 		"text":    "text",
-		"default": "text",
+		"default": "text", // SDK pre-substitution sentinel
 		"":        "text",
-		"yaml":    "text", // unrecognized falls back to text since validator already ran
-		"table":   "text", // legacy callers that may still pass "table" land on text
 	}
 	for in, want := range tests {
 		require.Equal(t, want, normalizeOutputFormat(in), "input=%q", in)

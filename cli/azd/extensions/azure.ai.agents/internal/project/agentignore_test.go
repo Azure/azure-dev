@@ -14,7 +14,7 @@ import (
 func TestAgentIgnore_NoFile_UsesDefaults(t *testing.T) {
 	dir := t.TempDir()
 
-	m, err := newAgentIgnoreMatcher(dir)
+	m, err := newAgentIgnoreMatcher(t.Context(), dir)
 	require.NoError(t, err)
 	require.False(t, m.hasUserIgnore)
 
@@ -55,7 +55,7 @@ func TestAgentIgnore_UserFileOverridesDefaults(t *testing.T) {
 	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte("*.log\n"), 0600)
 	require.NoError(t, err)
 
-	m, err := newAgentIgnoreMatcher(dir)
+	m, err := newAgentIgnoreMatcher(t.Context(), dir)
 	require.NoError(t, err)
 	require.True(t, m.hasUserIgnore)
 
@@ -79,7 +79,7 @@ func TestAgentIgnore_NegationWorks(t *testing.T) {
 	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte(content), 0600)
 	require.NoError(t, err)
 
-	m, err := newAgentIgnoreMatcher(dir)
+	m, err := newAgentIgnoreMatcher(t.Context(), dir)
 	require.NoError(t, err)
 
 	require.True(t, m.ShouldExclude("notes.txt", false))
@@ -98,7 +98,7 @@ func TestAgentIgnore_SymlinkRejected(t *testing.T) {
 		t.Skip("symlinks not supported on this platform")
 	}
 
-	_, err = newAgentIgnoreMatcher(dir)
+	_, err = newAgentIgnoreMatcher(t.Context(), dir)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "must be a regular file")
 }
@@ -110,7 +110,7 @@ func TestAgentIgnore_UTF8BOM(t *testing.T) {
 	err := os.WriteFile(filepath.Join(dir, ".agentignore"), content, 0600)
 	require.NoError(t, err)
 
-	m, err := newAgentIgnoreMatcher(dir)
+	m, err := newAgentIgnoreMatcher(t.Context(), dir)
 	require.NoError(t, err)
 
 	require.True(t, m.ShouldExclude("app.log", false))
@@ -121,7 +121,7 @@ func TestAgentIgnore_EmptyFile(t *testing.T) {
 	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte(""), 0600)
 	require.NoError(t, err)
 
-	m, err := newAgentIgnoreMatcher(dir)
+	m, err := newAgentIgnoreMatcher(t.Context(), dir)
 	require.NoError(t, err)
 	require.True(t, m.hasUserIgnore)
 

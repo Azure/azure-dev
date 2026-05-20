@@ -384,7 +384,7 @@ func (p *AgentServiceTargetProvider) Package(
 	// Code deploy: ZIP the source directory
 	if p.isCodeDeployAgent() {
 		progress("Packaging code")
-		zipPath, sha256Hex, err := p.packageCodeDeploy(serviceConfig)
+		zipPath, sha256Hex, err := p.packageCodeDeploy(ctx, serviceConfig)
 		if err != nil {
 			return nil, exterrors.Internal(exterrors.OpContainerPackage, fmt.Sprintf("code packaging failed: %s", err))
 		}
@@ -1057,7 +1057,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
 // and computes its SHA-256. Returns the temp file path and SHA-256 hex string.
-func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.ServiceConfig) (string, string, error) {
+func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serviceConfig *azdext.ServiceConfig) (string, string, error) {
 	// Source directory is the service's relative path
 	srcDir := filepath.Dir(p.agentDefinitionPath)
 
@@ -1077,9 +1077,13 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 	}
 
 	// Load .agentignore (or use defaults if no file exists)
-	ignoreMatcher, err := newAgentIgnoreMatcher(srcDir)
+	ignoreMatcher, err := newAgentIgnoreMatcher(ctx, srcDir)
 	if err != nil {
-		return "", "", fmt.Errorf("loading %s: %w", agentIgnoreFileName, err)
+		return "", "", exterrors.Dependency(
+			exterrors.CodeInvalidFilePath,
+			fmt.Sprintf("failed to load %s: %s", agentIgnoreFileName, err),
+			"check that .agentignore is a valid file with gitignore syntax",
+		)
 	}
 
 	// Create temp file and write ZIP directly to it while computing SHA-256
@@ -1120,6 +1124,11 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 
 		// Normalize to forward slashes for ZIP
 		relPath = filepath.ToSlash(relPath)
+
+		// Skip symlinked directories to avoid traversing outside the project root
+		if d.IsDir() && d.Type()&fs.ModeSymlink != 0 {
+			return filepath.SkipDir
+		}
 
 		// Check directory exclusions
 		if d.IsDir() {

@@ -5,6 +5,7 @@ package project
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -35,11 +36,12 @@ type agentIgnoreMatcher struct {
 
 // newAgentIgnoreMatcher creates a matcher by reading .agentignore from srcDir.
 // If no .agentignore exists, defaults are used.
-func newAgentIgnoreMatcher(srcDir string) (*agentIgnoreMatcher, error) {
+func newAgentIgnoreMatcher(ctx context.Context, srcDir string) (*agentIgnoreMatcher, error) {
+	_ = ctx // reserved for future cancellation support
 	m := &agentIgnoreMatcher{}
 
 	// Try to load user's .agentignore
-	ig, err := loadAgentIgnore(srcDir)
+	ig, err := loadAgentIgnore(ctx, srcDir)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +74,8 @@ func (m *agentIgnoreMatcher) ShouldExclude(relPath string, isDir bool) bool {
 
 // loadAgentIgnore reads an .agentignore file from srcDir.
 // Returns nil, nil if no file exists.
-func loadAgentIgnore(srcDir string) (gitignore.GitIgnore, error) {
+func loadAgentIgnore(ctx context.Context, srcDir string) (gitignore.GitIgnore, error) {
+	_ = ctx // reserved for future cancellation support
 	path := filepath.Join(srcDir, agentIgnoreFileName)
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -113,6 +116,7 @@ func loadAgentIgnore(srcDir string) (gitignore.GitIgnore, error) {
 func DefaultAgentIgnoreContent() string {
 	return `# Files excluded from agent code deployment packaging.
 # Uses .gitignore syntax.
+# Note: only the root .agentignore is read; subdirectory files are not supported.
 #
 # To include a file that is excluded by default, use negation: !filename
 

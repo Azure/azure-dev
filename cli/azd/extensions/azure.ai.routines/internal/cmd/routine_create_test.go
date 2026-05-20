@@ -62,6 +62,15 @@ func TestBuildTrigger_UnknownType(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestBuildTrigger_GithubIssueRejected(t *testing.T) {
+	t.Parallel()
+	// "github-issue" is in TriggerCLIToWire but is deferred for v1; buildTrigger
+	// must reject it explicitly rather than producing an incomplete trigger.
+	flags := &routineCreateFlags{trigger: "github-issue"}
+	_, err := buildTrigger(flags)
+	assert.Error(t, err)
+}
+
 // ─── buildAction ──────────────────────────────────────────────────────────────
 
 func TestBuildAction_AgentResponseByID(t *testing.T) {

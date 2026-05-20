@@ -56,10 +56,12 @@ func newTabWriter() *tabwriter.Writer {
 	return tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 }
 
-// boolStr returns "true"/"false" for a *bool pointer.
+// boolStr returns a human-readable string for a *bool field.
+// Returns "unknown" when the pointer is nil so callers don't silently
+// display a default that wasn't actually returned by the service.
 func boolStr(b *bool) string {
 	if b == nil {
-		return "true"
+		return "unknown"
 	}
 	if *b {
 		return "true"

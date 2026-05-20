@@ -100,7 +100,12 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 
 	var body routines.Routine
 	body.Name = flags.name
-	body.Enabled = new(flags.enabled)
+	// Only set Enabled from the flag when the user explicitly passed it.
+	// Otherwise let the manifest fill it in (file mode), and the post-merge
+	// fallback below defaults to enabled=true.
+	if cmd.Flags().Changed("enabled") {
+		body.Enabled = new(flags.enabled)
+	}
 	if flags.description != "" {
 		body.Description = flags.description
 	}
@@ -146,6 +151,13 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 		body.Action = &action
 	}
 
+	// Default Enabled to true when neither the flag nor the manifest provided
+	// a value. This matches the documented "enabled by default on creation"
+	// behavior while still letting a manifest's explicit `enabled: false` win.
+	if body.Enabled == nil {
+		body.Enabled = new(true)
+	}
+
 	client, _, err := newRoutineClient(ctx, cmd)
 	if err != nil {
 		return err
@@ -182,6 +194,19 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 
 // buildTrigger constructs a RoutineTrigger from CLI flags.
 func buildTrigger(flags *routineCreateFlags) (routines.RoutineTrigger, error) {
+	// "github-issue" is present in TriggerCLIToWire (it maps to the wire type
+	// for the deferred GitHub issue trigger), but the CLI does not yet support
+	// supplying the fields it needs (connection, owner, repository, actions).
+	// Reject it explicitly so users get a clear "deferred" message instead of
+	// a silently incomplete request.
+	if flags.trigger == "github-issue" {
+		return routines.RoutineTrigger{}, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"trigger type 'github-issue' is not yet supported by the CLI",
+			"use --trigger recurring or --trigger timer; github-issue is deferred to a future release",
+		)
+	}
+
 	wireType, ok := routines.TriggerCLIToWire[flags.trigger]
 	if !ok {
 		return routines.RoutineTrigger{}, exterrors.Validation(

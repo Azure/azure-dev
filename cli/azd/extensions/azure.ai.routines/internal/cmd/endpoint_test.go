@@ -115,6 +115,8 @@ func TestValidateProjectEndpoint_Rejections(t *testing.T) {
 		{name: "non-foundry host", raw: "https://management.azure.com/api/projects/x"},
 		{name: "no scheme", raw: "myaccount.services.ai.azure.com/api/projects/x"},
 		{name: "localhost", raw: "https://localhost/api/projects/x"},
+		{name: "explicit port", raw: "https://myaccount.services.ai.azure.com:444/api/projects/x"},
+		{name: "default port still rejected", raw: "https://myaccount.services.ai.azure.com:443/api/projects/x"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -93,21 +93,33 @@ func applyUpdateFlags(
 	trigger := getTrigger(existing)
 	if cronChanged {
 		if trigger == nil {
-			return 0, fmt.Errorf("cannot set --cron: routine has no default trigger")
+			return 0, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"cannot set --cron: routine has no default trigger",
+				"add a trigger by recreating the routine, or omit --cron",
+			)
 		}
 		trigger.CronExpression = cron
 		changed++
 	}
 	if tzChanged {
 		if trigger == nil {
-			return 0, fmt.Errorf("cannot set --time-zone: routine has no default trigger")
+			return 0, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"cannot set --time-zone: routine has no default trigger",
+				"add a trigger by recreating the routine, or omit --time-zone",
+			)
 		}
 		trigger.TimeZone = timeZone
 		changed++
 	}
 	if atChanged {
 		if trigger == nil {
-			return 0, fmt.Errorf("cannot set --at: routine has no default trigger")
+			return 0, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"cannot set --at: routine has no default trigger",
+				"add a trigger by recreating the routine, or omit --at",
+			)
 		}
 		trigger.At = at
 		changed++
@@ -123,7 +135,11 @@ func applyUpdateFlags(
 	action := getAction(existing)
 	if agentIDChanged || agentEpChanged {
 		if action == nil {
-			return 0, fmt.Errorf("cannot update agent fields: routine has no action")
+			return 0, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"cannot update agent fields: routine has no action",
+				"add an action by recreating the routine, or omit --agent-id / --agent-endpoint-id",
+			)
 		}
 		// agent-id and agent-endpoint-id are mutually exclusive; specifying one clears the other.
 		if agentIDChanged && agentEpChanged && agentID != "" && agentEndpointID != "" {
@@ -150,14 +166,22 @@ func applyUpdateFlags(
 	}
 	if convIDChanged {
 		if action == nil {
-			return 0, fmt.Errorf("cannot set --conversation-id: routine has no action")
+			return 0, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"cannot set --conversation-id: routine has no action",
+				"add an action by recreating the routine, or omit --conversation-id",
+			)
 		}
 		action.ConversationID = conversationID
 		changed++
 	}
 	if sessIDChanged {
 		if action == nil {
-			return 0, fmt.Errorf("cannot set --session-id: routine has no action")
+			return 0, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"cannot set --session-id: routine has no action",
+				"add an action by recreating the routine, or omit --session-id",
+			)
 		}
 		action.SessionID = sessionID
 		changed++

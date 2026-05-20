@@ -1,24 +1,22 @@
 # Azure Developer CLI — Telemetry Architecture
 
-> End-to-end reference for how telemetry flows through the azd ecosystem.
->
-
+> How azd collects, exports, and transmits telemetry data.
 
 ## Overview
 
-azd telemetry spans three repositories, each owning a distinct layer:
+azd emits OpenTelemetry spans for every command execution. Telemetry flows through a local pipeline:
 
-| Repository | Layer | What It Does |
-|-----------|-------|-------------|
-| [`Azure/azure-dev`](https://github.com/Azure/azure-dev) | **Instrumentation** | CLI + VS Code extension + extension framework emit OpenTelemetry spans |
-| [`devdiv-azure-service-dmitryr/azd-queries`](https://github.com/devdiv-azure-service-dmitryr/azd-queries) | **Pipeline & Governance** | GDPR classification, Kusto table sync, KQL query library |
-| [`coreai-microsoft/azure-dev-tools`](https://github.com/coreai-microsoft/azure-dev-tools) → `product-telemetry/azd/` | **Analysis** | Power BI reports, Kusto functions, funnel metrics, investigations |
+1. **Instrumentation** — CLI, VS Code extension, and extensions emit OTel spans
+2. **Export** — Spans are converted to Application Insights envelopes and queued to disk
+3. **Upload** — A background process transmits envelopes to Application Insights
 
-## End-to-End Data Flow
+> Microsoft-internal dashboards, data pipelines, and reporting infrastructure are documented separately for internal maintainers.
+
+## Data Flow
 
 ```mermaid
 flowchart TB
-    subgraph Instrumentation ["azure-dev (Instrumentation)"]
+    subgraph Instrumentation ["Instrumentation"]
         CLI["azd CLI<br/>(Go + OpenTelemetry)"]
         VSC["VS Code Extension<br/>(@microsoft/vscode-azext-utils)"]
         EXT["Extensions<br/>(structured error reporting)"]
@@ -32,40 +30,13 @@ flowchart TB
         Upload["azd telemetry upload<br/>(background / deferred)"]
     end
 
-    subgraph Ingestion ["Azure Monitor / Kusto"]
-        AppInsights["Azure Application Insights"]
-        Kusto["Azure Data Explorer (Kusto)<br/>DDAzureClients.DevCli"]
-        RawTable["RawEventsAppRequests"]
-    end
-
-    subgraph Pipeline ["azd-queries (Pipeline & Governance)"]
-        GDPR["GDPR Classify Pipeline<br/>eng/pipelines/classify.yml"]
-        GDPRTool["gdpr tool<br/>(export → publish → ingest)"]
-        GDPRAPI["GDPR API"]
-        TableSync["Kusto Table Sync<br/>.github/workflows/ci.yml"]
-        IngestScripts["Ingest Scripts<br/>(templates, template versions)"]
-        KQLLib["KQL Query Library<br/>(core-usage, insights, aspire, vscode)"]
-    end
-
-    subgraph Analysis ["azure-dev-tools (Analysis)"]
-        KustoFn["Kusto Functions<br/>(getAzdEvents, addTemplateColumns, etc.)"]
-        PBI["Power BI Reports<br/>(KPIs, funnels, user journeys)"]
-        Investigations["Ad-hoc Investigations"]
+    subgraph Ingestion ["Azure Monitor"]
+        AppInsights["Application Insights"]
     end
 
     CLI --> MW --> OTel --> AIExp --> DiskQ --> Upload --> AppInsights
     VSC -->|VS Code telemetry framework| AppInsights
     EXT -->|structured errors via host| MW
-    AppInsights --> Kusto --> RawTable
-
-    GDPR -->|reads azure-dev source| GDPRTool --> GDPRAPI
-    TableSync --> Kusto
-    IngestScripts --> Kusto
-    KQLLib -->|queries| RawTable
-
-    KustoFn -->|deployed to DDAzureClients.DevCli| RawTable
-    PBI -->|reads via| KustoFn
-    Investigations -->|ad-hoc KQL| RawTable
 ```
 
 ## CLI Telemetry Pipeline (Detail)
@@ -157,14 +128,6 @@ Each span becomes a `contracts.Envelope` containing `RequestData`:
 
 Slice attributes are JSON-serialized into `Properties`.
 
-### 6. Ingestion → Kusto
-
-Envelopes are POSTed (gzip compressed) to the App Insights ingestion endpoint. From there, data flows into Azure Data Explorer:
-
-- **Cluster:** `DDAzureClients`
-- **Database:** `DevCli`
-- **Primary table:** `RawEventsAppRequests`
-
 ## VS Code Extension Telemetry
 
 **Files:** `ext/vscode/src/telemetry/`
@@ -174,8 +137,7 @@ The VS Code extension uses a **separate telemetry path** from the CLI:
 ```mermaid
 flowchart LR
     VSExt["VS Code Extension"] --> VSFw["VS Code Telemetry Framework<br/>(@microsoft/vscode-azext-utils)"]
-    VSFw --> AppInsights2["Application Insights"]
-    AppInsights2 --> Kusto2["Kusto"]
+    VSFw --> AppInsights["Application Insights"]
 ```
 
 **Key differences from CLI:**
@@ -197,7 +159,7 @@ flowchart LR
 
 ## Extension Framework Telemetry
 
-**File:** `cli/azd/cmd/middleware/telemetry.go` (host side), `cli/azd/docs/extensions/extension-framework.md`
+**File:** `cli/azd/cmd/middleware/telemetry.go` (host side)
 
 Extensions run as separate processes and report back to the azd host:
 
@@ -216,47 +178,6 @@ flowchart LR
   - Auth: `ext.auth.*`
   - Dependency: `ext.dependency.*`
 - Extension lifecycle events: `ext.install`, `ext.upgrade`, `ext.promote`
-
-## GDPR Classification Pipeline
-
-**Repo:** `azd-queries` → `eng/pipelines/classify.yml`
-
-This pipeline ensures all telemetry fields are properly classified for GDPR compliance:
-
-```mermaid
-flowchart TB
-    subgraph Sources ["azure-dev (source of truth)"]
-        Events["tracing/events/events.go"]
-        Fields["tracing/fields/fields.go"]
-    end
-
-    subgraph Pipeline ["azd-queries (classify pipeline)"]
-        Export["gdpr export<br/>→ events.json + fields.json"]
-        Publish["gdpr publish<br/>→ GDPR API"]
-    end
-
-    subgraph GDPR ["GDPR System"]
-        API["GDPR API<br/>(product: ai.devcliapprequests)"]
-    end
-
-    Events --> Export
-    Fields --> Export
-    Export --> Publish --> API
-```
-
-**How it works:**
-
-1. The pipeline checks out **both** `azd-queries` and `Azure/azure-dev`
-2. Builds the `gdpr` Go tool (`eng/tools/gdpr/`)
-3. Runs `gdpr export` — parses `events.go` and `fields/` to produce `events.json` and `fields.json`
-4. Runs `gdpr publish` — pushes metadata to the GDPR API under product code `ai.devcliapprequests`
-5. Runs on a schedule for production/staging environments
-
-**GDPR tool commands:**
-- `export` — extract event/field metadata from Go source
-- `publish` — push metadata to GDPR API
-- `ingest` — ingest metadata into Kusto
-- `delete` — retire/remove fields from classification
 
 ## Consent & Privacy
 
@@ -278,22 +199,10 @@ flowchart TB
   - `CustomerContent`
   - `EndUserPseudonymizedInformation`
   - `OrganizationalIdentifiableInformation`
-- **Privacy review required** for: new telemetry fields, classification changes, any unhashed PII (see `docs/specs/metrics-audit/privacy-review-checklist.md`)
+- **Privacy review required** for: new telemetry fields, classification changes, any unhashed PII
 
-## Kusto Table Sync & Ingestion
+## Key Files
 
-**Repo:** `azd-queries` → `.github/workflows/ci.yml`
-
-- On PRs: `./ksd build tables` (validates table definitions)
-- On merge: `./ksd sync tables` (publishes table definitions to Kusto)
-- Ingestion scripts run to sync template metadata:
-  - `ingest/ingest-templates.kql`
-  - `ingest/ingest-template-versions.kql`
-- Template metadata is updated via `eng/Update-Templates.ps1` before ingest
-
-## Key Files Reference
-
-### azure-dev (Instrumentation)
 ```
 cli/azd/
 ├── cmd/middleware/telemetry.go           # Command-level span middleware
@@ -319,50 +228,10 @@ cli/azd/
 ext/vscode/src/telemetry/
 ├── telemetryId.ts                        # Extension event IDs
 └── activityStatisticsService.ts          # Active days tracking
-docs/specs/metrics-audit/
-├── telemetry-schema.md                   # Canonical schema reference
-└── privacy-review-checklist.md           # Privacy review process
-```
-
-### azd-queries (Pipeline & Governance)
-```
-eng/
-├── pipelines/classify.yml                # GDPR classification pipeline
-└── tools/gdpr/
-    ├── README.md                         # Tool documentation
-    ├── cmd/                              # export, publish, ingest, delete
-    └── pkg/gdpr/convert.go              # Event/field → GDPR row conversion
-.github/workflows/
-├── ci.yml                                # Kusto table sync + ingest
-└── amplitude-export.yml                  # Kusto → Amplitude export
-core-usage/                               # MAU/MEU/MDU, funnels, retention KQL
-insights-and-segments/                    # Usage by language, template, errors KQL
-tables/                                   # Kusto table definitions
-ingest/                                   # Template ingestion scripts
-```
-
-### azure-dev-tools (Analysis)
-```
-product-telemetry/azd/
-├── Kusto/
-│   ├── Functions/                        # Deployed Kusto functions (getAzdEvents, etc.)
-│   ├── KPIs/                             # KPI seed queries
-│   ├── funnel-metrics/                   # Funnel framework + queries
-│   ├── Backfill/                         # Historical backfill scripts
-│   └── Investigations/                   # Ad-hoc deep dives
-├── PowerBI/                              # Power BI report projects
-│   ├── KPIs/
-│   ├── User Journeys/
-│   ├── Template Health/
-│   ├── Deploy and Provision/
-│   └── ...
-├── Reports/                              # Written analyses (markdown, KQLX)
-└── PPTs/                                 # Presentations
 ```
 
 ## See Also
 
 - [Feature Telemetry Guide](../guides/feature-telemetry.md) — How to add telemetry for new features
 - [Telemetry Data Reference](../reference/telemetry-data.md) — Schema, events, fields, query patterns
-- [Dashboards & Reports](../reference/telemetry-dashboards.md) — Power BI, Kusto functions, funnel metrics
 - [Telemetry Overview](../guides/telemetry-overview.md) — For product managers and leadership

@@ -1,20 +1,14 @@
-# Telemetry Data Reference — Understanding & Querying azd Telemetry
+# Telemetry Data Reference — Understanding azd Telemetry
 
-> Schema reference for all azd telemetry events, fields, and Kusto tables.
-> Use this to understand what data exists and how to query it.
->
+> Schema reference for all azd telemetry events, fields, and data shapes.
+> Use this to understand what data azd emits and how to work with it.
 
 
-## Kusto Tables
+## Data Shape
 
-All azd telemetry lands in Azure Data Explorer (Kusto):
+All azd telemetry is emitted as Application Insights `RequestData` envelopes. Each command execution produces one top-level span, with optional child spans for sub-operations.
 
-- **Cluster:** `DDAzureClients`
-- **Database:** `DevCli`
-- **Primary table:** `RawEventsAppRequests`
-- **Supplementary tables:** `Templates`, `TemplateVersions`, `AzdKPIs`
-
-### RawEventsAppRequests — Core Columns
+### Core Columns
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -43,7 +37,7 @@ All azd telemetry lands in Azure Data Explorer (Kusto):
 
 ## Events Reference
 
-Events are defined in `cli/azd/internal/tracing/events/events.go`. Each event becomes a span `Name` in Kusto.
+Events are defined in `cli/azd/internal/tracing/events/events.go`. Each event becomes a span `Name`.
 
 ### Core Command Events (`cmd.*`)
 
@@ -138,7 +132,7 @@ JSON-RPC events for VS Code ↔ azd communication. Follow the pattern `vsrpc.<me
 
 ## Fields Reference
 
-Fields appear as `Properties` (strings/bools) or `Measurements` (numbers) in the Kusto table.
+Fields appear as `Properties` (strings/bools) or `Measurements` (numbers).
 
 ### Application-Level Fields (Every Event)
 
@@ -218,8 +212,7 @@ Valid values for `project.service.languages` and `project.service.language`:
 | `env.name` | string | ✅ SHA-256 | Environment name |
 
 > **Joining with template names:** Template IDs are hashed. To resolve to human-readable names,
-> join with the `Templates` table using `project.template.id` = `Templates.Hash`.
-> The `addTemplateColumns` Kusto function does this automatically.
+> join with a template lookup table using the hashed `project.template.id`.
 
 ### Command Entry-Point Fields
 
@@ -266,7 +259,7 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | Field Key | Type | Description |
 |-----------|------|-------------|
 | `service.host` | string | Azure service host |
-| `service.name` | string | Azure service name |
+| `service.name` | string | Azure service name (on service call spans) |
 | `service.statusCode` | measurement | HTTP status code |
 | `service.method` | string | HTTP method |
 | `service.errorCode` | measurement | Service-specific error code |
@@ -480,7 +473,7 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 
 ## Data Nuances & Gotchas
 
-Important things to know when querying azd telemetry data. These are sourced from real investigations and issues.
+Important things to know when working with azd telemetry data. These are sourced from real investigations and issues.
 
 ### OperationId Reuse in Retry/Troubleshoot Flows
 
@@ -504,14 +497,13 @@ OperationId: 28ce1f2898a4fec84522107e36c22038
 
 **Impact on queries:**
 ```kql
-// ❌ WRONG — counts retries as separate users/invocations
-getAzdEvents(...) | where Name == 'cmd.deploy' | summarize count()
+// ❌ WRONG — counts retries as separate invocations
+| where Name == 'cmd.deploy' | summarize count()
 
 // ✅ CORRECT — count distinct OperationIds to get unique invocations
-getAzdEvents(...) | where Name == 'cmd.deploy' | summarize dcount(OperationId)
+| where Name == 'cmd.deploy' | summarize dcount(OperationId)
 
 // ✅ Or be explicit about only first attempts
-getAzdEvents(...)
 | where Name == 'cmd.deploy'
 | summarize arg_min(TimeGenerated, *) by OperationId
 ```
@@ -529,97 +521,14 @@ Many failed commands produce the catch-all result code `internal.errors_errorStr
 
 Fields like `project.template.id`, `project.name`, `env.name` are **SHA-256 hashed** before emission to protect privacy. You cannot reverse them.
 
-To resolve template IDs to human-readable names, use the `Templates` table:
-```kql
-getAzdEvents(...)
-| invoke addTemplateColumns()
-| project TimeGenerated, TemplateName, Success
-```
+To resolve template IDs to human-readable names, join with a template lookup table using the hashed ID.
 
 ### Execution Time vs Duration
 
-`DurationMs` includes time the user spent at prompts (confirmations, selections). Use:
+`DurationMs` includes time the user spent at prompts (confirmations, selections). To compute actual execution time:
 ```kql
 | extend ExecutionTimeMs = DurationMs - toreal(Measurements['perf.interact_time'])
 ```
-
-### Internal vs External Users
-
-To distinguish Microsoft internal users from external:
-```kql
-// The addCustomerColumns function enriches with customer details
-getAzdEvents(...) | invoke addCustomerColumns()
-
-// Or filter by tenant/subscription patterns
-getAzdEvents(...) | invoke flagTestAzSubs()
-```
-
-## Common Query Patterns
-
-### Basic: Command Usage Over Time
-```kql
-getAzdEvents(startDate=ago(30d), endDate=now(), true, true)
-| where Name startswith "cmd."
-| summarize Users = dcount(tostring(Properties['machine.id'])), Executions = count() by Name
-| order by Users desc
-```
-
-### Feature Adoption: Template Usage
-```kql
-getAzdEvents(startDate=ago(30d), endDate=now(), true, true)
-| where Name == 'cmd.up' and Success
-| invoke addTemplateColumns()
-| summarize Users = dcount(tostring(Properties['machine.id'])) by TemplateName
-| order by Users desc
-```
-
-### Error Analysis: Top Failure Reasons
-```kql
-getAzdEvents(startDate=ago(7d), endDate=now(), true, true)
-| where Name == 'cmd.deploy' and not(Success)
-| summarize Count = count() by ResultCode
-| order by Count desc
-```
-
-### Performance: Command Duration (p50/p95)
-```kql
-getAzdEvents(startDate=ago(30d), endDate=now(), true, true)
-| where Name == 'cmd.provision' and Success
-| extend ExecutionTimeMs = DurationMs - toreal(Measurements['perf.interact_time'])
-| summarize p50 = percentile(ExecutionTimeMs, 50), p95 = percentile(ExecutionTimeMs, 95) by bin(TimeGenerated, 1d)
-```
-
-### Funnel: Init → Provision → Deploy Success
-```kql
-let timeRange = ago(30d);
-let events = getAzdEvents(startDate=timeRange, endDate=now(), true, true);
-let initUsers = events | where Name == 'cmd.init' | summarize by MachineId = tostring(Properties['machine.id']);
-let provisionUsers = events | where Name == 'cmd.provision' and Success | summarize by MachineId = tostring(Properties['machine.id']);
-let deployUsers = events | where Name == 'cmd.deploy' and Success | summarize by MachineId = tostring(Properties['machine.id']);
-print
-    Init = toscalar(initUsers | count),
-    Provision = toscalar(provisionUsers | count),
-    Deploy = toscalar(deployUsers | count)
-```
-
-## Kusto Functions Reference
-
-These reusable functions are deployed to `DDAzureClients.DevCli` and simplify common query patterns.
-See [Dashboards & Reports](telemetry-dashboards.md) for full details.
-
-| Function | Purpose |
-|----------|---------|
-| `getAzdEvents(...)` | Base query: filters `RawEventsAppRequests` by date, local clients, daily builds, min version |
-| `getAzdArmEvents(...)` | ARM-specific event query |
-| `addTemplateColumns` | Joins `Templates` table to resolve template hashes to names |
-| `addCustomerColumns` | Enriches with customer/org details |
-| `addAzSubColumns` | Adds Azure subscription metadata |
-| `addExecutionTimeColumns` | Adds `ExecutionTimeMs` (duration minus interaction time) |
-| `addAzdAndArmErrorDetails` | Enriches error rows with ARM error details |
-| `flagTestAzSubs` | Flags known test/internal subscriptions |
-| `calcAzdOperations(...)` | Calculates operation-level metrics |
-| `calcFirstSuccessfulExecution(...)` | Finds first successful execution per user |
-| `calcNeverBeforeSeenUsersForAzd(...)` | Identifies new users |
 
 ## Feature → Telemetry Mapping
 
@@ -630,25 +539,24 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Core Workflows (init/up/deploy/provision/down)** | `cmd.init`, `cmd.up`, `cmd.deploy`, `cmd.provision`, `cmd.down` | `cmd.entry`, `cmd.flags` | Adoption, success rate, duration, error patterns |
 | **Deployment Targets** | `cmd.deploy`, `cmd.package` | `project.service.targets` (`appservice`, `containerapp`, `aks`, etc.) | Usage by target, success rate per target |
 | **Container Apps (.NET / Aspire)** | `cmd.deploy`, `cmd.provision` | `project.service.targets` = `containerapp-dotnet`, `platform.type` = `aca` | Aspire-specific adoption and success |
-| **Language Support** | `cmd.deploy`, `cmd.package`, `cmd.restore` | `project.service.languages`, `project.service.language` (`dotnet`, `python`, `java`, etc.) | Usage by language |
-| **Templates** | `cmd.init`, `cmd.up` | `project.template.id` (hashed — use `addTemplateColumns` to resolve) | Template adoption, success by template |
-| **Provisioning (IaC)** | `cmd.provision`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`, `terraform`), ARM event details | Provision success, ARM errors, duration |
+| **Language Support** | `cmd.deploy`, `cmd.package`, `cmd.restore` | `project.service.languages`, `project.service.language` | Usage by language |
+| **Templates** | `cmd.init`, `cmd.up` | `project.template.id` (hashed — join with template lookup to resolve) | Template adoption, success by template |
+| **Provisioning (IaC)** | `cmd.provision`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`, `terraform`) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
-| **Extensions** | `ext.run`, `ext.install`, `ext.upgrade` | `extension.id`, `extension.version`, `extension.installed` | Extension adoption, install/upgrade rates, errors |
-| **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client, call volume |
-| **Agentic (Copilot)** | `copilot.initialize`, `copilot.session`, `cmd.copilot.chat` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage, model selection |
+| **Extensions** | `ext.run`, `ext.install`, `ext.upgrade` | `extension.id`, `extension.version`, `extension.installed` | Extension adoption, errors |
+| **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client |
+| **Agentic (Copilot)** | `copilot.initialize`, `copilot.session` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage |
 | **Agent Troubleshooting** | `agent.troubleshoot` | `agent.fix.attempts` | Auto-fix adoption, retry counts |
-| **VS Code Extension** | `azure-dev.*` | `azure-dev.commands.<cmd>` | VS Code usage, activation, command usage |
-| **Execution Environment** | All events | `execution.environment` (`Desktop`, `GitHub Actions`, `Claude Code`, etc.) | Usage by environment, CI vs local |
-| **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion`, `update.toVersion` | Update adoption |
-| **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type and executor |
-| **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image`, `pack.builder.tag` | Build method usage, success rates |
+| **VS Code Extension** | `azure-dev.*` | `azure-dev.commands.<cmd>` | VS Code usage, command usage |
+| **Execution Environment** | All events | `execution.environment` | Usage by environment, CI vs local |
+| **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion` | Update adoption |
+| **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type |
+| **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image` | Build method usage, success rates |
 
 ## See Also
 
 - [Architecture](../architecture/telemetry.md) — End-to-end telemetry flow
 - [Feature Telemetry Guide](../guides/feature-telemetry.md) — How to add telemetry for new features
-- [Dashboards & Reports](telemetry-dashboards.md) — Power BI reports and Kusto functions
 - [Telemetry Schema (canonical)](../../specs/metrics-audit/telemetry-schema.md) — Source-of-truth schema in the codebase
 - [Privacy Review Checklist](../../specs/metrics-audit/privacy-review-checklist.md) — When and how to do privacy reviews

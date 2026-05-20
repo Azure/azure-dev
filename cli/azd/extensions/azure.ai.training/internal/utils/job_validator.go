@@ -182,11 +182,30 @@ func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 	// 11. Distribution: when provided, type must be one of the four AML
 	// launcher types. Per-type fields are passed through without enforcement
 	// (mirrors the services policy — let the backend reject missing/invalid
-	// fields with its own error).
+	// fields with its own error). Exception: Ray port fields are range-checked
+	// here so obvious typos (e.g. 99999) don't require a network round-trip
+	// to discover.
 	if job.Distribution != nil {
 		switch strings.ToLower(strings.TrimSpace(job.Distribution.Type)) {
-		case "pytorch", "tensorflow", "mpi", "ray":
-			// supported
+		case "pytorch", "tensorflow", "mpi":
+			// supported, no extra field validation
+		case "ray":
+			// TCP port range is universal (1–65535); checking it here is a pure
+			// usability win with no drift risk.
+			if p := job.Distribution.Port; p != nil && (*p < 1 || *p > 65535) {
+				result.Findings = append(result.Findings, ValidationFinding{
+					Field:    "distribution.port",
+					Severity: SeverityError,
+					Message:  fmt.Sprintf("port %d is out of range; expected 1–65535", *p),
+				})
+			}
+			if p := job.Distribution.DashboardPort; p != nil && (*p < 1 || *p > 65535) {
+				result.Findings = append(result.Findings, ValidationFinding{
+					Field:    "distribution.dashboard_port",
+					Severity: SeverityError,
+					Message:  fmt.Sprintf("dashboard_port %d is out of range; expected 1–65535", *p),
+				})
+			}
 		case "":
 			result.Findings = append(result.Findings, ValidationFinding{
 				Field:    "distribution.type",

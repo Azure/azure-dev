@@ -173,7 +173,9 @@ func (r *Runner) copy(ctx context.Context, source, sasURI string, forceContents 
 	// the next repaint. Buffering lets us dump the full text on any failure
 	// path, which is often the only signal we get when azcopy exits before
 	// emitting an EndOfJob record (e.g. SAS/auth failure during enumeration).
-	stderrBuf := &cappedBuffer{max: 16 * 1024}
+	// 64KB is a balance between preserving enough text for batch-failure
+	// diagnosis and bounding worst-case memory for a runaway child.
+	stderrBuf := &cappedBuffer{max: 64 * 1024}
 	cmd.Stderr = stderrBuf
 
 	stdout, err := cmd.StdoutPipe()
@@ -294,6 +296,7 @@ func (r *Runner) copy(ctx context.Context, source, sasURI string, forceContents 
 		printEndOfJobDiagnostics(gotEndOfJob, endOfJob)
 		printCapturedStderr(stderrBuf)
 		printAzcopyInfo(initMessage, infoMessages)
+		maybeWriteFullDiagnostics(gotEndOfJob, endOfJob, stderrBuf)
 		if scanErr != nil {
 			return fmt.Errorf("azcopy failed: %w (also: error reading azcopy output: %s)", err, scanErr.Error())
 		}
@@ -307,6 +310,7 @@ func (r *Runner) copy(ctx context.Context, source, sasURI string, forceContents 
 		printEndOfJobDiagnostics(gotEndOfJob, endOfJob)
 		printCapturedStderr(stderrBuf)
 		printAzcopyInfo(initMessage, infoMessages)
+		maybeWriteFullDiagnostics(gotEndOfJob, endOfJob, stderrBuf)
 		return fmt.Errorf("azcopy exited successfully but its output stream failed mid-transfer: %w", scanErr)
 	}
 
@@ -319,6 +323,7 @@ func (r *Runner) copy(ctx context.Context, source, sasURI string, forceContents 
 		printEndOfJobDiagnostics(gotEndOfJob, endOfJob)
 		printCapturedStderr(stderrBuf)
 		printAzcopyInfo(initMessage, infoMessages)
+		maybeWriteFullDiagnostics(gotEndOfJob, endOfJob, stderrBuf)
 		return fmt.Errorf("azcopy job ended with status %q (%d failed, %d skipped of %d transfers)",
 			endOfJob.JobStatus, endOfJob.TransfersFailed, endOfJob.TransfersSkipped, endOfJob.TotalTransfers)
 	}
@@ -353,10 +358,9 @@ func printEndOfJobDiagnostics(got bool, eoj endOfJobContent) {
 	if eoj.ErrorMsg != "" {
 		fmt.Fprintf(os.Stderr, "  azcopy error: %s\n", eoj.ErrorMsg)
 	}
-	const maxShown = 5
 	for i, ft := range eoj.FailedTransfers {
-		if i >= maxShown {
-			fmt.Fprintf(os.Stderr, "  ... and %d more failed transfer(s)\n", len(eoj.FailedTransfers)-maxShown)
+		if i >= maxFailedTransfersShown {
+			fmt.Fprintf(os.Stderr, "  ... and %d more failed transfer(s)\n", len(eoj.FailedTransfers)-maxFailedTransfersShown)
 			break
 		}
 		status := ft.TransferStatusStr
@@ -365,6 +369,48 @@ func printEndOfJobDiagnostics(got bool, eoj endOfJobContent) {
 		}
 		fmt.Fprintf(os.Stderr, "    - %s [status=%s, code=%d]\n", ft.Src, status, ft.ErrorCode)
 	}
+}
+
+// maxFailedTransfersShown caps how many failed-transfer entries we print to
+// stderr. The full list is preserved in memory and dumped to a side-file by
+// maybeWriteFullDiagnostics when this cap is exceeded.
+const maxFailedTransfersShown = 5
+
+// maybeWriteFullDiagnostics writes a single side-file containing the full
+// EndOfJob payload (as pretty JSON) and the captured azcopy stderr when either
+// the failed-transfers list or the stderr buffer had to be truncated for
+// terminal display. The path is printed to stderr so the user can inspect the
+// full diagnostics for batch failures without re-running with more verbosity.
+//
+// Best-effort: any error creating or writing the file is swallowed silently
+// (the on-terminal diagnostics still printed by the callers are the source of
+// truth; a failed side-file shouldn't make a bad failure path worse).
+func maybeWriteFullDiagnostics(got bool, eoj endOfJobContent, stderrBuf *cappedBuffer) {
+	failedTruncated := got && len(eoj.FailedTransfers) > maxFailedTransfersShown
+	stderrTruncated := stderrBuf != nil && stderrBuf.dropped > 0
+	if !failedTruncated && !stderrTruncated {
+		return
+	}
+	f, err := os.CreateTemp("", "azd-azcopy-diag-*.log")
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	if got {
+		fmt.Fprintln(f, "=== azcopy EndOfJob (full) ===")
+		if data, mErr := json.MarshalIndent(eoj, "", "  "); mErr == nil {
+			_, _ = f.Write(data)
+			fmt.Fprintln(f)
+		}
+	}
+	if stderrBuf != nil {
+		fmt.Fprintln(f, "\n=== azcopy stderr (captured) ===")
+		fmt.Fprint(f, stderrBuf.String())
+		if stderrBuf.dropped > 0 {
+			fmt.Fprintf(f, "\n[note: %d additional stderr byte(s) were dropped before reaching the buffer cap]\n", stderrBuf.dropped)
+		}
+	}
+	fmt.Fprintf(os.Stderr, "  Full diagnostics written to: %s\n", f.Name())
 }
 
 // truncate returns s shortened to at most n runes, appending an ellipsis

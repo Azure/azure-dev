@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -2341,39 +2342,38 @@ func TestCodeDeployFlagValidation(t *testing.T) {
 // (covers PR review — directory creation tracking and message accuracy)
 // ---------------------------------------------------------------------------
 
-// TestCreatedFolderPath_AfterChdir verifies that the createdFolder path logic
-// produces the correct relative path for the user-facing message, even after
-// the process has chdir'd into the new project directory.
+// TestCreatedFolderPath_AfterChdir verifies that formatCreatedFolderMessage
+// produces the correct relative display path even after the process has
+// chdir'd into the new project directory.
 func TestCreatedFolderPath_AfterChdir(t *testing.T) {
 	tests := []struct {
-		name        string
-		folderName  string
-		wantRelPath string
+		name     string
+		folder   string
+		wantPath string
 	}{
 		{
-			name:        "simple folder name",
-			folderName:  "my-agent",
-			wantRelPath: "my-agent",
+			name:     "simple folder name",
+			folder:   "my-agent",
+			wantPath: "my-agent",
 		},
 		{
-			name:        "sanitized folder name",
-			folderName:  sanitizeAgentName("Hello World (Python)"),
-			wantRelPath: sanitizeAgentName("Hello World (Python)"),
+			name:     "sanitized folder name",
+			folder:   folderNameFromTitle("Hello World (Python)"),
+			wantPath: "hello-world",
 		},
 		{
-			name:        "folder with numbers",
-			folderName:  "agent-v2",
-			wantRelPath: "agent-v2",
+			name:     "folder with numbers",
+			folder:   "agent-v2",
+			wantPath: "agent-v2",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			originalCwd := t.TempDir()
-			t.Chdir(originalCwd)
 
 			// Create the subdirectory (simulates azd init creating it)
-			folderPath := filepath.Join(originalCwd, tt.folderName)
+			folderPath := filepath.Join(originalCwd, tt.folder)
 			//nolint:gosec // test fixture directory permissions are intentional
 			if err := os.MkdirAll(folderPath, 0o755); err != nil {
 				t.Fatalf("MkdirAll: %v", err)
@@ -2382,33 +2382,20 @@ func TestCreatedFolderPath_AfterChdir(t *testing.T) {
 			// Simulate the chdir that happens after azd init
 			t.Chdir(folderPath)
 
-			// This mirrors the logic in the init command:
-			// createdFolder = filepath.Join(originalCwd, folderName)
-			createdFolder := filepath.Join(originalCwd, tt.folderName)
-
-			// Verify that filepath.Rel produces the right path from originalCwd
-			relPath, err := filepath.Rel(originalCwd, createdFolder)
-			if err != nil {
-				t.Fatalf("filepath.Rel: %v", err)
+			msg := formatCreatedFolderMessage(originalCwd, folderPath, "")
+			wantSuffix := "cd " + tt.wantPath + "\n"
+			if !strings.Contains(msg, tt.wantPath) {
+				t.Errorf("message missing display path %q:\n%s", tt.wantPath, msg)
 			}
-
-			if relPath != tt.wantRelPath {
-				t.Errorf("relPath = %q, want %q", relPath, tt.wantRelPath)
-			}
-
-			// Verify that ./<relPath> resolves to the created directory
-			// from the original cwd perspective.
-			resolvedAbs := filepath.Join(originalCwd, relPath)
-			if resolvedAbs != folderPath {
-				t.Errorf("resolved = %q, want %q", resolvedAbs, folderPath)
+			if !strings.HasSuffix(msg, wantSuffix) {
+				t.Errorf("message should end with %q, got:\n%s", wantSuffix, msg)
 			}
 		})
 	}
 }
 
 // TestCreatedFolderPath_NotSetWhenDirectoryExists verifies that the
-// createdFolder variable is not set when the target directory already exists
-// (i.e., ensureProject found an existing project).
+// newlyCreated check correctly identifies an existing directory.
 func TestCreatedFolderPath_NotSetWhenDirectoryExists(t *testing.T) {
 	originalCwd := t.TempDir()
 	t.Chdir(originalCwd)
@@ -2422,24 +2409,17 @@ func TestCreatedFolderPath_NotSetWhenDirectoryExists(t *testing.T) {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 
-	// This mirrors the logic in the init command's default template case:
-	// _, dirExisted := os.Stat(folderName)
-	_, dirExisted := os.Stat(folderName)
+	// Mirror production logic: stat + errors.Is
+	_, statErr := os.Stat(folderName)
+	newlyCreated := errors.Is(statErr, fs.ErrNotExist)
 
-	createdFolder := ""
-	if dirExisted != nil {
-		createdFolder = filepath.Join(originalCwd, folderName)
-	}
-
-	// Since the directory already existed, createdFolder should remain empty
-	if createdFolder != "" {
-		t.Errorf("createdFolder should be empty when dir exists, got %q", createdFolder)
+	if newlyCreated {
+		t.Error("newlyCreated should be false when directory already exists")
 	}
 }
 
 // TestCreatedFolderPath_SetWhenDirectoryDoesNotExist verifies that the
-// createdFolder variable IS set when the target directory doesn't exist before
-// runInitFromManifest is called.
+// newlyCreated check correctly identifies a missing directory.
 func TestCreatedFolderPath_SetWhenDirectoryDoesNotExist(t *testing.T) {
 	originalCwd := t.TempDir()
 	t.Chdir(originalCwd)
@@ -2447,72 +2427,45 @@ func TestCreatedFolderPath_SetWhenDirectoryDoesNotExist(t *testing.T) {
 	folderName := "new-agent-project"
 
 	// Do NOT create the directory — simulates fresh init
-	_, dirExisted := os.Stat(folderName)
+	_, statErr := os.Stat(folderName)
+	newlyCreated := errors.Is(statErr, fs.ErrNotExist)
 
-	createdFolder := ""
-	if dirExisted != nil {
-		createdFolder = filepath.Join(originalCwd, folderName)
+	if !newlyCreated {
+		t.Error("newlyCreated should be true when directory does not exist")
 	}
 
-	// Since the directory did not exist, createdFolder should be set
-	wantPath := filepath.Join(originalCwd, folderName)
-	if createdFolder != wantPath {
-		t.Errorf("createdFolder = %q, want %q", createdFolder, wantPath)
-	}
-
-	// Verify the relative path is correct for the output message
-	relPath, err := filepath.Rel(originalCwd, createdFolder)
-	if err != nil {
-		t.Fatalf("filepath.Rel: %v", err)
-	}
-	if relPath != folderName {
-		t.Errorf("relPath = %q, want %q", relPath, folderName)
+	// Verify formatCreatedFolderMessage produces valid output
+	createdFolder := filepath.Join(originalCwd, folderName)
+	msg := formatCreatedFolderMessage(originalCwd, createdFolder, "")
+	if !strings.Contains(msg, folderName) {
+		t.Errorf("message should contain %q:\n%s", folderName, msg)
 	}
 }
 
 // TestCreatedFolderPath_AzdTemplateCase verifies the full flow for the
-// TemplateTypeAzd case: azd init creates the folder, the process chdir's in,
-// and the message correctly refers back to the original location.
+// TemplateTypeAzd case: folderNameFromTitle derives the name, and the message
+// includes a template-title notice when the name changed.
 func TestCreatedFolderPath_AzdTemplateCase(t *testing.T) {
 	originalCwd := t.TempDir()
-	t.Chdir(originalCwd)
 
-	// Simulate deriving folder name from template title
 	templateTitle := "Basic Agent (Python)"
-	folderName := sanitizeAgentName(templateTitle)
+	folderName := folderNameFromTitle(templateTitle)
 
-	// Simulate azd init creating the directory
-	folderPath := filepath.Join(originalCwd, folderName)
-	//nolint:gosec // test fixture directory permissions are intentional
-	if err := os.MkdirAll(folderPath, 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
+	// folderNameFromTitle should strip parenthetical suffix
+	if strings.Contains(folderName, "python") {
+		t.Errorf("folderName should not contain parenthetical suffix, got %q", folderName)
 	}
 
-	// Simulate the chdir that happens after the workflow completes
-	if err := os.Chdir(folderPath); err != nil {
-		t.Fatalf("Chdir: %v", err)
-	}
-
-	// The key line from init.go:
 	createdFolder := filepath.Join(originalCwd, folderName)
+	msg := formatCreatedFolderMessage(originalCwd, createdFolder, templateTitle)
 
-	// Now verify the message would print correctly
-	relPath, err := filepath.Rel(originalCwd, createdFolder)
-	if err != nil {
-		t.Fatalf("filepath.Rel: %v", err)
+	// Should contain the template notice since name differs from title
+	if !strings.Contains(msg, templateTitle) {
+		t.Errorf("message should reference original title %q:\n%s", templateTitle, msg)
 	}
-
-	// The message printed would be: "Your project has been created in ./<relPath>"
-	expectedMsg := "\nYour project has been created in ./" + relPath + "\n"
-	wantMsg := "\nYour project has been created in ./" + folderName + "\n"
-	if expectedMsg != wantMsg {
-		t.Errorf("message = %q, want %q", expectedMsg, wantMsg)
-	}
-
-	// Verify that from the user's shell (still in originalCwd), the path makes sense
-	expectedAbsPath := filepath.Join(originalCwd, relPath)
-	if expectedAbsPath != folderPath {
-		t.Errorf("absolute path = %q, want %q", expectedAbsPath, folderPath)
+	// Should contain the cd hint
+	if !strings.Contains(msg, "cd "+folderName) {
+		t.Errorf("message should contain cd hint:\n%s", msg)
 	}
 }
 
@@ -2540,21 +2493,11 @@ func TestCreatedFolderPath_ManifestTemplateExistingProject(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	// Check before "runInitFromManifest" — directory exists
-	_, dirExisted := os.Stat(folderName)
+	// Mirror production logic: directory exists, so newlyCreated is false
+	_, statErr := os.Stat(folderName)
+	newlyCreated := errors.Is(statErr, fs.ErrNotExist)
 
-	// Simulate runInitFromManifest finding the existing project and chdir'ing
-	if err := os.Chdir(projectDir); err != nil {
-		t.Fatalf("Chdir: %v", err)
-	}
-
-	createdFolder := ""
-	if dirExisted != nil {
-		createdFolder = filepath.Join(originalCwd, folderName)
-	}
-
-	// No message should be printed since the directory already existed
-	if createdFolder != "" {
-		t.Errorf("createdFolder should be empty for existing project, got %q", createdFolder)
+	if newlyCreated {
+		t.Error("newlyCreated should be false for existing project directory")
 	}
 }

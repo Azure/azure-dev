@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"maps"
 	"net/http"
@@ -812,7 +813,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						folderName := folderNameFromTitle(selectedTemplate.Title)
 						// Check whether the target directory already exists so we
 						// only report "created" when a new directory was made.
-						_, dirExisted := os.Stat(folderName)
+						_, statErr := os.Stat(folderName)
+						newlyCreated := errors.Is(statErr, fs.ErrNotExist)
 						initArgs := []string{"init", "-t", selectedTemplate.Source, folderName}
 						if flags.env != "" {
 							initArgs = append(initArgs, "--environment", flags.env)
@@ -863,7 +865,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 								folderName, err,
 							)
 						}
-						if dirExisted != nil {
+						if newlyCreated {
 							createdFolder = filepath.Join(originalCwd, folderName)
 							createdFromTitle = selectedTemplate.Title
 						}
@@ -897,7 +899,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						folderName := folderNameFromTitle(selectedTemplate.Title)
 						// Check whether the target directory already exists so we
 						// only report "created" when a new directory was made.
-						_, dirExisted := os.Stat(folderName)
+						_, statErr := os.Stat(folderName)
+						newlyCreated := errors.Is(statErr, fs.ErrNotExist)
 						flags.manifestPointer = selectedTemplate.Source
 						if err := runInitFromManifest(
 							ctx, flags, azdClient, httpClient, folderName,
@@ -907,7 +910,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 							}
 							return err
 						}
-						if dirExisted != nil {
+						if newlyCreated {
 							createdFolder = filepath.Join(originalCwd, folderName)
 							createdFromTitle = selectedTemplate.Title
 						}
@@ -931,20 +934,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			}
 
 			if createdFolder != "" {
-				// Print relative to where the user invoked the command.
-				// Use ToSlash so the path is consistently forward-slash on all platforms.
-				displayPath := createdFolder
-				if relPath, relErr := filepath.Rel(originalCwd, createdFolder); relErr == nil {
-					displayPath = filepath.ToSlash(relPath)
-				}
-
-				msg := fmt.Sprintf("\nYour project has been created in %s", displayPath)
-				if createdFromTitle != "" && filepath.Base(createdFolder) != createdFromTitle {
-					msg += fmt.Sprintf(" (from template %q)", createdFromTitle)
-				}
-				msg += fmt.Sprintf("\n  cd %s\n", displayPath)
-
-				fmt.Print(msg)
+				fmt.Print(formatCreatedFolderMessage(originalCwd, createdFolder, createdFromTitle))
 			}
 
 			return nil
@@ -3204,4 +3194,22 @@ func validateCodeDeployInput(noPrompt bool, deployMode, runtime, entryPoint, dep
 		}
 	}
 	return nil
+}
+
+// formatCreatedFolderMessage builds the user-facing message shown after a new
+// project folder is created. It computes a cross-platform relative display path
+// and optionally notes the original template title when the folder name differs.
+func formatCreatedFolderMessage(originalCwd, createdFolder, createdFromTitle string) string {
+	displayPath := createdFolder
+	if relPath, err := filepath.Rel(originalCwd, createdFolder); err == nil {
+		displayPath = filepath.ToSlash(relPath)
+	}
+
+	msg := fmt.Sprintf("\nYour project has been created in %s", displayPath)
+	if createdFromTitle != "" && filepath.Base(createdFolder) != createdFromTitle {
+		msg += fmt.Sprintf(" (from template %q)", createdFromTitle)
+	}
+	msg += fmt.Sprintf("\n  cd %s\n", displayPath)
+
+	return msg
 }

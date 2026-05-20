@@ -1,0 +1,55 @@
+parameters:
+  - name: CleanDocker
+    type: boolean
+    default: false
+  - name: CleanGoCache
+    type: boolean
+    default: false
+  - name: CleanNuGet
+    type: boolean
+    default: false
+  - name: CleanDotNet
+    type: boolean
+    default: false
+  - name: Condition
+    type: string
+    default: succeeded()
+
+steps:
+  - bash: df -h /
+    displayName: Disk usage (before cleanup)
+    condition: and(${{ parameters.Condition }}, eq(variables['Agent.OS'], 'Linux'))
+    continueOnError: true
+
+  - ${{ if eq(parameters.CleanDocker, true) }}:
+    - bash: docker system prune -af --volumes 2>/dev/null || true
+      displayName: Cleanup Docker
+      condition: and(${{ parameters.Condition }}, eq(variables['Agent.OS'], 'Linux'))
+      continueOnError: true
+
+  - ${{ if eq(parameters.CleanGoCache, true) }}:
+    - bash: |
+        go clean -cache 2>/dev/null || true
+        go clean -testcache 2>/dev/null || true
+      displayName: Cleanup Go cache
+      condition: and(${{ parameters.Condition }}, eq(variables['Agent.OS'], 'Linux'))
+      continueOnError: true
+
+  - ${{ if eq(parameters.CleanNuGet, true) }}:
+    - bash: dotnet nuget locals all --clear 2>/dev/null || true
+      displayName: Cleanup NuGet cache
+      condition: and(${{ parameters.Condition }}, eq(variables['Agent.OS'], 'Linux'))
+      continueOnError: true
+
+  - ${{ if eq(parameters.CleanDotNet, true) }}:
+    - bash: |
+        rm -rf /tmp/NuGetScratch 2>/dev/null || true
+        rm -rf /tmp/.dotnet 2>/dev/null || true
+      displayName: Cleanup .NET temp artifacts
+      condition: and(${{ parameters.Condition }}, eq(variables['Agent.OS'], 'Linux'))
+      continueOnError: true
+
+  - bash: df -h /
+    displayName: Disk usage (after cleanup)
+    condition: and(${{ parameters.Condition }}, eq(variables['Agent.OS'], 'Linux'))
+    continueOnError: true

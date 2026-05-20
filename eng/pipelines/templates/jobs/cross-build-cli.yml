@@ -97,6 +97,11 @@ jobs:
         parameters:
           Architecture: arm64
           Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+
+      - template: /eng/pipelines/templates/steps/cleanup-disk-space.yml
+        parameters:
+          CleanDocker: true
+          CleanGoCache: true
     
     templateContext: 
       outputs: 

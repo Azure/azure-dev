@@ -2259,7 +2259,7 @@ func (a *InitAction) populateContainerSettings(
 	if manifestResources != nil {
 		for i, t := range project.ResourceTiers {
 			if t.Cpu == manifestResources.Cpu && t.Memory == manifestResources.Memory {
-				defaultIndex = int32(i)
+				defaultIndex = int32(i) //nolint:gosec // resource tier list length is fixed and small
 				break
 			}
 		}

@@ -129,7 +129,7 @@ func (a *InitAction) selectFromList(
 			Label: val,
 		}
 		if val == defaultStr {
-			defaultIndex = int32(i)
+			defaultIndex = int32(i) //nolint:gosec // option list length is always small
 		}
 	}
 	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{

@@ -94,7 +94,10 @@ func (c *Client) doDataPlaneWithVersion(ctx context.Context, method, path, apiVe
 	}
 
 	if c.debugBody {
-		fmt.Fprintf(os.Stderr, "[DEBUG] %s %s\n", method, reqURL.String())
+		// Strip the query string before logging — query params can carry
+		// SAS tokens (sv=, sig=, se=, skoid=, etc.) or signed continuation
+		// tokens that must never reach stderr, even under --debug.
+		fmt.Fprintf(os.Stderr, "[DEBUG] %s %s\n", method, redactURLForDebug(reqURL.String()))
 	}
 
 	var bodyBytes []byte
@@ -231,6 +234,22 @@ func parseRetryAfter(h string) time.Duration {
 	return 0
 }
 
+// redactURLForDebug returns a URL with its query string and fragment removed,
+// suitable for logging under --debug. Query parameters can carry SAS tokens
+// (sv=, sig=, se=, skoid=, ...) or signed continuation tokens; keeping the
+// scheme/host/path preserves debuggability without leaking credentials. The
+// presence of a query string is preserved as a "?<redacted>" marker so the
+// reader can tell the request had additional parameters.
+func redactURLForDebug(raw string) string {
+	if raw == "" {
+		return raw
+	}
+	if i := strings.IndexAny(raw, "?#"); i >= 0 {
+		return raw[:i] + "?<redacted>"
+	}
+	return raw
+}
+
 // doDataPlane executes an authenticated HTTP request against the data plane.
 func (c *Client) doDataPlane(ctx context.Context, method, path string, body any, queryParams ...string) (*http.Response, error) {
 	return c.doDataPlaneWithVersion(ctx, method, path, c.apiVersion, body, queryParams...)
@@ -258,7 +277,8 @@ func (c *Client) getAbsoluteDataPlane(ctx context.Context, rawURL string) (*http
 	}
 
 	if c.debugBody {
-		fmt.Fprintf(os.Stderr, "[DEBUG] GET %s\n", parsed.String())
+		// See note in doDataPlaneWithVersion: never log query strings.
+		fmt.Fprintf(os.Stderr, "[DEBUG] GET %s\n", redactURLForDebug(parsed.String()))
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)

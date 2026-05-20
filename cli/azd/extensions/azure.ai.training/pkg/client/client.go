@@ -107,7 +107,14 @@ func (c *Client) doDataPlaneWithVersion(ctx context.Context, method, path, apiVe
 			return nil, fmt.Errorf("failed to marshal request body: %w", err)
 		}
 		if c.debugBody {
-			fmt.Fprintf(os.Stderr, "[DEBUG] Request body: %s\n", string(data))
+			// Never print request bodies for credential-issuing endpoints —
+			// inputs and responses on these paths may carry SAS-bearing URLs
+			// or other sensitive material.
+			if strings.Contains(path, "/credentials") {
+				fmt.Fprintf(os.Stderr, "[DEBUG] Request body: <redacted: credentials endpoint>\n")
+			} else {
+				fmt.Fprintf(os.Stderr, "[DEBUG] Request body: %s\n", string(data))
+			}
 		}
 		bodyBytes = data
 	}

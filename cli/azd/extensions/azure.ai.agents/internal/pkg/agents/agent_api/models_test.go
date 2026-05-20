@@ -997,6 +997,101 @@ func TestAgentEndpoint_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestAgentEndpoint_AuthorizationSchemes_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	original := AgentEndpoint{
+		Protocols: []AgentProtocol{AgentProtocolResponses},
+		AuthorizationSchemes: []AgentEndpointAuthorizationScheme{
+			{
+				Type: AgentEndpointAuthorizationSchemeTypeEntra,
+				IsolationKeySource: &IsolationKeySource{
+					Kind: IsolationKeySourceKindEntra,
+				},
+			},
+			{
+				Type: AgentEndpointAuthorizationSchemeTypeBotService,
+			},
+		},
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	s := string(data)
+	for _, field := range []string{
+		`"authorization_schemes"`,
+		`"type":"Entra"`,
+		`"type":"BotService"`,
+		`"isolation_key_source"`,
+		`"kind":"Entra"`,
+	} {
+		if !strings.Contains(s, field) {
+			t.Errorf("expected JSON to contain %s, got: %s", field, s)
+		}
+	}
+
+	// Ensure omitempty drops IsolationKeySource when nil (second scheme has no isolation key).
+	// The substring count for "isolation_key_source" should be exactly 1.
+	if c := strings.Count(s, `"isolation_key_source"`); c != 1 {
+		t.Errorf("expected exactly one isolation_key_source in JSON, got %d: %s", c, s)
+	}
+
+	var got AgentEndpoint
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if len(got.AuthorizationSchemes) != 2 {
+		t.Fatalf("AuthorizationSchemes length = %d, want 2", len(got.AuthorizationSchemes))
+	}
+	if got.AuthorizationSchemes[0].Type != AgentEndpointAuthorizationSchemeTypeEntra {
+		t.Errorf(
+			"AuthorizationSchemes[0].Type = %q, want %q",
+			got.AuthorizationSchemes[0].Type,
+			AgentEndpointAuthorizationSchemeTypeEntra,
+		)
+	}
+	if got.AuthorizationSchemes[0].IsolationKeySource == nil {
+		t.Fatal("AuthorizationSchemes[0].IsolationKeySource is nil")
+	}
+	if got.AuthorizationSchemes[0].IsolationKeySource.Kind != IsolationKeySourceKindEntra {
+		t.Errorf(
+			"AuthorizationSchemes[0].IsolationKeySource.Kind = %q, want %q",
+			got.AuthorizationSchemes[0].IsolationKeySource.Kind,
+			IsolationKeySourceKindEntra,
+		)
+	}
+	if got.AuthorizationSchemes[1].Type != AgentEndpointAuthorizationSchemeTypeBotService {
+		t.Errorf(
+			"AuthorizationSchemes[1].Type = %q, want %q",
+			got.AuthorizationSchemes[1].Type,
+			AgentEndpointAuthorizationSchemeTypeBotService,
+		)
+	}
+	if got.AuthorizationSchemes[1].IsolationKeySource != nil {
+		t.Errorf(
+			"AuthorizationSchemes[1].IsolationKeySource = %v, want nil",
+			got.AuthorizationSchemes[1].IsolationKeySource,
+		)
+	}
+}
+
+func TestAgentEndpoint_OmitEmpty(t *testing.T) {
+	t.Parallel()
+
+	// Empty AgentEndpoint should marshal to {} (both Protocols and AuthorizationSchemes are omitempty).
+	data, err := json.Marshal(AgentEndpoint{})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if string(data) != "{}" {
+		t.Errorf("expected empty AgentEndpoint to marshal to {}, got: %s", string(data))
+	}
+}
+
 func TestAgentCard_RoundTrip(t *testing.T) {
 	t.Parallel()
 

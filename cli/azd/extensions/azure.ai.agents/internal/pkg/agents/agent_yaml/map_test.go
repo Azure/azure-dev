@@ -1571,3 +1571,35 @@ func TestCreateHostedAgentAPIRequest_EmptyIsolationKeyKindRejected(t *testing.T)
 		t.Errorf("error = %q, want it to mention 'empty kind'", err.Error())
 	}
 }
+
+func TestCreateHostedAgentAPIRequest_IsolationKeySourceOnlyAllowedForEntra(t *testing.T) {
+	t.Parallel()
+
+	hostedAgent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "bad-agent",
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "responses", Version: "1.0.0"},
+		},
+		AgentEndpoint: &AgentEndpoint{
+			Protocols: []string{"responses"},
+			AuthorizationSchemes: []AgentEndpointAuthorizationScheme{
+				{
+					Type:               "BotService",
+					IsolationKeySource: &IsolationKeySource{Kind: "Entra"},
+				},
+			},
+		},
+	}
+
+	buildConfig := &AgentBuildConfig{ImageURL: "myregistry.azurecr.io/agent:latest"}
+	_, err := CreateHostedAgentAPIRequest(hostedAgent, buildConfig)
+	if err == nil {
+		t.Fatal("expected error for isolation_key_source on non-Entra scheme")
+	}
+	if !strings.Contains(err.Error(), "only allowed when type is") {
+		t.Errorf("error = %q, want it to mention 'only allowed when type is'", err.Error())
+	}
+}

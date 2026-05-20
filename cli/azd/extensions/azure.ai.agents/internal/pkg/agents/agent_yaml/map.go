@@ -495,6 +495,14 @@ func createAgentAPIRequest(
 				Type: agent_api.AgentEndpointAuthorizationSchemeType(trimmedType),
 			}
 			if scheme.IsolationKeySource != nil {
+				if apiScheme.Type != agent_api.AgentEndpointAuthorizationSchemeTypeEntra {
+					return nil, fmt.Errorf(
+						"agentEndpoint authorization_schemes isolation_key_source is only "+
+							"allowed when type is %q (got %q)",
+						agent_api.AgentEndpointAuthorizationSchemeTypeEntra,
+						trimmedType,
+					)
+				}
 				trimmedKind := strings.TrimSpace(scheme.IsolationKeySource.Kind)
 				if trimmedKind == "" {
 					return nil, fmt.Errorf(

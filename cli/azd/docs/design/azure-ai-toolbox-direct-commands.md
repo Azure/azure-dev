@@ -1,55 +1,61 @@
 <!-- cspell:ignore foundry toolbox toolboxes toolsets exterrors retarget touchpoints -->
 
-# Design Spec: `azd ai agent toolbox` Direct Commands
+# Design Spec: `azd ai toolbox` Direct Commands
 
 ## 1. Summary
 
-This spec covers the toolbox CRUD surface for the agents extension:
+This spec covers the toolbox CRUD surface, shipped as a standalone `azure.ai.toolboxes` extension:
 
-- `azd ai agent toolbox create | update | delete | show | list` — manage versioned toolboxes against a Foundry project.
-- `azd ai agent toolbox connection add | remove | list` — manage the connection-backed tools attached to a toolbox (MCP servers, Azure AI Search; tool shape inferred from the connection's ARM category — see § 5.6).
+- `azd ai toolbox create | update | delete | show | list` — manage versioned toolboxes against a Foundry project.
+- `azd ai toolbox version list <toolbox>` — list every published version of a toolbox and mark the default.
+- `azd ai toolbox connection add | remove | list` — manage the connection-backed tools attached to a toolbox (MCP servers, Azure AI Search; tool shape inferred from the connection's ARM category — see § 5.6).
 
 A Foundry **toolbox** is a versioned, named collection of connection-backed tools that an agent references at run time. Each version carries a `tools[]` array of MCP tools (for `RemoteTool` connections) and Azure AI Search tools (for `CognitiveSearch` connections), each pointing at an existing project connection.
+
+`create` and `connection add` accept their inputs through a JSON or YAML file via `--from-file`. There is no client-side "pending toolbox" state: a toolbox exists on the service from the moment `create` succeeds (publishing its initial version in the same call), and every subsequent mutation publishes a new version.
 
 ## 2. Scope and Non-Goals
 
 In scope:
 
-- The eight verbs listed in § 1.
+- The nine verbs listed in § 1.
 - Cross-cutting flags (`--output table|json`, `--no-prompt`, `--debug`, `--project-endpoint`) on every new command.
-- Extending the existing `FoundryToolboxClient` (`cli/azd/extensions/azure.ai.agents/internal/pkg/azure/foundry_toolsets_client.go`) with the additional methods the CLI surface needs but the agent runtime does not (§ 5). The client's existing methods (`CreateToolboxVersion`, `GetToolbox`, `DeleteToolbox`) and its pipeline are reused as-is.
+- The Foundry toolbox/projects data-plane clients, vendored under the new extension at `internal/pkg/azure/foundry_toolsets_client.go` and `internal/foundry/connections/client.go` (the duplication contract from the agents extension is documented in those files).
 
 Out of scope:
 
-- A new top-level extension. Toolbox commands live inside the existing `azure.ai.agents` extension.
-- Authoring built-in tools (`code_interpreter`, `web_search`, `file_search`) into toolboxes. Built-ins are wired on the agent, not via toolboxes (issue #8143). The CLI carries through any built-in entries already present on a fetched version (§ 5.6) but provides no verb to add or remove them.
+- A subcommand of `azd ai agent`. Toolbox commands ship as a sibling extension (`azure.ai.toolboxes`) with its own command tree under `azd ai toolbox …`.
+- Authoring built-in tools (`code_interpreter`, `web_search`, `file_search`) into toolboxes. Built-ins are wired on the agent, not via toolboxes (issue #8143). The CLI carries through any built-in entries already present on a fetched version (§ 5.6) but provides no verb to add or remove them. The file shape in § 5.1 / § 5.6 intentionally has no `tools[]` escape hatch.
+- Adding a connection to a non-default version (tracked separately in issue #8244; the documented workaround is to retarget the version as default first, then run `connection add`).
 - Config-driven orchestration / `azd up` for toolboxes.
 - Bicep / ARM template authoring for toolboxes.
 - Cross-project toolbox copy / clone.
 
 ## 3. Extension Placement
 
-The `toolbox` subtree is added under the existing `azure.ai.agents` extension. No new module and no change to `registry.json`. The agents extension registers its root as `agent`, so toolbox commands surface as `azd ai agent toolbox …`.
+The toolbox surface ships as a new top-level extension `azure.ai.toolboxes` (sibling to `azure.ai.agents`). Toolbox commands surface as `azd ai toolbox …`.
+
+The `azure.ai.toolboxes` extension carries its own copies of the Foundry data-plane primitives it needs (Foundry credential factory, project-endpoint resolver/validator, single-connection lookup client). These are duplicated — not depended on — from `azure.ai.agents` so the two extensions ship and version independently. The duplication is documented in each affected file and is intended to be the seed for a future shared module.
 
 ### 3.1 Modular Layout
 
-All `internal/...` paths in §§ 3, 5, 8, 9, and 11 are inside `cli/azd/extensions/azure.ai.agents/`.
+All `internal/...` paths in §§ 3, 5, 8, 9, and 11 are inside `cli/azd/extensions/azure.ai.toolboxes/`.
 
-1. All toolbox command files live under `internal/cmd/toolbox*.go`. No toolbox logic is added to existing command files.
-2. All toolbox data-plane access goes through the existing `FoundryToolboxClient` in `internal/pkg/azure/foundry_toolsets_client.go`. The new CLI verbs append the missing methods (`ListToolboxes`, `GetToolboxVersion`, `ListToolboxVersions`, `DeleteToolboxVersion`, `SetDefaultVersion`, plus the local-state helper `RegisterPending`) to this same client. The pipeline (auth scope, `Foundry-Features` header) is reused as-is.
-3. Imports are one-way: `cmd/toolbox*.go` → `internal/pkg/azure` (`FoundryToolboxClient`) → `internal/exterrors`. Shared helpers carry a `// SHARED: <reason>` comment.
-4. Toolbox commands do not call into other `internal/cmd/*.go` files (besides shared helpers). This avoids creating reverse dependencies that would block a future lift-out.
+1. All toolbox command files live under `internal/cmd/toolbox*.go`. The command parent is registered by the extension's own `internal/cmd/root.go`.
+2. All toolbox data-plane access goes through `FoundryToolboxClient` in `internal/pkg/azure/foundry_toolsets_client.go`. It exposes `CreateToolboxVersion`, `GetToolbox`, `DeleteToolbox`, `ListToolboxes`, `GetToolboxVersion`, `ListToolboxVersions`, `DeleteToolboxVersion`, `SetDefaultVersion`. Pipeline auth scope is `https://ai.azure.com/.default` and every request carries the `Foundry-Features: Toolboxes=V1Preview` header.
+3. Connection resolution (`GET /connections/{name}`) goes through `internal/foundry/connections/client.go`. The toolbox commands only need a single-connection lookup; they do not enumerate connections.
+4. Endpoint resolution and validation (the 5-level cascade) lives under `internal/foundry/projectctx/`. It reads `extensions.ai-agents.context.endpoint` from global config (the key owned by `azure.ai.agents`) read-only; it never writes that key.
+5. Imports are one-way: `internal/cmd/` → `internal/foundry/`, `internal/pkg/azure`, `internal/exterrors`.
 
-### 3.2 Shared Code Touchpoints
+### 3.2 Boundary with `azure.ai.agents`
 
-| Shared piece | Location | Reason |
+| Touchpoint | Direction | Notes |
 | --- | --- | --- |
-| Endpoint resolver (`resolveAgentEndpoint`) | `cli/azd/extensions/azure.ai.agents/internal/cmd/agent_context.go` | Used by every agent command and by toolbox commands; resolves via the 5-level cascade defined by the project-context spec. |
-| Confirmation prompt (`confirmDestructive` helper, wrapping `azdClient.Prompt().Confirm`) | `cli/azd/extensions/azure.ai.agents/internal/cmd/` | Used by `toolbox delete` and per-version delete. |
-| `azdext.ExtensionContext` (`OutputFormat`, `NoPrompt`, `Prompt()`) | azd host gRPC | Standard extension surface. |
-| Credential factory (`azidentity.NewAzureDeveloperCLICredential`) | stdlib wrapper | Same credential used by agent run. |
-| Foundry data-plane client (`FoundryToolboxClient`) | `cli/azd/extensions/azure.ai.agents/internal/pkg/azure/foundry_toolsets_client.go` | Implements the data-plane methods listed in § 3.1 with pipeline scope `https://ai.azure.com/.default` and header `Foundry-Features: Toolboxes=V1Preview`. |
-| `exterrors` package | `internal/exterrors/` | Shared error model and gRPC classification. |
+| `extensions.ai-agents.context.endpoint` in `~/.azd/config.json` | toolboxes reads, never writes | Owned by `azure.ai.agents`; toolboxes is one consumer of the cascade defined by the project-context spec. |
+| `FoundryToolboxClient` | toolboxes has its own copy | The agents extension's copy is reverted to its original (pre-toolbox-CRUD) surface; the additional methods only live in the toolboxes extension. |
+| Connection lookup client | toolboxes has its own minimal copy | Only the `Get(name)` primitive is needed; full enumeration stays in agents. |
+| Credential factory | toolboxes has its own copy | Same `azidentity.NewAzureDeveloperCLICredential` wrapper used by agents. |
+| `exterrors` | each extension owns its own copy | `azure.ai.toolboxes/internal/exterrors/` carries only the codes/ops the toolbox surface uses; unrelated codes are not duplicated. |
 
 ## 4. API Surfaces
 
@@ -79,31 +85,59 @@ Data plane: scope `https://ai.azure.com/.default`, header `Foundry-Features: Too
 
 ## 5. Command Behavior
 
-### 5.1 `azd ai agent toolbox create <name>`
+### 5.1 `azd ai toolbox create <name> --from-file <path>`
 
 Flags:
 
 | Flag | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `<name>` | positional, required | — | Toolbox name. |
-| `--description` | string | "" | Optional description recorded with the toolbox. |
+| `--from-file` | string, **required** | — | Path to a JSON/YAML payload describing the initial version. Marked `MarkFlagRequired` on the cobra command. |
 | `--project-endpoint` | string | resolver | See § 6. No `-p` short form (taken by `agent run` / `agent invoke`). |
 | `--output` | enum | `table` | `table` \| `json`. |
 | `--no-prompt` | bool | `false` | Cross-cutting. |
 | `--debug` | bool | `false` | Cross-cutting. |
 
-Behavior:
+#### File shape
+
+The same `connections[]` shape is reused by `connection add --from-file` (§ 5.6) so the two file payloads are intentionally similar. Only `create` accepts `description`.
+
+```jsonc
+{
+  "description": "research toolbox",
+  "connections": [
+    { "name": "my-mcp" },
+    { "name": "my-search", "index": "products" }
+  ]
+}
+```
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `description` | optional | Stored on the initial version. |
+| `connections[]` | required, non-empty | List of existing project connections to attach. |
+| `connections[].name` | required | Project connection short name. Looked up via `connections.Client.Get(name)`. |
+| `connections[].index` | required for `CognitiveSearch` connections, rejected otherwise | The search index name inside the AI Search service the connection points at. |
+
+There is no `metadata` field and no raw `tools[]` escape hatch (§ 2 Non-Goals). Both the YAML form (`.yaml`/`.yml`) and JSON (`.json`) are accepted; the file extension selects the parser.
+
+#### Behavior
 
 1. Resolve the project endpoint (§ 6).
-2. `GET /toolboxes/{name}` to determine if the toolbox already exists.
-3. `create` does not issue a POST. The service requires a non-empty `tools[]` on the first POST (§ 4.2), so `create` records a local **pending-toolbox** entry under `extensions.ai-agents.pending-toolboxes.<endpointHash>.items.<name>` (see § 7) containing `{description, createdAt}`. The first subsequent `connection add` reads this record, POSTs v1 with the first tool entry, and clears the record (§ 5.6).
-4. Output:
-   - New name: `Registered toolbox <name> (pending tools). Run 'azd ai agent toolbox connection add <name> <connection>' to publish v1.`
-   - Existing name: `Toolbox <name> already exists. Run 'connection add' to publish a new version, or 'update --default-version <n>' to retarget.`
+2. `GET /toolboxes/{name}` — if the toolbox already exists, fail with `CodeInvalidToolboxName` and the suggestion *"run `azd ai toolbox update` or `connection add/remove` to change it."* (Behavior is **non-mutating** on the "already exists" branch — no POST is attempted.)
+3. Parse `--from-file`. Reject:
+   - Empty/missing `connections[]` → `CodeInvalidToolboxName` *"toolbox create requires at least one connection."*
+   - Empty `connections[].name` → `CodeInvalidParameter`.
+   - Two entries that resolve to the same `project_connection_id` → `CodeDuplicateConnection` (pre-flight; service is not called).
+4. Resolve each connection via `connections.Client.Get(name)` and convert to a tool entry via the shape table in § 5.6.
+5. `POST /toolboxes/{name}/versions` with `{description, tools: [<resolved entries>]}`. The new version is automatically `default_version` (service guarantee for first POST), so no follow-up PATCH is issued.
+6. Output:
+   - Table: `Created toolbox <name> at version <v>.` followed by `Endpoint: <mcp-url>`.
+   - JSON: `{ "toolbox": "<name>", "version": "<v>", "endpoint": "<mcp-url>" }`.
 
-`--force` is not exposed on `create`.
+`--force` is not exposed on `create`. There is no "pending toolbox" state: creation is a single atomic publication of v1.
 
-### 5.2 `azd ai agent toolbox update <name>`
+### 5.2 `azd ai toolbox update <name>`
 
 Flags:
 
@@ -116,10 +150,10 @@ Flags:
 Behavior:
 
 1. `PATCH /toolboxes/{name}` with `{"default_version":"<n>"}`.
-2. Description and metadata edits are not supported (service only accepts `default_version` on PATCH). To change description or tools, publish a new version via `connection add` / `connection remove`.
+2. Description and tool edits are not supported (service only accepts `default_version` on PATCH). To change the tool list, publish a new version via `connection add` / `connection remove`. Description is set at create time only.
 3. Missing `--default-version` → `exterrors.Validation(CodeMissingUpdateField, "No fields to update. Specify --default-version.")`.
 
-### 5.3 `azd ai agent toolbox delete <name>`
+### 5.3 `azd ai toolbox delete <name>`
 
 Flags:
 
@@ -134,16 +168,16 @@ Behavior:
 
 | Scenario | Action |
 | --- | --- |
-| `--version` absent, toolbox exists on the service | `DELETE /toolboxes/{name}`. 404 is swallowed. Also clears any local pending-toolbox record for the same name and endpoint. |
-| `--version` absent, **pending-only** (no GET match on the service) | Non-network: clears the local pending-toolbox record and reports `Cleared pending toolbox <name>.` |
-| `--version <n>`, `<n>` is not `default_version` | `DELETE /toolboxes/{name}/versions/{n}`. |
-| `--version <n>`, `<n>` is `default_version`, other versions exist | `exterrors.Validation(CodeDefaultVersionDelete, ...)` with suggestion *"Retarget the default with `azd ai agent toolbox update --default-version <other>` first."* The CLI determines this by listing versions before issuing DELETE; the server would otherwise return 400 with the same message. |
-| `--version <n>`, `<n>` is `default_version`, **only remaining version** | The service deletes the version and cascades to remove the parent toolbox. To avoid surprise destruction, the CLI **rejects** this case unless `--force` is set, returning `exterrors.Validation(CodeOnlyVersionDelete, "Version <n> is the only remaining version; deleting it removes the toolbox.")` with suggestion *"Run `azd ai agent toolbox delete <name>` to delete the toolbox, or pass `--force` to confirm."* With `--force`, the CLI proceeds and reports `Deleted toolbox <name> (last version removed).` |
-| `--no-prompt` without `--force` | `exterrors.Validation(CodeMissingForceFlag, ...)`. |
+| `--version` absent, toolbox exists on the service | `DELETE /toolboxes/{name}`. 404 is swallowed. |
+| `--version` absent, toolbox 404 | `exterrors.Dependency(CodeToolboxNotFound, ...)` with suggestion *"Run `azd ai toolbox list` to see available toolboxes."* |
+| `--version <n>`, `<n>` is not `default_version` | `DELETE /toolboxes/{name}/versions/{n}`. No prompt. |
+| `--version <n>`, `<n>` is `default_version`, other versions exist | `exterrors.Validation(CodeDefaultVersionDelete, ...)` with suggestion *"Retarget the default with `azd ai toolbox update --default-version <other>` first."* The CLI determines this by listing versions before issuing DELETE; the server would otherwise return 400 with the same message. |
+| `--version <n>`, `<n>` is `default_version`, **only remaining version** | The service deletes the version and cascades to remove the parent toolbox. To avoid surprise destruction, the CLI **rejects** this case unless `--force` is set, returning `exterrors.Validation(CodeOnlyVersionDelete, "Version <n> is the only remaining version; deleting it removes the toolbox.")` with suggestion *"Run `azd ai toolbox delete <name>` to delete the toolbox, or pass `--force` to confirm."* With `--force`, the CLI proceeds and reports `Deleted toolbox <name> (last version removed).` |
+| `--no-prompt` without `--force`, parent-toolbox delete | `exterrors.Validation(CodeMissingForceFlag, ...)`. Per-version delete does not prompt and is not gated by `--force`/`--no-prompt`. |
 
-Confirmation is shown by default; `--force` skips it.
+Confirmation is shown by default on parent-toolbox delete; `--force` skips it. Per-version delete (`--version <n>`) does not prompt — it's a constrained mutation that already has its own pre-flight guards above.
 
-### 5.4 `azd ai agent toolbox show <name>`
+### 5.4 `azd ai toolbox show <name>`
 
 Flags:
 
@@ -155,46 +189,35 @@ Flags:
 
 Behavior:
 
-1. `GET /toolboxes/{name}` for `default_version`.
-2. If the GET returns 404, check the pending-toolbox config store (§ 7) for an entry matching the resolved endpoint and `<name>`:
-   - **Hit** → emit a *pending-toolbox view* (§ 5.4.1). `--version` is rejected with a `CodeMissingUpdateField`-style validation error (no versions exist yet).
-   - **Miss** → propagate the 404 as `ErrToolboxNotFound`.
-3. Otherwise (toolbox exists on the service): `GET /toolboxes/{name}/versions/{version}` (or `default_version` when `--version` is absent) for the body.
-4. Compute the toolbox's MCP consumption URL as `{projectEndpoint}/toolboxes/{name}/versions/{shown_version}/mcp?api-version=v1`, where `shown_version` is the `--version` arg or the server's `default_version`.
-5. Output:
+1. `GET /toolboxes/{name}` for `default_version`. 404 → `exterrors.Dependency(CodeToolboxNotFound, ...)` with suggestion *"Run `azd ai toolbox list` to see available toolboxes."*
+2. `GET /toolboxes/{name}/versions/{version}` (or `default_version` when `--version` is absent) for the body. 404 → `exterrors.Dependency(CodeToolboxNotFound, "version \"<v>\" of toolbox \"<name>\" not found", ...)`.
+3. Compute the toolbox's MCP consumption URL as `{projectEndpoint}/toolboxes/{name}/versions/{shown_version}/mcp?api-version=v1`, where `shown_version` is the `--version` arg or the server's `default_version`.
+4. Output:
    - Table: `Name`, `Default version`, `Shown version`, `Description`, `Endpoint`, `Tools` (count + list with `(builtin)` / `(connection:<id>)` annotation).
    - JSON: `{ "toolbox": <ToolboxObject>, "version": <ToolboxVersionObject>, "endpoint": "<mcp-url>" }`.
 
-#### 5.4.1 Pending-toolbox view
-
-When `show` resolves to a pending record (no service-side toolbox yet), output reflects the local state only:
-
-- Table: `Name`, `State: pending`, `Description`, `Created` (RFC3339 timestamp from the pending record), and a follow-up line: *"Run `azd ai agent toolbox connection add <name> <connection>` to publish v1."*
-- JSON: `{ "toolbox": { "name": "...", "pending": true, "description": "...", "createdAt": "..." }, "version": null, "endpoint": null }`. Consumers see `pending: true` as the trigger to use the follow-up command rather than treat the response as a live toolbox.
-
-#### 5.4.2 Runtime consumption
+#### 5.4.1 Runtime consumption
 
 The `endpoint` field is the contract for wiring a toolbox into agent code via the active azd environment:
 
 ```bash
-azd env set TOOLBOX_RESEARCH_ENDPOINT $(azd ai agent toolbox show research --output json | jq -r '.endpoint')
+azd env set TOOLBOX_RESEARCH_ENDPOINT $(azd ai toolbox show research --output json | jq -r '.endpoint')
 ```
 
 `azd env set` persists the value into the active azd env so subsequent `azd` runs (including `azd up`) pick it up automatically.
 
-### 5.5 `azd ai agent toolbox list`
+### 5.5 `azd ai toolbox list`
 
 Flags: `--project-endpoint`, `--output`, `--no-prompt`, `--debug`.
 
 Behavior:
 
 1. `GET /toolboxes` (paginated; CLI walks all pages).
-2. Merges in pending-toolbox records for the resolved endpoint and marks them `(pending)`.
-3. Output:
-   - Table columns: `NAME  DEFAULT-VERSION  STATE  TOOLS  CREATED` (`STATE` is empty for live toolboxes, `pending` for local records; `TOOLS` is a count, blank for pending; `CREATED` is the pending record's `createdAt`, blank for live toolboxes — surfaces stale records the user forgot to follow up on).
-   - JSON: `{ "toolboxes": [ ..., { "name": "...", "pending": true, "description": "..." } ] }`.
+2. Output:
+   - Table columns: `NAME  DEFAULT-VERSION`. The table intentionally omits a per-toolbox tool count to avoid an extra `GET /versions` per row; use `toolbox show` to see tools for a single toolbox.
+   - JSON: `{ "toolboxes": [ { "id": "...", "name": "...", "default_version": "..." }, ... ] }`.
 
-### 5.6 `azd ai agent toolbox connection add | remove | list`
+### 5.6 `azd ai toolbox connection add | remove | list`
 
 The `connection` subgroup is implemented on top of the toolbox versions API (§ 4.1): every tool mutation is a full-`tools[]` POST to `/toolboxes/{name}/versions`, followed by a `PATCH default_version` to make the new version active.
 
@@ -205,9 +228,9 @@ The `connection` subgroup is implemented on top of the toolbox versions API (§ 
 | Connection ARM category | Tool `type` | Tool-entry fields built from the connection | Notes |
 | --- | --- | --- | --- |
 | `RemoteTool` (MCP servers) | `mcp` | `name`, `server_label`, `server_url`, `project_connection_id` (full ARM ID) | `server_label` is the connection's short name; `server_url` is the connection's `target`. |
-| `CognitiveSearch` | `azure_ai_search` | `name`, `azure_ai_search.indexes[].project_connection_id` (full ARM ID) | Requires `--index <name>` (index name is not on the connection). |
+| `CognitiveSearch` | `azure_ai_search` | `name`, `azure_ai_search.indexes[].project_connection_id` (full ARM ID), `azure_ai_search.indexes[].index_name` | Requires `--index <name>` in single-mode, or `connections[].index` in file mode. The index name is not on the connection — it must be supplied per call. |
 
-Other connection categories (`ApiKey`, `CustomKeys`, `AppInsights`, etc.) → `CodeUnsupportedConnectionCategory` with the message *"Connection `<name>` has category `<category>`; v1 supports `RemoteTool` and `CognitiveSearch` only."*
+Other connection categories (`ApiKey`, `CustomKeys`, `AppInsights`, etc.) → `CodeUnsupportedConnectionCategory` with the message *"Connection `<name>` has category `<category>`; this command supports `RemoteTool` and `CognitiveSearch` only."* Service-team-confirmed additions (e.g. `RemoteA2A`, `GroundingWithCustomSearch`, `BrowserTool`) are tracked separately and will extend the table above when the toolbox `tools[].type` shape is finalized.
 
 Built-in tools (`code_interpreter`, `web_search`, `file_search`) are not authored by `connection add` or any other CLI verb (§ 2 Non-Goals). If a toolbox already contains built-in entries (added by another client), the CLI carries them through unchanged during the fetch-merge-POST flow.
 
@@ -215,22 +238,47 @@ Built-in tools (`code_interpreter`, `web_search`, `file_search`) are not authore
 
 | Flag | Type | Default | Used by | Notes |
 | --- | --- | --- | --- | --- |
-| `--index` | string | "" | `add` | Required when the resolved connection's category is `CognitiveSearch`. Rejected for other categories. |
+| `--index` | string | "" | `add` (single mode) | Required when the resolved connection's category is `CognitiveSearch`. Rejected for other categories. Mutually exclusive with `--from-file`. |
+| `--from-file` | string | "" | `add` (file mode) | Path to a JSON/YAML payload describing the connections to attach. All entries publish exactly one new toolbox version. Mutually exclusive with the `<connection>` positional. |
+| `--force` | bool | `false` | `remove` | Skip the confirmation prompt that `remove` shows by default. `--no-prompt` without `--force` → `CodeMissingForceFlag`. |
 | `--project-endpoint` / `--output` / `--no-prompt` / `--debug` | — | — | all | Cross-cutting. |
+
+#### File shape (`add --from-file`)
+
+```jsonc
+{
+  "connections": [
+    { "name": "my-mcp" },
+    { "name": "my-search", "index": "products" }
+  ]
+}
+```
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `connections[]` | required, non-empty | List of project connections to attach. The existing version's `description` and `metadata` are carried forward unchanged. |
+| `connections[].name` | required | Project connection short name. |
+| `connections[].index` | required for `CognitiveSearch`, rejected otherwise | Search index name. |
+
+There is no raw `tools[]` field. Use `toolbox update` to change the default version; published versions inherit `description` from the previous default version when not explicitly set.
 
 #### Shared write flow (`add` and `remove`)
 
-1. Resolve the project connection's ARM resource ID, `category`, `target`, and any other shape-specific fields via `GET https://management.azure.com{armPath}/connections/{name}?api-version=2025-04-01-preview`.
+1. Resolve each named project connection's ARM resource ID, `category`, `target`, and any other shape-specific fields via `GET https://management.azure.com{armPath}/connections/{name}?api-version=2025-04-01-preview`. Both modes use the same `connections.Client.Get(name)` primitive.
 2. Fetch the current default version body via `GET /toolboxes/{name}/versions/{default_version}`.
-3. Mutate the in-memory `tools[]` array (append for `add`; filter by `project_connection_id` for `remove`).
+3. Mutate the in-memory `tools[]` array:
+   - `add` (single): append one resolved entry.
+   - `add` (file): resolve every `connections[]` entry, append them all in order. Duplicate `project_connection_id` either against the current default version or within the batch → `CodeDuplicateConnection` (pre-flight; service is not called).
+   - `remove`: filter out by `project_connection_id == <armId>`.
 4. `POST /toolboxes/{name}/versions` with the complete mutated `tools[]`, carrying forward `description` and `metadata` from the previous version. Built-in tools are carried through unchanged.
-5. `PATCH /toolboxes/{name}` with `{"default_version":"<newVersion>"}`.
+5. `PATCH /toolboxes/{name}` with `{"default_version":"<newVersion>"}`. On PATCH failure after a successful POST, the error reports the just-created version number so the user can manually retarget with `toolbox update --default-version <v>`.
 
-| Verb | Positional args | Behavior |
+| Verb | Positional args | Notes |
 | --- | --- | --- |
-| `add` | `<toolbox> <connection-name>` | If the toolbox has a pending record (§ 5.1): POST v1 with `tools=[<resolved entry>]` and the recorded description, then clear the record. (First version is automatically `default_version`, so no PATCH.) Otherwise run the shared write flow, appending the category-appropriate tool entry. Duplicate `project_connection_id` in the current default version → `CodeDuplicateConnection`. |
-| `remove` | `<toolbox> <connection-name>` | Run the shared write flow, filtering out by `project_connection_id == <armId>`. Connection not present in the toolbox's current default version → `CodeConnectionNotInToolbox` with suggestion `Run 'connection list'`. If the resulting `tools[]` would have zero entries (counting any built-ins carried through) → `CodeLastToolRemoval` with the suggestion *"Delete the toolbox with `azd ai agent toolbox delete <name>` instead."* — service is not called. |
-| `list` | `<toolbox>` | `GET /toolboxes/{name}/versions/{default_version}` and emit entries with `project_connection_id` set (including the nested form for `azure_ai_search`). Table columns: `NAME  CONNECTION  TYPE` (`CONNECTION` shows the connection's short name parsed from the ARM ID's trailing segment). |
+| `add` (single) | `<toolbox> <connection-name>` | One new default version per invocation. |
+| `add` (file) | `<toolbox>` (positional `<connection-name>` not allowed when `--from-file` is set) | All entries publish **exactly one** new default version per invocation — adding N connections via the file produces v(N+1), not v(N+N). |
+| `remove` | `<toolbox> <connection-name>` | Runs the shared write flow, filtering out by `project_connection_id == <armId>`. Connection not present in the toolbox's current default version → `CodeConnectionNotInToolbox` with suggestion `Run 'connection list'`. If the resulting `tools[]` would have zero entries (counting any built-ins carried through) → `CodeLastToolRemoval` with the suggestion *"Delete the toolbox with `azd ai toolbox delete <name>` instead."* — service is not called. Prompts for confirmation by default; `--force` skips it; `--no-prompt` without `--force` → `CodeMissingForceFlag`. |
+| `list` | `<toolbox>` | `GET /toolboxes/{name}/versions/{default_version}` and emit entries with `project_connection_id` set (including the nested form for `azure_ai_search`). Table columns: `NAME  CONNECTION  TYPE` (`CONNECTION` shows the connection's short name parsed from the ARM ID's trailing segment). JSON entries include `connection_id` (snake_case). |
 
 If the ARM lookup in step 1 returns 404, the CLI returns `CodeConnectionNotFound` with the suggestion *"Run `azd ai connection list` to see available connections."*
 
@@ -240,93 +288,98 @@ The fetch-mutate-POST-PATCH flow has a gap between GET and POST. Two concurrent 
 
 The service does not expose primitives to prevent this race — no `If-Match` on POST, no compare-and-swap, no atomic add-tool endpoint. Any client-side mitigation (post-write re-GET, retry) is itself subject to a TOCTOU window between the verification and the PATCH, so v1 does not attempt one. The race is documented as a known limitation; a follow-up will revisit if the service grows conditional-write support (e.g. `If-Match` on POST against the parent's `default_version`). Users running concurrent `connection add` / `connection remove` against the same toolbox today should serialize their calls.
 
+### 5.7 `azd ai toolbox version list <toolbox>`
+
+Flags: `<toolbox>` positional, `--output`, `--project-endpoint`, `--no-prompt`, `--debug`.
+
+Behavior:
+
+1. `GET /toolboxes/{name}` for the current `default_version`. 404 → `CodeToolboxNotFound`.
+2. `GET /toolboxes/{name}/versions` (paginated). Sort descending: numeric versions compare numerically; non-numeric versions sort lexically descending.
+3. Output:
+   - Table columns: `VERSION  DEFAULT  CREATED  TOOLS  DESCRIPTION`. `DEFAULT` shows `*` on the row whose `version` matches the toolbox's `default_version`; `CREATED` is the version's `created_at` rendered RFC3339; `TOOLS` is the entry count.
+   - JSON: `{ "toolbox": "<name>", "default_version": "<v>", "versions": [ { "id", "name", "version", "description", "created_at", "tools_count", "is_default" }, ... ] }`.
+
+This verb exists so users can discover non-default versions before retargeting with `update --default-version` or deleting via `delete --version`. It is read-only and idempotent.
+
 ## 6. Endpoint Resolution
 
 The toolbox commands consume the 5-level cascade defined by the project-context spec ([PR #8152](https://github.com/Azure/azure-dev/pull/8152) — `azure-ai-project-commands.md` § 4):
 
 1. `--project-endpoint` flag on the invoked command.
 2. Active azd env value (`AZURE_AI_PROJECT_ENDPOINT`) when inside an azd project.
-3. Global config: `extensions.ai-agents.context.endpoint`.
+3. Global config: `extensions.ai-agents.context.endpoint` (owned by `azure.ai.agents`; `azure.ai.toolboxes` reads it but never writes it — see § 3.2).
 4. Environment variable `FOUNDRY_PROJECT_ENDPOINT`.
 5. Structured `exterrors.Dependency(CodeMissingProjectEndpoint, …)` with an actionable suggestion.
 
-`--project-endpoint` is registered as a persistent flag on the toolbox parent so every subcommand inherits it.
+`--project-endpoint` is registered as a persistent flag on the toolbox root so every subcommand inherits it.
 
-## 7. Config Store
+## 7. Client-Side State
 
-Per-endpoint pending-toolbox records live under:
+The toolbox commands hold **no** client-side state. Everything the user observes comes from a single source of truth: the Foundry project. `create` publishes the initial version in the same call that creates the toolbox; `list` / `show` / `version list` read live state; `delete` removes live state. The endpoint cascade (§ 6) reads existing azd-managed config but writes nothing.
 
-```jsonc
-{
-  "extensions": {
-    "ai-agents": {
-      "pending-toolboxes": {
-        "a1b2c3d4e5f6a7b8": {
-          "endpoint": "https://my-project.services.ai.azure.com/api/projects/my-project",
-          "items": {
-            "<toolbox-name>": {
-              "description": "Research-time toolset",
-              "createdAt": "2026-05-12T10:23:00Z"
-            }
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-- Outer key is `hex(sha256(endpoint))[:16]` — a short, opaque cache-key fragment. The hash is for key brevity, not secrecy.
-- The full endpoint is stored as a plain-text sibling of `items` so the bucket is self-describing.
-- Records are cleared by `connection add` (after the first successful POST) or by `delete <name>` (works on a pending-only toolbox without a service call — see § 5.3).
-- `toolbox list` merges in records for the resolved endpoint only and surfaces each record's `createdAt` (§ 5.5) so the user can see and prune stale entries. v1 does **not** auto-expire records; cleanup is user-driven via `delete <name>`. A TTL-based or `--cleanup-stale` sweep can be added in a follow-up if accumulation is observed.
+An earlier draft of this spec proposed a per-endpoint "pending toolbox" record under `~/.azd/config.json` (keyed by `hex(sha256(endpoint))[:16]`) to bridge the gap between `create` and the first `connection add`. That model was removed in favour of file-based `create --from-file` (§ 5.1), which lets the first POST ship a non-empty `tools[]` directly. The implementation has no `pending_toolboxes.go` file and the `extensions.ai-toolboxes.pending-toolboxes` namespace is unused.
 
 ## 8. Test Plan
 
-Unit tests (table-driven, no network; inject a `toolboxClient` interface that is a subset of `*azure.FoundryToolboxClient`):
+Unit tests (table-driven, no network; inject a `toolboxClient` interface that is a subset of `*azure.FoundryToolboxClient`, and a `connectionResolver` interface that stands in for the project connections client):
 
-- **`create`** — new name records a pending entry and prints the registered one-liner; existing name does not POST and prints the existing one-liner; description round-trips through the pending record.
+- **`create`** —
+  - File-input happy path: POSTs v1 with the resolved tool entries and the file's `description`. No PATCH (first version is automatically default).
+  - File missing or unreadable → `CodeInvalidParameter` with the path and OS error.
+  - Empty `connections[]` → `CodeInvalidToolboxName` *"toolbox create requires at least one connection."*
+  - Duplicate `connections[].name` (resolving to the same `project_connection_id`) → `CodeDuplicateConnection`, pre-flight.
+  - Toolbox already exists (`GET /toolboxes/{name}` returns 200) → `CodeInvalidToolboxName` *"toolbox \"<name>\" already exists"* and **no POST** is attempted.
+  - YAML and JSON both parse; unknown file extension → `CodeInvalidParameter`.
 - **`update`** — `--default-version` happy path; missing flag → `CodeMissingUpdateField`.
 - **`show`** —
-  - Live toolbox `default_version` path; explicit `--version`; table and JSON snapshots; `endpoint` field in JSON output is exactly `{projectEndpoint}/toolboxes/<name>/versions/<shown_version>/mcp?api-version=v1` and changes when `--version` is supplied.
-  - 404 on live GET with a matching pending record → emits the pending-toolbox view (§ 5.4.1); JSON output has `pending: true`, `version: null`, `endpoint: null`.
-  - 404 on live GET with no pending record → `ErrToolboxNotFound`.
-  - `--version` on a pending-only toolbox → validation error (no versions exist yet).
-- **`list`** — pagination across two pages; pending records merged and tagged `(pending)`; pending records for a different endpoint are not surfaced.
+  - Live toolbox `default_version` path; explicit `--version`; table and JSON snapshots.
+  - `endpoint` field in JSON output is exactly `{projectEndpoint}/toolboxes/<name>/versions/<shown_version>/mcp?api-version=v1` and changes when `--version` is supplied.
+  - 404 on `GET /toolboxes/{name}` → `CodeToolboxNotFound`.
+  - 404 on the specific-version GET → `CodeToolboxNotFound` with the version in the message.
+- **`list`** — pagination across two pages; sorted by name; table omits tool count.
+- **`version list`** —
+  - Happy path: returns versions sorted descending; marks the default with `*` in the table; JSON `is_default` is true on exactly one row.
+  - 404 on `GET /toolboxes/{name}` → `CodeToolboxNotFound`.
+  - Service error on `ListToolboxVersions` propagates as `ServiceFromAzure(OpListToolboxVersions)`.
 - **`delete`** —
-  - Toolbox path: 204 happy path; 404 swallowed.
-  - Per-version path (non-default): 204 happy path.
+  - Toolbox path: 204 happy path; 404 → `CodeToolboxNotFound`.
+  - Per-version path (non-default): 204 happy path, no prompt.
   - Per-version path (default, other versions exist): CLI rejects pre-flight with `CodeDefaultVersionDelete` and the retarget suggestion.
   - Per-version path (default, only remaining version): CLI rejects without `--force` (`CodeOnlyVersionDelete`); with `--force` proceeds and reports the cascaded toolbox removal.
-  - `--no-prompt` without `--force` → `CodeMissingForceFlag`.
-- **`connection add`** —
+  - `--no-prompt` without `--force` on a parent-toolbox delete → `CodeMissingForceFlag`; per-version delete is not gated by `--force`/`--no-prompt`.
+- **`connection add`** (single mode) —
   - `RemoteTool` category: ARM lookup resolves `target` → `server_url`; tool entry is `{type:"mcp", name, server_label, server_url, project_connection_id}`.
   - `CognitiveSearch` category: requires `--index <name>`; tool entry is `{type:"azure_ai_search", name, azure_ai_search:{indexes:[{project_connection_id, index_name}]}}`. Missing `--index` → `CodeMissingIndex`.
   - Unsupported category (`ApiKey`, `CustomKeys`, `AppInsights`, …) → `CodeUnsupportedConnectionCategory` with the category in the message; no toolbox-side calls made.
-  - `--index` on a `RemoteTool` connection → `CodeUnsupportedIndexFlag` (flag rejected for non-search categories).
-  - Pending-record promotion: POSTs v1 with the resolved tool entry and the recorded description; clears the pending record. No PATCH.
+  - `--index` on a `RemoteTool` connection → `CodeUnsupportedIndexFlag`.
   - Existing-toolbox path: fetch default version → append entry → POST new version → PATCH `default_version`.
   - Duplicate `project_connection_id` in the current default version → `CodeDuplicateConnection` before any POST.
   - Connection name not on the project (ARM 404) → `CodeConnectionNotFound` with the "Run `azd ai connection list`" suggestion; no toolbox-side calls made.
+  - `SetDefaultVersion` fails after a successful POST → `CodeSetDefaultVersionFailed` with the created version number in the message and a recovery suggestion that includes `toolbox update --default-version <v>`.
+- **`connection add`** (file mode) —
+  - All `connections[]` entries publish **exactly one** new version per invocation (single POST, single PATCH). Asserts `len(client.createVersionCalls) == 1` for an N-entry file.
+  - `<connection>` positional supplied together with `--from-file` → `CodeInvalidPositionalArg`.
+  - `--index` supplied together with `--from-file` → `CodeUnsupportedIndexFlag` (set per-connection via `connections[].index` instead).
+  - Empty `connections[]` → `CodeInvalidToolboxName`.
+  - Duplicate within the batch or against the current default version → `CodeDuplicateConnection`, pre-flight.
 - **`connection remove`** —
   - Happy path: POST new version with the entry filtered out (works for both `mcp` and nested `azure_ai_search` entries); PATCH `default_version`.
   - Missing connection → `CodeConnectionNotInToolbox`.
   - Removing a tool that would leave `tools[]` with zero entries (including any built-ins carried through) → `CodeLastToolRemoval` with the "delete the toolbox instead" suggestion; service is not called.
-- **`connection list`** — emits entries with `project_connection_id` set (top-level on `mcp`, nested under `azure_ai_search.indexes[]`); table `TYPE` column shows each entry's tool `type`; respects `--output`.
-
-E2E:
-
-- Smoke test that runs `create → connection add → list → show → connection remove → delete` against the built extension and asserts exit codes plus stdout/stderr shape.
+  - `--no-prompt` without `--force` → `CodeMissingForceFlag` before the resolver runs.
+- **`connection list`** — emits entries with `project_connection_id` set (top-level on `mcp`, nested under `azure_ai_search.indexes[]`); table `TYPE` column shows each entry's tool `type`; JSON keys use snake_case (`connection_id`); respects `--output`.
 
 Snapshots: `UPDATE_SNAPSHOTS=true go test ./cmd -run 'TestFigSpec|TestUsage'` from `cli/azd`.
 
 ## 9. Impact on Existing Commands
 
-None at the command level. The toolbox surface is purely additive:
+The toolbox surface ships as a new extension `azure.ai.toolboxes`, so the impact on existing commands is limited to entries in the extension registry:
 
-- `internal/cmd/root.go` registers the new toolbox parent alongside `session`, `files`, and `connection`. No existing command's flags, behavior, or output shape is changed.
-- `internal/exterrors/codes.go` gains new constants (§ 11); existing codes are not touched.
-- `internal/pkg/azure/foundry_toolsets_client.go` gains the additional methods (`ListToolboxes`, `GetToolboxVersion`, `ListToolboxVersions`, `DeleteToolboxVersion`, `SetDefaultVersion`, `RegisterPending`). The existing methods and the pipeline are unchanged; the existing call site in `internal/cmd/listen.go` is unaffected.
+- `cli/azd/extensions/registry.json` gains a new entry for `azure.ai.toolboxes`. No existing entry is modified.
+- `cli/azd/extensions/azure.ai.agents/` is reverted to its pre-toolbox-CRUD surface: `internal/pkg/azure/foundry_toolsets_client.go` and `internal/exterrors/codes.go` no longer carry the toolbox-only additions; the agents extension's `internal/cmd/listen.go` consumer of the original `FoundryToolboxClient` methods is unchanged.
+
+No command outside the toolboxes extension changes its flags, behavior, or output shape.
 
 ## 10. Telemetry
 
@@ -334,13 +387,14 @@ One event per command, reusing the extension's existing telemetry surface. All i
 
 | Event | Additional properties |
 | --- | --- |
-| `azd.ai.toolbox.create` | `hasDescription` (bool) |
+| `azd.ai.toolbox.create` | `hasDescription` (bool), `connectionCount` (int) |
 | `azd.ai.toolbox.update` | — |
 | `azd.ai.toolbox.delete` | `scope` (`toolbox` \| `version`), `forced` (bool) |
 | `azd.ai.toolbox.show` | `versionMode` (`default` \| `explicit`) |
-| `azd.ai.toolbox.list` | `count` (int), `pendingCount` (int) |
-| `azd.ai.toolbox.connection.add` | `promotedFromPending` (bool), `armResolveOk` (bool) |
-| `azd.ai.toolbox.connection.remove` | — |
+| `azd.ai.toolbox.list` | `count` (int) |
+| `azd.ai.toolbox.version.list` | `count` (int) |
+| `azd.ai.toolbox.connection.add` | `mode` (`single` \| `file`), `connectionCount` (int), `armResolveOk` (bool) |
+| `azd.ai.toolbox.connection.remove` | `forced` (bool) |
 | `azd.ai.toolbox.connection.list` | `count` (int) |
 
 No PII. `endpointHostHash` is sha256 of the project endpoint hostname; toolbox names are sent as-is (user-chosen labels with no credential value).
@@ -351,22 +405,29 @@ New codes added to `internal/exterrors/codes.go`. Each code maps to a single fai
 
 | Code | Used by |
 | --- | --- |
+| `CodeInvalidToolboxName` | `create` against an already-existing name; `create` / `connection add` (file) with an empty `connections[]`; positional name fails the local regex / length guard. |
+| `CodeInvalidParameter` | `--from-file` path is unreadable, parses as invalid JSON/YAML, has an unsupported extension, or a `connections[].name` is empty. |
+| `CodeInvalidPositionalArg` | `connection add` with both a `<connection>` positional and `--from-file`; or with neither. |
 | `CodeMissingUpdateField` | `update` invoked without `--default-version`. |
+| `CodeToolboxNotFound` | `GET /toolboxes/{name}` returns 404 on `show`, `delete`, `connection add` (existing-toolbox path), `connection remove`, `connection list`, `version list`. |
 | `CodeDefaultVersionDelete` | `delete --version <n>` where `<n>` is `default_version` and other versions exist. |
 | `CodeOnlyVersionDelete` | `delete --version <n>` where `<n>` is the only remaining version, invoked without `--force`. |
 | `CodeUnsupportedConnectionCategory` | `connection add` against a connection whose ARM `category` is not `RemoteTool` or `CognitiveSearch`. |
-| `CodeMissingIndex` | `connection add` against a `CognitiveSearch` connection without `--index`. |
-| `CodeUnsupportedIndexFlag` | `--index` supplied for a non-`CognitiveSearch` connection on `connection add`. |
-| `CodeDuplicateConnection` | `connection add` where the resolved `project_connection_id` is already present in the current default version. |
-| `CodeConnectionNotFound` | `connection add`'s ARM control-plane lookup returns 404 for the named connection. |
+| `CodeMissingIndex` | `connection add` against a `CognitiveSearch` connection without `--index` (single mode) or without `connections[].index` (file mode). |
+| `CodeUnsupportedIndexFlag` | `--index` supplied for a non-`CognitiveSearch` connection on `connection add`; or `--index` supplied together with `--from-file`. |
+| `CodeDuplicateConnection` | `connection add` or `create` where the resolved `project_connection_id` is already present in the current default version, or appears more than once within the input. |
+| `CodeConnectionNotFound` | `connection add` / `connection remove` / `create`'s ARM control-plane lookup returns 404 for the named connection. |
+| `CodeConnectionMissingTarget` | `connection add` against a `RemoteTool` connection whose `target` is empty (would produce a generic 400 server-side). |
 | `CodeConnectionNotInToolbox` | `connection remove` for a connection not present in the current default version. |
 | `CodeLastToolRemoval` | `connection remove` whose resulting `tools[]` would have zero entries (including any carried-through built-ins). |
-| `CodeMissingForceFlag` | `delete` with `--no-prompt` and without `--force`. |
+| `CodeMissingForceFlag` | `delete` or `connection remove` with `--no-prompt` and without `--force`. |
+| `CodeSetDefaultVersionFailed` | `connection add` / `connection remove` POSTed a new version successfully but the subsequent `PATCH default_version` failed. Error message and suggestion include the orphan version number for manual recovery via `toolbox update --default-version`. |
 
-New `Op*` constants for `exterrors.ServiceFromAzure` (added to `internal/exterrors/codes.go` alongside the existing `OpCreateToolboxVersion` and `OpGetToolbox`, which are reused):
+`Op*` constants for `exterrors.ServiceFromAzure`:
 
 ```
-OpRegisterPendingToolbox
+OpCreateToolboxVersion
+OpGetToolbox
 OpDeleteToolbox
 OpDeleteToolboxVersion
 OpSetDefaultVersion
@@ -379,27 +440,34 @@ OpResolveProjectConnection
 ## 12. Security Considerations
 
 - No credential material flows through toolbox commands. Connection credentials are owned by the connection extension and never echoed.
-- Endpoint URLs and toolbox names are persisted in plain text to `~/.azd/config.json` for pending records (§ 7). Endpoints are not credentials. File permissions are managed by azd core; no change.
+- The toolbox CLI persists no client-side state (§ 7). Endpoint URLs and toolbox names are not written to `~/.azd/config.json` by the toolboxes extension; the only config the extension reads is the shared `extensions.ai-agents.context.endpoint` slot owned by `azure.ai.agents` (read-only).
 - The data-plane client uses the existing Foundry pipeline factory, inheriting its TLS / proxy configuration.
 
 ## 13. Decisions
 
-1. **`create` does not accept `--connection <name>`.** `create` only records a local pending entry; the first network write happens on `connection add` (§ 5.1, § 5.6).
-2. **`toolbox list` reports tool count for the default version only.** Avoids one extra `GET /versions` per toolbox; matches `show`'s default behavior (§ 5.5).
-3. **`connection add` does not accept `--as <alias>`.** The tool entry's `name` is the connection's short name (§ 5.6).
+1. **`create` is file-based and immediately publishes the initial version.** An earlier draft proposed a per-endpoint "pending toolbox" config record that bridged the gap between `create` and the first `connection add`. That model was rejected because it created two ways to express the same state ("registered locally" vs "live on the service"), needed manual cleanup, and surprised users whose toolbox was visible to `azd ai toolbox list` but not to anyone else. File input lets the first POST ship a non-empty `tools[]` directly. See § 5.1, § 7.
+2. **No raw `tools[]` escape hatch in the file shape.** The file accepts only `description` (create) and `connections[]`; there is no top-level `tools[]` field. Built-ins are out of scope (§ 2 Non-Goals), so the field would only serve as a backdoor for unsupported categories — which the typed `connections` mapper should learn about explicitly when the service confirms their tool shapes. Tracking is via the unsupported-category list in § 5.6.
+3. **`connection add --from-file` publishes exactly one new version per invocation.** The earlier "N tools → N versions" behavior surfaced in review feedback as the dominant pain point. Single-mode (`add <toolbox> <connection>`) still publishes one version per call; file mode batches N entries into a single POST + PATCH. See § 5.6.
+4. **`connection add` does not target a non-default version.** Tracked separately in issue #8244. Workaround: retarget the desired version as default via `update --default-version`, then run `connection add`.
+5. **`connection add` does not accept `--as <alias>`.** The tool entry's `name` is the connection's short name (§ 5.6).
+6. **`toolbox list` does not report tool counts.** Avoids one extra `GET /versions` per toolbox (§ 5.5). Use `toolbox show` or `toolbox version list` to inspect tools/versions for a single toolbox.
+7. **`connection remove` prompts by default.** Symmetric with `toolbox delete`. `--force` skips; `--no-prompt` without `--force` rejects with `CodeMissingForceFlag`.
+8. **JSON output keys use snake_case.** Consistent within the toolbox surface (`default_version`, `connection_id`, `is_default`, `created_at`, `tools_count`).
 
 ## 14. Reference: Command Summary
 
 ```bash
-azd ai agent toolbox create  <name>            [--description <text>]                                  [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
-azd ai agent toolbox update  <name>             --default-version <n>                                  [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
-azd ai agent toolbox delete  <name>            [--version <n>] [--force]                                [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
-azd ai agent toolbox show    <name>            [--version <n>]                                          [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
-azd ai agent toolbox list                                                                                [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
+azd ai toolbox create  <name>             --from-file <path>                                       [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
+azd ai toolbox update  <name>             --default-version <n>                                    [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
+azd ai toolbox delete  <name>            [--version <n>] [--force]                                 [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
+azd ai toolbox show    <name>            [--version <n>]                                           [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
+azd ai toolbox list                                                                                [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
+azd ai toolbox version list <name>                                                                 [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
 
-azd ai agent toolbox connection add    <toolbox> <connection> [--index <name>]                          [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
-azd ai agent toolbox connection remove <toolbox> <connection>                                            [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
-azd ai agent toolbox connection list   <toolbox>                                                         [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
+azd ai toolbox connection add    <toolbox> <connection> [--index <name>]                           [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
+azd ai toolbox connection add    <toolbox>              --from-file <path>                         [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
+azd ai toolbox connection remove <toolbox> <connection> [--force]                                  [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
+azd ai toolbox connection list   <toolbox>                                                         [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
 ```
 
-Resolution cascade: `--project-endpoint` flag → azd env (`AZURE_AI_PROJECT_ENDPOINT`) → `~/.azd/config.json` (`extensions.ai-agents.context.endpoint`) → `FOUNDRY_PROJECT_ENDPOINT` → structured error.
+Resolution cascade: `--project-endpoint` flag → azd env (`AZURE_AI_PROJECT_ENDPOINT`) → `~/.azd/config.json` (`extensions.ai-agents.context.endpoint`, read-only) → `FOUNDRY_PROJECT_ENDPOINT` → structured error.

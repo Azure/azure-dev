@@ -12,6 +12,9 @@ on:
       - 'ext/devcontainer/**'
       - 'templates/**'
 
+permissions:
+  contents: read
+
 jobs:
   cspell-lint:
     runs-on: ubuntu-latest

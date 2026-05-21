@@ -335,6 +335,38 @@ func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (
 			return nil, fmt.Errorf("no model selected, exiting")
 		}
 		model = selectedModel
+	} else if !a.flags.noPrompt {
+		// Model found in catalog — let user confirm or choose a different one
+		choices := []*azdext.SelectChoice{
+			{Label: fmt.Sprintf("Use '%s' (from manifest)", model.Name), Value: "keep"},
+			{Label: "Choose a different model", Value: "change"},
+		}
+
+		defaultIdx := int32(0)
+		resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message:       fmt.Sprintf("Model '%s' is specified in the agent manifest.", model.Name),
+				Choices:       choices,
+				SelectedIndex: &defaultIdx,
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("model selection was cancelled")
+			}
+			return nil, fmt.Errorf("failed to prompt for model choice: %w", err)
+		}
+
+		if choices[*resp.Value].Value == "change" {
+			selectedModel, err := a.promptModelFromCatalog(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to select alternative model: %w", err)
+			}
+			if selectedModel == nil {
+				return nil, fmt.Errorf("no model selected, exiting")
+			}
+			model = selectedModel
+		}
 	}
 
 	currentLocation := a.azureContext.Scope.Location
@@ -553,6 +585,25 @@ func (a *modelSelector) promptForAlternativeModel(
 
 	if regionChoices[*regionResp.Value].Value == "region" {
 		promptReq.Filter = agentModelFilter([]string{a.azureContext.Scope.Location}, nil)
+	}
+
+	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)
+	if err != nil {
+		return nil, exterrors.FromPrompt(err, "failed to prompt for model selection")
+	}
+
+	return modelResp.Model, nil
+}
+
+// promptModelFromCatalog shows the model catalog list filtered to the current region,
+// allowing the user to pick any available model.
+func (a *modelSelector) promptModelFromCatalog(ctx context.Context) (*azdext.AiModel, error) {
+	promptReq := &azdext.PromptAiModelRequest{
+		AzureContext: a.azureContext,
+		Filter:       agentModelFilter([]string{a.azureContext.Scope.Location}, nil),
+		SelectOptions: &azdext.SelectOptions{
+			Message: "Select a model",
+		},
 	}
 
 	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)

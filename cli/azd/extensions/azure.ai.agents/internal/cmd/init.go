@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
@@ -47,6 +49,7 @@ type initFlags struct {
 	modelDeployment   string
 	model             string
 	manifestPointer   string
+	agentName         string
 	src               string
 	env               string
 	protocols         []string
@@ -205,6 +208,296 @@ func parseAuthStatusJSON(data []byte) (string, error) {
 	return result.Status, nil
 }
 
+func resolveInitAgentName(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	flags *initFlags,
+	defaultName string,
+) (string, error) {
+	if flags.agentName != "" {
+		return validateInitAgentName(flags.agentName)
+	}
+
+	defaultName, err := validateInitAgentName(defaultName)
+	if err != nil {
+		return "", err
+	}
+
+	if flags.noPrompt {
+		return defaultName, nil
+	}
+
+	promptResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Enter a name for your agent",
+			DefaultValue: defaultName,
+			HelpMessage: "Foundry agents are unique by name within a project. " +
+				"Reusing a name creates a new version of the existing agent.",
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", exterrors.Cancelled("agent name prompt was cancelled")
+		}
+		return "", fmt.Errorf("failed to prompt for agent name: %w", err)
+	}
+
+	agentName := strings.TrimSpace(promptResp.Value)
+	if agentName == "" {
+		agentName = defaultName
+	}
+
+	return validateInitAgentName(agentName)
+}
+
+func validateInitAgentName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if err := agent_yaml.ValidateAgentName(name); err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidAgentName,
+			fmt.Sprintf("invalid agent name %q: %s", name, err),
+			"choose a 1-63 character name that starts and ends with a letter or number "+
+				"and contains only letters, numbers, and internal hyphens",
+		)
+	}
+
+	return name, nil
+}
+
+func agentNameFromTemplate(template any) (string, error) {
+	var agentName string
+	_, err := updateAgentDefinition(template, func(def *agent_yaml.AgentDefinition) {
+		agentName = def.Name
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return agentName, nil
+}
+
+func setAgentNameOnTemplate(agentManifest *agent_yaml.AgentManifest, agentName string) error {
+	if agentManifest == nil {
+		return fmt.Errorf("agent manifest is nil")
+	}
+
+	template, err := updateAgentDefinition(agentManifest.Template, func(def *agent_yaml.AgentDefinition) {
+		def.Name = agentName
+	})
+	if err != nil {
+		return err
+	}
+
+	agentManifest.Template = template
+	return nil
+}
+
+func updateAgentDefinition(
+	template any,
+	update func(*agent_yaml.AgentDefinition),
+) (any, error) {
+	switch t := template.(type) {
+	case agent_yaml.ContainerAgent:
+		update(&t.AgentDefinition)
+		return t, nil
+	case *agent_yaml.ContainerAgent:
+		if t == nil {
+			return nil, fmt.Errorf("agent template is nil")
+		}
+		update(&t.AgentDefinition)
+		return t, nil
+	case agent_yaml.Workflow:
+		update(&t.AgentDefinition)
+		return t, nil
+	case *agent_yaml.Workflow:
+		if t == nil {
+			return nil, fmt.Errorf("agent template is nil")
+		}
+		update(&t.AgentDefinition)
+		return t, nil
+	default:
+		return nil, fmt.Errorf("unsupported agent template type %T", template)
+	}
+}
+
+func nextAgentNameSuggestion(agentName string) string {
+	const maxAgentNameLength = 63
+	const defaultAgentName = "agent"
+
+	base := strings.TrimRight(agentName, "-")
+	suffixNumber := "2"
+	if dashIndex := strings.LastIndex(base, "-"); dashIndex >= 0 && dashIndex < len(base)-1 {
+		if candidate := base[dashIndex+1:]; isDecimalString(candidate) {
+			suffixNumber = incrementDecimalString(candidate)
+			base = strings.TrimRight(base[:dashIndex], "-")
+		}
+	}
+
+	suffix := "-" + suffixNumber
+	if len(suffix) >= maxAgentNameLength {
+		suffix = "-2"
+	}
+
+	maxBaseLength := maxAgentNameLength - len(suffix)
+	if len(base) > maxBaseLength {
+		base = strings.TrimRight(base[:maxBaseLength], "-")
+	}
+	if base == "" {
+		base = defaultAgentName
+		if len(base) > maxBaseLength {
+			base = base[:maxBaseLength]
+		}
+	}
+
+	return base + suffix
+}
+
+func isDecimalString(value string) bool {
+	for _, ch := range value {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+
+	return value != ""
+}
+
+func incrementDecimalString(value string) string {
+	digits := []byte(value)
+	for i := len(digits) - 1; i >= 0; i-- {
+		if digits[i] < '9' {
+			digits[i]++
+			return string(digits)
+		}
+		digits[i] = '0'
+	}
+
+	return "1" + string(digits)
+}
+
+func resolveExistingAgentNameConflict(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environment *azdext.Environment,
+	credential azcore.TokenCredential,
+	noPrompt bool,
+	agentName string,
+) (string, error) {
+	if azdClient == nil || environment == nil || environment.Name == "" || credential == nil {
+		return agentName, nil
+	}
+
+	endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: environment.Name,
+		Key:     "FOUNDRY_PROJECT_ENDPOINT",
+	})
+	if err != nil {
+		log.Printf(
+			"existing agent name check skipped: failed to read FOUNDRY_PROJECT_ENDPOINT for environment %q: %v",
+			environment.Name,
+			err,
+		)
+		return agentName, nil
+	}
+	if endpointResp == nil || endpointResp.Value == "" {
+		log.Printf(
+			"existing agent name check skipped: FOUNDRY_PROJECT_ENDPOINT is empty for environment %q",
+			environment.Name,
+		)
+		return agentName, nil
+	}
+
+	agentClient := agent_api.NewAgentClient(endpointResp.Value, credential)
+	return resolveExistingAgentNameConflictWithChecker(ctx, azdClient, agentClient, noPrompt, agentName)
+}
+
+func resolveExistingAgentNameConflictWithChecker(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentChecker agents.AgentChecker,
+	noPrompt bool,
+	agentName string,
+) (string, error) {
+	for {
+		exists, err := agents.AgentExists(ctx, agentChecker, agentName, DefaultAgentAPIVersion)
+		if err != nil {
+			return "", fmt.Errorf("checking whether agent %q exists: %w", agentName, err)
+		}
+		if !exists {
+			return agentName, nil
+		}
+
+		fmt.Fprintf(os.Stderr, "%s", agents.ExistingAgentWarning(agentName))
+		if noPrompt {
+			fmt.Fprintf(os.Stderr, "%s", output.WithGrayFormat(
+				"To create a separate agent, re-run init with --agent-name <unique-name>.\n",
+			))
+			return agentName, nil
+		}
+
+		confirmResp, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+			Options: &azdext.ConfirmOptions{
+				Message:      "Continue with this existing agent name?",
+				DefaultValue: new(false),
+				HelpMessage:  "Choose no to enter a different Foundry agent name.",
+			},
+		})
+		if err != nil {
+			return "", exterrors.FromPrompt(err, "failed to confirm existing agent name")
+		}
+		if confirmResp != nil && confirmResp.Value != nil && *confirmResp.Value {
+			return agentName, nil
+		}
+
+		agentName, err = promptForReplacementAgentName(ctx, azdClient, agentName)
+		if err != nil {
+			return "", err
+		}
+	}
+}
+
+func promptForReplacementAgentName(ctx context.Context, azdClient *azdext.AzdClient, agentName string) (string, error) {
+	for {
+		promptResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:      "Enter a different name for your agent",
+				DefaultValue: nextAgentNameSuggestion(agentName),
+				HelpMessage:  "Foundry agents are unique by name within a project.",
+			},
+		})
+		if err != nil {
+			return "", exterrors.FromPrompt(err, "failed to prompt for a different agent name")
+		}
+
+		nextName := strings.TrimSpace(promptResp.Value)
+		if nextName == "" {
+			nextName = nextAgentNameSuggestion(agentName)
+		}
+
+		validName, err := validateInitAgentName(nextName)
+		if err != nil {
+			writeValidationRetryError(err)
+			continue
+		}
+
+		return validName, nil
+	}
+}
+
+func writeValidationRetryError(err error) {
+	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok && localErr.Suggestion != "" {
+		fmt.Fprintf(
+			os.Stderr,
+			"%s\n%s\n",
+			output.WithErrorFormat(localErr.Message),
+			output.WithGrayFormat(localErr.Suggestion),
+		)
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "%s\n", output.WithErrorFormat(err.Error()))
+}
+
 // runInitFromManifest sets up Azure context, credentials, console, and runs the
 // InitAction for a given manifest pointer. This is the shared code path used when
 // initializing from a manifest URL/path (the -m flag, agent template, or azd template
@@ -286,7 +579,26 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init [<path>] [-m <manifest pointer>] [--src <source directory>]",
 		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Initialize a new AI agent project.
+
+The agent name written to agent.yaml is the Foundry agent identity. Foundry
+agents are unique by name within a project, so deploying with an existing name
+creates a new version of that existing agent instead of a separate agent.
+
+Use --agent-name to choose a unique Foundry agent name when initializing from
+a reusable sample or manifest.
+
+A default .agentignore file is generated to control which files are excluded
+from code-deploy ZIP packaging (uses .gitignore syntax).`,
+		Example: `  # Initialize from an agent manifest
+  azd ai agent init -m ./agent.manifest.yaml
+
+  # Initialize from a manifest with a unique Foundry agent name
+  azd ai agent init -m ./agent.manifest.yaml --agent-name my-unique-agent
+
+  # Initialize from local agent code
+  azd ai agent init --src ./src/my-agent --agent-name my-unique-agent`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.noPrompt = extCtx.NoPrompt
 			if flags.env == "" {
@@ -515,6 +827,9 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
 		"Path or URI to an agent manifest to add to your azd project")
 
+	cmd.Flags().StringVar(&flags.agentName, "agent-name", "",
+		"Foundry agent name to write to agent.yaml. Reusing a name creates a new version of the existing agent.")
+
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
@@ -637,6 +952,25 @@ func (a *InitAction) Run(ctx context.Context) error {
 		// so agent.yaml is self-documenting about what env vars will be set.
 		if err := injectToolboxEnvVarsIntoDefinition(agentManifest); err != nil {
 			return fmt.Errorf("injecting toolbox env vars: %w", err)
+		}
+
+		agentName, err := agentNameFromTemplate(agentManifest.Template)
+		if err != nil {
+			return err
+		}
+		agentName, err = resolveExistingAgentNameConflict(
+			ctx,
+			a.azdClient,
+			a.environment,
+			a.credential,
+			a.flags.noPrompt,
+			agentName,
+		)
+		if err != nil {
+			return err
+		}
+		if err := setAgentNameOnTemplate(agentManifest, agentName); err != nil {
+			return err
 		}
 
 		// Write the final agent.yaml to disk (after deployment names have been injected)
@@ -836,14 +1170,14 @@ func (a *InitAction) configureModelChoice(
 			}
 
 			if selectedProject == nil {
-				return nil, fmt.Errorf("foundry project not found: %s", a.flags.projectResourceId)
+				return nil, fmt.Errorf("specified foundry project was not found or is not eligible for the current configuration: %s", a.flags.projectResourceId)
 			}
 
 			// Signal Bicep to skip project/role/connection provisioning for this existing project
 			if err := setEnvValue(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
 			); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 			}
 		} else {
 			// Prompt user to pick an existing Foundry project or create new resources
@@ -861,6 +1195,9 @@ func (a *InitAction) configureModelChoice(
 				},
 			})
 			if err != nil {
+				if exterrors.IsCancellation(err) {
+					return nil, exterrors.Cancelled("project selection was cancelled")
+				}
 				return nil, exterrors.FromPrompt(err, "failed to prompt for Foundry project configuration choice")
 			}
 
@@ -892,7 +1229,7 @@ func (a *InitAction) configureModelChoice(
 					if err := setEnvValue(
 						ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 					); err != nil {
-						return nil, err
+						return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 					}
 					if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
 						return nil, err
@@ -902,7 +1239,7 @@ func (a *InitAction) configureModelChoice(
 					if err := setEnvValue(
 						ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
 					); err != nil {
-						return nil, err
+						return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 					}
 				}
 			default:
@@ -919,7 +1256,7 @@ func (a *InitAction) configureModelChoice(
 				if err := setEnvValue(
 					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 				); err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 				}
 			}
 		}
@@ -927,37 +1264,9 @@ func (a *InitAction) configureModelChoice(
 		return agentManifest, nil
 	}
 
-	modelConfigChoices := []*azdext.SelectChoice{
-		{Label: "Deploy new model(s) from the catalog", Value: "new"},
-		{Label: "Use existing model deployment(s) from a Foundry project", Value: "existing"},
-	}
-
-	var modelConfigChoice string
-
+	// Step 1: Foundry project selection
 	if a.flags.projectResourceId != "" {
 		// --project-id provided: auto-select "existing" path
-		modelConfigChoice = "existing"
-	} else {
-		defaultIndex := int32(0)
-		modelConfigResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message:       "How would you like to configure model(s) for your agent?",
-				Choices:       modelConfigChoices,
-				SelectedIndex: &defaultIndex,
-			},
-		})
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("model configuration choice was cancelled")
-			}
-			return nil, fmt.Errorf("failed to prompt for model configuration choice: %w", err)
-		}
-		modelConfigChoice = modelConfigChoices[*modelConfigResp.Value].Value
-	}
-
-	switch modelConfigChoice {
-	case "existing":
-		// Ensure subscription for project listing
 		newCred, err := ensureSubscription(
 			ctx, a.azdClient, a.azureContext, a.environment.Name,
 			"Select an Azure subscription to look up available models and provision your Foundry project resources.",
@@ -967,7 +1276,6 @@ func (a *InitAction) configureModelChoice(
 		}
 		a.credential = newCred
 
-		// Select a Foundry project (sets AZURE_AI_PROJECT_ID, ACR, AppInsights env vars)
 		selectedProject, err := selectFoundryProject(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
@@ -978,44 +1286,92 @@ func (a *InitAction) configureModelChoice(
 		}
 
 		if selectedProject != nil {
-			// Signal Bicep to skip project/role/connection provisioning for this existing project
 			if err := setEnvValue(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
 			); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 			}
 		} else {
-			// No existing project selected (no projects found or user chose "Create new") → fall back to "deploy new" path
-			fmt.Println(output.WithGrayFormat(
-				"No existing Foundry project was selected. Falling back to deploying a new model.",
-			))
-			// Clear any stale existing-project flag from a previous init
+			return nil, fmt.Errorf("specified foundry project was not found or is not eligible for the current configuration: %s", a.flags.projectResourceId)
+		}
+	} else {
+		// Prompt user to pick an existing Foundry project or create new resources
+		projectChoices := []*azdext.SelectChoice{
+			{Label: "Use an existing Foundry project", Value: "existing"},
+			{Label: "Create a new Foundry project", Value: "new"},
+		}
+
+		defaultIdx := int32(0)
+		projectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message:       "Select a Foundry project to host your agent and any models or tools it uses.",
+				Choices:       projectChoices,
+				SelectedIndex: &defaultIdx,
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("project selection was cancelled")
+			}
+			return nil, exterrors.FromPrompt(err, "failed to prompt for Foundry project configuration choice")
+		}
+
+		switch projectChoices[*projectResp.Value].Value {
+		case "existing":
+			newCred, err := ensureSubscription(
+				ctx, a.azdClient, a.azureContext, a.environment.Name,
+				"Select an Azure subscription to find existing Foundry projects.",
+			)
+			if err != nil {
+				return nil, err
+			}
+			a.credential = newCred
+
+			selectedProject, err := selectFoundryProject(
+				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
+				a.azureContext.Scope.SubscriptionId, "",
+				a.isCodeDeploy,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			if selectedProject == nil {
+				// No existing project selected → fall back to "create new" path
+				fmt.Println(output.WithGrayFormat(
+					"No existing Foundry project was selected. Falling back to creating new resources.",
+				))
+				if err := setEnvValue(
+					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
+				); err != nil {
+					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+				}
+				if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
+					return nil, err
+				}
+			} else {
+				if err := setEnvValue(
+					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
+				); err != nil {
+					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+				}
+			}
+		default:
+			newCred, err := ensureSubscriptionAndLocation(
+				ctx, a.azdClient, a.azureContext, a.environment.Name,
+				"Select an Azure subscription to look up available models and provision your Foundry project resources.",
+			)
+			if err != nil {
+				return nil, err
+			}
+			a.credential = newCred
+
+			// Creating new resources — clear any stale existing-project flag
 			if err := setEnvValue(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 			); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 			}
-			if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
-				return nil, err
-			}
-		}
-
-	case "new":
-		// Ensure subscription + location for model catalog
-		newCred, err := ensureSubscriptionAndLocation(
-			ctx, a.azdClient, a.azureContext, a.environment.Name,
-			"Select an Azure subscription to look up available models and provision your Foundry project resources.",
-		)
-		if err != nil {
-			return nil, err
-		}
-		a.credential = newCred
-
-		// Deploying new resources — clear any stale existing-project flag
-		if err := setEnvValue(
-			ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
-		); err != nil {
-			return nil, err
 		}
 	}
 
@@ -1025,6 +1381,11 @@ func (a *InitAction) configureModelChoice(
 		return nil, fmt.Errorf("failed to process model resources: %w", err)
 	}
 	a.deploymentDetails = deploymentDetails
+
+	// Set AZD_AGENT_SKIP_ACR so Bicep knows whether to create a container registry.
+	if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, a.isCodeDeploy); err != nil {
+		return nil, err
+	}
 
 	return agentManifest, nil
 }
@@ -1383,9 +1744,24 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", err
 	}
 
+	templateAgentName, err := agentNameFromTemplate(agentManifest.Template)
+	if err != nil {
+		return nil, "", err
+	}
+	selectedAgentName, err := resolveInitAgentName(ctx, a.azdClient, a.flags, templateAgentName)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := setAgentNameOnTemplate(agentManifest, selectedAgentName); err != nil {
+		return nil, "", err
+	}
+
 	fmt.Println(output.WithGrayFormat("✓ Manifest validated successfully"))
 
 	agentId := agentManifest.Name
+	if agentId == "" {
+		agentId = selectedAgentName
+	}
 	serviceName := strings.ReplaceAll(agentId, " ", "")
 
 	// Use targetDir if provided, otherwise default to "src/{agentId}"
@@ -1489,6 +1865,15 @@ func writeAgentDefinitionFile(targetDir string, agentManifest *agent_yaml.AgentM
 	}
 
 	fmt.Println(output.WithGrayFormat("Processed agent.yaml at %s", filePath))
+
+	// Generate .agentignore if it doesn't already exist
+	agentIgnorePath := filepath.Join(targetDir, ".agentignore")
+	if _, err := os.Stat(agentIgnorePath); os.IsNotExist(err) {
+		if err := os.WriteFile(agentIgnorePath, []byte(project.DefaultAgentIgnoreContent()), osutil.PermissionFile); err != nil {
+			return fmt.Errorf("writing .agentignore: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -1607,11 +1992,8 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		}
 	}
 
-	// Detect startup command from the project source directory
-	if a.isCodeDeploy {
-		// For code deploy, auto-derive startupCommand from entry point in agent.yaml
-		agentConfig.StartupCommand = deriveStartupCommand(a.projectConfig.Path, targetDir)
-	} else {
+	// Detect startup command (container deploy only; code deploy does not use startupCommand)
+	if !a.isCodeDeploy {
 		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
 		if err != nil {
 			return err
@@ -1662,7 +2044,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: a.environment.Name,
 		Key:     "AZURE_AI_PROJECT_ID",
-	}); projectID != nil && projectID.Value != "" {
+	}); projectID != nil && projectID.Value != "" && len(a.deploymentDetails) == 0 {
 		fmt.Printf("To deploy your agent, use %s.\n",
 			color.HiBlueString("azd deploy %s", a.serviceNameOverride))
 	} else {

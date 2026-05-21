@@ -343,7 +343,7 @@ func configureFoundryProjectEnv(
 	}
 
 	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", project.AccountName, project.ProjectName)
-	if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
+	if err := setEnvValue(ctx, azdClient, envName, "FOUNDRY_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
 		return err
 	}
 

@@ -4,9 +4,14 @@
 package cmd
 
 import (
+	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/tool"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
 
 func TestToolCommandGating(t *testing.T) {
@@ -42,4 +47,70 @@ func TestToolCommandGating(t *testing.T) {
 		}
 		require.True(t, found, "expected 'tool' subcommand to be present when alpha feature is enabled")
 	})
+}
+
+func TestRunToolOperationUnsuccessfulResultReturnsError(t *testing.T) {
+	toolDef := &tool.ToolDefinition{
+		Id:   "az-cli",
+		Name: "Azure CLI",
+	}
+	console := mockinput.NewMockConsole()
+
+	results, err := runToolOperation(
+		t.Context(),
+		[]*tool.ToolDefinition{toolDef},
+		func(ctx context.Context, ids []string) ([]*tool.InstallResult, error) {
+			return []*tool.InstallResult{
+				{
+					Tool:    toolDef,
+					Success: false,
+				},
+			}, nil
+		},
+		"Installing",
+		"install",
+		console,
+	)
+
+	require.Error(t, err)
+	require.Len(t, results, 1)
+	assert.False(t, results[0].Success)
+	require.NotEmpty(t, console.Output())
+	assert.Contains(t, console.Output()[0], "Some tools could not be")
+}
+
+func TestRunToolOperationSuccessfulResultReturnsNoError(t *testing.T) {
+	toolDef := &tool.ToolDefinition{
+		Id:   "az-cli",
+		Name: "Azure CLI",
+	}
+	console := mockinput.NewMockConsole()
+
+	results, err := runToolOperation(
+		t.Context(),
+		[]*tool.ToolDefinition{toolDef},
+		func(ctx context.Context, ids []string) ([]*tool.InstallResult, error) {
+			assert.Equal(t, []string{"az-cli"}, ids)
+
+			return []*tool.InstallResult{
+				{
+					Tool:             toolDef,
+					Success:          true,
+					InstalledVersion: "2.73.0",
+				},
+			}, nil
+		},
+		"Installing",
+		"install",
+		console,
+	)
+
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.True(t, results[0].Success)
+	assert.Equal(t, "az-cli", results[0].Id)
+	assert.Equal(t, "Azure CLI", results[0].Name)
+	assert.Equal(t, "install", results[0].Action)
+	assert.Equal(t, "2.73.0", results[0].InstalledVersion)
+	assert.Empty(t, console.Output())
 }

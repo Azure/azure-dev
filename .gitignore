@@ -90,3 +90,6 @@ review-*.diff
 
 .playwright-mcp/
 .worktrees/
+
+# Demo video output
+demo-video/

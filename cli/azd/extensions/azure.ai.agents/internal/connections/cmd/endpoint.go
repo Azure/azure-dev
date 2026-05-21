@@ -21,7 +21,7 @@ import (
 // resolveProjectEndpoint implements the 5-level resolution cascade from the spec.
 //
 //  1. -p / --project-endpoint flag (passed as flagEndpoint)
-//  2. Active azd env → AZURE_AI_PROJECT_ENDPOINT
+//  2. Active azd env → FOUNDRY_PROJECT_ENDPOINT
 //  3. Global config → extensions.ai-agents.context.endpoint
 //  4. FOUNDRY_PROJECT_ENDPOINT environment variable
 //  5. Structured error
@@ -36,11 +36,11 @@ func resolveProjectEndpoint(ctx context.Context, flagEndpoint string) (string, e
 	if err == nil {
 		defer azdClient.Close()
 
-		// 2. Active azd env → AZURE_AI_PROJECT_ENDPOINT
+		// 2. Active azd env → FOUNDRY_PROJECT_ENDPOINT
 		if envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
 			if valResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 				EnvName: envResp.Environment.Name,
-				Key:     "AZURE_AI_PROJECT_ENDPOINT",
+				Key:     "FOUNDRY_PROJECT_ENDPOINT",
 			}); err == nil && valResp.Value != "" {
 				return valResp.Value, nil
 			}

@@ -676,6 +676,11 @@ func loadAzureContext(
 // ensureSubscription prompts for a subscription if not already set in the AzureContext.
 // If a subscription is already set, looks up the tenant for it. Returns the (possibly refreshed)
 // credential scoped to the resolved tenant. Both init flows use this.
+//
+// When the prompt fails (e.g. running under `--no-prompt` without
+// `AZURE_SUBSCRIPTION_ID` set), the error is wrapped with a structured
+// suggestion naming the env var to set so headless callers get an actionable
+// message instead of a generic "prompt required".
 func ensureSubscription(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -691,7 +696,24 @@ func ensureSubscription(
 			if exterrors.IsCancellation(err) {
 				return nil, exterrors.Cancelled("subscription selection was cancelled")
 			}
-			return nil, exterrors.FromPrompt(err, "failed to prompt for subscription")
+			// Only attach the AZURE_SUBSCRIPTION_ID-specific guidance when the
+			// failure is the no-prompt / "prompt required" path. Other prompt
+			// failures (e.g. host transport errors) get a generic message so we
+			// don't mislead the user into setting an env var that wouldn't have
+			// helped.
+			if exterrors.IsPromptRequired(err) {
+				return nil, exterrors.Dependency(
+					exterrors.CodeMissingAzureSubscription,
+					fmt.Sprintf("failed to select an Azure subscription: %s", err),
+					"set AZURE_SUBSCRIPTION_ID in your azd environment "+
+						"(run `azd env set AZURE_SUBSCRIPTION_ID <id>`), or run interactively to pick one",
+				)
+			}
+			return nil, exterrors.Dependency(
+				exterrors.CodeMissingAzureSubscription,
+				fmt.Sprintf("failed to select an Azure subscription: %s", err),
+				"retry, or run interactively to pick one",
+			)
 		}
 
 		azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
@@ -820,7 +842,15 @@ func promptLocationForInit(
 		if exterrors.IsCancellation(err) {
 			return "", exterrors.Cancelled("location selection was cancelled")
 		}
-		return "", exterrors.FromPrompt(err, "failed to prompt for location")
+		// Wrap with an actionable suggestion so headless callers (--no-prompt)
+		// learn how to supply the value instead of getting a generic
+		// "prompt required" propagated from the azd host.
+		return "", exterrors.Dependency(
+			exterrors.CodeLocationMismatch,
+			fmt.Sprintf("failed to select an Azure location: %s", err),
+			"set AZURE_LOCATION in your azd environment "+
+				"(`azd env set AZURE_LOCATION <region>`) or run interactively to pick one",
+		)
 	}
 
 	return locationResponse.Location.Name, nil
@@ -871,7 +901,15 @@ func selectNewModel(
 
 	modelResp, err := azdClient.Prompt().PromptAiModel(ctx, promptReq)
 	if err != nil {
-		return nil, exterrors.FromPrompt(err, "failed to prompt for model selection")
+		if exterrors.IsCancellation(err) {
+			return nil, exterrors.Cancelled("model selection was cancelled")
+		}
+		return nil, exterrors.Dependency(
+			exterrors.CodeModelResolutionFailed,
+			fmt.Sprintf("failed to select an AI model: %s", err),
+			"pass --model <name> (e.g. --model gpt-4.1-mini) or --project-id "+
+				"<id> with --model-deployment <name> to skip interactive model selection",
+		)
 	}
 
 	return modelResp.Model, nil
@@ -1090,7 +1128,12 @@ func selectFoundryProject(
 			if exterrors.IsCancellation(err) {
 				return nil, exterrors.Cancelled("project selection was cancelled")
 			}
-			return nil, fmt.Errorf("failed to prompt for project selection: %w", err)
+			return nil, exterrors.Dependency(
+				exterrors.CodeMissingAiProjectId,
+				fmt.Sprintf("failed to select a Foundry project: %s", err),
+				"pass --project-id <full resource id> to skip interactive project selection, "+
+					"or run interactively to choose from the discovered projects",
+			)
 		}
 
 		selectedIdx = *projectResp.Value

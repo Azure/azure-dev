@@ -85,7 +85,11 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	agentYamlPath := filepath.Join(srcDir, "agent.yaml")
 	if _, statErr := os.Stat(agentYamlPath); statErr == nil {
 		if a.flags.noPrompt {
-			return exterrors.Cancelled("agent.yaml already exists; overwrite declined in no-prompt mode")
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("agent.yaml already exists at %q", agentYamlPath),
+				"delete or move the existing agent.yaml, or run interactively to confirm overwrite",
+			)
 		}
 
 		confirmResp, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
@@ -320,30 +324,41 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 		fmt.Printf("%s %d file(s) already exist and would be overwritten.\n\n",
 			color.YellowString("Warning:"), len(collidingFiles))
 
-		conflictChoices := []*azdext.SelectChoice{
-			{Label: "Overwrite existing files", Value: "overwrite"},
-			{Label: "Skip existing files (keep my versions)", Value: "skip"},
-			{Label: "Cancel", Value: "cancel"},
-		}
-
-		conflictResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message: "How would you like to handle existing files?",
-				Choices: conflictChoices,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("prompting for conflict resolution: %w", err)
-		}
-
-		selectedValue := conflictChoices[*conflictResp.Value].Value
-		switch selectedValue {
-		case "overwrite":
-			overwriteCollisions = true
-		case "skip":
+		// In no-prompt mode, default to the safest behavior: keep the user's
+		// existing files (skip the collisions). The user can re-run
+		// interactively or delete the files themselves if they want the
+		// template versions.
+		if a.flags.noPrompt {
+			// Diagnostic on stderr so scripted consumers can keep stdout
+			// clean for the regular init output stream.
+			fmt.Fprintln(os.Stderr, "--no-prompt: keeping existing files; template versions are skipped.")
 			overwriteCollisions = false
-		case "cancel":
-			return fmt.Errorf("operation cancelled, no changes were made")
+		} else {
+			conflictChoices := []*azdext.SelectChoice{
+				{Label: "Overwrite existing files", Value: "overwrite"},
+				{Label: "Skip existing files (keep my versions)", Value: "skip"},
+				{Label: "Cancel", Value: "cancel"},
+			}
+
+			conflictResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+				Options: &azdext.SelectOptions{
+					Message: "How would you like to handle existing files?",
+					Choices: conflictChoices,
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("prompting for conflict resolution: %w", err)
+			}
+
+			selectedValue := conflictChoices[*conflictResp.Value].Value
+			switch selectedValue {
+			case "overwrite":
+				overwriteCollisions = true
+			case "skip":
+				overwriteCollisions = false
+			case "cancel":
+				return fmt.Errorf("operation cancelled, no changes were made")
+			}
 		}
 	} else {
 		// No collisions - confirm to proceed
@@ -859,13 +874,13 @@ func findDefaultModelIndex(modelNames []string) int32 {
 	// Look for exact gpt-4o first
 	for i, name := range modelNames {
 		if name == "gpt-4o" {
-			return int32(i)
+			return boundedInt32Index(i)
 		}
 	}
 	// Fall back to first gpt-4 match
 	for i, name := range modelNames {
 		if strings.HasPrefix(name, "gpt-4") {
-			return int32(i)
+			return boundedInt32Index(i)
 		}
 	}
 	return 0

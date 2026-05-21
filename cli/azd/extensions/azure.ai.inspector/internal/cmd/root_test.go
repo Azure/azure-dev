@@ -11,6 +11,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 )
 
+const maxCommandSearchDepth = 16
+
 func TestRootCommandLaunchIsExplicitSubcommand(t *testing.T) {
 	root := NewRootCommand()
 
@@ -56,11 +58,19 @@ func TestMetadataExposesLaunchCommand(t *testing.T) {
 }
 
 func findCommand(commands []extensions.Command, name []string) *extensions.Command {
+	return findCommandAtDepth(commands, name, 0)
+}
+
+func findCommandAtDepth(commands []extensions.Command, name []string, depth int) *extensions.Command {
+	if depth > maxCommandSearchDepth {
+		return nil
+	}
+
 	for i := range commands {
 		if reflect.DeepEqual(commands[i].Name, name) {
 			return &commands[i]
 		}
-		if cmd := findCommand(commands[i].Subcommands, name); cmd != nil {
+		if cmd := findCommandAtDepth(commands[i].Subcommands, name, depth+1); cmd != nil {
 			return cmd
 		}
 	}

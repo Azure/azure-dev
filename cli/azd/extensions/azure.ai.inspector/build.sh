@@ -6,7 +6,7 @@ EXTENSION_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Change to the script directory
 cd "$EXTENSION_DIR" || exit
 
-# Create a safe version of EXTENSION_ID replacing dots with dashes
+# Create EXTENSION_ID_SAFE by replacing dots in EXTENSION_ID with dashes
 EXTENSION_ID_SAFE="${EXTENSION_ID//./-}"
 
 # Define output directory

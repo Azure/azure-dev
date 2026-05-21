@@ -3,6 +3,7 @@ words:
   # Project terms
   - agentserver
   - apim
+  # Go module name for the Azure AI Inspector extension.
   - azureaiinspector
   - codicon
   - exterrors

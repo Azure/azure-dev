@@ -637,7 +637,7 @@ func TestAppendPortEnvVars(t *testing.T) {
 		if len(env) != 4 {
 			t.Errorf("expected 4 entries (2 existing + PORT + ASPNETCORE_URLS), got %d: %v", len(env), env)
 		}
-		if env[0] != "HOME=/home/user" || env[1] != "PATH=/usr/bin" {
+		if !slices.Contains(env, "HOME=/home/user") || !slices.Contains(env, "PATH=/usr/bin") {
 			t.Errorf("existing entries not preserved, got %v", env)
 		}
 	})

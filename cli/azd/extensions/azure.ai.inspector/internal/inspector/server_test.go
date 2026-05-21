@@ -83,6 +83,15 @@ func TestServerStartServesIndex(t *testing.T) {
 	}
 }
 
+func TestServerURLUsesBoundLoopbackAddress(t *testing.T) {
+	port := 8087
+	srv := New(Config{Port: port})
+
+	if got := srv.URL(); got != "http://127.0.0.1:8087" {
+		t.Fatalf("URL() = %q, want http://127.0.0.1:8087", got)
+	}
+}
+
 func TestWebSocketOriginValidationRejectsRebindingHost(t *testing.T) {
 	port := pickFreePort(t)
 	srv := New(Config{Port: port, AgentPort: 8088})

@@ -73,7 +73,7 @@ func New(cfg Config) *Server {
 }
 
 func (s *Server) URL() string {
-	return fmt.Sprintf("http://localhost:%d", s.cfg.Port)
+	return fmt.Sprintf("http://127.0.0.1:%d", s.cfg.Port)
 }
 
 // Start serves until ctx is cancelled. If ready is non-nil, it is closed

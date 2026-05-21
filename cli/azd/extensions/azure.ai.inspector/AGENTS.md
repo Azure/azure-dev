@@ -56,6 +56,16 @@ present.
   is set. Never use `log` for anything the user needs to see.
 - Do not use `log.Fatal` or `log.Panic` for expected failures.
 
+## Error handling
+
+This extension does not use an `internal/exterrors` package. Return plain Go
+errors, and wrap lower-level failures with `fmt.Errorf("context: %w", err)`
+where useful.
+
+Add structured extension errors only if this extension starts needing stable
+telemetry categories, error codes, or user-facing suggestions similar to the
+`azure.ai.agents` extension.
+
 ## SPA assets
 
 The embedded SPA in `internal/inspector/assets/` is a built artifact (Vite output).

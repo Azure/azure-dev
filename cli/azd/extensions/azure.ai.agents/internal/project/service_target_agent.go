@@ -734,8 +734,26 @@ func (p *AgentServiceTargetProvider) Deploy(
 	serviceKey := p.getServiceKey(serviceConfig.Name)
 	updateOnlyKey := fmt.Sprintf("AGENT_%s_UPDATE_ONLY", serviceKey)
 	if azdEnv[updateOnlyKey] == "true" {
-		fmt.Fprintf(os.Stderr, "Skipping deploy for %q (endpoint/card update only).\n", serviceConfig.Name)
-		// TODO: perform endpoint/card-only update here
+		fmt.Fprintf(os.Stderr, "Updating endpoint/card configuration for %q.\n", serviceConfig.Name)
+
+		agentDef, _, err := p.loadContainerAgentDefinition()
+		if err != nil {
+			return nil, err
+		}
+
+		request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef)
+		if err != nil {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidAgentRequest,
+				fmt.Sprintf("failed to create agent request: %s", err),
+				"verify the agent.yaml definition is correct",
+			)
+		}
+
+		if err := p.patchAgentEndpointFields(ctx, agentDef.Name, request.AgentEndpoint, request.AgentCard, azdEnv); err != nil {
+			return nil, err
+		}
+
 		return &azdext.ServiceDeployResult{}, nil
 	}
 
@@ -795,7 +813,9 @@ func (p *AgentServiceTargetProvider) Deploy(
 	}
 
 	// Patch agent-level endpoint/card fields
-	if err := p.patchAgentEndpointFields(ctx, result, azdEnv); err != nil {
+	if err := p.patchAgentEndpointFields(
+		ctx, result.agentName, result.request.AgentEndpoint, result.request.AgentCard, azdEnv,
+	); err != nil {
 		return nil, err
 	}
 
@@ -992,15 +1012,16 @@ type deployResult struct {
 	request      *agent_api.CreateAgentRequest
 }
 
-// patchAgentEndpointFields patches agent-level fields (agent_endpoint, agent_card)
-// after version creation. These are agent-level properties, not version-level, so
-// they require a separate PatchAgent call.
+// patchAgentEndpointFields patches agent-level fields (agent_endpoint, agent_card).
+// These are agent-level properties, not version-level, so they require a separate PatchAgent call.
 func (p *AgentServiceTargetProvider) patchAgentEndpointFields(
 	ctx context.Context,
-	result *deployResult,
+	agentName string,
+	agentEndpoint *agent_api.AgentEndpoint,
+	agentCard *agent_api.AgentCard,
 	azdEnv map[string]string,
 ) error {
-	if result.request.AgentEndpoint == nil && result.request.AgentCard == nil {
+	if agentEndpoint == nil && agentCard == nil {
 		return nil
 	}
 
@@ -1010,17 +1031,15 @@ func (p *AgentServiceTargetProvider) patchAgentEndpointFields(
 	)
 
 	patchRequest := &agent_api.PatchAgentRequest{
-		AgentEndpoint: result.request.AgentEndpoint,
-		AgentCard:     result.request.AgentCard,
+		AgentEndpoint: agentEndpoint,
+		AgentCard:     agentCard,
 	}
 
-	_, err := agentClient.PatchAgent(ctx, result.agentName, patchRequest, agentAPIVersion)
+	_, err := agentClient.PatchAgent(ctx, agentName, patchRequest, agentAPIVersion)
 	if err != nil {
 		fmt.Fprintf(os.Stderr,
-			"WARNING: Agent version '%s' (version %s) was created, "+
-				"but updating agent endpoint/card failed.\n",
-			result.agentVersion.Name,
-			result.agentVersion.Version,
+			"WARNING: Updating agent endpoint/card for %q failed.\n",
+			agentName,
 		)
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	}

@@ -86,6 +86,33 @@ Do **not** add context with `fmt.Errorf("context: %w", err)` after `err` is alre
 | Azure SDK HTTP failure | `exterrors.ServiceFromAzure` |
 | Unexpected bug or local failure with no better category | `exterrors.Internal` |
 
+### Recommended pattern
+
+```go
+func loadEndpoint(raw string) (string, error) {
+    normalized, _, err := validateProjectEndpoint(raw)
+    if err != nil {
+        return "", fmt.Errorf("validate %q: %w", raw, err)
+    }
+
+    return normalized, nil
+}
+
+func runCommand() error {
+    endpoint, err := loadEndpoint(rawFlag)
+    if err != nil {
+        return exterrors.Validation(
+            exterrors.CodeInvalidParameter,
+            fmt.Sprintf("project endpoint is invalid: %s", err),
+            "provide an https:// Foundry project endpoint URL",
+        )
+    }
+
+    _ = endpoint
+    return nil
+}
+```
+
 ### Error codes
 
 Define new codes in `internal/exterrors/codes.go`.
@@ -106,6 +133,24 @@ When changing the store:
 - Keep reads of the legacy `extensions.ai-agents.project.context` key best-effort: a malformed legacy blob must never block resolution from the new key, the flag, or `FOUNDRY_PROJECT_ENDPOINT`.
 - `clearProjectContext` must remain idempotent and must clear both the new and legacy keys, even when the previous-endpoint read fails (so users can always recover from a corrupted persisted blob).
 - The auto-migration in `readAzdHostedSources` is best-effort: a transient write failure must not break the command the user actually invoked.
+
+## Release preparation
+
+A new extension release ships in two PRs:
+
+### PR 1 — Version bump
+
+Bumps the extension to the new version. Touches only:
+
+- `version.txt` — new semver string
+- `extension.yaml` — `version:` field
+- `CHANGELOG.md` — new release section at the top
+
+Once merged, the team triggers the CI release pipeline, which builds, signs, and publishes the extension binaries as a GitHub release.
+
+### PR 2 — Registry update
+
+After the GitHub release is live, a follow-up PR updates `cli/azd/extensions/registry.json` so azd users can install the new version. The contents of that file are produced by running `azd x publish` against the published release artifacts.
 
 ## Output: `log` vs `fmt`
 
@@ -128,24 +173,6 @@ fmt.Printf("normalized URL: %s\n", normalized)    // use log.Printf
 // ❌ log used for user-facing info — user never sees it without --debug
 log.Printf("No project endpoint resolved")        // return an exterrors.Dependency instead
 ```
-
-## Release preparation
-
-A new extension release ships in two PRs:
-
-### PR 1 — Version bump
-
-Bumps the extension to the new version. Touches only:
-
-- `version.txt` — new semver string
-- `extension.yaml` — `version:` field
-- `CHANGELOG.md` — new release section at the top
-
-Once merged, the team triggers the CI release pipeline, which builds, signs, and publishes the extension binaries as a GitHub release.
-
-### PR 2 — Registry update
-
-After the GitHub release is live, a follow-up PR updates `cli/azd/extensions/registry.json` so azd users can install the new version. The contents of that file are produced by running `azd x publish` against the published release artifacts.
 
 ## Other extension conventions
 

@@ -96,14 +96,30 @@ UserTokenAndProjectManagedIdentity
 We built and tested a POC branch with new auth type support against a live workspace
 (`hosted-agents-bugbash` in `northcentralus`). Results:
 
-| Test | Kind | Auth Type | CLI Flags | Result |
-|------|------|-----------|-----------|--------|
-| RemoteA2A + None | `remote-a2a` | `none` | `--kind remote-a2a --auth-type none` | ✅ Created, listed (`list --kind remote-a2a`), shown, deleted |
-| RemoteA2A + CustomKeys | `remote-a2a` | `custom-keys` | `--kind remote-a2a --custom-key "api-key=xxx"` | ✅ Created, credentials visible via `show --show-credentials` |
-| OAuth2 | `remote-tool` | `oauth2` | `--client-id X --client-secret Y` | ✅ Created, credentials stored (`clientid`, `clientsecret`) |
-| AAD | `remote-tool` | `aad` | `--auth-type aad` | ❌ ARM rejects: "AuthType for RemoteTool can only be None, CustomKeys, ProjectManagedIdentity, OAuth2, ..." |
-| ManagedIdentity | `remote-tool` | `managed-identity` | `--auth-type managed-identity` | ❌ ARM rejects: maps to `RegistryIdentity`, not in allowed list |
-| `list --kind remote-a2a` | — | — | `--kind remote-a2a` | ✅ Correctly filters RemoteA2A connections only |
+**Round 1 — ARM SDK typed structs:**
+
+| Test | Kind | Auth Type | Method | Result |
+|------|------|-----------|--------|--------|
+| RemoteA2A + None | `remote-a2a` | `none` | ARM SDK | ✅ Created, listed, shown, deleted |
+| RemoteA2A + CustomKeys | `remote-a2a` | `custom-keys` | ARM SDK | ✅ Created, credentials visible |
+| OAuth2 | `remote-tool` | `oauth2` | ARM SDK | ✅ Created with `--client-id`/`--client-secret` |
+| AAD | `remote-tool` | `aad` | ARM SDK | ❌ ARM rejects for RemoteTool/RemoteA2A |
+| ManagedIdentity | `remote-tool` | `managed-identity` | ARM SDK | ❌ ARM rejects (maps to `RegistryIdentity`) |
+| `list --kind remote-a2a` | — | — | ARM SDK | ✅ Correctly filters RemoteA2A connections only |
+
+**Round 2 — Raw REST (`az rest --method PUT`):**
+
+| Test | Kind | Auth Type | Method | Result |
+|------|------|-----------|--------|--------|
+| AgenticIdentityToken | `RemoteTool` | `AgenticIdentityToken` | Raw REST | ✅ Created, shown, deleted |
+| AgenticIdentityToken | `RemoteA2A` | `AgenticIdentityToken` | Raw REST | ✅ Works on both kinds |
+| UserEntraToken | `RemoteTool` | `UserEntraToken` | Raw REST | ✅ Created, `audience` field stored correctly |
+| ProjectManagedIdentity | `RemoteTool` | `ProjectManagedIdentity` | Raw REST | ✅ Created, no credentials needed |
+| AgenticIdentity | `RemoteTool` | `AgenticIdentity` | Raw REST | ❌ ARM rejects — correct name is `AgenticIdentityToken` |
+
+> **Important finding:** The `agent.yaml` schema uses `AgenticIdentity` as the auth type name,
+> but ARM expects `AgenticIdentityToken`. The CLI should accept both and normalize to
+> `AgenticIdentityToken` when calling ARM.
 
 ### 3.4 Full Auth Type Inventory
 
@@ -116,15 +132,16 @@ for `RemoteTool` / `RemoteA2A` connections:
 | `CustomKeys` | ✅ | ✅ `CustomKeysConnectionProperties` | ✅ Shipped | ✅ Pass | — |
 | `ApiKey` | ✅ | ✅ `APIKeyAuthConnectionProperties` | ✅ Shipped | — | — |
 | **`OAuth2`** | ✅ | ✅ `OAuth2AuthTypeConnectionProperties` | ✅ **POC done** | ✅ Pass | **Ship it** |
-| **`ProjectManagedIdentity`** | ✅ | ❌ No struct | ❌ | — | ⚠️ Raw REST bypass |
-| **`UserEntraToken`** | ✅ | ❌ No struct | ❌ | — | ⚠️ Raw REST bypass + `--audience` flag |
-| `AgenticIdentityToken` | ✅ | ❌ No struct | ❌ | — | ⚠️ Raw REST bypass |
+| **`AgenticIdentityToken`** | ✅ | ❌ No struct | ❌ | ✅ Pass (raw REST) | ⚠️ Raw REST bypass |
+| **`ProjectManagedIdentity`** | ✅ | ❌ No struct | ❌ | ✅ Pass (raw REST) | ⚠️ Raw REST bypass |
+| **`UserEntraToken`** | ✅ | ❌ No struct | ❌ | ✅ Pass (raw REST, audience stored) | ⚠️ Raw REST bypass + `--audience` flag |
 | `DeveloperConnection` | ✅ | ❌ No struct | ❌ | — | ⚠️ Raw REST bypass |
 | `AgentUserImpersonation` | ✅ | ❌ No struct | ❌ | — | ⚠️ Raw REST bypass |
 | `AgenticUser` | ✅ | ❌ No struct | ❌ | — | ⚠️ Raw REST bypass |
 | `UserTokenAndProjectManagedIdentity` | ✅ | ❌ No struct | ❌ | — | ⚠️ Raw REST bypass |
 | `AAD` | ❌ Rejected | ✅ Has struct | ❌ | ❌ Fail | **Not applicable** for RemoteTool/RemoteA2A |
 | `ManagedIdentity` | ❌ Rejected | ✅ Has struct | ❌ | ❌ Fail | **Not applicable** for RemoteTool/RemoteA2A |
+| `AgenticIdentity` | ❌ Rejected | ❌ No struct | ❌ | ❌ Fail | ARM expects `AgenticIdentityToken` instead |
 
 ### 3.5 Linda's Reported Gaps — Validated
 
@@ -133,24 +150,37 @@ Linda tested the released CLI and confirmed these auth types are not supported:
 | Auth Type | Status | What's Needed |
 |-----------|--------|---------------|
 | **OAuth2** | ✅ **POC validated — works** | Wire `OAuth2AuthTypeConnectionProperties` + `--client-id`/`--client-secret` flags (~30 lines) |
-| **ProjectManagedIdentity** | ❌ Not in ARM Go SDK v2.0.0 | Raw REST bypass. No credentials needed (identity-based). ~50 lines |
-| **UserEntraToken** | ❌ Not in ARM Go SDK v2.0.0 | Raw REST bypass + `--audience` flag. ~50 lines |
+| **ProjectManagedIdentity** | ✅ **POC validated via raw REST** | Raw REST bypass. No credentials needed (identity-based). ~50 lines |
+| **UserEntraToken** | ✅ **POC validated via raw REST** | Raw REST bypass + `--audience` flag. ~50 lines |
+| **AgenticIdentityToken** | ✅ **POC validated via raw REST** | Raw REST bypass. No credentials needed. ~50 lines. Note: `agent.yaml` schema uses `AgenticIdentity` but ARM expects `AgenticIdentityToken` — CLI should normalize. |
 
 ### 3.6 Workaround for SDK-Missing Auth Types
 
-For `UserEntraToken` and `ProjectManagedIdentity`, the typed ARM SDK doesn't have structs.
-Two approaches:
+For `UserEntraToken`, `ProjectManagedIdentity`, and `AgenticIdentityToken`, the typed ARM SDK
+doesn't have structs. **POC validated that raw REST works for all three.**
 
-**Option A: Raw REST bypass** (recommended)
-- When `--auth-type` is `user-entra-token` or `project-managed-identity`, bypass the typed SDK
+**Approach: Raw REST bypass** (POC validated ✅)
+- When `--auth-type` is `user-entra-token`, `project-managed-identity`, or `agentic-identity`,
+  bypass the typed SDK
 - Build the JSON body manually and PUT via `runtime.NewRequest` (same pattern as the
   existing data-plane client in `foundry_projects_client.go`)
-- Effort: ~50 lines per auth type
+- Effort: ~50 lines per auth type (shared helper for the raw REST call)
+- The CLI should normalize `agentic-identity` → `AgenticIdentityToken` (not `AgenticIdentity`)
 
-**Option B: Wait for ARM SDK update**
-- The ARM Go SDK would need to add `UserEntraTokenAuthTypeConnectionProperties` and
-  `ProjectManagedIdentityAuthTypeConnectionProperties` structs
-- Timeline: unknown, depends on SDK team
+### 3.7 Connector Registry = Asset Catalog
+
+Linda clarified that the "connector registry" is the **same Asset Catalog API**
+(`api.catalog.azureml.ms/asset-gallery/v1.0`). Connectors are OAuth2-managed MCP servers
+in the Foundry Tools Catalog. When a user adds a connector:
+
+1. **Browse** — find the connector in the Tools Catalog
+2. **Connect** — authenticate (OAuth2 consent flow, API key, or none)
+3. **Select actions** — choose which connector actions to expose as MCP tools
+4. **Add tool** — Foundry creates a managed MCP server in the project's Connector Namespace
+
+The connection created has a `connectorName` field linking it to the managed MCP server.
+The `--from-catalog` picker should expose connectors alongside MCP tools, using the
+`connectorName` property to distinguish managed connectors from self-hosted MCP servers.
 
 ### 3.7 Proposed Auth Type Changes
 
@@ -170,18 +200,20 @@ New CLI flags: `--client-id`, `--client-secret`.
 > confirmed ARM rejects them** for RemoteTool/RemoteA2A connections. They are valid for other
 > connection kinds only.
 
-#### Phase 2 — Short-term (raw REST workaround)
+#### Phase 2 — Short-term (POC validated, raw REST workaround)
 
-Add `user-entra-token` and `project-managed-identity` using raw REST (no SDK structs available):
+Add identity-based auth types using raw REST (all POC validated ✅):
 
 ```go
 case "user-entra-token":
     → raw REST PUT: { authType: "UserEntraToken", audience: <--audience>, ... }
 case "project-managed-identity":
     → raw REST PUT: { authType: "ProjectManagedIdentity", ... }
+case "agentic-identity":
+    → raw REST PUT: { authType: "AgenticIdentityToken", ... }  // normalize name
 ```
 
-New CLI flag: `--audience` (for UserEntraToken only).
+New CLI flag: `--audience` (for UserEntraToken; also used by AgenticIdentityToken).
 
 ---
 
@@ -292,9 +324,11 @@ azd ai agent connection delete my-workiq --force
 > Can we use the catalog APIs to auto-fill `azd ai agent connection create` flags (target URL,
 > auth-type, kind) instead of users typing everything manually?
 
-Linda also noted there are **two registries** to support:
-1. **Asset Catalog** (`api.catalog.azureml.ms`) — MCP tools, models, publishers
-2. **Connector Registry** — details TBD (Linda to share)
+Linda also noted there are **two registries** to support — both served by the same
+Asset Catalog API (`api.catalog.azureml.ms`):
+1. **MCP Tools** — self-hosted MCP servers (e.g., Tavily, GitHub MCP)
+2. **Managed Connectors** — OAuth2-managed MCP servers provisioned in the Foundry
+   Connector Namespace (e.g., GitHub connector, Slack, Jira)
 
 ### 5.2 Asset Catalog API Summary
 
@@ -365,13 +399,19 @@ azd ai agent connection create --from-catalog
 | Catalog only has MCP tools (no A2A) | `--from-catalog` won't help with WorkIQ/A2A | Expected — A2A connections are created manually |
 | Catalog API is anonymous/public | Tool list may not match workspace capabilities | Expected — connection creation still validates against ARM |
 
-#### Future: Connector Registry
+#### Managed Connectors
 
-Linda mentioned a second registry (**connector registry**) that should also be supported.
-Details TBD — waiting for Linda to share the API surface. The `--from-catalog` architecture
-(picker → flag resolution → existing create flow) can be extended to support additional
-registries via a `--from-connector-registry` flag or a unified `--from-registry` flag
-with a source selector.
+The same catalog API serves managed connectors (OAuth2-based). When integrated into
+`--from-catalog`, the picker should:
+- Show connectors alongside MCP tools (distinguished by `connectorName` field)
+- For OAuth2 connectors: open browser for consent flow, then create connection with
+  `--auth-type oauth2` + `connectorName`
+- For no-auth connectors: create directly with `--auth-type none`
+
+> **CLI limitation:** The full connector flow (browse → OAuth consent → select actions →
+> add tool) involves browser-based OAuth and action selection UX. The CLI can handle
+> browse + create, but the OAuth consent and action selection may need to delegate to
+> a browser or portal URL.
 
 #### Future: Catalog adds A2A tools
 
@@ -399,13 +439,15 @@ pattern as `normalizeKind()`.
 
 **Result:** RemoteA2A kind support + OAuth2 auth. Covers the most common Linda-reported gaps.
 
-### Phase 2 — Short-term (raw REST workaround)
+### Phase 2 — Short-term (POC validated, raw REST workaround)
 
 | Change | Effort |
 |--------|--------|
 | `--auth-type user-entra-token` via raw REST + `--audience` flag | ~50 lines |
 | `--auth-type project-managed-identity` via raw REST | ~50 lines |
-| `--from-catalog` interactive picker | ~2-3 days |
+| `--auth-type agentic-identity` via raw REST (normalized to `AgenticIdentityToken`) | ~50 lines |
+| Shared raw REST helper for ARM PUT | ~30 lines (reused by all three) |
+| `--from-catalog` interactive picker (covers MCP tools + managed connectors) | ~2-3 days |
 | Catalog API client | ~1 day |
 
 ### Phase 3 — Future
@@ -436,11 +478,12 @@ pattern as `normalizeKind()`.
 
 | Test | Method | POC Result |
 |------|--------|------------|
-| `create --auth-type oauth2 --client-id X --client-secret Y` | Manual + E2E | ✅ Pass — credentials stored as `clientid`/`clientsecret` |
-| `create --auth-type aad` | Manual + E2E | ❌ ARM rejects for RemoteTool/RemoteA2A — **not applicable** |
-| `create --auth-type managed-identity` | Manual + E2E | ❌ ARM rejects for RemoteTool/RemoteA2A — **not applicable** |
-| `create --auth-type user-entra-token --audience X` (Phase 2) | Manual + E2E | — |
-| `create --auth-type project-managed-identity` (Phase 2) | Manual + E2E | — |
+| `create --auth-type oauth2 --client-id X --client-secret Y` | ARM SDK | ✅ Pass — credentials stored as `clientid`/`clientsecret` |
+| `create --auth-type agentic-identity` | Raw REST | ✅ Pass — normalized to `AgenticIdentityToken` |
+| `create --auth-type user-entra-token --audience X` | Raw REST | ✅ Pass — audience stored correctly |
+| `create --auth-type project-managed-identity` | Raw REST | ✅ Pass — no credentials needed |
+| `create --auth-type aad` | ARM SDK | ❌ ARM rejects for RemoteTool/RemoteA2A — **not applicable** |
+| `create --auth-type managed-identity` | ARM SDK | ❌ ARM rejects for RemoteTool/RemoteA2A — **not applicable** |
 
 ### Catalog Integration
 
@@ -456,9 +499,10 @@ pattern as `normalizeKind()`.
 
 ## 8. Open Questions
 
-1. **Connector registry** — @lindazqli to share the API surface for the second registry.
-2. **Auth mapping logic** — @lindazqli to share the UX team's `xMsSecuritySchemes` → auth type mapping.
-3. **WorkIQ-specific UX** — Does Linda's team want a dedicated `--kind work-iq` alias, or is `--kind remote-a2a` sufficient?
-4. **A2A in catalog** — Will A2A tools eventually appear in the Asset Catalog?
-5. **OAuth2 credential shape** — POC used `--client-id`/`--client-secret`. Are other OAuth2 fields needed (e.g., `--auth-url`, `--tenant-id`)?
-6. **UserEntraToken audience values** — What are the common `--audience` values? (e.g., `https://mcp.ai.azure.com`)
+1. **Auth mapping logic** — @lindazqli to share the UX team's `xMsSecuritySchemes` → auth type mapping.
+2. **WorkIQ-specific UX** — Does Linda's team want a dedicated `--kind work-iq` alias, or is `--kind remote-a2a` sufficient?
+3. **A2A in catalog** — Will A2A tools eventually appear in the Asset Catalog?
+4. **OAuth2 credential shape** — POC used `--client-id`/`--client-secret`. Are other OAuth2 fields needed (e.g., `--auth-url`, `--tenant-id`)?
+5. **UserEntraToken audience values** — What are the common `--audience` values? (e.g., `https://mcp.ai.azure.com`)
+6. **AgenticIdentity vs AgenticIdentityToken** — The `agent.yaml` schema uses `AgenticIdentity` but ARM expects `AgenticIdentityToken`. Should we align the schema, or just normalize in the CLI?
+7. **Connector picker UX** — For managed connectors, the flow is browse → connect (OAuth consent) → select actions → add. How much of this can happen in a CLI context vs portal?

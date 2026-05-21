@@ -1167,7 +1167,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 		if isDotnet && !isPython {
 			runtime = "dotnet_10"
 		} else {
-			runtime = "python_3_13" // default to python for backward compatibility (including mixed repos)
+			runtime = "python_3_13" // default to Python for mixed/unknown repos (language preference, not version compat)
 		}
 	} else {
 		defaultIdx := int32(0) // First item in the filtered list

@@ -53,6 +53,11 @@ type initFlags struct {
 	src               string
 	env               string
 	protocols         []string
+	// force, when true, lets headless callers (--no-prompt) pre-consent to
+	// overwrite prompts that would otherwise return a structured error. It
+	// mirrors the `--force` convention used by `azd down`, `azd env remove`,
+	// `azd config reset`, and `azd infra generate`.
+	force bool
 	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
 	// and is not registered as a CLI flag on the init command itself.
 	noPrompt bool
@@ -836,6 +841,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
 		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
 
+	cmd.Flags().BoolVar(&flags.force, "force", false,
+		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+
+			"Required together with --no-prompt when init would otherwise need confirmation.")
+
 	return cmd
 }
 
@@ -1612,17 +1621,36 @@ func (a *InitAction) downloadAgentYaml(
 
 			// Check if manifest is under src directory
 			if isSubpath(absManifestPath, srcDir) {
-				confirmResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-					Options: &azdext.ConfirmOptions{
-						Message:      "This operation will overwrite the provided manifest file. Continue?",
-						DefaultValue: new(false),
-					},
-				})
-				if err != nil {
-					return nil, "", fmt.Errorf("prompting for confirmation: %w", err)
-				}
-				if !*confirmResponse.Value {
-					return nil, "", exterrors.Cancelled("operation cancelled by user")
+				// `--force` is the explicit pre-consent path for headless
+				// callers: skip both the prompt and the no-prompt refusal,
+				// and accept the overwrite. We log the decision so debug
+				// output makes the choice visible in CI logs.
+				if a.flags.force {
+					log.Printf("--force: overwriting manifest %q inside src directory %q", manifestPointer, srcDir)
+				} else if a.flags.noPrompt {
+					// In no-prompt mode, refuse to silently overwrite a manifest
+					// that lives inside the project's src tree. Headless callers
+					// can pass --force to pre-consent, move the manifest, choose
+					// a different --src target, or run interactively to confirm.
+					return nil, "", exterrors.Validation(
+						exterrors.CodeInvalidManifestPointer,
+						fmt.Sprintf("manifest %q is inside the project src directory %q and would be overwritten", manifestPointer, srcDir),
+						"pass --force to overwrite, move the manifest outside the src tree, "+
+							"pass a different --src directory, or run interactively to confirm the overwrite",
+					)
+				} else {
+					confirmResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+						Options: &azdext.ConfirmOptions{
+							Message:      "This operation will overwrite the provided manifest file. Continue?",
+							DefaultValue: new(false),
+						},
+					})
+					if err != nil {
+						return nil, "", fmt.Errorf("prompting for confirmation: %w", err)
+					}
+					if !*confirmResponse.Value {
+						return nil, "", exterrors.Cancelled("operation cancelled by user")
+					}
 				}
 			}
 		}
@@ -1758,9 +1786,15 @@ func (a *InitAction) downloadAgentYaml(
 
 	fmt.Println(output.WithGrayFormat("✓ Manifest validated successfully"))
 
-	agentId := agentManifest.Name
+	// Use the (possibly user-renamed) selected agent name as the canonical
+	// identifier for naming the service entry and target directory. The
+	// outer manifest's Name field is not updated when the user resolves a
+	// conflict with an existing Foundry agent, so prefer selectedAgentName
+	// to keep azure.yaml's service entry consistent with the agent name
+	// written to agent.yaml.
+	agentId := selectedAgentName
 	if agentId == "" {
-		agentId = selectedAgentName
+		agentId = agentManifest.Name
 	}
 	serviceName := strings.ReplaceAll(agentId, " ", "")
 
@@ -2276,7 +2310,7 @@ func (a *InitAction) populateContainerSettings(
 	if manifestResources != nil {
 		for i, t := range project.ResourceTiers {
 			if t.Cpu == manifestResources.Cpu && t.Memory == manifestResources.Memory {
-				defaultIndex = int32(i)
+				defaultIndex = boundedInt32Index(i)
 				break
 			}
 		}

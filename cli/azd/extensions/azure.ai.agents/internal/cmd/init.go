@@ -1261,37 +1261,9 @@ func (a *InitAction) configureModelChoice(
 		return agentManifest, nil
 	}
 
-	modelConfigChoices := []*azdext.SelectChoice{
-		{Label: "Deploy new model(s) (with new Foundry project)", Value: "new"},
-		{Label: "Use an existing Foundry project", Value: "existing"},
-	}
-
-	var modelConfigChoice string
-
+	// Step 1: Foundry project selection
 	if a.flags.projectResourceId != "" {
 		// --project-id provided: auto-select "existing" path
-		modelConfigChoice = "existing"
-	} else {
-		defaultIndex := int32(0)
-		modelConfigResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message:       "How would you like to configure model(s) for your agent?",
-				Choices:       modelConfigChoices,
-				SelectedIndex: &defaultIndex,
-			},
-		})
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("model configuration choice was cancelled")
-			}
-			return nil, fmt.Errorf("failed to prompt for model configuration choice: %w", err)
-		}
-		modelConfigChoice = modelConfigChoices[*modelConfigResp.Value].Value
-	}
-
-	switch modelConfigChoice {
-	case "existing":
-		// Ensure subscription for project listing
 		newCred, err := ensureSubscription(
 			ctx, a.azdClient, a.azureContext, a.environment.Name,
 			"Select an Azure subscription to look up available models and provision your Foundry project resources.",
@@ -1301,7 +1273,6 @@ func (a *InitAction) configureModelChoice(
 		}
 		a.credential = newCred
 
-		// Select a Foundry project (sets AZURE_AI_PROJECT_ID, ACR, AppInsights env vars)
 		selectedProject, err := selectFoundryProject(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
@@ -1312,44 +1283,89 @@ func (a *InitAction) configureModelChoice(
 		}
 
 		if selectedProject != nil {
-			// Signal Bicep to skip project/role/connection provisioning for this existing project
 			if err := setEnvValue(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
 			); err != nil {
 				return nil, err
 			}
 		} else {
-			// No existing project selected (no projects found or user chose "Create new") → fall back to "deploy new" path
-			fmt.Println(output.WithGrayFormat(
-				"No existing Foundry project was selected. Falling back to deploying a new model.",
-			))
-			// Clear any stale existing-project flag from a previous init
+			return nil, fmt.Errorf("foundry project not found: %s", a.flags.projectResourceId)
+		}
+	} else {
+		// Prompt user to pick an existing Foundry project or create new resources
+		projectChoices := []*azdext.SelectChoice{
+			{Label: "Use an existing Foundry project", Value: "existing"},
+			{Label: "Create a new Foundry project", Value: "new"},
+		}
+
+		defaultIdx := int32(0)
+		projectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message:       "Select a Foundry project to host your agent and any models or tools it uses.",
+				Choices:       projectChoices,
+				SelectedIndex: &defaultIdx,
+			},
+		})
+		if err != nil {
+			return nil, exterrors.FromPrompt(err, "failed to prompt for Foundry project configuration choice")
+		}
+
+		switch projectChoices[*projectResp.Value].Value {
+		case "existing":
+			newCred, err := ensureSubscription(
+				ctx, a.azdClient, a.azureContext, a.environment.Name,
+				"Select an Azure subscription to find existing Foundry projects.",
+			)
+			if err != nil {
+				return nil, err
+			}
+			a.credential = newCred
+
+			selectedProject, err := selectFoundryProject(
+				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
+				a.azureContext.Scope.SubscriptionId, "",
+				a.isCodeDeploy,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			if selectedProject == nil {
+				// No existing project selected → fall back to "create new" path
+				fmt.Println(output.WithGrayFormat(
+					"No existing Foundry project was selected. Falling back to creating new resources.",
+				))
+				if err := setEnvValue(
+					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
+				); err != nil {
+					return nil, err
+				}
+				if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
+					return nil, err
+				}
+			} else {
+				if err := setEnvValue(
+					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
+				); err != nil {
+					return nil, err
+				}
+			}
+		default:
+			newCred, err := ensureSubscriptionAndLocation(
+				ctx, a.azdClient, a.azureContext, a.environment.Name,
+				"Select an Azure subscription to look up available models and provision your Foundry project resources.",
+			)
+			if err != nil {
+				return nil, err
+			}
+			a.credential = newCred
+
+			// Creating new resources — clear any stale existing-project flag
 			if err := setEnvValue(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 			); err != nil {
 				return nil, err
 			}
-			if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
-				return nil, err
-			}
-		}
-
-	case "new":
-		// Ensure subscription + location for model catalog
-		newCred, err := ensureSubscriptionAndLocation(
-			ctx, a.azdClient, a.azureContext, a.environment.Name,
-			"Select an Azure subscription to look up available models and provision your Foundry project resources.",
-		)
-		if err != nil {
-			return nil, err
-		}
-		a.credential = newCred
-
-		// Deploying new resources — clear any stale existing-project flag
-		if err := setEnvValue(
-			ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
-		); err != nil {
-			return nil, err
 		}
 	}
 
@@ -2022,7 +2038,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: a.environment.Name,
 		Key:     "AZURE_AI_PROJECT_ID",
-	}); projectID != nil && projectID.Value != "" {
+	}); projectID != nil && projectID.Value != "" && len(a.deploymentDetails) == 0 {
 		fmt.Printf("To deploy your agent, use %s.\n",
 			color.HiBlueString("azd deploy %s", a.serviceNameOverride))
 	} else {

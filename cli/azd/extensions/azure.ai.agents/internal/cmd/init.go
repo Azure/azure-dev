@@ -426,7 +426,18 @@ func resolveExistingAgentNameConflictWithChecker(
 	for {
 		exists, err := agents.AgentExists(ctx, agentChecker, agentName, DefaultAgentAPIVersion)
 		if err != nil {
-			return "", fmt.Errorf("checking whether agent %q exists: %w", agentName, err)
+			if exterrors.IsCancellation(err) || errors.Is(err, context.DeadlineExceeded) {
+				return "", err
+			}
+
+			// This check is a convenience to warn the user about name conflicts; it should
+			// never block init. Log a warning and continue with the requested name.
+			fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+				"WARNING: unable to check whether agent %q already exists: %v\n",
+				agentName,
+				err,
+			))
+			return agentName, nil
 		}
 		if !exists {
 			return agentName, nil

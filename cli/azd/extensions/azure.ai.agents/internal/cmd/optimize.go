@@ -211,7 +211,15 @@ func (a *OptimizeAction) resolveConfig(
 		if err != nil {
 			return nil, "", "", fmt.Errorf("%w\n\nCheck that the file path is correct and contains valid YAML", err)
 		}
-		return cfg, a.flags.configFile, "", nil
+
+		// Even with explicit --config, try to reconcile agent name with the environment.
+		resolved, resolveErr := resolveOptimizeAgent(ctx, a.flags.agent, a.noPrompt)
+		if resolveErr == nil {
+			agentProject = resolved.agentProject
+			reconcileConfigAgentName(&cfg.Agent, resolved.agentName, a.flags.configFile)
+		}
+
+		return cfg, a.flags.configFile, agentProject, nil
 	}
 
 	resolved, err := resolveOptimizeAgent(ctx, a.flags.agent, a.noPrompt)

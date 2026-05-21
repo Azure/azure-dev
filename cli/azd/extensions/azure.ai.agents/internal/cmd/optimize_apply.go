@@ -184,10 +184,13 @@ func (a *OptimizeApplyAction) apply(
 	fmt.Fprintf(out, "  Run %s to deploy the optimized agent.\n",
 		color.CyanString("azd deploy --service %s", svc.Name))
 
-	// Point the user to the config folders for comparison.
+	// Show instruction diff (baseline → optimized).
+	printPromptDiff(out, serviceDir, a.flags.candidate, candidateConfig)
+
+	// Point the user to the config folders for other differences (skills, tools, etc.).
 	baselinePath := filepath.Join(serviceDir, agentConfigsDir, opteval.BaselineDir)
 	candidatePath := filepath.Join(serviceDir, agentConfigsDir, a.flags.candidate)
-	fmt.Fprintf(out, "\n  To see the full diff, compare the files in:\n")
+	fmt.Fprintf(out, "\n  For other changes (skills, tools, etc.), compare the files in:\n")
 	fmt.Fprintf(out, "    Baseline:  %s\n", color.CyanString(baselinePath))
 	fmt.Fprintf(out, "    Optimized: %s\n", color.CyanString(candidatePath))
 
@@ -494,4 +497,53 @@ func extractInstructions(config any) string {
 		}
 	}
 	return ""
+}
+
+// maxDiffPreviewLines is the max lines shown per section in the prompt diff preview.
+const maxDiffPreviewLines = 4
+
+// printPromptDiff displays an abbreviated instruction diff (baseline → optimized)
+// with a short preview of each.
+func printPromptDiff(out io.Writer, serviceDir, candidateID string, candidateConfig any) {
+	optimized := extractInstructions(candidateConfig)
+	if optimized == "" {
+		return
+	}
+
+	baseDir := filepath.Join(serviceDir, agentConfigsDir, opteval.BaselineDir)
+	baseline, err := loadBaselineConfig(serviceDir)
+	if err != nil {
+		return
+	}
+	baselineText := baseline.resolveInstructions(baseDir)
+	if baselineText == "" {
+		return
+	}
+	baselineLines := strings.Split(baselineText, "\n")
+	optimizedLines := strings.Split(optimized, "\n")
+
+	fmt.Fprintf(out, "\n  Instruction diff (baseline → optimized):\n\n")
+
+	removed := color.New(color.FgRed)
+	removed.Fprintf(out, "    — Baseline (%d lines, %d chars):\n",
+		len(baselineLines), len(baselineText))
+	printPreviewLines(out, baselineLines, "- ", removed)
+
+	fmt.Fprintln(out)
+
+	added := color.New(color.FgGreen)
+	added.Fprintf(out, "    — Optimized (%d lines, %d chars):\n",
+		len(optimizedLines), len(optimized))
+	printPreviewLines(out, optimizedLines, "+ ", added)
+}
+
+// printPreviewLines prints up to maxDiffPreviewLines with a prefix, then "..." if truncated.
+func printPreviewLines(out io.Writer, lines []string, prefix string, c *color.Color) {
+	limit := min(len(lines), maxDiffPreviewLines)
+	for _, line := range lines[:limit] {
+		c.Fprintf(out, "    %s%s\n", prefix, line)
+	}
+	if len(lines) > maxDiffPreviewLines {
+		c.Fprintf(out, "    %s... (%d more lines)\n", prefix, len(lines)-maxDiffPreviewLines)
+	}
 }

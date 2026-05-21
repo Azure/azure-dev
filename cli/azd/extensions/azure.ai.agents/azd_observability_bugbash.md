@@ -29,11 +29,10 @@ Please activate `Foundry User` and `Owner` access
 Navigate to a fresh directory outside the extension repo, init the agent and point to our bugbash project, if you already have an azd project with TiP foundry account, you can continue to use it.
 
 ```bash
-mkdir bugbash-azd-<alias> && cd bugbash-azd-<alias>
 git clone https://github.com/ai-platform-microsoft/foundry-observability-playground.git
 cd .\foundry-observability-playground\demos\build2026\agents\travel-approver\
 azd ai agent init --project-id /subscriptions/2d385bf4-0756-4a76-aa95-28bf9ed3b625/resourceGroups/rg-azdbugbash/providers/Microsoft.CognitiveServices/accounts/azd-bugbash-0514/projects/bugbash-westus2
-# Customize your agent name and model deployment
+# !!! Customize your agent name and model deployment
 ```
 
 The template includes `agent_optimization/` — a small package that reads config
@@ -71,17 +70,30 @@ Verify: `azd ai agent invoke "Hello!"`
 > **If you have Owner permissions** and want fresh resources: run `azd provision` before `azd deploy`.
 
 
-## 6. E2E Hero Scenario (inside an azd project with a hosted agent)
+## 6. E2E Hero Scenarios
+
+There are two paths depending on whether you use the **bugbash project** or **your own project**.
+
+---
+
+### Path A: Using the bugbash project (eval + optimize)
+
+> Use this path if you cloned the template in step 3 and deployed to the bugbash Foundry project.
+> You have access to the eval APIs and can run the full eval → optimize flow.
 
 All commands below auto-detect the agent context from the current azd environment.
 Run them from your deployed azd project directory.
 
-### 6a. Initialize an eval suite
+#### 6a-A. Initialize an eval suite
 
-> **Note:** The dataset generation API is not yet available. Use the sample `data.jsonl` included in the template.
+> Generating the eval suite which can optimize your agent adaptively, which could used for optimization as well
 
 ```bash
-azd ai agent eval init --dataset ./data.jsonl
+# including both data generation and evaluator generation
+azd ai agent eval init 
+
+# (Recommended) Using our provided golden dataset, but also adaptive evaluator
+azd ai agent eval init --dataset eval/travel_approval_golden.jsonl
 ```
 
 The command resolves your agent from `azure.yaml` and prompts interactively:
@@ -93,34 +105,54 @@ Resolving eval context...
   Resolving Foundry project endpoint...
 
 Detected eval target:
-  (✓) Service:        sample-agent (azure.yaml)
-  (✓) Agent:          sample-agent (AGENT_SAMPLE_AGENT_NAME)
-  (✓) Version:        1 (AGENT_SAMPLE_AGENT_VERSION)
+  (✓) Service:        travel-approver-bb (azure.yaml)
+  (✓) Agent:          travel-approver-azd-bb (AGENT_TRAVEL_APPROVER_BB_NAME)
+  (✓) Version:        2 (AGENT_TRAVEL_APPROVER_BB_VERSION)
   (✓) Kind:           hosted (agent.yaml)
-  (✓) Endpoint:       https://azd-bugbash-0514.services.ai.azure.com/api/projects/bugbash-westus2
-  (✓) Project:        D:\optimization\bugbash-agent-zyying
-  Eval config:        D:\optimization\bugbash-agent-zyying\eval.yaml
+  (✓) Endpoint:       https://azd-bugbash-0514.services.ai.azure.com/api/projects/bugbash-westus2 (AZURE_AI_PROJECT_ENDPOINT)
+  (✓) Project:        D:\optimization\bugbash\foundry-observability-playground\demos\build2026\agents\travel-approver (azure.yaml service "travel-approver-bb" project path)
+  Eval config:      D:\optimization\bugbash\foundry-observability-playground\demos\build2026\agents\travel-approver\eval.yaml
 
-? Eval suite name: smoke-core-zyying
-? How would you like to provide the generation instruction?: Type inline
-? Describe what this agent does and what scenarios to test: test agent
-? Select the model for evaluation and generation: Select another deployment
-? Select a model deployment: gpt-4o (gpt-4o)
-? Max samples: 100
-\ Evaluator generation...  (✓) Done  Evaluator generation  (1m16s)
+   Agent Config:     D:\optimization\bugbash\foundry-observability-playground\demos\build2026\agents\travel-approver\.agent_configs\baseline\metadata.yaml
+? Eval suite name: travel-approver-azd-bb
+? Instruction file: .agent_configs\baseline\instructions.md
+? Include agent traces for evaluator generation?: No
+? Select the model for evaluation and generation: gpt-4o (deployed)
+? Max samples (between 15 and 1000): 15
+  (–) Running  Evaluator generation  (evaluatorgen-travel-approver-azd-bb-v1-3392d06e)
+  (–) Running  Dataset generation  (datagen-c00db6c5b7ee4585aa9f25f7089a05a6)
+  (✓) Done  Evaluator generation  (34 seconds)
+  (✓) Done  Dataset generation  (2m 19s)
 
-   Artifacts:  D:\optimization\bugbash-agent-zyying\.azure\.foundry
-               evaluators/smoke-core-zyying-35368f67.json
 Eval suite created
-   Config:     D:\optimization\bugbash-agent-zyying\eval.yaml
-   Dataset:    D:\optimization\bugbash-agent-zyying\data.jsonl
-   Evaluator:  smoke-core-zyying-35368f67
+   Config:     D:\optimization\bugbash\foundry-observability-playground\demos\build2026\agents\travel-approver\eval.yaml
+   Dataset:    travel-approver-azd-bb (2.0)
+               D:\optimization\bugbash\foundry-observability-playground\demos\build2026\agents\travel-approver\datasets\travel-approver-azd-bb
+   Evaluator:  travel-approver-azd-bb (1)
+               D:\optimization\bugbash\foundry-observability-playground\demos\build2026\agents\travel-approver\evaluators\travel-approver-azd-bb\rubric_dimensions.json
 
-   Review the generated assets, then run:
+   Evaluator dimensions (6):
+     Weight  Dimension
+     ──────  ─────────
+         10  policy_compliance
+          6  budget_accuracy
+          5  alternative_suggestions_specificity
+          4  decision_explanation_clarity
+          3  user_constraint_adherence
+          5  general_quality
+
+   Portal:
+     Dataset:   https://ai.azure.com/nextgen/r/LThb9AdWSnaqlSi_ntO2JQ,rg-azdbugbash,,azd-bugbash-0514,bugbash-westus2/build/data/datasets/travel-approver-azd-bb/2.0
+     Evaluator: https://ai.azure.com/nextgen/r/LThb9AdWSnaqlSi_ntO2JQ,rg-azdbugbash,,azd-bugbash-0514,bugbash-westus2/build/evaluations/catalog/travel-approver-azd-bb/1
+
+   Next steps:
      azd ai agent eval run
+       Run the eval suite against your agent.
+     azd ai agent eval update
+       Edit the generated dataset or evaluator locally, then upload changes.
 ```
 
-### 6b. Run an eval
+#### 6b-A. Run an eval (Optional, if you want to try evaluation run)
 
 ```bash
 azd ai agent eval run
@@ -128,7 +160,7 @@ azd ai agent eval run
 
 Reads `eval.yaml`, creates the eval on the Foundry backend, and submits a run against your deployed agent.
 
-### 6c. Browse eval results
+#### 6c-A. Browse eval results (Optional)
 
 ```bash
 # List all evals (table with status, run count, created date)
@@ -141,39 +173,46 @@ azd ai agent eval show
 azd ai agent eval show -O results.json
 ```
 
-### 6d. Optimize the agent
+#### 6d-A. Optimize the agent
 
 After the eval suite is ready, run optimize. It auto-detects the `eval.yaml` you just created.
 
 ```bash
 azd ai agent optimize
-# → Prompts: "Found eval.yaml in project. Use it for optimization?"
-#   Select Yes to use your eval config, or No to use the built-in dataset.
 ```
 
 Expected output (takes ~5–20 minutes):
 
 ```
-Optimizing agent "sample-agent"...
-  Config: D:\optimization\bugbash-agent-zyying\eval.yaml
-  Job ID: opt_f74131d58c774ebba1765fae1005a9f8
-  ⠦ completed · strategy: gepa · iteration 1 · score: 0.95 · 3m0s
+# azd ai agent optimize
+? Select an agent service: travel-zyying-new
+? Found eval.yaml in project. Use it for optimization?: Yes
+? Instruction file: .agent_configs\baseline\instructions.md
+? Skills directory (enter to skip): skills
+? Would you like to specify target models for optimization?: Yes
+? Select target models for optimization (current: gpt-4o): gpt-4o (current), gpt-4.1
+Optimizing agent "travel-zyying-new"...
+  Config: D:\optimization\public\viveks-scratch\optimization-demo-v2\src\travel-approver-demo\eval.yaml
+  Baseline saved to .agent_configs\baseline\metadata.yaml
+  Job ID: opt_b1cca48e468b4a508d21bfa19cdd16de
+  Status: pending
+  Portal: https://eastus2euap.ai.azure.com/nextgen/r/LThb9AdWSnaqlSi_ntO2JQ,rg-azdbugbash,,azd-bugbash-0514,bugbash-westus2/build/agents/travel-zyying-new/optimization/opt_b1cca48e468b4a508d21bfa19cdd16de?flight=enable_faos_read_ui
+
+  ⠼ completed · strategy: gepa · iteration 1 · score: 0.77 · 7m50s
 
 Results:
   Candidate              Score    Pass   Tokens
   ──────────────────── ─────── ─────── ────────
-  baseline                0.73    100%      430
-  baseline_instr_v2       0.77    100%     1180
-  baseline_instr_v3       0.85    100%     1204
-  baseline_instr_v1 ★     0.92    100%     1063
+  baseline ★              0.77    100%        0
+  candidate_1             0.74    100%        0
 
   Candidate IDs:
-      baseline_instr_v2    cand_445fe8e68e224d6d94cbb37b022945eb
-      baseline_instr_v3    cand_51b87d7ce10b43ba801776483a9b5506
-    ★ baseline_instr_v1    cand_6b5c23ed295f4f4e9be87b7fdb3809b0
+    ★ baseline             cand_c6532ad867594dd4b6878a45604a4994
+      candidate_1          cand_d9bedab23c5641d4a2d83c98aa635c2f
 
-  Deploy the best candidate:
-    azd ai agent optimize deploy --candidate cand_6b5c23ed295f4f4e9be87b7fdb3809b0
+  Apply the best candidate locally, then deploy:
+    azd ai agent optimize apply --candidate cand_c6532ad867594dd4b6878a45604a4994
+    azd deploy
 ```
 
 The ★ marks the best candidate. Copy the deploy command from the output to promote it.
@@ -185,32 +224,23 @@ You can fine-tune optimization behavior by adding or modifying the `options:` se
 ```yaml
 options:
   eval_model: "gpt-4o"                          # (string) Model used for evaluation. Default: "gpt-4o"
-  mode: "optimize"                               # (string) Run mode. Default: "optimize"
-  strategies:                                    # ([]string) Optimization strategies to try.
-    - instruction                                #   Default: ["instruction", "skill", "agents-optimization-job"]
-    - skill
-  budget: 5                                      # (int) Max optimization budget (number of candidates). Default: 5
-  max_iterations: 2                              # (int) Max iterations per strategy. Default: 2 (when strategies are default)
-  min_improvement: 0.0                           # (float) Minimum score improvement to accept a candidate. Default: 0 (not set)
-  improvement_threshold: 0.0                     # (float) Threshold for incremental improvement. Default: 0 (not set)
-  pass_threshold: 0.0                            # (float) Minimum passing score. Default: 0 (not set)
+  target_attributes:                            # If not specify, we should auto detect it
+        - instruction
+        - skill
+        - model
+  target_config:
+        model:
+            - gpt-4.1
+            - gpt-4.1-mini
+            - gpt-4o
+  budget: 0  # Deprecating                       # (int) Max optimization budget (number of candidates). Default: 5
+  max_iterations: 4                              # (int) Max iterations per strategy. Default: 4 (when strategies are default)
+  min_improvement: 0.0                           # (float) Minimum score improvement to accept a candidate.
   keep_versions: false                           # (bool) Keep all intermediate agent versions. Default: false
-  tasks_per_iteration: 0                         # (int) Number of tasks per iteration. Default: 0 (server decides)
   reflection_model: ""                           # (string) Model for reflection steps. Default: "" (uses eval_model)
 ```
 
-For example, to increase the budget and use a different eval model:
-
-```yaml
-options:
-  eval_model: "gpt-4.1"
-  budget: 10
-  max_iterations: 3
-```
-
-Fields you omit will use the defaults above. The `strategies` field defaults to all three strategies if not specified.
-
-### 6e. Monitor optimization jobs
+#### 6e-A. Monitor optimization jobs
 
 ```bash
 # Watch a running job in real-time
@@ -223,7 +253,7 @@ azd ai agent optimize list
 azd ai agent optimize cancel <operation-id>
 ```
 
-### 6f. Deploy the winning candidate
+#### 6f-A. Deploy the winning candidate
 
 > **⚠️ Known Issue:** Due to a FAOS CANDIDATE API issue, `optimize deploy` and `optimize apply` cannot fetch candidate config at this time. This step is blocked until the API issue is resolved.
 But you can check agent optimization job in foundry UI with `?flight=enable_faos_read_ui`
@@ -238,9 +268,89 @@ This creates a new agent version with `OPTIMIZATION_CONFIG` set to the candidate
 config (instructions, model, temperature). The agent SDK's `load_config()` reads this
 at startup and applies the optimized settings.
 
-### 6g. Verify the optimized agent
+#### 6g-A. Verify the optimized agent
 
 > **⚠️ Blocked:** This step depends on 6f, which is currently blocked by the FAOS CANDIDATE API issue.
+
+```bash
+azd ai agent invoke "Hello!"
+# Expected: agent responds using the optimized configuration
+```
+
+---
+
+### Path B: Using your own project (optimize only, built-in dataset)
+
+> Use this path if you have your own azd project with a deployed hosted agent on a westus2/ncus Foundry account.
+> The eval APIs (`eval init`, `eval run`) require specific backend support that may not be available on your project.
+> Instead, go directly to `optimize` which uses a **built-in dataset** (3 tasks, 12 criteria) — no eval setup needed.
+
+#### 6a-B. Prerequisites
+
+- You have an azd project with a hosted agent already deployed (`azd deploy` completed).
+- Your agent uses the `agent_optimization` SDK package with `load_config()`.
+- You are logged in (`az login`) and have access to the Foundry project.
+
+#### 6b-B. Optimize the agent (built-in dataset)
+
+From your azd project directory:
+
+```bash
+azd ai agent optimize
+# → If eval.yaml exists, select "No" to use the built-in dataset
+# → If no eval.yaml, it automatically uses the built-in dataset
+```
+
+Or explicitly skip the eval.yaml prompt:
+
+```bash
+azd ai agent optimize --no-prompt
+# Always uses built-in defaults (3 tasks, 12 criteria)
+```
+
+Expected output (takes ~5–20 minutes):
+
+```
+Optimizing agent "your-agent"...
+  Dataset: built-in (3 tasks, 12 criteria)
+  Job ID: opt_abc123...
+  ⠦ completed · strategy: gepa · iteration 1 · score: 0.85 · 5m0s
+
+Results:
+  Candidate              Score    Pass   Tokens
+  ──────────────────── ─────── ─────── ────────
+  baseline                0.60    100%      300
+  baseline_instr_v1 ★     0.85    100%      980
+
+  Deploy the best candidate:
+    azd ai agent optimize deploy --candidate cand_...
+```
+
+#### 6c-B. Monitor optimization jobs
+
+```bash
+# Watch the running job
+azd ai agent optimize status --watch
+
+# List all jobs
+azd ai agent optimize list
+
+# Cancel if needed
+azd ai agent optimize cancel <operation-id>
+```
+
+#### 6d-B. Deploy the winning candidate
+
+> **⚠️ Known Issue:** Due to a FAOS CANDIDATE API issue, `optimize deploy` and `optimize apply` cannot fetch candidate config at this time.
+> You can check agent optimization job results in Foundry UI with `?flight=enable_faos_read_ui`.
+
+```bash
+azd ai agent optimize deploy --candidate <candidate-id>
+```
+
+#### 6e-B. Verify the optimized agent
+
+> **⚠️ Blocked:** This step depends on 6d-B, which is currently blocked by the FAOS CANDIDATE API issue.
 
 ```bash
 azd ai agent invoke "Hello!"

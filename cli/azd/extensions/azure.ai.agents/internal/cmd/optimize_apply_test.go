@@ -14,6 +14,7 @@ import (
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -43,6 +44,143 @@ func TestNewOptimizeApplyCommand_CandidateIsRequired(t *testing.T) {
 	err := cmd.Execute()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "candidate")
+}
+
+// ---- printPreviewLines ----
+
+func TestPrintPreviewLines(t *testing.T) {
+	t.Parallel()
+
+	// Disable color output so assertions don't need ANSI codes.
+	color.NoColor = true
+
+	tests := []struct {
+		name   string
+		lines  []string
+		prefix string
+		want   []string // substrings expected in output
+	}{
+		{
+			"fewer lines than limit",
+			[]string{"line1", "line2"},
+			"+ ",
+			[]string{"+ line1", "+ line2"},
+		},
+		{
+			"exactly at limit",
+			[]string{"a", "b", "c", "d"},
+			"- ",
+			[]string{"- a", "- b", "- c", "- d"},
+		},
+		{
+			"exceeds limit shows truncation",
+			[]string{"a", "b", "c", "d", "e", "f"},
+			"+ ",
+			[]string{"+ a", "+ b", "+ c", "+ d", "... (2 more lines)"},
+		},
+		{
+			"empty lines",
+			[]string{},
+			"- ",
+			nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			c := color.New(color.FgWhite)
+			printPreviewLines(&buf, tt.lines, tt.prefix, c)
+			out := buf.String()
+			for _, s := range tt.want {
+				assert.Contains(t, out, s)
+			}
+			if tt.want == nil {
+				assert.Empty(t, out)
+			}
+		})
+	}
+}
+
+// ---- printPromptDiff ----
+
+func TestPrintPromptDiff(t *testing.T) {
+	t.Parallel()
+
+	color.NoColor = true
+
+	t.Run("shows diff when baseline and candidate have instructions", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		// Set up baseline with metadata that points to an instruction file.
+		baselineDir := filepath.Join(dir, agentConfigsDir, opteval.BaselineDir)
+		require.NoError(t, os.MkdirAll(baselineDir, 0750))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(baselineDir, opteval.InstructionFile),
+			[]byte("You are a baseline assistant.\nLine two."),
+			0600,
+		))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(baselineDir, opteval.MetadataFile),
+			[]byte("instruction_file: instructions.md\nmodel: gpt-4o\n"),
+			0600,
+		))
+
+		candidateConfig := map[string]any{
+			"systemPrompt": "You are an optimized assistant.\nNew line two.\nNew line three.",
+		}
+
+		var buf bytes.Buffer
+		printPromptDiff(&buf, dir, "cand1", candidateConfig)
+		out := buf.String()
+
+		assert.Contains(t, out, "Instruction diff")
+		assert.Contains(t, out, "Baseline")
+		assert.Contains(t, out, "Optimized")
+		assert.Contains(t, out, "You are a baseline assistant.")
+		assert.Contains(t, out, "You are an optimized assistant.")
+	})
+
+	t.Run("no output when candidate has no instructions", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		candidateConfig := map[string]any{"model": "gpt-4o"}
+
+		var buf bytes.Buffer
+		printPromptDiff(&buf, dir, "cand1", candidateConfig)
+		assert.Empty(t, buf.String())
+	})
+
+	t.Run("no output when baseline config missing", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		candidateConfig := map[string]any{"systemPrompt": "optimized"}
+
+		var buf bytes.Buffer
+		printPromptDiff(&buf, dir, "cand1", candidateConfig)
+		assert.Empty(t, buf.String())
+	})
+
+	t.Run("no output when baseline has no instruction file", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		// Write metadata without instruction_file.
+		baselineDir := filepath.Join(dir, agentConfigsDir, opteval.BaselineDir)
+		require.NoError(t, os.MkdirAll(baselineDir, 0750))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(baselineDir, opteval.MetadataFile),
+			[]byte("model: gpt-4o\n"),
+			0600,
+		))
+
+		candidateConfig := map[string]any{"systemPrompt": "optimized"}
+
+		var buf bytes.Buffer
+		printPromptDiff(&buf, dir, "cand1", candidateConfig)
+		assert.Empty(t, buf.String())
+	})
 }
 
 // ---- extractInstructions ----

@@ -4,31 +4,31 @@
 # paths so they override correctly. The root catch-all (/**) covers /cli/ and
 # everything else not listed below -- no need for a separate /cli/ rule.
 
-# ── Default (core team) ──────────────────────────────────────────────────────
-/**                                         @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @jongio
+# â”€â”€ Default (core team) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/**  @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050
 
-# ── CLI installer ─────────────────────────────────────────────────────────────
-/cli/installer/                             @jongio @wbreza @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
+# â”€â”€ CLI installer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/cli/installer/ @wbreza @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
 
-# ── CLI extensions (AI) ──────────────────────────────────────────────────────
-/cli/azd/extensions/azure.ai.agents/        @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @trrwilson @therealjohn
-/cli/azd/extensions/azure.ai.finetune/      @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
-/cli/azd/extensions/azure.ai.models/        @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
+# â”€â”€ CLI extensions (AI) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/cli/azd/extensions/azure.ai.agents/ @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @trrwilson @therealjohn
+/cli/azd/extensions/azure.ai.finetune/ @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
+/cli/azd/extensions/azure.ai.models/ @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 /cli/azd/extensions/azure.ai.training/  @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 
-# ── Extensions ────────────────────────────────────────────────────────────────
-/ext/                                       @jongio @wbreza @karolz-ms @vhvb1989 @tg-msft @rajeshkamal5050
-/ext/azuredevops/                           @jongio @wbreza @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
-/ext/devcontainer/                          @jongio @wbreza @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
-/ext/vscode/                                @jongio @wbreza @bwateratmsft @vhvb1989 @tg-msft @rajeshkamal5050 @karolz-ms
+# â”€â”€ Extensions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/ext/ @wbreza @karolz-ms @vhvb1989 @tg-msft @rajeshkamal5050
+/ext/azuredevops/ @wbreza @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
+/ext/devcontainer/ @wbreza @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
+/ext/vscode/ @wbreza @bwateratmsft @vhvb1989 @tg-msft @rajeshkamal5050 @karolz-ms
 
-# ── Infra / CI / Engineering ─────────────────────────────────────────────────
-/.github/                                   @jongio @wbreza @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
-/eng/                                       @jongio @wbreza @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
-/.config/1espt/                             @jongio @wbreza @Azure/azure-sdk-eng
+# â”€â”€ Infra / CI / Engineering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/.github/ @wbreza @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
+/eng/ @wbreza @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
+/.config/1espt/ @wbreza @Azure/azure-sdk-eng
 
-# ── Schemas ───────────────────────────────────────────────────────────────────
-/schemas/                                   @jongio @wbreza @vhvb1989 @tg-msft @rajeshkamal5050
+# â”€â”€ Schemas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/schemas/ @wbreza @vhvb1989 @tg-msft @rajeshkamal5050
 
-# ── This file (most specific -- must be last for /.github/) ───────────────────
+# â”€â”€ This file (most specific -- must be last for /.github/) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /.github/CODEOWNERS                         @rajeshkamal5050 @Azure/azure-sdk-eng

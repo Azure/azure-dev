@@ -1170,14 +1170,14 @@ func (a *InitAction) configureModelChoice(
 			}
 
 			if selectedProject == nil {
-				return nil, fmt.Errorf("foundry project not found: %s", a.flags.projectResourceId)
+				return nil, fmt.Errorf("specified foundry project was not found or is not eligible for the current configuration: %s", a.flags.projectResourceId)
 			}
 
 			// Signal Bicep to skip project/role/connection provisioning for this existing project
 			if err := setEnvValue(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
 			); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 			}
 		} else {
 			// Prompt user to pick an existing Foundry project or create new resources
@@ -1195,6 +1195,9 @@ func (a *InitAction) configureModelChoice(
 				},
 			})
 			if err != nil {
+				if exterrors.IsCancellation(err) {
+					return nil, exterrors.Cancelled("project selection was cancelled")
+				}
 				return nil, exterrors.FromPrompt(err, "failed to prompt for Foundry project configuration choice")
 			}
 
@@ -1226,7 +1229,7 @@ func (a *InitAction) configureModelChoice(
 					if err := setEnvValue(
 						ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 					); err != nil {
-						return nil, err
+						return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 					}
 					if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
 						return nil, err
@@ -1236,7 +1239,7 @@ func (a *InitAction) configureModelChoice(
 					if err := setEnvValue(
 						ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
 					); err != nil {
-						return nil, err
+						return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 					}
 				}
 			default:
@@ -1253,7 +1256,7 @@ func (a *InitAction) configureModelChoice(
 				if err := setEnvValue(
 					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 				); err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 				}
 			}
 		}
@@ -1286,10 +1289,10 @@ func (a *InitAction) configureModelChoice(
 			if err := setEnvValue(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
 			); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 			}
 		} else {
-			return nil, fmt.Errorf("foundry project not found: %s", a.flags.projectResourceId)
+			return nil, fmt.Errorf("specified foundry project was not found or is not eligible for the current configuration: %s", a.flags.projectResourceId)
 		}
 	} else {
 		// Prompt user to pick an existing Foundry project or create new resources
@@ -1307,6 +1310,9 @@ func (a *InitAction) configureModelChoice(
 			},
 		})
 		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("project selection was cancelled")
+			}
 			return nil, exterrors.FromPrompt(err, "failed to prompt for Foundry project configuration choice")
 		}
 
@@ -1338,7 +1344,7 @@ func (a *InitAction) configureModelChoice(
 				if err := setEnvValue(
 					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 				); err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 				}
 				if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
 					return nil, err
@@ -1347,7 +1353,7 @@ func (a *InitAction) configureModelChoice(
 				if err := setEnvValue(
 					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
 				); err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 				}
 			}
 		default:
@@ -1364,7 +1370,7 @@ func (a *InitAction) configureModelChoice(
 			if err := setEnvValue(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 			); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 			}
 		}
 	}

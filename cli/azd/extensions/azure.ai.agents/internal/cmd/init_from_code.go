@@ -494,7 +494,17 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	// Step 1: Foundry project selection
 	var selectedProject *FoundryProjectInfo
 	if a.flags.projectResourceId != "" {
-		a.azureContext.Scope.SubscriptionId = extractSubscriptionId(a.flags.projectResourceId)
+		projectDetails, err := extractProjectDetails(a.flags.projectResourceId)
+		if err != nil {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidProjectResourceId,
+				fmt.Sprintf("invalid --project-id value: %s", err),
+				"Provide a valid Foundry project resource ID in the format:\n"+
+					"/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP>/providers/"+
+					"Microsoft.CognitiveServices/accounts/<ACCOUNT_NAME>/projects/<PROJECT_NAME>",
+			)
+		}
+		a.azureContext.Scope.SubscriptionId = projectDetails.SubscriptionId
 
 		newCred, err := ensureSubscription(
 			ctx, a.azdClient, a.azureContext, a.environment.Name,
@@ -510,12 +520,12 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			return nil, err
 		}
 		if proj == nil {
-			return nil, fmt.Errorf("foundry project not found: %s", a.flags.projectResourceId)
+			return nil, fmt.Errorf("specified foundry project was not found or is not eligible for the current configuration: %s", a.flags.projectResourceId)
 		}
 		selectedProject = proj
 
 		if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true"); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 		}
 	} else {
 		projectChoices := []*azdext.SelectChoice{
@@ -532,6 +542,9 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			},
 		})
 		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("project selection was cancelled")
+			}
 			return nil, exterrors.FromPrompt(err, "failed to prompt for Foundry project configuration choice")
 		}
 
@@ -556,7 +569,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 					"No existing Foundry project was selected. Falling back to creating new resources.",
 				))
 				if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 				}
 				if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
 					return nil, err
@@ -564,7 +577,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			} else {
 				selectedProject = proj
 				if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true"); err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 				}
 			}
 		default:
@@ -578,7 +591,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			a.credential = newCred
 
 			if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 			}
 		}
 	}

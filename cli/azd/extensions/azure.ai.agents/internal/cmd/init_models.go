@@ -360,7 +360,7 @@ func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (
 		if choices[*resp.Value].Value == "change" {
 			selectedModel, err := a.promptModelFromCatalog(ctx)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to select alternative model: %w", err)
 			}
 			if selectedModel == nil {
 				return nil, fmt.Errorf("no model selected, exiting")

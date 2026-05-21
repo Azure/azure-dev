@@ -62,9 +62,10 @@ func New(cfg Config) *Server {
 			CheckOrigin: func(r *http.Request) bool {
 				origin := r.Header.Get("Origin")
 				if origin == "" {
-					return true
+					return false
 				}
-				return origin == "http://"+r.Host || origin == "https://"+r.Host
+				return isAllowedInspectorHostPort(r.Host, cfg.Port) &&
+					isAllowedInspectorOrigin(origin, cfg.Port)
 			},
 		},
 	}

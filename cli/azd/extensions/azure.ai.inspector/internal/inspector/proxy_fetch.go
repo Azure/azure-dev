@@ -62,6 +62,10 @@ func (s *rpcSession) proxyFetch(raw json.RawMessage) (any, error) {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return nil, fmt.Errorf("invalid params: %w", err)
 	}
+	targetURL, err := validateAgentProxyURL(p.URL, s.cfg.AgentPort)
+	if err != nil {
+		return nil, err
+	}
 
 	method := p.Method
 	if method == "" {
@@ -73,7 +77,7 @@ func (s *rpcSession) proxyFetch(raw json.RawMessage) (any, error) {
 		bodyReader = bytes.NewReader([]byte(p.Body))
 	}
 
-	req, err := http.NewRequestWithContext(s.rootCtx, method, p.URL, bodyReader)
+	req, err := http.NewRequestWithContext(s.rootCtx, method, targetURL.String(), bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -107,15 +111,19 @@ func (s *rpcSession) proxyInvoke(raw json.RawMessage) (any, error) {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return nil, fmt.Errorf("invalid params: %w", err)
 	}
+	targetURL, err := validateAgentProxyURL(p.URL, s.cfg.AgentPort)
+	if err != nil {
+		return nil, err
+	}
 
-	s.logger.Printf("invoke [%s] POST %s body: %s", p.RequestID, p.URL, p.Body)
+	s.logger.Printf("invoke [%s] POST %s body length: %d", p.RequestID, targetURL.Redacted(), len(p.Body))
 
 	var bodyReader io.Reader
 	if p.Body != "" {
 		bodyReader = bytes.NewReader([]byte(p.Body))
 	}
 
-	req, err := http.NewRequestWithContext(s.rootCtx, http.MethodPost, p.URL, bodyReader)
+	req, err := http.NewRequestWithContext(s.rootCtx, http.MethodPost, targetURL.String(), bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -149,7 +157,7 @@ func (s *rpcSession) proxyInvoke(raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
-	s.logger.Printf("invoke [%s] response %d: %s", p.RequestID, resp.StatusCode, string(body))
+	s.logger.Printf("invoke [%s] response %d body length: %d", p.RequestID, resp.StatusCode, len(body))
 	return proxyInvokeResult{
 		Status:     resp.StatusCode,
 		StatusText: resp.Status,

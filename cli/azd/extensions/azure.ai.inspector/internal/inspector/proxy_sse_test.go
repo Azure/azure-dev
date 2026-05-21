@@ -40,9 +40,17 @@ func TestSSECancelAbortsUpstreamOnWSClose(t *testing.T) {
 		}
 	}))
 	defer upstream.Close()
+	upstreamURL, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstreamPort, err := strconv.Atoi(upstreamURL.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	port := pickFreePort(t)
-	srv := New(Config{Port: port})
+	srv := New(Config{Port: port, AgentPort: upstreamPort})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -56,7 +64,8 @@ func TestSSECancelAbortsUpstreamOnWSClose(t *testing.T) {
 	}
 
 	wsURL := url.URL{Scheme: "ws", Host: "127.0.0.1:" + strconv.Itoa(port), Path: "/agentdev/ws/rpc"}
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+	headers := http.Header{"Origin": []string{"http://127.0.0.1:" + strconv.Itoa(port)}}
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL.String(), headers)
 	if err != nil {
 		t.Fatalf("dial ws: %v", err)
 	}

@@ -32,6 +32,11 @@ func (s *rpcSession) proxyFetchSSE(raw json.RawMessage) {
 		s.logger.Printf("fetchSSE: bad params: %v", err)
 		return
 	}
+	targetURL, err := validateAgentProxyURL(p.URL, s.cfg.AgentPort)
+	if err != nil {
+		s.sendSSEDone(p.RequestID, err)
+		return
+	}
 
 	if !s.cfg.Silent {
 		printUserInput(p.Body)
@@ -43,7 +48,9 @@ func (s *rpcSession) proxyFetchSSE(raw json.RawMessage) {
 	}
 
 	streamCtx, cancel := context.WithCancel(s.rootCtx)
-	s.registerStream(p.RequestID, cancel)
+	if !s.registerStream(p.RequestID, cancel) {
+		return
+	}
 
 	go func() {
 		defer s.unregisterStream(p.RequestID)
@@ -52,7 +59,7 @@ func (s *rpcSession) proxyFetchSSE(raw json.RawMessage) {
 		if p.Body != "" {
 			bodyReader = bytes.NewReader([]byte(p.Body))
 		}
-		req, err := http.NewRequestWithContext(streamCtx, method, p.URL, bodyReader)
+		req, err := http.NewRequestWithContext(streamCtx, method, targetURL.String(), bodyReader)
 		if err != nil {
 			s.sendSSEDone(p.RequestID, err)
 			return
@@ -76,7 +83,7 @@ func (s *rpcSession) proxyFetchSSE(raw json.RawMessage) {
 				fmt.Printf("Trace ID: %s\n", requestID)
 			}
 			body, _ := io.ReadAll(resp.Body)
-			err := fmt.Errorf("%s %s failed with HTTP %d: %s\n%s", method, p.URL, resp.StatusCode, resp.Status, string(body))
+			err := fmt.Errorf("%s %s failed with HTTP %d: %s\n%s", method, targetURL.Redacted(), resp.StatusCode, resp.Status, string(body))
 			if !s.cfg.Silent {
 				fmt.Fprintln(os.Stderr, "Error:", err)
 			}
@@ -98,8 +105,12 @@ func (s *rpcSession) proxyFetchSSE(raw json.RawMessage) {
 // by cancelling streamCtx ourselves on the normal-completion path so the
 // goroutine always runs and closes Body exactly once.
 func (s *rpcSession) pumpSSE(requestID string, resp *http.Response, logRaw bool) {
+	defer resp.Body.Close()
+
 	streamCtx, cancel := context.WithCancel(s.rootCtx)
-	s.registerStream(requestID, cancel)
+	if !s.registerStream(requestID, cancel) {
+		return
+	}
 	defer s.unregisterStream(requestID)
 
 	go func() {

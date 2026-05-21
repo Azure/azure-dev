@@ -47,6 +47,7 @@ type rpcSession struct {
 
 	streamsMu sync.Mutex
 	streams   map[string]context.CancelFunc
+	closed    bool
 
 	idMu          sync.Mutex
 	nextRequestID int
@@ -62,6 +63,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		s.logger.Printf("ws upgrade failed: %v", err)
 		return
 	}
+	conn.SetReadLimit(1 << 20)
 	rootCtx, rootCancel := context.WithCancel(r.Context())
 	sess := &rpcSession{
 		cfg:           s.cfg,
@@ -91,8 +93,21 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 		// Dispatch off the read loop so streaming methods don't block
 		// subsequent client messages (e.g. fetchSSE/cancel).
-		go sess.handleMessage(&msg)
+		go sess.handleMessageSafely(msg)
 	}
+}
+
+func (s *rpcSession) handleMessageSafely(msg rpcMessage) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			s.logger.Printf("rpc panic handling %q: %v", msg.Method, recovered)
+			if len(msg.ID) > 0 {
+				s.sendError(msg.ID, fmt.Errorf("internal inspector error"))
+			}
+		}
+	}()
+
+	s.handleMessage(&msg)
 }
 
 func (s *rpcSession) handleMessage(msg *rpcMessage) {
@@ -258,10 +273,15 @@ func (s *rpcSession) sendRaw(payload any) error {
 	return nil
 }
 
-func (s *rpcSession) registerStream(id string, cancel context.CancelFunc) {
+func (s *rpcSession) registerStream(id string, cancel context.CancelFunc) bool {
 	s.streamsMu.Lock()
 	defer s.streamsMu.Unlock()
+	if s.closed {
+		cancel()
+		return false
+	}
 	s.streams[id] = cancel
+	return true
 }
 
 func (s *rpcSession) unregisterStream(id string) {
@@ -289,13 +309,24 @@ func (s *rpcSession) cleanup() {
 	s.rootCancel()
 
 	s.streamsMu.Lock()
-	for _, cancel := range s.streams {
-		cancel()
+	if s.closed {
+		s.streamsMu.Unlock()
+		return
 	}
-	s.streams = nil
+	s.closed = true
+	cancels := make([]context.CancelFunc, 0, len(s.streams))
+	for _, cancel := range s.streams {
+		cancels = append(cancels, cancel)
+	}
+	clear(s.streams)
 	s.streamsMu.Unlock()
 
-	_ = s.conn.Close()
+	for _, cancel := range cancels {
+		cancel()
+	}
+	if s.conn != nil {
+		_ = s.conn.Close()
+	}
 }
 
 // unwrapSingleArray converts `[obj]` → `obj`, matching vscode-jsonrpc's

@@ -1736,9 +1736,15 @@ func (a *InitAction) downloadAgentYaml(
 
 	fmt.Println(output.WithGrayFormat("✓ Manifest validated successfully"))
 
-	agentId := agentManifest.Name
+	// Use the (possibly user-renamed) selected agent name as the canonical
+	// identifier for naming the service entry and target directory. The
+	// outer manifest's Name field is not updated when the user resolves a
+	// conflict with an existing Foundry agent, so prefer selectedAgentName
+	// to keep azure.yaml's service entry consistent with the agent name
+	// written to agent.yaml.
+	agentId := selectedAgentName
 	if agentId == "" {
-		agentId = selectedAgentName
+		agentId = agentManifest.Name
 	}
 	serviceName := strings.ReplaceAll(agentId, " ", "")
 

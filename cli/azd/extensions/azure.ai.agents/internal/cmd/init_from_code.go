@@ -37,6 +37,7 @@ type InitFromCodeAction struct {
 	environment       *azdext.Environment
 	credential        azcore.TokenCredential
 	deploymentDetails []project.Deployment
+	needsProvision    bool
 	httpClient        *http.Client
 }
 
@@ -138,7 +139,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: a.environment.Name,
 			Key:     "AZURE_AI_PROJECT_ID",
-		}); projectID != nil && projectID.Value != "" {
+		}); projectID != nil && projectID.Value != "" && !a.needsProvision {
 			fmt.Printf("Next steps: Run %s to deploy your agent to Microsoft Foundry.\n",
 				color.HiBlueString("azd deploy %s", localDefinition.Name))
 		} else {
@@ -721,6 +722,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 				Capacity: int(modelDetails.Capacity),
 			},
 		})
+		a.needsProvision = true
 
 		definition.EnvironmentVariables = appendEnvVar(definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
 			Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",

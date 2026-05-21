@@ -48,6 +48,7 @@ jobs:
           EXTENSION_PATH: "cli/azd/extensions/azure.ai.inspector/"
           WORKFLOW_PATH: ".github/workflows/approval-ext-azure-ai-inspector.yml"
           OVERRIDE_COMMAND: "/inspector-extension-approval override"
+          REQUIRED_APPROVERS: '["anchenyi", "XiaofuHuang", "swatDong"]'
         with:
           script: |
             const script = require('./.github/scripts/pr-approval-foundry-extensions-shared.js');

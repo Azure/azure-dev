@@ -199,8 +199,6 @@ type connectionCreateFlags struct {
 	metadata        []string
 	force           bool
 	projectEndpoint string
-	clientID        string
-	clientSecret    string
 }
 
 // ConnectionCreateAction implements connection creation.
@@ -239,14 +237,6 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 		)
 	}
 
-	if a.flags.authType == "oauth2" && (a.flags.clientID == "" || a.flags.clientSecret == "") {
-		return exterrors.Validation(
-			exterrors.CodeMissingConnectionField,
-			"Missing required flags --client-id and --client-secret for oauth2 auth.",
-			"Specify both OAuth2 client credentials.",
-		)
-	}
-
 	connCtx, err := resolveConnectionContext(ctx, a.flags.projectEndpoint)
 	if err != nil {
 		return err
@@ -269,7 +259,6 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 	body, err := buildConnectionBody(
 		a.flags.kind, a.flags.target, a.flags.authType,
 		a.flags.key, a.flags.customKeys, a.flags.metadata,
-		a.flags.clientID, a.flags.clientSecret,
 	)
 	if err != nil {
 		return err
@@ -316,11 +305,11 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 	}
 
 	cmd.Flags().StringVar(&flags.kind, "kind", "",
-		"Connection kind (e.g., remote-tool, remote-a2a, cognitive-search)")
+		"Connection kind (e.g., remote-tool, cognitive-search)")
 	cmd.Flags().StringVar(&flags.target, "target", "",
 		"Target URL or ARM resource ID")
 	cmd.Flags().StringVar(&flags.authType, "auth-type", "none",
-		"Auth type: api-key, custom-keys, none, oauth2, aad, managed-identity")
+		"Auth type: api-key, custom-keys, none")
 	cmd.Flags().StringVar(&flags.key, "key", "",
 		"API key (for api-key auth)")
 	cmd.Flags().StringArrayVar(&flags.customKeys, "custom-key", nil,
@@ -329,10 +318,6 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 		"Metadata key=value (repeatable)")
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Replace existing connection (upsert)")
-	cmd.Flags().StringVar(&flags.clientID, "client-id", "",
-		"OAuth2 client ID")
-	cmd.Flags().StringVar(&flags.clientSecret, "client-secret", "",
-		"OAuth2 client secret")
 	return cmd
 }
 
@@ -439,7 +424,6 @@ func (a *ConnectionUpdateAction) Run(ctx context.Context) error {
 	body, err := buildConnectionBody(
 		kindStr, newTarget, normalizedAuth,
 		credKey, credCustomKeys, metaPairs,
-		"", "",
 	)
 	if err != nil {
 		return err
@@ -645,7 +629,6 @@ func buildCredentialReferences(
 func buildConnectionBody(
 	kind, target, authType, key string,
 	customKeys, metadata []string,
-	clientID, clientSecret string,
 ) (*armcognitiveservices.ConnectionPropertiesV2BasicResource, error) {
 	metaMap := parseKVPtrMap(metadata)
 	cat := armcognitiveservices.ConnectionCategory(normalizeKind(kind))
@@ -688,52 +671,11 @@ func buildConnectionBody(
 			},
 		}, nil
 
-	case "oauth2":
-		at := armcognitiveservices.ConnectionAuthTypeOAuth2
-		creds := &armcognitiveservices.ConnectionOAuth2{}
-		if clientID != "" {
-			creds.ClientID = &clientID
-		}
-		if clientSecret != "" {
-			creds.ClientSecret = &clientSecret
-		}
-		return &armcognitiveservices.ConnectionPropertiesV2BasicResource{
-			Properties: &armcognitiveservices.OAuth2AuthTypeConnectionProperties{
-				AuthType:    &at,
-				Category:    &cat,
-				Target:      &target,
-				Credentials: creds,
-				Metadata:    metaMap,
-			},
-		}, nil
-
-	case "aad":
-		at := armcognitiveservices.ConnectionAuthTypeAAD
-		return &armcognitiveservices.ConnectionPropertiesV2BasicResource{
-			Properties: &armcognitiveservices.AADAuthTypeConnectionProperties{
-				AuthType: &at,
-				Category: &cat,
-				Target:   &target,
-				Metadata: metaMap,
-			},
-		}, nil
-
-	case "managed-identity":
-		at := armcognitiveservices.ConnectionAuthTypeManagedIdentity
-		return &armcognitiveservices.ConnectionPropertiesV2BasicResource{
-			Properties: &armcognitiveservices.ManagedIdentityAuthTypeConnectionProperties{
-				AuthType: &at,
-				Category: &cat,
-				Target:   &target,
-				Metadata: metaMap,
-			},
-		}, nil
-
 	default:
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAuthType,
 			fmt.Sprintf("Unsupported auth type %q.", authType),
-			"Supported: api-key, custom-keys, none, oauth2, aad, managed-identity",
+			"Supported: api-key, custom-keys, none",
 		)
 	}
 }
@@ -830,7 +772,6 @@ func authTypeStr(a *armcognitiveservices.ConnectionAuthType) string {
 func normalizeKind(cliKind string) string {
 	mapping := map[string]string{
 		"remote-tool":                "RemoteTool",
-		"remote-a2a":                "RemoteA2A",
 		"cognitive-search":           "CognitiveSearch",
 		"api-key":                    "ApiKey",
 		"app-insights":               "AppInsights",

@@ -50,8 +50,9 @@ User creates connection (category=RemoteA2A, target=<a2a-endpoint>)
 ### 2.2 Current State
 
 `RemoteA2A` connections support the **same auth types as `RemoteTool`**: no auth, custom keys,
-OAuth2, UserEntraToken, AgenticIdentity, etc. From E2E test fixtures
-(Agents service, `yacflow/tests/fixtures/`), real `RemoteA2A` connections exist with:
+OAuth2, UserEntraToken, AgenticIdentity, etc. From E2E test fixtures in the Agents service
+repo (vienna: `src/azureml-api/src/Agents/scripts/yacflow/tests/fixtures/`), real `RemoteA2A`
+connections exist with:
 
 | Auth Type | Example Connection | Target |
 |-----------|-------------------|--------|
@@ -163,7 +164,7 @@ doesn't have structs. **POC validated that raw REST works for all three.**
 - When `--auth-type` is `user-entra-token`, `project-managed-identity`, or `agentic-identity`,
   bypass the typed SDK
 - Build the JSON body manually and PUT via `runtime.NewRequest` (same pattern as the
-  existing data-plane client in `foundry_projects_client.go`)
+  existing data-plane client in `cli/azd/extensions/azure.ai.agents/internal/pkg/azure/foundry_projects_client.go`)
 - Effort: ~50 lines per auth type (shared helper for the raw REST call)
 - The CLI should normalize `agentic-identity` → `AgenticIdentityToken` (not `AgenticIdentity`)
 
@@ -221,7 +222,8 @@ New CLI flag: `--audience` (for UserEntraToken; also used by AgenticIdentityToke
 
 ### 4.1 Proposed Change
 
-Add a `remote-a2a` alias to `normalizeKind()` in the extension's `connection.go`:
+Add a `remote-a2a` alias to `normalizeKind()` in
+`cli/azd/extensions/azure.ai.agents/internal/connections/cmd/connection.go`:
 
 ```go
 "remote-a2a": "RemoteA2A",
@@ -332,7 +334,7 @@ Asset Catalog API (`api.catalog.azureml.ms`):
 
 ### 5.2 Asset Catalog API Summary
 
-**API:** `POST https://api.catalog.azureml.ms/asset-gallery/v1.0/tools`  
+**API:** `POST https://api.catalog.azureml.ms/asset-gallery/v1.0/tools` (listing uses POST with filter body)  
 **Auth:** Anonymous (no auth required)  
 **Returns:** Tool name, endpoint URL, auth scheme, description, publisher
 

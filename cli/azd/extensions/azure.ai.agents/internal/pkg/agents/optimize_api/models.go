@@ -8,6 +8,9 @@ package optimize_api
 
 import "encoding/json"
 
+// APIVersion is the API version used for all optimization service calls.
+const APIVersion = "v1"
+
 // Optimization job status constants.
 const (
 	StatusPending   = "pending"
@@ -223,11 +226,12 @@ type OptimizeCancelResponse struct {
 
 // --- Deployment report ---
 
-// DeploymentReport is sent to FAOS after a candidate is deployed,
+// DeploymentReport is sent to FAOS after a candidate is promoted,
 // creating the candidate→deployment mapping.
 type DeploymentReport struct {
-	CandidateID     string `json:"candidateId"`
-	ProjectEndpoint string `json:"projectEndpoint,omitempty"`
+	CandidateID  string `json:"-"`            // used in URL path, not serialized
+	AgentName    string `json:"agentName"`    // deployed agent name
+	AgentVersion string `json:"agentVersion"` // deployed agent version
 }
 
 // --- Candidate models ---

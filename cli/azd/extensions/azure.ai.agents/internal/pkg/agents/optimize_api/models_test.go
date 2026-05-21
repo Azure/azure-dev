@@ -236,3 +236,38 @@ func TestOptimizeListResponse_RoundTrip(t *testing.T) {
 	assert.Equal(t, "op-2", got.LastID)
 	assert.True(t, got.HasMore)
 }
+
+// ---- DeploymentReport serialization ----
+
+func TestDeploymentReport_JSON_ExcludesCandidateID(t *testing.T) {
+	t.Parallel()
+
+	report := DeploymentReport{
+		CandidateID:  "cand_abc123",
+		AgentName:    "my-agent",
+		AgentVersion: "3",
+	}
+
+	data, err := json.Marshal(report)
+	require.NoError(t, err)
+
+	// CandidateID has json:"-", so it must not appear in the body.
+	assert.NotContains(t, string(data), "candidateId")
+	assert.NotContains(t, string(data), "cand_abc123")
+
+	// agentName and agentVersion must be present.
+	assert.Contains(t, string(data), `"agentName":"my-agent"`)
+	assert.Contains(t, string(data), `"agentVersion":"3"`)
+}
+
+func TestDeploymentReport_JSON_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	body := `{"agentName":"test-agent","agentVersion":"5"}`
+	var report DeploymentReport
+	require.NoError(t, json.Unmarshal([]byte(body), &report))
+
+	assert.Equal(t, "test-agent", report.AgentName)
+	assert.Equal(t, "5", report.AgentVersion)
+	assert.Empty(t, report.CandidateID, "CandidateID should not be populated from JSON")
+}

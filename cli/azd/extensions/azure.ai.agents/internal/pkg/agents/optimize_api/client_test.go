@@ -224,28 +224,31 @@ func TestListOptimizeJobs_NoStatusFilter(t *testing.T) {
 func TestReportDeployment(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody DeploymentReport
+	var capturedBody map[string]string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Contains(t, r.URL.Path, "/optimize/candidates/cand-42/deployments")
+		assert.Contains(t, r.URL.Path, "/optimize/candidates/cand-42:promote")
 		assert.Contains(t, r.URL.RawQuery, "api-version=v1")
 
 		err := json.NewDecoder(r.Body).Decode(&capturedBody)
 		assert.NoError(t, err)
 
-		w.WriteHeader(http.StatusCreated)
+		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
 	client := newTestClient(server.URL)
 	err := client.ReportDeployment(t.Context(), &DeploymentReport{
-		CandidateID:     "cand-42",
-		ProjectEndpoint: "https://proj.endpoint",
+		CandidateID:  "cand-42",
+		AgentName:    "my-agent",
+		AgentVersion: "3",
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, "cand-42", capturedBody.CandidateID)
-	assert.Equal(t, "https://proj.endpoint", capturedBody.ProjectEndpoint)
+	assert.Equal(t, "my-agent", capturedBody["agentName"])
+	assert.Equal(t, "3", capturedBody["agentVersion"])
+	// CandidateID should not appear in the body (json:"-")
+	assert.Empty(t, capturedBody["candidateId"])
 }
 
 func TestReportDeployment_HTTPError(t *testing.T) {
@@ -259,7 +262,9 @@ func TestReportDeployment_HTTPError(t *testing.T) {
 
 	client := newTestClient(server.URL)
 	err := client.ReportDeployment(t.Context(), &DeploymentReport{
-		CandidateID: "bad-id",
+		CandidateID:  "bad-id",
+		AgentName:    "agent",
+		AgentVersion: "1",
 	})
 
 	require.Error(t, err)

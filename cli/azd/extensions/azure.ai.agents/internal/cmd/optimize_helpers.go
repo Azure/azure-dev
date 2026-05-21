@@ -11,10 +11,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/eval_api"
+	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -61,9 +63,6 @@ func (f *optimizeConnectionFlags) resolve(ctx context.Context) (string, error) {
 
 	return projectEndpoint, nil
 }
-
-// optimizeAPIVersion is the API version used for optimization service calls.
-const optimizeAPIVersion = "v1"
 
 // optimizeLastJobIDKey is the azd environment key for the last optimization job ID.
 const optimizeLastJobIDKey = "OPTIMIZE_LAST_OPERATION_ID"
@@ -130,4 +129,72 @@ func printOptimizePortalLink(ctx context.Context, out io.Writer, agentName, oper
 	printPortalLink(ctx, out, azdClient, envResp.Environment.Name, func(prefix *eval_api.PortalPrefix) string {
 		return prefix.OptimizationURL(agentName, operationID)
 	})
+}
+
+// reportOptimizationDeployments reports optimization candidate deployments to FAOS.
+// For each hosted agent service, if AGENT_{KEY}_OPTIMIZATION_CANDIDATE_ID is set in
+// the azd environment, it calls the promote API and then clears the env var.
+// This is best-effort — failures are logged but do not block the deploy.
+func reportOptimizationDeployments(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	hostedAgents []*azdext.ServiceConfig,
+	envName, projectEndpoint string,
+	newClient func(endpoint string) *optimize_api.OptimizeClient,
+) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("postdeploy: optimization deployment reporting panicked: %v", r)
+		}
+	}()
+
+	log.Printf("postdeploy: reporting optimization deployments for %d hosted agents", len(hostedAgents))
+
+	for _, svc := range hostedAgents {
+		serviceKey := toServiceKey(svc.Name)
+		candidateKey := fmt.Sprintf("AGENT_%s_OPTIMIZATION_CANDIDATE_ID", serviceKey)
+
+		candidateResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: envName,
+			Key:     candidateKey,
+		})
+		if err != nil || candidateResp.Value == "" {
+			log.Printf("postdeploy: no optimization candidate for %s, skipping", svc.Name)
+			continue
+		}
+
+		versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+		versionResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: envName,
+			Key:     versionKey,
+		})
+		if err != nil || versionResp.Value == "" {
+			log.Printf("postdeploy: no version for %s, skipping", svc.Name)
+			continue
+		}
+
+		log.Printf("postdeploy: promoting candidate %s for %s (version %s)",
+			candidateResp.Value, svc.Name, versionResp.Value)
+
+		optClient := newClient(projectEndpoint)
+		if err := optClient.ReportDeployment(ctx, &optimize_api.DeploymentReport{
+			CandidateID:  candidateResp.Value,
+			AgentName:    svc.Name,
+			AgentVersion: versionResp.Value,
+		}); err != nil {
+			log.Printf("postdeploy: failed to report optimization deployment for %s: %v", svc.Name, err)
+			continue
+		}
+
+		log.Printf("postdeploy: successfully promoted candidate %s for %s", candidateResp.Value, svc.Name)
+
+		// Clear the candidate ID after successful reporting.
+		if _, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: envName,
+			Key:     candidateKey,
+			Value:   "",
+		}); err != nil {
+			log.Printf("postdeploy: failed to clear %s: %v", candidateKey, err)
+		}
+	}
 }

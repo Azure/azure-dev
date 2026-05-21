@@ -171,7 +171,18 @@ func (a *OptimizeDeployAction) runDirect(
 		return err
 	}
 
-	// Step 5: Print success.
+	// Step 5: Report the deployment to the optimization service (best-effort).
+	if err := optClient.ReportDeployment(ctx, &optimize_api.DeploymentReport{
+		CandidateID:  a.flags.candidate,
+		AgentName:    agentName,
+		AgentVersion: versionObj.Version,
+	}); err != nil {
+		// Non-fatal — deployment succeeded, just log the reporting failure.
+		fmt.Fprintf(out, "  %s failed to report deployment to optimization service: %s\n",
+			color.YellowString("warning:"), err)
+	}
+
+	// Step 6: Print success.
 	fmt.Fprintln(out)
 	color.New(color.FgGreen, color.Bold).Fprintf(out,
 		"  \u2713 Successfully deployed candidate %s as version %s\n", a.flags.candidate, versionObj.Version)

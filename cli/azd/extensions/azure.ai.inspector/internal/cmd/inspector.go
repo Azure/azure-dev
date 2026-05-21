@@ -122,10 +122,15 @@ func runInspector(ctx context.Context, flags *inspectorFlags) error {
 	}
 
 	ready := make(chan struct{})
+	openCtx, cancelOpen := context.WithCancel(ctx)
+	defer cancelOpen()
 	go func() {
-		<-ready
-		if err := browser.OpenURL(url); err != nil {
-			logger.Printf("failed to open browser: %v", err)
+		select {
+		case <-ready:
+			if err := browser.OpenURL(url); err != nil {
+				logger.Printf("failed to open browser: %v", err)
+			}
+		case <-openCtx.Done():
 		}
 	}()
 

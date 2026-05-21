@@ -324,6 +324,36 @@ func TestInspectorLaunchFailureOnlyWarns(t *testing.T) {
 	}
 }
 
+func TestShouldWarnLoadAzdEnvironmentFailure(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "default environment missing is normal for local-only projects",
+			err:  status.Error(codes.Unknown, "default environment not found"),
+		},
+		{
+			name: "other environment error warns",
+			err:  status.Error(codes.Unknown, "environment service unavailable"),
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := shouldWarnLoadAzdEnvironmentFailure(tt.err); got != tt.want {
+				t.Fatalf("shouldWarnLoadAzdEnvironmentFailure() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNoInspectorSkipsWorkflowLaunch(t *testing.T) {
 	t.Parallel()
 

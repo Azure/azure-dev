@@ -38,7 +38,7 @@ type rpcError struct {
 }
 
 const (
-	wsMaxMessageBytes = 1 << 20
+	wsMaxMessageBytes = 16 << 20
 	wsPongWait        = 60 * time.Second
 	wsPingPeriod      = 45 * time.Second
 	wsWriteWait       = 10 * time.Second

@@ -14,6 +14,11 @@ import (
 	"time"
 )
 
+const (
+	maxProxyBufferedBodyBytes = 16 << 20
+	maxProxyErrorBodyBytes    = 4 << 10
+)
+
 // proxyFetchParams mirrors ProxyFetchParams in webViewRpcContracts.ts.
 type proxyFetchParams struct {
 	URL     string            `json:"url"`
@@ -91,7 +96,7 @@ func (s *rpcSession) proxyFetch(raw json.RawMessage) (any, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readLimitedBody(resp.Body, maxProxyBufferedBodyBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -153,7 +158,7 @@ func (s *rpcSession) proxyInvoke(raw json.RawMessage) (any, error) {
 	}
 
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := readLimitedBody(resp.Body, maxProxyBufferedBodyBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -176,6 +181,28 @@ func flattenHeaders(h http.Header) map[string]string {
 		out[strings.ToLower(k)] = v[0]
 	}
 	return out
+}
+
+func readLimitedBody(r io.Reader, maxBytes int64) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > maxBytes {
+		return nil, fmt.Errorf("response body exceeds %d bytes", maxBytes)
+	}
+	return body, nil
+}
+
+func readTruncatedBody(r io.Reader, maxBytes int64) ([]byte, bool, error) {
+	body, err := io.ReadAll(io.LimitReader(r, maxBytes+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if int64(len(body)) <= maxBytes {
+		return body, false, nil
+	}
+	return body[:maxBytes], true, nil
 }
 
 // printUserInput echoes the user's text from a Responses API request body.

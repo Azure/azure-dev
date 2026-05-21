@@ -80,10 +80,25 @@ func (s *rpcSession) proxyFetchSSE(raw json.RawMessage) {
 
 		if resp.StatusCode >= 400 {
 			if requestID := resp.Header.Get("apim-request-id"); requestID != "" && !s.cfg.Silent {
-				fmt.Printf("Trace ID: %s\n", requestID)
+				fmt.Fprintf(os.Stderr, "Trace ID: %s\n", requestID)
 			}
-			body, _ := io.ReadAll(resp.Body)
-			err := fmt.Errorf("%s %s failed with HTTP %d: %s\n%s", method, targetURL.Redacted(), resp.StatusCode, resp.Status, string(body))
+			body, truncated, readErr := readTruncatedBody(resp.Body, maxProxyErrorBodyBytes)
+			if readErr != nil {
+				s.sendSSEDone(p.RequestID, fmt.Errorf("read error response: %w", readErr))
+				return
+			}
+			bodyText := string(body)
+			if truncated {
+				bodyText += fmt.Sprintf("\n(response body truncated to %d bytes)", maxProxyErrorBodyBytes)
+			}
+			err := fmt.Errorf(
+				"%s %s failed with HTTP %d: %s\n%s",
+				method,
+				targetURL.Redacted(),
+				resp.StatusCode,
+				resp.Status,
+				bodyText,
+			)
 			if !s.cfg.Silent {
 				fmt.Fprintln(os.Stderr, "Error:", err)
 			}

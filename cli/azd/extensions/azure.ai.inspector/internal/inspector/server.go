@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
@@ -140,16 +141,28 @@ func assetsHandler(fsys fs.FS, inspectorPort int) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setAssetSecurityHeaders(w, inspectorPort)
 
-		path := r.URL.Path
-		if path == "" || path == "/" || path == "/index.html" {
+		cleanPath := path.Clean("/" + r.URL.Path)
+		if cleanPath == "/" || cleanPath == "/index.html" {
 			serveIndex(w)
 			return
 		}
-		if _, err := fs.Stat(fsys, strings.TrimPrefix(path, "/")); err != nil {
-			serveIndex(w)
+
+		assetPath := strings.TrimPrefix(cleanPath, "/")
+		if _, err := fs.Stat(fsys, assetPath); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				serveIndex(w)
+				return
+			}
+			http.Error(w, "failed to inspect embedded asset: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		fileServer.ServeHTTP(w, r)
+
+		assetRequest := r.Clone(r.Context())
+		assetURL := *r.URL
+		assetURL.Path = "/" + assetPath
+		assetURL.RawPath = ""
+		assetRequest.URL = &assetURL
+		fileServer.ServeHTTP(w, assetRequest)
 	})
 }
 

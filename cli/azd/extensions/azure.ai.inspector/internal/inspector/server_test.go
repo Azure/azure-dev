@@ -6,12 +6,15 @@ package inspector
 import (
 	"context"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -125,6 +128,42 @@ func TestWebSocketOriginValidationRejectsRebindingHost(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("server did not shut down in time")
 	}
+}
+
+func TestAssetsHandlerOnlyFallsBackForMissingFiles(t *testing.T) {
+	fsys := statErrorFS{
+		FS: fstest.MapFS{
+			"index.html": &fstest.MapFile{Data: []byte("<html></html>")},
+		},
+		path: "broken.js",
+		err:  fs.ErrPermission,
+	}
+	handler := assetsHandler(fsys, 8087)
+
+	missing := httptest.NewRecorder()
+	handler.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/spa/route", nil))
+	if missing.Code != http.StatusOK {
+		t.Fatalf("missing route status = %d, want 200", missing.Code)
+	}
+
+	broken := httptest.NewRecorder()
+	handler.ServeHTTP(broken, httptest.NewRequest(http.MethodGet, "/broken.js", nil))
+	if broken.Code != http.StatusInternalServerError {
+		t.Fatalf("stat error status = %d, want 500", broken.Code)
+	}
+}
+
+type statErrorFS struct {
+	fs.FS
+	path string
+	err  error
+}
+
+func (f statErrorFS) Stat(name string) (fs.FileInfo, error) {
+	if name == f.path {
+		return nil, f.err
+	}
+	return fs.Stat(f.FS, name)
 }
 
 func pickFreePort(t *testing.T) int {

@@ -180,6 +180,8 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 			env = append(env, fmt.Sprintf("%s=%s", k, v))
 		}
 		env = appendFoundryEnvVars(env, azdEnvVars, runCtx.ServiceName)
+	} else if shouldWarnLoadAzdEnvironmentFailure(err) {
+		fmt.Fprintf(os.Stderr, "Warning: failed to load azd environment values: %s\n", err)
 	}
 
 	// Resolve ${{connections.<name>.credentials.<key>}} references from the
@@ -429,6 +431,14 @@ func isContextCancellation(err error) bool {
 	return errors.Is(err, context.Canceled) ||
 		errors.Is(err, context.DeadlineExceeded) ||
 		status.Code(err) == codes.Canceled
+}
+
+func shouldWarnLoadAzdEnvironmentFailure(err error) bool {
+	msg := err.Error()
+	if st, ok := status.FromError(err); ok {
+		msg = st.Message()
+	}
+	return !strings.Contains(strings.ToLower(msg), "default environment not found")
 }
 
 // appendPortEnvVars appends PORT and, for .NET projects, ASPNETCORE_URLS to the

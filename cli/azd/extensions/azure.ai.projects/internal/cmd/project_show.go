@@ -24,8 +24,10 @@ type projectShowResult struct {
 	SourceDetail string `json:"sourceDetail"`
 	AzdEnv       string `json:"azdEnv"`
 	SetAt        string `json:"setAt,omitempty"`
-	// FromLegacyAgentsConfig mirrors [resolvedEndpoint.FromLegacyAgentsConfig]
-	// so automation can detect the migration prompt without parsing stderr.
+	// FromLegacyAgentsConfig mirrors [resolvedEndpoint.FromLegacyAgentsConfig].
+	// True only on the run that migrated the legacy
+	// `extensions.ai-agents.project.context` value into the new key, so
+	// automation can detect the one-time migration notice without parsing stderr.
 	FromLegacyAgentsConfig bool `json:"fromLegacyAgentsConfig,omitempty"`
 }
 
@@ -99,11 +101,10 @@ func (a *ProjectShowAction) Run(ctx context.Context) error {
 		}
 		if result.FromLegacyAgentsConfig {
 			fmt.Fprintln(os.Stderr,
-				"notice: this endpoint was read from the legacy "+
-					"`extensions.ai-agents.project.context` key written by the "+
-					"removed `azd ai agent project set` command. Run "+
-					"`azd ai project set <endpoint>` to migrate it to the "+
-					"new `extensions.ai-projects.context` key.")
+				"notice: migrated this endpoint from the legacy "+
+					"`extensions.ai-agents.project.context` key to the new "+
+					"`extensions.ai-projects.context` key. Future commands "+
+					"will read from the new key directly.")
 		}
 		return nil
 	}

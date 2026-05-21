@@ -16,6 +16,7 @@ const projectContextConfigPath = configPathPrefix + ".context"
 
 type projectContextConfig interface {
 	GetUserJSON(ctx context.Context, path string, out any) (bool, error)
+	SetUserJSON(ctx context.Context, path string, value any) error
 	UnsetUser(ctx context.Context, path string) error
 }
 
@@ -78,6 +79,45 @@ func getLegacyAgentsProjectContext(
 	}
 
 	return state, found
+}
+
+// migrateLegacyAgentsProjectContext copies state from the legacy
+// `extensions.ai-agents.project.context` key to the new
+// `extensions.ai-projects.context` key and removes the legacy key. The
+// operation is best-effort: callers continue with the in-memory value when
+// the migration fails so a transient config write error never blocks the
+// command the user actually invoked.
+func migrateLegacyAgentsProjectContext(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	state projectContextState,
+) error {
+	ch, err := azdext.NewConfigHelper(azdClient)
+	if err != nil {
+		return fmt.Errorf("migrateLegacyAgentsProjectContext: %w", err)
+	}
+
+	return writeMigratedProjectContext(ctx, ch, state)
+}
+
+// writeMigratedProjectContext persists state to projectContextConfigPath and
+// removes legacyAgentsContextPath. Split from
+// migrateLegacyAgentsProjectContext so tests can drive it with a fake
+// projectContextConfig.
+func writeMigratedProjectContext(
+	ctx context.Context,
+	ch projectContextConfig,
+	state projectContextState,
+) error {
+	if err := ch.SetUserJSON(ctx, projectContextConfigPath, state); err != nil {
+		return fmt.Errorf("migrateLegacyAgentsProjectContext: failed to write new key: %w", err)
+	}
+
+	if err := ch.UnsetUser(ctx, legacyAgentsContextPath); err != nil {
+		return fmt.Errorf("migrateLegacyAgentsProjectContext: failed to clear legacy key: %w", err)
+	}
+
+	return nil
 }
 
 // setProjectContext persists a validated project endpoint to global config.

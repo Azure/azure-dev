@@ -33,8 +33,9 @@ type resolvedEndpoint struct {
 	SetAt      string // RFC3339 timestamp, only meaningful when Source == SourceGlobalConfig
 	// FromLegacyAgentsConfig is true when Source == SourceGlobalConfig and the
 	// value was read from the legacy `extensions.ai-agents.project.context`
-	// key. Callers can surface a notice to prompt the user to re-run
-	// `azd ai project set` to migrate.
+	// key. The resolver migrates the value to the new key in the same call,
+	// so this flag is only true on the first run that observes the legacy
+	// key — callers can use it to surface a one-time confirmation notice.
 	FromLegacyAgentsConfig bool
 }
 
@@ -108,6 +109,12 @@ func readAzdHostedSources(ctx context.Context) (azdHostedSources, error) {
 			out.CfgState = legacyState
 			out.CfgFound = true
 			out.CfgFromLegacyAgents = true
+
+			// Auto-migrate the legacy value into the new key so subsequent
+			// invocations resolve from `extensions.ai-projects.context`
+			// directly. Best-effort: failures are intentionally swallowed
+			// so a transient config write does not break resolution.
+			_ = migrateLegacyAgentsProjectContext(ctx, azdClient, legacyState)
 		}
 	}
 

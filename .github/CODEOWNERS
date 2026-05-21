@@ -14,6 +14,7 @@
 /cli/azd/extensions/azure.ai.agents/        @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @trrwilson @therealjohn
 /cli/azd/extensions/azure.ai.finetune/      @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 /cli/azd/extensions/azure.ai.models/        @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
+/cli/azd/extensions/azure.ai.projects/      @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @trrwilson @therealjohn @huimiu
 /cli/azd/extensions/azure.ai.training/  @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 
 # ── Extensions ────────────────────────────────────────────────────────────────

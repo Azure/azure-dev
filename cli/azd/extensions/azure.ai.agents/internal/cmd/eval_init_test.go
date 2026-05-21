@@ -363,31 +363,6 @@ func TestBuildGenerationSources(t *testing.T) {
 		assert.Empty(t, sources[1].Prompt)
 	})
 
-	t.Run("prompt agent includes only agent source", func(t *testing.T) {
-		t.Parallel()
-		sources := eval_api.BuildGenerationSources(
-			string(agent_yaml.AgentKindPrompt), "prompt-agent", "v1", "", nil,
-		)
-		require.Len(t, sources, 1)
-
-		assert.Equal(t, "agent", sources[0].Type)
-		assert.Equal(t, "prompt-agent", sources[0].AgentName)
-		assert.Equal(t, "v1", sources[0].AgentVersion)
-		assert.Empty(t, sources[0].Prompt, "prompt agents should not have prompt field")
-	})
-
-	t.Run("prompt agent without version omits agent_version", func(t *testing.T) {
-		t.Parallel()
-		sources := eval_api.BuildGenerationSources(
-			string(agent_yaml.AgentKindPrompt), "prompt-agent", "", "", nil,
-		)
-		require.Len(t, sources, 1)
-
-		assert.Equal(t, "agent", sources[0].Type)
-		assert.Equal(t, "prompt-agent", sources[0].AgentName)
-		assert.Empty(t, sources[0].AgentVersion, "empty version should be omitted")
-	})
-
 	t.Run("hosted agent without instruction omits prompt source", func(t *testing.T) {
 		t.Parallel()
 		sources := eval_api.BuildGenerationSources(

@@ -149,7 +149,7 @@ func TestAgentRef_YAMLFields(t *testing.T) {
 
 	input := `
 name: test-agent
-kind: prompt
+kind: hosted
 version: v5
 model: gpt-4.1
 `
@@ -157,7 +157,7 @@ model: gpt-4.1
 	require.NoError(t, yaml.Unmarshal([]byte(input), &ref))
 
 	assert.Equal(t, "test-agent", ref.Name)
-	assert.Equal(t, agent_yaml.AgentKindPrompt, ref.Kind)
+	assert.Equal(t, agent_yaml.AgentKindHosted, ref.Kind)
 	assert.Equal(t, "v5", ref.Version)
 	assert.Equal(t, "gpt-4.1", ref.Model)
 }

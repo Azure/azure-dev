@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opteval"
 
@@ -195,8 +194,7 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		flags.name = resolveEvalName(flags)
 	}
 
-	if resolved.agentKind != agent_yaml.AgentKindPrompt &&
-		flags.instruction == "" && flags.instructionFile == "" && flags.configFile == "" &&
+	if flags.instruction == "" && flags.instructionFile == "" && flags.configFile == "" &&
 		(flags.dataset == "" || len(flags.evaluators) == 0) {
 		return fmt.Errorf("--gen-instruction is required when generating eval assets for a hosted agent")
 	}

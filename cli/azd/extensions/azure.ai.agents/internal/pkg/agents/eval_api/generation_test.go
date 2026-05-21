@@ -27,18 +27,9 @@ func TestBuildGenerationSources_HostedWithInstruction(t *testing.T) {
 	assert.Equal(t, "v2", sources[1].AgentVersion)
 }
 
-func TestBuildGenerationSources_PromptAgentOnly(t *testing.T) {
-	t.Parallel()
-	sources := BuildGenerationSources("prompt", "prompt-agent", "v1", "ignored", nil)
-	require.Len(t, sources, 1)
-	assert.Equal(t, "agent", sources[0].Type)
-	assert.Equal(t, "prompt-agent", sources[0].AgentName)
-	assert.Equal(t, "v1", sources[0].AgentVersion)
-}
-
 func TestBuildGenerationSources_NoVersion(t *testing.T) {
 	t.Parallel()
-	sources := BuildGenerationSources("prompt", "agent", "", "", nil)
+	sources := BuildGenerationSources("hosted", "agent", "", "", nil)
 	require.Len(t, sources, 1)
 	assert.Empty(t, sources[0].AgentVersion)
 }

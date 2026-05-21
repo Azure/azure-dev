@@ -21,14 +21,13 @@ type TraceOptions struct {
 }
 
 // BuildGenerationSources constructs the sources array for generation jobs.
-// For prompt agents (agentKind == "prompt"), only the agent source is included.
-// For other agent kinds, a prompt source is included when instruction is
-// non-empty, along with the agent source. When traces is non-nil and Days > 0,
-// a traces source is appended with start_time computed from the current time.
+// A prompt source is included when instruction is non-empty, along with the
+// agent source. When traces is non-nil and Days > 0, a traces source is
+// appended with start_time computed from the current time.
 func BuildGenerationSources(agentKind, agentName, version, instruction string, traces *TraceOptions) []GenerationSource {
 	var sources []GenerationSource
 
-	if agentKind != "prompt" && instruction != "" {
+	if instruction != "" {
 		sources = append(sources, GenerationSource{
 			Type:   "prompt",
 			Prompt: instruction,

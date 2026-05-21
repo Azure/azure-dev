@@ -166,15 +166,6 @@ func TestDetectEvalAgentKind(t *testing.T) {
 		assert.Equal(t, filepath.Join(dir, "agent.yaml"), path)
 	})
 
-	t.Run("detects prompt kind from agent.yml", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		writeTestFile(t, dir, "agent.yml", "kind: prompt\nname: test-agent\n")
-		kind, path := detectEvalAgentKind(dir)
-		assert.Equal(t, agent_yaml.AgentKindPrompt, kind)
-		assert.Equal(t, filepath.Join(dir, "agent.yml"), path)
-	})
-
 	t.Run("returns empty for missing manifest", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()

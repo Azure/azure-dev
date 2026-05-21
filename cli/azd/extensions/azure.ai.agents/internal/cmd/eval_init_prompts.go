@@ -15,8 +15,6 @@ import (
 	"strconv"
 	"strings"
 
-	"azureaiagent/internal/pkg/agents/agent_yaml"
-
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
@@ -52,12 +50,12 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 	needsGeneration := true // adaptive evaluator is always generated
 	needsEvalGen := true
 
-	if flags.configFile != "" && needsGeneration && resolved.agentKind != agent_yaml.AgentKindPrompt {
+	if flags.configFile != "" && needsGeneration {
 		// Config detected — show resolved values and let the user confirm or override.
 		if err := promptConfigConfirmation(ctx, azdClient, resolved, flags); err != nil {
 			return err
 		}
-	} else if flags.instruction == "" && flags.instructionFile == "" && needsGeneration && resolved.agentKind != agent_yaml.AgentKindPrompt {
+	} else if flags.instruction == "" && flags.instructionFile == "" && needsGeneration {
 		// Let the user choose between inline text or loading from a file.
 		inputChoices := []*azdext.SelectChoice{
 			{Label: "Type inline", Value: "inline"},

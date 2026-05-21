@@ -328,13 +328,13 @@ func TestUploadDirectory_PassesAbsolutePathToAzcopy(t *testing.T) {
 	runner := &fakeUploadRunner{}
 
 	// Use a relative path to verify the service resolves it before invoking azcopy.
-	cwd, err := os.Getwd()
-	require.NoError(t, err)
-	rel, err := filepath.Rel(cwd, dir)
-	require.NoError(t, err)
+	// Chdir to the temp dir's parent so the relative path is well-defined across
+	// drives on Windows (where t.TempDir() may be on a different volume than cwd).
+	t.Chdir(filepath.Dir(dir))
+	rel := filepath.Base(dir)
 
 	svc := &UploadService{client: client, azcopyRunner: runner}
-	_, err = svc.UploadDirectory(context.Background(), rel, "x", "desc")
+	_, err := svc.UploadDirectory(t.Context(), rel, "x", "desc")
 	require.NoError(t, err)
 
 	assert.True(t, filepath.IsAbs(runner.lastSrc),

@@ -1,4 +1,5 @@
 {
+  "schemaVersion": "1.0",
   "extensions": [
     {
       "id": "microsoft.azd.demo",
@@ -3891,50 +3892,50 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "e933b6fbe2dd0420d1cea6c63e48f7c753dcdf9e15b8efa2978cdde72e81a8e4"
+                "value": "ab396ab8dd3b627e0467e35535f6cb6bb29efb475986f7218cf2322946e4e33a"
               },
               "entryPoint": "azure-ai-agents-darwin-amd64",
-              "url": "https://github.com/Zyysurely/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.31-preview/azure-ai-agents-darwin-amd64.zip"
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.31-preview/azure-ai-agents-darwin-amd64.zip"
             },
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "19194ea63609f056a2b772bcf81b27605a02cffcfcc272afabfd0f2e9a0e20d5"
+                "value": "919f18a74e4fa85d8b3db74e34e1d41af10b1e9a78fae171be7e42085f8bfef9"
               },
               "entryPoint": "azure-ai-agents-darwin-arm64",
-              "url": "https://github.com/Zyysurely/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.31-preview/azure-ai-agents-darwin-arm64.zip"
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.31-preview/azure-ai-agents-darwin-arm64.zip"
             },
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "279474857915889b972cc6c041ebd73ec91131590ec57db122cb65a5b5e4daef"
+                "value": "dbcf13152499e43dee123bf8d3a25aba16f2f4cf287975187b9f79b62495cb53"
               },
               "entryPoint": "azure-ai-agents-linux-amd64",
-              "url": "https://github.com/Zyysurely/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.31-preview/azure-ai-agents-linux-amd64.tar.gz"
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.31-preview/azure-ai-agents-linux-amd64.tar.gz"
             },
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "818a85228bcb61559dee3618e1a602795514a79b2d14f84c7e1c9906e980f86c"
+                "value": "2a84f09164cf0260727e82e1e43ace5aef7a8d3380e0602221d05ece9230fd87"
               },
               "entryPoint": "azure-ai-agents-linux-arm64",
-              "url": "https://github.com/Zyysurely/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.31-preview/azure-ai-agents-linux-arm64.tar.gz"
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.31-preview/azure-ai-agents-linux-arm64.tar.gz"
             },
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "60d65a87f3f3ed594245f9004b3a58d881b031c7a723afc5e0f5f7c833a0a14d"
+                "value": "e3a9d3f0358852767babe84ce16fb01e52427458776751e11d2024fd77694a0a"
               },
               "entryPoint": "azure-ai-agents-windows-amd64.exe",
-              "url": "https://github.com/Zyysurely/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.31-preview/azure-ai-agents-windows-amd64.zip"
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.31-preview/azure-ai-agents-windows-amd64.zip"
             },
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "e2b29ac9718d86b07112b6e1d380208e6374da507dd8bceeb23a2eef93b8d5b4"
+                "value": "1ff890de9c6507ff8a2e104e697545e1928eb4f1557a35e06f7c2168478507c3"
               },
               "entryPoint": "azure-ai-agents-windows-arm64.exe",
-              "url": "https://github.com/Zyysurely/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.31-preview/azure-ai-agents-windows-arm64.zip"
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.31-preview/azure-ai-agents-windows-arm64.zip"
             }
           }
         }
@@ -5037,11 +5038,11 @@
           }
         },
         {
-          "version": "0.0.6-preview",
           "capabilities": [
             "custom-commands",
             "metadata"
           ],
+          "version": "0.0.6-preview",
           "usage": "azd ai models \u003ccommand\u003e [options]",
           "examples": [
             {

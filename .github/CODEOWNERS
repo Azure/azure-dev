@@ -15,6 +15,7 @@
 /cli/azd/extensions/azure.ai.toolboxes/     @JeffreyCA @trangevi @trrwilson @therealjohn
 /cli/azd/extensions/azure.ai.finetune/      @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 /cli/azd/extensions/azure.ai.models/        @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
+/cli/azd/extensions/azure.ai.projects/      @JeffreyCA @trangevi @trrwilson @therealjohn @huimiu
 /cli/azd/extensions/azure.ai.training/      @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 
 # ── Extensions ────────────────────────────────────────────────────────────────

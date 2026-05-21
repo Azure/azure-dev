@@ -57,16 +57,16 @@ func TestHumanSourceDetail(t *testing.T) {
 	}
 }
 
-func TestProjectCommand_HasSubcommands(t *testing.T) {
+func TestRootCommand_HasProjectSubcommands(t *testing.T) {
 	t.Parallel()
-	cmd := newProjectCommand(nil)
-	names := make([]string, 0, len(cmd.Commands()))
-	for _, sub := range cmd.Commands() {
-		names = append(names, sub.Name())
+	root := NewRootCommand()
+	names := make(map[string]bool, len(root.Commands()))
+	for _, sub := range root.Commands() {
+		names[sub.Name()] = true
 	}
-	assert.Contains(t, names, "set")
-	assert.Contains(t, names, "unset")
-	assert.Contains(t, names, "show")
+	assert.True(t, names["set"], "root should have `set` subcommand")
+	assert.True(t, names["unset"], "root should have `unset` subcommand")
+	assert.True(t, names["show"], "root should have `show` subcommand")
 }
 
 func TestJSONSourceDetail(t *testing.T) {

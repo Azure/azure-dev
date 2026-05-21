@@ -237,7 +237,7 @@ func TestSaveEvaluatorResult(t *testing.T) {
 
 	path := filepath.Join(dir, "evaluators", "smoke-core", "rubric_dimensions.json")
 	assert.FileExists(t, path)
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // test file path
 	require.NoError(t, err)
 	// Only the dimensions array is saved, not the outer fields.
 	assert.Contains(t, string(data), `"id": "quality"`)
@@ -305,7 +305,7 @@ func TestDownloadDatasetArtifact_WritesBlob(t *testing.T) {
 	t.Parallel()
 
 	// The Azure SDK bearer token policy rejects non-TLS test servers, so the
-	// credential call will fail. downloadDatasetArtifact gracefully returns nil.
+	// credential call will fail. downloadDatasetArtifact now returns the error.
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -318,9 +318,10 @@ func TestDownloadDatasetArtifact_WritesBlob(t *testing.T) {
 
 	ref := &evalDatasetRef{Name: "test-ds", Version: "v1"}
 	_, err := eval_api.DownloadDatasetArtifact(t.Context(), client, dir, ref, "2025-11-15-preview")
-	require.NoError(t, err)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "getting dataset credential")
 
-	// No file written when credential fetch fails (non-TLS test server).
+	// No file written when credential fetch fails.
 	dest := eval_api.DatasetArtifactPath(dir, ref)
 	assert.NoDirExists(t, dest)
 }
@@ -353,7 +354,7 @@ func TestWriteJSONFile(t *testing.T) {
 	err := eval_api.WriteJSONFile(path, map[string]string{"hello": "world"})
 	require.NoError(t, err)
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // test file path
 	require.NoError(t, err)
 	assert.Contains(t, string(data), `"hello": "world"`)
 }

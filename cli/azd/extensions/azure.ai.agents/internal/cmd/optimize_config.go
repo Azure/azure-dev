@@ -44,7 +44,7 @@ type OptimizeConfigCriterion struct {
 
 // LoadOptimizeConfig reads and parses a YAML optimization config file.
 func LoadOptimizeConfig(path string) (*OptimizeConfig, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is provided by user for local config
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
@@ -102,8 +102,10 @@ func defaultOptimizeConfig(agentName string) *OptimizeConfig {
 
 var defaultDataset = []optimize_api.DatasetTask{
 	{
-		Name:   "calculator_module",
-		Prompt: "Create a Python module calc.py with four functions: add, subtract, multiply, divide. Each takes two numbers and returns the result. Include a brief test at the bottom (if __name__ == '__main__') that exercises each function and prints the results. Then run it.",
+		Name: "calculator_module",
+		Prompt: "Create a Python module calc.py with four functions: add, subtract, multiply, divide. " +
+			"Each takes two numbers and returns the result. Include a brief test at the bottom " +
+			"(if __name__ == '__main__') that exercises each function and prints the results. Then run it.",
 		Criteria: []optimize_api.Criterion{
 			{Name: "decimal_types", Instruction: "ALL functions MUST use and return Python's decimal.Decimal type, NOT float."},
 			{Name: "error_code_prefix", Instruction: "ALL error messages raised by any function MUST include a bracketed error code prefix [CALC-NNN]."},
@@ -112,8 +114,11 @@ var defaultDataset = []optimize_api.DatasetTask{
 		},
 	},
 	{
-		Name:   "csv_report",
-		Prompt: "Create a Python script report.py that generates a CSV file 'sales_report.csv' with 10 rows of sample sales data. Columns: date, product, quantity, unit_price, total. Then read the CSV back and print a summary: total revenue and the top-selling product by quantity. Run the script.",
+		Name: "csv_report",
+		Prompt: "Create a Python script report.py that generates a CSV file 'sales_report.csv' " +
+			"with 10 rows of sample sales data. Columns: date, product, quantity, unit_price, total. " +
+			"Then read the CSV back and print a summary: total revenue and the top-selling product " +
+			"by quantity. Run the script.",
 		Criteria: []optimize_api.Criterion{
 			{Name: "pipe_delimiter", Instruction: "The CSV file MUST use pipe '|' as the delimiter, NOT comma."},
 			{Name: "zero_padded_quantity", Instruction: "ALL quantity values MUST be zero-padded to exactly 4 digits (e.g. '0042' not '42')."},
@@ -122,8 +127,12 @@ var defaultDataset = []optimize_api.DatasetTask{
 		},
 	},
 	{
-		Name:   "api_response_builder",
-		Prompt: "Create a Python module api_utils.py with a function build_response(data, status_code=200) that builds a JSON-ready dictionary representing an API response. Also create a function validate_email(email: str) -> bool that checks if an email is roughly valid. Write a test block that demonstrates both functions with a few examples and prints the JSON output. Run it.",
+		Name: "api_response_builder",
+		Prompt: "Create a Python module api_utils.py with a function build_response(data, " +
+			"status_code=200) that builds a JSON-ready dictionary representing an API response. " +
+			"Also create a function validate_email(email: str) -> bool that checks if an email " +
+			"is roughly valid. Write a test block that demonstrates both functions with a few " +
+			"examples and prints the JSON output. Run it.",
 		Criteria: []optimize_api.Criterion{
 			{Name: "named_tuple_validation", Instruction: "validate_email() MUST return a typing.NamedTuple with fields (is_valid: bool, reason: str), NOT a bare bool."},
 			{Name: "request_id", Instruction: "build_response() MUST include a 'requestId' field containing a UUID4 string."},
@@ -247,7 +256,7 @@ func loadSkillsFromDir(dir string) ([]optimize_api.SkillDefinition, error) {
 			continue
 		}
 
-		data, err := os.ReadFile(entryPath)
+		data, err := os.ReadFile(entryPath) //nolint:gosec // path derived from project skill directory
 		if err != nil {
 			return nil, fmt.Errorf("reading skill file %s: %w", entry.Name(), err)
 		}

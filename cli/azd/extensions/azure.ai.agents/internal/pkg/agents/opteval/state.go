@@ -9,6 +9,7 @@ package opteval
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -86,13 +87,18 @@ func SaveEvalState(ctx context.Context, azdClient *azdext.AzdClient, envName str
 }
 
 // ClearEvalState removes eval state keys from the azd environment.
-func ClearEvalState(ctx context.Context, azdClient *azdext.AzdClient, envName string) {
+func ClearEvalState(ctx context.Context, azdClient *azdext.AzdClient, envName string) error {
+	var errs []error
 	for _, key := range []string{
 		evalKeyInitStatus, evalKeyDatasetGenOpID, evalKeyDatasetGenStatus,
 		evalKeyEvalGenOpID, evalKeyEvalGenStatus, evalKeyEvalID,
 	} {
-		_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		_, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: envName, Key: key, Value: "",
 		})
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}
+	return errors.Join(errs...)
 }

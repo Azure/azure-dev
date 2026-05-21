@@ -47,15 +47,12 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 		}
 	}
 
-	needsGeneration := true // adaptive evaluator is always generated
-	needsEvalGen := true
-
-	if flags.configFile != "" && needsGeneration {
+	if flags.configFile != "" {
 		// Config detected — show resolved values and let the user confirm or override.
 		if err := promptConfigConfirmation(ctx, azdClient, resolved, flags); err != nil {
 			return err
 		}
-	} else if flags.instruction == "" && flags.instructionFile == "" && needsGeneration {
+	} else if flags.instruction == "" && flags.instructionFile == "" {
 		// Let the user choose between inline text or loading from a file.
 		inputChoices := []*azdext.SelectChoice{
 			{Label: "Type inline", Value: "inline"},
@@ -109,7 +106,7 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 	}
 
 	// Ask whether to include traces for evaluator generation, unless already set via flags.
-	if flags.traceDays == 0 && needsEvalGen {
+	if flags.traceDays == 0 {
 		confirmResp, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 			Options: &azdext.ConfirmOptions{
 				Message:      "Include agent traces for evaluator generation?",
@@ -140,10 +137,6 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 			days, _ := strconv.Atoi(rangeChoices[int(*rangeResp.Value)].Value)
 			flags.traceDays = days
 		}
-	}
-
-	if !needsGeneration {
-		return nil
 	}
 
 	if !flags.evalModelSet {

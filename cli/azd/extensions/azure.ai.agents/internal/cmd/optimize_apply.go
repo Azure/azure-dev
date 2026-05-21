@@ -113,7 +113,7 @@ func (a *OptimizeApplyAction) apply(
 	serviceDir := filepath.Join(project.Path, svc.RelativePath)
 	candidateDir := filepath.Join(serviceDir, agentConfigsDir, a.flags.candidate)
 
-	bold.Fprintf(out, "Applying optimization candidate %s...\n\n", a.flags.candidate)
+	_, _ = bold.Fprintf(out, "Applying optimization candidate %s...\n\n", a.flags.candidate)
 
 	credential, err := newAgentCredential()
 	if err != nil {
@@ -178,7 +178,7 @@ func (a *OptimizeApplyAction) apply(
 
 	// Done — prompt the user to deploy.
 	fmt.Fprintln(out)
-	color.New(color.FgGreen, color.Bold).Fprintf(out,
+	_, _ = color.New(color.FgGreen, color.Bold).Fprintf(out,
 		"  ✓ Candidate %s applied to %s\n\n",
 		a.flags.candidate, filepath.Join(agentConfigsDir, a.flags.candidate))
 	fmt.Fprintf(out, "  Run %s to deploy the optimized agent.\n",
@@ -438,7 +438,11 @@ func downloadSkillFilesToDir(
 			continue
 		}
 
-		outPath := filepath.Join(destDir, filepath.FromSlash(f.Path))
+		outPath, pathErr := opteval.SafePath(destDir, f.Path)
+		if pathErr != nil {
+			fmt.Fprintf(out, "  warning: skipping file %s: path escapes destination directory\n", f.Path)
+			continue
+		}
 		if err := os.MkdirAll(filepath.Dir(outPath), 0750); err != nil {
 			return count, fmt.Errorf("creating directory for %s: %w", f.Path, err)
 		}
@@ -525,14 +529,14 @@ func printPromptDiff(out io.Writer, serviceDir, candidateID string, candidateCon
 	fmt.Fprintf(out, "\n  Instruction diff (baseline → optimized):\n\n")
 
 	removed := color.New(color.FgRed)
-	removed.Fprintf(out, "    — Baseline (%d lines, %d chars):\n",
+	_, _ = removed.Fprintf(out, "    — Baseline (%d lines, %d chars):\n",
 		len(baselineLines), len(baselineText))
 	printPreviewLines(out, baselineLines, "- ", removed)
 
 	fmt.Fprintln(out)
 
 	added := color.New(color.FgGreen)
-	added.Fprintf(out, "    — Optimized (%d lines, %d chars):\n",
+	_, _ = added.Fprintf(out, "    — Optimized (%d lines, %d chars):\n",
 		len(optimizedLines), len(optimized))
 	printPreviewLines(out, optimizedLines, "+ ", added)
 }
@@ -541,9 +545,9 @@ func printPromptDiff(out io.Writer, serviceDir, candidateID string, candidateCon
 func printPreviewLines(out io.Writer, lines []string, prefix string, c *color.Color) {
 	limit := min(len(lines), maxDiffPreviewLines)
 	for _, line := range lines[:limit] {
-		c.Fprintf(out, "    %s%s\n", prefix, line)
+		_, _ = c.Fprintf(out, "    %s%s\n", prefix, line)
 	}
 	if len(lines) > maxDiffPreviewLines {
-		c.Fprintf(out, "    %s... (%d more lines)\n", prefix, len(lines)-maxDiffPreviewLines)
+		_, _ = c.Fprintf(out, "    %s... (%d more lines)\n", prefix, len(lines)-maxDiffPreviewLines)
 	}
 }

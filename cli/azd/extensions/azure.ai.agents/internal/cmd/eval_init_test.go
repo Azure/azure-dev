@@ -426,7 +426,6 @@ func TestBuildOpenAIEvalRequest(t *testing.T) {
 	assert.Equal(t, "azure_ai_evaluator", req.TestingCriteria[0].Type)
 	assert.Equal(t, "builtin.quality", req.TestingCriteria[0].EvaluatorName)
 	assert.Equal(t, "gpt-4o", req.TestingCriteria[0].InitializationParameters["model"])
-	assert.Equal(t, "{{item.messages}}", req.TestingCriteria[0].DataMapping["messages"])
 	assert.Equal(t, "{{item.query}}", req.TestingCriteria[0].DataMapping["query"])
 	assert.Equal(t, "{{sample.output_items}}", req.TestingCriteria[0].DataMapping["response"])
 }

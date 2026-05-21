@@ -141,7 +141,7 @@ func TestWriteBaselineConfig(t *testing.T) {
 
 		instrPath := filepath.Join(dir, opteval.AgentConfigsDir, opteval.BaselineDir, opteval.InstructionFile)
 		assert.FileExists(t, instrPath)
-		content, err := os.ReadFile(instrPath)
+		content, err := os.ReadFile(instrPath) //nolint:gosec // test file path
 		require.NoError(t, err)
 		assert.Equal(t, "You are a helpful assistant.", string(content))
 	})
@@ -172,7 +172,7 @@ func TestWriteBaselineConfig(t *testing.T) {
 		require.NoError(t, err)
 
 		metaPath := filepath.Join(dir, opteval.AgentConfigsDir, opteval.BaselineDir, opteval.MetadataFile)
-		data, err := os.ReadFile(metaPath)
+		data, err := os.ReadFile(metaPath) //nolint:gosec // test file path
 		require.NoError(t, err)
 		assert.Contains(t, string(data), "skill_dir")
 	})

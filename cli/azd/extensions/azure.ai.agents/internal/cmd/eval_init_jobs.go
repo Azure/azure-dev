@@ -10,7 +10,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -54,6 +53,12 @@ func newEvalConfig(flags *evalInitFlags, resolved *evalResolvedContext) *evalCon
 	}
 	if flags.configFile != "" {
 		agent.ConfigFile = flags.configFile
+	}
+	if flags.instruction != "" {
+		agent.Instruction.Value = flags.instruction
+	}
+	if flags.instructionFile != "" {
+		agent.Instruction.File = flags.instructionFile
 	}
 	return &evalConfig{
 		Config: opteval.Config{
@@ -102,9 +107,6 @@ func submitEvaluatorGeneration(
 	request := eval_api.NewEvaluatorGenerationJobRequest(
 		resolveEvalName(flags), flags.evalModel, sources,
 	)
-	if body, err := json.MarshalIndent(request, "", "  "); err == nil {
-		log.Printf("[debug] submitEvaluatorGeneration request:\n%s", body)
-	}
 	return resolved.evalClient.CreateEvaluatorGenerationJob(ctx, request, DefaultAgentAPIVersion)
 }
 
@@ -167,7 +169,9 @@ func resumeEvalInit(
 		return err
 	}
 	state.InitStatus = opteval.InitStatusCompleted
-	opteval.ClearEvalState(ctx, resolved.azdClient, resolved.envName)
+	if err := opteval.ClearEvalState(ctx, resolved.azdClient, resolved.envName); err != nil {
+		log.Printf("warning: clearing eval state: %v", err)
+	}
 	if resolved.hasProject {
 		eval_api.WriteEvalReviewArtifacts(resolved.agentProject, evalCfg)
 	}

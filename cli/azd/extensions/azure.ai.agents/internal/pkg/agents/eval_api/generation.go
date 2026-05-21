@@ -91,6 +91,7 @@ func NewEvaluatorGenerationJobRequest(
 	return &EvaluatorGenerationJobRequest{
 		Name:          name,
 		EvaluatorName: name,
+		Category:      "quality",
 		Model:         evalModel,
 		Sources:       sources,
 	}

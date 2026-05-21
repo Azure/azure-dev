@@ -102,7 +102,7 @@ func (a *OptimizeDeployAction) runDirect(
 		return err
 	}
 
-	bold.Fprintf(out, "Deploying candidate %s to agent %s...\n\n", a.flags.candidate, agentName)
+	_, _ = bold.Fprintf(out, "Deploying candidate %s to agent %s...\n\n", a.flags.candidate, agentName)
 
 	// Step 1: Fetch candidate config from optimization service.
 	fmt.Fprintf(out, "  Fetching candidate config...\n")
@@ -184,7 +184,7 @@ func (a *OptimizeDeployAction) runDirect(
 
 	// Step 6: Print success.
 	fmt.Fprintln(out)
-	color.New(color.FgGreen, color.Bold).Fprintf(out,
+	_, _ = color.New(color.FgGreen, color.Bold).Fprintf(out,
 		"  \u2713 Successfully deployed candidate %s as version %s\n", a.flags.candidate, versionObj.Version)
 	fmt.Fprintf(out, "\n  Agent:   %s\n", agentName)
 	fmt.Fprintf(out, "  Version: %s\n", versionObj.Version)

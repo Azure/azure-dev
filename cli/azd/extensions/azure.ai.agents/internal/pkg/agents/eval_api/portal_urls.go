@@ -64,9 +64,8 @@ func (p *PortalPrefix) DatasetURL(datasetName, version string) string {
 
 // OptimizationURL returns the portal URL for an optimization job.
 func (p *PortalPrefix) OptimizationURL(agentName, operationID string) string {
-	optimizePrefix := strings.Replace(p.prefix, "https://ai.azure.com", "https://eastus2euap.ai.azure.com", 1)
-	return fmt.Sprintf("%s/build/agents/%s/optimization/%s?flight=enable_faos_read_ui",
-		optimizePrefix, agentName, operationID)
+	return fmt.Sprintf("%s/build/agents/%s/optimization/%s",
+		p.prefix, agentName, operationID)
 }
 
 // encodeSubscriptionForURL encodes a subscription ID GUID as base64 without padding.

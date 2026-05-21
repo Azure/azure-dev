@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"log"
@@ -39,7 +40,7 @@ func NewDatasetClient(endpoint string, cred azcore.TokenCredential) *DatasetClie
 	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{"X-Ms-Correlation-Request-Id", "X-Request-Id"},
-			IncludeBody:    true,
+			IncludeBody:    false,
 		},
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
@@ -55,6 +56,15 @@ func NewDatasetClient(endpoint string, cred azcore.TokenCredential) *DatasetClie
 		clientOptions,
 	)
 
+	return &DatasetClient{
+		endpoint: endpoint,
+		pipeline: pipeline,
+	}
+}
+
+// NewDatasetClientFromPipeline creates a DatasetClient with a pre-built pipeline.
+// This is intended for tests that need to bypass auth policies.
+func NewDatasetClientFromPipeline(endpoint string, pipeline runtime.Pipeline) *DatasetClient {
 	return &DatasetClient{
 		endpoint: endpoint,
 		pipeline: pipeline,
@@ -107,8 +117,8 @@ func (c *DatasetClient) UploadNewVersion(
 		return nil, fmt.Errorf("uploading blob: %w", err)
 	}
 
-	// Step 3: Finalize the dataset version.
-	dataURI := pending.ResolvedBlobURI()
+	// Step 3: Finalize the dataset version with the full blob URI.
+	dataURI := strings.TrimSuffix(pending.ResolvedBlobURI(), "/") + "/" + blobName
 	return c.FinalizeDatasetVersion(ctx, name, newVersion, dataURI, apiVersion)
 }
 
@@ -207,8 +217,6 @@ func (c *DatasetClient) GetDatasetCredential(
 // Returns the raw content as bytes. The downloadURL should be the full URL with SAS token
 // (e.g., from DatasetCredential.ResolvedDownloadURI()).
 func (c *DatasetClient) DownloadDataset(ctx context.Context, downloadURL string) ([]byte, error) {
-	log.Printf("[dataset_api] downloading dataset from blob: %s", downloadURL)
-
 	req, err := runtime.NewRequest(ctx, http.MethodGet, downloadURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create download request: %w", err)
@@ -252,7 +260,7 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 	q.Set("comp", "list")
 	u.RawQuery = q.Encode()
 
-	log.Printf("[dataset_api] listing blobs: %s", u.String())
+	log.Printf("[dataset_api] listing blobs: %s", u.Redacted())
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -292,8 +300,6 @@ func (c *DatasetClient) DownloadBlob(ctx context.Context, containerSASUri, blobN
 	// Append blob name to the container path.
 	u.Path = strings.TrimSuffix(u.Path, "/") + "/" + blobName
 
-	log.Printf("[dataset_api] downloading blob: %s", u.String())
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create blob download request: %w", err)
@@ -319,23 +325,29 @@ func (c *DatasetClient) DownloadBlob(ctx context.Context, containerSASUri, blobN
 	return data, nil
 }
 
-// parseBlobNames extracts blob names from the Azure Blob Storage XML list response.
+// parseBlobNames extracts blob names from the Azure Blob Storage XML list response
+// using proper XML parsing against the EnumerationResults schema.
 func parseBlobNames(xmlBody string) []string {
-	var names []string
-	// Simple extraction — look for <Name>...</Name> within <Blob> elements.
-	remaining := xmlBody
-	for {
-		start := strings.Index(remaining, "<Name>")
-		if start == -1 {
-			break
+	type blob struct {
+		Name string `xml:"Name"`
+	}
+	type blobs struct {
+		Blob []blob `xml:"Blob"`
+	}
+	type enumerationResults struct {
+		Blobs blobs `xml:"Blobs"`
+	}
+
+	var result enumerationResults
+	if err := xml.Unmarshal([]byte(xmlBody), &result); err != nil {
+		return nil
+	}
+
+	names := make([]string, 0, len(result.Blobs.Blob))
+	for _, b := range result.Blobs.Blob {
+		if b.Name != "" {
+			names = append(names, b.Name)
 		}
-		remaining = remaining[start+len("<Name>"):]
-		end := strings.Index(remaining, "</Name>")
-		if end == -1 {
-			break
-		}
-		names = append(names, remaining[:end])
-		remaining = remaining[end:]
 	}
 	return names
 }
@@ -369,14 +381,13 @@ func (c *DatasetClient) doRequest(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	log.Printf("[dataset_api] %s %s", method, u.String())
+	log.Printf("[dataset_api] %s %s", method, u.Redacted())
 
 	if body != nil {
 		payload, err := json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request: %w", err)
 		}
-		log.Printf("[dataset_api] request body: %s", string(payload))
 		if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 			return nil, fmt.Errorf("failed to set request body: %w", err)
 		}
@@ -394,7 +405,6 @@ func (c *DatasetClient) doRequest(
 	}
 
 	log.Printf("[dataset_api] response status: %d", resp.StatusCode)
-	log.Printf("[dataset_api] response body: %s", string(respBody))
 
 	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated, http.StatusAccepted) {
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))

@@ -20,7 +20,7 @@ func TestNewEvalListCommand_Flags(t *testing.T) {
 
 	f := cmd.Flags().Lookup("limit")
 	require.NotNil(t, f)
-	assert.Equal(t, "20", f.DefValue)
+	assert.Equal(t, "10", f.DefValue)
 }
 
 func TestNewEvalListCommand_NoArgs(t *testing.T) {

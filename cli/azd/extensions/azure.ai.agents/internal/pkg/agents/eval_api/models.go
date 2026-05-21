@@ -273,7 +273,7 @@ type CreateOpenAIEvalRunRequest struct {
 }
 
 // EvalRunDataSourceType defines the type for an eval run data source.
-type EvalRunDataSourceType = string
+type EvalRunDataSourceType string
 
 const (
 	// EvalRunDataSourceTypeAgentTarget is the data source type for agent target completions.
@@ -281,7 +281,7 @@ const (
 )
 
 // EvalRunDataContentType defines the source type for eval run data content.
-type EvalRunDataContentType = string
+type EvalRunDataContentType string
 
 const (
 	EvalRunDataContentTypeFileContent EvalRunDataContentType = "file_content"

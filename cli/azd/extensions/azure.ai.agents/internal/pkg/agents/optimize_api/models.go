@@ -114,7 +114,7 @@ type OptimizeOptions struct {
 	MinImprovement       float64 `json:"minImprovement,omitempty"`
 	ImprovementThreshold float64 `json:"improvementThreshold,omitempty"`
 	PassThreshold        float64 `json:"passThreshold,omitempty"`
-	EvalModel            string  `json:"evalModel"`
+	EvalModel            string  `json:"evalModel,omitempty"`
 	// Send as both "strategies" (current server) and "targetAttributes" (future).
 	Strategies         []string      `json:"strategies,omitempty"`
 	TargetAttributes   []string      `json:"targetAttributes,omitempty"`

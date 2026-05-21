@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -151,7 +152,9 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 
 	// If --reset-defaults is set, clear existing state so the user can start fresh.
 	if flags.resetDefaults && resolved.envName != "" {
-		opteval.ClearEvalState(ctx, resolved.azdClient, resolved.envName)
+		if err := opteval.ClearEvalState(ctx, resolved.azdClient, resolved.envName); err != nil {
+			log.Printf("warning: clearing eval state: %v", err)
+		}
 	}
 
 	// Handle existing eval.yaml: prompt for regeneration, carry forward options.
@@ -230,7 +233,9 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 	}
 
 	state.InitStatus = opteval.InitStatusCompleted
-	opteval.ClearEvalState(ctx, resolved.azdClient, resolved.envName)
+	if err := opteval.ClearEvalState(ctx, resolved.azdClient, resolved.envName); err != nil {
+		log.Printf("warning: clearing eval state: %v", err)
+	}
 	return writeAndPrintEvalResult(ctx, resolved, evalCfg, pollRes, configPath, isRegenerate)
 }
 

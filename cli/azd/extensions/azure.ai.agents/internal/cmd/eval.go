@@ -96,7 +96,9 @@ Use eval init to generate an eval config, then eval run to execute it.`,
 	return cmd
 }
 
-// resolveEvalContext resolves the context for an eval operation by reading azd project state, environment variables, and optionally prompting the user. It returns an evalResolvedContext with API clients and metadata needed to run eval commands.
+// resolveEvalContext resolves the context for an eval operation by reading azd project state,
+// environment variables, and optionally prompting the user. It returns an evalResolvedContext
+// with API clients and metadata needed to run eval commands.
 func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalResolvedContext, error) {
 	fmt.Println(output.WithGrayFormat("Resolving eval context..."))
 
@@ -459,7 +461,6 @@ func pollEvalOperationWithSpinner(
 		return nil, err
 	}
 
-	log.Printf("[debug] %s: completed successfully", label)
 	progress.setDone(label)
 	return job, nil
 }

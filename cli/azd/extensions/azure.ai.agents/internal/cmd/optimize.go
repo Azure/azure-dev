@@ -177,7 +177,7 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 	out := cmd.OutOrStdout()
 	bold := color.New(color.Bold)
 
-	bold.Fprintf(out, "Optimizing agent %q...\n", cfg.Agent.Name)
+	_, _ = bold.Fprintf(out, "Optimizing agent %q...\n", cfg.Agent.Name)
 	if configSource == "" {
 		fmt.Fprintf(out, "  Dataset: built-in (3 tasks, 12 criteria)\n")
 	} else {
@@ -481,7 +481,7 @@ func printOptimizeResults(out io.Writer, status *optimize_api.OptimizeJobStatus,
 	bold := color.New(color.Bold)
 	green := color.New(color.FgGreen)
 
-	bold.Fprintln(out, "\nResults:")
+	_, _ = bold.Fprintln(out, "\nResults:")
 	fmt.Fprintf(out, "  %-20s %7s %7s %8s\n", "Candidate", "Score", "Pass", "Tokens")
 	fmt.Fprintf(out, "  %-20s %7s %7s %8s\n",
 		strings.Repeat("─", 20), strings.Repeat("─", 7),
@@ -501,7 +501,7 @@ func printOptimizeResults(out io.Writer, status *optimize_api.OptimizeJobStatus,
 
 		line := fmt.Sprintf("  %-20s %7.2f %6.0f%% %8.0f", name, c.AvgScore, c.PassRate*100, c.AvgTokens)
 		if isBest {
-			green.Fprintln(out, line)
+			_, _ = green.Fprintln(out, line)
 		} else {
 			fmt.Fprintln(out, line)
 		}

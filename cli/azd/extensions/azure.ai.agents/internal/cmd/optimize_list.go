@@ -97,7 +97,7 @@ func runOptimizeList(cmd *cobra.Command, flags *optimizeListFlags) error {
 func printOptimizeListTable(out io.Writer, jobs []optimize_api.OptimizeJobStatus) {
 	bold := color.New(color.Bold)
 
-	bold.Fprintf(out, "  %-38s %-12s %-14s %7s   %s\n", "ID", "Status", "Agent", "Score", "Created")
+	_, _ = bold.Fprintf(out, "  %-38s %-12s %-14s %7s   %s\n", "ID", "Status", "Agent", "Score", "Created")
 	fmt.Fprintf(out, "  %-38s %-12s %-14s %7s   %s\n",
 		strings.Repeat("─", 38), strings.Repeat("─", 12),
 		strings.Repeat("─", 14), strings.Repeat("─", 7), strings.Repeat("─", 19))

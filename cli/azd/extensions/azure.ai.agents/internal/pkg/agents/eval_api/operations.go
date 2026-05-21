@@ -45,7 +45,7 @@ func NewEvalClient(endpoint string, cred azcore.TokenCredential) *EvalClient {
 	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{"X-Ms-Correlation-Request-Id", "X-Request-Id"},
-			IncludeBody:    true,
+			IncludeBody:    false,
 		},
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
@@ -61,6 +61,15 @@ func NewEvalClient(endpoint string, cred azcore.TokenCredential) *EvalClient {
 		clientOptions,
 	)
 
+	return &EvalClient{
+		endpoint: endpoint,
+		pipeline: pipeline,
+	}
+}
+
+// NewEvalClientFromPipeline creates an EvalClient with a pre-built pipeline.
+// This is intended for tests that need to bypass auth policies.
+func NewEvalClientFromPipeline(endpoint string, pipeline runtime.Pipeline) *EvalClient {
 	return &EvalClient{
 		endpoint: endpoint,
 		pipeline: pipeline,
@@ -223,14 +232,13 @@ func (c *EvalClient) doRequest(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	log.Printf("[eval_api] %s %s", method, u.String())
+	log.Printf("[eval_api] %s %s", method, u.Redacted())
 
 	if body != nil {
 		payload, err := json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request: %w", err)
 		}
-		log.Printf("[eval_api] request body: %s", string(payload))
 		if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 			return nil, fmt.Errorf("failed to set request body: %w", err)
 		}
@@ -248,7 +256,6 @@ func (c *EvalClient) doRequest(
 	}
 
 	log.Printf("[eval_api] response status: %d", resp.StatusCode)
-	log.Printf("[eval_api] response body: %s", string(respBody))
 
 	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated, http.StatusAccepted) {
 		// Restore the body so runtime.NewResponseError can read it.

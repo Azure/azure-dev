@@ -37,7 +37,7 @@ func NewOptimizeClient(endpoint string, cred azcore.TokenCredential) *OptimizeCl
 	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{"X-Ms-Correlation-Request-Id", "X-Request-Id"},
-			IncludeBody:    true,
+			IncludeBody:    false,
 		},
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
@@ -117,7 +117,7 @@ func (c *OptimizeClient) GetOptimizeStatus(
 	ctx context.Context,
 	operationID string,
 ) (*OptimizeJobStatus, error) {
-	url := fmt.Sprintf("%s/optimize/%s?api-version=%s", c.endpoint, operationID, APIVersion)
+	url := fmt.Sprintf("%s/optimize/%s?api-version=%s", c.endpoint, netURL.PathEscape(operationID), APIVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
@@ -155,7 +155,7 @@ func (c *OptimizeClient) ListOptimizeJobs(
 ) (*OptimizeListResponse, error) {
 	url := fmt.Sprintf("%s/optimize?api-version=%s&limit=%d", c.endpoint, APIVersion, limit)
 	if status != "" {
-		url += "&status=" + status
+		url += "&status=" + netURL.QueryEscape(status)
 	}
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
@@ -191,7 +191,7 @@ func (c *OptimizeClient) CancelOptimize(
 	ctx context.Context,
 	operationID string,
 ) (*OptimizeCancelResponse, error) {
-	url := fmt.Sprintf("%s/optimize/%s/cancel?api-version=%s", c.endpoint, operationID, APIVersion)
+	url := fmt.Sprintf("%s/optimize/%s/cancel?api-version=%s", c.endpoint, netURL.PathEscape(operationID), APIVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
@@ -229,7 +229,7 @@ func (c *OptimizeClient) ReportDeployment(
 ) error {
 	url := fmt.Sprintf(
 		"%s/optimize/candidates/%s:promote?api-version=%s",
-		c.endpoint, report.CandidateID, APIVersion,
+		c.endpoint, netURL.PathEscape(report.CandidateID), APIVersion,
 	)
 
 	payload, err := json.Marshal(report)
@@ -267,7 +267,7 @@ func (c *OptimizeClient) GetCandidateConfig(
 	ctx context.Context,
 	candidateID string,
 ) (any, error) {
-	url := fmt.Sprintf("%s/optimize/candidates/%s/config?api-version=%s", c.endpoint, candidateID, APIVersion)
+	url := fmt.Sprintf("%s/optimize/candidates/%s/config?api-version=%s", c.endpoint, netURL.PathEscape(candidateID), APIVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
@@ -302,7 +302,7 @@ func (c *OptimizeClient) GetCandidate(
 	ctx context.Context,
 	candidateID string,
 ) (*CandidateManifest, error) {
-	url := fmt.Sprintf("%s/optimize/candidates/%s?api-version=%s", c.endpoint, candidateID, APIVersion)
+	url := fmt.Sprintf("%s/optimize/candidates/%s?api-version=%s", c.endpoint, netURL.PathEscape(candidateID), APIVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
@@ -339,7 +339,7 @@ func (c *OptimizeClient) GetCandidateFile(
 	filePath string,
 ) (string, error) {
 	url := fmt.Sprintf("%s/optimize/candidates/%s/files?api-version=%s&path=%s",
-		c.endpoint, candidateID, APIVersion, netURL.QueryEscape(filePath))
+		c.endpoint, netURL.PathEscape(candidateID), APIVersion, netURL.QueryEscape(filePath))
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {

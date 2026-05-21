@@ -6,6 +6,7 @@ package eval_api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -51,12 +52,12 @@ func DownloadDatasetArtifact(
 	// Attempt full download via the dataset API.
 	cred, credErr := client.GetDatasetCredential(ctx, ref.Name, ref.Version, apiVersion)
 	if credErr != nil {
-		return "", nil
+		return "", fmt.Errorf("getting dataset credential for %q: %w", ref.Name, credErr)
 	}
 
 	downloadURL := cred.ResolvedDownloadURI()
 	if downloadURL == "" {
-		return "", nil
+		return "", fmt.Errorf("dataset %q returned empty download URI", ref.Name)
 	}
 
 	destDir := DatasetArtifactPath(agentProject, ref)
@@ -68,29 +69,44 @@ func DownloadDatasetArtifact(
 	if isContainerSAS(downloadURL) {
 		blobs, err := client.ListContainerBlobs(ctx, downloadURL)
 		if err != nil {
-			return "", nil
+			return "", fmt.Errorf("listing container blobs for dataset %q: %w", ref.Name, err)
 		}
 		if len(blobs) == 0 {
-			return "", nil
+			return "", fmt.Errorf("dataset %q container has no blobs", ref.Name)
 		}
+		var errs []error
 		for _, blobName := range blobs {
-			data, dlErr := client.DownloadBlob(ctx, downloadURL, blobName)
-			if dlErr != nil {
+			ext := strings.ToLower(filepath.Ext(blobName))
+			if ext != ".jsonl" && ext != ".csv" {
 				continue
 			}
-			dest := filepath.Join(destDir, filepath.FromSlash(blobName))
+			data, dlErr := client.DownloadBlob(ctx, downloadURL, blobName)
+			if dlErr != nil {
+				errs = append(errs, fmt.Errorf("downloading blob %q: %w", blobName, dlErr))
+				continue
+			}
+			dest, pathErr := opteval.SafePath(destDir, blobName)
+			if pathErr != nil {
+				errs = append(errs, pathErr)
+				continue
+			}
 			if err := os.MkdirAll(filepath.Dir(dest), 0750); err != nil {
+				errs = append(errs, fmt.Errorf("creating dir for %q: %w", blobName, err))
 				continue
 			}
 			if err := os.WriteFile(dest, data, 0600); err != nil {
+				errs = append(errs, fmt.Errorf("writing %q: %w", blobName, err))
 				continue
 			}
+		}
+		if len(errs) > 0 {
+			return "", errors.Join(errs...)
 		}
 	} else {
 		// Single blob download.
 		data, dlErr := client.DownloadDataset(ctx, downloadURL)
 		if dlErr != nil {
-			return "", nil
+			return "", fmt.Errorf("downloading dataset %q: %w", ref.Name, dlErr)
 		}
 		// Infer filename from URL.
 		filename := filenameFromURL(downloadURL)

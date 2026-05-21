@@ -40,8 +40,10 @@ var spinFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"
 
 // Start launches the background spinner ticker.
 func (p *evalProgress) Start() {
+	p.mu.Lock()
 	p.start = time.Now()
 	p.spinning = true
+	p.mu.Unlock()
 	go func() {
 		defer close(p.done)
 		frameIdx := 0
@@ -110,14 +112,6 @@ func (p *evalProgress) setDone(label string) {
 	fmt.Printf("  %s  %s  (%s)\n", color.GreenString("(✓) Done"), label, elapsed)
 }
 
-// printDetail prints an indented detail line (e.g. a portal link) safely
-// without conflicting with the spinner.
-func (p *evalProgress) printDetail(text string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.clearSpinnerLine()
-	fmt.Printf("         · %s\n", text)
-}
 func (p *evalProgress) setFailed(label string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -293,7 +293,7 @@ func TestWriteAgentConfigFromCandidate(t *testing.T) {
 		assert.FileExists(t, filepath.Join(dir, opteval.MetadataFile))
 		assert.FileExists(t, filepath.Join(dir, opteval.InstructionFile))
 
-		content, err := os.ReadFile(filepath.Join(dir, opteval.InstructionFile))
+		content, err := os.ReadFile(filepath.Join(dir, opteval.InstructionFile)) //nolint:gosec // test file path
 		require.NoError(t, err)
 		assert.Equal(t, "Test prompt.", string(content))
 	})

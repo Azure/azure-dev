@@ -239,7 +239,7 @@ func writeBaselineConfig(agentProject string, p baselineParams) error {
 // loadJSONLFile reads a JSONL file and unmarshals each non-empty line into T.
 // Returns an error if the file cannot be read, a line fails to parse, or no items are found.
 func loadJSONLFile[T any](path string) ([]T, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // path is provided by user for local dataset
 	if err != nil {
 		return nil, fmt.Errorf("failed to open dataset file %s: %w", path, err)
 	}

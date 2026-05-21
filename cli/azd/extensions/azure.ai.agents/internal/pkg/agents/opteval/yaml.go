@@ -7,11 +7,25 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"go.yaml.in/yaml/v3"
 )
+
+// SafePath validates that joining baseDir with an untrusted relative path
+// does not escape baseDir (zip-slip prevention). Returns the cleaned
+// absolute path or an error.
+func SafePath(baseDir, untrusted string) (string, error) {
+	p := filepath.Join(baseDir, filepath.FromSlash(untrusted))
+	p = filepath.Clean(p)
+	if !strings.HasPrefix(p, filepath.Clean(baseDir)+string(filepath.Separator)) &&
+		p != filepath.Clean(baseDir) {
+		return "", fmt.Errorf("path %q escapes base directory", untrusted)
+	}
+	return p, nil
+}
 
 // Config is the shared YAML configuration for eval and optimize commands.
 //
@@ -397,9 +411,6 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	if o.MaxIterations <= 0 {
 		o.MaxIterations = 4
 	}
-	// if o.Budget <= 0 {
-	// 	o.Budget = 100
-	// }
 	return nil
 }
 

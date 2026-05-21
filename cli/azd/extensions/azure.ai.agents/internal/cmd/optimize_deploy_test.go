@@ -168,7 +168,7 @@ func TestUpsertAgentYamlEnvVar_InsertsNew(t *testing.T) {
 	err := upsertAgentYamlEnvVar(yamlPath, "MY_VAR", "my_value")
 	require.NoError(t, err)
 
-	data, err := os.ReadFile(yamlPath)
+	data, err := os.ReadFile(yamlPath) //nolint:gosec // test file path
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "MY_VAR")
 	assert.Contains(t, string(data), "my_value")
@@ -188,7 +188,7 @@ environment_variables:
 	err := upsertAgentYamlEnvVar(yamlPath, "MY_VAR", "new_value")
 	require.NoError(t, err)
 
-	data, err := os.ReadFile(yamlPath)
+	data, err := os.ReadFile(yamlPath) //nolint:gosec // test file path
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "new_value")
 	assert.NotContains(t, string(data), "old_value")

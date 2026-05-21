@@ -18,7 +18,7 @@ import (
 func TestOptimizeCommand_HasExpectedSubCommands(t *testing.T) {
 	cmd := newOptimizeCommand(&azdext.ExtensionContext{})
 
-	expected := []string{"status", "list", "cancel", "deploy"}
+	expected := []string{"status", "list", "cancel", "deploy", "apply"}
 	var actual []string
 	for _, sub := range cmd.Commands() {
 		actual = append(actual, sub.Name())
@@ -51,9 +51,7 @@ func TestOptimizeCommand_AcceptsConfigFlag(t *testing.T) {
 	assert.Equal(t, "c", f.Shorthand, "--config should have -c shorthand")
 
 	assert.NotNil(t, cmd.Flags().Lookup("poll-interval"))
-	assert.NotNil(t, cmd.Flags().Lookup("endpoint"))
-	assert.NotNil(t, cmd.Flags().Lookup("agent"))
-	assert.NotNil(t, cmd.Flags().Lookup("strategy"))
+	assert.NotNil(t, cmd.Flags().Lookup("target"))
 }
 
 func TestOptimizeCommand_DefaultFlags(t *testing.T) {

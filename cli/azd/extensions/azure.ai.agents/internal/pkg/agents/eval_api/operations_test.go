@@ -12,6 +12,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,18 +36,14 @@ func newTestClient(t *testing.T, handler http.Handler) (*EvalClient, *httptest.S
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	client := NewEvalClient(server.URL, &fakeCredential{})
+	pipeline := runtime.NewPipeline(
+		"test",
+		"v0.0.0",
+		runtime.PipelineOptions{},
+		&policy.ClientOptions{},
+	)
+	client := NewEvalClientFromPipeline(server.URL, pipeline)
 	return client, server
-}
-
-// jsonHandler returns an http.HandlerFunc that responds with the given body and status.
-func jsonHandler(status int, body map[string]any) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		data, _ := json.Marshal(body)
-		_, _ = w.Write(data)
-	}
 }
 
 // ---------------------------------------------------------------------------

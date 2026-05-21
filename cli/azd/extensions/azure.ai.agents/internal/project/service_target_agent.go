@@ -729,6 +729,16 @@ func (p *AgentServiceTargetProvider) Deploy(
 		azdEnv[kval.Key] = kval.Value
 	}
 
+	// Check if this service was marked for endpoint/card-only update during predeploy.
+	// If so, skip the full deploy — the update will be handled separately.
+	serviceKey := p.getServiceKey(serviceConfig.Name)
+	updateOnlyKey := fmt.Sprintf("AGENT_%s_UPDATE_ONLY", serviceKey)
+	if azdEnv[updateOnlyKey] == "true" {
+		fmt.Fprintf(os.Stderr, "Skipping deploy for %q (endpoint/card update only).\n", serviceConfig.Name)
+		// TODO: perform endpoint/card-only update here
+		return &azdext.ServiceDeployResult{}, nil
+	}
+
 	var serviceTargetConfig *ServiceTargetAgentConfig
 	if err := UnmarshalStruct(serviceConfig.Config, &serviceTargetConfig); err != nil {
 		return nil, exterrors.Validation(

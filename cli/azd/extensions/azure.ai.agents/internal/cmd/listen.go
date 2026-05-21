@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
@@ -24,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
 	"github.com/drone/envsubst"
+	goyaml "go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -98,24 +100,46 @@ func postprovisionHandler(
 }
 
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	hasHostedAgent := false
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to get current environment: %w", err)
+	}
+	envName := envResp.Environment.Name
+
+	hasFullDeploy := false
 	for _, svc := range args.Project.Services {
-		switch svc.Host {
-		case AiAgentHost:
-			if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
-				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
-			}
-			if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
-				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
-			}
-			if isHostedAgentService(svc, args.Project) {
-				hasHostedAgent = true
-			}
+		if svc.Host != AiAgentHost {
+			continue
 		}
+
+		updateOnly, err := checkEndpointUpdateOnly(ctx, azdClient, svc, args.Project, envName)
+		if err != nil {
+			return err
+		}
+		if updateOnly {
+			serviceKey := toServiceKey(svc.Name)
+			if _, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+				EnvName: envName,
+				Key:     fmt.Sprintf("AGENT_%s_UPDATE_ONLY", serviceKey),
+				Value:   "true",
+			}); err != nil {
+				return fmt.Errorf("failed to set update-only flag for service %q: %w", svc.Name, err)
+			}
+			continue
+		}
+
+		// Full deploy path — populate settings and update env.
+		if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
+			return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+		}
+		if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
+			return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
+		}
+		hasFullDeploy = true
 	}
 
 	// Run developer RBAC pre-flight checks for hosted agent deployments.
-	if hasHostedAgent {
+	if hasFullDeploy {
 		if err := project.CheckDeveloperRBAC(ctx, azdClient); err != nil {
 			return err
 		}
@@ -139,6 +163,100 @@ func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig)
 	kind, ok := generic["kind"].(string)
 	return ok && kind == string(agent_yaml.AgentKindHosted)
 }
+
+// predeployAgentAPIVersion is the API version used for agent existence checks during predeploy.
+const predeployAgentAPIVersion = "2025-11-15-preview"
+
+// checkEndpointUpdateOnly checks if the agent.yaml for a hosted agent service defines
+// AgentEndpoint or AgentCard, and if so, checks whether the agent already exists. If it
+// does, prompts the user to choose between deploying a new version or updating endpoint/card only.
+// Returns true if the user chose "update only", false otherwise.
+func checkEndpointUpdateOnly(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	svc *azdext.ServiceConfig,
+	proj *azdext.ProjectConfig,
+	envName string,
+) (bool, error) {
+	// Parse agent.yaml into ContainerAgent to check for endpoint/card fields.
+	agentYamlPath := filepath.Join(proj.Path, svc.RelativePath, "agent.yaml")
+	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // path from azd project config
+	if err != nil {
+		// If we can't read the file, skip this check — Deploy will catch the error.
+		return false, nil
+	}
+
+	var agentDef agent_yaml.ContainerAgent
+	if err := goyaml.Unmarshal(data, &agentDef); err != nil {
+		// Skip check if parse fails — Deploy will report the error.
+		return false, nil
+	}
+
+	// Only proceed if the agent defines endpoint or card configuration.
+	if agentDef.AgentEndpoint == nil && agentDef.AgentCard == nil {
+		return false, nil
+	}
+
+	// Get environment values needed for API calls.
+	endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_AI_PROJECT_ENDPOINT",
+	})
+	if err != nil || endpointResp.Value == "" {
+		// If endpoint is not set, skip — deploy will handle the error.
+		return false, nil
+	}
+
+	tenantResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_TENANT_ID",
+	})
+	if err != nil || tenantResp.Value == "" {
+		return false, nil
+	}
+
+	cred, err := azidentity.NewAzureDeveloperCLICredential(
+		&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID:                   tenantResp.Value,
+			AdditionallyAllowedTenants: []string{"*"},
+		},
+	)
+	if err != nil {
+		return false, nil
+	}
+
+	agentClient := agent_api.NewAgentClient(endpointResp.Value, cred)
+
+	exists, err := agents.AgentExists(ctx, agentClient, agentDef.Name, predeployAgentAPIVersion)
+	if err != nil || !exists {
+		// Agent doesn't exist or check failed — proceed with normal deploy.
+		return false, nil
+	}
+
+	// Agent exists and has endpoint/card config — prompt user.
+	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message: fmt.Sprintf(
+				"Agent %q already exists and has endpoint/card configuration. What would you like to do?",
+				agentDef.Name,
+			),
+			Choices: []*azdext.SelectChoice{
+				{Label: "Deploy a new version"},
+				{Label: "Update endpoint/card configuration only"},
+			},
+		},
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to prompt for deploy choice: %w", err)
+	}
+
+	if resp.Value != nil && *resp.Value == 1 {
+		return true, nil
+	}
+
+	return false, nil
+}
+
 
 func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	// Skip when the project has no hosted agent services. `postdeploy` fires on every
@@ -205,6 +323,22 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	agentIdentities := make(map[string]string)
 	for _, svc := range hostedAgents {
 		serviceKey := toServiceKey(svc.Name)
+
+		// Skip services that were marked for endpoint/card-only update and clear the flag.
+		updateOnlyKey := fmt.Sprintf("AGENT_%s_UPDATE_ONLY", serviceKey)
+		updateOnlyResp, _ := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: envName,
+			Key:     updateOnlyKey,
+		})
+		if updateOnlyResp != nil && updateOnlyResp.Value == "true" {
+			// Clear the flag so the user is prompted again on the next deploy.
+			_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+				EnvName: envName,
+				Key:     updateOnlyKey,
+				Value:   "",
+			})
+			continue
+		}
 
 		versionResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: envName,

@@ -1,5 +1,7 @@
 # Tracing in `azd`
 
+<!-- cspell:ignore Kusto predeploy pwsh -->
+
 ## Overview
 
 `azd` uses [OpenTelemetry](https://opentelemetry.io/docs/concepts/signals/traces/) to collect **anonymous usage information** and **success metrics**.
@@ -30,8 +32,8 @@ Decide whether you are adding:
 
 | Type          | File to Update                                           | Description                          |
 | ------------- | -------------------------------------------------------- | ------------------------------------ |
-| **Attribute** | [`fields.go`](cli/azd/internal/tracing/fields/fields.go) | Defines standardized attribute keys. |
-| **Event**     | [`events.go`](cli/azd/internal/tracing/events/events.go) | Defines standardized event names.    |
+| **Attribute** | [`fields.go`](../internal/tracing/fields/fields.go) | Defines standardized attribute keys. |
+| **Event**     | [`events.go`](../internal/tracing/events/events.go) | Defines standardized event names.    |
 
 ### 2. Recording a New Event
 
@@ -68,6 +70,80 @@ tracing.SetUsageAttributes(fields.EnvName.StringHashed(envName))
 ```
 
 This example sets a usage attribute to be included in the root command event.
+
+---
+
+## Existing Event Taxonomy
+
+The following events already exist in [`events.go`](../internal/tracing/events/events.go). Use them instead of
+adding new events for extension and hook lifecycle telemetry.
+
+| Event | Lifecycle | Attributes to expect | Sample row |
+| ----- | --------- | -------------------- | ---------- |
+| `ext.run` | Running an installed extension command through `azd`. | Command attributes such as `cmd.entry`, `cmd.flags`, `cmd.args.count`, plus `extension.installed` on the root span. | `name=ext.run`, `cmd.entry=cmd.ai.chat`, `cmd.flags=["model"]`, `cmd.args.count=0` |
+| `ext.install` | Installing one extension version. | `extension.id` (set as soon as installation begins); `extension.version` (set after the version is resolved). On failure the span uses OpenTelemetry status `Error`; `EndWithStatus` derives the status description from the error type. | `name=ext.install`, `extension.id=microsoft.azd.ai`, `extension.version=1.2.0`, `status=Ok` |
+| `ext.upgrade` | Upgrading one extension attempt. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source`, `extension.upgrade.duration_ms`, `extension.upgrade.outcome`. | `name=ext.upgrade`, `extension.id=microsoft.azd.ai`, `extension.version.from=1.1.0`, `extension.version.to=1.2.0`, `extension.upgrade.outcome=upgraded` |
+| `ext.promote` | Promoting an extension registry entry, such as dev to main. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source.from`, `extension.source.to`. | `name=ext.promote`, `extension.id=microsoft.azd.ai`, `extension.source.from=dev`, `extension.source.to=main`, `status=Ok` |
+| `hooks.exec` | Executing a project, layer, or service lifecycle hook. | `hooks.name`, `hooks.type`, `hooks.kind`; status description uses hook-specific codes such as `hook.validation_failed`. | `name=hooks.exec`, `hooks.name=predeploy`, `hooks.type=service`, `hooks.kind=sh`, `status=Ok` |
+
+### Extension Attributes
+
+Extension telemetry attributes are defined in [`fields.go`](../internal/tracing/fields/fields.go).
+
+| Attribute | Description | Example |
+| --------- | ----------- | ------- |
+| `extension.id` | Extension identifier. | `microsoft.azd.ai` |
+| `extension.version` | Installed extension version. | `1.2.0` |
+| `extension.installed` | Installed extensions on a command span, each formatted as `id@version`. | `["microsoft.azd.ai@1.2.0"]` |
+| `extension.version.from` | Version before an upgrade or promotion. | `1.1.0` |
+| `extension.version.to` | Version after an upgrade or promotion. | `1.2.0` |
+| `extension.source` | Registry source used for an upgrade. | `main` |
+| `extension.source.from` | Registry source before a promotion. | `dev` |
+| `extension.source.to` | Registry source after a promotion. | `main` |
+| `extension.upgrade.duration_ms` | Upgrade duration in milliseconds. | `1532` |
+| `extension.upgrade.outcome` | Upgrade result status. | `upgraded` |
+
+### Hook Attributes
+
+`hooks.exec` spans should include the hook name and scope as soon as they are known, then add the executor kind after hook
+validation succeeds.
+
+| Attribute | Description | Example |
+| --------- | ----------- | ------- |
+| `hooks.name` | Hook name. The `azd hooks run` root command hashes unknown hook names before recording usage attributes; `hooks.exec` child spans record the resolved hook name. | `predeploy` |
+| `hooks.type` | Hook run scope. | `project`, `layer`, or `service` |
+| `hooks.kind` | Executor kind used to run the hook. | `sh`, `pwsh`, `python`, `js`, `ts`, or `dotnet` |
+
+### Error Attribute Conventions
+
+Use `MapError` from [`internal/cmd/errors.go`](../internal/cmd/errors.go) for command, extension, JSON-RPC, MCP, and
+agent spans so that error status and attributes stay consistent.
+
+| Convention | Description | Example |
+| ---------- | ----------- | ------- |
+| Span status | Failed spans mapped through `MapError` set OpenTelemetry status `Error`; the status description is the primary error code. Codes use stable families such as `auth.*`, `ext.*`, `internal.*`, `service.*`, `tool.*`, or `user.*`. | `ext.run.failed`, `service.arm.deployment.failed`, `user.canceled` |
+| `error.category` | Broad local error category, used when the error is local rather than returned by an external service. | `auth` |
+| `error.code` | Normalized local or extension error code. | `invalid_payload` |
+| `error.type` | Go error type for unclassified or suggestion-wrapped errors. | `*os.PathError` |
+| `error.service.name` | External service name after `fields.ErrorKey` prefixes `service.name` for error details. Only set this when an external service returned the error. | `arm`, `aad`, `storage` |
+| `error.service.errorCode` | Error code returned by an external service, after `fields.ErrorKey` prefixes `service.errorCode`. For ARM deployment errors this is a JSON array describing the nested error chain (see below). | `AuthorizationFailed` |
+| `error.service.statusCode` | Status code returned by an external service, after `fields.ErrorKey` prefixes `service.statusCode`. | `403` |
+
+For nested ARM deployment failures, `MapError` walks the inner error tree and encodes each level as an entry in the
+JSON array stored on `error.service.errorCode`. Each entry has the shape
+`{"error.code": "<code>", "error.arm.frame_index": <n>}`, where `error.arm.frame_index` is the depth in the nested
+chain (0 for the outermost error). For example:
+
+```json
+[
+  {"error.code": "InvalidTemplateDeployment", "error.arm.frame_index": 0},
+  {"error.code": "AuthorizationFailed", "error.arm.frame_index": 1}
+]
+```
+
+Do not attach arbitrary user input or secrets to `error.*` attributes. Prefer the standardized field constants from
+`fields.go`; if you need to include a service-related field on an error span, pass it through `fields.ErrorKey` so it is
+reported under the `error.` namespace.
 
 ---
 

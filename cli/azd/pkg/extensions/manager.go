@@ -319,6 +319,9 @@ func (m *Manager) Install(
 	}
 
 	ctx, span := tracing.Start(ctx, events.ExtensionInstallEvent)
+	// Set the extension id immediately so failure spans can be correlated to the
+	// extension being installed. The version is added later, once it has been resolved.
+	span.SetAttributes(fields.ExtensionId.String(extension.Id))
 	defer func() {
 		span.EndWithStatus(err)
 	}()
@@ -375,6 +378,10 @@ func (m *Manager) Install(
 	if selectedVersion == nil {
 		return nil, fmt.Errorf("no compatible version found for extension: %s", extension.Id)
 	}
+
+	// Record the resolved version on the span so failures during install
+	// (artifact download, checksum, copy, config save) still emit it.
+	span.SetAttributes(fields.ExtensionVersion.String(selectedVersion.Version))
 
 	// Binaries are optional as long as dependencies are provided
 	// This allows for extensions that are just extension packs
@@ -529,10 +536,6 @@ func (m *Manager) Install(
 	if err := m.configManager.Save(m.userConfig); err != nil {
 		return nil, fmt.Errorf("failed to save user config: %w", err)
 	}
-
-	span.SetAttributes(
-		fields.ExtensionId.String(extension.Id),
-		fields.ExtensionVersion.String(selectedVersion.Version))
 
 	log.Printf(
 		"Extension '%s' (version %s) installed successfully to %s\n",

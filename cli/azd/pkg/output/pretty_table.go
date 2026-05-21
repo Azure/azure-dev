@@ -464,10 +464,15 @@ func sumWidths(widths []int) int {
 // ansiRegex matches ANSI escape codes used for terminal coloring.
 var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
+// osc8Regex matches OSC-8 hyperlink escape sequences.
+// Format: \x1b]8;params;URI\x1b\  (ST terminator) or \x1b]8;params;URI\a (BEL terminator)
+var osc8Regex = regexp.MustCompile(`\x1b\]8;[^;]*;[^\x1b\a]*(?:\x1b\\|\a)`)
+
 // displayWidth returns the visible column width of s, ignoring ANSI escape
-// codes and accounting for wide Unicode characters (e.g. CJK).
+// codes, OSC-8 hyperlink sequences, and accounting for wide Unicode characters (e.g. CJK).
 func displayWidth(s string) int {
-	stripped := ansiRegex.ReplaceAllString(s, "")
+	stripped := osc8Regex.ReplaceAllString(s, "")
+	stripped = ansiRegex.ReplaceAllString(stripped, "")
 	return runewidth.StringWidth(stripped)
 }
 

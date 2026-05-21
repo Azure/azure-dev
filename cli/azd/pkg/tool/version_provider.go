@@ -259,7 +259,7 @@ func parseAptCandidate(output string) (string, error) {
 // ---------------------------------------------------------------------------
 
 // ExtensionRegistryVersionProvider queries the azd extension registry
-// for the latest version of a library-category tool.
+// for the latest version of an azd-extension category tool.
 type ExtensionRegistryVersionProvider struct {
 	cacheManager *extensions.RegistryCacheManager
 }
@@ -452,7 +452,7 @@ func SelectVersionProvider(
 	httpClient httpDoer,
 ) LatestVersionProvider {
 	switch tool.Category {
-	case ToolCategoryLibrary:
+	case ToolCategoryAzdExtension:
 		if registryCacheManager != nil {
 			return NewExtensionRegistryVersionProvider(
 				registryCacheManager,
@@ -460,7 +460,7 @@ func SelectVersionProvider(
 		}
 		return nil
 
-	case ToolCategoryExtension:
+	case ToolCategoryVSCodeExtension:
 		if httpClient != nil {
 			return NewMarketplaceVersionProvider(httpClient)
 		}

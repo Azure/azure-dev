@@ -1,5 +1,9 @@
 import: ../../.vscode/cspell.yaml
 words:
+  # Connection commands
+  - tavily
+  - tvly
+  - conncmd
   # Azure region names
   - australiaeast
   - brazilsouth
@@ -24,6 +28,7 @@ words:
   - westeurope
   # Project terms
   - ABAC
+  - agentignore
   - ADLS
   - agentserver
   - aiservices

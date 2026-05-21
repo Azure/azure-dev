@@ -11,4 +11,5 @@ type RegisterModelRequest struct {
 	Tags                    map[string]string        `json:"tags,omitempty"`
 	CatalogInfo             *CatalogInfo             `json:"catalogInfo,omitempty"`
 	DerivedModelInformation *DerivedModelInformation `json:"derivedModelInformation,omitempty"`
+	LoRAConfig              *LoRAConfig              `json:"loraConfig,omitempty"`
 }

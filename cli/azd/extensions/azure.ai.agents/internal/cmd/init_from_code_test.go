@@ -108,6 +108,9 @@ func TestSanitizeAgentName(t *testing.T) {
 			if result != tt.expected {
 				t.Errorf("sanitizeAgentName(%q) = %q, want %q", tt.input, result, tt.expected)
 			}
+			if err := agent_yaml.ValidateAgentName(result); err != nil {
+				t.Errorf("sanitizeAgentName(%q) produced invalid agent name %q: %v", tt.input, result, err)
+			}
 		})
 	}
 }
@@ -441,10 +444,10 @@ func TestWriteDefinitionToSrcDir(t *testing.T) {
 		if !containsAll(contentStr, "name: test-agent", "kind: hosted", "responses", "AZURE_AI_MODEL_DEPLOYMENT_NAME") {
 			t.Errorf("written content missing expected fields:\n%s", contentStr)
 		}
-		// AZURE_OPENAI_ENDPOINT and AZURE_AI_PROJECT_ENDPOINT should NOT be written to agent.yaml.
+		// AZURE_OPENAI_ENDPOINT and FOUNDRY_PROJECT_ENDPOINT should NOT be written to agent.yaml.
 		// Hosted agents receive platform-provided FOUNDRY_* variables such as FOUNDRY_PROJECT_ENDPOINT instead.
-		if strings.Contains(contentStr, "AZURE_OPENAI_ENDPOINT") || strings.Contains(contentStr, "AZURE_AI_PROJECT_ENDPOINT") {
-			t.Errorf("agent.yaml should not contain AZURE_OPENAI_ENDPOINT or AZURE_AI_PROJECT_ENDPOINT:\n%s", contentStr)
+		if strings.Contains(contentStr, "AZURE_OPENAI_ENDPOINT") || strings.Contains(contentStr, "FOUNDRY_PROJECT_ENDPOINT") {
+			t.Errorf("agent.yaml should not contain AZURE_OPENAI_ENDPOINT or FOUNDRY_PROJECT_ENDPOINT:\n%s", contentStr)
 		}
 	})
 
@@ -813,6 +816,67 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 					t.Errorf("version[%d] = %q, want %q",
 						i, got[i].Version, tt.wantProtocols[i].Version)
 				}
+			}
+		})
+	}
+}
+
+func TestDetectDefaultEntryPoint(t *testing.T) {
+	tests := []struct {
+		name    string
+		files   []string
+		runtime string
+		want    string
+	}{
+		{
+			name:    "dotnet with csproj",
+			files:   []string{"MyAgent.csproj", "Program.cs"},
+			runtime: "dotnet_9",
+			want:    "MyAgent.dll",
+		},
+		{
+			name:    "dotnet_8 with csproj",
+			files:   []string{"EchoAgent.csproj", "Program.cs", "NuGet.config"},
+			runtime: "dotnet_8",
+			want:    "EchoAgent.dll",
+		},
+		{
+			name:    "dotnet_10 no csproj fallback",
+			files:   []string{"Program.cs"},
+			runtime: "dotnet_10",
+			want:    "App.dll",
+		},
+		{
+			name:    "python with app.py",
+			files:   []string{"app.py", "requirements.txt"},
+			runtime: "python_3_12",
+			want:    "app.py",
+		},
+		{
+			name:    "python without app.py",
+			files:   []string{"requirements.txt"},
+			runtime: "python_3_12",
+			want:    "main.py",
+		},
+		{
+			name:    "python with main.py",
+			files:   []string{"main.py", "requirements.txt"},
+			runtime: "python_3_11",
+			want:    "main.py",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, f := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, f), []byte(""), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := detectDefaultEntryPoint(dir, tt.runtime)
+			if got != tt.want {
+				t.Errorf("detectDefaultEntryPoint() = %q, want %q", got, tt.want)
 			}
 		})
 	}

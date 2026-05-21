@@ -5,6 +5,7 @@ package project
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -13,8 +14,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -22,6 +25,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
@@ -271,10 +275,10 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	}
 
 	// Check if required environment variables are set
-	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
+	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
+			"FOUNDRY_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
 			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
 		)
 	}
@@ -380,7 +384,7 @@ func (p *AgentServiceTargetProvider) Package(
 	// Code deploy: ZIP the source directory
 	if p.isCodeDeployAgent() {
 		progress("Packaging code")
-		zipPath, sha256Hex, err := p.packageCodeDeploy(serviceConfig)
+		zipPath, sha256Hex, err := p.packageCodeDeploy(ctx, serviceConfig)
 		if err != nil {
 			return nil, exterrors.Internal(exterrors.OpContainerPackage, fmt.Sprintf("code packaging failed: %s", err))
 		}
@@ -509,12 +513,84 @@ func (p *AgentServiceTargetProvider) Publish(
 		})
 
 	if err != nil {
-		return nil, exterrors.Internal(exterrors.OpContainerPublish, fmt.Sprintf("container publish failed: %s", err))
+		return nil, classifyContainerPublishError(err)
 	}
 
 	return &azdext.ServicePublishResult{
 		Artifacts: publishResponse.Result.Artifacts,
 	}, nil
+}
+
+func classifyContainerPublishError(err error) error {
+	if isPrivateACRNetworkAccessError(err) {
+		return exterrors.Dependency(
+			exterrors.CodePrivateACRNetworkAccessFailed,
+			fmt.Sprintf(
+				"container publish failed because the Azure Container Registry may be blocking network access: %s",
+				err,
+			),
+			"allowlist the public outbound IP/CIDR of the dev environment running `azd deploy` in the ACR "+
+				"firewall/network settings. If `docker.remoteBuild: true` is enabled, first set "+
+				"`docker.remoteBuild: false` for this service because remote build worker IPs are not predictable. "+
+				"Ensure Docker or Podman is installed and running, then run `azd deploy` again.",
+		)
+	}
+
+	if actionable := azdext.ActionableErrorDetailFromError(err); actionable != nil && actionable.GetSuggestion() != "" {
+		return err
+	}
+
+	return exterrors.Internal(exterrors.OpContainerPublish, fmt.Sprintf("container publish failed: %s", err))
+}
+
+func isPrivateACRNetworkAccessError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	message := strings.ToLower(err.Error())
+	acrContext := []string{
+		".azurecr.io",
+		"azure container registry",
+		"container registry",
+	}
+	hasACRContext := containsAny(message, acrContext...)
+
+	networkSignals := []string{
+		"public network access",
+		"private endpoint",
+		"network rule",
+		"firewall",
+		"not allowed access",
+		"forbidden",
+		"i/o timeout",
+		"connection timed out",
+		"tls handshake timeout",
+		"connection refused",
+		"no such host",
+	}
+	hasNetworkSignal := containsAny(message, networkSignals...)
+
+	if strings.Contains(message, "client with ip address") &&
+		strings.Contains(message, "not allowed access") {
+		return true
+	}
+
+	if strings.Contains(message, "remote build failed") &&
+		strings.Contains(message, "local fallback unavailable") {
+		return hasNetworkSignal || hasACRContext
+	}
+
+	return hasACRContext && hasNetworkSignal
+}
+
+func containsAny(s string, values ...string) bool {
+	for _, value := range values {
+		if strings.Contains(s, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func preBuiltImageArtifact(imageURL string) *azdext.Artifact {
@@ -761,6 +837,28 @@ type deployPrepResult struct {
 	protocols       []agent_yaml.ProtocolVersionRecord
 }
 
+func writeExistingAgentVersionWarning(agentName string) {
+	fmt.Fprintf(os.Stderr, "%s", agents.ExistingAgentWarning(agentName))
+}
+
+func writeExistingAgentVersionWarningIfPresent(
+	ctx context.Context,
+	agentChecker agents.AgentChecker,
+	agentName string,
+) bool {
+	exists, err := agents.AgentExists(ctx, agentChecker, agentName, agentAPIVersion)
+	if err != nil {
+		log.Printf("existing agent name check skipped for %q: %v", agentName, err)
+		return false
+	}
+	if exists {
+		writeExistingAgentVersionWarning(agentName)
+		return true
+	}
+
+	return false
+}
+
 // prepareDeploy handles the common pre-deploy logic shared by container and code
 // deploy: endpoint validation, environment variable resolution, service config
 // parsing, and API request building. The caller provides extra build options
@@ -771,16 +869,16 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	azdEnv map[string]string,
 	extraOptions []agent_yaml.AgentBuildOption,
 ) (*deployPrepResult, error) {
-	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
+	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
+			"FOUNDRY_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
 			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
 		)
 	}
 
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
+	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
 	// Resolve environment variables from YAML using azd environment values
@@ -868,7 +966,7 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 		agentVersion.Name,
 		agentVersion.Version,
 		azdEnv["AZURE_AI_PROJECT_ID"],
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		protocols,
 	)
 
@@ -939,32 +1037,53 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, err
 	}
 
+	// Poll until agent version is active
+	if agentVersionResponse.Status != "active" {
+		agentClient := agent_api.NewAgentClient(
+			azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
+			p.credential,
+		)
+		polledVersion, pollErr := p.waitForAgentActive(ctx, agentClient, prep.request.Name, agentVersionResponse.Version, progress)
+		if pollErr != nil {
+			return nil, pollErr
+		}
+		agentVersionResponse = polledVersion
+	} else {
+		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", agentVersionResponse.Version)
+	}
+
 	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, agentVersionResponse, prep.protocols)
 }
 
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
 // and computes its SHA-256. Returns the temp file path and SHA-256 hex string.
-func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.ServiceConfig) (string, string, error) {
+func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serviceConfig *azdext.ServiceConfig) (string, string, error) {
 	// Source directory is the service's relative path
 	srcDir := filepath.Dir(p.agentDefinitionPath)
 
-	// Exclusion patterns
-	excludeDirs := map[string]bool{
-		"__pycache__":   true,
-		".venv":         true,
-		"venv":          true,
-		".git":          true,
-		"node_modules":  true,
-		".mypy_cache":   true,
-		".pytest_cache": true,
-		".azure":        true,
+	// Load agent.yaml to check runtime and dependency resolution for dotnet bundled mode
+	if data, err := os.ReadFile(p.agentDefinitionPath); err == nil { //nolint:gosec // path from internal state
+		var agentDef agent_yaml.ContainerAgent
+		if err := yaml.Unmarshal(data, &agentDef); err == nil && agentDef.CodeConfiguration != nil {
+			isDotnet := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "dotnet_")
+			isBundled := false // default is remote_build (matches promptCodeConfig and deployHostedCodeAgent defaults)
+			if agentDef.CodeConfiguration.DependencyResolution != nil {
+				isBundled = *agentDef.CodeConfiguration.DependencyResolution == "bundled"
+			}
+			if isDotnet && isBundled {
+				return p.packageDotnetBundled(srcDir)
+			}
+		}
 	}
-	excludeExts := map[string]bool{
-		".pyc": true,
-		".pyo": true,
-	}
-	excludeFiles := map[string]bool{
-		".env": true,
+
+	// Load .agentignore (or use defaults if no file exists)
+	ignoreMatcher, err := newAgentIgnoreMatcher(ctx, srcDir)
+	if err != nil {
+		return "", "", exterrors.Dependency(
+			exterrors.CodeInvalidFilePath,
+			fmt.Sprintf("failed to load %s: %s", agentIgnoreFileName, err),
+			"check that .agentignore is a valid file with gitignore syntax",
+		)
 	}
 
 	// Create temp file and write ZIP directly to it while computing SHA-256
@@ -1006,9 +1125,14 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 		// Normalize to forward slashes for ZIP
 		relPath = filepath.ToSlash(relPath)
 
+		// Skip symlinked directories to avoid traversing outside the project root
+		if d.IsDir() && d.Type()&fs.ModeSymlink != 0 {
+			return filepath.SkipDir
+		}
+
 		// Check directory exclusions
 		if d.IsDir() {
-			if excludeDirs[d.Name()] {
+			if ignoreMatcher.ShouldExclude(relPath, true) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -1019,18 +1143,8 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 			return nil
 		}
 
-		// Check file extension exclusions
-		if excludeExts[filepath.Ext(path)] {
-			return nil
-		}
-
-		// Check file name exclusions (.env, .env.*)
-		if excludeFiles[d.Name()] || strings.HasPrefix(d.Name(), ".env.") {
-			return nil
-		}
-
-		// Skip agent.yaml itself from the ZIP (metadata is sent separately)
-		if d.Name() == "agent.yaml" {
+		// Check file exclusions
+		if ignoreMatcher.ShouldExclude(relPath, false) {
 			return nil
 		}
 
@@ -1062,6 +1176,144 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 
 	if err := tmpFile.Close(); err != nil {
 		return "", "", fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	// Enforce maximum ZIP size (250 MB)
+	const maxZipSize = 250 * 1024 * 1024
+	fi, err := os.Stat(tmpPath)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to stat ZIP file: %w", err)
+	}
+	if fi.Size() > maxZipSize {
+		return "", "", fmt.Errorf(
+			"code package too large: %d MB (max 250 MB). Reduce package size by excluding unnecessary files or using remote_build for dependency resolution",
+			fi.Size()/(1024*1024),
+		)
+	}
+
+	sha256Hex := hex.EncodeToString(hasher.Sum(nil))
+	success = true
+
+	return tmpPath, sha256Hex, nil
+}
+
+// packageDotnetBundled runs "dotnet publish" for the .NET project and creates a ZIP of the published output.
+func (p *AgentServiceTargetProvider) packageDotnetBundled(srcDir string) (string, string, error) {
+	// Find the .csproj file
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read source directory: %w", err)
+	}
+
+	var csprojPath string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".csproj") {
+			csprojPath = filepath.Join(srcDir, e.Name())
+			break
+		}
+	}
+	if csprojPath == "" {
+		return "", "", fmt.Errorf("no .csproj file found in %s; required for dotnet bundled packaging", srcDir)
+	}
+
+	// Create temp directory for publish output
+	publishDir, err := os.MkdirTemp("", "azd-dotnet-publish-*")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create temp dir for dotnet publish: %w", err)
+	}
+	defer os.RemoveAll(publishDir)
+
+	// Run dotnet publish targeting linux (hosted agents run on linux)
+	fmt.Fprintf(os.Stderr, "Running 'dotnet publish' for bundled packaging...\n")
+	cmd := exec.Command("dotnet", "publish", csprojPath, //nolint:gosec // csprojPath is derived from user's project directory
+		"-c", "Release",
+		"-r", "linux-x64",
+		"--self-contained", "false",
+		"-o", publishDir,
+	)
+	cmd.Dir = srcDir
+	var publishOutput bytes.Buffer
+	cmd.Stdout = io.MultiWriter(os.Stderr, &publishOutput)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &publishOutput)
+	if err := cmd.Run(); err != nil {
+		return "", "", fmt.Errorf("dotnet publish failed: %w\nOutput:\n%s", err, publishOutput.String())
+	}
+
+	// ZIP the publish output
+	tmpFile, err := os.CreateTemp("", "azd-code-deploy-*.zip")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create temp file for ZIP: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	success := false
+	defer func() {
+		if !success {
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	hasher := sha256.New()
+	multiWriter := io.MultiWriter(tmpFile, hasher)
+	zipWriter := zip.NewWriter(multiWriter)
+
+	err = filepath.WalkDir(publishDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+
+		relPath, relErr := filepath.Rel(publishDir, path)
+		if relErr != nil {
+			return relErr
+		}
+
+		if relPath == "." {
+			return nil
+		}
+
+		relPath = filepath.ToSlash(relPath)
+
+		if d.IsDir() {
+			return nil
+		}
+
+		fileData, readErr := os.ReadFile(path) //nolint:gosec // path from WalkDir within temp publish dir
+		if readErr != nil {
+			return fmt.Errorf("failed to read %s: %w", relPath, readErr)
+		}
+
+		w, createErr := zipWriter.Create(relPath)
+		if createErr != nil {
+			return fmt.Errorf("failed to create ZIP entry %s: %w", relPath, createErr)
+		}
+
+		if _, writeErr := w.Write(fileData); writeErr != nil {
+			return fmt.Errorf("failed to write ZIP entry %s: %w", relPath, writeErr)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return "", "", fmt.Errorf("failed to walk publish directory: %w", err)
+	}
+
+	if err := zipWriter.Close(); err != nil {
+		return "", "", fmt.Errorf("failed to close ZIP: %w", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return "", "", fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	// Enforce maximum ZIP size (250 MB) — same limit as packageCodeDeploy
+	const maxZipSizeBundled = 250 * 1024 * 1024
+	if fi, statErr := os.Stat(tmpPath); statErr == nil && fi.Size() > maxZipSizeBundled {
+		return "", "", fmt.Errorf(
+			"bundled package too large: %d MB (max 250 MB). Consider using remote_build for dependency resolution",
+			fi.Size()/(1024*1024),
+		)
 	}
 
 	sha256Hex := hex.EncodeToString(hasher.Sum(nil))
@@ -1133,7 +1385,8 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	if agentDef.CodeConfiguration != nil {
 		fmt.Fprintf(os.Stderr, "Runtime: %s\n", agentDef.CodeConfiguration.Runtime)
-		fmt.Fprintf(os.Stderr, "Entry Point: [\"python\", \"%s\"]\n", agentDef.CodeConfiguration.EntryPoint)
+		cmdPrefix := agent_yaml.RuntimeCmdPrefix(agentDef.CodeConfiguration.Runtime)
+		fmt.Fprintf(os.Stderr, "Entry Point: [\"%s\", \"%s\"]\n", cmdPrefix, agentDef.CodeConfiguration.EntryPoint)
 		depRes := "remote_build"
 		if agentDef.CodeConfiguration.DependencyResolution != nil {
 			depRes = *agentDef.CodeConfiguration.DependencyResolution
@@ -1153,7 +1406,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		p.credential,
 	)
 
@@ -1178,7 +1431,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 	} else {
 		// Agent exists — update
-		fmt.Fprintf(os.Stderr, "Updating existing agent: %s\n", agentDef.Name)
+		writeExistingAgentVersionWarning(agentDef.Name)
 		agentResp, err = agentClient.UpdateAgentFromZip(ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agentAPIVersion)
 		if err != nil {
 			return nil, exterrors.Internal(
@@ -1188,55 +1441,16 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 	}
 
-	// Poll for status if remote build
+	// Poll for agent version to become active
 	latestVersion := &agentResp.Versions.Latest
-	depRes := "remote_build"
-	if agentDef.CodeConfiguration != nil && agentDef.CodeConfiguration.DependencyResolution != nil {
-		depRes = *agentDef.CodeConfiguration.DependencyResolution
-	}
-	if depRes == "remote_build" && latestVersion.Status == "creating" {
-		fmt.Fprintf(os.Stderr, "Waiting for remote build to complete...\n")
-		pollTimeout := 5 * time.Minute
-		pollInterval := 5 * time.Second
-		deadline := time.Now().Add(pollTimeout)
-
-		for time.Now().Before(deadline) {
-			select {
-			case <-ctx.Done():
-				return nil, fmt.Errorf("deployment cancelled: %w", ctx.Err())
-			case <-time.After(pollInterval):
-			}
-			versionResp, err := agentClient.GetAgentVersion(ctx, agentDef.Name, latestVersion.Version, agentAPIVersion)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: poll failed: %s\n", err)
-				continue
-			}
-			latestVersion = versionResp
-			if versionResp.Status == "active" {
-				fmt.Fprintf(os.Stderr, "Agent is active!\n")
-				break
-			} else if versionResp.Status == "failed" {
-				errMsg := "agent deployment failed during remote build; check agent logs or try local packaging (dependency_resolution: bundled)"
-				if versionResp.Error != nil {
-					errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", versionResp.Error.Code, versionResp.Error.Message)
-				}
-				if versionResp.RequestID != "" {
-					errMsg += fmt.Sprintf(" (request-id: %s)", versionResp.RequestID)
-				}
-				return nil, exterrors.Internal(
-					exterrors.CodeAgentCreateFailed,
-					errMsg,
-				)
-			}
-			fmt.Fprintf(os.Stderr, "  Status: %s...\n", versionResp.Status)
+	if latestVersion.Status != "active" {
+		polledVersion, err := p.waitForAgentActive(ctx, agentClient, agentDef.Name, latestVersion.Version, progress)
+		if err != nil {
+			return nil, err
 		}
-
-		if latestVersion.Status != "active" {
-			return nil, exterrors.Internal(
-				exterrors.CodeAgentCreateFailed,
-				"agent deployment timed out waiting for remote build; check agent status manually or try local packaging",
-			)
-		}
+		latestVersion = polledVersion
+	} else {
+		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", latestVersion.Version)
 	}
 
 	// Patch agent-level fields (agent_endpoint, agent_card) if present.
@@ -1396,6 +1610,90 @@ func AgentPlaygroundURL(projectResourceID, agentName, agentVersion string) (stri
 	return url, nil
 }
 
+// waitForAgentActive polls the agent version until it reaches a confirmed terminal state.
+// It requires 2 consecutive polls with the same terminal status ("active" or "failed") to confirm,
+// avoiding transient service-side flickers. Returns the final AgentVersionObject or an error.
+func (p *AgentServiceTargetProvider) waitForAgentActive(
+	ctx context.Context,
+	agentClient *agent_api.AgentClient,
+	agentName string,
+	version string,
+	progress azdext.ProgressReporter,
+) (*agent_api.AgentVersionObject, error) {
+	const pollInterval = 10 * time.Second
+	const pollTimeout = 5 * time.Minute
+	const confirmCount = 2 // consecutive times a terminal status must be seen
+
+	deadline := time.Now().Add(pollTimeout)
+	maxAttempts := int(pollTimeout / pollInterval)
+	attempt := 0
+	progress("Waiting for agent to become active")
+
+	var consecutiveActive int
+	var consecutiveFailed int
+	var lastVersion *agent_api.AgentVersionObject
+
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("deployment cancelled: %w", ctx.Err())
+		case <-time.After(pollInterval):
+		}
+
+		attempt++
+		progress(fmt.Sprintf("Polling agent status (%d/%d)", attempt, maxAttempts))
+
+		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agentAPIVersion)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
+			// Reset counters on error — don't count transient failures
+			consecutiveActive = 0
+			consecutiveFailed = 0
+			continue
+		}
+		lastVersion = versionResp
+
+		switch versionResp.Status {
+		case "active":
+			consecutiveActive++
+			consecutiveFailed = 0
+			if consecutiveActive >= confirmCount {
+				fmt.Fprintf(os.Stderr, "Agent version %s is active!\n", version)
+				return versionResp, nil
+			}
+			fmt.Fprintf(os.Stderr, "  Status: active (confirming...)\n")
+		case "failed":
+			consecutiveFailed++
+			consecutiveActive = 0
+			if consecutiveFailed >= confirmCount {
+				errMsg := "agent deployment failed"
+				if versionResp.Error != nil {
+					errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", versionResp.Error.Code, versionResp.Error.Message)
+				}
+				if versionResp.RequestID != "" {
+					errMsg += fmt.Sprintf(" (request-id: %s)", versionResp.RequestID)
+				}
+				return nil, exterrors.Internal(exterrors.CodeAgentCreateFailed, errMsg)
+			}
+			fmt.Fprintf(os.Stderr, "  Status: failed (confirming...)\n")
+		default:
+			consecutiveActive = 0
+			consecutiveFailed = 0
+			fmt.Fprintf(os.Stderr, "  Status: %s...\n", versionResp.Status)
+		}
+	}
+
+	// Timeout
+	lastStatus := "unknown"
+	if lastVersion != nil {
+		lastStatus = lastVersion.Status
+	}
+	return nil, exterrors.Internal(
+		exterrors.CodeAgentCreateFailed,
+		fmt.Sprintf("agent deployment timed out (last status: %s); check agent status manually", lastStatus),
+	)
+}
+
 // createAgent creates a new version of the agent using the API
 func (p *AgentServiceTargetProvider) createAgent(
 	ctx context.Context,
@@ -1404,9 +1702,11 @@ func (p *AgentServiceTargetProvider) createAgent(
 ) (*agent_api.AgentVersionObject, error) {
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		p.credential,
 	)
+
+	writeExistingAgentVersionWarningIfPresent(ctx, agentClient, request.Name)
 
 	// Extract CreateAgentVersionRequest from CreateAgentRequest
 	versionRequest := &agent_api.CreateAgentVersionRequest{
@@ -1506,13 +1806,13 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 
 	// Set the base agent endpoint used for session management (not protocol-specific).
 	baseEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
-	projectEndpoint := strings.TrimRight(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], "/")
+	projectEndpoint := strings.TrimRight(azdEnv["FOUNDRY_PROJECT_ENDPOINT"], "/")
 	envVars[baseEndpointKey] = fmt.Sprintf(
 		"%s/agents/%s/versions/%s", projectEndpoint, agentVersionResponse.Name, agentVersionResponse.Version,
 	)
 
 	endpoints := agentInvocationEndpoints(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		agentVersionResponse.Name,
 		protocols,
 	)

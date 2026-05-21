@@ -143,7 +143,7 @@ func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig)
 
 func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	// Skip when the project has no hosted agent services. `postdeploy` fires on every
-	// `azd deploy`, so without this guard the AZURE_AI_PROJECT_ENDPOINT/AZURE_TENANT_ID
+	// `azd deploy`, so without this guard the FOUNDRY_PROJECT_ENDPOINT/AZURE_TENANT_ID
 	// reads below would fail for projects that don't use this extension. See #7373.
 	var hostedAgents []*azdext.ServiceConfig
 	for _, svc := range args.Project.Services {
@@ -169,13 +169,13 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	// Read the project endpoint for API calls.
 	endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envName,
-		Key:     "AZURE_AI_PROJECT_ENDPOINT",
+		Key:     "FOUNDRY_PROJECT_ENDPOINT",
 	})
 	if err != nil {
-		return fmt.Errorf("failed to read AZURE_AI_PROJECT_ENDPOINT: %w", err)
+		return fmt.Errorf("failed to read FOUNDRY_PROJECT_ENDPOINT: %w", err)
 	}
 	if endpointResp.Value == "" {
-		return fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT is not set in the environment")
+		return fmt.Errorf("FOUNDRY_PROJECT_ENDPOINT is not set in the environment")
 	}
 
 	// Create a credential for API calls.
@@ -614,12 +614,12 @@ func provisionToolboxes(
 
 	envValue, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: currentEnv.Environment.Name,
-		Key:     "AZURE_AI_PROJECT_ENDPOINT",
+		Key:     "FOUNDRY_PROJECT_ENDPOINT",
 	})
 	if err != nil || envValue.Value == "" {
 		return exterrors.Dependency(
 			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required for toolbox provisioning",
+			"FOUNDRY_PROJECT_ENDPOINT is required for toolbox provisioning",
 			"run 'azd provision' to create the AI project first",
 		)
 	}

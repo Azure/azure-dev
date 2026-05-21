@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/common"
 )
 
@@ -79,15 +79,16 @@ func (gh *GitHubCli) IsInstalled() (bool, error) {
 	return true, nil
 }
 
-// CheckAndGetInstallError checks if GitHub CLI is installed and returns a UserFriendlyError if it's not
+// CheckAndGetInstallError checks if GitHub CLI is installed and returns a structured error if it's not.
 func (gh *GitHubCli) CheckAndGetInstallError() error {
 	installed, err := gh.IsInstalled()
 	if err != nil || !installed {
-		// Create a user-friendly error with installation instructions in the user details
-		return internal.NewUserFriendlyError(
-			"GitHub CLI is required for this operation",
-			gh.getInstallInstructions(),
-		)
+		return &azdext.LocalError{
+			Message:    "GitHub CLI is required for this operation",
+			Code:       "github_cli_missing",
+			Category:   azdext.LocalErrorCategoryDependency,
+			Suggestion: gh.getInstallInstructions(),
+		}
 	}
 	return nil
 }

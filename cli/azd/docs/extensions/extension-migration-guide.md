@@ -133,6 +133,18 @@ func NewRootCommand() *cobra.Command {
 `PersistentPreRunE`. The `ExtensionContext` struct provides typed access to the
 parsed values.
 
+### Migrating `--cwd` handling
+
+`-C/--cwd` is now an SDK-managed global flag. `NewExtensionRootCommand` reads
+the flag or `AZD_CWD`, resolves the value, and changes the process working
+directory before the subcommand runs. Extensions that previously declared their
+own `--cwd` flag or changed directories in their root `PersistentPreRunE`
+should remove that custom flag and directory-changing code, then use the current
+working directory inside command handlers.
+
+If an extension still needs the original value for display or diagnostics, read
+`extCtx.Cwd`; do not re-register `--cwd` on subcommands.
+
 ---
 
 ## M3: Listen Command — Manual Host Setup → NewListenCommand

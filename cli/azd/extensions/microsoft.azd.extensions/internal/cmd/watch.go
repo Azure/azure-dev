@@ -142,36 +142,8 @@ func runWatchAction(ctx context.Context, flags *watchFlags) error {
 				return nil
 			}
 
-			// Fast path: ignore events matching hardcoded glob patterns.
-			shouldIgnore := false
-			for _, pattern := range globIgnorePaths {
-				matched, _ := doublestar.PathMatch(pattern, event.Name)
-				if matched {
-					shouldIgnore = true
-					break
-				}
-			}
-			if shouldIgnore {
+			if shouldIgnoreWatchEvent(cwd, event.Name, globIgnorePaths, ignoreMatcher) {
 				continue
-			}
-
-			// Check user-defined ignore patterns (.azdxignore / .gitignore).
-			// Use os.Stat once to determine if the path is a directory.
-			info, statErr := os.Stat(event.Name)
-			isDir := statErr == nil && info.IsDir()
-
-			if relPath, relErr := filepath.Rel(cwd, event.Name); relErr != nil {
-				log.Printf("debug: failed to compute relative path for %s: %v", event.Name, relErr)
-			} else {
-				if ignoreMatcher.IsIgnored(relPath, isDir) {
-					continue
-				}
-				// When the path no longer exists (e.g. Remove event), os.Stat fails
-				// and isDir defaults to false. Re-check as a directory so that
-				// directory-only patterns (trailing slash) still filter the event.
-				if statErr != nil && ignoreMatcher.IsIgnored(relPath, true) {
-					continue
-				}
 			}
 
 			// Collect unique changes
@@ -235,6 +207,50 @@ func watchRecursive(
 
 		return nil
 	})
+}
+
+func shouldIgnoreWatchEvent(
+	root string,
+	eventName string,
+	globIgnorePaths []string,
+	ignoreMatcher *ignore.Matcher,
+) bool {
+	relPath := relativeWatchPath(root, eventName)
+
+	// Fast path: ignore events matching hardcoded glob patterns.
+	// relPath uses forward slashes (see relativeWatchPath), so use Match,
+	// which always splits on '/', instead of PathMatch, which would split on
+	// the OS separator (`\` on Windows) and break these patterns.
+	for _, pattern := range globIgnorePaths {
+		matched, _ := doublestar.Match(pattern, relPath)
+		if matched {
+			return true
+		}
+	}
+
+	// Check user-defined ignore patterns (.azdxignore / .gitignore).
+	// Use os.Stat once to determine if the path is a directory.
+	info, statErr := os.Stat(eventName)
+	isDir := statErr == nil && info.IsDir()
+
+	if ignoreMatcher.IsIgnored(relPath, isDir) {
+		return true
+	}
+
+	// When the path no longer exists (e.g. Remove event), os.Stat fails
+	// and isDir defaults to false. Re-check as a directory so that
+	// directory-only patterns (trailing slash) still filter the event.
+	return statErr != nil && ignoreMatcher.IsIgnored(relPath, true)
+}
+
+func relativeWatchPath(root string, eventName string) string {
+	relPath, err := filepath.Rel(root, eventName)
+	if err != nil {
+		log.Printf("debug: failed to compute relative path for %s: %v", eventName, err)
+		relPath = eventName
+	}
+
+	return filepath.ToSlash(relPath)
 }
 
 func rebuild(ctx context.Context, extensionPath string) {

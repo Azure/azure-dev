@@ -66,6 +66,12 @@ func TestSessionCreateCommand_DefaultFlags(t *testing.T) {
 
 	isolationKey, _ := cmd.Flags().GetString("isolation-key")
 	assert.Equal(t, "", isolationKey)
+
+	userIsolationKey, _ := cmd.Flags().GetString("user-isolation-key")
+	assert.Equal(t, "", userIsolationKey)
+
+	chatIsolationKey, _ := cmd.Flags().GetString("chat-isolation-key")
+	assert.Equal(t, "", chatIsolationKey)
 }
 
 func TestSessionCreateCommand_AcceptsPositionalArgs(t *testing.T) {
@@ -88,6 +94,32 @@ func TestSessionListCommand_DefaultFlags(t *testing.T) {
 
 	token, _ := cmd.Flags().GetString("pagination-token")
 	assert.Equal(t, "", token)
+
+	userIsolationKey, _ := cmd.Flags().GetString("user-isolation-key")
+	assert.Equal(t, "", userIsolationKey)
+
+	chatIsolationKey, _ := cmd.Flags().GetString("chat-isolation-key")
+	assert.Equal(t, "", chatIsolationKey)
+}
+
+func TestSessionShowCommand_HasIsolationFlags(t *testing.T) {
+	cmd := newSessionShowCommand(nil)
+
+	for _, name := range []string{"user-isolation-key", "chat-isolation-key"} {
+		f := cmd.Flags().Lookup(name)
+		require.NotNil(t, f, "expected flag %q", name)
+		assert.Equal(t, "", f.DefValue)
+	}
+}
+
+func TestSessionDeleteCommand_HasIsolationFlags(t *testing.T) {
+	cmd := newSessionDeleteCommand(nil)
+
+	for _, name := range []string{"user-isolation-key", "chat-isolation-key"} {
+		f := cmd.Flags().Lookup(name)
+		require.NotNil(t, f, "expected flag %q", name)
+		assert.Equal(t, "", f.DefValue)
+	}
 }
 
 // ---------------------------------------------------------------------------

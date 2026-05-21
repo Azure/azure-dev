@@ -1705,23 +1705,25 @@ func (a *extensionSourceListAction) Run(ctx context.Context) (*actions.ActionRes
 	}
 
 	if a.formatter.Kind() == output.TableFormat {
-		columns := []output.Column{
+		prettyFormatter := &output.PrettyTableFormatter{}
+		columns := []output.PrettyColumn{
 			{
-				Heading:       "Name",
-				ValueTemplate: "{{.Name}}",
+				Column:   output.Column{Heading: "NAME", ValueTemplate: "{{.Name}}"},
+				Priority: 1,
 			},
 			{
-				Heading:       "Type",
-				ValueTemplate: "{{.Type}}",
+				Column:   output.Column{Heading: "TYPE", ValueTemplate: "{{.Type}}"},
+				Priority: 1,
 			},
 			{
-				Heading:       "Location",
-				ValueTemplate: "{{.Location}}",
+				Column:   output.Column{Heading: "LOCATION", ValueTemplate: "{{.Location}}"},
+				Priority: 2,
 			},
 		}
 
-		err = a.formatter.Format(sourceConfigs, a.writer, output.TableFormatterOptions{
-			Columns: columns,
+		err = prettyFormatter.Format(sourceConfigs, a.writer, output.PrettyTableFormatterOptions{
+			Columns:         columns,
+			CardGroupColumn: "TYPE",
 		})
 	} else {
 		err = a.formatter.Format(sourceConfigs, a.writer, nil)

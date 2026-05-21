@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"text/template"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -149,9 +150,51 @@ func (at *dotnetContainerAppTarget) Deploy(
 	var bicepDeploymentResult *azapi.ResourceDeployment
 	var yamlDeploymentError error
 
-	// Prepare the container image based on service type and configuration
-	// This handles all four Aspire resource types (dockerfile.v0, container.v0, project.v0, container.v1)
-	imageResult, err := at.prepareContainerImage(ctx, serviceConfig, serviceContext, targetResource, progress)
+	// Prepare the container image based on service type and configuration.
+	// This handles all four Aspire resource types (dockerfile.v0, container.v0, project.v0, container.v1).
+	//
+	// When multiple Aspire services are deployed in parallel, their dotnet publish
+	// invocations race on shared <ProjectReference> obj/ directories, producing
+	// MSB4018 / System.IO.IOException. We resolve this by giving each service its
+	// own artifacts directory (--artifacts-path), so intermediate build outputs
+	// are isolated and concurrent publishes cannot interfere with each other.
+	//
+	// If a build gate mutex is present in ctx, we first try to create a per-service
+	// temp dir for --artifacts-path. If that fails (e.g. disk full, permissions),
+	// we fall back to acquiring the mutex during image preparation only.
+	imageCtx := ctx
+	var buildGateMu *sync.Mutex // non-nil only in the mutex fallback path
+	if BuildGateFromContext(ctx) != nil {
+		// Create a per-service temp directory for isolated intermediate outputs.
+		// Sanitize the service name to safe filesystem characters and keep the
+		// prefix short to avoid MAX_PATH issues on Windows when MSBuild nests
+		// obj/<config>/<tfm>/... underneath.
+		safeName := sanitizeTempDirName(serviceConfig.Name)
+		artifactsDir, mkdirErr := os.MkdirTemp("", "azd-"+safeName+"-")
+		if mkdirErr == nil {
+			defer func() {
+				if rmErr := os.RemoveAll(artifactsDir); rmErr != nil {
+					log.Printf("warning: failed to remove artifacts temp dir %s: %v", artifactsDir, rmErr)
+				}
+			}()
+			imageCtx = dotnet.ContextWithArtifactsPath(ctx, artifactsDir)
+		} else {
+			// Fallback: use the mutex to serialize image preparation only.
+			// We lock/unlock explicitly (not defer) so the Azure deployment
+			// portion that follows runs in parallel.
+			log.Printf("warning: failed to create artifacts temp dir for %s: %v; falling back to serial build",
+				serviceConfig.Name, mkdirErr)
+			buildGateMu = BuildGateFromContext(ctx)
+		}
+	}
+
+	if buildGateMu != nil {
+		buildGateMu.Lock()
+	}
+	imageResult, err := at.prepareContainerImage(imageCtx, serviceConfig, serviceContext, targetResource, progress)
+	if buildGateMu != nil {
+		buildGateMu.Unlock()
+	}
 	if err != nil {
 		return nil, err
 	}

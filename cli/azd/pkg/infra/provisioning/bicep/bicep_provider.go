@@ -161,6 +161,9 @@ var azureReservedResourceNameExemptTypes = []string{
 	"Microsoft.Compute/virtualMachineScaleSets/extensions",
 	"Microsoft.Web/connections",                             // e.g. "office365", "sharepointonline"
 	"Microsoft.Network/virtualNetworks/subnets/delegations", // e.g. "Microsoft.Web/serverFarms"
+
+	// Service-mandated names (the resource name is fixed by the service, not user-chosen).
+	"Microsoft.Chaos/targets", // e.g. "microsoft-azurekubernetesservicechaosmesh"
 }
 
 // isReservedNameCheckExempt reports whether the reserved-word check should be

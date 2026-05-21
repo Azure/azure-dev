@@ -1,0 +1,15 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
+)
+
+func newMetadataCommand(rootCmd *cobra.Command) *cobra.Command {
+	return azdext.NewMetadataCommand("1.0", "azure.ai.inspector", func() *cobra.Command {
+		return rootCmd
+	})
+}

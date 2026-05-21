@@ -148,7 +148,7 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	env := os.Environ()
 	env = appendPortEnvVars(env, pt, flags.port)
 
-	// Load azd environment variables (e.g., AZURE_AI_PROJECT_ENDPOINT)
+	// Load azd environment variables (e.g., FOUNDRY_PROJECT_ENDPOINT)
 	// so the agent can reach Azure services during local development.
 	// Also translate azd env keys to FOUNDRY_* env vars so the agent code
 	// works identically whether running locally or in a hosted container
@@ -158,6 +158,18 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 			env = append(env, fmt.Sprintf("%s=%s", k, v))
 		}
 		env = appendFoundryEnvVars(env, azdEnvVars, runCtx.ServiceName)
+	}
+
+	// Resolve ${{connections.<name>.credentials.<key>}} references from the
+	// agent manifest's environment_variables section. These are fetched from
+	// the Foundry data plane at runtime and injected into the agent process.
+	// Uses the same endpoint resolution as other agent commands.
+	if endpoint, err := resolveAgentEndpoint(ctx, "", ""); err == nil {
+		if connEnv, err := resolveConnectionCredentials(ctx, projectDir, endpoint); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: connection credential resolution failed: %s\n", err)
+		} else {
+			env = append(env, connEnv...)
+		}
 	}
 
 	url := fmt.Sprintf("http://localhost:%d", flags.port)
@@ -395,7 +407,6 @@ func venvBinDir(venvDir string) string {
 //
 // The mapping is:
 //
-//	AZURE_AI_PROJECT_ENDPOINT          → FOUNDRY_PROJECT_ENDPOINT
 //	AZURE_AI_PROJECT_ID                → FOUNDRY_PROJECT_ARM_ID
 //	AGENT_{SVC}_NAME                   → FOUNDRY_AGENT_NAME
 //	AGENT_{SVC}_VERSION                → FOUNDRY_AGENT_VERSION
@@ -406,7 +417,6 @@ func appendFoundryEnvVars(env []string, azdEnv map[string]string, serviceName st
 		azdKey     string
 		foundryKey string
 	}{
-		{"AZURE_AI_PROJECT_ENDPOINT", "FOUNDRY_PROJECT_ENDPOINT"},
 		{"AZURE_AI_PROJECT_ID", "FOUNDRY_PROJECT_ARM_ID"},
 	}
 

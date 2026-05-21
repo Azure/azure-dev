@@ -1350,3 +1350,89 @@ func TestCreateHostedAgentAPIRequest_NoSkillsRejected(
 		t.Errorf("error = %q, want 'at least one skill'", err)
 	}
 }
+
+func TestCreateAgentAPIRequest_CodeDeploy_DotnetRuntime(t *testing.T) {
+	depRes := "remote_build"
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Name: "dotnet-agent",
+			Kind: AgentKindHosted,
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "responses", Version: "1.0.0"},
+		},
+		CodeConfiguration: &CodeConfiguration{
+			Runtime:              "dotnet_9",
+			EntryPoint:           "MyAgent.dll",
+			DependencyResolution: &depRes,
+		},
+	}
+
+	req, err := CreateAgentAPIRequestFromDefinition(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	codeDef, ok := req.Definition.(agent_api.HostedAgentDefinition)
+	if !ok {
+		t.Fatalf("expected CodeBasedHostedAgentDefinition, got %T", req.Definition)
+	}
+
+	// Verify entry_point is ["dotnet", "MyAgent.dll"]
+	wantEntryPoint := []string{"dotnet", "MyAgent.dll"}
+	if len(codeDef.CodeConfiguration.EntryPoint) != 2 ||
+		codeDef.CodeConfiguration.EntryPoint[0] != wantEntryPoint[0] ||
+		codeDef.CodeConfiguration.EntryPoint[1] != wantEntryPoint[1] {
+		t.Errorf("EntryPoint = %v, want %v", codeDef.CodeConfiguration.EntryPoint, wantEntryPoint)
+	}
+
+	// Verify runtime is passed through
+	if codeDef.CodeConfiguration.Runtime != "dotnet_9" {
+		t.Errorf("Runtime = %q, want %q", codeDef.CodeConfiguration.Runtime, "dotnet_9")
+	}
+
+	// Verify dependency resolution
+	if codeDef.CodeConfiguration.DependencyResolution != "remote_build" {
+		t.Errorf("DependencyResolution = %q, want %q", codeDef.CodeConfiguration.DependencyResolution, "remote_build")
+	}
+}
+
+func TestCreateAgentAPIRequest_CodeDeploy_PythonRuntime(t *testing.T) {
+	depRes := "bundled"
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Name: "python-agent",
+			Kind: AgentKindHosted,
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "invocations", Version: "1.0.0"},
+		},
+		CodeConfiguration: &CodeConfiguration{
+			Runtime:              "python_3_12",
+			EntryPoint:           "main.py",
+			DependencyResolution: &depRes,
+		},
+	}
+
+	req, err := CreateAgentAPIRequestFromDefinition(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	codeDef, ok := req.Definition.(agent_api.HostedAgentDefinition)
+	if !ok {
+		t.Fatalf("expected CodeBasedHostedAgentDefinition, got %T", req.Definition)
+	}
+
+	// Verify entry_point is ["python", "main.py"]
+	wantEntryPoint := []string{"python", "main.py"}
+	if len(codeDef.CodeConfiguration.EntryPoint) != 2 ||
+		codeDef.CodeConfiguration.EntryPoint[0] != wantEntryPoint[0] ||
+		codeDef.CodeConfiguration.EntryPoint[1] != wantEntryPoint[1] {
+		t.Errorf("EntryPoint = %v, want %v", codeDef.CodeConfiguration.EntryPoint, wantEntryPoint)
+	}
+
+	if codeDef.CodeConfiguration.Runtime != "python_3_12" {
+		t.Errorf("Runtime = %q, want %q", codeDef.CodeConfiguration.Runtime, "python_3_12")
+	}
+}

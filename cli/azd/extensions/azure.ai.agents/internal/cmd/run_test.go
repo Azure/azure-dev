@@ -4,13 +4,16 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -278,9 +281,83 @@ func TestInspectorLaunchWarningForMissingExtension(t *testing.T) {
 	}
 }
 
+func TestInspectorLaunchFailureOnlyWarns(t *testing.T) {
+	t.Parallel()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	workflow := &recordingWorkflowClient{
+		err:    status.Error(codes.Internal, "boom"),
+		called: make(chan struct{}),
+	}
+	var stderr lockedBuffer
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	startInspectorAfterAgentReadyWithOptions(
+		ctx,
+		workflow,
+		ln.Addr().(*net.TCPAddr).Port,
+		time.Second,
+		time.Millisecond,
+		&stderr,
+	)
+
+	select {
+	case <-workflow.called:
+	case <-time.After(2 * time.Second):
+		t.Fatal("inspector workflow was not called")
+	}
+
+	deadline := time.After(2 * time.Second)
+	for !strings.Contains(stderr.String(), "Warning: Agent Inspector was not launched") {
+		select {
+		case <-deadline:
+			t.Fatalf("stderr = %q, want inspector warning", stderr.String())
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+}
+
+func TestNoInspectorSkipsWorkflowLaunch(t *testing.T) {
+	t.Parallel()
+
+	workflow := &recordingWorkflowClient{called: make(chan struct{})}
+	handleInspectorAutoLaunch(t.Context(), workflow, 8088, true, true, nil, io.Discard)
+
+	select {
+	case <-workflow.called:
+		t.Fatal("--no-inspector should skip workflow launch")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 type recordingWorkflowClient struct {
 	request *azdext.RunWorkflowRequest
 	err     error
+	called  chan struct{}
+}
+
+type lockedBuffer struct {
+	mu sync.Mutex
+	bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.String()
 }
 
 func (c *recordingWorkflowClient) Run(
@@ -289,6 +366,9 @@ func (c *recordingWorkflowClient) Run(
 	_ ...grpc.CallOption,
 ) (*azdext.EmptyResponse, error) {
 	c.request = request
+	if c.called != nil {
+		close(c.called)
+	}
 	return &azdext.EmptyResponse{}, c.err
 }
 

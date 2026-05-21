@@ -20,9 +20,22 @@ func readSSEStream(body io.Reader, agentName string) error {
 
 	var currentEvent string
 	var printed bool
+	var printedLineClosed bool
+	var finalErr error
+	var terminalSeen bool
+
+	closePrintedLine := func() {
+		if printed && !printedLineClosed {
+			fmt.Println()
+			printedLineClosed = true
+		}
+	}
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		if terminalSeen {
+			continue
+		}
 
 		if after, ok := strings.CutPrefix(line, "event: "); ok {
 			currentEvent = after
@@ -40,13 +53,13 @@ func readSSEStream(body io.Reader, agentName string) error {
 						fmt.Printf("[%s] ", agentName)
 						printed = true
 					}
+					printedLineClosed = false
 					fmt.Print(delta.Delta)
 				}
 
 			case "response.completed":
-				if printed {
-					fmt.Println()
-				}
+				terminalSeen = true
+				closePrintedLine()
 				// Parse the completed response to check for errors
 				var event struct {
 					Response json.RawMessage `json:"response"`
@@ -58,30 +71,39 @@ func readSSEStream(body io.Reader, agentName string) error {
 							if errObj, ok := result["error"].(map[string]any); ok {
 								msg, _ := errObj["message"].(string)
 								code, _ := errObj["code"].(string)
-								return fmt.Errorf("agent failed (%s): %s", code, msg)
+								if finalErr == nil {
+									finalErr = fmt.Errorf("agent failed (%s): %s", code, msg)
+								}
+								break
 							}
-							return fmt.Errorf("agent returned failed status")
+							if finalErr == nil {
+								finalErr = fmt.Errorf("agent returned failed status")
+							}
+							break
 						}
 						// If no text was streamed, extract output from the completed response
-						if !printed {
-							return printAgentResponse(result, agentName)
+						if !printed && finalErr == nil {
+							finalErr = printAgentResponse(result, agentName)
 						}
 					}
 				}
-				return nil
 
 			case "error":
-				if printed {
-					fmt.Println()
-				}
+				terminalSeen = true
+				closePrintedLine()
 				var sseErr struct {
 					Code    string `json:"code"`
 					Message string `json:"message"`
 				}
 				if err := json.Unmarshal([]byte(data), &sseErr); err == nil {
-					return fmt.Errorf("agent error (%s): %s", sseErr.Code, sseErr.Message)
+					if finalErr == nil {
+						finalErr = fmt.Errorf("agent error (%s): %s", sseErr.Code, sseErr.Message)
+					}
+					break
 				}
-				return fmt.Errorf("agent stream error: %s", data)
+				if finalErr == nil {
+					finalErr = fmt.Errorf("agent stream error: %s", data)
+				}
 			}
 
 			currentEvent = ""
@@ -93,9 +115,10 @@ func readSSEStream(body io.Reader, agentName string) error {
 		return fmt.Errorf("error reading response stream: %w", err)
 	}
 
-	if printed {
-		fmt.Println()
+	if finalErr != nil {
+		return finalErr
 	}
+	closePrintedLine()
 	return nil
 }
 

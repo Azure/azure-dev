@@ -71,6 +71,52 @@ func TestValidateAgentProxyURL(t *testing.T) {
 	}
 }
 
+func TestValidateExternalBrowserURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+	}{
+		{
+			name: "http",
+			url:  "http://example.com/path",
+		},
+		{
+			name: "https",
+			url:  "https://example.com/path",
+		},
+		{
+			name:    "file scheme",
+			url:     "file:///C:/temp/file.txt",
+			wantErr: true,
+		},
+		{
+			name:    "custom uri handler",
+			url:     "vscode://file/C:/temp/file.txt",
+			wantErr: true,
+		},
+		{
+			name:    "userinfo",
+			url:     "https://user:pass@example.com/path",
+			wantErr: true,
+		},
+		{
+			name:    "missing host",
+			url:     "https:///path",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := validateExternalBrowserURL(tt.url)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateExternalBrowserURL() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestInspectorOriginValidation(t *testing.T) {
 	port := 8087
 

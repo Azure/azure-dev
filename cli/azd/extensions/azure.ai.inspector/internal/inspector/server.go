@@ -81,7 +81,7 @@ func (s *Server) Start(ctx context.Context, ready chan<- struct{}) error {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/agentdev/ws/rpc", s.handleWS)
-	mux.Handle("/", assetsHandler(Assets()))
+	mux.Handle("/", assetsHandler(Assets(), s.cfg.Port))
 
 	addr := fmt.Sprintf("127.0.0.1:%d", s.cfg.Port)
 	s.httpSrv = &http.Server{
@@ -122,7 +122,7 @@ func (s *Server) Start(ctx context.Context, ready chan<- struct{}) error {
 
 // assetsHandler serves embedded SPA assets, falling back to index.html
 // for unknown paths so client-side routes resolve.
-func assetsHandler(fsys fs.FS) http.Handler {
+func assetsHandler(fsys fs.FS, inspectorPort int) http.Handler {
 	fileServer := http.FileServer(http.FS(fsys))
 
 	indexBytes, indexErr := fs.ReadFile(fsys, "index.html")
@@ -138,6 +138,8 @@ func assetsHandler(fsys fs.FS) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		setAssetSecurityHeaders(w, inspectorPort)
+
 		path := r.URL.Path
 		if path == "" || path == "/" || path == "/index.html" {
 			serveIndex(w)
@@ -149,4 +151,26 @@ func assetsHandler(fsys fs.FS) http.Handler {
 		}
 		fileServer.ServeHTTP(w, r)
 	})
+}
+
+func setAssetSecurityHeaders(w http.ResponseWriter, inspectorPort int) {
+	localhostWS := fmt.Sprintf("ws://localhost:%d", inspectorPort)
+	ipv4WS := fmt.Sprintf("ws://127.0.0.1:%d", inspectorPort)
+	ipv6WS := fmt.Sprintf("ws://[::1]:%d", inspectorPort)
+	csp := strings.Join([]string{
+		"default-src 'self'",
+		"script-src 'self'",
+		"style-src 'self' 'unsafe-inline'",
+		"img-src 'self' data: blob:",
+		"font-src 'self' data:",
+		fmt.Sprintf("connect-src 'self' %s %s %s", localhostWS, ipv4WS, ipv6WS),
+		"object-src 'none'",
+		"base-uri 'none'",
+		"frame-ancestors 'none'",
+	}, "; ")
+
+	w.Header().Set("Content-Security-Policy", csp)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "no-referrer")
 }

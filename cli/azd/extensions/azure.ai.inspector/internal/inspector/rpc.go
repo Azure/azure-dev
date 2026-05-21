@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cli/browser"
 	"github.com/gorilla/websocket"
@@ -35,6 +36,13 @@ type rpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
+
+const (
+	wsMaxMessageBytes = 1 << 20
+	wsPongWait        = 60 * time.Second
+	wsPingPeriod      = 45 * time.Second
+	wsWriteWait       = 10 * time.Second
+)
 
 // rpcSession owns one WebSocket. writeMu enforces gorilla/websocket's
 // single-writer requirement.
@@ -63,7 +71,12 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		s.logger.Printf("ws upgrade failed: %v", err)
 		return
 	}
-	conn.SetReadLimit(1 << 20)
+	conn.SetReadLimit(wsMaxMessageBytes)
+	_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	})
+
 	rootCtx, rootCancel := context.WithCancel(r.Context())
 	sess := &rpcSession{
 		cfg:           s.cfg,
@@ -75,6 +88,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		rootCancel:    rootCancel,
 	}
 	defer sess.cleanup()
+	go sess.pingLoop(wsPingPeriod)
 
 	for {
 		_, raw, err := conn.ReadMessage()
@@ -94,6 +108,28 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		// Dispatch off the read loop so streaming methods don't block
 		// subsequent client messages (e.g. fetchSSE/cancel).
 		go sess.handleMessageSafely(msg)
+	}
+}
+
+func (s *rpcSession) pingLoop(period time.Duration) {
+	ticker := time.NewTicker(period)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.rootCtx.Done():
+			return
+		case <-ticker.C:
+			s.writeMu.Lock()
+			err := s.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(wsWriteWait))
+			s.writeMu.Unlock()
+			if err != nil {
+				s.logger.Printf("ws ping: %v", err)
+				s.rootCancel()
+				_ = s.conn.Close()
+				return
+			}
+		}
 	}
 }
 
@@ -208,7 +244,11 @@ func (s *rpcSession) openUrlInBrowser(raw json.RawMessage) (any, error) {
 	if url == "" {
 		return nil, fmt.Errorf("openUrlInBrowser: empty url")
 	}
-	if err := browser.OpenURL(url); err != nil {
+	targetURL, err := validateExternalBrowserURL(url)
+	if err != nil {
+		return nil, err
+	}
+	if err := browser.OpenURL(targetURL.String()); err != nil {
 		s.logger.Printf("openUrlInBrowser: %v", err)
 		return nil, err
 	}
@@ -266,6 +306,7 @@ func (s *rpcSession) sendRaw(payload any) error {
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
+	_ = s.conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 	if err := s.conn.WriteMessage(websocket.TextMessage, data); err != nil {
 		s.logger.Printf("rpc write: %v", err)
 		return err

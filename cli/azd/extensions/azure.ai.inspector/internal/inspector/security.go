@@ -34,6 +34,24 @@ func validateAgentProxyURL(rawURL string, agentPort int) (*url.URL, error) {
 	return target, nil
 }
 
+func validateExternalBrowserURL(rawURL string) (*url.URL, error) {
+	target, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse browser URL: %w", err)
+	}
+	if target.Scheme != "http" && target.Scheme != "https" {
+		return nil, fmt.Errorf("browser URL scheme %q is not allowed", target.Scheme)
+	}
+	if target.User != nil {
+		return nil, fmt.Errorf("browser URL must not include user information")
+	}
+	if target.Hostname() == "" {
+		return nil, fmt.Errorf("browser URL must include a host")
+	}
+
+	return target, nil
+}
+
 func isAllowedInspectorHostPort(hostPort string, inspectorPort int) bool {
 	host, portValue, err := net.SplitHostPort(hostPort)
 	if err != nil {

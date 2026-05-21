@@ -17,6 +17,9 @@ azd extension.
 The inspector targets a **local** agent only. The agent must already be running
 on the target port (for example, started via `azd ai agent run`).
 
+Third-party components redistributed with the embedded SPA are listed in
+`THIRD_PARTY_NOTICES.md`.
+
 ## Usage
 
 ```bash

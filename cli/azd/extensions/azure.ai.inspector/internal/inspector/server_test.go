@@ -47,6 +47,21 @@ func TestServerStartServesIndex(t *testing.T) {
 			if resp.StatusCode != http.StatusOK {
 				t.Fatalf("GET %s: status = %d, want 200", path, resp.StatusCode)
 			}
+			if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Fatalf("GET %s: X-Content-Type-Options = %q, want nosniff", path, got)
+			}
+			if got := resp.Header.Get("X-Frame-Options"); got != "DENY" {
+				t.Fatalf("GET %s: X-Frame-Options = %q, want DENY", path, got)
+			}
+			if got := resp.Header.Get("Referrer-Policy"); got != "no-referrer" {
+				t.Fatalf("GET %s: Referrer-Policy = %q, want no-referrer", path, got)
+			}
+			csp := resp.Header.Get("Content-Security-Policy")
+			if !strings.Contains(csp, "default-src 'self'") ||
+				!strings.Contains(csp, "connect-src 'self'") ||
+				!strings.Contains(csp, "ws://127.0.0.1:"+strconv.Itoa(port)) {
+				t.Fatalf("GET %s: Content-Security-Policy missing expected directives: %q", path, csp)
+			}
 			body, _ := io.ReadAll(resp.Body)
 			if !strings.Contains(strings.ToLower(string(body)), "<html") {
 				t.Fatalf("GET %s: body does not look like HTML (first 80 bytes: %q)", path, truncate(body, 80))

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -214,16 +215,20 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 		return fmt.Errorf("failed to start agent: %w", err)
 	}
 
+	inspectorInstalled := false
+	var inspectorInstallErr error
 	if !flags.noInspector {
-		inspectorInstalled, err := isInspectorExtensionInstalled(ctx, azdClient)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Agent Inspector was not launched: %v\n", err)
-		} else if !inspectorInstalled {
-			fmt.Fprintln(os.Stderr, missingInspectorExtensionWarning())
-		} else {
-			startInspectorAfterAgentReady(ctx, azdClient.Workflow(), flags.port)
-		}
+		inspectorInstalled, inspectorInstallErr = isInspectorExtensionInstalled(ctx, azdClient)
 	}
+	handleInspectorAutoLaunch(
+		ctx,
+		azdClient.Workflow(),
+		flags.port,
+		flags.noInspector,
+		inspectorInstalled,
+		inspectorInstallErr,
+		os.Stderr,
+	)
 
 	// Handle Ctrl+C / SIGTERM: forward signal to child, then wait for it to exit.
 	// The done channel is closed after proc.Wait returns so the goroutine can exit.
@@ -256,14 +261,62 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 }
 
 func startInspectorAfterAgentReady(ctx context.Context, workflow azdext.WorkflowServiceClient, agentPort int) {
+	startInspectorAfterAgentReadyWithOptions(
+		ctx,
+		workflow,
+		agentPort,
+		agentInspectorReadyTimeout,
+		agentInspectorReadyPollPeriod,
+		os.Stderr,
+	)
+}
+
+func handleInspectorAutoLaunch(
+	ctx context.Context,
+	workflow azdext.WorkflowServiceClient,
+	agentPort int,
+	noInspector bool,
+	inspectorInstalled bool,
+	inspectorInstallErr error,
+	stderr io.Writer,
+) {
+	if noInspector {
+		return
+	}
+	if inspectorInstallErr != nil {
+		fmt.Fprintf(stderr, "Warning: Agent Inspector was not launched: %v\n", inspectorInstallErr)
+		return
+	}
+	if !inspectorInstalled {
+		fmt.Fprintln(stderr, missingInspectorExtensionWarning())
+		return
+	}
+	startInspectorAfterAgentReadyWithOptions(
+		ctx,
+		workflow,
+		agentPort,
+		agentInspectorReadyTimeout,
+		agentInspectorReadyPollPeriod,
+		stderr,
+	)
+}
+
+func startInspectorAfterAgentReadyWithOptions(
+	ctx context.Context,
+	workflow azdext.WorkflowServiceClient,
+	agentPort int,
+	readyTimeout time.Duration,
+	pollPeriod time.Duration,
+	stderr io.Writer,
+) {
 	go func() {
-		waitCtx, cancel := context.WithTimeout(ctx, agentInspectorReadyTimeout)
+		waitCtx, cancel := context.WithTimeout(ctx, readyTimeout)
 		defer cancel()
 
-		if err := waitForLocalPort(waitCtx, agentPort, agentInspectorReadyPollPeriod); err != nil {
+		if err := waitForLocalPort(waitCtx, agentPort, pollPeriod); err != nil {
 			if ctx.Err() == nil {
 				fmt.Fprintf(
-					os.Stderr,
+					stderr,
 					"Warning: Agent Inspector was not launched because localhost:%d was not ready: %v\n",
 					agentPort,
 					err,
@@ -273,7 +326,7 @@ func startInspectorAfterAgentReady(ctx context.Context, workflow azdext.Workflow
 		}
 
 		if err := launchInspector(ctx, workflow, agentPort); err != nil && !isContextCancellation(err) {
-			fmt.Fprintln(os.Stderr, inspectorLaunchWarning(err))
+			fmt.Fprintln(stderr, inspectorLaunchWarning(err))
 		}
 	}()
 }

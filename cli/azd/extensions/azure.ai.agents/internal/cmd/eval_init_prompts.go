@@ -1,6 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// eval_init_prompts.go implements interactive prompts for the eval init
+// command, including eval suite name, instruction source, trace inclusion,
+// eval model selection, and regeneration choices for existing configs.
+
 package cmd
 
 import (
@@ -12,11 +16,13 @@ import (
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/agents/eval_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
+// promptEvalInitOptions runs interactive prompts for eval init options that
+// were not provided via flags: name, instruction, trace days, eval model,
+// and max samples.
 func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, flags *evalInitFlags, noPrompt bool) error {
 	azdClient := resolved.azdClient
 	if noPrompt {
@@ -303,19 +309,11 @@ func promptRegenerateChoices(
 	}
 
 	// Ask about evaluator.
-	generated, builtin := eval_api.SplitEvaluators(existingCfg.Evaluators)
-	if len(generated) > 0 {
-		generatedLabel := strings.Join(generated.Names(), ", ")
-		msg := fmt.Sprintf("Existing evaluator: %s. Do you want to regenerate?", generatedLabel)
-		if len(builtin) > 0 {
-			msg = fmt.Sprintf(
-				"Existing evaluator: %s (built-in evaluators %s will be kept). Do you want to regenerate?",
-				generatedLabel, strings.Join(builtin.Names(), ", "),
-			)
-		}
+	if len(existingCfg.Evaluators) > 0 {
+		evalLabel := strings.Join(existingCfg.Evaluators.Names(), ", ")
 		resp, err := prompt.Confirm(ctx, &azdext.ConfirmRequest{
 			Options: &azdext.ConfirmOptions{
-				Message:      msg,
+				Message:      fmt.Sprintf("Existing evaluator: %s. Do you want to regenerate?", evalLabel),
 				DefaultValue: new(false),
 			},
 		})
@@ -326,19 +324,8 @@ func promptRegenerateChoices(
 			flags.regenerateEvaluator = true
 		}
 	} else {
-		// No generated evaluators exist — ask whether to generate one.
-		resp, err := prompt.Confirm(ctx, &azdext.ConfirmRequest{
-			Options: &azdext.ConfirmOptions{
-				Message:      "No custom evaluator found. Do you want to generate one?",
-				DefaultValue: new(true),
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("prompting for evaluator generation: %w", err)
-		}
-		if resp.Value != nil && *resp.Value {
-			flags.regenerateEvaluator = true
-		}
+		// No evaluators exist — generate one by default.
+		flags.regenerateEvaluator = true
 	}
 
 	return nil
@@ -379,16 +366,4 @@ func promptConfigConfirmation(
 	}
 
 	return nil
-}
-
-// relativeDisplay returns a project-relative path for display purposes.
-// Returns empty string for empty input.
-func relativeDisplay(absPath, projectDir string) string {
-	if absPath == "" || projectDir == "" {
-		return absPath
-	}
-	if rel, err := filepath.Rel(projectDir, absPath); err == nil {
-		return rel
-	}
-	return absPath
 }

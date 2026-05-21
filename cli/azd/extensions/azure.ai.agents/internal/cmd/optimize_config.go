@@ -1,11 +1,15 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// optimize_config.go defines OptimizeConfig (the YAML config structure for
+// optimization jobs), provides loading/validation, and converts configs into
+// API requests. It also handles reading skills from disk and parsing YAML
+// frontmatter in skill files.
+
 package cmd
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +30,10 @@ type OptimizeConfig struct {
 	Criteria            []OptimizeConfigCriterion  `yaml:"criteria,omitempty"`
 	Options             *opteval.Options           `yaml:"options"`
 	InlineDataset       []optimize_api.DatasetTask `yaml:"-"` // populated by defaultOptimizeConfig, not from YAML
+
+	// Runtime-only: resolved skill directory and tools file (not serialized to YAML).
+	SkillDir  string `yaml:"-"`
+	ToolsFile string `yaml:"-"`
 }
 
 // OptimizeConfigCriterion is a named evaluation criterion with a natural-language instruction.
@@ -183,7 +191,7 @@ func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.Optimi
 	}
 
 	if c.DatasetFile != "" {
-		tasks, err := loadDatasetFile(c.DatasetFile)
+		tasks, err := loadJSONLFile[optimize_api.DatasetTask](c.DatasetFile)
 		if err != nil {
 			return nil, err
 		}
@@ -193,60 +201,25 @@ func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.Optimi
 	}
 
 	// Load skills from skill_dir if specified.
-	if c.Agent.SkillDir != "" {
-		skills, err := loadSkillsFromDir(c.Agent.SkillDir)
+	if c.SkillDir != "" {
+		skills, err := loadSkillsFromDir(c.SkillDir)
 		if err != nil {
-			return nil, fmt.Errorf("loading skills from %s: %w", c.Agent.SkillDir, err)
+			return nil, fmt.Errorf("loading skills from %s: %w", c.SkillDir, err)
 		}
 		req.Agent.Skills = skills
 	}
 
 	// Load tool definitions if a tools file is specified.
 	// TODO: re-enable when tools optimization is supported in the service.
-	// if c.Agent.ToolsFile != "" {
-	// 	tools, err := loadToolDefinitions(c.Agent.ToolsFile)
+	// if c.ToolsFile != "" {
+	// 	tools, err := loadToolDefinitions(c.ToolsFile)
 	// 	if err != nil {
-	// 		return nil, fmt.Errorf("loading tool definitions from %s: %w", c.Agent.ToolsFile, err)
+	// 		return nil, fmt.Errorf("loading tool definitions from %s: %w", c.ToolsFile, err)
 	// 	}
 	// 	req.Agent.ToolDefinitions = tools
 	// }
 
 	return req, nil
-}
-
-// loadDatasetFile reads a JSONL file where each line is a JSON DatasetTask.
-func loadDatasetFile(path string) ([]optimize_api.DatasetTask, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open dataset file %s: %w", path, err)
-	}
-	defer f.Close()
-
-	var tasks []optimize_api.DatasetTask
-	scanner := bufio.NewScanner(f)
-	lineNum := 0
-	for scanner.Scan() {
-		lineNum++
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
-		var task optimize_api.DatasetTask
-		if err := json.Unmarshal([]byte(line), &task); err != nil {
-			return nil, fmt.Errorf("failed to parse dataset line %d: %w", lineNum, err)
-		}
-		tasks = append(tasks, task)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading dataset file %s: %w", path, err)
-	}
-
-	if len(tasks) == 0 {
-		return nil, fmt.Errorf("dataset file %s contains no tasks", path)
-	}
-
-	return tasks, nil
 }
 
 // loadSkillsFromDir reads skill files from a directory and returns SkillDefinitions.
@@ -358,19 +331,4 @@ func splitFrontmatter(content string) (string, string) {
 
 	// No closing delimiter found — treat entire content as body.
 	return "", content
-}
-
-// loadToolDefinitions reads a JSON file containing an array of OpenAI-format
-// function tool definitions and returns them as ToolDefinition structs.
-func loadToolDefinitions(path string) ([]optimize_api.ToolDefinition, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // user-provided path validated earlier
-	if err != nil {
-		return nil, fmt.Errorf("reading tool definitions file: %w", err)
-	}
-
-	var tools []optimize_api.ToolDefinition
-	if err := json.Unmarshal(data, &tools); err != nil {
-		return nil, fmt.Errorf("parsing tool definitions: %w", err)
-	}
-	return tools, nil
 }

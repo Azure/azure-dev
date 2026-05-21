@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// models.go defines the request and response types for the optimization
+// service API, including job status, candidate results, agent definitions,
+// dataset tasks, and skill/tool definitions.
 package optimize_api
 
 import "encoding/json"

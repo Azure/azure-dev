@@ -1,6 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// optimize_helpers.go provides shared utilities for optimize commands:
+// connection flag resolution, job ID persistence in the azd environment,
+// and portal link construction.
+
 package cmd
 
 import (
@@ -10,16 +14,16 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"azureaiagent/internal/pkg/agents/eval_api"
+
 	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
 // optimizeConnectionFlags holds connection settings shared across all optimize sub-commands.
 type optimizeConnectionFlags struct {
-	projectEndpoint string
-	endpoint        string // override: direct optimization service URL (for local dev only)
+	projectEndpoint string // Foundry project endpoint URL
+	endpoint        string // direct optimization service URL (for local dev only)
 }
 
 // register adds the connection flags to the given cobra command.
@@ -63,13 +67,6 @@ const optimizeAPIVersion = "v1"
 
 // optimizeLastJobIDKey is the azd environment key for the last optimization job ID.
 const optimizeLastJobIDKey = "OPTIMIZE_LAST_OPERATION_ID"
-
-// tokenRequestOptions returns the token request options for Azure AI scope.
-func tokenRequestOptions() policy.TokenRequestOptions {
-	return policy.TokenRequestOptions{
-		Scopes: []string{"https://ai.azure.com/.default"},
-	}
-}
 
 // saveLastOptimizeJobID stores the operation ID in the azd environment.
 // Best-effort — silently ignores errors (e.g., when running outside azd).
@@ -130,11 +127,7 @@ func printOptimizePortalLink(ctx context.Context, out io.Writer, agentName, oper
 		return
 	}
 
-	prefix := resolvePortalPrefix(ctx, azdClient, envResp.Environment.Name)
-	if prefix == nil {
-		return
-	}
-
-	url := prefix.OptimizationURL(agentName, operationID)
-	fmt.Fprintf(out, "  Portal: %s\n", color.CyanString(url))
+	printPortalLink(ctx, out, azdClient, envResp.Environment.Name, func(prefix *eval_api.PortalPrefix) string {
+		return prefix.OptimizationURL(agentName, operationID)
+	})
 }

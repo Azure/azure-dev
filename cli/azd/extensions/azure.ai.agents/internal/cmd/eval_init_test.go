@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -36,7 +38,7 @@ func TestNewEvalInitCommand_Flags(t *testing.T) {
 		{"project-endpoint", ""},
 		{"gen-instruction", ""},
 		{"gen-instruction-file", ""},
-		{"eval-model", defaultEvalModel},
+		{"eval-model", ""},
 		{"dataset", ""},
 		{"max-samples", "15"},
 		{"out-file", defaultEvalConfigName},
@@ -90,7 +92,7 @@ func TestRunEvalInit_InstructionFile(t *testing.T) {
 
 	flags := &evalInitFlags{
 		instructionFile: instrFile,
-		evalModel:       defaultEvalModel,
+		evalModel:       "test-model",
 		maxSamples:      10,
 	}
 	// runEvalInit will fail later (no azd client), but file validation should pass.
@@ -613,4 +615,106 @@ func TestSplitEvaluators(t *testing.T) {
 			assert.Equal(t, tt.expectedBuiltin, builtin)
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// resolveEvalName — name resolution
+// ---------------------------------------------------------------------------
+
+func TestResolveEvalName(t *testing.T) {
+	t.Parallel()
+	t.Run("returns flag name when set", func(t *testing.T) {
+		t.Parallel()
+		flags := &evalInitFlags{name: "my-eval"}
+		assert.Equal(t, "my-eval", resolveEvalName(flags))
+	})
+
+	t.Run("returns default when flag is empty", func(t *testing.T) {
+		t.Parallel()
+		flags := &evalInitFlags{}
+		assert.Equal(t, defaultEvalName, resolveEvalName(flags))
+	})
+}
+
+// ---------------------------------------------------------------------------
+// resolvedInstruction — instruction from flags
+// ---------------------------------------------------------------------------
+
+func TestResolvedInstruction(t *testing.T) {
+	t.Parallel()
+	t.Run("returns inline instruction", func(t *testing.T) {
+		t.Parallel()
+		flags := &evalInitFlags{instruction: "Be helpful."}
+		assert.Equal(t, "Be helpful.", resolvedInstruction(flags))
+	})
+
+	t.Run("reads from instruction file", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		filePath := filepath.Join(dir, "prompt.md")
+		require.NoError(t, os.WriteFile(filePath, []byte("File instruction."), 0600))
+
+		flags := &evalInitFlags{instructionFile: filePath}
+		assert.Equal(t, "File instruction.", resolvedInstruction(flags))
+	})
+
+	t.Run("falls back to inline when file missing", func(t *testing.T) {
+		t.Parallel()
+		flags := &evalInitFlags{
+			instructionFile: "/nonexistent/path.md",
+			instruction:     "fallback",
+		}
+		assert.Equal(t, "fallback", resolvedInstruction(flags))
+	})
+
+	t.Run("returns empty when nothing set", func(t *testing.T) {
+		t.Parallel()
+		flags := &evalInitFlags{}
+		assert.Empty(t, resolvedInstruction(flags))
+	})
+}
+
+// ---------------------------------------------------------------------------
+// isPollerTimeout — timeout error detection
+// ---------------------------------------------------------------------------
+
+func TestIsPollerTimeout(t *testing.T) {
+	t.Parallel()
+	t.Run("true for PollerTimeoutError", func(t *testing.T) {
+		t.Parallel()
+		err := &eval_api.PollerTimeoutError{}
+		assert.True(t, isPollerTimeout(err))
+	})
+
+	t.Run("true for wrapped PollerTimeoutError", func(t *testing.T) {
+		t.Parallel()
+		inner := &eval_api.PollerTimeoutError{}
+		wrapped := fmt.Errorf("context: %w", inner)
+		assert.True(t, isPollerTimeout(wrapped))
+	})
+
+	t.Run("false for other errors", func(t *testing.T) {
+		t.Parallel()
+		assert.False(t, isPollerTimeout(errors.New("some error")))
+	})
+
+	t.Run("false for nil", func(t *testing.T) {
+		t.Parallel()
+		assert.False(t, isPollerTimeout(nil))
+	})
+}
+
+// ---------------------------------------------------------------------------
+// initTimeoutError — error message
+// ---------------------------------------------------------------------------
+
+func TestInitTimeoutError(t *testing.T) {
+	t.Parallel()
+	err := &initTimeoutError{
+		datasetOpID:       "ds-123",
+		evaluatorOpID:     "ev-456",
+		datasetTimedOut:   true,
+		evaluatorTimedOut: false,
+	}
+	assert.Contains(t, err.Error(), "polling timeout")
 }

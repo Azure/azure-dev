@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// optimize_list.go implements the "optimize list" command, which lists
+// recent optimization jobs with status, agent, and score.
+
 package cmd
 
 import (
@@ -14,9 +17,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// optimizeListFlags holds CLI flags for the optimize list command.
 type optimizeListFlags struct {
-	limit  int
-	status string
+	limit  int    // maximum number of results
+	status string // filter by job status
 	optimizeConnectionFlags
 }
 

@@ -1,6 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// eval_update.go implements the "eval update" command, which uploads new
+// versions of locally-edited evaluators and datasets. It reads eval.yaml,
+// detects assets with local_uri pointers, and uploads them as new versions.
+
 package cmd
 
 import (
@@ -18,10 +22,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// evalUpdateFlags holds CLI flags for the eval update command.
 type evalUpdateFlags struct {
-	config        string
-	datasetOnly   bool
-	evaluatorOnly bool
+	config        string // eval config path
+	datasetOnly   bool   // only update the dataset
+	evaluatorOnly bool   // only update evaluators
 }
 
 func newEvalUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -57,7 +62,7 @@ func runEvalUpdate(ctx context.Context, flags *evalUpdateFlags, noPrompt bool) e
 	}
 	defer resolved.azdClient.Close()
 
-	configPath := eval_api.ResolveEvalConfigPath(flags.config, resolved.agentProject)
+	configPath := eval_api.ResolveRelPath(flags.config, resolved.agentProject)
 	evalCfg, err := eval_api.LoadEvalConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load eval config: %w", err)

@@ -1,12 +1,15 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// eval_init_jobs.go handles generation job submission and polling for the
+// eval init command. It submits dataset and evaluator generation requests,
+// polls for completion in parallel, downloads artifacts on success, and
+// persists state for resume on timeout.
+
 package cmd
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,20 +24,12 @@ import (
 	"github.com/fatih/color"
 )
 
+// resolveEvalName returns the eval suite name from flags, falling back to defaultEvalName.
 func resolveEvalName(flags *evalInitFlags) string {
 	if flags.name != "" {
 		return flags.name
 	}
 	return defaultEvalName
-}
-
-// randomSuffix returns a short random hex string (4 bytes = 8 chars).
-func randomSuffix() string {
-	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		return "0000"
-	}
-	return hex.EncodeToString(b)
 }
 
 // resolvedInstruction returns the instruction content from flags, reading
@@ -50,6 +45,7 @@ func resolvedInstruction(flags *evalInitFlags) string {
 	return flags.instruction
 }
 
+// newEvalConfig builds an evalConfig from flags and resolved context, applying defaults as needed.
 func newEvalConfig(flags *evalInitFlags, resolved *evalResolvedContext) *evalConfig {
 	agent := evalAgentRef{
 		Name:    resolved.agentName,
@@ -72,6 +68,7 @@ func newEvalConfig(flags *evalInitFlags, resolved *evalResolvedContext) *evalCon
 	}
 }
 
+// submitDatasetGeneration submits a dataset generation job and returns the created job or an error.
 func submitDatasetGeneration(
 	ctx context.Context,
 	resolved *evalResolvedContext,
@@ -85,12 +82,10 @@ func submitDatasetGeneration(
 	request := eval_api.NewDataGenerationJobRequest(
 		resolveEvalName(flags), flags.evalModel, flags.maxSamples, sources,
 	)
-	if body, err := json.MarshalIndent(request, "", "  "); err == nil {
-		log.Printf("[debug] submitDatasetGeneration request:\n%s", body)
-	}
 	return resolved.evalClient.CreateDataGenerationJob(ctx, request, DataGenerationAPIVersion)
 }
 
+// submitEvaluatorGeneration submits an evaluator generation job and returns the created job or an error.
 func submitEvaluatorGeneration(
 	ctx context.Context,
 	resolved *evalResolvedContext,
@@ -157,12 +152,13 @@ func buildOpenAIEvalRequest(evalCfg *evalConfig) *eval_api.CreateOpenAIEvalReque
 	return evalCfg.ToAgentTargetAdaptableEvalGroupRequest()
 }
 
+// resumeEvalInit handles resuming an eval init when generation jobs are still pending. It polls for job completion, updates state and config on success, and persists state for later resume if polling times out.
 func resumeEvalInit(
 	ctx context.Context,
 	resolved *evalResolvedContext,
 	configPath string,
 	evalCfg *evalConfig,
-	state *evalState,
+	state *opteval.EvalState,
 ) error {
 	if _, err := pollAndFinalizeJobs(ctx, resolved, evalCfg, state, nil); err != nil {
 		if _, ok := errors.AsType[*initTimeoutError](err); ok {
@@ -170,8 +166,8 @@ func resumeEvalInit(
 		}
 		return err
 	}
-	state.InitStatus = "completed"
-	clearEvalState(ctx, resolved.azdClient, resolved.envName)
+	state.InitStatus = opteval.InitStatusCompleted
+	opteval.ClearEvalState(ctx, resolved.azdClient, resolved.envName)
 	if resolved.hasProject {
 		eval_api.WriteEvalReviewArtifacts(resolved.agentProject, evalCfg)
 	}
@@ -187,14 +183,14 @@ type pollResults struct {
 // pollAndFinalizeJobs polls pending dataset and evaluator generation jobs in
 // parallel, saves artifacts when an azd project exists, and updates state and
 // evalCfg. Jobs whose status is already terminal are skipped (safe for resume).
-// builtinEvals are prepended to the generated evaluator name on completion;
-// pass nil for fresh inits.
+// extraEvals are prepended to the generated evaluator list on completion;
+// pass nil for fresh inits without --evaluator flags.
 func pollAndFinalizeJobs(
 	ctx context.Context,
 	resolved *evalResolvedContext,
 	evalCfg *evalConfig,
-	state *evalState,
-	builtinEvals opteval.EvaluatorList,
+	state *opteval.EvalState,
+	extraEvals opteval.EvaluatorList,
 ) (*pollResults, error) {
 	results := &pollResults{}
 	// Each goroutine writes to distinct fields of evalCfg and state, so no
@@ -324,7 +320,7 @@ func pollAndFinalizeJobs(
 				Version:  evalVersion,
 				LocalURI: eval_api.EvaluatorLocalURI(evalName),
 			}
-			evalCfg.Evaluators = append(builtinEvals, evalRef)
+			evalCfg.Evaluators = append(extraEvals, evalRef)
 
 			results.EvaluatorResult = eval_api.ParseEvaluatorResult(completed.Result)
 
@@ -384,9 +380,9 @@ func writePendingEvalInit(
 	resolved *evalResolvedContext,
 	configPath string,
 	evalCfg *evalConfig,
-	state *evalState,
+	state *opteval.EvalState,
 ) error {
-	if err := saveEvalState(ctx, resolved.azdClient, resolved.envName, state); err != nil {
+	if err := opteval.SaveEvalState(ctx, resolved.azdClient, resolved.envName, state); err != nil {
 		return err
 	}
 	if err := eval_api.WriteEvalConfig(configPath, evalCfg); err != nil {
@@ -400,7 +396,6 @@ func writePendingEvalInit(
 		fmt.Printf("   evaluator generation: %s (%s)\n", state.EvalGenOpID, state.EvalGenStatus)
 	}
 	fmt.Printf("\n   Config written to: %s\n", configPath)
-	fmt.Printf("   State saved to:    azd environment %q\n", resolved.envName)
 	fmt.Println("\n   When ready, run:")
 	fmt.Println("     azd ai agent eval run")
 	return nil
@@ -413,10 +408,10 @@ func writeTimedOutEvalInit(
 	resolved *evalResolvedContext,
 	configPath string,
 	evalCfg *evalConfig,
-	state *evalState,
+	state *opteval.EvalState,
 ) error {
-	state.InitStatus = "pending"
-	if err := saveEvalState(ctx, resolved.azdClient, resolved.envName, state); err != nil {
+	state.InitStatus = opteval.InitStatusPending
+	if err := opteval.SaveEvalState(ctx, resolved.azdClient, resolved.envName, state); err != nil {
 		return err
 	}
 	if err := eval_api.WriteEvalConfig(configPath, evalCfg); err != nil {
@@ -432,7 +427,7 @@ func writeTimedOutEvalInit(
 	fmt.Printf("\n   Config written to: %s\n", configPath)
 	fmt.Printf("   State saved to:    azd environment %q\n", resolved.envName)
 	fmt.Println("\n   To resume polling, run:")
-	fmt.Println("     azd ai agent eval init")
+	fmt.Println("     azd ai agent eval run")
 	fmt.Println("\n   To start fresh and clear timed-out state, run:")
 	fmt.Println("     azd ai agent eval init --reset-defaults")
 	return nil

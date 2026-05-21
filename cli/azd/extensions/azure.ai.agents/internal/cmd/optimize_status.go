@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// optimize_status.go implements the "optimize status" command, which checks
+// or watches the status of an optimization job.
+
 package cmd
 
 import (
@@ -14,9 +17,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// optimizeStatusFlags holds CLI flags for the optimize status command.
 type optimizeStatusFlags struct {
-	watch        bool
-	pollInterval int
+	watch        bool // poll until job completes
+	pollInterval int  // polling interval in seconds
 	optimizeConnectionFlags
 }
 

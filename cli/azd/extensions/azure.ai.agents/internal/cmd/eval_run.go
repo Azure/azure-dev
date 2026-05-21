@@ -1,15 +1,16 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// eval_run.go implements the "eval run" command, which executes an evaluation
+// run using an eval.yaml config. It creates or reuses an OpenAI eval, submits
+// a run with the configured dataset and agent target, and polls for results.
+
 package cmd
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -21,10 +22,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// evalRunFlags holds CLI flags for the eval run command.
 type evalRunFlags struct {
-	config string
-	name   string
-	noWait bool
+	config string // eval config path
+	name   string // eval run name
+	noWait bool   // start and return immediately
 }
 
 func newEvalRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -53,7 +55,7 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 	}
 	defer resolved.azdClient.Close()
 
-	configPath := eval_api.ResolveEvalConfigPath(flags.config, resolved.agentProject)
+	configPath := eval_api.ResolveRelPath(flags.config, resolved.agentProject)
 	evalCfg, err := eval_api.LoadEvalConfig(configPath)
 	if err != nil {
 		return err
@@ -61,14 +63,9 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 
 	// Reconcile agent name/version between environment and eval.yaml.
 	// Environment values take precedence; warn and update the config if they differ.
-	configChanged := false
+	configChanged := reconcileConfigAgentName(&evalCfg.Agent, resolved.agentName, flags.config)
 	if resolved.agentName == "" {
 		resolved.agentName = evalCfg.Agent.Name
-	} else if evalCfg.Agent.Name != "" && evalCfg.Agent.Name != resolved.agentName {
-		fmt.Printf("  %s agent name in %s (%q) differs from environment (%q) — using environment value\n",
-			color.YellowString("warning:"), flags.config, evalCfg.Agent.Name, resolved.agentName)
-		evalCfg.Agent.Name = resolved.agentName
-		configChanged = true
 	}
 	if resolved.version == "" {
 		resolved.version = evalCfg.Agent.Version
@@ -86,9 +83,9 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 		}
 	}
 
-	state := loadEvalState(ctx, resolved.azdClient, resolved.envName)
+	state := opteval.LoadEvalState(ctx, resolved.azdClient, resolved.envName)
 
-	if state.InitStatus == "pending" {
+	if state.InitStatus == opteval.InitStatusPending {
 		if err := resumeEvalInit(ctx, resolved, configPath, evalCfg, state); err != nil {
 			return err
 		}
@@ -120,7 +117,7 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 			evalID = evalCfg.Name
 		}
 		state.EvalID = evalID
-		if err := saveEvalState(ctx, resolved.azdClient, resolved.envName, state); err != nil {
+		if err := opteval.SaveEvalState(ctx, resolved.azdClient, resolved.envName, state); err != nil {
 			return err
 		}
 	}
@@ -137,7 +134,7 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 
 	// Set source from local dataset file or remote dataset reference.
 	if evalCfg.DatasetFile != "" {
-		items, err := loadEvalDatasetFile(evalCfg.DatasetFile)
+		items, err := loadJSONLFile[map[string]any](evalCfg.DatasetFile)
 		if err != nil {
 			return err
 		}
@@ -278,38 +275,6 @@ func pollEvalRun(
 
 	progress.setTimedOut("Eval run")
 	return nil, fmt.Errorf("eval run %s did not complete within %d attempts", runID, maxAttempts)
-}
-
-// loadEvalDatasetFile reads a JSONL file and returns each line as a map.
-func loadEvalDatasetFile(path string) ([]map[string]any, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open dataset file %s: %w", path, err)
-	}
-	defer f.Close()
-
-	var items []map[string]any
-	scanner := bufio.NewScanner(f)
-	lineNum := 0
-	for scanner.Scan() {
-		lineNum++
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
-		var item map[string]any
-		if err := json.Unmarshal([]byte(line), &item); err != nil {
-			return nil, fmt.Errorf("failed to parse dataset line %d: %w", lineNum, err)
-		}
-		items = append(items, item)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading dataset file %s: %w", path, err)
-	}
-	if len(items) == 0 {
-		return nil, fmt.Errorf("dataset file %s contains no items", path)
-	}
-	return items, nil
 }
 
 // buildDatasetFileID constructs an azureai:// URI for a remote dataset reference.

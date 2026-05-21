@@ -1,6 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// eval_progress.go provides a concurrent-safe progress display with an
+// animated spinner for long-running eval operations (generation polling,
+// eval runs). Status transitions (running → done/failed/timed-out) are
+// printed above the spinner line.
+
 package cmd
 
 import (

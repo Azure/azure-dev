@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// eval_list.go implements the "eval list" command, which lists recent
+// evaluations for the current Foundry project with run counts and status.
+
 package cmd
 
 import (
@@ -11,14 +14,15 @@ import (
 	"text/tabwriter"
 
 	"azureaiagent/internal/pkg/agents/eval_api"
+	"azureaiagent/internal/pkg/agents/opteval"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
+// evalListFlags holds CLI flags for the eval list command.
 type evalListFlags struct {
-	limit int
+	limit int // maximum number of evals to return
 }
 
 func newEvalListCommand() *cobra.Command {
@@ -54,7 +58,7 @@ func runEvalList(ctx context.Context, flags *evalListFlags) error {
 	// Load the active eval ID from the azd environment.
 	var activeEvalID string
 	if resolved.envName != "" {
-		state := loadEvalState(ctx, resolved.azdClient, resolved.envName)
+		state := opteval.LoadEvalState(ctx, resolved.azdClient, resolved.envName)
 		activeEvalID = state.EvalID
 	}
 
@@ -118,35 +122,4 @@ func runEvalList(ctx context.Context, flags *evalListFlags) error {
 	}
 	fmt.Printf("(showing %d — use --limit to change)\n", len(items))
 	return nil
-}
-
-// padColorizedStatus returns a fixed-width colored status string so that
-// tabwriter aligns columns correctly despite ANSI escape sequences.
-func padColorizedStatus(status string) string {
-	const statusWidth = 10 // wide enough for "Completed", "Cancelled", etc.
-	label, colorFn := statusLabelAndColor(status)
-	padded := fmt.Sprintf("%-*s", statusWidth, label)
-	return colorFn(padded)
-}
-
-// statusLabelAndColor maps a raw status to a display label and color function.
-func statusLabelAndColor(status string) (string, func(string, ...any) string) {
-	switch status {
-	case "completed":
-		return "Completed", color.GreenString
-	case "succeeded":
-		return "Succeeded", color.GreenString
-	case "failed":
-		return "Failed", color.RedString
-	case "cancelled", "canceled":
-		return "Cancelled", color.YellowString
-	case "running", "in_progress":
-		return "Running", color.CyanString
-	case "partial":
-		return "Partial", color.YellowString
-	case "":
-		return "No runs", color.HiBlackString
-	default:
-		return status, fmt.Sprintf
-	}
 }

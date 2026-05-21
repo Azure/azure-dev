@@ -1,6 +1,13 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// eval.go implements the top-level "eval" command group and shared context
+// resolution logic used by all eval subcommands (init, run, update, list, show).
+//
+// The evalResolvedContext struct holds the resolved agent, project, and
+// endpoint information. It is built from azd project state, environment
+// variables, or interactive prompts, and threaded through all subcommands.
+
 package cmd
 
 import (
@@ -26,62 +33,48 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+// Default values for eval configuration.
 const (
 	defaultEvalConfigName = "eval.yaml"
 	defaultEvalName       = "smoke-core"
-	defaultEvalModel      = "gpt-4o"
 	defaultEvalSamples    = 15
 )
 
+// Type aliases to avoid repeating full package paths throughout the eval code.
 type evalConfig = eval_api.EvalConfig
 type evalAgentRef = opteval.AgentRef
 type evalDatasetRef = opteval.DatasetRef
 
-// evalState holds transient runtime state stored in the azd environment.
-type evalState struct {
-	InitStatus       string
-	DatasetGenOpID   string
-	DatasetGenStatus string
-	EvalGenOpID      string
-	EvalGenStatus    string
-	EvalID           string
-}
-
-// Azd environment keys for eval state.
-const (
-	evalKeyInitStatus       = "LAST_EVAL_INIT_STATUS"
-	evalKeyDatasetGenOpID   = "LAST_EVAL_DATASET_GEN_OP_ID"
-	evalKeyDatasetGenStatus = "LAST_EVAL_DATASET_GEN_STATUS"
-	evalKeyEvalGenOpID      = "LAST_EVAL_GEN_OP_ID"
-	evalKeyEvalGenStatus    = "LAST_EVAL_GEN_STATUS"
-	evalKeyEvalID           = "LAST_EVAL_ID"
-)
-
+// evalResolvedContext holds the fully-resolved context for an eval operation,
+// including the azd client, API clients, project paths, and agent metadata.
+// Built by resolveEvalContext from azd project state, environment variables,
+// or interactive prompts.
 type evalResolvedContext struct {
 	azdClient             *azdext.AzdClient
 	evalClient            *eval_api.EvalClient
 	datasetClient         *dataset_api.DatasetClient
-	projectRoot           string
-	hasProject            bool
-	agentProject          string
-	agentProjectSource    string
-	agentName             string
-	agentNameSource       string
-	version               string
-	versionSource         string
-	agentKind             agent_yaml.AgentKind
-	agentKindSource       string
-	serviceName           string
-	projectEndpoint       string
-	projectEndpointSource string
-	envName               string
+	projectRoot           string               // azd project root directory
+	hasProject            bool                 // true if running within an azd project
+	agentProject          string               // agent service directory
+	agentProjectSource    string               // how agentProject was resolved
+	agentName             string               // deployed agent name
+	agentNameSource       string               // how agentName was resolved
+	version               string               // agent version
+	versionSource         string               // how version was resolved
+	agentKind             agent_yaml.AgentKind // hosted or prompt
+	agentKindSource       string               // how agentKind was resolved
+	serviceName           string               // azure.yaml service name
+	projectEndpoint       string               // Foundry project endpoint URL
+	projectEndpointSource string               // how projectEndpoint was resolved
+	envName               string               // azd environment name
 }
 
+// evalContextOptions configures the behavior of resolveEvalContext.
 type evalContextOptions struct {
-	agent           string
-	projectEndpoint string
-	requireAgent    bool
-	noPrompt        bool
+	agent           string // explicit agent name (from --agent flag)
+	projectEndpoint string // explicit project endpoint (from --project-endpoint flag)
+	requireAgent    bool   // fail if agent name cannot be resolved
+	noPrompt        bool   // skip interactive prompts
 }
 
 func newEvalCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -103,6 +96,7 @@ Use eval init to generate an eval config, then eval run to execute it.`,
 	return cmd
 }
 
+// resolveEvalContext resolves the context for an eval operation by reading azd project state, environment variables, and optionally prompting the user. It returns an evalResolvedContext with API clients and metadata needed to run eval commands.
 func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalResolvedContext, error) {
 	fmt.Println(output.WithGrayFormat("Resolving eval context..."))
 
@@ -428,6 +422,7 @@ func endpointFromProjectID(projectID string) (string, error) {
 	return buildAgentEndpoint(project.AccountName, project.ProjectName), nil
 }
 
+// pollEvalOperationWithSpinner polls a long-running eval operation with a spinner, updating the provided evalProgress with status. It returns the completed job or an error if the operation failed or timed out.
 func pollEvalOperationWithSpinner(
 	ctx context.Context,
 	label string,
@@ -467,62 +462,6 @@ func pollEvalOperationWithSpinner(
 	log.Printf("[debug] %s: completed successfully", label)
 	progress.setDone(label)
 	return job, nil
-}
-
-// loadEvalState reads eval runtime state from the azd environment.
-// Returns an empty state if no values are set.
-func loadEvalState(ctx context.Context, azdClient *azdext.AzdClient, envName string) *evalState {
-	get := func(key string) string {
-		v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: envName, Key: key,
-		})
-		if err != nil || v.Value == "" {
-			return ""
-		}
-		return v.Value
-	}
-	return &evalState{
-		InitStatus:       get(evalKeyInitStatus),
-		DatasetGenOpID:   get(evalKeyDatasetGenOpID),
-		DatasetGenStatus: get(evalKeyDatasetGenStatus),
-		EvalGenOpID:      get(evalKeyEvalGenOpID),
-		EvalGenStatus:    get(evalKeyEvalGenStatus),
-		EvalID:           get(evalKeyEvalID),
-	}
-}
-
-// saveEvalState persists eval runtime state to the azd environment.
-func saveEvalState(ctx context.Context, azdClient *azdext.AzdClient, envName string, state *evalState) error {
-	pairs := []struct {
-		key, val string
-	}{
-		{evalKeyInitStatus, state.InitStatus},
-		{evalKeyDatasetGenOpID, state.DatasetGenOpID},
-		{evalKeyDatasetGenStatus, state.DatasetGenStatus},
-		{evalKeyEvalGenOpID, state.EvalGenOpID},
-		{evalKeyEvalGenStatus, state.EvalGenStatus},
-		{evalKeyEvalID, state.EvalID},
-	}
-	for _, p := range pairs {
-		if _, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: envName, Key: p.key, Value: p.val,
-		}); err != nil {
-			return fmt.Errorf("setting %s in azd env: %w", p.key, err)
-		}
-	}
-	return nil
-}
-
-// clearEvalState removes eval state keys from the azd environment.
-func clearEvalState(ctx context.Context, azdClient *azdext.AzdClient, envName string) {
-	for _, key := range []string{
-		evalKeyInitStatus, evalKeyDatasetGenOpID, evalKeyDatasetGenStatus,
-		evalKeyEvalGenOpID, evalKeyEvalGenStatus, evalKeyEvalID,
-	} {
-		_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: envName, Key: key, Value: "",
-		})
-	}
 }
 
 func relPathForYaml(baseDir string, target string) string {

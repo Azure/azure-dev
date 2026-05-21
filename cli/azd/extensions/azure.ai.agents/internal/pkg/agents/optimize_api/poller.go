@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// poller.go provides a polling loop for optimization jobs that calls
+// a progress callback on each tick until the job reaches a terminal state.
 package optimize_api
 
 import (

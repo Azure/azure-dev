@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// eval_show.go implements the "eval show" command, which displays eval
+// definitions, run history, and per-criteria result breakdowns.
+
 package cmd
 
 import (
@@ -10,16 +13,18 @@ import (
 	"text/tabwriter"
 
 	"azureaiagent/internal/pkg/agents/eval_api"
+	"azureaiagent/internal/pkg/agents/opteval"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
+// evalShowFlags holds CLI flags for the eval show command.
 type evalShowFlags struct {
-	evalRunID string
-	limit     int
-	output    string
+	evalRunID string // specific eval run to show
+	limit     int    // maximum number of runs to display
+	output    string // export results to JSON file
 }
 
 func newEvalShowCommand() *cobra.Command {
@@ -58,7 +63,7 @@ func runEvalShow(ctx context.Context, evalID string, flags *evalShowFlags) error
 
 	// Fall back to the eval ID stored in the azd environment.
 	if evalID == "" && resolved.envName != "" {
-		state := loadEvalState(ctx, resolved.azdClient, resolved.envName)
+		state := opteval.LoadEvalState(ctx, resolved.azdClient, resolved.envName)
 		evalID = state.EvalID
 	}
 	if evalID == "" {
@@ -118,7 +123,7 @@ func printEvalSummary(evalObj *eval_api.OpenAIEval, runs []eval_api.OpenAIEvalRu
 		}
 		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\n",
 			run.ID,
-			run.Status,
+			colorizeStatus(run.Status),
 			passed,
 			failed,
 			eval_api.FormatTimestamp(run.CreatedAt),
@@ -137,7 +142,7 @@ func printEvalRunSummary(evalID string, run *eval_api.OpenAIEvalRun) error {
 	if run.Name != "" {
 		fmt.Printf("Name:       %s\n", run.Name)
 	}
-	fmt.Printf("Status:     %s\n", run.Status)
+	fmt.Printf("Status:     %s\n", colorizeStatus(run.Status))
 	fmt.Printf("Created:    %s\n", eval_api.FormatTimestamp(run.CreatedAt))
 	if run.CreatedBy != "" {
 		fmt.Printf("Created by: %s\n", run.CreatedBy)

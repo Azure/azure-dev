@@ -48,7 +48,6 @@ func TestOptimizeCommand_AcceptsConfigFlag(t *testing.T) {
 	require.NotNil(t, f, "--config flag should be registered")
 	assert.Equal(t, "c", f.Shorthand, "--config should have -c shorthand")
 
-	assert.NotNil(t, cmd.Flags().Lookup("watch"))
 	assert.NotNil(t, cmd.Flags().Lookup("poll-interval"))
 	assert.NotNil(t, cmd.Flags().Lookup("endpoint"))
 	assert.NotNil(t, cmd.Flags().Lookup("agent"))
@@ -57,10 +56,6 @@ func TestOptimizeCommand_AcceptsConfigFlag(t *testing.T) {
 
 func TestOptimizeCommand_DefaultFlags(t *testing.T) {
 	cmd := newOptimizeCommand(&azdext.ExtensionContext{})
-
-	watchVal, err := cmd.Flags().GetBool("watch")
-	require.NoError(t, err)
-	assert.True(t, watchVal, "--watch should default to true")
 
 	pollVal, err := cmd.Flags().GetInt("poll-interval")
 	require.NoError(t, err)
@@ -88,4 +83,22 @@ func TestFormatOptimizeStatus(t *testing.T) {
 	assert.NotEmpty(t, formatOptimizeStatus(optimize_api.StatusCancelled))
 	assert.NotEmpty(t, formatOptimizeStatus(optimize_api.StatusRunning))
 	assert.NotEmpty(t, formatOptimizeStatus("unknown"))
+}
+
+// ---- defaultOptimizeConfig ----
+
+func TestDefaultOptimizeConfig(t *testing.T) {
+	t.Parallel()
+	cfg := defaultOptimizeConfig("my-agent")
+
+	assert.Equal(t, "my-agent", cfg.Agent.Name)
+	assert.NotEmpty(t, cfg.InlineDataset)
+	require.NotNil(t, cfg.Options)
+	assert.Equal(t, "gpt-4o", cfg.Options.EvalModel)
+	assert.Equal(t, "optimize", cfg.Options.Mode)
+	assert.Equal(t, 5, cfg.Options.Budget)
+	assert.Contains(t, cfg.Options.TargetAttributes, "instruction")
+	assert.Contains(t, cfg.Options.TargetAttributes, "skill")
+	require.Len(t, cfg.Evaluators, 1)
+	assert.Equal(t, "builtin.task_adherence", cfg.Evaluators[0].Name)
 }

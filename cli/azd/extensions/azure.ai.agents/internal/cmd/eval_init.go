@@ -1,6 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// eval_init.go implements the "eval init" command, which generates a local
+// eval suite (eval.yaml) for a deployed agent. It resolves context, submits
+// dataset and evaluator generation jobs, polls for completion (unless
+// --no-wait), downloads review artifacts, and writes the eval config.
+
 package cmd
 
 import (
@@ -22,33 +27,33 @@ import (
 // DataGenerationAPIVersion is the API version used for data generation jobs.
 const DataGenerationAPIVersion = "v1"
 
-// EvalInitFlags defines the customized flags for the eval init command.
+// evalInitFlags holds CLI flags and interactive prompt state for eval init.
 type evalInitFlags struct {
-	name            string
-	agent           string
-	projectEndpoint string
-	instruction     string
-	instructionFile string
-	configFile      string
-	skillDir        string
-	toolsFile       string
-	evalModel       string
-	dataset         string
-	output          string
-	maxSamples      int
-	evaluators      []string
-	noWait          bool
-	resetDefaults   bool
-	evalModelSet    bool
-	maxSamplesSet   bool
-	traceDays       int
-	// Internal flags set during interactive prompts.
+	// CLI flags.
+	name            string   // eval suite name
+	agent           string   // target agent name
+	projectEndpoint string   // Foundry project endpoint
+	instruction     string   // inline agent instruction
+	instructionFile string   // path to agent instruction file
+	configFile      string   // agent config metadata path
+	evalModel       string   // model for evaluation and generation
+	dataset         string   // existing dataset file or name
+	output          string   // eval config output path
+	maxSamples      int      // number of samples to generate
+	evaluators      []string // built-in or custom evaluator names
+	noWait          bool     // submit and return immediately
+	resetDefaults   bool     // overwrite existing eval config
+	evalModelSet    bool     // true if --eval-model was explicitly set
+	maxSamplesSet   bool     // true if --max-samples was explicitly set
+	traceDays       int      // include traces from last N days
+
+	// Internal state set during interactive prompts.
 	regenerateDataset   bool
 	regenerateEvaluator bool
 }
 
 func newEvalInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	flags := &evalInitFlags{evalModel: defaultEvalModel, maxSamples: defaultEvalSamples, output: defaultEvalConfigName}
+	flags := &evalInitFlags{maxSamples: defaultEvalSamples, output: defaultEvalConfigName}
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Generate a local eval suite for a deployed agent.",
@@ -78,7 +83,7 @@ the agent project root. Use --no-wait to write pending operation IDs and return.
 	cmd.Flags().StringVarP(&flags.projectEndpoint, "project-endpoint", "p", "", "Microsoft Foundry project endpoint URL")
 	cmd.Flags().StringVarP(&flags.instruction, "gen-instruction", "g", "", "Agent instruction used for dataset and evaluator generation")
 	cmd.Flags().StringVarP(&flags.instructionFile, "gen-instruction-file", "G", "", "Path to a file containing the agent instruction")
-	cmd.Flags().StringVar(&flags.evalModel, "eval-model", defaultEvalModel, "Model used for evaluation and generation, and also as the default model for evaluation")
+	cmd.Flags().StringVar(&flags.evalModel, "eval-model", "", "Model used for evaluation and generation")
 	cmd.Flags().StringVar(&flags.dataset, "dataset", "", "Existing local file or registered dataset name to use for evaluation (instead of generating a new dataset)")
 	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", defaultEvalSamples, "Number of samples to generate (15-1000)")
 	cmd.Flags().StringArrayVar(&flags.evaluators, "evaluator", nil, "Built-in or custom evaluator name")
@@ -89,7 +94,9 @@ the agent project root. Use --no-wait to write pending operation IDs and return.
 	return cmd
 }
 
-// runEvalInit executes the eval init command logic. It resolves context, prompts for missing options, submits generation jobs, polls for completion (unless --no-wait), writes the eval config, and prints next steps.
+// runEvalInit executes the eval init command logic. It resolves context,
+// prompts for missing options, submits generation jobs, polls for completion
+// (unless --no-wait), writes the eval config, and prints next steps.
 func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error {
 	if flags.instruction != "" && flags.instructionFile != "" {
 		return fmt.Errorf("cannot use both --gen-instruction and --gen-instruction-file; provide one or the other")
@@ -123,88 +130,43 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		}
 	}
 
-	configPath := eval_api.ResolveEvalOutputPath(flags.output, resolved.agentProject)
+	configPath := eval_api.ResolveRelPath(flags.output, resolved.agentProject)
 	printEvalDetectedContext(resolved, configPath)
 
-	// Auto-detect agent config metadata if no instruction was provided.
-	// This looks for .agent_configs/baseline/metadata.yaml and resolves
-	// instruction and skill_dir from it.
-	if flags.instruction == "" && flags.instructionFile == "" && resolved.hasProject {
-		defaultConfigFile := filepath.Join(agentConfigsDir, "baseline", "metadata.yaml")
-		absConfigFile := filepath.Join(resolved.agentProject, defaultConfigFile)
-		if _, err := os.Stat(absConfigFile); err == nil {
-			// Found a default config — resolve all fields from it.
-			var agent opteval.AgentRef
-			agent.ConfigFile = defaultConfigFile
-			agent.ResolveFromConfig(resolved.agentProject)
-			flags.configFile = defaultConfigFile
-			flags.instructionFile = agent.Instruction.File
-			flags.instruction = agent.Instruction.Value
-			flags.skillDir = agent.SkillDir
-			flags.toolsFile = agent.ToolsFile
-			fmt.Printf("   Config:     %s\n", absConfigFile)
-		}
-	}
-
-	// When eval.yaml exists, decide whether to regenerate or create fresh.
+	// Load existing eval.yaml and resolve agent config.
 	existingCfg, hasExisting := tryLoadExistingEvalConfig(configPath)
 	isRegenerate := false
-	var builtinEvals opteval.EvaluatorList
 
-	if flags.resetDefaults && resolved.envName != "" {
-		clearEvalState(ctx, resolved.azdClient, resolved.envName)
+	// Resolve agent config: eval.yaml config → default baseline → nothing.
+	if flags.instruction == "" && flags.instructionFile == "" && resolved.hasProject {
+		var existing *opteval.Config
+		if hasExisting && !flags.resetDefaults {
+			existing = &existingCfg.Config
+		}
+		if agentCfg := resolveAgentConfig(existing, resolved.agentProject); agentCfg != nil {
+			flags.configFile = agentCfg.ConfigFile
+			flags.instructionFile = agentCfg.InstructionFile
+			fmt.Printf("   Agent Config:     %s\n", filepath.Join(resolved.agentProject, agentCfg.ConfigFile))
+		}
 	}
 
+	// If --reset-defaults is set, clear existing state so the user can start fresh.
+	if flags.resetDefaults && resolved.envName != "" {
+		opteval.ClearEvalState(ctx, resolved.azdClient, resolved.envName)
+	}
+
+	// Handle existing eval.yaml: prompt for regeneration, carry forward options.
 	if hasExisting && !flags.resetDefaults {
-		if noPrompt {
-			// --no-prompt: treat as full regeneration.
-			flags.regenerateDataset = true
-			flags.regenerateEvaluator = true
-		} else {
-			if err := promptRegenerateChoices(ctx, resolved, existingCfg, flags); err != nil {
-				return err
-			}
-			if !flags.regenerateDataset && !flags.regenerateEvaluator {
-				fmt.Println("Keeping existing eval config unchanged.")
-				return nil
-			}
+		var keepExisting bool
+		keepExisting, err = handleExistingEvalConfig(ctx, resolved, existingCfg, flags, noPrompt)
+		if err != nil {
+			return err
+		}
+		if keepExisting {
+			fmt.Println("Keeping existing eval config unchanged.")
+			return nil
 		}
 		isRegenerate = true
-
-		// Carry forward existing options when not explicitly overridden.
-		if flags.name == "" && existingCfg.Name != "" {
-			flags.name = existingCfg.Name
-		}
-		if existingCfg.Options != nil && !flags.evalModelSet {
-			flags.evalModel = existingCfg.Options.EvalModel
-		}
-		if flags.configFile == "" && existingCfg.Agent.ConfigFile != "" {
-			flags.configFile = existingCfg.Agent.ConfigFile
-			// Resolve all fields from the config for generation API calls.
-			var agentRef opteval.AgentRef
-			agentRef.ConfigFile = flags.configFile
-			agentRef.ResolveFromConfig(resolved.agentProject)
-			if flags.instruction == "" && flags.instructionFile == "" {
-				flags.instructionFile = agentRef.Instruction.File
-				flags.instruction = agentRef.Instruction.Value
-			}
-			if flags.skillDir == "" {
-				flags.skillDir = agentRef.SkillDir
-			}
-			if flags.toolsFile == "" {
-				flags.toolsFile = agentRef.ToolsFile
-			}
-		}
-		if !flags.maxSamplesSet && existingCfg.MaxSamples > 0 {
-			flags.maxSamples = existingCfg.MaxSamples
-		}
-		if flags.traceDays == 0 && existingCfg.TraceDays > 0 {
-			flags.traceDays = existingCfg.TraceDays
-		}
-		// Track builtin evaluators for preservation during evaluator regeneration.
-		if flags.regenerateEvaluator {
-			_, builtinEvals = eval_api.SplitEvaluators(existingCfg.Evaluators)
-		}
 	}
 
 	// When the user hasn't explicitly set --eval-model, use the deployed model.
@@ -221,33 +183,18 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		return err
 	}
 
-	// If no baseline config exists yet and we have an instruction, write it
-	// so that optimize can use it later.
-	if flags.configFile == "" && resolved.hasProject &&
-		(flags.instruction != "" || flags.instructionFile != "") {
-		defaultConfigFile := filepath.Join(agentConfigsDir, "baseline", "metadata.yaml")
-		absConfigFile := filepath.Join(resolved.agentProject, defaultConfigFile)
-		if _, err := os.Stat(absConfigFile); err != nil {
-			// Baseline doesn't exist — create it.
-			instruction := resolvedInstruction(flags)
-			if writeErr := writeBaselineFromEvalInit(
-				resolved.agentProject, resolved.agentName, instruction,
-			); writeErr != nil {
-				fmt.Printf("   warning: failed to write baseline config: %s\n", writeErr)
-			} else {
-				flags.configFile = defaultConfigFile
-				fmt.Printf("   Baseline:   %s\n", absConfigFile)
-			}
+	// Write baseline config if none was resolved but we have an instruction.
+	if flags.configFile == "" && resolved.hasProject {
+		instruction := resolvedInstruction(flags)
+		if cfgFile := writeBaselineIfNeeded(resolved.agentProject, instruction); cfgFile != "" {
+			flags.configFile = cfgFile
 		}
 	}
 
-	// Finalize the eval suite name. On fresh init, add a random suffix to
-	// avoid collisions. On regeneration, keep the existing name.
 	if !isRegenerate {
-		flags.name = resolveEvalName(flags) + "-" + randomSuffix()
+		flags.name = resolveEvalName(flags)
 	}
 
-	// Prompt agents use the agent source directly; hosted agents require an instruction.
 	if resolved.agentKind != agent_yaml.AgentKindPrompt &&
 		flags.instruction == "" && flags.instructionFile == "" && flags.configFile == "" &&
 		(flags.dataset == "" || len(flags.evaluators) == 0) {
@@ -257,15 +204,92 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		return fmt.Errorf("--max-samples must be between 15 and 1000")
 	}
 
+	// Build config and submit generation jobs.
 	evalCfg := newEvalConfig(flags, resolved)
-	state := &evalState{}
+	var extraEvals opteval.EvaluatorList
+	if !isRegenerate && len(flags.evaluators) > 0 {
+		extraEvals = evaluatorsFromFlags(flags.evaluators)
+	}
 
-	// Determine which generation jobs to submit.
+	state, err := submitEvalJobs(ctx, resolved, flags, evalCfg, existingCfg, isRegenerate)
+	if err != nil {
+		return err
+	}
+
+	if flags.noWait {
+		if state.DatasetGenOpID != "" || state.EvalGenOpID != "" {
+			state.InitStatus = opteval.InitStatusPending
+		}
+		return writePendingEvalInit(ctx, resolved, configPath, evalCfg, state)
+	}
+
+	pollRes, err := pollAndFinalizeJobs(ctx, resolved, evalCfg, state, extraEvals)
+	if err != nil {
+		if _, ok := errors.AsType[*initTimeoutError](err); ok {
+			return writeTimedOutEvalInit(ctx, resolved, configPath, evalCfg, state)
+		}
+		return err
+	}
+
+	state.InitStatus = opteval.InitStatusCompleted
+	opteval.ClearEvalState(ctx, resolved.azdClient, resolved.envName)
+	return writeAndPrintEvalResult(ctx, resolved, evalCfg, pollRes, configPath, isRegenerate)
+}
+
+// handleExistingEvalConfig processes an existing eval.yaml by prompting for
+// regeneration choices and carrying forward options that weren't overridden.
+// Returns keepExisting=true if the user chose not to regenerate anything.
+func handleExistingEvalConfig(
+	ctx context.Context,
+	resolved *evalResolvedContext,
+	existingCfg *evalConfig,
+	flags *evalInitFlags,
+	noPrompt bool,
+) (keepExisting bool, err error) {
+	if noPrompt {
+		// --no-prompt: keep existing config unchanged by default.
+		return true, nil
+	}
+
+	if err := promptRegenerateChoices(ctx, resolved, existingCfg, flags); err != nil {
+		return false, err
+	}
+	if !flags.regenerateDataset && !flags.regenerateEvaluator {
+		return true, nil
+	}
+
+	// Carry forward existing options when not explicitly overridden.
+	if flags.name == "" && existingCfg.Name != "" {
+		flags.name = existingCfg.Name
+	}
+	if existingCfg.Options != nil && !flags.evalModelSet {
+		flags.evalModel = existingCfg.Options.EvalModel
+	}
+	if !flags.maxSamplesSet && existingCfg.MaxSamples > 0 {
+		flags.maxSamples = existingCfg.MaxSamples
+	}
+	if flags.traceDays == 0 && existingCfg.TraceDays > 0 {
+		flags.traceDays = existingCfg.TraceDays
+	}
+	return false, nil
+}
+
+// submitEvalJobs determines which generation jobs are needed and submits them.
+// It preserves existing config fields when regenerating only a subset.
+func submitEvalJobs(
+	ctx context.Context,
+	resolved *evalResolvedContext,
+	flags *evalInitFlags,
+	evalCfg *evalConfig,
+	existingCfg *evalConfig,
+	isRegenerate bool,
+) (*opteval.EvalState, error) {
+	state := &opteval.EvalState{}
+
 	var needDatasetGen, needEvalGen bool
 	if isRegenerate {
 		needDatasetGen = flags.regenerateDataset
 		needEvalGen = flags.regenerateEvaluator
-		// Preserve fields that are not being regenerated.
 		if !needDatasetGen {
 			evalCfg.DatasetFile = existingCfg.DatasetFile
 			evalCfg.Config.DatasetReference = existingCfg.Config.DatasetReference
@@ -275,26 +299,20 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		}
 	} else {
 		needDatasetGen = flags.dataset == ""
-		needEvalGen = true // always generate adaptive evaluator
+		needEvalGen = true
 		if !needDatasetGen {
-			// User provided a local dataset file — use it directly.
 			datasetPath, err := resolveLocalDatasetFile(flags.dataset, resolved.agentProject)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			evalCfg.DatasetFile = datasetPath
 		}
-		// --evaluator values are merged with the generated adaptive evaluator.
-		if len(flags.evaluators) > 0 {
-			builtinEvals = evaluatorsFromFlags(flags.evaluators)
-		}
 	}
 
-	// Submit generation jobs (fast API calls).
 	if needDatasetGen {
 		job, err := submitDatasetGeneration(ctx, resolved, flags)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		state.DatasetGenOpID = job.OperationID()
 		state.DatasetGenStatus = job.NormalizedStatus()
@@ -302,29 +320,26 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 	if needEvalGen {
 		job, err := submitEvaluatorGeneration(ctx, resolved, flags)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		state.EvalGenOpID = job.OperationID()
 		state.EvalGenStatus = job.NormalizedStatus()
 	}
 
-	if flags.noWait {
-		if needDatasetGen || needEvalGen {
-			state.InitStatus = "pending"
-		}
-		return writePendingEvalInit(ctx, resolved, configPath, evalCfg, state)
-	}
+	return state, nil
+}
 
-	pollRes, err := pollAndFinalizeJobs(ctx, resolved, evalCfg, state, builtinEvals)
-	if err != nil {
-		if _, ok := errors.AsType[*initTimeoutError](err); ok {
-			return writeTimedOutEvalInit(ctx, resolved, configPath, evalCfg, state)
-		}
-		return err
-	}
-
-	state.InitStatus = "completed"
-	clearEvalState(ctx, resolved.azdClient, resolved.envName)
+// writeAndPrintEvalResult writes the eval config and review artifacts, then
+// prints a summary of the generated assets along with portal links and
+// next-step instructions.
+func writeAndPrintEvalResult(
+	ctx context.Context,
+	resolved *evalResolvedContext,
+	evalCfg *evalConfig,
+	pollRes *pollResults,
+	configPath string,
+	isRegenerate bool,
+) error {
 	if err := eval_api.WriteEvalConfig(configPath, evalCfg); err != nil {
 		return err
 	}
@@ -364,13 +379,14 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		}
 	}
 
-	// Print evaluator rubric dimensions if available.
 	printEvalDimensions(pollRes)
-
-	// Print portal links.
 	printEvalPortalLinks(ctx, resolved, evalCfg)
 
-	fmt.Printf("\n   Review the generated assets, then run:\n     %s\n", color.CyanString("azd ai agent eval run"))
+	fmt.Println("\n   Next steps:")
+	fmt.Printf("     %s\n", color.CyanString("azd ai agent eval run"))
+	fmt.Printf("       Run the eval suite against your agent.\n")
+	fmt.Printf("     %s\n", color.CyanString("azd ai agent eval update"))
+	fmt.Printf("       Edit the generated dataset or evaluator locally, then upload changes.\n")
 	return nil
 }
 

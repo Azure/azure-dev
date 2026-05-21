@@ -41,37 +41,37 @@ func TestNewEvalRunCommand_UseString(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// loadEvalDatasetFile
+// loadJSONLFile
 // ---------------------------------------------------------------------------
 
-func TestLoadEvalDatasetFile(t *testing.T) {
+func TestLoadJSONLFile(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	f := filepath.Join(dir, "data.jsonl")
 	content := "{\"query\":\"hello\",\"id\":\"1\"}\n{\"query\":\"world\",\"id\":\"2\"}\n"
 	require.NoError(t, os.WriteFile(f, []byte(content), 0600))
 
-	items, err := loadEvalDatasetFile(f)
+	items, err := loadJSONLFile[map[string]any](f)
 	require.NoError(t, err)
 	require.Len(t, items, 2)
 	assert.Equal(t, "hello", items[0]["query"])
 	assert.Equal(t, "2", items[1]["id"])
 }
 
-func TestLoadEvalDatasetFile_Empty(t *testing.T) {
+func TestLoadJSONLFile_Empty(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	f := filepath.Join(dir, "empty.jsonl")
 	require.NoError(t, os.WriteFile(f, []byte(""), 0600))
 
-	_, err := loadEvalDatasetFile(f)
+	_, err := loadJSONLFile[map[string]any](f)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "contains no items")
 }
 
-func TestLoadEvalDatasetFile_NotFound(t *testing.T) {
+func TestLoadJSONLFile_NotFound(t *testing.T) {
 	t.Parallel()
-	_, err := loadEvalDatasetFile("/nonexistent/data.jsonl")
+	_, err := loadJSONLFile[map[string]any]("/nonexistent/data.jsonl")
 	assert.Error(t, err)
 }
 
@@ -146,4 +146,23 @@ func TestBuildDatasetFileID(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// agentVersionPtr — version string to pointer
+// ---------------------------------------------------------------------------
+
+func TestAgentVersionPtr(t *testing.T) {
+	t.Parallel()
+	t.Run("returns nil for empty string", func(t *testing.T) {
+		t.Parallel()
+		assert.Nil(t, agentVersionPtr(""))
+	})
+
+	t.Run("returns pointer to version", func(t *testing.T) {
+		t.Parallel()
+		v := agentVersionPtr("v2")
+		require.NotNil(t, v)
+		assert.Equal(t, "v2", *v)
+	})
 }

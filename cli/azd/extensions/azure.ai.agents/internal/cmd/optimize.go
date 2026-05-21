@@ -1,6 +1,13 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// optimize.go implements the top-level "optimize" command, which submits
+// agent optimization jobs. It resolves the agent, loads or builds a config,
+// prompts for instruction/skills/model, and polls for results.
+//
+// Subcommands (status, list, cancel, apply, deploy) are registered here
+// and implemented in their own files.
+
 package cmd
 
 import (
@@ -20,16 +27,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
 )
 
-// optimizeAgentContext holds the resolved agent name and project directory.
+// optimizeAgentContext holds the resolved agent name and project directory
+// for an optimization operation.
 type optimizeAgentContext struct {
-	agentName    string
-	agentProject string // project directory path (empty if not resolved from azd project)
+	agentName    string // deployed agent name
+	agentProject string // agent project directory (empty if not in an azd project)
 }
 
-// resolveOptimizeAgent resolves the agent name and project directory using:
+// resolveOptimizeAgent resolves the agent name and project directory.
+// Resolution order:
 //  1. Explicit --agent flag
 //  2. azd project context (resolveAgentService + environment variables)
 //  3. Error with guidance
@@ -69,17 +77,18 @@ func resolveOptimizeAgent(ctx context.Context, flagValue string, noPrompt bool) 
 	return nil, fmt.Errorf("agent name is required: use --agent <name>, or run from an azd project after 'azd deploy'")
 }
 
+// optimizeFlags holds CLI flags for the optimize (submit) command.
 type optimizeFlags struct {
-	configFile       string
-	agent            string
-	evalModel        string
-	targetAttributes []string
-	noWait           bool
-	watch            bool
-	pollInterval     int
+	configFile       string   // path to YAML config file
+	agent            string   // agent name override
+	evalModel        string   // model for evaluation
+	targetAttributes []string // optimization targets (instruction, skill)
+	noWait           bool     // return immediately after submission
+	pollInterval     int      // polling interval in seconds
 	optimizeConnectionFlags
 }
 
+// newOptimizeCommand creates the top-level "optimize" command and registers its subcommands.
 func newOptimizeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &optimizeFlags{}
 	action := &OptimizeAction{flags: flags, noPrompt: extCtx.NoPrompt}
@@ -130,7 +139,6 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
 	cmd.Flags().StringVarP(&flags.evalModel, "eval-model", "m", "gpt-4.1-mini", "Model for evaluation")
 	cmd.Flags().StringArrayVarP(&flags.targetAttributes, "target", "s", nil, "Target attribute for optimization: instruction, skill (repeatable)")
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Submit job and return immediately without waiting for completion")
-	cmd.Flags().BoolVar(&flags.watch, "watch", true, "Watch for job completion (opposite of --no-wait)")
 	cmd.Flags().IntVar(&flags.pollInterval, "poll-interval", 5, "Polling interval in seconds")
 	flags.optimizeConnectionFlags.register(cmd)
 
@@ -149,137 +157,21 @@ type OptimizeAction struct {
 	noPrompt bool
 }
 
+// Run executes the optimize command: resolves the agent, loads/builds the config, applies overrides, submits the job, and optionally polls for results.
 func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 	endpoint, err := a.flags.resolve(ctx)
 	if err != nil {
 		return err
 	}
 
-	var cfg *OptimizeConfig
-	configSource := "" // tracks where the config came from for user messaging
-	hasProject := false
-	agentProject := ""
-
-	if a.flags.configFile != "" {
-		cfg, err = LoadOptimizeConfig(a.flags.configFile)
-		if err != nil {
-			return fmt.Errorf("%w\n\nCheck that the file path is correct and contains valid YAML", err)
-		}
-		configSource = a.flags.configFile
-	} else {
-		resolved, err := resolveOptimizeAgent(ctx, a.flags.agent, a.noPrompt)
-		if err != nil {
-			return err
-		}
-		hasProject = resolved.agentProject != ""
-		agentProject = resolved.agentProject
-
-		// Check if eval.yaml exists in the agent project and offer to use it
-		if resolved.agentProject != "" {
-			evalPath := filepath.Join(resolved.agentProject, defaultEvalConfigName)
-			if _, statErr := os.Stat(evalPath); statErr == nil && !a.noPrompt {
-				azdClient, clientErr := azdext.NewAzdClient()
-				if clientErr == nil {
-					defer azdClient.Close()
-					resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-						Options: &azdext.ConfirmOptions{
-							Message:      fmt.Sprintf("Found %s in project. Use it for optimization?", defaultEvalConfigName),
-							DefaultValue: new(true),
-						},
-					})
-					if promptErr == nil && resp.Value != nil && *resp.Value {
-						cfg, err = LoadOptimizeConfig(evalPath)
-						if err != nil {
-							return fmt.Errorf("failed to load %s: %w", evalPath, err)
-						}
-						configSource = evalPath
-					}
-				}
-			}
-		}
-
-		if cfg == nil {
-			cfg = defaultOptimizeConfig(resolved.agentName)
-		} else if resolved.agentName != "" && cfg.Agent.Name != "" && cfg.Agent.Name != resolved.agentName {
-			// Config loaded from eval.yaml but agent name differs from environment.
-			fmt.Printf("  %s agent name in %s (%q) differs from environment (%q) — using environment value\n",
-				color.YellowString("warning:"), configSource, cfg.Agent.Name, resolved.agentName)
-			cfg.Agent.Name = resolved.agentName
-			if data, mErr := yaml.Marshal(cfg); mErr == nil {
-				if wErr := os.WriteFile(configSource, data, 0600); wErr == nil {
-					fmt.Printf("  Updated %s with current environment values\n", configSource)
-				}
-			}
-		}
-	}
-
-	if err := cfg.Validate(); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
-	}
-
-	// CLI flags override config values
-	if a.flags.evalModel != "" {
-		cfg.Options.EvalModel = a.flags.evalModel
-	}
-	if len(a.flags.targetAttributes) > 0 {
-		cfg.Options.TargetAttributes = a.flags.targetAttributes
-	}
-
-	// Resolve agent config directory pointer — fills in instruction, skill_dir,
-	// tools_file, and model from metadata.yaml if the config pointer is set.
-	if hasProject {
-		cfg.Agent.ResolveFromConfig(agentProject)
-	}
-
-	// Auto-detect baseline config if no config pointer is set yet.
-	if cfg.Agent.ConfigFile == "" && hasProject {
-		defaultConfigFile := filepath.Join(agentConfigsDir, "baseline", "metadata.yaml")
-		absConfigFile := filepath.Join(agentProject, defaultConfigFile)
-		if _, statErr := os.Stat(absConfigFile); statErr == nil {
-			cfg.Agent.ConfigFile = defaultConfigFile
-			cfg.Agent.ResolveFromConfig(agentProject)
-			fmt.Printf("  Baseline:    %s\n", absConfigFile)
-		}
-	}
-
-	// When baseline config is detected, show resolved values and let the user confirm.
-	if cfg.Agent.ConfigFile != "" && hasProject && !a.noPrompt {
-		if err := promptOptimizeConfigConfirmation(ctx, cfg, agentProject); err != nil {
-			return err
-		}
-	}
-
-	// Resolve relative skill_dir against agent project directory.
-	if cfg.Agent.SkillDir != "" && hasProject && !filepath.IsAbs(cfg.Agent.SkillDir) {
-		cfg.Agent.SkillDir = filepath.Join(agentProject, cfg.Agent.SkillDir)
-	}
-
-	// Resolve relative tools_file against agent project directory.
-	// TODO: re-enable when tools optimization is supported in the service.
-	// if cfg.Agent.ToolsFile != "" && hasProject && !filepath.IsAbs(cfg.Agent.ToolsFile) {
-	// 	cfg.Agent.ToolsFile = filepath.Join(agentProject, cfg.Agent.ToolsFile)
-	// }
-
-	// Resolve agent instruction using a well-defined lifecycle:
-	//  1. Config dir pointer (agent.config in eval.yaml) — resolves from metadata.yaml
-	//  2. Config file (eval.yaml / --config) — instruction in the agent section (inline or file reference)
-	//  3. Interactive prompt — ask the user to provide inline text or a file path
-	if err := resolveOptimizeSystemPrompt(ctx, cfg, agentProject, hasProject, a.noPrompt); err != nil {
+	cfg, configSource, agentProject, err := a.resolveConfig(ctx)
+	if err != nil {
 		return err
 	}
+	hasProject := agentProject != ""
 
-	// Resolve skill_dir: auto-detect, check baseline, or prompt user.
-	if cfg.Agent.SkillDir == "" && hasProject {
-		if err := resolveOptimizeSkillDir(ctx, cfg, agentProject, a.noPrompt); err != nil {
-			return err
-		}
-	}
-
-	// Resolve target_config.model: prompt user if not set.
-	if (cfg.Options.TargetConfig == nil || len(cfg.Options.TargetConfig.Model) == 0) && !a.noPrompt {
-		if err := resolveOptimizeTargetModels(ctx, cfg); err != nil {
-			return err
-		}
+	if err := a.applyOverrides(ctx, cfg, agentProject); err != nil {
+		return err
 	}
 
 	out := cmd.OutOrStdout()
@@ -292,51 +184,10 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 		fmt.Fprintf(out, "  Config: %s\n", configSource)
 	}
 
-	credential, err := newAgentCredential()
+	resp, client, err := a.submitJob(ctx, out, endpoint, cfg, agentProject)
 	if err != nil {
 		return err
 	}
-
-	client := optimize_api.NewOptimizeClient(endpoint, credential)
-
-	optimizeReq, err := cfg.ToRequest(endpoint)
-	if err != nil {
-		return fmt.Errorf("failed to build optimization request: %w", err)
-	}
-
-	if body, jsonErr := json.MarshalIndent(optimizeReq, "", "  "); jsonErr == nil {
-		log.Printf("[debug] optimization request:\n%s", body)
-	}
-
-	// Save baseline config before starting optimization.
-	if hasProject {
-		if err := saveBaselineConfig(agentProject, cfg.Agent.SkillDir, cfg.Agent.ToolsFile, optimizeReq); err != nil {
-			fmt.Fprintf(out, "  warning: failed to save baseline config: %s\n", err)
-		} else {
-			baselineMetaPath := filepath.Join(agentConfigsDir, "baseline", "metadata.yaml")
-			fmt.Fprintf(out, "  Baseline saved to %s\n", baselineMetaPath)
-			// Set config pointer so eval.yaml references the baseline.
-			if cfg.Agent.ConfigFile == "" {
-				cfg.Agent.ConfigFile = baselineMetaPath
-			}
-		}
-	}
-
-	resp, err := client.StartOptimize(ctx, optimizeReq)
-	if err != nil {
-		return fmt.Errorf("failed to submit optimization job: %w\n\nCheck that the endpoint %q is reachable", err, endpoint)
-	}
-
-	fmt.Fprintf(out, "  Job ID: %s\n", color.CyanString(resp.OperationID))
-	fmt.Fprintf(out, "  Status: %s\n", resp.Status)
-
-	// Print portal link for the optimization job.
-	printOptimizePortalLink(ctx, out, cfg.Agent.Name, resp.OperationID)
-
-	fmt.Fprintln(out)
-
-	// Store last operation ID in azd environment for use by status/deploy
-	saveLastOptimizeJobID(ctx, resp.OperationID)
 
 	if !a.flags.noWait && !optimize_api.IsTerminal(resp.Status) {
 		finalStatus, err := pollOptimizeJob(cmd, client, a.flags.pollInterval, resp.OperationID)
@@ -349,410 +200,219 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 	return nil
 }
 
-// resolveOptimizeSystemPrompt resolves the agent's system prompt:
-//
-//  1. Config dir pointer (agent.config): instruction from metadata.yaml (already resolved).
-//  2. Config (eval.yaml / --config): inline instruction or file reference.
-//  3. Interactive prompt: ask the user to provide inline text or a file path.
-//
-// Relative file paths are resolved against agentProject.
-func resolveOptimizeSystemPrompt(
+// resolveConfig loads or builds an OptimizeConfig from flags, eval.yaml
+// detection, and agent resolution. Returns the config, its source path
+// (empty if using defaults), and the agent project directory.
+func (a *OptimizeAction) resolveConfig(
 	ctx context.Context,
-	cfg *OptimizeConfig,
-	agentProject string,
-	hasProject bool,
-	noPrompt bool,
-) error {
-	// Resolve relative instruction file paths against the agent project directory.
-	if cfg.Agent.Instruction.File != "" && hasProject && !filepath.IsAbs(cfg.Agent.Instruction.File) {
-		cfg.Agent.Instruction.File = filepath.Join(agentProject, cfg.Agent.Instruction.File)
-	}
-
-	// Step 1: Config explicitly declares a file reference — validate it's readable.
-	if cfg.Agent.Instruction.File != "" {
-		if _, err := os.Stat(cfg.Agent.Instruction.File); err != nil {
-			return fmt.Errorf("instruction file %q from config is not accessible: %w",
-				cfg.Agent.Instruction.File, err)
+) (cfg *OptimizeConfig, configSource, agentProject string, err error) {
+	if a.flags.configFile != "" {
+		cfg, err = LoadOptimizeConfig(a.flags.configFile)
+		if err != nil {
+			return nil, "", "", fmt.Errorf("%w\n\nCheck that the file path is correct and contains valid YAML", err)
 		}
-		return nil
+		return cfg, a.flags.configFile, "", nil
 	}
 
-	// Step 1b: Config already has inline instruction — nothing to do.
-	if cfg.Agent.Instruction.Value != "" {
-		return nil
-	}
-
-	// Step 2: Interactive prompt — ask user to provide inline text or a file path.
-	if noPrompt {
-		return fmt.Errorf("instruction is required for optimization.\n\n" +
-			"Provide it via one of:\n" +
-			"  1. Set agent.config in eval.yaml to point to a config dir with metadata.yaml\n" +
-			"  2. Set instruction in eval.yaml (agent section): inline string or file reference\n" +
-			"  3. Run without --no-prompt to enter it interactively")
-	}
-
-	azdClient, clientErr := azdext.NewAzdClient()
-	if clientErr != nil {
-		return fmt.Errorf("instruction is required but could not open interactive prompt: %w", clientErr)
-	}
-	defer azdClient.Close()
-
-	inputChoices := []*azdext.SelectChoice{
-		{Label: "Type inline", Value: "inline"},
-		{Label: "Load from file", Value: "file"},
-	}
-	defaultIdx := int32(0)
-	selResp, selErr := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message: "No instruction found in config or baseline. " +
-				"How would you like to provide it?",
-			Choices:       inputChoices,
-			SelectedIndex: &defaultIdx,
-		},
-	})
-	if selErr != nil {
-		return fmt.Errorf("prompting for instruction input method: %w", selErr)
-	}
-
-	if inputChoices[int(*selResp.Value)].Value == "file" {
-		pathResp, pathErr := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message:        "Path to instruction file",
-				IgnoreHintKeys: true,
-			},
-		})
-		if pathErr != nil {
-			return fmt.Errorf("prompting for instruction file path: %w", pathErr)
-		}
-		filePath := strings.TrimSpace(pathResp.Value)
-		// Resolve relative paths against the agent project directory.
-		if !filepath.IsAbs(filePath) && hasProject {
-			filePath = filepath.Join(agentProject, filePath)
-		}
-		if _, err := os.Stat(filePath); err != nil {
-			return fmt.Errorf("instruction file %q is not accessible: %w", filePath, err)
-		}
-		cfg.Agent.Instruction.File = filePath
-	} else {
-		resp, promptErr := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message:        "Enter the agent's instruction",
-				IgnoreHintKeys: true,
-			},
-		})
-		if promptErr != nil {
-			return fmt.Errorf("prompting for instruction: %w", promptErr)
-		}
-		cfg.Agent.Instruction.Value = strings.TrimSpace(resp.Value)
-	}
-
-	return nil
-}
-
-// resolveOptimizeSkillDir resolves the agent's skill directory:
-//  1. Config dir pointer (agent.config): skill_dir from metadata.yaml (already resolved).
-//  2. Auto-detect: look for a "skills/" folder in the agent project — confirm with user.
-//  3. Interactive prompt: ask the user to provide a path or skip.
-func resolveOptimizeSkillDir(
-	ctx context.Context,
-	cfg *OptimizeConfig,
-	agentProject string,
-	noPrompt bool,
-) error {
-	// Step 1: Auto-detect common skill directory names.
-	var detectedDir string
-	for _, candidate := range []string{"skills", "skill"} {
-		dir := filepath.Join(agentProject, candidate)
-		if info, err := os.Stat(dir); err == nil && info.IsDir() {
-			detectedDir = dir
-			break
-		}
-	}
-
-	if noPrompt {
-		// In no-prompt mode, use whatever was detected (may be empty).
-		cfg.Agent.SkillDir = detectedDir
-		return nil
-	}
-
-	azdClient, clientErr := azdext.NewAzdClient()
-	if clientErr != nil {
-		cfg.Agent.SkillDir = detectedDir
-		return nil
-	}
-	defer azdClient.Close()
-
-	if detectedDir != "" {
-		// Found a skill directory — ask user to confirm or provide a different one.
-		choices := []*azdext.SelectChoice{
-			{Label: fmt.Sprintf("Use detected: %s", detectedDir), Value: "use"},
-			{Label: "Provide a different path", Value: "other"},
-			{Label: "Skip (no skills)", Value: "skip"},
-		}
-		defaultIdx := int32(0)
-		selResp, selErr := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message:       fmt.Sprintf("Found skills directory: %s", detectedDir),
-				Choices:       choices,
-				SelectedIndex: &defaultIdx,
-			},
-		})
-		if selErr != nil {
-			cfg.Agent.SkillDir = detectedDir
-			return nil
-		}
-
-		switch choices[int(*selResp.Value)].Value {
-		case "use":
-			cfg.Agent.SkillDir = detectedDir
-			return nil
-		case "skip":
-			return nil
-		case "other":
-			// Fall through to path prompt below.
-		}
-	} else {
-		// No skill directory found — ask if they want to provide one.
-		resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-			Options: &azdext.ConfirmOptions{
-				Message:      "No skills directory found. Would you like to provide one?",
-				DefaultValue: new(bool), // default false
-			},
-		})
-		if promptErr != nil || !resp.GetValue() {
-			return nil // skip skills
-		}
-	}
-
-	// Prompt for a custom path.
-	pathResp, pathErr := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:        "Path to skills directory",
-			IgnoreHintKeys: true,
-		},
-	})
-	if pathErr != nil {
-		return fmt.Errorf("prompting for skills directory: %w", pathErr)
-	}
-
-	dir := strings.TrimSpace(pathResp.Value)
-	if dir == "" {
-		return nil
-	}
-	if !filepath.IsAbs(dir) {
-		dir = filepath.Join(agentProject, dir)
-	}
-	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-		return fmt.Errorf("skills directory %q is not accessible or not a directory", dir)
-	}
-
-	cfg.Agent.SkillDir = dir
-	return nil
-}
-
-// promptOptimizeConfigConfirmation shows the resolved values from the baseline
-// config and lets the user confirm or override instruction file, skills
-// directory, and tools file.
-func promptOptimizeConfigConfirmation(ctx context.Context, cfg *OptimizeConfig, agentProject string) error {
-	azdClient, clientErr := azdext.NewAzdClient()
-	if clientErr != nil {
-		return nil // non-fatal — skip confirmation prompts
-	}
-	defer azdClient.Close()
-	prompt := azdClient.Prompt()
-
-	// Instruction file.
-	instrDefault := relativeOptDisplay(cfg.Agent.Instruction.File, agentProject)
-	resp, err := prompt.Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:        "Instruction file",
-			DefaultValue:   instrDefault,
-			IgnoreHintKeys: true,
-		},
-	})
+	resolved, err := resolveOptimizeAgent(ctx, a.flags.agent, a.noPrompt)
 	if err != nil {
-		return fmt.Errorf("prompting for instruction file: %w", err)
+		return nil, "", "", err
 	}
-	if value := strings.TrimSpace(resp.Value); value != "" {
-		if !filepath.IsAbs(value) && agentProject != "" {
-			value = filepath.Join(agentProject, value)
-		}
-		if _, err := os.Stat(value); err != nil {
-			return fmt.Errorf("instruction file %q is not accessible: %w", value, err)
-		}
-		cfg.Agent.Instruction.File = value
-		cfg.Agent.Instruction.Value = ""
-	}
+	agentProject = resolved.agentProject
 
-	// Skills directory.
-	skillDefault := relativeOptDisplay(cfg.Agent.SkillDir, agentProject)
-	resp, err = prompt.Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:        "Skills directory (enter to skip)",
-			DefaultValue:   skillDefault,
-			IgnoreHintKeys: true,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("prompting for skills directory: %w", err)
-	}
-	if value := strings.TrimSpace(resp.Value); value != "" {
-		if !filepath.IsAbs(value) && agentProject != "" {
-			value = filepath.Join(agentProject, value)
-		}
-		cfg.Agent.SkillDir = value
-	} else {
-		cfg.Agent.SkillDir = ""
-	}
-
-	// TODO: re-enable tools file prompt when tools optimization is supported.
-	// // Tools file.
-	// toolsDefault := relativeOptDisplay(cfg.Agent.ToolsFile, agentProject)
-	// resp, err = prompt.Prompt(ctx, &azdext.PromptRequest{
-	// 	Options: &azdext.PromptOptions{
-	// 		Message:        "Tools file (enter to skip)",
-	// 		DefaultValue:   toolsDefault,
-	// 		IgnoreHintKeys: true,
-	// 	},
-	// })
-	// if err != nil {
-	// 	return fmt.Errorf("prompting for tools file: %w", err)
-	// }
-	// if value := strings.TrimSpace(resp.Value); value != "" {
-	// 	if !filepath.IsAbs(value) && agentProject != "" {
-	// 		value = filepath.Join(agentProject, value)
-	// 	}
-	// 	cfg.Agent.ToolsFile = value
-	// } else {
-	// 	cfg.Agent.ToolsFile = ""
-	// }
-
-	return nil
-}
-
-// relativeOptDisplay returns a project-relative path for display.
-func relativeOptDisplay(absPath, projectDir string) string {
-	if absPath == "" || projectDir == "" {
-		return absPath
-	}
-	if rel, err := filepath.Rel(projectDir, absPath); err == nil {
-		return rel
-	}
-	return absPath
-}
-
-// knownOptimizationModels is the list of models commonly used for optimization.
-var knownOptimizationModels = []string{
-	"gpt-4.1",
-	"gpt-4.1-mini",
-	"gpt-4.1-nano",
-	"gpt-4o",
-	"gpt-4o-mini",
-}
-
-// resolveOptimizeTargetModels prompts the user to select model candidates
-// for optimization (target_config.model). Shows the current deployed model
-// and allows multi-select from known models.
-func resolveOptimizeTargetModels(
-	ctx context.Context,
-	cfg *OptimizeConfig,
-) error {
-	azdClient, clientErr := azdext.NewAzdClient()
-	if clientErr != nil {
-		return nil
-	}
-	defer azdClient.Close()
-
-	currentModel := cfg.Agent.Model
-
-	message := "Select target models for optimization"
-	if currentModel != "" {
-		message = fmt.Sprintf("Select target models for optimization (current: %s)", currentModel)
-	}
-
-	resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-		Options: &azdext.ConfirmOptions{
-			Message:      "Would you like to specify target models for optimization?",
-			DefaultValue: new(bool), // default false
-		},
-	})
-	if promptErr != nil || !resp.GetValue() {
-		return nil
-	}
-
-	// Build choices — include current model if not already in the known list.
-	choices := buildOptimizeModelChoices(currentModel)
-
-	multiResp, multiErr := azdClient.Prompt().MultiSelect(ctx, &azdext.MultiSelectRequest{
-		Options: &azdext.MultiSelectOptions{
-			Message: message,
-			Choices: choices,
-		},
-	})
-	if multiErr != nil {
-		return fmt.Errorf("prompting for target models: %w", multiErr)
-	}
-
-	var models []string
-	for _, v := range multiResp.Values {
-		models = append(models, v.Value)
-	}
-
-	if len(models) > 0 {
-		if cfg.Options.TargetConfig == nil {
-			cfg.Options.TargetConfig = &opteval.TargetConfig{}
-		}
-		cfg.Options.TargetConfig.Model = models
-	}
-
-	return nil
-}
-
-// buildOptimizeModelChoices returns MultiSelectChoice items for model selection.
-// The current deployed model is included and pre-selected; placed first if not in the known list.
-func buildOptimizeModelChoices(currentModel string) []*azdext.MultiSelectChoice {
-	seen := make(map[string]bool)
-	var choices []*azdext.MultiSelectChoice
-
-	// If the current model is not in the known list, prepend it.
-	if currentModel != "" {
-		found := false
-		for _, m := range knownOptimizationModels {
-			if m == currentModel {
-				found = true
-				break
+	// Check if eval.yaml exists in the agent project and offer to use it.
+	if resolved.agentProject != "" {
+		evalPath := filepath.Join(resolved.agentProject, defaultEvalConfigName)
+		if _, statErr := os.Stat(evalPath); statErr == nil && !a.noPrompt {
+			azdClient, clientErr := azdext.NewAzdClient()
+			if clientErr == nil {
+				defer azdClient.Close()
+				resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+					Options: &azdext.ConfirmOptions{
+						Message:      fmt.Sprintf("Found %s in project. Use it for optimization?", defaultEvalConfigName),
+						DefaultValue: new(true),
+					},
+				})
+				if promptErr == nil && resp.Value != nil && *resp.Value {
+					cfg, err = LoadOptimizeConfig(evalPath)
+					if err != nil {
+						return nil, "", "", fmt.Errorf("failed to load %s: %w", evalPath, err)
+					}
+					configSource = evalPath
+				}
 			}
 		}
-		if !found {
-			choices = append(choices, &azdext.MultiSelectChoice{
-				Label:    currentModel + " (current)",
-				Value:    currentModel,
-				Selected: true,
-			})
-			seen[currentModel] = true
-		}
 	}
 
-	for _, m := range knownOptimizationModels {
-		if seen[m] {
-			continue
-		}
-		label := m
-		selected := false
-		if m == currentModel {
-			label = m + " (current)"
-			selected = true
-		}
-		choices = append(choices, &azdext.MultiSelectChoice{
-			Label:    label,
-			Value:    m,
-			Selected: selected,
-		})
+	if cfg == nil {
+		cfg = defaultOptimizeConfig(resolved.agentName)
+	} else {
+		reconcileConfigAgentName(&cfg.Agent, resolved.agentName, configSource)
 	}
 
-	return choices
+	return cfg, configSource, agentProject, nil
 }
 
+// applyOverrides applies CLI flag overrides, resolves baseline agent config,
+// and interactively fills missing instruction/skills/model values.
+func (a *OptimizeAction) applyOverrides(
+	ctx context.Context,
+	cfg *OptimizeConfig,
+	agentProject string,
+) error {
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid config: %w", err)
+	}
+
+	hasProject := agentProject != ""
+
+	// CLI flags override config values.
+	if a.flags.evalModel != "" {
+		cfg.Options.EvalModel = a.flags.evalModel
+	}
+	if len(a.flags.targetAttributes) > 0 {
+		cfg.Options.TargetAttributes = a.flags.targetAttributes
+	}
+
+	// Resolve agent config: try existing config pointer, then default baseline.
+	if hasProject {
+		mergeAgentBaseline(cfg, agentProject)
+	}
+
+	// When baseline config is detected, show resolved values and let the user confirm.
+	if cfg.Agent.ConfigFile != "" && hasProject && !a.noPrompt {
+		if err := promptOptimizeConfigConfirmation(ctx, cfg, agentProject); err != nil {
+			return err
+		}
+	}
+
+	// Resolve relative skill_dir against agent project directory.
+	if cfg.SkillDir != "" && hasProject && !filepath.IsAbs(cfg.SkillDir) {
+		cfg.SkillDir = filepath.Join(agentProject, cfg.SkillDir)
+	}
+
+	// Resolve relative tools_file against agent project directory.
+	// TODO: re-enable when tools optimization is supported in the service.
+	// if cfg.ToolsFile != "" && hasProject && !filepath.IsAbs(cfg.ToolsFile) {
+	// 	cfg.ToolsFile = filepath.Join(agentProject, cfg.ToolsFile)
+	// }
+
+	// Resolve agent instruction using a well-defined lifecycle:
+	//  1. Config dir pointer (agent.config in eval.yaml) — resolves from metadata.yaml
+	//  2. Config file (eval.yaml / --config) — instruction in the agent section (inline or file reference)
+	//  3. Interactive prompt — ask the user to provide inline text or a file path
+	if err := resolveOptimizeSystemPrompt(ctx, cfg, agentProject, hasProject, a.noPrompt); err != nil {
+		return err
+	}
+
+	// Resolve skill_dir: auto-detect, check baseline, or prompt user.
+	if cfg.SkillDir == "" && hasProject {
+		if err := resolveOptimizeSkillDir(ctx, cfg, agentProject, a.noPrompt); err != nil {
+			return err
+		}
+	}
+
+	// Resolve target_config.model: prompt user if not set.
+	if (cfg.Options.TargetConfig == nil || len(cfg.Options.TargetConfig.Model) == 0) && !a.noPrompt {
+		if err := resolveOptimizeTargetModels(ctx, cfg); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// mergeAgentBaseline resolves the baseline agent config and merges missing
+// fields (instruction, model, skills, tools) into the OptimizeConfig.
+func mergeAgentBaseline(cfg *OptimizeConfig, agentProject string) {
+	var existing *opteval.Config
+	if cfg.Agent.ConfigFile != "" {
+		existing = &opteval.Config{Agent: cfg.Agent}
+	}
+	agentCfg := resolveAgentConfig(existing, agentProject)
+	if agentCfg == nil {
+		return
+	}
+	cfg.Agent.ConfigFile = agentCfg.ConfigFile
+	if cfg.Agent.Instruction.IsEmpty() && agentCfg.InstructionFile != "" {
+		cfg.Agent.Instruction.File = agentCfg.InstructionFile
+	}
+	if cfg.Agent.Model == "" {
+		cfg.Agent.Model = agentCfg.Model
+	}
+	if cfg.SkillDir == "" {
+		cfg.SkillDir = agentCfg.SkillDir
+	}
+	if cfg.ToolsFile == "" {
+		cfg.ToolsFile = agentCfg.ToolsFile
+	}
+	if existing == nil {
+		fmt.Printf("  Baseline:    %s\n", filepath.Join(agentProject, agentCfg.ConfigFile))
+	}
+}
+
+// submitJob builds the optimization request, saves the baseline config,
+// submits the job, and prints initial status.
+func (a *OptimizeAction) submitJob(
+	ctx context.Context,
+	out io.Writer,
+	endpoint string,
+	cfg *OptimizeConfig,
+	agentProject string,
+) (*optimize_api.OptimizeResponse, *optimize_api.OptimizeClient, error) {
+	credential, err := newAgentCredential()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	client := optimize_api.NewOptimizeClient(endpoint, credential)
+
+	optimizeReq, err := cfg.ToRequest(endpoint)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to build optimization request: %w", err)
+	}
+
+	if body, jsonErr := json.MarshalIndent(optimizeReq, "", "  "); jsonErr == nil {
+		log.Printf("[debug] optimization request:\n%s", body)
+	}
+
+	// Save baseline config before starting optimization.
+	hasProject := agentProject != ""
+	if hasProject {
+		if err := writeBaselineConfig(agentProject, baselineParams{
+			Model:       optimizeReq.Agent.Model,
+			Instruction: optimizeReq.Agent.SystemPrompt,
+			SkillDir:    cfg.SkillDir,
+			ToolsFile:   cfg.ToolsFile,
+		}); err != nil {
+			fmt.Fprintf(out, "  warning: failed to save baseline config: %s\n", err)
+		} else {
+			baselineMetaPath := opteval.BaselineConfigRelPath()
+			fmt.Fprintf(out, "  Baseline saved to %s\n", baselineMetaPath)
+			if cfg.Agent.ConfigFile == "" {
+				cfg.Agent.ConfigFile = baselineMetaPath
+			}
+		}
+	}
+
+	resp, err := client.StartOptimize(ctx, optimizeReq)
+	if err != nil {
+		return nil, nil, fmt.Errorf(
+			"failed to submit optimization job: %w\n\nCheck that the endpoint %q is reachable", err, endpoint)
+	}
+
+	fmt.Fprintf(out, "  Job ID: %s\n", color.CyanString(resp.OperationID))
+	fmt.Fprintf(out, "  Status: %s\n", resp.Status)
+
+	printOptimizePortalLink(ctx, out, cfg.Agent.Name, resp.OperationID)
+	fmt.Fprintln(out)
+
+	saveLastOptimizeJobID(ctx, resp.OperationID)
+
+	return resp, client, nil
+}
+
+// pollOptimizeJob polls the optimization job until it reaches a terminal state.
 func pollOptimizeJob(
 	cmd *cobra.Command,
 	client *optimize_api.OptimizeClient,
@@ -800,6 +460,7 @@ func pollOptimizeJob(
 	return finalStatus, nil
 }
 
+// printOptimizeResults prints the optimization results table and next-step commands.
 func printOptimizeResults(out io.Writer, status *optimize_api.OptimizeJobStatus, hasProject bool) {
 	if status.Error != nil {
 		fmt.Fprintf(out, "\n  %s %s\n", color.RedString("Error:"), status.Error.Message)
@@ -873,6 +534,7 @@ func printOptimizeResults(out io.Writer, status *optimize_api.OptimizeJobStatus,
 	fmt.Fprintln(out)
 }
 
+// formatOptimizeStatus returns a colorized string for the given job status.
 func formatOptimizeStatus(status string) string {
 	switch status {
 	case optimize_api.StatusCompleted:
@@ -890,6 +552,7 @@ func formatOptimizeStatus(status string) string {
 	}
 }
 
+// truncateString truncates s to maxLen characters, appending "..." if trimmed.
 func truncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s

@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// Package optimize_api provides an HTTP client for the agent optimization
+// service API. It supports job submission, status polling, cancellation,
+// and candidate config/file retrieval.
 package optimize_api
 
 import (
@@ -225,7 +228,7 @@ func (c *OptimizeClient) ReportDeployment(
 	report *DeploymentReport,
 ) error {
 	url := fmt.Sprintf(
-		"%s/optimize/candidates/%s/deployments?api-version=v1",
+		"%s/optimize/candidates/%s:promote?api-version=v1",
 		c.endpoint, report.CandidateID,
 	)
 

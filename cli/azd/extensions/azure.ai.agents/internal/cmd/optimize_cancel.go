@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// optimize_cancel.go implements the "optimize cancel" command, which cancels
+// a running optimization job by its operation ID.
+
 package cmd
 
 import (
@@ -12,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// optimizeCancelFlags holds connection settings for the cancel command.
 type optimizeCancelFlags struct {
 	optimizeConnectionFlags
 }

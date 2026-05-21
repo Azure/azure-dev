@@ -23,20 +23,13 @@ const (
 	EvaluatorContractFile = "rubric_dimensions.json"
 )
 
-// ResolveEvalOutputPath resolves the eval output config path. If output is
-// already absolute it is returned as-is; otherwise it is joined with the
-// agent project directory.
-func ResolveEvalOutputPath(output, agentProject string) string {
-	if filepath.IsAbs(output) {
-		return output
+// ResolveRelPath resolves a relative path against the agent project directory.
+// If the path is already absolute it is returned as-is.
+func ResolveRelPath(path, agentProject string) string {
+	if filepath.IsAbs(path) {
+		return path
 	}
-	return filepath.Join(agentProject, output)
-}
-
-// ResolveEvalConfigPath resolves the eval config path for reading. Follows the
-// same logic as ResolveEvalOutputPath.
-func ResolveEvalConfigPath(config, agentProject string) string {
-	return ResolveEvalOutputPath(config, agentProject)
+	return filepath.Join(agentProject, path)
 }
 
 // DownloadDatasetArtifact downloads the dataset and writes it locally.

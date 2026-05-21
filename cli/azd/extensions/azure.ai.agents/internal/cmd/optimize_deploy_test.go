@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -153,4 +155,47 @@ func TestNormalizeProtocolVersions_NoOp(t *testing.T) {
 func TestNormalizeProtocolVersions_MissingField(t *testing.T) {
 	def := map[string]any{"kind": "hosted"}
 	normalizeProtocolVersions(def) // should not panic
+}
+
+// ---- upsertAgentYamlEnvVar ----
+
+func TestUpsertAgentYamlEnvVar_InsertsNew(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yamlPath := filepath.Join(dir, "agent.yaml")
+	require.NoError(t, os.WriteFile(yamlPath, []byte("name: test-agent\n"), 0600))
+
+	err := upsertAgentYamlEnvVar(yamlPath, "MY_VAR", "my_value")
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(yamlPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "MY_VAR")
+	assert.Contains(t, string(data), "my_value")
+}
+
+func TestUpsertAgentYamlEnvVar_UpdatesExisting(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yamlPath := filepath.Join(dir, "agent.yaml")
+	content := `name: test-agent
+environment_variables:
+  - name: MY_VAR
+    value: old_value
+`
+	require.NoError(t, os.WriteFile(yamlPath, []byte(content), 0600))
+
+	err := upsertAgentYamlEnvVar(yamlPath, "MY_VAR", "new_value")
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(yamlPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "new_value")
+	assert.NotContains(t, string(data), "old_value")
+}
+
+func TestUpsertAgentYamlEnvVar_FileMissing(t *testing.T) {
+	t.Parallel()
+	err := upsertAgentYamlEnvVar("/nonexistent/agent.yaml", "KEY", "VALUE")
+	assert.Error(t, err)
 }

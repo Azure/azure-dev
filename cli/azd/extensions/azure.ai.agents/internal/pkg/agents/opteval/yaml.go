@@ -137,7 +137,81 @@ func (el EvaluatorList) SetLocalURI(name, uri string) {
 	}
 }
 
+// Agent config directory structure
+//
+// Each agent configuration version (baseline or optimized candidate) is stored
+// under AgentConfigsDir as a self-contained directory with a fixed layout:
+//
+//	.agent_configs/
+//	├── baseline/                  # original agent config captured by eval init or optimize
+//	│   ├── metadata.yaml          # MetadataFile  — model, file pointers
+//	│   ├── instructions.md        # InstructionFile — system prompt
+//	│   ├── skills/                # SkillsDir — skill definitions (optional)
+//	│   └── tools.json             # ToolsFile — tool definitions (optional)
+//	└── <candidate-id>/            # optimized candidate written by optimize apply
+//	    ├── metadata.yaml
+//	    ├── instructions.md
+//	    ├── skills/
+//	    └── tools.json
+//
+// Both eval and optimize commands share these constants and layout conventions.
+// Eval init writes the baseline directory; optimize apply writes candidate
+// directories and reads the baseline for diff display.
+const (
+	// AgentConfigsDir is the top-level folder that holds agent configuration
+	// versions (baseline and optimized candidates).
+	AgentConfigsDir = ".agent_configs"
+
+	// BaselineDir is the subdirectory name for the original agent configuration.
+	BaselineDir = "baseline"
+
+	// MetadataFile is the YAML file in each config directory that describes
+	// the agent model, instruction file path, skill directory, and tools file.
+	MetadataFile = "metadata.yaml"
+
+	// InstructionFile is the Markdown file containing the agent's system prompt.
+	InstructionFile = "instructions.md"
+
+	// SkillsDir is the subdirectory containing skill definition files.
+	SkillsDir = "skills"
+
+	// ToolsFile is the JSON file containing tool definitions.
+	ToolsFile = "tools.json"
+)
+
+// BaselineConfigRelPath returns the project-relative path to the baseline
+// metadata file: ".agent_configs/baseline/metadata.yaml".
+func BaselineConfigRelPath() string {
+	return filepath.Join(AgentConfigsDir, BaselineDir, MetadataFile)
+}
+
+// AgentConfig holds resolved agent configuration from metadata.yaml.
+// Unlike AgentRef (the YAML-serializable reference), AgentConfig contains
+// fully resolved absolute paths and values for use during command execution.
+type AgentConfig struct {
+	ConfigFile      string // project-relative path to metadata.yaml
+	Model           string // resolved model name
+	InstructionFile string // absolute path to instruction file
+	SkillDir        string // absolute path to skills directory
+	ToolsFile       string // absolute path to tools definition file
+}
+
+// ResolvedInstruction reads and returns the instruction file content.
+// Returns empty string if no instruction file is set or the file cannot be read.
+func (c *AgentConfig) ResolvedInstruction() string {
+	if c.InstructionFile == "" {
+		return ""
+	}
+	data, err := os.ReadFile(c.InstructionFile) //nolint:gosec // path from project config
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
 // AgentRef references the agent under evaluation/optimization.
+// Optimize-specific fields (skill_dir, tools_file) are stored in
+// OptimizeConfig, not here, so eval.yaml stays target-agnostic.
 type AgentRef struct {
 	Name        string               `yaml:"name"`
 	Kind        agent_yaml.AgentKind `yaml:"kind,omitempty"`
@@ -145,19 +219,15 @@ type AgentRef struct {
 	ConfigFile  string               `yaml:"config,omitempty"`
 	Model       string               `yaml:"model,omitempty"`
 	Instruction InstructionRef       `yaml:"instruction,omitempty"`
-	SkillDir    string               `yaml:"skill_dir,omitempty"`
-	ToolsFile   string               `yaml:"tools_file,omitempty"`
 }
 
-// ResolveFromConfig loads the metadata.yaml pointed to by ConfigFile and fills
-// in empty fields (Model, Instruction, SkillDir). Relative paths are resolved
-// against projectDir. File pointers inside metadata.yaml (instruction_file,
-// skill_dir) are resolved relative to the directory containing the config file.
-// Returns the absolute directory containing the config file, or empty string
-// if ConfigFile is not set.
-func (a *AgentRef) ResolveFromConfig(projectDir string) string {
+// ResolveConfig loads the metadata.yaml pointed to by ConfigFile and returns
+// a resolved AgentConfig without mutating the AgentRef. Relative paths inside
+// metadata.yaml are resolved against the directory containing the config file.
+// Returns nil if ConfigFile is not set.
+func (a *AgentRef) ResolveConfig(projectDir string) *AgentConfig {
 	if a.ConfigFile == "" {
-		return ""
+		return nil
 	}
 
 	configPath := a.ConfigFile
@@ -166,48 +236,47 @@ func (a *AgentRef) ResolveFromConfig(projectDir string) string {
 	}
 	configDir := filepath.Dir(configPath)
 
+	cfg := &AgentConfig{ConfigFile: a.ConfigFile}
+
 	data, err := os.ReadFile(configPath) //nolint:gosec // path from project config
 	if err != nil {
-		return configDir
+		return cfg
 	}
 
 	var meta struct {
-		Name            string `yaml:"name"`
 		Model           string `yaml:"model"`
 		InstructionFile string `yaml:"instruction_file"`
 		SkillDir        string `yaml:"skill_dir"`
 		ToolsFile       string `yaml:"tools_file"`
 	}
 	if err := yaml.Unmarshal(data, &meta); err != nil {
-		return configDir
+		return cfg
 	}
 
-	if a.Model == "" && meta.Model != "" {
-		a.Model = meta.Model
-	}
-	if a.Instruction.IsEmpty() && meta.InstructionFile != "" {
+	cfg.Model = meta.Model
+	if meta.InstructionFile != "" {
 		instrPath := meta.InstructionFile
 		if !filepath.IsAbs(instrPath) {
 			instrPath = filepath.Join(configDir, instrPath)
 		}
-		a.Instruction.File = instrPath
+		cfg.InstructionFile = instrPath
 	}
-	if a.SkillDir == "" && meta.SkillDir != "" {
+	if meta.SkillDir != "" {
 		skillDir := meta.SkillDir
 		if !filepath.IsAbs(skillDir) {
 			skillDir = filepath.Join(configDir, skillDir)
 		}
-		a.SkillDir = skillDir
+		cfg.SkillDir = skillDir
 	}
-	if a.ToolsFile == "" && meta.ToolsFile != "" {
+	if meta.ToolsFile != "" {
 		toolsFile := meta.ToolsFile
 		if !filepath.IsAbs(toolsFile) {
 			toolsFile = filepath.Join(configDir, toolsFile)
 		}
-		a.ToolsFile = toolsFile
+		cfg.ToolsFile = toolsFile
 	}
 
-	return configDir
+	return cfg
 }
 
 // ResolvedSystemPrompt returns the resolved instruction text.

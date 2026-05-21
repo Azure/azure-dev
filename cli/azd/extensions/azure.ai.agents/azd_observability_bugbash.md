@@ -7,25 +7,13 @@
 Prerequisites: [azd CLI](https://aka.ms/azd), [Go](https://go.dev/dl/), `az login`
 
 ```bash
+# Installing private registry for bugbash
 azd ext install microsoft.azd.extensions
-git clone https://github.com/Zyysurely/azure-dev.git
-cd azure-dev/cli/azd/extensions/azure.ai.agents
-git checkout zyying/opt_eval
-azd x build
-```
+azd ext source add --name zyysurely --type url --location https://raw.githubusercontent.com/Zyysurely/azure-dev/zyying/opt_eval/cli/azd/extensions/registry.json
+azd ext install azure.ai.agents --source zyysurely --version 0.1.33-optbugbash-preview --force
 
-After building, register the extension and overlay the custom binary:
-
-```powershell
-# Windows (PowerShell)
-azd ext install azure.ai.agents
-copy bin\azure-ai-agents-windows-amd64.exe $env:USERPROFILE\.azd\extensions\azure.ai.agents\ -Force
-```
-
-```bash
-# macOS / Linux
-azd ext install azure.ai.agents
-cp bin/azure-ai-agents-$(uname -s | tr A-Z a-z)-* ~/.azd/extensions/azure.ai.agents/
+# If then you want to switch back to the official version, use
+azd ext install azure.ai.agents --force
 ```
 
 Verify:`azd ai agent eval --help` and `azd ai agent optimize --help`
@@ -42,7 +30,8 @@ Navigate to a fresh directory outside the extension repo, init the agent and poi
 
 ```bash
 mkdir bugbash-azd-<alias> && cd bugbash-azd-<alias>
-azd init -t https://github.com/zyysurely/sample_agent .
+git clone https://github.com/ai-platform-microsoft/foundry-observability-playground.git
+cd .\foundry-observability-playground\demos\build2026\agents\travel-approver\
 azd ai agent init --project-id /subscriptions/2d385bf4-0756-4a76-aa95-28bf9ed3b625/resourceGroups/rg-azdbugbash/providers/Microsoft.CognitiveServices/accounts/azd-bugbash-0514/projects/bugbash-westus2
 # Customize your agent name and model deployment
 ```

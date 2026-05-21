@@ -61,26 +61,18 @@ func BuildGenerationSources(agentKind, agentName, version, instruction string, t
 // ---------------------------------------------------------------------------
 
 // NewDataGenerationJobRequest builds a DataGenerationJobRequest from the
-// provided parameters. When sources contain a "traces" entry, the generation
-// type is set to "traces"; otherwise it defaults to "simple_qna".
+// provided parameters. Currently, it's always "simple_qna" type with multiple sources
 func NewDataGenerationJobRequest(
 	name, evalModel string,
 	maxSamples int,
 	sources []GenerationSource,
 ) *DataGenerationJobRequest {
-	genType := "simple_qna"
-	for _, s := range sources {
-		if s.Type == "traces" {
-			genType = "traces"
-			break
-		}
-	}
 	return &DataGenerationJobRequest{
 		Inputs: DataGenerationInputs{
 			Name:     name,
 			Scenario: "evaluation",
 			Options: DataGenerationOptions{
-				Type:       genType,
+				Type:       "simple_qna",
 				MaxSamples: maxSamples,
 				ModelOptions: ModelOptions{
 					Model: evalModel,

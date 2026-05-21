@@ -1,6 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// optimize_deploy.go implements the "optimize deploy" command, which deploys
+// an optimization candidate directly to a Foundry agent (without requiring
+// an azd project). It fetches the candidate config, patches the agent, and
+// creates a new agent version.
+
 package cmd
 
 import (

@@ -131,38 +131,22 @@ func TestFormatTimestamp(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// eval_api.ResolveEvalOutputPath / eval_api.ResolveEvalConfigPath
+// eval_api.ResolveRelPath
 // ---------------------------------------------------------------------------
 
-func TestResolveEvalOutputPath(t *testing.T) {
+func TestResolveRelPath(t *testing.T) {
 	t.Parallel()
 
 	t.Run("absolute path returned as-is", func(t *testing.T) {
 		t.Parallel()
 		abs := filepath.Join(os.TempDir(), "eval.yaml")
-		assert.Equal(t, abs, eval_api.ResolveEvalOutputPath(abs, "/project"))
+		assert.Equal(t, abs, eval_api.ResolveRelPath(abs, "/project"))
 	})
 
 	t.Run("relative path joined with agent project", func(t *testing.T) {
 		t.Parallel()
-		result := eval_api.ResolveEvalOutputPath("eval.yaml", "/project/agent")
+		result := eval_api.ResolveRelPath("eval.yaml", "/project/agent")
 		assert.Equal(t, filepath.Join("/project/agent", "eval.yaml"), result)
-	})
-}
-
-func TestResolveEvalConfigPath(t *testing.T) {
-	t.Parallel()
-
-	t.Run("absolute path returned as-is", func(t *testing.T) {
-		t.Parallel()
-		abs := filepath.Join(os.TempDir(), "eval.yaml")
-		assert.Equal(t, abs, eval_api.ResolveEvalConfigPath(abs, "/project"))
-	})
-
-	t.Run("relative path joined with agent project when file does not exist", func(t *testing.T) {
-		t.Parallel()
-		result := eval_api.ResolveEvalConfigPath("nonexistent.yaml", "/project/agent")
-		assert.Equal(t, filepath.Join("/project/agent", "nonexistent.yaml"), result)
 	})
 }
 
@@ -219,7 +203,7 @@ func TestDetectEvalAgentKind(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// evalState — stored in azd environment (integration-tested via eval init/run)
+// EvalState — stored in azd environment (integration-tested via eval init/run)
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -472,4 +456,32 @@ func TestReadEvalConfig_MissingFile(t *testing.T) {
 	t.Parallel()
 	_, err := eval_api.LoadEvalConfig("/nonexistent/path/eval.yaml")
 	assert.Error(t, err)
+}
+
+// ---------------------------------------------------------------------------
+// endpointFromProjectID — project ID to endpoint conversion
+// ---------------------------------------------------------------------------
+
+func TestEndpointFromProjectID(t *testing.T) {
+	t.Parallel()
+	t.Run("valid project ID", func(t *testing.T) {
+		t.Parallel()
+		projectID := "/subscriptions/sub123/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/myaccount/projects/myproject"
+		endpoint, err := endpointFromProjectID(projectID)
+		require.NoError(t, err)
+		assert.Contains(t, endpoint, "myaccount")
+		assert.Contains(t, endpoint, "myproject")
+	})
+
+	t.Run("invalid project ID", func(t *testing.T) {
+		t.Parallel()
+		_, err := endpointFromProjectID("not-a-valid-id")
+		assert.Error(t, err)
+	})
+
+	t.Run("empty project ID", func(t *testing.T) {
+		t.Parallel()
+		_, err := endpointFromProjectID("")
+		assert.Error(t, err)
+	})
 }

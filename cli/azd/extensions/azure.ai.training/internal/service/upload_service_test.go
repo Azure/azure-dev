@@ -334,7 +334,7 @@ func TestUploadDirectory_PassesAbsolutePathToAzcopy(t *testing.T) {
 	rel := filepath.Base(dir)
 
 	svc := &UploadService{client: client, azcopyRunner: runner}
-	_, err := svc.UploadDirectory(context.Background(), rel, "x", "desc")
+	_, err := svc.UploadDirectory(t.Context(), rel, "x", "desc")
 	require.NoError(t, err)
 
 	assert.True(t, filepath.IsAbs(runner.lastSrc),

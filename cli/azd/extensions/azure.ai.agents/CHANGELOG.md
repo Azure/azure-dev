@@ -4,17 +4,20 @@
 
 - [[#8299]](https://github.com/Azure/azure-dev/pull/8299) Don't fail `azd ai agent init` when Foundry agent existence checks error.
 - [[#8298]](https://github.com/Azure/azure-dev/pull/8298) Use the selected agent name for service entry when resolving Foundry name conflicts.
-- [[#8293]](https://github.com/Azure/azure-dev/pull/8293) Remove deprecated runtimes (Python 3.11/3.12 and .NET 8/9) from `azd ai agent init`.
 - [[#8292]](https://github.com/Azure/azure-dev/pull/8292) Decouple Foundry project selection from model configuration during agent init.
 - [[#8271]](https://github.com/Azure/azure-dev/pull/8271) Remove the 0.25 CPU option for hosted agents.
 - [[#8266]](https://github.com/Azure/azure-dev/pull/8266) Add `azd ai agent sample list` and improve non-interactive `azd ai agent init`.
 - [[#8245]](https://github.com/Azure/azure-dev/pull/8245) Rename the project endpoint environment variable to `FOUNDRY_PROJECT_ENDPOINT`.
-- [[#8243]](https://github.com/Azure/azure-dev/pull/8243) Migrate project endpoint commands to the new scaffold.
 - [[#8242]](https://github.com/Azure/azure-dev/pull/8242) Skip ACR creation and startup command configuration for code deploy.
 - [[#8233]](https://github.com/Azure/azure-dev/pull/8233) Allow `azd ai agent invoke` to target specific versions.
 - [[#8206]](https://github.com/Azure/azure-dev/pull/8206) Support header isolation keys for agent sessions.
 - [[#8189]](https://github.com/Azure/azure-dev/pull/8189) Add naming safeguards for `azd ai agent init`.
 - [[#7898]](https://github.com/Azure/azure-dev/pull/7898) Remove the hardcoded invoke suggestion from `azd ai agent run`.
+
+### Breaking Changes
+
+- [[#8293]](https://github.com/Azure/azure-dev/pull/8293) Remove deprecated runtimes (Python 3.11/3.12 and .NET 8/9) from `azd ai agent init`.
+- [[#8243]](https://github.com/Azure/azure-dev/pull/8243) Migrate project endpoint commands to the new scaffold.
 
 ## 0.1.32-preview (2026-05-18)
 

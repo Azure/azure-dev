@@ -140,7 +140,7 @@ func runInspector(ctx context.Context, flags *inspectorFlags) error {
 // injectSSEEvents wraps the local agentserver SSE stream so it matches the
 // Foundry SSE shape that readSSEStream expects. agentserver discriminates
 // chunks via a JSON `type` field on each `data:` line and omits the
-// `event:` line that readSSEStream switches on; this helper synthesises it.
+// `event:` line that readSSEStream switches on; this helper synthesizes it.
 // `response.failed` is mapped to `response.completed` so the failed-status
 // branch in readSSEStream catches it.
 func injectSSEEvents(r io.Reader) io.Reader {

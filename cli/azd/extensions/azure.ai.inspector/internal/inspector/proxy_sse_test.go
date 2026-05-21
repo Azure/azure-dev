@@ -87,7 +87,9 @@ func TestSSECancelAbortsUpstreamOnWSClose(t *testing.T) {
 
 	// Wait for the first chunk so we know the upstream request is live and
 	// blocked on r.Context().Done(); then close the WS to trigger cleanup.
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {

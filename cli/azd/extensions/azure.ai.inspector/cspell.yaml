@@ -4,15 +4,19 @@ words:
   - agentserver
   - apim
   # Go module name for the Azure AI Inspector extension.
+  - agentdev
   - azureaiinspector
   - codicon
   - exterrors
   - fmtcheck
+  - fsys
   - gosec
   - JSONRPC
   - katex
   - lipgloss
   - lll
+  - nosniff
   - rpcs
+  - sess
   - SSEs
   - websockets

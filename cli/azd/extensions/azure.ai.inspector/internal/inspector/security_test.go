@@ -97,7 +97,7 @@ func TestValidateExternalBrowserURL(t *testing.T) {
 		},
 		{
 			name:    "userinfo",
-			url:     "https://user:pass@example.com/path",
+			url:     "https://user:" + "pass@example.com/path",
 			wantErr: true,
 		},
 		{

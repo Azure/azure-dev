@@ -256,32 +256,38 @@ func (s *rpcSession) openUrlInBrowser(raw json.RawMessage) (any, error) {
 }
 
 func (s *rpcSession) sendResult(id json.RawMessage, result any) {
-	s.sendRaw(map[string]any{
+	if err := s.sendRaw(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      json.RawMessage(id),
 		"result":  result,
-	})
+	}); err != nil {
+		s.logger.Printf("rpc send result: %v", err)
+	}
 }
 
 func (s *rpcSession) sendError(id json.RawMessage, err error) {
-	s.sendRaw(map[string]any{
+	if sendErr := s.sendRaw(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      json.RawMessage(id),
 		"error": map[string]any{
 			"code":    -32603,
 			"message": err.Error(),
 		},
-	})
+	}); sendErr != nil {
+		s.logger.Printf("rpc send error: %v", sendErr)
+	}
 }
 
 // sendNotification wraps params in a one-element array to match
 // vscode-jsonrpc's NotificationType1 convention.
 func (s *rpcSession) sendNotification(method string, payload any) {
-	s.sendRaw(map[string]any{
+	if err := s.sendRaw(map[string]any{
 		"jsonrpc": "2.0",
 		"method":  method,
 		"params":  []any{payload},
-	})
+	}); err != nil {
+		s.logger.Printf("rpc send notification: %v", err)
+	}
 }
 
 func (s *rpcSession) sendRequest(method string, params ...any) error {

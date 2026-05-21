@@ -262,17 +262,6 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	return nil
 }
 
-func startInspectorAfterAgentReady(ctx context.Context, workflow azdext.WorkflowServiceClient, agentPort int) {
-	startInspectorAfterAgentReadyWithOptions(
-		ctx,
-		workflow,
-		agentPort,
-		agentInspectorReadyTimeout,
-		agentInspectorReadyPollPeriod,
-		os.Stderr,
-	)
-}
-
 func handleInspectorAutoLaunch(
 	ctx context.Context,
 	workflow azdext.WorkflowServiceClient,

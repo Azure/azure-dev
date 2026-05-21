@@ -271,6 +271,34 @@ func TestResolveExistingAgentNameConflictWithChecker_AgentCheckErrorDoesNotBlock
 	}
 }
 
+func TestResolveExistingAgentNameConflictWithChecker_AgentCheckCancellationReturnsError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "canceled", err: context.Canceled},
+		{name: "deadline exceeded", err: context.DeadlineExceeded},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			checker := &fakeConflictAgentChecker{err: tt.err}
+
+			got, err := resolveExistingAgentNameConflictWithChecker(t.Context(), nil, checker, false, "my-agent")
+			if got != "" {
+				t.Fatalf("name = %q, want empty", got)
+			}
+			if !errors.Is(err, tt.err) {
+				t.Fatalf("error = %v, want %v", err, tt.err)
+			}
+		})
+	}
+}
+
 func TestResolveExistingAgentNameConflictWithChecker_ConflictAccepted(t *testing.T) {
 	t.Parallel()
 

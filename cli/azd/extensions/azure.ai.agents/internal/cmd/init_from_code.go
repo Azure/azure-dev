@@ -1146,26 +1146,18 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 
 	if isDotnet && !isPython {
 		runtimeChoices = []*azdext.SelectChoice{
-			{Label: ".NET 9", Value: "dotnet_9"},
-			{Label: ".NET 8", Value: "dotnet_8"},
 			{Label: ".NET 10", Value: "dotnet_10"},
 		}
 	} else if isPython && !isDotnet {
 		runtimeChoices = []*azdext.SelectChoice{
-			{Label: "Python 3.11", Value: "python_3_11"},
-			{Label: "Python 3.12", Value: "python_3_12"},
 			{Label: "Python 3.13", Value: "python_3_13"},
 			{Label: "Python 3.14", Value: "python_3_14"},
 		}
 	} else {
 		// Mixed or unknown — show all options
 		runtimeChoices = []*azdext.SelectChoice{
-			{Label: "Python 3.11", Value: "python_3_11"},
-			{Label: "Python 3.12", Value: "python_3_12"},
 			{Label: "Python 3.13", Value: "python_3_13"},
 			{Label: "Python 3.14", Value: "python_3_14"},
-			{Label: ".NET 9", Value: "dotnet_9"},
-			{Label: ".NET 8", Value: "dotnet_8"},
 			{Label: ".NET 10", Value: "dotnet_10"},
 		}
 	}
@@ -1173,15 +1165,12 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 	var runtime string
 	if noPrompt {
 		if isDotnet && !isPython {
-			runtime = "dotnet_9"
+			runtime = "dotnet_10"
 		} else {
-			runtime = "python_3_12" // default to python for backward compatibility (including mixed repos)
+			runtime = "python_3_13" // default to python for backward compatibility (including mixed repos)
 		}
 	} else {
 		defaultIdx := int32(0) // First item in the filtered list
-		if isPython && !isDotnet {
-			defaultIdx = 1 // Python 3.12
-		}
 		runtimeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "Select the runtime for your agent",

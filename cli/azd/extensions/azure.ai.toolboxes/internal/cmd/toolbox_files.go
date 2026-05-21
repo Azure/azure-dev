@@ -47,6 +47,7 @@ type toolboxCreateFile struct {
 // file, or misspelling `connections`) produces a sharp local error rather
 // than being silently dropped.
 func parseToolboxFile(path string, out any) error {
+	// #nosec G304 -- reading a user-supplied path is the intent of --from-file
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return exterrors.Dependency(

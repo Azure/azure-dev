@@ -10,9 +10,9 @@ import (
 
 func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
-		Name:  "{{.Metadata.Namespace}}",
-		Use:   "azd {{.Metadata.Namespace}} <command> [options]",
-		Short: "{{.Metadata.Description}}",
+		Name:  "{{.LeafNamespace}}",
+		Use:   "{{.LeafNamespace}} <command> [options]",
+		Short: {{strconvQuote .Metadata.Description}},
 	})
 
 	rootCmd.SilenceUsage = true

@@ -30,7 +30,7 @@ func TestBuiltInTools(t *testing.T) {
 			"vscode-bicep",
 			"GitHub.copilot-chat",
 			"azure-mcp-server",
-			"azd-ai-extensions",
+			"azure.ai.agents",
 		}
 
 		tools := BuiltInTools()
@@ -79,10 +79,10 @@ func TestBuiltInTools(t *testing.T) {
 		t.Parallel()
 
 		validCategories := map[ToolCategory]bool{
-			ToolCategoryCLI:       true,
-			ToolCategoryExtension: true,
-			ToolCategoryServer:    true,
-			ToolCategoryLibrary:   true,
+			ToolCategoryCLI:             true,
+			ToolCategoryVSCodeExtension: true,
+			ToolCategoryServer:          true,
+			ToolCategoryAzdExtension:    true,
 		}
 
 		tools := BuiltInTools()
@@ -166,8 +166,8 @@ func TestFindTool(t *testing.T) {
 		},
 		{
 			name:     "FindsAzdAIExtensions",
-			id:       "azd-ai-extensions",
-			expectId: "azd-ai-extensions",
+			id:       "azure.ai.agents",
+			expectId: "azure.ai.agents",
 		},
 		{
 			name:      "ReturnsNilForUnknownID",
@@ -221,11 +221,11 @@ func TestFindToolsByCategory(t *testing.T) {
 	t.Run("ReturnsExtensionTools", func(t *testing.T) {
 		t.Parallel()
 
-		tools := FindToolsByCategory(ToolCategoryExtension)
+		tools := FindToolsByCategory(ToolCategoryVSCodeExtension)
 		require.NotEmpty(t, tools)
 
 		for _, tool := range tools {
-			assert.Equal(t, ToolCategoryExtension, tool.Category)
+			assert.Equal(t, ToolCategoryVSCodeExtension, tool.Category)
 		}
 	})
 
@@ -243,11 +243,11 @@ func TestFindToolsByCategory(t *testing.T) {
 	t.Run("ReturnsLibraryTools", func(t *testing.T) {
 		t.Parallel()
 
-		tools := FindToolsByCategory(ToolCategoryLibrary)
+		tools := FindToolsByCategory(ToolCategoryAzdExtension)
 		require.NotEmpty(t, tools)
 
 		for _, tool := range tools {
-			assert.Equal(t, ToolCategoryLibrary, tool.Category)
+			assert.Equal(t, ToolCategoryAzdExtension, tool.Category)
 		}
 	})
 
@@ -263,9 +263,9 @@ func TestFindToolsByCategory(t *testing.T) {
 
 		allTools := BuiltInTools()
 		cli := FindToolsByCategory(ToolCategoryCLI)
-		ext := FindToolsByCategory(ToolCategoryExtension)
+		ext := FindToolsByCategory(ToolCategoryVSCodeExtension)
 		srv := FindToolsByCategory(ToolCategoryServer)
-		lib := FindToolsByCategory(ToolCategoryLibrary)
+		lib := FindToolsByCategory(ToolCategoryAzdExtension)
 
 		total := len(cli) + len(ext) + len(srv) + len(lib)
 		assert.Equal(t, len(allTools), total,
@@ -298,19 +298,44 @@ func TestSpecificToolDefinitions(t *testing.T) {
 		assert.True(t, hasLinux, "should have linux strategy")
 	})
 
-	t.Run("AzdAIExtensionsHasDependency", func(t *testing.T) {
+	t.Run("AzdAIExtensionsContract", func(t *testing.T) {
 		t.Parallel()
 
-		tool := FindTool("azd-ai-extensions")
-		require.NotNil(t, tool)
+		tool := FindTool("azure.ai.agents")
+		require.NotNil(t, tool, "azure.ai.agents must be registered")
 
-		assert.Contains(t, tool.Dependencies, "az-cli")
+		assert.Equal(t, "azure.ai.agents", tool.Id,
+			"Id must match the JSON id emitted by `azd extension list`")
+		assert.Equal(t, ToolCategoryAzdExtension, tool.Category,
+			"Category must be AzdExtension so DetectTool routes to detectAzdExtension")
+		assert.Equal(t, "azd-extension", string(tool.Category),
+			"wire format must remain stable for `azd tool list --output json` consumers")
+		assert.Equal(t, "azd", tool.DetectCommand,
+			"DetectCommand must be 'azd' for the extension-list probe")
+		assert.Equal(t,
+			[]string{"extension", "list", "--installed", "--output", "json"},
+			tool.VersionArgs,
+			"VersionArgs must match the JSON command parsed by detectAzdExtension")
+		assert.Empty(t, tool.Dependencies,
+			"azd extensions are self-contained; must not depend on az-cli")
+
+		for _, platform := range []string{"windows", "darwin", "linux"} {
+			strategy, ok := tool.InstallStrategies[platform]
+			require.True(t, ok, "missing install strategy for %s", platform)
+			assert.Contains(t, strategy.InstallCommand, "azure.ai.agents",
+				"%s install command must target azure.ai.agents", platform)
+			assert.Contains(t, strategy.InstallCommand, "--source azd",
+				"%s install command must pin the azd source", platform)
+		}
 	})
 
 	t.Run("VSCodeExtensionsUseCodeDetectCommand", func(t *testing.T) {
 		t.Parallel()
 
-		extensions := FindToolsByCategory(ToolCategoryExtension)
+		assert.Equal(t, "vscode-extension", string(ToolCategoryVSCodeExtension),
+			"wire format must remain stable for `azd tool list --output json` consumers")
+
+		extensions := FindToolsByCategory(ToolCategoryVSCodeExtension)
 		for _, ext := range extensions {
 			assert.Equal(t, "code", ext.DetectCommand,
 				"extension %q should detect via 'code'", ext.Id)

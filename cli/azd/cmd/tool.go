@@ -449,7 +449,7 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 	for _, id := range ids {
 		toolDef, findErr := a.manager.FindTool(id)
 		if findErr != nil {
-			return nil, findErr
+			return nil, wrapToolNotFoundIfErr(findErr)
 		}
 		tools = append(tools, toolDef)
 	}
@@ -482,7 +482,7 @@ func (a *toolInstallAction) dryRun(
 	for _, id := range ids {
 		toolDef, findErr := a.manager.FindTool(id)
 		if findErr != nil {
-			return nil, findErr
+			return nil, wrapToolNotFoundIfErr(findErr)
 		}
 
 		status, detectErr := a.manager.DetectTool(ctx, id)
@@ -661,7 +661,7 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		for _, id := range a.args {
 			toolDef, findErr := a.manager.FindTool(id)
 			if findErr != nil {
-				return nil, findErr
+				return nil, wrapToolNotFoundIfErr(findErr)
 			}
 			toolsToUpgrade = append(toolsToUpgrade, toolDef)
 		}
@@ -955,7 +955,7 @@ func (a *toolShowAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	toolDef, err := a.manager.FindTool(toolID)
 	if err != nil {
-		return nil, fmt.Errorf("finding tool: %w", err)
+		return nil, wrapToolNotFoundIfErr(fmt.Errorf("finding tool: %w", err))
 	}
 
 	var status *tool.ToolStatus
@@ -1138,6 +1138,17 @@ type toolShowItem struct {
 	Version     string `json:"version"`
 }
 
+func wrapToolNotFoundIfErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &internal.ErrorWithSuggestion{
+		Err: err,
+		Suggestion: "Use the tool ID as the argument. " +
+			"Run 'azd tool list' to see available tool IDs.",
+	}
+}
+
 // toolOperationFn abstracts InstallTools and UpgradeTools so that
 // runToolOperation can handle both operations uniformly.
 type toolOperationFn func(ctx context.Context, ids []string) ([]*tool.InstallResult, error)
@@ -1238,7 +1249,7 @@ func runToolOperation(
 						Action:  action,
 						Success: false,
 					})
-					return uxlib.Warning, fmt.Errorf(
+					return uxlib.Error, fmt.Errorf(
 						"%s did not succeed", action,
 					)
 				}
@@ -1293,7 +1304,7 @@ func runToolOperation(
 				})
 
 				if !depResult.Success {
-					return uxlib.Warning, fmt.Errorf("%s did not succeed", action)
+					return uxlib.Error, fmt.Errorf("%s did not succeed", action)
 				}
 				return uxlib.Success, nil
 			},

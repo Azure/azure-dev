@@ -19,12 +19,12 @@ type ToolCategory string
 const (
 	// ToolCategoryCLI is a standalone command-line binary (e.g. az, copilot).
 	ToolCategoryCLI ToolCategory = "cli"
-	// ToolCategoryExtension is an IDE extension (e.g. VS Code extensions).
-	ToolCategoryExtension ToolCategory = "extension"
+	// ToolCategoryVSCodeExtension is a VS Code extension.
+	ToolCategoryVSCodeExtension ToolCategory = "vscode-extension"
 	// ToolCategoryServer is a long-running background process or server (e.g. MCP server).
 	ToolCategoryServer ToolCategory = "server"
-	// ToolCategoryLibrary is an azd extension or plugin library.
-	ToolCategoryLibrary ToolCategory = "library"
+	// ToolCategoryAzdExtension is an azd extension installed via `azd extension install`.
+	ToolCategoryAzdExtension ToolCategory = "azd-extension"
 )
 
 // ToolPriority indicates how strongly a tool is recommended.
@@ -74,7 +74,7 @@ type ToolDefinition struct {
 	Name string
 	// Description summarizes what the tool does in one sentence.
 	Description string
-	// Category classifies the tool (CLI, extension, server, or library).
+	// Category classifies the tool (CLI, VS Code extension, server, or azd extension).
 	Category ToolCategory
 	// Priority indicates whether the tool is recommended or optional.
 	Priority ToolPriority
@@ -204,7 +204,7 @@ func vscodeAzureTools() *ToolDefinition {
 		Name: "Azure Tools VS Code Extension",
 		Description: "VS Code extension for browsing and managing " +
 			"Azure resources.",
-		Category:      ToolCategoryExtension,
+		Category:      ToolCategoryVSCodeExtension,
 		Priority:      ToolPriorityRecommended,
 		Website:       "https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azureresourcegroups",
 		DetectCommand: "code",
@@ -222,7 +222,7 @@ func vscodeBicep() *ToolDefinition {
 		Id:            "vscode-bicep",
 		Name:          "Bicep VS Code Extension",
 		Description:   "VS Code extension providing language support for Azure Bicep.",
-		Category:      ToolCategoryExtension,
+		Category:      ToolCategoryVSCodeExtension,
 		Priority:      ToolPriorityRecommended,
 		Website:       "https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-bicep",
 		DetectCommand: "code",
@@ -240,7 +240,7 @@ func vscodeGitHubCopilot() *ToolDefinition {
 		Id:            "GitHub.copilot-chat",
 		Name:          "GitHub Copilot Chat VS Code Extension",
 		Description:   "VS Code extension for AI-powered code completions, chat, and agent mode.",
-		Category:      ToolCategoryExtension,
+		Category:      ToolCategoryVSCodeExtension,
 		Priority:      ToolPriorityOptional,
 		Website:       "https://marketplace.visualstudio.com/items?itemName=GitHub.copilot-chat",
 		DetectCommand: "code",
@@ -275,18 +275,17 @@ func azureMCPServer() *ToolDefinition {
 
 func azdAIExtensions() *ToolDefinition {
 	return &ToolDefinition{
-		Id:            "azd-ai-extensions",
-		Name:          "azd AI Extensions",
+		Id:            "azure.ai.agents",
+		Name:          "azd AI Agent Extensions",
 		Description:   "Azure Developer CLI extensions for AI agent workflows.",
-		Category:      ToolCategoryLibrary,
+		Category:      ToolCategoryAzdExtension,
 		Priority:      ToolPriorityOptional,
 		Website:       "https://learn.microsoft.com/azure/developer/azure-developer-cli/",
 		DetectCommand: "azd",
 		VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
 		InstallStrategies: allPlatforms(InstallStrategy{
-			InstallCommand: "azd extension install azure.ai.agents",
+			InstallCommand: "azd extension install azure.ai.agents --source azd",
 		}),
-		Dependencies: []string{"az-cli"},
 	}
 }
 

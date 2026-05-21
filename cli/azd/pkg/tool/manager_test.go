@@ -256,6 +256,31 @@ func TestManager_InstallTools(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, results)
 	})
+}
+
+func TestManager_InstallToolsDependencyResolution(t *testing.T) {
+	t.Parallel()
+
+	// Two synthetic tools: "dependent" requires "base".
+	baseTool := func() *ToolDefinition {
+		return &ToolDefinition{Id: "base"}
+	}
+	dependentTool := func() *ToolDefinition {
+		return &ToolDefinition{
+			Id:           "dependent",
+			Dependencies: []string{"base"},
+		}
+	}
+
+	// newMgr builds a Manager whose manifest contains only the
+	// synthetic tools so the test is isolated from BuiltInTools().
+	newMgr := func(det Detector, inst Installer) *Manager {
+		return &Manager{
+			manifest:  []*ToolDefinition{baseTool(), dependentTool()},
+			detector:  det,
+			installer: inst,
+		}
+	}
 
 	t.Run("ResolvesUninstalledDependencies", func(t *testing.T) {
 		t.Parallel()
@@ -267,48 +292,30 @@ func TestManager_InstallTools(t *testing.T) {
 				tool *ToolDefinition,
 			) (*InstallResult, error) {
 				installedIDs = append(installedIDs, tool.Id)
-				return &InstallResult{
-					Tool:    tool,
-					Success: true,
-				}, nil
+				return &InstallResult{Tool: tool, Success: true}, nil
 			},
 		}
 
+		// "base" is not installed, triggering dependency resolution.
 		det := &mockDetector{
 			detectToolFn: func(
 				_ context.Context,
 				tool *ToolDefinition,
 			) (*ToolStatus, error) {
-				// az-cli is NOT installed yet, triggering
-				// dependency resolution.
-				if tool.Id == "az-cli" {
-					return &ToolStatus{
-						Tool:      tool,
-						Installed: false,
-					}, nil
-				}
 				return &ToolStatus{
 					Tool:      tool,
-					Installed: true,
+					Installed: tool.Id != "base",
 				}, nil
 			},
 		}
 
-		mgr := NewManager(det, inst, nil)
-
-		// azd-ai-extensions depends on az-cli.
-		results, err := mgr.InstallTools(
-			t.Context(),
-			[]string{"azd-ai-extensions"},
-		)
+		mgr := newMgr(det, inst)
+		results, err := mgr.InstallTools(t.Context(), []string{"dependent"})
 
 		require.NoError(t, err)
-		require.Len(t, results, 2,
-			"should install dep + requested tool")
-
-		// az-cli should be first (dependency).
-		assert.Equal(t, "az-cli", installedIDs[0])
-		assert.Equal(t, "azd-ai-extensions", installedIDs[1])
+		require.Len(t, results, 2, "should install dep + requested tool")
+		assert.Equal(t, []string{"base", "dependent"}, installedIDs,
+			"dependency must be installed first")
 	})
 
 	t.Run("SkipsDependencyAlreadyInstalled", func(t *testing.T) {
@@ -321,36 +328,26 @@ func TestManager_InstallTools(t *testing.T) {
 				tool *ToolDefinition,
 			) (*InstallResult, error) {
 				installedIDs = append(installedIDs, tool.Id)
-				return &InstallResult{
-					Tool:    tool,
-					Success: true,
-				}, nil
+				return &InstallResult{Tool: tool, Success: true}, nil
 			},
 		}
 
+		// Everything already installed; dependency must be skipped.
 		det := &mockDetector{
 			detectToolFn: func(
 				_ context.Context,
 				tool *ToolDefinition,
 			) (*ToolStatus, error) {
-				// az IS already installed.
-				return &ToolStatus{
-					Tool:      tool,
-					Installed: true,
-				}, nil
+				return &ToolStatus{Tool: tool, Installed: true}, nil
 			},
 		}
 
-		mgr := NewManager(det, inst, nil)
-		results, err := mgr.InstallTools(
-			t.Context(),
-			[]string{"azd-ai-extensions"},
-		)
+		mgr := newMgr(det, inst)
+		results, err := mgr.InstallTools(t.Context(), []string{"dependent"})
 
 		require.NoError(t, err)
-		// Only 1 result: the requested tool (dep skipped).
-		require.Len(t, results, 1)
-		assert.Equal(t, "azd-ai-extensions", results[0].Tool.Id)
+		require.Len(t, results, 1, "dep should be skipped")
+		assert.Equal(t, "dependent", results[0].Tool.Id)
 	})
 
 	t.Run("FailedDependencySkipsDependent", func(t *testing.T) {
@@ -361,17 +358,14 @@ func TestManager_InstallTools(t *testing.T) {
 				_ context.Context,
 				tool *ToolDefinition,
 			) (*InstallResult, error) {
-				if tool.Id == "az-cli" {
+				if tool.Id == "base" {
 					return &InstallResult{
 						Tool:    tool,
 						Success: false,
 						Error:   errors.New("install failed"),
 					}, nil
 				}
-				return &InstallResult{
-					Tool:    tool,
-					Success: true,
-				}, nil
+				return &InstallResult{Tool: tool, Success: true}, nil
 			},
 		}
 
@@ -380,34 +374,22 @@ func TestManager_InstallTools(t *testing.T) {
 				_ context.Context,
 				tool *ToolDefinition,
 			) (*ToolStatus, error) {
-				// az-cli not installed => triggers dep install.
-				if tool.Id == "az-cli" {
-					return &ToolStatus{
-						Tool:      tool,
-						Installed: false,
-					}, nil
-				}
 				return &ToolStatus{
 					Tool:      tool,
-					Installed: true,
+					Installed: tool.Id != "base",
 				}, nil
 			},
 		}
 
-		mgr := NewManager(det, inst, nil)
-		results, err := mgr.InstallTools(
-			t.Context(),
-			[]string{"azd-ai-extensions"},
-		)
+		mgr := newMgr(det, inst)
+		results, err := mgr.InstallTools(t.Context(), []string{"dependent"})
 
 		require.NoError(t, err)
 		require.Len(t, results, 2)
-
-		// Both should have errors: dep failed, dependent skipped.
+		// Dep result records the install failure; dependent is skipped.
 		assert.Error(t, results[0].Error)
 		assert.Error(t, results[1].Error)
-		assert.Contains(t, results[1].Error.Error(),
-			"dependency failed")
+		assert.Contains(t, results[1].Error.Error(), "dependency")
 	})
 }
 

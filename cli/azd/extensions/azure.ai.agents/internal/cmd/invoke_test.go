@@ -5,18 +5,102 @@ package cmd
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/grpc"
 )
+
+type invokeUserConfigServer struct {
+	azdext.UnimplementedUserConfigServiceServer
+	mu     sync.Mutex
+	values map[string][]byte
+}
+
+func newInvokeUserConfigServer() *invokeUserConfigServer {
+	return &invokeUserConfigServer{values: make(map[string][]byte)}
+}
+
+func (s *invokeUserConfigServer) Get(
+	_ context.Context,
+	req *azdext.GetUserConfigRequest,
+) (*azdext.GetUserConfigResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	value, found := s.values[req.Path]
+	return &azdext.GetUserConfigResponse{Value: value, Found: found}, nil
+}
+
+func (s *invokeUserConfigServer) Set(
+	_ context.Context,
+	req *azdext.SetUserConfigRequest,
+) (*azdext.EmptyResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.values[req.Path] = req.Value
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *invokeUserConfigServer) setJSON(t *testing.T, path string, value any) {
+	t.Helper()
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal user config value: %v", err)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.values[path] = data
+}
+
+func newInvokeTestAzdClient(t *testing.T, userConfigServer azdext.UserConfigServiceServer) *azdext.AzdClient {
+	t.Helper()
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterUserConfigServiceServer(grpcServer, userConfigServer)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	go func() {
+		_ = grpcServer.Serve(listener)
+	}()
+
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+
+	azdClient, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	if err != nil {
+		t.Fatalf("NewAzdClient: %v", err)
+	}
+
+	t.Cleanup(func() {
+		azdClient.Close()
+	})
+
+	return azdClient
+}
 
 func TestReadSSEStream(t *testing.T) {
 	t.Parallel()
@@ -272,6 +356,298 @@ func TestInvokeCommandTimeoutDefault(t *testing.T) {
 	}
 }
 
+func TestInvokeCommandVersionFlagRegistered(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInvokeCommand(nil)
+	versionFlag := cmd.Flags().Lookup("version")
+	if versionFlag == nil {
+		t.Fatal("version flag not registered")
+	}
+	if versionFlag.DefValue != "" {
+		t.Errorf("version default = %q, want empty", versionFlag.DefValue)
+	}
+}
+
+func TestInvokeVersionFlagValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		args   []string
+		errSub string
+	}{
+		{
+			name:   "rejects empty version",
+			args:   []string{"--version", "   ", "hi"},
+			errSub: "requires a non-empty agent version",
+		},
+		{
+			name:   "rejects local",
+			args:   []string{"--version", "3", "--local", "hi"},
+			errSub: "cannot use --version with --local",
+		},
+		{
+			name:   "rejects explicit session id",
+			args:   []string{"--version", "3", "--session-id", "existing-session", "hi"},
+			errSub: "cannot use --version with --session-id",
+		},
+		{
+			name:   "rejects unsupported version characters",
+			args:   []string{"--version", "3?api-version=evil", "hi"},
+			errSub: "unsupported characters",
+		},
+		{
+			name:   "rejects oversized version",
+			args:   []string{"--version", strings.Repeat("a", maxInvokeVersionLength+1), "hi"},
+			errSub: "at most 128 characters",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := newInvokeCommand(nil)
+			cmd.SetArgs(tt.args)
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.errSub) {
+				t.Errorf("error %q should contain %q", err.Error(), tt.errSub)
+			}
+		})
+	}
+}
+
+func TestInvokeCommandIsolationFlags(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInvokeCommand(nil)
+	for _, name := range []string{"user-isolation-key", "chat-isolation-key"} {
+		flag := cmd.Flags().Lookup(name)
+		if flag == nil {
+			t.Fatalf("%s flag not registered", name)
+		}
+		if flag.DefValue != "" {
+			t.Errorf("%s default = %q, want empty", name, flag.DefValue)
+		}
+	}
+}
+
+func TestIsolationHeaderFlags_SessionRequestOptions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		flags    *isolationHeaderFlags
+		wantNil  bool
+		wantUser string
+		wantChat string
+	}{
+		{
+			name:     "both keys set",
+			flags:    &isolationHeaderFlags{userIsolationKey: "u", chatIsolationKey: "c"},
+			wantUser: "u",
+			wantChat: "c",
+		},
+		{
+			name:     "user key only",
+			flags:    &isolationHeaderFlags{userIsolationKey: "u"},
+			wantUser: "u",
+			wantChat: "",
+		},
+		{
+			name:     "chat key only",
+			flags:    &isolationHeaderFlags{chatIsolationKey: "c"},
+			wantUser: "",
+			wantChat: "c",
+		},
+		{
+			name:    "neither key set returns nil",
+			flags:   &isolationHeaderFlags{},
+			wantNil: true,
+		},
+		{
+			name:    "nil flags returns nil",
+			flags:   nil,
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			opts := tt.flags.sessionRequestOptions()
+			if tt.wantNil {
+				if opts != nil {
+					t.Errorf("sessionRequestOptions() = %+v, want nil", opts)
+				}
+				return
+			}
+			if opts == nil {
+				t.Fatal("sessionRequestOptions() returned nil, want non-nil")
+			}
+			if opts.UserIsolationKey != tt.wantUser {
+				t.Errorf("UserIsolationKey = %q, want %q", opts.UserIsolationKey, tt.wantUser)
+			}
+			if opts.ChatIsolationKey != tt.wantChat {
+				t.Errorf("ChatIsolationKey = %q, want %q", opts.ChatIsolationKey, tt.wantChat)
+			}
+		})
+	}
+}
+
+func TestValidateInvokeVersionFlagsAllowsConversationFlags(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		flags *invokeFlags
+	}{
+		{
+			name: "explicit conversation id",
+			flags: &invokeFlags{
+				version:      "3",
+				conversation: "existing-conversation",
+			},
+		},
+		{
+			name: "new conversation",
+			flags: &invokeFlags{
+				version:         "3",
+				newConversation: true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := newInvokeCommand(nil)
+			if err := validateInvokeVersionFlags(cmd, tt.flags); err != nil {
+				t.Fatalf("validateInvokeVersionFlags rejected %s with --version: %v", tt.name, err)
+			}
+		})
+	}
+}
+
+func TestAgentEndpointAllowsVersionFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInvokeCommand(nil)
+	err := validateAgentEndpointFlags(cmd, &invokeFlags{
+		agentEndpoint: "https://acct.services.ai.azure.com/api/projects/proj/agents/" +
+			"hello/endpoint/protocols/invocations",
+		version: "3",
+	})
+	if err != nil {
+		t.Fatalf("validateAgentEndpointFlags rejected --version: %v", err)
+	}
+}
+
+func TestValidateInvokeVersionValue(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		version string
+		wantErr bool
+	}{
+		{name: "integer", version: "3"},
+		{name: "semver", version: "1.2.3-beta_1"},
+		{name: "question mark", version: "3?api-version=evil", wantErr: true},
+		{name: "slash", version: "path/to/version", wantErr: true},
+		{name: "unicode", version: "v三", wantErr: true},
+		{name: "too long", version: strings.Repeat("a", maxInvokeVersionLength+1), wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateInvokeVersionValue(tt.version)
+			if tt.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestIsolationHeaderFlags_SessionRequestOptionsWithSessionKey(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		flags       *isolationHeaderFlags
+		sessionKey  string
+		wantNil     bool
+		wantUser    string
+		wantChat    string
+		wantSession string
+	}{
+		{
+			name:        "session key appended to existing options",
+			flags:       &isolationHeaderFlags{userIsolationKey: "u"},
+			sessionKey:  "sess",
+			wantUser:    "u",
+			wantSession: "sess",
+		},
+		{
+			name:        "session key creates options when flags are empty",
+			flags:       &isolationHeaderFlags{},
+			sessionKey:  "sess",
+			wantSession: "sess",
+		},
+		{
+			name:    "no keys at all returns nil",
+			flags:   &isolationHeaderFlags{},
+			wantNil: true,
+		},
+		{
+			name:        "nil flags with session key creates options",
+			flags:       nil,
+			sessionKey:  "sess",
+			wantSession: "sess",
+		},
+		{
+			name:    "nil flags with empty session key returns nil",
+			flags:   nil,
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			opts := tt.flags.sessionRequestOptionsWithSessionKey(tt.sessionKey)
+			if tt.wantNil {
+				if opts != nil {
+					t.Errorf("sessionRequestOptionsWithSessionKey() = %+v, want nil", opts)
+				}
+				return
+			}
+			if opts == nil {
+				t.Fatal("sessionRequestOptionsWithSessionKey() returned nil, want non-nil")
+			}
+			if opts.UserIsolationKey != tt.wantUser {
+				t.Errorf("UserIsolationKey = %q, want %q", opts.UserIsolationKey, tt.wantUser)
+			}
+			if opts.ChatIsolationKey != tt.wantChat {
+				t.Errorf("ChatIsolationKey = %q, want %q", opts.ChatIsolationKey, tt.wantChat)
+			}
+			if opts.SessionIsolationKey != tt.wantSession {
+				t.Errorf("SessionIsolationKey = %q, want %q", opts.SessionIsolationKey, tt.wantSession)
+			}
+		})
+	}
+}
+
 func TestResolveProtocol_ExplicitFlag(t *testing.T) {
 	t.Parallel()
 
@@ -366,7 +742,8 @@ func TestProtocolFlagValidation(t *testing.T) {
 func TestAgentEndpointFlagValidation(t *testing.T) {
 	t.Parallel()
 
-	const validURL = "https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/invocations?api-version=2025-11-15-preview"
+	const validURL = "https://acct.services.ai.azure.com/api/projects/proj/agents/" +
+		"hello/endpoint/protocols/invocations?api-version=2025-11-15-preview"
 
 	tests := []struct {
 		name    string
@@ -433,6 +810,225 @@ func TestAgentEndpointFlagValidation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestResolveRemoteSessionID_ReusesCachedVersionSession(t *testing.T) {
+	orig := createInvokeVersionSession
+	t.Cleanup(func() { createInvokeVersionSession = orig })
+
+	createInvokeVersionSession = func(
+		context.Context,
+		string,
+		string,
+		string,
+	) (*agent_api.AgentSessionResource, error) {
+		t.Fatal("createInvokeVersionSession should not be called when a cached session exists")
+		return nil, nil
+	}
+
+	userConfig := newInvokeUserConfigServer()
+	azdClient := newInvokeTestAzdClient(t, userConfig)
+	projectEndpoint := "https://acct.services.ai.azure.com/api/projects/proj"
+	agentKey := buildAgentKey(projectEndpoint, "hello", "3", false)
+	userConfig.setJSON(t, configPath("sessions"), map[string]string{agentKey: "cached-session"})
+
+	action := &InvokeAction{flags: &invokeFlags{version: "3"}}
+	rc := &remoteContext{
+		name:            "hello",
+		projectEndpoint: projectEndpoint,
+		version:         "3",
+		agentKey:        agentKey,
+		azdClient:       azdClient,
+	}
+
+	sid, err := action.resolveRemoteSessionID(t.Context(), rc)
+	if err != nil {
+		t.Fatalf("resolveRemoteSessionID: %v", err)
+	}
+	if sid != "cached-session" {
+		t.Errorf("session id = %q, want cached-session", sid)
+	}
+}
+
+func TestResolveRemoteSessionID_NewSessionSkipsCachedVersionSession(t *testing.T) {
+	orig := createInvokeVersionSession
+	t.Cleanup(func() { createInvokeVersionSession = orig })
+
+	var calls int
+	createInvokeVersionSession = func(
+		context.Context,
+		string,
+		string,
+		string,
+	) (*agent_api.AgentSessionResource, error) {
+		calls++
+		return &agent_api.AgentSessionResource{AgentSessionID: "fresh-session"}, nil
+	}
+
+	userConfig := newInvokeUserConfigServer()
+	azdClient := newInvokeTestAzdClient(t, userConfig)
+	projectEndpoint := "https://acct.services.ai.azure.com/api/projects/proj"
+	agentKey := buildAgentKey(projectEndpoint, "hello", "3", false)
+	userConfig.setJSON(t, configPath("sessions"), map[string]string{agentKey: "cached-session"})
+
+	action := &InvokeAction{flags: &invokeFlags{version: "3", newSession: true}}
+	rc := &remoteContext{
+		name:            "hello",
+		projectEndpoint: projectEndpoint,
+		version:         "3",
+		agentKey:        agentKey,
+		azdClient:       azdClient,
+	}
+
+	sid, err := action.resolveRemoteSessionID(t.Context(), rc)
+	if err != nil {
+		t.Fatalf("resolveRemoteSessionID: %v", err)
+	}
+	if sid != "fresh-session" {
+		t.Errorf("session id = %q, want fresh-session", sid)
+	}
+	if calls != 1 {
+		t.Errorf("createInvokeVersionSession calls = %d, want 1", calls)
+	}
+}
+
+func TestResolveRemoteSessionID_CreatesSessionForExplicitVersion(t *testing.T) {
+	orig := createInvokeVersionSession
+	t.Cleanup(func() { createInvokeVersionSession = orig })
+
+	var calls int
+	createInvokeVersionSession = func(
+		ctx context.Context,
+		projectEndpoint string,
+		agentName string,
+		agentVersion string,
+	) (*agent_api.AgentSessionResource, error) {
+		calls++
+		if projectEndpoint != "https://acct.services.ai.azure.com/api/projects/proj" {
+			t.Errorf("projectEndpoint = %q", projectEndpoint)
+		}
+		if agentName != "hello" {
+			t.Errorf("agentName = %q", agentName)
+		}
+		if agentVersion != "3" {
+			t.Errorf("agentVersion = %q", agentVersion)
+		}
+		return &agent_api.AgentSessionResource{AgentSessionID: "session-v3"}, nil
+	}
+
+	action := &InvokeAction{flags: &invokeFlags{version: "3"}}
+	rc := &remoteContext{
+		name:            "hello",
+		projectEndpoint: "https://acct.services.ai.azure.com/api/projects/proj",
+		version:         "3",
+		agentKey:        buildAgentKey("https://acct.services.ai.azure.com/api/projects/proj", "hello", "3", false),
+	}
+
+	sid, err := action.resolveRemoteSessionID(t.Context(), rc)
+	if err != nil {
+		t.Fatalf("resolveRemoteSessionID: %v", err)
+	}
+	if sid != "session-v3" {
+		t.Errorf("session id = %q, want session-v3", sid)
+	}
+	if calls != 1 {
+		t.Errorf("createInvokeVersionSession calls = %d, want 1", calls)
+	}
+}
+
+func TestResolveRemoteSessionID_ExplicitSessionPreservedWithoutVersion(t *testing.T) {
+	t.Parallel()
+
+	action := &InvokeAction{flags: &invokeFlags{session: "existing-session"}}
+	rc := &remoteContext{
+		name:            "hello",
+		projectEndpoint: "https://acct.services.ai.azure.com/api/projects/proj",
+	}
+
+	sid, err := action.resolveRemoteSessionID(t.Context(), rc)
+	if err != nil {
+		t.Fatalf("resolveRemoteSessionID: %v", err)
+	}
+	if sid != "existing-session" {
+		t.Errorf("session id = %q, want existing-session", sid)
+	}
+}
+
+func TestVersionedConversationLookupDoesNotUseLegacyAgentName(t *testing.T) {
+	t.Parallel()
+
+	userConfig := newInvokeUserConfigServer()
+	azdClient := newInvokeTestAzdClient(t, userConfig)
+	projectEndpoint := "https://acct.services.ai.azure.com/api/projects/proj"
+	versionedKey := buildAgentKey(projectEndpoint, "hello", "3", false)
+	userConfig.setJSON(t, configPath("conversations"), map[string]string{"hello": "legacy-conversation"})
+
+	rc := &remoteContext{name: "hello", version: "3"}
+	got, err := getContextValueWithFallback(
+		t.Context(),
+		azdClient,
+		"conversations",
+		versionedKey,
+		rc.legacyKeys(),
+	)
+	if err != nil {
+		t.Fatalf("getContextValueWithFallback: %v", err)
+	}
+	if got != "" {
+		t.Errorf("conversation = %q, want empty because versioned lookup must not use legacy fallback", got)
+	}
+}
+
+func TestVersionedExplicitConversationPersistsUnderVersionKey(t *testing.T) {
+	t.Parallel()
+
+	userConfig := newInvokeUserConfigServer()
+	azdClient := newInvokeTestAzdClient(t, userConfig)
+	projectEndpoint := "https://acct.services.ai.azure.com/api/projects/proj"
+	versionedKey := buildAgentKey(projectEndpoint, "hello", "3", false)
+
+	got, err := resolveConversationID(
+		t.Context(),
+		azdClient,
+		versionedKey,
+		"existing-conversation",
+		false,
+		projectEndpoint,
+		"token",
+		"hello",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("resolveConversationID: %v", err)
+	}
+	if got != "existing-conversation" {
+		t.Fatalf("conversation = %q, want existing-conversation", got)
+	}
+
+	userConfig.mu.Lock()
+	defer userConfig.mu.Unlock()
+
+	var conversations map[string]string
+	if err := json.Unmarshal(userConfig.values[configPath("conversations")], &conversations); err != nil {
+		t.Fatalf("unmarshal persisted conversations: %v", err)
+	}
+	if got := conversations[versionedKey]; got != "existing-conversation" {
+		t.Fatalf("persisted conversation = %q, want existing-conversation", got)
+	}
+}
+
+func TestRemoteContextLegacyKeysSkippedForExplicitVersion(t *testing.T) {
+	t.Parallel()
+
+	rc := &remoteContext{name: "hello", version: "3"}
+	if got := rc.legacyKeys(); len(got) != 0 {
+		t.Errorf("legacyKeys = %v, want none for explicit version", got)
+	}
+
+	rc.version = ""
+	if got := rc.legacyKeys(); len(got) != 1 || got[0] != "hello" {
+		t.Errorf("legacyKeys = %v, want [hello]", got)
 	}
 }
 
@@ -659,7 +1255,7 @@ func TestHandleInvocationResponse_Routing(t *testing.T) {
 				resp.Header.Set(k, v)
 			}
 
-			err := handleInvocationResponse(t.Context(), resp, "", "", "test-agent", 10*time.Second)
+			err := handleInvocationResponse(t.Context(), resp, "", "", "test-agent", 10*time.Second, nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -912,7 +1508,7 @@ func TestHandleInvocationLRO(t *testing.T) {
 				resp.Header.Set("x-agent-invocation-id", tt.initial202Header)
 			}
 
-			err := handleInvocationLRO(t.Context(), resp, "", "", "test-agent", tt.timeout)
+			err := handleInvocationLRO(t.Context(), resp, "", "", "test-agent", tt.timeout, nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -925,6 +1521,145 @@ func TestHandleInvocationLRO(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestHandleInvocationLRO_PropagatesIsolationHeaders(t *testing.T) {
+	pollRequests := captureInvocationLROPollRequests(
+		t,
+		&agent_api.SessionRequestOptions{
+			UserIsolationKey: "user-1",
+			ChatIsolationKey: "chat-1",
+		},
+		`{"status":"running"}`,
+		`{"status":"completed"}`,
+	)
+	if len(pollRequests) < 2 {
+		t.Fatalf("poll request count = %d, want at least 2", len(pollRequests))
+	}
+	assertPollRequestsHaveHeaders(t, pollRequests, "user-1", "chat-1")
+}
+
+func TestHandleInvocationLRO_PropagatesPartialIsolationHeaders(t *testing.T) {
+	tests := []struct {
+		name     string
+		options  *agent_api.SessionRequestOptions
+		wantUser string
+		wantChat string
+	}{
+		{
+			name: "user only",
+			options: &agent_api.SessionRequestOptions{
+				UserIsolationKey: "user-1",
+			},
+			wantUser: "user-1",
+		},
+		{
+			name: "chat only",
+			options: &agent_api.SessionRequestOptions{
+				ChatIsolationKey: "chat-1",
+			},
+			wantChat: "chat-1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pollRequests := captureInvocationLROPollRequests(t, tt.options)
+			assertPollRequestsHaveHeaders(t, pollRequests, tt.wantUser, tt.wantChat)
+		})
+	}
+}
+
+func captureInvocationLROPollRequests(
+	t *testing.T,
+	options *agent_api.SessionRequestOptions,
+	pollBodies ...string,
+) []*http.Request {
+	t.Helper()
+
+	origInterval := defaultLROPollInterval
+	defaultLROPollInterval = time.Millisecond
+	t.Cleanup(func() { defaultLROPollInterval = origInterval })
+
+	// Use two-poll scenario: first poll returns "running", second returns "completed".
+	// Verify that isolation headers are sent on every poll, not just the first.
+	if len(pollBodies) == 0 {
+		pollBodies = []string{
+			`{"status":"running"}`,
+			`{"status":"completed"}`,
+		}
+	}
+
+	numPolls := len(pollBodies)
+	pollReqCh := make(chan *http.Request, numPolls)
+	respQueue := make(chan string, numPolls)
+	for _, body := range pollBodies {
+		respQueue <- body
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pollReqCh <- r
+		body := <-respQueue
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	reqURL, _ := url.Parse(srv.URL + "/invocations?api-version=test")
+	resp := &http.Response{
+		StatusCode: http.StatusAccepted,
+		Status:     "202 Accepted",
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader(`{"status":"accepted"}`)),
+		Request:    &http.Request{URL: reqURL},
+	}
+	resp.Header.Set("x-agent-invocation-id", "inv-headers")
+
+	err := handleInvocationLRO(
+		t.Context(),
+		resp,
+		"",
+		"token",
+		"test-agent",
+		time.Second,
+		options,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	close(pollReqCh)
+	pollRequests := make([]*http.Request, 0, numPolls)
+	for r := range pollReqCh {
+		pollRequests = append(pollRequests, r)
+	}
+	if len(pollRequests) != numPolls {
+		t.Errorf("expected %d poll requests, got %d", numPolls, len(pollRequests))
+	}
+
+	return pollRequests
+}
+
+func assertPollRequestsHaveHeaders(
+	t *testing.T,
+	pollRequests []*http.Request,
+	wantUser string,
+	wantChat string,
+) {
+	t.Helper()
+
+	for i, r := range pollRequests {
+		pollNumber := i + 1
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Errorf("poll %d: Authorization = %q, want Bearer token", pollNumber, got)
+		}
+		if got := r.Header.Get(agent_api.AgentUserIsolationKeyHeader); got != wantUser {
+			t.Errorf("poll %d: %s = %q, want %q", pollNumber, agent_api.AgentUserIsolationKeyHeader, got, wantUser)
+		}
+		if got := r.Header.Get(agent_api.AgentChatIsolationKeyHeader); got != wantChat {
+			t.Errorf("poll %d: %s = %q, want %q", pollNumber, agent_api.AgentChatIsolationKeyHeader, got, wantChat)
+		}
 	}
 }
 
@@ -1033,7 +1768,7 @@ func TestCreateConversation(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			id, err := createConversation(t.Context(), srv.URL, tt.agentName, "test-token")
+			id, err := createConversation(t.Context(), srv.URL, tt.agentName, "test-token", nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -1054,6 +1789,43 @@ func TestCreateConversation(t *testing.T) {
 				t.Errorf("id = %q, want %q", id, tt.wantID)
 			}
 		})
+	}
+}
+
+func TestCreateConversation_PropagatesIsolationHeaders(t *testing.T) {
+	t.Parallel()
+
+	reqCh := make(chan *http.Request, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqCh <- r
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"conv-headers"}`))
+	}))
+	defer srv.Close()
+
+	id, err := createConversation(
+		t.Context(),
+		srv.URL,
+		"my-agent",
+		"test-token",
+		&agent_api.SessionRequestOptions{
+			UserIsolationKey: "user-1",
+			ChatIsolationKey: "chat-1",
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != "conv-headers" {
+		t.Fatalf("id = %q, want conv-headers", id)
+	}
+
+	request := <-reqCh
+	if got := request.Header.Get(agent_api.AgentUserIsolationKeyHeader); got != "user-1" {
+		t.Errorf("%s = %q, want user-1", agent_api.AgentUserIsolationKeyHeader, got)
+	}
+	if got := request.Header.Get(agent_api.AgentChatIsolationKeyHeader); got != "chat-1" {
+		t.Errorf("%s = %q, want chat-1", agent_api.AgentChatIsolationKeyHeader, got)
 	}
 }
 

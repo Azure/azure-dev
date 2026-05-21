@@ -76,47 +76,74 @@ default:            → error: "Unsupported auth type"
 }
 ```
 
-### 3.2 Full Auth Type Inventory
+### 3.2 Allowed Auth Types for RemoteTool / RemoteA2A
 
-The ARM Go SDK (`armcognitiveservices` v2.0.0) exposes the following `ConnectionAuthType` constants
-and corresponding property structs:
+ARM explicitly validates auth types per connection kind. For `RemoteTool` and `RemoteA2A`
+connections, the **server-accepted** auth types are (from ARM 400 error response):
 
-| Auth Type | ARM SDK Constant | SDK Struct | In CLI? | Feasibility |
-|-----------|-----------------|------------|---------|-------------|
-| `ApiKey` | `ConnectionAuthTypeAPIKey` | `APIKeyAuthConnectionProperties` | ✅ Shipped | — |
-| `CustomKeys` | `ConnectionAuthTypeCustomKeys` | `CustomKeysConnectionProperties` | ✅ Shipped | — |
-| `None` | `ConnectionAuthTypeNone` | `NoneAuthTypeConnectionProperties` | ✅ Shipped | — |
-| **`OAuth2`** | `ConnectionAuthTypeOAuth2` | `OAuth2AuthTypeConnectionProperties` | ❌ Missing | ✅ **SDK struct exists — wire it** |
-| **`AAD`** | `ConnectionAuthTypeAAD` | `AADAuthTypeConnectionProperties` | ❌ Missing | ✅ **SDK struct exists — wire it** |
-| **`ManagedIdentity`** | `ConnectionAuthTypeManagedIdentity` | `ManagedIdentityAuthTypeConnectionProperties` | ❌ Missing | ✅ **SDK struct exists — wire it** |
-| `AccessKey` | `ConnectionAuthTypeAccessKey` | `AccessKeyAuthTypeConnectionProperties` | ❌ Missing | ✅ SDK struct exists |
-| `AccountKey` | `ConnectionAuthTypeAccountKey` | `AccountKeyAuthTypeConnectionProperties` | ❌ Missing | ✅ SDK struct exists |
-| `SAS` | `ConnectionAuthTypeSAS` | `SASAuthTypeConnectionProperties` | ❌ Missing | ✅ SDK struct exists |
-| `ServicePrincipal` | `ConnectionAuthTypeServicePrincipal` | `ServicePrincipalAuthTypeConnectionProperties` | ❌ Missing | ✅ SDK struct exists |
-| `PAT` | `ConnectionAuthTypePAT` | `PATAuthTypeConnectionProperties` | ❌ Missing | ✅ SDK struct exists |
-| `UsernamePassword` | `ConnectionAuthTypeUsernamePassword` | `UsernamePasswordAuthTypeConnectionProperties` | ❌ Missing | ✅ SDK struct exists |
-| **`UserEntraToken`** | ❌ Not in SDK | ❌ No struct | ❌ Missing | ⚠️ **Requires workaround** |
-| **`ProjectManagedIdentity`** | ❌ Not in SDK | ❌ No struct | ❌ Missing | ⚠️ **Requires workaround** |
-| `AgenticIdentityToken` | ❌ Not in SDK | ❌ No struct | ❌ Missing | ⚠️ Requires workaround |
+```
+None, CustomKeys, ProjectManagedIdentity, OAuth2, DeveloperConnection,
+UserEntraToken, AgentUserImpersonation, AgenticIdentityToken, AgenticUser,
+UserTokenAndProjectManagedIdentity
+```
 
-### 3.3 Linda's Reported Gaps (Confirmed)
+> **Note:** `AAD` and `ManagedIdentity` (from the ARM Go SDK) are **NOT** in this list.
+> They are valid for other connection kinds (e.g., `AzureOpenAI`, `ContainerRegistry`)
+> but are **rejected by ARM** for `RemoteTool` and `RemoteA2A` connections.
+
+### 3.3 POC Test Results
+
+We built and tested a POC branch with new auth type support against a live workspace
+(`hosted-agents-bugbash` in `northcentralus`). Results:
+
+| Test | Kind | Auth Type | CLI Flags | Result |
+|------|------|-----------|-----------|--------|
+| RemoteA2A + None | `remote-a2a` | `none` | `--kind remote-a2a --auth-type none` | ✅ Created, listed (`list --kind remote-a2a`), shown, deleted |
+| RemoteA2A + CustomKeys | `remote-a2a` | `custom-keys` | `--kind remote-a2a --custom-key "api-key=xxx"` | ✅ Created, credentials visible via `show --show-credentials` |
+| OAuth2 | `remote-tool` | `oauth2` | `--client-id X --client-secret Y` | ✅ Created, credentials stored (`clientid`, `clientsecret`) |
+| AAD | `remote-tool` | `aad` | `--auth-type aad` | ❌ ARM rejects: "AuthType for RemoteTool can only be None, CustomKeys, ProjectManagedIdentity, OAuth2, ..." |
+| ManagedIdentity | `remote-tool` | `managed-identity` | `--auth-type managed-identity` | ❌ ARM rejects: maps to `RegistryIdentity`, not in allowed list |
+| `list --kind remote-a2a` | — | — | `--kind remote-a2a` | ✅ Correctly filters RemoteA2A connections only |
+
+### 3.4 Full Auth Type Inventory
+
+Based on POC testing and ARM validation, here is the corrected auth type inventory
+for `RemoteTool` / `RemoteA2A` connections:
+
+| Auth Type | ARM-Accepted? | In ARM Go SDK v2.0.0? | In CLI? | POC Tested? | Feasibility |
+|-----------|:---:|:---:|:---:|:---:|-------------|
+| `None` | ✅ | ✅ `NoneAuthTypeConnectionProperties` | ✅ Shipped | ✅ Pass | — |
+| `CustomKeys` | ✅ | ✅ `CustomKeysConnectionProperties` | ✅ Shipped | ✅ Pass | — |
+| `ApiKey` | ✅ | ✅ `APIKeyAuthConnectionProperties` | ✅ Shipped | — | — |
+| **`OAuth2`** | ✅ | ✅ `OAuth2AuthTypeConnectionProperties` | ✅ **POC done** | ✅ Pass | **Ship it** |
+| **`ProjectManagedIdentity`** | ✅ | ❌ No struct | ❌ | — | ⚠️ Raw REST bypass |
+| **`UserEntraToken`** | ✅ | ❌ No struct | ❌ | — | ⚠️ Raw REST bypass + `--audience` flag |
+| `AgenticIdentityToken` | ✅ | ❌ No struct | ❌ | — | ⚠️ Raw REST bypass |
+| `DeveloperConnection` | ✅ | ❌ No struct | ❌ | — | ⚠️ Raw REST bypass |
+| `AgentUserImpersonation` | ✅ | ❌ No struct | ❌ | — | ⚠️ Raw REST bypass |
+| `AgenticUser` | ✅ | ❌ No struct | ❌ | — | ⚠️ Raw REST bypass |
+| `UserTokenAndProjectManagedIdentity` | ✅ | ❌ No struct | ❌ | — | ⚠️ Raw REST bypass |
+| `AAD` | ❌ Rejected | ✅ Has struct | ❌ | ❌ Fail | **Not applicable** for RemoteTool/RemoteA2A |
+| `ManagedIdentity` | ❌ Rejected | ✅ Has struct | ❌ | ❌ Fail | **Not applicable** for RemoteTool/RemoteA2A |
+
+### 3.5 Linda's Reported Gaps — Validated
 
 Linda tested the released CLI and confirmed these auth types are not supported:
 
 | Auth Type | Status | What's Needed |
 |-----------|--------|---------------|
-| **OAuth2** | SDK struct exists (`OAuth2AuthTypeConnectionProperties`) | Add switch case + credential prompts (~30 lines). Needs `--client-id` and `--client-secret` flags. |
-| **ProjectManagedIdentity** | ❌ Not in ARM Go SDK v2.0.0 | Raw REST bypass or SDK update. The Agents service treats this as a distinct type from `ManagedIdentity`. No credentials needed (identity-based). |
-| **UserEntraToken** | ❌ Not in ARM Go SDK v2.0.0 | Raw REST bypass or SDK update. Connections use an `audience` field (e.g., `"https://mcp.ai.azure.com"`) that existing SDK structs don't have. Needs `--audience` flag. |
+| **OAuth2** | ✅ **POC validated — works** | Wire `OAuth2AuthTypeConnectionProperties` + `--client-id`/`--client-secret` flags (~30 lines) |
+| **ProjectManagedIdentity** | ❌ Not in ARM Go SDK v2.0.0 | Raw REST bypass. No credentials needed (identity-based). ~50 lines |
+| **UserEntraToken** | ❌ Not in ARM Go SDK v2.0.0 | Raw REST bypass + `--audience` flag. ~50 lines |
 
-### 3.4 Workaround for SDK-Missing Auth Types
+### 3.6 Workaround for SDK-Missing Auth Types
 
 For `UserEntraToken` and `ProjectManagedIdentity`, the typed ARM SDK doesn't have structs.
 Two approaches:
 
 **Option A: Raw REST bypass** (recommended)
 - When `--auth-type` is `user-entra-token` or `project-managed-identity`, bypass the typed SDK
-- Build the JSON body manually and POST via `runtime.NewRequest` (same pattern as the
+- Build the JSON body manually and PUT via `runtime.NewRequest` (same pattern as the
   existing data-plane client in `foundry_projects_client.go`)
 - Effort: ~50 lines per auth type
 
@@ -125,35 +152,36 @@ Two approaches:
   `ProjectManagedIdentityAuthTypeConnectionProperties` structs
 - Timeline: unknown, depends on SDK team
 
-### 3.5 Proposed Auth Type Changes
+### 3.7 Proposed Auth Type Changes
 
-#### Phase 1 — Immediate (no blockers)
+#### Phase 1 — Immediate (POC validated, no blockers)
 
-Wire the three highest-priority auth types that already have SDK structs:
+Wire OAuth2 — the only high-priority auth type that has an SDK struct AND is accepted by ARM
+for RemoteTool/RemoteA2A:
 
 ```go
 case "oauth2":
     → OAuth2AuthTypeConnectionProperties  // needs --client-id, --client-secret
-case "aad":
-    → AADAuthTypeConnectionProperties     // no credentials, identity-based
-case "managed-identity":
-    → ManagedIdentityAuthTypeConnectionProperties  // no credentials
 ```
 
-New CLI flags needed: `--client-id`, `--client-secret` (for OAuth2 only).
+New CLI flags: `--client-id`, `--client-secret`.
+
+> **Note:** `AAD` and `ManagedIdentity` were initially planned for Phase 1 but **POC testing
+> confirmed ARM rejects them** for RemoteTool/RemoteA2A connections. They are valid for other
+> connection kinds only.
 
 #### Phase 2 — Short-term (raw REST workaround)
 
-Add `user-entra-token` and `project-managed-identity` using raw REST:
+Add `user-entra-token` and `project-managed-identity` using raw REST (no SDK structs available):
 
 ```go
 case "user-entra-token":
-    → raw REST body: { authType: "UserEntraToken", audience: <--audience>, ... }
+    → raw REST PUT: { authType: "UserEntraToken", audience: <--audience>, ... }
 case "project-managed-identity":
-    → raw REST body: { authType: "ProjectManagedIdentity", ... }
+    → raw REST PUT: { authType: "ProjectManagedIdentity", ... }
 ```
 
-New CLI flag needed: `--audience` (for UserEntraToken only).
+New CLI flag: `--audience` (for UserEntraToken only).
 
 ---
 
@@ -362,16 +390,14 @@ pattern as `normalizeKind()`.
 
 ## 6. Summary of Changes
 
-### Phase 1 — Immediate (no blockers)
+### Phase 1 — Immediate (POC validated, no blockers)
 
-| Change | Effort |
-|--------|--------|
-| Add `remote-a2a` → `RemoteA2A` kind alias + test + help text | 3 lines |
-| Wire `--auth-type oauth2` → `OAuth2AuthTypeConnectionProperties` + `--client-id`/`--client-secret` flags | ~30 lines |
-| Wire `--auth-type aad` → `AADAuthTypeConnectionProperties` (no credentials needed) | ~15 lines |
-| Wire `--auth-type managed-identity` → `ManagedIdentityAuthTypeConnectionProperties` (no credentials needed) | ~15 lines |
+| Change | Effort | POC Status |
+|--------|--------|------------|
+| Add `remote-a2a` → `RemoteA2A` kind alias + test + help text | 3 lines | ✅ Tested |
+| Wire `--auth-type oauth2` → `OAuth2AuthTypeConnectionProperties` + `--client-id`/`--client-secret` flags | ~30 lines | ✅ Tested |
 
-**Result:** RemoteA2A kind support + 3 new auth types. Covers most of Linda's reported gaps.
+**Result:** RemoteA2A kind support + OAuth2 auth. Covers the most common Linda-reported gaps.
 
 ### Phase 2 — Short-term (raw REST workaround)
 
@@ -394,27 +420,27 @@ pattern as `normalizeKind()`.
 
 ## 7. Testing Plan
 
-### RemoteA2A
+### RemoteA2A (POC validated ✅)
 
-| Test | Method |
-|------|--------|
-| `create --kind remote-a2a --auth-type none` | Manual + E2E |
-| `create --kind remote-a2a --auth-type custom-keys` | Manual + E2E |
-| `create --kind remote-a2a --auth-type oauth2` | Manual + E2E |
-| `list --kind remote-a2a` shows RemoteA2A connections | Manual |
-| `show` displays RemoteA2A connection details | Manual |
-| `delete` removes RemoteA2A connection | Manual |
-| `--kind RemoteA2A` (PascalCase, no alias) | Manual — verify passthrough |
+| Test | Method | POC Result |
+|------|--------|------------|
+| `create --kind remote-a2a --auth-type none` | Manual + E2E | ✅ Pass |
+| `create --kind remote-a2a --auth-type custom-keys` | Manual + E2E | ✅ Pass |
+| `create --kind remote-a2a --auth-type oauth2` | Manual + E2E | ✅ Pass |
+| `list --kind remote-a2a` shows RemoteA2A connections | Manual | ✅ Pass |
+| `show` displays RemoteA2A connection details | Manual | ✅ Pass |
+| `delete` removes RemoteA2A connection | Manual | ✅ Pass |
+| `--kind RemoteA2A` (PascalCase, no alias) | Manual — verify passthrough | ✅ Pass |
 
 ### Auth Types
 
-| Test | Method |
-|------|--------|
-| `create --auth-type oauth2 --client-id X --client-secret Y` | Manual + E2E |
-| `create --auth-type aad` (no credentials) | Manual + E2E |
-| `create --auth-type managed-identity` (no credentials) | Manual + E2E |
-| `create --auth-type user-entra-token --audience X` (Phase 2) | Manual + E2E |
-| `create --auth-type project-managed-identity` (Phase 2) | Manual + E2E |
+| Test | Method | POC Result |
+|------|--------|------------|
+| `create --auth-type oauth2 --client-id X --client-secret Y` | Manual + E2E | ✅ Pass — credentials stored as `clientid`/`clientsecret` |
+| `create --auth-type aad` | Manual + E2E | ❌ ARM rejects for RemoteTool/RemoteA2A — **not applicable** |
+| `create --auth-type managed-identity` | Manual + E2E | ❌ ARM rejects for RemoteTool/RemoteA2A — **not applicable** |
+| `create --auth-type user-entra-token --audience X` (Phase 2) | Manual + E2E | — |
+| `create --auth-type project-managed-identity` (Phase 2) | Manual + E2E | — |
 
 ### Catalog Integration
 
@@ -430,8 +456,9 @@ pattern as `normalizeKind()`.
 
 ## 8. Open Questions
 
-1. **Connector registry** — Linda to share the API surface for the second registry.
-2. **Auth mapping logic** — Linda to share the UX team's `xMsSecuritySchemes` → auth type mapping.
+1. **Connector registry** — @lindazqli to share the API surface for the second registry.
+2. **Auth mapping logic** — @lindazqli to share the UX team's `xMsSecuritySchemes` → auth type mapping.
 3. **WorkIQ-specific UX** — Does Linda's team want a dedicated `--kind work-iq` alias, or is `--kind remote-a2a` sufficient?
 4. **A2A in catalog** — Will A2A tools eventually appear in the Asset Catalog?
-5. **OAuth2 credential flow** — Does OAuth2 need `--client-id`/`--client-secret` flags, or is there a different credential shape?
+5. **OAuth2 credential shape** — POC used `--client-id`/`--client-secret`. Are other OAuth2 fields needed (e.g., `--auth-url`, `--tenant-id`)?
+6. **UserEntraToken audience values** — What are the common `--audience` values? (e.g., `https://mcp.ai.azure.com`)

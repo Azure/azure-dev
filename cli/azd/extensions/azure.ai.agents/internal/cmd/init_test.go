@@ -257,17 +257,17 @@ func TestResolveExistingAgentNameConflictWithChecker_NoPromptKeepsExistingName(t
 	}
 }
 
-func TestResolveExistingAgentNameConflictWithChecker_PropagatesAgentCheckError(t *testing.T) {
+func TestResolveExistingAgentNameConflictWithChecker_AgentCheckErrorDoesNotBlockInit(t *testing.T) {
 	t.Parallel()
 
 	checker := &fakeConflictAgentChecker{err: errors.New("service unavailable")}
 
-	_, err := resolveExistingAgentNameConflictWithChecker(t.Context(), nil, checker, false, "my-agent")
-	if err == nil {
-		t.Fatal("expected error")
+	got, err := resolveExistingAgentNameConflictWithChecker(t.Context(), nil, checker, false, "my-agent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "checking whether agent \"my-agent\" exists") {
-		t.Fatalf("error = %q, want agent check context", err)
+	if got != "my-agent" {
+		t.Fatalf("name = %q, want my-agent", got)
 	}
 }
 

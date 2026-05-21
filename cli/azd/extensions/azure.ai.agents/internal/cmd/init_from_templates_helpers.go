@@ -231,7 +231,8 @@ func promptAgentTemplate(
 		return nil, exterrors.Validation(
 			exterrors.CodePromptFailed,
 			"template selection requires interactive mode",
-			"use 'azd ai agent init -m <manifest>' to initialize from a template non-interactively",
+			"run 'azd ai agent sample list --output json' to discover available templates, "+
+				"then rerun 'azd ai agent init -m <manifestUrl>' (or 'azd init -t <repoUrl>' for full template repos)",
 		)
 	}
 
@@ -349,7 +350,7 @@ func partitionFeatured(templates []AgentTemplate) (featured, rest []AgentTemplat
 func findRecommendedIndex(templates []AgentTemplate) int32 {
 	for i, t := range templates {
 		if t.isRecommended() {
-			return int32(i) //nolint:gosec // template list length is always small
+			return boundedInt32Index(i)
 		}
 	}
 	return 0

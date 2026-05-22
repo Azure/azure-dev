@@ -126,7 +126,51 @@ func TestMergeRoutineFromFile_BodyFieldsWinOverFile(t *testing.T) {
 	assert.Equal(t, "cli-agent", body.Action.AgentID, "body action must win")
 }
 
-// ─── applyUpdateFlags ─────────────────────────────────────────────────────────
+// ─── overwriteRoutineFromFile ──────────────────────────────────────────────────
+
+func TestOverwriteRoutineFromFile_ManifestWins(t *testing.T) {
+	t.Parallel()
+	existing := &routines.Routine{
+		Name:        "fetched-name",
+		Description: "old description",
+		Enabled:     new(true),
+		Triggers: map[string]routines.RoutineTrigger{
+			"default": {Type: "timer", At: "2026-01-01T00:00:00Z"},
+		},
+		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentID: "old-agent"},
+	}
+	file := &routines.Routine{
+		Description: "new description from manifest",
+		Enabled:     new(false),
+		Triggers: map[string]routines.RoutineTrigger{
+			"default": {Type: "schedule", CronExpression: "0 9 * * *"},
+		},
+		Action: &routines.RoutineAction{Type: "invoke_agent_invocations_api", AgentEndpointID: "new-ep"},
+	}
+	n := overwriteRoutineFromFile(existing, file)
+
+	assert.Equal(t, 4, n, "all four fields should be counted as changed")
+	assert.Equal(t, "fetched-name", existing.Name, "name must not be overwritten by file")
+	assert.Equal(t, "new description from manifest", existing.Description)
+	require.NotNil(t, existing.Enabled)
+	assert.False(t, *existing.Enabled)
+	assert.Equal(t, "schedule", existing.Triggers["default"].Type)
+	require.NotNil(t, existing.Action)
+	assert.Equal(t, "invoke_agent_invocations_api", existing.Action.Type)
+}
+
+func TestOverwriteRoutineFromFile_EmptyManifestChangesNothing(t *testing.T) {
+	t.Parallel()
+	existing := &routines.Routine{
+		Name:        "my-routine",
+		Description: "keep this",
+	}
+	n := overwriteRoutineFromFile(existing, &routines.Routine{})
+	assert.Equal(t, 0, n)
+	assert.Equal(t, "keep this", existing.Description)
+}
+
+
 
 func routineWithScheduleAndAgentResp() *routines.Routine {
 	return &routines.Routine{
@@ -216,6 +260,42 @@ func TestApplyUpdateFlags_NoChangesReturnsZero(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.Equal(t, 0, n)
+}
+
+func TestApplyUpdateFlags_AgentIDRejectedForAgentInvoke(t *testing.T) {
+	t.Parallel()
+	r := &routines.Routine{
+		Action:   &routines.RoutineAction{Type: "invoke_agent_invocations_api", AgentEndpointID: "ep"},
+		Triggers: map[string]routines.RoutineTrigger{"default": {Type: "timer"}},
+	}
+	_, err := applyUpdateFlags(r,
+		"", "", "", "new-agent-id", "", "", "",
+		false, false, false, true, false, false, false,
+	)
+	assert.Error(t, err, "--agent-id must be rejected for agent-invoke actions")
+}
+
+func TestApplyUpdateFlags_ConvIDRejectedForAgentInvoke(t *testing.T) {
+	t.Parallel()
+	r := &routines.Routine{
+		Action:   &routines.RoutineAction{Type: "invoke_agent_invocations_api", AgentEndpointID: "ep"},
+		Triggers: map[string]routines.RoutineTrigger{"default": {Type: "timer"}},
+	}
+	_, err := applyUpdateFlags(r,
+		"", "", "", "", "", "conv-1", "",
+		false, false, false, false, false, true, false,
+	)
+	assert.Error(t, err, "--conversation-id must be rejected for agent-invoke actions")
+}
+
+func TestApplyUpdateFlags_SessIDRejectedForAgentResponse(t *testing.T) {
+	t.Parallel()
+	r := routineWithScheduleAndAgentResp()
+	_, err := applyUpdateFlags(r,
+		"", "", "", "", "", "", "sess-1",
+		false, false, false, false, false, false, true,
+	)
+	assert.Error(t, err, "--session-id must be rejected for agent-response actions")
 }
 
 // ─── getTrigger / getAction ───────────────────────────────────────────────────

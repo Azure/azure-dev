@@ -58,9 +58,10 @@ func readRoutineManifest(path string) (*routines.Routine, error) {
 	return &r, nil
 }
 
-// mergeRoutineFromFile copies fields from the manifest into body.
-// The caller's positional <name> argument wins over any name in the file.
-// Individual flag overrides are applied by the caller after this function returns.
+// mergeRoutineFromFile copies non-zero fields from file into body only when the
+// corresponding body field is unset (create-mode: body wins). The positional
+// <name> and any explicit flag overrides take precedence and are applied by
+// the caller.
 func mergeRoutineFromFile(body *routines.Routine, file *routines.Routine) {
 	if file.Description != "" && body.Description == "" {
 		body.Description = file.Description
@@ -74,6 +75,31 @@ func mergeRoutineFromFile(body *routines.Routine, file *routines.Routine) {
 	if file.Action != nil && body.Action == nil {
 		body.Action = file.Action
 	}
+}
+
+// overwriteRoutineFromFile copies non-zero fields from file onto existing,
+// overwriting whatever the fetched routine had (update-mode: manifest wins).
+// Name is not touched; the caller preserves the positional <name> argument.
+// Returns the count of fields overwritten.
+func overwriteRoutineFromFile(existing *routines.Routine, file *routines.Routine) int {
+	changed := 0
+	if file.Description != "" {
+		existing.Description = file.Description
+		changed++
+	}
+	if file.Enabled != nil {
+		existing.Enabled = file.Enabled
+		changed++
+	}
+	if len(file.Triggers) > 0 {
+		existing.Triggers = file.Triggers
+		changed++
+	}
+	if file.Action != nil {
+		existing.Action = file.Action
+		changed++
+	}
+	return changed
 }
 
 // applyUpdateFlags applies named CLI update flags onto an existing routine body.
@@ -135,6 +161,13 @@ func applyUpdateFlags(
 				"add an action by recreating the routine, or omit --agent-id / --agent-endpoint-id",
 			)
 		}
+		if agentIDChanged && action.Type == routines.ActionCLIToWire["agent-invoke"] {
+			return 0, exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--agent-id is not applicable to agent-invoke actions",
+				"use --agent-endpoint-id for agent-invoke, or recreate the routine with agent-response",
+			)
+		}
 		// agent-id and agent-endpoint-id are mutually exclusive; specifying one clears the other.
 		if agentIDChanged && agentEpChanged && agentID != "" && agentEndpointID != "" {
 			return 0, exterrors.Validation(
@@ -166,6 +199,13 @@ func applyUpdateFlags(
 				"add an action by recreating the routine, or omit --conversation-id",
 			)
 		}
+		if action.Type == routines.ActionCLIToWire["agent-invoke"] {
+			return 0, exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--conversation-id is not applicable to agent-invoke actions",
+				"use --session-id for agent-invoke, or recreate the routine with agent-response",
+			)
+		}
 		action.ConversationID = conversationID
 		changed++
 	}
@@ -175,6 +215,13 @@ func applyUpdateFlags(
 				exterrors.CodeInvalidParameter,
 				"cannot set --session-id: routine has no action",
 				"add an action by recreating the routine, or omit --session-id",
+			)
+		}
+		if action.Type == routines.ActionCLIToWire["agent-response"] {
+			return 0, exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--session-id is not applicable to agent-response actions",
+				"use --conversation-id for agent-response, or recreate the routine with agent-invoke",
 			)
 		}
 		action.SessionID = sessionID

@@ -112,3 +112,21 @@ func TestBuildAction_UnknownType(t *testing.T) {
 	_, err := buildAction("no-such-action", "", "ep", "", "")
 	assert.Error(t, err)
 }
+
+func TestBuildAction_AgentResponseRejectsSessionID(t *testing.T) {
+	t.Parallel()
+	_, err := buildAction("agent-response", "my-agent-id", "", "", "sess-1")
+	assert.Error(t, err, "--session-id must be rejected for agent-response action")
+}
+
+func TestBuildAction_AgentInvokeRejectsAgentID(t *testing.T) {
+	t.Parallel()
+	_, err := buildAction("agent-invoke", "my-agent-id", "ep-id", "", "")
+	assert.Error(t, err, "--agent-id must be rejected for agent-invoke action")
+}
+
+func TestBuildAction_AgentInvokeRejectsConversationID(t *testing.T) {
+	t.Parallel()
+	_, err := buildAction("agent-invoke", "", "ep-id", "conv-1", "")
+	assert.Error(t, err, "--conversation-id must be rejected for agent-invoke action")
+}

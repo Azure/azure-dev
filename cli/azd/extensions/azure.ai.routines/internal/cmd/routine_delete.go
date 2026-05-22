@@ -24,7 +24,7 @@ func newRoutineDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			output = extCtx.OutputFormat
 			ctx := azdext.WithAccessToken(cmd.Context())
-			return runRoutineDelete(ctx, cmd, args[0], force, output)
+			return runRoutineDelete(ctx, cmd, args[0], force, extCtx.NoPrompt, output)
 		},
 	}
 
@@ -38,8 +38,10 @@ func newRoutineDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	return cmd
 }
 
-func runRoutineDelete(ctx context.Context, cmd *cobra.Command, name string, force bool, output string) error {
-	noPrompt, _ := cmd.Flags().GetBool("no-prompt")
+func runRoutineDelete(ctx context.Context, cmd *cobra.Command, name string, force bool, noPromptEnv bool, output string) error {
+	// Combine env-backed no-prompt (AZD_NO_PROMPT) with the explicit CLI flag.
+	flagNoPrompt, _ := cmd.Flags().GetBool("no-prompt")
+	noPrompt := noPromptEnv || flagNoPrompt
 
 	// In --no-prompt mode, --force is required.
 	if noPrompt && !force {

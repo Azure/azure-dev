@@ -270,6 +270,13 @@ func buildAction(actionType, agentID, agentEndpointID, conversationID, sessionID
 				"provide --agent-id <id> or --agent-endpoint-id <id>",
 			)
 		}
+		if sessionID != "" {
+			return a, exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--session-id is not applicable to agent-response action",
+				"use --session-id with --action agent-invoke, or omit --session-id",
+			)
+		}
 		a.AgentID = agentID
 		a.AgentEndpointID = agentEndpointID
 		a.ConversationID = conversationID
@@ -279,6 +286,20 @@ func buildAction(actionType, agentID, agentEndpointID, conversationID, sessionID
 				exterrors.CodeInvalidParameter,
 				"--agent-endpoint-id is required for agent-invoke action",
 				"provide --agent-endpoint-id <id>",
+			)
+		}
+		if agentID != "" {
+			return a, exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--agent-id is not applicable to agent-invoke action",
+				"use --agent-endpoint-id for agent-invoke, or omit --agent-id",
+			)
+		}
+		if conversationID != "" {
+			return a, exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--conversation-id is not applicable to agent-invoke action",
+				"use --session-id for agent-invoke, or omit --conversation-id",
 			)
 		}
 		a.AgentEndpointID = agentEndpointID

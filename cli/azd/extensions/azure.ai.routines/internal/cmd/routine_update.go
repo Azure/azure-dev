@@ -105,13 +105,16 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetRoutine)
 	}
 
-	// If --file is provided, merge the manifest first.
+	// If --file is provided, overwrite routine fields with the manifest (manifest wins).
+	var changed int
 	if flags.file != "" {
 		manifest, err := readRoutineManifest(flags.file)
 		if err != nil {
 			return err
 		}
-		mergeRoutineFromFile(existing, manifest)
+		changed += overwriteRoutineFromFile(existing, manifest)
+		// Preserve the positional name argument.
+		existing.Name = flags.name
 	}
 
 	// Apply named flag changes (flag presence, not just non-empty value).
@@ -123,7 +126,7 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 	convIDChanged := cmd.Flags().Changed("conversation-id")
 	sessIDChanged := cmd.Flags().Changed("session-id")
 
-	changed, err := applyUpdateFlags(
+	flagChanged, err := applyUpdateFlags(
 		existing,
 		flags.description, flags.timeZone, flags.at,
 		flags.agentID, flags.agentEndpointID, flags.conversationID, flags.sessionID,
@@ -133,6 +136,7 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 	if err != nil {
 		return err
 	}
+	changed += flagChanged
 
 	if changed == 0 && flags.file == "" {
 		fmt.Printf("No changes specified for routine '%s'.\n", flags.name)

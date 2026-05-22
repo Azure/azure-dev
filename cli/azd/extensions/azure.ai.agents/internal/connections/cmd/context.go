@@ -25,6 +25,8 @@ type connectionContext struct {
 	rg        string
 	account   string
 	project   string
+	sub       string                 // subscription ID for raw REST calls
+	cred      azcore.TokenCredential // credential for raw REST calls
 }
 
 // resolveConnectionContext resolves the project endpoint, discovers ARM context,
@@ -71,6 +73,8 @@ func resolveConnectionContext(
 		rg:        armCtx.ResourceGroup,
 		account:   account,
 		project:   project,
+		sub:       armCtx.SubscriptionID,
+		cred:      cred,
 	}, nil
 }
 

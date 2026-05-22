@@ -36,6 +36,21 @@ func TestInitCommand_AgentNameFlag(t *testing.T) {
 	}
 }
 
+func TestInitCommand_ForceFlag(t *testing.T) {
+	cmd := newInitCommand(nil)
+
+	flag := cmd.Flags().Lookup("force")
+	if flag == nil {
+		t.Fatal("expected --force flag to be registered")
+	}
+	if flag.Shorthand != "" {
+		t.Fatalf("expected --force to have no shorthand (matches azd `infra generate --force`), got %q", flag.Shorthand)
+	}
+	if flag.DefValue != "false" {
+		t.Fatalf("expected --force default false, got %q", flag.DefValue)
+	}
+}
+
 func TestValidateInitAgentName(t *testing.T) {
 	t.Parallel()
 
@@ -257,17 +272,45 @@ func TestResolveExistingAgentNameConflictWithChecker_NoPromptKeepsExistingName(t
 	}
 }
 
-func TestResolveExistingAgentNameConflictWithChecker_PropagatesAgentCheckError(t *testing.T) {
+func TestResolveExistingAgentNameConflictWithChecker_AgentCheckErrorDoesNotBlockInit(t *testing.T) {
 	t.Parallel()
 
 	checker := &fakeConflictAgentChecker{err: errors.New("service unavailable")}
 
-	_, err := resolveExistingAgentNameConflictWithChecker(t.Context(), nil, checker, false, "my-agent")
-	if err == nil {
-		t.Fatal("expected error")
+	got, err := resolveExistingAgentNameConflictWithChecker(t.Context(), nil, checker, false, "my-agent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "checking whether agent \"my-agent\" exists") {
-		t.Fatalf("error = %q, want agent check context", err)
+	if got != "my-agent" {
+		t.Fatalf("name = %q, want my-agent", got)
+	}
+}
+
+func TestResolveExistingAgentNameConflictWithChecker_AgentCheckCancellationReturnsError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "canceled", err: context.Canceled},
+		{name: "deadline exceeded", err: context.DeadlineExceeded},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			checker := &fakeConflictAgentChecker{err: tt.err}
+
+			got, err := resolveExistingAgentNameConflictWithChecker(t.Context(), nil, checker, false, "my-agent")
+			if got != "" {
+				t.Fatalf("name = %q, want empty", got)
+			}
+			if !errors.Is(err, tt.err) {
+				t.Fatalf("error = %v, want %v", err, tt.err)
+			}
+		})
 	}
 }
 
@@ -1107,30 +1150,6 @@ func TestInjectToolboxEnvVarsIntoDefinition_NoopWithoutToolboxes(t *testing.T) {
 	containerAgent := manifest.Template.(agent_yaml.ContainerAgent)
 	if len(*containerAgent.EnvironmentVariables) != 1 {
 		t.Errorf("Expected env vars unchanged, got %d", len(*containerAgent.EnvironmentVariables))
-	}
-}
-
-func TestToolboxMCPEndpointEnvKey(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{"simple", "my-tools", "TOOLBOX_MY_TOOLS_MCP_ENDPOINT"},
-		{"spaces", "my tools", "TOOLBOX_MY_TOOLS_MCP_ENDPOINT"},
-		{"mixed", "agent-tools v2", "TOOLBOX_AGENT_TOOLS_V2_MCP_ENDPOINT"},
-		{"already upper", "TOOLS", "TOOLBOX_TOOLS_MCP_ENDPOINT"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := toolboxMCPEndpointEnvKey(tt.input)
-			if got != tt.expected {
-				t.Errorf("toolboxMCPEndpointEnvKey(%q) = %q, want %q", tt.input, got, tt.expected)
-			}
-		})
 	}
 }
 
@@ -2190,6 +2209,128 @@ func TestParseAuthStatusJSON(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestDownloadAgentYaml_NoPromptManifestInSrcWithoutForce verifies that a
+// headless caller pointing --manifest at a file inside `<cwd>/src/<name>` is
+// refused with a structured error whose suggestion explicitly mentions
+// `--force` as the pre-consent escape hatch.
+//
+// The InitAction is constructed with a nil azdClient because the validation
+// branch returns before any prompt is invoked. The manifest is parsed (so it
+// must contain a name field) but no downstream container / GitHub paths are
+// reached.
+func TestDownloadAgentYaml_NoPromptManifestInSrcWithoutForce(t *testing.T) {
+	// Not Parallel: changes process working directory.
+	tmp := t.TempDir()
+	t.Chdir(tmp)
+
+	name := "echo-agent"
+	srcDir := filepath.Join(tmp, "src", name)
+	//nolint:gosec // test fixture directory permissions are intentional
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatalf("mkdir src: %v", err)
+	}
+	manifestPath := filepath.Join(srcDir, "agent.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(manifestPath, []byte("name: "+name+"\n"), 0644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	a := &InitAction{flags: &initFlags{noPrompt: true, force: false}}
+
+	_, _, err := a.downloadAgentYaml(t.Context(), manifestPath, "")
+	if err == nil {
+		t.Fatal("expected error for no-prompt without --force")
+	}
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected *azdext.LocalError, got %T: %v", err, err)
+	}
+	if localErr.Code != exterrors.CodeInvalidManifestPointer {
+		t.Errorf("expected code %q, got %q", exterrors.CodeInvalidManifestPointer, localErr.Code)
+	}
+	if !strings.Contains(localErr.Suggestion, "--force") {
+		t.Errorf("suggestion should mention --force, got: %s", localErr.Suggestion)
+	}
+}
+
+func TestCodeDeployFlagValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		flags          initFlags
+		wantErr        bool
+		wantErrContain string
+	}{
+		{
+			name:    "code deploy with all required flags passes validation",
+			flags:   initFlags{noPrompt: true, deployMode: "code", runtime: "python_3_13", entryPoint: "app.py"},
+			wantErr: false,
+		},
+		{
+			name:           "code deploy without runtime fails",
+			flags:          initFlags{noPrompt: true, deployMode: "code", entryPoint: "app.py"},
+			wantErr:        true,
+			wantErrContain: "--runtime is required",
+		},
+		{
+			name:           "code deploy without entry-point fails",
+			flags:          initFlags{noPrompt: true, deployMode: "code", runtime: "python_3_13"},
+			wantErr:        true,
+			wantErrContain: "--entry-point is required",
+		},
+		{
+			name:    "container deploy without runtime/entry-point passes",
+			flags:   initFlags{noPrompt: true, deployMode: "container"},
+			wantErr: false,
+		},
+		{
+			name:    "code deploy without noPrompt skips validation",
+			flags:   initFlags{noPrompt: false, deployMode: "code"},
+			wantErr: false,
+		},
+		{
+			name:           "invalid deploy-mode value fails",
+			flags:          initFlags{noPrompt: true, deployMode: "invalid"},
+			wantErr:        true,
+			wantErrContain: "--deploy-mode must be",
+		},
+		{
+			name:           "invalid runtime value fails",
+			flags:          initFlags{noPrompt: true, deployMode: "code", runtime: "node_20", entryPoint: "app.js"},
+			wantErr:        true,
+			wantErrContain: "--runtime must be one of",
+		},
+		{
+			name:           "invalid dep-resolution value fails",
+			flags:          initFlags{noPrompt: true, deployMode: "code", runtime: "python_3_13", entryPoint: "app.py", depResolution: "invalid"},
+			wantErr:        true,
+			wantErrContain: "--dep-resolution must be",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			a := &InitAction{flags: &tt.flags}
+			err := a.validateCodeDeployFlags()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.wantErrContain) {
+					t.Errorf("error = %q, want containing %q", err.Error(), tt.wantErrContain)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
 		})
 	}

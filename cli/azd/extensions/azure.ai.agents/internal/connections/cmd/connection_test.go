@@ -4,10 +4,12 @@
 package cmd
 
 import (
+	"encoding/json"
 	"testing"
 
 	"azureaiagent/internal/connections/pkg/connections"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -116,6 +118,7 @@ func TestNormalizeKind(t *testing.T) {
 		want  string
 	}{
 		{"remote-tool", "RemoteTool"},
+		{"remote-a2a", "RemoteA2A"},
 		{"cognitive-search", "CognitiveSearch"},
 		{"api-key", "ApiKey"},
 		{"app-insights", "AppInsights"},
@@ -145,6 +148,10 @@ func TestNormalizeAuthType(t *testing.T) {
 		{"ApiKey", "api-key"},
 		{"CustomKeys", "custom-keys"},
 		{"None", "none"},
+		{"OAuth2", "oauth2"},
+		{"UserEntraToken", "user-entra-token"},
+		{"ProjectManagedIdentity", "project-managed-identity"},
+		{"AgenticIdentityToken", "agentic-identity"},
 		// Unknown — pass through
 		{"AAD", "AAD"},
 		{"", ""},
@@ -153,6 +160,110 @@ func TestNormalizeAuthType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			require.Equal(t, tt.want, normalizeAuthType(tt.input))
+		})
+	}
+}
+
+func TestNormalizeAuthTypeToARM(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"user-entra-token", "UserEntraToken"},
+		{"project-managed-identity", "ProjectManagedIdentity"},
+		{"agentic-identity", "AgenticIdentityToken"},
+		{"unknown", "unknown"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			require.Equal(t, tt.want, normalizeAuthTypeToARM(tt.input))
+		})
+	}
+}
+
+func TestBuildConnectionBody_OAuth2(t *testing.T) {
+	body, err := buildConnectionBody(
+		"RemoteTool", "https://example.com", "oauth2",
+		"", nil, nil,
+		"test-client-id", "test-client-secret",
+	)
+	require.NoError(t, err)
+
+	props, ok := body.Properties.(*armcognitiveservices.OAuth2AuthTypeConnectionProperties)
+	require.True(t, ok, "expected OAuth2AuthTypeConnectionProperties")
+	require.Equal(t, armcognitiveservices.ConnectionAuthTypeOAuth2, *props.AuthType)
+	require.Equal(t, "https://example.com", *props.Target)
+	require.Equal(t, "test-client-id", *props.Credentials.ClientID)
+	require.Equal(t, "test-client-secret", *props.Credentials.ClientSecret)
+}
+
+func TestBuildConnectionBody_UnsupportedAuthType(t *testing.T) {
+	_, err := buildConnectionBody(
+		"RemoteTool", "https://example.com", "invalid-type",
+		"", nil, nil, "", "",
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Unsupported auth type")
+}
+
+func TestRawConnectionBody_MarshalJSON(t *testing.T) {
+	props := rawConnectionProperties{
+		AuthType: "UserEntraToken",
+		Category: "RemoteTool",
+		Target:   "https://example.com",
+		Audience: "https://mcp.ai.azure.com",
+	}
+	body := rawConnectionBody{Properties: props}
+	data, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(data, &parsed))
+
+	p := parsed["properties"].(map[string]any)
+	require.Equal(t, "UserEntraToken", p["authType"])
+	require.Equal(t, "RemoteTool", p["category"])
+	require.Equal(t, "https://example.com", p["target"])
+	require.Equal(t, "https://mcp.ai.azure.com", p["audience"])
+}
+
+func TestRawConnectionBody_OmitsEmptyAudience(t *testing.T) {
+	props := rawConnectionProperties{
+		AuthType: "ProjectManagedIdentity",
+		Category: "RemoteA2A",
+		Target:   "https://example.com",
+	}
+	body := rawConnectionBody{Properties: props}
+	data, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(data, &parsed))
+
+	p := parsed["properties"].(map[string]any)
+	_, hasAudience := p["audience"]
+	require.False(t, hasAudience, "audience should be omitted when empty")
+}
+
+func TestParseKVMap(t *testing.T) {
+	tests := []struct {
+		name  string
+		pairs []string
+		want  map[string]string
+	}{
+		{"nil", nil, nil},
+		{"empty", []string{}, nil},
+		{"single", []string{"k=v"}, map[string]string{"k": "v"}},
+		{"value-with-equals", []string{"k=v=1"}, map[string]string{"k": "v=1"}},
+		{"multiple", []string{"a=1", "b=2"}, map[string]string{"a": "1", "b": "2"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseKVMap(tt.pairs)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }

@@ -26,6 +26,9 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newContextCommand())
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
+	rootCmd.AddCommand(newProjectSetCommand(extCtx))
+	rootCmd.AddCommand(newProjectUnsetCommand(extCtx))
+	rootCmd.AddCommand(newProjectShowCommand(extCtx))
 
 	return rootCmd
 }

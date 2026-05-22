@@ -39,9 +39,12 @@ words:
   - CLIENTSECRET
   - curr
   - dataagent
+  - envkey
   - exterrors
+  - goyaml
   - helloworld
   - hostedagent
+  - hostedagents
   - kval
   - logstream
   - mcpservertoolalwaysrequireapprovalmode
@@ -56,5 +59,18 @@ words:
   - protocolversionrecord
   - Qdrant
   - Toolsets
+  - underscoped
   - Vnext
   - webp
+  # Doctor / next-step terms
+  - nextstep
+  - nextsteps
+  - undeployed
+  - unredacted
+  - UNKN
+  - inlines
+  - Remediations
+  - remediations
+  - uppercases
+  - parseable
+  - azd's

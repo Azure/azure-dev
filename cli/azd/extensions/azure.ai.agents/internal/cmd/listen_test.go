@@ -4,11 +4,16 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestPostdeployHandler_NoAgentService_NoOp verifies postdeployHandler returns nil
@@ -31,6 +36,56 @@ func TestPostdeployHandler_NoAgentService_NoOp(t *testing.T) {
 	// nil azdClient — the early return must fire before any RPC call.
 	if err := postdeployHandler(t.Context(), nil, args); err != nil {
 		t.Fatalf("expected no error for project without agent services, got: %v", err)
+	}
+}
+
+func TestIsHostedAgentServiceRejectsTraversal(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	projectRoot := filepath.Join(parent, "project")
+	outside := filepath.Join(parent, "outside")
+	if err := os.MkdirAll(projectRoot, 0o750); err != nil {
+		t.Fatalf("failed to create project root: %v", err)
+	}
+	if err := os.MkdirAll(outside, 0o750); err != nil {
+		t.Fatalf("failed to create outside directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "agent.yaml"), []byte("kind: hostedAgent\n"), 0o600); err != nil {
+		t.Fatalf("failed to write outside agent.yaml: %v", err)
+	}
+
+	svc := &azdext.ServiceConfig{Name: "echo", Host: AiAgentHost, RelativePath: "../outside"}
+	proj := &azdext.ProjectConfig{Path: projectRoot}
+
+	if isHostedAgentService(svc, proj) {
+		t.Fatal("expected traversal service path to be rejected")
+	}
+}
+
+func TestKindEnvUpdateRejectsTraversal(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	projectRoot := filepath.Join(parent, "project")
+	outside := filepath.Join(parent, "outside")
+	if err := os.MkdirAll(projectRoot, 0o750); err != nil {
+		t.Fatalf("failed to create project root: %v", err)
+	}
+	if err := os.MkdirAll(outside, 0o750); err != nil {
+		t.Fatalf("failed to create outside directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "agent.yaml"), []byte("kind: hostedAgent\n"), 0o600); err != nil {
+		t.Fatalf("failed to write outside agent.yaml: %v", err)
+	}
+
+	svc := &azdext.ServiceConfig{Name: "echo", Host: AiAgentHost, RelativePath: "../outside"}
+	proj := &azdext.ProjectConfig{Path: projectRoot}
+
+	err := kindEnvUpdate(t.Context(), nil, proj, svc, "dev")
+
+	if err == nil || !strings.Contains(err.Error(), "invalid service path") {
+		t.Fatalf("expected invalid service path error, got: %v", err)
 	}
 }
 
@@ -278,4 +333,309 @@ func TestBuildConnectionCredentials(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// isHostedAgentService
+// ---------------------------------------------------------------------------
+
+func TestIsHostedAgentService_HostedKind(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "agent.yaml"),
+		[]byte("kind: hosted\nname: my-agent\n"), 0600,
+	))
+
+	svc := &azdext.ServiceConfig{Name: "svc", RelativePath: "."}
+	proj := &azdext.ProjectConfig{Path: dir}
+
+	assert.True(t, isHostedAgentService(svc, proj))
+}
+
+func TestIsHostedAgentService_NonHostedKind(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "agent.yaml"),
+		[]byte("kind: local\nname: my-agent\n"), 0600,
+	))
+
+	svc := &azdext.ServiceConfig{Name: "svc", RelativePath: "."}
+	proj := &azdext.ProjectConfig{Path: dir}
+
+	assert.False(t, isHostedAgentService(svc, proj))
+}
+
+func TestIsHostedAgentService_NoAgentYaml(t *testing.T) {
+	t.Parallel()
+
+	svc := &azdext.ServiceConfig{Name: "svc", RelativePath: "."}
+	proj := &azdext.ProjectConfig{Path: t.TempDir()}
+
+	assert.False(t, isHostedAgentService(svc, proj))
+}
+
+func TestIsHostedAgentService_InvalidYaml(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "agent.yaml"),
+		[]byte(":::invalid yaml:::"), 0600,
+	))
+
+	svc := &azdext.ServiceConfig{Name: "svc", RelativePath: "."}
+	proj := &azdext.ProjectConfig{Path: dir}
+
+	assert.False(t, isHostedAgentService(svc, proj))
+}
+
+func TestIsHostedAgentService_MissingKindField(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "agent.yaml"),
+		[]byte("name: my-agent\n"), 0600,
+	))
+
+	svc := &azdext.ServiceConfig{Name: "svc", RelativePath: "."}
+	proj := &azdext.ProjectConfig{Path: dir}
+
+	assert.False(t, isHostedAgentService(svc, proj))
+}
+
+func TestIsHostedAgentService_SubDirectory(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "agents", "bot")
+	require.NoError(t, os.MkdirAll(subDir, 0700))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(subDir, "agent.yaml"),
+		[]byte("kind: hosted\nname: bot\n"), 0600,
+	))
+
+	svc := &azdext.ServiceConfig{Name: "bot", RelativePath: "agents/bot"}
+	proj := &azdext.ProjectConfig{Path: dir}
+
+	assert.True(t, isHostedAgentService(svc, proj))
+}
+
+// ---------------------------------------------------------------------------
+// resolveEnvValue / resolveMapValues / resolveAnyValue
+// ---------------------------------------------------------------------------
+
+func TestResolveEnvValue(t *testing.T) {
+	t.Parallel()
+
+	env := map[string]string{
+		"DB_HOST": "mydb.postgres.azure.com",
+		"DB_PORT": "5432",
+	}
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"${DB_HOST}", "mydb.postgres.azure.com"},
+		{"host=${DB_HOST}:${DB_PORT}", "host=mydb.postgres.azure.com:5432"},
+		{"no-var", "no-var"},
+		{"${UNDEFINED}", ""},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, resolveEnvValue(tt.input, env))
+		})
+	}
+}
+
+func TestResolveMapValues(t *testing.T) {
+	t.Parallel()
+
+	env := map[string]string{"KEY": "val"}
+	m := map[string]any{
+		"a": "${KEY}",
+		"b": "literal",
+		"c": 42,
+	}
+
+	got := resolveMapValues(m, env)
+	assert.Equal(t, "val", got["a"])
+	assert.Equal(t, "literal", got["b"])
+	assert.Equal(t, 42, got["c"])
+}
+
+func TestResolveAnyValue_NestedStructures(t *testing.T) {
+	t.Parallel()
+
+	env := map[string]string{"X": "resolved"}
+
+	// Nested map
+	nested := map[string]any{
+		"inner": map[string]any{"key": "${X}"},
+	}
+	got := resolveAnyValue(nested, env)
+	gotMap := got.(map[string]any)
+	inner := gotMap["inner"].(map[string]any)
+	assert.Equal(t, "resolved", inner["key"])
+
+	// Slice
+	slice := []any{"${X}", "plain", 99}
+	gotSlice := resolveAnyValue(slice, env).([]any)
+	assert.Equal(t, "resolved", gotSlice[0])
+	assert.Equal(t, "plain", gotSlice[1])
+	assert.Equal(t, 99, gotSlice[2])
+
+	// Non-string type passthrough
+	assert.Equal(t, true, resolveAnyValue(true, env))
+}
+
+// ---------------------------------------------------------------------------
+// resolveToolboxEnvVars
+// ---------------------------------------------------------------------------
+
+func TestResolveToolboxEnvVars(t *testing.T) {
+	t.Parallel()
+
+	env := map[string]string{
+		"TB_NAME": "my-toolbox",
+		"TB_DESC": "A test toolbox",
+		"URL":     "https://example.com",
+	}
+
+	tb := project.Toolbox{
+		Name:        "${TB_NAME}",
+		Description: "${TB_DESC}",
+		Tools: []map[string]any{
+			{"server_url": "${URL}", "type": "web_search"},
+		},
+	}
+
+	resolveToolboxEnvVars(&tb, env)
+
+	assert.Equal(t, "my-toolbox", tb.Name)
+	assert.Equal(t, "A test toolbox", tb.Description)
+	assert.Equal(t, "https://example.com", tb.Tools[0]["server_url"])
+	assert.Equal(t, "web_search", tb.Tools[0]["type"])
+}
+
+// ---------------------------------------------------------------------------
+// toolboxConnectionsByName
+// ---------------------------------------------------------------------------
+
+func TestToolboxConnectionsByName_NilConfig(t *testing.T) {
+	t.Parallel()
+	assert.Empty(t, toolboxConnectionsByName(nil))
+}
+
+func TestToolboxConnectionsByName_MergesBothTypes(t *testing.T) {
+	t.Parallel()
+
+	config := &project.ServiceTargetAgentConfig{
+		Connections: []project.Connection{
+			{Name: "conn-a", Target: "https://a.com"},
+		},
+		ToolConnections: []project.ToolConnection{
+			{Name: "tool-b", Target: "https://b.com"},
+		},
+	}
+
+	result := toolboxConnectionsByName(config)
+	assert.Len(t, result, 2)
+	assert.Equal(t, "https://a.com", result["conn-a"].Target)
+	assert.Equal(t, "https://b.com", result["tool-b"].Target)
+}
+
+// ---------------------------------------------------------------------------
+// postdeployHandler — skips non-agent-host services
+// ---------------------------------------------------------------------------
+
+func TestPostdeployHandler_SkipsNonAgentHostServices(t *testing.T) {
+	t.Parallel()
+
+	// Project has one service with a different host type — handler should
+	// return nil without making any RPC calls (azdClient is nil).
+	args := &azdext.ProjectEventArgs{
+		Project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"api": {Name: "api", Host: "containerapp", RelativePath: "."},
+			},
+		},
+	}
+
+	assert.NoError(t, postdeployHandler(t.Context(), nil, args))
+}
+
+func TestPostdeployHandler_SkipsWhenNoServices(t *testing.T) {
+	t.Parallel()
+
+	args := &azdext.ProjectEventArgs{
+		Project: &azdext.ProjectConfig{
+			Path:     t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{},
+		},
+	}
+
+	assert.NoError(t, postdeployHandler(t.Context(), nil, args))
+}
+
+// ---------------------------------------------------------------------------
+// enrichToolboxFromConnections — server_url already set
+// ---------------------------------------------------------------------------
+
+func TestEnrichToolboxFromConnections_DoesNotOverrideExistingServerURL(t *testing.T) {
+	t.Parallel()
+
+	connByName := map[string]toolboxConnection{
+		"my-conn": {Name: "my-conn", Target: "https://conn-target.com"},
+	}
+
+	tb := project.Toolbox{
+		Name: "test",
+		Tools: []map[string]any{
+			{
+				"type":                  "mcp",
+				"project_connection_id": "my-conn",
+				"server_url":            "https://custom-url.com",
+			},
+		},
+	}
+
+	enrichToolboxFromConnections(&tb, connByName)
+
+	// server_url was already set — should not be overridden.
+	assert.Equal(t, "https://custom-url.com", tb.Tools[0]["server_url"])
+	// server_label should still be filled in.
+	assert.Equal(t, "my-conn", tb.Tools[0]["server_label"])
+}
+
+func TestEnrichToolboxFromConnections_EmptyTarget(t *testing.T) {
+	t.Parallel()
+
+	connByName := map[string]toolboxConnection{
+		"no-target": {Name: "no-target", Target: ""},
+	}
+
+	tb := project.Toolbox{
+		Name: "test",
+		Tools: []map[string]any{
+			{"type": "mcp", "project_connection_id": "no-target"},
+		},
+	}
+
+	enrichToolboxFromConnections(&tb, connByName)
+
+	// Empty target → server_url should NOT be set.
+	_, hasURL := tb.Tools[0]["server_url"]
+	assert.False(t, hasURL)
+	// server_label should still be set.
+	assert.Equal(t, "no-target", tb.Tools[0]["server_label"])
 }

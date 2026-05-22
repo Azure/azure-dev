@@ -79,9 +79,73 @@ type ProtocolVersionRecord struct {
 	Version  string        `json:"version"`
 }
 
-// AgentEndpoint describes the endpoint protocols an agent supports.
+// AgentEndpointProtocol represents the protocol types supported at the agent endpoint level.
+// These differ from AgentProtocol (which is used in definition-level protocol_versions).
+type AgentEndpointProtocol string
+
+const (
+	AgentEndpointProtocolActivity    AgentEndpointProtocol = "activity"
+	AgentEndpointProtocolResponses   AgentEndpointProtocol = "responses"
+	AgentEndpointProtocolA2A         AgentEndpointProtocol = "a2a"
+	AgentEndpointProtocolMCP         AgentEndpointProtocol = "mcp"
+	AgentEndpointProtocolInvocations AgentEndpointProtocol = "invocations"
+)
+
+// VersionSelectorType represents the type of version selection rule.
+type VersionSelectorType string
+
+const (
+	VersionSelectorTypeFixedRatio VersionSelectorType = "FixedRatio"
+)
+
+// VersionSelectionRule describes how traffic is routed to an agent version.
+// Discriminated by Type. For FixedRatio rules, TrafficPercentage is set.
+type VersionSelectionRule struct {
+	Type              VersionSelectorType `json:"type"`
+	AgentVersion      string              `json:"agent_version"`
+	TrafficPercentage *int32              `json:"traffic_percentage,omitempty"`
+}
+
+// VersionSelector determines how traffic is routed to different versions of an agent.
+type VersionSelector struct {
+	VersionSelectionRules []VersionSelectionRule `json:"version_selection_rules"`
+}
+
+// AgentEndpointAuthorizationSchemeType represents the authorization scheme type.
+type AgentEndpointAuthorizationSchemeType string
+
+const (
+	AgentEndpointAuthSchemeEntra          AgentEndpointAuthorizationSchemeType = "Entra"
+	AgentEndpointAuthSchemeBotService     AgentEndpointAuthorizationSchemeType = "BotService"
+	AgentEndpointAuthSchemeBotServiceRbac AgentEndpointAuthorizationSchemeType = "BotServiceRbac"
+)
+
+// IsolationKeySourceKind represents the kind of isolation key source.
+type IsolationKeySourceKind string
+
+const (
+	IsolationKeySourceKindEntra  IsolationKeySourceKind = "Entra"
+	IsolationKeySourceKindHeader IsolationKeySourceKind = "Header"
+)
+
+// IsolationKeySource describes the source from which a per-user isolation key is derived.
+// Discriminated by Kind.
+type IsolationKeySource struct {
+	Kind IsolationKeySourceKind `json:"kind"`
+}
+
+// AgentEndpointAuthorizationScheme describes an authorization scheme for the agent endpoint.
+// Discriminated by Type. For Entra schemes, IsolationKeySource may be set.
+type AgentEndpointAuthorizationScheme struct {
+	Type               AgentEndpointAuthorizationSchemeType `json:"type"`
+	IsolationKeySource *IsolationKeySource                  `json:"isolation_key_source,omitempty"`
+}
+
+// AgentEndpoint describes the endpoint configuration for an agent.
 type AgentEndpoint struct {
-	Protocols []AgentProtocol `json:"protocols"`
+	VersionSelector      *VersionSelector                   `json:"version_selector,omitempty"`
+	Protocols            []AgentEndpointProtocol            `json:"protocols,omitempty"`
+	AuthorizationSchemes []AgentEndpointAuthorizationScheme `json:"authorization_schemes,omitempty"`
 }
 
 // AgentCardSkill describes a single capability that an agent can perform.

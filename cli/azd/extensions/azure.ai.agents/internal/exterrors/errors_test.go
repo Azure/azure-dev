@@ -5,6 +5,7 @@ package exterrors
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -141,6 +142,51 @@ func TestFromPrompt(t *testing.T) {
 			if tt.wantContain != "" {
 				assert.Contains(t, result.Error(), tt.wantContain)
 			}
+		})
+	}
+}
+
+func TestIsPromptRequired(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "gRPC status with prompt required message",
+			err:  status.Error(codes.Unknown, "prompt required"),
+			want: true,
+		},
+		{
+			name: "gRPC status with prompt required mixed case",
+			err:  status.Error(codes.Unknown, "Prompt Required"),
+			want: true,
+		},
+		{
+			name: "plain error wrapping prompt required text",
+			err:  errors.New("rpc error: prompt required: Select subscription"),
+			want: true,
+		},
+		{
+			name: "unrelated transport error",
+			err:  status.Error(codes.Unavailable, "connection refused"),
+			want: false,
+		},
+		{
+			name: "auth error",
+			err:  status.Error(codes.Unauthenticated, "not logged in"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsPromptRequired(tt.err))
 		})
 	}
 }

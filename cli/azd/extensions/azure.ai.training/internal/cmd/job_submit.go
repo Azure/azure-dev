@@ -1,0 +1,375 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"fmt"
+	"maps"
+	"path/filepath"
+	"strings"
+
+	"azure.ai.training/internal/azcopy"
+	"azure.ai.training/internal/service"
+	"azure.ai.training/internal/utils"
+	"azure.ai.training/pkg/client"
+	"azure.ai.training/pkg/models"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
+)
+
+func newJobSubmitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	extCtx = ensureExtensionContext(extCtx)
+	var filePath string
+
+	cmd := &cobra.Command{
+		Use:   "submit",
+		Short: "Submit a new training job from a YAML definition file",
+		Long:  "Submit a new training job by providing a YAML job definition file.\n\nExample:\n  azd ai training job submit --file job.yaml",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := azdext.WithAccessToken(cmd.Context())
+
+			if filePath == "" {
+				return fmt.Errorf("--file (-f) is required: provide a path to a YAML job definition file")
+			}
+
+			// Parse the YAML job definition
+			jobDef, err := utils.ParseJobFile(filePath)
+			if err != nil {
+				return err
+			}
+
+			// Run shared offline validation up-front (same checks as `job validate`).
+			// On any error finding, abort before doing any network or upload work.
+			yamlDir := filepath.Dir(filePath)
+			validation := utils.ValidateJobOffline(jobDef, yamlDir)
+			if len(validation.Findings) > 0 {
+				if err := utils.ReportValidationResult(filePath, validation, false); err != nil {
+					return err
+				}
+				fmt.Println()
+			}
+
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return fmt.Errorf("failed to create azd client: %w", err)
+			}
+			defer azdClient.Close()
+
+			envValues, err := utils.GetEnvironmentValues(ctx, azdClient)
+			if err != nil {
+				return fmt.Errorf("failed to get environment values: %w", err)
+			}
+
+			accountName := envValues[utils.EnvAzureAccountName]
+			projectName := envValues[utils.EnvAzureProjectName]
+			tenantID := envValues[utils.EnvAzureTenantID]
+
+			if accountName == "" || projectName == "" {
+				return fmt.Errorf("environment not configured. Run 'azd ai training init' first")
+			}
+
+			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+				TenantID:                   tenantID,
+				AdditionallyAllowedTenants: []string{"*"},
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create azure credential: %w", err)
+			}
+
+			// Gate on User-Assigned Managed Identity. Use cached value when
+			// available; otherwise make a single ARM call to populate it.
+			if err := ensureUAMIBeforeSubmit(ctx, azdClient, envValues, credential); err != nil {
+				return err
+			}
+
+			endpoint := buildProjectEndpoint(accountName, projectName)
+			apiClient, err := client.NewClient(endpoint, credential)
+			if err != nil {
+				return fmt.Errorf("failed to create API client: %w", err)
+			}
+			apiClient.SetDebugBody(extCtx.Debug)
+
+			// Auto-generate job name if not provided (same pattern as AML SDK)
+			if jobDef.Name == "" {
+				jobDef.Name = utils.GenerateJobName()
+			}
+
+			// Resolve relative paths in YAML to absolute paths (required during upload)
+			jobDef.ResolveRelativePaths(filepath.Dir(filePath))
+
+			// Initialize azcopy runner (auto-detects or auto-installs)
+			azRunner, err := azcopy.NewRunner(ctx, "")
+			if err != nil {
+				return fmt.Errorf("failed to initialize azcopy: %w", err)
+			}
+
+			uploadSvc := service.NewUploadService(apiClient, azRunner)
+
+			// Resolve references (compute name → ARM ID, local paths → datastore URIs)
+			resolver := service.NewJobResolver(
+				service.NewDefaultComputeResolver(),
+				service.NewDefaultCodeResolver(uploadSvc, projectName),
+				service.NewDefaultInputResolver(uploadSvc),
+			)
+			if err := resolver.ResolveJobDefinition(ctx, jobDef); err != nil {
+				return fmt.Errorf("failed to resolve job definition: %w", err)
+			}
+
+			// Build REST payload from YAML definition
+			jobResource := buildJobResource(jobDef)
+
+			fmt.Printf("Submitting command job: %s\n\n", jobDef.Name)
+
+			result, err := apiClient.CreateOrUpdateJob(ctx, jobDef.Name, jobResource)
+			if err != nil {
+				return fmt.Errorf("failed to create job: %w", err)
+			}
+
+			fmt.Printf("✓ Job '%s' submitted successfully\n\n", jobDef.Name)
+
+			if err := utils.PrintObject(result, utils.OutputFormat(extCtx.OutputFormat)); err != nil {
+				return err
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to YAML job definition file (required)")
+
+	// Configure the SDK-managed --output flag: default to "json" for this
+	// subcommand and constrain to the formats we support.
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"table", "json"},
+		Default:       "json",
+	})
+
+	return cmd
+}
+
+// buildJobResource converts a parsed YAML JobDefinition into the REST API payload.
+func buildJobResource(def *utils.JobDefinition) *models.JobResource {
+	job := models.CommandJob{
+		JobType:                   "Command",
+		ExperimentName:            def.ExperimentName,
+		DisplayName:               def.DisplayName,
+		Description:               def.Description,
+		Command:                   def.Command,
+		EnvironmentImageReference: def.Environment,
+		ComputeID:                 def.Compute,
+		GPUCount:                  def.GPUCount,
+		UserAssignedIdentityID:    def.Identity,
+		CodeID:                    def.Code,
+		EnvironmentVariables:      def.EnvironmentVariables,
+	}
+
+	if job.DisplayName == "" {
+		job.DisplayName = def.Name
+	}
+
+	// Map inputs from YAML to REST model
+	if len(def.Inputs) > 0 {
+		job.Inputs = make(map[string]models.JobInput, len(def.Inputs))
+		for name, input := range def.Inputs {
+			ji := models.JobInput{
+				JobInputType: input.Type,
+				Mode:         mapInputMode(input.Mode),
+			}
+			if input.Value != "" {
+				ji.JobInputType = "literal"
+				ji.Value = input.Value
+			} else {
+				ji.URI = input.Path
+			}
+			job.Inputs[name] = ji
+		}
+	}
+
+	// Map outputs
+	if len(def.Outputs) > 0 {
+		job.Outputs = make(map[string]models.JobOutput, len(def.Outputs))
+		for name, output := range def.Outputs {
+			job.Outputs[name] = models.JobOutput{
+				JobOutputType: output.Type,
+				Mode:          mapOutputMode(output.Mode),
+				URI:           output.Path,
+			}
+		}
+	}
+
+	// Distribution: nested AML schema with one of 4 launcher types.
+	// ValidateJobOffline restricts type to {pytorch, tensorflow, mpi, ray};
+	// per-type fields are passed through without further validation.
+	if def.Distribution != nil {
+		job.Distribution = buildDistribution(def.Distribution)
+	}
+
+	// Resources — prefer structured resources block, fall back to flat instance_count
+	if def.Resources != nil {
+		job.Resources = &models.ResourceConfig{
+			InstanceCount: def.Resources.InstanceCount,
+			InstanceType:  def.Resources.InstanceType,
+			ShmSize:       def.Resources.ShmSize,
+			DockerArgs:    def.Resources.DockerArgs,
+			Properties:    def.Resources.Properties,
+		}
+	} else if def.InstanceCount > 0 {
+		job.Resources = &models.ResourceConfig{
+			InstanceCount: def.InstanceCount,
+		}
+	}
+
+	// Limits (timeout)
+	if def.Timeout != "" {
+		job.Limits = &models.CommandJobLimits{
+			Timeout: def.Timeout,
+		}
+	}
+
+	// Services (e.g., SSH, JupyterLab, TensorBoard, VSCode, Custom).
+	// ValidateJobOffline restricts type to the AML-CLI supported set and
+	// enforces ssh_public_keys for ssh; other per-type fields are passed
+	// through to the backend without client-side validation.
+	if len(def.Services) > 0 {
+		job.Services = make(map[string]any, len(def.Services))
+		for name, svc := range def.Services {
+			job.Services[name] = buildServiceRequest(svc)
+		}
+	}
+
+	return &models.JobResource{
+		Properties: job,
+		Tags:       def.Tags,
+	}
+}
+
+// buildServiceRequest translates an AML YAML ServiceDefinition into the API request shape.
+// Supported types mirror AML CLI v2: ssh, jupyter_lab, tensor_board, vs_code, custom.
+func buildServiceRequest(svc utils.ServiceDefinition) *models.JobServiceRequest {
+	req := &models.JobServiceRequest{
+		JobServiceType: mapServiceType(svc.Type),
+		Port:           svc.Port,
+	}
+
+	// Nodes: "all" → { nodesValueType: "All" } (run on all nodes).
+	// Empty/unset → nil (backend default: leader node only, index 0).
+	if strings.EqualFold(strings.TrimSpace(svc.Nodes), "all") {
+		req.Nodes = &models.NodesValue{NodesValueType: "All"}
+	}
+
+	// Start with any user-supplied properties, then merge in well-known
+	// per-type fields (sshPublicKeys for ssh, logDir for tensor_board) so
+	// the user can write them at the top level of the service block.
+	props := make(map[string]any)
+	maps.Copy(props, svc.Properties)
+	switch strings.ToLower(strings.TrimSpace(svc.Type)) {
+	case "ssh":
+		props["sshPublicKeys"] = svc.SshPublicKeys
+	case "tensor_board":
+		if strings.TrimSpace(svc.LogDir) != "" {
+			props["logDir"] = svc.LogDir
+		}
+	}
+	if len(props) > 0 {
+		req.Properties = props
+	}
+
+	return req
+}
+
+// mapServiceType converts an AML CLI YAML service type to the API jobServiceType.
+// Unknown types pass through unchanged so the server can reject them with a
+// clear error message (offline validation already restricts the accepted set).
+func mapServiceType(t string) string {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "ssh":
+		return "SSH"
+	case "jupyter_lab":
+		return "JupyterLab"
+	case "tensor_board":
+		return "TensorBoard"
+	case "vs_code":
+		return "VSCode"
+	case "custom":
+		return "Custom"
+	}
+	return t
+}
+
+// buildDistribution translates an AML YAML DistributionDefinition into the API request shape.
+// Only fields relevant to the chosen type are forwarded; everything else is dropped so we
+// don't accidentally send pytorch-specific fields on a ray job (and vice versa).
+func buildDistribution(d *utils.DistributionDefinition) *models.Distribution {
+	out := &models.Distribution{
+		DistributionType: mapDistributionType(d.Type),
+	}
+	switch strings.ToLower(strings.TrimSpace(d.Type)) {
+	case "pytorch", "mpi":
+		out.ProcessCountPerInstance = d.ProcessCountPerInstance
+	case "tensorflow":
+		out.ParameterServerCount = d.ParameterServerCount
+		out.WorkerCount = d.WorkerCount
+	case "ray":
+		out.Port = d.Port
+		out.Address = d.Address
+		out.IncludeDashboard = d.IncludeDashboard
+		out.DashboardPort = d.DashboardPort
+		out.HeadNodeAdditionalArgs = d.HeadNodeAdditionalArgs
+		out.WorkerNodeAdditionalArgs = d.WorkerNodeAdditionalArgs
+	}
+	return out
+}
+
+// mapDistributionType converts the AML YAML distribution type to the API distributionType.
+// Unknown values pass through unchanged so the server returns a clear error (offline
+// validation already restricts the accepted set).
+func mapDistributionType(t string) string {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "pytorch":
+		return "PyTorch"
+	case "tensorflow":
+		return "TensorFlow"
+	case "mpi":
+		return "Mpi"
+	case "ray":
+		return "Ray"
+	}
+	return t
+}
+
+// mapInputMode converts AML YAML mode names to REST API mode names.
+func mapInputMode(mode string) string {
+	switch strings.ToLower(mode) {
+	case "ro_mount":
+		return "ReadOnlyMount"
+	case "download":
+		return "Download"
+	case "direct":
+		return "Direct"
+	case "":
+		return ""
+	default:
+		return mode // pass through if already in API format
+	}
+}
+
+// mapOutputMode converts AML YAML mode names to REST API mode names.
+func mapOutputMode(mode string) string {
+	switch strings.ToLower(mode) {
+	case "rw_mount":
+		return "ReadWriteMount"
+	case "upload":
+		return "Upload"
+	case "direct":
+		return "Direct"
+	case "":
+		return ""
+	default:
+		return mode // pass through if already in API format
+	}
+}

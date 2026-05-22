@@ -21,10 +21,12 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -53,6 +55,16 @@ type initFlags struct {
 	src               string
 	env               string
 	protocols         []string
+	// deploy mode flags for non-interactive code deploy support
+	deployMode    string // "container" or "code"; empty = prompt interactively
+	runtime       string // e.g. "python_3_13", "python_3_14", "dotnet_10"
+	entryPoint    string // e.g. "app.py", "MyAgent.dll"
+	depResolution string // "remote_build" or "bundled"; defaults to "remote_build"
+	// force, when true, lets headless callers (--no-prompt) pre-consent to
+	// overwrite prompts that would otherwise return a structured error. It
+	// mirrors the `--force` convention used by `azd down`, `azd env remove`,
+	// `azd config reset`, and `azd infra generate`.
+	force bool
 	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
 	// and is not registered as a CLI flag on the init command itself.
 	noPrompt bool
@@ -421,7 +433,18 @@ func resolveExistingAgentNameConflictWithChecker(
 	for {
 		exists, err := agents.AgentExists(ctx, agentChecker, agentName, DefaultAgentAPIVersion)
 		if err != nil {
-			return "", fmt.Errorf("checking whether agent %q exists: %w", agentName, err)
+			if exterrors.IsCancellation(err) || errors.Is(err, context.DeadlineExceeded) {
+				return "", err
+			}
+
+			// This check is a convenience to warn the user about name conflicts; it should
+			// never block init. Log a warning and continue with the requested name.
+			fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+				"WARNING: unable to check whether agent %q already exists: %v\n",
+				agentName,
+				err,
+			))
+			return agentName, nil
 		}
 		if !exists {
 			return agentName, nil
@@ -597,7 +620,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
   azd ai agent init -m ./agent.manifest.yaml --agent-name my-unique-agent
 
   # Initialize from local agent code
-  azd ai agent init --src ./src/my-agent --agent-name my-unique-agent`,
+  azd ai agent init --src ./src/my-agent --agent-name my-unique-agent
+
+  # Non-interactive code deploy (CI/CD)
+  azd ai agent init --no-prompt --project-id "<resource-id>" \
+    --deploy-mode code --runtime python_3_13 --entry-point app.py`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.noPrompt = extCtx.NoPrompt
@@ -836,6 +863,22 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
 		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
 
+	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "",
+		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'container' in --no-prompt.")
+
+	cmd.Flags().StringVar(&flags.runtime, "runtime", "",
+		"Runtime for code deploy (e.g., 'python_3_13', 'python_3_14', 'dotnet_10'). Required with --deploy-mode code --no-prompt.")
+
+	cmd.Flags().StringVar(&flags.entryPoint, "entry-point", "",
+		"Entry point file for code deploy (e.g., 'app.py', 'MyAgent.dll'). Required with --deploy-mode code --no-prompt.")
+
+	cmd.Flags().StringVar(&flags.depResolution, "dep-resolution", "",
+		"Dependency resolution for code deploy: 'remote_build' or 'bundled'. Defaults to 'remote_build'.")
+
+	cmd.Flags().BoolVar(&flags.force, "force", false,
+		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+
+			"Required together with --no-prompt when init would otherwise need confirmation.")
+
 	return cmd
 }
 
@@ -853,6 +896,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to convert src path to relative path: %w", err)
 		}
 		a.flags.src = relPath
+	}
+
+	// Validate code deploy flags
+	if err := a.validateCodeDeployFlags(); err != nil {
+		return err
 	}
 
 	// If --manifest is given
@@ -890,7 +938,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		// Code deploy is supported for Python and .NET projects.
 		if _, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
 			showCodeDeploy := isPythonProject(targetDir) || isDotnetProject(targetDir)
-			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy)
+			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, a.flags.deployMode)
 			if err != nil {
 				return fmt.Errorf("prompting for deploy mode: %w", err)
 			}
@@ -898,7 +946,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 
 			if a.isCodeDeploy {
 				// Prompt for code configuration and update the manifest
-				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt)
+				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt, codeDeployOptions{
+					runtime:       a.flags.runtime,
+					entryPoint:    a.flags.entryPoint,
+					depResolution: a.flags.depResolution,
+				})
 				if err != nil {
 					return fmt.Errorf("prompting for code configuration: %w", err)
 				}
@@ -1170,14 +1222,19 @@ func (a *InitAction) configureModelChoice(
 			}
 
 			if selectedProject == nil {
-				return nil, fmt.Errorf("foundry project not found: %s", a.flags.projectResourceId)
+				return nil, fmt.Errorf("specified foundry project was not found or is not eligible for the current configuration: %s", a.flags.projectResourceId)
 			}
 
 			// Signal Bicep to skip project/role/connection provisioning for this existing project
 			if err := setEnvValue(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
 			); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+			}
+			if err := updatePendingProjectSignal(
+				ctx, a.azdClient, a.environment.Name, true,
+			); err != nil {
+				log.Printf("warning: failed to update project provision signal: %v", err)
 			}
 		} else {
 			// Prompt user to pick an existing Foundry project or create new resources
@@ -1195,6 +1252,9 @@ func (a *InitAction) configureModelChoice(
 				},
 			})
 			if err != nil {
+				if exterrors.IsCancellation(err) {
+					return nil, exterrors.Cancelled("project selection was cancelled")
+				}
 				return nil, exterrors.FromPrompt(err, "failed to prompt for Foundry project configuration choice")
 			}
 
@@ -1226,7 +1286,12 @@ func (a *InitAction) configureModelChoice(
 					if err := setEnvValue(
 						ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 					); err != nil {
-						return nil, err
+						return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+					}
+					if err := updatePendingProjectSignal(
+						ctx, a.azdClient, a.environment.Name, false,
+					); err != nil {
+						log.Printf("warning: failed to update project provision signal: %v", err)
 					}
 					if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
 						return nil, err
@@ -1236,7 +1301,12 @@ func (a *InitAction) configureModelChoice(
 					if err := setEnvValue(
 						ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
 					); err != nil {
-						return nil, err
+						return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+					}
+					if err := updatePendingProjectSignal(
+						ctx, a.azdClient, a.environment.Name, true,
+					); err != nil {
+						log.Printf("warning: failed to update project provision signal: %v", err)
 					}
 				}
 			default:
@@ -1253,7 +1323,12 @@ func (a *InitAction) configureModelChoice(
 				if err := setEnvValue(
 					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 				); err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+				}
+				if err := updatePendingProjectSignal(
+					ctx, a.azdClient, a.environment.Name, false,
+				); err != nil {
+					log.Printf("warning: failed to update project provision signal: %v", err)
 				}
 			}
 		}
@@ -1261,37 +1336,9 @@ func (a *InitAction) configureModelChoice(
 		return agentManifest, nil
 	}
 
-	modelConfigChoices := []*azdext.SelectChoice{
-		{Label: "Deploy new model(s) from the catalog", Value: "new"},
-		{Label: "Use existing model deployment(s) from a Foundry project", Value: "existing"},
-	}
-
-	var modelConfigChoice string
-
+	// Step 1: Foundry project selection
 	if a.flags.projectResourceId != "" {
 		// --project-id provided: auto-select "existing" path
-		modelConfigChoice = "existing"
-	} else {
-		defaultIndex := int32(0)
-		modelConfigResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message:       "How would you like to configure model(s) for your agent?",
-				Choices:       modelConfigChoices,
-				SelectedIndex: &defaultIndex,
-			},
-		})
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("model configuration choice was cancelled")
-			}
-			return nil, fmt.Errorf("failed to prompt for model configuration choice: %w", err)
-		}
-		modelConfigChoice = modelConfigChoices[*modelConfigResp.Value].Value
-	}
-
-	switch modelConfigChoice {
-	case "existing":
-		// Ensure subscription for project listing
 		newCred, err := ensureSubscription(
 			ctx, a.azdClient, a.azureContext, a.environment.Name,
 			"Select an Azure subscription to look up available models and provision your Foundry project resources.",
@@ -1301,7 +1348,6 @@ func (a *InitAction) configureModelChoice(
 		}
 		a.credential = newCred
 
-		// Select a Foundry project (sets AZURE_AI_PROJECT_ID, ACR, AppInsights env vars)
 		selectedProject, err := selectFoundryProject(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
@@ -1312,44 +1358,105 @@ func (a *InitAction) configureModelChoice(
 		}
 
 		if selectedProject != nil {
-			// Signal Bicep to skip project/role/connection provisioning for this existing project
 			if err := setEnvValue(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
 			); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+			}
+			if err := updatePendingProjectSignal(
+				ctx, a.azdClient, a.environment.Name, true,
+			); err != nil {
+				log.Printf("warning: failed to update project provision signal: %v", err)
 			}
 		} else {
-			// No existing project selected (no projects found or user chose "Create new") → fall back to "deploy new" path
-			fmt.Println(output.WithGrayFormat(
-				"No existing Foundry project was selected. Falling back to deploying a new model.",
-			))
-			// Clear any stale existing-project flag from a previous init
+			return nil, fmt.Errorf("specified foundry project was not found or is not eligible for the current configuration: %s", a.flags.projectResourceId)
+		}
+	} else {
+		// Prompt user to pick an existing Foundry project or create new resources
+		projectChoices := []*azdext.SelectChoice{
+			{Label: "Use an existing Foundry project", Value: "existing"},
+			{Label: "Create a new Foundry project", Value: "new"},
+		}
+
+		defaultIdx := int32(0)
+		projectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message:       "Select a Foundry project to host your agent and any models or tools it uses.",
+				Choices:       projectChoices,
+				SelectedIndex: &defaultIdx,
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("project selection was cancelled")
+			}
+			return nil, exterrors.FromPrompt(err, "failed to prompt for Foundry project configuration choice")
+		}
+
+		switch projectChoices[*projectResp.Value].Value {
+		case "existing":
+			newCred, err := ensureSubscription(
+				ctx, a.azdClient, a.azureContext, a.environment.Name,
+				"Select an Azure subscription to find existing Foundry projects.",
+			)
+			if err != nil {
+				return nil, err
+			}
+			a.credential = newCred
+
+			selectedProject, err := selectFoundryProject(
+				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
+				a.azureContext.Scope.SubscriptionId, "",
+				a.isCodeDeploy,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			if selectedProject == nil {
+				// No existing project selected → fall back to "create new" path
+				fmt.Println(output.WithGrayFormat(
+					"No existing Foundry project was selected. Falling back to creating new resources.",
+				))
+				if err := setEnvValue(
+					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
+				); err != nil {
+					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+				}
+				if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
+					return nil, err
+				}
+			} else {
+				if err := setEnvValue(
+					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
+				); err != nil {
+					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+				}
+			}
+		default:
+			newCred, err := ensureSubscriptionAndLocation(
+				ctx, a.azdClient, a.azureContext, a.environment.Name,
+				"Select an Azure subscription to look up available models and provision your Foundry project resources.",
+			)
+			if err != nil {
+				return nil, err
+			}
+			a.credential = newCred
+
+			// Creating new resources — clear any stale existing-project flag
 			if err := setEnvValue(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 			); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+			}
+			if err := updatePendingProjectSignal(
+				ctx, a.azdClient, a.environment.Name, false,
+			); err != nil {
+				log.Printf("warning: failed to update project provision signal: %v", err)
 			}
 			if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
 				return nil, err
 			}
-		}
-
-	case "new":
-		// Ensure subscription + location for model catalog
-		newCred, err := ensureSubscriptionAndLocation(
-			ctx, a.azdClient, a.azureContext, a.environment.Name,
-			"Select an Azure subscription to look up available models and provision your Foundry project resources.",
-		)
-		if err != nil {
-			return nil, err
-		}
-		a.credential = newCred
-
-		// Deploying new resources — clear any stale existing-project flag
-		if err := setEnvValue(
-			ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
-		); err != nil {
-			return nil, err
 		}
 	}
 
@@ -1590,17 +1697,36 @@ func (a *InitAction) downloadAgentYaml(
 
 			// Check if manifest is under src directory
 			if isSubpath(absManifestPath, srcDir) {
-				confirmResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-					Options: &azdext.ConfirmOptions{
-						Message:      "This operation will overwrite the provided manifest file. Continue?",
-						DefaultValue: new(false),
-					},
-				})
-				if err != nil {
-					return nil, "", fmt.Errorf("prompting for confirmation: %w", err)
-				}
-				if !*confirmResponse.Value {
-					return nil, "", exterrors.Cancelled("operation cancelled by user")
+				// `--force` is the explicit pre-consent path for headless
+				// callers: skip both the prompt and the no-prompt refusal,
+				// and accept the overwrite. We log the decision so debug
+				// output makes the choice visible in CI logs.
+				if a.flags.force {
+					log.Printf("--force: overwriting manifest %q inside src directory %q", manifestPointer, srcDir)
+				} else if a.flags.noPrompt {
+					// In no-prompt mode, refuse to silently overwrite a manifest
+					// that lives inside the project's src tree. Headless callers
+					// can pass --force to pre-consent, move the manifest, choose
+					// a different --src target, or run interactively to confirm.
+					return nil, "", exterrors.Validation(
+						exterrors.CodeInvalidManifestPointer,
+						fmt.Sprintf("manifest %q is inside the project src directory %q and would be overwritten", manifestPointer, srcDir),
+						"pass --force to overwrite, move the manifest outside the src tree, "+
+							"pass a different --src directory, or run interactively to confirm the overwrite",
+					)
+				} else {
+					confirmResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+						Options: &azdext.ConfirmOptions{
+							Message:      "This operation will overwrite the provided manifest file. Continue?",
+							DefaultValue: new(false),
+						},
+					})
+					if err != nil {
+						return nil, "", fmt.Errorf("prompting for confirmation: %w", err)
+					}
+					if !*confirmResponse.Value {
+						return nil, "", exterrors.Cancelled("operation cancelled by user")
+					}
 				}
 			}
 		}
@@ -1736,9 +1862,15 @@ func (a *InitAction) downloadAgentYaml(
 
 	fmt.Println(output.WithGrayFormat("✓ Manifest validated successfully"))
 
-	agentId := agentManifest.Name
+	// Use the (possibly user-renamed) selected agent name as the canonical
+	// identifier for naming the service entry and target directory. The
+	// outer manifest's Name field is not updated when the user resolves a
+	// conflict with an existing Foundry agent, so prefer selectedAgentName
+	// to keep azure.yaml's service entry consistent with the agent name
+	// written to agent.yaml.
+	agentId := selectedAgentName
 	if agentId == "" {
-		agentId = selectedAgentName
+		agentId = agentManifest.Name
 	}
 	serviceName := strings.ReplaceAll(agentId, " ", "")
 
@@ -2019,18 +2151,18 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		"\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n",
 		a.serviceNameOverride,
 	)
-	if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: a.environment.Name,
-		Key:     "AZURE_AI_PROJECT_ID",
-	}); projectID != nil && projectID.Value != "" {
-		fmt.Printf("To deploy your agent, use %s.\n",
-			color.HiBlueString("azd deploy %s", a.serviceNameOverride))
-	} else {
-		fmt.Printf(
-			"To provision and deploy the whole solution, use %s.\n",
-			color.HiBlueString("azd up"),
-		)
-	}
+
+	// Replace the legacy hardcoded `azd up` / `azd deploy` hint with the
+	// shared nextstep resolver. The resolver inspects the current azd
+	// environment plus each azure.ai.agent service's agent.yaml and emits
+	// context-aware guidance: `azd provision` when infra outputs are
+	// unset, `azd env set <KEY> <value>` lines when agent.yaml references
+	// user-supplied variables that are unset, or `azd ai agent run` when
+	// everything is configured. All paths append the deploy hint as the
+	// trailing line. State-assembly errors are intentionally ignored: the
+	// resolver degrades gracefully on partial state per the design spec.
+	state, _ := nextstep.AssembleState(ctx, a.azdClient)
+	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state))
 	return nil
 }
 
@@ -2254,7 +2386,7 @@ func (a *InitAction) populateContainerSettings(
 	if manifestResources != nil {
 		for i, t := range project.ResourceTiers {
 			if t.Cpu == manifestResources.Cpu && t.Memory == manifestResources.Memory {
-				defaultIndex = int32(i)
+				defaultIndex = boundedInt32Index(i)
 				break
 			}
 		}
@@ -2794,7 +2926,7 @@ func injectToolboxEnvVarsIntoDefinition(manifest *agent_yaml.AgentManifest) erro
 	}
 
 	for _, tbName := range toolboxNames {
-		envKey := toolboxMCPEndpointEnvKey(tbName)
+		envKey := envkey.ToolboxMCPEndpoint(tbName)
 		if existingNames[envKey] {
 			return fmt.Errorf(
 				"duplicate toolbox environment variable %q (from toolbox %q)",
@@ -2879,4 +3011,61 @@ func extractConnectionConfigs(
 	}
 
 	return connections, credentialEnvVars, nil
+}
+
+// validateCodeDeployFlags checks that required flags are present when using
+// --deploy-mode code in --no-prompt mode.
+func (a *InitAction) validateCodeDeployFlags() error {
+	return validateCodeDeployInput(
+		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution)
+}
+
+// validateCodeDeployInput is the shared validation logic for code deploy flags.
+// Used by both InitAction and InitFromCodeAction.
+func validateCodeDeployInput(noPrompt bool, deployMode, runtime, entryPoint, depResolution string) error {
+	if deployMode != "" && deployMode != "container" && deployMode != "code" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--deploy-mode must be 'container' or 'code'",
+			"Specify --deploy-mode container or --deploy-mode code",
+		)
+	}
+	if runtime != "" {
+		validRuntimes := map[string]bool{
+			"python_3_13": true,
+			"python_3_14": true,
+			"dotnet_10":   true,
+		}
+		if !validRuntimes[runtime] {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--runtime must be one of: python_3_13, python_3_14, dotnet_10",
+				"Specify a valid runtime value",
+			)
+		}
+	}
+	if depResolution != "" && depResolution != "remote_build" && depResolution != "bundled" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--dep-resolution must be 'remote_build' or 'bundled'",
+			"Specify --dep-resolution remote_build or --dep-resolution bundled",
+		)
+	}
+	if noPrompt && deployMode == "code" {
+		if runtime == "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--runtime is required when using --deploy-mode code with --no-prompt",
+				"Specify --runtime (e.g., python_3_13, python_3_14, dotnet_10)",
+			)
+		}
+		if entryPoint == "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--entry-point is required when using --deploy-mode code with --no-prompt",
+				"Specify --entry-point (e.g., app.py, main.py, MyAgent.dll)",
+			)
+		}
+	}
+	return nil
 }

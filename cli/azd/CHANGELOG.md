@@ -10,6 +10,14 @@
 
 ### Other Changes
 
+## 1.25.2 (2026-05-22)
+
+### Bugs Fixed
+
+- [[#8230]](https://github.com/Azure/azure-dev/pull/8230) Fix `-C`/`--cwd` relative path being applied twice when invoking extensions, causing "no such file or directory" errors.
+- [[#8240]](https://github.com/Azure/azure-dev/pull/8240) Fix false-positive preflight warning for Azure Chaos Studio target resources (`Microsoft.Chaos/targets`) whose names are service-mandated.
+- [[#8249]](https://github.com/Azure/azure-dev/pull/8249) Fix AI agent detection not recognizing Copilot CLI via the `COPILOT_CLI` environment variable. Thanks @tmeschter for the contribution!
+
 ## 1.25.1 (2026-05-15)
 
 ### Features Added

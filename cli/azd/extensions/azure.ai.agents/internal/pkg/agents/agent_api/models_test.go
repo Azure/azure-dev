@@ -966,7 +966,7 @@ func TestAgentEndpoint_RoundTrip(t *testing.T) {
 	t.Parallel()
 
 	original := AgentEndpoint{
-		Protocols: []AgentProtocol{AgentProtocolResponses, AgentProtocolA2A},
+		Protocols: []AgentEndpointProtocol{AgentEndpointProtocolResponses, AgentEndpointProtocolA2A},
 	}
 
 	data, err := json.Marshal(original)
@@ -989,11 +989,11 @@ func TestAgentEndpoint_RoundTrip(t *testing.T) {
 	if len(got.Protocols) != 2 {
 		t.Fatalf("Protocols length = %d, want 2", len(got.Protocols))
 	}
-	if got.Protocols[0] != AgentProtocolResponses {
-		t.Errorf("Protocols[0] = %q, want %q", got.Protocols[0], AgentProtocolResponses)
+	if got.Protocols[0] != AgentEndpointProtocolResponses {
+		t.Errorf("Protocols[0] = %q, want %q", got.Protocols[0], AgentEndpointProtocolResponses)
 	}
-	if got.Protocols[1] != AgentProtocolA2A {
-		t.Errorf("Protocols[1] = %q, want %q", got.Protocols[1], AgentProtocolA2A)
+	if got.Protocols[1] != AgentEndpointProtocolA2A {
+		t.Errorf("Protocols[1] = %q, want %q", got.Protocols[1], AgentEndpointProtocolA2A)
 	}
 }
 
@@ -1097,7 +1097,7 @@ func TestCreateAgentRequest_WithEndpointAndCard(t *testing.T) {
 	original := CreateAgentRequest{
 		Name: "a2a-agent",
 		AgentEndpoint: &AgentEndpoint{
-			Protocols: []AgentProtocol{AgentProtocolResponses, AgentProtocolA2A},
+			Protocols: []AgentEndpointProtocol{AgentEndpointProtocolResponses, AgentEndpointProtocolA2A},
 		},
 		AgentCard: &AgentCard{
 			Description: "test a2a agent",
@@ -1165,5 +1165,122 @@ func TestIsInvocable(t *testing.T) {
 				t.Errorf("IsInvocable() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestAgentEndpoint_JSONRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	original := AgentEndpoint{
+		VersionSelector: &VersionSelector{
+			VersionSelectionRules: []VersionSelectionRule{
+				{
+					Type:              VersionSelectorTypeFixedRatio,
+					AgentVersion:      "v1",
+					TrafficPercentage: new(int32(70)),
+				},
+				{
+					Type:         VersionSelectorTypeFixedRatio,
+					AgentVersion: "v2",
+				},
+			},
+		},
+		Protocols: []AgentEndpointProtocol{
+			AgentEndpointProtocolResponses,
+			AgentEndpointProtocolA2A,
+		},
+		AuthorizationSchemes: []AgentEndpointAuthorizationScheme{
+			{
+				Type: AgentEndpointAuthSchemeEntra,
+				IsolationKeySource: &IsolationKeySource{
+					Kind: IsolationKeySourceKindEntra,
+				},
+			},
+			{
+				Type: AgentEndpointAuthSchemeBotService,
+			},
+		},
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	s := string(data)
+	for _, field := range []string{
+		`"version_selector"`, `"version_selection_rules"`, `"type"`,
+		`"agent_version"`, `"traffic_percentage"`,
+		`"protocols"`, `"authorization_schemes"`, `"isolation_key_source"`, `"kind"`,
+	} {
+		if !strings.Contains(s, field) {
+			t.Errorf("expected JSON to contain %s, got: %s", field, s)
+		}
+	}
+
+	var got AgentEndpoint
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// VersionSelector
+	if got.VersionSelector == nil {
+		t.Fatal("VersionSelector is nil after round-trip")
+	}
+	if len(got.VersionSelector.VersionSelectionRules) != 2 {
+		t.Fatalf("VersionSelectionRules length = %d, want 2",
+			len(got.VersionSelector.VersionSelectionRules))
+	}
+	r0 := got.VersionSelector.VersionSelectionRules[0]
+	if r0.Type != VersionSelectorTypeFixedRatio {
+		t.Errorf("rules[0].Type = %q, want %q", r0.Type, VersionSelectorTypeFixedRatio)
+	}
+	if r0.AgentVersion != "v1" {
+		t.Errorf("rules[0].AgentVersion = %q, want %q", r0.AgentVersion, "v1")
+	}
+	if r0.TrafficPercentage == nil || *r0.TrafficPercentage != 70 {
+		t.Errorf("rules[0].TrafficPercentage = %v, want 70", r0.TrafficPercentage)
+	}
+	r1 := got.VersionSelector.VersionSelectionRules[1]
+	if r1.AgentVersion != "v2" {
+		t.Errorf("rules[1].AgentVersion = %q, want %q", r1.AgentVersion, "v2")
+	}
+	if r1.TrafficPercentage != nil {
+		t.Errorf("rules[1].TrafficPercentage = %v, want nil", r1.TrafficPercentage)
+	}
+
+	// Protocols
+	if len(got.Protocols) != 2 {
+		t.Fatalf("Protocols length = %d, want 2", len(got.Protocols))
+	}
+	if got.Protocols[0] != AgentEndpointProtocolResponses {
+		t.Errorf("Protocols[0] = %q, want %q", got.Protocols[0], AgentEndpointProtocolResponses)
+	}
+	if got.Protocols[1] != AgentEndpointProtocolA2A {
+		t.Errorf("Protocols[1] = %q, want %q", got.Protocols[1], AgentEndpointProtocolA2A)
+	}
+
+	// AuthorizationSchemes
+	if len(got.AuthorizationSchemes) != 2 {
+		t.Fatalf("AuthorizationSchemes length = %d, want 2", len(got.AuthorizationSchemes))
+	}
+	if got.AuthorizationSchemes[0].Type != AgentEndpointAuthSchemeEntra {
+		t.Errorf("schemes[0].Type = %q, want %q",
+			got.AuthorizationSchemes[0].Type, AgentEndpointAuthSchemeEntra)
+	}
+	if got.AuthorizationSchemes[0].IsolationKeySource == nil {
+		t.Fatal("schemes[0].IsolationKeySource is nil")
+	}
+	if got.AuthorizationSchemes[0].IsolationKeySource.Kind != IsolationKeySourceKindEntra {
+		t.Errorf("schemes[0].IsolationKeySource.Kind = %q, want %q",
+			got.AuthorizationSchemes[0].IsolationKeySource.Kind, IsolationKeySourceKindEntra)
+	}
+	if got.AuthorizationSchemes[1].Type != AgentEndpointAuthSchemeBotService {
+		t.Errorf("schemes[1].Type = %q, want %q",
+			got.AuthorizationSchemes[1].Type, AgentEndpointAuthSchemeBotService)
+	}
+	if got.AuthorizationSchemes[1].IsolationKeySource != nil {
+		t.Errorf("schemes[1].IsolationKeySource = %v, want nil",
+			got.AuthorizationSchemes[1].IsolationKeySource)
 	}
 }

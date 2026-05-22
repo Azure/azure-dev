@@ -6,7 +6,7 @@ EXTENSION_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Change to the script directory
 cd "$EXTENSION_DIR" || exit
 
-# Create a safe version of EXTENSION_ID replacing dots with dashes
+# Create EXTENSION_ID_SAFE by replacing dots in EXTENSION_ID with dashes
 EXTENSION_ID_SAFE="${EXTENSION_ID//./-}"
 
 # Define output directory
@@ -33,7 +33,7 @@ else
     )
 fi
 
-APP_PATH="$EXTENSION_ID/internal/cmd"
+VERSION_PATH="azureaiinspector/internal/version"
 
 # Loop through platforms and build
 for PLATFORM in "${PLATFORMS[@]}"; do
@@ -53,7 +53,7 @@ for PLATFORM in "${PLATFORMS[@]}"; do
 
     # Set environment variables for Go build
     GOOS=$OS GOARCH=$ARCH go build \
-        -ldflags="-X '$APP_PATH.Version=$EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" \
+        -ldflags="-X '$VERSION_PATH.Version=$EXTENSION_VERSION' -X '$VERSION_PATH.Commit=$COMMIT' -X '$VERSION_PATH.BuildDate=$BUILD_DATE'" \
         -o "$OUTPUT_NAME"
 
     if [ $? -ne 0 ]; then

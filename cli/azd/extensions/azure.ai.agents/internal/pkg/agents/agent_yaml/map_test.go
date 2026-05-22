@@ -1163,13 +1163,13 @@ func TestCreateHostedAgentAPIRequest_WithAgentEndpointAndCard(t *testing.T) {
 		t.Fatalf("AgentEndpoint.Protocols length = %d, want 2",
 			len(request.AgentEndpoint.Protocols))
 	}
-	if request.AgentEndpoint.Protocols[0] != agent_api.AgentProtocolResponses {
+	if request.AgentEndpoint.Protocols[0] != agent_api.AgentEndpointProtocolResponses {
 		t.Errorf("AgentEndpoint.Protocols[0] = %q, want %q",
-			request.AgentEndpoint.Protocols[0], agent_api.AgentProtocolResponses)
+			request.AgentEndpoint.Protocols[0], agent_api.AgentEndpointProtocolResponses)
 	}
-	if request.AgentEndpoint.Protocols[1] != agent_api.AgentProtocolA2A {
+	if request.AgentEndpoint.Protocols[1] != agent_api.AgentEndpointProtocolA2A {
 		t.Errorf("AgentEndpoint.Protocols[1] = %q, want %q",
-			request.AgentEndpoint.Protocols[1], agent_api.AgentProtocolA2A)
+			request.AgentEndpoint.Protocols[1], agent_api.AgentEndpointProtocolA2A)
 	}
 
 	// Verify agent_card is populated
@@ -1434,5 +1434,103 @@ func TestCreateAgentAPIRequest_CodeDeploy_PythonRuntime(t *testing.T) {
 
 	if codeDef.CodeConfiguration.Runtime != "python_3_12" {
 		t.Errorf("Runtime = %q, want %q", codeDef.CodeConfiguration.Runtime, "python_3_12")
+	}
+}
+
+func TestCreateHostedAgentAPIRequest_WithVersionSelectorAndAuthSchemes(t *testing.T) {
+	t.Parallel()
+
+	trafficPct := int32(80)
+	hostedAgent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "selector-agent",
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "responses", Version: "1.0.0"},
+		},
+		AgentEndpoint: &AgentEndpoint{
+			Protocols: []string{"responses"},
+			VersionSelector: &VersionSelector{
+				VersionSelectionRules: []VersionSelectionRule{
+					{
+						Type:              "FixedRatio",
+						AgentVersion:      "v1",
+						TrafficPercentage: &trafficPct,
+					},
+					{
+						Type:         "FixedRatio",
+						AgentVersion: "v2",
+					},
+				},
+			},
+			AuthorizationSchemes: []AuthorizationScheme{
+				{
+					Type: "Entra",
+					IsolationKeySource: &IsolationKeySource{
+						Kind: "Entra",
+					},
+				},
+				{
+					Type: "BotService",
+				},
+			},
+		},
+	}
+
+	buildConfig := &AgentBuildConfig{ImageURL: "myregistry.azurecr.io/agent:latest"}
+	request, err := CreateHostedAgentAPIRequest(hostedAgent, buildConfig)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if request.AgentEndpoint == nil {
+		t.Fatal("AgentEndpoint is nil")
+	}
+
+	// Verify version selector
+	if request.AgentEndpoint.VersionSelector == nil {
+		t.Fatal("VersionSelector is nil")
+	}
+	rules := request.AgentEndpoint.VersionSelector.VersionSelectionRules
+	if len(rules) != 2 {
+		t.Fatalf("VersionSelectionRules length = %d, want 2", len(rules))
+	}
+	if rules[0].Type != agent_api.VersionSelectorTypeFixedRatio {
+		t.Errorf("rules[0].Type = %q, want %q", rules[0].Type, agent_api.VersionSelectorTypeFixedRatio)
+	}
+	if rules[0].AgentVersion != "v1" {
+		t.Errorf("rules[0].AgentVersion = %q, want %q", rules[0].AgentVersion, "v1")
+	}
+	if rules[0].TrafficPercentage == nil || *rules[0].TrafficPercentage != 80 {
+		t.Errorf("rules[0].TrafficPercentage = %v, want 80", rules[0].TrafficPercentage)
+	}
+	if rules[1].AgentVersion != "v2" {
+		t.Errorf("rules[1].AgentVersion = %q, want %q", rules[1].AgentVersion, "v2")
+	}
+	if rules[1].TrafficPercentage != nil {
+		t.Errorf("rules[1].TrafficPercentage = %v, want nil", rules[1].TrafficPercentage)
+	}
+
+	// Verify authorization schemes
+	schemes := request.AgentEndpoint.AuthorizationSchemes
+	if len(schemes) != 2 {
+		t.Fatalf("AuthorizationSchemes length = %d, want 2", len(schemes))
+	}
+	if schemes[0].Type != agent_api.AgentEndpointAuthSchemeEntra {
+		t.Errorf("schemes[0].Type = %q, want %q", schemes[0].Type, agent_api.AgentEndpointAuthSchemeEntra)
+	}
+	if schemes[0].IsolationKeySource == nil {
+		t.Fatal("schemes[0].IsolationKeySource is nil")
+	}
+	if schemes[0].IsolationKeySource.Kind != agent_api.IsolationKeySourceKindEntra {
+		t.Errorf("schemes[0].IsolationKeySource.Kind = %q, want %q",
+			schemes[0].IsolationKeySource.Kind, agent_api.IsolationKeySourceKindEntra)
+	}
+	if schemes[1].Type != agent_api.AgentEndpointAuthSchemeBotService {
+		t.Errorf("schemes[1].Type = %q, want %q", schemes[1].Type, agent_api.AgentEndpointAuthSchemeBotService)
+	}
+	if schemes[1].IsolationKeySource != nil {
+		t.Errorf("schemes[1].IsolationKeySource should be nil, got %v", schemes[1].IsolationKeySource)
 	}
 }

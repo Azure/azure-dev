@@ -421,3 +421,100 @@ func TestIsReservedEnvVarError(t *testing.T) {
 		})
 	}
 }
+
+// ---- writeToolsFile ----
+
+func TestWriteToolsFile_NoKeys(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	err := writeToolsFile(dir, map[string]any{"name": "agent"})
+	require.NoError(t, err)
+	assert.NoFileExists(t, filepath.Join(dir, opt_eval.ToolsFile))
+}
+
+func TestWriteToolsFile_OnlyToolDefinitions(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	defs := []any{
+		map[string]any{"type": "function", "function": map[string]any{"name": "search"}},
+	}
+	err := writeToolsFile(dir, map[string]any{"toolDefinitions": defs})
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(dir, opt_eval.ToolsFile)) //nolint:gosec // test file path
+	require.NoError(t, err)
+
+	// Should be written as a raw list (no wrapper object).
+	var parsed []any
+	require.NoError(t, json.Unmarshal(data, &parsed))
+	assert.Len(t, parsed, 1)
+}
+
+func TestWriteToolsFile_OnlyToolDescriptions(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	descs := map[string]any{
+		"lookup_policy": map[string]any{
+			"description": "Look up policy",
+			"parameters":  map[string]any{},
+		},
+	}
+	err := writeToolsFile(dir, map[string]any{"toolDescriptions": descs})
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(dir, opt_eval.ToolsFile)) //nolint:gosec // test file path
+	require.NoError(t, err)
+
+	// Should be written as a raw object (no wrapper).
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(data, &parsed))
+	assert.Contains(t, parsed, "lookup_policy")
+}
+
+func TestWriteToolsFile_BothKeys(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	defs := []any{
+		map[string]any{"type": "function", "function": map[string]any{"name": "search"}},
+	}
+	descs := map[string]any{
+		"search": map[string]any{"description": "Search stuff", "parameters": map[string]any{}},
+	}
+	err := writeToolsFile(dir, map[string]any{
+		"toolDefinitions":  defs,
+		"toolDescriptions": descs,
+	})
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(dir, opt_eval.ToolsFile)) //nolint:gosec // test file path
+	require.NoError(t, err)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(data, &parsed))
+	assert.Contains(t, parsed, "toolDefinitions")
+	assert.Contains(t, parsed, "toolDescriptions")
+}
+
+func TestWriteAgentConfigFromCandidate_WithToolDescriptions(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	config := mustMarshal(t, map[string]any{
+		"systemPrompt": "prompt",
+		"toolDescriptions": map[string]any{
+			"check_budget": map[string]any{
+				"description": "Check the budget",
+				"parameters":  map[string]any{},
+			},
+		},
+	})
+
+	err := writeAgentConfigFromCandidate(dir, config)
+	require.NoError(t, err)
+
+	assert.FileExists(t, filepath.Join(dir, opt_eval.ToolsFile))
+
+	// Verify metadata references tools_file.
+	metaData, err := os.ReadFile(filepath.Join(dir, opt_eval.MetadataFile)) //nolint:gosec // test file path
+	require.NoError(t, err)
+	assert.Contains(t, string(metaData), "tools_file")
+}

@@ -247,8 +247,8 @@ func resolveProjectEndpointForDeploy(ctx context.Context, connFlags *optimizeCon
 
 	projectEndpoint, err := resolveAgentEndpoint(ctx, "", "")
 	if err != nil {
-		if ep := os.Getenv("AZURE_AI_PROJECT_ENDPOINT"); ep != "" {
-			return strings.TrimRight(ep, "/"), nil
+		if ep := projectEndpointFromEnv(); ep != "" {
+			return ep, nil
 		}
 		return "", fmt.Errorf("could not resolve project endpoint: %w\n\n"+
 			"Provide --project-endpoint (-p), or run 'azd ai agent init'", err)

@@ -165,6 +165,12 @@ func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalR
 	projectEndpoint := options.projectEndpoint
 	projectEndpointSource := "--project-endpoint"
 	if projectEndpoint == "" {
+		if v := getEnvValue("FOUNDRY_PROJECT_ENDPOINT"); v != "" {
+			projectEndpoint = v
+			projectEndpointSource = "FOUNDRY_PROJECT_ENDPOINT"
+		}
+	}
+	if projectEndpoint == "" {
 		if v := getEnvValue("AZURE_AI_PROJECT_ENDPOINT"); v != "" {
 			projectEndpoint = v
 			projectEndpointSource = "AZURE_AI_PROJECT_ENDPOINT"

@@ -344,3 +344,50 @@ func TestReportOptimizationDeployments_PanicRecovery(t *testing.T) {
 	// Candidate key should remain since the promote never succeeded.
 	assert.Equal(t, "cand-panic", envServer.values["dev"]["AGENT_SVC_OPTIMIZATION_CANDIDATE_ID"])
 }
+
+func TestOptimizeConnectionFlags_Resolve_FoundryEnvVar(t *testing.T) {
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.example.com/")
+	f := &optimizeConnectionFlags{}
+	endpoint, err := f.resolve(t.Context())
+	assert.NoError(t, err)
+	assert.Equal(t, "https://foundry.example.com", endpoint)
+}
+
+func TestOptimizeConnectionFlags_Resolve_AzureAIEnvVar(t *testing.T) {
+	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "https://azure-ai.example.com/")
+	f := &optimizeConnectionFlags{}
+	endpoint, err := f.resolve(t.Context())
+	assert.NoError(t, err)
+	assert.Equal(t, "https://azure-ai.example.com", endpoint)
+}
+
+func TestOptimizeConnectionFlags_Resolve_FoundryTakesPriorityOverAzureAI(t *testing.T) {
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.example.com")
+	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "https://azure-ai.example.com")
+	f := &optimizeConnectionFlags{}
+	endpoint, err := f.resolve(t.Context())
+	assert.NoError(t, err)
+	assert.Equal(t, "https://foundry.example.com", endpoint)
+}
+
+func TestResolveProjectEndpointForDeploy_FoundryEnvVar(t *testing.T) {
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry-deploy.example.com/")
+	ep, err := resolveProjectEndpointForDeploy(t.Context(), &optimizeConnectionFlags{})
+	assert.NoError(t, err)
+	assert.Equal(t, "https://foundry-deploy.example.com", ep)
+}
+
+func TestResolveProjectEndpointForDeploy_AzureAIEnvVar(t *testing.T) {
+	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "https://azure-ai-deploy.example.com/")
+	ep, err := resolveProjectEndpointForDeploy(t.Context(), &optimizeConnectionFlags{})
+	assert.NoError(t, err)
+	assert.Equal(t, "https://azure-ai-deploy.example.com", ep)
+}
+
+func TestResolveProjectEndpointForDeploy_FoundryTakesPriorityOverAzureAI(t *testing.T) {
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry-deploy.example.com")
+	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "https://azure-ai-deploy.example.com")
+	ep, err := resolveProjectEndpointForDeploy(t.Context(), &optimizeConnectionFlags{})
+	assert.NoError(t, err)
+	assert.Equal(t, "https://foundry-deploy.example.com", ep)
+}

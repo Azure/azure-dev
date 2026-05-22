@@ -374,9 +374,9 @@ func isAllowedReflectionModel(modelName string) bool {
 }
 
 // resolveOptimizeReflectionModel prompts the user to select a reflection model
-// for optimization. Only deployments whose underlying model is in the allowed
-// reflection model set are shown. If the eval model is allowed, skipping
-// defaults to it; otherwise the user must pick from the filtered list.
+// for optimization. All deployments are shown; if the user picks one whose
+// model is not in the recommended set, a warning is printed. This avoids
+// requiring client-side updates when the server's allowed set changes.
 func resolveOptimizeReflectionModel(ctx context.Context, cfg *OptimizeConfig) error {
 	azdClient, clientErr := azdext.NewAzdClient()
 	if clientErr != nil {
@@ -391,32 +391,18 @@ func resolveOptimizeReflectionModel(ctx context.Context, cfg *OptimizeConfig) er
 
 	allowedList := strings.Join(allowedReflectionModels, ", ")
 
-	// Check if the eval model deployment uses an allowed model.
-	evalModelAllowed := false
-	for _, d := range deployments {
-		if d.Name == cfg.Options.EvalModel && isAllowedReflectionModel(d.ModelName) {
-			evalModelAllowed = true
-			break
-		}
-	}
-
 	var choices []*azdext.SelectChoice
 	seen := make(map[string]bool)
 
-	// Only offer "Skip" when the eval model is in the allowed set.
-	if evalModelAllowed {
-		choices = append(choices, &azdext.SelectChoice{
-			Label: fmt.Sprintf("Skip (use eval model: %s)", cfg.Options.EvalModel),
-			Value: "",
-		})
-	}
+	// Always offer Skip — defaults to using the eval model.
+	choices = append(choices, &azdext.SelectChoice{
+		Label: fmt.Sprintf("Skip (use eval model: %s)", cfg.Options.EvalModel),
+		Value: "",
+	})
 
-	// Only include deployments whose underlying model is in the allowed set.
+	// Show all deployments — don't filter by allowed set.
 	for _, d := range deployments {
 		if seen[d.Name] {
-			continue
-		}
-		if !isAllowedReflectionModel(d.ModelName) {
 			continue
 		}
 		label := d.Name
@@ -430,18 +416,7 @@ func resolveOptimizeReflectionModel(ctx context.Context, cfg *OptimizeConfig) er
 		seen[d.Name] = true
 	}
 
-	if len(choices) == 0 {
-		fmt.Printf("Warning: no deployed models match the allowed reflection model set: %s\n", allowedList)
-		return nil
-	}
-
-	message := fmt.Sprintf("Select a reflection model (allowed: %s)", allowedList)
-	if !evalModelAllowed && cfg.Options.EvalModel != "" {
-		message = fmt.Sprintf(
-			"Eval model %q is not in the allowed reflection model set (%s). Select a reflection model",
-			cfg.Options.EvalModel, allowedList,
-		)
-	}
+	message := fmt.Sprintf("Select a reflection model (recommended: %s)", allowedList)
 
 	selectResp, selectErr := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
@@ -455,7 +430,16 @@ func resolveOptimizeReflectionModel(ctx context.Context, cfg *OptimizeConfig) er
 
 	idx := int(*selectResp.Value)
 	if idx >= 0 && idx < len(choices) && choices[idx].Value != "" {
-		cfg.Options.ReflectionModel = choices[idx].Value
+		selected := choices[idx].Value
+		// Warn if the selected deployment's model is not in the recommended set.
+		for _, d := range deployments {
+			if d.Name == selected && !isAllowedReflectionModel(d.ModelName) {
+				fmt.Printf("Warning: deployment %q uses model %q which is not in the recommended "+
+					"reflection model set (%s). The server may reject it.\n", selected, d.ModelName, allowedList)
+				break
+			}
+		}
+		cfg.Options.ReflectionModel = selected
 	}
 	// Empty Value means Skip — leave ReflectionModel empty (server uses eval model).
 

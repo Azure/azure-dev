@@ -324,10 +324,10 @@ func writeAgentConfigFromCandidate(candidateDir string, rawConfig json.RawMessag
 		meta.SkillDir = opt_eval.SkillsDir
 	}
 
-	// Write tool_definitions as a JSON file.
+	// Write the candidate config as tools.json (preserves original structure).
 	if m != nil {
-		if err := writeToolDefinitions(candidateDir, m); err != nil {
-			return fmt.Errorf("writing candidate tool definitions: %w", err)
+		if err := writeToolsFile(candidateDir, m); err != nil {
+			return fmt.Errorf("writing candidate tools file: %w", err)
 		}
 		if _, err := os.Stat(filepath.Join(candidateDir, opt_eval.ToolsFile)); err == nil {
 			meta.ToolsFile = opt_eval.ToolsFile
@@ -401,17 +401,33 @@ func writeInlineSkills(candidateDir string, config map[string]any) error {
 	return nil
 }
 
-// writeToolDefinitions extracts the "tool_definitions" field from a candidate
-// config and writes it as tools.json.
-func writeToolDefinitions(candidateDir string, config map[string]any) error {
-	toolsRaw, exists := config["tool_definitions"]
-	if !exists {
+// writeToolsFile writes the candidate config as tools.json, preserving its
+// original structure (may be a list or an object).
+func writeToolsFile(candidateDir string, config map[string]any) error {
+	toolDefs, hasDefs := config["toolDefinitions"]
+	toolDescs, hasDescs := config["toolDescriptions"]
+	if !hasDefs && !hasDescs {
 		return nil
 	}
 
-	data, err := json.MarshalIndent(toolsRaw, "", "  ")
+	// Write whichever is present. If only one key exists, write its value
+	// directly (preserves array or object). If both exist, wrap in an object.
+	var payload any
+	switch {
+	case hasDefs && hasDescs:
+		payload = map[string]any{
+			"toolDefinitions":  toolDefs,
+			"toolDescriptions": toolDescs,
+		}
+	case hasDefs:
+		payload = toolDefs
+	default:
+		payload = toolDescs
+	}
+
+	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
-		return fmt.Errorf("serializing tool definitions: %w", err)
+		return fmt.Errorf("serializing tools file: %w", err)
 	}
 
 	return os.WriteFile(filepath.Join(candidateDir, opt_eval.ToolsFile), data, 0600)

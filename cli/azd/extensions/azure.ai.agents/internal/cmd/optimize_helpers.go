@@ -35,7 +35,20 @@ func (f *optimizeConnectionFlags) register(cmd *cobra.Command) {
 }
 
 // resolve returns the project endpoint for optimize API calls.
-// Priority: --endpoint flag → --project-endpoint → azd environment → AZURE_AI_PROJECT_ENDPOINT env var.
+// projectEndpointFromEnv returns the project endpoint from FOUNDRY_PROJECT_ENDPOINT
+// or AZURE_AI_PROJECT_ENDPOINT environment variables (in that priority order).
+// Returns empty string if neither is set.
+func projectEndpointFromEnv() string {
+	if ep := os.Getenv("FOUNDRY_PROJECT_ENDPOINT"); ep != "" {
+		return strings.TrimRight(ep, "/")
+	}
+	if ep := os.Getenv("AZURE_AI_PROJECT_ENDPOINT"); ep != "" {
+		return strings.TrimRight(ep, "/")
+	}
+	return ""
+}
+
+// Priority: --endpoint flag → --project-endpoint → azd environment → FOUNDRY_PROJECT_ENDPOINT / AZURE_AI_PROJECT_ENDPOINT env var.
 func (f *optimizeConnectionFlags) resolve(ctx context.Context) (string, error) {
 	if f.endpoint != "" {
 		return strings.TrimRight(f.endpoint, "/"), nil
@@ -49,12 +62,12 @@ func (f *optimizeConnectionFlags) resolve(ctx context.Context) (string, error) {
 	// Try azd environment (works when running under azd)
 	projectEndpoint, err := resolveAgentEndpoint(ctx, "", "")
 	if err != nil {
-		// Fall back to AZURE_AI_PROJECT_ENDPOINT env var (works standalone)
-		if ep := os.Getenv("AZURE_AI_PROJECT_ENDPOINT"); ep != "" {
-			return strings.TrimRight(ep, "/"), nil
+		// Fall back to FOUNDRY_PROJECT_ENDPOINT or AZURE_AI_PROJECT_ENDPOINT env var (works standalone)
+		if ep := projectEndpointFromEnv(); ep != "" {
+			return ep, nil
 		}
 		return "", fmt.Errorf("could not resolve project endpoint\n\n" +
-			"Set AZURE_AI_PROJECT_ENDPOINT, provide --project-endpoint (-p),\n" +
+			"Set FOUNDRY_PROJECT_ENDPOINT or AZURE_AI_PROJECT_ENDPOINT, provide --project-endpoint (-p),\n" +
 			"or run 'azd ai agent init'")
 	}
 

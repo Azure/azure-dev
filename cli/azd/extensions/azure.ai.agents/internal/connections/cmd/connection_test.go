@@ -219,10 +219,10 @@ func TestRawConnectionBody_MarshalJSON(t *testing.T) {
 	data, err := json.Marshal(body)
 	require.NoError(t, err)
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	require.NoError(t, json.Unmarshal(data, &parsed))
 
-	p := parsed["properties"].(map[string]interface{})
+	p := parsed["properties"].(map[string]any)
 	require.Equal(t, "UserEntraToken", p["authType"])
 	require.Equal(t, "RemoteTool", p["category"])
 	require.Equal(t, "https://example.com", p["target"])
@@ -239,10 +239,10 @@ func TestRawConnectionBody_OmitsEmptyAudience(t *testing.T) {
 	data, err := json.Marshal(body)
 	require.NoError(t, err)
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	require.NoError(t, json.Unmarshal(data, &parsed))
 
-	p := parsed["properties"].(map[string]interface{})
+	p := parsed["properties"].(map[string]any)
 	_, hasAudience := p["audience"]
 	require.False(t, hasAudience, "audience should be omitted when empty")
 }

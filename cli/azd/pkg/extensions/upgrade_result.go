@@ -57,6 +57,9 @@ type UpgradeResult struct {
 	Error error
 	// SkipReason describes why the extension was skipped (e.g., "already up to date").
 	SkipReason string
+	// Suggestion is an optional actionable hint shown alongside SkipReason or Error
+	// in interactive output. Not serialized to JSON; may contain ANSI formatting.
+	Suggestion string
 	// DependencyUpgrades captures upgrade results for dependent extensions
 	// that were upgraded as a side effect of upgrading this extension. Empty
 	// for leaf extensions or when --no-dependency-upgrades is set.

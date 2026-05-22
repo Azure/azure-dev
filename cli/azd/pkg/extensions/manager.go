@@ -32,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 )
 
@@ -922,9 +923,15 @@ func (m *Manager) evaluateDependencyChanges(
 				FromVersion: installed.Version,
 				FromSource:  installed.Source,
 				SkipReason: fmt.Sprintf(
-					"installed version %s is outside %s's constraint %q; not downgrading. "+
-						"Run 'azd extension install %s --version %s' to align with the pack.",
-					installed.Version, parentExtension.Id, dep.Version, dep.Id, bestVersion.Version,
+					"current %s is outside %s's constraint %q",
+					installed.Version, parentExtension.Id, dep.Version,
+				),
+				Suggestion: fmt.Sprintf(
+					"Run %s to align with extension pack.",
+					output.WithHighLightFormat(
+						"azd ext install %s --version %s",
+						dep.Id, bestVersion.Version,
+					),
 				),
 			})
 			continue
@@ -938,7 +945,7 @@ func (m *Manager) evaluateDependencyChanges(
 				FromVersion: installed.Version,
 				FromSource:  installed.Source,
 				SkipReason: fmt.Sprintf(
-					"automatic dependency upgrade disabled (matching version %s available)",
+					"dependency upgrades disabled; %s available",
 					bestVersion.Version,
 				),
 			})

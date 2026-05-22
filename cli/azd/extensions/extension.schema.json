@@ -47,8 +47,7 @@
         }
       },
       "required": [
-        "id",
-        "version"
+        "id"
       ]
     },
     "Provider": {

@@ -1947,8 +1947,9 @@ func Test_Upgrade_DependencyUpgrade_RefusesToDowngradeOutsideConstraint(t *testi
 	require.Equal(t, "test.child", depUpgrades[0].ExtensionId)
 	require.Equal(t, UpgradeStatusSkipped, depUpgrades[0].Status)
 	require.Equal(t, "2.0.0", depUpgrades[0].FromVersion)
+	require.Contains(t, depUpgrades[0].SkipReason, "current 2.0.0")
 	require.Contains(t, depUpgrades[0].SkipReason, "outside")
-	require.Contains(t, depUpgrades[0].SkipReason, "not downgrading")
+	require.Contains(t, depUpgrades[0].Suggestion, "azd ext install test.child --version 1.0.0")
 
 	// Installed version should still be 2.0.0 — no downgrade happened.
 	installed, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
@@ -2242,7 +2243,7 @@ func Test_Upgrade_DependencyUpgrade_DisabledByOpts(t *testing.T) {
 	require.Equal(t, "test.child", depUpgrades[0].ExtensionId)
 	require.Equal(t, UpgradeStatusSkipped, depUpgrades[0].Status)
 	require.Equal(t, "1.0.0", depUpgrades[0].FromVersion)
-	require.Contains(t, depUpgrades[0].SkipReason, "automatic dependency upgrade disabled")
+	require.Contains(t, depUpgrades[0].SkipReason, "dependency upgrades disabled")
 
 	child, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
 	require.NoError(t, err)

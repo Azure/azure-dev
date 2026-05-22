@@ -871,7 +871,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 
 		// Determine target version
 		targetVersion := a.flags.version
-		if targetVersion == "" || targetVersion == "latest" {
+		if targetVersion == "" || strings.EqualFold(targetVersion, "latest") {
 			targetVersion = extensions.LatestVersion(compatibleExtension.Versions).Version
 		}
 
@@ -887,20 +887,15 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 				continue
 			}
 
-			// Parse versions for semantic comparison
-			installedSemver, err := semver.NewVersion(installedExtension.Version)
-			if err != nil {
-				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, fmt.Errorf("failed to parse installed version '%s': %w", installedExtension.Version, err)
-			}
-
-			targetSemver, err := semver.NewVersion(targetVersion)
-			if err != nil {
-				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, fmt.Errorf("failed to parse target version '%s': %w", targetVersion, err)
-			}
-
-			if targetSemver.LessThan(installedSemver) && !a.flags.force {
+			// Parse versions for semantic comparison. Non-semver tags
+			// (e.g. "nightly", "dev") have no defined ordering, so when
+			// either side fails to parse we skip the downgrade guard and
+			// fall through to the upgrade path. The string equality check
+			// above already short-circuits the no-op case.
+			installedSemver, installedErr := semver.NewVersion(installedExtension.Version)
+			targetSemver, targetErr := semver.NewVersion(targetVersion)
+			if installedErr == nil && targetErr == nil &&
+				targetSemver.LessThan(installedSemver) && !a.flags.force {
 				// Would be a downgrade - require --force
 				stepMessage += output.WithGrayFormat(
 					" (would downgrade from %s to %s, use --force to override)",
@@ -1455,26 +1450,17 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		targetVersionStr = latestVer.Version
 	}
 
-	installedSemver, err := semver.NewVersion(installed.Version)
-	if err != nil {
-		return fail(fmt.Errorf(
-			"failed to parse installed version '%s': %w",
-			installed.Version, err,
-		))
-	}
-
-	targetSemver, err := semver.NewVersion(targetVersionStr)
-	if err != nil {
-		return fail(fmt.Errorf(
-			"failed to parse target version '%s': %w",
-			targetVersionStr, err,
-		))
-	}
+	// Parse versions for semantic comparison. Non-semver tags
+	// (e.g. "nightly", "dev") have no defined ordering, so when either
+	// side fails to parse we skip the "installed is newer" guard and
+	// proceed with the upgrade attempt.
+	installedSemver, installedErr := semver.NewVersion(installed.Version)
+	targetSemver, targetErr := semver.NewVersion(targetVersionStr)
 
 	baseResult.ToSource = newSource
 
 	// Compare versions
-	if installedSemver.GreaterThan(targetSemver) {
+	if installedErr == nil && targetErr == nil && installedSemver.GreaterThan(targetSemver) {
 		baseResult.Status = extensions.UpgradeStatusSkipped
 		baseResult.SkipReason = fmt.Sprintf(
 			"installed %s is newer than %s",
@@ -1493,7 +1479,11 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		return baseResult
 	}
 
-	if installedSemver.Equal(targetSemver) && !isPromotion {
+	versionsEqual := installed.Version == targetVersionStr
+	if installedErr == nil && targetErr == nil {
+		versionsEqual = installedSemver.Equal(targetSemver)
+	}
+	if versionsEqual && !isPromotion {
 		reconciledVersion, depUpgrades, err := a.extensionManager.ReconcileDependencies(
 			ctx, compatExt, extensions.UpgradeOptions{
 				VersionPreference:   a.flags.version,
@@ -1663,17 +1653,22 @@ func displayDependencyUpgradeResults(
 				}(),
 			))
 		case extensions.UpgradeStatusSkipped:
-			console.Message(ctx, fmt.Sprintf(
+			line := fmt.Sprintf(
 				"%s%s Upgrading %s dependency",
 				indent,
 				output.WithGrayFormat("(-) Skipped:"),
 				output.WithHighLightFormat(child.ExtensionId),
-			))
+			)
 			if child.SkipReason != "" {
+				line += output.WithGrayFormat(" (%s)", child.SkipReason)
+			}
+			console.Message(ctx, line)
+			if child.Suggestion != "" {
 				console.Message(ctx, fmt.Sprintf(
-					"%s  %s",
+					"%s%s%s",
 					indent,
-					output.WithGrayFormat("%s", child.SkipReason),
+					strings.Repeat(" ", len("(-) Skipped: ")),
+					child.Suggestion,
 				))
 			}
 		}

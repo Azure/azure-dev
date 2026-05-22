@@ -138,6 +138,7 @@ Upgrades one or more extensions to the latest versions.
 - `--all` Upgrades all previously installed extensions when specified.
 - `-v, --version` Upgrades a specified extension to an exact version, if provided.
 - `-s, --source` Specifies the extension source used for installations.
+- `--no-dependency-upgrades` Skips upgrading dependencies declared by extension packs.
 
 ## Developing Extensions
 

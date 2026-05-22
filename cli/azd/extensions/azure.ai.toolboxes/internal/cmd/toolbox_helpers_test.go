@@ -87,6 +87,17 @@ func TestBuildToolEntry(t *testing.T) {
 		requireLocalError(t, err, exterrors.CodeUnsupportedIndexFlag)
 	})
 
+	t.Run("RemoteTool treats whitespace-only --index as empty", func(t *testing.T) {
+		entry, err := buildToolEntry(&projectConnection{
+			ID:       "/c/x",
+			Category: connections.ConnectionTypeRemoteTool,
+			Name:     "x",
+			Target:   "https://mcp.example.com",
+		}, "   ", "  ")
+		require.NoError(t, err)
+		assert.Equal(t, "mcp", entry["type"])
+	})
+
 	t.Run("RemoteTool rejects --instance-name", func(t *testing.T) {
 		_, err := buildToolEntry(&projectConnection{
 			Category: connections.ConnectionTypeRemoteTool,
@@ -227,9 +238,21 @@ func TestFilterOutConnection(t *testing.T) {
 		},
 		{"type": "a2a_preview", "name": "a2a", "project_connection_id": "/conn/f"},
 	}
+	// assertNoneReference asserts the removed connection ID is not referenced
+	// by any remaining tool entry, anywhere in the recognized shapes.
+	assertNoneReference := func(t *testing.T, entries []map[string]any, connID string) {
+		t.Helper()
+		for _, e := range entries {
+			if toolEntryReferences(e, func(id string) bool { return id == connID }) {
+				t.Errorf("entry %#v still references %q", e, connID)
+			}
+		}
+	}
+
 	got, removed := filterOutConnection(tools, "/conn/a")
 	assert.True(t, removed)
 	assert.Len(t, got, 5)
+	assertNoneReference(t, got, "/conn/a")
 
 	// Removing missing connection: removed=false, slice unchanged in length.
 	got2, removed2 := filterOutConnection(tools, "/conn/zzz")
@@ -240,16 +263,19 @@ func TestFilterOutConnection(t *testing.T) {
 	got3, removed3 := filterOutConnection(tools, "/conn/c")
 	assert.True(t, removed3)
 	assert.Len(t, got3, 5)
+	assertNoneReference(t, got3, "/conn/c")
 
 	// Removing web_search (custom_search_configuration nested).
 	got4, removed4 := filterOutConnection(tools, "/conn/d")
 	assert.True(t, removed4)
 	assert.Len(t, got4, 5)
+	assertNoneReference(t, got4, "/conn/d")
 
 	// Removing a2a_preview (top-level project_connection_id).
 	got6, removed6 := filterOutConnection(tools, "/conn/f")
 	assert.True(t, removed6)
 	assert.Len(t, got6, 5)
+	assertNoneReference(t, got6, "/conn/f")
 }
 
 func TestShortConnectionName(t *testing.T) {

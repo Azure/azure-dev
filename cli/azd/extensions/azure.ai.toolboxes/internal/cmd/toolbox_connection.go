@@ -40,6 +40,11 @@ func buildToolEntry(conn *projectConnection, index, instanceName string) (map[st
 	if err := validateToolName(conn.Name); err != nil {
 		return nil, err
 	}
+	// Normalize whitespace-only inputs up front so cross-category flag
+	// rejection and required-input validation agree (e.g. `--index "   "`
+	// should not be treated as "user supplied a value").
+	index = strings.TrimSpace(index)
+	instanceName = strings.TrimSpace(instanceName)
 	// --index is only meaningful for CognitiveSearch; reject elsewhere.
 	if index != "" && conn.Category != connections.ConnectionTypeCognitiveSearch {
 		return nil, exterrors.Validation(
@@ -86,7 +91,7 @@ func buildToolEntry(conn *projectConnection, index, instanceName string) (map[st
 		}, nil
 
 	case connections.ConnectionTypeCognitiveSearch:
-		if strings.TrimSpace(index) == "" {
+		if index == "" {
 			return nil, exterrors.Validation(
 				exterrors.CodeMissingIndex,
 				fmt.Sprintf(
@@ -117,7 +122,7 @@ func buildToolEntry(conn *projectConnection, index, instanceName string) (map[st
 		}, nil
 
 	case connections.ConnectionTypeGroundingWithCustomSearch:
-		if strings.TrimSpace(instanceName) == "" {
+		if instanceName == "" {
 			return nil, exterrors.Validation(
 				exterrors.CodeMissingInstanceName,
 				fmt.Sprintf(

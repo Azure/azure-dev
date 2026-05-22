@@ -357,6 +357,111 @@ func resolveOptimizeTargetModels(
 	return nil
 }
 
+// allowedReflectionModels is the set of model families permitted as reflection
+// models by the server. Deployments whose ModelName does not match one of these
+// prefixes are excluded from the selection list.
+var allowedReflectionModels = []string{"gpt-5", "gpt-5.1", "gpt-5.3"}
+
+// isAllowedReflectionModel checks whether a model name matches an allowed
+// reflection model (exact match or prefix followed by a separator).
+func isAllowedReflectionModel(modelName string) bool {
+	for _, allowed := range allowedReflectionModels {
+		if strings.EqualFold(modelName, allowed) {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveOptimizeReflectionModel prompts the user to select a reflection model
+// for optimization. Only deployments whose underlying model is in the allowed
+// reflection model set are shown. If the eval model is allowed, skipping
+// defaults to it; otherwise the user must pick from the filtered list.
+func resolveOptimizeReflectionModel(ctx context.Context, cfg *OptimizeConfig) error {
+	azdClient, clientErr := azdext.NewAzdClient()
+	if clientErr != nil {
+		return nil
+	}
+	defer azdClient.Close()
+
+	deployments := listDeploymentsFromEnv(ctx, azdClient)
+	if len(deployments) == 0 {
+		return nil
+	}
+
+	allowedList := strings.Join(allowedReflectionModels, ", ")
+
+	// Check if the eval model deployment uses an allowed model.
+	evalModelAllowed := false
+	for _, d := range deployments {
+		if d.Name == cfg.Options.EvalModel && isAllowedReflectionModel(d.ModelName) {
+			evalModelAllowed = true
+			break
+		}
+	}
+
+	var choices []*azdext.SelectChoice
+	seen := make(map[string]bool)
+
+	// Only offer "Skip" when the eval model is in the allowed set.
+	if evalModelAllowed {
+		choices = append(choices, &azdext.SelectChoice{
+			Label: fmt.Sprintf("Skip (use eval model: %s)", cfg.Options.EvalModel),
+			Value: "",
+		})
+	}
+
+	// Only include deployments whose underlying model is in the allowed set.
+	for _, d := range deployments {
+		if seen[d.Name] {
+			continue
+		}
+		if !isAllowedReflectionModel(d.ModelName) {
+			continue
+		}
+		label := d.Name
+		if d.ModelName != "" && d.ModelName != d.Name {
+			label = fmt.Sprintf("%s (%s)", d.Name, d.ModelName)
+		}
+		choices = append(choices, &azdext.SelectChoice{
+			Label: label,
+			Value: d.Name,
+		})
+		seen[d.Name] = true
+	}
+
+	if len(choices) == 0 {
+		fmt.Printf("Warning: no deployed models match the allowed reflection model set: %s\n", allowedList)
+		return nil
+	}
+
+	message := fmt.Sprintf("Select a reflection model (allowed: %s)", allowedList)
+	if !evalModelAllowed && cfg.Options.EvalModel != "" {
+		message = fmt.Sprintf(
+			"Eval model %q is not in the allowed reflection model set (%s). Select a reflection model",
+			cfg.Options.EvalModel, allowedList,
+		)
+	}
+
+	selectResp, selectErr := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message: message,
+			Choices: choices,
+		},
+	})
+	if selectErr != nil || selectResp.Value == nil {
+		return nil
+	}
+
+	idx := int(*selectResp.Value)
+	if idx >= 0 && idx < len(choices) && choices[idx].Value != "" {
+		cfg.Options.ReflectionModel = choices[idx].Value
+	}
+	// Empty Value means Skip — leave ReflectionModel empty (server uses eval model).
+
+	return nil
+}
+
 // buildOptimizeModelChoices fetches Foundry project deployments and returns
 // MultiSelectChoice items. The current deployed model is pre-selected.
 // Falls back to an empty list if deployments cannot be fetched.

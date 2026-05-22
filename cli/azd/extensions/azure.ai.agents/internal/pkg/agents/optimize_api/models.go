@@ -109,12 +109,8 @@ type TargetConfig struct {
 
 // OptimizeOptions controls the optimization run.
 type OptimizeOptions struct {
-	Budget               int     `json:"budget,omitempty"`
-	MaxIterations        *int    `json:"maxIterations,omitempty"`
-	MinImprovement       float64 `json:"minImprovement,omitempty"`
-	ImprovementThreshold float64 `json:"improvementThreshold,omitempty"`
-	PassThreshold        float64 `json:"passThreshold,omitempty"`
-	EvalModel            string  `json:"evalModel,omitempty"`
+	MaxIterations *int   `json:"maxIterations,omitempty"`
+	EvalModel     string `json:"evalModel,omitempty"`
 	// Send as both "strategies" (current server) and "targetAttributes" (future).
 	Strategies         []string      `json:"strategies,omitempty"`
 	TargetAttributes   []string      `json:"targetAttributes,omitempty"`
@@ -123,7 +119,7 @@ type OptimizeOptions struct {
 	TasksPerIteration  int           `json:"tasksPerIteration,omitempty"`
 	MaxReflectionTasks int           `json:"maxReflectionTasks,omitempty"`
 	ReflectionModel    string        `json:"reflectionModel,omitempty"`
-	Mode               string        `json:"mode,omitempty"`
+	EvaluationLevel    string        `json:"evaluationLevel,omitempty"`
 }
 
 // --- Response models ---
@@ -136,28 +132,28 @@ type OptimizeResponse struct {
 
 // OptimizeJobStatus is the full status of an optimization job.
 type OptimizeJobStatus struct {
-	OperationID         string            `json:"operationId"`
-	Status              string            `json:"status"`
-	CreatedAt           string            `json:"createdAt"`
-	UpdatedAt           string            `json:"updatedAt"`
-	Agent               *AgentDefinition  `json:"agent,omitempty"`
-	Progress            *JobProgress      `json:"progress,omitempty"`
-	Error               *JobError         `json:"error,omitempty"`
-	Baseline            *CandidateResult  `json:"baseline,omitempty"`
-	Best                *CandidateResult  `json:"best,omitempty"`
-	Candidates          []CandidateResult `json:"candidates,omitempty"`
-	AllStrategiesFailed bool              `json:"allStrategiesFailed,omitempty"`
-	Warnings            []string          `json:"warnings,omitempty"`
+	OperationID               string            `json:"operationId"`
+	Status                    string            `json:"status"`
+	CreatedAt                 string            `json:"createdAt"`
+	UpdatedAt                 string            `json:"updatedAt"`
+	Agent                     *AgentDefinition  `json:"agent,omitempty"`
+	Progress                  *JobProgress      `json:"progress,omitempty"`
+	Error                     *JobError         `json:"error,omitempty"`
+	Baseline                  *CandidateResult  `json:"baseline,omitempty"`
+	Best                      *CandidateResult  `json:"best,omitempty"`
+	Candidates                []CandidateResult `json:"candidates,omitempty"`
+	AllTargetAttributesFailed bool              `json:"allTargetAttributesFailed,omitempty"`
+	Warnings                  []string          `json:"warnings,omitempty"`
 }
 
 // JobProgress reports iteration-level progress.
 type JobProgress struct {
-	CurrentStrategy  string  `json:"currentStrategy"`
-	CurrentIteration int     `json:"currentIteration"`
-	TasksCompleted   int     `json:"tasksCompleted"`
-	TasksTotal       int     `json:"tasksTotal"`
-	BestScore        float64 `json:"bestScore"`
-	ElapsedSeconds   float64 `json:"elapsedSeconds"`
+	CurrentTargetAttribute string  `json:"currentTargetAttribute"`
+	CurrentIteration       int     `json:"currentIteration"`
+	TasksCompleted         int     `json:"tasksCompleted"`
+	TasksTotal             int     `json:"tasksTotal"`
+	BestScore              float64 `json:"bestScore"`
+	ElapsedSeconds         float64 `json:"elapsedSeconds"`
 }
 
 // JobError captures an error from a failed job.

@@ -95,8 +95,6 @@ func TestDefaultOptimizeConfig(t *testing.T) {
 	assert.NotEmpty(t, cfg.InlineDataset)
 	require.NotNil(t, cfg.Options)
 	assert.Equal(t, "gpt-4o", cfg.Options.EvalModel)
-	assert.Equal(t, "optimize", cfg.Options.Mode)
-	assert.Equal(t, 5, cfg.Options.Budget)
 	assert.Contains(t, cfg.Options.TargetAttributes, "instruction")
 	assert.Contains(t, cfg.Options.TargetAttributes, "skill")
 	require.Len(t, cfg.Evaluators, 1)

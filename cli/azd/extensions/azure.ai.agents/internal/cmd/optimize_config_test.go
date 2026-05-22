@@ -68,7 +68,6 @@ options:
 	assert.Equal(t, "4", req.Dataset[0].GroundTruth)
 	assert.Nil(t, req.TrainDatasetReference)
 	assert.Equal(t, "gpt-4o-mini", req.Options.EvalModel)
-	assert.Equal(t, 100, req.Options.Budget)
 	assert.Equal(t, []string{"coherence", "relevance"}, req.Evaluators)
 	assert.Len(t, req.Criteria, 1)
 	assert.Equal(t, "accuracy", req.Criteria[0].Name)
@@ -241,7 +240,6 @@ evaluators:
 
 options:
   eval_model: gpt-4o
-  mode: evaluate
   strategies:
     - instruction
   budget: 3
@@ -258,7 +256,6 @@ evaluators:
   - builtin.task_adherence
 options:
   eval_model: gpt-4o
-  mode: evaluate
   strategies:
     - instruction
   budget: 3
@@ -282,9 +279,7 @@ options:
 	// Options
 	require.NotNil(t, cfg.Options)
 	assert.Equal(t, "gpt-4o", cfg.Options.EvalModel)
-	assert.Equal(t, "evaluate", cfg.Options.Mode)
 	assert.Equal(t, []string{"instruction"}, cfg.Options.TargetAttributes)
-	assert.Equal(t, 3, cfg.Options.Budget)
 
 	// Validate + ToRequest
 	require.NoError(t, cfg.Validate())

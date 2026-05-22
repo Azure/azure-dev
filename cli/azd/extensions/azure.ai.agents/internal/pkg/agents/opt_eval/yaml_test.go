@@ -189,15 +189,10 @@ func TestOptions_YAMLFields(t *testing.T) {
 
 	input := `
 eval_model: gpt-4.1
-mode: full
 target_attributes:
   - prompt
   - tool
-budget: 500
 max_iterations: 10
-min_improvement: 0.05
-improvement_threshold: 0.1
-pass_threshold: 0.8
 keep_versions: true
 tasks_per_iteration: 20
 reflection_model: gpt-4o
@@ -206,14 +201,9 @@ reflection_model: gpt-4o
 	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
 
 	assert.Equal(t, "gpt-4.1", opts.EvalModel)
-	assert.Equal(t, "full", opts.Mode)
 	assert.Equal(t, []string{"prompt", "tool"}, opts.TargetAttributes)
-	assert.Equal(t, 500, opts.Budget)
 	require.NotNil(t, opts.MaxIterations)
 	assert.Equal(t, 10, *opts.MaxIterations)
-	assert.InDelta(t, 0.05, opts.MinImprovement, 0.001)
-	assert.InDelta(t, 0.1, opts.ImprovementThreshold, 0.001)
-	assert.InDelta(t, 0.8, opts.PassThreshold, 0.001)
 	assert.True(t, opts.KeepVersions)
 	assert.Equal(t, 20, opts.TasksPerIteration)
 	assert.Equal(t, "gpt-4o", opts.ReflectionModel)

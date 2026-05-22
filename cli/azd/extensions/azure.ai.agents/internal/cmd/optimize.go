@@ -327,6 +327,13 @@ func (a *OptimizeAction) applyOverrides(
 		}
 	}
 
+	// Resolve reflection_model: prompt user if not set.
+	if cfg.Options.ReflectionModel == "" && !a.noPrompt {
+		if err := resolveOptimizeReflectionModel(ctx, cfg); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -444,8 +451,8 @@ func pollOptimizeJob(
 			progress := fmt.Sprintf("\r  %s %s", spin, status.Status)
 			if status.Progress != nil {
 				p := status.Progress
-				if p.CurrentStrategy != "" {
-					progress += fmt.Sprintf(" · strategy: %s", p.CurrentStrategy)
+				if p.CurrentTargetAttribute != "" {
+					progress += fmt.Sprintf(" · strategy: %s", p.CurrentTargetAttribute)
 				}
 				if p.CurrentIteration > 0 {
 					progress += fmt.Sprintf(" · iteration %d", p.CurrentIteration)

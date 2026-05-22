@@ -45,19 +45,14 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 			{Name: "global-crit", Instruction: "be concise"},
 		},
 		Options: OptimizeOptions{
-			Budget:               100,
-			MaxIterations:        new(5),
-			MinImprovement:       0.01,
-			ImprovementThreshold: 0.05,
-			PassThreshold:        0.8,
-			EvalModel:            "gpt-4o-mini",
-			Strategies:           []string{"prompt_mutation"},
-			TargetAttributes:     []string{"prompt_mutation"},
-			KeepVersions:         true,
-			TasksPerIteration:    10,
-			MaxReflectionTasks:   3,
-			ReflectionModel:      "gpt-4o",
-			Mode:                 "full",
+			MaxIterations:      new(5),
+			EvalModel:          "gpt-4o-mini",
+			Strategies:         []string{"prompt_mutation"},
+			TargetAttributes:   []string{"prompt_mutation"},
+			KeepVersions:       true,
+			TasksPerIteration:  10,
+			MaxReflectionTasks: 3,
+			ReflectionModel:    "gpt-4o",
 		},
 	}
 
@@ -69,8 +64,8 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 	for _, field := range []string{
 		`"agent"`, `"foundryProjectUrl"`, `"agentName"`, `"agentVersion"`,
 		`"dataset"`, `"trainDatasetReference"`, `"evaluators"`, `"criteria"`,
-		`"options"`, `"evalModel"`, `"maxIterations"`, `"minImprovement"`,
-		`"improvementThreshold"`, `"passThreshold"`, `"keepVersions"`,
+		`"options"`, `"evalModel"`, `"maxIterations"`,
+		`"keepVersions"`,
 		`"tasksPerIteration"`, `"maxReflectionTasks"`, `"reflectionModel"`,
 		`"strategies"`, `"targetAttributes"`, `"groundTruth"`, `"systemPrompt"`, `"skills"`,
 	} {
@@ -88,10 +83,8 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 	assert.Equal(t, "4", got.Dataset[0].GroundTruth)
 	assert.NotNil(t, got.TrainDatasetReference)
 	assert.Equal(t, "train-ds", got.TrainDatasetReference.Name)
-	assert.Equal(t, 100, got.Options.Budget)
 	assert.Equal(t, "gpt-4o-mini", got.Options.EvalModel)
 	assert.True(t, got.Options.KeepVersions)
-	assert.Equal(t, "full", got.Options.Mode)
 }
 
 func TestOptimizeJobStatus_RoundTrip(t *testing.T) {
@@ -107,12 +100,12 @@ func TestOptimizeJobStatus_RoundTrip(t *testing.T) {
 			AgentName:         "agent-1",
 		},
 		Progress: &JobProgress{
-			CurrentStrategy:  "prompt_mutation",
-			CurrentIteration: 3,
-			TasksCompleted:   15,
-			TasksTotal:       20,
-			BestScore:        0.85,
-			ElapsedSeconds:   120.5,
+			CurrentTargetAttribute: "prompt_mutation",
+			CurrentIteration:       3,
+			TasksCompleted:         15,
+			TasksTotal:             20,
+			BestScore:              0.85,
+			ElapsedSeconds:         120.5,
 		},
 		Baseline: &CandidateResult{
 			Name:     "baseline",
@@ -149,7 +142,7 @@ func TestOptimizeJobStatus_RoundTrip(t *testing.T) {
 	s := string(data)
 	for _, field := range []string{
 		`"operationId"`, `"status"`, `"createdAt"`, `"updatedAt"`,
-		`"progress"`, `"currentStrategy"`, `"currentIteration"`,
+		`"progress"`, `"currentTargetAttribute"`, `"currentIteration"`,
 		`"tasksCompleted"`, `"tasksTotal"`, `"bestScore"`, `"elapsedSeconds"`,
 		`"baseline"`, `"best"`, `"candidates"`, `"candidateId"`,
 		`"avgScore"`, `"avgTokens"`, `"passRate"`, `"mutations"`,

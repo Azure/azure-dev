@@ -62,6 +62,11 @@ func DownloadDatasetArtifact(
 	}
 
 	destDir := DatasetArtifactPath(agentProject, ref)
+
+	// Clear existing dataset directory to ensure a clean download.
+	if err := os.RemoveAll(destDir); err != nil {
+		return "", fmt.Errorf("removing existing dataset dir: %w", err)
+	}
 	if err := os.MkdirAll(destDir, 0750); err != nil {
 		return "", fmt.Errorf("creating dataset artifact dir: %w", err)
 	}

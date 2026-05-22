@@ -94,9 +94,7 @@ func defaultOptimizeConfig(agentName string) *OptimizeConfig {
 		InlineDataset: defaultDataset,
 		Options: &opt_eval.Options{
 			EvalModel:        defaultEvalModel,
-			Mode:             "optimize",
 			TargetAttributes: []string{"instruction", "skill"},
-			Budget:           5,
 		},
 	}
 }
@@ -156,18 +154,14 @@ func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.Optimi
 		},
 		Evaluators: c.Evaluators.Names(),
 		Options: optimize_api.OptimizeOptions{
-			EvalModel:            c.Options.EvalModel,
-			Budget:               c.Options.Budget,
-			MaxIterations:        c.Options.MaxIterations,
-			MinImprovement:       c.Options.MinImprovement,
-			ImprovementThreshold: c.Options.ImprovementThreshold,
-			PassThreshold:        c.Options.PassThreshold,
-			Strategies:           c.Options.TargetAttributes,
-			TargetAttributes:     c.Options.TargetAttributes,
-			KeepVersions:         c.Options.KeepVersions,
-			TasksPerIteration:    c.Options.TasksPerIteration,
-			ReflectionModel:      c.Options.ReflectionModel,
-			Mode:                 c.Options.Mode,
+			EvalModel:         c.Options.EvalModel,
+			MaxIterations:     c.Options.MaxIterations,
+			Strategies:        c.Options.TargetAttributes,
+			TargetAttributes:  c.Options.TargetAttributes,
+			KeepVersions:      c.Options.KeepVersions,
+			TasksPerIteration: c.Options.TasksPerIteration,
+			ReflectionModel:   c.Options.ReflectionModel,
+			EvaluationLevel:   c.Options.EvaluationLevel,
 		},
 	}
 

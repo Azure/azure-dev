@@ -116,6 +116,41 @@ func TestGetDataset_Success(t *testing.T) {
 	assert.Equal(t, "https://storage.blob.core.windows.net/datasets/golden.jsonl", result.BlobURI)
 }
 
+func TestDataset_UnmarshalServicePayload(t *testing.T) {
+	t.Parallel()
+
+	// Recorded service GET /datasets/<name>/versions/<ver> response (snake_case).
+	payload := `{
+		"name": "eval-golden",
+		"version": "3",
+		"format": "jsonl",
+		"blob_uri": "https://store.blob.core.windows.net/ds/eval-golden.jsonl",
+		"data_uri": "https://store.blob.core.windows.net/ds/eval-golden-data.jsonl",
+		"content_uri": "https://store.blob.core.windows.net/ds/eval-golden-content.jsonl"
+	}`
+
+	var ds Dataset
+	require.NoError(t, json.Unmarshal([]byte(payload), &ds))
+
+	assert.Equal(t, "eval-golden", ds.Name)
+	assert.Equal(t, "3", ds.Version)
+	assert.Equal(t, "jsonl", ds.Format)
+	assert.Equal(t, "https://store.blob.core.windows.net/ds/eval-golden.jsonl", ds.BlobURI)
+	assert.Equal(t, "https://store.blob.core.windows.net/ds/eval-golden-data.jsonl", ds.DataURI)
+	assert.Equal(t, "https://store.blob.core.windows.net/ds/eval-golden-content.jsonl", ds.ContentURI)
+
+	// ResolvedBlobURI prefers blob_uri.
+	assert.Equal(t, ds.BlobURI, ds.ResolvedBlobURI())
+
+	// When blob_uri is empty, falls back to data_uri.
+	ds.BlobURI = ""
+	assert.Equal(t, ds.DataURI, ds.ResolvedBlobURI())
+
+	// When both blob_uri and data_uri are empty, falls back to content_uri.
+	ds.DataURI = ""
+	assert.Equal(t, ds.ContentURI, ds.ResolvedBlobURI())
+}
+
 // ---------------------------------------------------------------------------
 // GetDatasetCredential
 // ---------------------------------------------------------------------------

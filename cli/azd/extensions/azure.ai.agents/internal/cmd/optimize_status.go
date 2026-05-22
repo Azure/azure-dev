@@ -111,10 +111,10 @@ func printOptimizeJobSummary(out io.Writer, status *optimize_api.OptimizeJobStat
 	if status.Agent != nil && status.Agent.AgentName != "" {
 		fmt.Fprintf(out, "  Agent:   %s\n", status.Agent.AgentName)
 	}
-	if status.AllStrategiesFailed {
+	if status.AllTargetAttributesFailed {
 		fmt.Fprintf(out, "  Strategy: %s\n", color.YellowString("failed (baseline only — no candidates generated)"))
-	} else if status.Progress != nil && status.Progress.CurrentStrategy != "" {
-		fmt.Fprintf(out, "  Strategy: %s\n", status.Progress.CurrentStrategy)
+	} else if status.Progress != nil && status.Progress.CurrentTargetAttribute != "" {
+		fmt.Fprintf(out, "  Strategy: %s\n", status.Progress.CurrentTargetAttribute)
 	}
 	if status.Best != nil {
 		fmt.Fprintf(out, "  Best:    %.2f\n", status.Best.AvgScore)

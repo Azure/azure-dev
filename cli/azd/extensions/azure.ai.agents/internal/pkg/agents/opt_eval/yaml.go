@@ -378,18 +378,14 @@ type TargetConfig struct {
 // Options holds run-time options for eval and optimize.
 // Eval only uses EvalModel; optimize uses all fields.
 type Options struct {
-	EvalModel            string        `yaml:"eval_model,omitempty"`
-	Mode                 string        `yaml:"mode,omitempty"`
-	TargetAttributes     []string      `yaml:"target_attributes,omitempty"`
-	TargetConfig         *TargetConfig `yaml:"target_config,omitempty"`
-	Budget               int           `yaml:"budget,omitempty"`
-	MaxIterations        *int          `yaml:"max_iterations,omitempty"`
-	MinImprovement       float64       `yaml:"min_improvement,omitempty"`
-	ImprovementThreshold float64       `yaml:"improvement_threshold,omitempty"`
-	PassThreshold        float64       `yaml:"pass_threshold,omitempty"`
-	KeepVersions         bool          `yaml:"keep_versions,omitempty"`
-	TasksPerIteration    int           `yaml:"tasks_per_iteration,omitempty"`
-	ReflectionModel      string        `yaml:"reflection_model,omitempty"`
+	EvalModel         string        `yaml:"eval_model,omitempty"`
+	TargetAttributes  []string      `yaml:"target_attributes,omitempty"`
+	TargetConfig      *TargetConfig `yaml:"target_config,omitempty"`
+	MaxIterations     *int          `yaml:"max_iterations,omitempty"`
+	KeepVersions      bool          `yaml:"keep_versions,omitempty"`
+	TasksPerIteration int           `yaml:"tasks_per_iteration,omitempty"`
+	ReflectionModel   string        `yaml:"reflection_model,omitempty"`
+	EvaluationLevel   string        `yaml:"evaluation_level,omitempty"`
 }
 
 // UnmarshalYAML populates default target attributes when the field is absent in YAML.
@@ -411,10 +407,6 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 		if len(legacy.Strategies) > 0 {
 			o.TargetAttributes = legacy.Strategies
 		}
-	}
-
-	if o.MaxIterations == nil {
-		o.MaxIterations = new(4)
 	}
 	return nil
 }

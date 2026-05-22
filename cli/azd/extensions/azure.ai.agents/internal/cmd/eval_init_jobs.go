@@ -270,8 +270,7 @@ func pollAndFinalizeJobs(
 					ctx, resolved.datasetClient, resolved.agentProject, dsRef, DefaultAgentAPIVersion,
 				)
 				if err != nil {
-					datasetPollErr = err
-					return
+					log.Printf("warning: downloading dataset artifact for %q: %v", dsRef.Name, err)
 				}
 				if localURI != "" {
 					dsRef.LocalURI = localURI

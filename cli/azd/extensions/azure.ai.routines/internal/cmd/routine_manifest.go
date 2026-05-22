@@ -18,6 +18,7 @@ import (
 
 // readRoutineManifest reads and parses a routine manifest from a YAML or JSON file.
 func readRoutineManifest(path string) (*routines.Routine, error) {
+	// #nosec G304 - path is provided by the user via --file and is intentional
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, exterrors.Dependency(

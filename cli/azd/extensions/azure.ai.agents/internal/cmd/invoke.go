@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
@@ -337,6 +338,70 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	return a.responsesRemote(ctx)
 }
 
+// emitInvokeSuccessNextStep prints the resolver-driven Next: block after a
+// successful invoke. Each of invoke's four success paths funnels through
+// this helper so policy lives in `nextstep`, not in the command handler.
+//
+// State is intentionally nil: ResolveAfterInvoke's success branches don't
+// inspect State (`resolver.go:resolveInvokeSuccess`), and the gRPC cost of
+// AssembleState is wasted when the result isn't used. The failure helper
+// below makes the same choice — see its doc for the resolver-side
+// rationale that justifies skipping AssembleState even on failure today.
+//
+// Caller contract for `agentName`: pass the azure.yaml service name, NOT
+// the deployed Foundry agent name. The resolver embeds this verbatim
+// into the suggested `azd ai agent show <agentName>`, and `show` keys on
+// `s.Name` from azure.yaml (helpers.go:resolveAgentService). The remote
+// invoke functions translate `name` in place from service name to
+// Foundry name for the URL path; they MUST capture the service name
+// separately and pass that here. See `responsesRemote` /
+// `invocationsRemote` for the `serviceName` tracking pattern. The
+// resolver-level contract is locked by
+// TestResolveAfterInvoke_Success / "remote success with agent name →
+// show <agent> + monitor" in `nextstep/resolver_test.go`.
+//
+// Output is gated on a TTY stdout per the nextstep call-site contract
+// (`nextstep/types.go`, `nextstep/format.go`, `helpers.go:isTerminal`):
+// the package never inspects TTY state, so callers must. Without the gate,
+// piped or redirected stdout (`invoke > out.txt`, `invoke | tee log`,
+// CI capture) would receive the human-only guidance block mixed in with
+// the agent's reply.
+func (a *InvokeAction) emitInvokeSuccessNextStep(mode nextstep.InvokeMode, agentName string) {
+	_ = printNextIfTerminal(os.Stdout, nextstep.ResolveAfterInvoke(nil, mode, agentName, nil))
+}
+
+// emitInvokeFailureNextStep prints the resolver-driven Next: block when
+// an invoke fails. sessionCode is the value of the `x-adc-response-details`
+// response header (or empty when the failure has no platform-classified
+// session error code — e.g. local-server failures, connect errors, or
+// any 4xx/5xx that didn't carry the header). Local-invoke failures pass
+// the empty string and get a generic "see local server output" line per
+// the resolver's InvokeLocal branch.
+//
+// State is intentionally nil with the same rationale as the success
+// helper: today `resolveInvokeFailure(_ *State, mode, _ string, failure)`
+// ignores State entirely (the `_` in the signature is load-bearing), and
+// AssembleState costs an extra gRPC roundtrip the user pays for at the
+// exact moment they're staring at an error message. If a future failure
+// branch grows state-aware behavior, this is the single line to update.
+//
+// Output is TTY-gated for the same reason the success helper is — piped
+// or redirected stdout must receive only the agent's reply (or the
+// terminal error message via the host), never the human-only Next: block.
+//
+// Output ordering: the Next: block prints BEFORE the error message
+// (which the host renders after this function returns). This is the
+// "hint: ... error: ..." pattern git uses — acceptable for an
+// interactive command, and avoids the sentinel-error / silent-stderr
+// gymnastics that would be needed to flip the order. Revisit if user
+// feedback says the block should print after the error.
+func (a *InvokeAction) emitInvokeFailureNextStep(mode nextstep.InvokeMode, agentName, sessionCode string) {
+	failure := &nextstep.InvokeFailure{
+		SessionCode: nextstep.SessionErrorCode(sessionCode),
+	}
+	_ = printNextIfTerminal(os.Stdout, nextstep.ResolveAfterInvoke(nil, mode, agentName, failure))
+}
+
 // resolveProtocol returns the protocol to use for this invocation.
 // The explicit --protocol flag takes priority; otherwise the protocol
 // is auto-detected from agent.yaml (local or remote).
@@ -475,6 +540,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 		if traceID := responseTraceID(resp); traceID != "" {
 			fmt.Printf("Trace ID:     %s\n", traceID)
 		}
+		a.emitInvokeFailureNextStep(nextstep.InvokeLocal, "", "")
 		return fmt.Errorf(
 			"POST %s failed with HTTP %d: %s\n%s",
 			reqURL, resp.StatusCode, resp.Status, string(respBody),
@@ -485,10 +551,15 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		// Not JSON — just print raw response
 		fmt.Println(string(respBody))
+		a.emitInvokeSuccessNextStep(nextstep.InvokeLocal, "")
 		return nil
 	}
 
-	return printAgentResponse(result, "local")
+	if err := printAgentResponse(result, "local"); err != nil {
+		return err
+	}
+	a.emitInvokeSuccessNextStep(nextstep.InvokeLocal, "")
+	return nil
 }
 
 // remoteContext holds the resolved inputs for a remote (Foundry) invoke.
@@ -506,12 +577,20 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 // no-op. agentKey may still be non-empty in that case.
 type remoteContext struct {
 	name            string
+	serviceName     string
 	agentKey        string
 	projectEndpoint string
 	apiVersion      string
 	version         string
 	azdClient       *azdext.AzdClient
 	bearerToken     string
+}
+
+func (rc *remoteContext) nextStepName() string {
+	if rc.serviceName != "" {
+		return rc.serviceName
+	}
+	return rc.name
 }
 
 // resolveRemoteContext returns the inputs required to invoke a remote agent.
@@ -546,8 +625,14 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	rc.azdClient = azdClient
 
 	rc.name = a.flags.name
+	// Auto-resolve agent name and version from azure.yaml. Track the
+	// azure.yaml service name separately from the deployed Foundry name
+	// so post-success next-step suggestions emit the service name; show
+	// keys on s.Name in azure.yaml and would 404 on the deployed Foundry
+	// name in the divergent case.
 	if info, err := resolveAgentServiceFromProject(ctx, azdClient, rc.name, a.noPrompt); err == nil {
-		if rc.name == "" && info.AgentName != "" {
+		rc.serviceName = info.ServiceName
+		if info.AgentName != "" {
 			rc.name = info.AgentName
 		}
 		if info.AgentEndpoint != "" {
@@ -813,6 +898,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
+		a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.nextStepName(), resp.Header.Get("x-adc-response-details"))
 		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", respURL, resp.StatusCode, resp.Status, string(respBody))
 	}
 
@@ -820,10 +906,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	if err := readSSEStream(resp.Body, rc.name); err != nil {
 		return err
 	}
-
-	if agentKey != "" && rc.azdClient != nil {
-		fmt.Println("\n(tip: pass --new-session or --new-conversation to reset; see `azd ai agent invoke --help`)")
-	}
+	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
 	return nil
 }
 
@@ -841,7 +924,19 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		defer azdClient.Close()
 	}
 
-	agentKey := resolveLocalAgentKey(ctx, azdClient, a.flags.name, a.noPrompt)
+	// Resolve the agent service ONCE. The same plain name feeds both:
+	//   - agentKey (composite, port + project + name) for the session
+	//     and conversation store, where the wider scope is needed to
+	//     avoid cross-project collisions in the shared config store.
+	//   - agentName (plain) for the OpenAPI cache filename, which lives
+	//     inside .azure/<envName>/ (already project-isolated) and must
+	//     match `nextstep.ReadCachedOpenAPISpec`'s reader, which only
+	//     knows the azure.yaml service name.
+	// Resolving twice would re-prompt the user on multi-agent projects
+	// AND risk picking different services for the two values (silent
+	// state corruption: session under A, cache under B).
+	agentName := resolveLocalAgentName(ctx, azdClient, a.flags.name, a.noPrompt)
+	agentKey := buildLocalAgentKey(DefaultPort, agentName, "", resolveProjectPath(ctx, azdClient))
 
 	// Resolve local session ID (generated locally, not server-assigned).
 	var sid string
@@ -863,7 +958,9 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 
 	// Fetch and cache the agent's OpenAPI spec (always refresh for local).
 	if azdClient != nil {
-		fetchOpenAPISpec(ctx, azdClient, localBaseURL, agentKey, "local", "", true)
+		if path, fresh := fetchOpenAPISpec(ctx, azdClient, localBaseURL, agentName, "local", "", "", true); fresh {
+			fmt.Printf("OpenAPI spec saved to %s\n", path)
+		}
 	}
 
 	invURL := localBaseURL + "/invocations"
@@ -892,7 +989,15 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		fmt.Printf("Invocation:   %s\n", invID)
 	}
 
-	return handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout(), nil)
+	if err := handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout(), nil); err != nil {
+		// See invocationsRemote for the status-code rationale.
+		if resp.StatusCode >= 400 {
+			a.emitInvokeFailureNextStep(nextstep.InvokeLocal, agentName, "")
+		}
+		return err
+	}
+	a.emitInvokeSuccessNextStep(nextstep.InvokeLocal, agentName)
+	return nil
 }
 
 // invocationsRemote sends the user's message to Foundry using
@@ -950,7 +1055,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	// mode (--agent-endpoint) we deliberately avoid the on-disk side effect since
 	// the user is one-off targeting a remote endpoint.
 	if rc.azdClient != nil && a.endpoint == nil {
-		fetchOpenAPISpec(ctx, rc.azdClient, remoteBaseURL, rc.name, "remote", rc.bearerToken, false)
+		fetchOpenAPISpec(ctx, rc.azdClient, remoteBaseURL, rc.name, "remote", rc.bearerToken, rc.apiVersion, false)
 	}
 
 	invURL := buildInvocationsURL(rc.projectEndpoint, rc.name, rc.apiVersion, sid)
@@ -982,6 +1087,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 
 	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, "Session:  ")
 
+	sessionCode := resp.Header.Get("x-adc-response-details")
 	if err := handleInvocationResponse(
 		ctx,
 		resp,
@@ -991,12 +1097,19 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		a.httpTimeout(),
 		a.flags.sessionRequestOptions(),
 	); err != nil {
+		// Only emit failure Next: for platform HTTP failures.
+		// 200 OK with an agent-error envelope (handleInvocationSync /
+		// handleInvocationSSE returning fmt.Errorf("agent error...")) is
+		// an agent-level error; the platform's SessionErrorCode vocabulary
+		// doesn't apply, and the responses protocol's equivalent
+		// (printAgentResponse / readSSEStream agent errors) is also
+		// not wired. Keeps the two protocols' UX consistent.
+		if resp.StatusCode >= 400 {
+			a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.nextStepName(), sessionCode)
+		}
 		return err
 	}
-
-	if agentKey != "" && rc.azdClient != nil {
-		fmt.Println("\n(tip: pass --new-session to reset; see `azd ai agent invoke --help`)")
-	}
+	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
 	return nil
 }
 

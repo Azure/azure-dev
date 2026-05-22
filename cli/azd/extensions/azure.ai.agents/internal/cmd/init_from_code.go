@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
@@ -11,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	posixpath "path"
@@ -147,16 +149,21 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		validatePostInit(srcDir, localDefinition.CodeConfiguration)
 
 		fmt.Println("\nYou can customize environment variables and other settings in the agent.yaml.")
-		if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: a.environment.Name,
-			Key:     "AZURE_AI_PROJECT_ID",
-		}); projectID != nil && projectID.Value != "" && !a.needsProvision {
-			fmt.Printf("Next steps: Run %s to deploy your agent to Microsoft Foundry.\n",
-				color.HiBlueString("azd deploy %s", localDefinition.Name))
-		} else {
-			fmt.Printf("Next steps: Run %s to deploy your agent to Microsoft Foundry.\n",
-				color.HiBlueString("azd up"))
-		}
+
+		// Delegate the trailing Next: block to the shared nextstep
+		// resolver — the same path used by the manifest-driven init
+		// flow (see InitAction.addToProject). The resolver inspects
+		// the current azd environment, the pending-provision signal,
+		// each agent.yaml's references to user-supplied variables,
+		// and emits context-aware guidance (`azd provision` when infra
+		// outputs are unset or pending, `azd env set <KEY>` lines when
+		// agent.yaml references unset user-supplied variables, or
+		// `azd ai agent run` when everything is configured). All paths
+		// terminate with the deploy hint. State-assembly errors are
+		// intentionally ignored: the resolver degrades gracefully on
+		// partial state per the design spec.
+		state, _ := nextstep.AssembleState(ctx, a.azdClient)
+		_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state))
 	}
 
 	return nil
@@ -726,6 +733,16 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_MODEL_DEPLOYMENT_NAME", existingDeployment.Name); err != nil {
 			return nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
 		}
+
+		// Existing deployment chosen — clear any prior
+		// model_deployment tag so re-init that swaps from
+		// new-deployment back to existing doesn't leave the
+		// trailer stuck on `azd provision`.
+		if err := updatePendingModelDeploymentSignal(
+			ctx, a.azdClient, a.environment.Name, true, false,
+		); err != nil {
+			log.Printf("warning: failed to update model_deployment provision signal: %v", err)
+		}
 	} else if selectedModel != nil {
 		modelDetails, err := a.resolveSelectedModelDeployment(ctx, selectedModel)
 		if err != nil {
@@ -753,6 +770,17 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 
 		if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_MODEL_DEPLOYMENT_NAME", modelDetails.ModelName); err != nil {
 			return nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+		}
+
+		// New model deployment configured — record that the
+		// post-init trailer should suggest `azd provision`. See
+		// pending_provision.go for the lifecycle contract: this
+		// tag is cleared by postprovisionHandler after a
+		// successful provision.
+		if err := updatePendingModelDeploymentSignal(
+			ctx, a.azdClient, a.environment.Name, true, true,
+		); err != nil {
+			log.Printf("warning: failed to update model_deployment provision signal: %v", err)
 		}
 	}
 

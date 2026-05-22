@@ -9,6 +9,7 @@ import (
 	"azureaiagent/internal/project"
 	"context"
 	"fmt"
+	"log"
 	"regexp"
 	"slices"
 	"strings"
@@ -455,6 +456,13 @@ func configureAcrConnection(
 			if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID", resourceId); err != nil {
 				return err
 			}
+			if err := updatePendingACRSignal(ctx, azdClient, envName, true); err != nil {
+				log.Printf("warning: failed to update acr provision signal: %v", err)
+			}
+		} else {
+			if err := updatePendingACRSignal(ctx, azdClient, envName, false); err != nil {
+				log.Printf("warning: failed to update acr provision signal: %v", err)
+			}
 		}
 		return nil
 	}
@@ -494,6 +502,9 @@ func configureAcrConnection(
 	}
 	if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT", normalizeLoginServer(selectedConnection.Target)); err != nil {
 		return err
+	}
+	if err := updatePendingACRSignal(ctx, azdClient, envName, true); err != nil {
+		log.Printf("warning: failed to update acr provision signal: %v", err)
 	}
 
 	return nil
@@ -545,6 +556,13 @@ func configureAppInsightsConnection(
 					return err
 				}
 			}
+			if err := updatePendingAppInsightsSignal(ctx, azdClient, envName, true); err != nil {
+				log.Printf("warning: failed to update app_insights provision signal: %v", err)
+			}
+		} else {
+			if err := updatePendingAppInsightsSignal(ctx, azdClient, envName, false); err != nil {
+				log.Printf("warning: failed to update app_insights provision signal: %v", err)
+			}
 		}
 		return nil
 	}
@@ -587,6 +605,9 @@ func configureAppInsightsConnection(
 			ctx, azdClient, envName, "APPLICATIONINSIGHTS_CONNECTION_STRING", selectedConnection.Credentials.Key,
 		); err != nil {
 			return err
+		}
+		if err := updatePendingAppInsightsSignal(ctx, azdClient, envName, true); err != nil {
+			log.Printf("warning: failed to update app_insights provision signal: %v", err)
 		}
 	}
 

@@ -21,10 +21,12 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -1229,6 +1231,11 @@ func (a *InitAction) configureModelChoice(
 			); err != nil {
 				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 			}
+			if err := updatePendingProjectSignal(
+				ctx, a.azdClient, a.environment.Name, true,
+			); err != nil {
+				log.Printf("warning: failed to update project provision signal: %v", err)
+			}
 		} else {
 			// Prompt user to pick an existing Foundry project or create new resources
 			projectChoices := []*azdext.SelectChoice{
@@ -1281,6 +1288,11 @@ func (a *InitAction) configureModelChoice(
 					); err != nil {
 						return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 					}
+					if err := updatePendingProjectSignal(
+						ctx, a.azdClient, a.environment.Name, false,
+					); err != nil {
+						log.Printf("warning: failed to update project provision signal: %v", err)
+					}
 					if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
 						return nil, err
 					}
@@ -1290,6 +1302,11 @@ func (a *InitAction) configureModelChoice(
 						ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
 					); err != nil {
 						return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+					}
+					if err := updatePendingProjectSignal(
+						ctx, a.azdClient, a.environment.Name, true,
+					); err != nil {
+						log.Printf("warning: failed to update project provision signal: %v", err)
 					}
 				}
 			default:
@@ -1307,6 +1324,11 @@ func (a *InitAction) configureModelChoice(
 					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 				); err != nil {
 					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+				}
+				if err := updatePendingProjectSignal(
+					ctx, a.azdClient, a.environment.Name, false,
+				); err != nil {
+					log.Printf("warning: failed to update project provision signal: %v", err)
 				}
 			}
 		}
@@ -1340,6 +1362,11 @@ func (a *InitAction) configureModelChoice(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
 			); err != nil {
 				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+			}
+			if err := updatePendingProjectSignal(
+				ctx, a.azdClient, a.environment.Name, true,
+			); err != nil {
+				log.Printf("warning: failed to update project provision signal: %v", err)
 			}
 		} else {
 			return nil, fmt.Errorf("specified foundry project was not found or is not eligible for the current configuration: %s", a.flags.projectResourceId)
@@ -1421,6 +1448,14 @@ func (a *InitAction) configureModelChoice(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 			); err != nil {
 				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+			}
+			if err := updatePendingProjectSignal(
+				ctx, a.azdClient, a.environment.Name, false,
+			); err != nil {
+				log.Printf("warning: failed to update project provision signal: %v", err)
+			}
+			if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -2116,18 +2151,18 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		"\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n",
 		a.serviceNameOverride,
 	)
-	if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: a.environment.Name,
-		Key:     "AZURE_AI_PROJECT_ID",
-	}); projectID != nil && projectID.Value != "" && len(a.deploymentDetails) == 0 {
-		fmt.Printf("To deploy your agent, use %s.\n",
-			color.HiBlueString("azd deploy %s", a.serviceNameOverride))
-	} else {
-		fmt.Printf(
-			"To provision and deploy the whole solution, use %s.\n",
-			color.HiBlueString("azd up"),
-		)
-	}
+
+	// Replace the legacy hardcoded `azd up` / `azd deploy` hint with the
+	// shared nextstep resolver. The resolver inspects the current azd
+	// environment plus each azure.ai.agent service's agent.yaml and emits
+	// context-aware guidance: `azd provision` when infra outputs are
+	// unset, `azd env set <KEY> <value>` lines when agent.yaml references
+	// user-supplied variables that are unset, or `azd ai agent run` when
+	// everything is configured. All paths append the deploy hint as the
+	// trailing line. State-assembly errors are intentionally ignored: the
+	// resolver degrades gracefully on partial state per the design spec.
+	state, _ := nextstep.AssembleState(ctx, a.azdClient)
+	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state))
 	return nil
 }
 
@@ -2891,7 +2926,7 @@ func injectToolboxEnvVarsIntoDefinition(manifest *agent_yaml.AgentManifest) erro
 	}
 
 	for _, tbName := range toolboxNames {
-		envKey := toolboxMCPEndpointEnvKey(tbName)
+		envKey := envkey.ToolboxMCPEndpoint(tbName)
 		if existingNames[envKey] {
 			return fmt.Errorf(
 				"duplicate toolbox environment variable %q (from toolbox %q)",

@@ -10,14 +10,14 @@ import (
 	"log"
 	"net/url"
 	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
+	"azureaiagent/internal/pkg/envkey"
+	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -26,10 +26,6 @@ import (
 	"github.com/drone/envsubst"
 	"google.golang.org/protobuf/types/known/structpb"
 )
-
-// nonAlphanumEnvKeyRe matches any character that is not an uppercase letter or
-// digit, used to sanitize environment variable key segments.
-var nonAlphanumEnvKeyRe = regexp.MustCompile(`[^A-Z0-9]+`)
 
 // configureExtensionHost wires the service target and event handlers on the
 // supplied [azdext.ExtensionHost]. It is passed to [azdext.NewListenCommand]
@@ -81,10 +77,12 @@ func postprovisionHandler(
 	azdClient *azdext.AzdClient,
 	args *azdext.ProjectEventArgs,
 ) error {
+	hasAgent := false
 	for _, svc := range args.Project.Services {
 		if svc.Host != AiAgentHost {
 			continue
 		}
+		hasAgent = true
 
 		if err := provisionToolboxes(ctx, azdClient, svc); err != nil {
 			return fmt.Errorf(
@@ -94,7 +92,62 @@ func postprovisionHandler(
 		}
 	}
 
+	// Clear the AI_AGENT_PENDING_PROVISION signal now that provision has
+	// finished successfully. Init writes resource-class tags into this
+	// variable when it configures non-existent infra (a new model
+	// deployment, a new Foundry project, a blank ACR/AppInsights input)
+	// so the post-init trailer and `azd ai agent doctor` can recommend
+	// `azd provision`. Once provision returns success the signal is
+	// stale: subsequent runs of doctor/init/run/show/deploy should rely
+	// on the canonical post-provision env vars (AZURE_AI_PROJECT_ENDPOINT
+	// and friends) and the agent.yaml-vs-env diff. The clear is gated on
+	// the presence of at least one azure.ai.agent service so toolbox-only
+	// or non-agent provisions don't write to a variable they don't own.
+	// Best-effort: a transport failure here is logged but not returned —
+	// the user's provision DID succeed and surfacing a clear-time error
+	// would be confusing. The next init/doctor run will simply re-emit
+	// the suggestion until the variable is cleared by a future
+	// successful provision (or by the user via `azd env set ... ""`).
+	if hasAgent {
+		envName, err := currentEnvName(ctx, azdClient)
+		switch {
+		case err != nil:
+			log.Printf(
+				"warning: failed to look up current environment to clear %s: %v",
+				pendingProvisionEnvVar, err,
+			)
+		case envName == "":
+			log.Printf(
+				"warning: no current environment selected; skipping clear of %s",
+				pendingProvisionEnvVar,
+			)
+		default:
+			if clearErr := clearPendingProvisionReasons(ctx, azdClient, envName); clearErr != nil {
+				log.Printf(
+					"warning: failed to clear %s after provision: %v",
+					pendingProvisionEnvVar, clearErr,
+				)
+			}
+		}
+	}
+
 	return nil
+}
+
+// currentEnvName returns the name of the currently selected azd
+// environment, or empty string + error when no environment is
+// selected. Wraps Environment().GetCurrent so callers (notably
+// postprovisionHandler) can read the current env name without
+// duplicating the request shape.
+func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
+	resp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return "", err
+	}
+	if resp == nil || resp.Environment == nil {
+		return "", nil
+	}
+	return resp.Environment.Name, nil
 }
 
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
@@ -127,7 +180,10 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 // isHostedAgentService checks if a service is a hosted (container) agent by reading
 // the agent.yaml kind from the service directory.
 func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig) bool {
-	agentYamlPath := filepath.Join(proj.Path, svc.RelativePath, "agent.yaml")
+	agentYamlPath, err := paths.JoinAllowRoot(proj.Path, svc.RelativePath, "agent.yaml")
+	if err != nil {
+		return false
+	}
 	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // path from azd project config
 	if err != nil {
 		return false
@@ -348,9 +404,10 @@ func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azd
 }
 
 func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig, envName string) error {
-	servicePath := svc.RelativePath
-	fullPath := filepath.Join(project.Path, servicePath)
-	agentYamlPath := filepath.Join(fullPath, "agent.yaml")
+	agentYamlPath, err := paths.JoinAllowRoot(project.Path, svc.RelativePath, "agent.yaml")
+	if err != nil {
+		return fmt.Errorf("invalid service path: %w", err)
+	}
 
 	//nolint:gosec // agentYamlPath is resolved from project/service paths in current workspace
 	data, err := os.ReadFile(agentYamlPath)
@@ -730,7 +787,7 @@ func registerToolboxEnvVars(
 	toolboxName string,
 	toolboxVersion string,
 ) error {
-	envKey := toolboxMCPEndpointEnvKey(toolboxName)
+	envKey := envkey.ToolboxMCPEndpoint(toolboxName)
 
 	endpoint := strings.TrimRight(projectEndpoint, "/")
 	mcpEndpoint := fmt.Sprintf(
@@ -741,13 +798,6 @@ func registerToolboxEnvVars(
 	return setEnvVar(
 		ctx, azdClient, envName, envKey, mcpEndpoint,
 	)
-}
-
-// toolboxMCPEndpointEnvKey builds the TOOLBOX_{NAME}_MCP_ENDPOINT env var key.
-// Non-alphanumeric characters are replaced with underscores for a valid env key.
-func toolboxMCPEndpointEnvKey(toolboxName string) string {
-	sanitized := nonAlphanumEnvKeyRe.ReplaceAllString(strings.ToUpper(toolboxName), "_")
-	return fmt.Sprintf("TOOLBOX_%s_MCP_ENDPOINT", sanitized)
 }
 
 // resolveToolboxEnvVars resolves ${VAR} references in toolbox name, description,

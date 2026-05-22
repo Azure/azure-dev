@@ -1153,30 +1153,6 @@ func TestInjectToolboxEnvVarsIntoDefinition_NoopWithoutToolboxes(t *testing.T) {
 	}
 }
 
-func TestToolboxMCPEndpointEnvKey(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{"simple", "my-tools", "TOOLBOX_MY_TOOLS_MCP_ENDPOINT"},
-		{"spaces", "my tools", "TOOLBOX_MY_TOOLS_MCP_ENDPOINT"},
-		{"mixed", "agent-tools v2", "TOOLBOX_AGENT_TOOLS_V2_MCP_ENDPOINT"},
-		{"already upper", "TOOLS", "TOOLBOX_TOOLS_MCP_ENDPOINT"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := toolboxMCPEndpointEnvKey(tt.input)
-			if got != tt.expected {
-				t.Errorf("toolboxMCPEndpointEnvKey(%q) = %q, want %q", tt.input, got, tt.expected)
-			}
-		})
-	}
-}
-
 func TestExtractConnectionConfigs_SurfacesCredentialsType(t *testing.T) {
 	t.Parallel()
 

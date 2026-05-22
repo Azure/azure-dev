@@ -130,3 +130,25 @@ log.Printf("No routines found on project")                     // use fmt.Print*
   branches can compare with `== "json"`.
 - When using `PromptSubscription()`, create credentials with
   `Subscription.UserTenantId`, not `Subscription.TenantId`.
+
+## API spec alignment
+
+The authoritative TypeSpec is in
+[`azure-rest-api-specs` PR #43186](https://github.com/Azure/azure-rest-api-specs/pull/43186)
+(`specification/ai-foundry/data-plane/Foundry/src/routines/`). The client in
+`internal/pkg/routines/` tracks that spec, with the following deliberate
+divergences that exist purely to stay compatible with the currently deployed
+Foundry service. Each divergence is also noted inline in the code.
+
+| Concern | Spec (PR #43186) | Live service | Client choice |
+|---|---|---|---|
+| Wire field naming | `snake_case` | `camelCase` | camelCase JSON tags |
+| `InvokeAgentResponsesApiRoutineAction` agent field | `agent_name` | `agentId` | `AgentID` / `agentId` |
+| `:dispatch_async` action segment | snake_case | `:dispatchAsync` only | camelCase URL |
+| `POST :enable` / `POST :disable` | dedicated routes | 404 | GET+PUT fallback |
+| `:github_issue_opened` trigger | renamed in spec | accepts old `github_issue` | CLI keeps `github_issue` wire value (trigger feature is deferred at the CLI anyway) |
+| `AgentsPagedResult<T>` envelope | `data` + `last_id` + `has_more` | `value` + `nextLink` (routines) / `value` + `nextPageToken` (runs) | matches service |
+| `task_id` on `DispatchRoutineResponse` / `RoutineRun` | new in spec | already emitted by service | added (`TaskID` / `taskId`) |
+
+When the service catches up to the spec, revisit these one at a time.
+

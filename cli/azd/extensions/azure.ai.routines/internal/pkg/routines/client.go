@@ -9,10 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -32,9 +34,43 @@ type Client struct {
 	pipeline runtime.Pipeline
 }
 
+// newHTTPClient returns the *http.Client used by the data-plane pipeline.
+//
+// The default azcore transport relies on Go's HTTP/2 client, which can wait
+// minutes before surfacing a server-side stream reset (RST_STREAM). The
+// Foundry Routines data plane returns 500s for certain inputs via stream
+// resets, so callers were observing ~6 minute hangs on what curl reports as
+// a sub-second failure. We use a transport with explicit response-header and
+// connection-level timeouts so failures surface within tens of seconds.
+func newHTTPClient() *http.Client {
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		ResponseHeaderTimeout: 60 * time.Second,
+	}
+	return &http.Client{Transport: transport}
+}
+
 // NewClient creates a new Routines data-plane client.
 func NewClient(endpoint string, cred azcore.TokenCredential) *Client {
 	clientOptions := &policy.ClientOptions{
+		Transport: newHTTPClient(),
+		// Limit retries so HTTP/2 stream-reset failures surface quickly to the
+		// user. The azcore default is 3 retries which, combined with a 60s
+		// response-header timeout, can hide a fast server-side failure behind
+		// a 4-minute wait. CLI callers can simply re-run the command.
+		Retry: policy.RetryOptions{
+			MaxRetries: 1,
+			TryTimeout: 30 * time.Second,
+		},
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(
 				cred,
@@ -214,14 +250,20 @@ func (c *Client) DeleteRoutine(ctx context.Context, name string) error {
 	return nil
 }
 
-// EnableRoutine flips `enabled` to true via PUT.
-// The Foundry Routines API does not expose a dedicated :enable route; the
-// client mutates the routine resource directly.
+// EnableRoutine flips `enabled` to true on the routine.
+//
+// Spec PR #43186 added a dedicated `POST /routines/{name}:enable` route,
+// but the live service still returns 404 for it. We fall back to a GET+PUT
+// on the routine resource; revisit when the service exposes the route.
 func (c *Client) EnableRoutine(ctx context.Context, name string) (*Routine, error) {
 	return c.setEnabled(ctx, name, true)
 }
 
-// DisableRoutine flips `enabled` to false via PUT.
+// DisableRoutine flips `enabled` to false on the routine.
+//
+// Spec PR #43186 added a dedicated `POST /routines/{name}:disable` route,
+// but the live service still returns 404 for it. We fall back to a GET+PUT
+// on the routine resource; revisit when the service exposes the route.
 func (c *Client) DisableRoutine(ctx context.Context, name string) (*Routine, error) {
 	return c.setEnabled(ctx, name, false)
 }
@@ -241,9 +283,11 @@ func (c *Client) setEnabled(ctx context.Context, name string, enabled bool) (*Ro
 	return c.PutRoutine(ctx, name, existing)
 }
 
-// DispatchRoutineAsync calls the :dispatchAsync action route.
-// The action segment is camelCase per TypeSpec; do not change it to
-// snake_case without first updating the Foundry Routines spec.
+// DispatchRoutineAsync calls the routine async-dispatch action route.
+//
+// Spec PR #43186 names this route `:dispatch_async` (snake_case). The live
+// service only exposes the camelCase form `:dispatchAsync`, so we use that
+// here. Revisit when the service catches up to the spec.
 func (c *Client) DispatchRoutineAsync(
 	ctx context.Context,
 	name string,

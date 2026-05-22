@@ -116,5 +116,8 @@ func runRoutineDispatch(
 	if resp.ActionCorrelationID != "" {
 		fmt.Printf("Action Correlation ID: %s\n", resp.ActionCorrelationID)
 	}
+	if resp.TaskID != "" {
+		fmt.Printf("Task ID: %s\n", resp.TaskID)
+	}
 	return nil
 }

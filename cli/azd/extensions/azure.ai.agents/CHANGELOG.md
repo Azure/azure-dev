@@ -1,5 +1,15 @@
 # Release History
 
+## 0.1.34-preview (2026-05-22)
+
+- [[#8264]](https://github.com/Azure/azure-dev/pull/8264) Launch Agent Inspector automatically on `azd ai agent run`. Use `--no-inspector` to opt out. Requires the `azure.ai.inspector` extension.
+- [[#8327]](https://github.com/Azure/azure-dev/pull/8327) Add `RemoteA2A` connection kind and expand auth type support for `azd ai agent connection create`, including OAuth2, user Entra token, project managed identity, and agentic identity token auth types.
+- [[#8321]](https://github.com/Azure/azure-dev/pull/8321) Introduce `AZURE_AI_DEPLOYMENTS_LOCATION` to decouple model/project deployment location from resource group location (`AZURE_LOCATION`), fixing provisioning failures when a Foundry project and resource group are in different regions.
+- [[#8324]](https://github.com/Azure/azure-dev/pull/8324) Add `--deploy-mode`, `--runtime`, `--entry-point`, and `--dep-resolution` flags to `azd ai agent init` for non-interactive code deploy support in CI/CD pipelines.
+- [[#8198]](https://github.com/Azure/azure-dev/pull/8198) Add `azd ai agent doctor` diagnostics command with checks for project setup, environment variables, authentication, Foundry reachability, hosted agent status, and more. Add context-aware `Next:` guidance across init, run, invoke, show, and deploy-hook flows.
+- [[#8306]](https://github.com/Azure/azure-dev/pull/8306) Add `azd ai agent eval` and `azd ai agent optimize` command families for evaluating and iteratively optimizing AI agents.
+- [[#8332]](https://github.com/Azure/azure-dev/pull/8332) Add handling to update agent endpoint details when an agent is redeployed to a new endpoint.
+
 ## 0.1.33-preview (2026-05-21)
 
 - [[#8299]](https://github.com/Azure/azure-dev/pull/8299) Don't fail `azd ai agent init` when Foundry agent existence checks error.

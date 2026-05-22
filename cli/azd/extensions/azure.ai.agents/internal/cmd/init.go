@@ -81,6 +81,7 @@ type InitAction struct {
 	models        *modelSelector
 
 	deploymentDetails   []project.Deployment
+	needsProvision      bool
 	containerSettings   *project.ContainerSettings
 	isCodeDeploy        bool // true when user selects code deploy mode; skips ACR config
 	httpClient          *http.Client
@@ -2089,7 +2090,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: a.environment.Name,
 		Key:     "AZURE_AI_PROJECT_ID",
-	}); projectID != nil && projectID.Value != "" && len(a.deploymentDetails) == 0 {
+	}); projectID != nil && projectID.Value != "" && !a.needsProvision {
 		fmt.Printf("To deploy your agent, use %s.\n",
 			color.HiBlueString("azd deploy %s", a.serviceNameOverride))
 	} else {

@@ -291,6 +291,9 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 		return nil, fmt.Errorf("failed to get model details: %w", err)
 	}
 
+	// This path creates a new model deployment that needs provisioning
+	a.needsProvision = true
+
 	message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name)", modelDetails.ModelName)
 
 	modelDeploymentInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{

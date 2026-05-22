@@ -18,7 +18,6 @@ import (
 type routineCreateFlags struct {
 	name            string
 	trigger         string
-	cron            string
 	timeZone        string
 	at              string
 	action          string
@@ -55,9 +54,7 @@ Use --file to create from a YAML/JSON manifest file instead of individual flags.
 	}
 
 	cmd.Flags().StringVar(&flags.trigger, "trigger", "",
-		"Trigger type: recurring, timer (required unless --file is used)")
-	cmd.Flags().StringVar(&flags.cron, "cron", "",
-		"Cron expression for recurring trigger (e.g. '0 8 * * 1-5')")
+		"Trigger type: timer (required unless --file is used)")
 	cmd.Flags().StringVar(&flags.timeZone, "time-zone", "UTC",
 		"Time zone for the trigger (e.g. 'America/New_York')")
 	cmd.Flags().StringVar(&flags.at, "at", "",
@@ -129,7 +126,7 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 			return exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"--trigger is required when --file is not provided",
-				"specify --trigger recurring, --trigger timer, or use --file",
+				"specify --trigger timer, or use --file",
 			)
 		}
 
@@ -193,17 +190,25 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 }
 
 // buildTrigger constructs a RoutineTrigger from CLI flags.
+//
+// Only the `timer` trigger is exposed at the CLI surface in this PR. The
+// `recurring` (schedule) and `github-issue` triggers are deferred until the
+// Foundry service is ready (see PR #8241 description and AGENTS.md). The
+// underlying model and wire support for both triggers are retained so
+// re-enabling them is just a CLI flag wiring change.
 func buildTrigger(flags *routineCreateFlags) (routines.RoutineTrigger, error) {
-	// "github-issue" is present in TriggerCLIToWire (it maps to the wire type
-	// for the deferred GitHub issue trigger), but the CLI does not yet support
-	// supplying the fields it needs (connection, owner, repository, actions).
-	// Reject it explicitly so users get a clear "deferred" message instead of
-	// a silently incomplete request.
 	if flags.trigger == "github-issue" {
 		return routines.RoutineTrigger{}, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"trigger type 'github-issue' is not yet supported by the CLI",
-			"use --trigger recurring or --trigger timer; github-issue is deferred to a future release",
+			"use --trigger timer; github-issue is deferred to a future release",
+		)
+	}
+	if flags.trigger == "recurring" {
+		return routines.RoutineTrigger{}, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"trigger type 'recurring' is not yet supported by the CLI",
+			"use --trigger timer; recurring/schedule is deferred until the Foundry service is ready",
 		)
 	}
 
@@ -212,7 +217,7 @@ func buildTrigger(flags *routineCreateFlags) (routines.RoutineTrigger, error) {
 		return routines.RoutineTrigger{}, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("unknown trigger type %q", flags.trigger),
-			"supported triggers: recurring, timer",
+			"supported triggers: timer",
 		)
 	}
 
@@ -222,15 +227,6 @@ func buildTrigger(flags *routineCreateFlags) (routines.RoutineTrigger, error) {
 	}
 
 	switch flags.trigger {
-	case "recurring":
-		if flags.cron == "" {
-			return t, exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"--cron is required for trigger type 'recurring'",
-				"provide a cron expression, e.g. '0 8 * * 1-5'",
-			)
-		}
-		t.CronExpression = flags.cron
 	case "timer":
 		if flags.at == "" {
 			return t, exterrors.Validation(

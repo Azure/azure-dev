@@ -19,7 +19,6 @@ type routineUpdateFlags struct {
 	trigger         string // type-switch guard only
 	action          string // type-switch guard only
 	description     string
-	cron            string
 	timeZone        string
 	at              string
 	agentID         string
@@ -58,7 +57,6 @@ To change the trigger or action type, delete and recreate the routine.`,
 	_ = cmd.Flags().MarkHidden("action")
 
 	cmd.Flags().StringVar(&flags.description, "description", "", "New description for the routine")
-	cmd.Flags().StringVar(&flags.cron, "cron", "", "New cron expression for recurring trigger")
 	cmd.Flags().StringVar(&flags.timeZone, "time-zone", "", "New time zone for the trigger")
 	cmd.Flags().StringVar(&flags.at, "at", "", "New ISO 8601 datetime for timer trigger")
 	cmd.Flags().StringVar(&flags.agentID, "agent-id", "", "New project-scoped agent ID")
@@ -118,7 +116,6 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 
 	// Apply named flag changes (flag presence, not just non-empty value).
 	descChanged := cmd.Flags().Changed("description")
-	cronChanged := cmd.Flags().Changed("cron")
 	tzChanged := cmd.Flags().Changed("time-zone")
 	atChanged := cmd.Flags().Changed("at")
 	agentIDChanged := cmd.Flags().Changed("agent-id")
@@ -128,9 +125,9 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 
 	changed, err := applyUpdateFlags(
 		existing,
-		flags.description, flags.cron, flags.timeZone, flags.at,
+		flags.description, flags.timeZone, flags.at,
 		flags.agentID, flags.agentEndpointID, flags.conversationID, flags.sessionID,
-		descChanged, cronChanged, tzChanged, atChanged,
+		descChanged, tzChanged, atChanged,
 		agentIDChanged, agentEpChanged, convIDChanged, sessIDChanged,
 	)
 	if err != nil {

@@ -143,32 +143,20 @@ func TestApplyUpdateFlags_Description(t *testing.T) {
 	t.Parallel()
 	r := routineWithScheduleAndAgentResp()
 	n, err := applyUpdateFlags(r,
-		"new desc", "", "", "", "", "", "", "",
-		true, false, false, false, false, false, false, false,
+		"new desc", "", "", "", "", "", "",
+		true, false, false, false, false, false, false,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 	assert.Equal(t, "new desc", r.Description)
 }
 
-func TestApplyUpdateFlags_Cron(t *testing.T) {
-	t.Parallel()
-	r := routineWithScheduleAndAgentResp()
-	n, err := applyUpdateFlags(r,
-		"", "0 9 * * 1-5", "", "", "", "", "", "",
-		false, true, false, false, false, false, false, false,
-	)
-	require.NoError(t, err)
-	assert.Equal(t, 1, n)
-	assert.Equal(t, "0 9 * * 1-5", r.Triggers["default"].CronExpression)
-}
-
 func TestApplyUpdateFlags_TimeZone(t *testing.T) {
 	t.Parallel()
 	r := routineWithScheduleAndAgentResp()
 	n, err := applyUpdateFlags(r,
-		"", "", "America/New_York", "", "", "", "", "",
-		false, false, true, false, false, false, false, false,
+		"", "America/New_York", "", "", "", "", "",
+		false, true, false, false, false, false, false,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
@@ -182,8 +170,8 @@ func TestApplyUpdateFlags_AgentIDClearsEndpointID(t *testing.T) {
 		Triggers: map[string]routines.RoutineTrigger{"default": {Type: "schedule"}},
 	}
 	n, err := applyUpdateFlags(r,
-		"", "", "", "", "new-agent-id", "", "", "",
-		false, false, false, false, true, false, false, false,
+		"", "", "", "new-agent-id", "", "", "",
+		false, false, false, true, false, false, false,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
@@ -199,8 +187,8 @@ func TestApplyUpdateFlags_AgentEndpointIDClearsID(t *testing.T) {
 		Triggers: map[string]routines.RoutineTrigger{"default": {Type: "schedule"}},
 	}
 	n, err := applyUpdateFlags(r,
-		"", "", "", "", "", "new-ep", "", "",
-		false, false, false, false, false, true, false, false,
+		"", "", "", "", "new-ep", "", "",
+		false, false, false, false, true, false, false,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
@@ -213,8 +201,8 @@ func TestApplyUpdateFlags_MutuallyExclusiveAgentFields(t *testing.T) {
 	t.Parallel()
 	r := routineWithScheduleAndAgentResp()
 	_, err := applyUpdateFlags(r,
-		"", "", "", "", "new-agent-id", "new-ep", "", "",
-		false, false, false, false, true, true, false, false,
+		"", "", "", "new-agent-id", "new-ep", "", "",
+		false, false, false, true, true, false, false,
 	)
 	assert.Error(t, err)
 }
@@ -223,8 +211,8 @@ func TestApplyUpdateFlags_NoChangesReturnsZero(t *testing.T) {
 	t.Parallel()
 	r := routineWithScheduleAndAgentResp()
 	n, err := applyUpdateFlags(r,
-		"", "", "", "", "", "", "", "",
-		false, false, false, false, false, false, false, false,
+		"", "", "", "", "", "", "",
+		false, false, false, false, false, false, false,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, 0, n)

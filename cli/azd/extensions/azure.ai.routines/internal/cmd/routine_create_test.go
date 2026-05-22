@@ -14,22 +14,11 @@ import (
 
 // ─── buildTrigger ─────────────────────────────────────────────────────────────
 
-func TestBuildTrigger_Recurring(t *testing.T) {
+func TestBuildTrigger_RecurringDeferred(t *testing.T) {
 	t.Parallel()
-	flags := &routineCreateFlags{
-		trigger:  "recurring",
-		cron:     "0 8 * * 1-5",
-		timeZone: "America/New_York",
-	}
-	got, err := buildTrigger(flags)
-	require.NoError(t, err)
-	assert.Equal(t, "schedule", got.Type)
-	assert.Equal(t, "0 8 * * 1-5", got.CronExpression)
-	assert.Equal(t, "America/New_York", got.TimeZone)
-}
-
-func TestBuildTrigger_RecurringMissingCron(t *testing.T) {
-	t.Parallel()
+	// `recurring` is in TriggerCLIToWire but is deferred at the CLI surface
+	// (service-side schedule create is not yet ready); buildTrigger must
+	// reject it explicitly with a "deferred" message.
 	flags := &routineCreateFlags{trigger: "recurring"}
 	_, err := buildTrigger(flags)
 	assert.Error(t, err)

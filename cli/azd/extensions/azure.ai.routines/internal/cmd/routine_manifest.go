@@ -78,10 +78,14 @@ func mergeRoutineFromFile(body *routines.Routine, file *routines.Routine) {
 
 // applyUpdateFlags applies named CLI update flags onto an existing routine body.
 // It returns the count of fields changed.
+//
+// Note: --cron is intentionally not handled here. The recurring/schedule
+// trigger is deferred at the CLI surface (see buildTrigger in
+// routine_create.go) until the Foundry service is ready.
 func applyUpdateFlags(
 	existing *routines.Routine,
-	description, cron, timeZone, at, agentID, agentEndpointID, conversationID, sessionID string,
-	descChanged, cronChanged, tzChanged, atChanged, agentIDChanged, agentEpChanged, convIDChanged, sessIDChanged bool,
+	description, timeZone, at, agentID, agentEndpointID, conversationID, sessionID string,
+	descChanged, tzChanged, atChanged, agentIDChanged, agentEpChanged, convIDChanged, sessIDChanged bool,
 ) (int, error) {
 	changed := 0
 
@@ -92,17 +96,6 @@ func applyUpdateFlags(
 
 	// Trigger field updates
 	trigger := getTrigger(existing)
-	if cronChanged {
-		if trigger == nil {
-			return 0, exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"cannot set --cron: routine has no default trigger",
-				"add a trigger by recreating the routine, or omit --cron",
-			)
-		}
-		trigger.CronExpression = cron
-		changed++
-	}
 	if tzChanged {
 		if trigger == nil {
 			return 0, exterrors.Validation(

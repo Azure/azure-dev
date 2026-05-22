@@ -170,8 +170,6 @@ func TestOverwriteRoutineFromFile_EmptyManifestChangesNothing(t *testing.T) {
 	assert.Equal(t, "keep this", existing.Description)
 }
 
-
-
 func routineWithScheduleAndAgentResp() *routines.Routine {
 	return &routines.Routine{
 		Name:        "my-routine",

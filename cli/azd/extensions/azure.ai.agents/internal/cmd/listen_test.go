@@ -6,10 +6,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
-<<<<<<< HEAD
-=======
 	"strings"
->>>>>>> main
 	"testing"
 
 	"azureaiagent/internal/project"

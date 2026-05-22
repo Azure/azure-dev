@@ -107,10 +107,10 @@ func runEndpointUpdate(
 		)
 	}
 
-	// Build the API request to map YAML fields to API model.
-	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef)
+	// Map YAML endpoint/card fields to API models (skips full definition validation).
+	apiEndpoint, apiCard, err := agent_yaml.MapEndpointAndCard(agentDef.AgentEndpoint, agentDef.AgentCard)
 	if err != nil {
-		return fmt.Errorf("failed to create agent request from definition: %w", err)
+		return fmt.Errorf("failed to map endpoint/card fields: %w", err)
 	}
 
 	// Resolve endpoint and create client.
@@ -126,8 +126,8 @@ func runEndpointUpdate(
 
 	// Patch endpoint/card fields.
 	patchRequest := &agent_api.PatchAgentRequest{
-		AgentEndpoint: request.AgentEndpoint,
-		AgentCard:     request.AgentCard,
+		AgentEndpoint: apiEndpoint,
+		AgentCard:     apiCard,
 	}
 
 	_, err = agentClient.PatchAgent(ctx, agentDef.Name, patchRequest, DefaultAgentAPIVersion)

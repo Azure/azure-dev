@@ -84,6 +84,27 @@ func constructBuildConfig(options ...AgentBuildOption) *AgentBuildConfig {
 	return config
 }
 
+// MapEndpointAndCard maps YAML-layer endpoint and card fields to API model types
+// without requiring or validating the full agent definition. This is used by the
+// endpoint update command where only endpoint/card patching is needed.
+func MapEndpointAndCard(
+	agentEndpoint *AgentEndpoint,
+	agentCard *AgentCard,
+) (*agent_api.AgentEndpoint, *agent_api.AgentCard, error) {
+	// Reuse createAgentAPIRequest with a minimal definition to get
+	// endpoint/card mapping only.
+	req, err := createAgentAPIRequest(
+		AgentDefinition{Name: "placeholder"},
+		nil,
+		agentEndpoint,
+		agentCard,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return req.AgentEndpoint, req.AgentCard, nil
+}
+
 // CreateAgentAPIRequestFromDefinition creates a CreateAgentRequest from AgentDefinition with strong typing
 func CreateAgentAPIRequestFromDefinition(agentTemplate any, options ...AgentBuildOption) (*agent_api.CreateAgentRequest, error) {
 	buildConfig := constructBuildConfig(options...)

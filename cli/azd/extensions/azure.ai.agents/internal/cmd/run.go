@@ -5,25 +5,40 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+const (
+	agentInspectorExtensionID     = "azure.ai.inspector"
+	agentInspectorReadyTimeout    = 30 * time.Second
+	agentInspectorReadyPollPeriod = 250 * time.Millisecond
 )
 
 type runFlags struct {
 	port         int
 	name         string
 	startCommand string
+	noInspector  bool
 }
 
 func newRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -43,7 +58,10 @@ positional argument. When omitted, the single agent service is used.
 
 The startup command is read from the startupCommand property of the
 agent service in azure.yaml. If not set, it is auto-detected from the
-project type. Use --start-command to override both.`,
+project type. Use --start-command to override both.
+
+By default, this also opens Agent Inspector after the local agent starts
+listening. Use --no-inspector to skip this.`,
 		Example: `  # Start the agent in the current directory
   azd ai agent run
 
@@ -52,6 +70,9 @@ project type. Use --start-command to override both.`,
 
   # Start on a custom port
   azd ai agent run --port 9090
+
+  # Start without opening Agent Inspector
+  azd ai agent run --no-inspector
 
   # Start with an explicit command
   azd ai agent run --start-command "python app.py"`,
@@ -68,6 +89,7 @@ project type. Use --start-command to override both.`,
 	cmd.Flags().IntVarP(&flags.port, "port", "p", DefaultPort, "Port to listen on")
 	cmd.Flags().StringVarP(&flags.startCommand, "start-command", "c", "",
 		"Explicit startup command (overrides azure.yaml and auto-detection)")
+	cmd.Flags().BoolVar(&flags.noInspector, "no-inspector", false, "Do not open Agent Inspector")
 
 	return cmd
 }
@@ -155,6 +177,8 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 			env = append(env, fmt.Sprintf("%s=%s", k, v))
 		}
 		env = appendFoundryEnvVars(env, azdEnvVars, runCtx.ServiceName)
+	} else if shouldWarnLoadAzdEnvironmentFailure(err) {
+		fmt.Fprintf(os.Stderr, "Warning: failed to load azd environment values: %s\n", err)
 	}
 
 	// Resolve ${{connections.<name>.credentials.<key>}} references from the
@@ -187,6 +211,21 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 		return fmt.Errorf("failed to start agent: %w", err)
 	}
 
+	inspectorInstalled := false
+	var inspectorInstallErr error
+	if !flags.noInspector {
+		inspectorInstalled, inspectorInstallErr = isInspectorExtensionInstalled(ctx, azdClient)
+	}
+	handleInspectorAutoLaunch(
+		ctx,
+		azdClient.Workflow(),
+		flags.port,
+		flags.noInspector,
+		inspectorInstalled,
+		inspectorInstallErr,
+		os.Stderr,
+	)
+
 	// Handle Ctrl+C / SIGTERM: forward signal to child, then wait for it to exit.
 	// The done channel is closed after proc.Wait returns so the goroutine can exit.
 	sigCh := make(chan os.Signal, 1)
@@ -215,6 +254,174 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 		return fmt.Errorf("agent exited: %w", err)
 	}
 	return nil
+}
+
+func handleInspectorAutoLaunch(
+	ctx context.Context,
+	workflow azdext.WorkflowServiceClient,
+	agentPort int,
+	noInspector bool,
+	inspectorInstalled bool,
+	inspectorInstallErr error,
+	stderr io.Writer,
+) {
+	if noInspector {
+		return
+	}
+	if inspectorInstallErr != nil {
+		fmt.Fprintf(stderr, "Warning: Agent Inspector was not launched: %v\n", inspectorInstallErr)
+		return
+	}
+	if !inspectorInstalled {
+		fmt.Fprintln(stderr, missingInspectorExtensionWarning())
+		return
+	}
+	startInspectorAfterAgentReadyWithOptions(
+		ctx,
+		workflow,
+		agentPort,
+		agentInspectorReadyTimeout,
+		agentInspectorReadyPollPeriod,
+		stderr,
+	)
+}
+
+func startInspectorAfterAgentReadyWithOptions(
+	ctx context.Context,
+	workflow azdext.WorkflowServiceClient,
+	agentPort int,
+	readyTimeout time.Duration,
+	pollPeriod time.Duration,
+	stderr io.Writer,
+) {
+	go func() {
+		waitCtx, cancel := context.WithTimeout(ctx, readyTimeout)
+		defer cancel()
+
+		if err := waitForLocalPort(waitCtx, agentPort, pollPeriod); err != nil {
+			if ctx.Err() == nil {
+				fmt.Fprintf(
+					stderr,
+					"Warning: Agent Inspector was not launched because localhost:%d was not ready: %v\n",
+					agentPort,
+					err,
+				)
+			}
+			return
+		}
+
+		if err := launchInspector(ctx, workflow, agentPort); err != nil && !isContextCancellation(err) {
+			fmt.Fprintln(stderr, inspectorLaunchWarning(err))
+		}
+	}()
+}
+
+func waitForLocalPort(ctx context.Context, port int, pollPeriod time.Duration) error {
+	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	dialer := net.Dialer{Timeout: pollPeriod}
+	ticker := time.NewTicker(pollPeriod)
+	defer ticker.Stop()
+
+	for {
+		conn, err := dialer.DialContext(ctx, "tcp", address)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return fmt.Errorf("timed out waiting for %s to accept connections", address)
+			}
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func launchInspector(ctx context.Context, workflow azdext.WorkflowServiceClient, agentPort int) error {
+	_, err := workflow.Run(ctx, &azdext.RunWorkflowRequest{
+		Workflow: &azdext.Workflow{
+			Name: "launch-agent-inspector",
+			Steps: []*azdext.WorkflowStep{
+				{
+					Command: &azdext.WorkflowCommand{
+						Args: []string{
+							"ai",
+							"inspector",
+							"launch",
+							"--port",
+							strconv.Itoa(agentPort),
+							"--silent",
+						},
+					},
+				},
+			},
+		},
+	})
+	return err
+}
+
+func isInspectorExtensionInstalled(ctx context.Context, azdClient *azdext.AzdClient) (bool, error) {
+	configHelper, err := azdext.NewConfigHelper(azdClient)
+	if err != nil {
+		return false, err
+	}
+
+	var installed map[string]json.RawMessage
+	found, err := configHelper.GetUserJSON(ctx, "extension.installed", &installed)
+	if err != nil {
+		return false, fmt.Errorf("failed to check installed azd extensions: %w", err)
+	}
+	if !found {
+		return false, nil
+	}
+
+	_, ok := installed[agentInspectorExtensionID]
+	return ok, nil
+}
+
+func inspectorLaunchWarning(err error) string {
+	msg := err.Error()
+	if st, ok := status.FromError(err); ok {
+		msg = st.Message()
+	}
+
+	if isInspectorExtensionMissingMessage(msg) {
+		return missingInspectorExtensionWarning()
+	}
+
+	return fmt.Sprintf("Warning: Agent Inspector was not launched: %v", err)
+}
+
+func missingInspectorExtensionWarning() string {
+	return fmt.Sprintf(
+		"Warning: Agent Inspector was not launched because the %s extension is not installed.\n"+
+			"Install it with: azd extension install %s",
+		agentInspectorExtensionID,
+		agentInspectorExtensionID,
+	)
+}
+
+func isInspectorExtensionMissingMessage(message string) bool {
+	message = strings.ToLower(message)
+	return (strings.Contains(message, "unknown command") && strings.Contains(message, "inspector")) ||
+		(strings.Contains(message, "ai inspector launch") && strings.Contains(message, "unknown flag: --port"))
+}
+
+func isContextCancellation(err error) bool {
+	return errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		status.Code(err) == codes.Canceled
+}
+
+func shouldWarnLoadAzdEnvironmentFailure(err error) bool {
+	msg := err.Error()
+	if st, ok := status.FromError(err); ok {
+		msg = st.Message()
+	}
+	return !strings.Contains(strings.ToLower(msg), "default environment not found")
 }
 
 // appendPortEnvVars appends PORT and, for .NET projects, ASPNETCORE_URLS to the

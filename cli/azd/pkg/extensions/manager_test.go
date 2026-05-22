@@ -1924,7 +1924,7 @@ func Test_Upgrade_DependencyUpgrade_RefusesToDowngradeOutsideConstraint(t *testi
 	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
 	require.NoError(t, err)
 
-	// Install pack first; it pulls in test.child at the highest version matching ~1.0.0 (1.1.0).
+	// Install pack first; it pulls in test.child at 1.0.0 (the only version matching ~1.0.0).
 	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
 	require.NoError(t, err)
 	_, err = manager.Install(*mockContext.Context, packs[0], "")
@@ -2612,4 +2612,130 @@ func Test_Upgrade_DependencyUpgrade_ConstraintConflict(t *testing.T) {
 	require.Error(t, cEntry.Error)
 	require.Contains(t, cEntry.Error.Error(), "constraint conflict")
 	require.Contains(t, cEntry.Error.Error(), "leaf.c")
+}
+
+// Test_Upgrade_DependencyUpgrade_NoOpStillPinsForSiblings exercises the case
+// where the first parent processed for a dependency leaves it untouched (the
+// installed version already matches the highest satisfying version). A later
+// sibling upgrade chain whose constraint is incompatible with that installed
+// version must still surface a constraint conflict, rather than silently
+// picking its own preferred version and invalidating the first parent's
+// constraint.
+func Test_Upgrade_DependencyUpgrade_NoOpStillPinsForSiblings(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	// pack.a v2 lists leaf.c first (already at 1.0.0, satisfies ~1.0.0 → no-op)
+	// and pack.b second. pack.b v2 wants leaf.c >=2.0.0, which would normally
+	// trigger an upgrade of leaf.c — but pack.a's earlier no-op visit must
+	// have pinned leaf.c so that pack.b's recursive walk surfaces a conflict
+	// instead of silently upgrading leaf.c out of pack.a's range.
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "pack.a",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "leaf.c", Version: "~1.0.0"},
+							{Id: "pack.b", Version: "~1.0.0"},
+						},
+					},
+					{
+						Version: "2.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "leaf.c", Version: "~1.0.0"},
+							{Id: "pack.b", Version: ">=2.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "pack.b",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "leaf.c", Version: "~1.0.0"},
+						},
+					},
+					{
+						Version: "2.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "leaf.c", Version: ">=2.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "leaf.c",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+					{Version: "2.0.0", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	// Bootstrap: install pack.a v1 → pack.b v1 → leaf.c 1.0.0.
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "pack.a"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, packs[0], "1.0.0")
+	require.NoError(t, err)
+
+	cInstalled, err := manager.GetInstalled(FilterOptions{Id: "leaf.c"})
+	require.NoError(t, err)
+	require.Equal(t, "1.0.0", cInstalled.Version)
+
+	_, depUpgrades, err := manager.Upgrade(
+		*mockContext.Context,
+		packs[0],
+		DefaultUpgradeOptions("2.0.0"),
+	)
+	require.NoError(t, err)
+
+	var cEntry *UpgradeResult
+	var findInNested func(entries []UpgradeResult)
+	findInNested = func(entries []UpgradeResult) {
+		for i := range entries {
+			if entries[i].ExtensionId == "leaf.c" {
+				cEntry = &entries[i]
+				return
+			}
+			findInNested(entries[i].DependencyUpgrades)
+			if cEntry != nil {
+				return
+			}
+		}
+	}
+	findInNested(depUpgrades)
+
+	require.NotNil(t, cEntry, "leaf.c dependency-upgrade entry expected")
+	require.Equal(t, UpgradeStatusFailed, cEntry.Status)
+	require.Error(t, cEntry.Error)
+	require.Contains(t, cEntry.Error.Error(), "constraint conflict")
+
+	// leaf.c must remain at 1.0.0 — pack.a's earlier no-op visit pinned it.
+	cFinal, err := manager.GetInstalled(FilterOptions{Id: "leaf.c"})
+	require.NoError(t, err)
+	require.Equal(t, "1.0.0", cFinal.Version)
 }

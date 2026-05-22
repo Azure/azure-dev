@@ -869,6 +869,12 @@ func (m *Manager) evaluateDependencyChanges(
 			continue
 		}
 
+		// Mark visited up front so that any sibling pack processed later in this
+		// run goes through the seen-branch above and validates against the
+		// currently installed version — regardless of whether this iteration
+		// upgrades, skips, or fails.
+		visited[dep.Id] = struct{}{}
+
 		// Dependency upgrades use upgrade-to-best-match semantics.
 		childMetadata, findErr := m.findDependencyChild(ctx, parentExtension, dep.Id)
 		if findErr != nil {
@@ -951,8 +957,6 @@ func (m *Manager) evaluateDependencyChanges(
 			})
 			continue
 		}
-
-		visited[dep.Id] = struct{}{}
 
 		childResult := UpgradeResult{
 			ExtensionId: dep.Id,

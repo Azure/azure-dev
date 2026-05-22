@@ -809,12 +809,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		}
 
 		installedExtension, alreadyInstalled := allInstalled[extensionId]
-		// Snapshot the set of installed ids BEFORE Install runs so we can
-		// later distinguish "freshly installed by this call" from "already
-		// installed before this call" when rendering the dep tree.
-		// Note: allInstalled is a live reference to the manager's in-memory
-		// installed map, which Install mutates — we cannot reuse it for the
-		// pre-install check after Install returns.
+		// Snapshot installed ids before Install mutates the manager cache.
 		preInstalledIds := make(map[string]struct{}, len(allInstalled))
 		for id := range allInstalled {
 			preInstalledIds[id] = struct{}{}
@@ -936,8 +931,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		}
 
 		if len(extensionVersion.Dependencies) > 0 {
-			// Render child deps flat with the parent step rather than nested,
-			// using the same 2-space indent as the parent's "(✓) Done:" line.
+			// Render dependencies flat with the parent step.
 			displayInstalledDependencies(
 				ctx, a.console, a.extensionManager,
 				extensionVersion.Dependencies,
@@ -1587,10 +1581,7 @@ func (a *extensionUpgradeAction) displayPromotionWarning(
 	))
 }
 
-// displayDependencyUpgradeResults renders the dependency upgrade tree under
-// the parent at the configured indent. Recursion preserves the same indent
-// so nested entries render flat under the parent step, matching the
-// install-time dep display.
+// displayDependencyUpgradeResults renders dependency upgrades as flat rows.
 func displayDependencyUpgradeResults(
 	ctx context.Context,
 	console input.Console,
@@ -1986,11 +1977,7 @@ func (a *extensionSourceRemoveAction) Run(ctx context.Context) (*actions.ActionR
 	}, nil
 }
 
-// displayExtensionUsageAndExamples prints the Usage line and Examples block
-// for an installed extension, skipping each section when its content is
-// empty. Extension packs (which have no executable, only dependencies)
-// typically have no usage or examples, so omitting empty labels avoids
-// noisy blank rows in the install/upgrade output.
+// displayExtensionUsageAndExamples prints non-empty Usage and Examples sections.
 func displayExtensionUsageAndExamples(
 	ctx context.Context,
 	console input.Console,
@@ -2014,21 +2001,8 @@ func displayExtensionUsageAndExamples(
 	}
 }
 
-// displayInstalledDependencies renders the dependency tree of a freshly
-// installed extension as a flat list of rows aligned with the parent step.
-// Each entry is one of:
-//
-//   - `(✓) Installed: <id> (<version>)` — newly installed by this call,
-//     i.e., not present in preInstalledIds.
-//   - `(-) Skipped: <id> (<version>, already installed)` — already in
-//     preInstalledIds, so Install short-circuited via ErrExtensionInstalled.
-//
-// The helper recurses into nested packs by re-querying each child's
-// dependency list from the registry but keeps rendering flat at every
-// level, which avoids deep nesting noise for deeply-nested pack graphs.
-// The visited map guards against diamond/cycle shapes. Glyphs and color
-// helpers match those used by the TaskList primitive
-// (pkg/ux/task_list.go) so styling stays consistent across the CLI.
+// displayInstalledDependencies renders newly installed and skipped dependencies
+// as flat rows aligned with the parent step.
 func displayInstalledDependencies(
 	ctx context.Context,
 	console input.Console,

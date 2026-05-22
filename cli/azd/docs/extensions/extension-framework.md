@@ -1112,6 +1112,10 @@ Dependencies support semantic versioning constraints:
 - `~1.2.0`: Compatible with version 1.2.x
 - `>=1.0.0 <2.0.0`: Range specification
 
+azd installs or upgrades to the highest published version that satisfies the dependency constraint.
+Pre-release versions follow standard semver constraint rules: a constraint must include a pre-release comparator to match pre-release versions.
+For example, `>=0.1.0` does not match `0.1.31-preview`; use `>=0.1.0-0` or a pre-release range such as `~0.1.0-preview` when preview versions should be eligible.
+
 #### Provider Registration
 
 When your extension provides custom service targets or framework services, declare them in the `providers` section:

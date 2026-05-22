@@ -1540,11 +1540,7 @@ func Test_CopyFromLocalPath_PathTraversal_Blocked(t *testing.T) {
 	}
 }
 
-// Test_Upgrade_DependencyUpgrade verifies the dependency-upgrade decision
-// matrix: parent upgrades select the highest published version satisfying
-// each declared constraint (upgrade-to-best-match, same as npm/yarn), skip
-// dependencies already at that best version, and respect the
-// UpgradeDependencies=false opt-out.
+// Test_Upgrade_DependencyUpgrade verifies dependency upgrade decisions.
 func Test_Upgrade_DependencyUpgrade_TightenedConstraint(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 
@@ -1611,8 +1607,7 @@ func Test_Upgrade_DependencyUpgrade_TightenedConstraint(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "1.0.0", installed.Version)
 
-	// Upgrade pack to v2 — child constraint is now >=2.0.0 so child
-	// must cascade-upgrade from 1.0.0 to 2.0.0.
+	// Upgrade pack to v2; child must upgrade from 1.0.0 to 2.0.0.
 	packsV2, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
 	require.NoError(t, err)
 	require.Len(t, packsV2, 1)
@@ -1689,7 +1684,7 @@ func Test_Upgrade_DependencyUpgrade_ConstraintAlreadySatisfied(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "2.0.0", child.Version)
 
-	// Upgrading pack again with the same constraint should not cascade.
+	// Upgrading pack again with the same constraint should not upgrade the child.
 	_, depUpgrades, err := manager.Upgrade(
 		*mockContext.Context,
 		packs[0],
@@ -1749,7 +1744,7 @@ func Test_Upgrade_DependencyUpgrade_EmptyConstraint(t *testing.T) {
 	_, err = manager.Install(*mockContext.Context, packs[0], "")
 	require.NoError(t, err)
 
-	// Force the child to an older version to confirm cascade does NOT
+	// Force the child to an older version to confirm dependency upgrade does NOT
 	// run when the parent's dependency constraint is empty.
 	_ = manager.Uninstall("test.child")
 	childMeta, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.child"})
@@ -1832,9 +1827,7 @@ func Test_Upgrade_DependencyUpgrade_DisabledByOpts(t *testing.T) {
 		UpgradeOptions{VersionPreference: "2.0.0", UpgradeDependencies: false},
 	)
 	require.NoError(t, err)
-	// With cascade disabled, a child whose installed version no longer
-	// satisfies the new parent's constraint must surface as a Skipped
-	// entry so the user is not left with a silent constraint violation.
+	// Disabled dependency upgrades should surface as Skipped.
 	require.Len(t, depUpgrades, 1)
 	require.Equal(t, "test.child", depUpgrades[0].ExtensionId)
 	require.Equal(t, UpgradeStatusSkipped, depUpgrades[0].Status)
@@ -1843,16 +1836,13 @@ func Test_Upgrade_DependencyUpgrade_DisabledByOpts(t *testing.T) {
 
 	child, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
 	require.NoError(t, err)
-	require.Equal(t, "1.0.0", child.Version, "child must remain at 1.0.0 when cascade disabled")
+	require.Equal(t, "1.0.0", child.Version, "child must remain at 1.0.0 when dependency upgrades are disabled")
 }
 
 func Test_Upgrade_DependencyUpgrade_CycleGuard(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 
-	// Registry shape avoids a cycle during initial Install (pack.b v1 has no
-	// dependency on pack.a) but introduces a cycle in the upgraded versions
-	// (pack.b v2 depends on pack.a). The cascade visited-set must prevent the
-	// upgraded pack.b from re-cascading back into pack.a.
+	// Registry shape avoids an install cycle but introduces one during upgrade.
 	registry := Registry{
 		Extensions: []*ExtensionMetadata{
 			{
@@ -1916,9 +1906,7 @@ func Test_Upgrade_DependencyUpgrade_CycleGuard(t *testing.T) {
 	_, err = manager.Install(*mockContext.Context, packs[0], "1.0.0")
 	require.NoError(t, err)
 
-	// Upgrade pack.a — pack.b cascade-upgrades to v2 (which now declares
-	// pack.a as a dep). The cascade visited-set must skip pack.a inside
-	// pack.b's nested cascade rather than recurse back into it.
+	// Upgrade pack.a; pack.b v2 depends back on pack.a.
 	_, depUpgrades, err := manager.Upgrade(
 		*mockContext.Context,
 		packs[0],
@@ -1929,9 +1917,8 @@ func Test_Upgrade_DependencyUpgrade_CycleGuard(t *testing.T) {
 	require.Equal(t, "pack.b", depUpgrades[0].ExtensionId)
 	require.Equal(t, UpgradeStatusUpgraded, depUpgrades[0].Status)
 	require.Equal(t, "2.0.0", depUpgrades[0].ToVersion)
-	// pack.a is in the visited set, so pack.b's nested cascade must not
-	// re-upgrade it.
-	require.Empty(t, depUpgrades[0].DependencyUpgrades, "nested cascade must respect visited set")
+	// pack.a is in the visited set, so pack.b's nested upgrade must skip it.
+	require.Empty(t, depUpgrades[0].DependencyUpgrades, "nested dependency upgrade must respect visited set")
 }
 
 func Test_Upgrade_DependencyUpgrade_NestedPacks(t *testing.T) {
@@ -2015,7 +2002,7 @@ func Test_Upgrade_DependencyUpgrade_NestedPacks(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "1.0.0", cInstalled.Version)
 
-	// Upgrade A to v2 — should cascade to B v2 → C v2.
+	// Upgrade A to v2; B and C should also upgrade to v2.
 	_, depUpgrades, err := manager.Upgrade(
 		*mockContext.Context,
 		packs[0],
@@ -2041,11 +2028,7 @@ func Test_Upgrade_DependencyUpgrade_NestedPacks(t *testing.T) {
 func Test_Install_DependencyCycle_Bounded(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 
-	// Registry defines a true install-time cycle: A → B → A. Without an
-	// in-flight visited set, Install would recurse without bound because the
-	// parent's installed-config record is only written after dependencies
-	// finish installing, so ErrExtensionInstalled cannot short-circuit
-	// the cycle during the initial install.
+	// Registry defines a true install-time cycle: A → B → A.
 	registry := Registry{
 		Extensions: []*ExtensionMetadata{
 			{
@@ -2106,12 +2089,7 @@ func Test_Upgrade_DependencyUpgrade_ConstraintConflict(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 
 	// Pack A v2 depends on { B: ">=2.0.0", C: ">=2.0.0" }.
-	// B v2 depends on { C: "~1.0.0" } — mutually unsatisfiable with A's
-	// constraint on C. Iteration upgrades B first, B's cascade pins C to
-	// 1.x to satisfy its own constraint, then A's cascade reaches C: the
-	// installed C now violates A's >=2.0.0 and C is already in the visited
-	// set. The cascade must surface this as a Failed entry rather than
-	// silently leaving C at a version A does not allow.
+	// B v2 pins C to 1.x, which conflicts with A v2's >=2.0.0 constraint on C.
 	registry := Registry{
 		Extensions: []*ExtensionMetadata{
 			{

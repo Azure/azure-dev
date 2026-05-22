@@ -99,10 +99,7 @@ func (r UpgradeResult) MarshalJSON() ([]byte, error) {
 }
 
 // UpgradeSummary holds aggregate counts from a batch upgrade operation.
-// DependencyUpgrades is the total recursive count of dependency-upgrade
-// entries regardless of status. DependencyUpgradesByStatus breaks that
-// total down per UpgradeStatus so callers (UI summary, telemetry) can
-// distinguish actually upgraded dependencies from skipped/failed ones.
+// DependencyUpgradesByStatus is for internal UI and telemetry counters.
 type UpgradeSummary struct {
 	Total                      int                   `json:"total"`
 	Upgraded                   int                   `json:"upgraded"`
@@ -114,10 +111,7 @@ type UpgradeSummary struct {
 }
 
 // NewUpgradeSummary computes aggregate counts from a slice of UpgradeResult.
-// Top-level Upgraded/Skipped/Promoted/Failed counters reflect only the
-// top-level entries. DependencyUpgrades counts every dependency-upgrade
-// entry recursively, regardless of its status, so callers can surface how
-// much extra work the dependency-upgrade flow performed.
+// Top-level status counters exclude dependency upgrades.
 func NewUpgradeSummary(results []UpgradeResult) UpgradeSummary {
 	s := UpgradeSummary{
 		Total:                      len(results),
@@ -140,9 +134,7 @@ func NewUpgradeSummary(results []UpgradeResult) UpgradeSummary {
 	return s
 }
 
-// countDependencyUpgradesByStatus accumulates per-status counts of every
-// dependency-upgrade entry in the tree (recursive). The map is mutated in
-// place so callers can share a single accumulator across a batch of results.
+// countDependencyUpgradesByStatus accumulates recursive dependency counts by status.
 func countDependencyUpgradesByStatus(results []UpgradeResult, counts map[UpgradeStatus]int) {
 	for i := range results {
 		counts[results[i].Status]++
@@ -150,10 +142,7 @@ func countDependencyUpgradesByStatus(results []UpgradeResult, counts map[Upgrade
 	}
 }
 
-// CountDependencyUpgrades returns the recursive count of every entry in the
-// dependency-upgrade tree rooted at the supplied slice. Useful for telemetry
-// attributes and summary counters that should reflect total dependency work,
-// not just direct children.
+// CountDependencyUpgrades returns the recursive count of dependency upgrade entries.
 func CountDependencyUpgrades(results []UpgradeResult) int {
 	n := 0
 	for i := range results {

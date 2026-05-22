@@ -794,7 +794,15 @@ func ensureLocation(
 	}
 
 	if azureContext.Scope.Location != "" && locationAllowed(azureContext.Scope.Location, allowedLocations) {
-		return setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", azureContext.Scope.Location)
+		if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", azureContext.Scope.Location); err != nil {
+			return err
+		}
+		// Defensively seed AZURE_LOCATION (resource group location) if not already set,
+		// so that downstream provisioning always has a valid location.
+		if existing, _ := getEnvValue(ctx, azdClient, envName, "AZURE_LOCATION"); existing == "" {
+			return setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", azureContext.Scope.Location)
+		}
+		return nil
 	}
 	if azureContext.Scope.Location != "" {
 		fmt.Printf("%s", output.WithWarningFormat(

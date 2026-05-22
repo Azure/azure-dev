@@ -262,3 +262,58 @@ func TestPersistFirstDeploymentName(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateEnvLocation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		selectedLocation string
+		existingContext  *azdext.AzureContext
+		wantLocation     string // expected azureContext.Scope.Location after call
+	}{
+		{
+			name:             "sets AZURE_AI_DEPLOYMENTS_LOCATION and updates azureContext",
+			selectedLocation: "westus2",
+			existingContext:  &azdext.AzureContext{Scope: &azdext.AzureScope{Location: "eastus"}},
+			wantLocation:     "westus2",
+		},
+		{
+			name:             "nil azureContext gets initialized",
+			selectedLocation: "swedencentral",
+			existingContext:  nil,
+			wantLocation:     "swedencentral",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			envName := "test-env"
+			envServer := &testEnvironmentServiceServer{
+				values: map[string]map[string]string{
+					envName: {},
+				},
+			}
+			azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+			ms := &modelSelector{
+				azdClient:    azdClient,
+				environment:  &azdext.Environment{Name: envName},
+				azureContext: tt.existingContext,
+			}
+
+			err := ms.updateEnvLocation(t.Context(), tt.selectedLocation)
+			require.NoError(t, err)
+
+			// Verify env var was persisted
+			assert.Equal(t, tt.selectedLocation, envServer.values[envName]["AZURE_AI_DEPLOYMENTS_LOCATION"])
+
+			// Verify azureContext was updated
+			require.NotNil(t, ms.azureContext)
+			require.NotNil(t, ms.azureContext.Scope)
+			assert.Equal(t, tt.wantLocation, ms.azureContext.Scope.Location)
+		})
+	}
+}

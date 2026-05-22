@@ -30,9 +30,9 @@ func TestParseBicepOutputs(t *testing.T) {
 			name: "single output, common shape",
 			in: `param location string = resourceGroup().location
 
-output AZURE_AI_PROJECT_ENDPOINT string = aiProject.outputs.endpoint
+output FOUNDRY_PROJECT_ENDPOINT string = aiProject.outputs.endpoint
 `,
-			want: []string{"AZURE_AI_PROJECT_ENDPOINT"},
+			want: []string{"FOUNDRY_PROJECT_ENDPOINT"},
 		},
 		{
 			name: "multiple outputs in sorted order regardless of source order",
@@ -133,9 +133,9 @@ output VISIBLE string = ''
 		{
 			name: "@description decorator on previous line does not interfere",
 			in: `@description('Project endpoint URL')
-output AZURE_AI_PROJECT_ENDPOINT string = 'value'
+output FOUNDRY_PROJECT_ENDPOINT string = 'value'
 `,
-			want: []string{"AZURE_AI_PROJECT_ENDPOINT"},
+			want: []string{"FOUNDRY_PROJECT_ENDPOINT"},
 		},
 		{
 			name: "param / var / resource keywords are ignored",
@@ -208,7 +208,7 @@ func TestDiscoverBicepOutputs_RealFile(t *testing.T) {
 
 param location string = resourceGroup().location
 
-output AZURE_AI_PROJECT_ENDPOINT string = aiProject.outputs.endpoint
+output FOUNDRY_PROJECT_ENDPOINT string = aiProject.outputs.endpoint
 output TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT string = toolbox.outputs.mcpEndpoint
 
 /* output COMMENTED_OUT string = '' */
@@ -223,7 +223,7 @@ output APPLICATIONINSIGHTS_CONNECTION_STRING string = appInsights.outputs.connec
 	got := discoverBicepOutputs(projectRoot)
 	want := []string{
 		"APPLICATIONINSIGHTS_CONNECTION_STRING",
-		"AZURE_AI_PROJECT_ENDPOINT",
+		"FOUNDRY_PROJECT_ENDPOINT",
 		"TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT",
 	}
 	assert.Equal(t, want, got)

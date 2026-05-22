@@ -462,7 +462,7 @@ func firstLine(s string) string {
 
 // capitalize uppercases the first rune of s while leaving the remainder
 // untouched. It is a no-op when s begins with a non-letter (e.g., a number,
-// an env var like AZURE_AI_PROJECT_ENDPOINT, or a backtick-quoted token),
+// an env var like FOUNDRY_PROJECT_ENDPOINT, or a backtick-quoted token),
 // when s is already capitalized, or when s begins with a known brand-name
 // prefix that is conventionally lowercase ("azd", "azure.yaml", "agent.yaml",
 // "skipped:", "cancelled"). The render-layer rule mirrors the convention in

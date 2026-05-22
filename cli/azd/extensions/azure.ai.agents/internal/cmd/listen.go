@@ -100,7 +100,7 @@ func postprovisionHandler(
 	// so the post-init trailer and `azd ai agent doctor` can recommend
 	// `azd provision`. Once provision returns success the signal is
 	// stale: subsequent runs of doctor/init/run/show/deploy should rely
-	// on the canonical post-provision env vars (AZURE_AI_PROJECT_ENDPOINT
+	// on the canonical post-provision env vars (FOUNDRY_PROJECT_ENDPOINT
 	// and friends) and the agent.yaml-vs-env diff. The clear is gated on
 	// the presence of at least one azure.ai.agent service so toolbox-only
 	// or non-agent provisions don't write to a variable they don't own.

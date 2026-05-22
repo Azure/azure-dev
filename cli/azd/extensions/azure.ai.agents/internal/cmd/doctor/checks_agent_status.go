@@ -233,7 +233,7 @@ func newCheckAgentStatus(deps Dependencies) Check {
 				return Result{
 					Status: StatusSkip,
 					Message: "skipped: upstream check passed but did not " +
-						"surface AZURE_AI_PROJECT_ENDPOINT in its Details.",
+						"surface FOUNDRY_PROJECT_ENDPOINT in its Details.",
 				}
 			}
 			if apiVersion == "" {

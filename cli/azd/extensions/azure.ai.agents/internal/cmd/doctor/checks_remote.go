@@ -30,7 +30,7 @@ package doctor
 //   - `local.grpc-extension` to have produced an AzdClient
 //   - `local.azure-yaml` for the project root
 //   - `local.environment-selected` for the active azd env name
-//   - `local.project-endpoint-set` for AZURE_AI_PROJECT_ENDPOINT
+//   - `local.project-endpoint-set` for FOUNDRY_PROJECT_ENDPOINT
 //     Guard with one or more `priorBlocked(prior, "<id>")` calls and
 //     return Result{Status: StatusSkip, Message: "..."}. Doing the
 //     work inside the check (rather than in the runner) keeps the

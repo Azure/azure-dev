@@ -212,8 +212,8 @@ func TestCheckProjectEndpointSet_GRPCError_Fails(t *testing.T) {
 	got := check.Fn(t.Context(), Options{}, nil)
 
 	require.Equal(t, StatusFail, got.Status)
-	require.Contains(t, got.Message, "failed to read AZURE_AI_PROJECT_ENDPOINT")
-	require.Contains(t, got.Suggestion, "azd env set AZURE_AI_PROJECT_ENDPOINT")
+	require.Contains(t, got.Message, "failed to read FOUNDRY_PROJECT_ENDPOINT")
+	require.Contains(t, got.Suggestion, "azd env set FOUNDRY_PROJECT_ENDPOINT")
 }
 
 func TestCheckProjectEndpointSet_TransportError_SwapsSuggestion(t *testing.T) {

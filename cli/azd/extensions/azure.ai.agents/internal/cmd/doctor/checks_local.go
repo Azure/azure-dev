@@ -74,7 +74,7 @@ type Dependencies struct {
 	// `remote.foundry-endpoint` check, letting unit tests assert each
 	// HTTP-status branch (200/401/403/404/5xx/network) without
 	// standing up a live Foundry service. The probe receives the
-	// `AZURE_AI_PROJECT_ENDPOINT` value resolved by the upstream
+	// `FOUNDRY_PROJECT_ENDPOINT` value resolved by the upstream
 	// `local.project-endpoint-set` check; production wiring leaves
 	// this field nil.
 	probeFoundryEndpoint func(ctx context.Context, endpoint string) foundryProbeResult

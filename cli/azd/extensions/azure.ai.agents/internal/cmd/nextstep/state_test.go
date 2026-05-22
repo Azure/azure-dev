@@ -65,7 +65,7 @@ func TestAssembleState(t *testing.T) {
 			name: "endpoint set, no services: HasProjectEndpoint true",
 			src: &fakeSource{
 				envName: "dev",
-				values:  map[string]string{"dev/AZURE_AI_PROJECT_ENDPOINT": "https://x.services.ai.azure.com"},
+				values:  map[string]string{"dev/FOUNDRY_PROJECT_ENDPOINT": "https://x.services.ai.azure.com"},
 				project: &azdext.ProjectConfig{Name: "demo"},
 			},
 			assert: func(t *testing.T, state *State, _ []error) {
@@ -157,7 +157,7 @@ func TestAssembleState(t *testing.T) {
 				assert.False(t, state.HasProjectEndpoint)
 				assert.Empty(t, state.PendingProvisionReasons)
 			},
-			// One error each for AZURE_AI_PROJECT_ENDPOINT,
+			// One error each for FOUNDRY_PROJECT_ENDPOINT,
 			// AI_AGENT_PENDING_PROVISION + one per service lookup
 			// (AGENT_ECHO_VERSION) = 3.
 			errCount: 3,
@@ -167,7 +167,7 @@ func TestAssembleState(t *testing.T) {
 			src: &fakeSource{
 				envName: "dev",
 				project: &azdext.ProjectConfig{Name: "demo"},
-				values:  map[string]string{"dev/AZURE_AI_PROJECT_ENDPOINT": "https://x.services.ai.azure.com"},
+				values:  map[string]string{"dev/FOUNDRY_PROJECT_ENDPOINT": "https://x.services.ai.azure.com"},
 			},
 			assert: func(t *testing.T, state *State, _ []error) {
 				assert.Empty(t, state.PendingProvisionReasons)
@@ -179,7 +179,7 @@ func TestAssembleState(t *testing.T) {
 				envName: "dev",
 				project: &azdext.ProjectConfig{Name: "demo"},
 				values: map[string]string{
-					"dev/AZURE_AI_PROJECT_ENDPOINT":  "https://x.services.ai.azure.com",
+					"dev/FOUNDRY_PROJECT_ENDPOINT":   "https://x.services.ai.azure.com",
 					"dev/AI_AGENT_PENDING_PROVISION": "model_deployment",
 				},
 			},
@@ -193,7 +193,7 @@ func TestAssembleState(t *testing.T) {
 				envName: "dev",
 				project: &azdext.ProjectConfig{Name: "demo"},
 				values: map[string]string{
-					"dev/AZURE_AI_PROJECT_ENDPOINT":  "https://x.services.ai.azure.com",
+					"dev/FOUNDRY_PROJECT_ENDPOINT":   "https://x.services.ai.azure.com",
 					"dev/AI_AGENT_PENDING_PROVISION": "project,acr,project,model_deployment",
 				},
 			},
@@ -207,7 +207,7 @@ func TestAssembleState(t *testing.T) {
 				envName: "dev",
 				project: &azdext.ProjectConfig{Name: "demo"},
 				values: map[string]string{
-					"dev/AZURE_AI_PROJECT_ENDPOINT":  "https://x.services.ai.azure.com",
+					"dev/FOUNDRY_PROJECT_ENDPOINT":   "https://x.services.ai.azure.com",
 					"dev/AI_AGENT_PENDING_PROVISION": "  ,, project ,, acr , ",
 				},
 			},
@@ -715,9 +715,9 @@ func TestExtractAgentYamlEnvRefs(t *testing.T) {
 			manifest: `kind: hostedAgent
 environment_variables:
   - name: ENDPOINT
-    value: ${AZURE_AI_PROJECT_ENDPOINT}
+    value: ${FOUNDRY_PROJECT_ENDPOINT}
 `,
-			wantRefs: []string{"AZURE_AI_PROJECT_ENDPOINT"},
+			wantRefs: []string{"FOUNDRY_PROJECT_ENDPOINT"},
 		},
 		{
 			name: "reference with default tail is skipped",
@@ -733,11 +733,11 @@ environment_variables:
 			manifest: `kind: hostedAgent
 environment_variables:
   - name: ENDPOINT
-    value: ${AZURE_AI_PROJECT_ENDPOINT}
+    value: ${FOUNDRY_PROJECT_ENDPOINT}
   - name: MODEL
     value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
 `,
-			wantRefs: []string{"AZURE_AI_PROJECT_ENDPOINT"},
+			wantRefs: []string{"FOUNDRY_PROJECT_ENDPOINT"},
 		},
 		{
 			name: "multiple references in one value",
@@ -951,7 +951,7 @@ func TestAssembleState_PopulatesMissingVars(t *testing.T) {
 		[]byte(`kind: hostedAgent
 environment_variables:
   - name: ENDPOINT
-    value: ${AZURE_AI_PROJECT_ENDPOINT}
+    value: ${FOUNDRY_PROJECT_ENDPOINT}
   - name: MODEL
     value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
   - name: KEY
@@ -967,7 +967,7 @@ environment_variables:
 	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(projectRoot, "infra", "main.bicep"),
-		[]byte(`output AZURE_AI_PROJECT_ENDPOINT string = ''
+		[]byte(`output FOUNDRY_PROJECT_ENDPOINT string = ''
 output AZURE_AI_MODEL_DEPLOYMENT_NAME string = ''
 `),
 		0o600,
@@ -989,7 +989,7 @@ output AZURE_AI_MODEL_DEPLOYMENT_NAME string = ''
 
 	state, errs := assembleState(context.Background(), src)
 	require.Empty(t, errs)
-	assert.Equal(t, []string{"AZURE_AI_PROJECT_ENDPOINT"}, state.MissingInfraVars)
+	assert.Equal(t, []string{"FOUNDRY_PROJECT_ENDPOINT"}, state.MissingInfraVars)
 	assert.Equal(t, []string{"MY_API_KEY"}, state.MissingManualVars)
 }
 
@@ -1000,7 +1000,7 @@ func TestAssembleState_MissingVarsDedupedAcrossServices(t *testing.T) {
 	manifest := []byte(`kind: hostedAgent
 environment_variables:
   - name: ENDPOINT
-    value: ${AZURE_AI_PROJECT_ENDPOINT}
+    value: ${FOUNDRY_PROJECT_ENDPOINT}
   - name: KEY
     value: ${MY_API_KEY}
 `)
@@ -1015,7 +1015,7 @@ environment_variables:
 	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(projectRoot, "infra", "main.bicep"),
-		[]byte(`output AZURE_AI_PROJECT_ENDPOINT string = ''
+		[]byte(`output FOUNDRY_PROJECT_ENDPOINT string = ''
 `),
 		0o600,
 	))
@@ -1033,7 +1033,7 @@ environment_variables:
 
 	state, errs := assembleState(context.Background(), src)
 	require.Empty(t, errs)
-	assert.Equal(t, []string{"AZURE_AI_PROJECT_ENDPOINT"}, state.MissingInfraVars)
+	assert.Equal(t, []string{"FOUNDRY_PROJECT_ENDPOINT"}, state.MissingInfraVars)
 	assert.Equal(t, []string{"MY_API_KEY"}, state.MissingManualVars)
 }
 
@@ -1047,7 +1047,7 @@ func TestAssembleState_AllVarsSetLeavesMissingEmpty(t *testing.T) {
 		[]byte(`kind: hostedAgent
 environment_variables:
   - name: ENDPOINT
-    value: ${AZURE_AI_PROJECT_ENDPOINT}
+    value: ${FOUNDRY_PROJECT_ENDPOINT}
   - name: KEY
     value: ${MY_API_KEY}
 `),
@@ -1063,8 +1063,8 @@ environment_variables:
 			},
 		},
 		values: map[string]string{
-			"dev/AZURE_AI_PROJECT_ENDPOINT": "https://x.services.ai.azure.com",
-			"dev/MY_API_KEY":                "sk-abc",
+			"dev/FOUNDRY_PROJECT_ENDPOINT": "https://x.services.ai.azure.com",
+			"dev/MY_API_KEY":               "sk-abc",
 		},
 	}
 
@@ -1087,7 +1087,7 @@ func TestAssembleState_DefaultedRefsAreExcludedFromMissingVars(t *testing.T) {
 		[]byte(`kind: hostedAgent
 environment_variables:
   - name: ENDPOINT
-    value: ${AZURE_AI_PROJECT_ENDPOINT}
+    value: ${FOUNDRY_PROJECT_ENDPOINT}
   - name: MODEL
     value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
   - name: KEY
@@ -1098,7 +1098,7 @@ environment_variables:
 	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(projectRoot, "infra", "main.bicep"),
-		[]byte(`output AZURE_AI_PROJECT_ENDPOINT string = ''
+		[]byte(`output FOUNDRY_PROJECT_ENDPOINT string = ''
 `),
 		0o600,
 	))
@@ -1118,7 +1118,7 @@ environment_variables:
 
 	state, errs := assembleState(context.Background(), src)
 	require.Empty(t, errs)
-	assert.Equal(t, []string{"AZURE_AI_PROJECT_ENDPOINT"}, state.MissingInfraVars)
+	assert.Equal(t, []string{"FOUNDRY_PROJECT_ENDPOINT"}, state.MissingInfraVars)
 	assert.Empty(t, state.MissingManualVars)
 }
 
@@ -1149,7 +1149,7 @@ environment_variables:
 	}
 
 	state, errs := assembleState(context.Background(), src)
-	// One error each for AZURE_AI_PROJECT_ENDPOINT +
+	// One error each for FOUNDRY_PROJECT_ENDPOINT +
 	// AI_AGENT_PENDING_PROVISION + AGENT_ECHO_VERSION + MY_API_KEY = 4.
 	assert.Len(t, errs, 4)
 	assert.Empty(t, state.MissingInfraVars)
@@ -1294,7 +1294,7 @@ func TestAssembleState_NoBicepFileEverythingManual(t *testing.T) {
 		[]byte(`kind: hostedAgent
 environment_variables:
   - name: ENDPOINT
-    value: ${AZURE_AI_PROJECT_ENDPOINT}
+    value: ${FOUNDRY_PROJECT_ENDPOINT}
   - name: TOOLBOX
     value: ${TOOLBOX_MCP_ENDPOINT}
   - name: KEY
@@ -1318,7 +1318,7 @@ environment_variables:
 	assert.Empty(t, state.MissingInfraVars)
 	assert.Equal(
 		t,
-		[]string{"AZURE_AI_PROJECT_ENDPOINT", "MY_API_KEY", "TOOLBOX_MCP_ENDPOINT"},
+		[]string{"FOUNDRY_PROJECT_ENDPOINT", "MY_API_KEY", "TOOLBOX_MCP_ENDPOINT"},
 		state.MissingManualVars,
 	)
 }
@@ -1389,7 +1389,7 @@ environment_variables:
 	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(projectRoot, "infra", "main.bicep"),
-		[]byte(`output AZURE_AI_PROJECT_ENDPOINT string = ''
+		[]byte(`output FOUNDRY_PROJECT_ENDPOINT string = ''
 `),
 		0o600,
 	))

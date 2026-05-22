@@ -171,9 +171,9 @@ func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalR
 		}
 	}
 	if projectEndpoint == "" {
-		if v := getEnvValue("AZURE_AI_PROJECT_ENDPOINT"); v != "" {
+		if v := getEnvValue("AZURE_AI_PROJECT_ENDPOINT"); v != "" { // deprecated fallback
 			projectEndpoint = v
-			projectEndpointSource = "AZURE_AI_PROJECT_ENDPOINT"
+			projectEndpointSource = "AZURE_AI_PROJECT_ENDPOINT (deprecated)"
 		}
 	}
 	if projectEndpoint == "" {

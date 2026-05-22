@@ -709,6 +709,48 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}
 
+			// When no valid manifest was detected upstream, look for a bare
+			// agent.yaml definition the user wants to reuse. This skips both the
+			// init-mode prompt and the from-code scaffolding sequence — the
+			// definition itself is the source of truth. See issue #7268.
+			if flags.manifestPointer == "" {
+				checkDir := flags.src
+				if checkDir == "" {
+					checkDir = "."
+				}
+				existing, findErr := findExistingAgentYaml(checkDir)
+				if findErr != nil {
+					return findErr
+				}
+				if existing != "" {
+					useExisting := flags.noPrompt
+					if !flags.noPrompt {
+						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+							Options: &azdext.ConfirmOptions{
+								Message: fmt.Sprintf(
+									"An existing agent definition was found at %q. Use it?",
+									existing,
+								),
+								DefaultValue: new(true),
+							},
+						})
+						if promptErr != nil {
+							if exterrors.IsCancellation(promptErr) {
+								return exterrors.Cancelled("initialization was cancelled")
+							}
+							return fmt.Errorf("prompting for definition reuse: %w", promptErr)
+						}
+						useExisting = *confirmResp.Value
+					}
+					if useExisting {
+						if flags.src == "" {
+							flags.src = checkDir
+						}
+						return runReuseDefinition(ctx, flags, azdClient, httpClient, checkDir, existing)
+					}
+				}
+			}
+
 			if flags.manifestPointer != "" {
 				// Fail fast when the user accidentally passes a directory
 				// instead of a manifest file — before downloading templates.

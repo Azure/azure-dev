@@ -89,35 +89,6 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		srcDir = "."
 	}
 
-	// Check if agent.yaml already exists before the interactive setup so the user
-	// doesn't complete the full agent configuration only to have it discarded.
-	agentYamlPath := filepath.Join(srcDir, "agent.yaml")
-	if _, statErr := os.Stat(agentYamlPath); statErr == nil {
-		if a.flags.noPrompt {
-			return exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("agent.yaml already exists at %q", agentYamlPath),
-				"delete or move the existing agent.yaml, or run interactively to confirm overwrite",
-			)
-		}
-
-		confirmResp, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-			Options: &azdext.ConfirmOptions{
-				Message:      fmt.Sprintf("An agent.yaml already exists in %q. Overwrite?", srcDir),
-				DefaultValue: new(false),
-			},
-		})
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return exterrors.Cancelled("overwrite confirmation was cancelled")
-			}
-			return fmt.Errorf("prompting for overwrite confirmation: %w", err)
-		}
-		if !*confirmResp.Value {
-			return exterrors.Cancelled("agent.yaml already exists; overwrite declined")
-		}
-	}
-
 	// No manifest pointer provided - process local agent code
 	// Create a definition based on user prompts
 	localDefinition, err := a.createDefinitionFromLocalAgent(ctx)

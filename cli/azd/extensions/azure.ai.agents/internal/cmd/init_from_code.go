@@ -75,7 +75,9 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	}
 
 	// Validate code deploy flags
-	if err := validateCodeDeployInput(a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint); err != nil {
+	if err := validateCodeDeployInput(
+		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution,
+	); err != nil {
 		return err
 	}
 

@@ -2319,6 +2319,24 @@ func TestCodeDeployFlagValidation(t *testing.T) {
 			flags:   initFlags{noPrompt: false, deployMode: "code"},
 			wantErr: false,
 		},
+		{
+			name:           "invalid deploy-mode value fails",
+			flags:          initFlags{noPrompt: true, deployMode: "invalid"},
+			wantErr:        true,
+			wantErrContain: "--deploy-mode must be",
+		},
+		{
+			name:           "invalid runtime value fails",
+			flags:          initFlags{noPrompt: true, deployMode: "code", runtime: "node_20", entryPoint: "app.js"},
+			wantErr:        true,
+			wantErrContain: "--runtime must be one of",
+		},
+		{
+			name:           "invalid dep-resolution value fails",
+			flags:          initFlags{noPrompt: true, deployMode: "code", runtime: "python_3_13", entryPoint: "app.py", depResolution: "invalid"},
+			wantErr:        true,
+			wantErrContain: "--dep-resolution must be",
+		},
 	}
 
 	for _, tt := range tests {

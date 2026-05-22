@@ -621,8 +621,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
   azd ai agent init --src ./src/my-agent --agent-name my-unique-agent
 
   # Non-interactive code deploy (CI/CD)
-  azd ai agent init --no-prompt \
-    --project-id "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>" \
+  azd ai agent init --no-prompt --project-id "<resource-id>" \
     --deploy-mode code --runtime python_3_13 --entry-point app.py`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -2982,12 +2981,41 @@ func extractConnectionConfigs(
 // validateCodeDeployFlags checks that required flags are present when using
 // --deploy-mode code in --no-prompt mode.
 func (a *InitAction) validateCodeDeployFlags() error {
-	return validateCodeDeployInput(a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint)
+	return validateCodeDeployInput(
+		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution)
 }
 
 // validateCodeDeployInput is the shared validation logic for code deploy flags.
 // Used by both InitAction and InitFromCodeAction.
-func validateCodeDeployInput(noPrompt bool, deployMode, runtime, entryPoint string) error {
+func validateCodeDeployInput(noPrompt bool, deployMode, runtime, entryPoint, depResolution string) error {
+	if deployMode != "" && deployMode != "container" && deployMode != "code" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--deploy-mode must be 'container' or 'code'",
+			"Specify --deploy-mode container or --deploy-mode code",
+		)
+	}
+	if runtime != "" {
+		validRuntimes := map[string]bool{
+			"python_3_13": true,
+			"python_3_14": true,
+			"dotnet_10":   true,
+		}
+		if !validRuntimes[runtime] {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--runtime must be one of: python_3_13, python_3_14, dotnet_10",
+				"Specify a valid runtime value",
+			)
+		}
+	}
+	if depResolution != "" && depResolution != "remote_build" && depResolution != "bundled" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--dep-resolution must be 'remote_build' or 'bundled'",
+			"Specify --dep-resolution remote_build or --dep-resolution bundled",
+		)
+	}
 	if noPrompt && deployMode == "code" {
 		if runtime == "" {
 			return exterrors.Validation(

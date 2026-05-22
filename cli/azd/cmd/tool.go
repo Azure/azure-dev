@@ -481,10 +481,7 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	tracing.SetUsageAttributes(
-		fields.ToolIdsKey.String(strings.Join(ids, ",")),
-		fields.ToolDryRunKey.Bool(a.flags.dryRun),
-	)
+	tracing.SetUsageAttributes(fields.ToolDryRunKey.Bool(a.flags.dryRun))
 
 	if len(ids) == 0 {
 		a.console.Message(ctx, output.WithSuccessFormat("Nothing to install."))
@@ -503,13 +500,20 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 	})
 
 	tools := make([]*tool.ToolDefinition, 0, len(ids))
+	resolvedIDs := make([]string, 0, len(ids))
 	for _, id := range ids {
 		toolDef, findErr := a.manager.FindTool(id)
 		if findErr != nil {
 			return nil, findErr
 		}
 		tools = append(tools, toolDef)
+		resolvedIDs = append(resolvedIDs, toolDef.Id)
 	}
+
+	// Emit tool.ids only after every arg resolves to a built-in tool
+	// definition, using the canonical toolDef.Id values — never raw
+	// user input.
+	tracing.SetUsageAttributes(fields.ToolIdsKey.String(strings.Join(resolvedIDs, ",")))
 
 	operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
 		return a.manager.InstallTools(ctx, allIDs)
@@ -1056,12 +1060,14 @@ func (a *toolShowAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	}
 
 	toolID := a.args[0]
-	tracing.SetUsageAttributes(fields.ToolIdKey.String(toolID))
 
 	toolDef, err := a.manager.FindTool(toolID)
 	if err != nil {
 		return nil, fmt.Errorf("finding tool: %w", err)
 	}
+
+	// Emit tool.id only after FindTool succeeds
+	tracing.SetUsageAttributes(fields.ToolIdKey.String(toolDef.Id))
 
 	var status *tool.ToolStatus
 	if a.formatter.Kind() != output.JsonFormat {

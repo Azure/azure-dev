@@ -340,11 +340,16 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 		}
 	}
 
-	tracing.SetUsageAttributes(
+	attrs := []attribute.KeyValue{
 		fields.ToolFirstRunToolsSelectedKey.Int(len(selectedIDs)),
-		fields.ToolFirstRunToolsSelectedNamesKey.String(strings.Join(selectedIDs, ",")),
-		fields.ToolFirstRunToolsDeselectedNamesKey.String(strings.Join(deselectedIDs, ",")),
-	)
+	}
+	if len(selectedIDs) > 0 {
+		attrs = append(attrs, fields.ToolFirstRunToolsSelectedNamesKey.String(strings.Join(selectedIDs, ",")))
+	}
+	if len(deselectedIDs) > 0 {
+		attrs = append(attrs, fields.ToolFirstRunToolsDeselectedNamesKey.String(strings.Join(deselectedIDs, ",")))
+	}
+	tracing.SetUsageAttributes(attrs...)
 
 	if len(selected) == 0 {
 		m.console.Message(ctx, output.WithGrayFormat(

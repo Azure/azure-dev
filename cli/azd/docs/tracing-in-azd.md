@@ -222,7 +222,7 @@ The first-run middleware (`cmd/middleware/tool_first_run.go`) emits attributes o
 | `tool.firstrun.tools_selected` | int | At least one tool was offered | Count of tools the user kept selected. |
 | `tool.firstrun.tools_selected_names` | string | At least one tool selected | Comma-separated built-in tool IDs (low-cardinality, no PII). |
 | `tool.firstrun.tools_deselected_names` | string | User deselected at least one offered tool | Comma-separated built-in tool IDs. |
-| `tool.firstrun.completed` | bool | First-run flow reached the completion-persistence step | `true` once `tool.firstRunCompleted` is written to user config. |
+| `tool.firstrun.completed` | bool | First-run flow reached the completion-persistence step | Emitted as `true` once `tool.firstRunCompleted` is written to user config. Unset on cancel / detection-failure paths. |
 | `tool.firstrun.install_success_count` | int | First-run installed tools | Number of tools that succeeded during the first-run batch install. Mirrors `tool.install.success_count` but is namespaced so a subsequent `azd tool install` action on the same span does not overwrite it. |
 | `tool.firstrun.install_failure_count` | int | First-run installed tools | Number of tools that failed during the first-run batch install. |
 | `tool.firstrun.install_failed_ids` | string | First-run had at least one failure | Comma-separated tool IDs whose first-run install failed. |

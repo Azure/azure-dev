@@ -476,9 +476,11 @@ var (
 		Purpose:        FeatureInsight,
 	}
 
-	// ToolFirstRunCompletedKey records whether the first-run experience
-	// reached the point where `tool.firstRunCompleted` was persisted to user
-	// config. False when the user cancelled or detection failed.
+	// ToolFirstRunCompletedKey records that the first-run experience
+	// reached the completion-persistence step and `tool.firstRunCompleted`
+	// was written to user config. Emitted as `true` only on the success
+	// path; the attribute is unset when the user cancels, detection
+	// fails, or the flow is otherwise short-circuited.
 	ToolFirstRunCompletedKey = AttributeKey{
 		Key:            attribute.Key("tool.firstrun.completed"),
 		Classification: SystemMetadata,

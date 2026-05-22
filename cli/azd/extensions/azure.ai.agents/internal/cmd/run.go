@@ -61,10 +61,7 @@ agent service in azure.yaml. If not set, it is auto-detected from the
 project type. Use --start-command to override both.
 
 By default, this also opens Agent Inspector after the local agent starts
-listening. Use --no-inspector to skip this.
-
-Use a separate terminal to invoke the running agent:
-  azd ai agent invoke --local "Hello!"`,
+listening. Use --no-inspector to skip this.`,
 		Example: `  # Start the agent in the current directory
   azd ai agent run
 
@@ -170,7 +167,7 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	env := os.Environ()
 	env = appendPortEnvVars(env, pt, flags.port)
 
-	// Load azd environment variables (e.g., AZURE_AI_PROJECT_ENDPOINT)
+	// Load azd environment variables (e.g., FOUNDRY_PROJECT_ENDPOINT)
 	// so the agent can reach Azure services during local development.
 	// Also translate azd env keys to FOUNDRY_* env vars so the agent code
 	// works identically whether running locally or in a hosted container
@@ -197,10 +194,7 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	}
 
 	url := fmt.Sprintf("http://localhost:%d", flags.port)
-	fmt.Println()
-	fmt.Println("After startup, in another terminal, try:")
-	fmt.Printf("  azd ai agent invoke --local \"Hello!\"\n\n")
-	fmt.Printf("Starting agent on %s (Ctrl+C to stop)\n\n", url)
+	fmt.Printf("\nStarting agent on %s (Ctrl+C to stop)\n\n", url)
 
 	// Create command with stdout/stderr piped to terminal
 	ctx, cancel := context.WithCancel(ctx)
@@ -614,7 +608,6 @@ func venvBinDir(venvDir string) string {
 //
 // The mapping is:
 //
-//	AZURE_AI_PROJECT_ENDPOINT          → FOUNDRY_PROJECT_ENDPOINT
 //	AZURE_AI_PROJECT_ID                → FOUNDRY_PROJECT_ARM_ID
 //	AGENT_{SVC}_NAME                   → FOUNDRY_AGENT_NAME
 //	AGENT_{SVC}_VERSION                → FOUNDRY_AGENT_VERSION
@@ -625,7 +618,6 @@ func appendFoundryEnvVars(env []string, azdEnv map[string]string, serviceName st
 		azdKey     string
 		foundryKey string
 	}{
-		{"AZURE_AI_PROJECT_ENDPOINT", "FOUNDRY_PROJECT_ENDPOINT"},
 		{"AZURE_AI_PROJECT_ID", "FOUNDRY_PROJECT_ARM_ID"},
 	}
 

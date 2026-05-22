@@ -430,7 +430,7 @@ func TestMarketplaceVersionProvider_Success(t *testing.T) {
 
 	tool := &ToolDefinition{
 		Id:       "ms-azuretools.vscode-bicep",
-		Category: ToolCategoryExtension,
+		Category: ToolCategoryVSCodeExtension,
 	}
 
 	version, err := provider.GetLatestVersion(t.Context(), tool)
@@ -455,7 +455,7 @@ func TestMarketplaceVersionProvider_HTTPError(t *testing.T) {
 
 	tool := &ToolDefinition{
 		Id:       "ms-azuretools.vscode-bicep",
-		Category: ToolCategoryExtension,
+		Category: ToolCategoryVSCodeExtension,
 	}
 
 	_, err := provider.GetLatestVersion(t.Context(), tool)
@@ -481,7 +481,7 @@ func TestMarketplaceVersionProvider_EmptyResults(t *testing.T) {
 
 	tool := &ToolDefinition{
 		Id:       "nonexistent.extension",
-		Category: ToolCategoryExtension,
+		Category: ToolCategoryVSCodeExtension,
 	}
 
 	_, err := provider.GetLatestVersion(t.Context(), tool)
@@ -504,7 +504,7 @@ func TestSelectVersionProvider(t *testing.T) {
 
 			tool := &ToolDefinition{
 				Id:       "azure.ai.agents",
-				Category: ToolCategoryLibrary,
+				Category: ToolCategoryAzdExtension,
 			}
 
 			// We can't easily create a real RegistryCacheManager
@@ -523,7 +523,7 @@ func TestSelectVersionProvider(t *testing.T) {
 
 		tool := &ToolDefinition{
 			Id:       "ms-azuretools.vscode-bicep",
-			Category: ToolCategoryExtension,
+			Category: ToolCategoryVSCodeExtension,
 		}
 
 		provider := SelectVersionProvider(
@@ -540,7 +540,7 @@ func TestSelectVersionProvider(t *testing.T) {
 
 		tool := &ToolDefinition{
 			Id:       "ms-azuretools.vscode-bicep",
-			Category: ToolCategoryExtension,
+			Category: ToolCategoryVSCodeExtension,
 		}
 
 		provider := SelectVersionProvider(

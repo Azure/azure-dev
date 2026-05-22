@@ -4093,7 +4093,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--output', '-o'],
-							description: 'Path to the output directory. Defaults to ./bin folder.',
+							description: 'Path to the output directory.',
 							args: [
 								{
 									name: 'output',
@@ -4112,7 +4112,7 @@ const completionSpec: Fig.Spec = {
 					options: [
 						{
 							name: ['--capabilities'],
-							description: 'The list of capabilities for the extension (e.g., custom-commands,lifecycle-events,mcp-server,service-target-provider).',
+							description: 'The list of capabilities for the extension (e.g., custom-commands,lifecycle-events,mcp-server,service-target-provider,framework-service-provider,metadata,provisioning-provider).',
 							isRepeatable: true,
 							args: [
 								{
@@ -4157,8 +4157,27 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['--output', '-o'],
+							description: 'The output format',
+							args: [
+								{
+									name: 'output',
+								},
+							],
+						},
+						{
 							name: ['--registry', '-r'],
 							description: 'When set will create a local extension source registry.',
+						},
+						{
+							name: ['--tags'],
+							description: 'Optional tags for the extension, comma-separated or repeatable (max 10 tags, 64 characters each).',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'tags',
+								},
+							],
 						},
 					],
 				},
@@ -4177,7 +4196,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--output', '-o'],
-							description: 'Path to the artifacts output directory. If not provided, will use local registry artifacts path.',
+							description: 'Path to the artifacts output directory. If omitted, uses the local registry artifacts path.',
 							args: [
 								{
 									name: 'output',
@@ -4201,6 +4220,15 @@ const completionSpec: Fig.Spec = {
 							args: [
 								{
 									name: 'artifacts',
+								},
+							],
+						},
+						{
+							name: ['--output', '-o'],
+							description: 'The output format',
+							args: [
+								{
+									name: 'output',
 								},
 							],
 						},
@@ -4274,6 +4302,15 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['--output', '-o'],
+							description: 'The output format',
+							args: [
+								{
+									name: 'output',
+								},
+							],
+						},
+						{
 							name: ['--prerelease'],
 							description: 'Create a pre-release version',
 						},
@@ -4309,10 +4346,32 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['version'],
 					description: 'Prints the version of the application',
+					options: [
+						{
+							name: ['--output', '-o'],
+							description: 'The output format',
+							args: [
+								{
+									name: 'output',
+								},
+							],
+						},
+					],
 				},
 				{
 					name: ['watch'],
 					description: 'Watches the azd extension project for file changes and rebuilds it.',
+					options: [
+						{
+							name: ['--output', '-o'],
+							description: 'The output format',
+							args: [
+								{
+									name: 'output',
+								},
+							],
+						},
+					],
 				},
 			],
 		},

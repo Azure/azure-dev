@@ -1,0 +1,150 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"fmt"
+	"strings"
+
+	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/foundry/connections"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
+)
+
+// newToolboxConnectionCommand returns the `azd ai toolbox connection` parent.
+func newToolboxConnectionCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	extCtx = ensureExtensionContext(extCtx)
+	cmd := &cobra.Command{
+		Use:   "connection",
+		Short: "Manage the connection-backed tools attached to a toolbox.",
+		Long: `Manage the connection-backed tools attached to a toolbox.
+
+Tools are project connections (MCP servers via RemoteTool, or Azure AI Search
+indexes via CognitiveSearch). Each mutation publishes a new immutable version
+and retargets the toolbox default.`,
+	}
+	cmd.AddCommand(newToolboxConnectionAddCommand(extCtx))
+	cmd.AddCommand(newToolboxConnectionRemoveCommand(extCtx))
+	cmd.AddCommand(newToolboxConnectionListCommand(extCtx))
+	return cmd
+}
+
+// buildToolEntry returns the tool-entry map appropriate for the connection's
+// category. Enforces the --index flag rules and the `tool.name` regex.
+func buildToolEntry(conn *projectConnection, index string) (map[string]any, error) {
+	if err := validateToolName(conn.Name); err != nil {
+		return nil, err
+	}
+	switch conn.Category {
+	case connections.ConnectionTypeRemoteTool:
+		if index != "" {
+			return nil, exterrors.Validation(
+				exterrors.CodeUnsupportedIndexFlag,
+				fmt.Sprintf(
+					"--index is only valid for CognitiveSearch connections, "+
+						"connection %q has category %q",
+					conn.Name, conn.Category,
+				),
+				"omit --index for RemoteTool (MCP) connections",
+			)
+		}
+		// Reject locally rather than letting the service produce a generic 400.
+		if strings.TrimSpace(conn.Target) == "" {
+			return nil, exterrors.Validation(
+				exterrors.CodeConnectionMissingTarget,
+				fmt.Sprintf(
+					"connection %q is a RemoteTool but has no target URL",
+					conn.Name,
+				),
+				"set the target on the project connection (this is the MCP server URL)",
+			)
+		}
+		return map[string]any{
+			"type":                  "mcp",
+			"name":                  conn.Name,
+			"server_label":          conn.Name,
+			"server_url":            conn.Target,
+			"project_connection_id": conn.ID,
+		}, nil
+
+	case connections.ConnectionTypeCognitiveSearch:
+		if strings.TrimSpace(index) == "" {
+			return nil, exterrors.Validation(
+				exterrors.CodeMissingIndex,
+				fmt.Sprintf(
+					"connection %q is a CognitiveSearch connection; --index is required",
+					conn.Name,
+				),
+				"pass --index <name> with the search index to attach",
+			)
+		}
+		return map[string]any{
+			"type": "azure_ai_search",
+			"name": conn.Name,
+			"azure_ai_search": map[string]any{
+				"indexes": []any{
+					map[string]any{
+						"project_connection_id": conn.ID,
+						"index_name":            index,
+					},
+				},
+			},
+		}, nil
+
+	default:
+		return nil, exterrors.Validation(
+			exterrors.CodeUnsupportedConnectionCategory,
+			fmt.Sprintf(
+				"connection %q has category %q which is not supported as a toolbox tool today; "+
+					"v1 supports RemoteTool (MCP) and CognitiveSearch (Azure AI Search) only",
+				conn.Name, conn.Category,
+			),
+			"use a RemoteTool (MCP) or CognitiveSearch (Azure AI Search) connection, "+
+				"or file an issue requesting support for the connection category you need",
+		)
+	}
+}
+
+// duplicateConnectionInTools reports whether any tool entry already references
+// the given project_connection_id.
+func duplicateConnectionInTools(tools []map[string]any, connID string) bool {
+	found := false
+	forEachToolConnectionID(tools, func(id string) bool {
+		if id == connID {
+			found = true
+			return true
+		}
+		return false
+	})
+	return found
+}
+
+// filterOutConnection returns tools[] with every entry whose
+// project_connection_id matches connID stripped (top-level and nested forms).
+// `removed` reports whether at least one entry was filtered.
+func filterOutConnection(tools []map[string]any, connID string) (result []map[string]any, removed bool) {
+	for _, t := range tools {
+		if toolEntryReferences(t, func(id string) bool { return id == connID }) {
+			removed = true
+			continue
+		}
+		result = append(result, t)
+	}
+	return result, removed
+}
+
+// shortConnectionName extracts the connection's short name from the trailing
+// segment of its ARM ID (e.g. ".../connections/my-mcp" → "my-mcp"). Falls back
+// to the full id when no slash is present.
+func shortConnectionName(id string) string {
+	if id == "" {
+		return ""
+	}
+	if i := strings.LastIndex(id, "/"); i >= 0 && i < len(id)-1 {
+		return id[i+1:]
+	}
+	return id
+}

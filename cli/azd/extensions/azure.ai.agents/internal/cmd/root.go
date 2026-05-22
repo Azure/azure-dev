@@ -62,7 +62,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newMonitorCommand(extCtx))
 	rootCmd.AddCommand(newFilesCommand(extCtx))
 	rootCmd.AddCommand(newSessionCommand(extCtx))
-	rootCmd.AddCommand(newProjectCommand(extCtx))
+	rootCmd.AddCommand(newSampleCommand(extCtx))
 
 	// Connection commands — in separate package for easy lift-and-shift later.
 	// When the azd core namespace change lands, move this AddCommand call

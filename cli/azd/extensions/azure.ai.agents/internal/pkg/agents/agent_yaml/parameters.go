@@ -167,7 +167,7 @@ func promptForEnumValue(
 			Label: val,
 		}
 		if val == defaultStr {
-			defaultIndex = int32(i)
+			defaultIndex = int32(i) //nolint:gosec // enum value list length is bounded by manifest schema
 		}
 	}
 

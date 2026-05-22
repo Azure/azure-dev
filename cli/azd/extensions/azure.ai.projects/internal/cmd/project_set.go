@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 
+	"azure.ai.projects/internal/exterrors"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -26,7 +28,7 @@ type projectSetResult struct {
 	SetAt        string `json:"setAt"`
 }
 
-// ProjectSetAction is the action for the `project set` command.
+// ProjectSetAction is the action for the `set` command.
 type ProjectSetAction struct {
 	flags *projectSetFlags
 }
@@ -39,10 +41,10 @@ func newProjectSetCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Use:   "set <endpoint>",
 		Short: "Persist a default Foundry project endpoint.",
 		Long: `Persist a default Foundry project endpoint in the azd global config
-(~/.azd/config.json). Other agent commands will resolve this endpoint when no
+(~/.azd/config.json). Other commands will resolve this endpoint when no
 azd environment or explicit flag is available.`,
 		Example: `  # Set the default project endpoint
-  azd ai agent project set https://my-project.services.ai.azure.com/api/projects/my-project`,
+  azd ai project set https://my-project.services.ai.azure.com/api/projects/my-project`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.endpoint = args[0]
@@ -72,7 +74,13 @@ func (a *ProjectSetAction) Run(ctx context.Context) error {
 
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return fmt.Errorf("failed to create azd client: %w", err)
+		return exterrors.Dependency(
+			exterrors.CodeAzdClientFailed,
+			"could not connect to the azd daemon",
+			"ensure azd is installed and reachable; "+
+				"if you are running this command outside an azd extension host, "+
+				"the daemon endpoint may not be configured",
+		)
 	}
 	defer azdClient.Close()
 
@@ -88,7 +96,7 @@ func (a *ProjectSetAction) Run(ctx context.Context) error {
 		); envErr == nil {
 			fmt.Fprintln(os.Stderr,
 				"warning: an active azd environment is present; "+
-					"its AZURE_AI_PROJECT_ENDPOINT takes precedence "+
+					"its FOUNDRY_PROJECT_ENDPOINT takes precedence "+
 					"over global context.")
 		}
 	}

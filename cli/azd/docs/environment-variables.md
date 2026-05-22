@@ -149,7 +149,7 @@ specific version of the tool installed on the machine.
 | Variable | Description |
 | --- | --- |
 | `AZURE_AI_PROJECT_ID` | The Microsoft Foundry project resource ID used by the `azure.ai.agents` extension. |
-| `AZURE_AI_PROJECT_ENDPOINT` | The Microsoft Foundry project endpoint used by the `azure.ai.agents` extension. |
+| `FOUNDRY_PROJECT_ENDPOINT` | The Microsoft Foundry project endpoint used by the `azure.ai.agents` extension. Read first from the active azd environment and, if not present, from the host shell environment as an endpoint-resolution fallback. |
 | `AZURE_AI_PROJECT_PRINCIPAL_ID` | The principal ID associated with the Microsoft Foundry project identity. |
 | `AZURE_AI_ACCOUNT_NAME` | The Microsoft Foundry account name associated with the project. |
 | `AZURE_AI_PROJECT_NAME` | The Microsoft Foundry project name. |
@@ -157,10 +157,10 @@ specific version of the tool installed on the machine.
 | `AZURE_AI_PROJECT_ACR_CONNECTION_NAME` | The Azure Container Registry connection name used by the extension for hosted agents. |
 | `AI_PROJECT_DEPLOYMENTS` | JSON-encoded deployment metadata populated by the extension for agent workflows. |
 | `AI_PROJECT_DEPENDENT_RESOURCES` | JSON-encoded dependent resource metadata populated by the extension for agent workflows. |
+| `AZD_AGENT_SKIP_ACR` | If `true`, signals the Bicep template to skip Azure Container Registry creation during provisioning. Automatically set by `azd agent init` for code-deploy scenarios (where no container image is built). |
 | `ENABLE_HOSTED_AGENTS` | If set, indicates that hosted agents are enabled for the current azd environment. |
 | `ENABLE_CONTAINER_AGENTS` | If set, indicates that container agents are enabled for the current azd environment. |
 | `AGENT_DEFINITION_PATH` | Path to an agent definition file for AI agent workflows. |
-| `FOUNDRY_PROJECT_ENDPOINT` | A host environment variable specifying the Microsoft Foundry project endpoint. Used as a fallback in the endpoint resolution cascade when no azd environment or global config is available. Not read from the azd env, only from the host shell environment. |
 
 ## UI Prompt Integration
 

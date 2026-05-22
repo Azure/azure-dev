@@ -21,6 +21,12 @@ pr:
     exclude:
       - cli/azd/docs/**
 
+parameters:
+  - name: PublishToDevRegistry
+    displayName: Publish to dev registry
+    type: boolean
+    default: false
+
 extends:
   template: /eng/pipelines/templates/stages/1es-redirect.yml
   parameters:
@@ -30,4 +36,4 @@ extends:
           AzdExtensionId: microsoft.azd.extensions
           SanitizedExtensionId: microsoft-azd-extensions
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.extensions
-          SkipTests: true
+          PublishToDevRegistry: ${{ parameters.PublishToDevRegistry }}

@@ -28,6 +28,7 @@ words:
   - westeurope
   # Project terms
   - ABAC
+  - agentignore
   - ADLS
   - agentserver
   - aiservices

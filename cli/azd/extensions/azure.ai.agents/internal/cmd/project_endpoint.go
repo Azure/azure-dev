@@ -18,7 +18,7 @@ const (
 	// SourceFlag means the endpoint came from the -p / --project-endpoint flag.
 	SourceFlag EndpointSource = "flag"
 	// SourceAzdEnv means the endpoint came from the active azd environment's
-	// AZURE_AI_PROJECT_ENDPOINT value.
+	// FOUNDRY_PROJECT_ENDPOINT value.
 	SourceAzdEnv EndpointSource = "azdEnv"
 	// SourceGlobalConfig means the endpoint came from ~/.azd/config.json
 	// (extensions.ai-agents.context.endpoint).
@@ -128,7 +128,7 @@ func noProjectEndpointError() error {
 		exterrors.CodeMissingProjectEndpoint,
 		"no Foundry project endpoint resolved",
 		"persist a workspace default with `azd ai agent project set <endpoint>`, "+
-			"or set AZURE_AI_PROJECT_ENDPOINT in the active azd environment, "+
+			"or set FOUNDRY_PROJECT_ENDPOINT in the active azd environment, "+
 			"or export FOUNDRY_PROJECT_ENDPOINT in your shell",
 	)
 }

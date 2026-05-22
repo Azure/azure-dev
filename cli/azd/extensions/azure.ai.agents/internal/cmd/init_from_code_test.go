@@ -108,6 +108,9 @@ func TestSanitizeAgentName(t *testing.T) {
 			if result != tt.expected {
 				t.Errorf("sanitizeAgentName(%q) = %q, want %q", tt.input, result, tt.expected)
 			}
+			if err := agent_yaml.ValidateAgentName(result); err != nil {
+				t.Errorf("sanitizeAgentName(%q) produced invalid agent name %q: %v", tt.input, result, err)
+			}
 		})
 	}
 }
@@ -441,10 +444,10 @@ func TestWriteDefinitionToSrcDir(t *testing.T) {
 		if !containsAll(contentStr, "name: test-agent", "kind: hosted", "responses", "AZURE_AI_MODEL_DEPLOYMENT_NAME") {
 			t.Errorf("written content missing expected fields:\n%s", contentStr)
 		}
-		// AZURE_OPENAI_ENDPOINT and AZURE_AI_PROJECT_ENDPOINT should NOT be written to agent.yaml.
+		// AZURE_OPENAI_ENDPOINT and FOUNDRY_PROJECT_ENDPOINT should NOT be written to agent.yaml.
 		// Hosted agents receive platform-provided FOUNDRY_* variables such as FOUNDRY_PROJECT_ENDPOINT instead.
-		if strings.Contains(contentStr, "AZURE_OPENAI_ENDPOINT") || strings.Contains(contentStr, "AZURE_AI_PROJECT_ENDPOINT") {
-			t.Errorf("agent.yaml should not contain AZURE_OPENAI_ENDPOINT or AZURE_AI_PROJECT_ENDPOINT:\n%s", contentStr)
+		if strings.Contains(contentStr, "AZURE_OPENAI_ENDPOINT") || strings.Contains(contentStr, "FOUNDRY_PROJECT_ENDPOINT") {
+			t.Errorf("agent.yaml should not contain AZURE_OPENAI_ENDPOINT or FOUNDRY_PROJECT_ENDPOINT:\n%s", contentStr)
 		}
 	})
 

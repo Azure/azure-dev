@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 
+	"azure.ai.projects/internal/exterrors"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -18,11 +20,13 @@ type projectUnsetFlags struct {
 }
 
 type projectUnsetResult struct {
-	Cleared          bool   `json:"cleared"`
+	// PreviouslySet reports whether a project endpoint was set before this
+	// unset operation. The operation succeeds (idempotently) regardless.
+	PreviouslySet    bool   `json:"previouslySet"`
 	PreviousEndpoint string `json:"previousEndpoint"`
 }
 
-// ProjectUnsetAction is the action for the `project unset` command.
+// ProjectUnsetAction is the action for the `unset` command.
 type ProjectUnsetAction struct {
 	flags *projectUnsetFlags
 }
@@ -59,7 +63,13 @@ is not an error.`,
 func (a *ProjectUnsetAction) Run(ctx context.Context) error {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return fmt.Errorf("failed to create azd client: %w", err)
+		return exterrors.Dependency(
+			exterrors.CodeAzdClientFailed,
+			"could not connect to the azd daemon",
+			"ensure azd is installed and reachable; "+
+				"if you are running this command outside an azd extension host, "+
+				"the daemon endpoint may not be configured",
+		)
 	}
 	defer azdClient.Close()
 
@@ -68,22 +78,22 @@ func (a *ProjectUnsetAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	cleared := previous != ""
+	previouslySet := previous != ""
 
 	switch a.flags.outputFmt {
 	case "json":
 		result := projectUnsetResult{
-			Cleared:          cleared,
+			PreviouslySet:    previouslySet,
 			PreviousEndpoint: previous,
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(result)
 	default:
-		if !cleared {
-			fmt.Println("No active project endpoint to clear.")
-		} else {
+		if previouslySet {
 			fmt.Println("Project endpoint cleared.")
+		} else {
+			fmt.Println("No project endpoint was set; nothing to clear.")
 		}
 		return nil
 	}

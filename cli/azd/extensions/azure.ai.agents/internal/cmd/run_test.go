@@ -433,15 +433,14 @@ func createVenv(t *testing.T, projectDir string) string {
 func TestAppendFoundryEnvVars(t *testing.T) {
 	t.Parallel()
 
-	t.Run("maps AZURE_AI_PROJECT_ENDPOINT to FOUNDRY_PROJECT_ENDPOINT", func(t *testing.T) {
+	t.Run("does not map FOUNDRY_PROJECT_ENDPOINT to itself", func(t *testing.T) {
 		t.Parallel()
 		azdEnv := map[string]string{
-			"AZURE_AI_PROJECT_ENDPOINT": "https://myaccount.services.ai.azure.com/api/projects/myproject",
+			"FOUNDRY_PROJECT_ENDPOINT": "https://myaccount.services.ai.azure.com/api/projects/myproject",
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "")
-		expected := "FOUNDRY_PROJECT_ENDPOINT=https://myaccount.services.ai.azure.com/api/projects/myproject"
-		if !slices.Contains(env, expected) {
-			t.Errorf("expected %q in env, got %v", expected, env)
+		if len(env) != 0 {
+			t.Errorf("expected no translated env vars, got %v", env)
 		}
 	})
 
@@ -484,24 +483,23 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 	t.Run("includes all mappings together", func(t *testing.T) {
 		t.Parallel()
 		azdEnv := map[string]string{
-			"AZURE_AI_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/proj",
-			"AZURE_AI_PROJECT_ID":       "/subscriptions/sub/rg/rg/acct/proj",
-			"AGENT_AGENT1_NAME":         "agent1",
-			"AGENT_AGENT1_VERSION":      "v1",
+			"FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/proj",
+			"AZURE_AI_PROJECT_ID":      "/subscriptions/sub/rg/rg/acct/proj",
+			"AGENT_AGENT1_NAME":        "agent1",
+			"AGENT_AGENT1_VERSION":     "v1",
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "agent1")
-		if len(env) != 4 {
-			t.Errorf("expected 4 env vars, got %d: %v", len(env), env)
+		if len(env) != 3 {
+			t.Errorf("expected 3 env vars, got %d: %v", len(env), env)
 		}
 	})
 
 	t.Run("skips foundry key when already set in azd env", func(t *testing.T) {
 		t.Parallel()
 		azdEnv := map[string]string{
-			"AZURE_AI_PROJECT_ENDPOINT": "https://from-azd.services.ai.azure.com",
-			"FOUNDRY_PROJECT_ENDPOINT":  "https://explicit.services.ai.azure.com",
-			"AGENT_MY_SVC_NAME":         "my-agent",
-			"FOUNDRY_AGENT_NAME":        "explicit-agent",
+			"FOUNDRY_PROJECT_ENDPOINT": "https://explicit.services.ai.azure.com",
+			"AGENT_MY_SVC_NAME":        "my-agent",
+			"FOUNDRY_AGENT_NAME":       "explicit-agent",
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "my-svc")
 
@@ -531,10 +529,10 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 			"FOUNDRY_AGENT_NAME=shell-agent",
 		}
 		azdEnv := map[string]string{
-			"AZURE_AI_PROJECT_ENDPOINT": "https://from-azd.services.ai.azure.com",
-			"AZURE_AI_PROJECT_ID":       "/subscriptions/sub/rg/rg/acct/proj",
-			"AGENT_MY_SVC_NAME":         "my-agent",
-			"AGENT_MY_SVC_VERSION":      "v2",
+			"FOUNDRY_PROJECT_ENDPOINT": "https://from-azd.services.ai.azure.com",
+			"AZURE_AI_PROJECT_ID":      "/subscriptions/sub/rg/rg/acct/proj",
+			"AGENT_MY_SVC_NAME":        "my-agent",
+			"AGENT_MY_SVC_VERSION":     "v2",
 		}
 		env := appendFoundryEnvVars(existingEnv, azdEnv, "my-svc")
 

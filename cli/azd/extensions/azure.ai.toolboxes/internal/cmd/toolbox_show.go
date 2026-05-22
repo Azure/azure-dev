@@ -152,7 +152,7 @@ func emitShowTable(
 		for _, tool := range version.Tools {
 			toolName, _ := tool["name"].(string)
 			toolType, _ := tool["type"].(string)
-			detail := describeToolDetail(toolType, tool)
+			detail := describeToolDetail(tool)
 			fmt.Fprintf(tw, "%s\t%s\t%s\n", toolName, toolType, detail)
 		}
 		if err := tw.Flush(); err != nil {
@@ -163,17 +163,15 @@ func emitShowTable(
 }
 
 // describeToolDetail returns the per-tool annotation used in the show table:
-// "(builtin)" for first-party tools and "(connection:<id>)" for connection-backed entries.
-func describeToolDetail(toolType string, tool map[string]any) string {
-	switch toolType {
-	case "code_interpreter", "web_search", "file_search":
-		return "(builtin)"
-	case "mcp", "azure_ai_search":
-		if id := firstConnectionID(tool); id != "" {
-			return "(connection:" + id + ")"
-		}
+// "(connection:<id>)" when the entry references a project connection (in any
+// recognized shape), otherwise "(builtin)". Driving this off the tool entry's
+// shape rather than a hardcoded type allow-list means new connection-backed
+// tool types are surfaced automatically.
+func describeToolDetail(tool map[string]any) string {
+	if id := firstConnectionID(tool); id != "" {
+		return "(connection:" + id + ")"
 	}
-	return ""
+	return "(builtin)"
 }
 
 // firstConnectionID returns the first project_connection_id referenced by a

@@ -79,13 +79,17 @@ func runConnectionListWith(
 // extractConnectionTools collapses the tool list to one row per connection-backed
 // entry, surfacing the short connection name parsed from the trailing segment
 // of the connection ARM ID (the `connection` column in `connection list`).
+//
+// Rows are emitted for every tool entry that references at least one
+// project_connection_id. Built-in tool types (code_interpreter, file_search,
+// etc.) carry no connection reference and are skipped automatically.
 func extractConnectionTools(tools []map[string]any) []map[string]string {
 	rows := []map[string]string{}
 	for _, t := range tools {
 		toolType, _ := t["type"].(string)
 		toolName, _ := t["name"].(string)
 		switch toolType {
-		case "mcp":
+		case "mcp", "a2a_preview":
 			if id, ok := t["project_connection_id"].(string); ok && id != "" {
 				rows = append(rows, map[string]string{
 					"name":          toolName,
@@ -114,6 +118,25 @@ func extractConnectionTools(tools []map[string]any) []map[string]string {
 					}
 				}
 			}
+		case "web_search":
+			// Built-in web_search has no custom_search_configuration; only the
+			// GroundingWithCustomSearch variant carries a project_connection_id.
+			cfg, _ := t["custom_search_configuration"].(map[string]any)
+			if cfg == nil {
+				continue
+			}
+			id, _ := cfg["project_connection_id"].(string)
+			if id == "" {
+				continue
+			}
+			instance, _ := cfg["instance_name"].(string)
+			rows = append(rows, map[string]string{
+				"name":          toolName,
+				"connection":    shortConnectionName(id),
+				"connection_id": id,
+				"type":          toolType,
+				"instance_name": instance,
+			})
 		}
 	}
 	return rows

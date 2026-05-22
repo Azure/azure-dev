@@ -70,7 +70,7 @@ func TestBuildToolEntry(t *testing.T) {
 			Category: connections.ConnectionTypeRemoteTool,
 			Name:     "my-mcp",
 			Target:   "https://mcp.example.com",
-		}, "")
+		}, "", "")
 		require.NoError(t, err)
 		assert.Equal(t, "mcp", entry["type"])
 		assert.Equal(t, "my-mcp", entry["name"])
@@ -83,8 +83,17 @@ func TestBuildToolEntry(t *testing.T) {
 		_, err := buildToolEntry(&projectConnection{
 			Category: connections.ConnectionTypeRemoteTool,
 			Name:     "my-mcp",
-		}, "idx")
+		}, "idx", "")
 		requireLocalError(t, err, exterrors.CodeUnsupportedIndexFlag)
+	})
+
+	t.Run("RemoteTool rejects --instance-name", func(t *testing.T) {
+		_, err := buildToolEntry(&projectConnection{
+			Category: connections.ConnectionTypeRemoteTool,
+			Name:     "my-mcp",
+			Target:   "https://mcp.example.com",
+		}, "", "inst")
+		requireLocalError(t, err, exterrors.CodeUnsupportedInstanceNameFlag)
 	})
 
 	t.Run("RemoteTool rejects empty target", func(t *testing.T) {
@@ -93,7 +102,7 @@ func TestBuildToolEntry(t *testing.T) {
 			Category: connections.ConnectionTypeRemoteTool,
 			Name:     "x",
 			Target:   "  ", // whitespace-only is treated as empty
-		}, "")
+		}, "", "")
 		le := requireLocalError(t, err, exterrors.CodeConnectionMissingTarget)
 		assert.Contains(t, le.Message, "target URL")
 	})
@@ -102,7 +111,7 @@ func TestBuildToolEntry(t *testing.T) {
 		_, err := buildToolEntry(&projectConnection{
 			Category: connections.ConnectionTypeCognitiveSearch,
 			Name:     "search",
-		}, "")
+		}, "", "")
 		requireLocalError(t, err, exterrors.CodeMissingIndex)
 	})
 
@@ -111,7 +120,7 @@ func TestBuildToolEntry(t *testing.T) {
 			ID:       "/subs/x/.../connections/search",
 			Category: connections.ConnectionTypeCognitiveSearch,
 			Name:     "search",
-		}, "products")
+		}, "products", "")
 		require.NoError(t, err)
 		assert.Equal(t, "azure_ai_search", entry["type"])
 		search := entry["azure_ai_search"].(map[string]any)
@@ -122,13 +131,46 @@ func TestBuildToolEntry(t *testing.T) {
 		assert.Equal(t, "/subs/x/.../connections/search", first["project_connection_id"])
 	})
 
+	t.Run("RemoteA2A builds a2a_preview entry", func(t *testing.T) {
+		entry, err := buildToolEntry(&projectConnection{
+			ID:       "/subs/x/.../connections/my-a2a",
+			Category: connections.ConnectionTypeRemoteA2A,
+			Name:     "my-a2a",
+		}, "", "")
+		require.NoError(t, err)
+		assert.Equal(t, "a2a_preview", entry["type"])
+		assert.Equal(t, "my-a2a", entry["name"])
+		assert.Equal(t, "/subs/x/.../connections/my-a2a", entry["project_connection_id"])
+	})
+
+	t.Run("GroundingWithCustomSearch requires --instance-name", func(t *testing.T) {
+		_, err := buildToolEntry(&projectConnection{
+			Category: connections.ConnectionTypeGroundingWithCustomSearch,
+			Name:     "bing",
+		}, "", "")
+		requireLocalError(t, err, exterrors.CodeMissingInstanceName)
+	})
+
+	t.Run("GroundingWithCustomSearch builds web_search entry", func(t *testing.T) {
+		entry, err := buildToolEntry(&projectConnection{
+			ID:       "/subs/x/.../connections/bing",
+			Category: connections.ConnectionTypeGroundingWithCustomSearch,
+			Name:     "bing",
+		}, "", "docs-config")
+		require.NoError(t, err)
+		assert.Equal(t, "web_search", entry["type"])
+		cfg := entry["custom_search_configuration"].(map[string]any)
+		assert.Equal(t, "/subs/x/.../connections/bing", cfg["project_connection_id"])
+		assert.Equal(t, "docs-config", cfg["instance_name"])
+	})
+
 	t.Run("unsupported category rejected", func(t *testing.T) {
 		for _, cat := range []connections.ConnectionType{
 			connections.ConnectionTypeApiKey,
 			connections.ConnectionTypeCustomKeys,
 			connections.ConnectionTypeAppInsights,
 		} {
-			_, err := buildToolEntry(&projectConnection{Category: cat, Name: "x"}, "")
+			_, err := buildToolEntry(&projectConnection{Category: cat, Name: "x"}, "", "")
 			le := requireLocalError(t, err, exterrors.CodeUnsupportedConnectionCategory)
 			assert.Contains(t, le.Message, string(cat),
 				"expected category in message")
@@ -147,10 +189,19 @@ func TestDuplicateConnectionInTools(t *testing.T) {
 				},
 			},
 		},
+		{
+			"type": "web_search",
+			"custom_search_configuration": map[string]any{
+				"project_connection_id": "/conn/d", "instance_name": "inst",
+			},
+		},
+		{"type": "a2a_preview", "project_connection_id": "/conn/f"},
 	}
 	assert.True(t, duplicateConnectionInTools(tools, "/conn/a"))
 	assert.True(t, duplicateConnectionInTools(tools, "/conn/b"))
-	assert.False(t, duplicateConnectionInTools(tools, "/conn/c"))
+	assert.True(t, duplicateConnectionInTools(tools, "/conn/d"))
+	assert.True(t, duplicateConnectionInTools(tools, "/conn/f"))
+	assert.False(t, duplicateConnectionInTools(tools, "/conn/zzz"))
 }
 
 func TestFilterOutConnection(t *testing.T) {
@@ -167,23 +218,38 @@ func TestFilterOutConnection(t *testing.T) {
 				},
 			},
 		},
+		{
+			"type": "web_search",
+			"name": "ws",
+			"custom_search_configuration": map[string]any{
+				"project_connection_id": "/conn/d", "instance_name": "inst",
+			},
+		},
+		{"type": "a2a_preview", "name": "a2a", "project_connection_id": "/conn/f"},
 	}
 	got, removed := filterOutConnection(tools, "/conn/a")
 	assert.True(t, removed)
-	assert.Len(t, got, 3)
-	for _, e := range got {
-		assert.NotEqual(t, "/conn/a", e["project_connection_id"])
-	}
+	assert.Len(t, got, 5)
 
 	// Removing missing connection: removed=false, slice unchanged in length.
 	got2, removed2 := filterOutConnection(tools, "/conn/zzz")
 	assert.False(t, removed2)
-	assert.Len(t, got2, 4)
+	assert.Len(t, got2, 6)
 
 	// Removing nested search connection.
 	got3, removed3 := filterOutConnection(tools, "/conn/c")
 	assert.True(t, removed3)
-	assert.Len(t, got3, 3)
+	assert.Len(t, got3, 5)
+
+	// Removing web_search (custom_search_configuration nested).
+	got4, removed4 := filterOutConnection(tools, "/conn/d")
+	assert.True(t, removed4)
+	assert.Len(t, got4, 5)
+
+	// Removing a2a_preview (top-level project_connection_id).
+	got6, removed6 := filterOutConnection(tools, "/conn/f")
+	assert.True(t, removed6)
+	assert.Len(t, got6, 5)
 }
 
 func TestShortConnectionName(t *testing.T) {

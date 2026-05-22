@@ -22,9 +22,10 @@ func newToolboxConnectionCommand(extCtx *azdext.ExtensionContext) *cobra.Command
 		Short: "Manage the connection-backed tools attached to a toolbox.",
 		Long: `Manage the connection-backed tools attached to a toolbox.
 
-Tools are project connections (MCP servers via RemoteTool, or Azure AI Search
-indexes via CognitiveSearch). Each mutation publishes a new immutable version
-and retargets the toolbox default.`,
+Tools are project connections. Supported categories: RemoteTool (MCP),
+CognitiveSearch (Azure AI Search), RemoteA2A, and GroundingWithCustomSearch.
+Each mutation publishes a new immutable version and retargets the toolbox
+default.`,
 	}
 	cmd.AddCommand(newToolboxConnectionAddCommand(extCtx))
 	cmd.AddCommand(newToolboxConnectionRemoveCommand(extCtx))
@@ -33,24 +34,38 @@ and retargets the toolbox default.`,
 }
 
 // buildToolEntry returns the tool-entry map appropriate for the connection's
-// category. Enforces the --index flag rules and the `tool.name` regex.
-func buildToolEntry(conn *projectConnection, index string) (map[string]any, error) {
+// category. Enforces per-input flag rules (--index, --instance-name) and the
+// `tool.name` regex.
+func buildToolEntry(conn *projectConnection, index, instanceName string) (map[string]any, error) {
 	if err := validateToolName(conn.Name); err != nil {
 		return nil, err
 	}
+	// --index is only meaningful for CognitiveSearch; reject elsewhere.
+	if index != "" && conn.Category != connections.ConnectionTypeCognitiveSearch {
+		return nil, exterrors.Validation(
+			exterrors.CodeUnsupportedIndexFlag,
+			fmt.Sprintf(
+				"--index is only valid for CognitiveSearch connections, "+
+					"connection %q has category %q",
+				conn.Name, conn.Category,
+			),
+			"omit --index for non-CognitiveSearch connections",
+		)
+	}
+	// --instance-name is only meaningful for GroundingWithCustomSearch.
+	if instanceName != "" && conn.Category != connections.ConnectionTypeGroundingWithCustomSearch {
+		return nil, exterrors.Validation(
+			exterrors.CodeUnsupportedInstanceNameFlag,
+			fmt.Sprintf(
+				"--instance-name is only valid for GroundingWithCustomSearch connections, "+
+					"connection %q has category %q",
+				conn.Name, conn.Category,
+			),
+			"omit --instance-name for non-GroundingWithCustomSearch connections",
+		)
+	}
 	switch conn.Category {
 	case connections.ConnectionTypeRemoteTool:
-		if index != "" {
-			return nil, exterrors.Validation(
-				exterrors.CodeUnsupportedIndexFlag,
-				fmt.Sprintf(
-					"--index is only valid for CognitiveSearch connections, "+
-						"connection %q has category %q",
-					conn.Name, conn.Category,
-				),
-				"omit --index for RemoteTool (MCP) connections",
-			)
-		}
 		// Reject locally rather than letting the service produce a generic 400.
 		if strings.TrimSpace(conn.Target) == "" {
 			return nil, exterrors.Validation(
@@ -94,15 +109,44 @@ func buildToolEntry(conn *projectConnection, index string) (map[string]any, erro
 			},
 		}, nil
 
+	case connections.ConnectionTypeRemoteA2A:
+		return map[string]any{
+			"type":                  "a2a_preview",
+			"name":                  conn.Name,
+			"project_connection_id": conn.ID,
+		}, nil
+
+	case connections.ConnectionTypeGroundingWithCustomSearch:
+		if strings.TrimSpace(instanceName) == "" {
+			return nil, exterrors.Validation(
+				exterrors.CodeMissingInstanceName,
+				fmt.Sprintf(
+					"connection %q is a GroundingWithCustomSearch connection; "+
+						"--instance-name is required",
+					conn.Name,
+				),
+				"pass --instance-name <name> with the Bing custom-search configuration name",
+			)
+		}
+		return map[string]any{
+			"type": "web_search",
+			"name": conn.Name,
+			"custom_search_configuration": map[string]any{
+				"project_connection_id": conn.ID,
+				"instance_name":         instanceName,
+			},
+		}, nil
+
 	default:
 		return nil, exterrors.Validation(
 			exterrors.CodeUnsupportedConnectionCategory,
 			fmt.Sprintf(
 				"connection %q has category %q which is not supported as a toolbox tool today; "+
-					"v1 supports RemoteTool (MCP) and CognitiveSearch (Azure AI Search) only",
+					"supported categories: RemoteTool (MCP), CognitiveSearch (Azure AI Search), "+
+					"RemoteA2A, GroundingWithCustomSearch",
 				conn.Name, conn.Category,
 			),
-			"use a RemoteTool (MCP) or CognitiveSearch (Azure AI Search) connection, "+
+			"use one of the supported connection categories, "+
 				"or file an issue requesting support for the connection category you need",
 		)
 	}

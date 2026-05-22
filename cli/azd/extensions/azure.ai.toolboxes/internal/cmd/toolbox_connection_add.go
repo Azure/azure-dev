@@ -18,8 +18,9 @@ import (
 
 // connectionAddFlags carries the verb-specific flags for `connection add`.
 type connectionAddFlags struct {
-	index    string
-	fromFile string
+	index        string
+	instanceName string
+	fromFile     string
 }
 
 // newToolboxConnectionAddCommand returns the `connection add` command.
@@ -40,6 +41,7 @@ Single-connection mode:
 
 Pass the project connection's short name as the positional. --index is
 required when the connection's category is CognitiveSearch (Azure AI Search).
+--instance-name is required when the category is GroundingWithCustomSearch.
 Only one tool is appended; the new version becomes the default.
 
 File mode:
@@ -61,6 +63,9 @@ Examples:
 
   # Attach a CognitiveSearch connection with an explicit index
   azd ai toolbox add research my-search --index products
+
+  # Attach a GroundingWithCustomSearch connection with a Bing custom-search instance
+  azd ai toolbox add research my-bing --instance-name docs-config
 
   # Attach several tools in one new version
   azd ai toolbox add research --from-file ./tools.yaml --output json
@@ -94,6 +99,11 @@ Examples:
 	cmd.Flags().StringVar(
 		&flags.index, "index", "",
 		"Search index name. Required for CognitiveSearch (Azure AI Search) connections; ignored otherwise.",
+	)
+	cmd.Flags().StringVar(
+		&flags.instanceName, "instance-name", "",
+		"Bing custom-search configuration name. "+
+			"Required for GroundingWithCustomSearch connections; ignored otherwise.",
 	)
 	cmd.Flags().StringVar(
 		&flags.fromFile, "from-file", "",
@@ -175,6 +185,13 @@ func runConnectionAddWith(
 				"set connection indexes in the file under connections[].index",
 			)
 		}
+		if verb.instanceName != "" {
+			return exterrors.Validation(
+				exterrors.CodeUnsupportedInstanceNameFlag,
+				"--instance-name cannot be used together with --from-file",
+				"set connection instance names in the file under connections[].instance_name",
+			)
+		}
 
 		var input toolboxToolsFile
 		if err := parseToolboxFile(verb.fromFile, &input); err != nil {
@@ -193,7 +210,7 @@ func runConnectionAddWith(
 		if err != nil {
 			return err
 		}
-		entry, err := buildToolEntry(conn, verb.index)
+		entry, err := buildToolEntry(conn, verb.index, verb.instanceName)
 		if err != nil {
 			return err
 		}

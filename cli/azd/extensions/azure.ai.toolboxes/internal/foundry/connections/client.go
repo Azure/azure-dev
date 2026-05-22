@@ -41,6 +41,9 @@ const (
 	ConnectionTypeAppInsights         ConnectionType = "AppInsights"
 	ConnectionTypeCustomKeys          ConnectionType = "CustomKeys"
 	ConnectionTypeRemoteTool          ConnectionType = "RemoteTool"
+	// Additional tool-capable connection categories surfaced as toolbox tools.
+	ConnectionTypeRemoteA2A                 ConnectionType = "RemoteA2A"
+	ConnectionTypeGroundingWithCustomSearch ConnectionType = "GroundingWithCustomSearch"
 )
 
 // CredentialType is the credential kind reported on a connection.

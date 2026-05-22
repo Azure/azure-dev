@@ -38,25 +38,29 @@ func forEachToolConnectionID(tools []map[string]any, fn func(connID string) bool
 }
 
 // toolEntryReferences runs match against every connection ID referenced by a
-// single tool entry and returns true on the first hit.
+// single tool entry and returns true on the first hit. Recognized shapes:
+//   - top-level `project_connection_id` (mcp, a2a_preview)
+//   - `azure_ai_search.indexes[].project_connection_id`
+//   - `custom_search_configuration.project_connection_id` (web_search)
 func toolEntryReferences(t map[string]any, match func(connID string) bool) bool {
 	if id, ok := t["project_connection_id"].(string); ok && id != "" && match(id) {
 		return true
 	}
-	search, ok := t["azure_ai_search"].(map[string]any)
-	if !ok {
-		return false
-	}
-	indexes, ok := search["indexes"].([]any)
-	if !ok {
-		return false
-	}
-	for _, idx := range indexes {
-		m, ok := idx.(map[string]any)
-		if !ok {
-			continue
+	if search, ok := t["azure_ai_search"].(map[string]any); ok {
+		if indexes, ok := search["indexes"].([]any); ok {
+			for _, idx := range indexes {
+				m, ok := idx.(map[string]any)
+				if !ok {
+					continue
+				}
+				if id, ok := m["project_connection_id"].(string); ok && id != "" && match(id) {
+					return true
+				}
+			}
 		}
-		if id, ok := m["project_connection_id"].(string); ok && id != "" && match(id) {
+	}
+	if cfg, ok := t["custom_search_configuration"].(map[string]any); ok {
+		if id, ok := cfg["project_connection_id"].(string); ok && id != "" && match(id) {
 			return true
 		}
 	}

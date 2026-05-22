@@ -17,7 +17,9 @@ func fileShapeBlurb(includeDescription bool) string {
     "description": "research toolbox",
     "connections": [
       { "name": "my-mcp" },
-      { "name": "my-search", "index": "products" }
+      { "name": "my-search", "index": "products" },
+      { "name": "my-bing",   "instance_name": "docs-config" },
+      { "name": "my-a2a" }
     ]
   }
 
@@ -28,15 +30,20 @@ Equivalent YAML:
     - name: my-mcp
     - name: my-search
       index: products
+    - name: my-bing
+      instance_name: docs-config
+    - name: my-a2a
 
 Fields:
-  description   Optional. Stored on the initial toolbox version.
-  connections   Required. List of existing project connections to attach.
-                Each entry needs 'name' (the project connection short name).
-                'index' is required only for CognitiveSearch connections and
-                is the search index name inside that service.
-                Supported connection categories: RemoteTool (MCP),
-                CognitiveSearch (Azure AI Search).
+  description     Optional. Stored on the initial toolbox version.
+  connections     Required. List of existing project connections to attach.
+                  Each entry needs 'name' (the project connection short name).
+                  'index' is required only for CognitiveSearch connections.
+                  'instance_name' is required only for
+                  GroundingWithCustomSearch connections.
+                  Supported connection categories: RemoteTool (MCP),
+                  CognitiveSearch (Azure AI Search), RemoteA2A,
+                  GroundingWithCustomSearch.
 
 Project connections must already exist on the Foundry project; this command
 does not create them. Run 'azd ai agent connection list' to see available
@@ -48,7 +55,9 @@ connections.`
   {
     "connections": [
       { "name": "my-mcp" },
-      { "name": "my-search", "index": "products" }
+      { "name": "my-search", "index": "products" },
+      { "name": "my-bing",   "instance_name": "docs-config" },
+      { "name": "my-a2a" }
     ]
   }
 
@@ -58,14 +67,19 @@ Equivalent YAML:
     - name: my-mcp
     - name: my-search
       index: products
+    - name: my-bing
+      instance_name: docs-config
+    - name: my-a2a
 
 Fields:
-  connections   Required. List of existing project connections to attach.
-                Each entry needs 'name' (the project connection short name).
-                'index' is required only for CognitiveSearch connections and
-                is the search index name inside that service.
-                Supported connection categories: RemoteTool (MCP),
-                CognitiveSearch (Azure AI Search).
+  connections     Required. List of existing project connections to attach.
+                  Each entry needs 'name' (the project connection short name).
+                  'index' is required only for CognitiveSearch connections.
+                  'instance_name' is required only for
+                  GroundingWithCustomSearch connections.
+                  Supported connection categories: RemoteTool (MCP),
+                  CognitiveSearch (Azure AI Search), RemoteA2A,
+                  GroundingWithCustomSearch.
 
 The toolbox's existing description is carried forward unchanged; use
 'azd ai toolbox update' to change it.

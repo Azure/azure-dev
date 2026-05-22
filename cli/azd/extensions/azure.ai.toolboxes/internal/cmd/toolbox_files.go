@@ -18,9 +18,11 @@ import (
 
 // toolboxConnectionSpec is one connection-backed tool input.
 // For CognitiveSearch connections, Index is required.
+// For GroundingWithCustomSearch connections, InstanceName is required.
 type toolboxConnectionSpec struct {
-	Name  string `json:"name" yaml:"name"`
-	Index string `json:"index,omitempty" yaml:"index,omitempty"`
+	Name         string `json:"name" yaml:"name"`
+	Index        string `json:"index,omitempty" yaml:"index,omitempty"`
+	InstanceName string `json:"instance_name,omitempty" yaml:"instance_name,omitempty"`
 }
 
 // toolboxToolsFile is the file shape for `toolbox connection add --from-file`.

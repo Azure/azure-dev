@@ -187,7 +187,7 @@ func resolveConnectionSpecs(
 		if err != nil {
 			return nil, err
 		}
-		entry, err := buildToolEntry(conn, spec.Index)
+		entry, err := buildToolEntry(conn, spec.Index, spec.InstanceName)
 		if err != nil {
 			return nil, err
 		}

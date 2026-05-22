@@ -451,7 +451,7 @@ func TestBuildToolEntry_RejectsInvalidName(t *testing.T) {
 		Category: connections.ConnectionTypeRemoteTool,
 		Name:     "tools.v1", // dot is not in ^[A-Za-z0-9_-]+$
 		Target:   "https://mcp",
-	}, "")
+	}, "", "")
 	le := requireLocalError(t, err, exterrors.CodeInvalidToolboxName)
 	assert.Contains(t, le.Message, "tool entry name")
 	assert.Contains(t, le.Message, "tools.v1")

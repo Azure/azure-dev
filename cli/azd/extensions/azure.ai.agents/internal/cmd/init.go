@@ -2087,10 +2087,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		"\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n",
 		a.serviceNameOverride,
 	)
-	if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: a.environment.Name,
-		Key:     "AZURE_AI_PROJECT_ID",
-	}); projectID != nil && projectID.Value != "" && !a.needsProvision {
+	if a.initCompletionNeedsDeploy(ctx) {
 		fmt.Printf("To deploy your agent, use %s.\n",
 			color.HiBlueString("azd deploy %s", a.serviceNameOverride))
 	} else {
@@ -2100,6 +2097,21 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		)
 	}
 	return nil
+}
+
+// initCompletionNeedsDeploy returns true when the user only needs to run
+// "azd deploy <service>" (i.e. infrastructure is already provisioned and no
+// new model deployments were requested). When false, the user should run
+// "azd up" to provision and deploy.
+func (a *InitAction) initCompletionNeedsDeploy(ctx context.Context) bool {
+	if a.needsProvision {
+		return false
+	}
+	projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: a.environment.Name,
+		Key:     "AZURE_AI_PROJECT_ID",
+	})
+	return projectID != nil && projectID.Value != ""
 }
 
 // resolveCollisions checks whether the auto-computed target directory or

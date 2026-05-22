@@ -2282,3 +2282,62 @@ func TestDownloadAgentYaml_NoPromptManifestInSrcWithoutForce(t *testing.T) {
 		t.Errorf("suggestion should mention --force, got: %s", localErr.Suggestion)
 	}
 }
+
+func TestInitCompletionNeedsDeploy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		needsProvision bool
+		projectID      string // empty means AZURE_AI_PROJECT_ID is not set
+		want           bool
+	}{
+		{
+			name:           "existing project, no new deployments → deploy only",
+			needsProvision: false,
+			projectID:      "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/proj",
+			want:           true,
+		},
+		{
+			name:           "existing project, new model deployed → needs provision",
+			needsProvision: true,
+			projectID:      "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/proj",
+			want:           false,
+		},
+		{
+			name:           "no project set → needs provision",
+			needsProvision: false,
+			projectID:      "",
+			want:           false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			envName := "test-env"
+			envServer := &testEnvironmentServiceServer{
+				values: map[string]map[string]string{},
+			}
+			if tt.projectID != "" {
+				envServer.values[envName] = map[string]string{
+					"AZURE_AI_PROJECT_ID": tt.projectID,
+				}
+			}
+
+			azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+			action := &InitAction{
+				azdClient:      azdClient,
+				needsProvision: tt.needsProvision,
+				environment:    &azdext.Environment{Name: envName},
+			}
+
+			got := action.initCompletionNeedsDeploy(t.Context())
+			if got != tt.want {
+				t.Errorf("initCompletionNeedsDeploy() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

@@ -922,6 +922,22 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+	// ExtensionDependencyOf is the identifier of the parent extension that
+	// triggered this dependency upgrade. Present only on the child span.
+	ExtensionDependencyOf = AttributeKey{
+		Key:            attribute.Key("extension.dependency_of"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionDependencyUpgradeCount is the recursive count of dependency
+	// upgrades performed as part of upgrading this extension, including
+	// transitive dependencies of dependencies.
+	ExtensionDependencyUpgradeCount = AttributeKey{
+		Key:            attribute.Key("extension.dependency_upgrade_count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
 )
 
 // Update related fields

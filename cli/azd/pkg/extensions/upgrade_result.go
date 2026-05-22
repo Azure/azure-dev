@@ -57,20 +57,25 @@ type UpgradeResult struct {
 	Error error
 	// SkipReason describes why the extension was skipped (e.g., "already up to date").
 	SkipReason string
+	// DependencyUpgrades captures upgrade results for dependent extensions
+	// that were upgraded as a side effect of upgrading this extension. Empty
+	// for leaf extensions or when --no-dependency-upgrades is set.
+	DependencyUpgrades []UpgradeResult
 }
 
 // upgradeResultJSON is the JSON serialization format for UpgradeResult.
 // Field names are part of the public --output json contract.
 // Changes to field names or removal of fields is a breaking change.
 type upgradeResultJSON struct {
-	Name        string `json:"name"`
-	Status      string `json:"status"`
-	FromVersion string `json:"fromVersion,omitempty"`
-	ToVersion   string `json:"toVersion,omitempty"`
-	FromSource  string `json:"fromSource,omitempty"`
-	ToSource    string `json:"toSource,omitempty"`
-	SkipReason  string `json:"skipReason,omitempty"`
-	Error       string `json:"error,omitempty"`
+	Name               string          `json:"name"`
+	Status             string          `json:"status"`
+	FromVersion        string          `json:"fromVersion,omitempty"`
+	ToVersion          string          `json:"toVersion,omitempty"`
+	FromSource         string          `json:"fromSource,omitempty"`
+	ToSource           string          `json:"toSource,omitempty"`
+	SkipReason         string          `json:"skipReason,omitempty"`
+	Error              string          `json:"error,omitempty"`
+	DependencyUpgrades []UpgradeResult `json:"dependencyUpgrades,omitempty"`
 }
 
 // MarshalJSON serializes UpgradeResult to JSON for --output json.
@@ -78,13 +83,14 @@ type upgradeResultJSON struct {
 // by design (via ErrorWithSuggestion and error_suggestions.yaml pipeline).
 func (r UpgradeResult) MarshalJSON() ([]byte, error) {
 	j := upgradeResultJSON{
-		Name:        r.ExtensionId,
-		Status:      r.Status.String(),
-		FromVersion: r.FromVersion,
-		ToVersion:   r.ToVersion,
-		FromSource:  r.FromSource,
-		ToSource:    r.ToSource,
-		SkipReason:  r.SkipReason,
+		Name:               r.ExtensionId,
+		Status:             r.Status.String(),
+		FromVersion:        r.FromVersion,
+		ToVersion:          r.ToVersion,
+		FromSource:         r.FromSource,
+		ToSource:           r.ToSource,
+		SkipReason:         r.SkipReason,
+		DependencyUpgrades: r.DependencyUpgrades,
 	}
 	if r.Error != nil {
 		j.Error = r.Error.Error()
@@ -93,15 +99,23 @@ func (r UpgradeResult) MarshalJSON() ([]byte, error) {
 }
 
 // UpgradeSummary holds aggregate counts from a batch upgrade operation.
+// DependencyUpgrades is the recursive count of dependency-upgrade entries
+// and is reported as a separate counter so existing consumers continue
+// to see Upgraded as the top-level upgrade count.
 type UpgradeSummary struct {
-	Total    int `json:"total"`
-	Upgraded int `json:"upgraded"`
-	Skipped  int `json:"skipped"`
-	Promoted int `json:"promoted"`
-	Failed   int `json:"failed"`
+	Total              int `json:"total"`
+	Upgraded           int `json:"upgraded"`
+	Skipped            int `json:"skipped"`
+	Promoted           int `json:"promoted"`
+	Failed             int `json:"failed"`
+	DependencyUpgrades int `json:"dependencyUpgrades,omitempty"`
 }
 
 // NewUpgradeSummary computes aggregate counts from a slice of UpgradeResult.
+// Top-level Upgraded/Skipped/Promoted/Failed counters reflect only the
+// top-level entries. DependencyUpgrades counts every dependency-upgrade
+// entry recursively, regardless of its status, so callers can surface how
+// much extra work the dependency-upgrade flow performed.
 func NewUpgradeSummary(results []UpgradeResult) UpgradeSummary {
 	s := UpgradeSummary{Total: len(results)}
 	for i := range results {
@@ -115,8 +129,22 @@ func NewUpgradeSummary(results []UpgradeResult) UpgradeSummary {
 		case UpgradeStatusFailed:
 			s.Failed++
 		}
+		s.DependencyUpgrades += CountDependencyUpgrades(results[i].DependencyUpgrades)
 	}
 	return s
+}
+
+// CountDependencyUpgrades returns the recursive count of every entry in the
+// dependency-upgrade tree rooted at the supplied slice. Useful for telemetry
+// attributes and summary counters that should reflect total dependency work,
+// not just direct children.
+func CountDependencyUpgrades(results []UpgradeResult) int {
+	n := 0
+	for i := range results {
+		n++
+		n += CountDependencyUpgrades(results[i].DependencyUpgrades)
+	}
+	return n
 }
 
 // UpgradeReport is the top-level JSON structure for batch upgrade output.

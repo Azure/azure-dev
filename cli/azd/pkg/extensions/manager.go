@@ -19,7 +19,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -68,6 +67,84 @@ type FilterOptions struct {
 type sourceFilterPredicate func(config *SourceConfig) bool
 type extensionFilterPredicate func(extension *ExtensionMetadata) bool
 
+// matchesVersionConstraint reports whether candidate satisfies expr.
+//
+// expr may be:
+//   - An empty string or "latest", which matches any candidate.
+//   - A semver constraint expression (e.g. ">=0.1.0", "^0.1", "~0.1.0-preview",
+//     ">=1.0.0,<2.0.0"). When expr parses as a constraint and candidate parses
+//     as a semver version, the constraint check determines the result.
+//   - An exact version tag. If either expr fails to parse as a constraint or
+//     candidate fails to parse as a semver version, the function falls back to
+//     a case-insensitive string comparison so non-semver tags such as "dev" or
+//     "nightly" continue to work.
+func matchesVersionConstraint(expr, candidate string) bool {
+	if expr == "" || strings.EqualFold(expr, "latest") {
+		return true
+	}
+
+	constraint, err := semver.NewConstraint(expr)
+	if err != nil {
+		return strings.EqualFold(expr, candidate)
+	}
+
+	parsedVersion, err := semver.NewVersion(candidate)
+	if err != nil {
+		return strings.EqualFold(expr, candidate)
+	}
+
+	return constraint.Check(parsedVersion)
+}
+
+// bestSatisfyingVersion returns the highest published version satisfying
+// expr from the provided versions slice. Returns (nil, nil) when no
+// published version satisfies the constraint. Returns (nil, err) only when
+// expr fails to parse as a semver constraint AND no candidate matches
+// expr literally — for non-semver tags this falls back to exact match.
+func bestSatisfyingVersion(expr string, versions []ExtensionVersion) (*ExtensionVersion, error) {
+	if len(versions) == 0 {
+		return nil, nil
+	}
+
+	// "" or "latest" → just return the LatestVersion (which already handles
+	// the semver-vs-non-semver ordering used elsewhere in the package).
+	if expr == "" || strings.EqualFold(expr, "latest") {
+		return LatestVersion(versions), nil
+	}
+
+	constraint, err := semver.NewConstraint(expr)
+	if err != nil {
+		// Non-semver expression: fall back to exact-match against any
+		// candidate tag.
+		for i := range versions {
+			if strings.EqualFold(versions[i].Version, expr) {
+				return &versions[i], nil
+			}
+		}
+		return nil, nil
+	}
+
+	var best *semver.Version
+	var bestIdx int
+	for i := range versions {
+		v, err := semver.NewVersion(versions[i].Version)
+		if err != nil {
+			continue
+		}
+		if !constraint.Check(v) {
+			continue
+		}
+		if best == nil || v.GreaterThan(best) {
+			best = v
+			bestIdx = i
+		}
+	}
+	if best == nil {
+		return nil, nil
+	}
+	return &versions[bestIdx], nil
+}
+
 // createExtensionFilter creates a comprehensive filter that checks ALL criteria with AND logic
 func createExtensionFilter(options *FilterOptions) extensionFilterPredicate {
 	return func(extension *ExtensionMetadata) bool {
@@ -85,10 +162,12 @@ func createExtensionFilter(options *FilterOptions) extensionFilterPredicate {
 			}
 		}
 
-		// Check Version filter - extension must have the specified version
+		// Check Version filter - extension must have at least one version satisfying the expression.
+		// The expression may be an exact version, a semver constraint (e.g. ">=0.1.0", "^0.1",
+		// "~0.1.0-preview"), an empty string, or "latest". See matchesVersionConstraint for details.
 		if options.Version != "" && options.Version != "latest" {
 			hasVersion := slices.ContainsFunc(extension.Versions, func(version ExtensionVersion) bool {
-				return strings.EqualFold(version.Version, options.Version)
+				return matchesVersionConstraint(options.Version, version.Version)
 			})
 			if !hasVersion {
 				return false
@@ -313,10 +392,35 @@ func (m *Manager) Install(
 	ctx context.Context,
 	extension *ExtensionMetadata,
 	versionPreference string,
+) (*ExtensionVersion, error) {
+	return m.installInternal(ctx, extension, versionPreference, map[string]struct{}{})
+}
+
+// installInternal performs the actual install work and recurses through the
+// dependency list. The visited map is shared across the recursive call chain
+// and contains every extension id currently in flight; this prevents
+// unbounded recursion when a registry declares a dependency cycle
+// (e.g. A → B → A) where the cycle would otherwise loop because the parent's
+// installed-config record is not written until after its dependencies have
+// finished installing.
+func (m *Manager) installInternal(
+	ctx context.Context,
+	extension *ExtensionMetadata,
+	versionPreference string,
+	visited map[string]struct{},
 ) (extVersion *ExtensionVersion, err error) {
 	if extension == nil {
 		return nil, fmt.Errorf("extension metadata cannot be nil")
 	}
+
+	if _, inFlight := visited[extension.Id]; inFlight {
+		return nil, fmt.Errorf(
+			"dependency cycle detected involving extension %s",
+			extension.Id,
+		)
+	}
+	visited[extension.Id] = struct{}{}
+	defer delete(visited, extension.Id)
 
 	ctx, span := tracing.Start(ctx, events.ExtensionInstallEvent)
 	// Set the extension id immediately so failure spans can be correlated to the
@@ -331,52 +435,23 @@ func (m *Manager) Install(
 		return nil, fmt.Errorf("%s %w", extension.Id, ErrExtensionInstalled)
 	}
 
-	// Step 1: Determine the version to install
-	var selectedVersion *ExtensionVersion
-
-	if versionPreference == "" || versionPreference == "latest" {
-		selectedVersion = LatestVersion(extension.Versions)
-	} else {
-		// Find the best match for the version constraint
-		availableVersions := []*semver.Version{}
-		availableVersionMap := map[*semver.Version]*ExtensionVersion{}
-
-		for i, extensionVersion := range extension.Versions {
-			version, err := semver.NewVersion(extensionVersion.Version)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse version: %w", err)
-			}
-
-			availableVersionMap[version] = &extension.Versions[i]
-			availableVersions = append(availableVersions, version)
-		}
-
-		sort.Sort(semver.Collection(availableVersions))
-
-		constraint, err := semver.NewConstraint(versionPreference)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse version constraint: %w", err)
-		}
-
-		var bestMatch *semver.Version
-		for _, v := range availableVersions {
-			if constraint.Check(v) {
-				bestMatch = v
-			}
-		}
-
-		if bestMatch == nil {
-			return nil, fmt.Errorf(
-				"no matching version found for extension: %s and constraint: %s",
-				extension.Id, versionPreference,
-			)
-		}
-
-		selectedVersion = availableVersionMap[bestMatch]
+	// Resolve the version to install. Empty or "latest" → latest published;
+	// otherwise pick the highest published version satisfying the
+	// (possibly semver-constraint-shaped) preference. bestSatisfyingVersion
+	// also handles non-semver exact-match tags ("dev", "nightly") so the
+	// behavior matches createExtensionFilter.
+	selectedVersion, err := bestSatisfyingVersion(versionPreference, extension.Versions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve version for %s: %w", extension.Id, err)
 	}
-
 	if selectedVersion == nil {
-		return nil, fmt.Errorf("no compatible version found for extension: %s", extension.Id)
+		if versionPreference == "" || strings.EqualFold(versionPreference, "latest") {
+			return nil, fmt.Errorf("no compatible version found for extension: %s", extension.Id)
+		}
+		return nil, fmt.Errorf(
+			"no matching version found for extension: %s and constraint: %s",
+			extension.Id, versionPreference,
+		)
 	}
 
 	// Record the resolved version on the span so failures during install
@@ -414,7 +489,7 @@ func (m *Manager) Install(
 
 			dependencyMetadata := dependencyMatches[0]
 
-			if _, err := m.Install(ctx, dependencyMetadata, dependency.Version); err != nil {
+			if _, err := m.installInternal(ctx, dependencyMetadata, dependency.Version, visited); err != nil {
 				if !errors.Is(err, ErrExtensionInstalled) {
 					return nil, fmt.Errorf("failed to install dependency: %w", err)
 				}
@@ -602,28 +677,280 @@ func (m *Manager) Uninstall(id string) error {
 	return nil
 }
 
-// Upgrade upgrades the extension to the specified version
-// This is a convenience method that uninstalls the existing extension and installs the new version
-// If the version is not specified, the latest version is installed
+// UpgradeOptions controls how Manager.Upgrade behaves.
+type UpgradeOptions struct {
+	// VersionPreference is the version constraint or exact tag to install.
+	// Empty or "latest" selects the highest available version.
+	VersionPreference string
+	// UpgradeDependencies controls whether installed dependencies whose
+	// versions are behind the upgraded extension's declared constraints are
+	// also upgraded. Defaults to true when constructed via
+	// DefaultUpgradeOptions.
+	UpgradeDependencies bool
+}
+
+// DefaultUpgradeOptions returns UpgradeOptions with UpgradeDependencies
+// enabled and the supplied version preference.
+func DefaultUpgradeOptions(versionPreference string) UpgradeOptions {
+	return UpgradeOptions{
+		VersionPreference:   versionPreference,
+		UpgradeDependencies: true,
+	}
+}
+
+// Upgrade upgrades the extension to the specified version.
+// This is a convenience method that uninstalls the existing extension and installs the new version.
+// If opts.VersionPreference is empty or "latest", the latest version is installed.
+//
+// When opts.UpgradeDependencies is true and the upgraded version declares
+// dependencies, any installed dependency that is not already at the highest
+// version satisfying the declared constraint is recursively upgraded. The
+// returned slice contains one entry per dependency upgrade attempt and is
+// ordered to match the parent's dependency list. Dependencies not installed,
+// at the highest matching version, or with an empty constraint are skipped
+// silently and do not appear in the returned slice.
 func (m *Manager) Upgrade(
 	ctx context.Context,
 	extension *ExtensionMetadata,
-	versionPreference string,
-) (*ExtensionVersion, error) {
+	opts UpgradeOptions,
+) (*ExtensionVersion, []UpgradeResult, error) {
 	if extension == nil {
-		return nil, fmt.Errorf("extension metadata cannot be nil")
+		return nil, nil, fmt.Errorf("extension metadata cannot be nil")
 	}
 
+	visited := map[string]struct{}{extension.Id: {}}
+	return m.upgradeInternal(ctx, extension, opts, visited)
+}
+
+// upgradeInternal performs the uninstall+reinstall and, when
+// opts.UpgradeDependencies is true, recursively upgrades outdated
+// dependencies. visited prevents infinite recursion in the presence of
+// dependency cycles; an id present in visited is treated as
+// already-processed and is not upgraded again.
+func (m *Manager) upgradeInternal(
+	ctx context.Context,
+	extension *ExtensionMetadata,
+	opts UpgradeOptions,
+	visited map[string]struct{},
+) (*ExtensionVersion, []UpgradeResult, error) {
 	if err := m.Uninstall(extension.Id); err != nil {
-		return nil, fmt.Errorf("failed to uninstall extension: %w", err)
+		return nil, nil, fmt.Errorf("failed to uninstall extension: %w", err)
 	}
 
-	extensionVersion, err := m.Install(ctx, extension, versionPreference)
+	extensionVersion, err := m.Install(ctx, extension, opts.VersionPreference)
 	if err != nil {
-		return nil, fmt.Errorf("failed to install extension: %w", err)
+		return nil, nil, fmt.Errorf("failed to install extension: %w", err)
 	}
 
-	return extensionVersion, nil
+	if extensionVersion == nil || len(extensionVersion.Dependencies) == 0 {
+		return extensionVersion, nil, nil
+	}
+
+	depUpgrades := m.evaluateDependencyChanges(ctx, extension, extensionVersion, opts, visited)
+	return extensionVersion, depUpgrades, nil
+}
+
+// evaluateDependencyChanges walks the upgraded parent's declared dependencies
+// and decides per child:
+//   - empty dep.Version, child not installed, or installed version is already
+//     the highest satisfying the constraint → no entry returned.
+//   - opts.UpgradeDependencies is true → recursively upgrade the child and
+//     append an UpgradeStatusUpgraded (or Failed) entry.
+//   - opts.UpgradeDependencies is false → append an UpgradeStatusSkipped
+//     entry with a SkipReason so the user sees what would have happened
+//     with automatic dependency upgrades enabled.
+//   - constraint not satisfied but another sibling has already pinned the
+//     child (id in visited) → append an UpgradeStatusFailed entry describing
+//     the constraint conflict, rather than silently leaving a child at a
+//     version the upgraded parent does not allow.
+//
+// Children already present in visited that DO satisfy the parent's constraint
+// are skipped silently — a sibling upgrade has already taken care of them.
+func (m *Manager) evaluateDependencyChanges(
+	ctx context.Context,
+	parentExtension *ExtensionMetadata,
+	parentVersion *ExtensionVersion,
+	opts UpgradeOptions,
+	visited map[string]struct{},
+) []UpgradeResult {
+	var results []UpgradeResult
+
+	for _, dep := range parentVersion.Dependencies {
+		if dep.Version == "" {
+			continue
+		}
+
+		installed, err := m.GetInstalled(FilterOptions{Id: dep.Id})
+		if err != nil || installed == nil {
+			// Not installed — handled by the parent's Install dep loop.
+			continue
+		}
+
+		// If a sibling upgrade ran first and this child is already in the
+		// visited set, respect the sibling's choice when compatible.
+		// Otherwise surface a conflict — both parents can't both win.
+		if _, seen := visited[dep.Id]; seen {
+			if matchesVersionConstraint(dep.Version, installed.Version) {
+				continue
+			}
+			conflictErr := fmt.Errorf(
+				"constraint conflict for %s: %s requires %q but another "+
+					"dependency already pinned it to %s",
+				dep.Id, parentExtension.Id, dep.Version, installed.Version,
+			)
+			results = append(results, UpgradeResult{
+				ExtensionId: dep.Id,
+				Status:      UpgradeStatusFailed,
+				FromVersion: installed.Version,
+				FromSource:  installed.Source,
+				Error:       conflictErr,
+			})
+			continue
+		}
+
+		// Resolve the highest published version satisfying the parent's
+		// constraint. Dependency upgrades use "upgrade-to-best-match"
+		// semantics (same as npm/yarn), not just "fix-if-violating", so a
+		// child whose installed version still satisfies the constraint but
+		// is behind a newer matching version is upgraded too.
+		childMetadata, findErr := m.findDependencyChild(ctx, parentExtension, dep.Id)
+		if findErr != nil {
+			// Fall back to the constraint-only check: only flag a
+			// failure when the installed version actually violates the
+			// constraint. Otherwise leave the child alone — we can't
+			// improve on what's installed without the registry data.
+			if matchesVersionConstraint(dep.Version, installed.Version) {
+				continue
+			}
+			results = append(results, UpgradeResult{
+				ExtensionId: dep.Id,
+				Status:      UpgradeStatusFailed,
+				FromVersion: installed.Version,
+				FromSource:  installed.Source,
+				Error:       findErr,
+			})
+			continue
+		}
+
+		bestVersion, bestErr := bestSatisfyingVersion(dep.Version, childMetadata.Versions)
+		if bestErr != nil || bestVersion == nil {
+			// Constraint matches no published version. If the installed
+			// version still satisfies the constraint there's nothing to
+			// do; otherwise surface as a failure.
+			if matchesVersionConstraint(dep.Version, installed.Version) {
+				continue
+			}
+			err := bestErr
+			if err == nil {
+				err = fmt.Errorf(
+					"no published version of %s satisfies constraint %q",
+					dep.Id, dep.Version,
+				)
+			}
+			results = append(results, UpgradeResult{
+				ExtensionId: dep.Id,
+				Status:      UpgradeStatusFailed,
+				FromVersion: installed.Version,
+				FromSource:  installed.Source,
+				Error:       err,
+			})
+			continue
+		}
+
+		// Already at the highest matching version — nothing to do.
+		if bestVersion.Version == installed.Version {
+			continue
+		}
+
+		// Dependency upgrades disabled — surface as a Skipped entry so the
+		// user sees which children would otherwise be upgraded.
+		if !opts.UpgradeDependencies {
+			results = append(results, UpgradeResult{
+				ExtensionId: dep.Id,
+				Status:      UpgradeStatusSkipped,
+				FromVersion: installed.Version,
+				FromSource:  installed.Source,
+				SkipReason: fmt.Sprintf(
+					"automatic dependency upgrade disabled (newer matching version %s available)",
+					bestVersion.Version,
+				),
+			})
+			continue
+		}
+
+		visited[dep.Id] = struct{}{}
+
+		childResult := UpgradeResult{
+			ExtensionId: dep.Id,
+			FromVersion: installed.Version,
+			FromSource:  installed.Source,
+		}
+
+		// Emit a child span tagged with dependency_of so downstream telemetry
+		// can correlate this upgrade with its triggering parent.
+		childCtx, span := tracing.Start(ctx, events.ExtensionUpgradeEvent)
+		span.SetAttributes(
+			fields.ExtensionId.String(dep.Id),
+			fields.ExtensionDependencyOf.String(parentExtension.Id),
+		)
+
+		childOpts := UpgradeOptions{
+			VersionPreference:   dep.Version,
+			UpgradeDependencies: opts.UpgradeDependencies,
+		}
+
+		childVersion, nested, upErr := m.upgradeInternal(childCtx, childMetadata, childOpts, visited)
+		if upErr != nil {
+			childResult.Status = UpgradeStatusFailed
+			childResult.Error = upErr
+			span.EndWithStatus(upErr)
+			results = append(results, childResult)
+			continue
+		}
+
+		childResult.Status = UpgradeStatusUpgraded
+		childResult.ToVersion = childVersion.Version
+		childResult.ToSource = childMetadata.Source
+		childResult.DependencyUpgrades = nested
+		span.SetAttributes(
+			fields.ExtensionVersionFrom.String(installed.Version),
+			fields.ExtensionVersionTo.String(childVersion.Version),
+			fields.ExtensionSource.String(childMetadata.Source),
+		)
+		span.EndWithStatus(nil)
+		results = append(results, childResult)
+	}
+
+	return results
+}
+
+// findDependencyChild locates the child extension metadata to use for a
+// dependency upgrade. It prefers the parent's source but falls back to any
+// source if the child is not present in the parent's source.
+func (m *Manager) findDependencyChild(
+	ctx context.Context,
+	parent *ExtensionMetadata,
+	childId string,
+) (*ExtensionMetadata, error) {
+	opts := &FilterOptions{Id: childId, Source: parent.Source}
+	matches, err := m.FindExtensions(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find dependency %s: %w", childId, err)
+	}
+	if len(matches) == 0 {
+		// Fall back to any source
+		matches, err = m.FindExtensions(ctx, &FilterOptions{Id: childId})
+		if err != nil {
+			return nil, fmt.Errorf("failed to find dependency %s: %w", childId, err)
+		}
+	}
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("dependency %s not found in any registry", childId)
+	}
+	if len(matches) > 1 {
+		return nil, fmt.Errorf("dependency %s found in multiple sources, specify exact source", childId)
+	}
+	return matches[0], nil
 }
 
 // Helper function to find the artifact for the current OS

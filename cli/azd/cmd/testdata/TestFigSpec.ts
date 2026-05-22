@@ -3486,6 +3486,10 @@ const completionSpec: Fig.Spec = {
 							description: 'Upgrade all installed extensions',
 						},
 						{
+							name: ['--no-dependency-upgrades'],
+							description: 'Do not upgrade dependencies when upgrading an extension that has dependencies',
+						},
+						{
 							name: ['--source', '-s'],
 							description: 'The extension source to use for upgrades',
 							args: [

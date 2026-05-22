@@ -296,6 +296,159 @@ func Test_Install_With_SemverConstraints(t *testing.T) {
 	}
 }
 
+func Test_MatchesVersionConstraint(t *testing.T) {
+	testCases := []struct {
+		Name      string
+		Expr      string
+		Candidate string
+		Want      bool
+	}{
+		{Name: "empty matches any", Expr: "", Candidate: "0.1.0", Want: true},
+		{Name: "latest matches any", Expr: "latest", Candidate: "0.1.0", Want: true},
+		{Name: "Latest case-insensitive", Expr: "Latest", Candidate: "9.9.9-rc1", Want: true},
+		{Name: "exact pin match", Expr: "0.1.31-preview", Candidate: "0.1.31-preview", Want: true},
+		{Name: "exact pin miss", Expr: "0.1.31-preview", Candidate: "0.1.32-preview", Want: false},
+		{Name: "ge matches base", Expr: ">=0.1.0", Candidate: "0.1.0", Want: true},
+		// Pre-release versions are only matched by constraints that explicitly include a
+		// pre-release tag on the lower bound (Masterminds/semver semantics).
+		{Name: "ge does not match pre-release", Expr: ">=0.1.0", Candidate: "0.1.31-preview", Want: false},
+		{
+			Name:      "ge with preview lower bound matches pre-release",
+			Expr:      ">=0.1.0-0",
+			Candidate: "0.1.31-preview",
+			Want:      true,
+		},
+		{Name: "ge matches higher major", Expr: ">=0.1.0", Candidate: "1.0.0", Want: true},
+		{Name: "range matches in-range", Expr: ">=1.0.0,<2.0.0", Candidate: "1.5.0", Want: true},
+		{Name: "range rejects below", Expr: ">=1.0.0,<2.0.0", Candidate: "0.9.0", Want: false},
+		{Name: "range rejects upper bound", Expr: ">=1.0.0,<2.0.0", Candidate: "2.0.0", Want: false},
+		{Name: "caret matches pre-release within range", Expr: "^0.1.0-0", Candidate: "0.1.31-preview", Want: true},
+		{Name: "caret rejects next minor", Expr: "^0.1", Candidate: "0.2.0", Want: false},
+		{Name: "tilde matches pre-release within range", Expr: "~0.1.0-preview", Candidate: "0.1.31-preview", Want: true},
+		{Name: "tilde rejects next minor", Expr: "~0.1.0-preview", Candidate: "0.2.0", Want: false},
+		{Name: "unparseable expr falls back to exact match", Expr: "dev", Candidate: "dev", Want: true},
+		{
+			Name:      "unparseable expr fallback case-insensitive",
+			Expr:      "Nightly",
+			Candidate: "nightly",
+			Want:      true,
+		},
+		{Name: "unparseable expr no match", Expr: "dev", Candidate: "0.1.0", Want: false},
+		{
+			Name:      "non-semver candidate falls back to exact",
+			Expr:      ">=0.1.0",
+			Candidate: "nightly",
+			Want:      false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			got := matchesVersionConstraint(tc.Expr, tc.Candidate)
+			require.Equal(t, tc.Want, got)
+		})
+	}
+}
+
+func Test_CreateExtensionFilter_VersionConstraints(t *testing.T) {
+	ext := &ExtensionMetadata{
+		Id: "test.constraints",
+		Versions: []ExtensionVersion{
+			{Version: "0.1.0"},
+			{Version: "0.1.31-preview"},
+			{Version: "1.0.0"},
+			{Version: "1.5.0"},
+			{Version: "2.0.0"},
+		},
+	}
+
+	testCases := []struct {
+		Name    string
+		Version string
+		Match   bool
+	}{
+		{Name: "empty matches", Version: "", Match: true},
+		{Name: "latest matches", Version: "latest", Match: true},
+		{Name: "exact pin", Version: "0.1.31-preview", Match: true},
+		{Name: "ge across versions", Version: ">=0.1.0", Match: true},
+		{Name: "range matches 1.5.0", Version: ">=1.0.0,<2.0.0", Match: true},
+		{Name: "caret 0.1 with preview lower bound", Version: "^0.1.0-0", Match: true},
+		{Name: "tilde preview", Version: "~0.1.0-preview", Match: true},
+		{Name: "unparseable matches none", Version: "dev", Match: false},
+		{Name: "constraint matches nothing", Version: ">=99.0.0", Match: false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			filter := createExtensionFilter(&FilterOptions{Version: tc.Version})
+			require.Equal(t, tc.Match, filter(ext))
+		})
+	}
+}
+
+func Test_Install_PackDependency_SemverConstraint(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	packRegistry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id:          "test.pack",
+				Namespace:   "test",
+				DisplayName: "Test Pack",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "test.dependency", Version: ">=0.1.0-0"},
+						},
+					},
+				},
+			},
+			{
+				Id:          "test.dependency",
+				Namespace:   "test",
+				DisplayName: "Test Dependency",
+				Versions: []ExtensionVersion{
+					{Version: "0.1.0", Artifacts: sampleArtifacts},
+					{Version: "0.1.15-preview", Artifacts: sampleArtifacts},
+					{Version: "0.1.31-preview", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, packRegistry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	require.Len(t, packs, 1)
+
+	_, err = manager.Install(*mockContext.Context, packs[0], "")
+	require.NoError(t, err)
+
+	installed, err := manager.GetInstalled(FilterOptions{Id: "test.dependency"})
+	require.NoError(t, err)
+	require.NotNil(t, installed)
+	require.Equal(t, "0.1.31-preview", installed.Version)
+}
+
 func Test_DownloadArtifact_Remote(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 
@@ -1385,4 +1538,688 @@ func Test_CopyFromLocalPath_PathTraversal_Blocked(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Test_Upgrade_DependencyUpgrade verifies the dependency-upgrade decision matrix described in
+// the issue: parent upgrades trigger child upgrades only when the
+// declared dependency constraint is no longer satisfied by the installed
+// child version, and respect the UpgradeDependencies=false opt-out.
+func Test_Upgrade_DependencyUpgrade_TightenedConstraint(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id:          "test.pack",
+				Namespace:   "test",
+				DisplayName: "Test Pack",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "test.child", Version: "~1.0.0"},
+						},
+					},
+					{
+						Version: "2.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "test.child", Version: ">=2.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id:          "test.child",
+				Namespace:   "test",
+				DisplayName: "Test Child",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+					{Version: "2.0.0", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	// Install pack v1, which pulls in child v1 (constrained to ~1.0.0).
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	require.Len(t, packs, 1)
+	_, err = manager.Install(*mockContext.Context, packs[0], "1.0.0")
+	require.NoError(t, err)
+
+	installed, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	require.Equal(t, "1.0.0", installed.Version)
+
+	// Upgrade pack to v2 — child constraint is now >=2.0.0 so child
+	// must cascade-upgrade from 1.0.0 to 2.0.0.
+	packsV2, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	require.Len(t, packsV2, 1)
+
+	_, depUpgrades, err := manager.Upgrade(
+		*mockContext.Context,
+		packsV2[0],
+		DefaultUpgradeOptions("2.0.0"),
+	)
+	require.NoError(t, err)
+	require.Len(t, depUpgrades, 1)
+	require.Equal(t, "test.child", depUpgrades[0].ExtensionId)
+	require.Equal(t, UpgradeStatusUpgraded, depUpgrades[0].Status)
+	require.Equal(t, "1.0.0", depUpgrades[0].FromVersion)
+	require.Equal(t, "2.0.0", depUpgrades[0].ToVersion)
+
+	child, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	require.Equal(t, "2.0.0", child.Version)
+}
+
+func Test_Upgrade_DependencyUpgrade_ConstraintAlreadySatisfied(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "test.pack",
+				Versions: []ExtensionVersion{
+					{
+						Version: "2.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "test.child", Version: ">=1.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "test.child",
+				Versions: []ExtensionVersion{
+					{Version: "1.5.0", Artifacts: sampleArtifacts},
+					{Version: "2.0.0", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, packs[0], "")
+	require.NoError(t, err)
+
+	// Child should be at 2.0.0 (latest >=1.0.0).
+	child, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	require.Equal(t, "2.0.0", child.Version)
+
+	// Upgrading pack again with the same constraint should not cascade.
+	_, depUpgrades, err := manager.Upgrade(
+		*mockContext.Context,
+		packs[0],
+		DefaultUpgradeOptions(""),
+	)
+	require.NoError(t, err)
+	require.Empty(t, depUpgrades)
+}
+
+func Test_Upgrade_DependencyUpgrade_EmptyConstraint(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "test.pack",
+				Versions: []ExtensionVersion{
+					{
+						Version: "2.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "test.child"}, // empty constraint
+						},
+					},
+				},
+			},
+			{
+				Id: "test.child",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+					{Version: "9.9.9", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, packs[0], "")
+	require.NoError(t, err)
+
+	// Force the child to an older version to confirm cascade does NOT
+	// run when the parent's dependency constraint is empty.
+	_ = manager.Uninstall("test.child")
+	childMeta, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, childMeta[0], "1.0.0")
+	require.NoError(t, err)
+
+	_, depUpgrades, err := manager.Upgrade(
+		*mockContext.Context,
+		packs[0],
+		DefaultUpgradeOptions(""),
+	)
+	require.NoError(t, err)
+	require.Empty(t, depUpgrades)
+
+	child, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	require.Equal(t, "1.0.0", child.Version)
+}
+
+func Test_Upgrade_DependencyUpgrade_DisabledByOpts(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "test.pack",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "test.child", Version: "~1.0.0"},
+						},
+					},
+					{
+						Version: "2.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "test.child", Version: ">=2.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "test.child",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+					{Version: "2.0.0", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, packs[0], "1.0.0")
+	require.NoError(t, err)
+
+	_, depUpgrades, err := manager.Upgrade(
+		*mockContext.Context,
+		packs[0],
+		UpgradeOptions{VersionPreference: "2.0.0", UpgradeDependencies: false},
+	)
+	require.NoError(t, err)
+	// With cascade disabled, a child whose installed version no longer
+	// satisfies the new parent's constraint must surface as a Skipped
+	// entry so the user is not left with a silent constraint violation.
+	require.Len(t, depUpgrades, 1)
+	require.Equal(t, "test.child", depUpgrades[0].ExtensionId)
+	require.Equal(t, UpgradeStatusSkipped, depUpgrades[0].Status)
+	require.Equal(t, "1.0.0", depUpgrades[0].FromVersion)
+	require.Contains(t, depUpgrades[0].SkipReason, "automatic dependency upgrade disabled")
+
+	child, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	require.Equal(t, "1.0.0", child.Version, "child must remain at 1.0.0 when cascade disabled")
+}
+
+func Test_Upgrade_DependencyUpgrade_CycleGuard(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	// Registry shape avoids a cycle during initial Install (pack.b v1 has no
+	// dependency on pack.a) but introduces a cycle in the upgraded versions
+	// (pack.b v2 depends on pack.a). The cascade visited-set must prevent the
+	// upgraded pack.b from re-cascading back into pack.a.
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "pack.a",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "pack.b", Version: "~1.0.0"},
+						},
+					},
+					{
+						Version: "2.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "pack.b", Version: ">=2.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "pack.b",
+				Versions: []ExtensionVersion{
+					{
+						Version:   "1.0.0",
+						Artifacts: sampleArtifacts,
+					},
+					{
+						Version:   "2.0.0",
+						Artifacts: sampleArtifacts,
+						Dependencies: []ExtensionDependency{
+							{Id: "pack.a", Version: ">=1.0.0"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	// Bootstrap: install pack.a v1 → pulls in pack.b v1 (no transitive deps).
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "pack.a"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, packs[0], "1.0.0")
+	require.NoError(t, err)
+
+	// Upgrade pack.a — pack.b cascade-upgrades to v2 (which now declares
+	// pack.a as a dep). The cascade visited-set must skip pack.a inside
+	// pack.b's nested cascade rather than recurse back into it.
+	_, depUpgrades, err := manager.Upgrade(
+		*mockContext.Context,
+		packs[0],
+		DefaultUpgradeOptions("2.0.0"),
+	)
+	require.NoError(t, err)
+	require.Len(t, depUpgrades, 1)
+	require.Equal(t, "pack.b", depUpgrades[0].ExtensionId)
+	require.Equal(t, UpgradeStatusUpgraded, depUpgrades[0].Status)
+	require.Equal(t, "2.0.0", depUpgrades[0].ToVersion)
+	// pack.a is in the visited set, so pack.b's nested cascade must not
+	// re-upgrade it.
+	require.Empty(t, depUpgrades[0].DependencyUpgrades, "nested cascade must respect visited set")
+}
+
+func Test_Upgrade_DependencyUpgrade_NestedPacks(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "pack.a",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "pack.b", Version: "~1.0.0"},
+						},
+					},
+					{
+						Version: "2.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "pack.b", Version: ">=2.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "pack.b",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "leaf.c", Version: "~1.0.0"},
+						},
+					},
+					{
+						Version: "2.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "leaf.c", Version: ">=2.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "leaf.c",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+					{Version: "2.0.0", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	// Bootstrap: install A v1 → B v1 → C v1 (constraints pin each step to ~1.0.0).
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "pack.a"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, packs[0], "1.0.0")
+	require.NoError(t, err)
+
+	bInstalled, err := manager.GetInstalled(FilterOptions{Id: "pack.b"})
+	require.NoError(t, err)
+	require.Equal(t, "1.0.0", bInstalled.Version)
+	cInstalled, err := manager.GetInstalled(FilterOptions{Id: "leaf.c"})
+	require.NoError(t, err)
+	require.Equal(t, "1.0.0", cInstalled.Version)
+
+	// Upgrade A to v2 — should cascade to B v2 → C v2.
+	_, depUpgrades, err := manager.Upgrade(
+		*mockContext.Context,
+		packs[0],
+		DefaultUpgradeOptions("2.0.0"),
+	)
+	require.NoError(t, err)
+	require.Len(t, depUpgrades, 1)
+	require.Equal(t, "pack.b", depUpgrades[0].ExtensionId)
+	require.Equal(t, UpgradeStatusUpgraded, depUpgrades[0].Status)
+	require.Equal(t, "2.0.0", depUpgrades[0].ToVersion)
+	require.Len(t, depUpgrades[0].DependencyUpgrades, 1)
+	require.Equal(t, "leaf.c", depUpgrades[0].DependencyUpgrades[0].ExtensionId)
+	require.Equal(t, "2.0.0", depUpgrades[0].DependencyUpgrades[0].ToVersion)
+
+	bFinal, err := manager.GetInstalled(FilterOptions{Id: "pack.b"})
+	require.NoError(t, err)
+	require.Equal(t, "2.0.0", bFinal.Version)
+	cFinal, err := manager.GetInstalled(FilterOptions{Id: "leaf.c"})
+	require.NoError(t, err)
+	require.Equal(t, "2.0.0", cFinal.Version)
+}
+
+func Test_Install_DependencyCycle_Bounded(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	// Registry defines a true install-time cycle: A → B → A. Without an
+	// in-flight visited set, Install would recurse without bound because the
+	// parent's installed-config record is only written after dependencies
+	// finish installing, so ErrExtensionInstalled cannot short-circuit
+	// the cycle during the initial install.
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "pack.a",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "pack.b", Version: "1.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "pack.b",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "pack.a", Version: "1.0.0"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "pack.a"})
+	require.NoError(t, err)
+	require.Len(t, packs, 1)
+
+	// Install must terminate (not recurse forever) and surface a cycle error.
+	_, err = manager.Install(*mockContext.Context, packs[0], "1.0.0")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "dependency cycle detected")
+}
+
+func Test_Upgrade_DependencyUpgrade_ConstraintConflict(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	// Pack A v2 depends on { B: ">=2.0.0", C: ">=2.0.0" }.
+	// B v2 depends on { C: "~1.0.0" } — mutually unsatisfiable with A's
+	// constraint on C. Iteration upgrades B first, B's cascade pins C to
+	// 1.x to satisfy its own constraint, then A's cascade reaches C: the
+	// installed C now violates A's >=2.0.0 and C is already in the visited
+	// set. The cascade must surface this as a Failed entry rather than
+	// silently leaving C at a version A does not allow.
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "pack.a",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "pack.b", Version: "~1.0.0"},
+							{Id: "leaf.c", Version: "~0.9.0"},
+						},
+					},
+					{
+						Version: "2.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "pack.b", Version: ">=2.0.0"},
+							{Id: "leaf.c", Version: ">=2.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "pack.b",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "leaf.c", Version: "~0.9.0"},
+						},
+					},
+					{
+						Version: "2.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "leaf.c", Version: "~1.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "leaf.c",
+				Versions: []ExtensionVersion{
+					{Version: "0.9.0", Artifacts: sampleArtifacts},
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+					{Version: "2.0.0", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	// Bootstrap: install A v1 → B v1 → C v0.9. After this, all three are
+	// installed and consistent with A v1's constraints.
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "pack.a"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, packs[0], "1.0.0")
+	require.NoError(t, err)
+
+	cInstalled, err := manager.GetInstalled(FilterOptions{Id: "leaf.c"})
+	require.NoError(t, err)
+	require.Equal(t, "0.9.0", cInstalled.Version)
+
+	// Upgrade A to v2 — iteration order processes B first (sibling pin to
+	// C ~1.0.0), then attempts to upgrade C to satisfy A's >=2.0.0.
+	_, depUpgrades, err := manager.Upgrade(
+		*mockContext.Context,
+		packs[0],
+		DefaultUpgradeOptions("2.0.0"),
+	)
+	require.NoError(t, err)
+
+	// Two top-level dependency-upgrade entries: B upgraded, C reported as a conflict.
+	require.Len(t, depUpgrades, 2)
+
+	var bEntry, cEntry *UpgradeResult
+	for i := range depUpgrades {
+		entry := &depUpgrades[i]
+		switch entry.ExtensionId {
+		case "pack.b":
+			bEntry = entry
+		case "leaf.c":
+			cEntry = entry
+		}
+	}
+	require.NotNil(t, bEntry, "pack.b dependency-upgrade entry expected")
+	require.NotNil(t, cEntry, "leaf.c dependency-upgrade entry expected")
+
+	require.Equal(t, UpgradeStatusUpgraded, bEntry.Status)
+	require.Equal(t, "2.0.0", bEntry.ToVersion)
+
+	require.Equal(t, UpgradeStatusFailed, cEntry.Status)
+	require.Error(t, cEntry.Error)
+	require.Contains(t, cEntry.Error.Error(), "constraint conflict")
+	require.Contains(t, cEntry.Error.Error(), "leaf.c")
 }

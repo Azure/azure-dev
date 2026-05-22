@@ -197,7 +197,7 @@ func TestCheckAgentStatus_SkipsWhenEndpointMissingFromUpstream(t *testing.T) {
 	}
 	res := newCheckAgentStatus(deps).Fn(t.Context(), Options{}, prior)
 	require.Equal(t, StatusSkip, res.Status)
-	require.Contains(t, res.Message, "AZURE_AI_PROJECT_ENDPOINT")
+	require.Contains(t, res.Message, "FOUNDRY_PROJECT_ENDPOINT")
 }
 
 func TestCheckAgentStatus_SkipsWhenAgentServiceListMissingFromUpstream(t *testing.T) {

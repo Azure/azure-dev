@@ -52,7 +52,7 @@ type foundryProbeResult struct {
 
 // newCheckFoundryEndpoint produces Check `remote.foundry-endpoint`.
 // It issues one authenticated GET against
-// `<AZURE_AI_PROJECT_ENDPOINT>/agents?api-version=<DefaultAgentAPIVersion>&limit=1`
+// `<FOUNDRY_PROJECT_ENDPOINT>/agents?api-version=<DefaultAgentAPIVersion>&limit=1`
 // and maps the HTTP status code to a precise fix:
 //
 //   - 200 — Pass: "endpoint reachable (HTTP 200)"
@@ -62,7 +62,7 @@ type foundryProbeResult struct {
 //     active subscription/tenant matches the Foundry project, then
 //     see check `remote.rbac` (C16) for role assignments
 //   - 404 — Fail: "endpoint wrong or project gone"; fix: `azd
-//     provision` or `azd env set AZURE_AI_PROJECT_ENDPOINT`
+//     provision` or `azd env set FOUNDRY_PROJECT_ENDPOINT`
 //   - 5xx — Fail: "Foundry returned <status>"; fix: retry doctor;
 //     report to Foundry status if persistent
 //   - other status / transport error — Fail: render the error;
@@ -88,7 +88,7 @@ func newCheckFoundryEndpoint(deps Dependencies) Check {
 			if priorBlocked(prior, "local.project-endpoint-set") {
 				return Result{
 					Status: StatusSkip,
-					Message: "skipped: AZURE_AI_PROJECT_ENDPOINT is not set " +
+					Message: "skipped: FOUNDRY_PROJECT_ENDPOINT is not set " +
 						"(see check `local.project-endpoint-set`).",
 				}
 			}
@@ -107,7 +107,7 @@ func newCheckFoundryEndpoint(deps Dependencies) Check {
 				return Result{
 					Status: StatusSkip,
 					Message: "skipped: upstream check passed but did not " +
-						"surface AZURE_AI_PROJECT_ENDPOINT in its Details.",
+						"surface FOUNDRY_PROJECT_ENDPOINT in its Details.",
 				}
 			}
 			if apiVersion == "" {
@@ -133,11 +133,11 @@ func newCheckFoundryEndpoint(deps Dependencies) Check {
 				return Result{
 					Status: StatusFail,
 					Message: fmt.Sprintf(
-						"AZURE_AI_PROJECT_ENDPOINT is invalid: %s.",
+						"FOUNDRY_PROJECT_ENDPOINT is invalid: %s.",
 						err),
 					Suggestion: fmt.Sprintf(
 						"Set a valid absolute HTTPS endpoint with "+
-							"`azd env set AZURE_AI_PROJECT_ENDPOINT "+
+							"`azd env set FOUNDRY_PROJECT_ENDPOINT "+
 							"<https://...>` (currently %q).",
 						endpoint),
 					Details: map[string]any{
@@ -173,7 +173,7 @@ func newCheckFoundryEndpoint(deps Dependencies) Check {
 						"Foundry endpoint did not respond within %s.",
 						foundryProbeTimeout),
 					Suggestion: "Verify your network / VPN, confirm the URL " +
-						"in `AZURE_AI_PROJECT_ENDPOINT`, then retry " +
+						"in `FOUNDRY_PROJECT_ENDPOINT`, then retry " +
 						"`azd ai agent doctor`.",
 					Details: foundryDetails(endpoint, res),
 				}
@@ -199,7 +199,7 @@ func classifyFoundryResult(endpoint string, res foundryProbeResult) Result {
 				endpointHost(endpoint), firstLine(res.err.Error())),
 			Suggestion: fmt.Sprintf(
 				"Verify network / VPN / firewall reachability and the URL "+
-					"in `AZURE_AI_PROJECT_ENDPOINT` (currently %q).",
+					"in `FOUNDRY_PROJECT_ENDPOINT` (currently %q).",
 				endpoint),
 			Details: details,
 		}
@@ -238,7 +238,7 @@ func classifyFoundryResult(endpoint string, res foundryProbeResult) Result {
 			Message: "Foundry returned HTTP 404 " +
 				"(endpoint is wrong or the project no longer exists).",
 			Suggestion: "Run `azd provision` to (re)create the Foundry " +
-				"project, or `azd env set AZURE_AI_PROJECT_ENDPOINT " +
+				"project, or `azd env set FOUNDRY_PROJECT_ENDPOINT " +
 				"<https://...>` to point at an existing one.",
 			Details: details,
 		}
@@ -258,7 +258,7 @@ func classifyFoundryResult(endpoint string, res foundryProbeResult) Result {
 			Message: fmt.Sprintf(
 				"Foundry returned unexpected HTTP %d.", res.statusCode),
 			Suggestion: "Inspect the response in `--verbose` mode and verify " +
-				"`AZURE_AI_PROJECT_ENDPOINT` is correct.",
+				"`FOUNDRY_PROJECT_ENDPOINT` is correct.",
 			Details: details,
 		}
 	}
@@ -421,7 +421,7 @@ func endpointHost(endpoint string) string {
 	return u.Host
 }
 
-// readProjectEndpoint pulls the AZURE_AI_PROJECT_ENDPOINT value out
+// readProjectEndpoint pulls the FOUNDRY_PROJECT_ENDPOINT value out
 // of the upstream `local.project-endpoint-set` check's Details map.
 // Returns "" if not present or not a non-empty string — the caller
 // is responsible for deciding whether that is a Skip or a hard fail.

@@ -454,7 +454,7 @@ func TestNewLocalChecks_OrderAndIDs(t *testing.T) {
 		{"local.azure-yaml", "azure.yaml present and parseable", false},
 		{"local.environment-selected", "azd environment selected", false},
 		{"local.agent-service-detected", "agent service in azure.yaml", false},
-		{"local.project-endpoint-set", "AZURE_AI_PROJECT_ENDPOINT set", false},
+		{"local.project-endpoint-set", "FOUNDRY_PROJECT_ENDPOINT set", false},
 		{"local.agent-yaml-valid", "agent.yaml valid (per service)", false},
 		{"local.manual-env-vars", "manual env vars set", false},
 		{"local.toolboxes", "Manifest toolboxes have endpoint env vars set", false},

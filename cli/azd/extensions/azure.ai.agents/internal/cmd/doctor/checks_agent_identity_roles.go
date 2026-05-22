@@ -175,7 +175,7 @@ func newCheckAgentIdentityRoles(deps Dependencies) Check {
 				return Result{
 					Status: StatusSkip,
 					Message: "skipped: upstream check did not surface " +
-						"AZURE_AI_PROJECT_ENDPOINT in its Details.",
+						"FOUNDRY_PROJECT_ENDPOINT in its Details.",
 				}
 			}
 			if apiVersion == "" {

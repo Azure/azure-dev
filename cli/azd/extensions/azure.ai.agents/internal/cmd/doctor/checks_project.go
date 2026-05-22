@@ -26,7 +26,7 @@ const agentHost = "azure.ai.agent"
 // projectEndpointVar is the azd environment variable that points at the
 // Foundry project. Must stay in sync with the rest of the extension
 // (`agent_context.go`, `listen.go`, `service_target_agent.go`).
-const projectEndpointVar = "AZURE_AI_PROJECT_ENDPOINT"
+const projectEndpointVar = "FOUNDRY_PROJECT_ENDPOINT"
 
 // newCheckAgentServiceDetected produces Check `local.agent-service-detected`.
 // It re-fetches the project config and counts services whose `host` is
@@ -97,7 +97,7 @@ func newCheckAgentServiceDetected(deps Dependencies) Check {
 }
 
 // newCheckProjectEndpointSet produces Check `local.project-endpoint-set`.
-// It reads `AZURE_AI_PROJECT_ENDPOINT` from the currently-selected azd
+// It reads `FOUNDRY_PROJECT_ENDPOINT` from the currently-selected azd
 // environment via the EnvironmentService gRPC. An empty EnvName in
 // GetEnvRequest defaults to the current environment, so this check does
 // not need to re-resolve the environment name itself.
@@ -109,7 +109,7 @@ func newCheckAgentServiceDetected(deps Dependencies) Check {
 func newCheckProjectEndpointSet(deps Dependencies) Check {
 	return Check{
 		ID:   "local.project-endpoint-set",
-		Name: "AZURE_AI_PROJECT_ENDPOINT set",
+		Name: "FOUNDRY_PROJECT_ENDPOINT set",
 		Fn: func(ctx context.Context, _ Options, prior []Result) Result {
 			if deps.AzdClient == nil {
 				return Result{Status: StatusSkip, Message: "skipped: azd extension not reachable"}

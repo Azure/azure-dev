@@ -58,7 +58,7 @@ const (
 //     "init configured something provision still has to materialize"
 //     signal — every reason tag (project, model_deployment, acr,
 //     app_insights) fires this branch so a stale
-//     AZURE_AI_PROJECT_ENDPOINT carried over from a prior init or
+//     FOUNDRY_PROJECT_ENDPOINT carried over from a prior init or
 //     sibling environment cannot mislead the resolver into
 //     suggesting `azd ai agent run`. See state.PendingProvisionReasons
 //     for the env-var contract.

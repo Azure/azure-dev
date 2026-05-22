@@ -61,7 +61,7 @@ func TestCheckFoundryEndpoint_SkipsWhenProjectEndpointSetFailed(t *testing.T) {
 	got := check.Fn(t.Context(), Options{}, prior)
 
 	require.Equal(t, StatusSkip, got.Status)
-	require.Contains(t, got.Message, "AZURE_AI_PROJECT_ENDPOINT")
+	require.Contains(t, got.Message, "FOUNDRY_PROJECT_ENDPOINT")
 	require.Contains(t, got.Message, "local.project-endpoint-set")
 }
 
@@ -201,7 +201,7 @@ func TestCheckFoundryEndpoint_FailsOn404WithProvisionFix(t *testing.T) {
 	require.Contains(t, got.Message, "404")
 	require.Contains(t, got.Message, "endpoint is wrong")
 	require.Contains(t, got.Suggestion, "azd provision")
-	require.Contains(t, got.Suggestion, "azd env set AZURE_AI_PROJECT_ENDPOINT")
+	require.Contains(t, got.Suggestion, "azd env set FOUNDRY_PROJECT_ENDPOINT")
 }
 
 func TestCheckFoundryEndpoint_FailsOnServerError(t *testing.T) {
@@ -253,7 +253,7 @@ func TestCheckFoundryEndpoint_FailsOnTransportError(t *testing.T) {
 	require.Equal(t, StatusFail, got.Status)
 	require.Contains(t, got.Message, "could not reach")
 	require.Contains(t, got.Message, "typo.services.ai.azure.com")
-	require.Contains(t, got.Suggestion, "AZURE_AI_PROJECT_ENDPOINT")
+	require.Contains(t, got.Suggestion, "FOUNDRY_PROJECT_ENDPOINT")
 }
 
 func TestCheckFoundryEndpoint_StripsMultiLineTransportError(t *testing.T) {
@@ -552,7 +552,7 @@ func TestCheckFoundryEndpoint_FailsOnNonHTTPSEndpoint(t *testing.T) {
 
 	require.Equal(t, StatusFail, got.Status)
 	require.Contains(t, got.Message, "invalid")
-	require.Contains(t, got.Suggestion, "azd env set AZURE_AI_PROJECT_ENDPOINT")
+	require.Contains(t, got.Suggestion, "azd env set FOUNDRY_PROJECT_ENDPOINT")
 	require.Equal(t, endpoint, got.Details["endpoint"])
 	require.NotEmpty(t, got.Details["validationError"])
 }

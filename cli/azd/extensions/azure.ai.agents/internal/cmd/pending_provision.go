@@ -252,7 +252,7 @@ func updatePendingModelDeploymentSignal(
 //     "project" hint (if any) is now stale.
 //   - useExisting=false → add "project". The user opted to create a
 //     new Foundry project, which requires `azd provision` to run
-//     before AZURE_AI_PROJECT_ENDPOINT reflects a real resource.
+//     before FOUNDRY_PROJECT_ENDPOINT reflects a real resource.
 //
 // Errors are surfaced for callers to log; this helper does not log
 // directly so each call site can attach its own context. The signal

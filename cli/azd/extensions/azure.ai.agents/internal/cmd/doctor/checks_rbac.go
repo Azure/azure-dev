@@ -26,7 +26,7 @@ const rbacLearnLink = "https://learn.microsoft.com/azure/ai-foundry/concepts/rba
 
 // projectIDVar is the azd environment variable that carries the full
 // ARM resource ID of the Foundry project. It is NOT the same as
-// `AZURE_AI_PROJECT_ENDPOINT` (which is the data-plane URL); RBAC
+// `FOUNDRY_PROJECT_ENDPOINT` (which is the data-plane URL); RBAC
 // queries run against ARM and need the full resource ID to scope the
 // role-assignment list.
 const projectIDVar = "AZURE_AI_PROJECT_ID"

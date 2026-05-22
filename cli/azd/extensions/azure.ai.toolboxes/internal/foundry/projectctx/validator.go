@@ -106,7 +106,7 @@ func NoEndpointError() error {
 		exterrors.CodeMissingProjectEndpoint,
 		"no Foundry project endpoint resolved",
 		"persist a workspace default with `azd ai agent project set <endpoint>`, "+
-			"or set AZURE_AI_PROJECT_ENDPOINT in the active azd environment, "+
+			"or set FOUNDRY_PROJECT_ENDPOINT in the active azd environment, "+
 			"or export FOUNDRY_PROJECT_ENDPOINT in your shell",
 	)
 }

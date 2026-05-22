@@ -62,7 +62,7 @@ func TestResolveAfterInit(t *testing.T) {
 		{
 			// User selected "Deploy new model(s)" in init. The Foundry
 			// project does not exist yet, but a stale
-			// AZURE_AI_PROJECT_ENDPOINT carried over from a prior init
+			// FOUNDRY_PROJECT_ENDPOINT carried over from a prior init
 			// or sibling environment sets HasProjectEndpoint=true.
 			// Without the explicit "project" pending-provision tag
 			// the resolver would default to `azd ai agent run` and

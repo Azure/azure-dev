@@ -34,7 +34,7 @@ const (
 
 	// projectEndpointVar is the env-var that carries the Foundry project
 	// endpoint URL produced by `azd ai agent init`.
-	projectEndpointVar = "AZURE_AI_PROJECT_ENDPOINT"
+	projectEndpointVar = "FOUNDRY_PROJECT_ENDPOINT"
 
 	// useExistingAIProjectVar was removed in 4.13. The
 	// USE_EXISTING_AI_PROJECT env var is still written by `azd ai

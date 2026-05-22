@@ -104,7 +104,7 @@ func TestCheckAgentIdentityRoles_SkipsWhenProjectEndpointMissing(t *testing.T) {
 		"")
 	res := runIdentityCheck(t, Dependencies{}, prior)
 	require.Equal(t, StatusSkip, res.Status)
-	require.Contains(t, res.Message, "AZURE_AI_PROJECT_ENDPOINT")
+	require.Contains(t, res.Message, "FOUNDRY_PROJECT_ENDPOINT")
 }
 
 func TestCheckAgentIdentityRoles_SkipsWhenNoActiveAgents(t *testing.T) {

@@ -44,7 +44,7 @@ type resolvedEndpoint struct {
 // as a single struct so that tests can stub the whole lookup via
 // resolveProjectEndpointOpts.ReadAzdHostedSources.
 type azdHostedSources struct {
-	// EnvValue is the AZURE_AI_PROJECT_ENDPOINT value from the active azd
+	// EnvValue is the FOUNDRY_PROJECT_ENDPOINT value from the active azd
 	// env, or "" if not set / no active env / no azd client available.
 	EnvValue string
 	// EnvName is the active azd env name. Only meaningful when EnvValue != "".
@@ -60,7 +60,7 @@ type azdHostedSources struct {
 }
 
 // readAzdHostedSources dials the azd daemon (if reachable) and reads both
-// the active env's AZURE_AI_PROJECT_ENDPOINT and the global-config project
+// the active env's FOUNDRY_PROJECT_ENDPOINT and the global-config project
 // context in a single client lifetime. Errors talking to the daemon are
 // returned only for non-Unavailable cases on the config read — Unavailable
 // is treated as "no daemon" and the caller falls through to subsequent levels.
@@ -79,7 +79,7 @@ func readAzdHostedSources(ctx context.Context) (azdHostedSources, error) {
 	); err == nil {
 		envVal, valErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: envResp.Environment.Name,
-			Key:     "AZURE_AI_PROJECT_ENDPOINT",
+			Key:     "FOUNDRY_PROJECT_ENDPOINT",
 		})
 		if valErr == nil && envVal.Value != "" {
 			out.EnvValue = envVal.Value
@@ -138,7 +138,7 @@ func containsGRPCCode(err error, code codes.Code) bool {
 // cascade defined in the design spec:
 //
 //  1. Explicit flag (--project-endpoint, if exposed by the caller)
-//  2. Active azd env value (AZURE_AI_PROJECT_ENDPOINT)
+//  2. Active azd env value (FOUNDRY_PROJECT_ENDPOINT)
 //  3. Global config: extensions.ai-projects.context.endpoint in ~/.azd/config.json
 //  4. Host environment variable FOUNDRY_PROJECT_ENDPOINT
 //  5. Structured error with actionable suggestion
@@ -170,7 +170,7 @@ func resolveProjectEndpoint(
 		return nil, err
 	}
 
-	// Level 2: active azd environment's AZURE_AI_PROJECT_ENDPOINT.
+	// Level 2: active azd environment's FOUNDRY_PROJECT_ENDPOINT.
 	if sources.EnvValue != "" {
 		normalized, _, err := validateProjectEndpoint(sources.EnvValue)
 		if err != nil {

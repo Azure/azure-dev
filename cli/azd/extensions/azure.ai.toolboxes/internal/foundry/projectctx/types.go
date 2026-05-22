@@ -17,7 +17,7 @@ const (
 	// SourceFlag means the endpoint came from the --project-endpoint flag.
 	SourceFlag EndpointSource = "flag"
 	// SourceAzdEnv means the endpoint came from the active azd environment's
-	// AZURE_AI_PROJECT_ENDPOINT value.
+	// FOUNDRY_PROJECT_ENDPOINT value.
 	SourceAzdEnv EndpointSource = "azdEnv"
 	// SourceGlobalConfig means the endpoint came from ~/.azd/config.json
 	// (extensions.ai-agents.project.context.endpoint — owned by azure.ai.agents
@@ -47,7 +47,7 @@ type Resolved struct {
 // sources (active env + ~/.azd/config.json). Returned as a single struct so
 // tests can stub the whole lookup via ReadAzdHostedSourcesFunc.
 type AzdHostedSources struct {
-	// EnvValue is the AZURE_AI_PROJECT_ENDPOINT value from the active azd env,
+	// EnvValue is the FOUNDRY_PROJECT_ENDPOINT value from the active azd env,
 	// or "" if not set / no active env / no azd client available.
 	EnvValue string
 	// EnvName is the active azd env name. Only meaningful when EnvValue != "".

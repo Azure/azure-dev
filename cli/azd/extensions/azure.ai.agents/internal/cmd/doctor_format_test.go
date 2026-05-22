@@ -399,7 +399,7 @@ func TestCapitalize(t *testing.T) {
 		"":                          "",
 		"endpoint reachable":        "Endpoint reachable",
 		"Endpoint reachable":        "Endpoint reachable",
-		"AZURE_AI_PROJECT_ENDPOINT": "AZURE_AI_PROJECT_ENDPOINT",
+		"FOUNDRY_PROJECT_ENDPOINT": "FOUNDRY_PROJECT_ENDPOINT",
 		"1 of 1 agents":             "1 of 1 agents",
 		"`azure.ai.agent`":          "`azure.ai.agent`",
 		// Brand-name leads stay lowercase.

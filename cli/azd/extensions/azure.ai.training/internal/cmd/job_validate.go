@@ -1,0 +1,55 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"azure.ai.training/internal/utils"
+
+	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
+)
+
+func newJobValidateCommand() *cobra.Command {
+	var filePath string
+
+	cmd := &cobra.Command{
+		Use:   "validate",
+		Short: "Validate a job YAML definition file offline without submitting",
+		Long:  "Validate a job YAML definition file offline without submitting.\n\nExample:\n  azd ai training job validate --file job.yaml",
+		// Override parent's PersistentPreRunE — validate is offline and needs no Azure setup.
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error { return nil },
+		Args:              cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if filePath == "" {
+				return fmt.Errorf("--file is required: provide a path to a YAML job definition file")
+			}
+
+			// Read and parse the YAML file
+			// #nosec G304 -- filePath is the user-supplied --file argument; reading it is the command's purpose
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				return fmt.Errorf("failed to read job file '%s': %w", filePath, err)
+			}
+
+			var jobDef utils.JobDefinition
+			if err := yaml.Unmarshal(data, &jobDef); err != nil {
+				return fmt.Errorf("failed to parse job YAML: %w", err)
+			}
+
+			// Run offline validation — collects all findings
+			yamlDir := filepath.Dir(filePath)
+			result := utils.ValidateJobOffline(&jobDef, yamlDir)
+
+			return utils.ReportValidationResult(filePath, result, true)
+		},
+	}
+
+	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to YAML job definition file (required)")
+
+	return cmd
+}

@@ -208,6 +208,31 @@ func IsCancellation(err error) bool {
 	return false
 }
 
+// IsPromptRequired reports whether err looks like a `--no-prompt` failure
+// propagated from the azd host (a [*input.PromptRequiredError] crossing the
+// gRPC boundary).
+//
+// The host's *input.PromptRequiredError loses its type identity when it
+// crosses gRPC (see internal/grpcserver/errors.go: only *ErrorWithSuggestion
+// and auth errors are translated to structured details; everything else is
+// flattened to a status with the original Error() text). The error reaches
+// the extension as a gRPC status whose message contains the literal
+// "prompt required" string from PromptRequiredError.Error().
+//
+// Callers use this to decide whether attaching env-var-specific guidance
+// (e.g. "set AZURE_SUBSCRIPTION_ID") is appropriate. When this returns false,
+// the prompt failed for a different reason (transport, panic, etc.) and the
+// caller should fall back to a less prescriptive message.
+func IsPromptRequired(err error) bool {
+	if err == nil {
+		return false
+	}
+	if st, ok := status.FromError(err); ok {
+		return strings.Contains(strings.ToLower(st.Message()), "prompt required")
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "prompt required")
+}
+
 // Cancelled returns a user cancellation error.
 func Cancelled(message string) error {
 	return User(CodeCancelled, message)

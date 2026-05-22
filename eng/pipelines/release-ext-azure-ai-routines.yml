@@ -22,6 +22,12 @@ pr:
     exclude:
       - cli/azd/docs/**
 
+parameters:
+  - name: PublishToDevRegistry
+    displayName: Publish to dev registry
+    type: boolean
+    default: false
+
 extends:
   template: /eng/pipelines/templates/stages/1es-redirect.yml
   parameters:
@@ -31,3 +37,4 @@ extends:
           AzdExtensionId: azure.ai.routines
           SanitizedExtensionId: azure-ai-routines
           AzdExtensionDirectory: cli/azd/extensions/azure.ai.routines
+          PublishToDevRegistry: ${{ parameters.PublishToDevRegistry }}

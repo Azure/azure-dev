@@ -10,9 +10,11 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -229,6 +231,69 @@ func newServiceTargetTestClient(
 	return client
 }
 
+type stubProjectServer struct {
+	azdext.UnimplementedProjectServiceServer
+	project *azdext.ProjectConfig
+}
+
+func (s *stubProjectServer) Get(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.GetProjectResponse, error) {
+	return &azdext.GetProjectResponse{Project: s.project}, nil
+}
+
+type stubInitializeEnvServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+}
+
+func (s *stubInitializeEnvServer) GetCurrent(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: "test-env"}}, nil
+}
+
+func (s *stubInitializeEnvServer) GetValue(
+	context.Context, *azdext.GetEnvRequest,
+) (*azdext.KeyValueResponse, error) {
+	return &azdext.KeyValueResponse{Value: "00000000-0000-0000-0000-000000000000"}, nil
+}
+
+type stubAccountServer struct {
+	azdext.UnimplementedAccountServiceServer
+}
+
+func (s *stubAccountServer) LookupTenant(
+	context.Context, *azdext.LookupTenantRequest,
+) (*azdext.LookupTenantResponse, error) {
+	return &azdext.LookupTenantResponse{TenantId: "00000000-0000-0000-0000-000000000000"}, nil
+}
+
+func newInitializeTestClient(t *testing.T, projectRoot string) *azdext.AzdClient {
+	t.Helper()
+
+	srv := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(srv, &stubProjectServer{
+		project: &azdext.ProjectConfig{Path: projectRoot},
+	})
+	azdext.RegisterEnvironmentServiceServer(srv, &stubInitializeEnvServer{})
+	azdext.RegisterAccountServiceServer(srv, &stubAccountServer{})
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(func() {
+		srv.Stop()
+		_ = lis.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(lis.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+
+	return client
+}
+
 type stubPromptServer struct {
 	azdext.UnimplementedPromptServiceServer
 	selectedIndex int32
@@ -252,6 +317,60 @@ func (s *stubPromptServer) Select(
 func newPromptTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *azdext.AzdClient {
 	t.Helper()
 	return newServiceTargetTestClient(t, nil, promptSrv)
+}
+
+func TestInitializeAcceptsProjectLocalAgentYaml(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "svc")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(serviceDir, "agent.yaml"), []byte("kind: hostedAgent\n"), 0o600))
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	err := provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"})
+
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(serviceDir, "agent.yaml"), provider.agentDefinitionPath)
+}
+
+func TestInitializeRejectsAgentYamlSymlinkEscapingRoot(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	parent := t.TempDir()
+	projectRoot := filepath.Join(parent, "project")
+	serviceDir := filepath.Join(projectRoot, "svc")
+	outside := filepath.Join(parent, "outside")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.MkdirAll(outside, 0o750))
+
+	outsideAgentYaml := filepath.Join(outside, "agent.yaml")
+	require.NoError(t, os.WriteFile(outsideAgentYaml, []byte("kind: hostedAgent\n"), 0o600))
+	createSymlinkOrSkip(t, outsideAgentYaml, filepath.Join(serviceDir, "agent.yaml"))
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	err := provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "escapes project root")
+	require.Empty(t, provider.agentDefinitionPath)
+}
+
+func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
+	t.Helper()
+
+	if err := os.Symlink(oldname, newname); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("symlink creation not permitted: %v", err)
+		}
+		t.Fatalf("create symlink: %v", err)
+	}
 }
 
 // stubEnvServer records SetValue calls for testing registerAgentEnvironmentVariables.
@@ -310,7 +429,7 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 	}
 
 	azdEnv := map[string]string{
-		"AZURE_AI_PROJECT_ENDPOINT": "https://proj.azure.com",
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com",
 	}
 	protocols := []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "1.0.0"},
@@ -362,7 +481,7 @@ func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
 	}
 
 	azdEnv := map[string]string{
-		"AZURE_AI_PROJECT_ENDPOINT": "https://proj.azure.com/",
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com/",
 	}
 	protocols := []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "1.0.0"},
@@ -397,7 +516,7 @@ func TestRegisterAgentEnvironmentVariables_EmptyName(t *testing.T) {
 
 	err := provider.registerAgentEnvironmentVariables(
 		t.Context(),
-		map[string]string{"AZURE_AI_PROJECT_ENDPOINT": "https://proj.azure.com"},
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com"},
 		&azdext.ServiceConfig{Name: "my-svc"},
 		&agent_api.AgentVersionObject{Name: "", Version: "1.0.0"},
 		nil,
@@ -419,7 +538,7 @@ func TestRegisterAgentEnvironmentVariables_EmptyVersion(t *testing.T) {
 
 	err := provider.registerAgentEnvironmentVariables(
 		t.Context(),
-		map[string]string{"AZURE_AI_PROJECT_ENDPOINT": "https://proj.azure.com"},
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com"},
 		&azdext.ServiceConfig{Name: "my-svc"},
 		&agent_api.AgentVersionObject{Name: "my-agent", Version: ""},
 		nil,
@@ -1067,4 +1186,389 @@ func actionableStatusError(t *testing.T, message, suggestion string) error {
 	stWithDetails, err := st.WithDetails(&azdext.ActionableErrorDetail{Suggestion: suggestion})
 	require.NoError(t, err)
 	return stWithDetails.Err()
+}
+
+func TestAugmentDeployNote_NoReadme_AppendsBelowAkaMsLink(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	// No README written; readmeExists closure should return false.
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{
+				Name:         "echo",
+				RelativePath: "src/echo",
+				Protocol:     "invocations",
+				IsDeployed:   true,
+			},
+		},
+	}
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+
+	augmentDeployNote(state, []*azdext.Artifact{artifact}, tmp, "" /* no configDir → cache lookup is a no-op */)
+
+	got := artifact.Metadata["note"]
+	require.Contains(t, got, "static aka.ms link", "aka.ms link should be preserved when no README is present")
+	require.Contains(t, got, "Next:", "Next: block should be appended")
+	require.Contains(t, got, "azd ai agent invoke ", "should suggest invoking the deployed agent")
+	require.Equal(t, 1, strings.Count(got, "Next:"), "Next: header should appear exactly once")
+}
+
+func TestAugmentDeployNote_WithReadme_ReplacesAkaMsLink(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	servicePath := filepath.Join(tmp, "src", "echo")
+	require.NoError(t, os.MkdirAll(servicePath, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(servicePath, "README.md"), []byte("sample"), 0o600))
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{
+				Name:         "echo",
+				RelativePath: "src/echo",
+				Protocol:     "invocations",
+				IsDeployed:   true,
+			},
+		},
+	}
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+
+	augmentDeployNote(state, []*azdext.Artifact{artifact}, tmp, "")
+
+	got := artifact.Metadata["note"]
+	require.NotContains(t, got, "static aka.ms link",
+		"aka.ms line must be replaced when a local README provides richer guidance")
+	require.Contains(t, got, "Next:", "Next: block should be present")
+	require.Contains(t, got, "see src/echo/README.md", "README pointer should be present")
+}
+
+func TestAugmentDeployNote_WithRootReadme_ReplacesAkaMsLink(t *testing.T) {
+	t.Parallel()
+
+	for _, rel := range []string{"", "."} {
+		t.Run(fmt.Sprintf("rel=%q", rel), func(t *testing.T) {
+			t.Parallel()
+
+			tmp := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(tmp, "README.md"), []byte("sample"), 0o600))
+
+			state := &nextstep.State{
+				Services: []nextstep.ServiceState{
+					{
+						Name:         "echo",
+						RelativePath: rel,
+						Protocol:     "invocations",
+						IsDeployed:   true,
+					},
+				},
+			}
+
+			artifact := &azdext.Artifact{
+				Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+				Metadata: map[string]string{
+					"label": "Agent endpoint (invocations)",
+					"note":  "static aka.ms link",
+				},
+			}
+
+			augmentDeployNote(state, []*azdext.Artifact{artifact}, tmp, "")
+
+			got := artifact.Metadata["note"]
+			require.NotContains(t, got, "static aka.ms link",
+				"aka.ms line must be replaced when a local README provides richer guidance")
+			require.Contains(t, got, "see README.md", "README pointer should be present")
+		})
+	}
+}
+
+func TestAugmentDeployNote_ReadmeTraversalDoesNotReplaceAkaMsLink(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	projectRoot := filepath.Join(parent, "project")
+	outside := filepath.Join(parent, "outside")
+	require.NoError(t, os.MkdirAll(projectRoot, 0o750))
+	require.NoError(t, os.MkdirAll(outside, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "README.md"), []byte("outside"), 0o600))
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{
+				Name:         "echo",
+				RelativePath: "../outside",
+				Protocol:     "invocations",
+				IsDeployed:   true,
+			},
+		},
+	}
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+
+	augmentDeployNote(state, []*azdext.Artifact{artifact}, projectRoot, "")
+
+	got := artifact.Metadata["note"]
+	require.Contains(t, got, "static aka.ms link")
+	require.Contains(t, got, "Next:")
+}
+
+func TestAugmentDeployNote_CachedSpecYieldsPayloadOverride(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	configDir := filepath.Join(tmp, ".azure", "dev")
+	require.NoError(t, os.MkdirAll(configDir, 0o750))
+	// ReadCachedOpenAPISpec / sanitizeAgentName: the filename uses the agent
+	// name verbatim when it contains only safe characters.
+	spec := `{
+  "paths": {
+    "/invocations": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {"prompt": "from cache"}
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "openapi-echo-local.json"), []byte(spec), 0o600))
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{
+				Name:         "echo",
+				RelativePath: "src/echo",
+				Protocol:     "invocations",
+				IsDeployed:   true,
+			},
+		},
+	}
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+
+	augmentDeployNote(state, []*azdext.Artifact{artifact}, tmp, configDir)
+
+	got := artifact.Metadata["note"]
+	require.Contains(t, got, `"prompt":"from cache"`,
+		"cached OpenAPI example should drive the suggested invoke payload")
+}
+
+func TestAugmentDeployNote_NoteAttachedToLastEndpoint(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{
+				Name:         "echo",
+				RelativePath: "src/echo",
+				Protocol:     "invocations",
+				IsDeployed:   true,
+			},
+		},
+	}
+
+	playground := &azdext.Artifact{
+		Kind:     azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{"label": "Agent playground (portal)"},
+	}
+	first := &azdext.Artifact{
+		Kind:     azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{"label": "Agent endpoint (responses)"},
+	}
+	last := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+
+	augmentDeployNote(state, []*azdext.Artifact{playground, first, last}, tmp, "")
+
+	require.NotContains(t, playground.Metadata["note"], "Next:", "playground artifact must remain untouched")
+	require.NotContains(t, first.Metadata["note"], "Next:", "non-note endpoint must remain untouched")
+	require.Contains(t, last.Metadata["note"], "Next:", "augmentation must target the last note-bearing artifact")
+}
+
+func TestAugmentDeployNote_NilStateIsNoOp(t *testing.T) {
+	t.Parallel()
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+	augmentDeployNote(nil, []*azdext.Artifact{artifact}, "/tmp", "")
+	require.Equal(t, "static aka.ms link", artifact.Metadata["note"], "nil state must leave the static note intact")
+}
+
+func TestAugmentDeployNote_NoNoteBearingArtifactIsNoOp(t *testing.T) {
+	t.Parallel()
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{Name: "echo", RelativePath: "src/echo", Protocol: "invocations", IsDeployed: true},
+		},
+	}
+	playground := &azdext.Artifact{
+		Kind:     azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{"label": "Agent playground (portal)"},
+	}
+	augmentDeployNote(state, []*azdext.Artifact{playground}, "/tmp", "")
+	require.Empty(t, playground.Metadata["note"], "no note-bearing artifact → nothing to augment")
+}
+
+// TestAugmentDeployNote_NoServicesIsNoOp covers a partial-state branch:
+// ResolveAfterDeploy short-circuits on len(state.Services) == 0, so the
+// existing static note must survive unchanged.
+func TestAugmentDeployNote_NoServicesIsNoOp(t *testing.T) {
+	t.Parallel()
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+	augmentDeployNote(&nextstep.State{}, []*azdext.Artifact{artifact}, "/tmp", "")
+	require.Equal(t, "static aka.ms link", artifact.Metadata["note"])
+}
+
+// TestAugmentDeployNote_LowercaseReadme_DoesNotReplaceFallback locks the
+// casing-mismatch guard: when only a lowercase readme.md exists on a
+// case-sensitive filesystem, the resolver would still emit a literal
+// "README.md" pointer that does not resolve on disk  and the aka.ms
+// fallback would be lost. The fix tightens readmeExists to the canonical
+// casing so the append branch fires and the static link is preserved.
+func TestAugmentDeployNote_LowercaseReadme_DoesNotReplaceFallback(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	// Detect case-sensitivity at runtime; the fix is meaningful only on
+	// case-sensitive filesystems (Linux, WSL). On Windows NTFS and default
+	// macOS APFS the OS resolves "README.md" → "readme.md" transparently,
+	// which would make readmeExists return true even after the fix.
+	probe := filepath.Join(tmp, "case-probe.txt")
+	require.NoError(t, os.WriteFile(probe, nil, 0o600))
+	if _, err := os.Stat(filepath.Join(tmp, "CASE-PROBE.TXT")); err == nil {
+		t.Skip("case-insensitive filesystem — readmeExists casing guard is a no-op here")
+	}
+
+	servicePath := filepath.Join(tmp, "src", "echo")
+	require.NoError(t, os.MkdirAll(servicePath, 0o750))
+	// Only lowercase readme.md exists; canonical README.md does not.
+	require.NoError(t, os.WriteFile(filepath.Join(servicePath, "readme.md"), []byte("sample"), 0o600))
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{
+				Name:         "echo",
+				RelativePath: "src/echo",
+				Protocol:     "invocations",
+				IsDeployed:   true,
+			},
+		},
+	}
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+
+	augmentDeployNote(state, []*azdext.Artifact{artifact}, tmp, "")
+
+	got := artifact.Metadata["note"]
+	require.Contains(t, got, "static aka.ms link",
+		"aka.ms fallback must survive when only lowercase readme.md exists on disk")
+	require.NotContains(t, got, "see src/echo/README.md",
+		"resolver must not emit a README pointer that does not match what is on disk")
+}
+
+// TestAugmentDeployNote_MultiServiceState_ScopedToDeployedService locks
+// the deploy-hook contract that the rendered Next: block reflects only
+// the service whose artifact note is being augmented. The hook applies
+// filterServicesByName to the assembled state before invoking the
+// resolver.
+func TestAugmentDeployNote_MultiServiceState_ScopedToDeployedService(t *testing.T) {
+	t.Parallel()
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{Name: "alpha", RelativePath: "src/alpha", Protocol: "invocations", IsDeployed: true},
+			{Name: "beta", RelativePath: "src/beta", Protocol: "invocations", IsDeployed: true},
+		},
+	}
+	state.Services = filterServicesByName(state.Services, "alpha")
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+
+	augmentDeployNote(state, []*azdext.Artifact{artifact}, "/tmp", "")
+
+	got := artifact.Metadata["note"]
+	require.NotContains(t, got, "beta",
+		"other-service guidance must not leak into the deployed service's note")
+	require.Contains(t, got, "Next:", "Next: block should be present for the deployed service")
+}
+
+// TestFilterServicesByName covers the helper used at the deploy-hook call site.
+func TestFilterServicesByName(t *testing.T) {
+	t.Parallel()
+
+	services := []nextstep.ServiceState{
+		{Name: "alpha"},
+		{Name: "beta"},
+		{Name: "gamma"},
+	}
+
+	require.Equal(t, []nextstep.ServiceState{{Name: "beta"}}, filterServicesByName(services, "beta"),
+		"match returns single-element slice")
+	require.Nil(t, filterServicesByName(services, "missing"),
+		"no match returns nil  caller short-circuits on empty Services")
+	require.Equal(t, services, filterServicesByName(services, ""),
+		"empty name returns input unchanged (defensive)")
 }

@@ -9,6 +9,7 @@ import (
 	"azureaiagent/internal/project"
 	"context"
 	"fmt"
+	"log"
 	"regexp"
 	"slices"
 	"strings"
@@ -60,6 +61,23 @@ func setEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key,
 	}
 
 	return nil
+}
+
+// getEnvValue retrieves a single environment variable value. Returns empty string if not found.
+func getEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key string) (string, error) {
+	envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: envName,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to get environment values: %w", err)
+	}
+
+	for _, kv := range envValues.KeyValues {
+		if kv.Key == key {
+			return kv.Value, nil
+		}
+	}
+	return "", nil
 }
 
 // projectResourceIdRegex is the precompiled regex for parsing Foundry project ARM resource IDs.
@@ -343,7 +361,7 @@ func configureFoundryProjectEnv(
 	}
 
 	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", project.AccountName, project.ProjectName)
-	if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
+	if err := setEnvValue(ctx, azdClient, envName, "FOUNDRY_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
 		return err
 	}
 
@@ -438,6 +456,13 @@ func configureAcrConnection(
 			if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID", resourceId); err != nil {
 				return err
 			}
+			if err := updatePendingACRSignal(ctx, azdClient, envName, true); err != nil {
+				log.Printf("warning: failed to update acr provision signal: %v", err)
+			}
+		} else {
+			if err := updatePendingACRSignal(ctx, azdClient, envName, false); err != nil {
+				log.Printf("warning: failed to update acr provision signal: %v", err)
+			}
 		}
 		return nil
 	}
@@ -477,6 +502,9 @@ func configureAcrConnection(
 	}
 	if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT", normalizeLoginServer(selectedConnection.Target)); err != nil {
 		return err
+	}
+	if err := updatePendingACRSignal(ctx, azdClient, envName, true); err != nil {
+		log.Printf("warning: failed to update acr provision signal: %v", err)
 	}
 
 	return nil
@@ -528,6 +556,13 @@ func configureAppInsightsConnection(
 					return err
 				}
 			}
+			if err := updatePendingAppInsightsSignal(ctx, azdClient, envName, true); err != nil {
+				log.Printf("warning: failed to update app_insights provision signal: %v", err)
+			}
+		} else {
+			if err := updatePendingAppInsightsSignal(ctx, azdClient, envName, false); err != nil {
+				log.Printf("warning: failed to update app_insights provision signal: %v", err)
+			}
 		}
 		return nil
 	}
@@ -570,6 +605,9 @@ func configureAppInsightsConnection(
 			ctx, azdClient, envName, "APPLICATIONINSIGHTS_CONNECTION_STRING", selectedConnection.Credentials.Key,
 		); err != nil {
 			return err
+		}
+		if err := updatePendingAppInsightsSignal(ctx, azdClient, envName, true); err != nil {
+			log.Printf("warning: failed to update app_insights provision signal: %v", err)
 		}
 	}
 
@@ -661,11 +699,18 @@ func loadAzureContext(
 		envValueMap[value.Key] = value.Value
 	}
 
+	// Prefer AZURE_AI_DEPLOYMENTS_LOCATION for model/project operations;
+	// fall back to AZURE_LOCATION for backward compatibility.
+	location := envValueMap["AZURE_AI_DEPLOYMENTS_LOCATION"]
+	if location == "" {
+		location = envValueMap["AZURE_LOCATION"]
+	}
+
 	return &azdext.AzureContext{
 		Scope: &azdext.AzureScope{
 			TenantId:       envValueMap["AZURE_TENANT_ID"],
 			SubscriptionId: envValueMap["AZURE_SUBSCRIPTION_ID"],
-			Location:       envValueMap["AZURE_LOCATION"],
+			Location:       location,
 		},
 		Resources: []string{},
 	}, nil
@@ -676,6 +721,11 @@ func loadAzureContext(
 // ensureSubscription prompts for a subscription if not already set in the AzureContext.
 // If a subscription is already set, looks up the tenant for it. Returns the (possibly refreshed)
 // credential scoped to the resolved tenant. Both init flows use this.
+//
+// When the prompt fails (e.g. running under `--no-prompt` without
+// `AZURE_SUBSCRIPTION_ID` set), the error is wrapped with a structured
+// suggestion naming the env var to set so headless callers get an actionable
+// message instead of a generic "prompt required".
 func ensureSubscription(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -691,7 +741,24 @@ func ensureSubscription(
 			if exterrors.IsCancellation(err) {
 				return nil, exterrors.Cancelled("subscription selection was cancelled")
 			}
-			return nil, exterrors.FromPrompt(err, "failed to prompt for subscription")
+			// Only attach the AZURE_SUBSCRIPTION_ID-specific guidance when the
+			// failure is the no-prompt / "prompt required" path. Other prompt
+			// failures (e.g. host transport errors) get a generic message so we
+			// don't mislead the user into setting an env var that wouldn't have
+			// helped.
+			if exterrors.IsPromptRequired(err) {
+				return nil, exterrors.Dependency(
+					exterrors.CodeMissingAzureSubscription,
+					fmt.Sprintf("failed to select an Azure subscription: %s", err),
+					"set AZURE_SUBSCRIPTION_ID in your azd environment "+
+						"(run `azd env set AZURE_SUBSCRIPTION_ID <id>`), or run interactively to pick one",
+				)
+			}
+			return nil, exterrors.Dependency(
+				exterrors.CodeMissingAzureSubscription,
+				fmt.Sprintf("failed to select an Azure subscription: %s", err),
+				"retry, or run interactively to pick one",
+			)
 		}
 
 		azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
@@ -748,11 +815,19 @@ func ensureLocation(
 	}
 
 	if azureContext.Scope.Location != "" && locationAllowed(azureContext.Scope.Location, allowedLocations) {
+		if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", azureContext.Scope.Location); err != nil {
+			return err
+		}
+		// Defensively seed AZURE_LOCATION (resource group location) if not already set,
+		// so that downstream provisioning always has a valid location.
+		if existing, _ := getEnvValue(ctx, azdClient, envName, "AZURE_LOCATION"); existing == "" {
+			return setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", azureContext.Scope.Location)
+		}
 		return nil
 	}
 	if azureContext.Scope.Location != "" {
 		fmt.Printf("%s", output.WithWarningFormat(
-			"The current AZURE_LOCATION '%s' is not supported for this agent setup. Please choose a different location.\n",
+			"The current location '%s' is not supported for this agent setup. Please choose a different location.\n",
 			azureContext.Scope.Location,
 		))
 		azureContext.Scope.Location = ""
@@ -767,7 +842,13 @@ func ensureLocation(
 
 	azureContext.Scope.Location = locationName
 
-	return setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", azureContext.Scope.Location)
+	// Set both AZURE_LOCATION (resource group) and AZURE_AI_DEPLOYMENTS_LOCATION (model/project resources)
+	// to the same value by default. AZURE_AI_DEPLOYMENTS_LOCATION can be changed independently later
+	// (e.g. during model selection) without affecting the resource group location.
+	if err := setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", azureContext.Scope.Location); err != nil {
+		return err
+	}
+	return setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", azureContext.Scope.Location)
 }
 
 // ensureSubscriptionAndLocation ensures both subscription and location are set.
@@ -820,7 +901,15 @@ func promptLocationForInit(
 		if exterrors.IsCancellation(err) {
 			return "", exterrors.Cancelled("location selection was cancelled")
 		}
-		return "", exterrors.FromPrompt(err, "failed to prompt for location")
+		// Wrap with an actionable suggestion so headless callers (--no-prompt)
+		// learn how to supply the value instead of getting a generic
+		// "prompt required" propagated from the azd host.
+		return "", exterrors.Dependency(
+			exterrors.CodeLocationMismatch,
+			fmt.Sprintf("failed to select an Azure location: %s", err),
+			"set AZURE_LOCATION in your azd environment "+
+				"(`azd env set AZURE_LOCATION <region>`) or run interactively to pick one",
+		)
 	}
 
 	return locationResponse.Location.Name, nil
@@ -871,7 +960,15 @@ func selectNewModel(
 
 	modelResp, err := azdClient.Prompt().PromptAiModel(ctx, promptReq)
 	if err != nil {
-		return nil, exterrors.FromPrompt(err, "failed to prompt for model selection")
+		if exterrors.IsCancellation(err) {
+			return nil, exterrors.Cancelled("model selection was cancelled")
+		}
+		return nil, exterrors.Dependency(
+			exterrors.CodeModelResolutionFailed,
+			fmt.Sprintf("failed to select an AI model: %s", err),
+			"pass --model <name> (e.g. --model gpt-4.1-mini) or --project-id "+
+				"<id> with --model-deployment <name> to skip interactive model selection",
+		)
 	}
 
 	return modelResp.Model, nil
@@ -1090,7 +1187,12 @@ func selectFoundryProject(
 			if exterrors.IsCancellation(err) {
 				return nil, exterrors.Cancelled("project selection was cancelled")
 			}
-			return nil, fmt.Errorf("failed to prompt for project selection: %w", err)
+			return nil, exterrors.Dependency(
+				exterrors.CodeMissingAiProjectId,
+				fmt.Sprintf("failed to select a Foundry project: %s", err),
+				"pass --project-id <full resource id> to skip interactive project selection, "+
+					"or run interactively to choose from the discovered projects",
+			)
 		}
 
 		selectedIdx = *projectResp.Value
@@ -1105,8 +1207,17 @@ func selectFoundryProject(
 
 	// Set location from the selected project
 	azureContext.Scope.Location = selectedProject.Location
-	if err := setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", selectedProject.Location); err != nil {
-		return nil, fmt.Errorf("failed to set AZURE_LOCATION: %w", err)
+	if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", selectedProject.Location); err != nil {
+		return nil, fmt.Errorf("failed to set AZURE_AI_DEPLOYMENTS_LOCATION: %w", err)
+	}
+	// Seed AZURE_LOCATION (used for resource group) only if not already set.
+	// If the user already has an existing RG in a different region, we must not
+	// overwrite it — ARM cannot change the location of an existing resource group.
+	currentLocation, _ := getEnvValue(ctx, azdClient, envName, "AZURE_LOCATION")
+	if currentLocation == "" {
+		if err := setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", selectedProject.Location); err != nil {
+			return nil, fmt.Errorf("failed to set AZURE_LOCATION: %w", err)
+		}
 	}
 
 	// Configure all Foundry project environment variables

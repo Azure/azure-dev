@@ -20,6 +20,7 @@ func TestDevRegistryFileIsValid(t *testing.T) {
 	var registry Registry
 	require.NoError(t, json.Unmarshal(data, &registry))
 	require.Equal(t, CurrentRegistrySchemaVersion, registry.SchemaVersion)
+	require.Empty(t, registry.Extensions)
 
 	result := ValidateRegistry(&registry, false)
 	require.True(t, result.Valid, "registry.dev.json failed validation: %+v", result)

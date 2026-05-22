@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../extension.schema.json
+id: azure.ai.training
+namespace: ai.training
+displayName: Microsoft Foundry Training (Preview)
+description: Extension for Microsoft Foundry training jobs. (Preview)
+usage: azd ai training <command> [options]
+version: 0.0.1-preview
+requiredAzdVersion: ">=1.25.1"
+language: go
+capabilities:
+    - custom-commands
+    - metadata
+examples:
+    - name: init
+      description: Initialize project configuration for training.
+      usage: azd ai training init
+    - name: job submit
+      description: Submit a command job from YAML definition.
+      usage: azd ai training job submit --file job.yaml
+    - name: job list
+      description: List all training jobs.
+      usage: azd ai training job list

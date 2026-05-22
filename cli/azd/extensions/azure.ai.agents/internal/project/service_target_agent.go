@@ -24,11 +24,13 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
+	"azureaiagent/internal/pkg/paths"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -133,7 +135,14 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 		)
 	}
 	servicePath := serviceConfig.RelativePath
-	fullPath := filepath.Join(proj.Project.Path, servicePath)
+	fullPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid service path for %s: %s", serviceConfig.Name, err),
+			"update azure.yaml so the agent service path stays within the project directory",
+		)
+	}
 
 	// Get and store environment
 	azdEnvClient := p.azdClient.Environment()
@@ -222,8 +231,22 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	}
 
 	// Look for agent.yaml or agent.yml in the service directory root
-	agentYamlPath := filepath.Join(fullPath, "agent.yaml")
-	agentYmlPath := filepath.Join(fullPath, "agent.yml")
+	agentYamlPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath, "agent.yaml")
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid agent definition path for %s: %s", serviceConfig.Name, err),
+			"update azure.yaml so the agent definition stays within the project directory",
+		)
+	}
+	agentYmlPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath, "agent.yml")
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid agent definition path for %s: %s", serviceConfig.Name, err),
+			"update azure.yaml so the agent definition stays within the project directory",
+		)
+	}
 
 	if _, err := os.Stat(agentYamlPath); err == nil {
 		p.agentDefinitionPath = agentYamlPath
@@ -275,10 +298,10 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	}
 
 	// Check if required environment variables are set
-	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
+	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
+			"FOUNDRY_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
 			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
 		)
 	}
@@ -384,7 +407,7 @@ func (p *AgentServiceTargetProvider) Package(
 	// Code deploy: ZIP the source directory
 	if p.isCodeDeployAgent() {
 		progress("Packaging code")
-		zipPath, sha256Hex, err := p.packageCodeDeploy(serviceConfig)
+		zipPath, sha256Hex, err := p.packageCodeDeploy(ctx, serviceConfig)
 		if err != nil {
 			return nil, exterrors.Internal(exterrors.OpContainerPackage, fmt.Sprintf("code packaging failed: %s", err))
 		}
@@ -899,16 +922,16 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	azdEnv map[string]string,
 	extraOptions []agent_yaml.AgentBuildOption,
 ) (*deployPrepResult, error) {
-	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
+	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
+			"FOUNDRY_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
 			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
 		)
 	}
 
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
+	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
 	// Resolve environment variables from YAML using azd environment values
@@ -1041,9 +1064,31 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 		agentVersion.Name,
 		agentVersion.Version,
 		azdEnv["AZURE_AI_PROJECT_ID"],
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		protocols,
 	)
+
+	// Best-effort: enrich the last endpoint artifact's note with a
+	// context-aware "Next:" block. Failures are non-fatal — the static
+	// aka.ms link emitted by deployArtifacts is preserved when the
+	// enrichment is skipped or short-circuits.
+	if state, _ := nextstep.AssembleState(ctx, p.azdClient); state != nil {
+		// Scope to the service just deployed. ResolveAfterDeploy renders a
+		// show/invoke pair per state.Services entry; without this filter a
+		// multi-agent project would attach guidance for other services to
+		// this artifact's note.
+		state.Services = filterServicesByName(state.Services, serviceConfig.Name)
+
+		projectRoot := ""
+		if proj, err := p.azdClient.Project().Get(ctx, nil); err == nil && proj.Project != nil {
+			projectRoot = proj.Project.Path
+		}
+		configDir := ""
+		if projectRoot != "" && p.env != nil && p.env.Name != "" {
+			configDir = filepath.Join(projectRoot, ".azure", p.env.Name)
+		}
+		augmentDeployNote(state, artifacts, projectRoot, configDir)
+	}
 
 	return &azdext.ServiceDeployResult{
 		Artifacts: artifacts,
@@ -1122,7 +1167,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
 // and computes its SHA-256. Returns the temp file path and SHA-256 hex string.
-func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.ServiceConfig) (string, string, error) {
+func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serviceConfig *azdext.ServiceConfig) (string, string, error) {
 	// Source directory is the service's relative path
 	srcDir := filepath.Dir(p.agentDefinitionPath)
 
@@ -1141,30 +1186,14 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 		}
 	}
 
-	// Exclusion patterns
-	// TODO: support a .azdignore or similar ignore file for user-configurable exclusions.
-	excludeDirs := map[string]bool{
-		"__pycache__":   true,
-		".venv":         true,
-		"venv":          true,
-		".git":          true,
-		"node_modules":  true,
-		".mypy_cache":   true,
-		".pytest_cache": true,
-		".azure":        true,
-		// .NET directories (for remote_build, exclude build artifacts)
-		"bin": true,
-		"obj": true,
-		".vs": true,
-	}
-	excludeExts := map[string]bool{
-		".pyc":  true,
-		".pyo":  true,
-		".user": true,
-		".suo":  true,
-	}
-	excludeFiles := map[string]bool{
-		".env": true,
+	// Load .agentignore (or use defaults if no file exists)
+	ignoreMatcher, err := newAgentIgnoreMatcher(ctx, srcDir)
+	if err != nil {
+		return "", "", exterrors.Dependency(
+			exterrors.CodeInvalidFilePath,
+			fmt.Sprintf("failed to load %s: %s", agentIgnoreFileName, err),
+			"check that .agentignore is a valid file with gitignore syntax",
+		)
 	}
 
 	// Create temp file and write ZIP directly to it while computing SHA-256
@@ -1206,9 +1235,14 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 		// Normalize to forward slashes for ZIP
 		relPath = filepath.ToSlash(relPath)
 
+		// Skip symlinked directories to avoid traversing outside the project root
+		if d.IsDir() && d.Type()&fs.ModeSymlink != 0 {
+			return filepath.SkipDir
+		}
+
 		// Check directory exclusions
 		if d.IsDir() {
-			if excludeDirs[d.Name()] {
+			if ignoreMatcher.ShouldExclude(relPath, true) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -1219,18 +1253,8 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 			return nil
 		}
 
-		// Check file extension exclusions
-		if excludeExts[filepath.Ext(path)] {
-			return nil
-		}
-
-		// Check file name exclusions (.env, .env.*)
-		if excludeFiles[d.Name()] || strings.HasPrefix(d.Name(), ".env.") {
-			return nil
-		}
-
-		// Skip agent.yaml itself from the ZIP (metadata is sent separately)
-		if d.Name() == "agent.yaml" {
+		// Check file exclusions
+		if ignoreMatcher.ShouldExclude(relPath, false) {
 			return nil
 		}
 
@@ -1492,7 +1516,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		p.credential,
 	)
 
@@ -1584,11 +1608,137 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 		if len(endpoints) > 0 {
 			last := artifacts[len(artifacts)-1]
 			last.Metadata["note"] = "For information on invoking the agent, see " + output.WithLinkFormat(
-				"https://aka.ms/azd-agents-invoke")
+				"https://aka.ms/azd-agents-invoke") +
+				"\n\nSet up an evaluation suite to measure quality and impact in one step with " + output.WithHighLightFormat("azd ai agent eval init")
 		}
 	}
 
 	return artifacts
+}
+
+// augmentDeployNote enriches the last endpoint artifact's note with a
+// context-aware "Next:" block resolved from the provided state.
+//
+// Collision rule with the static aka.ms link emitted by deployArtifacts:
+//
+//   - When the resolved block contains a "see <relPath>/README.md"
+//     suggestion (i.e. a local README exists at the service path), the
+//     aka.ms line is replaced entirely — the block already points the
+//     user at the more-detailed local doc, so the canned link is
+//     redundant.
+//   - Otherwise the aka.ms line is preserved and the "Next:" block is
+//     appended below, separated by a blank line — aka.ms remains the
+//     fallback doc pointer when no local README is present.
+//
+// The function is a no-op when state is nil, no artifact carries a note,
+// or the resolver returns no suggestions; this keeps the deploy path
+// resilient to partial state (e.g. project metadata unavailable) without
+// silencing the original static guidance.
+func augmentDeployNote(state *nextstep.State, artifacts []*azdext.Artifact, projectRoot, configDir string) {
+	if state == nil {
+		return
+	}
+
+	target := lastNoteArtifact(artifacts)
+	if target == nil {
+		return
+	}
+
+	cachedPayload := func(serviceName string) string {
+		if configDir == "" || serviceName == "" {
+			return ""
+		}
+		spec, err := nextstep.ReadCachedOpenAPISpec(configDir, serviceName, "local")
+		if err != nil {
+			return ""
+		}
+		return nextstep.ExtractInvokeExample(spec)
+	}
+
+	readmeExists := func(relativePath string) bool {
+		if projectRoot == "" {
+			return false
+		}
+		// Only consider the canonical casing — ResolveAfterDeploy emits
+		// "see <relPath>/README.md" verbatim. Accepting other casings here
+		// would yield a broken pointer on case-sensitive filesystems and,
+		// because suggestionsIncludeReadme triggers the replace branch,
+		// would silently discard the working aka.ms fallback.
+		readmePath, err := paths.JoinAllowRoot(projectRoot, relativePath, "README.md")
+		if err != nil {
+			return false
+		}
+		_, err = os.Stat(readmePath)
+		return err == nil
+	}
+
+	suggestions := nextstep.ResolveAfterDeploy(state, cachedPayload, readmeExists)
+	if len(suggestions) == 0 {
+		return
+	}
+
+	block := nextstep.FormatNextForNote(suggestions)
+	if block == "" {
+		return
+	}
+
+	if suggestionsIncludeReadme(suggestions) {
+		target.Metadata["note"] = block
+		return
+	}
+	existing := target.Metadata["note"]
+	if existing == "" {
+		target.Metadata["note"] = block
+		return
+	}
+	target.Metadata["note"] = existing + "\n\n" + block
+}
+
+// lastNoteArtifact returns the last artifact in the slice whose
+// Metadata["note"] is non-empty, or nil when none of the artifacts
+// carry a note. deployArtifacts attaches its informational note to the
+// final endpoint artifact only; scanning from the end keeps this in
+// sync should the convention shift to multi-note artifacts in future.
+func lastNoteArtifact(artifacts []*azdext.Artifact) *azdext.Artifact {
+	for i := len(artifacts) - 1; i >= 0; i-- {
+		a := artifacts[i]
+		if a == nil || a.Metadata == nil {
+			continue
+		}
+		if a.Metadata["note"] != "" {
+			return a
+		}
+	}
+	return nil
+}
+
+// suggestionsIncludeReadme reports whether any suggestion is a local-README
+// pointer (ResolveAfterDeploy emits these as "see <relPath>/README.md").
+// Used by augmentDeployNote to decide whether to replace or append to the
+// existing static aka.ms note.
+func suggestionsIncludeReadme(suggestions []nextstep.Suggestion) bool {
+	for _, s := range suggestions {
+		if strings.HasPrefix(s.Command, "see ") && strings.HasSuffix(s.Command, "README.md") {
+			return true
+		}
+	}
+	return false
+}
+
+// filterServicesByName narrows the assembled state's service slice to a
+// single entry by name. Used by the deploy hook so the rendered "Next:"
+// block reflects only the service whose artifact note is being augmented,
+// not every agent service in the project.
+func filterServicesByName(services []nextstep.ServiceState, name string) []nextstep.ServiceState {
+	if name == "" {
+		return services
+	}
+	for i := range services {
+		if services[i].Name == name {
+			return services[i : i+1]
+		}
+	}
+	return nil
 }
 
 // protocolEndpointInfo holds a displayable protocol label and its invocation URL.
@@ -1686,6 +1836,8 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	const confirmCount = 2 // consecutive times a terminal status must be seen
 
 	deadline := time.Now().Add(pollTimeout)
+	maxAttempts := int(pollTimeout / pollInterval)
+	attempt := 0
 	progress("Waiting for agent to become active")
 
 	var consecutiveActive int
@@ -1698,6 +1850,9 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 			return nil, fmt.Errorf("deployment cancelled: %w", ctx.Err())
 		case <-time.After(pollInterval):
 		}
+
+		attempt++
+		progress(fmt.Sprintf("Polling agent status (%d/%d)", attempt, maxAttempts))
 
 		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agentAPIVersion)
 		if err != nil {
@@ -1758,7 +1913,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 ) (*agent_api.AgentVersionObject, error) {
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		p.credential,
 	)
 
@@ -1833,13 +1988,13 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 
 	// Set the base agent endpoint used for session management (not protocol-specific).
 	baseEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
-	projectEndpoint := strings.TrimRight(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], "/")
+	projectEndpoint := strings.TrimRight(azdEnv["FOUNDRY_PROJECT_ENDPOINT"], "/")
 	envVars[baseEndpointKey] = fmt.Sprintf(
 		"%s/agents/%s/versions/%s", projectEndpoint, agentVersionResponse.Name, agentVersionResponse.Version,
 	)
 
 	endpoints := agentInvocationEndpoints(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		agentVersionResponse.Name,
 		protocols,
 	)

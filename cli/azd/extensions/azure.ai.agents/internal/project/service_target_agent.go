@@ -729,34 +729,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 		azdEnv[kval.Key] = kval.Value
 	}
 
-	// Check if this service was marked for endpoint/card-only update during predeploy.
-	// If so, skip the full deploy — the update will be handled separately.
-	serviceKey := p.getServiceKey(serviceConfig.Name)
-	updateOnlyKey := fmt.Sprintf("AGENT_%s_UPDATE_ONLY", serviceKey)
-	if azdEnv[updateOnlyKey] == "true" {
-		fmt.Fprintf(os.Stderr, "Updating endpoint/card configuration for %q.\n", serviceConfig.Name)
-
-		agentDef, _, err := p.loadContainerAgentDefinition()
-		if err != nil {
-			return nil, err
-		}
-
-		request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef)
-		if err != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidAgentRequest,
-				fmt.Sprintf("failed to create agent request: %s", err),
-				"verify the agent.yaml definition is correct",
-			)
-		}
-
-		if err := p.patchAgentEndpointFields(ctx, agentDef.Name, request.AgentEndpoint, request.AgentCard, azdEnv); err != nil {
-			return nil, err
-		}
-
-		return &azdext.ServiceDeployResult{}, nil
-	}
-
 	var serviceTargetConfig *ServiceTargetAgentConfig
 	if err := UnmarshalStruct(serviceConfig.Config, &serviceTargetConfig); err != nil {
 		return nil, exterrors.Validation(

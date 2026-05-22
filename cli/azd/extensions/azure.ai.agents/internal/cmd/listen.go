@@ -152,24 +152,26 @@ func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 }
 
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	hasHostedAgent := false
+	hasHostedAgentService := false
 	for _, svc := range args.Project.Services {
-		switch svc.Host {
-		case AiAgentHost:
-			if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
-				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
-			}
-			if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
-				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
-			}
-			if isHostedAgentService(svc, args.Project) {
-				hasHostedAgent = true
-			}
+		if svc.Host != AiAgentHost {
+			continue
+		}
+
+		if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
+			return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+		}
+		if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
+			return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
+		}
+
+		if !hasHostedAgentService && isHostedAgentService(svc, args.Project) {
+			hasHostedAgentService = true
 		}
 	}
 
-	// Run developer RBAC pre-flight checks for hosted agent deployments.
-	if hasHostedAgent {
+	// Run developer RBAC pre-flight checks only for hosted agent deployments.
+	if hasHostedAgentService {
 		if err := project.CheckDeveloperRBAC(ctx, azdClient); err != nil {
 			return err
 		}

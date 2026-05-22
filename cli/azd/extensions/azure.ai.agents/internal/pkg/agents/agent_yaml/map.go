@@ -84,6 +84,27 @@ func constructBuildConfig(options ...AgentBuildOption) *AgentBuildConfig {
 	return config
 }
 
+// MapEndpointAndCard maps YAML-layer endpoint and card fields to API model types
+// without requiring or validating the full agent definition. This is used by the
+// endpoint update command where only endpoint/card patching is needed.
+func MapEndpointAndCard(
+	agentEndpoint *AgentEndpoint,
+	agentCard *AgentCard,
+) (*agent_api.AgentEndpoint, *agent_api.AgentCard, error) {
+	// Reuse createAgentAPIRequest with a minimal definition to get
+	// endpoint/card mapping only.
+	req, err := createAgentAPIRequest(
+		AgentDefinition{Name: "placeholder"},
+		nil,
+		agentEndpoint,
+		agentCard,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return req.AgentEndpoint, req.AgentCard, nil
+}
+
 // CreateAgentAPIRequestFromDefinition creates a CreateAgentRequest from AgentDefinition with strong typing
 func CreateAgentAPIRequestFromDefinition(agentTemplate any, options ...AgentBuildOption) (*agent_api.CreateAgentRequest, error) {
 	buildConfig := constructBuildConfig(options...)
@@ -470,21 +491,66 @@ func createAgentAPIRequest(
 
 	// Map optional agent endpoint and card fields.
 	if agentEndpoint != nil {
-		protocols := make(
-			[]agent_api.AgentProtocol, 0, len(agentEndpoint.Protocols),
-		)
-		for _, p := range agentEndpoint.Protocols {
-			trimmed := strings.TrimSpace(p)
-			if trimmed == "" {
-				return nil, fmt.Errorf(
-					"agentEndpoint contains an empty protocol value",
-				)
+		apiEndpoint := &agent_api.AgentEndpoint{}
+
+		// Map protocols
+		if len(agentEndpoint.Protocols) > 0 {
+			protocols := make(
+				[]agent_api.AgentEndpointProtocol, 0, len(agentEndpoint.Protocols),
+			)
+			for _, p := range agentEndpoint.Protocols {
+				trimmed := strings.TrimSpace(p)
+				if trimmed == "" {
+					return nil, fmt.Errorf(
+						"agentEndpoint contains an empty protocol value",
+					)
+				}
+				protocols = append(protocols, agent_api.AgentEndpointProtocol(trimmed))
 			}
-			protocols = append(protocols, agent_api.AgentProtocol(trimmed))
+			apiEndpoint.Protocols = protocols
 		}
-		request.AgentEndpoint = &agent_api.AgentEndpoint{
-			Protocols: protocols,
+
+		// Map version selector
+		if agentEndpoint.VersionSelector != nil {
+			rules := make(
+				[]agent_api.VersionSelectionRule, 0,
+				len(agentEndpoint.VersionSelector.VersionSelectionRules),
+			)
+			for _, r := range agentEndpoint.VersionSelector.VersionSelectionRules {
+				rules = append(rules, agent_api.VersionSelectionRule{
+					Type:              agent_api.VersionSelectorType(r.Type),
+					AgentVersion:      r.AgentVersion,
+					TrafficPercentage: r.TrafficPercentage,
+				})
+			}
+			apiEndpoint.VersionSelector = &agent_api.VersionSelector{
+				VersionSelectionRules: rules,
+			}
 		}
+
+		// Map authorization schemes
+		if len(agentEndpoint.AuthorizationSchemes) > 0 {
+			schemes := make(
+				[]agent_api.AgentEndpointAuthorizationScheme, 0,
+				len(agentEndpoint.AuthorizationSchemes),
+			)
+			for _, s := range agentEndpoint.AuthorizationSchemes {
+				scheme := agent_api.AgentEndpointAuthorizationScheme{
+					Type: agent_api.AgentEndpointAuthorizationSchemeType(s.Type),
+				}
+				if s.IsolationKeySource != nil {
+					scheme.IsolationKeySource = &agent_api.IsolationKeySource{
+						Kind: agent_api.IsolationKeySourceKind(
+							s.IsolationKeySource.Kind,
+						),
+					}
+				}
+				schemes = append(schemes, scheme)
+			}
+			apiEndpoint.AuthorizationSchemes = schemes
+		}
+
+		request.AgentEndpoint = apiEndpoint
 	}
 
 	if agentCard != nil {

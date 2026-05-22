@@ -41,6 +41,7 @@ words:
   - dataagent
   - envkey
   - exterrors
+  - goyaml
   - helloworld
   - hostedagent
   - hostedagents

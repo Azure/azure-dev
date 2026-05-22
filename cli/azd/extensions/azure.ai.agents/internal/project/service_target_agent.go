@@ -780,11 +780,41 @@ func (p *AgentServiceTargetProvider) Deploy(
 	}
 
 	// Branch: code deploy vs container deploy
+	var result *deployResult
 	if agentDef.CodeConfiguration != nil {
-		return p.deployHostedCodeAgent(ctx, serviceConfig, serviceContext, progress, agentDef, azdEnv)
+		result, err = p.deployHostedCodeAgent(ctx, serviceConfig, serviceContext, progress, agentDef, azdEnv)
+	} else {
+		result, err = p.deployHostedAgent(ctx, serviceConfig, serviceContext, progress, agentDef, azdEnv)
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	return p.deployHostedAgent(ctx, serviceConfig, serviceContext, progress, agentDef, azdEnv)
+	// Poll until agent version is active
+	if result.agentVersion.Status != "active" {
+		agentClient := agent_api.NewAgentClient(
+			azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
+			p.credential,
+		)
+		polledVersion, pollErr := p.waitForAgentActive(
+			ctx, agentClient, result.agentName, result.agentVersion.Version, progress,
+		)
+		if pollErr != nil {
+			return nil, pollErr
+		}
+		result.agentVersion = polledVersion
+	} else {
+		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", result.agentVersion.Version)
+	}
+
+	// Patch agent-level endpoint/card fields
+	if err := p.patchAgentEndpointFields(
+		ctx, result.agentName, result.request.AgentEndpoint, result.request.AgentCard, azdEnv,
+	); err != nil {
+		return nil, err
+	}
+
+	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, result.agentVersion, result.protocols)
 }
 
 // shouldUsePreBuiltImage determines whether to use a pre-built image.
@@ -968,6 +998,47 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	}, nil
 }
 
+// deployResult holds the intermediate results from a deploy method (code or container)
+// before the common post-deploy steps (polling, patching, finalization) are applied.
+type deployResult struct {
+	agentVersion *agent_api.AgentVersionObject
+	agentName    string
+	protocols    []agent_yaml.ProtocolVersionRecord
+	request      *agent_api.CreateAgentRequest
+}
+
+// patchAgentEndpointFields patches agent-level fields (agent_endpoint, agent_card).
+// These are agent-level properties, not version-level, so they require a separate PatchAgent call.
+func (p *AgentServiceTargetProvider) patchAgentEndpointFields(
+	ctx context.Context,
+	agentName string,
+	agentEndpoint *agent_api.AgentEndpoint,
+	agentCard *agent_api.AgentCard,
+	azdEnv map[string]string,
+) error {
+	if agentEndpoint == nil && agentCard == nil {
+		return nil
+	}
+
+	agentClient := agent_api.NewAgentClient(
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
+		p.credential,
+	)
+
+	patchRequest := &agent_api.PatchAgentRequest{
+		AgentEndpoint: agentEndpoint,
+		AgentCard:     agentCard,
+	}
+
+	_, err := agentClient.PatchAgent(ctx, agentName, patchRequest, agentAPIVersion)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+	}
+
+	fmt.Fprintf(os.Stderr, "Agent endpoint/card updated.\n")
+	return nil
+}
+
 // finalizeDeploy handles the common post-deploy logic: registering environment
 // variables and building the deploy result artifacts.
 func (p *AgentServiceTargetProvider) finalizeDeploy(
@@ -1028,7 +1099,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	progress azdext.ProgressReporter,
 	agentDef agent_yaml.ContainerAgent,
 	azdEnv map[string]string,
-) (*azdext.ServiceDeployResult, error) {
+) (*deployResult, error) {
 	progress("Deploying hosted agent")
 
 	fullImageURL := ""
@@ -1082,22 +1153,12 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, err
 	}
 
-	// Poll until agent version is active
-	if agentVersionResponse.Status != "active" {
-		agentClient := agent_api.NewAgentClient(
-			azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
-			p.credential,
-		)
-		polledVersion, pollErr := p.waitForAgentActive(ctx, agentClient, prep.request.Name, agentVersionResponse.Version, progress)
-		if pollErr != nil {
-			return nil, pollErr
-		}
-		agentVersionResponse = polledVersion
-	} else {
-		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", agentVersionResponse.Version)
-	}
-
-	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, agentVersionResponse, prep.protocols)
+	return &deployResult{
+		agentVersion: agentVersionResponse,
+		agentName:    prep.request.Name,
+		protocols:    prep.protocols,
+		request:      prep.request,
+	}, nil
 }
 
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
@@ -1375,7 +1436,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	progress azdext.ProgressReporter,
 	agentDef agent_yaml.ContainerAgent,
 	azdEnv map[string]string,
-) (*azdext.ServiceDeployResult, error) {
+) (*deployResult, error) {
 	progress("Deploying hosted agent (code deploy)")
 
 	// Validate that the Foundry project's region supports code deploy.
@@ -1486,36 +1547,12 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 	}
 
-	// Poll for agent version to become active
-	latestVersion := &agentResp.Versions.Latest
-	if latestVersion.Status != "active" {
-		polledVersion, err := p.waitForAgentActive(ctx, agentClient, agentDef.Name, latestVersion.Version, progress)
-		if err != nil {
-			return nil, err
-		}
-		latestVersion = polledVersion
-	} else {
-		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", latestVersion.Version)
-	}
-
-	// Patch agent-level fields (agent_endpoint, agent_card) if present.
-	if prep.request.AgentEndpoint != nil || prep.request.AgentCard != nil {
-		patchRequest := &agent_api.PatchAgentRequest{
-			AgentEndpoint: prep.request.AgentEndpoint,
-			AgentCard:     prep.request.AgentCard,
-		}
-
-		_, err := agentClient.PatchAgent(ctx, agentDef.Name, patchRequest, agentAPIVersion)
-		if err != nil {
-			fmt.Fprintf(os.Stderr,
-				"WARNING: Agent was created/updated, but patching agent endpoint/card failed: %s\n", err,
-			)
-			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
-		}
-		fmt.Fprintf(os.Stderr, "Agent endpoint/card updated.\n")
-	}
-
-	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, latestVersion, prep.protocols)
+	return &deployResult{
+		agentVersion: &agentResp.Versions.Latest,
+		agentName:    agentDef.Name,
+		protocols:    prep.protocols,
+		request:      prep.request,
+	}, nil
 }
 
 // deployArtifacts constructs the artifacts list for deployment results.
@@ -1892,35 +1929,6 @@ func (p *AgentServiceTargetProvider) createAgent(
 	}
 
 	fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
-
-	// Patch agent-level fields (agent_endpoint, agent_card) if present.
-	// These are agent-level properties, not version-level, so they require
-	// a separate PatchAgent call after version creation.
-	if request.AgentEndpoint != nil || request.AgentCard != nil {
-		patchRequest := &agent_api.PatchAgentRequest{
-			AgentEndpoint: request.AgentEndpoint,
-			AgentCard:     request.AgentCard,
-		}
-
-		_, err := agentClient.PatchAgent(
-			ctx, request.Name, patchRequest, agentAPIVersion,
-		)
-		if err != nil {
-			fmt.Fprintf(os.Stderr,
-				"WARNING: Agent version '%s' (version %s) was created, "+
-					"but updating agent endpoint/card failed.\n",
-				agentVersionResponse.Name,
-				agentVersionResponse.Version,
-			)
-			return nil, exterrors.ServiceFromAzure(
-				err, exterrors.OpCreateAgent,
-			)
-		}
-
-		fmt.Fprintf(os.Stderr,
-			"Agent endpoint and card updated successfully!\n",
-		)
-	}
 
 	return agentVersionResponse, nil
 }

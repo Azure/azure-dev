@@ -617,9 +617,34 @@ type ProtocolVersionRecord struct {
 	Version  string `json:"version" yaml:"version"`
 }
 
-// AgentEndpoint describes the endpoint protocols an agent supports in agent.yaml.
+// VersionSelectionRule describes how traffic is routed to an agent version in agent.yaml.
+type VersionSelectionRule struct {
+	Type              string `json:"type" yaml:"type"`
+	AgentVersion      string `json:"agentVersion" yaml:"agent_version"`
+	TrafficPercentage *int32 `json:"trafficPercentage,omitempty" yaml:"traffic_percentage,omitempty"`
+}
+
+// VersionSelector determines how traffic is routed to different versions of an agent.
+type VersionSelector struct {
+	VersionSelectionRules []VersionSelectionRule `json:"versionSelectionRules" yaml:"version_selection_rules"`
+}
+
+// IsolationKeySource describes the source from which a per-user isolation key is derived.
+type IsolationKeySource struct {
+	Kind string `json:"kind" yaml:"kind"`
+}
+
+// AuthorizationScheme describes an authorization scheme for the agent endpoint in agent.yaml.
+type AuthorizationScheme struct {
+	Type               string              `json:"type" yaml:"type"`
+	IsolationKeySource *IsolationKeySource `json:"isolationKeySource,omitempty" yaml:"isolation_key_source,omitempty"`
+}
+
+// AgentEndpoint describes the endpoint configuration for an agent in agent.yaml.
 type AgentEndpoint struct {
-	Protocols []string `json:"protocols" yaml:"protocols"`
+	VersionSelector      *VersionSelector      `json:"versionSelector,omitempty" yaml:"version_selector,omitempty"`
+	Protocols            []string              `json:"protocols,omitempty" yaml:"protocols,omitempty"`
+	AuthorizationSchemes []AuthorizationScheme `json:"authorizationSchemes,omitempty" yaml:"authorization_schemes,omitempty"`
 }
 
 // AgentCardSkill describes a single capability that an agent can perform.

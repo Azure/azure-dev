@@ -53,6 +53,11 @@ type initFlags struct {
 	src               string
 	env               string
 	protocols         []string
+	// deploy mode flags for non-interactive code deploy support
+	deployMode    string // "container" or "code"; empty = prompt interactively
+	runtime       string // e.g. "python_3_13", "python_3_14", "dotnet_10"
+	entryPoint    string // e.g. "app.py", "MyAgent.dll"
+	depResolution string // "remote_build" or "bundled"; defaults to "remote_build"
 	// force, when true, lets headless callers (--no-prompt) pre-consent to
 	// overwrite prompts that would otherwise return a structured error. It
 	// mirrors the `--force` convention used by `azd down`, `azd env remove`,
@@ -613,7 +618,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
   azd ai agent init -m ./agent.manifest.yaml --agent-name my-unique-agent
 
   # Initialize from local agent code
-  azd ai agent init --src ./src/my-agent --agent-name my-unique-agent`,
+  azd ai agent init --src ./src/my-agent --agent-name my-unique-agent
+
+  # Non-interactive code deploy (CI/CD)
+  azd ai agent init --no-prompt --project-id "<resource-id>" \
+    --deploy-mode code --runtime python_3_13 --entry-point app.py`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.noPrompt = extCtx.NoPrompt
@@ -852,6 +861,18 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
 		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
 
+	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "",
+		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'container' in --no-prompt.")
+
+	cmd.Flags().StringVar(&flags.runtime, "runtime", "",
+		"Runtime for code deploy (e.g., 'python_3_13', 'python_3_14', 'dotnet_10'). Required with --deploy-mode code --no-prompt.")
+
+	cmd.Flags().StringVar(&flags.entryPoint, "entry-point", "",
+		"Entry point file for code deploy (e.g., 'app.py', 'MyAgent.dll'). Required with --deploy-mode code --no-prompt.")
+
+	cmd.Flags().StringVar(&flags.depResolution, "dep-resolution", "",
+		"Dependency resolution for code deploy: 'remote_build' or 'bundled'. Defaults to 'remote_build'.")
+
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+
 			"Required together with --no-prompt when init would otherwise need confirmation.")
@@ -873,6 +894,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to convert src path to relative path: %w", err)
 		}
 		a.flags.src = relPath
+	}
+
+	// Validate code deploy flags
+	if err := a.validateCodeDeployFlags(); err != nil {
+		return err
 	}
 
 	// If --manifest is given
@@ -910,7 +936,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		// Code deploy is supported for Python and .NET projects.
 		if _, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
 			showCodeDeploy := isPythonProject(targetDir) || isDotnetProject(targetDir)
-			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy)
+			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, a.flags.deployMode)
 			if err != nil {
 				return fmt.Errorf("prompting for deploy mode: %w", err)
 			}
@@ -918,7 +944,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 
 			if a.isCodeDeploy {
 				// Prompt for code configuration and update the manifest
-				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt)
+				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt, codeDeployOptions{
+					runtime:       a.flags.runtime,
+					entryPoint:    a.flags.entryPoint,
+					depResolution: a.flags.depResolution,
+				})
 				if err != nil {
 					return fmt.Errorf("prompting for code configuration: %w", err)
 				}
@@ -2946,4 +2976,61 @@ func extractConnectionConfigs(
 	}
 
 	return connections, credentialEnvVars, nil
+}
+
+// validateCodeDeployFlags checks that required flags are present when using
+// --deploy-mode code in --no-prompt mode.
+func (a *InitAction) validateCodeDeployFlags() error {
+	return validateCodeDeployInput(
+		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution)
+}
+
+// validateCodeDeployInput is the shared validation logic for code deploy flags.
+// Used by both InitAction and InitFromCodeAction.
+func validateCodeDeployInput(noPrompt bool, deployMode, runtime, entryPoint, depResolution string) error {
+	if deployMode != "" && deployMode != "container" && deployMode != "code" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--deploy-mode must be 'container' or 'code'",
+			"Specify --deploy-mode container or --deploy-mode code",
+		)
+	}
+	if runtime != "" {
+		validRuntimes := map[string]bool{
+			"python_3_13": true,
+			"python_3_14": true,
+			"dotnet_10":   true,
+		}
+		if !validRuntimes[runtime] {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--runtime must be one of: python_3_13, python_3_14, dotnet_10",
+				"Specify a valid runtime value",
+			)
+		}
+	}
+	if depResolution != "" && depResolution != "remote_build" && depResolution != "bundled" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--dep-resolution must be 'remote_build' or 'bundled'",
+			"Specify --dep-resolution remote_build or --dep-resolution bundled",
+		)
+	}
+	if noPrompt && deployMode == "code" {
+		if runtime == "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--runtime is required when using --deploy-mode code with --no-prompt",
+				"Specify --runtime (e.g., python_3_13, python_3_14, dotnet_10)",
+			)
+		}
+		if entryPoint == "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--entry-point is required when using --deploy-mode code with --no-prompt",
+				"Specify --entry-point (e.g., app.py, main.py, MyAgent.dll)",
+			)
+		}
+	}
+	return nil
 }

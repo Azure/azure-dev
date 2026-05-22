@@ -152,12 +152,11 @@ func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 }
 
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	hasAgentService := false
+	hasHostedAgentService := false
 	for _, svc := range args.Project.Services {
 		if svc.Host != AiAgentHost {
 			continue
 		}
-		hasAgentService = true
 
 		if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
 			return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
@@ -165,10 +164,14 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
 			return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 		}
+
+		if !hasHostedAgentService && isHostedAgentService(svc, args.Project) {
+			hasHostedAgentService = true
+		}
 	}
 
-	// Run developer RBAC pre-flight checks for hosted agent deployments.
-	if hasAgentService {
+	// Run developer RBAC pre-flight checks only for hosted agent deployments.
+	if hasHostedAgentService {
 		if err := project.CheckDeveloperRBAC(ctx, azdClient); err != nil {
 			return err
 		}

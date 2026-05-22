@@ -7,10 +7,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/paths"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -85,8 +85,11 @@ func runEndpointUpdate(
 	}
 
 	// Read and parse agent.yaml.
-	agentYamlPath := filepath.Join(proj.Path, svc.RelativePath, "agent.yaml")
-	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // path from azd project config
+	agentYamlPath, err := paths.JoinAllowRoot(proj.Path, svc.RelativePath, "agent.yaml")
+	if err != nil {
+		return fmt.Errorf("invalid agent.yaml path: %w", err)
+	}
+	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // path validated by JoinAllowRoot
 	if err != nil {
 		return fmt.Errorf("failed to read agent.yaml: %w", err)
 	}
@@ -132,6 +135,6 @@ func runEndpointUpdate(
 		return fmt.Errorf("failed to update agent %q: %w", agentDef.Name, err)
 	}
 
-	fmt.Fprintf(os.Stdout, output.WithSuccessFormat("Agent %q endpoint/card configuration updated successfully.\n"), agentDef.Name)
+	fmt.Fprint(os.Stdout, output.WithSuccessFormat("Agent %q endpoint/card configuration updated successfully.\n", agentDef.Name))
 	return nil
 }

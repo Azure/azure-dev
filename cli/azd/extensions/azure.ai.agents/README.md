@@ -1,5 +1,18 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Running Local Agents
+
+`azd ai agent run` starts the selected agent locally and, by default, opens the
+Agent Inspector after the local agent port is accepting connections. The
+inspector launch is best-effort: if `azure.ai.inspector` is not installed or
+fails to start, the agent process keeps running and azd prints install guidance.
+
+Use `--no-inspector` to run only the local agent process:
+
+```bash
+azd ai agent run --no-inspector
+```
+
 ## Local Development
 
 ### Prerequisites

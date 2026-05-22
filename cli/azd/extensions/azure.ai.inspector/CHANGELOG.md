@@ -1,6 +1,6 @@
 # Release History
 
-## 0.0.1-preview (2026-05-22)
+## 0.1.0-preview (2026-05-22)
 
 Initial preview release of the Agent Inspector extension.
 

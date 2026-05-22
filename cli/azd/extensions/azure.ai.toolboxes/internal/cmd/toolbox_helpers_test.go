@@ -301,3 +301,115 @@ func TestBuildToolboxMcpURL(t *testing.T) {
 	)
 	assert.Contains(t, escaped, "versions/v%201%2F2/mcp")
 }
+
+func TestExtractConnectionTools(t *testing.T) {
+	tools := []map[string]any{
+		// Connection-backed mcp.
+		{
+			"type":                  "mcp",
+			"name":                  "gh",
+			"project_connection_id": "/conn/gh",
+		},
+		// Connection-backed azure_ai_search.
+		{
+			"type": "azure_ai_search",
+			"name": "search",
+			"azure_ai_search": map[string]any{
+				"indexes": []any{
+					map[string]any{
+						"project_connection_id": "/conn/search",
+						"index_name":            "products",
+					},
+				},
+			},
+		},
+		// Connection-backed a2a_preview.
+		{
+			"type":                  "a2a_preview",
+			"name":                  "a2a",
+			"project_connection_id": "/conn/a2a",
+		},
+		// Connection-backed web_search (GroundingWithCustomSearch).
+		{
+			"type": "web_search",
+			"name": "bing",
+			"custom_search_configuration": map[string]any{
+				"project_connection_id": "/conn/bing",
+				"instance_name":         "docs-config",
+			},
+		},
+		// Built-in web_search (no custom_search_configuration) — must be skipped.
+		{
+			"type": "web_search",
+			"name": "builtin-ws",
+		},
+		// Other built-ins — never emit rows.
+		{"type": "code_interpreter", "name": "ci"},
+		{"type": "file_search", "name": "fs"},
+	}
+
+	rows := extractConnectionTools(tools)
+	require.Len(t, rows, 4, "expected one row per connection-backed entry; built-in web_search must be skipped")
+
+	byName := map[string]map[string]string{}
+	for _, r := range rows {
+		byName[r["name"]] = r
+	}
+
+	gh := byName["gh"]
+	require.NotNil(t, gh)
+	assert.Equal(t, "mcp", gh["type"])
+	assert.Equal(t, "/conn/gh", gh["connection_id"])
+	assert.Equal(t, "gh", gh["connection"])
+	assert.Empty(t, gh["index"])
+	assert.Empty(t, gh["instance_name"])
+
+	search := byName["search"]
+	require.NotNil(t, search)
+	assert.Equal(t, "azure_ai_search", search["type"])
+	assert.Equal(t, "/conn/search", search["connection_id"])
+	assert.Equal(t, "products", search["index"])
+
+	a2a := byName["a2a"]
+	require.NotNil(t, a2a)
+	assert.Equal(t, "a2a_preview", a2a["type"])
+	assert.Equal(t, "/conn/a2a", a2a["connection_id"])
+
+	bing := byName["bing"]
+	require.NotNil(t, bing)
+	assert.Equal(t, "web_search", bing["type"])
+	assert.Equal(t, "/conn/bing", bing["connection_id"])
+	assert.Equal(t, "docs-config", bing["instance_name"])
+
+	// Confirm the built-in and other built-in tools never produced a row.
+	assert.NotContains(t, byName, "builtin-ws", "built-in web_search must be skipped")
+	assert.NotContains(t, byName, "ci")
+	assert.NotContains(t, byName, "fs")
+}
+
+func TestExtractConnectionTools_SkipsMalformedEntries(t *testing.T) {
+	tools := []map[string]any{
+		// mcp without a project_connection_id is not surfaced.
+		{"type": "mcp", "name": "no-id"},
+		// mcp with empty project_connection_id is not surfaced.
+		{"type": "mcp", "name": "empty-id", "project_connection_id": ""},
+		// web_search whose custom_search_configuration has no project_connection_id.
+		{
+			"type": "web_search",
+			"name": "no-cfg-id",
+			"custom_search_configuration": map[string]any{
+				"instance_name": "x",
+			},
+		},
+		// web_search whose custom_search_configuration.project_connection_id is empty.
+		{
+			"type": "web_search",
+			"name": "empty-cfg-id",
+			"custom_search_configuration": map[string]any{
+				"project_connection_id": "",
+				"instance_name":         "x",
+			},
+		},
+	}
+	assert.Empty(t, extractConnectionTools(tools))
+}

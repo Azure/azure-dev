@@ -405,8 +405,8 @@ func writeInlineSkills(candidateDir string, config map[string]any) error {
 // original structure (may be a list or an object).
 func writeToolsFile(candidateDir string, config map[string]any) error {
 	toolDefs, hasDefs := config["toolDefinitions"]
-	toolDescs, hasDescs := config["toolDescriptions"]
-	if !hasDefs && !hasDescs {
+	toolDescriptions, hasToolDescriptions := config["toolDescriptions"]
+	if !hasDefs && !hasToolDescriptions {
 		return nil
 	}
 
@@ -414,15 +414,15 @@ func writeToolsFile(candidateDir string, config map[string]any) error {
 	// directly (preserves array or object). If both exist, wrap in an object.
 	var payload any
 	switch {
-	case hasDefs && hasDescs:
+	case hasDefs && hasToolDescriptions:
 		payload = map[string]any{
 			"toolDefinitions":  toolDefs,
-			"toolDescriptions": toolDescs,
+			"toolDescriptions": toolDescriptions,
 		}
 	case hasDefs:
 		payload = toolDefs
 	default:
-		payload = toolDescs
+		payload = toolDescriptions
 	}
 
 	data, err := json.MarshalIndent(payload, "", "  ")

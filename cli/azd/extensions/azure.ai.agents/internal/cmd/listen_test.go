@@ -6,6 +6,10 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+<<<<<<< HEAD
+=======
+	"strings"
+>>>>>>> main
 	"testing"
 
 	"azureaiagent/internal/project"
@@ -35,6 +39,56 @@ func TestPostdeployHandler_NoAgentService_NoOp(t *testing.T) {
 	// nil azdClient — the early return must fire before any RPC call.
 	if err := postdeployHandler(t.Context(), nil, args); err != nil {
 		t.Fatalf("expected no error for project without agent services, got: %v", err)
+	}
+}
+
+func TestIsHostedAgentServiceRejectsTraversal(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	projectRoot := filepath.Join(parent, "project")
+	outside := filepath.Join(parent, "outside")
+	if err := os.MkdirAll(projectRoot, 0o750); err != nil {
+		t.Fatalf("failed to create project root: %v", err)
+	}
+	if err := os.MkdirAll(outside, 0o750); err != nil {
+		t.Fatalf("failed to create outside directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "agent.yaml"), []byte("kind: hostedAgent\n"), 0o600); err != nil {
+		t.Fatalf("failed to write outside agent.yaml: %v", err)
+	}
+
+	svc := &azdext.ServiceConfig{Name: "echo", Host: AiAgentHost, RelativePath: "../outside"}
+	proj := &azdext.ProjectConfig{Path: projectRoot}
+
+	if isHostedAgentService(svc, proj) {
+		t.Fatal("expected traversal service path to be rejected")
+	}
+}
+
+func TestKindEnvUpdateRejectsTraversal(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	projectRoot := filepath.Join(parent, "project")
+	outside := filepath.Join(parent, "outside")
+	if err := os.MkdirAll(projectRoot, 0o750); err != nil {
+		t.Fatalf("failed to create project root: %v", err)
+	}
+	if err := os.MkdirAll(outside, 0o750); err != nil {
+		t.Fatalf("failed to create outside directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "agent.yaml"), []byte("kind: hostedAgent\n"), 0o600); err != nil {
+		t.Fatalf("failed to write outside agent.yaml: %v", err)
+	}
+
+	svc := &azdext.ServiceConfig{Name: "echo", Host: AiAgentHost, RelativePath: "../outside"}
+	proj := &azdext.ProjectConfig{Path: projectRoot}
+
+	err := kindEnvUpdate(t.Context(), nil, proj, svc, "dev")
+
+	if err == nil || !strings.Contains(err.Error(), "invalid service path") {
+		t.Fatalf("expected invalid service path error, got: %v", err)
 	}
 }
 

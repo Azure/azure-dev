@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 	"slices"
 	"strings"
 
@@ -82,11 +83,11 @@ func (a *modelSelector) updateEnvLocation(ctx context.Context, selectedLocation 
 
 	_, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: envName,
-		Key:     "AZURE_LOCATION",
+		Key:     "AZURE_AI_DEPLOYMENTS_LOCATION",
 		Value:   selectedLocation,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to update AZURE_LOCATION in azd environment: %w", err)
+		return fmt.Errorf("failed to update AZURE_AI_DEPLOYMENTS_LOCATION in azd environment: %w", err)
 	}
 
 	if a.azureContext == nil {
@@ -97,7 +98,7 @@ func (a *modelSelector) updateEnvLocation(ctx context.Context, selectedLocation 
 	}
 	a.azureContext.Scope.Location = selectedLocation
 
-	fmt.Println(output.WithSuccessFormat("Updated AZURE_LOCATION to '%s' in your azd environment.", selectedLocation))
+	fmt.Println(output.WithSuccessFormat("Updated AZURE_AI_DEPLOYMENTS_LOCATION to '%s' in your azd environment.", selectedLocation))
 	return nil
 }
 
@@ -129,7 +130,7 @@ func (a *InitAction) selectFromList(
 			Label: val,
 		}
 		if val == defaultStr {
-			defaultIndex = int32(i)
+			defaultIndex = boundedInt32Index(i)
 		}
 	}
 	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
@@ -146,20 +147,37 @@ func (a *InitAction) selectFromList(
 	return options[*resp.Value], nil
 }
 
-func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_yaml.Model) (*project.Deployment, error) {
+// getModelDeploymentDetails resolves the deployment for a single model
+// referenced by the agent manifest. It returns the resolved
+// project.Deployment alongside an `isNew` flag indicating whether the
+// caller selected a not-yet-provisioned deployment (true) or an
+// existing one already deployed in Azure (false). Callers use the
+// flag to drive the AI_AGENT_PENDING_PROVISION signal that the
+// post-init trailer and `azd ai agent doctor` consume — see
+// pending_provision.go for the lifecycle contract.
+//
+// Flag semantics by branch:
+//   - matching existing deployment selected (line ~200) → isNew=false
+//   - "use_different" path picks an existing project deployment    → isNew=false
+//   - "deploy_new" path, or fall-through after a no-match / no-deployment
+//     scenario, or no AZURE_AI_PROJECT_ID set (deploy-new init flow)
+//     → isNew=true
+func (a *InitAction) getModelDeploymentDetails(
+	ctx context.Context, model agent_yaml.Model,
+) (*project.Deployment, bool, error) {
 	resp, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: a.environment.Name,
 		Key:     "AZURE_AI_PROJECT_ID",
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get the environment variable AZURE_AI_PROJECT_ID from your azd environment: %w", err)
+		return nil, false, fmt.Errorf("failed to get the environment variable AZURE_AI_PROJECT_ID from your azd environment: %w", err)
 	}
 
 	foundryProjectId := resp.Value
 	if foundryProjectId != "" {
 		parts := strings.Split(foundryProjectId, "/")
 		if len(parts) < 9 {
-			return nil, fmt.Errorf(
+			return nil, false, fmt.Errorf(
 				"invalid AZURE_AI_PROJECT_ID format: expected at least 9 path segments, got %d", len(parts))
 		}
 
@@ -169,7 +187,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 
 		allDeployments, err := listProjectDeployments(ctx, a.credential, subscription, resourceGroup, accountName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list deployments: %w", err)
+			return nil, false, fmt.Errorf("failed to list deployments: %w", err)
 		}
 
 		matchingDeployments := make(map[string]*FoundryDeploymentInfo)
@@ -191,7 +209,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 
 			selection, err := a.selectFromList(ctx, "deployment", options, options[0])
 			if err != nil {
-				return nil, fmt.Errorf("failed to select deployment: %w", err)
+				return nil, false, fmt.Errorf("failed to select deployment: %w", err)
 			}
 
 			if selection != "Create new model deployment" {
@@ -209,7 +227,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 							Name:     deployment.SkuName,
 							Capacity: deployment.SkuCapacity,
 						},
-					}, nil
+					}, false, nil
 				}
 			}
 		} else {
@@ -239,9 +257,9 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 			})
 			if err != nil {
 				if exterrors.IsCancellation(err) {
-					return nil, exterrors.Cancelled("model deployment selection was cancelled")
+					return nil, false, exterrors.Cancelled("model deployment selection was cancelled")
 				}
-				return nil, fmt.Errorf("failed to prompt for no-match choice: %w", err)
+				return nil, false, fmt.Errorf("failed to prompt for no-match choice: %w", err)
 			}
 
 			if noMatchChoices[*noMatchResp.Value].Value == "use_different" {
@@ -262,7 +280,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 
 					selection, err := a.selectFromList(ctx, "deployment", deploymentOptions, deploymentOptions[0])
 					if err != nil {
-						return nil, fmt.Errorf("failed to select deployment: %w", err)
+						return nil, false, fmt.Errorf("failed to select deployment: %w", err)
 					}
 
 					if deployment, exists := deploymentMap[selection]; exists {
@@ -278,7 +296,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 								Name:     deployment.SkuName,
 								Capacity: deployment.SkuCapacity,
 							},
-						}, nil
+						}, false, nil
 					}
 				}
 			}
@@ -288,7 +306,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 
 	modelDetails, err := a.getModelSelector().getModelDetails(ctx, model.Id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get model details: %w", err)
+		return nil, false, fmt.Errorf("failed to get model details: %w", err)
 	}
 
 	message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name)", modelDetails.ModelName)
@@ -301,7 +319,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to prompt for text value: %w", err)
+		return nil, false, fmt.Errorf("failed to prompt for text value: %w", err)
 	}
 
 	modelDeployment := modelDeploymentInput.Value
@@ -317,7 +335,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 			Name:     modelDetails.Sku.Name,
 			Capacity: int(modelDetails.Capacity),
 		},
-	}, nil
+	}, true, nil
 }
 
 func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (*azdext.AiModelDeployment, error) {
@@ -824,6 +842,14 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 
 	deploymentDetails := []project.Deployment{}
 	paramValues := agent_yaml.ParameterValues{}
+	// anyModelProcessed tracks whether we encountered at least one
+	// model resource (so we know whether to call remove on the
+	// no-new-deployments path — a manifest with no models should not
+	// touch the pending-provision signal at all). anyNewDeployment
+	// flips true when getModelDeploymentDetails reports any tag-new
+	// branch was taken.
+	anyModelProcessed := false
+	anyNewDeployment := false
 	switch agentDef.Kind {
 	case agent_yaml.AgentKindHosted:
 		for _, resource := range manifest.Resources {
@@ -840,12 +866,16 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 			if resourceDef.Kind == agent_yaml.ResourceKindModel {
 				resource := resource.(agent_yaml.ModelResource)
 				model := agent_yaml.Model{Id: resource.Id}
-				modelDeployment, err := a.getModelDeploymentDetails(ctx, model)
+				modelDeployment, isNew, err := a.getModelDeploymentDetails(ctx, model)
 				if err != nil {
 					return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
 				}
 				deploymentDetails = append(deploymentDetails, *modelDeployment)
 				paramValues[resource.Name] = modelDeployment.Name
+				anyModelProcessed = true
+				if isNew {
+					anyNewDeployment = true
+				}
 			}
 		}
 	}
@@ -860,6 +890,19 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 	}
 	if err := persistFirstDeploymentName(ctx, setEnv, deploymentDetails); err != nil {
 		return nil, nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+	}
+
+	// Update the AI_AGENT_PENDING_PROVISION signal based on the
+	// aggregate of all model resources processed in this manifest.
+	// See updatePendingModelDeploymentSignal for the rule table.
+	// Errors writing the signal are logged but not returned: init's
+	// primary work (manifest processing) succeeded, and a transport
+	// failure on the hint signal should not abort it. The next init
+	// or provision run will reconcile.
+	if err := updatePendingModelDeploymentSignal(
+		ctx, a.azdClient, a.environment.Name, anyModelProcessed, anyNewDeployment,
+	); err != nil {
+		log.Printf("warning: failed to update model_deployment provision signal: %v", err)
 	}
 
 	fmt.Println("Model deployment details processed and injected into agent definition. Deployment details can also be found in the JSON formatted AI_PROJECT_DEPLOYMENTS environment variable.")

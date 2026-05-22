@@ -24,11 +24,13 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
+	"azureaiagent/internal/pkg/paths"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -133,7 +135,14 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 		)
 	}
 	servicePath := serviceConfig.RelativePath
-	fullPath := filepath.Join(proj.Project.Path, servicePath)
+	fullPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid service path for %s: %s", serviceConfig.Name, err),
+			"update azure.yaml so the agent service path stays within the project directory",
+		)
+	}
 
 	// Get and store environment
 	azdEnvClient := p.azdClient.Environment()
@@ -222,8 +231,22 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	}
 
 	// Look for agent.yaml or agent.yml in the service directory root
-	agentYamlPath := filepath.Join(fullPath, "agent.yaml")
-	agentYmlPath := filepath.Join(fullPath, "agent.yml")
+	agentYamlPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath, "agent.yaml")
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid agent definition path for %s: %s", serviceConfig.Name, err),
+			"update azure.yaml so the agent definition stays within the project directory",
+		)
+	}
+	agentYmlPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath, "agent.yml")
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid agent definition path for %s: %s", serviceConfig.Name, err),
+			"update azure.yaml so the agent definition stays within the project directory",
+		)
+	}
 
 	if _, err := os.Stat(agentYamlPath); err == nil {
 		p.agentDefinitionPath = agentYamlPath
@@ -970,6 +993,28 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 		protocols,
 	)
 
+	// Best-effort: enrich the last endpoint artifact's note with a
+	// context-aware "Next:" block. Failures are non-fatal — the static
+	// aka.ms link emitted by deployArtifacts is preserved when the
+	// enrichment is skipped or short-circuits.
+	if state, _ := nextstep.AssembleState(ctx, p.azdClient); state != nil {
+		// Scope to the service just deployed. ResolveAfterDeploy renders a
+		// show/invoke pair per state.Services entry; without this filter a
+		// multi-agent project would attach guidance for other services to
+		// this artifact's note.
+		state.Services = filterServicesByName(state.Services, serviceConfig.Name)
+
+		projectRoot := ""
+		if proj, err := p.azdClient.Project().Get(ctx, nil); err == nil && proj.Project != nil {
+			projectRoot = proj.Project.Path
+		}
+		configDir := ""
+		if projectRoot != "" && p.env != nil && p.env.Name != "" {
+			configDir = filepath.Join(projectRoot, ".azure", p.env.Name)
+		}
+		augmentDeployNote(state, artifacts, projectRoot, configDir)
+	}
+
 	return &azdext.ServiceDeployResult{
 		Artifacts: artifacts,
 	}, nil
@@ -1528,6 +1573,131 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 	}
 
 	return artifacts
+}
+
+// augmentDeployNote enriches the last endpoint artifact's note with a
+// context-aware "Next:" block resolved from the provided state.
+//
+// Collision rule with the static aka.ms link emitted by deployArtifacts:
+//
+//   - When the resolved block contains a "see <relPath>/README.md"
+//     suggestion (i.e. a local README exists at the service path), the
+//     aka.ms line is replaced entirely — the block already points the
+//     user at the more-detailed local doc, so the canned link is
+//     redundant.
+//   - Otherwise the aka.ms line is preserved and the "Next:" block is
+//     appended below, separated by a blank line — aka.ms remains the
+//     fallback doc pointer when no local README is present.
+//
+// The function is a no-op when state is nil, no artifact carries a note,
+// or the resolver returns no suggestions; this keeps the deploy path
+// resilient to partial state (e.g. project metadata unavailable) without
+// silencing the original static guidance.
+func augmentDeployNote(state *nextstep.State, artifacts []*azdext.Artifact, projectRoot, configDir string) {
+	if state == nil {
+		return
+	}
+
+	target := lastNoteArtifact(artifacts)
+	if target == nil {
+		return
+	}
+
+	cachedPayload := func(serviceName string) string {
+		if configDir == "" || serviceName == "" {
+			return ""
+		}
+		spec, err := nextstep.ReadCachedOpenAPISpec(configDir, serviceName, "local")
+		if err != nil {
+			return ""
+		}
+		return nextstep.ExtractInvokeExample(spec)
+	}
+
+	readmeExists := func(relativePath string) bool {
+		if projectRoot == "" {
+			return false
+		}
+		// Only consider the canonical casing — ResolveAfterDeploy emits
+		// "see <relPath>/README.md" verbatim. Accepting other casings here
+		// would yield a broken pointer on case-sensitive filesystems and,
+		// because suggestionsIncludeReadme triggers the replace branch,
+		// would silently discard the working aka.ms fallback.
+		readmePath, err := paths.JoinAllowRoot(projectRoot, relativePath, "README.md")
+		if err != nil {
+			return false
+		}
+		_, err = os.Stat(readmePath)
+		return err == nil
+	}
+
+	suggestions := nextstep.ResolveAfterDeploy(state, cachedPayload, readmeExists)
+	if len(suggestions) == 0 {
+		return
+	}
+
+	block := nextstep.FormatNextForNote(suggestions)
+	if block == "" {
+		return
+	}
+
+	if suggestionsIncludeReadme(suggestions) {
+		target.Metadata["note"] = block
+		return
+	}
+	existing := target.Metadata["note"]
+	if existing == "" {
+		target.Metadata["note"] = block
+		return
+	}
+	target.Metadata["note"] = existing + "\n\n" + block
+}
+
+// lastNoteArtifact returns the last artifact in the slice whose
+// Metadata["note"] is non-empty, or nil when none of the artifacts
+// carry a note. deployArtifacts attaches its informational note to the
+// final endpoint artifact only; scanning from the end keeps this in
+// sync should the convention shift to multi-note artifacts in future.
+func lastNoteArtifact(artifacts []*azdext.Artifact) *azdext.Artifact {
+	for i := len(artifacts) - 1; i >= 0; i-- {
+		a := artifacts[i]
+		if a == nil || a.Metadata == nil {
+			continue
+		}
+		if a.Metadata["note"] != "" {
+			return a
+		}
+	}
+	return nil
+}
+
+// suggestionsIncludeReadme reports whether any suggestion is a local-README
+// pointer (ResolveAfterDeploy emits these as "see <relPath>/README.md").
+// Used by augmentDeployNote to decide whether to replace or append to the
+// existing static aka.ms note.
+func suggestionsIncludeReadme(suggestions []nextstep.Suggestion) bool {
+	for _, s := range suggestions {
+		if strings.HasPrefix(s.Command, "see ") && strings.HasSuffix(s.Command, "README.md") {
+			return true
+		}
+	}
+	return false
+}
+
+// filterServicesByName narrows the assembled state's service slice to a
+// single entry by name. Used by the deploy hook so the rendered "Next:"
+// block reflects only the service whose artifact note is being augmented,
+// not every agent service in the project.
+func filterServicesByName(services []nextstep.ServiceState, name string) []nextstep.ServiceState {
+	if name == "" {
+		return services
+	}
+	for i := range services {
+		if services[i].Name == name {
+			return services[i : i+1]
+		}
+	}
+	return nil
 }
 
 // protocolEndpointInfo holds a displayable protocol label and its invocation URL.

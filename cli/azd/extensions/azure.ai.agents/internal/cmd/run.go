@@ -5,25 +5,43 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
+
+	"azureaiagent/internal/cmd/nextstep"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+const (
+	agentInspectorExtensionID     = "azure.ai.inspector"
+	agentInspectorReadyTimeout    = 30 * time.Second
+	agentInspectorReadyPollPeriod = 250 * time.Millisecond
 )
 
 type runFlags struct {
 	port         int
 	name         string
 	startCommand string
+	noInspector  bool
 }
 
 func newRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -45,8 +63,8 @@ The startup command is read from the startupCommand property of the
 agent service in azure.yaml. If not set, it is auto-detected from the
 project type. Use --start-command to override both.
 
-Use a separate terminal to invoke the running agent:
-  azd ai agent invoke --local "Hello!"`,
+By default, this also opens Agent Inspector after the local agent starts
+listening. Use --no-inspector to skip this.`,
 		Example: `  # Start the agent in the current directory
   azd ai agent run
 
@@ -55,6 +73,9 @@ Use a separate terminal to invoke the running agent:
 
   # Start on a custom port
   azd ai agent run --port 9090
+
+  # Start without opening Agent Inspector
+  azd ai agent run --no-inspector
 
   # Start with an explicit command
   azd ai agent run --start-command "python app.py"`,
@@ -71,6 +92,7 @@ Use a separate terminal to invoke the running agent:
 	cmd.Flags().IntVarP(&flags.port, "port", "p", DefaultPort, "Port to listen on")
 	cmd.Flags().StringVarP(&flags.startCommand, "start-command", "c", "",
 		"Explicit startup command (overrides azure.yaml and auto-detection)")
+	cmd.Flags().BoolVar(&flags.noInspector, "no-inspector", false, "Do not open Agent Inspector")
 
 	return cmd
 }
@@ -158,6 +180,8 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 			env = append(env, fmt.Sprintf("%s=%s", k, v))
 		}
 		env = appendFoundryEnvVars(env, azdEnvVars, runCtx.ServiceName)
+	} else if shouldWarnLoadAzdEnvironmentFailure(err) {
+		fmt.Fprintf(os.Stderr, "Warning: failed to load azd environment values: %s\n", err)
 	}
 
 	// Resolve ${{connections.<name>.credentials.<key>}} references from the
@@ -173,9 +197,15 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	}
 
 	url := fmt.Sprintf("http://localhost:%d", flags.port)
-	fmt.Println()
-	fmt.Println("After startup, in another terminal, try:")
-	fmt.Printf("  azd ai agent invoke --local \"Hello!\"\n\n")
+
+	// `run` holds the foreground TTY for the agent process and the
+	// `Next:` block is a "wait + new terminal" sequence. Emitting it
+	// before the agent has actually bound its port produces the
+	// well-known race where a user alt-tabs to a fresh terminal and
+	// pastes the suggested invoke before the server is up — and the
+	// invoke fails. Defer the emission until net.DialTimeout against
+	// localhost:port succeeds (or the budget elapses). See B5 in the
+	// PR-8057 design spec.
 	fmt.Printf("Starting agent on %s (Ctrl+C to stop)\n\n", url)
 
 	// Create command with stdout/stderr piped to terminal
@@ -192,6 +222,35 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	if err := proc.Start(); err != nil {
 		return fmt.Errorf("failed to start agent: %w", err)
 	}
+
+	inspectorInstalled := false
+	var inspectorInstallErr error
+	if !flags.noInspector {
+		inspectorInstalled, inspectorInstallErr = isInspectorExtensionInstalled(ctx, azdClient)
+	}
+	handleInspectorAutoLaunch(
+		ctx,
+		azdClient.Workflow(),
+		flags.port,
+		flags.noInspector,
+		inspectorInstalled,
+		inspectorInstallErr,
+		os.Stderr,
+	)
+
+	// Emit the `Next:` block once the agent's port is open. We don't
+	// want users alt-tabbing to a fresh terminal and pasting the
+	// suggested invoke before the server is ready to answer. The
+	// goroutine returns silently if the agent never binds within the
+	// budget (e.g., the process exited during boot — the user already
+	// sees the stderr trace) or if the parent ctx is cancelled.
+	// nextDone signals the goroutine has exited so runRun can join it
+	// after proc.Wait returns, preventing stdout races on shutdown.
+	nextDone := make(chan struct{})
+	go func() {
+		defer close(nextDone)
+		emitNextAfterBind(ctx, azdClient, runCtx.ServiceName, flags.port)
+	}()
 
 	// Handle Ctrl+C / SIGTERM: forward signal to child, then wait for it to exit.
 	// The done channel is closed after proc.Wait returns so the goroutine can exit.
@@ -210,6 +269,8 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 
 	err = proc.Wait()
 	close(done)
+	cancel()
+	<-nextDone
 
 	// Suppress the noisy "signal: interrupt" error on Ctrl+C
 	if ctx.Err() != nil {
@@ -221,6 +282,174 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 		return fmt.Errorf("agent exited: %w", err)
 	}
 	return nil
+}
+
+func handleInspectorAutoLaunch(
+	ctx context.Context,
+	workflow azdext.WorkflowServiceClient,
+	agentPort int,
+	noInspector bool,
+	inspectorInstalled bool,
+	inspectorInstallErr error,
+	stderr io.Writer,
+) {
+	if noInspector {
+		return
+	}
+	if inspectorInstallErr != nil {
+		fmt.Fprintf(stderr, "Warning: Agent Inspector was not launched: %v\n", inspectorInstallErr)
+		return
+	}
+	if !inspectorInstalled {
+		fmt.Fprintln(stderr, missingInspectorExtensionWarning())
+		return
+	}
+	startInspectorAfterAgentReadyWithOptions(
+		ctx,
+		workflow,
+		agentPort,
+		agentInspectorReadyTimeout,
+		agentInspectorReadyPollPeriod,
+		stderr,
+	)
+}
+
+func startInspectorAfterAgentReadyWithOptions(
+	ctx context.Context,
+	workflow azdext.WorkflowServiceClient,
+	agentPort int,
+	readyTimeout time.Duration,
+	pollPeriod time.Duration,
+	stderr io.Writer,
+) {
+	go func() {
+		waitCtx, cancel := context.WithTimeout(ctx, readyTimeout)
+		defer cancel()
+
+		if err := waitForLocalPort(waitCtx, agentPort, pollPeriod); err != nil {
+			if ctx.Err() == nil {
+				fmt.Fprintf(
+					stderr,
+					"Warning: Agent Inspector was not launched because localhost:%d was not ready: %v\n",
+					agentPort,
+					err,
+				)
+			}
+			return
+		}
+
+		if err := launchInspector(ctx, workflow, agentPort); err != nil && !isContextCancellation(err) {
+			fmt.Fprintln(stderr, inspectorLaunchWarning(err))
+		}
+	}()
+}
+
+func waitForLocalPort(ctx context.Context, port int, pollPeriod time.Duration) error {
+	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	dialer := net.Dialer{Timeout: pollPeriod}
+	ticker := time.NewTicker(pollPeriod)
+	defer ticker.Stop()
+
+	for {
+		conn, err := dialer.DialContext(ctx, "tcp", address)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return fmt.Errorf("timed out waiting for %s to accept connections", address)
+			}
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func launchInspector(ctx context.Context, workflow azdext.WorkflowServiceClient, agentPort int) error {
+	_, err := workflow.Run(ctx, &azdext.RunWorkflowRequest{
+		Workflow: &azdext.Workflow{
+			Name: "launch-agent-inspector",
+			Steps: []*azdext.WorkflowStep{
+				{
+					Command: &azdext.WorkflowCommand{
+						Args: []string{
+							"ai",
+							"inspector",
+							"launch",
+							"--port",
+							strconv.Itoa(agentPort),
+							"--silent",
+						},
+					},
+				},
+			},
+		},
+	})
+	return err
+}
+
+func isInspectorExtensionInstalled(ctx context.Context, azdClient *azdext.AzdClient) (bool, error) {
+	configHelper, err := azdext.NewConfigHelper(azdClient)
+	if err != nil {
+		return false, err
+	}
+
+	var installed map[string]json.RawMessage
+	found, err := configHelper.GetUserJSON(ctx, "extension.installed", &installed)
+	if err != nil {
+		return false, fmt.Errorf("failed to check installed azd extensions: %w", err)
+	}
+	if !found {
+		return false, nil
+	}
+
+	_, ok := installed[agentInspectorExtensionID]
+	return ok, nil
+}
+
+func inspectorLaunchWarning(err error) string {
+	msg := err.Error()
+	if st, ok := status.FromError(err); ok {
+		msg = st.Message()
+	}
+
+	if isInspectorExtensionMissingMessage(msg) {
+		return missingInspectorExtensionWarning()
+	}
+
+	return fmt.Sprintf("Warning: Agent Inspector was not launched: %v", err)
+}
+
+func missingInspectorExtensionWarning() string {
+	return fmt.Sprintf(
+		"Warning: Agent Inspector was not launched because the %s extension is not installed.\n"+
+			"Install it with: azd extension install %s",
+		agentInspectorExtensionID,
+		agentInspectorExtensionID,
+	)
+}
+
+func isInspectorExtensionMissingMessage(message string) bool {
+	message = strings.ToLower(message)
+	return (strings.Contains(message, "unknown command") && strings.Contains(message, "inspector")) ||
+		(strings.Contains(message, "ai inspector launch") && strings.Contains(message, "unknown flag: --port"))
+}
+
+func isContextCancellation(err error) bool {
+	return errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		status.Code(err) == codes.Canceled
+}
+
+func shouldWarnLoadAzdEnvironmentFailure(err error) bool {
+	msg := err.Error()
+	if st, ok := status.FromError(err); ok {
+		msg = st.Message()
+	}
+	return !strings.Contains(strings.ToLower(msg), "default environment not found")
 }
 
 // appendPortEnvVars appends PORT and, for .NET projects, ASPNETCORE_URLS to the
@@ -479,4 +708,123 @@ func loadAzdEnvironment(ctx context.Context, azdClient *azdext.AzdClient) (map[s
 		result[kv.Key] = kv.Value
 	}
 	return result, nil
+}
+
+// emitNextAfterBind blocks until the agent process binds the local
+// port (or the budget elapses, or ctx is cancelled) and then prints
+// the protocol-appropriate `Next:` block. The state assembler is
+// configured with both a live HTTP probe and the on-disk cache: the
+// live spec wins when reachable, and the cache is the fallback when
+// the agent doesn't expose /invocations/docs/openapi.json or fails
+// its probe.
+//
+// Returns silently on every failure path (port never bound, ctx
+// cancelled mid-wait, state assembly error, non-terminal stdout). The
+// user already sees the agent's own stderr in those cases; surfacing
+// additional diagnostics here would clutter an otherwise-busy terminal.
+func emitNextAfterBind(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	port int,
+) {
+	// Honor the nextstep call-site TTY-gating contract: when stdout
+	// is redirected (e.g., `azd ai agent run > log`), the human-only
+	// "Agent ready"/Next: block must not contaminate the capture.
+	if !stdoutIsTerminal() {
+		return
+	}
+	if !waitForPortReady(ctx, port, portReadyBudget) {
+		return
+	}
+	liveFetch := func(probeCtx context.Context) ([]byte, error) {
+		probeCtx, cancel := context.WithTimeout(probeCtx, liveOpenAPITimeout)
+		defer cancel()
+		return fetchLiveOpenAPI(probeCtx, port)
+	}
+	state, _ := nextstep.AssembleState(ctx, azdClient,
+		nextstep.WithOpenAPIProbe(serviceName, "local"),
+		nextstep.WithLiveOpenAPIProbe(liveFetch))
+	// Re-check ctx after AssembleState: if Ctrl+C arrived mid-call,
+	// the user already saw "Stopping agent..."/"Agent stopped." and
+	// printing "Agent ready" now would be factually wrong.
+	if ctx.Err() != nil {
+		return
+	}
+	fmt.Println("\nAgent ready. In another terminal, try:")
+	_ = printNextIfTerminal(os.Stdout, nextstep.ResolveAfterRun(state, serviceName))
+}
+
+// portReadyBudget is the wall-clock ceiling for waitForPortReady;
+// most agent runtimes (uvicorn, dotnet, node) bind within a second
+// of start so 5 s is generous without making a failed boot drag
+// the user's attention.
+const portReadyBudget = 5 * time.Second
+
+// portReadyPollInterval is how often waitForPortReady probes the
+// loopback address; 100 ms is short enough to feel snappy while
+// keeping the wake-up count low on slow machines.
+const portReadyPollInterval = 100 * time.Millisecond
+
+// portReadyDialTimeout caps each individual dial; this stays well
+// below portReadyPollInterval so a slow refusal doesn't drag the
+// poll cadence beyond the configured rhythm.
+const portReadyDialTimeout = 50 * time.Millisecond
+
+// liveOpenAPITimeout caps the live /invocations/docs/openapi.json
+// fetch issued by emitNextAfterBind. The design budget is 3 s — long
+// enough for a freshly-bound server to honor the GET, short enough
+// that a silent agent (no openapi route) doesn't visibly delay the
+// `Next:` block.
+const liveOpenAPITimeout = 3 * time.Second
+
+// waitForPortReady polls localhost:port at portReadyPollInterval
+// until a TCP dial succeeds or the budget elapses. Returns true on
+// success. Respects ctx.Done so a Ctrl+C during boot doesn't block
+// the wait — the goroutine exits cleanly.
+func waitForPortReady(ctx context.Context, port int, budget time.Duration) bool {
+	deadline := time.Now().Add(budget)
+	addr := fmt.Sprintf("localhost:%d", port)
+	for time.Now().Before(deadline) {
+		if ctx.Err() != nil {
+			return false
+		}
+		conn, err := net.DialTimeout("tcp", addr, portReadyDialTimeout)
+		if err == nil {
+			_ = conn.Close()
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(portReadyPollInterval):
+		}
+	}
+	return false
+}
+
+// fetchLiveOpenAPI issues an HTTP GET against
+// /invocations/docs/openapi.json on the local agent and returns the
+// response body. The route matches the cache-side fetcher in
+// helpers.go (fetchOpenAPISpec) and the user-facing curl tip surfaced
+// by nextstep/resolver.go. The caller is responsible for the
+// surrounding timeout (we honor ctx). Non-200 responses are reported
+// as errors so the state assembler falls back to the on-disk cache
+// rather than feeding a stale or 404-shaped body into
+// ExtractInvokeExample.
+func fetchLiveOpenAPI(ctx context.Context, port int) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		fmt.Sprintf("http://localhost:%d/invocations/docs/openapi.json", port), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("openapi.json: %s", resp.Status)
+	}
+	return io.ReadAll(resp.Body)
 }

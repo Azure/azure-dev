@@ -13,8 +13,8 @@ import (
 
 // Default container settings constants
 const (
-	DefaultMemory = "0.5Gi"
-	DefaultCpu    = "0.25"
+	DefaultMemory = "1Gi"
+	DefaultCpu    = "0.5"
 )
 
 // CodeDeployRegions lists the regions that currently support code deploy (ZIP upload).
@@ -39,7 +39,6 @@ func (t ResourceTier) String() string {
 // ResourceTiers defines the available container resource allocation options.
 var ResourceTiers = []ResourceTier{
 	{Cpu: DefaultCpu, Memory: DefaultMemory},
-	{Cpu: "0.5", Memory: "1Gi"},
 	{Cpu: "1", Memory: "2Gi"},
 	{Cpu: "2", Memory: "4Gi"},
 }

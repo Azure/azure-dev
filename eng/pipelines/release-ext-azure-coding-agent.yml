@@ -21,6 +21,12 @@ pr:
     exclude:
       - cli/azd/docs/**
 
+parameters:
+  - name: PublishToDevRegistry
+    displayName: Publish to dev registry
+    type: boolean
+    default: false
+
 extends:
   template: /eng/pipelines/templates/stages/1es-redirect.yml
   parameters:
@@ -31,3 +37,4 @@ extends:
           SanitizedExtensionId: azure-coding-agent
           AzdExtensionDirectory: cli/azd/extensions/azure.coding-agent
           SkipTests: true
+          PublishToDevRegistry: ${{ parameters.PublishToDevRegistry }}

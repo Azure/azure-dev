@@ -495,6 +495,15 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
+												},
+											],
+										},
+										{
 											name: ['--file', '-f'],
 											description: 'Remote file or directory path to delete',
 											args: [
@@ -525,6 +534,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -537,6 +555,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -576,6 +603,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -588,6 +624,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -610,6 +655,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -622,6 +676,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -652,6 +715,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -664,6 +736,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -686,6 +767,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -698,6 +788,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -737,6 +836,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 							],
@@ -756,6 +864,20 @@ const completionSpec: Fig.Spec = {
 							name: ['init'],
 							description: 'Initialize a new AI agent project. (Preview)',
 							options: [
+								{
+									name: ['--agent-name'],
+									description: 'Foundry agent name to write to agent.yaml. Reusing a name creates a new version of the existing agent.',
+									args: [
+										{
+											name: 'agent-name',
+										},
+									],
+								},
+								{
+									name: ['--force'],
+									description: 'Overwrite an input manifest that already lives inside the generated src tree without prompting. Required together with --no-prompt when init would otherwise need confirmation.',
+									isDangerous: true,
+								},
 								{
 									name: ['--manifest', '-m'],
 									description: 'Path or URI to an agent manifest to add to your azd project',
@@ -836,6 +958,15 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--chat-isolation-key'],
+									description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+									args: [
+										{
+											name: 'chat-isolation-key',
+										},
+									],
+								},
+								{
 									name: ['--conversation-id'],
 									description: 'Explicit conversation ID override',
 									args: [
@@ -910,12 +1041,39 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--user-isolation-key'],
+									description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+									args: [
+										{
+											name: 'user-isolation-key',
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Agent version to invoke (creates or reuses a session backed by that version)',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
 							],
 						},
 						{
 							name: ['monitor'],
 							description: 'Monitor logs from a hosted agent.',
 							options: [
+								{
+									name: ['--chat-isolation-key'],
+									description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+									args: [
+										{
+											name: 'chat-isolation-key',
+										},
+									],
+								},
 								{
 									name: ['--follow', '-f'],
 									description: 'Stream logs in real-time',
@@ -961,73 +1119,17 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
-									name: ['--utc'],
-									description: 'Display timestamps in UTC instead of local time',
-								},
-							],
-						},
-						{
-							name: ['project'],
-							description: 'Manage the default Microsoft Foundry project endpoint.',
-							subcommands: [
-								{
-									name: ['set'],
-									description: 'Persist a default Foundry project endpoint.',
-									options: [
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-													suggestions: ['json', 'table'],
-												},
-											],
-										},
-									],
-								},
-								{
-									name: ['show'],
-									description: 'Display the currently resolved Foundry project endpoint.',
-									options: [
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-													suggestions: ['json', 'table'],
-												},
-											],
-										},
-									],
-								},
-								{
-									name: ['unset'],
-									description: 'Clear the persisted Foundry project endpoint.',
-									options: [
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-													suggestions: ['json', 'table'],
-												},
-											],
-										},
-									],
-								},
-							],
-							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
+									name: ['--user-isolation-key'],
+									description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
 									args: [
 										{
-											name: 'output',
+											name: 'user-isolation-key',
 										},
 									],
+								},
+								{
+									name: ['--utc'],
+									description: 'Display timestamps in UTC instead of local time',
 								},
 							],
 						},
@@ -1065,6 +1167,61 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['sample'],
+							description: 'Browse the curated catalog of agent samples and azd templates.',
+							subcommands: [
+								{
+									name: ['list', 'ls'],
+									description: 'List available agent samples that can be used with `azd ai agent init -m`.',
+									options: [
+										{
+											name: ['--featured-only'],
+											description: 'Only include samples tagged \'featured\' (the curated starter list).',
+										},
+										{
+											name: ['--language'],
+											description: 'Filter by language token. Supported values: python, dotnetCsharp.',
+											args: [
+												{
+													name: 'language',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'text'],
+												},
+											],
+										},
+										{
+											name: ['--type'],
+											description: 'Filter by template type. Supported values: agent, azd.',
+											args: [
+												{
+													name: 'type',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['sessions'],
 							description: 'Manage sessions for a hosted agent endpoint.',
 							subcommands: [
@@ -1082,8 +1239,17 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
+												},
+											],
+										},
+										{
 											name: ['--isolation-key'],
-											description: 'Isolation key for session ownership (derived from Entra token by default)',
+											description: 'Session ownership isolation key header value (x-session-isolation-key; derived from Entra token by default)',
 											args: [
 												{
 													name: 'isolation-key',
@@ -1106,6 +1272,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'session-id',
+												},
+											],
+										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
 												},
 											],
 										},
@@ -1134,8 +1309,17 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
+												},
+											],
+										},
+										{
 											name: ['--isolation-key'],
-											description: 'Isolation key for session ownership (derived from Entra token by default)',
+											description: 'Session ownership isolation key header value (x-session-isolation-key; derived from Entra token by default)',
 											args: [
 												{
 													name: 'isolation-key',
@@ -1151,6 +1335,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -1163,6 +1356,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -1194,6 +1396,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -1210,12 +1421,30 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
+												},
+											],
+										},
+										{
 											name: ['--output', '-o'],
 											description: 'The output format',
 											args: [
 												{
 													name: 'output',
 													suggestions: ['json', 'table'],
+												},
+											],
+										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
 												},
 											],
 										},
@@ -4460,26 +4689,18 @@ const completionSpec: Fig.Spec = {
 									description: 'Monitor logs from a hosted agent.',
 								},
 								{
-									name: ['project'],
-									description: 'Manage the default Microsoft Foundry project endpoint.',
-									subcommands: [
-										{
-											name: ['set'],
-											description: 'Persist a default Foundry project endpoint.',
-										},
-										{
-											name: ['show'],
-											description: 'Display the currently resolved Foundry project endpoint.',
-										},
-										{
-											name: ['unset'],
-											description: 'Clear the persisted Foundry project endpoint.',
-										},
-									],
-								},
-								{
 									name: ['run'],
 									description: 'Run your agent locally for development.',
+								},
+								{
+									name: ['sample'],
+									description: 'Browse the curated catalog of agent samples and azd templates.',
+									subcommands: [
+										{
+											name: ['list', 'ls'],
+											description: 'List available agent samples that can be used with `azd ai agent init -m`.',
+										},
+									],
 								},
 								{
 									name: ['sessions'],

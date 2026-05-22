@@ -13,6 +13,12 @@ func NewRootCommand() *cobra.Command {
 		Name:  "toolbox",
 		Use:   "toolbox <command> [options]",
 		Short: "Manage Microsoft Foundry Toolboxes from your terminal. (Preview)",
+		Long: `Manage Foundry toolboxes.
+
+A toolbox is a versioned, named collection of connection-backed tools that
+agents reference at run time. Each version is immutable and carries the full
+tool list; mutations publish a new version and (after the first one) require
+an explicit update to retarget the default.`,
 	})
 
 	rootCmd.SilenceUsage = true
@@ -23,7 +29,26 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
-	rootCmd.AddCommand(newContextCommand())
+	// --output and --no-prompt are reserved azd globals and are inherited
+	// automatically; only the extension-specific flag is registered here.
+	rootCmd.PersistentFlags().String(
+		"project-endpoint", "",
+		"Foundry project endpoint URL. When unset, falls back to the active azd "+
+			"environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.",
+	)
+	// Advertise the toolbox-specific --output allowed values + default on the
+	// root so `azd ai toolbox --help` shows them too. Leaf commands re-register
+	// on themselves; cobra annotations don't propagate.
+	registerToolboxOutputFlag(rootCmd)
+
+	rootCmd.AddCommand(newToolboxCreateCommand(extCtx))
+	rootCmd.AddCommand(newToolboxUpdateCommand(extCtx))
+	rootCmd.AddCommand(newToolboxDeleteCommand(extCtx))
+	rootCmd.AddCommand(newToolboxShowCommand(extCtx))
+	rootCmd.AddCommand(newToolboxListCommand(extCtx))
+	rootCmd.AddCommand(newToolboxVersionCommand(extCtx))
+	rootCmd.AddCommand(newToolboxConnectionCommand(extCtx))
+
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
 

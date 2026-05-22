@@ -1,2 +1,8 @@
 import: ../../.vscode/cspell.yaml
-words: []
+words:
+    - exterrors
+    - projectctx
+    - retarget
+    - retargets
+    - subdocument
+    - toolsets

@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -20,11 +21,13 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/paths"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/google/uuid"
 	"go.yaml.in/yaml/v3"
+	"golang.org/x/term"
 )
 
 const (
@@ -149,16 +152,15 @@ func saveContextValue(
 	setContextValueSafe(ctx, azdClient, storeField, agentKey, value)
 }
 
-// resolveLocalAgentKey builds the storage key for local mode from the azd project config.
-// Returns the new structured key format: localhost:<port>/<projectHash>/agents/<name>/versions/latest/local
-func resolveLocalAgentKey(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) string {
-	return resolveLocalAgentKeyWithPort(ctx, azdClient, name, noPrompt, DefaultPort)
-}
-
-// resolveLocalAgentKeyWithPort builds the local storage key with a specific port.
-func resolveLocalAgentKeyWithPort(
-	ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool, port int,
-) string {
+// resolveLocalAgentName resolves the plain agent name used for local mode,
+// without composing any port/project/version disambiguation into it. Use this
+// when you need just a stable, file-system-safe identifier for the agent —
+// for example, when naming the cached OpenAPI spec file shared with the
+// `nextstep.ReadCachedOpenAPISpec` reader.
+//
+// For the structured config-store key (which DOES need port + project hash
+// to avoid cross-project collisions), use `resolveLocalAgentKey` instead.
+func resolveLocalAgentName(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) string {
 	agentName := name
 
 	if azdClient != nil {
@@ -174,6 +176,20 @@ func resolveLocalAgentKeyWithPort(
 		agentName = "local"
 	}
 
+	return agentName
+}
+
+// resolveLocalAgentKey builds the storage key for local mode from the azd project config.
+// Returns the new structured key format: localhost:<port>/<projectHash>/agents/<name>/versions/latest/local
+func resolveLocalAgentKey(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) string {
+	return resolveLocalAgentKeyWithPort(ctx, azdClient, name, noPrompt, DefaultPort)
+}
+
+// resolveLocalAgentKeyWithPort builds the local storage key with a specific port.
+func resolveLocalAgentKeyWithPort(
+	ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool, port int,
+) string {
+	agentName := resolveLocalAgentName(ctx, azdClient, name, noPrompt)
 	projectPath := resolveProjectPath(ctx, azdClient)
 	return buildLocalAgentKey(port, agentName, "", projectPath)
 }
@@ -311,8 +327,16 @@ func captureResponseSession(
 // fetchOpenAPISpec fetches the OpenAPI spec from a running agent and caches it on disk.
 // baseURL is the root URL (e.g., "http://localhost:8088" or "{endpoint}/agents/{name}/endpoint/protocols").
 // suffix is "local" or "remote", used in the cached filename.
+// apiVersion, when non-empty, is appended as the "?api-version=<v>" query parameter.
+// Local agents do not require this; remote Foundry endpoints reject requests without it.
 // If forceRefresh is false and the file already exists, the fetch is skipped.
-// Failures are non-fatal and silently ignored.
+//
+// Returns the on-disk path to the cached spec on success (whether freshly
+// written or already cached), plus a fresh flag that is true only when this
+// call actually wrote the file. Callers that want to surface the "OpenAPI
+// spec saved to ..." line gate on the fresh flag; callers that just need the
+// path (or want silence) ignore it. Returns ("", false) on any failure;
+// errors are silently swallowed because the spec is best-effort.
 func fetchOpenAPISpec(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -320,11 +344,12 @@ func fetchOpenAPISpec(
 	agentName string,
 	suffix string,
 	bearerToken string,
+	apiVersion string,
 	forceRefresh bool,
-) {
+) (string, bool) {
 	configPath, err := resolveConfigPath(ctx, azdClient)
 	if err != nil {
-		return
+		return "", false
 	}
 	configDir := filepath.Dir(configPath)
 
@@ -337,14 +362,17 @@ func fetchOpenAPISpec(
 
 	if !forceRefresh {
 		if _, err := os.Stat(specFile); err == nil {
-			return // file exists, skip fetch
+			return specFile, false // already cached; surface the path without re-fetching
 		}
 	}
 
 	specURL := baseURL + "/invocations/docs/openapi.json"
+	if apiVersion != "" {
+		specURL += "?api-version=" + url.QueryEscape(apiVersion)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, specURL, nil)
 	if err != nil {
-		return
+		return "", false
 	}
 	if bearerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+bearerToken)
@@ -353,24 +381,24 @@ func fetchOpenAPISpec(
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req) //nolint:gosec // G704: URL constructed from azd environment or localhost
 	if err != nil {
-		return
+		return "", false
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return
+		return "", false
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return
+		return "", false
 	}
 
 	if err := os.WriteFile(specFile, body, 0600); err != nil {
-		return
+		return "", false
 	}
 
-	fmt.Printf("OpenAPI spec saved to %s\n", specFile)
+	return specFile, true
 }
 
 // resolveConversationID resolves a Foundry conversation ID.
@@ -655,7 +683,14 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 		return nil, err
 	}
 
-	projectDir := filepath.Join(project.Path, svc.RelativePath)
+	projectDir, err := paths.JoinAllowRoot(project.Path, svc.RelativePath)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid service path for %s: %s", svc.Name, err),
+			"update azure.yaml so the agent service path stays within the project directory",
+		)
+	}
 
 	var startupCmd string
 	if svc.Config != nil {
@@ -740,9 +775,14 @@ func resolveAgentProtocol(
 		)
 	}
 
-	agentYamlPath := filepath.Join(
-		project.Path, svc.RelativePath, "agent.yaml",
-	)
+	agentYamlPath, err := paths.JoinAllowRoot(project.Path, svc.RelativePath, "agent.yaml")
+	if err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid service path for %s: %s", svc.Name, err),
+			"update azure.yaml so the agent service path stays within the project directory",
+		)
+	}
 	return protocolFromAgentYaml(agentYamlPath)
 }
 
@@ -856,4 +896,11 @@ func multiProtocolError(
 			strings.Join(supported, ", "),
 		),
 	)
+}
+
+// isTerminal reports whether fd refers to an interactive terminal.
+// Used to gate human-only output such as the next-step guidance block.
+func isTerminal(fd uintptr) bool {
+	//nolint:gosec // file descriptors fit in int on all supported platforms
+	return term.IsTerminal(int(fd))
 }

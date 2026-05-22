@@ -199,6 +199,9 @@ type connectionCreateFlags struct {
 	metadata        []string
 	force           bool
 	projectEndpoint string
+	clientID        string // OAuth2 client ID
+	clientSecret    string // OAuth2 client secret
+	audience        string // Token audience for user-entra-token / agentic-identity
 }
 
 // ConnectionCreateAction implements connection creation.
@@ -236,6 +239,28 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 			"Specify at least one custom key (e.g., --custom-key x-api-key=value).",
 		)
 	}
+	if a.flags.authType == "oauth2" && (a.flags.clientID == "" || a.flags.clientSecret == "") {
+		return exterrors.Validation(
+			exterrors.CodeMissingConnectionField,
+			"Missing required flags --client-id and --client-secret for oauth2 auth.",
+			"Specify both OAuth2 client credentials.",
+		)
+	}
+	if a.flags.authType != "oauth2" && (a.flags.clientID != "" || a.flags.clientSecret != "") {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--client-id and --client-secret are only valid with --auth-type oauth2.",
+			"",
+		)
+	}
+	if a.flags.audience != "" && a.flags.authType != "user-entra-token" &&
+		a.flags.authType != "agentic-identity" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--audience is only valid with --auth-type user-entra-token or agentic-identity.",
+			"",
+		)
+	}
 
 	connCtx, err := resolveConnectionContext(ctx, a.flags.projectEndpoint)
 	if err != nil {
@@ -256,21 +281,37 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 		}
 	}
 
-	body, err := buildConnectionBody(
-		a.flags.kind, a.flags.target, a.flags.authType,
-		a.flags.key, a.flags.customKeys, a.flags.metadata,
-	)
-	if err != nil {
-		return err
+	// Route to raw REST or typed SDK based on auth type
+	switch a.flags.authType {
+	case "user-entra-token", "project-managed-identity", "agentic-identity":
+		err = rawCreateConnection(
+			ctx, connCtx,
+			a.flags.name,
+			rawConnectionProperties{
+				AuthType: normalizeAuthTypeToARM(a.flags.authType),
+				Category: normalizeKind(a.flags.kind),
+				Target:   a.flags.target,
+				Audience: a.flags.audience,
+				Metadata: parseKVMap(a.flags.metadata),
+			},
+		)
+	default:
+		body, buildErr := buildConnectionBody(
+			a.flags.kind, a.flags.target, a.flags.authType,
+			a.flags.key, a.flags.customKeys, a.flags.metadata,
+			a.flags.clientID, a.flags.clientSecret,
+		)
+		if buildErr != nil {
+			return buildErr
+		}
+		_, err = connCtx.armClient.Create(
+			ctx, connCtx.rg, connCtx.account, connCtx.project,
+			a.flags.name,
+			&armcognitiveservices.ProjectConnectionsClientCreateOptions{
+				Connection: body,
+			},
+		)
 	}
-
-	_, err = connCtx.armClient.Create(
-		ctx, connCtx.rg, connCtx.account, connCtx.project,
-		a.flags.name,
-		&armcognitiveservices.ProjectConnectionsClientCreateOptions{
-			Connection: body,
-		},
-	)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateConnection)
 	}
@@ -305,11 +346,12 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 	}
 
 	cmd.Flags().StringVar(&flags.kind, "kind", "",
-		"Connection kind (e.g., remote-tool, cognitive-search)")
+		"Connection kind (e.g., remote-tool, remote-a2a, cognitive-search)")
 	cmd.Flags().StringVar(&flags.target, "target", "",
 		"Target URL or ARM resource ID")
 	cmd.Flags().StringVar(&flags.authType, "auth-type", "none",
-		"Auth type: api-key, custom-keys, none")
+		"Auth type: api-key, custom-keys, none, oauth2, user-entra-token, "+
+			"project-managed-identity, agentic-identity")
 	cmd.Flags().StringVar(&flags.key, "key", "",
 		"API key (for api-key auth)")
 	cmd.Flags().StringArrayVar(&flags.customKeys, "custom-key", nil,
@@ -318,6 +360,12 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 		"Metadata key=value (repeatable)")
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Replace existing connection (upsert)")
+	cmd.Flags().StringVar(&flags.clientID, "client-id", "",
+		"OAuth2 client ID (required for oauth2 auth)")
+	cmd.Flags().StringVar(&flags.clientSecret, "client-secret", "",
+		"OAuth2 client secret (required for oauth2 auth)")
+	cmd.Flags().StringVar(&flags.audience, "audience", "",
+		"Token audience for user-entra-token/agentic-identity auth")
 	return cmd
 }
 
@@ -421,21 +469,37 @@ func (a *ConnectionUpdateAction) Run(ctx context.Context) error {
 		credCustomKeys = append(credCustomKeys, k+"="+v)
 	}
 
-	body, err := buildConnectionBody(
-		kindStr, newTarget, normalizedAuth,
-		credKey, credCustomKeys, metaPairs,
-	)
-	if err != nil {
-		return err
+	// Route to raw REST or typed SDK based on auth type
+	switch normalizedAuth {
+	case "user-entra-token", "project-managed-identity", "agentic-identity":
+		// Identity auth types lack ARM SDK structs — update via raw REST
+		err = rawCreateConnection(
+			ctx, connCtx,
+			a.flags.name,
+			rawConnectionProperties{
+				AuthType: normalizeAuthTypeToARM(normalizedAuth),
+				Category: kindStr,
+				Target:   newTarget,
+				Metadata: parseKVMap(metaPairs),
+			},
+		)
+	default:
+		body, buildErr := buildConnectionBody(
+			kindStr, newTarget, normalizedAuth,
+			credKey, credCustomKeys, metaPairs,
+			"", "",
+		)
+		if buildErr != nil {
+			return buildErr
+		}
+		_, err = connCtx.armClient.Create(
+			ctx, connCtx.rg, connCtx.account, connCtx.project,
+			a.flags.name,
+			&armcognitiveservices.ProjectConnectionsClientCreateOptions{
+				Connection: body,
+			},
+		)
 	}
-
-	_, err = connCtx.armClient.Create(
-		ctx, connCtx.rg, connCtx.account, connCtx.project,
-		a.flags.name,
-		&armcognitiveservices.ProjectConnectionsClientCreateOptions{
-			Connection: body,
-		},
-	)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpUpdateConnection)
 	}
@@ -629,6 +693,7 @@ func buildCredentialReferences(
 func buildConnectionBody(
 	kind, target, authType, key string,
 	customKeys, metadata []string,
+	clientID, clientSecret string,
 ) (*armcognitiveservices.ConnectionPropertiesV2BasicResource, error) {
 	metaMap := parseKVPtrMap(metadata)
 	cat := armcognitiveservices.ConnectionCategory(normalizeKind(kind))
@@ -671,11 +736,32 @@ func buildConnectionBody(
 			},
 		}, nil
 
+	case "oauth2":
+		at := armcognitiveservices.ConnectionAuthTypeOAuth2
+		creds := &armcognitiveservices.ConnectionOAuth2{}
+		if clientID != "" {
+			creds.ClientID = &clientID
+		}
+		if clientSecret != "" {
+			creds.ClientSecret = &clientSecret
+		}
+		return &armcognitiveservices.ConnectionPropertiesV2BasicResource{
+			Properties: &armcognitiveservices.OAuth2AuthTypeConnectionProperties{
+				AuthType:    &at,
+				Category:    &cat,
+				Target:      &target,
+				Credentials: creds,
+				Metadata:    metaMap,
+			},
+		}, nil
+
 	default:
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAuthType,
 			fmt.Sprintf("Unsupported auth type %q.", authType),
-			"Supported: api-key, custom-keys, none",
+			"Supported: api-key, custom-keys, none, oauth2. "+
+				"For identity-based auth types (user-entra-token, project-managed-identity, "+
+				"agentic-identity), use 'connection create' directly.",
 		)
 	}
 }
@@ -772,6 +858,7 @@ func authTypeStr(a *armcognitiveservices.ConnectionAuthType) string {
 func normalizeKind(cliKind string) string {
 	mapping := map[string]string{
 		"remote-tool":                "RemoteTool",
+		"remote-a2a":                 "RemoteA2A",
 		"cognitive-search":           "CognitiveSearch",
 		"api-key":                    "ApiKey",
 		"app-insights":               "AppInsights",
@@ -795,7 +882,30 @@ func normalizeAuthType(armAuthType string) string {
 		return "custom-keys"
 	case "None":
 		return "none"
+	case "OAuth2":
+		return "oauth2"
+	case "UserEntraToken":
+		return "user-entra-token"
+	case "ProjectManagedIdentity":
+		return "project-managed-identity"
+	case "AgenticIdentityToken":
+		return "agentic-identity"
 	default:
 		return armAuthType
+	}
+}
+
+// normalizeAuthTypeToARM converts CLI kebab-case auth type to the ARM wire format.
+// Used for auth types that lack ARM SDK structs and require raw REST.
+func normalizeAuthTypeToARM(cliAuthType string) string {
+	switch cliAuthType {
+	case "user-entra-token":
+		return "UserEntraToken"
+	case "project-managed-identity":
+		return "ProjectManagedIdentity"
+	case "agentic-identity":
+		return "AgenticIdentityToken" // ARM expects "Token" suffix
+	default:
+		return cliAuthType
 	}
 }

@@ -341,3 +341,20 @@ func TestSetACREnvVar(t *testing.T) {
 		})
 	}
 }
+
+func TestIsTerminal_NonTTY(t *testing.T) {
+	t.Parallel()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = r.Close()
+		_ = w.Close()
+	})
+
+	if isTerminal(r.Fd()) {
+		t.Errorf("isTerminal(pipe read end) = true, want false")
+	}
+}

@@ -1,2 +1,4 @@
 import: ../../.vscode/cspell.yaml
-words: []
+words:
+  - exterrors
+  - idempotently

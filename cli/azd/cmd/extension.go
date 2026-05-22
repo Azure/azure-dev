@@ -2066,11 +2066,11 @@ func displayInstalledDependencies(
 			))
 		}
 
-		matches, ferr := manager.FindExtensions(ctx, &extensions.FilterOptions{
+		matches, findErr := manager.FindExtensions(ctx, &extensions.FilterOptions{
 			Id:     dep.Id,
 			Source: installed.Source,
 		})
-		if ferr != nil || len(matches) == 0 {
+		if findErr != nil || len(matches) == 0 {
 			continue
 		}
 		for _, v := range matches[0].Versions {

@@ -414,10 +414,9 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 		Config: opt_eval.Config{
 			Name: "smoke-core",
 			Agent: evalAgentRef{
-				Name:        "my-agent",
-				Kind:        agent_yaml.AgentKindHosted,
-				Version:     "v1",
-				Instruction: opt_eval.InstructionRef{Value: "Test this agent"},
+				Name:    "my-agent",
+				Kind:    agent_yaml.AgentKindHosted,
+				Version: "v1",
 			},
 			DatasetReference: &evalDatasetRef{Name: "ds", Version: "v1"},
 			Evaluators:       opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
@@ -439,7 +438,6 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 	assert.Equal(t, original.Agent.Kind, loaded.Agent.Kind)
 	assert.Equal(t, original.Agent.Version, loaded.Agent.Version)
 	assert.Equal(t, "gpt-4o", loaded.Options.EvalModel)
-	assert.Equal(t, original.Agent.Instruction.Value, loaded.Agent.Instruction.Value)
 	assert.Equal(t, original.MaxSamples, loaded.MaxSamples)
 	require.NotNil(t, loaded.DatasetReference)
 	assert.Equal(t, "ds", loaded.DatasetReference.Name)

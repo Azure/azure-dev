@@ -35,13 +35,10 @@ func (f *optimizeConnectionFlags) register(cmd *cobra.Command) {
 }
 
 // resolve returns the project endpoint for optimize API calls.
-// Priority: --endpoint flag → AZURE_AI_OPTIMIZE_ENDPOINT → --project-endpoint → azd environment → AZURE_AI_PROJECT_ENDPOINT env var.
+// Priority: --endpoint flag → --project-endpoint → azd environment → AZURE_AI_PROJECT_ENDPOINT env var.
 func (f *optimizeConnectionFlags) resolve(ctx context.Context) (string, error) {
 	if f.endpoint != "" {
 		return strings.TrimRight(f.endpoint, "/"), nil
-	}
-	if ep := os.Getenv("AZURE_AI_OPTIMIZE_ENDPOINT"); ep != "" {
-		return strings.TrimRight(ep, "/"), nil
 	}
 
 	// Explicit --project-endpoint flag

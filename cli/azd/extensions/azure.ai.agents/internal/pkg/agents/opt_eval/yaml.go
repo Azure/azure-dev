@@ -236,8 +236,8 @@ type AgentRef struct {
 	Version    string               `yaml:"version,omitempty"`
 	ConfigFile string               `yaml:"config,omitempty"`
 	Model      string               `yaml:"model,omitempty"`
-	// Not expected to be shown in yaml
-	Instruction InstructionRef `yaml:"instruction,omitempty"`
+	// Not serialized to YAML — populated at runtime from config or flags.
+	Instruction InstructionRef `yaml:"-"`
 }
 
 // ResolveConfig loads the metadata.yaml pointed to by ConfigFile and returns

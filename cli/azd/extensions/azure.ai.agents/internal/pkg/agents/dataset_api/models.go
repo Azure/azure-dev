@@ -5,6 +5,7 @@ package dataset_api
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -150,7 +151,7 @@ func NextVersion(current string) string {
 
 	// Try parsing as a decimal number (e.g. "1", "1.0", "2.0").
 	if f, err := strconv.ParseFloat(current, 64); err == nil {
-		return strconv.FormatFloat(f+1, 'f', 1, 64)
+		return strconv.FormatFloat(math.Floor(f)+1, 'f', 1, 64)
 	}
 
 	// Find trailing digits and increment them.

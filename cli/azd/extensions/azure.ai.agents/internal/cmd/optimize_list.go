@@ -85,7 +85,7 @@ func runOptimizeList(cmd *cobra.Command, flags *optimizeListFlags) error {
 		fmt.Fprintln(out, "  No optimization jobs found.")
 		if flags.status != "" {
 			fmt.Fprintf(out, "\n  Try removing the --status filter or run a new job with:\n")
-			fmt.Fprintf(out, "    azd ai agent optimize run --config spec.yaml\n")
+			fmt.Fprintf(out, "    azd ai agent optimize --config spec.yaml\n")
 		}
 		return nil
 	}

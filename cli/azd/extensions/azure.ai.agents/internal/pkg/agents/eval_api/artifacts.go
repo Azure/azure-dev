@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -121,18 +122,12 @@ func DownloadDatasetArtifact(
 
 // isContainerSAS checks if a SAS URI is container-scoped (sr=c in query).
 func isContainerSAS(rawURL string) bool {
-	idx := strings.IndexByte(rawURL, '?')
-	if idx == -1 {
+	_, query, ok := strings.Cut(rawURL, "?")
+	if !ok {
 		return false
 	}
-	query := rawURL[idx+1:]
 	// Look for sr=c parameter.
-	for _, param := range strings.Split(query, "&") {
-		if param == "sr=c" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(strings.Split(query, "&"), "sr=c")
 }
 
 // filenameFromURL extracts the filename from a blob URL path.

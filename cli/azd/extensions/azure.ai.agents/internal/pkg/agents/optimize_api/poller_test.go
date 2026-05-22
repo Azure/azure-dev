@@ -212,3 +212,19 @@ func TestPoller_TransientRetryExhausted(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "consecutive transient errors")
 }
+
+func TestPoller_NilClient(t *testing.T) {
+	t.Parallel()
+	poller := &Poller{OperationID: "op-1"}
+	_, err := poller.PollUntilDone(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Client is nil")
+}
+
+func TestPoller_EmptyOperationID(t *testing.T) {
+	t.Parallel()
+	poller := &Poller{Client: &OptimizeClient{}}
+	_, err := poller.PollUntilDone(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "OperationID is empty")
+}

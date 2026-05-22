@@ -138,11 +138,10 @@ func TestEvalConfig_RoundTrip_FullFields(t *testing.T) {
 		Config: opt_eval.Config{
 			Name: "full-test",
 			Agent: opt_eval.AgentRef{
-				Name:        "booking-agent",
-				Kind:        "hosted",
-				Version:     "v3",
-				Model:       "gpt-4.1",
-				Instruction: opt_eval.InstructionRef{Value: "This agent handles restaurant reservations"},
+				Name:    "booking-agent",
+				Kind:    "hosted",
+				Version: "v3",
+				Model:   "gpt-4.1",
 			},
 			DatasetReference: &opt_eval.DatasetRef{Name: "golden-data", Version: "v2"},
 			Evaluators:       opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}, {Name: "custom-quality"}},
@@ -169,7 +168,6 @@ func TestEvalConfig_RoundTrip_FullFields(t *testing.T) {
 	assert.Equal(t, "builtin.task_adherence", loaded.Evaluators[0].Name)
 	assert.Equal(t, "custom-quality", loaded.Evaluators[1].Name)
 	assert.Equal(t, "gpt-4o", loaded.Options.EvalModel)
-	assert.Equal(t, "This agent handles restaurant reservations", loaded.Agent.Instruction.Value)
 	assert.Equal(t, 75, loaded.MaxSamples)
 }
 

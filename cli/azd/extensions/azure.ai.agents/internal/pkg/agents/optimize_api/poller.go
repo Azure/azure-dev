@@ -29,6 +29,13 @@ type Poller struct {
 // connection reset) are retried up to maxConsecutiveTransient times before
 // the poller gives up.
 func (p *Poller) PollUntilDone(ctx context.Context) (*OptimizeJobStatus, error) {
+	if p.Client == nil {
+		return nil, fmt.Errorf("poller Client is nil")
+	}
+	if p.OperationID == "" {
+		return nil, fmt.Errorf("poller OperationID is empty")
+	}
+
 	const maxConsecutiveTransient = 5
 
 	interval := p.Interval

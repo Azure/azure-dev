@@ -618,7 +618,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
   azd ai agent init -m ./agent.manifest.yaml --agent-name my-unique-agent
 
   # Initialize from local agent code
-  azd ai agent init --src ./src/my-agent --agent-name my-unique-agent`,
+  azd ai agent init --src ./src/my-agent --agent-name my-unique-agent
+
+  # Non-interactive code deploy (CI/CD)
+  azd ai agent init --no-prompt \
+    --project-id "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>" \
+    --deploy-mode code --runtime python_3_13 --entry-point app.py`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.noPrompt = extCtx.NoPrompt

@@ -469,22 +469,37 @@ func (a *ConnectionUpdateAction) Run(ctx context.Context) error {
 		credCustomKeys = append(credCustomKeys, k+"="+v)
 	}
 
-	body, err := buildConnectionBody(
-		kindStr, newTarget, normalizedAuth,
-		credKey, credCustomKeys, metaPairs,
-		"", "",
-	)
-	if err != nil {
-		return err
+	// Route to raw REST or typed SDK based on auth type
+	switch normalizedAuth {
+	case "user-entra-token", "project-managed-identity", "agentic-identity":
+		// Identity auth types lack ARM SDK structs — update via raw REST
+		err = rawCreateConnection(
+			ctx, connCtx,
+			a.flags.name,
+			rawConnectionProperties{
+				AuthType: normalizeAuthTypeToARM(normalizedAuth),
+				Category: kindStr,
+				Target:   newTarget,
+				Metadata: parseKVMap(metaPairs),
+			},
+		)
+	default:
+		body, buildErr := buildConnectionBody(
+			kindStr, newTarget, normalizedAuth,
+			credKey, credCustomKeys, metaPairs,
+			"", "",
+		)
+		if buildErr != nil {
+			return buildErr
+		}
+		_, err = connCtx.armClient.Create(
+			ctx, connCtx.rg, connCtx.account, connCtx.project,
+			a.flags.name,
+			&armcognitiveservices.ProjectConnectionsClientCreateOptions{
+				Connection: body,
+			},
+		)
 	}
-
-	_, err = connCtx.armClient.Create(
-		ctx, connCtx.rg, connCtx.account, connCtx.project,
-		a.flags.name,
-		&armcognitiveservices.ProjectConnectionsClientCreateOptions{
-			Connection: body,
-		},
-	)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpUpdateConnection)
 	}
@@ -744,8 +759,9 @@ func buildConnectionBody(
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAuthType,
 			fmt.Sprintf("Unsupported auth type %q.", authType),
-			"Supported: api-key, custom-keys, none, oauth2, user-entra-token, "+
-				"project-managed-identity, agentic-identity",
+			"Supported: api-key, custom-keys, none, oauth2. "+
+				"For identity-based auth types (user-entra-token, project-managed-identity, "+
+				"agentic-identity), use 'connection create' directly.",
 		)
 	}
 }

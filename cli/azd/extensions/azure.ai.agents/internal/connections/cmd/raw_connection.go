@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"net/url"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -40,11 +42,12 @@ func rawCreateConnection(
 	props rawConnectionProperties,
 ) error {
 	apiVersion := "2025-04-01-preview"
-	url := fmt.Sprintf(
+	armURL := fmt.Sprintf(
 		"https://management.azure.com/subscriptions/%s/resourceGroups/%s/"+
 			"providers/Microsoft.CognitiveServices/accounts/%s/projects/%s/"+
 			"connections/%s?api-version=%s",
-		connCtx.sub, connCtx.rg, connCtx.account, connCtx.project, name, apiVersion,
+		connCtx.sub, connCtx.rg, connCtx.account, connCtx.project,
+		url.PathEscape(name), apiVersion,
 	)
 
 	body := rawConnectionBody{Properties: props}
@@ -63,7 +66,7 @@ func rawCreateConnection(
 		&policy.ClientOptions{},
 	)
 
-	req, err := runtime.NewRequest(ctx, http.MethodPut, url)
+	req, err := runtime.NewRequest(ctx, http.MethodPut, armURL)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -78,9 +81,7 @@ func rawCreateConnection(
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to create connection (HTTP %d): %s",
-			resp.StatusCode, string(respBody))
+		return runtime.NewResponseError(resp)
 	}
 
 	return nil
@@ -93,11 +94,16 @@ func parseKVMap(pairs []string) map[string]string {
 	}
 	result := make(map[string]string, len(pairs))
 	for _, pair := range pairs {
+		found := false
 		for i := range len(pair) {
 			if pair[i] == '=' {
 				result[pair[:i]] = pair[i+1:]
+				found = true
 				break
 			}
+		}
+		if !found {
+			log.Printf("warning: ignoring malformed key=value pair: %q", pair)
 		}
 	}
 	return result

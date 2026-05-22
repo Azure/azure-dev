@@ -821,6 +821,174 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 	}
 }
 
+func TestPromptDeployMode_FlagOverride(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		noPrompt       bool
+		showCodeDeploy bool
+		flag           string
+		want           string
+		wantErr        bool
+		wantErrContain string
+	}{
+		{
+			name:           "flag=container returns container",
+			noPrompt:       true,
+			showCodeDeploy: true,
+			flag:           "container",
+			want:           "container",
+		},
+		{
+			name:           "flag=code returns code",
+			noPrompt:       true,
+			showCodeDeploy: true,
+			flag:           "code",
+			want:           "code",
+		},
+		{
+			name:           "flag=code works even when showCodeDeploy=false",
+			noPrompt:       true,
+			showCodeDeploy: false,
+			flag:           "code",
+			want:           "code",
+		},
+		{
+			name:           "invalid flag value returns error",
+			noPrompt:       true,
+			showCodeDeploy: true,
+			flag:           "invalid",
+			wantErr:        true,
+			wantErrContain: "invalid --deploy-mode value",
+		},
+		{
+			name:           "no flag + noPrompt defaults to container",
+			noPrompt:       true,
+			showCodeDeploy: true,
+			flag:           "",
+			want:           "container",
+		},
+		{
+			name:           "no flag + showCodeDeploy=false defaults to container",
+			noPrompt:       false,
+			showCodeDeploy: false,
+			flag:           "",
+			want:           "container",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := promptDeployMode(t.Context(), nil, tt.noPrompt, tt.showCodeDeploy, tt.flag)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tt.wantErrContain != "" && !strings.Contains(err.Error(), tt.wantErrContain) {
+					t.Errorf("error = %q, want containing %q", err.Error(), tt.wantErrContain)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("promptDeployMode() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPromptCodeConfig_FlagOverrides(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		files       []string // files to create in temp dir
+		noPrompt    bool
+		opts        codeDeployOptions
+		wantRuntime string
+		wantEntry   string
+		wantDepRes  string
+	}{
+		{
+			name:        "all opts provided",
+			noPrompt:    true,
+			opts:        codeDeployOptions{runtime: "python_3_14", entryPoint: "bot.py", depResolution: "bundled"},
+			wantRuntime: "python_3_14",
+			wantEntry:   "bot.py",
+			wantDepRes:  "bundled",
+		},
+		{
+			name:        "noPrompt defaults for python project",
+			files:       []string{"requirements.txt", "app.py"},
+			noPrompt:    true,
+			opts:        codeDeployOptions{},
+			wantRuntime: "python_3_13",
+			wantEntry:   "app.py",
+			wantDepRes:  "remote_build",
+		},
+		{
+			name:        "noPrompt defaults for dotnet project",
+			files:       []string{"MyBot.csproj", "Program.cs"},
+			noPrompt:    true,
+			opts:        codeDeployOptions{},
+			wantRuntime: "dotnet_10",
+			wantEntry:   "MyBot.dll",
+			wantDepRes:  "remote_build",
+		},
+		{
+			name:        "opts override noPrompt defaults",
+			files:       []string{"requirements.txt", "app.py"},
+			noPrompt:    true,
+			opts:        codeDeployOptions{runtime: "python_3_14", entryPoint: "serve.py", depResolution: "bundled"},
+			wantRuntime: "python_3_14",
+			wantEntry:   "serve.py",
+			wantDepRes:  "bundled",
+		},
+		{
+			name:        "partial opts — runtime from flag, rest from defaults",
+			files:       []string{"app.py"},
+			noPrompt:    true,
+			opts:        codeDeployOptions{runtime: "python_3_14"},
+			wantRuntime: "python_3_14",
+			wantEntry:   "app.py",
+			wantDepRes:  "remote_build",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			for _, f := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, f), []byte(""), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			got, err := promptCodeConfig(t.Context(), nil, dir, tt.noPrompt, tt.opts)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Runtime != tt.wantRuntime {
+				t.Errorf("Runtime = %q, want %q", got.Runtime, tt.wantRuntime)
+			}
+			if got.EntryPoint != tt.wantEntry {
+				t.Errorf("EntryPoint = %q, want %q", got.EntryPoint, tt.wantEntry)
+			}
+			if got.DependencyResolution == nil {
+				t.Fatal("DependencyResolution is nil")
+			}
+			if *got.DependencyResolution != tt.wantDepRes {
+				t.Errorf("DependencyResolution = %q, want %q", *got.DependencyResolution, tt.wantDepRes)
+			}
+		})
+	}
+}
+
 func TestDetectDefaultEntryPoint(t *testing.T) {
 	tests := []struct {
 		name    string

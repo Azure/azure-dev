@@ -893,21 +893,8 @@ func (a *InitAction) Run(ctx context.Context) error {
 	}
 
 	// Validate code deploy flags
-	if a.flags.noPrompt && a.flags.deployMode == "code" {
-		if a.flags.runtime == "" {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"--runtime is required when using --deploy-mode code with --no-prompt",
-				"Specify --runtime (e.g., python_3_13, python_3_14, dotnet_10)",
-			)
-		}
-		if a.flags.entryPoint == "" {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"--entry-point is required when using --deploy-mode code with --no-prompt",
-				"Specify --entry-point (e.g., app.py, main.py, MyAgent.dll)",
-			)
-		}
+	if err := a.validateCodeDeployFlags(); err != nil {
+		return err
 	}
 
 	// If --manifest is given
@@ -2985,4 +2972,26 @@ func extractConnectionConfigs(
 	}
 
 	return connections, credentialEnvVars, nil
+}
+
+// validateCodeDeployFlags checks that required flags are present when using
+// --deploy-mode code in --no-prompt mode.
+func (a *InitAction) validateCodeDeployFlags() error {
+	if a.flags.noPrompt && a.flags.deployMode == "code" {
+		if a.flags.runtime == "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--runtime is required when using --deploy-mode code with --no-prompt",
+				"Specify --runtime (e.g., python_3_13, python_3_14, dotnet_10)",
+			)
+		}
+		if a.flags.entryPoint == "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--entry-point is required when using --deploy-mode code with --no-prompt",
+				"Specify --entry-point (e.g., app.py, main.py, MyAgent.dll)",
+			)
+		}
+	}
+	return nil
 }

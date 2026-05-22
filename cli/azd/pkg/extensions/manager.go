@@ -87,6 +87,20 @@ func matchesVersionConstraint(expr, candidate string) bool {
 	return constraint.Check(parsedVersion)
 }
 
+// isDowngrade reports whether moving from current to target is a version regression.
+// Returns false if either version is not valid semver.
+func isDowngrade(current, target string) bool {
+	currentSemver, err := semver.NewVersion(current)
+	if err != nil {
+		return false
+	}
+	targetSemver, err := semver.NewVersion(target)
+	if err != nil {
+		return false
+	}
+	return targetSemver.LessThan(currentSemver)
+}
+
 // bestSatisfyingVersion returns the highest published version satisfying expr.
 // Empty or "latest" selects the latest version; non-semver tags use exact match.
 func bestSatisfyingVersion(expr string, versions []ExtensionVersion) *ExtensionVersion {
@@ -892,6 +906,27 @@ func (m *Manager) evaluateDependencyChanges(
 
 		// Already at the highest matching version — nothing to do.
 		if bestVersion.Version == installed.Version {
+			continue
+		}
+
+		// Refuse to silently downgrade: a user (or sibling pack) may have moved the dependency
+		// past this pack's declared range deliberately.
+		if isDowngrade(installed.Version, bestVersion.Version) {
+			if matchesVersionConstraint(dep.Version, installed.Version) {
+				// Installed is newer but still satisfies the constraint — keep it, no-op.
+				continue
+			}
+			results = append(results, UpgradeResult{
+				ExtensionId: dep.Id,
+				Status:      UpgradeStatusSkipped,
+				FromVersion: installed.Version,
+				FromSource:  installed.Source,
+				SkipReason: fmt.Sprintf(
+					"installed version %s is outside %s's constraint %q; not downgrading. "+
+						"Run 'azd extension install %s --version %s' to align with the pack.",
+					installed.Version, parentExtension.Id, dep.Version, dep.Id, bestVersion.Version,
+				),
+			})
 			continue
 		}
 

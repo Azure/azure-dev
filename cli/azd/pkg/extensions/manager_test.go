@@ -1878,6 +1878,162 @@ func Test_Upgrade_DependencyUpgrade_ReconcilesWhenParentCurrent(t *testing.T) {
 	require.Equal(t, "2.0.0", depUpgrades[0].ToVersion)
 }
 
+func Test_Upgrade_DependencyUpgrade_RefusesToDowngradeOutsideConstraint(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "test.pack",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "test.child", Version: "~1.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "test.child",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+					{Version: "1.1.0", Artifacts: sampleArtifacts},
+					{Version: "2.0.0", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	// Install pack first; it pulls in test.child at the highest version matching ~1.0.0 (1.1.0).
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, packs[0], "")
+	require.NoError(t, err)
+
+	// Simulate the user upgrading the dependency standalone to a version outside the constraint.
+	require.NoError(t, manager.Uninstall("test.child"))
+	children, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, children[0], "2.0.0")
+	require.NoError(t, err)
+
+	_, depUpgrades, err := manager.ReconcileDependencies(
+		*mockContext.Context,
+		packs[0],
+		DefaultUpgradeOptions(""),
+	)
+	require.NoError(t, err)
+	require.Len(t, depUpgrades, 1)
+	require.Equal(t, "test.child", depUpgrades[0].ExtensionId)
+	require.Equal(t, UpgradeStatusSkipped, depUpgrades[0].Status)
+	require.Equal(t, "2.0.0", depUpgrades[0].FromVersion)
+	require.Contains(t, depUpgrades[0].SkipReason, "outside")
+	require.Contains(t, depUpgrades[0].SkipReason, "not downgrading")
+
+	// Installed version should still be 2.0.0 — no downgrade happened.
+	installed, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	require.Equal(t, "2.0.0", installed.Version)
+}
+
+func Test_Upgrade_DependencyUpgrade_KeepsNewerInstalledWhenInRange(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "test.pack",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "test.child", Version: ">=1.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "test.child",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+					{Version: "1.5.0", Artifacts: sampleArtifacts},
+					{Version: "2.0.0", RequiredAzdVersion: ">=99.0.0", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	// Install the child at 2.0.0 first; it's outside the azd-compatible candidate set
+	// ({1.0.0, 1.5.0}) but still satisfies the pack's >=1.0.0 constraint, so reconciliation
+	// should keep it rather than downgrade to 1.5.0.
+	children, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, children[0], "2.0.0")
+	require.NoError(t, err)
+
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, packs[0], "")
+	require.NoError(t, err)
+
+	azdVersion, err := semver.NewVersion("1.0.0")
+	require.NoError(t, err)
+	_, depUpgrades, err := manager.ReconcileDependencies(
+		*mockContext.Context,
+		packs[0],
+		UpgradeOptions{
+			VersionPreference:   "",
+			UpgradeDependencies: true,
+			AzdVersion:          azdVersion,
+		},
+	)
+	require.NoError(t, err)
+	require.Empty(t, depUpgrades)
+
+	installed, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	require.Equal(t, "2.0.0", installed.Version)
+}
+
 func Test_Upgrade_DependencyUpgrade_UsesCompatibleDependencyVersion(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 

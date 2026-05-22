@@ -1655,27 +1655,28 @@ func displayUpgradeSummary(
 	console.Message(ctx, "")
 
 	parts := make([]string, 0, 5)
+	depUpgraded := summary.DependencyUpgradesByStatus[extensions.UpgradeStatusUpgraded]
 	if summary.Upgraded > 0 {
 		upgradedPart := output.WithSuccessFormat(
 			"%d upgraded", summary.Upgraded,
 		)
-		if summary.DependencyUpgrades > 0 {
+		if depUpgraded > 0 {
 			noun := "dependency"
-			if summary.DependencyUpgrades != 1 {
+			if depUpgraded != 1 {
 				noun = "dependencies"
 			}
 			upgradedPart += output.WithGrayFormat(
-				" (%d %s)", summary.DependencyUpgrades, noun,
+				" (%d %s)", depUpgraded, noun,
 			)
 		}
 		parts = append(parts, upgradedPart)
-	} else if summary.DependencyUpgrades > 0 {
+	} else if depUpgraded > 0 {
 		noun := "dependency"
-		if summary.DependencyUpgrades != 1 {
+		if depUpgraded != 1 {
 			noun = "dependencies"
 		}
 		parts = append(parts, output.WithSuccessFormat(
-			"%d %s upgraded", summary.DependencyUpgrades, noun,
+			"%d %s upgraded", depUpgraded, noun,
 		))
 	}
 	if summary.Skipped > 0 {

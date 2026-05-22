@@ -97,19 +97,18 @@ func matchesVersionConstraint(expr, candidate string) bool {
 }
 
 // bestSatisfyingVersion returns the highest published version satisfying
-// expr from the provided versions slice. Returns (nil, nil) when no
-// published version satisfies the constraint. Returns (nil, err) only when
-// expr fails to parse as a semver constraint AND no candidate matches
-// expr literally — for non-semver tags this falls back to exact match.
-func bestSatisfyingVersion(expr string, versions []ExtensionVersion) (*ExtensionVersion, error) {
+// expr from the provided versions slice, or nil when no published version
+// matches. Empty expr or "latest" returns LatestVersion. Constraint-shaped
+// expressions are evaluated via semver.NewConstraint; non-semver tags fall
+// back to a case-insensitive exact match. The caller treats a nil return
+// as "no acceptable version available".
+func bestSatisfyingVersion(expr string, versions []ExtensionVersion) *ExtensionVersion {
 	if len(versions) == 0 {
-		return nil, nil
+		return nil
 	}
 
-	// "" or "latest" → just return the LatestVersion (which already handles
-	// the semver-vs-non-semver ordering used elsewhere in the package).
 	if expr == "" || strings.EqualFold(expr, "latest") {
-		return LatestVersion(versions), nil
+		return LatestVersion(versions)
 	}
 
 	constraint, err := semver.NewConstraint(expr)
@@ -118,10 +117,10 @@ func bestSatisfyingVersion(expr string, versions []ExtensionVersion) (*Extension
 		// candidate tag.
 		for i := range versions {
 			if strings.EqualFold(versions[i].Version, expr) {
-				return &versions[i], nil
+				return &versions[i]
 			}
 		}
-		return nil, nil
+		return nil
 	}
 
 	var best *semver.Version
@@ -140,9 +139,9 @@ func bestSatisfyingVersion(expr string, versions []ExtensionVersion) (*Extension
 		}
 	}
 	if best == nil {
-		return nil, nil
+		return nil
 	}
-	return &versions[bestIdx], nil
+	return &versions[bestIdx]
 }
 
 // createExtensionFilter creates a comprehensive filter that checks ALL criteria with AND logic
@@ -440,10 +439,7 @@ func (m *Manager) installInternal(
 	// (possibly semver-constraint-shaped) preference. bestSatisfyingVersion
 	// also handles non-semver exact-match tags ("dev", "nightly") so the
 	// behavior matches createExtensionFilter.
-	selectedVersion, err := bestSatisfyingVersion(versionPreference, extension.Versions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve version for %s: %w", extension.Id, err)
-	}
+	selectedVersion := bestSatisfyingVersion(versionPreference, extension.Versions)
 	if selectedVersion == nil {
 		if versionPreference == "" || strings.EqualFold(versionPreference, "latest") {
 			return nil, fmt.Errorf("no compatible version found for extension: %s", extension.Id)
@@ -832,27 +828,23 @@ func (m *Manager) evaluateDependencyChanges(
 			continue
 		}
 
-		bestVersion, bestErr := bestSatisfyingVersion(dep.Version, childMetadata.Versions)
-		if bestErr != nil || bestVersion == nil {
+		bestVersion := bestSatisfyingVersion(dep.Version, childMetadata.Versions)
+		if bestVersion == nil {
 			// Constraint matches no published version. If the installed
 			// version still satisfies the constraint there's nothing to
 			// do; otherwise surface as a failure.
 			if matchesVersionConstraint(dep.Version, installed.Version) {
 				continue
 			}
-			err := bestErr
-			if err == nil {
-				err = fmt.Errorf(
-					"no published version of %s satisfies constraint %q",
-					dep.Id, dep.Version,
-				)
-			}
 			results = append(results, UpgradeResult{
 				ExtensionId: dep.Id,
 				Status:      UpgradeStatusFailed,
 				FromVersion: installed.Version,
 				FromSource:  installed.Source,
-				Error:       err,
+				Error: fmt.Errorf(
+					"no published version of %s satisfies constraint %q",
+					dep.Id, dep.Version,
+				),
 			})
 			continue
 		}

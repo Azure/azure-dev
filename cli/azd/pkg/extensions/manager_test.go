@@ -1540,10 +1540,11 @@ func Test_CopyFromLocalPath_PathTraversal_Blocked(t *testing.T) {
 	}
 }
 
-// Test_Upgrade_DependencyUpgrade verifies the dependency-upgrade decision matrix described in
-// the issue: parent upgrades trigger child upgrades only when the
-// declared dependency constraint is no longer satisfied by the installed
-// child version, and respect the UpgradeDependencies=false opt-out.
+// Test_Upgrade_DependencyUpgrade verifies the dependency-upgrade decision
+// matrix: parent upgrades select the highest published version satisfying
+// each declared constraint (upgrade-to-best-match, same as npm/yarn), skip
+// dependencies already at that best version, and respect the
+// UpgradeDependencies=false opt-out.
 func Test_Upgrade_DependencyUpgrade_TightenedConstraint(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 

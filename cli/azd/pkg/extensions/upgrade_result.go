@@ -99,16 +99,18 @@ func (r UpgradeResult) MarshalJSON() ([]byte, error) {
 }
 
 // UpgradeSummary holds aggregate counts from a batch upgrade operation.
-// DependencyUpgrades is the recursive count of dependency-upgrade entries
-// and is reported as a separate counter so existing consumers continue
-// to see Upgraded as the top-level upgrade count.
+// DependencyUpgrades is the total recursive count of dependency-upgrade
+// entries regardless of status. DependencyUpgradesByStatus breaks that
+// total down per UpgradeStatus so callers (UI summary, telemetry) can
+// distinguish actually upgraded dependencies from skipped/failed ones.
 type UpgradeSummary struct {
-	Total              int `json:"total"`
-	Upgraded           int `json:"upgraded"`
-	Skipped            int `json:"skipped"`
-	Promoted           int `json:"promoted"`
-	Failed             int `json:"failed"`
-	DependencyUpgrades int `json:"dependencyUpgrades,omitempty"`
+	Total                      int                   `json:"total"`
+	Upgraded                   int                   `json:"upgraded"`
+	Skipped                    int                   `json:"skipped"`
+	Promoted                   int                   `json:"promoted"`
+	Failed                     int                   `json:"failed"`
+	DependencyUpgrades         int                   `json:"dependencyUpgrades,omitempty"`
+	DependencyUpgradesByStatus map[UpgradeStatus]int `json:"-"`
 }
 
 // NewUpgradeSummary computes aggregate counts from a slice of UpgradeResult.
@@ -117,7 +119,10 @@ type UpgradeSummary struct {
 // entry recursively, regardless of its status, so callers can surface how
 // much extra work the dependency-upgrade flow performed.
 func NewUpgradeSummary(results []UpgradeResult) UpgradeSummary {
-	s := UpgradeSummary{Total: len(results)}
+	s := UpgradeSummary{
+		Total:                      len(results),
+		DependencyUpgradesByStatus: map[UpgradeStatus]int{},
+	}
 	for i := range results {
 		switch results[i].Status {
 		case UpgradeStatusUpgraded:
@@ -130,8 +135,19 @@ func NewUpgradeSummary(results []UpgradeResult) UpgradeSummary {
 			s.Failed++
 		}
 		s.DependencyUpgrades += CountDependencyUpgrades(results[i].DependencyUpgrades)
+		countDependencyUpgradesByStatus(results[i].DependencyUpgrades, s.DependencyUpgradesByStatus)
 	}
 	return s
+}
+
+// countDependencyUpgradesByStatus accumulates per-status counts of every
+// dependency-upgrade entry in the tree (recursive). The map is mutated in
+// place so callers can share a single accumulator across a batch of results.
+func countDependencyUpgradesByStatus(results []UpgradeResult, counts map[UpgradeStatus]int) {
+	for i := range results {
+		counts[results[i].Status]++
+		countDependencyUpgradesByStatus(results[i].DependencyUpgrades, counts)
+	}
 }
 
 // CountDependencyUpgrades returns the recursive count of every entry in the

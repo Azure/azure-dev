@@ -1954,6 +1954,78 @@ const completionSpec: Fig.Spec = {
 					],
 				},
 				{
+					name: ['inspector'],
+					description: 'Browser-based inspector UI for locally running Foundry agents. (Preview)',
+					subcommands: [
+						{
+							name: ['launch'],
+							description: 'Launch the Agent Inspector UI in a browser, pointed at a local agent.',
+							options: [
+								{
+									name: ['--conversation-id'],
+									description: 'Optional explicit conversation ID for the SPA. If omitted, the SPA mints a fresh UUID.',
+									args: [
+										{
+											name: 'conversation-id',
+										},
+									],
+								},
+								{
+									name: ['--inspector-port'],
+									description: 'Port the Agent Inspector UI listens on (default: 8087)',
+									args: [
+										{
+											name: 'inspector-port',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--port'],
+									description: 'Localhost port of the agent the inspector targets (default: 8088)',
+									args: [
+										{
+											name: 'port',
+										},
+									],
+								},
+								{
+									name: ['--session-id'],
+									description: 'Optional explicit session ID for the SPA. If omitted, the SPA mints a fresh UUID.',
+									args: [
+										{
+											name: 'session-id',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+				{
 					name: ['models'],
 					description: 'Extension for managing custom models in Azure AI Foundry. (Preview)',
 					subcommands: [
@@ -4779,6 +4851,20 @@ const completionSpec: Fig.Spec = {
 								{
 									name: ['version'],
 									description: 'Prints the version of the application',
+								},
+							],
+						},
+						{
+							name: ['inspector'],
+							description: 'Browser-based inspector UI for locally running Foundry agents. (Preview)',
+							subcommands: [
+								{
+									name: ['launch'],
+									description: 'Launch the Agent Inspector UI in a browser, pointed at a local agent.',
+								},
+								{
+									name: ['version'],
+									description: 'Display the extension version',
 								},
 							],
 						},

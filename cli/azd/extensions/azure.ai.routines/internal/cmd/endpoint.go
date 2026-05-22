@@ -79,8 +79,8 @@ func validateProjectEndpoint(raw string) (normalized string, err error) {
 	}
 
 	// Reject explicit ports: Foundry hosts are reached on the default HTTPS
-	// port (443) and accepting other ports would silently misroute traffic
-	// (the normalized URL strips the port).
+	// port (443); accepting other ports would silently route traffic to the
+	// wrong destination (the normalized URL strips the port).
 	if u.Port() != "" {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,

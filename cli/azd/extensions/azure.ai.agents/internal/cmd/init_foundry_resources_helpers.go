@@ -62,6 +62,23 @@ func setEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key,
 	return nil
 }
 
+// getEnvValue retrieves a single environment variable value. Returns empty string if not found.
+func getEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key string) (string, error) {
+	envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: envName,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to get environment values: %w", err)
+	}
+
+	for _, kv := range envValues.KeyValues {
+		if kv.Key == key {
+			return kv.Value, nil
+		}
+	}
+	return "", nil
+}
+
 // projectResourceIdRegex is the precompiled regex for parsing Foundry project ARM resource IDs.
 var projectResourceIdRegex = regexp.MustCompile(
 	`^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`,
@@ -661,11 +678,18 @@ func loadAzureContext(
 		envValueMap[value.Key] = value.Value
 	}
 
+	// Prefer AZURE_AI_DEPLOYMENTS_LOCATION for model/project operations;
+	// fall back to AZURE_LOCATION for backward compatibility.
+	location := envValueMap["AZURE_AI_DEPLOYMENTS_LOCATION"]
+	if location == "" {
+		location = envValueMap["AZURE_LOCATION"]
+	}
+
 	return &azdext.AzureContext{
 		Scope: &azdext.AzureScope{
 			TenantId:       envValueMap["AZURE_TENANT_ID"],
 			SubscriptionId: envValueMap["AZURE_SUBSCRIPTION_ID"],
-			Location:       envValueMap["AZURE_LOCATION"],
+			Location:       location,
 		},
 		Resources: []string{},
 	}, nil
@@ -770,11 +794,19 @@ func ensureLocation(
 	}
 
 	if azureContext.Scope.Location != "" && locationAllowed(azureContext.Scope.Location, allowedLocations) {
+		if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", azureContext.Scope.Location); err != nil {
+			return err
+		}
+		// Defensively seed AZURE_LOCATION (resource group location) if not already set,
+		// so that downstream provisioning always has a valid location.
+		if existing, _ := getEnvValue(ctx, azdClient, envName, "AZURE_LOCATION"); existing == "" {
+			return setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", azureContext.Scope.Location)
+		}
 		return nil
 	}
 	if azureContext.Scope.Location != "" {
 		fmt.Printf("%s", output.WithWarningFormat(
-			"The current AZURE_LOCATION '%s' is not supported for this agent setup. Please choose a different location.\n",
+			"The current location '%s' is not supported for this agent setup. Please choose a different location.\n",
 			azureContext.Scope.Location,
 		))
 		azureContext.Scope.Location = ""
@@ -789,7 +821,13 @@ func ensureLocation(
 
 	azureContext.Scope.Location = locationName
 
-	return setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", azureContext.Scope.Location)
+	// Set both AZURE_LOCATION (resource group) and AZURE_AI_DEPLOYMENTS_LOCATION (model/project resources)
+	// to the same value by default. AZURE_AI_DEPLOYMENTS_LOCATION can be changed independently later
+	// (e.g. during model selection) without affecting the resource group location.
+	if err := setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", azureContext.Scope.Location); err != nil {
+		return err
+	}
+	return setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", azureContext.Scope.Location)
 }
 
 // ensureSubscriptionAndLocation ensures both subscription and location are set.
@@ -1148,8 +1186,17 @@ func selectFoundryProject(
 
 	// Set location from the selected project
 	azureContext.Scope.Location = selectedProject.Location
-	if err := setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", selectedProject.Location); err != nil {
-		return nil, fmt.Errorf("failed to set AZURE_LOCATION: %w", err)
+	if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", selectedProject.Location); err != nil {
+		return nil, fmt.Errorf("failed to set AZURE_AI_DEPLOYMENTS_LOCATION: %w", err)
+	}
+	// Seed AZURE_LOCATION (used for resource group) only if not already set.
+	// If the user already has an existing RG in a different region, we must not
+	// overwrite it — ARM cannot change the location of an existing resource group.
+	currentLocation, _ := getEnvValue(ctx, azdClient, envName, "AZURE_LOCATION")
+	if currentLocation == "" {
+		if err := setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", selectedProject.Location); err != nil {
+			return nil, fmt.Errorf("failed to set AZURE_LOCATION: %w", err)
+		}
 	}
 
 	// Configure all Foundry project environment variables

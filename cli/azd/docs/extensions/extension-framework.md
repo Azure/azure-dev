@@ -1001,13 +1001,16 @@ A [JSON schema](../../extensions/extension.schema.json) is available to support 
 **Required Properties:**
 - `id`: Unique identifier for the extension
 - `version`: Semantic version following MAJOR.MINOR.PATCH format
-- `capabilities`: Array of extension capabilities (see below)
 - `displayName`: Human-readable name of the extension
 - `description`: Detailed description of the extension
+
+Each manifest must include either `capabilities` or `dependencies`. Extension packs may omit `capabilities`
+when they declare `dependencies` instead and have no executable.
 
 **Optional Properties:**
 - `namespace`: Command namespace for grouping extension commands
 - `entryPoint`: Executable or script that serves as the entry point
+- `capabilities`: Array of extension capabilities (see below)
 - `usage`: Instructions on how to use the extension
 - `examples`: Array of usage examples with name, description, and usage
 - `tags`: Keywords for categorization and filtering

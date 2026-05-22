@@ -179,7 +179,7 @@ func TestAssembleState(t *testing.T) {
 				envName: "dev",
 				project: &azdext.ProjectConfig{Name: "demo"},
 				values: map[string]string{
-					"dev/FOUNDRY_PROJECT_ENDPOINT":  "https://x.services.ai.azure.com",
+					"dev/FOUNDRY_PROJECT_ENDPOINT":   "https://x.services.ai.azure.com",
 					"dev/AI_AGENT_PENDING_PROVISION": "model_deployment",
 				},
 			},
@@ -193,7 +193,7 @@ func TestAssembleState(t *testing.T) {
 				envName: "dev",
 				project: &azdext.ProjectConfig{Name: "demo"},
 				values: map[string]string{
-					"dev/FOUNDRY_PROJECT_ENDPOINT":  "https://x.services.ai.azure.com",
+					"dev/FOUNDRY_PROJECT_ENDPOINT":   "https://x.services.ai.azure.com",
 					"dev/AI_AGENT_PENDING_PROVISION": "project,acr,project,model_deployment",
 				},
 			},
@@ -207,7 +207,7 @@ func TestAssembleState(t *testing.T) {
 				envName: "dev",
 				project: &azdext.ProjectConfig{Name: "demo"},
 				values: map[string]string{
-					"dev/FOUNDRY_PROJECT_ENDPOINT":  "https://x.services.ai.azure.com",
+					"dev/FOUNDRY_PROJECT_ENDPOINT":   "https://x.services.ai.azure.com",
 					"dev/AI_AGENT_PENDING_PROVISION": "  ,, project ,, acr , ",
 				},
 			},
@@ -1064,7 +1064,7 @@ environment_variables:
 		},
 		values: map[string]string{
 			"dev/FOUNDRY_PROJECT_ENDPOINT": "https://x.services.ai.azure.com",
-			"dev/MY_API_KEY":                "sk-abc",
+			"dev/MY_API_KEY":               "sk-abc",
 		},
 	}
 

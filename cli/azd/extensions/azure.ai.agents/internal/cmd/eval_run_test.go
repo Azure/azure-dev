@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -124,19 +124,19 @@ func TestBuildDatasetFileID(t *testing.T) {
 	tests := []struct {
 		name     string
 		endpoint string
-		ref      *opteval.DatasetRef
+		ref      *opt_eval.DatasetRef
 		expected string
 	}{
 		{
 			"with version",
 			"https://foundryljm7.services.ai.azure.com/api/projects/projectljm7",
-			&opteval.DatasetRef{Name: "bugbash-mt-sim-scenarios", Version: "1"},
+			&opt_eval.DatasetRef{Name: "bugbash-mt-sim-scenarios", Version: "1"},
 			"azureai://accounts/foundryljm7/projects/projectljm7/data/bugbash-mt-sim-scenarios/versions/1",
 		},
 		{
 			"default version",
 			"https://myaccount.services.ai.azure.com/api/projects/myproject",
-			&opteval.DatasetRef{Name: "my-dataset"},
+			&opt_eval.DatasetRef{Name: "my-dataset"},
 			"azureai://accounts/myaccount/projects/myproject/data/my-dataset/versions/1",
 		},
 	}

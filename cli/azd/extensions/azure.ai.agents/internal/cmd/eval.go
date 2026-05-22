@@ -24,7 +24,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/dataset_api"
 	"azureaiagent/internal/pkg/agents/eval_api"
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -38,12 +38,13 @@ const (
 	defaultEvalConfigName = "eval.yaml"
 	defaultEvalName       = "smoke-core"
 	defaultEvalSamples    = 15
+	defaultEvalModel      = "gpt-4o"
 )
 
 // Type aliases to avoid repeating full package paths throughout the eval code.
 type evalConfig = eval_api.EvalConfig
-type evalAgentRef = opteval.AgentRef
-type evalDatasetRef = opteval.DatasetRef
+type evalAgentRef = opt_eval.AgentRef
+type evalDatasetRef = opt_eval.DatasetRef
 
 // evalResolvedContext holds the fully-resolved context for an eval operation,
 // including the azd client, API clients, project paths, and agent metadata.
@@ -83,8 +84,12 @@ func newEvalCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Create and run quick evals for an agent.",
 		Long: `Create and run quick evals for an agent.
 
-These commands are designed for quick agent eval onboarding under azd ai agent.
-Use eval init to generate an eval config, then eval run to execute it.`,
+Subcommands:
+  init    Generate an eval config and dataset from a hosted agent
+  run     Execute an evaluation run from eval.yaml
+  update  Update an existing eval configuration
+  list    List evaluations for the current project
+  show    Show details of an evaluation run`,
 	}
 
 	cmd.AddCommand(newEvalInitCommand(extCtx))

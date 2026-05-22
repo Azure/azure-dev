@@ -110,7 +110,7 @@ type TargetConfig struct {
 // OptimizeOptions controls the optimization run.
 type OptimizeOptions struct {
 	Budget               int     `json:"budget,omitempty"`
-	MaxIterations        int     `json:"maxIterations,omitempty"`
+	MaxIterations        *int    `json:"maxIterations,omitempty"`
 	MinImprovement       float64 `json:"minImprovement,omitempty"`
 	ImprovementThreshold float64 `json:"improvementThreshold,omitempty"`
 	PassThreshold        float64 `json:"passThreshold,omitempty"`
@@ -226,7 +226,7 @@ type OptimizeCancelResponse struct {
 
 // --- Deployment report ---
 
-// DeploymentReport is sent to FAOS after a candidate is promoted,
+// DeploymentReport is sent to the optimization service after a candidate is promoted,
 // creating the candidate→deployment mapping.
 type DeploymentReport struct {
 	CandidateID  string `json:"-"`            // used in URL path, not serialized

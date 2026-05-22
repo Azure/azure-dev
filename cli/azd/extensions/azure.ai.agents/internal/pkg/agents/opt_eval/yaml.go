@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package opteval
+package opt_eval
 
 import (
 	"fmt"
@@ -20,8 +20,12 @@ import (
 func SafePath(baseDir, untrusted string) (string, error) {
 	p := filepath.Join(baseDir, filepath.FromSlash(untrusted))
 	p = filepath.Clean(p)
-	if !strings.HasPrefix(p, filepath.Clean(baseDir)+string(filepath.Separator)) &&
-		p != filepath.Clean(baseDir) {
+
+	rel, err := filepath.Rel(baseDir, p)
+	if err != nil {
+		return "", fmt.Errorf("path %q escapes base directory", untrusted)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("path %q escapes base directory", untrusted)
 	}
 	return p, nil
@@ -227,12 +231,13 @@ func (c *AgentConfig) ResolvedInstruction() string {
 // Optimize-specific fields (skill_dir, tools_file) are stored in
 // OptimizeConfig, not here, so eval.yaml stays target-agnostic.
 type AgentRef struct {
-	Name        string               `yaml:"name"`
-	Kind        agent_yaml.AgentKind `yaml:"kind,omitempty"`
-	Version     string               `yaml:"version,omitempty"`
-	ConfigFile  string               `yaml:"config,omitempty"`
-	Model       string               `yaml:"model,omitempty"`
-	Instruction InstructionRef       `yaml:"instruction,omitempty"`
+	Name       string               `yaml:"name"`
+	Kind       agent_yaml.AgentKind `yaml:"kind,omitempty"`
+	Version    string               `yaml:"version,omitempty"`
+	ConfigFile string               `yaml:"config,omitempty"`
+	Model      string               `yaml:"model,omitempty"`
+	// Not expected to be shown in yaml
+	Instruction InstructionRef `yaml:"instruction,omitempty"`
 }
 
 // ResolveConfig loads the metadata.yaml pointed to by ConfigFile and returns
@@ -378,7 +383,7 @@ type Options struct {
 	TargetAttributes     []string      `yaml:"target_attributes,omitempty"`
 	TargetConfig         *TargetConfig `yaml:"target_config,omitempty"`
 	Budget               int           `yaml:"budget,omitempty"`
-	MaxIterations        int           `yaml:"max_iterations,omitempty"`
+	MaxIterations        *int          `yaml:"max_iterations,omitempty"`
 	MinImprovement       float64       `yaml:"min_improvement,omitempty"`
 	ImprovementThreshold float64       `yaml:"improvement_threshold,omitempty"`
 	PassThreshold        float64       `yaml:"pass_threshold,omitempty"`
@@ -408,8 +413,8 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 		}
 	}
 
-	if o.MaxIterations <= 0 {
-		o.MaxIterations = 4
+	if o.MaxIterations == nil {
+		o.MaxIterations = new(4)
 	}
 	return nil
 }

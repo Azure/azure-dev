@@ -13,7 +13,7 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/eval_api"
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -61,12 +61,11 @@ func TestNewEvalInitCommand_NoArgs(t *testing.T) {
 	assert.Error(t, cmd.Args(cmd, []string{"extra"}))
 }
 
-func TestNewEvalInitCommand_ShortOutFile(t *testing.T) {
+func TestNewEvalInitCommand_NoShortOutFile(t *testing.T) {
 	t.Parallel()
 	cmd := newEvalInitCommand(&azdext.ExtensionContext{})
-	f := cmd.Flags().ShorthandLookup("O")
-	require.NotNil(t, f, "flag -O shorthand should exist")
-	assert.Equal(t, "out-file", f.Name)
+	f := cmd.Flags().ShorthandLookup("o")
+	assert.Nil(t, f, "flag -o shorthand must not exist (conflicts with azd global --output)")
 }
 
 // ---------------------------------------------------------------------------
@@ -403,16 +402,16 @@ func TestBuildOpenAIEvalRequest(t *testing.T) {
 	t.Parallel()
 
 	cfg := &evalConfig{
-		Config: opteval.Config{
+		Config: opt_eval.Config{
 			Name: "smoke-core",
 			Agent: evalAgentRef{
 				Name:    "agent-1",
 				Version: "v1",
 			},
 			DatasetReference: &evalDatasetRef{Name: "ds", Version: "v1"},
-			Evaluators:       opteval.EvaluatorList{{Name: "builtin.quality"}},
+			Evaluators:       opt_eval.EvaluatorList{{Name: "builtin.quality"}},
 		},
-		Options: &opteval.Options{EvalModel: "gpt-4o"},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o"},
 	}
 
 	req := buildOpenAIEvalRequest(cfg)
@@ -434,7 +433,7 @@ func TestBuildOpenAIEvalRequest_WithDatasetFile(t *testing.T) {
 	t.Parallel()
 
 	cfg := &evalConfig{
-		Config: opteval.Config{
+		Config: opt_eval.Config{
 			Name:        "test-eval",
 			Agent:       evalAgentRef{Name: "agent-1"},
 			DatasetFile: "tasks.jsonl",
@@ -489,13 +488,13 @@ func TestTryLoadExistingEvalConfig_Found(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "eval.yaml")
 	cfg := &evalConfig{
-		Config: opteval.Config{
+		Config: opt_eval.Config{
 			Name: "smoke-core",
 			Agent: evalAgentRef{
 				Name: "my-agent",
 			},
 			DatasetFile: "data.jsonl",
-			Evaluators:  opteval.EvaluatorList{{Name: "quality"}},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "quality"}},
 		},
 	}
 	require.NoError(t, eval_api.WriteEvalConfig(cfgPath, cfg))
@@ -504,7 +503,7 @@ func TestTryLoadExistingEvalConfig_Found(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "smoke-core", loaded.Name)
 	assert.Equal(t, "my-agent", loaded.Agent.Name)
-	assert.Equal(t, opteval.EvaluatorList{{Name: "quality"}}, loaded.Evaluators)
+	assert.Equal(t, opt_eval.EvaluatorList{{Name: "quality"}}, loaded.Evaluators)
 }
 
 func TestTryLoadExistingEvalConfig_NotFound(t *testing.T) {
@@ -553,26 +552,26 @@ func TestSplitEvaluators(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name              string
-		input             opteval.EvaluatorList
-		expectedGenerated opteval.EvaluatorList
-		expectedBuiltin   opteval.EvaluatorList
+		input             opt_eval.EvaluatorList
+		expectedGenerated opt_eval.EvaluatorList
+		expectedBuiltin   opt_eval.EvaluatorList
 	}{
 		{
 			"mixed list",
-			opteval.EvaluatorList{{Name: "builtin.task_adherence"}, {Name: "my-quality"}, {Name: "builtin.safety"}},
-			opteval.EvaluatorList{{Name: "my-quality"}},
-			opteval.EvaluatorList{{Name: "builtin.task_adherence"}, {Name: "builtin.safety"}},
+			opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}, {Name: "my-quality"}, {Name: "builtin.safety"}},
+			opt_eval.EvaluatorList{{Name: "my-quality"}},
+			opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}, {Name: "builtin.safety"}},
 		},
 		{
 			"all builtin",
-			opteval.EvaluatorList{{Name: "builtin.quality"}, {Name: "builtin.safety"}},
+			opt_eval.EvaluatorList{{Name: "builtin.quality"}, {Name: "builtin.safety"}},
 			nil,
-			opteval.EvaluatorList{{Name: "builtin.quality"}, {Name: "builtin.safety"}},
+			opt_eval.EvaluatorList{{Name: "builtin.quality"}, {Name: "builtin.safety"}},
 		},
 		{
 			"all generated",
-			opteval.EvaluatorList{{Name: "smoke-core"}, {Name: "custom-1"}},
-			opteval.EvaluatorList{{Name: "smoke-core"}, {Name: "custom-1"}},
+			opt_eval.EvaluatorList{{Name: "smoke-core"}, {Name: "custom-1"}},
+			opt_eval.EvaluatorList{{Name: "smoke-core"}, {Name: "custom-1"}},
 			nil,
 		},
 		{

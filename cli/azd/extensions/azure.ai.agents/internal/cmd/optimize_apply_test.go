@@ -5,12 +5,13 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -114,22 +115,22 @@ func TestPrintPromptDiff(t *testing.T) {
 		dir := t.TempDir()
 
 		// Set up baseline with metadata that points to an instruction file.
-		baselineDir := filepath.Join(dir, agentConfigsDir, opteval.BaselineDir)
+		baselineDir := filepath.Join(dir, agentConfigsDir, opt_eval.BaselineDir)
 		require.NoError(t, os.MkdirAll(baselineDir, 0750))
 		require.NoError(t, os.WriteFile(
-			filepath.Join(baselineDir, opteval.InstructionFile),
+			filepath.Join(baselineDir, opt_eval.InstructionFile),
 			[]byte("You are a baseline assistant.\nLine two."),
 			0600,
 		))
 		require.NoError(t, os.WriteFile(
-			filepath.Join(baselineDir, opteval.MetadataFile),
+			filepath.Join(baselineDir, opt_eval.MetadataFile),
 			[]byte("instruction_file: instructions.md\nmodel: gpt-4o\n"),
 			0600,
 		))
 
-		candidateConfig := map[string]any{
+		candidateConfig := mustMarshal(t, map[string]any{
 			"systemPrompt": "You are an optimized assistant.\nNew line two.\nNew line three.",
-		}
+		})
 
 		var buf bytes.Buffer
 		printPromptDiff(&buf, dir, "cand1", candidateConfig)
@@ -145,7 +146,7 @@ func TestPrintPromptDiff(t *testing.T) {
 	t.Run("no output when candidate has no instructions", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		candidateConfig := map[string]any{"model": "gpt-4o"}
+		candidateConfig := mustMarshal(t, map[string]any{"model": "gpt-4o"})
 
 		var buf bytes.Buffer
 		printPromptDiff(&buf, dir, "cand1", candidateConfig)
@@ -155,7 +156,7 @@ func TestPrintPromptDiff(t *testing.T) {
 	t.Run("no output when baseline config missing", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		candidateConfig := map[string]any{"systemPrompt": "optimized"}
+		candidateConfig := mustMarshal(t, map[string]any{"systemPrompt": "optimized"})
 
 		var buf bytes.Buffer
 		printPromptDiff(&buf, dir, "cand1", candidateConfig)
@@ -167,20 +168,27 @@ func TestPrintPromptDiff(t *testing.T) {
 		dir := t.TempDir()
 
 		// Write metadata without instruction_file.
-		baselineDir := filepath.Join(dir, agentConfigsDir, opteval.BaselineDir)
+		baselineDir := filepath.Join(dir, agentConfigsDir, opt_eval.BaselineDir)
 		require.NoError(t, os.MkdirAll(baselineDir, 0750))
 		require.NoError(t, os.WriteFile(
-			filepath.Join(baselineDir, opteval.MetadataFile),
+			filepath.Join(baselineDir, opt_eval.MetadataFile),
 			[]byte("model: gpt-4o\n"),
 			0600,
 		))
 
-		candidateConfig := map[string]any{"systemPrompt": "optimized"}
+		candidateConfig := mustMarshal(t, map[string]any{"systemPrompt": "optimized"})
 
 		var buf bytes.Buffer
 		printPromptDiff(&buf, dir, "cand1", candidateConfig)
 		assert.Empty(t, buf.String())
 	})
+}
+
+func mustMarshal(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	data, err := json.Marshal(v)
+	require.NoError(t, err)
+	return data
 }
 
 // ---- extractInstructions ----
@@ -189,7 +197,7 @@ func TestExtractInstructions(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name   string
-		config any
+		config map[string]any
 		want   string
 	}{
 		{
@@ -211,7 +219,6 @@ func TestExtractInstructions(t *testing.T) {
 			"From systemPrompt",
 		},
 		{"nil config", nil, ""},
-		{"non-map config", "just a string", ""},
 		{"empty map", map[string]any{}, ""},
 		{"non-string value", map[string]any{"systemPrompt": 42}, ""},
 	}
@@ -274,6 +281,29 @@ func TestAgentConfigMetadata_ResolveSkillDir(t *testing.T) {
 	})
 }
 
+func TestAgentConfigMetadata_ResolveToolsFile(t *testing.T) {
+	t.Parallel()
+	t.Run("returns empty when not set", func(t *testing.T) {
+		t.Parallel()
+		meta := &agentConfigMetadata{}
+		assert.Empty(t, meta.resolveToolsFile("/some/dir"))
+	})
+
+	t.Run("resolves relative path", func(t *testing.T) {
+		t.Parallel()
+		meta := &agentConfigMetadata{ToolsFile: "tools.json"}
+		result := meta.resolveToolsFile("/project/config")
+		assert.Equal(t, filepath.Join("/project/config", "tools.json"), result)
+	})
+
+	t.Run("preserves absolute path", func(t *testing.T) {
+		t.Parallel()
+		abs := filepath.Join(os.TempDir(), "absolute-tools.json")
+		meta := &agentConfigMetadata{ToolsFile: abs}
+		assert.Equal(t, abs, meta.resolveToolsFile("/any/dir"))
+	})
+}
+
 // ---- writeAgentConfigFromCandidate ----
 
 func TestWriteAgentConfigFromCandidate(t *testing.T) {
@@ -281,19 +311,19 @@ func TestWriteAgentConfigFromCandidate(t *testing.T) {
 	t.Run("writes metadata and instructions", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		config := map[string]any{
+		config := mustMarshal(t, map[string]any{
 			"name":         "test-agent",
 			"model":        "gpt-4o",
 			"systemPrompt": "Test prompt.",
-		}
+		})
 
 		err := writeAgentConfigFromCandidate(dir, config)
 		require.NoError(t, err)
 
-		assert.FileExists(t, filepath.Join(dir, opteval.MetadataFile))
-		assert.FileExists(t, filepath.Join(dir, opteval.InstructionFile))
+		assert.FileExists(t, filepath.Join(dir, opt_eval.MetadataFile))
+		assert.FileExists(t, filepath.Join(dir, opt_eval.InstructionFile))
 
-		content, err := os.ReadFile(filepath.Join(dir, opteval.InstructionFile)) //nolint:gosec // test file path
+		content, err := os.ReadFile(filepath.Join(dir, opt_eval.InstructionFile)) //nolint:gosec // test file path
 		require.NoError(t, err)
 		assert.Equal(t, "Test prompt.", string(content))
 	})
@@ -301,7 +331,7 @@ func TestWriteAgentConfigFromCandidate(t *testing.T) {
 	t.Run("writes inline skills", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		config := map[string]any{
+		config := mustMarshal(t, map[string]any{
 			"systemPrompt": "prompt",
 			"skills": []any{
 				map[string]any{
@@ -310,21 +340,21 @@ func TestWriteAgentConfigFromCandidate(t *testing.T) {
 					"body":        "Search content here.",
 				},
 			},
-		}
+		})
 
 		err := writeAgentConfigFromCandidate(dir, config)
 		require.NoError(t, err)
 
-		skillFile := filepath.Join(dir, opteval.SkillsDir, "search", "SKILL.md")
+		skillFile := filepath.Join(dir, opt_eval.SkillsDir, "search", "SKILL.md")
 		assert.FileExists(t, skillFile)
 	})
 
 	t.Run("handles nil config gracefully", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		err := writeAgentConfigFromCandidate(dir, nil)
+		err := writeAgentConfigFromCandidate(dir, json.RawMessage(`{}`))
 		require.NoError(t, err)
-		assert.FileExists(t, filepath.Join(dir, opteval.MetadataFile))
+		assert.FileExists(t, filepath.Join(dir, opt_eval.MetadataFile))
 	})
 }
 
@@ -335,7 +365,7 @@ func TestCleanOtherCandidates(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create baseline, current candidate, and old candidate directories.
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, opteval.BaselineDir), 0750))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, opt_eval.BaselineDir), 0750))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "cand_current"), 0750))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "cand_old"), 0750))
 
@@ -343,7 +373,7 @@ func TestCleanOtherCandidates(t *testing.T) {
 	cleanOtherCandidates(dir, "cand_current", &buf)
 
 	// baseline and cand_current should remain; cand_old should be removed.
-	assert.DirExists(t, filepath.Join(dir, opteval.BaselineDir))
+	assert.DirExists(t, filepath.Join(dir, opt_eval.BaselineDir))
 	assert.DirExists(t, filepath.Join(dir, "cand_current"))
 	assert.NoDirExists(t, filepath.Join(dir, "cand_old"))
 }

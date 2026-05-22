@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 
 	"azureaiagent/internal/pkg/agents/eval_api"
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -82,12 +82,12 @@ the agent project root. Use --no-wait to write pending operation IDs and return.
 	cmd.Flags().StringVar(&flags.agent, "agent", "", "Target agent name")
 	cmd.Flags().StringVarP(&flags.projectEndpoint, "project-endpoint", "p", "", "Microsoft Foundry project endpoint URL")
 	cmd.Flags().StringVarP(&flags.instruction, "gen-instruction", "g", "", "Agent instruction used for dataset and evaluator generation")
-	cmd.Flags().StringVarP(&flags.instructionFile, "gen-instruction-file", "G", "", "Path to a file containing the agent instruction")
+	cmd.Flags().StringVarP(&flags.instructionFile, "gen-instruction-file", "", "", "Path to a file containing the agent instruction")
 	cmd.Flags().StringVar(&flags.evalModel, "eval-model", "", "Model used for evaluation and generation")
 	cmd.Flags().StringVar(&flags.dataset, "dataset", "", "Existing local file or registered dataset name to use for evaluation (instead of generating a new dataset)")
 	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", defaultEvalSamples, "Number of samples to generate (15-1000)")
 	cmd.Flags().StringArrayVar(&flags.evaluators, "evaluator", nil, "Built-in or custom evaluator name")
-	cmd.Flags().StringVarP(&flags.output, "out-file", "O", defaultEvalConfigName, "Eval config path")
+	cmd.Flags().StringVar(&flags.output, "out-file", defaultEvalConfigName, "Eval config path")
 	cmd.Flags().IntVar(&flags.traceDays, "trace-days", 0, "Include agent traces from the last N days for evaluator generation (0 = no traces)")
 	cmd.Flags().BoolVar(&flags.resetDefaults, "reset-defaults", false, "Overwrite an existing eval config")
 
@@ -139,7 +139,7 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 
 	// Resolve agent config: eval.yaml config → default baseline → nothing.
 	if flags.instruction == "" && flags.instructionFile == "" && resolved.hasProject {
-		var existing *opteval.Config
+		var existing *opt_eval.Config
 		if hasExisting && !flags.resetDefaults {
 			existing = &existingCfg.Config
 		}
@@ -152,7 +152,7 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 
 	// If --reset-defaults is set, clear existing state so the user can start fresh.
 	if flags.resetDefaults && resolved.envName != "" {
-		if err := opteval.ClearEvalState(ctx, resolved.azdClient, resolved.envName); err != nil {
+		if err := opt_eval.ClearEvalState(ctx, resolved.azdClient, resolved.envName); err != nil {
 			log.Printf("warning: clearing eval state: %v", err)
 		}
 	}
@@ -199,7 +199,9 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 
 	if flags.instruction == "" && flags.instructionFile == "" && flags.configFile == "" &&
 		(flags.dataset == "" || len(flags.evaluators) == 0) {
-		return fmt.Errorf("--gen-instruction is required when generating eval assets for a hosted agent")
+		return fmt.Errorf(
+			"one of --gen-instruction, --gen-instruction-file, --config, or both --dataset and --evaluators is required" +
+				" when generating eval assets for a hosted agent")
 	}
 	if flags.maxSamples < 15 || flags.maxSamples > 1000 {
 		return fmt.Errorf("--max-samples must be between 15 and 1000")
@@ -207,7 +209,7 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 
 	// Build config and submit generation jobs.
 	evalCfg := newEvalConfig(flags, resolved)
-	var extraEvals opteval.EvaluatorList
+	var extraEvals opt_eval.EvaluatorList
 	if !isRegenerate && len(flags.evaluators) > 0 {
 		extraEvals = evaluatorsFromFlags(flags.evaluators)
 	}
@@ -219,7 +221,7 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 
 	if flags.noWait {
 		if state.DatasetGenOpID != "" || state.EvalGenOpID != "" {
-			state.InitStatus = opteval.InitStatusPending
+			state.InitStatus = opt_eval.InitStatusPending
 		}
 		return writePendingEvalInit(ctx, resolved, configPath, evalCfg, state)
 	}
@@ -232,8 +234,8 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		return err
 	}
 
-	state.InitStatus = opteval.InitStatusCompleted
-	if err := opteval.ClearEvalState(ctx, resolved.azdClient, resolved.envName); err != nil {
+	state.InitStatus = opt_eval.InitStatusCompleted
+	if err := opt_eval.ClearEvalState(ctx, resolved.azdClient, resolved.envName); err != nil {
 		log.Printf("warning: clearing eval state: %v", err)
 	}
 	return writeAndPrintEvalResult(ctx, resolved, evalCfg, pollRes, configPath, isRegenerate)
@@ -286,8 +288,8 @@ func submitEvalJobs(
 	evalCfg *evalConfig,
 	existingCfg *evalConfig,
 	isRegenerate bool,
-) (*opteval.EvalState, error) {
-	state := &opteval.EvalState{}
+) (*opt_eval.EvalState, error) {
+	state := &opt_eval.EvalState{}
 
 	var needDatasetGen, needEvalGen bool
 	if isRegenerate {
@@ -348,7 +350,9 @@ func writeAndPrintEvalResult(
 	}
 
 	if resolved.hasProject {
-		eval_api.WriteEvalReviewArtifacts(resolved.agentProject, evalCfg)
+		if err := eval_api.WriteEvalReviewArtifacts(resolved.agentProject, evalCfg); err != nil {
+			log.Printf("warning: writing eval review artifacts: %v", err)
+		}
 	}
 	if isRegenerate {
 		fmt.Println(color.GreenString("\nEval suite regenerated"))

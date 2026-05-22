@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -275,27 +275,26 @@ func promptOptimizeConfigConfirmation(ctx context.Context, cfg *OptimizeConfig, 
 		cfg.SkillDir = ""
 	}
 
-	// TODO: re-enable tools file prompt when tools optimization is supported.
-	// // Tools file.
-	// toolsDefault := relativeDisplay(cfg.ToolsFile, agentProject)
-	// resp, err = prompt.Prompt(ctx, &azdext.PromptRequest{
-	// 	Options: &azdext.PromptOptions{
-	// 		Message:        "Tools file (enter to skip)",
-	// 		DefaultValue:   toolsDefault,
-	// 		IgnoreHintKeys: true,
-	// 	},
-	// })
-	// if err != nil {
-	// 	return fmt.Errorf("prompting for tools file: %w", err)
-	// }
-	// if value := strings.TrimSpace(resp.Value); value != "" {
-	// 	if !filepath.IsAbs(value) && agentProject != "" {
-	// 		value = filepath.Join(agentProject, value)
-	// 	}
-	// 	cfg.ToolsFile = value
-	// } else {
-	// 	cfg.ToolsFile = ""
-	// }
+	// Tools file.
+	toolsDefault := relativeDisplay(cfg.ToolsFile, agentProject)
+	resp, err = prompt.Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:        "Tools file (enter to skip)",
+			DefaultValue:   toolsDefault,
+			IgnoreHintKeys: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("prompting for tools file: %w", err)
+	}
+	if value := strings.TrimSpace(resp.Value); value != "" {
+		if !filepath.IsAbs(value) && agentProject != "" {
+			value = filepath.Join(agentProject, value)
+		}
+		cfg.ToolsFile = value
+	} else {
+		cfg.ToolsFile = ""
+	}
 
 	return nil
 }
@@ -350,7 +349,7 @@ func resolveOptimizeTargetModels(
 
 	if len(models) > 0 {
 		if cfg.Options.TargetConfig == nil {
-			cfg.Options.TargetConfig = &opteval.TargetConfig{}
+			cfg.Options.TargetConfig = &opt_eval.TargetConfig{}
 		}
 		cfg.Options.TargetConfig.Model = models
 	}

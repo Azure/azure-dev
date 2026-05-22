@@ -7,12 +7,11 @@ package optimize_api
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"azureaiagent/internal/pkg/agents"
 )
 
 // Poller polls an optimization job until it reaches a terminal state.
@@ -26,8 +25,12 @@ type Poller struct {
 
 // PollUntilDone polls GetOptimizeStatus at the configured interval until the
 // job reaches a terminal state (completed, failed, cancelled), the context
-// is cancelled, or MaxAttempts is reached.
+// is cancelled, or MaxAttempts is reached. Transient errors (5xx, 429,
+// connection reset) are retried up to maxConsecutiveTransient times before
+// the poller gives up.
 func (p *Poller) PollUntilDone(ctx context.Context) (*OptimizeJobStatus, error) {
+	const maxConsecutiveTransient = 5
+
 	interval := p.Interval
 	if interval <= 0 {
 		interval = 5 * time.Second
@@ -36,15 +39,25 @@ func (p *Poller) PollUntilDone(ctx context.Context) (*OptimizeJobStatus, error) 
 	defer ticker.Stop()
 
 	attempts := 0
+	consecutiveTransient := 0
 	for {
 		status, err := p.Client.GetOptimizeStatus(ctx, p.OperationID)
 		if err != nil {
-			if isTransientError(err) {
-				log.Printf("[poller] transient error polling %s, will retry: %v", p.OperationID, err)
+			if agents.IsTransientError(err) {
+				consecutiveTransient++
+				if consecutiveTransient > maxConsecutiveTransient {
+					return nil, fmt.Errorf(
+						"polling aborted after %d consecutive transient errors, last: %w",
+						consecutiveTransient, err)
+				}
+				log.Printf("[poller] transient error polling %s (%d/%d), will retry: %v",
+					p.OperationID, consecutiveTransient, maxConsecutiveTransient, err)
 				goto wait
 			}
 			return nil, fmt.Errorf("failed to get optimization status: %w", err)
 		}
+
+		consecutiveTransient = 0 // reset on success
 
 		if p.OnProgress != nil {
 			p.OnProgress(status)
@@ -67,13 +80,4 @@ func (p *Poller) PollUntilDone(ctx context.Context) (*OptimizeJobStatus, error) 
 			// continue polling
 		}
 	}
-}
-
-// isTransientError checks whether an error represents a transient HTTP failure
-// (429 Too Many Requests or 5xx Server Error) that is safe to retry.
-func isTransientError(err error) bool {
-	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
-		return respErr.StatusCode == 429 || respErr.StatusCode >= 500
-	}
-	return false
 }

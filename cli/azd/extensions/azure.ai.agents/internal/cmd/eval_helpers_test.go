@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,7 +45,7 @@ func TestReconcileConfigAgentName(t *testing.T) {
 	t.Parallel()
 	t.Run("no change when names match", func(t *testing.T) {
 		t.Parallel()
-		agent := &opteval.AgentRef{Name: "my-agent"}
+		agent := &opt_eval.AgentRef{Name: "my-agent"}
 		changed := reconcileConfigAgentName(agent, "my-agent", "config.yaml")
 		assert.False(t, changed)
 		assert.Equal(t, "my-agent", agent.Name)
@@ -53,7 +53,7 @@ func TestReconcileConfigAgentName(t *testing.T) {
 
 	t.Run("sets name when agent name is empty", func(t *testing.T) {
 		t.Parallel()
-		agent := &opteval.AgentRef{}
+		agent := &opt_eval.AgentRef{}
 		changed := reconcileConfigAgentName(agent, "env-agent", "config.yaml")
 		assert.False(t, changed)
 		assert.Equal(t, "env-agent", agent.Name)
@@ -61,7 +61,7 @@ func TestReconcileConfigAgentName(t *testing.T) {
 
 	t.Run("overrides when names differ", func(t *testing.T) {
 		t.Parallel()
-		agent := &opteval.AgentRef{Name: "config-agent"}
+		agent := &opt_eval.AgentRef{Name: "config-agent"}
 		changed := reconcileConfigAgentName(agent, "env-agent", "config.yaml")
 		assert.True(t, changed)
 		assert.Equal(t, "env-agent", agent.Name)
@@ -69,7 +69,7 @@ func TestReconcileConfigAgentName(t *testing.T) {
 
 	t.Run("no change when envName is empty", func(t *testing.T) {
 		t.Parallel()
-		agent := &opteval.AgentRef{Name: "my-agent"}
+		agent := &opt_eval.AgentRef{Name: "my-agent"}
 		changed := reconcileConfigAgentName(agent, "", "config.yaml")
 		assert.False(t, changed)
 		assert.Equal(t, "my-agent", agent.Name)
@@ -136,10 +136,10 @@ func TestWriteBaselineConfig(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		metaPath := filepath.Join(dir, opteval.AgentConfigsDir, opteval.BaselineDir, opteval.MetadataFile)
+		metaPath := filepath.Join(dir, opt_eval.AgentConfigsDir, opt_eval.BaselineDir, opt_eval.MetadataFile)
 		assert.FileExists(t, metaPath)
 
-		instrPath := filepath.Join(dir, opteval.AgentConfigsDir, opteval.BaselineDir, opteval.InstructionFile)
+		instrPath := filepath.Join(dir, opt_eval.AgentConfigsDir, opt_eval.BaselineDir, opt_eval.InstructionFile)
 		assert.FileExists(t, instrPath)
 		content, err := os.ReadFile(instrPath) //nolint:gosec // test file path
 		require.NoError(t, err)
@@ -154,10 +154,10 @@ func TestWriteBaselineConfig(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		metaPath := filepath.Join(dir, opteval.AgentConfigsDir, opteval.BaselineDir, opteval.MetadataFile)
+		metaPath := filepath.Join(dir, opt_eval.AgentConfigsDir, opt_eval.BaselineDir, opt_eval.MetadataFile)
 		assert.FileExists(t, metaPath)
 
-		instrPath := filepath.Join(dir, opteval.AgentConfigsDir, opteval.BaselineDir, opteval.InstructionFile)
+		instrPath := filepath.Join(dir, opt_eval.AgentConfigsDir, opt_eval.BaselineDir, opt_eval.InstructionFile)
 		assert.NoFileExists(t, instrPath)
 	})
 
@@ -171,7 +171,7 @@ func TestWriteBaselineConfig(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		metaPath := filepath.Join(dir, opteval.AgentConfigsDir, opteval.BaselineDir, opteval.MetadataFile)
+		metaPath := filepath.Join(dir, opt_eval.AgentConfigsDir, opt_eval.BaselineDir, opt_eval.MetadataFile)
 		data, err := os.ReadFile(metaPath) //nolint:gosec // test file path
 		require.NoError(t, err)
 		assert.Contains(t, string(data), "skill_dir")
@@ -194,7 +194,7 @@ func TestWriteBaselineIfNeeded(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		// Create existing baseline.
-		absPath := filepath.Join(dir, opteval.BaselineConfigRelPath())
+		absPath := filepath.Join(dir, opt_eval.BaselineConfigRelPath())
 		require.NoError(t, os.MkdirAll(filepath.Dir(absPath), 0750))
 		require.NoError(t, os.WriteFile(absPath, []byte("existing"), 0600))
 

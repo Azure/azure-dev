@@ -14,7 +14,7 @@ import (
 	"text/tabwriter"
 
 	"azureaiagent/internal/pkg/agents/eval_api"
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -58,7 +58,7 @@ func runEvalList(ctx context.Context, flags *evalListFlags) error {
 	// Load the active eval ID from the azd environment.
 	var activeEvalID string
 	if resolved.envName != "" {
-		state := opteval.LoadEvalState(ctx, resolved.azdClient, resolved.envName)
+		state := opt_eval.LoadEvalState(ctx, resolved.azdClient, resolved.envName)
 		activeEvalID = state.EvalID
 	}
 
@@ -69,13 +69,18 @@ func runEvalList(ctx context.Context, flags *evalListFlags) error {
 
 	items := resp.Data
 
-	// Fetch run summaries in parallel for each eval.
+	// Fetch run summaries in parallel for each eval, bounded by a semaphore
+	// to avoid overwhelming the service with concurrent requests.
+	const maxConcurrent = 5
+	sem := make(chan struct{}, maxConcurrent)
 	summaries := make([]evalRunSummary, len(items))
 	var wg sync.WaitGroup
 	for i, item := range items {
 		wg.Add(1)
 		go func(idx int, evalID string) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			runs, err := resolved.evalClient.ListOpenAIEvalRuns(ctx, evalID, 10, DefaultAgentAPIVersion)
 			if err != nil || runs == nil {
 				return

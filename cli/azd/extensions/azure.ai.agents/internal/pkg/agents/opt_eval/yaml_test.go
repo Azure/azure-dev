@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package opteval
+package opt_eval
 
 import (
 	"path/filepath"
@@ -209,7 +209,8 @@ reflection_model: gpt-4o
 	assert.Equal(t, "full", opts.Mode)
 	assert.Equal(t, []string{"prompt", "tool"}, opts.TargetAttributes)
 	assert.Equal(t, 500, opts.Budget)
-	assert.Equal(t, 10, opts.MaxIterations)
+	require.NotNil(t, opts.MaxIterations)
+	assert.Equal(t, 10, *opts.MaxIterations)
 	assert.InDelta(t, 0.05, opts.MinImprovement, 0.001)
 	assert.InDelta(t, 0.1, opts.ImprovementThreshold, 0.001)
 	assert.InDelta(t, 0.8, opts.PassThreshold, 0.001)

@@ -5,12 +5,13 @@
 // environment across CLI invocations. This covers eval job tracking and any
 // other cross-invocation state needed by eval, optimize, or related commands.
 
-package opteval
+package opt_eval
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -43,13 +44,15 @@ const (
 )
 
 // LoadEvalState reads eval runtime state from the azd environment.
-// Returns an empty state if no values are set.
+// Individual key-read errors are logged but do not prevent loading
+// the remaining keys; a partial state is still useful for resume logic.
 func LoadEvalState(ctx context.Context, azdClient *azdext.AzdClient, envName string) *EvalState {
 	get := func(key string) string {
 		v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: envName, Key: key,
 		})
-		if err != nil || v.Value == "" {
+		if err != nil {
+			log.Printf("LoadEvalState: failed to read %s: %v", key, err)
 			return ""
 		}
 		return v.Value

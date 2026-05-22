@@ -248,7 +248,7 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
 	}
 
-	// Report optimization candidate deployments to FAOS.
+	// Report optimization candidate deployments to the optimization service.
 	// If a service has AGENT_{KEY}_OPTIMIZATION_CANDIDATE_ID in the azd environment,
 	// the agent was deployed from an optimization candidate. We notify the
 	// optimization service so it can track which candidates have been deployed.

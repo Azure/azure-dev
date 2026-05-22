@@ -5,13 +5,12 @@ package eval_api
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"azureaiagent/internal/pkg/agents"
 )
 
 // ---------------------------------------------------------------------------
@@ -167,7 +166,7 @@ func (p *Poller) Poll(ctx context.Context) (*GenerationJob, error) {
 
 		job, err := p.GetJob(ctx, p.OperationID, p.APIVersion)
 		if err != nil {
-			if isTransientError(err) {
+			if agents.IsTransientError(err) {
 				log.Printf("[poller] transient error polling %s, will retry: %v", p.OperationID, err)
 				continue
 			}
@@ -193,13 +192,4 @@ func (p *Poller) Poll(ctx context.Context) (*GenerationJob, error) {
 		OperationID: p.OperationID,
 		Attempts:    p.Options.MaxAttempts,
 	}
-}
-
-// isTransientError checks whether an error represents a transient HTTP failure
-// (429 Too Many Requests or 5xx Server Error) that is safe to retry.
-func isTransientError(err error) bool {
-	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
-		return respErr.StatusCode == 429 || respErr.StatusCode >= 500
-	}
-	return false
 }

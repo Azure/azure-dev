@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -136,8 +136,9 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
 
 	cmd.Flags().StringVarP(&flags.configFile, "config", "c", "", "Path to YAML config file (optional — uses defaults if omitted)")
 	cmd.Flags().StringVarP(&flags.agent, "agent", "a", "", "Agent name (auto-detected from azd project if omitted)")
-	cmd.Flags().StringVarP(&flags.evalModel, "eval-model", "m", "gpt-4.1-mini", "Model for evaluation")
-	cmd.Flags().StringArrayVarP(&flags.targetAttributes, "target", "s", nil, "Target attribute for optimization: instruction, skill (repeatable)")
+	cmd.Flags().StringVarP(&flags.evalModel, "eval-model", "m", defaultEvalModel, "Model for evaluation")
+	cmd.Flags().StringArrayVarP(&flags.targetAttributes, "target", "t", nil,
+		"Target attribute for optimization: instruction, skill (repeatable)")
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Submit job and return immediately without waiting for completion")
 	cmd.Flags().IntVar(&flags.pollInterval, "poll-interval", 5, "Polling interval in seconds")
 	flags.optimizeConnectionFlags.register(cmd)
@@ -300,10 +301,9 @@ func (a *OptimizeAction) applyOverrides(
 	}
 
 	// Resolve relative tools_file against agent project directory.
-	// TODO: re-enable when tools optimization is supported in the service.
-	// if cfg.ToolsFile != "" && hasProject && !filepath.IsAbs(cfg.ToolsFile) {
-	// 	cfg.ToolsFile = filepath.Join(agentProject, cfg.ToolsFile)
-	// }
+	if cfg.ToolsFile != "" && hasProject && !filepath.IsAbs(cfg.ToolsFile) {
+		cfg.ToolsFile = filepath.Join(agentProject, cfg.ToolsFile)
+	}
 
 	// Resolve agent instruction using a well-defined lifecycle:
 	//  1. Config dir pointer (agent.config in eval.yaml) — resolves from metadata.yaml
@@ -333,9 +333,9 @@ func (a *OptimizeAction) applyOverrides(
 // mergeAgentBaseline resolves the baseline agent config and merges missing
 // fields (instruction, model, skills, tools) into the OptimizeConfig.
 func mergeAgentBaseline(cfg *OptimizeConfig, agentProject string) {
-	var existing *opteval.Config
+	var existing *opt_eval.Config
 	if cfg.Agent.ConfigFile != "" {
-		existing = &opteval.Config{Agent: cfg.Agent}
+		existing = &opt_eval.Config{Agent: cfg.Agent}
 	}
 	agentCfg := resolveAgentConfig(existing, agentProject)
 	if agentCfg == nil {
@@ -395,7 +395,7 @@ func (a *OptimizeAction) submitJob(
 		}); err != nil {
 			fmt.Fprintf(out, "  warning: failed to save baseline config: %s\n", err)
 		} else {
-			baselineMetaPath := opteval.BaselineConfigRelPath()
+			baselineMetaPath := opt_eval.BaselineConfigRelPath()
 			fmt.Fprintf(out, "  Baseline saved to %s\n", baselineMetaPath)
 			if cfg.Agent.ConfigFile == "" {
 				cfg.Agent.ConfigFile = baselineMetaPath

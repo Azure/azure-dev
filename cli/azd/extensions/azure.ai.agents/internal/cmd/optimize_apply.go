@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -30,7 +30,7 @@ import (
 )
 
 // agentConfigsDir aliases the shared constant for local use.
-const agentConfigsDir = opteval.AgentConfigsDir
+const agentConfigsDir = opt_eval.AgentConfigsDir
 
 // optimizeApplyFlags holds CLI flags for the optimize apply command.
 type optimizeApplyFlags struct {
@@ -51,7 +51,7 @@ candidate and write them into your local azd project under .agent_configs/.
 
 After applying, run 'azd deploy' to deploy the optimized agent version.`,
 		Example: `  # Apply candidate config locally, then deploy
-  azd ai agent optimize apply --candidate cand_abc123
+  azd ai agent optimize apply --candidate candidate_abc123
   azd deploy`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -147,7 +147,7 @@ func (a *OptimizeApplyAction) apply(
 	if err := writeAgentConfigFromCandidate(candidateDir, candidateConfig); err != nil {
 		return fmt.Errorf("failed to write candidate config: %w", err)
 	}
-	fmt.Fprintf(out, "  → %s\n", filepath.Join(candidateDir, opteval.MetadataFile))
+	fmt.Fprintf(out, "  → %s\n", filepath.Join(candidateDir, opt_eval.MetadataFile))
 
 	// Step 3: Write OPTIMIZATION_LOCAL_DIR and OPTIMIZATION_CANDIDATE_ID into agent.yaml
 	// so the deploy pipeline knows which local optimization config to use.
@@ -188,7 +188,7 @@ func (a *OptimizeApplyAction) apply(
 	printPromptDiff(out, serviceDir, a.flags.candidate, candidateConfig)
 
 	// Point the user to the config folders for other differences (skills, tools, etc.).
-	baselinePath := filepath.Join(serviceDir, agentConfigsDir, opteval.BaselineDir)
+	baselinePath := filepath.Join(serviceDir, agentConfigsDir, opt_eval.BaselineDir)
 	candidatePath := filepath.Join(serviceDir, agentConfigsDir, a.flags.candidate)
 	fmt.Fprintf(out, "\n  For other changes (skills, tools, etc.), compare the files in:\n")
 	fmt.Fprintf(out, "    Baseline:  %s\n", color.CyanString(baselinePath))
@@ -216,8 +216,8 @@ type agentConfigMetadata struct {
 // <agentProject>/.agent_configs/baseline/metadata.yaml and resolves
 // file pointers to absolute paths.
 func loadBaselineConfig(agentProject string) (*agentConfigMetadata, error) {
-	baseDir := filepath.Join(agentProject, agentConfigsDir, opteval.BaselineDir)
-	metaPath := filepath.Join(baseDir, opteval.MetadataFile)
+	baseDir := filepath.Join(agentProject, agentConfigsDir, opt_eval.BaselineDir)
+	metaPath := filepath.Join(baseDir, opt_eval.MetadataFile)
 	data, err := os.ReadFile(metaPath) //nolint:gosec // path derived from project directory
 	if err != nil {
 		return nil, err
@@ -259,15 +259,30 @@ func (m *agentConfigMetadata) resolveSkillDir(configDir string) string {
 	return filepath.Join(configDir, m.SkillDir)
 }
 
+// resolveToolsFile returns the absolute path to the tools file,
+// resolved relative to configDir. Returns empty if not set.
+func (m *agentConfigMetadata) resolveToolsFile(configDir string) string {
+	if m.ToolsFile == "" {
+		return ""
+	}
+	if filepath.IsAbs(m.ToolsFile) {
+		return m.ToolsFile
+	}
+	return filepath.Join(configDir, m.ToolsFile)
+}
+
 // writeAgentConfigFromCandidate writes metadata.yaml, instructions.md, skill
 // files, and tool definitions for an optimization candidate into the given
 // directory. No config.json is written — all content is decomposed into
 // individual files with pointers in metadata.yaml.
-func writeAgentConfigFromCandidate(candidateDir string, candidateConfig any) error {
+func writeAgentConfigFromCandidate(candidateDir string, rawConfig json.RawMessage) error {
 	meta := agentConfigMetadata{}
 
-	// Extract fields from the candidate config map.
-	m, _ := candidateConfig.(map[string]any)
+	// Unmarshal the raw JSON into a generic map for field extraction.
+	var m map[string]any
+	if err := json.Unmarshal(rawConfig, &m); err != nil {
+		return fmt.Errorf("parsing candidate config JSON: %w", err)
+	}
 	if m != nil {
 		if v, exists := m["name"]; exists {
 			if s, ok := v.(string); ok {
@@ -287,13 +302,13 @@ func writeAgentConfigFromCandidate(candidateDir string, candidateConfig any) err
 	}
 
 	// Write instructions.md from the candidate's system prompt.
-	instructions := extractInstructions(candidateConfig)
+	instructions := extractInstructions(m)
 	if instructions != "" {
-		instructionPath := filepath.Join(candidateDir, opteval.InstructionFile)
+		instructionPath := filepath.Join(candidateDir, opt_eval.InstructionFile)
 		if err := os.WriteFile(instructionPath, []byte(instructions), 0600); err != nil {
 			return fmt.Errorf("writing candidate instructions: %w", err)
 		}
-		meta.InstructionFile = opteval.InstructionFile
+		meta.InstructionFile = opt_eval.InstructionFile
 	}
 
 	// Write inline skills from the candidate config as individual files.
@@ -304,9 +319,9 @@ func writeAgentConfigFromCandidate(candidateDir string, candidateConfig any) err
 	}
 
 	// Set skill_dir pointer if the skills/ dir exists (from inline or downloaded skills).
-	skillDir := filepath.Join(candidateDir, opteval.SkillsDir)
+	skillDir := filepath.Join(candidateDir, opt_eval.SkillsDir)
 	if info, err := os.Stat(skillDir); err == nil && info.IsDir() {
-		meta.SkillDir = opteval.SkillsDir
+		meta.SkillDir = opt_eval.SkillsDir
 	}
 
 	// Write tool_definitions as a JSON file.
@@ -314,8 +329,8 @@ func writeAgentConfigFromCandidate(candidateDir string, candidateConfig any) err
 		if err := writeToolDefinitions(candidateDir, m); err != nil {
 			return fmt.Errorf("writing candidate tool definitions: %w", err)
 		}
-		if _, err := os.Stat(filepath.Join(candidateDir, opteval.ToolsFile)); err == nil {
-			meta.ToolsFile = opteval.ToolsFile
+		if _, err := os.Stat(filepath.Join(candidateDir, opt_eval.ToolsFile)); err == nil {
+			meta.ToolsFile = opt_eval.ToolsFile
 		}
 	}
 
@@ -324,7 +339,7 @@ func writeAgentConfigFromCandidate(candidateDir string, candidateConfig any) err
 	if err != nil {
 		return fmt.Errorf("serializing candidate metadata: %w", err)
 	}
-	metaPath := filepath.Join(candidateDir, opteval.MetadataFile)
+	metaPath := filepath.Join(candidateDir, opt_eval.MetadataFile)
 	if err := os.WriteFile(metaPath, data, 0600); err != nil {
 		return fmt.Errorf("writing candidate metadata: %w", err)
 	}
@@ -358,7 +373,7 @@ func writeInlineSkills(candidateDir string, config map[string]any) error {
 		body, _ := sm["body"].(string)
 		description, _ := sm["description"].(string)
 
-		skillSubDir := filepath.Join(candidateDir, opteval.SkillsDir, name)
+		skillSubDir := filepath.Join(candidateDir, opt_eval.SkillsDir, name)
 		if err := os.MkdirAll(skillSubDir, 0750); err != nil {
 			return fmt.Errorf("creating skill directory %s: %w", name, err)
 		}
@@ -399,7 +414,7 @@ func writeToolDefinitions(candidateDir string, config map[string]any) error {
 		return fmt.Errorf("serializing tool definitions: %w", err)
 	}
 
-	return os.WriteFile(filepath.Join(candidateDir, opteval.ToolsFile), data, 0600)
+	return os.WriteFile(filepath.Join(candidateDir, opt_eval.ToolsFile), data, 0600)
 }
 
 // downloadSkillFilesToDir fetches the candidate manifest, downloads all skill
@@ -438,7 +453,7 @@ func downloadSkillFilesToDir(
 			continue
 		}
 
-		outPath, pathErr := opteval.SafePath(destDir, f.Path)
+		outPath, pathErr := opt_eval.SafePath(destDir, f.Path)
 		if pathErr != nil {
 			fmt.Fprintf(out, "  warning: skipping file %s: path escapes destination directory\n", f.Path)
 			continue
@@ -471,7 +486,7 @@ func cleanOtherCandidates(optimizeDir, currentCandidate string, out io.Writer) {
 			continue
 		}
 		name := entry.Name()
-		if name == opteval.BaselineDir || name == currentCandidate {
+		if name == opt_eval.BaselineDir || name == currentCandidate {
 			continue
 		}
 		dir := filepath.Join(optimizeDir, name)
@@ -485,9 +500,8 @@ func cleanOtherCandidates(optimizeDir, currentCandidate string, out io.Writer) {
 
 // extractInstructions retrieves the system prompt string from a candidate config
 // returned by the optimization service.
-func extractInstructions(config any) string {
-	m, ok := config.(map[string]any)
-	if !ok {
+func extractInstructions(m map[string]any) string {
+	if m == nil {
 		return ""
 	}
 	if v, exists := m["systemPrompt"]; exists {
@@ -508,13 +522,17 @@ const maxDiffPreviewLines = 4
 
 // printPromptDiff displays an abbreviated instruction diff (baseline → optimized)
 // with a short preview of each.
-func printPromptDiff(out io.Writer, serviceDir, candidateID string, candidateConfig any) {
-	optimized := extractInstructions(candidateConfig)
+func printPromptDiff(out io.Writer, serviceDir, candidateID string, candidateConfig json.RawMessage) {
+	var m map[string]any
+	if err := json.Unmarshal(candidateConfig, &m); err != nil {
+		return
+	}
+	optimized := extractInstructions(m)
 	if optimized == "" {
 		return
 	}
 
-	baseDir := filepath.Join(serviceDir, agentConfigsDir, opteval.BaselineDir)
+	baseDir := filepath.Join(serviceDir, agentConfigsDir, opt_eval.BaselineDir)
 	baseline, err := loadBaselineConfig(serviceDir)
 	if err != nil {
 		return

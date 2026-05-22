@@ -20,6 +20,9 @@ type CreateDatasetRequest struct {
 }
 
 // Dataset is the response for dataset operations.
+// Note: The GET /datasets API returns snake_case field names (data_uri, blob_uri,
+// content_uri), while the POST /finalize API accepts camelCase (dataUri).
+// Both conventions are correct for their respective endpoints.
 type Dataset struct {
 	Name       string `json:"name"`
 	Version    string `json:"version"`
@@ -136,7 +139,7 @@ type FinalizeDatasetRequest struct {
 //
 // Rules:
 //  1. Empty → "1.0"
-//  2. Parseable as a decimal number → increment by 1, format as "N.0"
+//  2. Parsable as a decimal number → increment by 1, format as "N.0"
 //  3. Ends with trailing digits → increment the trailing numeric part
 //  4. Otherwise → append ".1"
 func NextVersion(current string) string {

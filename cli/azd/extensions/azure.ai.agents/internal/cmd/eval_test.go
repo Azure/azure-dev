@@ -16,7 +16,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/dataset_api"
 	"azureaiagent/internal/pkg/agents/eval_api"
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -207,9 +207,10 @@ func TestWriteEvalReviewArtifacts(t *testing.T) {
 
 	cfg := &evalConfig{}
 	cfg.DatasetReference = &evalDatasetRef{Name: "test-data", Version: "v1"}
-	cfg.Evaluators = opteval.EvaluatorList{{Name: "quality"}}
+	cfg.Evaluators = opt_eval.EvaluatorList{{Name: "quality"}}
 
-	eval_api.WriteEvalReviewArtifacts(dir, cfg)
+	err := eval_api.WriteEvalReviewArtifacts(dir, cfg)
+	require.NoError(t, err)
 
 	evPath := filepath.Join(dir, "evaluators", "quality", "quality.yaml")
 	assert.FileExists(t, evPath)
@@ -221,7 +222,8 @@ func TestWriteEvalReviewArtifacts_NilDataset(t *testing.T) {
 
 	cfg := &evalConfig{}
 	// No dataset reference — should not panic.
-	eval_api.WriteEvalReviewArtifacts(dir, cfg)
+	err := eval_api.WriteEvalReviewArtifacts(dir, cfg)
+	require.NoError(t, err)
 }
 
 // ---------------------------------------------------------------------------
@@ -233,7 +235,7 @@ func TestSaveEvaluatorResult(t *testing.T) {
 	dir := t.TempDir()
 
 	result := json.RawMessage(`{"name":"smoke-core","definition":{"type":"rubric","dimensions":[{"id":"quality","weight":10}]}}`)
-	eval_api.SaveEvaluatorResult(dir, "smoke-core", result)
+	require.NoError(t, eval_api.SaveEvaluatorResult(dir, "smoke-core", result))
 
 	path := filepath.Join(dir, "evaluators", "smoke-core", "rubric_dimensions.json")
 	assert.FileExists(t, path)
@@ -250,7 +252,7 @@ func TestSaveEvaluatorResult_WithVersion(t *testing.T) {
 	dir := t.TempDir()
 
 	result := json.RawMessage(`{"name":"custom","definition":{"type":"rubric","dimensions":[{"id":"d1","weight":5}]}}`)
-	eval_api.SaveEvaluatorResult(dir, "custom", result)
+	require.NoError(t, eval_api.SaveEvaluatorResult(dir, "custom", result))
 
 	path := filepath.Join(dir, "evaluators", "custom", "rubric_dimensions.json")
 	assert.FileExists(t, path)
@@ -260,7 +262,7 @@ func TestSaveEvaluatorResult_NilResult(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 
-	eval_api.SaveEvaluatorResult(dir, "test", nil)
+	require.NoError(t, eval_api.SaveEvaluatorResult(dir, "test", nil))
 	path := filepath.Join(dir, "evaluators", "test", "rubric_dimensions.json")
 	assert.NoFileExists(t, path)
 }
@@ -269,7 +271,7 @@ func TestSaveEvaluatorResult_EmptyName(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 
-	eval_api.SaveEvaluatorResult(dir, "", json.RawMessage(`{"name":"x"}`))
+	require.NoError(t, eval_api.SaveEvaluatorResult(dir, "", json.RawMessage(`{"name":"x"}`)))
 	// Should not create any file.
 	matches, _ := filepath.Glob(filepath.Join(dir, "evaluators", "*.json"))
 	assert.Empty(t, matches)
@@ -280,11 +282,12 @@ func TestWriteEvalReviewArtifacts_SkipsWhenResultExists(t *testing.T) {
 	dir := t.TempDir()
 
 	// Pre-save a result file.
-	eval_api.SaveEvaluatorResult(dir, "quality", json.RawMessage(`{"name":"quality","definition":{"type":"rubric","dimensions":[{"id":"q","weight":1}]}}`))
+	require.NoError(t, eval_api.SaveEvaluatorResult(dir, "quality", json.RawMessage(`{"name":"quality","definition":{"type":"rubric","dimensions":[{"id":"q","weight":1}]}}`)))
 
 	cfg := &evalConfig{}
-	cfg.Evaluators = opteval.EvaluatorList{{Name: "quality"}}
-	eval_api.WriteEvalReviewArtifacts(dir, cfg)
+	cfg.Evaluators = opt_eval.EvaluatorList{{Name: "quality"}}
+	err := eval_api.WriteEvalReviewArtifacts(dir, cfg)
+	require.NoError(t, err)
 
 	// Should NOT create a .yaml stub since .json result already exists.
 	yamlPath := filepath.Join(dir, "evaluators", "quality", "quality.yaml")
@@ -336,7 +339,7 @@ func TestDatasetArtifactPath(t *testing.T) {
 	result := eval_api.DatasetArtifactPath("/project", ref)
 	assert.Equal(t, filepath.Join("/project", "datasets", "golden"), result)
 
-	// No version — same path
+	// No version — same path, version not included.
 	refNoVer := &evalDatasetRef{Name: "golden", Version: ""}
 	resultNoVer := eval_api.DatasetArtifactPath("/project", refNoVer)
 	assert.Equal(t, filepath.Join("/project", "datasets", "golden"), resultNoVer)
@@ -408,18 +411,18 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 	path := filepath.Join(dir, "eval.yaml")
 
 	original := &evalConfig{
-		Config: opteval.Config{
+		Config: opt_eval.Config{
 			Name: "smoke-core",
 			Agent: evalAgentRef{
 				Name:        "my-agent",
 				Kind:        agent_yaml.AgentKindHosted,
 				Version:     "v1",
-				Instruction: opteval.InstructionRef{Value: "Test this agent"},
+				Instruction: opt_eval.InstructionRef{Value: "Test this agent"},
 			},
 			DatasetReference: &evalDatasetRef{Name: "ds", Version: "v1"},
-			Evaluators:       opteval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			Evaluators:       opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
-		Options: &opteval.Options{
+		Options: &opt_eval.Options{
 			EvalModel: "gpt-4o",
 		},
 		MaxSamples: 50,

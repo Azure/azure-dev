@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"github.com/stretchr/testify/assert"
@@ -113,10 +113,10 @@ func TestValidate_MissingAgentName(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{
-		Config: opteval.Config{
-			DatasetReference: &opteval.DatasetRef{Name: "ds", Version: "1"},
+		Config: opt_eval.Config{
+			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "1"},
 		},
-		Options: &opteval.Options{EvalModel: "gpt-4o-mini"},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini"},
 	}
 
 	err := cfg.Validate()
@@ -128,9 +128,9 @@ func TestValidate_MissingEvalModel(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{
-		Config: opteval.Config{
-			Agent:            opteval.AgentRef{Name: "agent"},
-			DatasetReference: &opteval.DatasetRef{Name: "ds", Version: "1"},
+		Config: opt_eval.Config{
+			Agent:            opt_eval.AgentRef{Name: "agent"},
+			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "1"},
 		},
 	}
 
@@ -143,12 +143,12 @@ func TestValidate_BothDatasetFileAndReference(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{
-		Config: opteval.Config{
-			Agent:            opteval.AgentRef{Name: "agent"},
+		Config: opt_eval.Config{
+			Agent:            opt_eval.AgentRef{Name: "agent"},
 			DatasetFile:      "tasks.jsonl",
-			DatasetReference: &opteval.DatasetRef{Name: "ds", Version: "1"},
+			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "1"},
 		},
-		Options: &opteval.Options{EvalModel: "gpt-4o-mini"},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini"},
 	}
 
 	err := cfg.Validate()
@@ -160,8 +160,8 @@ func TestValidate_NeitherDatasetFileNorReference(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{
-		Config:  opteval.Config{Agent: opteval.AgentRef{Name: "agent"}},
-		Options: &opteval.Options{EvalModel: "gpt-4o-mini"},
+		Config:  opt_eval.Config{Agent: opt_eval.AgentRef{Name: "agent"}},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini"},
 	}
 
 	err := cfg.Validate()
@@ -299,7 +299,7 @@ options:
 // parseSkillFile / loadSkillsFromDir
 // ---------------------------------------------------------------------------
 
-func TestParseSkillFile_MarkdownWithFrontmatter(t *testing.T) {
+func TestParseSkillFile_MarkdownWithPreamble(t *testing.T) {
 	t.Parallel()
 	content := `---
 name: policy-reviewer
@@ -318,7 +318,7 @@ Review travel requests and provide a friendly assessment.
 	assert.NotContains(t, skill.Body, "---")
 }
 
-func TestParseSkillFile_MarkdownWithoutFrontmatter(t *testing.T) {
+func TestParseSkillFile_MarkdownWithoutPreamble(t *testing.T) {
 	t.Parallel()
 	content := "# Simple Skill\n\nDo something useful.\n"
 	skill := parseSkillFile("simple.md", content)
@@ -336,7 +336,7 @@ func TestParseSkillFile_NonMarkdown(t *testing.T) {
 	assert.Equal(t, content, skill.Body)
 }
 
-func TestParseSkillFile_FrontmatterNameOnly(t *testing.T) {
+func TestParseSkillFile_PreambleNameOnly(t *testing.T) {
 	t.Parallel()
 	content := "---\nname: custom-name\n---\nBody content here.\n"
 	skill := parseSkillFile("ignored-filename.md", content)
@@ -377,4 +377,102 @@ func TestLoadSkillsFromDir_WithMarkdownSkills(t *testing.T) {
 	require.NotNil(t, txtSkill)
 	assert.Empty(t, txtSkill.Description)
 	assert.Equal(t, txt, txtSkill.Body)
+}
+
+// ---------------------------------------------------------------------------
+// loadToolDefinitions
+// ---------------------------------------------------------------------------
+
+func TestLoadToolDefinitions_Valid(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	content := `[
+  {
+    "type": "function",
+    "function": {
+      "name": "get_weather",
+      "description": "Get current weather for a location",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location": {"type": "string", "description": "City name"}
+        },
+        "required": ["location"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search",
+      "description": "Search the web"
+    }
+  }
+]`
+	path := writeTestFile(t, dir, "tools.json", content)
+
+	tools, err := loadToolDefinitions(path)
+	require.NoError(t, err)
+	require.Len(t, tools, 2)
+
+	assert.Equal(t, "function", tools[0].Type)
+	assert.Equal(t, "get_weather", tools[0].Function.Name)
+	assert.Equal(t, "Get current weather for a location", tools[0].Function.Description)
+	assert.NotNil(t, tools[0].Function.Parameters)
+
+	assert.Equal(t, "function", tools[1].Type)
+	assert.Equal(t, "search", tools[1].Function.Name)
+}
+
+func TestLoadToolDefinitions_FileNotFound(t *testing.T) {
+	t.Parallel()
+	_, err := loadToolDefinitions(filepath.Join(t.TempDir(), "nonexistent.json"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reading tools file")
+}
+
+func TestLoadToolDefinitions_InvalidJSON(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "tools.json", "not json")
+
+	_, err := loadToolDefinitions(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parsing tools file")
+}
+
+func TestLoadToolDefinitions_EmptyArray(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "tools.json", "[]")
+
+	tools, err := loadToolDefinitions(path)
+	require.NoError(t, err)
+	assert.Empty(t, tools)
+}
+
+func TestToRequest_WithToolsFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	toolsContent := `[{"type":"function","function":{"name":"calculator","description":"Do math"}}]`
+	toolsPath := writeTestFile(t, dir, "tools.json", toolsContent)
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "test-agent"},
+			DatasetFile: writeTestFile(t, dir, "dataset.jsonl", `{"prompt":"test"}`),
+		},
+		Options: &opt_eval.Options{
+			EvalModel: "gpt-4o",
+		},
+		ToolsFile: toolsPath,
+	}
+
+	req, err := cfg.ToRequest("https://example.com")
+	require.NoError(t, err)
+	require.Len(t, req.Agent.ToolDefinitions, 1)
+	assert.Equal(t, "calculator", req.Agent.ToolDefinitions[0].Function.Name)
+	assert.Equal(t, "Do math", req.Agent.ToolDefinitions[0].Function.Description)
 }

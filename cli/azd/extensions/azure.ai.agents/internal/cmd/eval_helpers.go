@@ -18,7 +18,7 @@ import (
 	"path/filepath"
 
 	"azureaiagent/internal/pkg/agents/eval_api"
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -88,7 +88,7 @@ func relativeDisplay(absPath, projectDir string) string {
 // reconcileConfigAgentName reconciles the agent name in a config with the
 // environment-resolved name. Environment takes precedence. Returns true if
 // the config was changed. Used by both eval run and optimize.
-func reconcileConfigAgentName(agent *opteval.AgentRef, envName, configSource string) bool {
+func reconcileConfigAgentName(agent *opt_eval.AgentRef, envName, configSource string) bool {
 	if envName == "" || agent.Name == "" || agent.Name == envName {
 		if envName != "" && agent.Name == "" {
 			agent.Name = envName
@@ -114,20 +114,20 @@ func reconcileConfigAgentName(agent *opteval.AgentRef, envName, configSource str
 // skill_dir, and tools_file. Eval init uses only instruction fields;
 // optimize also uses skill_dir and tools_file.
 func resolveAgentConfig(
-	existingConfig *opteval.Config,
+	existingConfig *opt_eval.Config,
 	projectDir string,
-) *opteval.AgentConfig {
+) *opt_eval.AgentConfig {
 	// Step 1: existing config has a config pointer — resolve from it.
 	if existingConfig != nil && existingConfig.Agent.ConfigFile != "" {
-		ref := opteval.AgentRef{ConfigFile: existingConfig.Agent.ConfigFile}
+		ref := opt_eval.AgentRef{ConfigFile: existingConfig.Agent.ConfigFile}
 		return ref.ResolveConfig(projectDir)
 	}
 
 	// Step 2: try the default baseline path.
 	if projectDir != "" {
-		relPath := opteval.BaselineConfigRelPath()
+		relPath := opt_eval.BaselineConfigRelPath()
 		if fileExists(filepath.Join(projectDir, relPath)) {
-			ref := opteval.AgentRef{ConfigFile: relPath}
+			ref := opt_eval.AgentRef{ConfigFile: relPath}
 			return ref.ResolveConfig(projectDir)
 		}
 	}
@@ -145,7 +145,7 @@ func writeBaselineIfNeeded(
 	if projectDir == "" || instruction == "" {
 		return ""
 	}
-	defaultConfigFile := opteval.BaselineConfigRelPath()
+	defaultConfigFile := opt_eval.BaselineConfigRelPath()
 	absConfigFile := filepath.Join(projectDir, defaultConfigFile)
 	// Don't overwrite an existing baseline.
 	if fileExists(absConfigFile) {
@@ -174,7 +174,7 @@ type baselineParams struct {
 // When skillDir is empty, it auto-detects a "skills" or "skill" directory.
 // Used by both eval init and optimize.
 func writeBaselineConfig(agentProject string, p baselineParams) error {
-	baseDir := filepath.Join(agentProject, opteval.AgentConfigsDir, opteval.BaselineDir)
+	baseDir := filepath.Join(agentProject, opt_eval.AgentConfigsDir, opt_eval.BaselineDir)
 	if err := os.MkdirAll(baseDir, 0750); err != nil {
 		return fmt.Errorf("creating baseline directory: %w", err)
 	}
@@ -189,11 +189,11 @@ func writeBaselineConfig(agentProject string, p baselineParams) error {
 	}
 
 	if p.Instruction != "" {
-		instructionPath := filepath.Join(baseDir, opteval.InstructionFile)
+		instructionPath := filepath.Join(baseDir, opt_eval.InstructionFile)
 		if err := os.WriteFile(instructionPath, []byte(p.Instruction), 0600); err != nil {
 			return fmt.Errorf("writing baseline instructions: %w", err)
 		}
-		meta.InstructionFile = opteval.InstructionFile
+		meta.InstructionFile = opt_eval.InstructionFile
 	}
 
 	// Resolve skill_dir: use explicit path, or auto-detect from project.
@@ -228,7 +228,7 @@ func writeBaselineConfig(agentProject string, p baselineParams) error {
 		return fmt.Errorf("serializing baseline metadata: %w", err)
 	}
 
-	metaPath := filepath.Join(baseDir, opteval.MetadataFile)
+	metaPath := filepath.Join(baseDir, opt_eval.MetadataFile)
 	if err := os.WriteFile(metaPath, data, 0600); err != nil {
 		return fmt.Errorf("writing baseline metadata: %w", err)
 	}

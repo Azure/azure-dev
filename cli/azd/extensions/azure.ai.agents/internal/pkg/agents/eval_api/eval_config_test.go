@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,13 +19,30 @@ import (
 // Validate
 // ---------------------------------------------------------------------------
 
+func TestValidate_RequiresName(t *testing.T) {
+	t.Parallel()
+
+	cfg := &EvalConfig{
+		Config: opt_eval.Config{
+			Agent:            opt_eval.AgentRef{Name: "agent-1"},
+			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
+			Evaluators:       opt_eval.EvaluatorList{{Name: "coherence"}},
+		},
+	}
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "name is required")
+}
+
 func TestValidate_RequiresAgentName(t *testing.T) {
 	t.Parallel()
 
 	cfg := &EvalConfig{
-		Config: opteval.Config{
-			Agent:            opteval.AgentRef{},
-			DatasetReference: &opteval.DatasetRef{Name: "ds", Version: "v1"},
+		Config: opt_eval.Config{
+			Name:             "my-eval",
+			Agent:            opt_eval.AgentRef{},
+			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
+			Evaluators:       opt_eval.EvaluatorList{{Name: "coherence"}},
 		},
 	}
 	err := cfg.Validate()
@@ -33,12 +50,29 @@ func TestValidate_RequiresAgentName(t *testing.T) {
 	assert.Contains(t, err.Error(), "agent.name is required")
 }
 
+func TestValidate_RequiresEvaluators(t *testing.T) {
+	t.Parallel()
+
+	cfg := &EvalConfig{
+		Config: opt_eval.Config{
+			Name:             "my-eval",
+			Agent:            opt_eval.AgentRef{Name: "agent-1"},
+			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
+		},
+	}
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one evaluator")
+}
+
 func TestValidate_RequiresDataset(t *testing.T) {
 	t.Parallel()
 
 	cfg := &EvalConfig{
-		Config: opteval.Config{
-			Agent: opteval.AgentRef{Name: "agent-1"},
+		Config: opt_eval.Config{
+			Name:       "my-eval",
+			Agent:      opt_eval.AgentRef{Name: "agent-1"},
+			Evaluators: opt_eval.EvaluatorList{{Name: "coherence"}},
 		},
 	}
 	err := cfg.Validate()
@@ -50,10 +84,12 @@ func TestValidate_MutuallyExclusiveDataset(t *testing.T) {
 	t.Parallel()
 
 	cfg := &EvalConfig{
-		Config: opteval.Config{
-			Agent:            opteval.AgentRef{Name: "agent-1"},
+		Config: opt_eval.Config{
+			Name:             "my-eval",
+			Agent:            opt_eval.AgentRef{Name: "agent-1"},
 			DatasetFile:      "tasks.jsonl",
-			DatasetReference: &opteval.DatasetRef{Name: "ds", Version: "v1"},
+			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
+			Evaluators:       opt_eval.EvaluatorList{{Name: "coherence"}},
 		},
 	}
 	err := cfg.Validate()
@@ -65,9 +101,11 @@ func TestValidate_ValidWithDatasetFile(t *testing.T) {
 	t.Parallel()
 
 	cfg := &EvalConfig{
-		Config: opteval.Config{
-			Agent:       opteval.AgentRef{Name: "agent-1"},
+		Config: opt_eval.Config{
+			Name:        "my-eval",
+			Agent:       opt_eval.AgentRef{Name: "agent-1"},
 			DatasetFile: "tasks.jsonl",
+			Evaluators:  opt_eval.EvaluatorList{{Name: "coherence"}},
 		},
 	}
 	assert.NoError(t, cfg.Validate())
@@ -77,9 +115,11 @@ func TestValidate_ValidWithDatasetReference(t *testing.T) {
 	t.Parallel()
 
 	cfg := &EvalConfig{
-		Config: opteval.Config{
-			Agent:            opteval.AgentRef{Name: "agent-1"},
-			DatasetReference: &opteval.DatasetRef{Name: "ds", Version: "v1"},
+		Config: opt_eval.Config{
+			Name:             "my-eval",
+			Agent:            opt_eval.AgentRef{Name: "agent-1"},
+			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
+			Evaluators:       opt_eval.EvaluatorList{{Name: "coherence"}},
 		},
 	}
 	assert.NoError(t, cfg.Validate())
@@ -95,19 +135,19 @@ func TestEvalConfig_RoundTrip_FullFields(t *testing.T) {
 	path := filepath.Join(dir, "eval.yaml")
 
 	original := &EvalConfig{
-		Config: opteval.Config{
+		Config: opt_eval.Config{
 			Name: "full-test",
-			Agent: opteval.AgentRef{
+			Agent: opt_eval.AgentRef{
 				Name:        "booking-agent",
 				Kind:        "hosted",
 				Version:     "v3",
 				Model:       "gpt-4.1",
-				Instruction: opteval.InstructionRef{Value: "This agent handles restaurant reservations"},
+				Instruction: opt_eval.InstructionRef{Value: "This agent handles restaurant reservations"},
 			},
-			DatasetReference: &opteval.DatasetRef{Name: "golden-data", Version: "v2"},
-			Evaluators:       opteval.EvaluatorList{{Name: "builtin.task_adherence"}, {Name: "custom-quality"}},
+			DatasetReference: &opt_eval.DatasetRef{Name: "golden-data", Version: "v2"},
+			Evaluators:       opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}, {Name: "custom-quality"}},
 		},
-		Options: &opteval.Options{
+		Options: &opt_eval.Options{
 			EvalModel: "gpt-4o",
 		},
 		MaxSamples: 75,
@@ -139,8 +179,8 @@ func TestEvalConfig_RoundTrip_MinimalFields(t *testing.T) {
 	path := filepath.Join(dir, "eval.yaml")
 
 	original := &EvalConfig{
-		Config: opteval.Config{
-			Agent:       opteval.AgentRef{Name: "simple-agent"},
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "simple-agent"},
 			DatasetFile: "data.jsonl",
 		},
 	}
@@ -179,8 +219,8 @@ func TestWriteEvalConfig_CreatesDirectory(t *testing.T) {
 	path := filepath.Join(dir, "subdir", "nested", "eval.yaml")
 
 	cfg := &EvalConfig{
-		Config: opteval.Config{
-			Agent: opteval.AgentRef{Name: "agent-1"},
+		Config: opt_eval.Config{
+			Agent: opt_eval.AgentRef{Name: "agent-1"},
 		},
 	}
 
@@ -196,13 +236,13 @@ func TestToAgentTargetAdaptableEvalGroupRequest_WithEvaluators(t *testing.T) {
 	t.Parallel()
 
 	cfg := &EvalConfig{
-		Config: opteval.Config{
+		Config: opt_eval.Config{
 			Name:        "test-eval",
-			Agent:       opteval.AgentRef{Name: "agent-1", Version: "v1"},
-			Evaluators:  opteval.EvaluatorList{{Name: "builtin.quality"}, {Name: "custom-1"}},
+			Agent:       opt_eval.AgentRef{Name: "agent-1", Version: "v1"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.quality"}, {Name: "custom-1"}},
 			DatasetFile: "tasks.jsonl",
 		},
-		Options: &opteval.Options{EvalModel: "gpt-4o"},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o"},
 	}
 
 	req := cfg.ToAgentTargetAdaptableEvalGroupRequest()
@@ -224,10 +264,10 @@ func TestToAgentTargetAdaptableEvalGroupRequest_WithDatasetReference(t *testing.
 	t.Parallel()
 
 	cfg := &EvalConfig{
-		Config: opteval.Config{
+		Config: opt_eval.Config{
 			Name:             "ref-eval",
-			Agent:            opteval.AgentRef{Name: "agent-1"},
-			DatasetReference: &opteval.DatasetRef{Name: "ds", Version: "v1"},
+			Agent:            opt_eval.AgentRef{Name: "agent-1"},
+			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
 		},
 	}
 
@@ -241,9 +281,9 @@ func TestToAgentTargetAdaptableEvalGroupRequest_NoEvaluators(t *testing.T) {
 	t.Parallel()
 
 	cfg := &EvalConfig{
-		Config: opteval.Config{
+		Config: opt_eval.Config{
 			Name:        "test-eval",
-			Agent:       opteval.AgentRef{Name: "agent-1"},
+			Agent:       opt_eval.AgentRef{Name: "agent-1"},
 			DatasetFile: "tasks.jsonl",
 		},
 	}
@@ -256,9 +296,9 @@ func TestToAgentTargetAdaptableEvalGroupRequest_MetadataFields(t *testing.T) {
 	t.Parallel()
 
 	cfg := &EvalConfig{
-		Config: opteval.Config{
+		Config: opt_eval.Config{
 			Name:        "meta-test",
-			Agent:       opteval.AgentRef{Name: "my-agent", Version: "v5"},
+			Agent:       opt_eval.AgentRef{Name: "my-agent", Version: "v5"},
 			DatasetFile: "tasks.jsonl",
 		},
 	}

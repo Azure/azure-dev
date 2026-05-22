@@ -256,7 +256,7 @@ func (c *DatasetClient) ListContainerBlobs(ctx context.Context, containerSASUri 
 	}
 
 	q := u.Query()
-	q.Set("restype", "container")
+	q.Set("restype", "container") // cspell:ignore restype — Azure Storage API query parameter
 	q.Set("comp", "list")
 	u.RawQuery = q.Encode()
 

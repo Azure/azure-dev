@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 )
 
 // ---------------------------------------------------------------------------
@@ -109,7 +109,7 @@ func IsBuiltinEvaluator(name string) bool {
 
 // SplitEvaluators partitions evaluators into generated (non-builtin) and
 // built-in lists.
-func SplitEvaluators(evaluators opteval.EvaluatorList) (generated, builtin opteval.EvaluatorList) {
+func SplitEvaluators(evaluators opt_eval.EvaluatorList) (generated, builtin opt_eval.EvaluatorList) {
 	for _, e := range evaluators {
 		if IsBuiltinEvaluator(e.Name) {
 			builtin = append(builtin, e)

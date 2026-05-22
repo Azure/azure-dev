@@ -46,7 +46,7 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 		},
 		Options: OptimizeOptions{
 			Budget:               100,
-			MaxIterations:        5,
+			MaxIterations:        new(5),
 			MinImprovement:       0.01,
 			ImprovementThreshold: 0.05,
 			PassThreshold:        0.8,

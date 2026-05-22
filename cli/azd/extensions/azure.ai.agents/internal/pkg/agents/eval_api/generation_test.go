@@ -6,7 +6,7 @@ package eval_api
 import (
 	"testing"
 
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -94,20 +94,20 @@ func TestSplitEvaluators(t *testing.T) {
 
 	t.Run("mixed", func(t *testing.T) {
 		t.Parallel()
-		gen, bi := SplitEvaluators(opteval.EvaluatorList{
+		gen, bi := SplitEvaluators(opt_eval.EvaluatorList{
 			{Name: "builtin.task_adherence"}, {Name: "my-quality"}, {Name: "builtin.safety"},
 		})
-		assert.Equal(t, opteval.EvaluatorList{{Name: "my-quality"}}, gen)
-		assert.Equal(t, opteval.EvaluatorList{{Name: "builtin.task_adherence"}, {Name: "builtin.safety"}}, bi)
+		assert.Equal(t, opt_eval.EvaluatorList{{Name: "my-quality"}}, gen)
+		assert.Equal(t, opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}, {Name: "builtin.safety"}}, bi)
 	})
 
 	t.Run("all builtin", func(t *testing.T) {
 		t.Parallel()
-		gen, bi := SplitEvaluators(opteval.EvaluatorList{
+		gen, bi := SplitEvaluators(opt_eval.EvaluatorList{
 			{Name: "builtin.quality"}, {Name: "builtin.safety"},
 		})
 		assert.Nil(t, gen)
-		assert.Equal(t, opteval.EvaluatorList{{Name: "builtin.quality"}, {Name: "builtin.safety"}}, bi)
+		assert.Equal(t, opt_eval.EvaluatorList{{Name: "builtin.quality"}, {Name: "builtin.safety"}}, bi)
 	})
 
 	t.Run("nil", func(t *testing.T) {

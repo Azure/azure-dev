@@ -45,10 +45,10 @@ func newOptimizeDeployCommand() *cobra.Command {
 This creates a new agent version with the optimized configuration applied.
 Use 'optimize apply' instead if you want to localize the config into your azd project first.`,
 		Example: `  # Deploy candidate directly
-  azd ai agent optimize deploy --candidate cand_abc123 --agent my-agent
+  azd ai agent optimize deploy --candidate candidate_abc123 --agent my-agent
 
   # Deploy with explicit endpoint
-  azd ai agent optimize deploy --candidate cand_abc123 --agent my-agent --project-endpoint https://...`,
+  azd ai agent optimize deploy --candidate candidate_abc123 --agent my-agent --project-endpoint https://...`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -258,6 +258,8 @@ func resolveProjectEndpointForDeploy(ctx context.Context, connFlags *optimizeCon
 
 // isReservedEnvVarError checks if a version creation error is due to
 // the platform rejecting reserved AGENT_* or FOUNDRY_* environment variables.
+// TODO: Use azcore.ResponseError.StatusCode + stable API error code when available,
+// instead of brittle substring matching on server error wording.
 func isReservedEnvVarError(err error) bool {
 	if err == nil {
 		return false

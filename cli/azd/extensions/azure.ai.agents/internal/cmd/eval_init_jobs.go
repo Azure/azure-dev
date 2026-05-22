@@ -18,7 +18,7 @@ import (
 	"sync"
 
 	"azureaiagent/internal/pkg/agents/eval_api"
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"github.com/fatih/color"
 )
@@ -61,11 +61,11 @@ func newEvalConfig(flags *evalInitFlags, resolved *evalResolvedContext) *evalCon
 		agent.Instruction.File = flags.instructionFile
 	}
 	return &evalConfig{
-		Config: opteval.Config{
+		Config: opt_eval.Config{
 			Name:  resolveEvalName(flags),
 			Agent: agent,
 		},
-		Options: &opteval.Options{
+		Options: &opt_eval.Options{
 			EvalModel: flags.evalModel,
 		},
 		MaxSamples: flags.maxSamples,
@@ -142,10 +142,10 @@ func evaluatorFromJob(job *eval_api.GenerationJob) (string, string) {
 	return job.ResolvedNameVersion()
 }
 
-func evaluatorsFromFlags(values []string) opteval.EvaluatorList {
-	refs := make(opteval.EvaluatorList, len(values))
+func evaluatorsFromFlags(values []string) opt_eval.EvaluatorList {
+	refs := make(opt_eval.EvaluatorList, len(values))
 	for i, v := range values {
-		refs[i] = opteval.EvaluatorRef{Name: v}
+		refs[i] = opt_eval.EvaluatorRef{Name: v}
 	}
 	return refs
 }
@@ -160,7 +160,7 @@ func resumeEvalInit(
 	resolved *evalResolvedContext,
 	configPath string,
 	evalCfg *evalConfig,
-	state *opteval.EvalState,
+	state *opt_eval.EvalState,
 ) error {
 	if _, err := pollAndFinalizeJobs(ctx, resolved, evalCfg, state, nil); err != nil {
 		if _, ok := errors.AsType[*initTimeoutError](err); ok {
@@ -168,12 +168,14 @@ func resumeEvalInit(
 		}
 		return err
 	}
-	state.InitStatus = opteval.InitStatusCompleted
-	if err := opteval.ClearEvalState(ctx, resolved.azdClient, resolved.envName); err != nil {
+	state.InitStatus = opt_eval.InitStatusCompleted
+	if err := opt_eval.ClearEvalState(ctx, resolved.azdClient, resolved.envName); err != nil {
 		log.Printf("warning: clearing eval state: %v", err)
 	}
 	if resolved.hasProject {
-		eval_api.WriteEvalReviewArtifacts(resolved.agentProject, evalCfg)
+		if err := eval_api.WriteEvalReviewArtifacts(resolved.agentProject, evalCfg); err != nil {
+			log.Printf("warning: writing eval review artifacts: %v", err)
+		}
 	}
 	return eval_api.WriteEvalConfig(configPath, evalCfg)
 }
@@ -193,8 +195,8 @@ func pollAndFinalizeJobs(
 	ctx context.Context,
 	resolved *evalResolvedContext,
 	evalCfg *evalConfig,
-	state *opteval.EvalState,
-	extraEvals opteval.EvaluatorList,
+	state *opt_eval.EvalState,
+	extraEvals opt_eval.EvaluatorList,
 ) (*pollResults, error) {
 	results := &pollResults{}
 	// Each goroutine writes to distinct fields of evalCfg and state, so no
@@ -223,9 +225,7 @@ func pollAndFinalizeJobs(
 	progress.Start()
 
 	if hasDataset {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			var completed *eval_api.GenerationJob
 			if needPollDataset {
 				var err error
@@ -277,13 +277,11 @@ func pollAndFinalizeJobs(
 					dsRef.LocalURI = localURI
 				}
 			}
-		}()
+		})
 	}
 
 	if hasEval {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			var completed *eval_api.GenerationJob
 			if needPollEval {
 				var err error
@@ -319,7 +317,7 @@ func pollAndFinalizeJobs(
 			// Evaluator goroutine owns: state.EvalGenStatus, evalCfg.Evaluators.
 			evalName, evalVersion := evaluatorFromJob(completed)
 			state.EvalGenStatus = completed.NormalizedStatus()
-			evalRef := opteval.EvaluatorRef{
+			evalRef := opt_eval.EvaluatorRef{
 				Name:     evalName,
 				Version:  evalVersion,
 				LocalURI: eval_api.EvaluatorLocalURI(evalName),
@@ -329,9 +327,11 @@ func pollAndFinalizeJobs(
 			results.EvaluatorResult = eval_api.ParseEvaluatorResult(completed.Result)
 
 			if resolved.hasProject {
-				eval_api.SaveEvaluatorResult(resolved.agentProject, evalName, completed.Result)
+				if err := eval_api.SaveEvaluatorResult(resolved.agentProject, evalName, completed.Result); err != nil {
+					log.Printf("warning: saving evaluator result for %q: %v", evalName, err)
+				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -384,9 +384,9 @@ func writePendingEvalInit(
 	resolved *evalResolvedContext,
 	configPath string,
 	evalCfg *evalConfig,
-	state *opteval.EvalState,
+	state *opt_eval.EvalState,
 ) error {
-	if err := opteval.SaveEvalState(ctx, resolved.azdClient, resolved.envName, state); err != nil {
+	if err := opt_eval.SaveEvalState(ctx, resolved.azdClient, resolved.envName, state); err != nil {
 		return err
 	}
 	if err := eval_api.WriteEvalConfig(configPath, evalCfg); err != nil {
@@ -412,10 +412,10 @@ func writeTimedOutEvalInit(
 	resolved *evalResolvedContext,
 	configPath string,
 	evalCfg *evalConfig,
-	state *opteval.EvalState,
+	state *opt_eval.EvalState,
 ) error {
-	state.InitStatus = opteval.InitStatusPending
-	if err := opteval.SaveEvalState(ctx, resolved.azdClient, resolved.envName, state); err != nil {
+	state.InitStatus = opt_eval.InitStatusPending
+	if err := opt_eval.SaveEvalState(ctx, resolved.azdClient, resolved.envName, state); err != nil {
 		return err
 	}
 	if err := eval_api.WriteEvalConfig(configPath, evalCfg); err != nil {

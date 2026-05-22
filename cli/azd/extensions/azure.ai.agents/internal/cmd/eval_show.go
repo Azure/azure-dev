@@ -13,7 +13,7 @@ import (
 	"text/tabwriter"
 
 	"azureaiagent/internal/pkg/agents/eval_api"
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -63,7 +63,7 @@ func runEvalShow(ctx context.Context, evalID string, flags *evalShowFlags) error
 
 	// Fall back to the eval ID stored in the azd environment.
 	if evalID == "" && resolved.envName != "" {
-		state := opteval.LoadEvalState(ctx, resolved.azdClient, resolved.envName)
+		state := opt_eval.LoadEvalState(ctx, resolved.azdClient, resolved.envName)
 		evalID = state.EvalID
 	}
 	if evalID == "" {
@@ -132,7 +132,7 @@ func printEvalSummary(evalObj *eval_api.OpenAIEval, runs []eval_api.OpenAIEvalRu
 	if err := w.Flush(); err != nil {
 		return err
 	}
-	fmt.Printf("\n(showing %d of %d runs — use --limit to change)\n", min(limit, len(runs)), len(runs))
+	fmt.Printf("\n(showing %d runs — use --limit to change)\n", min(limit, len(runs)))
 	return nil
 }
 

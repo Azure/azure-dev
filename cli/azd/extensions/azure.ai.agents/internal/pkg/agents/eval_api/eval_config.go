@@ -9,17 +9,18 @@ import (
 	"path/filepath"
 	"strings"
 
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"go.yaml.in/yaml/v3"
 )
 
 // EvalConfig extends the shared Config with eval-specific fields and helpers.
 type EvalConfig struct {
-	opteval.Config `yaml:",inline"`
+	opt_eval.Config `yaml:",inline"`
 
 	// Options holds run-time options (eval_model, etc.).
-	Options *opteval.Options `yaml:"options,omitempty"`
+	Options *opt_eval.Options `yaml:"options,omitempty"`
 
 	// MaxSamples is the maximum number of data samples to generate.
 	MaxSamples int `yaml:"max_samples,omitempty"`
@@ -63,8 +64,25 @@ func WriteEvalConfig(path string, cfg *EvalConfig) error {
 
 // Validate checks required fields for the eval command.
 func (c *EvalConfig) Validate() error {
+	if c.Name == "" {
+		return exterrors.Validation(
+			exterrors.CodeEvalConfigInvalid,
+			"name is required in the eval config",
+			"add a 'name:' field to your eval.yaml")
+	}
+
 	if c.Agent.Name == "" {
-		return fmt.Errorf("agent.name is required")
+		return exterrors.Validation(
+			exterrors.CodeEvalConfigInvalid,
+			"agent.name is required",
+			"add 'agent.name' to your eval.yaml or use --agent")
+	}
+
+	if len(c.Evaluators) == 0 {
+		return exterrors.Validation(
+			exterrors.CodeEvalConfigInvalid,
+			"at least one evaluator is required",
+			"add an 'evaluators:' section to your eval.yaml or use --evaluator")
 	}
 
 	hasFile := c.DatasetFile != ""

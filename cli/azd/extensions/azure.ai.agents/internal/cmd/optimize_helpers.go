@@ -131,7 +131,7 @@ func printOptimizePortalLink(ctx context.Context, out io.Writer, agentName, oper
 	})
 }
 
-// reportOptimizationDeployments reports optimization candidate deployments to FAOS.
+// reportOptimizationDeployments reports optimization candidate deployments to the optimization service.
 // For each hosted agent service, if AGENT_{KEY}_OPTIMIZATION_CANDIDATE_ID is set in
 // the azd environment, it calls the promote API and then clears the env var.
 // This is best-effort — failures are logged but do not block the deploy.
@@ -142,59 +142,71 @@ func reportOptimizationDeployments(
 	envName, projectEndpoint string,
 	newClient func(endpoint string) *optimize_api.OptimizeClient,
 ) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("postdeploy: optimization deployment reporting panicked: %v", r)
-		}
-	}()
-
 	log.Printf("postdeploy: reporting optimization deployments for %d hosted agents", len(hostedAgents))
 
 	for _, svc := range hostedAgents {
-		serviceKey := toServiceKey(svc.Name)
-		candidateKey := fmt.Sprintf("AGENT_%s_OPTIMIZATION_CANDIDATE_ID", serviceKey)
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("postdeploy: optimization reporting panicked for %s: %v", svc.Name, r)
+				}
+			}()
+			reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, projectEndpoint, newClient)
+		}()
+	}
+}
 
-		candidateResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: envName,
-			Key:     candidateKey,
-		})
-		if err != nil || candidateResp.Value == "" {
-			log.Printf("postdeploy: no optimization candidate for %s, skipping", svc.Name)
-			continue
-		}
+// reportSvcOptimizationDeployment reports a single service's optimization candidate.
+func reportSvcOptimizationDeployment(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	svc *azdext.ServiceConfig,
+	envName, projectEndpoint string,
+	newClient func(endpoint string) *optimize_api.OptimizeClient,
+) {
+	serviceKey := toServiceKey(svc.Name)
+	candidateKey := fmt.Sprintf("AGENT_%s_OPTIMIZATION_CANDIDATE_ID", serviceKey)
 
-		versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
-		versionResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: envName,
-			Key:     versionKey,
-		})
-		if err != nil || versionResp.Value == "" {
-			log.Printf("postdeploy: no version for %s, skipping", svc.Name)
-			continue
-		}
+	candidateResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     candidateKey,
+	})
+	if err != nil || candidateResp.Value == "" {
+		log.Printf("postdeploy: no optimization candidate for %s, skipping", svc.Name)
+		return
+	}
 
-		log.Printf("postdeploy: promoting candidate %s for %s (version %s)",
-			candidateResp.Value, svc.Name, versionResp.Value)
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+	versionResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     versionKey,
+	})
+	if err != nil || versionResp.Value == "" {
+		log.Printf("postdeploy: no version for %s, skipping", svc.Name)
+		return
+	}
 
-		optClient := newClient(projectEndpoint)
-		if err := optClient.ReportDeployment(ctx, &optimize_api.DeploymentReport{
-			CandidateID:  candidateResp.Value,
-			AgentName:    svc.Name,
-			AgentVersion: versionResp.Value,
-		}); err != nil {
-			log.Printf("postdeploy: failed to report optimization deployment for %s: %v", svc.Name, err)
-			continue
-		}
+	log.Printf("postdeploy: promoting candidate %s for %s (version %s)",
+		candidateResp.Value, svc.Name, versionResp.Value)
 
-		log.Printf("postdeploy: successfully promoted candidate %s for %s", candidateResp.Value, svc.Name)
+	optClient := newClient(projectEndpoint)
+	if err := optClient.ReportDeployment(ctx, &optimize_api.DeploymentReport{
+		CandidateID:  candidateResp.Value,
+		AgentName:    svc.Name,
+		AgentVersion: versionResp.Value,
+	}); err != nil {
+		log.Printf("postdeploy: failed to report optimization deployment for %s: %v", svc.Name, err)
+		return
+	}
 
-		// Clear the candidate ID after successful reporting.
-		if _, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: envName,
-			Key:     candidateKey,
-			Value:   "",
-		}); err != nil {
-			log.Printf("postdeploy: failed to clear %s: %v", candidateKey, err)
-		}
+	log.Printf("postdeploy: successfully promoted candidate %s for %s", candidateResp.Value, svc.Name)
+
+	// Clear the candidate ID after successful reporting.
+	if _, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: envName,
+		Key:     candidateKey,
+		Value:   "",
+	}); err != nil {
+		log.Printf("postdeploy: failed to clear %s: %v", candidateKey, err)
 	}
 }

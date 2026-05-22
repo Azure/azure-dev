@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/pkg/agents/dataset_api"
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 )
 
 // Artifact directory names relative to the agent project root.
@@ -42,7 +42,7 @@ func DownloadDatasetArtifact(
 	ctx context.Context,
 	client *dataset_api.DatasetClient,
 	agentProject string,
-	ref *opteval.DatasetRef,
+	ref *opt_eval.DatasetRef,
 	apiVersion string,
 ) (string, error) {
 	if ref == nil || ref.Name == "" {
@@ -85,7 +85,7 @@ func DownloadDatasetArtifact(
 				errs = append(errs, fmt.Errorf("downloading blob %q: %w", blobName, dlErr))
 				continue
 			}
-			dest, pathErr := opteval.SafePath(destDir, blobName)
+			dest, pathErr := opt_eval.SafePath(destDir, blobName)
 			if pathErr != nil {
 				errs = append(errs, pathErr)
 				continue
@@ -153,7 +153,7 @@ func filenameFromURL(rawURL string) string {
 }
 
 // DatasetArtifactPath returns the local filesystem path for a downloaded dataset directory.
-func DatasetArtifactPath(agentProject string, ref *opteval.DatasetRef) string {
+func DatasetArtifactPath(agentProject string, ref *opt_eval.DatasetRef) string {
 	if ref == nil || ref.Name == "" {
 		return ""
 	}
@@ -180,28 +180,31 @@ func EvaluatorLocalURI(name string) string {
 // SaveEvaluatorResult extracts the rubric dimensions from the evaluator result
 // and saves them as the local artifact. Only dimensions are persisted so that
 // users can edit weights/descriptions and upload a new evaluator version.
-func SaveEvaluatorResult(agentProject, evaluatorName string, result json.RawMessage) {
+func SaveEvaluatorResult(agentProject, evaluatorName string, result json.RawMessage) error {
 	if evaluatorName == "" || len(result) == 0 {
-		return
+		return nil
 	}
 	dir := evaluatorDir(agentProject, evaluatorName)
 	if err := os.MkdirAll(dir, 0750); err != nil {
-		return
+		return fmt.Errorf("creating evaluator dir %q: %w", dir, err)
 	}
 
 	// Parse the evaluator result to extract the rubric dimensions.
 	parsed := ParseEvaluatorResult(result)
 	if parsed == nil || len(parsed.Definition.Dimensions) == 0 {
-		return
+		return nil
 	}
 
 	formatted, err := json.MarshalIndent(parsed.Definition.Dimensions, "", "  ")
 	if err != nil {
-		return
+		return fmt.Errorf("marshalling evaluator dimensions: %w", err)
 	}
 
 	path := filepath.Join(dir, EvaluatorContractFile)
-	_ = os.WriteFile(path, formatted, 0600)
+	if err := os.WriteFile(path, formatted, 0600); err != nil {
+		return fmt.Errorf("writing evaluator artifact %q: %w", path, err)
+	}
+	return nil
 }
 
 // PrintEvaluatorDimensions prints a compact table of rubric dimensions.
@@ -217,16 +220,18 @@ func PrintEvaluatorDimensions(parsed *EvaluatorResult) {
 
 // WriteEvalReviewArtifacts writes human-readable review artifacts for evaluators.
 // It writes a stub YAML file for each evaluator unless a result JSON already exists.
-func WriteEvalReviewArtifacts(agentProject string, cfg *EvalConfig) {
+func WriteEvalReviewArtifacts(agentProject string, cfg *EvalConfig) error {
 	if cfg == nil {
-		return
+		return nil
 	}
+	var errs []error
 	for _, evaluator := range cfg.Evaluators {
 		if evaluator.Name == "" || IsBuiltinEvaluator(evaluator.Name) {
 			continue
 		}
 		dir := evaluatorDir(agentProject, evaluator.Name)
 		if err := os.MkdirAll(dir, 0750); err != nil {
+			errs = append(errs, fmt.Errorf("creating dir for evaluator %q: %w", evaluator.Name, err))
 			continue
 		}
 		// Skip if a result JSON already exists.
@@ -236,8 +241,11 @@ func WriteEvalReviewArtifacts(agentProject string, cfg *EvalConfig) {
 		}
 		yamlPath := filepath.Join(dir, evaluator.Name+".yaml")
 		stub := fmt.Sprintf("# Evaluator stub: %s\nname: %s\n", evaluator.Name, evaluator.Name)
-		_ = os.WriteFile(yamlPath, []byte(stub), 0600)
+		if err := os.WriteFile(yamlPath, []byte(stub), 0600); err != nil {
+			errs = append(errs, fmt.Errorf("writing evaluator stub %q: %w", yamlPath, err))
+		}
 	}
+	return errors.Join(errs...)
 }
 
 // WriteJSONFile writes a value as indented JSON to the specified path.

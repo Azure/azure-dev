@@ -222,7 +222,7 @@ func (c *OptimizeClient) CancelOptimize(
 }
 
 // ReportDeployment notifies the optimization service that a candidate has been
-// deployed. This allows FAOS to track which candidates have been deployed.
+// deployed. This allows the optimization service to track which candidates have been deployed.
 func (c *OptimizeClient) ReportDeployment(
 	ctx context.Context,
 	report *DeploymentReport,
@@ -266,7 +266,7 @@ func (c *OptimizeClient) ReportDeployment(
 func (c *OptimizeClient) GetCandidateConfig(
 	ctx context.Context,
 	candidateID string,
-) (any, error) {
+) (json.RawMessage, error) {
 	url := fmt.Sprintf("%s/optimize/candidates/%s/config?api-version=%s", c.endpoint, netURL.PathEscape(candidateID), APIVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
@@ -289,14 +289,14 @@ func (c *OptimizeClient) GetCandidateConfig(
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var config any
-	if err := json.Unmarshal(body, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse candidate config: %w", err)
+	// Validate that the body is valid JSON.
+	if !json.Valid(body) {
+		return nil, fmt.Errorf("candidate config is not valid JSON")
 	}
-	return config, nil
+	return json.RawMessage(body), nil
 }
 
-// GetCandidate fetches the candidate manifest (metadata + file list) from FAOS.
+// GetCandidate fetches the candidate manifest (metadata + file list) from the optimization service.
 // GET /optimize/candidates/{id}
 func (c *OptimizeClient) GetCandidate(
 	ctx context.Context,

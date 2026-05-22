@@ -14,8 +14,10 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/eval_api"
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -83,9 +85,9 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 		}
 	}
 
-	state := opteval.LoadEvalState(ctx, resolved.azdClient, resolved.envName)
+	state := opt_eval.LoadEvalState(ctx, resolved.azdClient, resolved.envName)
 
-	if state.InitStatus == opteval.InitStatusPending {
+	if state.InitStatus == opt_eval.InitStatusPending {
 		if err := resumeEvalInit(ctx, resolved, configPath, evalCfg, state); err != nil {
 			return err
 		}
@@ -117,7 +119,7 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 			evalID = evalCfg.Name
 		}
 		state.EvalID = evalID
-		if err := opteval.SaveEvalState(ctx, resolved.azdClient, resolved.envName, state); err != nil {
+		if err := opt_eval.SaveEvalState(ctx, resolved.azdClient, resolved.envName, state); err != nil {
 			return err
 		}
 	}
@@ -225,6 +227,13 @@ func resolveRunName(
 	return defaultName
 }
 
+// Default polling constants for eval run monitoring.
+const (
+	defaultEvalPollInterval    = 5 * time.Second
+	defaultEvalMaxAttempts     = 360 // ~30 minutes at 5s intervals
+	maxConsecutiveTransientErr = 5
+)
+
 // pollEvalRun polls an eval run until it reaches a terminal status.
 // Terminal statuses: "completed", "failed", "canceled".
 func pollEvalRun(
@@ -232,29 +241,32 @@ func pollEvalRun(
 	client *eval_api.EvalClient,
 	evalID, runID string,
 ) (*eval_api.OpenAIEvalRun, error) {
-	const (
-		interval    = 5 * time.Second
-		maxAttempts = 360 // ~30 minutes
-	)
-
 	progress := newEvalProgress()
 	progress.Start()
 	defer progress.Stop()
 
 	progress.setRunning("Eval run", runID)
 
-	for range maxAttempts {
+	consecutiveTransient := 0
+	for range defaultEvalMaxAttempts {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(interval):
+		case <-time.After(defaultEvalPollInterval):
 		}
 
 		run, err := client.GetOpenAIEvalRun(ctx, evalID, runID, DefaultAgentAPIVersion)
 		if err != nil {
+			if agents.IsTransientError(err) {
+				consecutiveTransient++
+				if consecutiveTransient <= maxConsecutiveTransientErr {
+					continue
+				}
+			}
 			progress.setFailed("Eval run")
 			return nil, fmt.Errorf("failed to poll eval run: %w", err)
 		}
+		consecutiveTransient = 0
 
 		switch run.Status {
 		case "completed":
@@ -266,22 +278,26 @@ func pollEvalRun(
 			if run.Error != nil {
 				errMsg = fmt.Sprintf("eval run failed: %v", run.Error)
 			}
-			return nil, fmt.Errorf("%s", errMsg)
+			return nil, exterrors.Dependency(
+				exterrors.CodeEvalRunFailed, errMsg,
+				"check eval run details with 'azd ai agent eval show'")
 		case "canceled", "cancelled":
 			progress.setFailed("Eval run")
-			return nil, fmt.Errorf("eval run was canceled")
+			return nil, exterrors.Cancelled("eval run was canceled")
 		}
 	}
 
 	progress.setTimedOut("Eval run")
-	return nil, fmt.Errorf("eval run %s did not complete within %d attempts", runID, maxAttempts)
+	return nil, fmt.Errorf(
+		"eval run %s did not complete within %d attempts",
+		runID, defaultEvalMaxAttempts)
 }
 
 // buildDatasetFileID constructs an azureai:// URI for a remote dataset reference.
 // Format: azureai://accounts/<account>/projects/<project>/data/<name>/versions/<version>
 // The account and project are extracted from the project endpoint URL
 // (https://<account>.services.ai.azure.com/api/projects/<project>).
-func buildDatasetFileID(projectEndpoint string, ref *opteval.DatasetRef) string {
+func buildDatasetFileID(projectEndpoint string, ref *opt_eval.DatasetRef) string {
 	account, project := parseProjectEndpoint(projectEndpoint)
 	version := ref.Version
 	if version == "" {

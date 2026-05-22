@@ -4,18 +4,19 @@
 // optimize_config.go defines OptimizeConfig (the YAML config structure for
 // optimization jobs), provides loading/validation, and converts configs into
 // API requests. It also handles reading skills from disk and parsing YAML
-// frontmatter in skill files.
+// preamble in skill files.
 
 package cmd
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"azureaiagent/internal/pkg/agents/opteval"
+	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"go.yaml.in/yaml/v3"
@@ -23,12 +24,12 @@ import (
 
 // OptimizeConfig extends the shared Config with optimize-specific fields.
 type OptimizeConfig struct {
-	opteval.Config `yaml:",inline"`
+	opt_eval.Config `yaml:",inline"`
 
 	// Optimize-specific YAML fields.
-	ValidationReference *opteval.DatasetRef        `yaml:"validation_reference,omitempty"`
+	ValidationReference *opt_eval.DatasetRef       `yaml:"validation_reference,omitempty"`
 	Criteria            []OptimizeConfigCriterion  `yaml:"criteria,omitempty"`
-	Options             *opteval.Options           `yaml:"options"`
+	Options             *opt_eval.Options          `yaml:"options"`
 	InlineDataset       []optimize_api.DatasetTask `yaml:"-"` // populated by defaultOptimizeConfig, not from YAML
 
 	// Runtime-only: resolved skill directory and tools file (not serialized to YAML).
@@ -86,13 +87,13 @@ func (c *OptimizeConfig) Validate() error {
 // evaluation dataset.
 func defaultOptimizeConfig(agentName string) *OptimizeConfig {
 	return &OptimizeConfig{
-		Config: opteval.Config{
-			Agent:      opteval.AgentRef{Name: agentName},
-			Evaluators: opteval.EvaluatorList{{Name: "builtin.task_adherence"}},
+		Config: opt_eval.Config{
+			Agent:      opt_eval.AgentRef{Name: agentName},
+			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
 		InlineDataset: defaultDataset,
-		Options: &opteval.Options{
-			EvalModel:        "gpt-4o",
+		Options: &opt_eval.Options{
+			EvalModel:        defaultEvalModel,
 			Mode:             "optimize",
 			TargetAttributes: []string{"instruction", "skill"},
 			Budget:           5,
@@ -219,21 +220,36 @@ func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.Optimi
 	}
 
 	// Load tool definitions if a tools file is specified.
-	// TODO: re-enable when tools optimization is supported in the service.
-	// if c.ToolsFile != "" {
-	// 	tools, err := loadToolDefinitions(c.ToolsFile)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("loading tool definitions from %s: %w", c.ToolsFile, err)
-	// 	}
-	// 	req.Agent.ToolDefinitions = tools
-	// }
+	if c.ToolsFile != "" {
+		tools, err := loadToolDefinitions(c.ToolsFile)
+		if err != nil {
+			return nil, fmt.Errorf("loading tool definitions from %s: %w", c.ToolsFile, err)
+		}
+		req.Agent.ToolDefinitions = tools
+	}
 
 	return req, nil
 }
 
+// loadToolDefinitions reads an OpenAI-format tools JSON file and returns
+// ToolDefinition entries for the optimize API request.
+func loadToolDefinitions(path string) ([]optimize_api.ToolDefinition, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // path derived from project tools file
+	if err != nil {
+		return nil, fmt.Errorf("reading tools file: %w", err)
+	}
+
+	var tools []optimize_api.ToolDefinition
+	if err := json.Unmarshal(data, &tools); err != nil {
+		return nil, fmt.Errorf("parsing tools file: %w", err)
+	}
+
+	return tools, nil
+}
+
 // loadSkillsFromDir reads skill files from a directory and returns SkillDefinitions.
-// For markdown files (.md), YAML frontmatter is parsed to extract name and description;
-// the content after the frontmatter becomes the skill body.
+// For markdown files (.md), YAML preamble is parsed to extract name and description;
+// the content after the preamble becomes the skill body.
 // For other files, the filename (without extension) is used as the name and the full
 // content as the body.
 // Subdirectories are recursed into — each file within is also loaded as a skill.
@@ -268,15 +284,15 @@ func loadSkillsFromDir(dir string) ([]optimize_api.SkillDefinition, error) {
 	return skills, nil
 }
 
-// skillFrontmatter represents the YAML frontmatter in a skill markdown file.
-type skillFrontmatter struct {
+// skillPreamble represents the YAML preamble in a skill markdown file.
+type skillPreamble struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description"`
 }
 
 // parseSkillFile parses a skill file. For .md files it attempts to extract
-// YAML frontmatter (delimited by "---") for name and description; the body
-// is the content after the frontmatter. For other files, the filename (sans
+// YAML preamble (delimited by "---") for name and description; the body
+// is the content after the preamble. For other files, the filename (sans
 // extension) is the name and the full content is the body.
 func parseSkillFile(filename, content string) optimize_api.SkillDefinition {
 	ext := filepath.Ext(filename)
@@ -289,15 +305,15 @@ func parseSkillFile(filename, content string) optimize_api.SkillDefinition {
 		}
 	}
 
-	// Try to parse YAML frontmatter from markdown.
-	fm, body := splitFrontmatter(content)
+	// Try to parse YAML preamble from markdown.
+	fm, body := splitPreamble(content)
 	skill := optimize_api.SkillDefinition{
 		Name: baseName,
 		Body: body,
 	}
 
 	if fm != "" {
-		var meta skillFrontmatter
+		var meta skillPreamble
 		if err := yaml.Unmarshal([]byte(fm), &meta); err == nil {
 			if meta.Name != "" {
 				skill.Name = meta.Name
@@ -309,10 +325,10 @@ func parseSkillFile(filename, content string) optimize_api.SkillDefinition {
 	return skill
 }
 
-// splitFrontmatter splits YAML frontmatter (between "---" delimiters) from
-// the rest of the content. Returns (frontmatter, body). If no frontmatter is
+// splitPreamble splits YAML preamble (between "---" delimiters) from
+// the rest of the content. Returns (preamble, body). If no preamble is
 // found, returns ("", original content).
-func splitFrontmatter(content string) (string, string) {
+func splitPreamble(content string) (string, string) {
 	const delimiter = "---"
 
 	scanner := bufio.NewScanner(strings.NewReader(content))

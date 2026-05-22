@@ -43,6 +43,7 @@ words:
   - exterrors
   - helloworld
   - hostedagent
+  - hostedagents
   - kval
   - logstream
   - mcpservertoolalwaysrequireapprovalmode
@@ -61,6 +62,11 @@ words:
   - Vnext
   - webp
   # Doctor / next-step terms
+  - nextstep
+  - nextsteps
+  - undeployed
+  - unredacted
+  - UNKN
   - inlines
   - Remediations
   - remediations

@@ -59,7 +59,7 @@ func parsePendingProvisionReasons(value string) []string {
 		return nil
 	}
 	seen := make(map[string]struct{})
-	for _, raw := range strings.Split(value, ",") {
+	for raw := range strings.SplitSeq(value, ",") {
 		tag := strings.TrimSpace(raw)
 		if tag == "" {
 			continue

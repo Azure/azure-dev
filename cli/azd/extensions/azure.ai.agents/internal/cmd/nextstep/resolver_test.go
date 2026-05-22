@@ -120,7 +120,6 @@ func TestResolveAfterInit(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			out := ResolveAfterInit(tt.state)
@@ -531,7 +530,6 @@ func TestResolveAfterRun(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			out := ResolveAfterRun(tt.state, tt.serviceName)
@@ -660,7 +658,6 @@ func TestResolveAfterShow(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			// Same-name case: service and agent names align (common when deploy
@@ -678,7 +675,6 @@ func TestResolveAfterShow_ActiveAndIdleReturnNil(t *testing.T) {
 	t.Parallel()
 
 	for _, status := range []AgentVersionStatus{AgentVersionActive, AgentVersionIdle} {
-		status := status
 		t.Run(string(status), func(t *testing.T) {
 			t.Parallel()
 			state := &State{

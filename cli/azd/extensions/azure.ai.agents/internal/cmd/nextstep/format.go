@@ -141,10 +141,7 @@ func renderRows(suggestions []Suggestion, limit int) string {
 
 	var rendered []Suggestion
 	if limit > 0 && trailing != nil {
-		budget := limit - 1
-		if budget < 0 {
-			budget = 0
-		}
+		budget := max(limit-1, 0)
 		if len(primary) > budget {
 			primary = primary[:budget]
 		}

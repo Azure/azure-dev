@@ -15,6 +15,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
@@ -302,6 +303,16 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	if err := project.EnsureAgentIdentityRBAC(ctx, azdClient, agentIdentities); err != nil {
 		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
 	}
+
+	// Report optimization candidate deployments to the optimization service.
+	// If a service has AGENT_{KEY}_OPTIMIZATION_CANDIDATE_ID in the azd environment,
+	// the agent was deployed from an optimization candidate. We notify the
+	// optimization service so it can track which candidates have been deployed.
+	reportOptimizationDeployments(ctx, azdClient, hostedAgents, envName, endpointResp.Value,
+		func(endpoint string) *optimize_api.OptimizeClient {
+			return optimize_api.NewOptimizeClient(endpoint, cred)
+		},
+	)
 
 	return nil
 }

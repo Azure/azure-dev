@@ -163,3 +163,15 @@ const (
 	OpCreateToolboxVersion  = "create_toolbox_version"
 	OpGetToolbox            = "get_toolbox"
 )
+
+// Error codes for eval and optimize operations.
+const (
+	CodeEvalRunFailed      = "eval_run_failed"
+	CodeEvalRunCancelled   = "eval_run_cancelled"
+	CodeEvalRunTimeout     = "eval_run_timeout"
+	CodeEvalConfigInvalid  = "eval_config_invalid"
+	CodeOptimizeJobFailed  = "optimize_job_failed"
+	CodeOptimizeJobTimeout = "optimize_job_timeout"
+	CodeInvalidTargetAttr  = "invalid_target_attribute"
+	CodeReservedEnvVar     = "reserved_env_var"
+)

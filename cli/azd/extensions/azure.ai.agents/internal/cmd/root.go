@@ -69,6 +69,8 @@ func NewRootCommand() *cobra.Command {
 	// When the azd core namespace change lands, move this AddCommand call
 	// to the new root and update the import path.
 	rootCmd.AddCommand(conncmd.NewConnectionRootCommand(extCtx))
+	rootCmd.AddCommand(newEvalCommand(extCtx))
+	rootCmd.AddCommand(newOptimizeCommand(extCtx))
 
 	return rootCmd
 }

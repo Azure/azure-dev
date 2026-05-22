@@ -858,7 +858,7 @@ func authTypeStr(a *armcognitiveservices.ConnectionAuthType) string {
 func normalizeKind(cliKind string) string {
 	mapping := map[string]string{
 		"remote-tool":                "RemoteTool",
-		"remote-a2a":                "RemoteA2A",
+		"remote-a2a":                 "RemoteA2A",
 		"cognitive-search":           "CognitiveSearch",
 		"api-key":                    "ApiKey",
 		"app-insights":               "AppInsights",

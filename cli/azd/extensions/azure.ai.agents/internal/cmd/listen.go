@@ -196,8 +196,6 @@ func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig)
 	return ok && kind == string(agent_yaml.AgentKindHosted)
 }
 
-
-
 func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	// Skip when the project has no hosted agent services. `postdeploy` fires on every
 	// `azd deploy`, so without this guard the FOUNDRY_PROJECT_ENDPOINT/AZURE_TENANT_ID

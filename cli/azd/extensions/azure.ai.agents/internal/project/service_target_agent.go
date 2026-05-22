@@ -793,7 +793,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	// Poll until agent version is active
 	if result.agentVersion.Status != "active" {
 		agentClient := agent_api.NewAgentClient(
-			azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+			azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 			p.credential,
 		)
 		polledVersion, pollErr := p.waitForAgentActive(
@@ -1021,7 +1021,7 @@ func (p *AgentServiceTargetProvider) patchAgentEndpointFields(
 	}
 
 	agentClient := agent_api.NewAgentClient(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		p.credential,
 	)
 
@@ -1032,10 +1032,6 @@ func (p *AgentServiceTargetProvider) patchAgentEndpointFields(
 
 	_, err := agentClient.PatchAgent(ctx, agentName, patchRequest, agentAPIVersion)
 	if err != nil {
-		fmt.Fprintf(os.Stderr,
-			"WARNING: Updating agent endpoint/card for %q failed.\n",
-			agentName,
-		)
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	}
 

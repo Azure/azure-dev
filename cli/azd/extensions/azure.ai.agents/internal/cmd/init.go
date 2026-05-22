@@ -2977,15 +2977,21 @@ func extractConnectionConfigs(
 // validateCodeDeployFlags checks that required flags are present when using
 // --deploy-mode code in --no-prompt mode.
 func (a *InitAction) validateCodeDeployFlags() error {
-	if a.flags.noPrompt && a.flags.deployMode == "code" {
-		if a.flags.runtime == "" {
+	return validateCodeDeployInput(a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint)
+}
+
+// validateCodeDeployInput is the shared validation logic for code deploy flags.
+// Used by both InitAction and InitFromCodeAction.
+func validateCodeDeployInput(noPrompt bool, deployMode, runtime, entryPoint string) error {
+	if noPrompt && deployMode == "code" {
+		if runtime == "" {
 			return exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"--runtime is required when using --deploy-mode code with --no-prompt",
 				"Specify --runtime (e.g., python_3_13, python_3_14, dotnet_10)",
 			)
 		}
-		if a.flags.entryPoint == "" {
+		if entryPoint == "" {
 			return exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"--entry-point is required when using --deploy-mode code with --no-prompt",

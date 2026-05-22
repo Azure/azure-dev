@@ -75,21 +75,8 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	}
 
 	// Validate code deploy flags
-	if a.flags.noPrompt && a.flags.deployMode == "code" {
-		if a.flags.runtime == "" {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"--runtime is required when using --deploy-mode code with --no-prompt",
-				"Specify --runtime (e.g., python_3_13, python_3_14, dotnet_10)",
-			)
-		}
-		if a.flags.entryPoint == "" {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"--entry-point is required when using --deploy-mode code with --no-prompt",
-				"Specify --entry-point (e.g., app.py, main.py, MyAgent.dll)",
-			)
-		}
+	if err := validateCodeDeployInput(a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint); err != nil {
+		return err
 	}
 
 	// Default src to current directory when not specified

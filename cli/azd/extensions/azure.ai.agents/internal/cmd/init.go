@@ -53,6 +53,11 @@ type initFlags struct {
 	src               string
 	env               string
 	protocols         []string
+	// deploy mode flags for non-interactive code deploy support
+	deployMode    string // "container" or "code"; empty = prompt interactively
+	runtime       string // e.g. "python_3_13", "python_3_14", "dotnet_10"
+	entryPoint    string // e.g. "app.py", "MyAgent.dll"
+	depResolution string // "remote_build" or "bundled"; defaults to "remote_build"
 	// force, when true, lets headless callers (--no-prompt) pre-consent to
 	// overwrite prompts that would otherwise return a structured error. It
 	// mirrors the `--force` convention used by `azd down`, `azd env remove`,
@@ -852,6 +857,18 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
 		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
 
+	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "",
+		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'container' in --no-prompt.")
+
+	cmd.Flags().StringVar(&flags.runtime, "runtime", "",
+		"Runtime for code deploy (e.g., 'python_3_13', 'python_3_14', 'dotnet_10'). Required with --deploy-mode code --no-prompt.")
+
+	cmd.Flags().StringVar(&flags.entryPoint, "entry-point", "",
+		"Entry point file for code deploy (e.g., 'app.py', 'MyAgent.dll'). Required with --deploy-mode code --no-prompt.")
+
+	cmd.Flags().StringVar(&flags.depResolution, "dep-resolution", "",
+		"Dependency resolution for code deploy: 'remote_build' or 'bundled'. Defaults to 'remote_build'.")
+
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+
 			"Required together with --no-prompt when init would otherwise need confirmation.")
@@ -873,6 +890,24 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to convert src path to relative path: %w", err)
 		}
 		a.flags.src = relPath
+	}
+
+	// Validate code deploy flags
+	if a.flags.noPrompt && a.flags.deployMode == "code" {
+		if a.flags.runtime == "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--runtime is required when using --deploy-mode code with --no-prompt",
+				"Specify --runtime (e.g., python_3_13, python_3_14, dotnet_10)",
+			)
+		}
+		if a.flags.entryPoint == "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--entry-point is required when using --deploy-mode code with --no-prompt",
+				"Specify --entry-point (e.g., app.py, main.py, MyAgent.dll)",
+			)
+		}
 	}
 
 	// If --manifest is given
@@ -910,7 +945,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		// Code deploy is supported for Python and .NET projects.
 		if _, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
 			showCodeDeploy := isPythonProject(targetDir) || isDotnetProject(targetDir)
-			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy)
+			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, a.flags.deployMode)
 			if err != nil {
 				return fmt.Errorf("prompting for deploy mode: %w", err)
 			}
@@ -918,7 +953,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 
 			if a.isCodeDeploy {
 				// Prompt for code configuration and update the manifest
-				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt)
+				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt, codeDeployOptions{
+					runtime:       a.flags.runtime,
+					entryPoint:    a.flags.entryPoint,
+					depResolution: a.flags.depResolution,
+				})
 				if err != nil {
 					return fmt.Errorf("prompting for code configuration: %w", err)
 				}

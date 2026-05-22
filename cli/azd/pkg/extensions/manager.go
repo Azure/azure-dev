@@ -130,6 +130,45 @@ func bestSatisfyingVersion(expr string, versions []ExtensionVersion) *ExtensionV
 	return &versions[bestIdx]
 }
 
+func bestSatisfyingVersionForAzd(
+	expr string,
+	versions []ExtensionVersion,
+	azdVersion *semver.Version,
+) *ExtensionVersion {
+	if azdVersion == nil {
+		return bestSatisfyingVersion(expr, versions)
+	}
+
+	compatible := make([]ExtensionVersion, 0, len(versions))
+	for i := range versions {
+		if VersionIsCompatible(&versions[i], azdVersion) {
+			compatible = append(compatible, versions[i])
+		}
+	}
+
+	return bestSatisfyingVersion(expr, compatible)
+}
+
+// resolveExtensionVersion selects the best published version of extension that satisfies
+// versionPreference and is compatible with azdVersion, or returns a descriptive error.
+func resolveExtensionVersion(
+	extension *ExtensionMetadata,
+	versionPreference string,
+	azdVersion *semver.Version,
+) (*ExtensionVersion, error) {
+	selected := bestSatisfyingVersionForAzd(versionPreference, extension.Versions, azdVersion)
+	if selected != nil {
+		return selected, nil
+	}
+	if versionPreference == "" || strings.EqualFold(versionPreference, "latest") {
+		return nil, fmt.Errorf("no compatible version found for extension: %s", extension.Id)
+	}
+	return nil, fmt.Errorf(
+		"no matching version found for extension: %s and constraint: %s",
+		extension.Id, versionPreference,
+	)
+}
+
 // createExtensionFilter creates a comprehensive filter that checks ALL criteria with AND logic
 func createExtensionFilter(options *FilterOptions) extensionFilterPredicate {
 	return func(extension *ExtensionMetadata) bool {
@@ -368,23 +407,48 @@ func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([
 	return allExtensions, nil
 }
 
-// Install an extension from metadata with optional version preference
-// If no version is provided, the latest version is installed
-// Latest version is determined by semver comparison across all available versions
+// Install an extension from metadata with optional version preference.
 func (m *Manager) Install(
 	ctx context.Context,
 	extension *ExtensionMetadata,
 	versionPreference string,
 ) (*ExtensionVersion, error) {
-	return m.installInternal(ctx, extension, versionPreference, map[string]struct{}{})
+	return m.installInternal(
+		ctx,
+		extension,
+		InstallOptions{VersionPreference: versionPreference},
+		false,
+		map[string]struct{}{},
+	)
+}
+
+// InstallOptions controls how Manager.InstallWithOptions behaves.
+type InstallOptions struct {
+	// VersionPreference is the version constraint or exact tag to install.
+	// Empty or "latest" selects the highest available version.
+	VersionPreference string
+	// AzdVersion limits selected extension versions to those compatible with azd.
+	AzdVersion *semver.Version
+}
+
+// InstallWithOptions installs an extension using the supplied options.
+func (m *Manager) InstallWithOptions(
+	ctx context.Context,
+	extension *ExtensionMetadata,
+	opts InstallOptions,
+) (*ExtensionVersion, error) {
+	return m.installInternal(ctx, extension, opts, false, map[string]struct{}{})
 }
 
 // installInternal installs an extension and its dependencies.
+// skipDependencyValidation bypasses the installed-dependency constraint check; it is set by the
+// upgrade flow so dependency reconciliation can run after the parent has been reinstalled.
 // visited contains the ids currently in flight, which prevents dependency cycles.
 func (m *Manager) installInternal(
 	ctx context.Context,
 	extension *ExtensionMetadata,
-	versionPreference string,
+	opts InstallOptions,
+	skipDependencyValidation bool,
 	visited map[string]struct{},
 ) (extVersion *ExtensionVersion, err error) {
 	if extension == nil {
@@ -414,15 +478,9 @@ func (m *Manager) installInternal(
 	}
 
 	// Resolve to the latest published version that satisfies the preference.
-	selectedVersion := bestSatisfyingVersion(versionPreference, extension.Versions)
-	if selectedVersion == nil {
-		if versionPreference == "" || strings.EqualFold(versionPreference, "latest") {
-			return nil, fmt.Errorf("no compatible version found for extension: %s", extension.Id)
-		}
-		return nil, fmt.Errorf(
-			"no matching version found for extension: %s and constraint: %s",
-			extension.Id, versionPreference,
-		)
+	selectedVersion, err := resolveExtensionVersion(extension, opts.VersionPreference, opts.AzdVersion)
+	if err != nil {
+		return nil, err
 	}
 
 	// Record the resolved version on the span so failures during install
@@ -438,6 +496,19 @@ func (m *Manager) installInternal(
 	// Install dependencies
 	if len(selectedVersion.Dependencies) > 0 {
 		for _, dependency := range selectedVersion.Dependencies {
+			installedDependency, err := m.GetInstalled(FilterOptions{Id: dependency.Id})
+			if err == nil && installedDependency != nil {
+				if !skipDependencyValidation &&
+					dependency.Version != "" &&
+					!matchesVersionConstraint(dependency.Version, installedDependency.Version) {
+					return nil, fmt.Errorf(
+						"installed dependency %s version %s does not satisfy constraint %q",
+						dependency.Id, installedDependency.Version, dependency.Version,
+					)
+				}
+				continue
+			}
+
 			// Find the dependency extension metadata first
 			dependencyOptions := &FilterOptions{
 				Id:      dependency.Id,
@@ -460,7 +531,11 @@ func (m *Manager) installInternal(
 
 			dependencyMetadata := dependencyMatches[0]
 
-			if _, err := m.installInternal(ctx, dependencyMetadata, dependency.Version, visited); err != nil {
+			dependencyOpts := InstallOptions{
+				VersionPreference: dependency.Version,
+				AzdVersion:        opts.AzdVersion,
+			}
+			if _, err := m.installInternal(ctx, dependencyMetadata, dependencyOpts, false, visited); err != nil {
 				if !errors.Is(err, ErrExtensionInstalled) {
 					return nil, fmt.Errorf("failed to install dependency: %w", err)
 				}
@@ -655,6 +730,8 @@ type UpgradeOptions struct {
 	VersionPreference string
 	// UpgradeDependencies enables automatic upgrades for installed dependencies.
 	UpgradeDependencies bool
+	// AzdVersion limits selected extension versions to those compatible with azd.
+	AzdVersion *semver.Version
 }
 
 // DefaultUpgradeOptions returns UpgradeOptions with dependency upgrades enabled.
@@ -681,6 +758,30 @@ func (m *Manager) Upgrade(
 	return m.upgradeInternal(ctx, extension, opts, visited)
 }
 
+// ReconcileDependencies upgrades installed dependencies for the selected extension version.
+func (m *Manager) ReconcileDependencies(
+	ctx context.Context,
+	extension *ExtensionMetadata,
+	opts UpgradeOptions,
+) (*ExtensionVersion, []UpgradeResult, error) {
+	if extension == nil {
+		return nil, nil, fmt.Errorf("extension metadata cannot be nil")
+	}
+
+	selectedVersion, err := resolveExtensionVersion(extension, opts.VersionPreference, opts.AzdVersion)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(selectedVersion.Dependencies) == 0 {
+		return selectedVersion, nil, nil
+	}
+
+	visited := map[string]struct{}{extension.Id: {}}
+	results := m.evaluateDependencyChanges(ctx, extension, selectedVersion, opts, visited)
+	return selectedVersion, results, nil
+}
+
 // upgradeInternal performs the reinstall and any dependency upgrades.
 // visited prevents dependency cycles.
 func (m *Manager) upgradeInternal(
@@ -693,7 +794,12 @@ func (m *Manager) upgradeInternal(
 		return nil, nil, fmt.Errorf("failed to uninstall extension: %w", err)
 	}
 
-	extensionVersion, err := m.Install(ctx, extension, opts.VersionPreference)
+	// Skip the installed-dependency constraint check: the previous parent has just been
+	// uninstalled and any stale dependency will be reconciled by evaluateDependencyChanges below.
+	extensionVersion, err := m.installInternal(ctx, extension, InstallOptions{
+		VersionPreference: opts.VersionPreference,
+		AzdVersion:        opts.AzdVersion,
+	}, true, map[string]struct{}{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to install extension: %w", err)
 	}
@@ -765,7 +871,7 @@ func (m *Manager) evaluateDependencyChanges(
 			continue
 		}
 
-		bestVersion := bestSatisfyingVersion(dep.Version, childMetadata.Versions)
+		bestVersion := bestSatisfyingVersionForAzd(dep.Version, childMetadata.Versions, opts.AzdVersion)
 		if bestVersion == nil {
 			// If no published version matches, keep a compatible installed version.
 			if matchesVersionConstraint(dep.Version, installed.Version) {
@@ -777,7 +883,7 @@ func (m *Manager) evaluateDependencyChanges(
 				FromVersion: installed.Version,
 				FromSource:  installed.Source,
 				Error: fmt.Errorf(
-					"no published version of %s satisfies constraint %q",
+					"no compatible published version of %s satisfies constraint %q",
 					dep.Id, dep.Version,
 				),
 			})
@@ -797,7 +903,7 @@ func (m *Manager) evaluateDependencyChanges(
 				FromVersion: installed.Version,
 				FromSource:  installed.Source,
 				SkipReason: fmt.Sprintf(
-					"automatic dependency upgrade disabled (newer matching version %s available)",
+					"automatic dependency upgrade disabled (matching version %s available)",
 					bestVersion.Version,
 				),
 			})
@@ -822,6 +928,7 @@ func (m *Manager) evaluateDependencyChanges(
 		childOpts := UpgradeOptions{
 			VersionPreference:   dep.Version,
 			UpgradeDependencies: opts.UpgradeDependencies,
+			AzdVersion:          opts.AzdVersion,
 		}
 
 		childVersion, nested, upErr := m.upgradeInternal(childCtx, childMetadata, childOpts, visited)

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -447,6 +448,122 @@ func Test_Install_PackDependency_SemverConstraint(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, installed)
 	require.Equal(t, "0.1.31-preview", installed.Version)
+}
+
+func Test_Install_PackDependency_InstalledDependencyMustSatisfyConstraint(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "test.pack",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "test.child", Version: ">=2.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "test.child",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+					{Version: "2.0.0", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	children, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, children[0], "1.0.0")
+	require.NoError(t, err)
+
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, packs[0], "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "installed dependency test.child version 1.0.0 does not satisfy constraint")
+}
+
+func Test_Install_PackDependency_UsesCompatibleDependencyVersion(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "test.pack",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "test.child", Version: ">=1.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "test.child",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+					{Version: "2.0.0", RequiredAzdVersion: ">=99.0.0", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	azdVersion, err := semver.NewVersion("1.0.0")
+	require.NoError(t, err)
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	_, err = manager.InstallWithOptions(*mockContext.Context, packs[0], InstallOptions{
+		AzdVersion: azdVersion,
+	})
+	require.NoError(t, err)
+
+	installed, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	require.Equal(t, "1.0.0", installed.Version)
 }
 
 func Test_DownloadArtifact_Remote(t *testing.T) {
@@ -1689,6 +1806,143 @@ func Test_Upgrade_DependencyUpgrade_ConstraintAlreadySatisfied(t *testing.T) {
 		*mockContext.Context,
 		packs[0],
 		DefaultUpgradeOptions(""),
+	)
+	require.NoError(t, err)
+	require.Empty(t, depUpgrades)
+}
+
+func Test_Upgrade_DependencyUpgrade_ReconcilesWhenParentCurrent(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "test.pack",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "test.child", Version: ">=1.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "test.child",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+					{Version: "2.0.0", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	children, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, children[0], "1.0.0")
+	require.NoError(t, err)
+
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, packs[0], "")
+	require.NoError(t, err)
+
+	_, depUpgrades, err := manager.ReconcileDependencies(
+		*mockContext.Context,
+		packs[0],
+		DefaultUpgradeOptions(""),
+	)
+	require.NoError(t, err)
+	require.Len(t, depUpgrades, 1)
+	require.Equal(t, "test.child", depUpgrades[0].ExtensionId)
+	require.Equal(t, "1.0.0", depUpgrades[0].FromVersion)
+	require.Equal(t, "2.0.0", depUpgrades[0].ToVersion)
+}
+
+func Test_Upgrade_DependencyUpgrade_UsesCompatibleDependencyVersion(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	registry := Registry{
+		Extensions: []*ExtensionMetadata{
+			{
+				Id: "test.pack",
+				Versions: []ExtensionVersion{
+					{
+						Version: "1.0.0",
+						Dependencies: []ExtensionDependency{
+							{Id: "test.child", Version: ">=1.0.0"},
+						},
+					},
+				},
+			},
+			{
+				Id: "test.child",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0", Artifacts: sampleArtifacts},
+					{Version: "2.0.0", RequiredAzdVersion: ">=99.0.0", Artifacts: sampleArtifacts},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	children, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, children[0], "1.0.0")
+	require.NoError(t, err)
+
+	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
+	require.NoError(t, err)
+	_, err = manager.Install(*mockContext.Context, packs[0], "")
+	require.NoError(t, err)
+
+	azdVersion, err := semver.NewVersion("1.0.0")
+	require.NoError(t, err)
+	_, depUpgrades, err := manager.ReconcileDependencies(
+		*mockContext.Context,
+		packs[0],
+		UpgradeOptions{
+			VersionPreference:   "",
+			UpgradeDependencies: true,
+			AzdVersion:          azdVersion,
+		},
 	)
 	require.NoError(t, err)
 	require.Empty(t, depUpgrades)

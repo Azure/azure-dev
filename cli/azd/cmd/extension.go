@@ -790,6 +790,13 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			Suggestion: "Install one extension at a time when using --version.",
 		}
 	}
+	if err := validateExactVersionFlag(a.flags.version); err != nil {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: err,
+			Suggestion: "Use an exact extension version with --version. " +
+				"Dependency constraints belong in extension manifests.",
+		}
+	}
 
 	azdVersion := currentAzdSemver()
 
@@ -907,7 +914,11 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			// Use upgrade logic for existing installations
 			a.console.ShowSpinner(ctx, stepMessage, input.Step)
 			extensionVersion, _, err = a.extensionManager.Upgrade(
-				ctx, compatibleExtension, extensions.DefaultUpgradeOptions(a.flags.version),
+				ctx, compatibleExtension, extensions.UpgradeOptions{
+					VersionPreference:   a.flags.version,
+					UpgradeDependencies: true,
+					AzdVersion:          azdVersion,
+				},
 			)
 			if err != nil {
 				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
@@ -920,7 +931,14 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		} else {
 			// Extension not installed - proceed with fresh install
 			a.console.ShowSpinner(ctx, stepMessage, input.Step)
-			extensionVersion, err = a.extensionManager.Install(ctx, compatibleExtension, a.flags.version)
+			extensionVersion, err = a.extensionManager.InstallWithOptions(
+				ctx,
+				compatibleExtension,
+				extensions.InstallOptions{
+					VersionPreference: a.flags.version,
+					AzdVersion:        azdVersion,
+				},
+			)
 			if err != nil {
 				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, fmt.Errorf("failed to install extension: %w", err)
@@ -1126,6 +1144,13 @@ func (a *extensionUpgradeAction) Run(
 				internal.ErrInvalidFlagCombination),
 			Suggestion: "Upgrade one extension at a time when " +
 				"using --version.",
+		}
+	}
+	if err := validateExactVersionFlag(a.flags.version); err != nil {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: err,
+			Suggestion: "Use an exact extension version with --version. " +
+				"Dependency constraints belong in extension manifests.",
 		}
 	}
 
@@ -1469,6 +1494,23 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	}
 
 	if installedSemver.Equal(targetSemver) && !isPromotion {
+		reconciledVersion, depUpgrades, err := a.extensionManager.ReconcileDependencies(
+			ctx, compatExt, extensions.UpgradeOptions{
+				VersionPreference:   a.flags.version,
+				UpgradeDependencies: !a.flags.noDependencyUpgrades,
+				AzdVersion:          azdVersion,
+			},
+		)
+		if err != nil {
+			return fail(fmt.Errorf(
+				"failed to reconcile extension dependencies: %w", err,
+			))
+		}
+		baseResult.DependencyUpgrades = depUpgrades
+		if reconciledVersion != nil {
+			baseResult.ToSource = newSource
+		}
+
 		baseResult.Status = extensions.UpgradeStatusSkipped
 		baseResult.SkipReason = "already up to date"
 		if !isJsonOutput {
@@ -1478,6 +1520,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			a.console.StopSpinner(
 				ctx, skipMsg, input.StepSkipped,
 			)
+			displayDependencyUpgradeResults(ctx, a.console, baseResult.DependencyUpgrades, "  ")
 		}
 		return baseResult
 	}
@@ -1487,6 +1530,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		ctx, compatExt, extensions.UpgradeOptions{
 			VersionPreference:   a.flags.version,
 			UpgradeDependencies: !a.flags.noDependencyUpgrades,
+			AzdVersion:          azdVersion,
 		},
 	)
 	if err != nil {
@@ -1591,10 +1635,12 @@ func displayDependencyUpgradeResults(
 	for _, child := range results {
 		switch child.Status {
 		case extensions.UpgradeStatusUpgraded:
+			verb := dependencyChangeVerb(child.FromVersion, child.ToVersion)
 			console.Message(ctx, fmt.Sprintf(
-				"%s%s Upgraded %s dependency %s",
+				"%s%s %s %s dependency %s",
 				indent,
 				output.WithSuccessFormat("(\u2713) Done:"),
+				verb,
 				output.WithHighLightFormat(child.ExtensionId),
 				output.WithGrayFormat(
 					"(%s \u2192 %s)",
@@ -1635,6 +1681,18 @@ func displayDependencyUpgradeResults(
 	}
 }
 
+func dependencyChangeVerb(fromVersion, toVersion string) string {
+	from, fromErr := semver.NewVersion(fromVersion)
+	to, toErr := semver.NewVersion(toVersion)
+	if fromErr != nil || toErr != nil {
+		return "Updated"
+	}
+	if to.LessThan(from) {
+		return "Downgraded"
+	}
+	return "Upgraded"
+}
+
 // displayUpgradeSummary prints the batch summary line after all
 // extensions have been processed.
 func displayUpgradeSummary(
@@ -1657,7 +1715,7 @@ func displayUpgradeSummary(
 				noun = "dependencies"
 			}
 			upgradedPart += output.WithGrayFormat(
-				" (%d %s)", depUpgraded, noun,
+				" (%d %s updated)", depUpgraded, noun,
 			)
 		}
 		parts = append(parts, upgradedPart)
@@ -1667,7 +1725,7 @@ func displayUpgradeSummary(
 			noun = "dependencies"
 		}
 		parts = append(parts, output.WithSuccessFormat(
-			"%d %s upgraded", depUpgraded, noun,
+			"%d %s updated", depUpgraded, noun,
 		))
 	}
 	if summary.Skipped > 0 {
@@ -2282,6 +2340,27 @@ func validateVersionCompatibility(
 			break
 		}
 	}
+	return nil
+}
+
+func validateExactVersionFlag(version string) error {
+	if version == "" || strings.EqualFold(version, "latest") {
+		return nil
+	}
+
+	if _, err := semver.NewVersion(version); err == nil {
+		return nil
+	}
+
+	hasWildcardPart := slices.ContainsFunc(strings.Split(version, "."), func(part string) bool {
+		return part == "x" || part == "X" || part == "*"
+	})
+	if strings.ContainsAny(version, "<>=^~*, ") ||
+		strings.Contains(version, "||") ||
+		hasWildcardPart {
+		return fmt.Errorf("--version requires an exact version, not a version constraint: %s", version)
+	}
+
 	return nil
 }
 

@@ -200,7 +200,8 @@
       "description": "List of other extensions that this extension depends on. These will be resolved and installed automatically.",
       "items": {
         "$ref": "#/definitions/ExtensionDependency"
-      }
+      },
+      "minItems": 1
     },
     "providers": {
       "type": "array",

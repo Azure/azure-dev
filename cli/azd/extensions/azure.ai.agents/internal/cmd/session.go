@@ -273,7 +273,7 @@ func (a *SessionCreateAction) Run(ctx context.Context) error {
 		ctx,
 		sc.agentName,
 		request,
-		DefaultAgentAPIVersion,
+		AgentEndpointAPIVersion,
 		a.flags.sessionRequestOptionsWithSessionKey(a.flags.isolationKey),
 	)
 	if err != nil {
@@ -359,7 +359,7 @@ func (a *SessionShowAction) Run(ctx context.Context) error {
 		ctx,
 		sc.agentName,
 		a.sessionID,
-		DefaultAgentAPIVersion,
+		AgentEndpointAPIVersion,
 		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
@@ -462,7 +462,7 @@ func (a *SessionDeleteAction) Run(ctx context.Context) error {
 		ctx,
 		sc.agentName,
 		a.sessionID,
-		DefaultAgentAPIVersion,
+		AgentEndpointAPIVersion,
 		a.flags.sessionRequestOptionsWithSessionKey(a.flags.isolationKey),
 	)
 	if err != nil {
@@ -597,7 +597,7 @@ func (a *SessionListAction) Run(ctx context.Context) error {
 		sc.agentName,
 		limit,
 		token,
-		DefaultAgentAPIVersion,
+		AgentEndpointAPIVersion,
 		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {

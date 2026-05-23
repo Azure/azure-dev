@@ -24,11 +24,11 @@ func TestParseAgentEndpoint(t *testing.T) {
 	}{
 		{
 			name:       "invocations with api-version",
-			raw:        "https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/invocations?api-version=2025-11-15-preview",
+			raw:        "https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/invocations?api-version=v1",
 			wantProj:   "https://acct.services.ai.azure.com/api/projects/proj",
 			wantAgent:  "hello",
 			wantProto:  agent_api.AgentProtocolInvocations,
-			wantAPIVer: "2025-11-15-preview",
+			wantAPIVer: "v1",
 		},
 		{
 			name:      "invocations without api-version",
@@ -39,11 +39,11 @@ func TestParseAgentEndpoint(t *testing.T) {
 		},
 		{
 			name:       "responses (openai/responses)",
-			raw:        "https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/responses?api-version=2025-11-15-preview",
+			raw:        "https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/responses?api-version=v1",
 			wantProj:   "https://acct.services.ai.azure.com/api/projects/proj",
 			wantAgent:  "echo",
 			wantProto:  agent_api.AgentProtocolResponses,
-			wantAPIVer: "2025-11-15-preview",
+			wantAPIVer: "v1",
 		},
 		{
 			name:      "trailing slash tolerated",
@@ -177,7 +177,7 @@ func TestParseAgentEndpoint_RejectsInvalidAgentNames(t *testing.T) {
 	for _, name := range cases {
 		t.Run(name, func(t *testing.T) {
 			endpoint := "https://acct.services.ai.azure.com/api/projects/proj/agents/" +
-				name + "/endpoint/protocols/invocations?api-version=2025-11-15-preview"
+				name + "/endpoint/protocols/invocations?api-version=v1"
 			_, err := parseAgentEndpoint(endpoint)
 			if err == nil {
 				t.Fatalf("parseAgentEndpoint(%q) = nil, want error", name)
@@ -191,13 +191,13 @@ func TestParseAgentEndpoint_RejectsInvalidAgentNames(t *testing.T) {
 func TestBuildResponsesURL(t *testing.T) {
 	t.Parallel()
 	parsed, err := parseAgentEndpoint(
-		"https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/responses?api-version=2025-11-15-preview",
+		"https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/responses?api-version=custom-version",
 	)
 	if err != nil {
 		t.Fatalf("parseAgentEndpoint: %v", err)
 	}
 	got := buildResponsesURL(parsed.ProjectEndpoint, parsed.AgentName, parsed.APIVersion)
-	want := "https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/responses?api-version=2025-11-15-preview"
+	want := "https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/responses?api-version=custom-version"
 	if got != want {
 		t.Errorf("buildResponsesURL = %q, want %q", got, want)
 	}
@@ -214,7 +214,7 @@ func TestBuildResponsesURL(t *testing.T) {
 func TestBuildInvocationsURL(t *testing.T) {
 	t.Parallel()
 	parsed, err := parseAgentEndpoint(
-		"https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/invocations?api-version=2025-11-15-preview",
+		"https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/invocations?api-version=custom-version",
 	)
 	if err != nil {
 		t.Fatalf("parseAgentEndpoint: %v", err)
@@ -222,7 +222,7 @@ func TestBuildInvocationsURL(t *testing.T) {
 
 	t.Run("no session id", func(t *testing.T) {
 		got := buildInvocationsURL(parsed.ProjectEndpoint, parsed.AgentName, parsed.APIVersion, "")
-		want := "https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/invocations?api-version=2025-11-15-preview"
+		want := "https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/invocations?api-version=custom-version"
 		if got != want {
 			t.Errorf("buildInvocationsURL = %q, want %q", got, want)
 		}
@@ -266,7 +266,7 @@ func TestResolveRemoteContext_EphemeralMode(t *testing.T) {
 			name: "api-version omitted falls back to default",
 			raw: "https://acct.services.ai.azure.com/api/projects/proj/agents/" +
 				"hello/endpoint/protocols/openai/responses",
-			wantAPIVersion: DefaultAgentAPIVersion,
+			wantAPIVersion: "v1",
 			wantName:       "hello",
 			wantProject:    "https://acct.services.ai.azure.com/api/projects/proj",
 		},

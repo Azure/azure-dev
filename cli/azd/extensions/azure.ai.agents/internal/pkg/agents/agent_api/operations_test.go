@@ -174,7 +174,7 @@ func TestDeleteSession_Accepts200(t *testing.T) {
 	)
 
 	err := client.DeleteSession(
-		t.Context(), "my-agent", "sess-1", "2025-11-15-preview", nil,
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
 	)
 	require.NoError(t, err, "200 OK should be treated as success")
 }
@@ -186,7 +186,7 @@ func TestDeleteSession_Accepts204(t *testing.T) {
 	)
 
 	err := client.DeleteSession(
-		t.Context(), "my-agent", "sess-1", "2025-11-15-preview", nil,
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
 	)
 	require.NoError(t, err, "204 No Content should be treated as success")
 }
@@ -198,7 +198,7 @@ func TestDeleteSession_Rejects500(t *testing.T) {
 	)
 
 	err := client.DeleteSession(
-		t.Context(), "my-agent", "sess-1", "2025-11-15-preview", nil,
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
 	)
 	require.Error(t, err, "500 should be an error")
 }
@@ -210,7 +210,7 @@ func TestGetSession_404ReturnsError(t *testing.T) {
 	)
 
 	_, err := client.GetSession(
-		t.Context(), "my-agent", "sess-1", "2025-11-15-preview", nil,
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
 	)
 	require.Error(t, err, "404 should be an error from GetSession")
 }
@@ -256,7 +256,7 @@ func TestCreateSession_Returns201WithBody(t *testing.T) {
 				AgentVersion: "3",
 			},
 		},
-		"2025-11-15-preview",
+		AgentEndpointAPIVersion,
 		nil,
 	)
 
@@ -290,7 +290,7 @@ func TestListSessions_Returns200WithPagination(t *testing.T) {
 	)
 
 	result, err := client.ListSessions(
-		t.Context(), "my-agent", nil, nil, "2025-11-15-preview", nil,
+		t.Context(), "my-agent", nil, nil, AgentEndpointAPIVersion, nil,
 	)
 
 	require.NoError(t, err)
@@ -326,7 +326,7 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 					t.Context(),
 					"my-agent",
 					&CreateAgentSessionRequest{},
-					"2025-11-15-preview",
+					AgentEndpointAPIVersion,
 					options,
 				)
 				return err
@@ -342,7 +342,7 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 					t.Context(),
 					"my-agent",
 					"sess-1",
-					"2025-11-15-preview",
+					AgentEndpointAPIVersion,
 					options,
 				)
 				return err
@@ -356,7 +356,7 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 					t.Context(),
 					"my-agent",
 					"sess-1",
-					"2025-11-15-preview",
+					AgentEndpointAPIVersion,
 					options,
 				)
 			},
@@ -372,7 +372,7 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 					"my-agent",
 					nil,
 					nil,
-					"2025-11-15-preview",
+					AgentEndpointAPIVersion,
 					options,
 				)
 				return err

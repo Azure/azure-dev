@@ -21,6 +21,9 @@ import (
 // DefaultAgentAPIVersion is the default API version for agent operations.
 const DefaultAgentAPIVersion = "2025-11-15-preview"
 
+// AgentEndpointAPIVersion is the API version for hosted agent endpoint protocol and session requests.
+const AgentEndpointAPIVersion = agent_api.AgentEndpointAPIVersion
+
 // ConversationsAPIVersion is the API version used by the Foundry Conversations protocol.
 const ConversationsAPIVersion = "v1"
 

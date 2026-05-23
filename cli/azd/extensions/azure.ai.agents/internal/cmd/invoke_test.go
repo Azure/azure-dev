@@ -743,7 +743,7 @@ func TestAgentEndpointFlagValidation(t *testing.T) {
 	t.Parallel()
 
 	const validURL = "https://acct.services.ai.azure.com/api/projects/proj/agents/" +
-		"hello/endpoint/protocols/invocations?api-version=2025-11-15-preview"
+		"hello/endpoint/protocols/invocations?api-version=v1"
 
 	tests := []struct {
 		name    string
@@ -822,6 +822,7 @@ func TestResolveRemoteSessionID_ReusesCachedVersionSession(t *testing.T) {
 		string,
 		string,
 		string,
+		string,
 	) (*agent_api.AgentSessionResource, error) {
 		t.Fatal("createInvokeVersionSession should not be called when a cached session exists")
 		return nil, nil
@@ -858,6 +859,7 @@ func TestResolveRemoteSessionID_NewSessionSkipsCachedVersionSession(t *testing.T
 	var calls int
 	createInvokeVersionSession = func(
 		context.Context,
+		string,
 		string,
 		string,
 		string,
@@ -903,6 +905,7 @@ func TestResolveRemoteSessionID_CreatesSessionForExplicitVersion(t *testing.T) {
 		projectEndpoint string,
 		agentName string,
 		agentVersion string,
+		apiVersion string,
 	) (*agent_api.AgentSessionResource, error) {
 		calls++
 		if projectEndpoint != "https://acct.services.ai.azure.com/api/projects/proj" {
@@ -914,6 +917,9 @@ func TestResolveRemoteSessionID_CreatesSessionForExplicitVersion(t *testing.T) {
 		if agentVersion != "3" {
 			t.Errorf("agentVersion = %q", agentVersion)
 		}
+		if apiVersion != "custom-version" {
+			t.Errorf("apiVersion = %q", apiVersion)
+		}
 		return &agent_api.AgentSessionResource{AgentSessionID: "session-v3"}, nil
 	}
 
@@ -922,6 +928,7 @@ func TestResolveRemoteSessionID_CreatesSessionForExplicitVersion(t *testing.T) {
 		name:            "hello",
 		projectEndpoint: "https://acct.services.ai.azure.com/api/projects/proj",
 		version:         "3",
+		apiVersion:      "custom-version",
 		agentKey:        buildAgentKey("https://acct.services.ai.azure.com/api/projects/proj", "hello", "3", false),
 	}
 
@@ -1255,7 +1262,9 @@ func TestHandleInvocationResponse_Routing(t *testing.T) {
 				resp.Header.Set(k, v)
 			}
 
-			err := handleInvocationResponse(t.Context(), resp, "", "", "test-agent", 10*time.Second, nil)
+			err := handleInvocationResponse(
+				t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil,
+			)
 
 			if tt.wantErr {
 				if err == nil {
@@ -1508,7 +1517,9 @@ func TestHandleInvocationLRO(t *testing.T) {
 				resp.Header.Set("x-agent-invocation-id", tt.initial202Header)
 			}
 
-			err := handleInvocationLRO(t.Context(), resp, "", "", "test-agent", tt.timeout, nil)
+			err := handleInvocationLRO(
+				t.Context(), resp, "", "", "test-agent", tt.timeout, "", nil,
+			)
 
 			if tt.wantErr {
 				if err == nil {
@@ -1623,6 +1634,7 @@ func captureInvocationLROPollRequests(
 		"token",
 		"test-agent",
 		time.Second,
+		"",
 		options,
 	)
 	if err != nil {

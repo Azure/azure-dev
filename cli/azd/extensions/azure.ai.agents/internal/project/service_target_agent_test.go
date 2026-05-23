@@ -366,7 +366,8 @@ func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
 	t.Helper()
 
 	if err := os.Symlink(oldname, newname); err != nil {
-		if errors.Is(err, os.ErrPermission) {
+		if errors.Is(err, os.ErrPermission) || os.IsPermission(err) ||
+			strings.Contains(strings.ToLower(err.Error()), "privilege") {
 			t.Skipf("symlink creation not permitted: %v", err)
 		}
 		t.Fatalf("create symlink: %v", err)
@@ -456,13 +457,17 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 
 	// Per-protocol endpoints
 	require.Contains(t, envStub.values, "AGENT_MY_SVC_RESPONSES_ENDPOINT")
-	require.Contains(t,
+	require.Equal(
+		t,
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/openai/responses?api-version=v1",
 		envStub.values["AGENT_MY_SVC_RESPONSES_ENDPOINT"],
-		"/agents/my-agent/endpoint/protocols/openai/responses")
+	)
 	require.Contains(t, envStub.values, "AGENT_MY_SVC_INVOCATIONS_ENDPOINT")
-	require.Contains(t,
+	require.Equal(
+		t,
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/invocations?api-version=v1",
 		envStub.values["AGENT_MY_SVC_INVOCATIONS_ENDPOINT"],
-		"/agents/my-agent/endpoint/protocols/invocations")
+	)
 
 	// Base agent endpoint for session management
 	require.Contains(t, envStub.values, "AGENT_MY_SVC_ENDPOINT")
@@ -589,7 +594,7 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			expected: []protocolEndpointInfo{
 				{
 					Protocol: "responses",
-					URL:      baseURL + "openai/responses?api-version=" + agentAPIVersion,
+					URL:      baseURL + "openai/responses?api-version=v1",
 				},
 			},
 		},
@@ -601,7 +606,7 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			expected: []protocolEndpointInfo{
 				{
 					Protocol: "invocations",
-					URL:      baseURL + "invocations?api-version=" + agentAPIVersion,
+					URL:      baseURL + "invocations?api-version=v1",
 				},
 			},
 		},
@@ -615,11 +620,11 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			expected: []protocolEndpointInfo{
 				{
 					Protocol: "responses",
-					URL:      baseURL + "openai/responses?api-version=" + agentAPIVersion,
+					URL:      baseURL + "openai/responses?api-version=v1",
 				},
 				{
 					Protocol: "invocations",
-					URL:      baseURL + "invocations?api-version=" + agentAPIVersion,
+					URL:      baseURL + "invocations?api-version=v1",
 				},
 			},
 		},
@@ -668,7 +673,7 @@ func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
 
 	wantResponses := ep +
 		"/agents/test-agent/endpoint/protocols/openai/responses" +
-		"?api-version=" + agentAPIVersion
+		"?api-version=v1"
 	require.Equal(t, wantResponses, artifacts[0].Location)
 	require.Equal(t, "Agent endpoint (responses)", artifacts[0].Metadata["label"])
 	require.Empty(t, artifacts[0].Metadata["note"],
@@ -676,7 +681,7 @@ func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
 
 	wantInvocations := ep +
 		"/agents/test-agent/endpoint/protocols/invocations" +
-		"?api-version=" + agentAPIVersion
+		"?api-version=v1"
 	require.Equal(t, wantInvocations, artifacts[1].Location)
 	require.Equal(t, "Agent endpoint (invocations)", artifacts[1].Metadata["label"])
 	require.Contains(t, artifacts[1].Metadata["note"], "invoking the agent")
@@ -702,7 +707,7 @@ func TestDeployArtifacts_ResponsesProtocol(t *testing.T) {
 	require.Len(t, artifacts, 1)
 	wantURL := ep +
 		"/agents/prompt-agent/endpoint/protocols/openai/responses" +
-		"?api-version=" + agentAPIVersion
+		"?api-version=v1"
 	require.Equal(t, wantURL, artifacts[0].Location)
 	require.Equal(t, "Agent endpoint (responses)", artifacts[0].Metadata["label"])
 	require.Contains(t, artifacts[0].Metadata["note"], "invoking the agent")

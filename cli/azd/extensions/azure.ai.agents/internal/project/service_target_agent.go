@@ -47,7 +47,7 @@ import (
 
 // Reference implementation
 
-// agentAPIVersion is the API version used for agent endpoint invocation URLs.
+// agentAPIVersion is the API version used for agent management operations.
 const agentAPIVersion = "2025-11-15-preview"
 
 // displayableProtocolEntry defines a protocol that produces user-visible invocation endpoints.
@@ -1771,7 +1771,7 @@ func agentInvocationEndpoints(
 			Protocol: p.Protocol,
 			URL: fmt.Sprintf(
 				"%s/agents/%s/endpoint/protocols/%s?api-version=%s",
-				projectEndpoint, agentName, path, agentAPIVersion),
+				projectEndpoint, agentName, path, agent_api.AgentEndpointAPIVersion),
 		})
 	}
 	return endpoints

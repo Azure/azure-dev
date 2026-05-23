@@ -9,6 +9,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -299,6 +300,15 @@ func promptOptimizeConfigConfirmation(ctx context.Context, cfg *OptimizeConfig, 
 	return nil
 }
 
+// hasModelConfig reports whether OptimizationConfig contains a "model" entry.
+func hasModelConfig(oc opt_eval.OptimizationConfig) bool {
+	if oc == nil {
+		return false
+	}
+	_, ok := oc["model"]
+	return ok
+}
+
 // resolveOptimizeTargetModels prompts the user to select model candidates
 // for optimization (target_config.model). Fetches actual deployments from the
 // Foundry project and allows multi-select.
@@ -348,36 +358,35 @@ func resolveOptimizeTargetModels(
 	}
 
 	if len(models) > 0 {
-		if cfg.Options.TargetConfig == nil {
-			cfg.Options.TargetConfig = &opt_eval.TargetConfig{}
+		modelJSON, _ := json.Marshal(map[string]any{"model": models})
+		if cfg.Options.OptimizationConfig == nil {
+			cfg.Options.OptimizationConfig = make(opt_eval.OptimizationConfig)
 		}
-		cfg.Options.TargetConfig.Model = models
+		cfg.Options.OptimizationConfig["model"] = modelJSON
 	}
 
 	return nil
 }
 
-// allowedReflectionModels is the set of model families permitted as reflection
-// models by the server. Deployments whose ModelName does not match one of these
-// prefixes are excluded from the selection list.
-var allowedReflectionModels = []string{"gpt-5", "gpt-5.1", "gpt-5.3"}
+// recommendedOptimizationModels is the set of model families recommended as
+// optimization models by the server.
+var recommendedOptimizationModels = []string{"gpt-5", "gpt-5.1", "gpt-5.3"}
 
-// isAllowedReflectionModel checks whether a model name matches an allowed
-// reflection model (exact match or prefix followed by a separator).
-func isAllowedReflectionModel(modelName string) bool {
-	for _, allowed := range allowedReflectionModels {
-		if strings.EqualFold(modelName, allowed) {
+// isRecommendedOptimizationModel checks whether a model name matches a
+// recommended optimization model (exact match, case-insensitive).
+func isRecommendedOptimizationModel(modelName string) bool {
+	for _, rec := range recommendedOptimizationModels {
+		if strings.EqualFold(modelName, rec) {
 			return true
 		}
 	}
 	return false
 }
 
-// resolveOptimizeReflectionModel prompts the user to select a reflection model
-// for optimization. All deployments are shown; if the user picks one whose
-// model is not in the recommended set, a warning is printed. This avoids
-// requiring client-side updates when the server's allowed set changes.
-func resolveOptimizeReflectionModel(ctx context.Context, cfg *OptimizeConfig) error {
+// resolveOptimizeOptimizationModel prompts the user to select an optimization
+// model. All deployments are shown; if the user picks one whose model is not
+// in the recommended set, a warning is printed.
+func resolveOptimizeOptimizationModel(ctx context.Context, cfg *OptimizeConfig) error {
 	azdClient, clientErr := azdext.NewAzdClient()
 	if clientErr != nil {
 		return nil
@@ -389,7 +398,7 @@ func resolveOptimizeReflectionModel(ctx context.Context, cfg *OptimizeConfig) er
 		return nil
 	}
 
-	allowedList := strings.Join(allowedReflectionModels, ", ")
+	allowedList := strings.Join(recommendedOptimizationModels, ", ")
 
 	var choices []*azdext.SelectChoice
 	seen := make(map[string]bool)
@@ -416,7 +425,7 @@ func resolveOptimizeReflectionModel(ctx context.Context, cfg *OptimizeConfig) er
 		seen[d.Name] = true
 	}
 
-	message := fmt.Sprintf("Select a reflection model (recommended: %s)", allowedList)
+	message := fmt.Sprintf("Select an optimization model (recommended: %s)", allowedList)
 
 	selectResp, selectErr := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
@@ -433,15 +442,15 @@ func resolveOptimizeReflectionModel(ctx context.Context, cfg *OptimizeConfig) er
 		selected := choices[idx].Value
 		// Warn if the selected deployment's model is not in the recommended set.
 		for _, d := range deployments {
-			if d.Name == selected && !isAllowedReflectionModel(d.ModelName) {
+			if d.Name == selected && !isRecommendedOptimizationModel(d.ModelName) {
 				fmt.Printf("Warning: deployment %q uses model %q which is not in the recommended "+
-					"reflection model set (%s). The server may reject it.\n", selected, d.ModelName, allowedList)
+					"optimization model set (%s). The server may reject it.\n", selected, d.ModelName, allowedList)
 				break
 			}
 		}
-		cfg.Options.ReflectionModel = selected
+		cfg.Options.OptimizationModel = selected
 	}
-	// Empty Value means Skip — leave ReflectionModel empty (server uses eval model).
+	// Empty Value means Skip — leave OptimizationModel empty (server uses eval model).
 
 	return nil
 }

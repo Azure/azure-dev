@@ -320,16 +320,16 @@ func (a *OptimizeAction) applyOverrides(
 		}
 	}
 
-	// Resolve target_config.model: prompt user if not set.
-	if (cfg.Options.TargetConfig == nil || len(cfg.Options.TargetConfig.Model) == 0) && !a.noPrompt {
+	// Resolve optimization_config.model: prompt user if not set.
+	if !hasModelConfig(cfg.Options.OptimizationConfig) && !a.noPrompt {
 		if err := resolveOptimizeTargetModels(ctx, cfg); err != nil {
 			return err
 		}
 	}
 
-	// Resolve reflection_model: prompt user if not set.
-	if cfg.Options.ReflectionModel == "" && !a.noPrompt {
-		if err := resolveOptimizeReflectionModel(ctx, cfg); err != nil {
+	// Resolve optimization_model: prompt user if not set.
+	if cfg.Options.OptimizationModel == "" && !a.noPrompt {
+		if err := resolveOptimizeOptimizationModel(ctx, cfg); err != nil {
 			return err
 		}
 	}
@@ -382,7 +382,7 @@ func (a *OptimizeAction) submitJob(
 
 	client := optimize_api.NewOptimizeClient(endpoint, credential)
 
-	optimizeReq, err := cfg.ToRequest(endpoint)
+	optimizeReq, err := cfg.ToRequest()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to build optimization request: %w", err)
 	}
@@ -395,8 +395,8 @@ func (a *OptimizeAction) submitJob(
 	hasProject := agentProject != ""
 	if hasProject {
 		if err := writeBaselineConfig(agentProject, baselineParams{
-			Model:       optimizeReq.Agent.Model,
-			Instruction: optimizeReq.Agent.SystemPrompt,
+			Model:       cfg.Agent.Model,
+			Instruction: cfg.Agent.ResolvedSystemPrompt(),
 			SkillDir:    cfg.SkillDir,
 			ToolsFile:   cfg.ToolsFile,
 		}); err != nil {
@@ -552,15 +552,15 @@ func printOptimizeResults(out io.Writer, status *optimize_api.OptimizeJobStatus,
 // formatOptimizeStatus returns a colorized string for the given job status.
 func formatOptimizeStatus(status string) string {
 	switch status {
-	case optimize_api.StatusCompleted:
+	case optimize_api.StatusCompleted, optimize_api.StatusSucceeded:
 		return color.GreenString(status)
 	case optimize_api.StatusFailed:
 		return color.RedString(status)
 	case optimize_api.StatusCancelled:
 		return color.YellowString(status)
-	case optimize_api.StatusRunning:
+	case optimize_api.StatusRunning, optimize_api.StatusInProgress:
 		return color.CyanString(status)
-	case optimize_api.StatusPending:
+	case optimize_api.StatusPending, optimize_api.StatusQueued:
 		return color.BlueString(status)
 	default:
 		return status

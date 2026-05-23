@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -41,14 +42,11 @@ dataset_file: ` + datasetPath + `
 evaluators:
   - coherence
   - relevance
-criteria:
-  - name: accuracy
-    instruction: answer must be correct
 options:
   eval_model: gpt-4o-mini
   budget: 100
   max_iterations: 5
-  strategies:
+  target_attributes:
     - prompt_mutation
 `
 	cfgPath := writeTestFile(t, dir, "optimize.yaml", yamlContent)
@@ -57,20 +55,17 @@ options:
 	require.NoError(t, err)
 	require.NoError(t, cfg.Validate())
 
-	req, err := cfg.ToRequest("https://example.ai.azure.com/project/p")
+	req, err := cfg.ToRequest()
 	require.NoError(t, err)
 
 	assert.Equal(t, "my-agent", req.Agent.AgentName)
 	assert.Equal(t, "1", req.Agent.AgentVersion)
-	assert.Equal(t, "https://example.ai.azure.com/project/p", req.Agent.FoundryProjectURL)
 	assert.Len(t, req.Dataset, 2)
 	assert.Equal(t, "What is 2+2?", req.Dataset[0].Prompt)
 	assert.Equal(t, "4", req.Dataset[0].GroundTruth)
 	assert.Nil(t, req.TrainDatasetReference)
 	assert.Equal(t, "gpt-4o-mini", req.Options.EvalModel)
 	assert.Equal(t, []string{"coherence", "relevance"}, req.Evaluators)
-	assert.Len(t, req.Criteria, 1)
-	assert.Equal(t, "accuracy", req.Criteria[0].Name)
 }
 
 func TestLoadOptimizeConfig_WithDatasetReference(t *testing.T) {
@@ -96,7 +91,7 @@ options:
 	require.NoError(t, err)
 	require.NoError(t, cfg.Validate())
 
-	req, err := cfg.ToRequest("https://example.com/proj")
+	req, err := cfg.ToRequest()
 	require.NoError(t, err)
 
 	assert.Equal(t, "ref-agent", req.Agent.AgentName)
@@ -240,7 +235,7 @@ evaluators:
 
 options:
   eval_model: gpt-4o
-  strategies:
+  target_attributes:
     - instruction
   budget: 3
 `
@@ -256,7 +251,7 @@ evaluators:
   - builtin.task_adherence
 options:
   eval_model: gpt-4o
-  strategies:
+  target_attributes:
     - instruction
   budget: 3
 `
@@ -283,7 +278,7 @@ options:
 
 	// Validate + ToRequest
 	require.NoError(t, cfg.Validate())
-	req, err := cfg.ToRequest("https://example.ai.azure.com/project/p")
+	req, err := cfg.ToRequest()
 	require.NoError(t, err)
 	assert.Equal(t, "my-test-agent", req.Agent.AgentName)
 	assert.Len(t, req.Dataset, 1)
@@ -465,9 +460,12 @@ func TestToRequest_WithToolsFile(t *testing.T) {
 		ToolsFile: toolsPath,
 	}
 
-	req, err := cfg.ToRequest("https://example.com")
+	req, err := cfg.ToRequest()
 	require.NoError(t, err)
-	require.Len(t, req.Agent.ToolDefinitions, 1)
-	assert.Equal(t, "calculator", req.Agent.ToolDefinitions[0].Function.Name)
-	assert.Equal(t, "Do math", req.Agent.ToolDefinitions[0].Function.Description)
+	require.Contains(t, req.Options.OptimizationConfig, "tools")
+	// Verify tool definitions are serialized into optimization_config.
+	var tools []optimize_api.ToolDefinition
+	require.NoError(t, json.Unmarshal(req.Options.OptimizationConfig["tools"], &tools))
+	require.Len(t, tools, 1)
+	assert.Equal(t, "calculator", tools[0].Function.Name)
 }

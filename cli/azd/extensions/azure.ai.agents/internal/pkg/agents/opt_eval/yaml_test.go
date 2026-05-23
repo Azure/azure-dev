@@ -194,8 +194,7 @@ target_attributes:
   - tool
 max_iterations: 10
 keep_versions: true
-tasks_per_iteration: 20
-reflection_model: gpt-4o
+optimization_model: gpt-4o
 `
 	var opts Options
 	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
@@ -205,21 +204,22 @@ reflection_model: gpt-4o
 	require.NotNil(t, opts.MaxIterations)
 	assert.Equal(t, 10, *opts.MaxIterations)
 	assert.True(t, opts.KeepVersions)
-	assert.Equal(t, 20, opts.TasksPerIteration)
-	assert.Equal(t, "gpt-4o", opts.ReflectionModel)
+	assert.Equal(t, "gpt-4o", opts.OptimizationModel)
 }
 
-func TestOptions_LegacyStrategiesBackwardCompat(t *testing.T) {
+func TestOptions_LegacyTargetConfigBackwardCompat(t *testing.T) {
 	t.Parallel()
 
 	input := `
 eval_model: gpt-4.1
-strategies:
-  - prompt
-  - tool
+target_config:
+  model:
+    - gpt-4o
+    - gpt-5
 `
 	var opts Options
 	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
 
-	assert.Equal(t, []string{"prompt", "tool"}, opts.TargetAttributes)
+	require.NotNil(t, opts.OptimizationConfig)
+	require.Contains(t, opts.OptimizationConfig, "model")
 }

@@ -28,19 +28,12 @@ type OptimizeConfig struct {
 
 	// Optimize-specific YAML fields.
 	ValidationReference *opt_eval.DatasetRef       `yaml:"validation_reference,omitempty"`
-	Criteria            []OptimizeConfigCriterion  `yaml:"criteria,omitempty"`
 	Options             *opt_eval.Options          `yaml:"options"`
 	InlineDataset       []optimize_api.DatasetTask `yaml:"-"` // populated by defaultOptimizeConfig, not from YAML
 
 	// Runtime-only: resolved skill directory and tools file (not serialized to YAML).
 	SkillDir  string `yaml:"-"`
 	ToolsFile string `yaml:"-"`
-}
-
-// OptimizeConfigCriterion is a named evaluation criterion with a natural-language instruction.
-type OptimizeConfigCriterion struct {
-	Name        string `yaml:"name"`
-	Instruction string `yaml:"instruction"`
 }
 
 // LoadOptimizeConfig reads and parses a YAML optimization config file.
@@ -143,41 +136,26 @@ var defaultDataset = []optimize_api.DatasetTask{
 
 // ToRequest converts the YAML config into an API OptimizeRequest.
 // If DatasetFile is set, each line of the file is read as a JSON-encoded DatasetTask.
-func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.OptimizeRequest, error) {
+func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, error) {
 	req := &optimize_api.OptimizeRequest{
-		Agent: optimize_api.AgentDefinition{
-			FoundryProjectURL: projectEndpoint,
-			AgentName:         c.Agent.Name,
-			AgentVersion:      c.Agent.Version,
-			Model:             c.Agent.Model,
-			SystemPrompt:      c.Agent.ResolvedSystemPrompt(),
+		Agent: optimize_api.AgentIdentifier{
+			AgentName:    c.Agent.Name,
+			AgentVersion: c.Agent.Version,
 		},
 		Evaluators: c.Evaluators.Names(),
 		Options: optimize_api.OptimizeOptions{
 			EvalModel:         c.Options.EvalModel,
 			MaxIterations:     c.Options.MaxIterations,
-			Strategies:        c.Options.TargetAttributes,
 			TargetAttributes:  c.Options.TargetAttributes,
 			KeepVersions:      c.Options.KeepVersions,
-			TasksPerIteration: c.Options.TasksPerIteration,
-			ReflectionModel:   c.Options.ReflectionModel,
+			OptimizationModel: c.Options.OptimizationModel,
 			EvaluationLevel:   c.Options.EvaluationLevel,
 		},
 	}
 
-	// Map target_config from YAML to API format.
-	if c.Options.TargetConfig != nil {
-		req.Options.TargetConfig = &optimize_api.TargetConfig{
-			Model: c.Options.TargetConfig.Model,
-		}
-	}
-
-	// Map criteria from config schema to API schema.
-	for _, crit := range c.Criteria {
-		req.Criteria = append(req.Criteria, optimize_api.Criterion{
-			Name:        crit.Name,
-			Instruction: crit.Instruction,
-		})
+	// Map optimization_config from YAML to API format.
+	if c.Options.OptimizationConfig != nil {
+		req.Options.OptimizationConfig = c.Options.OptimizationConfig
 	}
 
 	if c.DatasetReference != nil {
@@ -204,13 +182,34 @@ func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.Optimi
 		req.Dataset = c.InlineDataset
 	}
 
+	// Populate optimization_config with baselineModel, systemPrompt, skills, tools.
+	ensureOptConfig := func() {
+		if req.Options.OptimizationConfig == nil {
+			req.Options.OptimizationConfig = make(map[string]json.RawMessage)
+		}
+	}
+
+	if model := c.Agent.Model; model != "" {
+		ensureOptConfig()
+		raw, _ := json.Marshal(model)
+		req.Options.OptimizationConfig["baselineModel"] = raw
+	}
+
+	if prompt := c.Agent.ResolvedSystemPrompt(); prompt != "" {
+		ensureOptConfig()
+		raw, _ := json.Marshal(prompt)
+		req.Options.OptimizationConfig["systemPrompt"] = raw
+	}
+
 	// Load skills from skill_dir if specified.
 	if c.SkillDir != "" {
 		skills, err := loadSkillsFromDir(c.SkillDir)
 		if err != nil {
 			return nil, fmt.Errorf("loading skills from %s: %w", c.SkillDir, err)
 		}
-		req.Agent.Skills = skills
+		ensureOptConfig()
+		raw, _ := json.Marshal(skills)
+		req.Options.OptimizationConfig["skills"] = raw
 	}
 
 	// Load tool definitions if a tools file is specified.
@@ -219,7 +218,9 @@ func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.Optimi
 		if err != nil {
 			return nil, fmt.Errorf("loading tool definitions from %s: %w", c.ToolsFile, err)
 		}
-		req.Agent.ToolDefinitions = tools
+		ensureOptConfig()
+		raw, _ := json.Marshal(tools)
+		req.Options.OptimizationConfig["tools"] = raw
 	}
 
 	return req, nil

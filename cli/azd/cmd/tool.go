@@ -545,6 +545,7 @@ func (a *toolInstallAction) dryRun(
 	ids []string,
 ) (*actions.ActionResult, error) {
 	rows := make([]toolDryRunItem, 0, len(ids))
+	resolvedIDs := make([]string, 0, len(ids))
 
 	for _, id := range ids {
 		toolDef, findErr := a.manager.FindTool(id)
@@ -570,7 +571,12 @@ func (a *toolInstallAction) dryRun(
 			CurrentVersion: currentVersion,
 			Action:         action,
 		})
+		resolvedIDs = append(resolvedIDs, id)
 	}
+
+	// Emit tool.ids on the dry-run path too — built from canonical
+	// toolDef.Id values that have already been validated by FindTool.
+	tracing.SetUsageAttributes(fields.ToolIdsKey.String(strings.Join(resolvedIDs, ",")))
 
 	if a.formatter.Kind() == output.JsonFormat {
 		return nil, a.formatter.Format(rows, a.writer, nil)

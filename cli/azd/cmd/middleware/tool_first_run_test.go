@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/tool"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -400,4 +401,92 @@ func TestToolFirstRunMiddleware_NoSkipReasonForSilentPaths(t *testing.T) {
 				"silent skip path must not overwrite tool.firstrun.skip_reason")
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// markCompleted
+// ---------------------------------------------------------------------------
+
+// TestToolFirstRunMiddleware_MarkCompleted_PersistsKey verifies that
+// markCompleted writes the documented `tool.firstRunCompleted` key into
+// user config so the experience is suppressed on subsequent runs.
+func TestToolFirstRunMiddleware_MarkCompleted_PersistsKey(t *testing.T) {
+	cfg := config.NewEmptyConfig()
+	ucm := &mockUserConfigManager{cfg: cfg}
+
+	m := &ToolFirstRunMiddleware{
+		configManager: ucm,
+	}
+
+	m.markCompleted()
+
+	got, ok := cfg.Get(configKeyFirstRunCompleted)
+	require.True(t, ok, "markCompleted must persist the firstRunCompleted key")
+	require.NotEmpty(t, got, "persisted value should be a non-empty timestamp")
+}
+
+// TestToolFirstRunMiddleware_MarkCompleted_LoadError verifies that a
+// failure to load user config is logged and swallowed — markCompleted
+// must never panic or escalate the error, because the first-run flow
+// is best-effort.
+func TestToolFirstRunMiddleware_MarkCompleted_LoadError(t *testing.T) {
+	ucm := &mockUserConfigManager{
+		cfg: config.NewEmptyConfig(),
+		err: assert.AnError,
+	}
+
+	m := &ToolFirstRunMiddleware{
+		configManager: ucm,
+	}
+
+	// Should not panic; should silently swallow the load error.
+	require.NotPanics(t, func() {
+		m.markCompleted()
+	})
+}
+
+// ---------------------------------------------------------------------------
+// displayToolStatuses
+// ---------------------------------------------------------------------------
+
+// TestToolFirstRunMiddleware_DisplayToolStatuses verifies that each
+// tool produces a status line — installed tools show their version,
+// missing tools render the "not installed" marker, and entries with a
+// nil Tool reference are skipped without panicking.
+func TestToolFirstRunMiddleware_DisplayToolStatuses(t *testing.T) {
+	console := mockinput.NewMockConsole()
+	m := &ToolFirstRunMiddleware{console: console}
+
+	statuses := []*tool.ToolStatus{
+		{
+			Tool:             &tool.ToolDefinition{Id: "az-cli", Name: "Azure CLI"},
+			Installed:        true,
+			InstalledVersion: "2.73.0",
+		},
+		{
+			Tool:      &tool.ToolDefinition{Id: "kubectl", Name: "kubectl"},
+			Installed: true, // missing version → renders "installed"
+		},
+		{
+			Tool:      &tool.ToolDefinition{Id: "helm", Name: "Helm"},
+			Installed: false,
+		},
+		{Tool: nil}, // nil Tool must be skipped silently
+	}
+
+	require.NotPanics(t, func() {
+		m.displayToolStatuses(context.Background(), statuses)
+	})
+
+	output := console.Output()
+	joined := ""
+	for _, line := range output {
+		joined += line + "\n"
+	}
+	assert.Contains(t, joined, "Azure CLI")
+	assert.Contains(t, joined, "2.73.0")
+	assert.Contains(t, joined, "kubectl")
+	assert.Contains(t, joined, "installed")
+	assert.Contains(t, joined, "Helm")
+	assert.Contains(t, joined, "not installed")
 }

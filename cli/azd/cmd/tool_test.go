@@ -232,3 +232,29 @@ func TestEmitToolInstallTelemetry_EmptyResults(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, int64(0), got)
 }
+
+// TestToolShowAction_InvalidArgDoesNotEmitToolId locks the privacy
+// contract: when a user passes an unknown / bogus tool ID to
+// `azd tool show`, `tool.id` must not be emitted, because the value
+// would otherwise be a raw user-supplied string.
+func TestToolShowAction_InvalidArgDoesNotEmitToolId(t *testing.T) {
+	const sentinel = "__sentinel_show__"
+	tracing.SetUsageAttributes(fields.ToolIdKey.String(sentinel))
+
+	manager := tool.NewManager(nil, nil, nil)
+	action := newToolShowAction(
+		[]string{"definitely-not-a-real-tool"},
+		manager,
+		mockinput.NewMockConsole(),
+		nil,
+		nil,
+	)
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+
+	got, ok := lookupToolStrUsage(string(fields.ToolIdKey.Key))
+	require.True(t, ok)
+	assert.Equal(t, sentinel, got,
+		"tool.id must not be emitted when FindTool fails on an unknown tool")
+}

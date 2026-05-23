@@ -231,11 +231,38 @@ const completionSpec: Fig.Spec = {
 									description: 'Create a new Foundry project connection.',
 									options: [
 										{
+											name: ['--audience'],
+											description: 'Token audience for user-entra-token/agentic-identity auth',
+											args: [
+												{
+													name: 'audience',
+												},
+											],
+										},
+										{
 											name: ['--auth-type'],
-											description: 'Auth type: api-key, custom-keys, none',
+											description: 'Auth type: api-key, custom-keys, none, oauth2, user-entra-token, project-managed-identity, agentic-identity',
 											args: [
 												{
 													name: 'auth-type',
+												},
+											],
+										},
+										{
+											name: ['--client-id'],
+											description: 'OAuth2 client ID (required for oauth2 auth)',
+											args: [
+												{
+													name: 'client-id',
+												},
+											],
+										},
+										{
+											name: ['--client-secret'],
+											description: 'OAuth2 client secret (required for oauth2 auth)',
+											args: [
+												{
+													name: 'client-secret',
 												},
 											],
 										},
@@ -265,7 +292,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--kind'],
-											description: 'Connection kind (e.g., remote-tool, cognitive-search)',
+											description: 'Connection kind (e.g., remote-tool, remote-a2a, cognitive-search)',
 											args: [
 												{
 													name: 'kind',
@@ -472,6 +499,336 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['doctor'],
+							description: 'Diagnose problems with an azd ai agent project.',
+							options: [
+								{
+									name: ['--local-only'],
+									description: 'Skip remote (network-dependent) checks. Useful when offline, behind a proxy, or for a fast local triage.',
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--unredacted'],
+									description: 'Show raw principal IDs, scope ARNs, and UPNs in the report.',
+								},
+							],
+						},
+						{
+							name: ['endpoint'],
+							description: 'Manage agent endpoint and card configuration.',
+							subcommands: [
+								{
+									name: ['update'],
+									description: 'Update an agent\'s endpoint and card configuration without deploying a new version.',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['eval'],
+							description: 'Create and run quick evals for an agent.',
+							subcommands: [
+								{
+									name: ['init'],
+									description: 'Generate a local eval suite for a deployed agent.',
+									options: [
+										{
+											name: ['--agent'],
+											description: 'Target agent name',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
+										{
+											name: ['--dataset'],
+											description: 'Existing local file or registered dataset name to use for evaluation (instead of generating a new dataset)',
+											args: [
+												{
+													name: 'dataset',
+												},
+											],
+										},
+										{
+											name: ['--eval-model'],
+											description: 'Model used for evaluation and generation',
+											args: [
+												{
+													name: 'eval-model',
+												},
+											],
+										},
+										{
+											name: ['--evaluator'],
+											description: 'Built-in or custom evaluator name',
+											isRepeatable: true,
+											args: [
+												{
+													name: 'evaluator',
+												},
+											],
+										},
+										{
+											name: ['--gen-instruction', '-g'],
+											description: 'Agent instruction used for dataset and evaluator generation',
+											args: [
+												{
+													name: 'gen-instruction',
+												},
+											],
+										},
+										{
+											name: ['--gen-instruction-file'],
+											description: 'Path to a file containing the agent instruction',
+											args: [
+												{
+													name: 'gen-instruction-file',
+												},
+											],
+										},
+										{
+											name: ['--max-samples'],
+											description: 'Number of samples to generate (15-1000)',
+											args: [
+												{
+													name: 'max-samples',
+												},
+											],
+										},
+										{
+											name: ['--name'],
+											description: 'Name for the eval suite',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--no-wait'],
+											description: 'Submit generation jobs and return immediately',
+										},
+										{
+											name: ['--out-file'],
+											description: 'Eval config path',
+											args: [
+												{
+													name: 'out-file',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Microsoft Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--reset-defaults'],
+											description: 'Overwrite an existing eval config',
+										},
+										{
+											name: ['--trace-days'],
+											description: 'Include agent traces from the last N days for evaluator generation (0 = no traces)',
+											args: [
+												{
+													name: 'trace-days',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['list'],
+									description: 'List evaluations for the current project.',
+									options: [
+										{
+											name: ['--limit'],
+											description: 'Maximum number of evals to return',
+											args: [
+												{
+													name: 'limit',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['run'],
+									description: 'Execute an evaluation run from eval.yaml.',
+									options: [
+										{
+											name: ['--config'],
+											description: 'Local eval config YAML',
+											args: [
+												{
+													name: 'config',
+												},
+											],
+										},
+										{
+											name: ['--name'],
+											description: 'Name for the eval run (defaults to eval config name)',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--no-wait'],
+											description: 'Start the run and return immediately without waiting for results',
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['show'],
+									description: 'Show an eval definition, run history, or run details.',
+									options: [
+										{
+											name: ['--eval-run-id'],
+											description: 'Show details for a specific eval run',
+											args: [
+												{
+													name: 'eval-run-id',
+												},
+											],
+										},
+										{
+											name: ['--limit'],
+											description: 'Maximum number of runs to show',
+											args: [
+												{
+													name: 'limit',
+												},
+											],
+										},
+										{
+											name: ['--out-file', '-O'],
+											description: 'Export full run results to a JSON file',
+											args: [
+												{
+													name: 'out-file',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['update'],
+									description: 'Update evaluators and datasets from local files.',
+									options: [
+										{
+											name: ['--config'],
+											description: 'Local eval config YAML',
+											args: [
+												{
+													name: 'config',
+												},
+											],
+										},
+										{
+											name: ['--dataset-only'],
+											description: 'Only update the dataset',
+										},
+										{
+											name: ['--evaluator-only'],
+											description: 'Only update evaluators',
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
 										},
 									],
 								},
@@ -874,6 +1231,33 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--dep-resolution'],
+									description: 'Dependency resolution for code deploy: \'remote_build\' or \'bundled\'. Defaults to \'remote_build\'.',
+									args: [
+										{
+											name: 'dep-resolution',
+										},
+									],
+								},
+								{
+									name: ['--deploy-mode'],
+									description: 'Deployment mode: \'container\' (Docker image) or \'code\' (ZIP upload). Defaults to \'container\' in --no-prompt.',
+									args: [
+										{
+											name: 'deploy-mode',
+										},
+									],
+								},
+								{
+									name: ['--entry-point'],
+									description: 'Entry point file for code deploy (e.g., \'app.py\', \'MyAgent.dll\'). Required with --deploy-mode code --no-prompt.',
+									args: [
+										{
+											name: 'entry-point',
+										},
+									],
+								},
+								{
 									name: ['--force'],
 									description: 'Overwrite an input manifest that already lives inside the generated src tree without prompting. Required together with --no-prompt when init would otherwise need confirmation.',
 									isDangerous: true,
@@ -930,6 +1314,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'protocol',
+										},
+									],
+								},
+								{
+									name: ['--runtime'],
+									description: 'Runtime for code deploy (e.g., \'python_3_13\', \'python_3_14\', \'dotnet_10\'). Required with --deploy-mode code --no-prompt.',
+									args: [
+										{
+											name: 'runtime',
 										},
 									],
 								},
@@ -1134,9 +1527,330 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['optimize'],
+							description: 'Evaluate and optimize AI agents.',
+							subcommands: [
+								{
+									name: ['apply'],
+									description: 'Apply optimized candidate configuration locally to your azd project.',
+									options: [
+										{
+											name: ['--agent'],
+											description: 'Agent service name (auto-detected from azure.yaml)',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
+										{
+											name: ['--candidate'],
+											description: 'Candidate ID from optimization results (required)',
+											args: [
+												{
+													name: 'candidate',
+												},
+											],
+										},
+										{
+											name: ['--endpoint'],
+											description: 'Optimization service endpoint (for local dev)',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['cancel'],
+									description: 'Cancel a running optimization job.',
+									options: [
+										{
+											name: ['--endpoint'],
+											description: 'Optimization service endpoint (for local dev)',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['deploy'],
+									description: 'Deploy a winning optimization candidate as a new agent version via the API.',
+									options: [
+										{
+											name: ['--agent'],
+											description: 'Agent name to deploy to (auto-detected from agent.yaml)',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
+										{
+											name: ['--candidate'],
+											description: 'Candidate ID from optimization results (required)',
+											args: [
+												{
+													name: 'candidate',
+												},
+											],
+										},
+										{
+											name: ['--endpoint'],
+											description: 'Optimization service endpoint (for local dev)',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['list'],
+									description: 'List recent optimization runs.',
+									options: [
+										{
+											name: ['--endpoint'],
+											description: 'Optimization service endpoint (for local dev)',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--limit'],
+											description: 'Maximum number of results',
+											args: [
+												{
+													name: 'limit',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--status'],
+											description: 'Filter by status (pending/running/completed/failed/cancelled)',
+											args: [
+												{
+													name: 'status',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['status'],
+									description: 'Check the status of an optimization job.',
+									options: [
+										{
+											name: ['--endpoint'],
+											description: 'Optimization service endpoint (for local dev)',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--poll-interval'],
+											description: 'Polling interval in seconds',
+											args: [
+												{
+													name: 'poll-interval',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--watch'],
+											description: 'Poll until job completes',
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--agent', '-a'],
+									description: 'Agent name (auto-detected from azd project if omitted)',
+									args: [
+										{
+											name: 'agent',
+										},
+									],
+								},
+								{
+									name: ['--config', '-c'],
+									description: 'Path to YAML config file (optional — uses defaults if omitted)',
+									args: [
+										{
+											name: 'config',
+										},
+									],
+								},
+								{
+									name: ['--endpoint'],
+									description: 'Optimization service endpoint (for local dev)',
+									args: [
+										{
+											name: 'endpoint',
+										},
+									],
+								},
+								{
+									name: ['--eval-model', '-m'],
+									description: 'Model for evaluation',
+									args: [
+										{
+											name: 'eval-model',
+										},
+									],
+								},
+								{
+									name: ['--no-wait'],
+									description: 'Submit job and return immediately without waiting for completion',
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--poll-interval'],
+									description: 'Polling interval in seconds',
+									args: [
+										{
+											name: 'poll-interval',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--target', '-t'],
+									description: 'Target attribute for optimization: instruction, skill (repeatable)',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'target',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['run'],
 							description: 'Run your agent locally for development.',
 							options: [
+								{
+									name: ['--no-inspector'],
+									description: 'Do not open Agent Inspector',
+								},
 								{
 									name: ['--output', '-o'],
 									description: 'The output format',
@@ -4719,6 +5433,46 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['doctor'],
+									description: 'Diagnose problems with an azd ai agent project.',
+								},
+								{
+									name: ['endpoint'],
+									description: 'Manage agent endpoint and card configuration.',
+									subcommands: [
+										{
+											name: ['update'],
+											description: 'Update an agent\'s endpoint and card configuration without deploying a new version.',
+										},
+									],
+								},
+								{
+									name: ['eval'],
+									description: 'Create and run quick evals for an agent.',
+									subcommands: [
+										{
+											name: ['init'],
+											description: 'Generate a local eval suite for a deployed agent.',
+										},
+										{
+											name: ['list'],
+											description: 'List evaluations for the current project.',
+										},
+										{
+											name: ['run'],
+											description: 'Execute an evaluation run from eval.yaml.',
+										},
+										{
+											name: ['show'],
+											description: 'Show an eval definition, run history, or run details.',
+										},
+										{
+											name: ['update'],
+											description: 'Update evaluators and datasets from local files.',
+										},
+									],
+								},
+								{
 									name: ['files'],
 									description: 'Manage files in a hosted agent session.',
 									subcommands: [
@@ -4759,6 +5513,32 @@ const completionSpec: Fig.Spec = {
 								{
 									name: ['monitor'],
 									description: 'Monitor logs from a hosted agent.',
+								},
+								{
+									name: ['optimize'],
+									description: 'Evaluate and optimize AI agents.',
+									subcommands: [
+										{
+											name: ['apply'],
+											description: 'Apply optimized candidate configuration locally to your azd project.',
+										},
+										{
+											name: ['cancel'],
+											description: 'Cancel a running optimization job.',
+										},
+										{
+											name: ['deploy'],
+											description: 'Deploy a winning optimization candidate as a new agent version via the API.',
+										},
+										{
+											name: ['list'],
+											description: 'List recent optimization runs.',
+										},
+										{
+											name: ['status'],
+											description: 'Check the status of an optimization job.',
+										},
+									],
 								},
 								{
 									name: ['run'],

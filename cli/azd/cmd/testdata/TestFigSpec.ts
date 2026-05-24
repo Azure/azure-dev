@@ -3538,6 +3538,619 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 				},
+				{
+					name: ['training'],
+					description: 'Extension for Microsoft Foundry training jobs. (Preview)',
+					subcommands: [
+						{
+							name: ['init'],
+							description: 'Initialize project configuration for training. (Preview)',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--subscription', '-s'],
+									description: 'Azure subscription ID',
+									args: [
+										{
+											name: 'subscription',
+										},
+									],
+								},
+								{
+									name: ['--template', '-t'],
+									description: 'GitHub URL or local directory path to a training job template. If omitted, a minimal job.yaml is scaffolded interactively.',
+									args: [
+										{
+											name: 'template',
+										},
+									],
+								},
+								{
+									name: ['--working-directory', '-w'],
+									description: 'Local directory where the training job template will be written. Defaults to the current directory.',
+									args: [
+										{
+											name: 'working-directory',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['job'],
+							description: 'Manage training jobs',
+							subcommands: [
+								{
+									name: ['cancel'],
+									description: 'Cancel a running training job',
+									options: [
+										{
+											name: ['--name'],
+											description: 'Job name/ID to cancel (required)',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--no-wait'],
+											description: 'Do not wait for the cancel to complete; return immediately after the server accepts the request',
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['connect-ssh'],
+									description: 'Open an SSH session to a node of a running training job',
+									options: [
+										{
+											name: ['--name'],
+											description: 'Job name (required)',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--node-index'],
+											description: 'Zero-based index of the node to connect to in a multi-node job (default 0)',
+											args: [
+												{
+													name: 'node-index',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--private-key-file-path'],
+											description: 'Path to the SSH private key file (optional; ssh will use ~/.ssh defaults if omitted)',
+											args: [
+												{
+													name: 'private-key-file-path',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['delete'],
+									description: 'Delete a training job',
+									options: [
+										{
+											name: ['--name'],
+											description: 'Job name/ID to delete (required)',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--no-wait'],
+											description: 'Do not wait for the deletion to complete; return immediately after the server accepts the request',
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
+										{
+											name: ['--yes'],
+											description: 'Skip confirmation prompt',
+										},
+									],
+								},
+								{
+									name: ['download'],
+									description: 'Download outputs and/or artifacts from a training job',
+									options: [
+										{
+											name: ['--all'],
+											description: 'Download all named outputs and default artifacts',
+										},
+										{
+											name: ['--download-path', '-p'],
+											description: 'Path to download files to (used as-is when provided; defaults to ./<job-name>/ in the current directory)',
+											args: [
+												{
+													name: 'download-path',
+												},
+											],
+										},
+										{
+											name: ['--name', '-n'],
+											description: 'Job name (required)',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--output-name'],
+											description: 'Name of the user-defined output to download. If omitted (or set to "default"), the default artifacts are downloaded',
+											args: [
+												{
+													name: 'output-name',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['list'],
+									description: 'List all training jobs',
+									options: [
+										{
+											name: ['--include-archived'],
+											description: 'Include archived jobs in the results (default: active only)',
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--properties'],
+											description: 'Filter results by properties (comma-separated, e.g., --properties "prop1,prop2=value2")',
+											args: [
+												{
+													name: 'properties',
+												},
+											],
+										},
+										{
+											name: ['--skip-token'],
+											description: 'Continuation token for next page of results',
+											args: [
+												{
+													name: 'skip-token',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
+										{
+											name: ['--tag'],
+											description: 'Filter results by tag key (e.g., --tag team)',
+											args: [
+												{
+													name: 'tag',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['show'],
+									description: 'Show details of a specific training job',
+									options: [
+										{
+											name: ['--name'],
+											description: 'Job name/ID (required)',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['show-services'],
+									description: 'Show services of a training job per node (e.g. SSH, JupyterLab, TensorBoard)',
+									options: [
+										{
+											name: ['--name'],
+											description: 'Job name (required)',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--node-index'],
+											description: 'Zero-based index of the node in a multi-node job (default 0)',
+											args: [
+												{
+													name: 'node-index',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['stream'],
+									description: 'Stream logs from a running training job',
+									options: [
+										{
+											name: ['--name'],
+											description: 'Job name/ID (required)',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['submit'],
+									description: 'Submit a new training job from a YAML definition file',
+									options: [
+										{
+											name: ['--file', '-f'],
+											description: 'Path to YAML job definition file (required)',
+											args: [
+												{
+													name: 'file',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['validate'],
+									description: 'Validate a job YAML definition file offline without submitting',
+									options: [
+										{
+											name: ['--file', '-f'],
+											description: 'Path to YAML job definition file (required)',
+											args: [
+												{
+													name: 'file',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--subscription', '-s'],
+									description: 'Azure subscription ID (enables implicit init if environment not configured)',
+									args: [
+										{
+											name: 'subscription',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Prints the version of the application',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+							],
+						},
+					],
+				},
 			],
 		},
 		{
@@ -5701,6 +6314,66 @@ const completionSpec: Fig.Spec = {
 								{
 									name: ['update'],
 									description: 'Update a custom model',
+								},
+								{
+									name: ['version'],
+									description: 'Prints the version of the application',
+								},
+							],
+						},
+						{
+							name: ['training'],
+							description: 'Extension for Microsoft Foundry training jobs. (Preview)',
+							subcommands: [
+								{
+									name: ['init'],
+									description: 'Initialize project configuration for training. (Preview)',
+								},
+								{
+									name: ['job'],
+									description: 'Manage training jobs',
+									subcommands: [
+										{
+											name: ['cancel'],
+											description: 'Cancel a running training job',
+										},
+										{
+											name: ['connect-ssh'],
+											description: 'Open an SSH session to a node of a running training job',
+										},
+										{
+											name: ['delete'],
+											description: 'Delete a training job',
+										},
+										{
+											name: ['download'],
+											description: 'Download outputs and/or artifacts from a training job',
+										},
+										{
+											name: ['list'],
+											description: 'List all training jobs',
+										},
+										{
+											name: ['show'],
+											description: 'Show details of a specific training job',
+										},
+										{
+											name: ['show-services'],
+											description: 'Show services of a training job per node (e.g. SSH, JupyterLab, TensorBoard)',
+										},
+										{
+											name: ['stream'],
+											description: 'Stream logs from a running training job',
+										},
+										{
+											name: ['submit'],
+											description: 'Submit a new training job from a YAML definition file',
+										},
+										{
+											name: ['validate'],
+											description: 'Validate a job YAML definition file offline without submitting',
+										},
+									],
 								},
 								{
 									name: ['version'],

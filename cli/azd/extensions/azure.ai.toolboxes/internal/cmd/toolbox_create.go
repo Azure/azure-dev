@@ -113,6 +113,7 @@ func runToolboxCreateWith(
 
 	description := ""
 	entries := []map[string]any{}
+	var policies map[string]any
 
 	if strings.TrimSpace(verb.fromFile) != "" {
 		var input toolboxCreateFile
@@ -120,18 +121,20 @@ func runToolboxCreateWith(
 			return err
 		}
 		description = input.Description
+		policies = input.Policies
 		resolvedEntries, err := resolveConnectionSpecs(ctx, resolver, endpoint, input.Connections)
 		if err != nil {
 			return err
 		}
 		entries = append(entries, resolvedEntries...)
+		entries = append(entries, input.Tools...)
 	}
 
 	if len(entries) == 0 {
 		return exterrors.Validation(
 			exterrors.CodeInvalidToolboxName,
-			"toolbox create requires at least one connection",
-			"pass --from-file with a non-empty 'connections' list",
+			"toolbox create requires at least one connection or tool",
+			"pass --from-file with a non-empty 'connections' or 'tools' list",
 		)
 	}
 
@@ -142,6 +145,7 @@ func runToolboxCreateWith(
 	req := &azure.CreateToolboxVersionRequest{
 		Description: description,
 		Tools:       entries,
+		Policies:    policies,
 	}
 	created, err := client.CreateToolboxVersion(ctx, name, req)
 	if err != nil {

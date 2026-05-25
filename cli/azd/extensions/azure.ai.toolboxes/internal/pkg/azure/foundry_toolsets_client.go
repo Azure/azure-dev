@@ -188,6 +188,7 @@ type CreateToolboxVersionRequest struct {
 	Description string            `json:"description,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	Tools       []map[string]any  `json:"tools"`
+	Policies    map[string]any    `json:"policies,omitempty"`
 }
 
 // ToolboxObject is the lightweight response for a toolbox (no tools list).

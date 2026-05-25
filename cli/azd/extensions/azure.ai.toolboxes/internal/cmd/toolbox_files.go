@@ -38,10 +38,15 @@ type toolboxToolsFile struct {
 // toolboxCreateFile is the file shape for `toolbox create --from-file`.
 //
 // description is optional and stored on the initial version.
-// connections[] is required and lists existing project connections to attach.
+// connections[] lists existing project connections to attach (resolved to tool entries).
+// tools[] lists raw tool entries that don't require a connection (e.g., web_search).
+// policies{} specifies optional policies such as rai_config.
+// At least one connection or tool must be provided.
 type toolboxCreateFile struct {
 	Description string                  `json:"description,omitempty" yaml:"description,omitempty"`
 	Connections []toolboxConnectionSpec `json:"connections,omitempty" yaml:"connections,omitempty"`
+	Tools       []map[string]any        `json:"tools,omitempty" yaml:"tools,omitempty"`
+	Policies    map[string]any          `json:"policies,omitempty" yaml:"policies,omitempty"`
 }
 
 // parseToolboxFile reads a JSON or YAML file into out. Unknown fields are

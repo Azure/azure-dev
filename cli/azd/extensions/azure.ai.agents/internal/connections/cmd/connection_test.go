@@ -356,6 +356,30 @@ func TestParseKVPtrMap(t *testing.T) {
 	}
 }
 
+func TestRawConnectionBody_OAuth2_ConnectorNameOnly(t *testing.T) {
+	// When using a managed connector, only connectorName is set — no credentials.
+	props := rawConnectionProperties{
+		AuthType:      "OAuth2",
+		Category:      "RemoteTool",
+		Target:        "https://example.com",
+		ConnectorName: "github",
+	}
+	body := rawConnectionBody{Properties: props}
+	data, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(data, &parsed))
+
+	p := parsed["properties"].(map[string]any)
+	require.Equal(t, "OAuth2", p["authType"])
+	require.Equal(t, "github", p["connectorName"])
+	_, hasCreds := p["credentials"]
+	require.False(t, hasCreds, "credentials should be omitted for connector-name-only")
+	_, hasAuthURL := p["authorizationUrl"]
+	require.False(t, hasAuthURL, "authorizationUrl should be omitted for connector-name-only")
+}
+
 func TestBuildCredentialReferences(t *testing.T) {
 	tests := []struct {
 		name     string

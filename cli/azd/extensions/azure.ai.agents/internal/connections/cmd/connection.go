@@ -10,6 +10,7 @@ import (
 	"log"
 	"maps"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"azureaiagent/internal/connections/exterrors"
@@ -244,28 +245,80 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 			"Specify at least one custom key (e.g., --custom-key x-api-key=value).",
 		)
 	}
-	if a.flags.authType == "oauth2" && (a.flags.clientID == "" || a.flags.clientSecret == "") {
-		return exterrors.Validation(
-			exterrors.CodeMissingConnectionField,
-			"Missing required flags --client-id and --client-secret for oauth2 auth.",
-			"Specify both OAuth2 client credentials.",
-		)
+	// OAuth2-only flags must not be used with other auth types.
+	if a.flags.authType != "oauth2" {
+		if a.flags.clientID != "" || a.flags.clientSecret != "" {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--client-id and --client-secret are only valid with --auth-type oauth2.",
+				"",
+			)
+		}
+		if a.flags.authorizationURL != "" || a.flags.tokenURL != "" ||
+			a.flags.refreshURL != "" || a.flags.scopes != "" || a.flags.connectorName != "" {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--authorization-url, --token-url, --refresh-url, --scopes, and --connector-name "+
+					"are only valid with --auth-type oauth2.",
+				"",
+			)
+		}
 	}
-	if a.flags.authType != "oauth2" && (a.flags.clientID != "" || a.flags.clientSecret != "") {
-		return exterrors.Validation(
-			exterrors.CodeConflictingArguments,
-			"--client-id and --client-secret are only valid with --auth-type oauth2.",
-			"",
-		)
-	}
-	if a.flags.authType != "oauth2" && (a.flags.authorizationURL != "" || a.flags.tokenURL != "" ||
-		a.flags.refreshURL != "" || a.flags.scopes != "" || a.flags.connectorName != "") {
-		return exterrors.Validation(
-			exterrors.CodeConflictingArguments,
-			"--authorization-url, --token-url, --refresh-url, --scopes, and --connector-name "+
-				"are only valid with --auth-type oauth2.",
-			"",
-		)
+	// OAuth2 validation: either --connector-name alone (managed connector) or all of
+	// --authorization-url, --token-url, --refresh-url, --scopes, --client-id, --client-secret.
+	if a.flags.authType == "oauth2" {
+		hasConnector := a.flags.connectorName != ""
+		hasBYO := a.flags.authorizationURL != "" || a.flags.tokenURL != "" ||
+			a.flags.refreshURL != "" || a.flags.scopes != "" ||
+			a.flags.clientID != "" || a.flags.clientSecret != ""
+
+		if hasConnector && hasBYO {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--connector-name cannot be combined with --authorization-url, --token-url, "+
+					"--refresh-url, --scopes, --client-id, or --client-secret. "+
+					"Use --connector-name alone for managed connectors, or provide the other flags for BYO OAuth2.",
+				"",
+			)
+		}
+		if !hasConnector && !hasBYO {
+			return exterrors.Validation(
+				exterrors.CodeMissingConnectionField,
+				"OAuth2 auth requires either --connector-name (managed connector) or all of "+
+					"--authorization-url, --token-url, --refresh-url, --scopes, --client-id, --client-secret.",
+				"",
+			)
+		}
+		if !hasConnector {
+			// BYO mode — all six fields are required.
+			missing := []string{}
+			if a.flags.authorizationURL == "" {
+				missing = append(missing, "--authorization-url")
+			}
+			if a.flags.tokenURL == "" {
+				missing = append(missing, "--token-url")
+			}
+			if a.flags.refreshURL == "" {
+				missing = append(missing, "--refresh-url")
+			}
+			if a.flags.scopes == "" {
+				missing = append(missing, "--scopes")
+			}
+			if a.flags.clientID == "" {
+				missing = append(missing, "--client-id")
+			}
+			if a.flags.clientSecret == "" {
+				missing = append(missing, "--client-secret")
+			}
+			if len(missing) > 0 {
+				return exterrors.Validation(
+					exterrors.CodeMissingConnectionField,
+					"BYO OAuth2 requires all of: --authorization-url, --token-url, --refresh-url, "+
+						"--scopes, --client-id, --client-secret. Missing: "+strings.Join(missing, ", "),
+					"",
+				)
+			}
+		}
 	}
 	if a.flags.audience != "" && a.flags.authType != "user-entra-token" &&
 		a.flags.authType != "agentic-identity" {
@@ -383,9 +436,9 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Replace existing connection (upsert)")
 	cmd.Flags().StringVar(&flags.clientID, "client-id", "",
-		"OAuth2 client ID (required for oauth2 auth)")
+		"OAuth2 client ID (required for BYO OAuth2)")
 	cmd.Flags().StringVar(&flags.clientSecret, "client-secret", "",
-		"OAuth2 client secret (required for oauth2 auth)")
+		"OAuth2 client secret (required for BYO OAuth2)")
 	cmd.Flags().StringVar(&flags.audience, "audience", "",
 		"Token audience for user-entra-token/agentic-identity auth")
 	cmd.Flags().StringVar(&flags.authorizationURL, "authorization-url", "",

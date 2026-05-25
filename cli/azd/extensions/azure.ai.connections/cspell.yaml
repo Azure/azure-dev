@@ -1,2 +1,7 @@
 import: ../../.vscode/cspell.yaml
-words: []
+words:
+    - connectioncmd
+    - exterrors
+    - projectctx
+    - tavily
+    - tvly

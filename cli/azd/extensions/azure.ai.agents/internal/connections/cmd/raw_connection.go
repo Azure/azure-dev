@@ -18,14 +18,26 @@ import (
 )
 
 // rawConnectionProperties represents the JSON body for connection PUT requests
-// that use auth types not covered by the ARM Go SDK (e.g., UserEntraToken,
-// ProjectManagedIdentity, AgenticIdentityToken).
+// that use auth types not covered by the ARM Go SDK (e.g., OAuth2 with full fields,
+// UserEntraToken, ProjectManagedIdentity, AgenticIdentityToken).
 type rawConnectionProperties struct {
-	AuthType string            `json:"authType"`
-	Category string            `json:"category"`
-	Target   string            `json:"target"`
-	Metadata map[string]string `json:"metadata,omitempty"`
-	Audience string            `json:"audience,omitempty"`
+	AuthType         string            `json:"authType"`
+	Category         string            `json:"category"`
+	Target           string            `json:"target"`
+	Metadata         map[string]string `json:"metadata,omitempty"`
+	Audience         string            `json:"audience,omitempty"`
+	AuthorizationURL string            `json:"authorizationUrl,omitempty"`
+	TokenURL         string            `json:"tokenUrl,omitempty"`
+	RefreshURL       string            `json:"refreshUrl,omitempty"`
+	Scopes           string            `json:"scopes,omitempty"`
+	ConnectorName    string            `json:"connectorName,omitempty"`
+	Credentials      *rawCredentials   `json:"credentials,omitempty"`
+}
+
+// rawCredentials represents OAuth2 credentials in the raw REST body.
+type rawCredentials struct {
+	ClientID     string `json:"clientId,omitempty"`
+	ClientSecret string `json:"clientSecret,omitempty"`
 }
 
 type rawConnectionBody struct {

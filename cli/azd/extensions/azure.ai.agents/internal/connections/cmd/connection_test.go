@@ -9,7 +9,6 @@ import (
 
 	"azureaiagent/internal/connections/pkg/connections"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -169,6 +168,7 @@ func TestNormalizeAuthTypeToARM(t *testing.T) {
 		input string
 		want  string
 	}{
+		{"oauth2", "OAuth2"},
 		{"user-entra-token", "UserEntraToken"},
 		{"project-managed-identity", "ProjectManagedIdentity"},
 		{"agentic-identity", "AgenticIdentityToken"},
@@ -183,20 +183,14 @@ func TestNormalizeAuthTypeToARM(t *testing.T) {
 	}
 }
 
-func TestBuildConnectionBody_OAuth2(t *testing.T) {
-	body, err := buildConnectionBody(
+func TestBuildConnectionBody_OAuth2_NowUnsupported(t *testing.T) {
+	// OAuth2 is now handled via raw REST, so buildConnectionBody should reject it
+	_, err := buildConnectionBody(
 		"RemoteTool", "https://example.com", "oauth2",
-		"", nil, nil,
-		"test-client-id", "test-client-secret",
+		"", nil, nil, "", "",
 	)
-	require.NoError(t, err)
-
-	props, ok := body.Properties.(*armcognitiveservices.OAuth2AuthTypeConnectionProperties)
-	require.True(t, ok, "expected OAuth2AuthTypeConnectionProperties")
-	require.Equal(t, armcognitiveservices.ConnectionAuthTypeOAuth2, *props.AuthType)
-	require.Equal(t, "https://example.com", *props.Target)
-	require.Equal(t, "test-client-id", *props.Credentials.ClientID)
-	require.Equal(t, "test-client-secret", *props.Credentials.ClientSecret)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Unsupported auth type")
 }
 
 func TestBuildConnectionBody_UnsupportedAuthType(t *testing.T) {
@@ -206,6 +200,41 @@ func TestBuildConnectionBody_UnsupportedAuthType(t *testing.T) {
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Unsupported auth type")
+}
+
+func TestRawConnectionBody_OAuth2_FullFields(t *testing.T) {
+	props := rawConnectionProperties{
+		AuthType:         "OAuth2",
+		Category:         "RemoteTool",
+		Target:           "https://api.githubcopilot.com/mcp/",
+		AuthorizationURL: "https://github.com/login/oauth/authorize",
+		TokenURL:         "https://github.com/login/oauth/access_token",
+		RefreshURL:       "https://github.com/login/oauth/access_token",
+		Scopes:           "read:user user:email",
+		ConnectorName:    "github",
+		Credentials: &rawCredentials{
+			ClientID:     "test-cid",
+			ClientSecret: "test-csec",
+		},
+	}
+	body := rawConnectionBody{Properties: props}
+	data, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(data, &parsed))
+
+	p := parsed["properties"].(map[string]any)
+	require.Equal(t, "OAuth2", p["authType"])
+	require.Equal(t, "https://github.com/login/oauth/authorize", p["authorizationUrl"])
+	require.Equal(t, "https://github.com/login/oauth/access_token", p["tokenUrl"])
+	require.Equal(t, "https://github.com/login/oauth/access_token", p["refreshUrl"])
+	require.Equal(t, "read:user user:email", p["scopes"])
+	require.Equal(t, "github", p["connectorName"])
+
+	creds := p["credentials"].(map[string]any)
+	require.Equal(t, "test-cid", creds["clientId"])
+	require.Equal(t, "test-csec", creds["clientSecret"])
 }
 
 func TestRawConnectionBody_MarshalJSON(t *testing.T) {

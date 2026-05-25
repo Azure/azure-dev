@@ -103,7 +103,6 @@ type Criterion struct {
 type OptimizeOptions struct {
 	MaxIterations      *int                       `json:"maxIterations,omitempty"`
 	EvalModel          string                     `json:"evalModel,omitempty"`
-	BaselineModel      string                     `json:"baselineModel,omitempty"`
 	OptimizationConfig map[string]json.RawMessage `json:"optimizationConfig,omitempty"`
 	OptimizationModel  string                     `json:"optimizationModel,omitempty"`
 	EvaluationLevel    string                     `json:"evaluationLevel,omitempty"`

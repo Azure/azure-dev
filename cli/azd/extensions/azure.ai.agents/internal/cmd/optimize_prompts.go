@@ -368,7 +368,7 @@ func hasModelConfig(oc opt_eval.OptimizationConfig) bool {
 }
 
 // resolveOptimizeTargetModels prompts the user to select model candidates
-// for optimization (target_config.model). Fetches actual deployments from the
+// for optimization. Fetches actual deployments from the
 // Foundry project and allows multi-select.
 func resolveOptimizeTargetModels(
 	ctx context.Context,

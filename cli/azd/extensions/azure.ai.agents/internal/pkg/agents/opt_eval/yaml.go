@@ -394,18 +394,6 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 
-	// Backward compatibility: migrate "target_config.model" to optimization_config["model"].
-	var legacyTC struct {
-		TargetConfig *struct {
-			Model []string `yaml:"model,omitempty"`
-		} `yaml:"target_config,omitempty"`
-	}
-	_ = value.Decode(&legacyTC)
-	if legacyTC.TargetConfig != nil && len(legacyTC.TargetConfig.Model) > 0 && o.OptimizationConfig == nil {
-		modelJSON, _ := json.Marshal(map[string]any{"model": legacyTC.TargetConfig.Model})
-		o.OptimizationConfig = OptimizationConfig{"model": modelJSON}
-	}
-
 	return nil
 }
 

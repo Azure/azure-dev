@@ -102,7 +102,6 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 		Evaluators: c.Evaluators.Names(),
 		Options: optimize_api.OptimizeOptions{
 			EvalModel:         c.Options.EvalModel,
-			BaselineModel:     c.Agent.Model,
 			MaxIterations:     c.Options.MaxIterations,
 			OptimizationModel: c.Options.OptimizationModel,
 			EvaluationLevel:   c.Options.EvaluationLevel,
@@ -112,6 +111,15 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 	// Map optimization_config from YAML to API format.
 	if c.Options.OptimizationConfig != nil {
 		req.Options.OptimizationConfig = c.Options.OptimizationConfig
+	}
+
+	// Put baselineModel into optimizationConfig.
+	if c.Agent.Model != "" {
+		if req.Options.OptimizationConfig == nil {
+			req.Options.OptimizationConfig = make(map[string]json.RawMessage)
+		}
+		raw, _ := json.Marshal(c.Agent.Model)
+		req.Options.OptimizationConfig["baselineModel"] = raw
 	}
 
 	var warnings []string

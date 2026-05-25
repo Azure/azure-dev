@@ -464,3 +464,68 @@ func TestToRequest_WithToolsFile(t *testing.T) {
 	require.Len(t, tools, 1)
 	assert.Equal(t, "calculator", tools[0].Function.Name)
 }
+
+// ---- ToRequest: BaselineModel in OptimizationConfig ----
+
+func TestToRequest_SetsBaselineModelInOptimizationConfig(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent", Model: "gpt-4o"},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"prompt":"hi"}`),
+		},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini"},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+
+	require.NotNil(t, req.Options.OptimizationConfig)
+	raw, ok := req.Options.OptimizationConfig["baselineModel"]
+	require.True(t, ok, "baselineModel should be in optimizationConfig")
+	assert.Equal(t, `"gpt-4o"`, string(raw))
+}
+
+func TestToRequest_BaselineModelOmittedWhenEmpty(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"prompt":"hi"}`),
+		},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini"},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+
+	if req.Options.OptimizationConfig != nil {
+		_, hasKey := req.Options.OptimizationConfig["baselineModel"]
+		assert.False(t, hasKey, "baselineModel should not be set when model is empty")
+	}
+}
+
+func TestToRequest_BaselineModelInJSON(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent", Model: "gpt-4o"},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"prompt":"hi"}`),
+		},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini"},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+
+	// Verify the JSON output contains baselineModel inside optimizationConfig.
+	data, err := json.Marshal(req)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"baselineModel"`)
+}

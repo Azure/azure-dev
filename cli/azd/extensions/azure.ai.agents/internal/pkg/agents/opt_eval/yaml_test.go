@@ -200,20 +200,3 @@ optimization_model: gpt-4o
 	assert.Equal(t, 10, *opts.MaxIterations)
 	assert.Equal(t, "gpt-4o", opts.OptimizationModel)
 }
-
-func TestOptions_LegacyTargetConfigBackwardCompat(t *testing.T) {
-	t.Parallel()
-
-	input := `
-eval_model: gpt-4.1
-target_config:
-  model:
-    - gpt-4o
-    - gpt-5
-`
-	var opts Options
-	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
-
-	require.NotNil(t, opts.OptimizationConfig)
-	require.Contains(t, opts.OptimizationConfig, "model")
-}

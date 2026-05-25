@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 
+	"azure.ai.connections/internal/version"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -29,6 +31,8 @@ type DataClient struct {
 
 // NewDataClient creates a new data-plane client for connection operations.
 func NewDataClient(endpoint string, cred azcore.TokenCredential) *DataClient {
+	userAgent := fmt.Sprintf("azd-ext-azure-ai-connections/%s", version.Version)
+
 	clientOptions := &policy.ClientOptions{
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(
@@ -37,12 +41,12 @@ func NewDataClient(endpoint string, cred azcore.TokenCredential) *DataClient {
 				nil,
 			),
 			azsdk.NewMsCorrelationPolicy(),
-			azsdk.NewUserAgentPolicy("azd-ext-azure-ai-connection/0.1.0"),
+			azsdk.NewUserAgentPolicy(userAgent),
 		},
 	}
 
 	pipeline := runtime.NewPipeline(
-		"azure-ai-connection-data",
+		"azure-ai-connections-data",
 		"v1.0.0",
 		runtime.PipelineOptions{},
 		clientOptions,

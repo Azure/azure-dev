@@ -20,15 +20,8 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 			AgentName:    "my-agent",
 			AgentVersion: "1",
 		},
-		Dataset: []DatasetTask{
-			{
-				Name:        "task1",
-				Prompt:      "What is 2+2?",
-				GroundTruth: "4",
-				Criteria: []Criterion{
-					{Name: "accuracy", Instruction: "answer must be correct"},
-				},
-			},
+		Dataset: []json.RawMessage{
+			json.RawMessage(`{"name":"task1","prompt":"What is 2+2?","groundTruth":"4","criteria":[{"name":"accuracy","instruction":"answer must be correct"}]}`),
 		},
 		TrainDatasetReference: &DatasetReference{
 			Name:    "train-ds",
@@ -38,8 +31,6 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 		Options: OptimizeOptions{
 			MaxIterations:     new(5),
 			EvalModel:         "gpt-4o-mini",
-			TargetAttributes:  []string{"prompt_mutation"},
-			KeepVersions:      true,
 			OptimizationModel: "gpt-4o",
 		},
 	}
@@ -53,8 +44,8 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 		`"agent"`, `"agentName"`, `"agentVersion"`,
 		`"dataset"`, `"trainDatasetReference"`, `"evaluators"`,
 		`"options"`, `"evalModel"`, `"maxIterations"`,
-		`"keepVersions"`, `"optimizationModel"`,
-		`"targetAttributes"`, `"groundTruth"`,
+		`"optimizationModel"`,
+		`"groundTruth"`,
 	} {
 		assert.True(t, strings.Contains(s, field), "JSON should contain %s", field)
 	}
@@ -64,12 +55,11 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 
 	assert.Equal(t, original.Agent.AgentName, got.Agent.AgentName)
 	assert.Len(t, got.Dataset, 1)
-	assert.Equal(t, "task1", got.Dataset[0].Name)
-	assert.Equal(t, "4", got.Dataset[0].GroundTruth)
+	assert.Contains(t, string(got.Dataset[0]), `"task1"`)
+	assert.Contains(t, string(got.Dataset[0]), `"groundTruth"`)
 	assert.NotNil(t, got.TrainDatasetReference)
 	assert.Equal(t, "train-ds", got.TrainDatasetReference.Name)
 	assert.Equal(t, "gpt-4o-mini", got.Options.EvalModel)
-	assert.True(t, got.Options.KeepVersions)
 }
 
 func TestOptimizeJobStatus_RoundTrip(t *testing.T) {
@@ -102,18 +92,7 @@ func TestOptimizeJobStatus_RoundTrip(t *testing.T) {
 			AvgTokens:   150.0,
 			PassRate:    0.95,
 			CandidateID: "cand-2",
-			Mutations:   map[string]any{"systemPrompt": "Be very helpful"},
 			Rationale:   "Improved prompt clarity",
-			TaskScores: []TaskScore{
-				{
-					TaskName:       "task1",
-					Scores:         map[string]float64{"coherence": 0.9, "relevance": 0.95},
-					CompositeScore: 0.925,
-					Tokens:         200,
-					Duration:       1.5,
-					Passed:         true,
-				},
-			},
 		},
 		Candidates: []CandidateResult{
 			{Name: "candidate-1", AvgScore: 0.7},
@@ -129,8 +108,8 @@ func TestOptimizeJobStatus_RoundTrip(t *testing.T) {
 		`"progress"`, `"currentTargetAttribute"`, `"currentIteration"`,
 		`"tasksCompleted"`, `"tasksTotal"`, `"bestScore"`, `"elapsedSeconds"`,
 		`"baseline"`, `"best"`, `"candidates"`, `"candidateId"`,
-		`"avgScore"`, `"avgTokens"`, `"passRate"`, `"mutations"`,
-		`"rationale"`, `"taskScores"`, `"compositeScore"`, `"durationSeconds"`,
+		`"avgScore"`, `"avgTokens"`, `"passRate"`,
+		`"rationale"`,
 	} {
 		assert.True(t, strings.Contains(s, field), "JSON should contain %s", field)
 	}
@@ -149,8 +128,6 @@ func TestOptimizeJobStatus_RoundTrip(t *testing.T) {
 	assert.InDelta(t, 0.6, got.Baseline.AvgScore, 0.001)
 	assert.NotNil(t, got.Best)
 	assert.Equal(t, "cand-2", got.Best.CandidateID)
-	assert.Len(t, got.Best.TaskScores, 1)
-	assert.True(t, got.Best.TaskScores[0].Passed)
 	assert.Len(t, got.Candidates, 1)
 }
 

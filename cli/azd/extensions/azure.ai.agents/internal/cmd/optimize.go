@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
@@ -79,12 +80,14 @@ func resolveOptimizeAgent(ctx context.Context, flagValue string, noPrompt bool) 
 
 // optimizeFlags holds CLI flags for the optimize (submit) command.
 type optimizeFlags struct {
-	configFile       string   // path to YAML config file
-	agent            string   // agent name override
-	evalModel        string   // model for evaluation
-	targetAttributes []string // optimization targets (instruction, skill)
-	noWait           bool     // return immediately after submission
-	pollInterval     int      // polling interval in seconds
+	configFile        string // path to YAML config file
+	agent             string // agent name override
+	dataset           string // existing dataset file or registered dataset name
+	evalModel         string // model for evaluation
+	optimizationModel string // model for optimization reasoning (gpt-5 family)
+	maxIterations     int    // max optimization iterations per strategy
+	noWait            bool   // return immediately after submission
+	pollInterval      int    // polling interval in seconds
 	optimizeConnectionFlags
 }
 
@@ -105,12 +108,6 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
 
   # Optimize a specific agent
   azd ai agent optimize my-agent
-
-  # Optimize with skill target
-  azd ai agent optimize --target skill
-
-  # Optimize with multiple target attributes
-  azd ai agent optimize --target instruction --target skill
 
   # Full control via config file
   azd ai agent optimize --config spec.yaml
@@ -136,9 +133,11 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
 
 	cmd.Flags().StringVarP(&flags.configFile, "config", "c", "", "Path to YAML config file (optional — uses defaults if omitted)")
 	cmd.Flags().StringVarP(&flags.agent, "agent", "a", "", "Agent name (auto-detected from azd project if omitted)")
-	cmd.Flags().StringVarP(&flags.evalModel, "eval-model", "m", defaultEvalModel, "Model for evaluation")
-	cmd.Flags().StringArrayVarP(&flags.targetAttributes, "target", "t", nil,
-		"Target attribute for optimization: instruction, skill (repeatable)")
+	cmd.Flags().StringVarP(&flags.dataset, "dataset", "d", "", "Existing local file or registered dataset name")
+	cmd.Flags().StringVarP(&flags.evalModel, "eval-model", "m", "", "Model for evaluation (required)")
+	cmd.Flags().StringVar(&flags.optimizationModel, "optimize-model", "",
+		"Model for optimization reasoning (must be gpt-5 family; falls back to eval model when not set)")
+	cmd.Flags().IntVar(&flags.maxIterations, "max-iterations", 5, "Maximum number of optimization iterations (must be >= 1)")
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Submit job and return immediately without waiting for completion")
 	cmd.Flags().IntVar(&flags.pollInterval, "poll-interval", 5, "Polling interval in seconds")
 	flags.optimizeConnectionFlags.register(cmd)
@@ -179,9 +178,7 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 	bold := color.New(color.Bold)
 
 	_, _ = bold.Fprintf(out, "Optimizing agent %q...\n", cfg.Agent.Name)
-	if configSource == "" {
-		fmt.Fprintf(out, "  Dataset: built-in (3 tasks, 12 criteria)\n")
-	} else {
+	if configSource != "" {
 		fmt.Fprintf(out, "  Config: %s\n", configSource)
 	}
 
@@ -269,23 +266,52 @@ func (a *OptimizeAction) applyOverrides(
 	cfg *OptimizeConfig,
 	agentProject string,
 ) error {
-	if err := cfg.Validate(); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
+	// Apply --dataset flag before anything else.
+	if a.flags.dataset != "" {
+		if eval_api.IsDatasetName(a.flags.dataset) {
+			cfg.DatasetReference = &opt_eval.DatasetRef{Name: a.flags.dataset}
+			cfg.DatasetFile = ""
+		} else {
+			resolved, err := resolveLocalDatasetFile(a.flags.dataset, agentProject)
+			if err != nil {
+				return err
+			}
+			cfg.DatasetFile = resolved
+			cfg.DatasetReference = nil
+		}
+	}
+
+	// Ensure Options is initialized.
+	if cfg.Options == nil {
+		cfg.Options = &opt_eval.Options{}
 	}
 
 	hasProject := agentProject != ""
 
-	// CLI flags override config values.
+	// CLI flags override config values (applied before prompts so prompts skip set values).
 	if a.flags.evalModel != "" {
 		cfg.Options.EvalModel = a.flags.evalModel
 	}
-	if len(a.flags.targetAttributes) > 0 {
-		cfg.Options.TargetAttributes = a.flags.targetAttributes
+	if a.flags.optimizationModel != "" {
+		cfg.Options.OptimizationModel = a.flags.optimizationModel
+	}
+	if a.flags.maxIterations > 0 {
+		cfg.Options.MaxIterations = &a.flags.maxIterations
 	}
 
 	// Resolve agent config: try existing config pointer, then default baseline.
 	if hasProject {
 		mergeAgentBaseline(cfg, agentProject)
+	}
+
+	// If the model is still unknown, try the azd environment (set during deploy).
+	if cfg.Agent.Model == "" {
+		if azdClient, clientErr := azdext.NewAzdClient(); clientErr == nil {
+			defer azdClient.Close()
+			if m := getDeployedModelFromEnv(ctx, azdClient); m != "" {
+				cfg.Agent.Model = m
+			}
+		}
 	}
 
 	// When baseline config is detected, show resolved values and let the user confirm.
@@ -320,6 +346,20 @@ func (a *OptimizeAction) applyOverrides(
 		}
 	}
 
+	// Resolve eval_model: prompt user if not set.
+	if cfg.Options.EvalModel == "" {
+		if err := resolveOptimizeEvalModel(ctx, cfg, a.noPrompt); err != nil {
+			return err
+		}
+	}
+
+	// Resolve dataset: prompt user if neither file nor reference is set.
+	if cfg.DatasetFile == "" && cfg.DatasetReference == nil {
+		if err := resolveOptimizeDataset(ctx, cfg, agentProject, a.noPrompt); err != nil {
+			return err
+		}
+	}
+
 	// Resolve optimization_config.model: prompt user if not set.
 	if !hasModelConfig(cfg.Options.OptimizationConfig) && !a.noPrompt {
 		if err := resolveOptimizeTargetModels(ctx, cfg); err != nil {
@@ -332,6 +372,11 @@ func (a *OptimizeAction) applyOverrides(
 		if err := resolveOptimizeOptimizationModel(ctx, cfg); err != nil {
 			return err
 		}
+	}
+
+	// Final validation after all overrides and prompts.
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid config: %w", err)
 	}
 
 	return nil
@@ -382,11 +427,16 @@ func (a *OptimizeAction) submitJob(
 
 	client := optimize_api.NewOptimizeClient(endpoint, credential)
 
-	optimizeReq, err := cfg.ToRequest()
+	optimizeReq, warnings, err := cfg.ToRequest()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to build optimization request: %w", err)
 	}
 
+	for _, w := range warnings {
+		fmt.Fprintf(out, "  warning: %s\n", w)
+	}
+
+	// TODO: remove it
 	if body, jsonErr := json.MarshalIndent(optimizeReq, "", "  "); jsonErr == nil {
 		log.Printf("[debug] optimization request:\n%s", body)
 	}
@@ -489,10 +539,10 @@ func printOptimizeResults(out io.Writer, status *optimize_api.OptimizeJobStatus,
 	green := color.New(color.FgGreen)
 
 	_, _ = bold.Fprintln(out, "\nResults:")
-	fmt.Fprintf(out, "  %-20s %7s %7s %8s\n", "Candidate", "Score", "Pass", "Tokens")
-	fmt.Fprintf(out, "  %-20s %7s %7s %8s\n",
+	fmt.Fprintf(out, "  %-20s %7s %7s %8s  %s\n", "Candidate", "Score", "Pass", "Tokens", "Pareto optimal")
+	fmt.Fprintf(out, "  %-20s %7s %7s %8s  %s\n",
 		strings.Repeat("─", 20), strings.Repeat("─", 7),
-		strings.Repeat("─", 7), strings.Repeat("─", 8))
+		strings.Repeat("─", 7), strings.Repeat("─", 8), strings.Repeat("─", 13))
 
 	bestName := ""
 	if status.Best != nil {
@@ -506,7 +556,12 @@ func printOptimizeResults(out io.Writer, status *optimize_api.OptimizeJobStatus,
 			name += " ★"
 		}
 
-		line := fmt.Sprintf("  %-20s %7.2f %6.0f%% %8.0f", name, c.AvgScore, c.PassRate*100, c.AvgTokens)
+		pareto := "--"
+		if c.IsParetoOptimal {
+			pareto = color.New(color.FgGreen).Sprint("Pareto")
+		}
+
+		line := fmt.Sprintf("  %-20s %7.2f %6.0f%% %8.0f  %-6s", name, c.AvgScore, c.PassRate*100, c.AvgTokens, pareto)
 		if isBest {
 			_, _ = green.Fprintln(out, line)
 		} else {

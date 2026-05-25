@@ -18,6 +18,7 @@ import (
 	"azureaiagent/internal/pkg/agents/opt_eval"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/fatih/color"
 )
 
 // resolveOptimizeSystemPrompt resolves the agent's system prompt:
@@ -300,6 +301,63 @@ func promptOptimizeConfigConfirmation(ctx context.Context, cfg *OptimizeConfig, 
 	return nil
 }
 
+// resolveOptimizeEvalModel prompts the user to select an evaluation model
+// when --eval-model was not provided. In --no-prompt mode, returns an error.
+func resolveOptimizeEvalModel(
+	ctx context.Context,
+	cfg *OptimizeConfig,
+	noPrompt bool,
+) error {
+	if noPrompt {
+		return fmt.Errorf("options.eval_model is required: use --eval-model <model> to specify the evaluation model")
+	}
+
+	azdClient, clientErr := azdext.NewAzdClient()
+	if clientErr != nil {
+		return fmt.Errorf("eval_model is required but cannot prompt: %w", clientErr)
+	}
+	defer azdClient.Close()
+
+	deployedModel := getDeployedModelFromEnv(ctx, azdClient)
+
+	selected, err := promptModelSelection(ctx, azdClient, "Select the model for evaluation", deployedModel)
+	if err != nil {
+		return err
+	}
+
+	cfg.Options.EvalModel = selected
+	return nil
+}
+
+// resolveOptimizeDataset prompts the user to provide a dataset when none was
+// specified via config or --dataset flag. In --no-prompt mode, returns an error.
+func resolveOptimizeDataset(
+	ctx context.Context,
+	cfg *OptimizeConfig,
+	agentProject string,
+	noPrompt bool,
+) error {
+	if noPrompt {
+		return fmt.Errorf(
+			"a dataset is required: use --dataset <file-or-name>, or provide dataset_file / dataset_reference " +
+				"in your config, or run 'azd ai agent eval init' to generate one")
+	}
+
+	azdClient, clientErr := azdext.NewAzdClient()
+	if clientErr != nil {
+		return fmt.Errorf("dataset is required but cannot prompt: %w", clientErr)
+	}
+	defer azdClient.Close()
+
+	file, ref, err := promptDatasetSelection(ctx, azdClient, agentProject)
+	if err != nil {
+		return err
+	}
+	cfg.DatasetFile = file
+	cfg.DatasetReference = ref
+	return nil
+}
+
 // hasModelConfig reports whether OptimizationConfig contains a "model" entry.
 func hasModelConfig(oc opt_eval.OptimizationConfig) bool {
 	if oc == nil {
@@ -358,7 +416,7 @@ func resolveOptimizeTargetModels(
 	}
 
 	if len(models) > 0 {
-		modelJSON, _ := json.Marshal(map[string]any{"model": models})
+		modelJSON, _ := json.Marshal(models)
 		if cfg.Options.OptimizationConfig == nil {
 			cfg.Options.OptimizationConfig = make(opt_eval.OptimizationConfig)
 		}
@@ -370,7 +428,7 @@ func resolveOptimizeTargetModels(
 
 // recommendedOptimizationModels is the set of model families recommended as
 // optimization models by the server.
-var recommendedOptimizationModels = []string{"gpt-5", "gpt-5.1", "gpt-5.3"}
+var recommendedOptimizationModels = []string{"gpt-5", "gpt-5.1", "gpt-5.2"}
 
 // isRecommendedOptimizationModel checks whether a model name matches a
 // recommended optimization model (exact match, case-insensitive).
@@ -384,8 +442,9 @@ func isRecommendedOptimizationModel(modelName string) bool {
 }
 
 // resolveOptimizeOptimizationModel prompts the user to select an optimization
-// model. All deployments are shown; if the user picks one whose model is not
-// in the recommended set, a warning is printed.
+// model. The eval model is offered as default (Skip), followed by a "Select
+// another deployment" option to browse all deployments. If the user picks a
+// model not in the recommended set, a warning is printed.
 func resolveOptimizeOptimizationModel(ctx context.Context, cfg *OptimizeConfig) error {
 	azdClient, clientErr := azdext.NewAzdClient()
 	if clientErr != nil {
@@ -393,65 +452,58 @@ func resolveOptimizeOptimizationModel(ctx context.Context, cfg *OptimizeConfig) 
 	}
 	defer azdClient.Close()
 
-	deployments := listDeploymentsFromEnv(ctx, azdClient)
-	if len(deployments) == 0 {
-		return nil
-	}
-
 	allowedList := strings.Join(recommendedOptimizationModels, ", ")
 
 	var choices []*azdext.SelectChoice
-	seen := make(map[string]bool)
-
-	// Always offer Skip — defaults to using the eval model.
+	// First choice: skip (use the eval model).
 	choices = append(choices, &azdext.SelectChoice{
 		Label: fmt.Sprintf("Skip (use eval model: %s)", cfg.Options.EvalModel),
 		Value: "",
 	})
-
-	// Show all deployments — don't filter by allowed set.
-	for _, d := range deployments {
-		if seen[d.Name] {
-			continue
-		}
-		label := d.Name
-		if d.ModelName != "" && d.ModelName != d.Name {
-			label = fmt.Sprintf("%s (%s)", d.Name, d.ModelName)
-		}
-		choices = append(choices, &azdext.SelectChoice{
-			Label: label,
-			Value: d.Name,
-		})
-		seen[d.Name] = true
-	}
+	// Second choice: browse deployments.
+	choices = append(choices, &azdext.SelectChoice{
+		Label: "Select another deployment",
+		Value: selectOtherDeploymentValue,
+	})
 
 	message := fmt.Sprintf("Select an optimization model (recommended: %s)", allowedList)
-
+	defaultIndex := int32(0)
 	selectResp, selectErr := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: message,
-			Choices: choices,
+			Message:       message,
+			Choices:       choices,
+			SelectedIndex: &defaultIndex,
 		},
 	})
 	if selectErr != nil || selectResp.Value == nil {
 		return nil
 	}
 
-	idx := int(*selectResp.Value)
-	if idx >= 0 && idx < len(choices) && choices[idx].Value != "" {
-		selected := choices[idx].Value
-		// Warn if the selected deployment's model is not in the recommended set.
-		for _, d := range deployments {
-			if d.Name == selected && !isRecommendedOptimizationModel(d.ModelName) {
-				fmt.Printf("Warning: deployment %q uses model %q which is not in the recommended "+
-					"optimization model set (%s). The server may reject it.\n", selected, d.ModelName, allowedList)
-				break
-			}
-		}
-		cfg.Options.OptimizationModel = selected
+	selected := choices[int(*selectResp.Value)].Value
+	if selected == "" {
+		// Skip — leave OptimizationModel empty (server uses eval model).
+		return nil
 	}
-	// Empty Value means Skip — leave OptimizationModel empty (server uses eval model).
 
+	if selected == selectOtherDeploymentValue {
+		picked, err := promptAllDeployments(ctx, azdClient)
+		if err != nil {
+			return nil // no deployments — silently skip
+		}
+		selected = picked
+	}
+
+	// Warn if the selected deployment's model is not in the recommended set.
+	deployments := listDeploymentsFromEnv(ctx, azdClient)
+	for _, d := range deployments {
+		if d.Name == selected && !isRecommendedOptimizationModel(d.ModelName) {
+			fmt.Printf("%s deployment %q uses model %q which is not in the recommended "+
+				"optimization model set (%s). The server may reject it.\n", color.YellowString("Warning:"), selected, d.ModelName, allowedList)
+			break
+		}
+	}
+
+	cfg.Options.OptimizationModel = selected
 	return nil
 }
 

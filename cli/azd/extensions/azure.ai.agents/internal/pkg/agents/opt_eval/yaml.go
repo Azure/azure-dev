@@ -380,10 +380,8 @@ type OptimizationConfig = map[string]json.RawMessage
 // Eval only uses EvalModel; optimize uses all fields.
 type Options struct {
 	EvalModel          string             `yaml:"eval_model,omitempty"`
-	TargetAttributes   []string           `yaml:"target_attributes,omitempty"`
 	OptimizationConfig OptimizationConfig `yaml:"optimization_config,omitempty"`
 	MaxIterations      *int               `yaml:"max_iterations,omitempty"`
-	KeepVersions       bool               `yaml:"keep_versions,omitempty"`
 	OptimizationModel  string             `yaml:"optimization_model,omitempty"`
 	EvaluationLevel    string             `yaml:"evaluation_level,omitempty"`
 }

@@ -42,7 +42,7 @@ func IsTerminal(status string) bool {
 // OptimizeRequest is the top-level payload sent to POST /optimize.
 type OptimizeRequest struct {
 	Agent                      AgentIdentifier   `json:"agent"`
-	Dataset                    []DatasetTask     `json:"dataset,omitempty"`
+	Dataset                    []json.RawMessage `json:"dataset,omitempty"`
 	TrainDatasetReference      *DatasetReference `json:"trainDatasetReference,omitempty"`
 	ValidationDatasetReference *DatasetReference `json:"validationDatasetReference,omitempty"`
 	Evaluators                 []string          `json:"evaluators,omitempty"`
@@ -103,9 +103,8 @@ type Criterion struct {
 type OptimizeOptions struct {
 	MaxIterations      *int                       `json:"maxIterations,omitempty"`
 	EvalModel          string                     `json:"evalModel,omitempty"`
-	TargetAttributes   []string                   `json:"targetAttributes,omitempty"`
+	BaselineModel      string                     `json:"baselineModel,omitempty"`
 	OptimizationConfig map[string]json.RawMessage `json:"optimizationConfig,omitempty"`
-	KeepVersions       bool                       `json:"keepVersions,omitempty"`
 	OptimizationModel  string                     `json:"optimizationModel,omitempty"`
 	EvaluationLevel    string                     `json:"evaluationLevel,omitempty"`
 }
@@ -170,24 +169,13 @@ func (e *JobError) UnmarshalJSON(data []byte) error {
 
 // CandidateResult holds the evaluation result for a single candidate.
 type CandidateResult struct {
-	Name        string         `json:"name"`
-	AvgScore    float64        `json:"avgScore"`
-	AvgTokens   float64        `json:"avgTokens"`
-	PassRate    float64        `json:"passRate"`
-	Mutations   map[string]any `json:"mutations,omitempty"`
-	Rationale   string         `json:"rationale,omitempty"`
-	CandidateID string         `json:"candidateId,omitempty"`
-	TaskScores  []TaskScore    `json:"taskScores,omitempty"`
-}
-
-// TaskScore captures per-task evaluation metrics.
-type TaskScore struct {
-	TaskName       string             `json:"taskName"`
-	Scores         map[string]float64 `json:"scores"`
-	CompositeScore float64            `json:"compositeScore"`
-	Tokens         int                `json:"tokens"`
-	Duration       float64            `json:"durationSeconds"`
-	Passed         bool               `json:"passed"`
+	Name            string  `json:"name"`
+	AvgScore        float64 `json:"avgScore"`
+	AvgTokens       float64 `json:"avgTokens"`
+	PassRate        float64 `json:"passRate"`
+	IsParetoOptimal bool    `json:"isParetoOptimal,omitempty"`
+	Rationale       string  `json:"rationale,omitempty"`
+	CandidateID     string  `json:"candidateId,omitempty"`
 }
 
 // --- List response ---

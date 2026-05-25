@@ -46,8 +46,6 @@ options:
   eval_model: gpt-4o-mini
   budget: 100
   max_iterations: 5
-  target_attributes:
-    - prompt_mutation
 `
 	cfgPath := writeTestFile(t, dir, "optimize.yaml", yamlContent)
 
@@ -55,14 +53,14 @@ options:
 	require.NoError(t, err)
 	require.NoError(t, cfg.Validate())
 
-	req, err := cfg.ToRequest()
+	req, _, err := cfg.ToRequest()
 	require.NoError(t, err)
 
 	assert.Equal(t, "my-agent", req.Agent.AgentName)
 	assert.Equal(t, "1", req.Agent.AgentVersion)
 	assert.Len(t, req.Dataset, 2)
-	assert.Equal(t, "What is 2+2?", req.Dataset[0].Prompt)
-	assert.Equal(t, "4", req.Dataset[0].GroundTruth)
+	assert.Contains(t, string(req.Dataset[0]), `"What is 2+2?"`)
+	assert.Contains(t, string(req.Dataset[0]), `"groundTruth"`)
 	assert.Nil(t, req.TrainDatasetReference)
 	assert.Equal(t, "gpt-4o-mini", req.Options.EvalModel)
 	assert.Equal(t, []string{"coherence", "relevance"}, req.Evaluators)
@@ -91,7 +89,7 @@ options:
 	require.NoError(t, err)
 	require.NoError(t, cfg.Validate())
 
-	req, err := cfg.ToRequest()
+	req, _, err := cfg.ToRequest()
 	require.NoError(t, err)
 
 	assert.Equal(t, "ref-agent", req.Agent.AgentName)
@@ -160,7 +158,7 @@ func TestValidate_NeitherDatasetFileNorReference(t *testing.T) {
 
 	err := cfg.Validate()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "one of dataset_file or dataset_reference is required")
+	assert.Contains(t, err.Error(), "a dataset is required")
 }
 
 func TestLoadOptimizeConfig_FileNotFound(t *testing.T) {
@@ -235,8 +233,6 @@ evaluators:
 
 options:
   eval_model: gpt-4o
-  target_attributes:
-    - instruction
   budget: 3
 `
 	datasetPath := writeTestFile(t, dir, "eval.jsonl",
@@ -251,8 +247,6 @@ evaluators:
   - builtin.task_adherence
 options:
   eval_model: gpt-4o
-  target_attributes:
-    - instruction
   budget: 3
 `
 	cfgPath := writeTestFile(t, dir, "spec.yaml", yamlContent)
@@ -274,11 +268,10 @@ options:
 	// Options
 	require.NotNil(t, cfg.Options)
 	assert.Equal(t, "gpt-4o", cfg.Options.EvalModel)
-	assert.Equal(t, []string{"instruction"}, cfg.Options.TargetAttributes)
 
 	// Validate + ToRequest
 	require.NoError(t, cfg.Validate())
-	req, err := cfg.ToRequest()
+	req, _, err := cfg.ToRequest()
 	require.NoError(t, err)
 	assert.Equal(t, "my-test-agent", req.Agent.AgentName)
 	assert.Len(t, req.Dataset, 1)
@@ -402,7 +395,7 @@ func TestLoadToolDefinitions_Valid(t *testing.T) {
 ]`
 	path := writeTestFile(t, dir, "tools.json", content)
 
-	tools, err := loadToolDefinitions(path)
+	tools, _, err := loadToolDefinitions(path)
 	require.NoError(t, err)
 	require.Len(t, tools, 2)
 
@@ -417,7 +410,7 @@ func TestLoadToolDefinitions_Valid(t *testing.T) {
 
 func TestLoadToolDefinitions_FileNotFound(t *testing.T) {
 	t.Parallel()
-	_, err := loadToolDefinitions(filepath.Join(t.TempDir(), "nonexistent.json"))
+	_, _, err := loadToolDefinitions(filepath.Join(t.TempDir(), "nonexistent.json"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "reading tools file")
 }
@@ -427,7 +420,7 @@ func TestLoadToolDefinitions_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestFile(t, dir, "tools.json", "not json")
 
-	_, err := loadToolDefinitions(path)
+	_, _, err := loadToolDefinitions(path)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parsing tools file")
 }
@@ -437,9 +430,11 @@ func TestLoadToolDefinitions_EmptyArray(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestFile(t, dir, "tools.json", "[]")
 
-	tools, err := loadToolDefinitions(path)
+	tools, warns, err := loadToolDefinitions(path)
 	require.NoError(t, err)
 	assert.Empty(t, tools)
+	assert.Len(t, warns, 1)
+	assert.Contains(t, warns[0], "no tool definitions")
 }
 
 func TestToRequest_WithToolsFile(t *testing.T) {
@@ -460,7 +455,7 @@ func TestToRequest_WithToolsFile(t *testing.T) {
 		ToolsFile: toolsPath,
 	}
 
-	req, err := cfg.ToRequest()
+	req, _, err := cfg.ToRequest()
 	require.NoError(t, err)
 	require.Contains(t, req.Options.OptimizationConfig, "tools")
 	// Verify tool definitions are serialized into optimization_config.

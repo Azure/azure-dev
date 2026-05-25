@@ -14,12 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// These tests cover the helpers that back the issue #7268 reuse path.
-// runReuseDefinition itself is exercised by manual e2e (see
-// cli/azd/docs/design/azure-ai-agent-init-reuse-agent-yaml.md §7) because a
-// full unit test would require mocking the azd Project gRPC service in
-// addition to the Environment/Prompt mocks that already exist; that
-// investment is deferred until the next time a reuse-related change lands.
+// Helpers backing the issue #7268 reuse path. runReuseDefinition's happy path
+// is covered by manual e2e; only its failure branches are unit-tested here
+// because they short-circuit before any azd gRPC calls.
 
 func TestFindExistingAgentYaml(t *testing.T) {
 	t.Parallel()
@@ -143,11 +140,8 @@ func TestLoadAgentDefinitionFile(t *testing.T) {
 	})
 }
 
-// TestRunReuseDefinition_InvalidFileReturnsStructuredError covers the
-// "malformed template-wrapped YAML returns CodeInvalidAgentManifest" case the
-// reviewer explicitly asked for. We invoke the failure path directly because
-// it short-circuits before any azd gRPC calls are made and so does not need a
-// full client mock.
+// Malformed YAML must surface as CodeInvalidAgentManifest. Runs against the
+// failure path so no gRPC mock is needed.
 func TestRunReuseDefinition_InvalidFileReturnsStructuredError(t *testing.T) {
 	t.Parallel()
 
@@ -157,33 +151,28 @@ func TestRunReuseDefinition_InvalidFileReturnsStructuredError(t *testing.T) {
 	err := runReuseDefinition(t.Context(), &initFlags{}, nil, nil, dir, path)
 	require.Error(t, err)
 
-	var localErr *azdext.LocalError
-	require.True(t, errors.As(err, &localErr), "expected *azdext.LocalError, got %T", err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
 	require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
 	require.NotEmpty(t, localErr.Suggestion)
-	// Error message and suggestion should both reference the file by name.
 	require.Contains(t, localErr.Message, "agent.yaml")
 	require.Contains(t, localErr.Suggestion, "agent.yaml")
 }
 
-// TestRunReuseDefinition_RejectsManifestShapedFile covers the case where the
-// scan picks up a file that looks like a manifest but failed upstream
-// validation. The user sees a targeted error instead of falling through to
-// scaffolding prompts.
+// A manifest-shaped file that failed upstream validation must produce a
+// targeted error here, not fall into scaffolding.
 func TestRunReuseDefinition_RejectsManifestShapedFile(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	// Manifest-shaped but missing required fields, so detectLocalManifest would
-	// have rejected it upstream and our reuse scan picks it up here.
 	path := writeReuseTestFile(t, dir, "agent.manifest.yaml",
 		"template:\n  # intentionally incomplete\n")
 
 	err := runReuseDefinition(t.Context(), &initFlags{}, nil, nil, dir, path)
 	require.Error(t, err)
 
-	var localErr *azdext.LocalError
-	require.True(t, errors.As(err, &localErr))
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
 	require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
 	require.Contains(t, localErr.Message, "agent.manifest.yaml",
 		"error message must name the actual file, not a hardcoded agent.yaml")

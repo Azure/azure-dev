@@ -20,28 +20,19 @@ import (
 )
 
 // agentYamlCandidates lists the file names (in priority order) scanned by the
-// reuse path. The set intentionally mirrors detectLocalManifest in
-// init_from_templates_helpers.go so the same on-disk files trigger either the
-// manifest pipeline (when they parse as a valid manifest) or the definition
-// reuse pipeline (when they do not).
+// reuse path. Order matches detectLocalManifest in init_from_templates_helpers.go.
 var agentYamlCandidates = []string{
 	"agent.manifest.yaml",
-	"agent.manifest.yml",
 	"agent.yaml",
+	"agent.manifest.yml",
 	"agent.yml",
 }
 
 // findExistingAgentYaml returns the first agent yaml file found in srcDir, or
-// an empty string when none exists. The scan is shallow: only srcDir itself
-// is checked, never subdirectories. ErrNotExist is treated as "not found" and
-// the next candidate is tried; other I/O errors propagate.
+// an empty string when none exists. The scan is shallow.
 //
-// This helper is called by RunE in init.go after detectLocalManifest has been
-// given the first chance to claim the file. A path returned here is therefore
-// guaranteed to not be a valid manifest (otherwise detectLocalManifest would
-// have set flags.manifestPointer first); it is either a bare definition or a
-// malformed manifest. runReuseDefinition distinguishes the two and produces a
-// targeted error for the malformed case.
+// Called from RunE after detectLocalManifest. A path returned here is either a
+// bare definition or a malformed manifest; runReuseDefinition distinguishes them.
 func findExistingAgentYaml(srcDir string) (string, error) {
 	for _, name := range agentYamlCandidates {
 		candidate := filepath.Join(srcDir, name)
@@ -62,17 +53,11 @@ func findExistingAgentYaml(srcDir string) (string, error) {
 }
 
 // runReuseDefinition wires an existing bare agent.yaml definition into
-// azure.yaml without rewriting the file or running the from-code scaffolding
-// prompts. It is invoked from init.go RunE alongside the manifest detection
-// branch, so the user is never asked to pick an init mode when a local
-// agent.yaml is already present.
+// azure.yaml without rewriting the file or running the from-code prompts.
 //
-// The function deliberately does NOT resolve a Foundry project, prompt for
-// model deployments, or enrich the definition with deployment metadata — the
-// issue (#7268) constrains the definition path to "less to ask and just setup
-// azure.yaml". Users who need a Foundry project bound before azd deploy
-// should either delete the definition and rerun init interactively, or set
-// AZURE_AI_PROJECT_ID in their azd environment by hand.
+// Foundry project resolution and model deployment selection are intentionally
+// skipped (issue #7268: "less to ask and just setup azure.yaml"). Users who
+// need a project bound before azd deploy can set AZURE_AI_PROJECT_ID by hand.
 func runReuseDefinition(
 	ctx context.Context,
 	flags *initFlags,
@@ -100,24 +85,19 @@ func runReuseDefinition(
 		displayPath, def.Name,
 	))
 
-	// Reuse the same project/environment bootstrap runInitFromManifest uses so
-	// addToProject has the project config and env it needs to write azure.yaml.
 	projectConfig, err := ensureProject(ctx, flags, azdClient)
 	if err != nil {
 		return err
 	}
 
-	// Mirror InitFromCodeAction.Run: when --src is absolute, convert it to a
-	// path relative to the azd project root so azure.yaml's RelativePath is
-	// portable across machines.
+	// Mirror InitFromCodeAction.Run: convert absolute --src to project-relative
+	// so azure.yaml's RelativePath stays portable.
 	if flags.src != "" && filepath.IsAbs(flags.src) {
 		relPath, err := filepath.Rel(projectConfig.Path, flags.src)
 		if err != nil {
 			return fmt.Errorf("failed to convert src path to relative path: %w", err)
 		}
 		flags.src = relPath
-		// srcDir was passed in by the caller; keep it in sync so the messages
-		// and addToProject targetDir match.
 		srcDir = relPath
 	}
 
@@ -149,19 +129,14 @@ func runReuseDefinition(
 
 	fmt.Println(color.HiBlackString("Reusing existing %s (name: %s).", displayPath, def.Name))
 
-	// Run the same advisory post-init validations the scaffold path emits.
 	validatePostInit(srcDir, def.CodeConfiguration)
 
 	return nil
 }
 
 // loadAgentDefinitionFile parses path as a bare AgentDefinition (no surrounding
-// "template:" wrapper) and validates it. It is the definition-side counterpart
-// to agent_yaml.LoadAndValidateAgentManifest.
-//
-// The parser uses ContainerAgent so a CodeConfiguration block — when present —
-// is preserved for the caller to inspect (it drives isCodeDeploy and the
-// post-init language detection).
+// "template:" wrapper) and runs the same schema validation the manifest
+// pipeline does.
 func loadAgentDefinitionFile(path string) (*agent_yaml.ContainerAgent, error) {
 	//nolint:gosec // path comes from findExistingAgentYaml against a user-controlled directory
 	data, err := os.ReadFile(path)
@@ -169,9 +144,8 @@ func loadAgentDefinitionFile(path string) (*agent_yaml.ContainerAgent, error) {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 
-	// Reject files that are actually manifests. A valid manifest would have been
-	// routed upstream; an invalid one reaching here is most likely a malformed
-	// template authored by the user, so the error message points at the cause.
+	// Reject manifest-shaped files. A valid manifest would have been routed
+	// upstream; an invalid one reaching here is a malformed template.
 	var top map[string]any
 	if err := yaml.Unmarshal(data, &top); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
@@ -183,10 +157,6 @@ func loadAgentDefinitionFile(path string) (*agent_yaml.ContainerAgent, error) {
 		)
 	}
 
-	// Run the same schema validation the manifest pipeline runs on the unwrapped
-	// template body. This catches missing/invalid kind, missing name, and the
-	// kind-specific structural checks before the bare definition is wired into
-	// azure.yaml.
 	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
 		return nil, err
 	}

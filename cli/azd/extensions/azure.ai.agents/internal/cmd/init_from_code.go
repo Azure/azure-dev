@@ -89,6 +89,42 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		srcDir = "."
 	}
 
+	// Guard against silently overwriting an existing agent definition. Reached
+	// when the user declined the reuse prompt in RunE or bypassed it; we still
+	// refuse in --no-prompt and confirm interactively.
+	if existing, statErr := findExistingAgentYaml(srcDir); statErr == nil && existing != "" {
+		displayPath, relErr := filepath.Rel(srcDir, existing)
+		if relErr != nil || displayPath == "" {
+			displayPath = existing
+		}
+		if a.flags.noPrompt {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("%s already exists at %q", displayPath, existing),
+				fmt.Sprintf(
+					"delete or move the existing %s, or run interactively to confirm overwrite",
+					displayPath,
+				),
+			)
+		}
+
+		confirmResp, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+			Options: &azdext.ConfirmOptions{
+				Message:      fmt.Sprintf("An agent definition already exists at %q. Overwrite?", displayPath),
+				DefaultValue: new(false),
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return exterrors.Cancelled("overwrite confirmation was cancelled")
+			}
+			return fmt.Errorf("prompting for overwrite confirmation: %w", err)
+		}
+		if !*confirmResp.Value {
+			return exterrors.Cancelled(fmt.Sprintf("%s already exists; overwrite declined", displayPath))
+		}
+	}
+
 	// No manifest pointer provided - process local agent code
 	// Create a definition based on user prompts
 	localDefinition, err := a.createDefinitionFromLocalAgent(ctx)
@@ -968,10 +1004,9 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 	if !isCodeDeploy {
 		language = "docker"
 	} else {
-		// Detect language from the on-disk agent yaml. The from-code scaffold path
-		// writes agent.yaml; the reuse path (issue #7268) may have agent.yml. Walk
-		// the same candidates findExistingAgentYaml uses so either case is handled.
-		for _, name := range agentYamlCandidates {
+		// Detect language from the on-disk definition. Skip manifest filenames:
+		// their fields are nested under template: and would not match here.
+		for _, name := range []string{"agent.yaml", "agent.yml"} {
 			langDetectPath := filepath.Join(a.projectConfig.Path, targetDir, name)
 			data, err := os.ReadFile(langDetectPath) //nolint:gosec // path from project config
 			if err != nil {

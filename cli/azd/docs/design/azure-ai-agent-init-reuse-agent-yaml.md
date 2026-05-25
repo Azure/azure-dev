@@ -10,7 +10,7 @@ The from-code path of `azd ai agent init` today treats a pre-existing `agent.yam
 
 This change adds **definition reuse**: when the user has a bare `agent.yaml` (a YAML file without a top-level `template:` wrapper) in the target directory and runs `azd ai agent init`, the command treats that file as the source of truth, skips the from-code prompts, and writes only the `azure.yaml` service entry, matching the issue's wording: *"if it's a definition, then we have less to ask and just setup azure.yaml."*
 
-Manifest reuse (the other half of the issue) is already handled by upstream `detectLocalManifest` in `init.go`, which intercepts valid local manifests (regardless of filename) and routes them through `runInitFromManifest`. This spec does **not** touch that path; it only fills the bare-definition gap.
+Manifest reuse (the other half of the issue) is already handled by upstream `detectLocalManifest` in `init.go`, which scans the four candidate filenames (`agent.manifest.yaml`, `agent.manifest.yml`, `agent.yaml`, `agent.yml`) and accepts whichever one parses as a valid manifest. This spec does **not** touch that path; it only fills the bare-definition gap.
 
 ## 2. Scope and Non-Goals
 
@@ -37,11 +37,11 @@ All paths inside `cli/azd/extensions/azure.ai.agents/internal/`.
 | --- | --- | --- |
 | Top-level dispatch | `cmd/init.go` `RunE` | **Modified**: a new detection+reuse block is inserted alongside the existing `detectLocalManifest` block. Triggers before the init-mode prompt, so users with a local `agent.yaml` skip both the mode prompt and the from-code scaffolding sequence. |
 | Existing in-action overwrite guard | `cmd/init_from_code.go` (`InitFromCodeAction.Run`) | **Modified**: the "agent.yaml already exists" guard at the top of the action is removed. By the time `InitFromCodeAction.Run` is reached, the RunE-level dispatch has already handled (or declined) the reuse. |
-| Upstream manifest detection | `cmd/init.go` (`detectLocalManifest`) | **Unchanged**. |
+| Upstream manifest detection | `cmd/init_from_templates_helpers.go` (`detectLocalManifest`, called from `cmd/init.go` `RunE`) | **Unchanged**. |
 | Manifest pipeline | `cmd/init.go` (`runInitFromManifest`) | **Unchanged**. |
 | Definition reuse helpers | `cmd/init_from_code_reuse.go` (new file) | `findExistingAgentYaml`, `runReuseDefinition`, `loadAgentDefinitionFile`. |
 | `azure.yaml` writer | `cmd/init_from_code.go` (`addToProject`) | **Reused as-is** by `runReuseDefinition`. |
-| Project / environment bootstrap | `cmd/init.go` (`ensureProject`, `getExistingEnvironment`, `createNewEnvironment`) | **Reused as-is**: the reuse path runs the same setup `runInitFromManifest` does. |
+| Project / environment bootstrap | `cmd/init.go` (`ensureProject`, `getExistingEnvironment`); `cmd/init_foundry_resources_helpers.go` (`createNewEnvironment`) | **Reused as-is**: the reuse path runs the same setup `runInitFromManifest` does. |
 | Definition types | `pkg/agents/agent_yaml/yaml.go` (`ContainerAgent`, `CodeConfiguration`) | Unchanged. |
 | Name validation | `pkg/agents/agent_yaml/parse.go` (`ValidateAgentName`) | Reused. |
 
@@ -54,7 +54,8 @@ The feature is primarily wiring. No new exported APIs.
 After auth and project resolution, when no `-m` was passed:
 
 1. `detectLocalManifest(srcDir)`: existing helper, runs first. If it returns a valid manifest path, `flags.manifestPointer` is set (with an optional confirmation prompt in interactive mode) and the manifest pipeline runs as today.
-2. **If `flags.manifestPointer` is still empty**, the new step runs: `findExistingAgentYaml(srcDir)` does a shallow `os.Stat` against the four candidate filenames. Any hit at this point is guaranteed to either be a bare definition (rejected by `detectLocalManifest` for lacking `template:`) or a malformed manifest (rejected for failing manifest validation).
+2. **If `detectLocalManifest` returned no valid manifest at all** (not merely "user declined the prompt"), the new step runs: `findExistingAgentYaml(srcDir)` does a shallow `os.Stat` against the four candidate filenames. Any hit at this point is either a bare definition (rejected by `detectLocalManifest` for lacking `template:`) or a malformed manifest (rejected for failing manifest validation).
+   - **Edge case**: when `detectLocalManifest` found a *valid* manifest but the user declined the reuse prompt, the reuse scan is skipped. Otherwise we would mis-classify the declined manifest as an "invalid definition" and block init with `CodeInvalidAgentManifest`, contradicting the user's choice to start fresh. The implementation tracks this with a `manifestDetectedButDeclined` flag set in the `detectLocalManifest` branch.
 3. On a hit, a confirmation prompt ("An existing agent definition was found at ... Use it?") is shown; in `--no-prompt` mode the answer auto-defaults to yes.
 4. On confirmation, `runReuseDefinition(ctx, flags, azdClient, httpClient, srcDir, existingPath)` is called and the command returns. The init-mode prompt and the from-code scaffolding sequence are both skipped.
 
@@ -64,7 +65,7 @@ The new free function lives in `init_from_code_reuse.go`. It performs:
 
 1. `loadAgentDefinitionFile(path)`: reads the file, rejects anything with a top-level `template:` (manifest-shaped but invalid, produces a targeted error), unmarshals to `agent_yaml.ContainerAgent` so `CodeConfiguration` is preserved, and validates the name via `agent_yaml.ValidateAgentName`.
 2. Prints `Detected existing agent definition: <relative-path> (name: <def.Name>).`
-3. Bootstraps project + env using the same helpers `runInitFromManifest` uses: `ensureProject`, then `getExistingEnvironment` / `createNewEnvironment` (the env is named `<def.Name>-dev` when none was supplied via `-e`).
+3. Bootstraps project + env using the same helpers `runInitFromManifest` uses: `ensureProject`, then `getExistingEnvironment` / `createNewEnvironment` (the env is named `sanitizeAgentName(<def.Name> + "-dev")` when none was supplied via `-e`, matching the existing from-code path).
 4. Builds a thin `*InitFromCodeAction` with the bootstrapped pieces and calls `action.addToProject(ctx, srcDir, def.Name, def.CodeConfiguration != nil)`, the existing from-code service-entry writer.
 5. Prints `Reusing existing agent.yaml (name: <def.Name>).`
 6. Calls `validatePostInit(srcDir, def.CodeConfiguration)` for the same advisory warnings the scaffold path emits.
@@ -119,7 +120,7 @@ Per the extension's error-handling rule, the structured error is created at the 
 
 ## 7. Test Plan
 
-- **Pre-existing unit tests** in `cli/azd/extensions/azure.ai.agents/internal/cmd/*_test.go` continue to pass. The no-yaml regression is covered by today's `init_from_code_test.go`.
+- **Pre-existing unit tests** in `cli/azd/extensions/azure.ai.agents/internal/cmd/*_test.go` continue to pass. They cover helpers (`sanitizeAgentName`, `writeDefinitionToSrcDir`, etc.) that this change does not modify; we are not adding new unit tests because the new code paths are exercised end-to-end below.
 - **Manual e2e** against the locally-built `azd` + extension. Three scenarios:
   - **Definition reuse**: write a bare `agent.yaml`, run `azd ai agent init --no-prompt`; assert no init-mode prompt, `Detected existing agent definition: ...` printed, `azure.yaml` contains the agent's `name:`, on-disk `agent.yaml` byte-identical to input.
   - **Manifest reuse**: write `agent.manifest.yaml`, run with `AZURE_SUBSCRIPTION_ID` and `AZURE_AI_PROJECT_ID` set; assert the existing upstream manifest path runs unchanged and `azure.yaml` ends up with the manifest's `template.name`.

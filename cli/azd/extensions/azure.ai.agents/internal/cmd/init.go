@@ -671,6 +671,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 			// Auto-detect an existing agent manifest in the target directory
 			// when no --manifest flag was provided.
+			//
+			// manifestDetectedButDeclined records the case where detectLocalManifest
+			// found a valid manifest that the user actively declined. The
+			// definition-reuse scan below must skip in that case so the declined
+			// file is not mis-classified as an invalid bare definition. See #7268.
+			manifestDetectedButDeclined := false
 			if flags.manifestPointer == "" {
 				checkDir := flags.src
 				if checkDir == "" {
@@ -705,6 +711,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						if flags.src == "" {
 							flags.src = checkDir
 						}
+					} else {
+						manifestDetectedButDeclined = true
 					}
 				}
 			}
@@ -713,7 +721,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// agent.yaml definition the user wants to reuse. This skips both the
 			// init-mode prompt and the from-code scaffolding sequence — the
 			// definition itself is the source of truth. See issue #7268.
-			if flags.manifestPointer == "" {
+			//
+			// Skip when detectLocalManifest already found a valid manifest that
+			// the user declined: the on-disk file would otherwise be re-discovered
+			// here and rejected as an "invalid definition" because of its top-level
+			// `template:` key, contradicting the user's choice to start fresh.
+			if flags.manifestPointer == "" && !manifestDetectedButDeclined {
 				checkDir := flags.src
 				if checkDir == "" {
 					checkDir = "."

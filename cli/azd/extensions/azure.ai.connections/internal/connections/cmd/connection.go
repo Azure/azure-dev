@@ -12,8 +12,8 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"azureaiagent/internal/connections/exterrors"
-	"azureaiagent/internal/connections/pkg/connections"
+	"azure.ai.connections/internal/connections/pkg/connections"
+	"azure.ai.connections/internal/exterrors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -522,9 +522,9 @@ func newConnectionUpdateCommand(
 Only the specified flags are changed; all other fields are preserved.
 Does not accept --auth-type (delete and recreate to change auth type).
 For metadata changes, use the 'metadata' subcommand.`,
-		Example: `  azd ai agent connection update prod-search --key "$NEW_SEARCH_KEY"
-  azd ai agent connection update my-conn --target https://new-endpoint.com
-  azd ai agent connection update my-mcp --custom-key "x-api-key=new-key"`,
+		Example: `  azd ai connection update prod-search --key "$NEW_SEARCH_KEY"
+  azd ai connection update my-conn --target https://new-endpoint.com
+  azd ai connection update my-mcp --custom-key "x-api-key=new-key"`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]

@@ -6,9 +6,11 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 
-	"azureaiagent/internal/connections/exterrors"
-	"azureaiagent/internal/connections/pkg/connections"
+	"azure.ai.connections/internal/connections/pkg/connections"
+	"azure.ai.connections/internal/exterrors"
+	"azure.ai.connections/internal/foundry/projectctx"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -31,14 +33,21 @@ type connectionContext struct {
 
 // resolveConnectionContext resolves the project endpoint, discovers ARM context,
 // and creates both clients needed for connection operations.
+//
+// Endpoint resolution is delegated to projectctx.Resolve (the 5-level cascade
+// shared with sibling Foundry extensions). The connection-specific work
+// (account/project split, ARM discovery, client construction) stays here.
 func resolveConnectionContext(
 	ctx context.Context,
 	flagEndpoint string,
 ) (*connectionContext, error) {
-	endpoint, err := resolveProjectEndpoint(ctx, flagEndpoint)
+	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{FlagValue: flagEndpoint})
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("projectctx: resolved endpoint=%s source=%s",
+		resolved.Endpoint, resolved.Source)
+	endpoint := resolved.Endpoint
 
 	account, project, err := parseEndpointComponents(endpoint)
 	if err != nil {

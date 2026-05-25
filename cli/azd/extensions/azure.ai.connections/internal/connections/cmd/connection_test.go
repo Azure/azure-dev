@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"azureaiagent/internal/connections/pkg/connections"
+	"azure.ai.connections/internal/connections/pkg/connections"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/stretchr/testify/require"

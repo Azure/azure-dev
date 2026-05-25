@@ -968,16 +968,22 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 	if !isCodeDeploy {
 		language = "docker"
 	} else {
-		// Detect language from agent.yaml runtime
-		// Re-read agent.yaml to detect the language for azure.yaml service config
-		langDetectPath := filepath.Join(a.projectConfig.Path, targetDir, "agent.yaml")
-		if data, err := os.ReadFile(langDetectPath); err == nil { //nolint:gosec // path from project config
+		// Detect language from the on-disk agent yaml. The from-code scaffold path
+		// writes agent.yaml; the reuse path (issue #7268) may have agent.yml. Walk
+		// the same candidates findExistingAgentYaml uses so either case is handled.
+		for _, name := range agentYamlCandidates {
+			langDetectPath := filepath.Join(a.projectConfig.Path, targetDir, name)
+			data, err := os.ReadFile(langDetectPath) //nolint:gosec // path from project config
+			if err != nil {
+				continue
+			}
 			var langDef agent_yaml.ContainerAgent
 			if err := yaml.Unmarshal(data, &langDef); err == nil &&
 				langDef.CodeConfiguration != nil &&
 				strings.HasPrefix(langDef.CodeConfiguration.Runtime, "dotnet_") {
 				language = "csharp"
 			}
+			break
 		}
 	}
 

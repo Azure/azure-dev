@@ -16,7 +16,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // agentYamlCandidates lists the file names (in priority order) scanned by the
@@ -32,7 +32,7 @@ var agentYamlCandidates = []string{
 }
 
 // findExistingAgentYaml returns the first agent yaml file found in srcDir, or
-// an empty string when none exists. The scan is shallow — only srcDir itself
+// an empty string when none exists. The scan is shallow: only srcDir itself
 // is checked, never subdirectories. ErrNotExist is treated as "not found" and
 // the next candidate is tried; other I/O errors propagate.
 //
@@ -91,7 +91,7 @@ func runReuseDefinition(
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("agent definition in %s is invalid: %s", displayPath, err),
-			"Fix the agent.yaml and retry, or remove the file to start a fresh init.",
+			fmt.Sprintf("Fix %s and retry, or remove the file to start a fresh init.", displayPath),
 		)
 	}
 
@@ -105,6 +105,20 @@ func runReuseDefinition(
 	projectConfig, err := ensureProject(ctx, flags, azdClient)
 	if err != nil {
 		return err
+	}
+
+	// Mirror InitFromCodeAction.Run: when --src is absolute, convert it to a
+	// path relative to the azd project root so azure.yaml's RelativePath is
+	// portable across machines.
+	if flags.src != "" && filepath.IsAbs(flags.src) {
+		relPath, err := filepath.Rel(projectConfig.Path, flags.src)
+		if err != nil {
+			return fmt.Errorf("failed to convert src path to relative path: %w", err)
+		}
+		flags.src = relPath
+		// srcDir was passed in by the caller; keep it in sync so the messages
+		// and addToProject targetDir match.
+		srcDir = relPath
 	}
 
 	env := getExistingEnvironment(ctx, flags.env, azdClient)
@@ -133,7 +147,7 @@ func runReuseDefinition(
 		return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 	}
 
-	fmt.Println(color.HiBlackString("Reusing existing agent.yaml (name: %s).", def.Name))
+	fmt.Println(color.HiBlackString("Reusing existing %s (name: %s).", displayPath, def.Name))
 
 	// Run the same advisory post-init validations the scaffold path emits.
 	validatePostInit(srcDir, def.CodeConfiguration)
@@ -142,8 +156,8 @@ func runReuseDefinition(
 }
 
 // loadAgentDefinitionFile parses path as a bare AgentDefinition (no surrounding
-// "template:" wrapper) and validates the name. It is the definition-side
-// counterpart to agent_yaml.LoadAndValidateAgentManifest.
+// "template:" wrapper) and validates it. It is the definition-side counterpart
+// to agent_yaml.LoadAndValidateAgentManifest.
 //
 // The parser uses ContainerAgent so a CodeConfiguration block — when present —
 // is preserved for the caller to inspect (it drives isCodeDeploy and the
@@ -169,13 +183,17 @@ func loadAgentDefinitionFile(path string) (*agent_yaml.ContainerAgent, error) {
 		)
 	}
 
+	// Run the same schema validation the manifest pipeline runs on the unwrapped
+	// template body. This catches missing/invalid kind, missing name, and the
+	// kind-specific structural checks before the bare definition is wired into
+	// azure.yaml.
+	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
+		return nil, err
+	}
+
 	var def agent_yaml.ContainerAgent
 	if err := yaml.Unmarshal(data, &def); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-
-	if err := agent_yaml.ValidateAgentName(def.Name); err != nil {
-		return nil, fmt.Errorf("invalid agent name %q: %w", def.Name, err)
 	}
 
 	return &def, nil

@@ -74,3 +74,16 @@ words:
   - uppercases
   - parseable
   - azd's
+  # Help styling helpers (cli/azd/extensions/*/internal/helpformat)
+  - helpformat
+  - cmdhelp
+  # Agent-driven init pre-flow identifiers (internal/cmd/init_preflow.go,
+  # init.go, starter_prompt.go)
+  - preflow
+  - scaffolder
+  # Go module path for the cross-platform clipboard library used by
+  # starter_prompt.go
+  - atotto
+  # Linux clipboard backend name referenced in starter_prompt.go's
+  # headless-environment detection
+  - xclip

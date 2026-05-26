@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"maps"
 	"net/http"
@@ -23,6 +24,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/helpformat"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -65,6 +67,13 @@ type initFlags struct {
 	// mirrors the `--force` convention used by `azd down`, `azd env remove`,
 	// `azd config reset`, and `azd infra generate`.
 	force bool
+	// fromCode mirrors `azd init --from-code`. When set we treat the
+	// current directory as the source for the agent (vs. a manifest or
+	// downloaded template). It exists for brownfield callers -- humans
+	// or coding agents lifting existing hand-written agent source into
+	// a hosted Foundry agent. For greenfield projects, callers should
+	// pass `-m <manifestUrl>` from `azd ai agent sample list` instead.
+	fromCode bool
 	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
 	// and is not registered as a CLI flag on the init command itself.
 	noPrompt bool
@@ -602,29 +611,14 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init [<path>] [-m <manifest pointer>] [--src <source directory>]",
 		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
-		Long: `Initialize a new AI agent project.
-
-The agent name written to agent.yaml is the Foundry agent identity. Foundry
-agents are unique by name within a project, so deploying with an existing name
-creates a new version of that existing agent instead of a separate agent.
-
-Use --agent-name to choose a unique Foundry agent name when initializing from
-a reusable sample or manifest.
-
-A default .agentignore file is generated to control which files are excluded
-from code-deploy ZIP packaging (uses .gitignore syntax).`,
-		Example: `  # Initialize from an agent manifest
-  azd ai agent init -m ./agent.manifest.yaml
-
-  # Initialize from a manifest with a unique Foundry agent name
-  azd ai agent init -m ./agent.manifest.yaml --agent-name my-unique-agent
-
-  # Initialize from local agent code
-  azd ai agent init --src ./src/my-agent --agent-name my-unique-agent
-
-  # Non-interactive code deploy (CI/CD)
-  azd ai agent init --no-prompt --project-id "<resource-id>" \
-    --deploy-mode code --runtime python_3_13 --entry-point app.py`,
+		// Long intentionally empty: helpformat.Install below uses
+		// getCmdInitHelpDescription as the preamble (with bullets and
+		// inline coloring). cobra would otherwise prefer Long over Short
+		// when rendering --help, masking the styled description.
+		// Examples migrated into getCmdInitHelpFooter; removing the
+		// cobra.Command.Example field here prevents the legacy
+		// uncolored Examples block from rendering alongside the styled
+		// block.
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.noPrompt = extCtx.NoPrompt
@@ -632,13 +626,36 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				flags.env = extCtx.Environment
 			}
 
-			printBanner(cmd.OutOrStdout())
+			// Skip the banner in non-interactive mode (CI/CD, agent-driven flows)
+			// so the decorative output does not contaminate machine-parsed logs.
+			if !flags.noPrompt {
+				out := cmd.OutOrStdout()
+				printBanner(out)
+				// Print the root command's one-liner (e.g. "Ship agents
+				// with Microsoft Foundry from your terminal. (Preview)")
+				// between the banner and the pre-flow prompts so the
+				// user sees the extension's identity before being asked
+				// to make a decision. Matches the banner + Short order
+				// used by `azd ai agent --help`.
+				printTagline(out, cmd.Root().Short)
+			}
 
 			// Resolve optional positional argument into --manifest or --src
 			if len(args) == 1 {
 				if err := applyPositionalArg(args[0], flags, cmd); err != nil {
 					return err
 				}
+			}
+
+			// Validate init-mode flag combinations BEFORE any I/O so the
+			// failure is deterministic and independent of detection
+			// outcomes. --from-code declares an intent ("treat cwd as
+			// the source"); --manifest declares a different intent
+			// ("download/use this manifest"). They cannot both be true.
+			// This check covers positional manifest args too because
+			// applyPositionalArg above resolves them into manifestPointer.
+			if err := validateInitModeFlags(flags); err != nil {
+				return err
 			}
 
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -648,6 +665,34 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
 			}
 			defer azdClient.Close()
+
+			// Agent-driven onboarding pre-flow (interactive mode only).
+			// Asks whether the user wants their coding agent to drive
+			// the setup; on Yes, installs the AZD AI skill, copies a
+			// tailored starter prompt to the clipboard, and exits
+			// without running the existing init flow. On No, returns
+			// handled=false and the existing flow continues.
+			if !flags.noPrompt {
+				cwd, cwdErr := os.Getwd()
+				if cwdErr != nil {
+					return fmt.Errorf("resolve working directory: %w", cwdErr)
+				}
+				preflow := &InitPreflowAction{
+					out:          cmd.OutOrStdout(),
+					azdClient:    azdClient,
+					runner:       defaultAzdRunner,
+					cwd:          cwd,
+					copyClip:     CopyToClipboard,
+					azureContext: &azdext.AzureContext{Scope: &azdext.AzureScope{}},
+				}
+				handled, preErr := preflow.Run(ctx)
+				if preErr != nil {
+					return preErr
+				}
+				if handled {
+					return nil
+				}
+			}
 
 			if err := checkAiModelServiceAvailable(ctx, azdClient); err != nil {
 				return err
@@ -670,8 +715,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			}
 
 			// Auto-detect an existing agent manifest in the target directory
-			// when no --manifest flag was provided.
-			if flags.manifestPointer == "" {
+			// when no --manifest flag was provided. Skipped entirely when
+			// --from-code is set: that flag is an explicit "use the code
+			// in this directory" intent, and silently promoting a stray
+			// agent.yaml into manifestPointer would route the user through
+			// the manifest flow they explicitly opted out of.
+			if flags.manifestPointer == "" && !flags.fromCode {
 				checkDir := flags.src
 				if checkDir == "" {
 					checkDir = "."
@@ -723,8 +772,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					return err
 				}
 			} else {
-				// No manifest provided - prompt user for init mode
-				initMode, err := promptInitMode(ctx, azdClient)
+				// No manifest provided - prompt user for init mode.
+				// flags + cmd.OutOrStdout are threaded through so the
+				// helper can:
+				//   - short-circuit on --from-code
+				//   - return a deterministic ErrorWithSuggestion in
+				//     --no-prompt mode rather than failing on Select
+				initMode, err := promptInitMode(ctx, azdClient, flags, cmd.OutOrStdout())
 				if err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
@@ -879,7 +933,92 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+
 			"Required together with --no-prompt when init would otherwise need confirmation.")
 
+	cmd.Flags().BoolVar(&flags.fromCode, "from-code", false,
+		"Use the code in the current directory as the source for the agent. "+
+			"Equivalent to choosing 'Use the code in the current directory' at the interactive prompt. "+
+			"Mutually exclusive with --manifest.")
+
+	// Install styled help last -- after every flag and subcommand has been
+	// registered -- so the dynamic Available Commands / Flags sections
+	// inspect the final command state. Examples migrated out of the
+	// cobra.Command.Example field above into getCmdInitHelpFooter so
+	// arguments render in yellow and command tokens in blue. Bullets in
+	// getCmdInitHelpDescription cover the three init modes (manifest /
+	// existing code / template) and the --no-prompt deterministic path.
+	helpformat.Install(cmd, helpformat.Options{
+		Description: getCmdInitHelpDescription,
+		Footer:      getCmdInitHelpFooter,
+	})
+
 	return cmd
+}
+
+// getCmdInitHelpDescription renders the --help preamble for `azd ai agent init`.
+// Bullets follow core azd's pattern: one per high-level scenario. The
+// first sentence (without bullets) goes in cmd.Short; this preamble lives
+// in cmd.Long replacement so users see scenario-shaped guidance before
+// the Usage block.
+func getCmdInitHelpDescription(*cobra.Command) string {
+	return helpformat.Description(
+		"Initialize a new AI agent project. The agent name written to agent.yaml "+
+			"is the Foundry agent identity; deploying with an existing name creates a new "+
+			"version of that agent.",
+		helpformat.Note(fmt.Sprintf(
+			"Running %s with no flags prompts you to start from local code, an existing "+
+				"agent manifest, or a Microsoft sample template.",
+			helpformat.Command("azd ai agent init"),
+		)),
+		helpformat.Note(fmt.Sprintf(
+			"Use %s to point at an existing agent manifest. Use %s to use code in the current "+
+				"directory. The two flags are mutually exclusive.",
+			helpformat.Flag("--manifest"),
+			helpformat.Flag("--from-code"),
+		)),
+		helpformat.Note(fmt.Sprintf(
+			"In %s mode pass %s for a deterministic init path when the current directory already "+
+				"contains your agent code.",
+			helpformat.Flag("--no-prompt"),
+			helpformat.Flag("--from-code"),
+		)),
+		helpformat.Note("A default .agentignore file is generated to control which files are excluded "+
+			"from code-deploy ZIP packaging (uses .gitignore syntax)."),
+	)
+}
+
+// getCmdInitHelpFooter renders the Examples section. Migrated from the
+// previous cobra.Command.Example field (which has been removed) so that
+// command tokens render blue and arguments yellow, matching azd init --help.
+func getCmdInitHelpFooter(*cobra.Command) string {
+	return helpformat.Examples(map[string]string{
+		"Initialize from an agent manifest.": fmt.Sprintf("%s %s",
+			helpformat.Command("azd ai agent init -m"),
+			helpformat.Arg("[manifest path]"),
+		),
+		"Initialize from a manifest with a unique Foundry agent name.": fmt.Sprintf("%s %s %s %s",
+			helpformat.Command("azd ai agent init -m"),
+			helpformat.Arg("[manifest path]"),
+			helpformat.Flag("--agent-name"),
+			helpformat.Arg("[name]"),
+		),
+		"Initialize from local agent code with a unique Foundry agent name.": fmt.Sprintf("%s %s %s %s",
+			helpformat.Command("azd ai agent init --src"),
+			helpformat.Arg("[source dir]"),
+			helpformat.Flag("--agent-name"),
+			helpformat.Arg("[name]"),
+		),
+		"Non-interactive code deploy (CI/CD or agent-driven flows).": fmt.Sprintf(
+			"%s %s %s %s %s %s %s %s %s",
+			helpformat.Command("azd ai agent init --no-prompt --from-code"),
+			helpformat.Flag("--project-id"),
+			helpformat.Arg("[resource ID]"),
+			helpformat.Flag("--deploy-mode"),
+			helpformat.Arg("code"),
+			helpformat.Flag("--runtime"),
+			helpformat.Arg("python_3_13"),
+			helpformat.Flag("--entry-point"),
+			helpformat.Arg("app.py"),
+		),
+	})
 }
 
 func (a *InitAction) Run(ctx context.Context) error {
@@ -1049,42 +1188,74 @@ func (a *InitAction) Run(ctx context.Context) error {
 func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.ProjectConfig, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		fmt.Println("Let's get your project initialized.")
+		// No project on disk. Decide between scaffolding the full starter
+		// template (gives infra/, azure.yaml, sample code) vs. writing
+		// just a minimal azure.yaml in-place. The starter template path
+		// only works in an empty directory: `azd init -t` prompts to
+		// confirm overwrites when the dir is not empty, and that
+		// confirmation auto-declines under --no-prompt -- which is the
+		// mode coding agents always invoke us in. Writing a minimal
+		// azure.yaml ourselves avoids the prompt and keeps the flow
+		// working in directories that already contain installed skill
+		// files (e.g. .agents/) or any other user content.
+		cwd, cwdErr := os.Getwd()
+		if cwdErr != nil {
+			return nil, exterrors.Internal(exterrors.CodeProjectInitFailed,
+				fmt.Sprintf("failed to resolve working directory: %s", cwdErr))
+		}
 
-		// Environment creation is handled separately in ensureEnvironment
-		initArgs := []string{"init", "-t", "Azure-Samples/azd-ai-starter-basic", "."}
-		if flags.env != "" {
-			initArgs = append(initArgs, "--environment", flags.env)
-		} else {
-			cwd, err := os.Getwd()
-			if err == nil {
+		empty, emptyErr := isCwdEmptyForInit(cwd)
+		if emptyErr != nil {
+			return nil, exterrors.Internal(exterrors.CodeProjectInitFailed,
+				fmt.Sprintf("checking working directory: %s", emptyErr))
+		}
+
+		if empty {
+			fmt.Println("Let's get your project initialized.")
+
+			// Environment creation is handled separately in ensureEnvironment
+			initArgs := []string{"init", "-t", "Azure-Samples/azd-ai-starter-basic", "."}
+			if flags.env != "" {
+				initArgs = append(initArgs, "--environment", flags.env)
+			} else {
 				sanitizedDirectoryName := sanitizeAgentName(filepath.Base(cwd))
 				initArgs = append(initArgs, "--environment", sanitizedDirectoryName+"-dev")
 			}
-		}
 
-		// We don't have a project yet
-		// Dispatch a workflow to init the project
-		workflow := &azdext.Workflow{
-			Name: "init",
-			Steps: []*azdext.WorkflowStep{
-				{Command: &azdext.WorkflowCommand{Args: initArgs}},
-			},
-		}
-
-		_, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
-			Workflow: workflow,
-		})
-
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("project initialization was cancelled")
+			// We don't have a project yet
+			// Dispatch a workflow to init the project
+			workflow := &azdext.Workflow{
+				Name: "init",
+				Steps: []*azdext.WorkflowStep{
+					{Command: &azdext.WorkflowCommand{Args: initArgs}},
+				},
 			}
-			return nil, exterrors.Dependency(
-				exterrors.CodeProjectInitFailed,
-				fmt.Sprintf("failed to initialize project: %s", err),
-				"",
-			)
+
+			_, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+				Workflow: workflow,
+			})
+
+			if err != nil {
+				if exterrors.IsCancellation(err) {
+					return nil, exterrors.Cancelled("project initialization was cancelled")
+				}
+				return nil, exterrors.Dependency(
+					exterrors.CodeProjectInitFailed,
+					fmt.Sprintf("failed to initialize project: %s", err),
+					"",
+				)
+			}
+		} else {
+			// Non-empty dir: write a minimal azure.yaml ourselves rather
+			// than dispatch the heavy template scaffold. The manifest /
+			// from-code flows will populate the services section via
+			// addToProject after we return.
+			fmt.Println(output.WithGrayFormat(
+				"Adding agent to existing directory; writing a minimal azure.yaml."))
+			if err := writeMinimalAzureYaml(cwd); err != nil {
+				return nil, exterrors.Internal(exterrors.CodeProjectInitFailed,
+					fmt.Sprintf("failed to write azure.yaml: %s", err))
+			}
 		}
 
 		projectResponse, err = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
@@ -1124,6 +1295,63 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 	}
 
 	return projectResponse.Project, nil
+}
+
+// isCwdEmptyForInit reports whether dir contains no entries at all.
+// Used by ensureProject to decide between scaffolding the full starter
+// template (empty dir) and writing a minimal azure.yaml in-place
+// (non-empty dir, e.g. has installed skill files under .agents/).
+//
+// Uses os.Open + Readdirnames(1) rather than os.ReadDir so we stop after
+// the first entry instead of slurping the entire listing into memory.
+func isCwdEmptyForInit(dir string) (bool, error) {
+	f, err := os.Open(dir) //nolint:gosec // dir comes from os.Getwd()
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	names, err := f.Readdirnames(1)
+	if err != nil && err != io.EOF {
+		return false, err
+	}
+	return len(names) == 0, nil
+}
+
+// writeMinimalAzureYaml writes a 3-line azure.yaml to <cwd>/azure.yaml
+// using O_CREATE|O_EXCL so we never clobber an existing file. The
+// file's only purpose is to satisfy `azdClient.Project().Get()` so the
+// rest of the manifest / from-code flows can run addToProject to
+// populate services. Infra scaffolding is intentionally NOT done here
+// -- if the user needs `azd provision`, they can run
+// `azd init -t Azure-Samples/azd-ai-starter-basic .` in an empty
+// directory before invoking the agent init (the existing warning at
+// the end of ensureProject points them at that path).
+func writeMinimalAzureYaml(cwd string) error {
+	path := filepath.Join(cwd, "azure.yaml")
+	name := sanitizeAgentName(filepath.Base(cwd))
+	content := fmt.Sprintf(
+		"# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json\n"+
+			"\n"+
+			"name: %s\n",
+		name,
+	)
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644) //nolint:gosec // path is cwd + fixed filename
+	if err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			// Concurrent writer beat us to it; their file is now what
+			// Project().Get() will see. Safe no-op.
+			return nil
+		}
+		return fmt.Errorf("create azure.yaml: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := f.Write([]byte(content)); err != nil {
+		return fmt.Errorf("write azure.yaml: %w", err)
+	}
+	return nil
 }
 
 func getExistingEnvironment(ctx context.Context, envName string, azdClient *azdext.AzdClient) *azdext.Environment {
@@ -1586,6 +1814,28 @@ func resolvePositionalArg(arg string) (isManifest bool, isSrc bool, err error) {
 
 // applyPositionalArg resolves a positional argument and maps it to the
 // appropriate flag, returning an error if the flag was already set explicitly.
+// validateInitModeFlags rejects mutually-exclusive init-mode inputs
+// before any I/O. Today the only combination we reject is
+// --from-code + --manifest (the latter includes both -m and a
+// positional manifest argument, since applyPositionalArg has already
+// folded those into flags.manifestPointer by the time this runs).
+//
+// We surface a structured Validation error so the exterrors pipeline
+// records a stable code (CodeConflictingArguments) and the user sees
+// an actionable suggestion -- mirrors the ErrMultipleInitModes pattern
+// in cli/azd/cmd/init.go for the same conflict on core `azd init`.
+func validateInitModeFlags(flags *initFlags) error {
+	if flags.fromCode && flags.manifestPointer != "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"cannot use --from-code together with --manifest (or a positional manifest argument)",
+			"choose one: --from-code to use the code in this directory, OR "+
+				"--manifest <path> to use an agent manifest",
+		)
+	}
+	return nil
+}
+
 func applyPositionalArg(arg string, flags *initFlags, cmd *cobra.Command) error {
 	isManifest, isSrc, err := resolvePositionalArg(arg)
 	if err != nil {

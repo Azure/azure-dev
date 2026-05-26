@@ -30,6 +30,7 @@ import (
 // This is the unified type used by both init flows.
 type FoundryProjectInfo struct {
 	SubscriptionId    string
+	TenantId          string // user-access tenant; used by preflow for model catalog browsing
 	ResourceGroupName string
 	AccountName       string
 	ProjectName       string
@@ -1333,4 +1334,123 @@ func selectModelDeployment(
 
 	// User chose "Create a new model deployment"
 	return nil, nil
+}
+
+// --- Preflow-specific helpers (no environment writes) ---
+
+// promptSubscriptionAndLocationPreflow prompts for subscription and location without
+// writing to the azd environment. Used by the agent-ready preflow which runs before
+// the environment is fully initialized. Returns subscription ID, tenant ID, location, and credential.
+func promptSubscriptionAndLocationPreflow(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+) (subscriptionId string, tenantId string, location string, credential azcore.TokenCredential, err error) {
+	// Prompt for subscription
+	subResp, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", "", "", nil, exterrors.Cancelled("subscription selection was cancelled")
+		}
+		return "", "", "", nil, fmt.Errorf("select Azure subscription: %w", err)
+	}
+	if subResp == nil || subResp.Subscription == nil {
+		return "", "", "", nil, fmt.Errorf("no subscription selected")
+	}
+
+	subscriptionId = subResp.Subscription.Id
+	tenantId = subResp.Subscription.UserTenantId
+
+	// Create credential scoped to the user-access tenant
+	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID:                   tenantId,
+		AdditionallyAllowedTenants: []string{"*"},
+	})
+	if err != nil {
+		return "", "", "", nil, fmt.Errorf("create Azure credential: %w", err)
+	}
+
+	// Prompt for location
+	allowedLocations, err := supportedRegionsForInit(ctx)
+	if err != nil {
+		return "", "", "", nil, err
+	}
+
+	fmt.Println("Select an Azure location. This determines which models are available and where your Foundry project resources will be deployed.")
+	locationName, err := promptLocationForInit(ctx, azdClient, &azdext.AzureContext{
+		Scope: &azdext.AzureScope{
+			SubscriptionId: subscriptionId,
+			TenantId:       tenantId,
+		},
+	}, allowedLocations)
+	if err != nil {
+		return "", "", "", nil, err
+	}
+
+	return subscriptionId, tenantId, locationName, cred, nil
+}
+
+// selectModelCatalogPreflow shows the AI model catalog and prompts the user to select
+// a model and deployment configuration. Used by the agent-ready preflow when creating
+// a new model deployment. Returns the selected model deployment name, or empty string
+// if the user cancels/skips.
+func selectModelCatalogPreflow(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	subscriptionId string,
+	tenantId string,
+	location string,
+) (modelDeploymentName string, err error) {
+	azureContext := &azdext.AzureContext{
+		Scope: &azdext.AzureScope{
+			SubscriptionId: subscriptionId,
+			TenantId:       tenantId,
+			Location:       location,
+		},
+	}
+
+	// Prompt for model from catalog
+	promptReq := &azdext.PromptAiModelRequest{
+		AzureContext: azureContext,
+		Filter:       agentModelFilter([]string{location}, nil),
+		SelectOptions: &azdext.SelectOptions{
+			Message: "Select a model",
+		},
+	}
+
+	modelResp, err := azdClient.Prompt().PromptAiModel(ctx, promptReq)
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", exterrors.Cancelled("model selection was cancelled")
+		}
+		return "", exterrors.FromPrompt(err, "failed to select model")
+	}
+	if modelResp == nil || modelResp.Model == nil {
+		return "", fmt.Errorf("no model selected")
+	}
+
+	selectedModel := modelResp.Model
+
+	// Prompt for deployment configuration (SKU, capacity, quota)
+	deploymentResp, err := azdClient.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
+		AzureContext: azureContext,
+		ModelName:    selectedModel.Name,
+		Options: &azdext.AiModelDeploymentOptions{
+			Locations: []string{location},
+		},
+		Quota: &azdext.QuotaCheckOptions{
+			MinRemainingCapacity: 1,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", exterrors.Cancelled("deployment configuration was cancelled")
+		}
+		return "", exterrors.FromPrompt(err, "failed to configure model deployment")
+	}
+	if deploymentResp == nil || deploymentResp.Deployment == nil {
+		return "", fmt.Errorf("no deployment configuration selected")
+	}
+
+	// Return the model name as the deployment name (user can customize during provisioning)
+	return selectedModel.Name, nil
 }

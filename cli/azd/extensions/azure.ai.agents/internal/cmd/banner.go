@@ -40,3 +40,21 @@ func printBanner(w io.Writer) {
 	fmt.Fprintln(w, output.WithGrayFormat("Visit the docs at https://aka.ms/azd-ai-agent-docs")) //nolint:gosec // G104 - banner output errors are non-critical
 	fmt.Fprintln(w)
 }
+
+// printTagline writes the supplied tagline followed by a trailing blank
+// line. Intended to be called immediately after printBanner so the
+// extension's one-liner identity (the root command's Short) sits
+// between the banner and whatever comes next (--help body, init
+// pre-flow prompts, etc.). Whitespace is trimmed from the right edge
+// of tagline so callers can pass cmd.Root().Short verbatim without
+// worrying about trailing newlines.
+//
+// Empty (post-trim) tagline is a no-op.
+func printTagline(w io.Writer, tagline string) {
+	trimmed := strings.TrimRight(tagline, " \t\r\n")
+	if trimmed == "" {
+		return
+	}
+	fmt.Fprintln(w, trimmed)
+	fmt.Fprintln(w)
+}

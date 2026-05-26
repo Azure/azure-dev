@@ -51,6 +51,84 @@ func TestInitCommand_ForceFlag(t *testing.T) {
 	}
 }
 
+// TestInitCommand_FromCodeFlag pins the flag registration -- the
+// post-pre-flow non-interactive path depends on this flag being a
+// boolean with no shorthand, mirroring `azd init --from-code` in
+// cli/azd/cmd/init.go.
+func TestInitCommand_FromCodeFlag(t *testing.T) {
+	cmd := newInitCommand(nil)
+
+	flag := cmd.Flags().Lookup("from-code")
+	if flag == nil {
+		t.Fatal("expected --from-code flag to be registered")
+	}
+	if flag.Shorthand != "" {
+		t.Fatalf("expected --from-code to have no shorthand (matches `azd init --from-code`), got %q", flag.Shorthand)
+	}
+	if flag.DefValue != "false" {
+		t.Fatalf("expected --from-code default false, got %q", flag.DefValue)
+	}
+}
+
+// TestValidateInitModeFlags covers the mutual-exclusion contract for
+// --from-code vs --manifest. The combination is rejected at the
+// validation step so the failure is deterministic and independent of
+// what detectLocalManifest later finds on disk.
+func TestValidateInitModeFlags(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		flags   *initFlags
+		wantErr bool
+		// when wantErr is true, the suggestion text MUST include both
+		// flag names so the user knows which one to drop.
+		wantContains []string
+	}{
+		{
+			name:    "empty flags ok",
+			flags:   &initFlags{},
+			wantErr: false,
+		},
+		{
+			name:    "only --from-code ok",
+			flags:   &initFlags{fromCode: true},
+			wantErr: false,
+		},
+		{
+			name:    "only --manifest ok",
+			flags:   &initFlags{manifestPointer: "agent.yaml"},
+			wantErr: false,
+		},
+		{
+			name:         "--from-code AND --manifest conflicts",
+			flags:        &initFlags{fromCode: true, manifestPointer: "agent.yaml"},
+			wantErr:      true,
+			wantContains: []string{"--from-code", "--manifest"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateInitModeFlags(tt.flags)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				for _, want := range tt.wantContains {
+					if !strings.Contains(err.Error(), want) {
+						t.Fatalf("error message should mention %q to help the user; got %v", want, err)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected nil error, got %v", err)
+			}
+		})
+	}
+}
+
 func TestValidateInitAgentName(t *testing.T) {
 	t.Parallel()
 

@@ -178,8 +178,6 @@ func TestLookupCredentialValue(t *testing.T) {
 	}
 }
 
-
-
 func TestConnectionRefPattern(t *testing.T) {
 	tests := []struct {
 		name     string

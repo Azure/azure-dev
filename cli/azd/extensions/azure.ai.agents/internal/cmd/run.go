@@ -195,21 +195,14 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// the Foundry data plane). Agent definition env vars do not override
 	// values already present in the process environment.
 	endpoint, _ := resolveAgentEndpoint(ctx, "", "")
-	if defEnv, err := resolveAgentDefinitionEnvVars(ctx, projectDir, azdEnvVars, endpoint); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %s\n", err)
-		// Still inject any non-connection env vars that were resolved
-		for _, entry := range defEnv {
-			key, _, _ := strings.Cut(entry, "=")
-			if !envSliceHasKey(env, key) {
-				env = append(env, entry)
-			}
-		}
-	} else {
-		for _, entry := range defEnv {
-			key, _, _ := strings.Cut(entry, "=")
-			if !envSliceHasKey(env, key) {
-				env = append(env, entry)
-			}
+	defEnv, defErr := resolveAgentDefinitionEnvVars(ctx, projectDir, azdEnvVars, endpoint)
+	if defErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", defErr)
+	}
+	for _, entry := range defEnv {
+		key, _, _ := strings.Cut(entry, "=")
+		if !envSliceHasKey(env, key) {
+			env = append(env, entry)
 		}
 	}
 
@@ -492,12 +485,12 @@ func resolveAgentDefinitionEnvVars(
 
 	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // G304: path from findAgentYaml which checks known filenames in projectDir
 	if err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("could not read agent definition %s: %w", agentYamlPath, err)
 	}
 
 	var agentDef agent_yaml.ContainerAgent
 	if err := yaml.Unmarshal(data, &agentDef); err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("could not parse agent definition %s: %w", agentYamlPath, err)
 	}
 
 	if agentDef.EnvironmentVariables == nil || len(*agentDef.EnvironmentVariables) == 0 {
@@ -547,6 +540,10 @@ func resolveAgentDefinitionEnvVars(
 }
 
 // findAgentYaml locates the agent definition file in the given directory.
+// After `azd ai agent init`, agent.yaml (and azure.yaml) are the sources of
+// truth for the agent configuration. We intentionally do not look at
+// agent.manifest.yaml here — that file is an import artifact used only during
+// init and is not referenced at runtime.
 func findAgentYaml(dir string) string {
 	candidates := []string{"agent.yaml", "agent.yml"}
 	for _, name := range candidates {

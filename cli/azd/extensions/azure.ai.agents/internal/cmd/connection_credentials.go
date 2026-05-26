@@ -118,4 +118,3 @@ func resolveConnectionRefs(ctx context.Context, refs []connRef, endpoint string)
 
 	return result, nil
 }
-

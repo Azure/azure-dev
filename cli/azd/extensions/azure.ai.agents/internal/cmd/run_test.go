@@ -1001,4 +1001,23 @@ environment_variables:
 			t.Errorf("expected MISSING_REF= (empty), got %v", result)
 		}
 	})
+
+	t.Run("returns error for invalid YAML", func(t *testing.T) {
+		dir := t.TempDir()
+		invalid := `name: [unclosed bracket`
+		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(invalid), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), dir, nil, "")
+		if err == nil {
+			t.Fatal("expected error for invalid YAML, got nil")
+		}
+		if !strings.Contains(err.Error(), "could not parse agent definition") {
+			t.Errorf("unexpected error message: %v", err)
+		}
+		if result != nil {
+			t.Errorf("expected nil result, got %v", result)
+		}
+	})
 }

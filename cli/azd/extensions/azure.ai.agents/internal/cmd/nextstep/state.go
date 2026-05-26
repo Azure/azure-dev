@@ -159,6 +159,11 @@ type config struct {
 	// `azd ai agent run` to surface a fresh sample without making the
 	// on-disk cache the source of truth.
 	openAPILiveFetch func(context.Context) ([]byte, error)
+
+	// createdFolderDisplay is a pre-computed relative display path for
+	// the folder created during init (e.g., "my-agent"). Empty when
+	// init did not create a new directory.
+	createdFolderDisplay string
 }
 
 // WithOpenAPIProbe enables a cache-only OpenAPI lookup for (agentName, suffix).
@@ -184,6 +189,14 @@ func WithOpenAPIProbe(agentName, suffix string) Option {
 // paths (show / deploy) should not register a live probe.
 func WithLiveOpenAPIProbe(fetch func(context.Context) ([]byte, error)) Option {
 	return func(c *config) { c.openAPILiveFetch = fetch }
+}
+
+// WithCreatedFolder passes a pre-computed display path for the folder
+// created during init (e.g., "my-agent"). The resolver prepends a
+// `cd <folder>` suggestion when this is non-empty. The caller is
+// responsible for computing the relative/slash-normalized path.
+func WithCreatedFolder(displayPath string) Option {
+	return func(c *config) { c.createdFolderDisplay = displayPath }
 }
 
 // AssembleState builds a State snapshot for the current azd environment.
@@ -222,6 +235,7 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 	}
 
 	state := &State{}
+	state.CreatedFolderDisplay = cfg.createdFolderDisplay
 	var errs []error
 
 	envName, err := src.CurrentEnvName(ctx)

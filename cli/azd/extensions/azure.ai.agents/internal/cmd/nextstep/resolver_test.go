@@ -181,6 +181,48 @@ func TestResolveAfterInit_NilState(t *testing.T) {
 	assert.Nil(t, ResolveAfterInit(nil))
 }
 
+func TestResolveAfterInit_CreatedFolder(t *testing.T) {
+	t.Parallel()
+
+	t.Run("cd suggestion prepended when folder was created", func(t *testing.T) {
+		t.Parallel()
+		state := &State{
+			HasProjectEndpoint:   true,
+			CreatedFolderDisplay: "my-agent",
+		}
+		out := ResolveAfterInit(state)
+		require.NotEmpty(t, out)
+		assert.Equal(t, "cd my-agent", out[0].Command)
+		assert.Equal(t, "enter your new project folder", out[0].Description)
+		assert.Equal(t, 0, out[0].Priority, "cd suggestion should have highest priority")
+		// Next primary is run, trailing is deploy
+		assert.Contains(t, out[1].Command, "azd ai agent run")
+		assert.Equal(t, "azd deploy", out[len(out)-1].Command)
+	})
+
+	t.Run("no cd suggestion when no folder created", func(t *testing.T) {
+		t.Parallel()
+		state := &State{HasProjectEndpoint: true}
+		out := ResolveAfterInit(state)
+		require.NotEmpty(t, out)
+		for _, s := range out {
+			assert.False(t, strings.HasPrefix(s.Command, "cd "),
+				"should not contain cd suggestion, got %q", s.Command)
+		}
+	})
+
+	t.Run("cd suggestion before provision when infra missing", func(t *testing.T) {
+		t.Parallel()
+		state := &State{
+			CreatedFolderDisplay: "hello-world",
+		}
+		out := ResolveAfterInit(state)
+		require.True(t, len(out) >= 2)
+		assert.Equal(t, "cd hello-world", out[0].Command)
+		assert.Equal(t, "azd provision", out[1].Command)
+	})
+}
+
 // TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape locks the
 // single-missing-manual-var case end-to-end. Three asserts: the env-set
 // line has the enriched "referenced by agent.yaml but not set in azd

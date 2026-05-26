@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"maps"
 	"net/http"
@@ -87,11 +88,12 @@ type InitAction struct {
 	flags         *initFlags
 	models        *modelSelector
 
-	deploymentDetails   []project.Deployment
-	containerSettings   *project.ContainerSettings
-	isCodeDeploy        bool // true when user selects code deploy mode; skips ACR config
-	httpClient          *http.Client
-	serviceNameOverride string // when set, addToProject uses this instead of the manifest name
+	deploymentDetails    []project.Deployment
+	containerSettings    *project.ContainerSettings
+	isCodeDeploy         bool // true when user selects code deploy mode; skips ACR config
+	httpClient           *http.Client
+	serviceNameOverride  string // when set, addToProject uses this instead of the manifest name
+	createdFolderDisplay string // pre-computed relative display path for the created folder
 }
 
 // modelSelector encapsulates the dependencies needed for model selection and
@@ -302,6 +304,13 @@ func setAgentNameOnTemplate(agentManifest *agent_yaml.AgentManifest, agentName s
 
 	agentManifest.Template = template
 	return nil
+}
+
+func folderNameStrippingParenSuffix(title string) string {
+	if idx := strings.IndexByte(title, '('); idx >= 0 {
+		title = strings.TrimSpace(title[:idx])
+	}
+	return sanitizeAgentName(title)
 }
 
 func updateAgentDefinition(
@@ -530,9 +539,11 @@ func runInitFromManifest(
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
+	targetDir string,
+	createdFolderDisplay string,
 ) error {
 	// Ensure project and environment exist (no subscription/location prompting yet)
-	projectConfig, err := ensureProject(ctx, flags, azdClient)
+	projectConfig, err := ensureProject(ctx, flags, azdClient, targetDir)
 	if err != nil {
 		return err
 	}
@@ -582,14 +593,15 @@ func runInitFromManifest(
 	)
 
 	action := &InitAction{
-		azdClient:     azdClient,
-		azureContext:  azureContext,
-		console:       console,
-		credential:    credential,
-		projectConfig: projectConfig,
-		environment:   env,
-		flags:         flags,
-		httpClient:    httpClient,
+		azdClient:            azdClient,
+		azureContext:         azureContext,
+		console:              console,
+		credential:           credential,
+		projectConfig:        projectConfig,
+		environment:          env,
+		flags:                flags,
+		httpClient:           httpClient,
+		createdFolderDisplay: createdFolderDisplay,
 	}
 
 	return action.Run(ctx)
@@ -668,6 +680,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			var httpClient = &http.Client{
 				Timeout: 30 * time.Second,
 			}
+
+			// Track whether a project already exists so the cd hint is
+			// only shown for brand-new top-level project folders, not
+			// when a template adds a subfolder to an existing project.
+			existingProject := fileExists("azure.yaml")
 
 			// Auto-detect an existing agent manifest in the target directory
 			// when no --manifest flag was provided.
@@ -763,7 +780,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					return err
 				}
 
-				if err := runInitFromManifest(ctx, flags, azdClient, httpClient); err != nil {
+				if err := runInitFromManifest(ctx, flags, azdClient, httpClient, ".", ""); err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
 					}
@@ -793,17 +810,24 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					switch selectedTemplate.EffectiveType() {
 					case TemplateTypeAzd:
 						// Full azd template - dispatch azd init -t <repo>
-						initArgs := []string{"init", "-t", selectedTemplate.Source, "."}
+						// Create project in a new subdirectory derived from the template title.
+						folderName := folderNameStrippingParenSuffix(selectedTemplate.Title)
+						// Check whether the target directory already exists so we
+						// only report "created" when a new directory was made.
+						_, statErr := os.Stat(folderName)
+						newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+						initArgs := []string{"init", "-t", selectedTemplate.Source, folderName}
 						if flags.env != "" {
 							initArgs = append(initArgs, "--environment", flags.env)
 						} else {
-							cwd, err := os.Getwd()
-							if err == nil {
-								sanitizedDirectoryName := sanitizeAgentName(filepath.Base(cwd))
-								initArgs = append(
-									initArgs, "--environment", sanitizedDirectoryName+"-dev",
-								)
+							base := sanitizeAgentName(folderName)
+							if len(base) > 59 {
+								base = strings.TrimRight(base[:59], "-")
 							}
+							defaultEnvName := base + "-dev"
+							initArgs = append(
+								initArgs, "--environment", defaultEnvName,
+							)
 						}
 
 						workflow := &azdext.Workflow{
@@ -834,6 +858,22 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 							selectedTemplate.Title,
 						)
 
+						// Sync the extension process into the new project directory.
+						// The azd host already chdir'd when it processed the init command.
+						if err := os.Chdir(folderName); err != nil {
+							return fmt.Errorf(
+								"changing to project directory %q: %w",
+								folderName, err,
+							)
+						}
+						// Compute display path for created folder (used in nextstep).
+						// Only show cd hint for brand-new projects, not when adding
+						// a template subfolder to an existing project.
+						var folderDisplay string
+						if newlyCreated && !existingProject {
+							folderDisplay = filepath.ToSlash(folderName)
+						}
+
 						// Search for an agent manifest in the scaffolded project
 						cwd, err := os.Getwd()
 						if err != nil {
@@ -847,7 +887,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 						if manifestPath != "" {
 							flags.manifestPointer = manifestPath
-							if err := runInitFromManifest(ctx, flags, azdClient, httpClient); err != nil {
+							if err := runInitFromManifest(
+								ctx, flags, azdClient, httpClient, ".", folderDisplay,
+							); err != nil {
 								if exterrors.IsCancellation(err) {
 									return exterrors.Cancelled("initialization was cancelled")
 								}
@@ -858,9 +900,21 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 
 					default:
-						// Agent manifest template - use existing -m flow
+						// Agent manifest template - use existing -m flow.
+						// Create project in a new subdirectory derived from the template title.
+						folderName := folderNameStrippingParenSuffix(selectedTemplate.Title)
+						// Check whether the target directory already exists so we
+						// only report "created" when a new directory was made.
+						_, statErr := os.Stat(folderName)
+						newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+						var folderDisplay string
+						if newlyCreated && !existingProject {
+							folderDisplay = filepath.ToSlash(folderName)
+						}
 						flags.manifestPointer = selectedTemplate.Source
-						if err := runInitFromManifest(ctx, flags, azdClient, httpClient); err != nil {
+						if err := runInitFromManifest(
+							ctx, flags, azdClient, httpClient, folderName, folderDisplay,
+						); err != nil {
 							if exterrors.IsCancellation(err) {
 								return exterrors.Cancelled("initialization was cancelled")
 							}
@@ -1093,21 +1147,37 @@ func (a *InitAction) Run(ctx context.Context) error {
 	return nil
 }
 
-func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.ProjectConfig, error) {
+func ensureProject(
+	ctx context.Context,
+	flags *initFlags,
+	azdClient *azdext.AzdClient,
+	targetDir string,
+) (*azdext.ProjectConfig, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		fmt.Println("Let's get your project initialized.")
 
 		// Environment creation is handled separately in ensureEnvironment
-		initArgs := []string{"init", "-t", "Azure-Samples/azd-ai-starter-basic", "."}
+		initArgs := []string{
+			"init", "-t", "Azure-Samples/azd-ai-starter-basic", targetDir,
+		}
 		if flags.env != "" {
 			initArgs = append(initArgs, "--environment", flags.env)
 		} else {
-			cwd, err := os.Getwd()
-			if err == nil {
-				sanitizedDirectoryName := sanitizeAgentName(filepath.Base(cwd))
-				initArgs = append(initArgs, "--environment", sanitizedDirectoryName+"-dev")
+			// Derive environment name from target folder
+			envBase := targetDir
+			if targetDir == "." {
+				cwd, cwdErr := os.Getwd()
+				if cwdErr == nil {
+					envBase = filepath.Base(cwd)
+				}
 			}
+			base := sanitizeAgentName(envBase)
+			if len(base) > 59 {
+				base = strings.TrimRight(base[:59], "-")
+			}
+			envName := base + "-dev"
+			initArgs = append(initArgs, "--environment", envName)
 		}
 
 		// We don't have a project yet
@@ -1132,6 +1202,17 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 				fmt.Sprintf("failed to initialize project: %s", err),
 				"",
 			)
+		}
+
+		// Sync the extension process into the new project directory so that
+		// subsequent local file operations see the scaffolded project.
+		if targetDir != "." {
+			if chdirErr := os.Chdir(targetDir); chdirErr != nil {
+				return nil, fmt.Errorf(
+					"changing to project directory %q: %w",
+					targetDir, chdirErr,
+				)
+			}
 		}
 
 		projectResponse, err = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
@@ -2208,7 +2289,11 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	// everything is configured. All paths append the deploy hint as the
 	// trailing line. State-assembly errors are intentionally ignored: the
 	// resolver degrades gracefully on partial state per the design spec.
-	state, _ := nextstep.AssembleState(ctx, a.azdClient)
+	var stateOpts []nextstep.Option
+	if a.createdFolderDisplay != "" {
+		stateOpts = append(stateOpts, nextstep.WithCreatedFolder(a.createdFolderDisplay))
+	}
+	state, _ := nextstep.AssembleState(ctx, a.azdClient, stateOpts...)
 	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state))
 	return nil
 }
@@ -3115,4 +3200,22 @@ func validateCodeDeployInput(noPrompt bool, deployMode, runtime, entryPoint, dep
 		}
 	}
 	return nil
+}
+
+// formatCreatedFolderMessage builds the user-facing message shown after a new
+// project folder is created. It computes a cross-platform relative display path
+// and optionally notes the original template title when the folder name differs.
+func formatCreatedFolderMessage(originalCwd, createdFolder, createdFromTitle string) string {
+	displayPath := createdFolder
+	if relPath, err := filepath.Rel(originalCwd, createdFolder); err == nil {
+		displayPath = filepath.ToSlash(relPath)
+	}
+
+	msg := fmt.Sprintf("\nYour project has been created in %s", displayPath)
+	if createdFromTitle != "" && filepath.Base(createdFolder) != createdFromTitle {
+		msg += fmt.Sprintf(" (from template %q)", createdFromTitle)
+	}
+	msg += fmt.Sprintf("\n  cd %s\n", displayPath)
+
+	return msg
 }

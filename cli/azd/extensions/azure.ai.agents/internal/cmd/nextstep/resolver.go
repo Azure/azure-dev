@@ -93,6 +93,17 @@ func ResolveAfterInit(state *State) []Suggestion {
 	out := make([]Suggestion, 0, 4)
 	priority := 5
 
+	// When init created a new project folder, the user's shell is still
+	// in the original directory. A leading `cd` suggestion lets them
+	// navigate before running any subsequent commands.
+	if state.CreatedFolderDisplay != "" {
+		out = append(out, Suggestion{
+			Command:     fmt.Sprintf("cd %s", state.CreatedFolderDisplay),
+			Description: "enter your new project folder",
+			Priority:    0,
+		})
+	}
+
 	// Placeholder fix-ups always come first when present: they are broken
 	// state in agent.yaml itself and block both `run` and `deploy`. The
 	// user has to edit agent.yaml (or define a matching parameter in

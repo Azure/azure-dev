@@ -27,6 +27,11 @@ parameters:
           GOOS: linux
           GOARCH: arm64
           BuildLinuxPackages: true
+          # Set special temp/cache directory overrides to avoid out of space
+          # issues on hosted agents
+          DOCKER_TMPDIR: $(Agent.TempDirectory)
+          TMPDIR: $(Agent.TempDirectory)
+          GOCACHE: $(Agent.TempDirectory)/go-cache
       MacARM64:
         Pool: Azure Pipelines
         OSVmImage: $(MACVMIMAGE)

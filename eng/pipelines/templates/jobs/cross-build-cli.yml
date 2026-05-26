@@ -93,6 +93,11 @@ jobs:
         workingDirectory: cli/azd
         displayName: Copy binary to artifact staging directory
 
+      - template: /eng/pipelines/templates/steps/cleanup-disk-space.yml
+        parameters:
+          CleanGoCache: true
+          Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+
       - template: /eng/pipelines/templates/steps/build-linux-packages.yml
         parameters:
           Architecture: arm64
@@ -101,7 +106,6 @@ jobs:
       - template: /eng/pipelines/templates/steps/cleanup-disk-space.yml
         parameters:
           CleanDocker: true
-          CleanGoCache: true
           Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
     
     templateContext: 

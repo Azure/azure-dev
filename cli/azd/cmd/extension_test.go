@@ -211,6 +211,38 @@ func TestValidateVersionCompatibility(t *testing.T) {
 	})
 }
 
+func TestValidateExactVersionFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		version string
+		wantErr bool
+	}{
+		{name: "empty", version: ""},
+		{name: "latest", version: "latest"},
+		{name: "semver", version: "1.2.3"},
+		{name: "prerelease", version: "1.2.3-preview.1"},
+		{name: "non_semver_version", version: "nightly"},
+		{name: "range", version: ">=1.2.3", wantErr: true},
+		{name: "tilde", version: "~1.2.0", wantErr: true},
+		{name: "wildcard", version: "1.x", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateExactVersionFlag(tt.version)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestResolveCompatibleExtension_NilAzdVersion(t *testing.T) {
 	t.Parallel()
 

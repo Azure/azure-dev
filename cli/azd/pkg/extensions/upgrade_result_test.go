@@ -135,6 +135,57 @@ func TestUpgradeResult_MarshalJSON(t *testing.T) {
 		assert.Equal(t, "dev", parsed["fromSource"])
 		assert.Equal(t, "azd", parsed["toSource"])
 	})
+
+	t.Run("dependencyUpgrades_field_included", func(t *testing.T) {
+		t.Parallel()
+		child := UpgradeResult{
+			ExtensionId: "child.ext",
+			Status:      UpgradeStatusUpgraded,
+			FromVersion: "1.0.0",
+			ToVersion:   "2.0.0",
+		}
+		r := UpgradeResult{
+			ExtensionId:        "parent.pack",
+			Status:             UpgradeStatusUpgraded,
+			FromVersion:        "1.0.0",
+			ToVersion:          "2.0.0",
+			DependencyUpgrades: []UpgradeResult{child},
+		}
+
+		data, err := json.Marshal(r)
+		require.NoError(t, err)
+
+		var parsed map[string]any
+		require.NoError(t, json.Unmarshal(data, &parsed))
+
+		entries, ok := parsed["dependencyUpgrades"].([]any)
+		require.True(t, ok, "dependencyUpgrades field must be a JSON array")
+		require.Len(t, entries, 1)
+
+		childParsed, ok := entries[0].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "child.ext", childParsed["name"])
+		assert.Equal(t, "upgraded", childParsed["status"])
+		assert.Equal(t, "1.0.0", childParsed["fromVersion"])
+		assert.Equal(t, "2.0.0", childParsed["toVersion"])
+	})
+
+	t.Run("dependencyUpgrades_omitempty_when_nil", func(t *testing.T) {
+		t.Parallel()
+		r := UpgradeResult{
+			ExtensionId: "leaf.ext",
+			Status:      UpgradeStatusUpgraded,
+		}
+
+		data, err := json.Marshal(r)
+		require.NoError(t, err)
+
+		var parsed map[string]any
+		require.NoError(t, json.Unmarshal(data, &parsed))
+
+		_, present := parsed["dependencyUpgrades"]
+		assert.False(t, present, "dependencyUpgrades field must be omitted when empty")
+	})
 }
 
 func TestNewUpgradeSummary(t *testing.T) {
@@ -203,6 +254,26 @@ func TestNewUpgradeSummary(t *testing.T) {
 		assert.Equal(t, 2, s.Total)
 		assert.Equal(t, 2, s.Skipped)
 		assert.Equal(t, 0, s.Failed)
+	})
+
+	t.Run("dependencyUpgrades_counted_recursively", func(t *testing.T) {
+		t.Parallel()
+		grandchild := UpgradeResult{Status: UpgradeStatusUpgraded}
+		child := UpgradeResult{
+			Status:             UpgradeStatusUpgraded,
+			DependencyUpgrades: []UpgradeResult{grandchild},
+		}
+		results := []UpgradeResult{
+			{
+				Status:             UpgradeStatusUpgraded,
+				DependencyUpgrades: []UpgradeResult{child},
+			},
+			{Status: UpgradeStatusUpgraded},
+		}
+		s := NewUpgradeSummary(results)
+		assert.Equal(t, 2, s.Total)
+		assert.Equal(t, 2, s.Upgraded)
+		assert.Equal(t, 2, s.DependencyUpgrades, "dependency-upgrade count must include grandchildren")
 	})
 }
 

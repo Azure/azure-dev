@@ -202,11 +202,11 @@ type connectionCreateFlags struct {
 	projectEndpoint  string
 	clientID         string // OAuth2 client ID
 	clientSecret     string // OAuth2 client secret
-	audience         string // Token audience for user-entra-token / agentic-identity
+	audience         string // Token audience for user-entra-token / agentic-identity / project-managed-identity
 	authorizationURL string // OAuth2 authorization endpoint
 	tokenURL         string // OAuth2 token endpoint
 	refreshURL       string // OAuth2 refresh endpoint
-	scopes           string // OAuth2 scopes (space-separated)
+	scopes           string // OAuth2 scopes (comma-separated)
 	connectorName    string // Managed connector name
 }
 
@@ -321,10 +321,10 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 		}
 	}
 	if a.flags.audience != "" && a.flags.authType != "user-entra-token" &&
-		a.flags.authType != "agentic-identity" {
+		a.flags.authType != "agentic-identity" && a.flags.authType != "project-managed-identity" {
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments,
-			"--audience is only valid with --auth-type user-entra-token or agentic-identity.",
+			"--audience is only valid with --auth-type user-entra-token, agentic-identity, or project-managed-identity.",
 			"",
 		)
 	}
@@ -440,7 +440,7 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 	cmd.Flags().StringVar(&flags.clientSecret, "client-secret", "",
 		"OAuth2 client secret (required for BYO OAuth2)")
 	cmd.Flags().StringVar(&flags.audience, "audience", "",
-		"Token audience for user-entra-token/agentic-identity auth")
+		"Token audience for user-entra-token/agentic-identity/project-managed-identity auth")
 	cmd.Flags().StringVar(&flags.authorizationURL, "authorization-url", "",
 		"OAuth2 authorization endpoint URL")
 	cmd.Flags().StringVar(&flags.tokenURL, "token-url", "",
@@ -448,7 +448,7 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 	cmd.Flags().StringVar(&flags.refreshURL, "refresh-url", "",
 		"OAuth2 token refresh URL")
 	cmd.Flags().StringVar(&flags.scopes, "scopes", "",
-		"OAuth2 scopes (space-separated)")
+		"OAuth2 scopes (comma-separated)")
 	cmd.Flags().StringVar(&flags.connectorName, "connector-name", "",
 		"Managed connector name (for OAuth2 connectors)")
 	return cmd

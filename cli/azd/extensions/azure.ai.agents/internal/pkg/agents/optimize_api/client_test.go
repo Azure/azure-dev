@@ -65,9 +65,8 @@ func TestStartOptimize(t *testing.T) {
 
 	client := newTestClient(server.URL)
 	resp, err := client.StartOptimize(context.Background(), &OptimizeRequest{
-		Agent: AgentDefinition{
-			FoundryProjectURL: "https://example.com/proj",
-			AgentName:         "agent-1",
+		Agent: AgentIdentifier{
+			AgentName: "agent-1",
 		},
 		Options: OptimizeOptions{EvalModel: "gpt-4o-mini"},
 	})

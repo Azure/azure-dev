@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -51,7 +52,16 @@ func TestOptimizeCommand_AcceptsConfigFlag(t *testing.T) {
 	assert.Equal(t, "c", f.Shorthand, "--config should have -c shorthand")
 
 	assert.NotNil(t, cmd.Flags().Lookup("poll-interval"))
-	assert.NotNil(t, cmd.Flags().Lookup("target"))
+}
+
+func TestOptimizeCommand_DatasetFlag(t *testing.T) {
+	t.Parallel()
+	cmd := newOptimizeCommand(&azdext.ExtensionContext{})
+
+	f := cmd.Flags().Lookup("dataset")
+	require.NotNil(t, f, "--dataset flag should be registered")
+	assert.Equal(t, "d", f.Shorthand, "--dataset should have -d shorthand")
+	assert.Equal(t, "", f.DefValue, "--dataset default should be empty")
 }
 
 func TestOptimizeCommand_DefaultFlags(t *testing.T) {
@@ -92,11 +102,8 @@ func TestDefaultOptimizeConfig(t *testing.T) {
 	cfg := defaultOptimizeConfig("my-agent")
 
 	assert.Equal(t, "my-agent", cfg.Agent.Name)
-	assert.NotEmpty(t, cfg.InlineDataset)
 	require.NotNil(t, cfg.Options)
-	assert.Equal(t, "gpt-4o", cfg.Options.EvalModel)
-	assert.Contains(t, cfg.Options.TargetAttributes, "instruction")
-	assert.Contains(t, cfg.Options.TargetAttributes, "skill")
+	assert.Empty(t, cfg.Options.EvalModel)
 	require.Len(t, cfg.Evaluators, 1)
 	assert.Equal(t, "builtin.task_adherence", cfg.Evaluators[0].Name)
 }
@@ -169,4 +176,77 @@ func TestLoadOptimizeConfig_ReconcileAgentName(t *testing.T) {
 		assert.False(t, changed)
 		assert.Equal(t, "config-agent", cfg.Agent.Name, "original name preserved when env is empty")
 	})
+}
+
+// ---- applyOverrides: --dataset flag ----
+
+func TestApplyOverrides_DatasetFlag_LocalFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	dataFile := filepath.Join(dir, "data.jsonl")
+	require.NoError(t, os.WriteFile(dataFile, []byte(`{"input":"hi"}`+"\n"), 0600))
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent: opt_eval.AgentRef{Name: "a", Instruction: opt_eval.InstructionRef{Value: "test"}},
+		},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o"},
+	}
+
+	action := &OptimizeAction{
+		flags:    &optimizeFlags{dataset: dataFile},
+		noPrompt: true,
+	}
+
+	err := action.applyOverrides(t.Context(), cfg, dir)
+	require.NoError(t, err)
+	assert.Equal(t, dataFile, cfg.DatasetFile)
+	assert.Nil(t, cfg.DatasetReference)
+}
+
+func TestApplyOverrides_DatasetFlag_RegisteredName(t *testing.T) {
+	t.Parallel()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent: opt_eval.AgentRef{Name: "a", Instruction: opt_eval.InstructionRef{Value: "test"}},
+		},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o"},
+	}
+
+	action := &OptimizeAction{
+		flags:    &optimizeFlags{dataset: "my-golden-dataset"},
+		noPrompt: true,
+	}
+
+	err := action.applyOverrides(t.Context(), cfg, "")
+	require.NoError(t, err)
+	assert.Empty(t, cfg.DatasetFile)
+	require.NotNil(t, cfg.DatasetReference)
+	assert.Equal(t, "my-golden-dataset", cfg.DatasetReference.Name)
+}
+
+func TestApplyOverrides_DatasetFlag_OverridesExisting(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	dataFile := filepath.Join(dir, "new.jsonl")
+	require.NoError(t, os.WriteFile(dataFile, []byte(`{"input":"hi"}`+"\n"), 0600))
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:            opt_eval.AgentRef{Name: "a", Instruction: opt_eval.InstructionRef{Value: "test"}},
+			DatasetReference: &opt_eval.DatasetRef{Name: "old-ref"},
+		},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o"},
+	}
+
+	action := &OptimizeAction{
+		flags:    &optimizeFlags{dataset: dataFile},
+		noPrompt: true,
+	}
+
+	err := action.applyOverrides(t.Context(), cfg, dir)
+	require.NoError(t, err)
+	assert.Equal(t, dataFile, cfg.DatasetFile, "file should replace ref")
+	assert.Nil(t, cfg.DatasetReference, "ref should be cleared")
 }

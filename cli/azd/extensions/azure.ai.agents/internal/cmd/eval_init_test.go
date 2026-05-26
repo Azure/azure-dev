@@ -276,27 +276,27 @@ func TestIsDatasetName(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// buildModelChoices
+// buildModelSelectionChoices (shared in model_prompt.go)
 // ---------------------------------------------------------------------------
 
-func TestBuildModelChoices(t *testing.T) {
+func TestBuildModelSelectionChoices(t *testing.T) {
 	t.Parallel()
 
 	t.Run("no deployed model has select-other only", func(t *testing.T) {
 		t.Parallel()
-		choices := buildModelChoices("")
+		choices := buildModelSelectionChoices("")
 		require.Len(t, choices, 1)
-		assert.Equal(t, selectOtherDeployment, choices[0].Value)
+		assert.Equal(t, selectOtherDeploymentValue, choices[0].Value)
 		assert.Equal(t, "Select another deployment", choices[0].Label)
 	})
 
 	t.Run("deployed model first then select-other", func(t *testing.T) {
 		t.Parallel()
-		choices := buildModelChoices("my-deployment")
+		choices := buildModelSelectionChoices("my-deployment")
 		require.Len(t, choices, 2)
 		assert.Equal(t, "my-deployment", choices[0].Value)
 		assert.Contains(t, choices[0].Label, "(deployed)")
-		assert.Equal(t, selectOtherDeployment, choices[1].Value)
+		assert.Equal(t, selectOtherDeploymentValue, choices[1].Value)
 	})
 }
 

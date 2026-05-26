@@ -144,8 +144,9 @@ func copyToClipboardWith(text string, write clipboardCopier, env clipboardEnv) C
 // isHeadlessEnv reports whether the current process looks like it has
 // no usable clipboard. Heuristics:
 //
-//   - CI=true (covers GitHub Actions, ADO, etc.; matches the SDK's CI
-//     detection precedent)
+//   - Any CI env var present (matches azdext.isCIEnv; covers GitHub
+//     Actions, ADO, Jenkins, GitLab, CircleCI, Travis, Buildkite,
+//     CodeBuild, plus a presence-only CI=<anything> check)
 //   - TERM=dumb
 //   - Linux with neither DISPLAY nor WAYLAND_DISPLAY set
 //   - Any SSH session (SSH_CONNECTION or SSH_TTY set)
@@ -153,8 +154,10 @@ func copyToClipboardWith(text string, write clipboardCopier, env clipboardEnv) C
 // On Windows and macOS the OS clipboard is always reachable in
 // principle, so we only skip on the universal heuristics there.
 func isHeadlessEnv(env clipboardEnv) bool {
-	if v, ok := env.Lookup("CI"); ok && strings.EqualFold(v, "true") {
-		return true
+	for _, key := range headlessCIEnvVars {
+		if v, ok := env.Lookup(key); ok && v != "" {
+			return true
+		}
 	}
 	if v, ok := env.Lookup("TERM"); ok && strings.EqualFold(v, "dumb") {
 		return true
@@ -173,6 +176,21 @@ func isHeadlessEnv(env clipboardEnv) bool {
 		}
 	}
 	return false
+}
+
+// headlessCIEnvVars mirrors azdext.ciEnvVars so the extension agrees with
+// the host on what counts as a CI environment. Any non-empty value here
+// is treated as CI (presence-based, not just CI="true").
+var headlessCIEnvVars = []string{
+	"CI",
+	"GITHUB_ACTIONS",
+	"TF_BUILD",
+	"JENKINS_URL",
+	"GITLAB_CI",
+	"CIRCLECI",
+	"TRAVIS",
+	"BUILDKITE",
+	"CODEBUILD_BUILD_ID",
 }
 
 // printStarterPrompt writes a styled "Starter prompt for your AI agent:"

@@ -821,12 +821,10 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				}
 			} else {
 				// No manifest provided - prompt user for init mode.
-				// flags + cmd.OutOrStdout are threaded through so the
-				// helper can:
-				//   - short-circuit on --from-code
-				//   - return a deterministic ErrorWithSuggestion in
-				//     --no-prompt mode rather than failing on Select
-				initMode, err := promptInitMode(ctx, azdClient, flags, cmd.OutOrStdout())
+				// The helper short-circuits on --from-code and returns
+				// a deterministic ErrorWithSuggestion in --no-prompt
+				// mode rather than failing on Select.
+				initMode, err := promptInitMode(ctx, azdClient, flags)
 				if err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")

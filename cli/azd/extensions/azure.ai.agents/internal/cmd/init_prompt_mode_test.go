@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -37,7 +36,7 @@ func TestPromptInitMode_FromCodeFlagWins(t *testing.T) {
 
 	// nil azdClient is safe here because the from-code short-circuit
 	// returns before any Prompt RPC is attempted.
-	mode, err := promptInitMode(context.Background(), nil, &initFlags{fromCode: true}, &bytes.Buffer{})
+	mode, err := promptInitMode(context.Background(), nil, &initFlags{fromCode: true})
 	require.NoError(t, err)
 	assert.Equal(t, initModeFromCode, mode)
 }
@@ -48,7 +47,7 @@ func TestPromptInitMode_FromCodeFlagWins(t *testing.T) {
 func TestPromptInitMode_EmptyDirSelectsTemplate(t *testing.T) {
 	_ = chdirTo(t)
 
-	mode, err := promptInitMode(context.Background(), nil, &initFlags{}, &bytes.Buffer{})
+	mode, err := promptInitMode(context.Background(), nil, &initFlags{})
 	require.NoError(t, err)
 	assert.Equal(t, initModeTemplate, mode)
 }
@@ -62,7 +61,7 @@ func TestPromptInitMode_NonEmptyNoPromptReturnsSuggestion(t *testing.T) {
 	dir := chdirTo(t)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.py"), []byte("x\n"), 0o644)) //nolint:gosec
 
-	_, err := promptInitMode(context.Background(), nil, &initFlags{noPrompt: true}, &bytes.Buffer{})
+	_, err := promptInitMode(context.Background(), nil, &initFlags{noPrompt: true})
 	require.Error(t, err)
 
 	// The suggestion should name BOTH escape hatches so the caller

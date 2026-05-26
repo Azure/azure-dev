@@ -342,11 +342,11 @@ func (a *InitPreflowAction) installSkill(ctx context.Context, target preflowTarg
 	}
 
 	// Capture the child's stdout so we can parse the JSON install
-	// receipt. Errors from the child are written to its own os.Stderr;
-	// passing nil to runner.Run forwards stderr to the parent terminal
-	// so any failure detail is visible to the user live.
+	// receipt. Forward stderr to the parent terminal so any install
+	// failure detail is visible to the user live -- passing nil to
+	// runner.Run would discard stderr (os/exec drops nil Cmd.Stderr).
 	var stdout strings.Builder
-	if err := a.runner.Run(ctx, args, &stdout, nil); err != nil {
+	if err := a.runner.Run(ctx, args, &stdout, a.out); err != nil {
 		// We pre-checked docs-extension presence in ensureDocsExtension
 		// above (see ext_lookup.go for the rationale on why we don't
 		// rely on azd's auto-install). Any error here is from the
@@ -620,7 +620,18 @@ func (a *InitPreflowAction) askFoundryProject(
 	if len(projects) == 0 {
 		fmt.Fprintln(a.out, output.WithGrayFormat(
 			"No Foundry projects found in the selected subscription. The coding agent will create one."))
-		return nil, nil, nil
+		// Prompt for location so Q5 (model deployment) can still browse
+		// the model catalog -- otherwise hasAzureContext is false and
+		// the "Create a new model deployment" choice silently degrades.
+		location, locationErr := a.promptLocationPreflow(ctx)
+		if locationErr != nil {
+			return nil, nil, locationErr
+		}
+		return &FoundryProjectInfo{
+			SubscriptionId: subscriptionId,
+			TenantId:       tenantId,
+			Location:       location,
+		}, credential, nil
 	}
 
 	// Build select choices from the project list.

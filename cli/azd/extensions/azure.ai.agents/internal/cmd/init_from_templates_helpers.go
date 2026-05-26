@@ -105,7 +105,6 @@ func promptInitMode(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	flags *initFlags,
-	out io.Writer,
 ) (string, error) {
 	// 1. Explicit flag wins over any directory-state inference.
 	if flags != nil && flags.fromCode {

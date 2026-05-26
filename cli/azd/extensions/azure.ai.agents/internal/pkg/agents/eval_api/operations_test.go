@@ -144,7 +144,7 @@ func TestCreateEvaluatorGenerationJob_Success(t *testing.T) {
 
 	client, _ := newTestClient(t, handler)
 	result, err := client.CreateEvaluatorGenerationJob(
-		t.Context(), &EvaluatorGenerationJobRequest{Name: "my-eval"}, "2025-11-15-preview",
+		t.Context(), &EvaluatorGenerationJobRequest{Name: "my-eval"}, "v1",
 	)
 
 	require.NoError(t, err)
@@ -175,7 +175,7 @@ func TestGetEvaluatorGenerationJob_Success(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	result, err := client.GetEvaluatorGenerationJob(t.Context(), "eval-op-456", "2025-11-15-preview")
+	result, err := client.GetEvaluatorGenerationJob(t.Context(), "eval-op-456", "v1")
 
 	require.NoError(t, err)
 	assert.Equal(t, "/evaluator_generation_jobs/eval-op-456", capturedPath)
@@ -204,7 +204,7 @@ func TestCreateOpenAIEval_Success(t *testing.T) {
 
 	client, _ := newTestClient(t, handler)
 	result, err := client.CreateOpenAIEval(
-		t.Context(), &CreateOpenAIEvalRequest{Name: "smoke-core"}, "2025-11-15-preview",
+		t.Context(), &CreateOpenAIEvalRequest{Name: "smoke-core"}, "v1",
 	)
 
 	require.NoError(t, err)
@@ -236,7 +236,7 @@ func TestListOpenAIEvals_Success(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	result, err := client.ListOpenAIEvals(t.Context(), 10, "2025-11-15-preview")
+	result, err := client.ListOpenAIEvals(t.Context(), 10, "v1")
 
 	require.NoError(t, err)
 	assert.Equal(t, "10", capturedLimit)
@@ -256,7 +256,7 @@ func TestListOpenAIEvals_ZeroLimit(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	_, err := client.ListOpenAIEvals(t.Context(), 0, "2025-11-15-preview")
+	_, err := client.ListOpenAIEvals(t.Context(), 0, "v1")
 
 	require.NoError(t, err)
 	assert.False(t, hasLimitParam, "limit should not be set when 0")
@@ -281,7 +281,7 @@ func TestGetOpenAIEval_Success(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	result, err := client.GetOpenAIEval(t.Context(), "eval-001", "2025-11-15-preview")
+	result, err := client.GetOpenAIEval(t.Context(), "eval-001", "v1")
 
 	require.NoError(t, err)
 	assert.Equal(t, "/openai/evals/eval-001", capturedPath)
@@ -310,7 +310,7 @@ func TestCreateOpenAIEvalRun_Success(t *testing.T) {
 	result, err := client.CreateOpenAIEvalRun(
 		t.Context(), "eval-001", &CreateOpenAIEvalRunRequest{
 			Metadata: map[string]string{"agent": "a"},
-		}, "2025-11-15-preview",
+		}, "v1",
 	)
 
 	require.NoError(t, err)
@@ -338,7 +338,7 @@ func TestListOpenAIEvalRuns_Success(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	result, err := client.ListOpenAIEvalRuns(t.Context(), "eval-001", 5, "2025-11-15-preview")
+	result, err := client.ListOpenAIEvalRuns(t.Context(), "eval-001", 5, "v1")
 
 	require.NoError(t, err)
 	assert.Equal(t, "/openai/evals/eval-001/runs", capturedPath)
@@ -365,7 +365,7 @@ func TestGetOpenAIEvalRun_Success(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	result, err := client.GetOpenAIEvalRun(t.Context(), "eval-001", "run-001", "2025-11-15-preview")
+	result, err := client.GetOpenAIEvalRun(t.Context(), "eval-001", "run-001", "v1")
 
 	require.NoError(t, err)
 	assert.Equal(t, "/openai/evals/eval-001/runs/run-001", capturedPath)
@@ -384,7 +384,7 @@ func TestDoRequest_ServerError(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	_, err := client.CreateOpenAIEval(t.Context(), &CreateOpenAIEvalRequest{}, "2025-11-15-preview")
+	_, err := client.CreateOpenAIEval(t.Context(), &CreateOpenAIEvalRequest{}, "v1")
 	assert.Error(t, err)
 }
 
@@ -396,7 +396,7 @@ func TestDoRequest_EmptyBody(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	result, err := client.ListOpenAIEvals(t.Context(), 0, "2025-11-15-preview")
+	result, err := client.ListOpenAIEvals(t.Context(), 0, "v1")
 	require.NoError(t, err)
 	assert.Empty(t, result.Data)
 }
@@ -414,9 +414,9 @@ func TestDoRequest_APIVersionInQuery(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	_, err := client.GetOpenAIEval(t.Context(), "eval-1", "2025-11-15-preview")
+	_, err := client.GetOpenAIEval(t.Context(), "eval-1", "v1")
 	require.NoError(t, err)
-	assert.Equal(t, "2025-11-15-preview", capturedAPIVersion)
+	assert.Equal(t, "v1", capturedAPIVersion)
 }
 
 func TestDoRequest_RequestBodySent(t *testing.T) {

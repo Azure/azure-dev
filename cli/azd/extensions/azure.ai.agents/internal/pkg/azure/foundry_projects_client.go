@@ -70,7 +70,7 @@ func NewFoundryProjectsClient(
 	return &FoundryProjectsClient{
 		baseEndpoint:  baseEndpoint,
 		baseOriginURL: parsedBase,
-		apiVersion:    "2025-11-15-preview",
+		apiVersion:    "v1",
 		pipeline:      pipeline,
 	}, nil
 }

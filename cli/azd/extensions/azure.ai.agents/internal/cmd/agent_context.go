@@ -19,7 +19,7 @@ import (
 )
 
 // DefaultAgentAPIVersion is the default API version for agent operations.
-const DefaultAgentAPIVersion = "2025-11-15-preview"
+const DefaultAgentAPIVersion = "v1"
 
 // AgentEndpointAPIVersion is the API version for hosted agent endpoint protocol and session requests.
 const AgentEndpointAPIVersion = agent_api.AgentEndpointAPIVersion

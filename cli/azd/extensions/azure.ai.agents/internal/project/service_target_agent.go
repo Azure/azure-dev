@@ -48,7 +48,7 @@ import (
 // Reference implementation
 
 // agentAPIVersion is the API version used for agent management operations.
-const agentAPIVersion = "2025-11-15-preview"
+const agentAPIVersion = "v1"
 
 // displayableProtocolEntry defines a protocol that produces user-visible invocation endpoints.
 type displayableProtocolEntry struct {

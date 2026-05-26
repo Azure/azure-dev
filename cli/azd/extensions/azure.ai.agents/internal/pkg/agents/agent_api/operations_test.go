@@ -412,7 +412,7 @@ func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
 					"my-agent",
 					"sess-1",
 					"/data/input.txt",
-					"2025-11-15-preview",
+					"v1",
 					bytes.NewReader([]byte("hello")),
 					options,
 				)
@@ -428,7 +428,7 @@ func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
 					"my-agent",
 					"sess-1",
 					"/data/input.txt",
-					"2025-11-15-preview",
+					"v1",
 					options,
 				)
 				if err != nil {
@@ -447,7 +447,7 @@ func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
 					"my-agent",
 					"sess-1",
 					"",
-					"2025-11-15-preview",
+					"v1",
 					options,
 				)
 				return err
@@ -463,7 +463,7 @@ func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
 					"sess-1",
 					"/data/input.txt",
 					false,
-					"2025-11-15-preview",
+					"v1",
 					options,
 				)
 			},
@@ -477,7 +477,7 @@ func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
 					"my-agent",
 					"sess-1",
 					"/data",
-					"2025-11-15-preview",
+					"v1",
 					options,
 				)
 			},
@@ -492,7 +492,7 @@ func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
 					"my-agent",
 					"sess-1",
 					"/data/input.txt",
-					"2025-11-15-preview",
+					"v1",
 					options,
 				)
 				return err
@@ -536,7 +536,7 @@ func TestGetAgentSessionLogStream_ApplyIsolationHeaders(t *testing.T) {
 		t.Context(),
 		"my-agent",
 		"sess-1",
-		"2025-11-15-preview",
+		"v1",
 		"console",
 		50,
 		false,
@@ -600,7 +600,7 @@ func TestPatchAgent_Success(t *testing.T) {
 	}
 
 	result, err := client.PatchAgent(
-		t.Context(), "my-agent", req, "2025-11-15-preview",
+		t.Context(), "my-agent", req, "v1",
 	)
 	require.NoError(t, err)
 	require.Equal(t, "my-agent", result.Name)
@@ -619,7 +619,7 @@ func TestPatchAgent_400ReturnsError(t *testing.T) {
 	}
 
 	_, err := client.PatchAgent(
-		t.Context(), "my-agent", req, "2025-11-15-preview",
+		t.Context(), "my-agent", req, "v1",
 	)
 	require.Error(t, err, "400 should be an error")
 }
@@ -633,7 +633,7 @@ func TestPatchAgent_404ReturnsError(t *testing.T) {
 	req := &PatchAgentRequest{}
 
 	_, err := client.PatchAgent(
-		t.Context(), "no-such-agent", req, "2025-11-15-preview",
+		t.Context(), "no-such-agent", req, "v1",
 	)
 	require.Error(t, err, "404 should be an error")
 }
@@ -649,7 +649,7 @@ func TestPatchAgent_500ReturnsError(t *testing.T) {
 	req := &PatchAgentRequest{}
 
 	_, err := client.PatchAgent(
-		t.Context(), "my-agent", req, "2025-11-15-preview",
+		t.Context(), "my-agent", req, "v1",
 	)
 	require.Error(t, err, "500 should be an error")
 }

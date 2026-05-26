@@ -1,5 +1,5 @@
 param(
-    [string] $Version = (Get-Content "$PSScriptRoot/../version.txt"),
+    [string] $Version = (Get-Content "$PSScriptRoot/version.txt"),
     [string] $SourceVersion = (git rev-parse HEAD),
     [switch] $CodeCoverageEnabled,
     [switch] $BuildRecordMode,

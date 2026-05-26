@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -226,6 +227,71 @@ func TestClient_DownloadSkillContent_ReturnsZipBytes(t *testing.T) {
 	got, err := c.DownloadSkillContent(context.Background(), "my-skill")
 	require.NoError(t, err)
 	require.Equal(t, payload, got)
+}
+
+func TestClient_DownloadSkillContent_RejectsOversizeContentLength(t *testing.T) {
+	withDownloadCap(t, 16)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := strings.Repeat("A", 17)
+		w.Header().Set("Content-Type", ContentTypeZip)
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		_, _ = io.WriteString(w, body)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	_, err := c.DownloadSkillContent(context.Background(), "my-skill")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeds")
+}
+
+func TestClient_DownloadSkillContent_RejectsOversizeStreamingBody(t *testing.T) {
+	withDownloadCap(t, 16)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", ContentTypeZip)
+		// No Content-Length: force the streaming-limit path.
+		// Stream chunks until the client closes the connection.
+		flusher, _ := w.(http.Flusher)
+		chunk := []byte("AAAAAAAA") // 8 bytes
+		for range 16 {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	_, err := c.DownloadSkillContent(context.Background(), "my-skill")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeds")
+}
+
+func TestClient_DownloadSkillContent_AcceptsAtLimit(t *testing.T) {
+	withDownloadCap(t, 16)
+	payload := []byte("PK\x03\x04tinybody")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", ContentTypeZip)
+		_, _ = w.Write(payload)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	got, err := c.DownloadSkillContent(context.Background(), "my-skill")
+	require.NoError(t, err)
+	require.Equal(t, payload, got)
+}
+
+// withDownloadCap lowers downloadByteCap for the duration of a single test so
+// the cap can be exercised without writing MaxDownloadBytes through httptest.
+func withDownloadCap(t *testing.T, cap int64) {
+	t.Helper()
+	prev := downloadByteCap
+	downloadByteCap = cap
+	t.Cleanup(func() { downloadByteCap = prev })
 }
 
 func TestClient_DownloadVersionContent_TargetsVersionPath(t *testing.T) {

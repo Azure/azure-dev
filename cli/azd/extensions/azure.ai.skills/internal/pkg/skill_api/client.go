@@ -36,11 +36,21 @@ const (
 	// content-type the client uses when uploading a single zip via multipart.
 	ContentTypeZip = "application/zip"
 
+	// MaxDownloadBytes caps the wire size of /content responses to bound
+	// memory before extraction enforces its own uncompressed cap. Set to
+	// match the archive uncompressed limit; a legitimate zip is far smaller
+	// after compression, so this only trips on egregious responses.
+	MaxDownloadBytes = 512 * 1024 * 1024
+
 	//nolint:gosec // OAuth scope identifier, not a credential
 	BearerScope = "https://ai.azure.com/.default"
 
 	userAgentPrefix = "azd-ext-azure-ai-skills"
 )
+
+// downloadByteCap is the active per-response cap used by downloadContent.
+// Defaults to MaxDownloadBytes; tests may override it via withDownloadCap.
+var downloadByteCap int64 = MaxDownloadBytes
 
 type Client struct {
 	endpoint string
@@ -420,9 +430,22 @@ func (c *Client) downloadContent(ctx context.Context, fullURL string) ([]byte, e
 		}
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// Fail fast on a server-declared oversize before reading the body.
+	if resp.ContentLength > downloadByteCap {
+		return nil, fmt.Errorf(
+			"download size %d exceeds the %d byte limit",
+			resp.ContentLength, downloadByteCap,
+		)
+	}
+
+	// Read one extra byte so we can distinguish "exactly at limit" from
+	// "tried to send more than the limit".
+	body, err := io.ReadAll(io.LimitReader(resp.Body, downloadByteCap+1))
 	if err != nil {
 		return nil, fmt.Errorf("read download body: %w", err)
+	}
+	if int64(len(body)) > downloadByteCap {
+		return nil, fmt.Errorf("download exceeds the %d byte limit", downloadByteCap)
 	}
 	return body, nil
 }

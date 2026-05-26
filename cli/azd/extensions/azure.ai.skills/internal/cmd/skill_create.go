@@ -64,11 +64,12 @@ func (a *createAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	// --force in package mode is destructive: we delete the existing skill by
-	// positional name before any guarantee the archive targets the same one.
-	// Peek the embedded SKILL.md `name` and bail if it disagrees.
-	if mode == modeFilePackage && a.flags.force {
-		if err := verifyPackageNameMatches(a.flags.file, a.flags.name); err != nil {
+	// --force is destructive: we delete the existing skill by positional name
+	// before any guarantee the supplied file targets the same one. For both
+	// package (.zip) and SKILL.md inputs, peek the embedded `name` and bail
+	// before deletion if it disagrees with the positional argument.
+	if a.flags.force {
+		if err := verifyFileNameMatches(a.flags.file, a.flags.name, mode); err != nil {
 			return err
 		}
 	}
@@ -207,6 +208,47 @@ func (a *createAction) printCreateResult(ctx context.Context, client *skill_api.
 		return printSkillVersionDetail(version, outputTable)
 	}
 	return printSkillDetail(skill, outputTable)
+}
+
+// verifyFileNameMatches refuses --force when the user-supplied file's embedded
+// `name` disagrees with the positional argument, so a typo can't wipe an
+// unrelated skill. Inline-mode (no --file) is always allowed.
+func verifyFileNameMatches(filePath, positionalName string, mode createMode) error {
+	switch mode {
+	case modeFilePackage:
+		return verifyPackageNameMatches(filePath, positionalName)
+	case modeFileMd:
+		return verifyMdNameMatches(filePath, positionalName)
+	}
+	return nil
+}
+
+// verifyMdNameMatches reads the SKILL.md front matter and refuses --force on
+// a `name` mismatch. Returns nil when SKILL.md omits `name` or the names agree.
+func verifyMdNameMatches(filePath, positionalName string) error {
+	data, err := readFileWithLimit(filePath)
+	if err != nil {
+		return err
+	}
+	parsed, parseErr := skill_api.ParseSkillMd(data)
+	if parseErr != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("failed to parse %s: %s", filePath, parseErr),
+			"ensure the file begins with a YAML front matter block delimited by '---'",
+		)
+	}
+	if parsed.Name == "" || parsed.Name == positionalName {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidSkillFile,
+		fmt.Sprintf(
+			"--force refused: SKILL.md declares name %q which does not match positional argument %q",
+			parsed.Name, positionalName,
+		),
+		"re-run without --force, or fix the positional name / SKILL.md so they agree",
+	)
 }
 
 // verifyPackageNameMatches refuses --force when the archive's SKILL.md

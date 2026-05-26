@@ -101,6 +101,39 @@ func TestVerifyPackageNameMatches_MalformedSkillMd(t *testing.T) {
 	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
 }
 
+// --- verifyFileNameMatches (md mode) ---
+
+func TestVerifyFileNameMatches_MdMatch(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "SKILL.md")
+	require.NoError(t, os.WriteFile(p, []byte("---\nname: my-skill\n---\nbody"), 0600))
+	require.NoError(t, verifyFileNameMatches(p, "my-skill", modeFileMd))
+}
+
+func TestVerifyFileNameMatches_MdMismatch(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "SKILL.md")
+	require.NoError(t, os.WriteFile(p, []byte("---\nname: other-skill\n---\nbody"), 0600))
+	err := verifyFileNameMatches(p, "my-skill", modeFileMd)
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
+}
+
+func TestVerifyFileNameMatches_MdNoName(t *testing.T) {
+	// SKILL.md without a name claim must allow --force.
+	dir := t.TempDir()
+	p := filepath.Join(dir, "SKILL.md")
+	require.NoError(t, os.WriteFile(p, []byte("---\ndescription: hi\n---\nbody"), 0600))
+	require.NoError(t, verifyFileNameMatches(p, "my-skill", modeFileMd))
+}
+
+func TestVerifyFileNameMatches_InlineNoCheck(t *testing.T) {
+	// Inline mode (no --file) is always allowed.
+	require.NoError(t, verifyFileNameMatches("", "my-skill", modeInline))
+}
+
 // helpers
 
 func writeZipWithSkillMd(t *testing.T, skillName string) string {

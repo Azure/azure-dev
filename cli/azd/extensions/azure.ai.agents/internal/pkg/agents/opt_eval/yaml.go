@@ -386,7 +386,7 @@ type Options struct {
 	EvaluationLevel    string             `yaml:"evaluation_level,omitempty"`
 }
 
-// UnmarshalYAML handles backward compatibility for legacy YAML keys.
+// UnmarshalYAML decodes Options from a YAML node.
 func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	// Alias avoids infinite recursion.
 	type raw Options

@@ -12,10 +12,8 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,13 +129,13 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.configFile, "config", "c", "", "Path to YAML config file (optional — uses defaults if omitted)")
+	cmd.Flags().StringVarP(&flags.configFile, "config", "c", "", "Path to YAML config file (optional — values are prompted interactively if omitted)")
 	cmd.Flags().StringVarP(&flags.agent, "agent", "a", "", "Agent name (auto-detected from azd project if omitted)")
 	cmd.Flags().StringVarP(&flags.dataset, "dataset", "d", "", "Existing local file or registered dataset name")
 	cmd.Flags().StringVarP(&flags.evalModel, "eval-model", "m", "", "Model for evaluation (required)")
 	cmd.Flags().StringVar(&flags.optimizationModel, "optimize-model", "",
-		"Model for optimization reasoning (must be gpt-5 family; falls back to eval model when not set)")
-	cmd.Flags().IntVar(&flags.maxIterations, "max-iterations", 5, "Maximum number of optimization iterations (must be >= 1)")
+		"Model for optimization reasoning (gpt-5 family recommended; falls back to eval model when not set)")
+	cmd.Flags().IntVar(&flags.maxIterations, "max-iterations", 0, "Maximum number of optimization iterations (must be >= 1; default: 5)")
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Submit job and return immediately without waiting for completion")
 	cmd.Flags().IntVar(&flags.pollInterval, "poll-interval", 5, "Polling interval in seconds")
 	flags.optimizeConnectionFlags.register(cmd)
@@ -434,11 +432,6 @@ func (a *OptimizeAction) submitJob(
 
 	for _, w := range warnings {
 		fmt.Fprintf(out, "  warning: %s\n", w)
-	}
-
-	// TODO: remove it
-	if body, jsonErr := json.MarshalIndent(optimizeReq, "", "  "); jsonErr == nil {
-		log.Printf("[debug] optimization request:\n%s", body)
 	}
 
 	// Save baseline config before starting optimization.

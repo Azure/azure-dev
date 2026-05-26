@@ -76,8 +76,8 @@ func (c *OptimizeConfig) Validate() error {
 	return nil
 }
 
-// defaultOptimizeConfig returns a config with sensible defaults and a built-in
-// evaluation dataset.
+// defaultOptimizeConfig returns a minimal config skeleton with sensible defaults.
+// Dataset, eval model, and other values are resolved interactively or via flags.
 func defaultOptimizeConfig(agentName string) *OptimizeConfig {
 	return &OptimizeConfig{
 		Config: opt_eval.Config{
@@ -215,23 +215,31 @@ func loadToolDefinitions(path string) ([]optimize_api.ToolDefinition, []string, 
 }
 
 // loadJSONLRawFile reads a JSONL file and returns each non-empty line as
-// a json.RawMessage, preserving unknown fields.
+// a json.RawMessage, preserving unknown fields. Uses a streaming scanner
+// to avoid loading the entire file into memory at once.
 func loadJSONLRawFile(path string) ([]json.RawMessage, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // path is provided by user for local config
+	f, err := os.Open(path) //nolint:gosec // path is provided by user for local config
 	if err != nil {
 		return nil, fmt.Errorf("failed to read JSONL file %s: %w", path, err)
 	}
+	defer f.Close()
 
 	var result []json.RawMessage
-	for line := range strings.SplitSeq(string(data), "\n") {
-		line = strings.TrimSpace(line)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
-		if !json.Valid([]byte(line)) {
+		raw := make([]byte, len(line))
+		copy(raw, line)
+		if !json.Valid(raw) {
 			return nil, fmt.Errorf("invalid JSON line in %s: %s", path, line)
 		}
-		result = append(result, json.RawMessage(line))
+		result = append(result, json.RawMessage(raw))
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("reading JSONL file %s: %w", path, err)
 	}
 
 	if len(result) == 0 {

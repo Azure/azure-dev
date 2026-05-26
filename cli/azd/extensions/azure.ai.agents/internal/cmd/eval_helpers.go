@@ -337,6 +337,9 @@ func promptModelSelection(
 	if err != nil {
 		return "", fmt.Errorf("prompting for model: %w", err)
 	}
+	if resp.Value == nil || int(*resp.Value) >= len(choices) {
+		return "", fmt.Errorf("unexpected prompt response for model selection")
+	}
 	selected := choices[int(*resp.Value)].Value
 
 	if selected == selectOtherDeploymentValue {

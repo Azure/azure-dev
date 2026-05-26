@@ -426,8 +426,8 @@ func resolveOptimizeTargetModels(
 	return nil
 }
 
-// recommendedOptimizationModels is the set of model families recommended as
-// optimization models by the server.
+// recommendedOptimizationModels is the set of model names recommended as
+// optimization models by the server (exact match, case-insensitive).
 var recommendedOptimizationModels = []string{"gpt-5", "gpt-5.1", "gpt-5.2"}
 
 // isRecommendedOptimizationModel checks whether a model name matches a

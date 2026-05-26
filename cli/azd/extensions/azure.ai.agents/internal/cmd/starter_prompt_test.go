@@ -86,7 +86,6 @@ func TestRenderStarterPrompt_IsBrief(t *testing.T) {
 		"starter prompt (baseline, no optional fields) should be brief; got %d words", words)
 }
 
-
 type mapClipboardEnv map[string]string
 
 func (m mapClipboardEnv) Lookup(key string) (string, bool) {

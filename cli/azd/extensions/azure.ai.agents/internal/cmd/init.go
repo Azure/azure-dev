@@ -1358,7 +1358,7 @@ func isCwdEmptyForInit(dir string) (bool, error) {
 	defer f.Close()
 
 	names, err := f.Readdirnames(1)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return false, err
 	}
 	return len(names) == 0, nil

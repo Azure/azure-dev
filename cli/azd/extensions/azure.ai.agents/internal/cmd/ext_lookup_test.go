@@ -27,9 +27,7 @@ type fakeRunner struct {
 }
 
 type runCall struct {
-	args   []string
-	stdout string
-	stderr string
+	args []string
 }
 
 func (f *fakeRunner) Output(_ context.Context, _ []string) ([]byte, error) {

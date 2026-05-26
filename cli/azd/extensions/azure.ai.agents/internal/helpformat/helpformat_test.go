@@ -352,6 +352,7 @@ func TestInstall_DescriptionWithTemplateLiterals(t *testing.T) {
 		},
 		Footer: func(c *cobra.Command) string {
 			return Examples(map[string]string{
+				// #nosec G101 -- documentation example, not a real credential.
 				"Use a workflow secret.": "demo --token ${{ secrets.FOO }}",
 			})
 		},

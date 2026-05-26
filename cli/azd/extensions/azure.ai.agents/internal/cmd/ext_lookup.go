@@ -87,6 +87,7 @@ type azdRunner interface {
 type osAzdRunner struct{}
 
 func (osAzdRunner) Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	// #nosec G204 -- invoking the azd CLI by fixed name with caller-supplied args is intentional.
 	cmd := exec.CommandContext(ctx, "azd", args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -94,6 +95,7 @@ func (osAzdRunner) Run(ctx context.Context, args []string, stdout, stderr io.Wri
 }
 
 func (osAzdRunner) Output(ctx context.Context, args []string) ([]byte, error) {
+	// #nosec G204 -- invoking the azd CLI by fixed name with caller-supplied args is intentional.
 	cmd := exec.CommandContext(ctx, "azd", args...)
 	return cmd.Output()
 }

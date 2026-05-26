@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/connections/pkg/connections"
@@ -202,7 +203,115 @@ func TestBuildConnectionBody_UnsupportedAuthType(t *testing.T) {
 	require.Contains(t, err.Error(), "Unsupported auth type")
 }
 
+func TestOAuth2Validation(t *testing.T) {
+	runValidation := func(flags *connectionCreateFlags) error {
+		action := &ConnectionCreateAction{flags: flags}
+		// Run calls resolveConnectionContext which needs real infra, so we only
+		// test the validation prefix by calling Run and checking for validation errors.
+		// Any error that is NOT a validation error means we passed validation.
+		err := action.Run(t.Context())
+		return err
+	}
+
+	isValidationError := func(err error, substr string) bool {
+		return err != nil && strings.Contains(err.Error(), substr)
+	}
+
+	t.Run("reject connector-name combined with BYO flags", func(t *testing.T) {
+		flags := &connectionCreateFlags{
+			kind:             "remote-tool",
+			target:           "https://example.com",
+			authType:         "oauth2",
+			connectorName:    "github",
+			authorizationURL: "https://example.com/auth",
+		}
+		err := runValidation(flags)
+		require.True(t, isValidationError(err, "--connector-name cannot be combined with"))
+	})
+
+	t.Run("reject empty oauth2 - neither connector nor BYO", func(t *testing.T) {
+		flags := &connectionCreateFlags{
+			kind:     "remote-tool",
+			target:   "https://example.com",
+			authType: "oauth2",
+		}
+		err := runValidation(flags)
+		require.True(t, isValidationError(err, "OAuth2 auth requires either"))
+	})
+
+	t.Run("reject partial BYO - missing required fields", func(t *testing.T) {
+		flags := &connectionCreateFlags{
+			kind:             "remote-tool",
+			target:           "https://example.com",
+			authType:         "oauth2",
+			authorizationURL: "https://example.com/auth",
+			// missing token-url, client-id, client-secret
+		}
+		err := runValidation(flags)
+		require.True(t, isValidationError(err, "Missing: --token-url"))
+	})
+
+	t.Run("accept connector-name only", func(t *testing.T) {
+		flags := &connectionCreateFlags{
+			kind:          "remote-tool",
+			target:        "https://example.com",
+			authType:      "oauth2",
+			connectorName: "github",
+		}
+		err := runValidation(flags)
+		// Should pass validation — any error here is from resolveConnectionContext, not validation
+		require.False(t, isValidationError(err, "connector-name"))
+		require.False(t, isValidationError(err, "Missing"))
+	})
+
+	t.Run("accept full BYO without optional refresh-url", func(t *testing.T) {
+		flags := &connectionCreateFlags{
+			kind:             "remote-tool",
+			target:           "https://example.com",
+			authType:         "oauth2",
+			authorizationURL: "https://example.com/auth",
+			tokenURL:         "https://example.com/token",
+			clientID:         "cid",
+			clientSecret:     "csec",
+		}
+		err := runValidation(flags)
+		// Should pass validation — any error here is from resolveConnectionContext, not validation
+		require.False(t, isValidationError(err, "Missing"))
+		require.False(t, isValidationError(err, "requires"))
+	})
+
+	t.Run("accept full BYO with all fields", func(t *testing.T) {
+		flags := &connectionCreateFlags{
+			kind:             "remote-tool",
+			target:           "https://example.com",
+			authType:         "oauth2",
+			authorizationURL: "https://example.com/auth",
+			tokenURL:         "https://example.com/token",
+			refreshURL:       "https://example.com/refresh",
+			scopes:           []string{"read", "write"},
+			clientID:         "cid",
+			clientSecret:     "csec",
+		}
+		err := runValidation(flags)
+		require.False(t, isValidationError(err, "Missing"))
+		require.False(t, isValidationError(err, "requires"))
+	})
+
+	t.Run("reject oauth2 flags with non-oauth2 auth type", func(t *testing.T) {
+		flags := &connectionCreateFlags{
+			kind:     "remote-tool",
+			target:   "https://example.com",
+			authType: "api-key",
+			key:      "abc",
+			scopes:   []string{"read"},
+		}
+		err := runValidation(flags)
+		require.True(t, isValidationError(err, "only valid with --auth-type oauth2"))
+	})
+}
+
 func TestRawConnectionBody_OAuth2_FullFields(t *testing.T) {
+	// BYO OAuth2 — no ConnectorName (CLI makes connector-name and BYO mutually exclusive).
 	props := rawConnectionProperties{
 		AuthType:         "OAuth2",
 		Category:         "RemoteTool",
@@ -210,8 +319,7 @@ func TestRawConnectionBody_OAuth2_FullFields(t *testing.T) {
 		AuthorizationURL: "https://github.com/login/oauth/authorize",
 		TokenURL:         "https://github.com/login/oauth/access_token",
 		RefreshURL:       "https://github.com/login/oauth/access_token",
-		Scopes:           "read:user user:email",
-		ConnectorName:    "github",
+		Scopes:           []string{"read:user", "user:email"},
 		Credentials: &rawCredentials{
 			ClientID:     "test-cid",
 			ClientSecret: "test-csec",
@@ -229,8 +337,15 @@ func TestRawConnectionBody_OAuth2_FullFields(t *testing.T) {
 	require.Equal(t, "https://github.com/login/oauth/authorize", p["authorizationUrl"])
 	require.Equal(t, "https://github.com/login/oauth/access_token", p["tokenUrl"])
 	require.Equal(t, "https://github.com/login/oauth/access_token", p["refreshUrl"])
-	require.Equal(t, "read:user user:email", p["scopes"])
-	require.Equal(t, "github", p["connectorName"])
+
+	// scopes must be a JSON array
+	scopesList, ok := p["scopes"].([]any)
+	require.True(t, ok, "scopes should be a JSON array")
+	require.Equal(t, []any{"read:user", "user:email"}, scopesList)
+
+	// No connectorName in BYO mode
+	_, hasConnector := p["connectorName"]
+	require.False(t, hasConnector, "connectorName should be omitted in BYO mode")
 
 	creds := p["credentials"].(map[string]any)
 	require.Equal(t, "test-cid", creds["clientId"])

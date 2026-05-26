@@ -206,7 +206,7 @@ type connectionCreateFlags struct {
 	authorizationURL string // OAuth2 authorization endpoint
 	tokenURL         string // OAuth2 token endpoint
 	refreshURL       string // OAuth2 refresh endpoint
-	scopes           string // OAuth2 scopes (comma-separated)
+	scopes           []string // OAuth2 scopes
 	connectorName    string // Managed connector name
 }
 
@@ -255,7 +255,7 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 			)
 		}
 		if a.flags.authorizationURL != "" || a.flags.tokenURL != "" ||
-			a.flags.refreshURL != "" || a.flags.scopes != "" || a.flags.connectorName != "" {
+			a.flags.refreshURL != "" || len(a.flags.scopes) > 0 || a.flags.connectorName != "" {
 			return exterrors.Validation(
 				exterrors.CodeConflictingArguments,
 				"--authorization-url, --token-url, --refresh-url, --scopes, and --connector-name "+
@@ -269,7 +269,7 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 	if a.flags.authType == "oauth2" {
 		hasConnector := a.flags.connectorName != ""
 		hasBYO := a.flags.authorizationURL != "" || a.flags.tokenURL != "" ||
-			a.flags.refreshURL != "" || a.flags.scopes != "" ||
+			a.flags.refreshURL != "" || len(a.flags.scopes) > 0 ||
 			a.flags.clientID != "" || a.flags.clientSecret != ""
 
 		if hasConnector && hasBYO {
@@ -284,25 +284,21 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 		if !hasConnector && !hasBYO {
 			return exterrors.Validation(
 				exterrors.CodeMissingConnectionField,
-				"OAuth2 auth requires either --connector-name (managed connector) or all of "+
-					"--authorization-url, --token-url, --refresh-url, --scopes, --client-id, --client-secret.",
+				"OAuth2 auth requires either --connector-name (managed connector) or "+
+					"--authorization-url, --token-url, --client-id, --client-secret "+
+					"(and optionally --refresh-url, --scopes).",
 				"",
 			)
 		}
 		if !hasConnector {
-			// BYO mode — all six fields are required.
+			// BYO mode — required: authorization-url, token-url, client-id, client-secret.
+			// Optional: refresh-url, scopes.
 			missing := []string{}
 			if a.flags.authorizationURL == "" {
 				missing = append(missing, "--authorization-url")
 			}
 			if a.flags.tokenURL == "" {
 				missing = append(missing, "--token-url")
-			}
-			if a.flags.refreshURL == "" {
-				missing = append(missing, "--refresh-url")
-			}
-			if a.flags.scopes == "" {
-				missing = append(missing, "--scopes")
 			}
 			if a.flags.clientID == "" {
 				missing = append(missing, "--client-id")
@@ -313,8 +309,8 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 			if len(missing) > 0 {
 				return exterrors.Validation(
 					exterrors.CodeMissingConnectionField,
-					"BYO OAuth2 requires all of: --authorization-url, --token-url, --refresh-url, "+
-						"--scopes, --client-id, --client-secret. Missing: "+strings.Join(missing, ", "),
+					"BYO OAuth2 requires: --authorization-url, --token-url, --client-id, "+
+						"--client-secret. Missing: "+strings.Join(missing, ", "),
 					"",
 				)
 			}
@@ -447,8 +443,8 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 		"OAuth2 token endpoint URL")
 	cmd.Flags().StringVar(&flags.refreshURL, "refresh-url", "",
 		"OAuth2 token refresh URL")
-	cmd.Flags().StringVar(&flags.scopes, "scopes", "",
-		"OAuth2 scopes (comma-separated)")
+	cmd.Flags().StringSliceVar(&flags.scopes, "scopes", nil,
+		"OAuth2 scopes (repeatable or comma-separated, e.g. --scopes read:user,user:email)")
 	cmd.Flags().StringVar(&flags.connectorName, "connector-name", "",
 		"Managed connector name (for OAuth2 connectors)")
 	return cmd

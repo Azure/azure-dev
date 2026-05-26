@@ -29,7 +29,7 @@ type rawConnectionProperties struct {
 	AuthorizationURL string            `json:"authorizationUrl,omitempty"`
 	TokenURL         string            `json:"tokenUrl,omitempty"`
 	RefreshURL       string            `json:"refreshUrl,omitempty"`
-	Scopes           string            `json:"scopes,omitempty"`
+	Scopes           []string          `json:"scopes,omitempty"`
 	ConnectorName    string            `json:"connectorName,omitempty"`
 	Credentials      *rawCredentials   `json:"credentials,omitempty"`
 }

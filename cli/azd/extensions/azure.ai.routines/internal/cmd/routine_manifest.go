@@ -21,10 +21,17 @@ func readRoutineManifest(path string) (*routines.Routine, error) {
 	// #nosec G304 - path is provided by the user via --file and is intentional
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, exterrors.Dependency(
+				exterrors.CodeFileNotFound,
+				fmt.Sprintf("routine manifest file not found: %s", path),
+				"verify the path or rerun without --file",
+			)
+		}
 		return nil, exterrors.Dependency(
 			exterrors.CodeFileNotFound,
-			fmt.Sprintf("routine manifest file not found: %s", path),
-			"verify the path or rerun without --file",
+			fmt.Sprintf("unable to read routine manifest file %s: %v", path, err),
+			"check file permissions and ensure the path points to a regular file",
 		)
 	}
 

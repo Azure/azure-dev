@@ -55,9 +55,9 @@ present.
 Return plain Go errors by default, and wrap lower-level failures with
 `fmt.Errorf("context: %w", err)` where useful.
 
-If this extension grows enough to need stable telemetry categories, error codes,
-or user-facing suggestions, introduce an `internal/exterrors` package modeled on
-the one in `azure.ai.agents` / `azure.ai.toolboxes`:
+This extension uses an `internal/exterrors` package (modeled on `azure.ai.agents` /
+`azure.ai.toolboxes`) for stable telemetry categories, error codes, and
+user-facing suggestions:
 
 - Create a structured error once, as close as possible to the place where you
   know the final category, code, and suggestion.

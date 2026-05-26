@@ -72,7 +72,7 @@ func runRoutineDispatch(
 				return exterrors.ServiceFromStatus(404, exterrors.OpDispatchRoutine,
 					fmt.Sprintf("routine %q not found. Verify the name with 'routine list'.", name))
 			}
-			return exterrors.ServiceFromAzure(getErr, exterrors.OpGetRoutine)
+			return exterrors.ServiceFromAzure(getErr, exterrors.OpDispatchRoutine)
 		}
 		if routine.Action == nil || routine.Action.Type == "" {
 			return exterrors.Validation(

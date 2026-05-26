@@ -61,6 +61,9 @@ func newHTTPClient() *http.Client {
 func NewClient(endpoint string, cred azcore.TokenCredential) *Client {
 	clientOptions := &policy.ClientOptions{
 		Transport: newHTTPClient(),
+		Logging: policy.LogOptions{
+			AllowedHeaders: []string{azsdk.MsCorrelationIdHeader},
+		},
 		Retry: policy.RetryOptions{
 			MaxRetries: 1,
 			TryTimeout: 30 * time.Second,

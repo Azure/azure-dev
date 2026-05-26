@@ -13,6 +13,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Validation returns a validation LocalError for user-input errors.
@@ -129,9 +131,16 @@ func IsConflict(err error) bool {
 	return false
 }
 
-// IsCancellation checks if an error represents user cancellation.
+// IsCancellation checks if an error represents user cancellation
+// ([context.Canceled] or gRPC [codes.Canceled]).
 func IsCancellation(err error) bool {
-	return errors.Is(err, context.Canceled)
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	if st, ok := status.FromError(err); ok && st.Code() == codes.Canceled {
+		return true
+	}
+	return false
 }
 
 // authFromMessage creates an Auth error from an HTTP response message.

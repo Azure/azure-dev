@@ -223,7 +223,7 @@ func loadJSONLRawFile(path string) ([]json.RawMessage, error) {
 	}
 
 	var result []json.RawMessage
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

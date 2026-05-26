@@ -24,9 +24,12 @@ import (
 	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/drone/envsubst"
 	"github.com/spf13/cobra"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -175,7 +178,9 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// Also translate azd env keys to FOUNDRY_* env vars so the agent code
 	// works identically whether running locally or in a hosted container
 	// (where the platform automatically injects FOUNDRY_* env vars).
-	if azdEnvVars, err := loadAzdEnvironment(ctx, azdClient); err == nil {
+	var azdEnvVars map[string]string
+	if loaded, err := loadAzdEnvironment(ctx, azdClient); err == nil {
+		azdEnvVars = loaded
 		for k, v := range azdEnvVars {
 			env = append(env, fmt.Sprintf("%s=%s", k, v))
 		}
@@ -184,15 +189,27 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load azd environment values: %s\n", err)
 	}
 
-	// Resolve ${{connections.<name>.credentials.<key>}} references from the
-	// agent manifest's environment_variables section. These are fetched from
-	// the Foundry data plane at runtime and injected into the agent process.
-	// Uses the same endpoint resolution as other agent commands.
-	if endpoint, err := resolveAgentEndpoint(ctx, "", ""); err == nil {
-		if connEnv, err := resolveConnectionCredentials(ctx, projectDir, endpoint); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: connection credential resolution failed: %s\n", err)
-		} else {
-			env = append(env, connEnv...)
+	// Resolve environment_variables from the agent definition (agent.yaml).
+	// This handles hardcoded values, ${VAR} references (resolved via azd env),
+	// and ${{connections.<name>.credentials.<key>}} references (resolved via
+	// the Foundry data plane). Agent definition env vars do not override
+	// values already present in the process environment.
+	endpoint, _ := resolveAgentEndpoint(ctx, "", "")
+	if defEnv, err := resolveAgentDefinitionEnvVars(ctx, projectDir, azdEnvVars, endpoint); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", err)
+		// Still inject any non-connection env vars that were resolved
+		for _, entry := range defEnv {
+			key, _, _ := strings.Cut(entry, "=")
+			if !envSliceHasKey(env, key) {
+				env = append(env, entry)
+			}
+		}
+	} else {
+		for _, entry := range defEnv {
+			key, _, _ := strings.Cut(entry, "=")
+			if !envSliceHasKey(env, key) {
+				env = append(env, entry)
+			}
 		}
 	}
 
@@ -450,6 +467,95 @@ func shouldWarnLoadAzdEnvironmentFailure(err error) bool {
 		msg = st.Message()
 	}
 	return !strings.Contains(strings.ToLower(msg), "default environment not found")
+}
+
+// resolveAgentDefinitionEnvVars loads agent.yaml from projectDir, extracts
+// environment_variables, and resolves all value types:
+//   - Hardcoded values are used as-is
+//   - ${VAR} references are resolved using azdEnvVars via envsubst
+//   - ${{connections.<name>.credentials.<key>}} are resolved via Foundry API
+//
+// Returns nil if no agent.yaml is found or it has no environment_variables.
+// Errors during connection resolution are returned so the caller can decide
+// whether to warn or fail.
+func resolveAgentDefinitionEnvVars(
+	ctx context.Context,
+	projectDir string,
+	azdEnvVars map[string]string,
+	endpoint string,
+) ([]string, error) {
+	// Find agent.yaml in projectDir
+	agentYamlPath := findAgentYaml(projectDir)
+	if agentYamlPath == "" {
+		return nil, nil
+	}
+
+	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // G304: path from findAgentYaml which checks known filenames in projectDir
+	if err != nil {
+		return nil, nil
+	}
+
+	var agentDef agent_yaml.ContainerAgent
+	if err := yaml.Unmarshal(data, &agentDef); err != nil {
+		return nil, nil
+	}
+
+	if agentDef.EnvironmentVariables == nil || len(*agentDef.EnvironmentVariables) == 0 {
+		return nil, nil
+	}
+
+	// Separate connection refs from regular env vars
+	envVars := *agentDef.EnvironmentVariables
+	refs := extractConnectionRefs(envVars)
+	connRefEnvNames := make(map[string]struct{}, len(refs))
+	for _, ref := range refs {
+		connRefEnvNames[ref.EnvName] = struct{}{}
+	}
+
+	// Build lookup function for envsubst
+	lookup := func(varName string) string {
+		if azdEnvVars == nil {
+			return ""
+		}
+		return azdEnvVars[varName]
+	}
+
+	var result []string
+
+	// Resolve non-connection env vars (hardcoded + ${VAR} references)
+	for _, ev := range envVars {
+		if _, isConn := connRefEnvNames[ev.Name]; isConn {
+			continue
+		}
+		resolved, evalErr := envsubst.Eval(ev.Value, lookup)
+		if evalErr != nil {
+			resolved = ev.Value
+		}
+		result = append(result, fmt.Sprintf("%s=%s", ev.Name, resolved))
+	}
+
+	// Resolve connection credential references via Foundry API
+	if len(refs) > 0 && endpoint != "" {
+		connEnv, err := resolveConnectionRefs(ctx, refs, endpoint)
+		if err != nil {
+			return result, fmt.Errorf("connection credential resolution failed: %w", err)
+		}
+		result = append(result, connEnv...)
+	}
+
+	return result, nil
+}
+
+// findAgentYaml locates the agent definition file in the given directory.
+func findAgentYaml(dir string) string {
+	candidates := []string{"agent.yaml", "agent.yml"}
+	for _, name := range candidates {
+		path := filepath.Join(dir, name)
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
 }
 
 // appendPortEnvVars appends PORT and, for .NET projects, ASPNETCORE_URLS to the

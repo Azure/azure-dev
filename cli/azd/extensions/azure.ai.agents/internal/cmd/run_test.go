@@ -822,3 +822,183 @@ func TestEmitNextAfterBind_ReturnsSilentlyOnContextCancellation(t *testing.T) {
 		t.Fatalf("emitNextAfterBind did not honor ctx cancel within 2s")
 	}
 }
+
+func TestFindAgentYaml(t *testing.T) {
+	t.Parallel()
+
+	t.Run("finds agent.yaml", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("name: test"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		got := findAgentYaml(dir)
+		if got != filepath.Join(dir, "agent.yaml") {
+			t.Errorf("expected agent.yaml path, got %q", got)
+		}
+	})
+
+	t.Run("finds agent.yml", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "agent.yml"), []byte("name: test"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		got := findAgentYaml(dir)
+		if got != filepath.Join(dir, "agent.yml") {
+			t.Errorf("expected agent.yml path, got %q", got)
+		}
+	})
+
+	t.Run("prefers agent.yaml over agent.yml", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("name: yaml"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "agent.yml"), []byte("name: yml"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		got := findAgentYaml(dir)
+		if got != filepath.Join(dir, "agent.yaml") {
+			t.Errorf("expected agent.yaml (preferred), got %q", got)
+		}
+	})
+
+	t.Run("returns empty for missing directory", func(t *testing.T) {
+		got := findAgentYaml(filepath.Join(t.TempDir(), "nonexistent"))
+		if got != "" {
+			t.Errorf("expected empty, got %q", got)
+		}
+	})
+}
+
+func TestResolveAgentDefinitionEnvVars(t *testing.T) {
+	t.Parallel()
+
+	t.Run("hardcoded values", func(t *testing.T) {
+		dir := t.TempDir()
+		yaml := `name: test-agent
+environment_variables:
+  - name: TOOLBOX_NAME
+    value: my-toolbox
+  - name: LOG_LEVEL
+    value: debug
+`
+		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(yaml), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), dir, nil, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !slices.Contains(result, "TOOLBOX_NAME=my-toolbox") {
+			t.Errorf("expected TOOLBOX_NAME=my-toolbox, got %v", result)
+		}
+		if !slices.Contains(result, "LOG_LEVEL=debug") {
+			t.Errorf("expected LOG_LEVEL=debug, got %v", result)
+		}
+	})
+
+	t.Run("resolves ${VAR} references", func(t *testing.T) {
+		dir := t.TempDir()
+		yaml := `name: test-agent
+environment_variables:
+  - name: MY_ENDPOINT
+    value: ${FOUNDRY_PROJECT_ENDPOINT}/agents
+  - name: PLAIN
+    value: hardcoded
+`
+		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(yaml), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		azdEnv := map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example.azure.com",
+		}
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), dir, azdEnv, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !slices.Contains(result, "MY_ENDPOINT=https://example.azure.com/agents") {
+			t.Errorf("expected resolved endpoint, got %v", result)
+		}
+		if !slices.Contains(result, "PLAIN=hardcoded") {
+			t.Errorf("expected PLAIN=hardcoded, got %v", result)
+		}
+	})
+
+	t.Run("skips connection refs without endpoint", func(t *testing.T) {
+		dir := t.TempDir()
+		yaml := `name: test-agent
+environment_variables:
+  - name: API_KEY
+    value: "${{connections.my-conn.credentials.key}}"
+  - name: STATIC
+    value: hello
+`
+		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(yaml), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), dir, nil, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Should have STATIC but not API_KEY (connection ref with no endpoint)
+		if !slices.Contains(result, "STATIC=hello") {
+			t.Errorf("expected STATIC=hello, got %v", result)
+		}
+		for _, entry := range result {
+			if strings.HasPrefix(entry, "API_KEY=") {
+				t.Errorf("did not expect API_KEY in result (no endpoint), got %v", result)
+			}
+		}
+	})
+
+	t.Run("returns nil for missing agent.yaml", func(t *testing.T) {
+		dir := t.TempDir()
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), dir, nil, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != nil {
+			t.Errorf("expected nil, got %v", result)
+		}
+	})
+
+	t.Run("returns nil for empty environment_variables", func(t *testing.T) {
+		dir := t.TempDir()
+		yaml := `name: test-agent
+`
+		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(yaml), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), dir, nil, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != nil {
+			t.Errorf("expected nil, got %v", result)
+		}
+	})
+
+	t.Run("unresolved ${VAR} becomes empty", func(t *testing.T) {
+		dir := t.TempDir()
+		yaml := `name: test-agent
+environment_variables:
+  - name: MISSING_REF
+    value: ${DOES_NOT_EXIST}
+`
+		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(yaml), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), dir, map[string]string{}, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !slices.Contains(result, "MISSING_REF=") {
+			t.Errorf("expected MISSING_REF= (empty), got %v", result)
+		}
+	})
+}

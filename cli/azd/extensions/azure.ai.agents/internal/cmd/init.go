@@ -88,11 +88,11 @@ type InitAction struct {
 	flags         *initFlags
 	models        *modelSelector
 
-	deploymentDetails   []project.Deployment
-	containerSettings   *project.ContainerSettings
-	isCodeDeploy        bool // true when user selects code deploy mode; skips ACR config
-	httpClient          *http.Client
-	serviceNameOverride string // when set, addToProject uses this instead of the manifest name
+	deploymentDetails    []project.Deployment
+	containerSettings    *project.ContainerSettings
+	isCodeDeploy         bool // true when user selects code deploy mode; skips ACR config
+	httpClient           *http.Client
+	serviceNameOverride  string // when set, addToProject uses this instead of the manifest name
 	createdFolderDisplay string // pre-computed relative display path for the created folder
 }
 
@@ -304,6 +304,13 @@ func setAgentNameOnTemplate(agentManifest *agent_yaml.AgentManifest, agentName s
 
 	agentManifest.Template = template
 	return nil
+}
+
+func folderNameStrippingParenSuffix(title string) string {
+	if idx := strings.IndexByte(title, '('); idx >= 0 {
+		title = strings.TrimSpace(title[:idx])
+	}
+	return sanitizeAgentName(title)
 }
 
 func updateAgentDefinition(

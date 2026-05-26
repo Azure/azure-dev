@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"testing"
@@ -258,7 +259,7 @@ func createContainerAppServiceTarget(
 	})
 	if err != nil {
 		// Log the error but don't fail the test as this is test setup
-		fmt.Printf("Warning: Failed to set up azdContext: %v\n", err)
+		log.Printf("Warning: Failed to set up azdContext: %v", err)
 	}
 
 	containerAppService := containerapps.NewContainerAppService(

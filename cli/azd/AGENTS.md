@@ -86,6 +86,7 @@ go fix ./...
 golangci-lint run ./...
 cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml --no-progress
 ../../eng/scripts/copyright-check.sh . --fix
+../../eng/scripts/test-stdout-check.sh .
 
 # From repo root — spell check docs/misc files (mirrors CI cspell-misc.yml)
 cd ../..
@@ -315,6 +316,7 @@ This project uses Go 1.26. Use modern standard library features:
 - **Cross-platform paths**: When resolving binary paths in tests, handle `.exe` suffix on Windows (e.g., `azd` vs `azd.exe` via `process.platform === "win32"`)
 - **Test new JSON fields**: When adding fields to JSON command output (e.g., `expiresOn` in `azd auth status --output json`), add a test asserting the field's presence and format
 - **No unused dependencies**: Don't add npm/pip packages that aren't imported anywhere. Remove dead `devDependencies` before submitting
+- **Never write to `os.Stdout` in tests**: Tests that write directly to `os.Stdout` (via `fmt.Print*`, `os.Stdout`, or UX components like `ux.NewSpinner` without a `Writer` option) corrupt the `go test -json` event stream under parallel execution, causing phantom test failures in CI. Use `t.Log`/`t.Logf` for diagnostic output, `io.Discard` or `&bytes.Buffer{}` for UX component writers, and `SkipLoadingSpinner: true` for prompt tests that don't need spinner behavior. Run `eng/scripts/test-stdout-check.sh cli/azd` to verify. See [#8385](https://github.com/Azure/azure-dev/issues/8385) for details.
 
 ## MCP Tools
 

@@ -71,6 +71,25 @@ func TestAssembleState(t *testing.T) {
 			assert: func(t *testing.T, state *State, _ []error) {
 				assert.True(t, state.HasProjectEndpoint)
 				assert.Empty(t, state.Services)
+				assert.Equal(t,
+					[]string{"AZURE_SUBSCRIPTION_ID", "AZURE_LOCATION"},
+					state.MissingAzureContextVars,
+				)
+			},
+		},
+		{
+			name: "Azure context vars set: MissingAzureContextVars stays empty",
+			src: &fakeSource{
+				envName: "dev",
+				values: map[string]string{
+					"dev/AZURE_SUBSCRIPTION_ID":    "sub-id",
+					"dev/AZURE_LOCATION":           "eastus",
+					"dev/FOUNDRY_PROJECT_ENDPOINT": "https://x.services.ai.azure.com",
+				},
+				project: &azdext.ProjectConfig{Name: "demo"},
+			},
+			assert: func(t *testing.T, state *State, _ []error) {
+				assert.Empty(t, state.MissingAzureContextVars)
 			},
 		},
 		{
@@ -158,9 +177,10 @@ func TestAssembleState(t *testing.T) {
 				assert.Empty(t, state.PendingProvisionReasons)
 			},
 			// One error each for FOUNDRY_PROJECT_ENDPOINT,
-			// AI_AGENT_PENDING_PROVISION + one per service lookup
-			// (AGENT_ECHO_VERSION) = 3.
-			errCount: 3,
+			// AI_AGENT_PENDING_PROVISION, AZURE_SUBSCRIPTION_ID,
+			// AZURE_LOCATION + one per service lookup
+			// (AGENT_ECHO_VERSION) = 5.
+			errCount: 5,
 		},
 		{
 			name: "AI_AGENT_PENDING_PROVISION unset: PendingProvisionReasons stays empty",
@@ -1149,9 +1169,9 @@ environment_variables:
 	}
 
 	state, errs := assembleState(context.Background(), src)
-	// One error each for FOUNDRY_PROJECT_ENDPOINT +
-	// AI_AGENT_PENDING_PROVISION + AGENT_ECHO_VERSION + MY_API_KEY = 4.
-	assert.Len(t, errs, 4)
+	// One error each for FOUNDRY_PROJECT_ENDPOINT, AI_AGENT_PENDING_PROVISION,
+	// AZURE_SUBSCRIPTION_ID, AZURE_LOCATION, AGENT_ECHO_VERSION, and MY_API_KEY.
+	assert.Len(t, errs, 6)
 	assert.Empty(t, state.MissingInfraVars)
 	assert.Empty(t, state.MissingManualVars)
 }

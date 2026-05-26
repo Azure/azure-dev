@@ -724,7 +724,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			} else {
 				// No manifest provided - prompt user for init mode
-				initMode, err := promptInitMode(ctx, azdClient)
+				initMode, err := promptInitMode(ctx, azdClient, flags.noPrompt)
 				if err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
@@ -1197,11 +1197,24 @@ func (a *InitAction) configureModelChoice(
 		a.azureContext.Scope.SubscriptionId = projectDetails.SubscriptionId
 	}
 
+	hasModelResources := manifestHasModelResources(agentManifest)
+	if a.flags.projectResourceId == "" && shouldDeferInitAzureContext(a.flags.noPrompt, a.azureContext) {
+		if err := configureDeferredInitAzureContext(
+			ctx, a.azdClient, a.environment.Name, a.azureContext, hasModelResources,
+		); err != nil {
+			return nil, err
+		}
+		if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, a.isCodeDeploy); err != nil {
+			return nil, err
+		}
+		return agentManifest, nil
+	}
+
 	// If the manifest has no model resources, skip the model configuration prompt
 	// but still ensure subscription and location are set for agent creation.
 	// When --project-id is provided, use the existing project to derive location
 	// and configure Foundry env vars (ACR, AppInsights, etc.) instead of prompting.
-	if !manifestHasModelResources(agentManifest) {
+	if !hasModelResources {
 		if a.flags.projectResourceId != "" {
 			newCred, err := ensureSubscription(
 				ctx, a.azdClient, a.azureContext, a.environment.Name,
@@ -1233,6 +1246,26 @@ func (a *InitAction) configureModelChoice(
 			}
 			if err := updatePendingProjectSignal(
 				ctx, a.azdClient, a.environment.Name, true,
+			); err != nil {
+				log.Printf("warning: failed to update project provision signal: %v", err)
+			}
+		} else if a.flags.noPrompt {
+			newCred, err := ensureSubscriptionAndLocation(
+				ctx, a.azdClient, a.azureContext, a.environment.Name,
+				"Select an Azure subscription to provision your agent and Foundry project resources.",
+			)
+			if err != nil {
+				return nil, err
+			}
+			a.credential = newCred
+
+			if err := setEnvValue(
+				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
+			); err != nil {
+				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+			}
+			if err := updatePendingProjectSignal(
+				ctx, a.azdClient, a.environment.Name, false,
 			); err != nil {
 				log.Printf("warning: failed to update project provision signal: %v", err)
 			}
@@ -1370,6 +1403,27 @@ func (a *InitAction) configureModelChoice(
 			}
 		} else {
 			return nil, fmt.Errorf("specified foundry project was not found or is not eligible for the current configuration: %s", a.flags.projectResourceId)
+		}
+	} else if a.flags.noPrompt {
+		newCred, err := ensureSubscriptionAndLocation(
+			ctx, a.azdClient, a.azureContext, a.environment.Name,
+			"Select an Azure subscription to look up available models and provision your Foundry project resources.",
+		)
+		if err != nil {
+			return nil, err
+		}
+		a.credential = newCred
+
+		// Creating new resources — clear any stale existing-project flag
+		if err := setEnvValue(
+			ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
+		); err != nil {
+			return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+		}
+		if err := updatePendingProjectSignal(
+			ctx, a.azdClient, a.environment.Name, false,
+		); err != nil {
+			log.Printf("warning: failed to update project provision signal: %v", err)
 		}
 	} else {
 		// Prompt user to pick an existing Foundry project or create new resources

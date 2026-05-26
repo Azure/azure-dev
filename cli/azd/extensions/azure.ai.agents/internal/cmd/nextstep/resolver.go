@@ -42,7 +42,8 @@ const (
 //     land in the container. They never reach `azd env set` because the
 //     value lives in agent.yaml itself, not the azd environment.
 //   - len(PendingProvisionReasons) > 0 OR !HasProjectEndpoint OR
-//     MissingInfraVars → `azd provision`
+//     MissingInfraVars → required Azure-context `azd env set` fixups,
+//     then `azd provision`
 //     The project endpoint is the canonical "provision finished"
 //     marker — it is set by `azd provision` as a Bicep output, or by
 //     `azd ai agent init` when the user selects an existing Foundry
@@ -112,10 +113,20 @@ func ResolveAfterInit(state *State) []Suggestion {
 		}
 	}
 
-	switch {
-	case len(state.PendingProvisionReasons) > 0 ||
+	needsProvision := len(state.PendingProvisionReasons) > 0 ||
 		!state.HasProjectEndpoint ||
-		len(state.MissingInfraVars) > 0:
+		len(state.MissingInfraVars) > 0
+
+	switch {
+	case needsProvision:
+		for _, key := range state.MissingAzureContextVars {
+			out = append(out, Suggestion{
+				Command:     fmt.Sprintf("azd env set %s <value>", key),
+				Description: "required before provisioning Azure resources",
+				Priority:    priority,
+			})
+			priority++
+		}
 		out = append(out, Suggestion{
 			Command:     "azd provision",
 			Description: "set up your Foundry project, models, and connections",

@@ -716,6 +716,65 @@ func loadAzureContext(
 	}, nil
 }
 
+func missingInitAzureContextValues(azureContext *azdext.AzureContext) []string {
+	var missing []string
+	if azureContext == nil || azureContext.Scope == nil {
+		return []string{"AZURE_SUBSCRIPTION_ID", "AZURE_LOCATION"}
+	}
+	if strings.TrimSpace(azureContext.Scope.SubscriptionId) == "" {
+		missing = append(missing, "AZURE_SUBSCRIPTION_ID")
+	}
+	if strings.TrimSpace(azureContext.Scope.Location) == "" {
+		missing = append(missing, "AZURE_LOCATION")
+	}
+	return missing
+}
+
+func shouldDeferInitAzureContext(noPrompt bool, azureContext *azdext.AzureContext) bool {
+	return noPrompt && len(missingInitAzureContextValues(azureContext)) > 0
+}
+
+func configureDeferredInitAzureContext(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	azureContext *azdext.AzureContext,
+	hasModelResources bool,
+) error {
+	missing := missingInitAzureContextValues(azureContext)
+	fmt.Printf("%s", output.WithWarningFormat(
+		"Missing Azure environment values: %s. Continuing because --no-prompt was specified.\n",
+		strings.Join(missing, ", "),
+	))
+	fmt.Println(output.WithGrayFormat("Set the missing values before running azd provision or azd deploy:"))
+	if slices.Contains(missing, "AZURE_SUBSCRIPTION_ID") {
+		fmt.Println(output.WithGrayFormat("  azd env set AZURE_SUBSCRIPTION_ID <subscription-id>"))
+	}
+	if slices.Contains(missing, "AZURE_LOCATION") {
+		fmt.Println(output.WithGrayFormat("  azd env set AZURE_LOCATION <region>"))
+		fmt.Println(output.WithGrayFormat(
+			"  # Optional: azd env set AZURE_AI_DEPLOYMENTS_LOCATION <region>",
+		))
+	}
+	if hasModelResources {
+		fmt.Printf("%s", output.WithWarningFormat(
+			"Model resource configuration was deferred because model lookup requires the missing Azure values.\n",
+		))
+		fmt.Println(output.WithGrayFormat(
+			"Set the missing values, then re-run init or configure model deployments in azure.yaml before provisioning.",
+		))
+	}
+
+	if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
+		return fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+	}
+	if err := updatePendingProjectSignal(ctx, azdClient, envName, false); err != nil {
+		log.Printf("warning: failed to update project provision signal: %v", err)
+	}
+
+	return nil
+}
+
 // --- Shared subscription/location helpers ---
 
 // ensureSubscription prompts for a subscription if not already set in the AzureContext.

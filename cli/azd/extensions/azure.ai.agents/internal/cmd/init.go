@@ -715,11 +715,16 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			}
 
 			// Auto-detect an existing agent manifest in the target directory
+			// Auto-detect an existing agent manifest in the target directory
 			// when no --manifest flag was provided. Skipped entirely when
 			// --from-code is set: that flag is an explicit "use the code
 			// in this directory" intent, and silently promoting a stray
 			// agent.yaml into manifestPointer would route the user through
 			// the manifest flow they explicitly opted out of.
+			//
+			// manifestDetectedButDeclined: gates the definition-reuse scan below so
+			// a declined manifest is not re-discovered and mis-classified.
+			manifestDetectedButDeclined := false
 			if flags.manifestPointer == "" && !flags.fromCode {
 				checkDir := flags.src
 				if checkDir == "" {
@@ -754,6 +759,49 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 						if flags.src == "" {
 							flags.src = checkDir
 						}
+					} else {
+						manifestDetectedButDeclined = true
+					}
+				}
+			}
+
+			// When no manifest was detected, look for a bare agent.yaml definition
+			// to reuse (issue #7268). Skips the init-mode prompt and from-code
+			// scaffolding. Bypassed when the user already declined a manifest above.
+			if flags.manifestPointer == "" && !manifestDetectedButDeclined {
+				checkDir := flags.src
+				if checkDir == "" {
+					checkDir = "."
+				}
+				existing, findErr := findExistingAgentYaml(checkDir)
+				if findErr != nil {
+					return findErr
+				}
+				if existing != "" {
+					useExisting := flags.noPrompt
+					if !flags.noPrompt {
+						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+							Options: &azdext.ConfirmOptions{
+								Message: fmt.Sprintf(
+									"An existing agent definition was found at %q. Use it?",
+									existing,
+								),
+								DefaultValue: new(true),
+							},
+						})
+						if promptErr != nil {
+							if exterrors.IsCancellation(promptErr) {
+								return exterrors.Cancelled("initialization was cancelled")
+							}
+							return fmt.Errorf("prompting for definition reuse: %w", promptErr)
+						}
+						useExisting = *confirmResp.Value
+					}
+					if useExisting {
+						if flags.src == "" {
+							flags.src = checkDir
+						}
+						return runReuseDefinition(ctx, flags, azdClient, httpClient, checkDir, existing)
 					}
 				}
 			}

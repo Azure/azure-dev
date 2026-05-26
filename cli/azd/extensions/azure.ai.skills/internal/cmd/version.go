@@ -4,17 +4,19 @@
 package cmd
 
 import (
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"fmt"
+
+	"azureaiskills/internal/version"
+
 	"github.com/spf13/cobra"
 )
 
-var (
-	// Populated at build time
-	Version   = "dev" // Default value for development builds
-	Commit    = "none"
-	BuildDate = "unknown"
-)
-
-func newVersionCommand(outputFormat *string) *cobra.Command {
-	return azdext.NewVersionCommand("azure.ai.skills", Version, outputFormat)
+func newVersionCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the extension version.",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("Version: %s\nCommit: %s\nBuild Date: %s\n", version.Version, version.Commit, version.BuildDate)
+		},
+	}
 }

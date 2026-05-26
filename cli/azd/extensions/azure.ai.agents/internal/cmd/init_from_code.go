@@ -89,21 +89,28 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		srcDir = "."
 	}
 
-	// Check if agent.yaml already exists before the interactive setup so the user
-	// doesn't complete the full agent configuration only to have it discarded.
-	agentYamlPath := filepath.Join(srcDir, "agent.yaml")
-	if _, statErr := os.Stat(agentYamlPath); statErr == nil {
+	// Guard against silently overwriting an existing agent definition. Reached
+	// when the user declined the reuse prompt in RunE or bypassed it; we still
+	// refuse in --no-prompt and confirm interactively.
+	if existing, statErr := findExistingAgentYaml(srcDir); statErr == nil && existing != "" {
+		displayPath, relErr := filepath.Rel(srcDir, existing)
+		if relErr != nil || displayPath == "" {
+			displayPath = existing
+		}
 		if a.flags.noPrompt {
 			return exterrors.Validation(
 				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("agent.yaml already exists at %q", agentYamlPath),
-				"delete or move the existing agent.yaml, or run interactively to confirm overwrite",
+				fmt.Sprintf("%s already exists at %q", displayPath, existing),
+				fmt.Sprintf(
+					"delete or move the existing %s, or run interactively to confirm overwrite",
+					displayPath,
+				),
 			)
 		}
 
 		confirmResp, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 			Options: &azdext.ConfirmOptions{
-				Message:      fmt.Sprintf("An agent.yaml already exists in %q. Overwrite?", srcDir),
+				Message:      fmt.Sprintf("An agent definition already exists at %q. Overwrite?", displayPath),
 				DefaultValue: new(false),
 			},
 		})
@@ -114,7 +121,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 			return fmt.Errorf("prompting for overwrite confirmation: %w", err)
 		}
 		if !*confirmResp.Value {
-			return exterrors.Cancelled("agent.yaml already exists; overwrite declined")
+			return exterrors.Cancelled(fmt.Sprintf("%s already exists; overwrite declined", displayPath))
 		}
 	}
 
@@ -997,16 +1004,21 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 	if !isCodeDeploy {
 		language = "docker"
 	} else {
-		// Detect language from agent.yaml runtime
-		// Re-read agent.yaml to detect the language for azure.yaml service config
-		langDetectPath := filepath.Join(a.projectConfig.Path, targetDir, "agent.yaml")
-		if data, err := os.ReadFile(langDetectPath); err == nil { //nolint:gosec // path from project config
+		// Detect language from the on-disk definition. Skip manifest filenames:
+		// their fields are nested under template: and would not match here.
+		for _, name := range []string{"agent.yaml", "agent.yml"} {
+			langDetectPath := filepath.Join(a.projectConfig.Path, targetDir, name)
+			data, err := os.ReadFile(langDetectPath) //nolint:gosec // path from project config
+			if err != nil {
+				continue
+			}
 			var langDef agent_yaml.ContainerAgent
 			if err := yaml.Unmarshal(data, &langDef); err == nil &&
 				langDef.CodeConfiguration != nil &&
 				strings.HasPrefix(langDef.CodeConfiguration.Runtime, "dotnet_") {
 				language = "csharp"
 			}
+			break
 		}
 	}
 

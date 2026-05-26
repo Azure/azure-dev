@@ -140,6 +140,7 @@ func (a *OptimizeDeployAction) runDirect(
 	// Step 3: Merge env vars and create new version.
 	// Use OPTIMIZATION_CONFIG (non-reserved) — the agent SDK reads both
 	// AGENT_OPTIMIZATION_CONFIG (first-party service) and OPTIMIZATION_CONFIG (CLI).
+	// TODO: if the SSL issue is resolved, change to resolved endpoint + candidate ID.
 	envVars := extractEnvVars(latestDef)
 	envVars["OPTIMIZATION_CONFIG"] = string(configJSON)
 

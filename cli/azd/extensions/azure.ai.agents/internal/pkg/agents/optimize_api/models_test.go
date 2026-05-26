@@ -16,43 +16,22 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 	t.Parallel()
 
 	original := OptimizeRequest{
-		Agent: AgentDefinition{
-			FoundryProjectURL: "https://example.ai.azure.com/project/my-proj",
-			AgentName:         "my-agent",
-			AgentVersion:      "1",
-			Model:             "gpt-4o",
-			SystemPrompt:      "You are helpful",
-			Skills: []SkillDefinition{
-				{Name: "search", Description: "web search"},
-			},
+		Agent: AgentIdentifier{
+			AgentName:    "my-agent",
+			AgentVersion: "1",
 		},
-		Dataset: []DatasetTask{
-			{
-				Name:        "task1",
-				Prompt:      "What is 2+2?",
-				GroundTruth: "4",
-				Criteria: []Criterion{
-					{Name: "accuracy", Instruction: "answer must be correct"},
-				},
-			},
+		Dataset: []json.RawMessage{
+			json.RawMessage(`{"name":"task1","prompt":"What is 2+2?","groundTruth":"4","criteria":[{"name":"accuracy","instruction":"answer must be correct"}]}`),
 		},
 		TrainDatasetReference: &DatasetReference{
 			Name:    "train-ds",
 			Version: "1",
 		},
 		Evaluators: []string{"coherence", "relevance"},
-		Criteria: []Criterion{
-			{Name: "global-crit", Instruction: "be concise"},
-		},
 		Options: OptimizeOptions{
-			MaxIterations:      new(5),
-			EvalModel:          "gpt-4o-mini",
-			Strategies:         []string{"prompt_mutation"},
-			TargetAttributes:   []string{"prompt_mutation"},
-			KeepVersions:       true,
-			TasksPerIteration:  10,
-			MaxReflectionTasks: 3,
-			ReflectionModel:    "gpt-4o",
+			MaxIterations:     new(5),
+			EvalModel:         "gpt-4o-mini",
+			OptimizationModel: "gpt-4o",
 		},
 	}
 
@@ -62,12 +41,11 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 	s := string(data)
 	// Verify camelCase JSON tags
 	for _, field := range []string{
-		`"agent"`, `"foundryProjectUrl"`, `"agentName"`, `"agentVersion"`,
-		`"dataset"`, `"trainDatasetReference"`, `"evaluators"`, `"criteria"`,
+		`"agent"`, `"agentName"`, `"agentVersion"`,
+		`"dataset"`, `"trainDatasetReference"`, `"evaluators"`,
 		`"options"`, `"evalModel"`, `"maxIterations"`,
-		`"keepVersions"`,
-		`"tasksPerIteration"`, `"maxReflectionTasks"`, `"reflectionModel"`,
-		`"strategies"`, `"targetAttributes"`, `"groundTruth"`, `"systemPrompt"`, `"skills"`,
+		`"optimizationModel"`,
+		`"groundTruth"`,
 	} {
 		assert.True(t, strings.Contains(s, field), "JSON should contain %s", field)
 	}
@@ -76,15 +54,12 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &got), "unmarshal should succeed")
 
 	assert.Equal(t, original.Agent.AgentName, got.Agent.AgentName)
-	assert.Equal(t, original.Agent.FoundryProjectURL, got.Agent.FoundryProjectURL)
-	assert.Equal(t, original.Agent.Model, got.Agent.Model)
 	assert.Len(t, got.Dataset, 1)
-	assert.Equal(t, "task1", got.Dataset[0].Name)
-	assert.Equal(t, "4", got.Dataset[0].GroundTruth)
+	assert.Contains(t, string(got.Dataset[0]), `"task1"`)
+	assert.Contains(t, string(got.Dataset[0]), `"groundTruth"`)
 	assert.NotNil(t, got.TrainDatasetReference)
 	assert.Equal(t, "train-ds", got.TrainDatasetReference.Name)
 	assert.Equal(t, "gpt-4o-mini", got.Options.EvalModel)
-	assert.True(t, got.Options.KeepVersions)
 }
 
 func TestOptimizeJobStatus_RoundTrip(t *testing.T) {
@@ -95,9 +70,8 @@ func TestOptimizeJobStatus_RoundTrip(t *testing.T) {
 		Status:      StatusRunning,
 		CreatedAt:   "2024-01-01T00:00:00Z",
 		UpdatedAt:   "2024-01-01T01:00:00Z",
-		Agent: &AgentDefinition{
-			FoundryProjectURL: "https://example.ai.azure.com/project/p",
-			AgentName:         "agent-1",
+		Agent: &AgentIdentifier{
+			AgentName: "agent-1",
 		},
 		Progress: &JobProgress{
 			CurrentTargetAttribute: "prompt_mutation",
@@ -118,18 +92,7 @@ func TestOptimizeJobStatus_RoundTrip(t *testing.T) {
 			AvgTokens:   150.0,
 			PassRate:    0.95,
 			CandidateID: "cand-2",
-			Mutations:   map[string]any{"systemPrompt": "Be very helpful"},
 			Rationale:   "Improved prompt clarity",
-			TaskScores: []TaskScore{
-				{
-					TaskName:       "task1",
-					Scores:         map[string]float64{"coherence": 0.9, "relevance": 0.95},
-					CompositeScore: 0.925,
-					Tokens:         200,
-					Duration:       1.5,
-					Passed:         true,
-				},
-			},
 		},
 		Candidates: []CandidateResult{
 			{Name: "candidate-1", AvgScore: 0.7},
@@ -145,8 +108,8 @@ func TestOptimizeJobStatus_RoundTrip(t *testing.T) {
 		`"progress"`, `"currentTargetAttribute"`, `"currentIteration"`,
 		`"tasksCompleted"`, `"tasksTotal"`, `"bestScore"`, `"elapsedSeconds"`,
 		`"baseline"`, `"best"`, `"candidates"`, `"candidateId"`,
-		`"avgScore"`, `"avgTokens"`, `"passRate"`, `"mutations"`,
-		`"rationale"`, `"taskScores"`, `"compositeScore"`, `"durationSeconds"`,
+		`"avgScore"`, `"avgTokens"`, `"passRate"`,
+		`"rationale"`,
 	} {
 		assert.True(t, strings.Contains(s, field), "JSON should contain %s", field)
 	}
@@ -165,8 +128,6 @@ func TestOptimizeJobStatus_RoundTrip(t *testing.T) {
 	assert.InDelta(t, 0.6, got.Baseline.AvgScore, 0.001)
 	assert.NotNil(t, got.Best)
 	assert.Equal(t, "cand-2", got.Best.CandidateID)
-	assert.Len(t, got.Best.TaskScores, 1)
-	assert.True(t, got.Best.TaskScores[0].Passed)
 	assert.Len(t, got.Candidates, 1)
 }
 

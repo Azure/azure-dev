@@ -1,0 +1,92 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"encoding/json"
+	"testing"
+
+	"azureaiagent/internal/pkg/agents/opt_eval"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// ---- hasModelConfig ----
+
+func TestHasModelConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		oc   opt_eval.OptimizationConfig
+		want bool
+	}{
+		{"nil config", nil, false},
+		{"empty config", opt_eval.OptimizationConfig{}, false},
+		{"has model key", opt_eval.OptimizationConfig{
+			"model": json.RawMessage(`["gpt-4o"]`),
+		}, true},
+		{"has other keys only", opt_eval.OptimizationConfig{
+			"systemPrompt": json.RawMessage(`"hello"`),
+		}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, hasModelConfig(tt.oc))
+		})
+	}
+}
+
+// ---- model JSON serialization ----
+
+// TestModelConfigIsPlainArray verifies that when models are stored in
+// OptimizationConfig["model"], the value is a JSON array of strings
+// (e.g. ["gpt-4o","gpt-5"]) — not a wrapped object like {"model":[...]}.
+func TestModelConfigIsPlainArray(t *testing.T) {
+	t.Parallel()
+
+	models := []string{"gpt-4o", "gpt-5"}
+	modelJSON, err := json.Marshal(models)
+	require.NoError(t, err)
+
+	oc := make(opt_eval.OptimizationConfig)
+	oc["model"] = modelJSON
+
+	// Deserialize and verify it's a plain array.
+	var parsed []string
+	require.NoError(t, json.Unmarshal(oc["model"], &parsed))
+	assert.Equal(t, models, parsed)
+
+	// Verify it does NOT deserialize as an object with a "model" key.
+	var asObject map[string]any
+	err = json.Unmarshal(oc["model"], &asObject)
+	assert.Error(t, err, "model value should not be a JSON object")
+}
+
+// ---- isRecommendedOptimizationModel ----
+
+func TestIsRecommendedOptimizationModel(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		model string
+		want  bool
+	}{
+		{"gpt-5", true},
+		{"GPT-5", true},
+		{"gpt-5.1", true},
+		{"gpt-5.2", true},
+		{"gpt-4o", false},
+		{"gpt-4o-mini", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, isRecommendedOptimizationModel(tt.model))
+		})
+	}
+}

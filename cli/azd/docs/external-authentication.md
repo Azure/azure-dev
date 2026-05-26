@@ -137,7 +137,7 @@ An `AZD_AUTH_ENDPOINT` without a scheme, or with `https:`, behaves exactly as
 it always has. No existing IDE host configuration is broken by the addition
 of `unix:` and `npipe:`.
 
-
+## Implementation
 
 The `azd` CLI implements the client side of this feature in the [`pkg/auth/remote_credential.go`](../pkg/auth/remote_credential.go).
 

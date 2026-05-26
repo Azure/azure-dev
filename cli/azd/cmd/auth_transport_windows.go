@@ -11,9 +11,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os/user"
-	"regexp"
 	"strings"
+	"unsafe"
 
 	"github.com/Microsoft/go-winio"
 	"golang.org/x/sys/windows"
@@ -89,15 +88,10 @@ func normalizePipePath(rawURL string) (string, error) {
 	return `\\.\pipe\` + name, nil
 }
 
-// sddlAceSidRE captures the trailing SID of each ACE in an SDDL DACL string.
-// An ACE has the form "(type;flags;rights;object;inherit_object;account_sid)".
-// We only care about the account_sid component, which appears after the last
-// semicolon and before the closing parenthesis.
-var sddlAceSidRE = regexp.MustCompile(`\(([^)]*)\)`)
-
 // verifyPipeSecurity queries the DACL of the named pipe and refuses if any
 // allow ACE references a SID outside the current user / SYSTEM /
-// Administrators set.
+// Administrators set. ACEs are walked structurally via windows.GetAce rather
+// than by parsing the SDDL string representation.
 func verifyPipeSecurity(pipePath string) error {
 	sd, err := windows.GetNamedSecurityInfo(
 		pipePath,
@@ -108,65 +102,91 @@ func verifyPipeSecurity(pipePath string) error {
 		return fmt.Errorf("querying pipe security descriptor: %w", err)
 	}
 
-	// Render the DACL as SDDL so we can enumerate ACEs without taking a
-	// direct dependency on raw Win32 ACE parsing.
-	sddl := sd.String()
-
-	cur, err := user.Current()
+	dacl, _, err := sd.DACL()
 	if err != nil {
-		return fmt.Errorf("looking up current user: %w", err)
+		return fmt.Errorf("reading DACL: %w", err)
 	}
-	allowedSids := map[string]struct{}{
-		strings.ToUpper(cur.Uid): {},
-	}
-	// Well-known SIDs that are always acceptable per spec.
-	for _, wk := range []windows.WELL_KNOWN_SID_TYPE{
-		windows.WinLocalSystemSid,
-		windows.WinBuiltinAdministratorsSid,
-	} {
-		s, err := windows.CreateWellKnownSid(wk)
-		if err == nil {
-			allowedSids[strings.ToUpper(s.String())] = struct{}{}
-		}
-	}
-	// SDDL short forms for SYSTEM ("SY"), Administrators ("BA"), and Local
-	// Administrators ("LA") are also acceptable.
-	for _, short := range []string{"SY", "BA", "LA"} {
-		allowedSids[short] = struct{}{}
+	// A nil DACL means full access for everyone — refuse.
+	if dacl == nil {
+		return fmt.Errorf("permissions too permissive: pipe %q has a NULL DACL", pipePath)
 	}
 
-	// Extract the DACL substring. An SDDL is of the form
-	// "O:<owner>G:<group>D:<dacl>S:<sacl>"; the D: section contains the ACEs
-	// we care about.
-	daclIdx := strings.Index(sddl, "D:")
-	if daclIdx < 0 {
-		// No DACL section at all means the DACL was NULL (full access for
-		// everyone) — refuse.
-		return fmt.Errorf("permissions too permissive: pipe %q has no DACL", pipePath)
+	currentUserSid, err := currentProcessUserSid()
+	if err != nil {
+		return fmt.Errorf("looking up current user SID: %w", err)
 	}
-	daclStr := sddl[daclIdx:]
-	if sIdx := strings.Index(daclStr, "S:"); sIdx >= 0 {
-		daclStr = daclStr[:sIdx]
+	systemSid, err := windows.CreateWellKnownSid(windows.WinLocalSystemSid)
+	if err != nil {
+		return fmt.Errorf("creating SYSTEM SID: %w", err)
 	}
+	adminsSid, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
+	if err != nil {
+		return fmt.Errorf("creating Administrators SID: %w", err)
+	}
+	allowedSids := []*windows.SID{currentUserSid, systemSid, adminsSid}
 
-	for _, m := range sddlAceSidRE.FindAllStringSubmatch(daclStr, -1) {
-		parts := strings.Split(m[1], ";")
-		if len(parts) < 6 {
-			continue
+	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
+		var aceHdr *windows.ACCESS_ALLOWED_ACE
+		if err := windows.GetAce(dacl, i, &aceHdr); err != nil {
+			return fmt.Errorf("reading ACE %d: %w", i, err)
 		}
-		aceType := strings.ToUpper(strings.TrimSpace(parts[0]))
-		// Only ACCESS_ALLOWED_ACE ("A") and ACCESS_ALLOWED_OBJECT_ACE ("OA")
-		// grant access; the spec is concerned with allow ACEs.
-		if aceType != "A" && aceType != "OA" {
-			continue
+		// Only ACCESS_ALLOWED_ACE_TYPE (and its callback variant) grant
+		// access via the layout exposed by ACCESS_ALLOWED_ACE. Deny / audit
+		// ACEs are ignored — they do not widen access. Object ACE types
+		// (used for AD) are not expected on a named pipe; if encountered,
+		// refuse defensively because their SID lives at a different offset.
+		switch aceHdr.Header.AceType {
+		case windows.ACCESS_ALLOWED_ACE_TYPE, accessAllowedCallbackAceType:
+			sid := (*windows.SID)(unsafe.Pointer(&aceHdr.SidStart))
+			if !sidInList(sid, allowedSids) {
+				return fmt.Errorf(
+					"permissions too permissive: pipe %q grants access to SID %q "+
+						"outside the current user/SYSTEM/Administrators",
+					pipePath, sid.String())
+			}
+		case accessAllowedObjectAceType, accessAllowedCallbackObjectAceType:
+			return fmt.Errorf(
+				"permissions too permissive: pipe %q has an object allow ACE which is not supported",
+				pipePath)
+		default:
+			// Deny / audit / other ACE types do not grant access; skip.
 		}
-		sidStr := strings.ToUpper(strings.TrimSpace(parts[5]))
-		if _, ok := allowedSids[sidStr]; ok {
-			continue
-		}
-		return fmt.Errorf(
-			"permissions too permissive: pipe %q grants access to SID %q outside the current user/SYSTEM/Administrators",
-			pipePath, parts[5])
 	}
 	return nil
+}
+
+// AceType constants not (yet) exposed by golang.org/x/sys/windows.
+// See https://learn.microsoft.com/windows/win32/api/winnt/ns-winnt-ace_header.
+const (
+	accessAllowedObjectAceType         uint8 = 0x05
+	accessAllowedCallbackAceType       uint8 = 0x09
+	accessAllowedCallbackObjectAceType uint8 = 0x0B
+)
+
+// currentProcessUserSid returns the SID of the user owning the current
+// process token. This is preferred over user.Current() because it avoids a
+// roundtrip through string parsing and reflects the actual access token.
+func currentProcessUserSid() (*windows.SID, error) {
+	var token windows.Token
+	if err := windows.OpenProcessToken(
+		windows.CurrentProcess(), windows.TOKEN_QUERY, &token); err != nil {
+		return nil, err
+	}
+	defer token.Close()
+	tu, err := token.GetTokenUser()
+	if err != nil {
+		return nil, err
+	}
+	// Copy the SID off the token-owned buffer so it remains valid after
+	// token.Close().
+	return tu.User.Sid.Copy()
+}
+
+func sidInList(sid *windows.SID, list []*windows.SID) bool {
+	for _, s := range list {
+		if windows.EqualSid(sid, s) {
+			return true
+		}
+	}
+	return false
 }

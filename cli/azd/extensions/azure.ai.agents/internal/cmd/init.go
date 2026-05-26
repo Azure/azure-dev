@@ -93,6 +93,7 @@ type InitAction struct {
 	isCodeDeploy        bool // true when user selects code deploy mode; skips ACR config
 	httpClient          *http.Client
 	serviceNameOverride string // when set, addToProject uses this instead of the manifest name
+	createdFolderDisplay string // pre-computed relative display path for the created folder
 }
 
 // modelSelector encapsulates the dependencies needed for model selection and
@@ -532,6 +533,7 @@ func runInitFromManifest(
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 	targetDir string,
+	createdFolderDisplay string,
 ) error {
 	// Ensure project and environment exist (no subscription/location prompting yet)
 	projectConfig, err := ensureProject(ctx, flags, azdClient, targetDir)
@@ -584,14 +586,15 @@ func runInitFromManifest(
 	)
 
 	action := &InitAction{
-		azdClient:     azdClient,
-		azureContext:  azureContext,
-		console:       console,
-		credential:    credential,
-		projectConfig: projectConfig,
-		environment:   env,
-		flags:         flags,
-		httpClient:    httpClient,
+		azdClient:            azdClient,
+		azureContext:         azureContext,
+		console:              console,
+		credential:           credential,
+		projectConfig:        projectConfig,
+		environment:          env,
+		flags:                flags,
+		httpClient:           httpClient,
+		createdFolderDisplay: createdFolderDisplay,
 	}
 
 	return action.Run(ctx)
@@ -671,19 +674,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				Timeout: 30 * time.Second,
 			}
 
-			// Capture the original working directory so we can print an
-			// accurate cd hint after the process has chdir'd.
-			originalCwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting current directory: %w", err)
-			}
-
-			// Track the absolute path of a newly created project folder so we
-			// can print a follow-up cd hint at the end of the command.
-			createdFolder := ""
-			// Original template title, used to surface a notice when the
-			// sanitized folder name differs significantly from what the user selected.
-			createdFromTitle := ""
+			// Track whether a project already exists so the cd hint is
+			// only shown for brand-new top-level project folders, not
+			// when a template adds a subfolder to an existing project.
+			existingProject := fileExists("azure.yaml")
 
 			// Auto-detect an existing agent manifest in the target directory
 			// when no --manifest flag was provided.
@@ -779,7 +773,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					return err
 				}
 
-				if err := runInitFromManifest(ctx, flags, azdClient, httpClient, "."); err != nil {
+				if err := runInitFromManifest(ctx, flags, azdClient, httpClient, ".", ""); err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
 					}
@@ -865,9 +859,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 								folderName, err,
 							)
 						}
-						if newlyCreated {
-							createdFolder = filepath.Join(originalCwd, folderName)
-							createdFromTitle = selectedTemplate.Title
+						// Compute display path for created folder (used in nextstep).
+						// Only show cd hint for brand-new projects, not when adding
+						// a template subfolder to an existing project.
+						var folderDisplay string
+						if newlyCreated && !existingProject {
+							folderDisplay = filepath.ToSlash(folderName)
 						}
 
 						// Search for an agent manifest in the scaffolded project
@@ -883,7 +880,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 						if manifestPath != "" {
 							flags.manifestPointer = manifestPath
-							if err := runInitFromManifest(ctx, flags, azdClient, httpClient, "."); err != nil {
+							if err := runInitFromManifest(
+								ctx, flags, azdClient, httpClient, ".", folderDisplay,
+							); err != nil {
 								if exterrors.IsCancellation(err) {
 									return exterrors.Cancelled("initialization was cancelled")
 								}
@@ -901,18 +900,18 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						// only report "created" when a new directory was made.
 						_, statErr := os.Stat(folderName)
 						newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+						var folderDisplay string
+						if newlyCreated && !existingProject {
+							folderDisplay = filepath.ToSlash(folderName)
+						}
 						flags.manifestPointer = selectedTemplate.Source
 						if err := runInitFromManifest(
-							ctx, flags, azdClient, httpClient, folderName,
+							ctx, flags, azdClient, httpClient, folderName, folderDisplay,
 						); err != nil {
 							if exterrors.IsCancellation(err) {
 								return exterrors.Cancelled("initialization was cancelled")
 							}
 							return err
-						}
-						if newlyCreated {
-							createdFolder = filepath.Join(originalCwd, folderName)
-							createdFromTitle = selectedTemplate.Title
 						}
 					}
 
@@ -931,10 +930,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						return err
 					}
 				}
-			}
-
-			if createdFolder != "" {
-				fmt.Print(formatCreatedFolderMessage(originalCwd, createdFolder, createdFromTitle))
 			}
 
 			return nil
@@ -2287,7 +2282,11 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	// everything is configured. All paths append the deploy hint as the
 	// trailing line. State-assembly errors are intentionally ignored: the
 	// resolver degrades gracefully on partial state per the design spec.
-	state, _ := nextstep.AssembleState(ctx, a.azdClient)
+	var stateOpts []nextstep.Option
+	if a.createdFolderDisplay != "" {
+		stateOpts = append(stateOpts, nextstep.WithCreatedFolder(a.createdFolderDisplay))
+	}
+	state, _ := nextstep.AssembleState(ctx, a.azdClient, stateOpts...)
 	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state))
 	return nil
 }

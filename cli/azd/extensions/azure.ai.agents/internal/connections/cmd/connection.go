@@ -200,14 +200,14 @@ type connectionCreateFlags struct {
 	metadata         []string
 	force            bool
 	projectEndpoint  string
-	clientID         string // OAuth2 client ID
-	clientSecret     string // OAuth2 client secret
-	audience         string // Token audience for user-entra-token / agentic-identity / project-managed-identity
-	authorizationURL string // OAuth2 authorization endpoint
-	tokenURL         string // OAuth2 token endpoint
-	refreshURL       string // OAuth2 refresh endpoint
+	clientID         string   // OAuth2 client ID
+	clientSecret     string   // OAuth2 client secret
+	audience         string   // Token audience for user-entra-token / agentic-identity / project-managed-identity
+	authorizationURL string   // OAuth2 authorization endpoint
+	tokenURL         string   // OAuth2 token endpoint
+	refreshURL       string   // OAuth2 refresh endpoint
 	scopes           []string // OAuth2 scopes
-	connectorName    string // Managed connector name
+	connectorName    string   // Managed connector name
 }
 
 // ConnectionCreateAction implements connection creation.

@@ -265,7 +265,7 @@ func TestOAuth2Validation(t *testing.T) {
 	})
 
 	t.Run("accept full BYO without optional refresh-url", func(t *testing.T) {
-		flags := &connectionCreateFlags{
+		flags := &connectionCreateFlags{ //nolint:gosec // test credentials, not real
 			kind:             "remote-tool",
 			target:           "https://example.com",
 			authType:         "oauth2",
@@ -281,7 +281,7 @@ func TestOAuth2Validation(t *testing.T) {
 	})
 
 	t.Run("accept full BYO with all fields", func(t *testing.T) {
-		flags := &connectionCreateFlags{
+		flags := &connectionCreateFlags{ //nolint:gosec // test credentials, not real
 			kind:             "remote-tool",
 			target:           "https://example.com",
 			authType:         "oauth2",
@@ -312,7 +312,7 @@ func TestOAuth2Validation(t *testing.T) {
 
 func TestRawConnectionBody_OAuth2_FullFields(t *testing.T) {
 	// BYO OAuth2 — no ConnectorName (CLI makes connector-name and BYO mutually exclusive).
-	props := rawConnectionProperties{
+	props := rawConnectionProperties{ //nolint:gosec // test credentials, not real
 		AuthType:         "OAuth2",
 		Category:         "RemoteTool",
 		Target:           "https://api.githubcopilot.com/mcp/",

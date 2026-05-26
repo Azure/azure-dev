@@ -25,7 +25,7 @@ func TestReadRoutineManifest_JSON(t *testing.T) {
 		Triggers: map[string]routines.RoutineTrigger{
 			"default": {Type: "schedule", CronExpression: "0 8 * * 1-5"},
 		},
-		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentID: "my-agent-id"},
+		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: "my-agent-name"},
 	}
 	data, err := json.Marshal(r)
 	require.NoError(t, err)
@@ -40,7 +40,7 @@ func TestReadRoutineManifest_JSON(t *testing.T) {
 	assert.Equal(t, "schedule", got.Triggers["default"].Type)
 	assert.Equal(t, "0 8 * * 1-5", got.Triggers["default"].CronExpression)
 	require.NotNil(t, got.Action)
-	assert.Equal(t, "my-agent-id", got.Action.AgentID)
+	assert.Equal(t, "my-agent-name", got.Action.AgentName)
 }
 
 func TestReadRoutineManifest_YAML(t *testing.T) {
@@ -53,7 +53,7 @@ triggers:
     at: "2026-01-01T00:00:00Z"
 action:
   type: invoke_agent_responses_api
-  agent_id: yaml-agent-id
+  agent_name: yaml-agent-name
 `
 	path := filepath.Join(t.TempDir(), "routine.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(yaml), 0600))
@@ -63,7 +63,7 @@ action:
 	assert.Equal(t, "yaml-routine", got.Name)
 	assert.Equal(t, "timer", got.Triggers["default"].Type)
 	require.NotNil(t, got.Action)
-	assert.Equal(t, "yaml-agent-id", got.Action.AgentID)
+	assert.Equal(t, "yaml-agent-name", got.Action.AgentName)
 }
 
 func TestReadRoutineManifest_FileNotFound(t *testing.T) {
@@ -89,7 +89,7 @@ func TestMergeRoutineFromFile_FileFieldsMergedWhenBodyEmpty(t *testing.T) {
 	file := &routines.Routine{
 		Description: "from file",
 		Triggers:    map[string]routines.RoutineTrigger{"default": {Type: "schedule", CronExpression: "* * * * *"}},
-		Action:      &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentID: "a"},
+		Action:      &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: "a"},
 	}
 	mergeRoutineFromFile(body, file)
 
@@ -97,7 +97,7 @@ func TestMergeRoutineFromFile_FileFieldsMergedWhenBodyEmpty(t *testing.T) {
 	assert.Equal(t, "from file", body.Description)
 	assert.Equal(t, "schedule", body.Triggers["default"].Type)
 	require.NotNil(t, body.Action)
-	assert.Equal(t, "a", body.Action.AgentID)
+	assert.Equal(t, "a", body.Action.AgentName)
 }
 
 func TestMergeRoutineFromFile_BodyFieldsWinOverFile(t *testing.T) {
@@ -109,7 +109,7 @@ func TestMergeRoutineFromFile_BodyFieldsWinOverFile(t *testing.T) {
 		Triggers: map[string]routines.RoutineTrigger{
 			"default": {Type: "timer", At: "2026-01-01T00:00:00Z"},
 		},
-		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentID: "cli-agent"},
+		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: "cli-agent"},
 	}
 	file := &routines.Routine{
 		Description: "file description",
@@ -123,7 +123,7 @@ func TestMergeRoutineFromFile_BodyFieldsWinOverFile(t *testing.T) {
 	assert.Equal(t, "cli description", body.Description, "body description must win")
 	assert.Equal(t, "timer", body.Triggers["default"].Type, "body trigger must win")
 	require.NotNil(t, body.Action)
-	assert.Equal(t, "cli-agent", body.Action.AgentID, "body action must win")
+	assert.Equal(t, "cli-agent", body.Action.AgentName, "body action must win")
 }
 
 // ─── overwriteRoutineFromFile ──────────────────────────────────────────────────
@@ -137,7 +137,7 @@ func TestOverwriteRoutineFromFile_ManifestWins(t *testing.T) {
 		Triggers: map[string]routines.RoutineTrigger{
 			"default": {Type: "timer", At: "2026-01-01T00:00:00Z"},
 		},
-		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentID: "old-agent"},
+		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: "old-agent"},
 	}
 	file := &routines.Routine{
 		Description: "new description from manifest",
@@ -177,7 +177,7 @@ func routineWithScheduleAndAgentResp() *routines.Routine {
 		Triggers: map[string]routines.RoutineTrigger{
 			"default": {Type: "schedule", CronExpression: "0 8 * * *", TimeZone: "UTC"},
 		},
-		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentID: "old-agent-id"},
+		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: "old-agent-name"},
 	}
 }
 
@@ -185,8 +185,8 @@ func TestApplyUpdateFlags_Description(t *testing.T) {
 	t.Parallel()
 	r := routineWithScheduleAndAgentResp()
 	n, err := applyUpdateFlags(r,
-		"new desc", "", "", "", "", "", "",
-		true, false, false, false, false, false, false,
+		"new desc", "", "", "", "", "", "", "",
+		true, false, false, false, false, false, false, false,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
@@ -197,54 +197,54 @@ func TestApplyUpdateFlags_TimeZone(t *testing.T) {
 	t.Parallel()
 	r := routineWithScheduleAndAgentResp()
 	n, err := applyUpdateFlags(r,
-		"", "America/New_York", "", "", "", "", "",
-		false, true, false, false, false, false, false,
+		"", "America/New_York", "", "", "", "", "", "",
+		false, true, false, false, false, false, false, false,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 	assert.Equal(t, "America/New_York", r.Triggers["default"].TimeZone)
 }
 
-func TestApplyUpdateFlags_AgentIDClearsEndpointID(t *testing.T) {
+func TestApplyUpdateFlags_AgentNameClearsEndpointID(t *testing.T) {
 	t.Parallel()
 	r := &routines.Routine{
 		Action:   &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentEndpointID: "old-ep"},
 		Triggers: map[string]routines.RoutineTrigger{"default": {Type: "schedule"}},
 	}
 	n, err := applyUpdateFlags(r,
-		"", "", "", "new-agent-id", "", "", "",
-		false, false, false, true, false, false, false,
+		"", "", "", "", "new-agent-name", "", "", "",
+		false, false, false, false, true, false, false, false,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 	require.NotNil(t, r.Action)
-	assert.Equal(t, "new-agent-id", r.Action.AgentID)
-	assert.Empty(t, r.Action.AgentEndpointID, "setting agent-id should clear agent-endpoint-id")
+	assert.Equal(t, "new-agent-name", r.Action.AgentName)
+	assert.Empty(t, r.Action.AgentEndpointID, "setting agent-name should clear agent-endpoint-id")
 }
 
 func TestApplyUpdateFlags_AgentEndpointIDClearsID(t *testing.T) {
 	t.Parallel()
 	r := &routines.Routine{
-		Action:   &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentID: "old-agent-id"},
+		Action:   &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: "old-agent-name"},
 		Triggers: map[string]routines.RoutineTrigger{"default": {Type: "schedule"}},
 	}
 	n, err := applyUpdateFlags(r,
-		"", "", "", "", "new-ep", "", "",
-		false, false, false, false, true, false, false,
+		"", "", "", "", "", "new-ep", "", "",
+		false, false, false, false, false, true, false, false,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 	require.NotNil(t, r.Action)
 	assert.Equal(t, "new-ep", r.Action.AgentEndpointID)
-	assert.Empty(t, r.Action.AgentID, "setting agent-endpoint-id should clear agent-id")
+	assert.Empty(t, r.Action.AgentName, "setting agent-endpoint-id should clear agent-name")
 }
 
 func TestApplyUpdateFlags_MutuallyExclusiveAgentFields(t *testing.T) {
 	t.Parallel()
 	r := routineWithScheduleAndAgentResp()
 	_, err := applyUpdateFlags(r,
-		"", "", "", "new-agent-id", "new-ep", "", "",
-		false, false, false, true, true, false, false,
+		"", "", "", "", "new-agent-name", "new-ep", "", "",
+		false, false, false, false, true, true, false, false,
 	)
 	assert.Error(t, err)
 }
@@ -253,24 +253,24 @@ func TestApplyUpdateFlags_NoChangesReturnsZero(t *testing.T) {
 	t.Parallel()
 	r := routineWithScheduleAndAgentResp()
 	n, err := applyUpdateFlags(r,
-		"", "", "", "", "", "", "",
-		false, false, false, false, false, false, false,
+		"", "", "", "", "", "", "", "",
+		false, false, false, false, false, false, false, false,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, 0, n)
 }
 
-func TestApplyUpdateFlags_AgentIDRejectedForAgentInvoke(t *testing.T) {
+func TestApplyUpdateFlags_AgentNameRejectedForAgentInvoke(t *testing.T) {
 	t.Parallel()
 	r := &routines.Routine{
 		Action:   &routines.RoutineAction{Type: "invoke_agent_invocations_api", AgentEndpointID: "ep"},
 		Triggers: map[string]routines.RoutineTrigger{"default": {Type: "timer"}},
 	}
 	_, err := applyUpdateFlags(r,
-		"", "", "", "new-agent-id", "", "", "",
-		false, false, false, true, false, false, false,
+		"", "", "", "", "new-agent-name", "", "", "",
+		false, false, false, false, true, false, false, false,
 	)
-	assert.Error(t, err, "--agent-id must be rejected for agent-invoke actions")
+	assert.Error(t, err, "--agent-name must be rejected for agent-invoke actions")
 }
 
 func TestApplyUpdateFlags_ConvIDRejectedForAgentInvoke(t *testing.T) {
@@ -280,8 +280,8 @@ func TestApplyUpdateFlags_ConvIDRejectedForAgentInvoke(t *testing.T) {
 		Triggers: map[string]routines.RoutineTrigger{"default": {Type: "timer"}},
 	}
 	_, err := applyUpdateFlags(r,
-		"", "", "", "", "", "conv-1", "",
-		false, false, false, false, false, true, false,
+		"", "", "", "", "", "", "conv-1", "",
+		false, false, false, false, false, false, true, false,
 	)
 	assert.Error(t, err, "--conversation-id must be rejected for agent-invoke actions")
 }
@@ -290,8 +290,8 @@ func TestApplyUpdateFlags_SessIDRejectedForAgentResponse(t *testing.T) {
 	t.Parallel()
 	r := routineWithScheduleAndAgentResp()
 	_, err := applyUpdateFlags(r,
-		"", "", "", "", "", "", "sess-1",
-		false, false, false, false, false, false, true,
+		"", "", "", "", "", "", "", "sess-1",
+		false, false, false, false, false, false, false, true,
 	)
 	assert.Error(t, err, "--session-id must be rejected for agent-response actions")
 }
@@ -327,10 +327,10 @@ func TestGetAction_NilWhenEmpty(t *testing.T) {
 func TestGetAction_ReturnsCopy(t *testing.T) {
 	t.Parallel()
 	r := &routines.Routine{
-		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentID: "orig-agent-id"},
+		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: "orig-agent-name"},
 	}
 	act := getAction(r)
 	require.NotNil(t, act)
-	act.AgentID = "changed"
-	assert.Equal(t, "orig-agent-id", r.Action.AgentID)
+	act.AgentName = "changed"
+	assert.Equal(t, "orig-agent-name", r.Action.AgentName)
 }

@@ -96,8 +96,8 @@ func routineSummaryTable(r *routines.Routine) {
 	if r.Action != nil {
 		a := r.Action
 		fmt.Fprintf(tw, "Action:\t%s\n", a.Type)
-		if a.AgentID != "" {
-			fmt.Fprintf(tw, "  AgentID:\t%s\n", a.AgentID)
+		if a.AgentName != "" {
+			fmt.Fprintf(tw, "  AgentName:\t%s\n", a.AgentName)
 		}
 		if a.AgentEndpointID != "" {
 			fmt.Fprintf(tw, "  AgentEndpointID:\t%s\n", a.AgentEndpointID)

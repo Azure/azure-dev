@@ -104,14 +104,10 @@ func overwriteRoutineFromFile(existing *routines.Routine, file *routines.Routine
 
 // applyUpdateFlags applies named CLI update flags onto an existing routine body.
 // It returns the count of fields changed.
-//
-// Note: --cron is intentionally not handled here. The recurring/schedule
-// trigger is deferred at the CLI surface (see buildTrigger in
-// routine_create.go) until the Foundry service is ready.
 func applyUpdateFlags(
 	existing *routines.Routine,
-	description, timeZone, at, agentID, agentEndpointID, conversationID, sessionID string,
-	descChanged, tzChanged, atChanged, agentIDChanged, agentEpChanged, convIDChanged, sessIDChanged bool,
+	description, timeZone, at, cronExpression, agentName, agentEndpointID, conversationID, sessionID string,
+	descChanged, tzChanged, atChanged, cronChanged, agentNameChanged, agentEpChanged, convIDChanged, sessIDChanged bool,
 ) (int, error) {
 	changed := 0
 
@@ -144,6 +140,17 @@ func applyUpdateFlags(
 		trigger.At = at
 		changed++
 	}
+	if cronChanged {
+		if trigger == nil {
+			return 0, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"cannot set --cron: routine has no default trigger",
+				"add a trigger by recreating the routine, or omit --cron",
+			)
+		}
+		trigger.CronExpression = cronExpression
+		changed++
+	}
 	if trigger != nil {
 		if existing.Triggers == nil {
 			existing.Triggers = make(map[string]routines.RoutineTrigger)
@@ -153,40 +160,40 @@ func applyUpdateFlags(
 
 	// Action field updates
 	action := getAction(existing)
-	if agentIDChanged || agentEpChanged {
+	if agentNameChanged || agentEpChanged {
 		if action == nil {
 			return 0, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"cannot update agent fields: routine has no action",
-				"add an action by recreating the routine, or omit --agent-id / --agent-endpoint-id",
+				"add an action by recreating the routine, or omit --agent-name / --agent-endpoint-id",
 			)
 		}
-		if agentIDChanged && action.Type == routines.ActionCLIToWire["agent-invoke"] {
+		if agentNameChanged && action.Type == routines.ActionCLIToWire["agent-invoke"] {
 			return 0, exterrors.Validation(
 				exterrors.CodeConflictingArguments,
-				"--agent-id is not applicable to agent-invoke actions",
+				"--agent-name is not applicable to agent-invoke actions",
 				"use --agent-endpoint-id for agent-invoke, or recreate the routine with agent-response",
 			)
 		}
-		// agent-id and agent-endpoint-id are mutually exclusive; specifying one clears the other.
-		if agentIDChanged && agentEpChanged && agentID != "" && agentEndpointID != "" {
+		// agent-name and agent-endpoint-id are mutually exclusive; specifying one clears the other.
+		if agentNameChanged && agentEpChanged && agentName != "" && agentEndpointID != "" {
 			return 0, exterrors.Validation(
 				exterrors.CodeConflictingArguments,
-				"--agent-id and --agent-endpoint-id are mutually exclusive",
-				"provide either --agent-id or --agent-endpoint-id, not both",
+				"--agent-name and --agent-endpoint-id are mutually exclusive",
+				"provide either --agent-name or --agent-endpoint-id, not both",
 			)
 		}
-		if agentIDChanged {
-			action.AgentID = agentID
-			if agentID != "" {
-				action.AgentEndpointID = "" // specifying agent-id clears agent-endpoint-id
+		if agentNameChanged {
+			action.AgentName = agentName
+			if agentName != "" {
+				action.AgentEndpointID = "" // specifying agent-name clears agent-endpoint-id
 			}
 			changed++
 		}
 		if agentEpChanged {
 			action.AgentEndpointID = agentEndpointID
 			if agentEndpointID != "" {
-				action.AgentID = "" // specifying agent-endpoint-id clears agent-id
+				action.AgentName = "" // specifying agent-endpoint-id clears agent-name
 			}
 			changed++
 		}

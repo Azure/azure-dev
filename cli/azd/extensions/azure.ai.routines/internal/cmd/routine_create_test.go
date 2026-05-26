@@ -14,11 +14,22 @@ import (
 
 // ─── buildTrigger ─────────────────────────────────────────────────────────────
 
-func TestBuildTrigger_RecurringDeferred(t *testing.T) {
+func TestBuildTrigger_Recurring(t *testing.T) {
 	t.Parallel()
-	// `recurring` is in TriggerCLIToWire but is deferred at the CLI surface
-	// (service-side schedule create is not yet ready); buildTrigger must
-	// reject it explicitly with a "deferred" message.
+	flags := &routineCreateFlags{
+		trigger:        "recurring",
+		cronExpression: "0 8 * * *",
+		timeZone:       "UTC",
+	}
+	got, err := buildTrigger(flags)
+	require.NoError(t, err)
+	assert.Equal(t, "schedule", got.Type)
+	assert.Equal(t, "0 8 * * *", got.CronExpression)
+	assert.Equal(t, "UTC", got.TimeZone)
+}
+
+func TestBuildTrigger_RecurringMissingCron(t *testing.T) {
+	t.Parallel()
 	flags := &routineCreateFlags{trigger: "recurring"}
 	_, err := buildTrigger(flags)
 	assert.Error(t, err)
@@ -64,10 +75,10 @@ func TestBuildTrigger_GithubIssueRejected(t *testing.T) {
 
 func TestBuildAction_AgentResponseByID(t *testing.T) {
 	t.Parallel()
-	got, err := buildAction("agent-response", "my-agent-id", "", "conv-1", "")
+	got, err := buildAction("agent-response", "my-agent-name", "", "conv-1", "")
 	require.NoError(t, err)
 	assert.Equal(t, routines.ActionCLIToWire["agent-response"], got.Type)
-	assert.Equal(t, "my-agent-id", got.AgentID)
+	assert.Equal(t, "my-agent-name", got.AgentName)
 	assert.Empty(t, got.AgentEndpointID)
 	assert.Equal(t, "conv-1", got.ConversationID)
 }
@@ -76,14 +87,14 @@ func TestBuildAction_AgentResponseByEndpointID(t *testing.T) {
 	t.Parallel()
 	got, err := buildAction("agent-response", "", "ep-id-123", "", "")
 	require.NoError(t, err)
-	assert.Empty(t, got.AgentID)
+	assert.Empty(t, got.AgentName)
 	assert.Equal(t, "ep-id-123", got.AgentEndpointID)
 }
 
 func TestBuildAction_AgentResponseMutuallyExclusive(t *testing.T) {
 	t.Parallel()
-	_, err := buildAction("agent-response", "my-agent-id", "ep-id-123", "", "")
-	assert.Error(t, err, "agent-id and agent-endpoint-id must be mutually exclusive")
+	_, err := buildAction("agent-response", "my-agent-name", "ep-id-123", "", "")
+	assert.Error(t, err, "agent-name and agent-endpoint-id must be mutually exclusive")
 }
 
 func TestBuildAction_AgentResponseMissingBoth(t *testing.T) {
@@ -115,14 +126,14 @@ func TestBuildAction_UnknownType(t *testing.T) {
 
 func TestBuildAction_AgentResponseRejectsSessionID(t *testing.T) {
 	t.Parallel()
-	_, err := buildAction("agent-response", "my-agent-id", "", "", "sess-1")
+	_, err := buildAction("agent-response", "my-agent-name", "", "", "sess-1")
 	assert.Error(t, err, "--session-id must be rejected for agent-response action")
 }
 
-func TestBuildAction_AgentInvokeRejectsAgentID(t *testing.T) {
+func TestBuildAction_AgentInvokeRejectsAgentName(t *testing.T) {
 	t.Parallel()
-	_, err := buildAction("agent-invoke", "my-agent-id", "ep-id", "", "")
-	assert.Error(t, err, "--agent-id must be rejected for agent-invoke action")
+	_, err := buildAction("agent-invoke", "my-agent-name", "ep-id", "", "")
+	assert.Error(t, err, "--agent-name must be rejected for agent-invoke action")
 }
 
 func TestBuildAction_AgentInvokeRejectsConversationID(t *testing.T) {

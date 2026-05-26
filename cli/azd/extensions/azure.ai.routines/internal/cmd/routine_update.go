@@ -21,7 +21,8 @@ type routineUpdateFlags struct {
 	description     string
 	timeZone        string
 	at              string
-	agentID         string
+	cronExpression  string
+	agentName       string
 	agentEndpointID string
 	conversationID  string
 	sessionID       string
@@ -59,7 +60,8 @@ To change the trigger or action type, delete and recreate the routine.`,
 	cmd.Flags().StringVar(&flags.description, "description", "", "New description for the routine")
 	cmd.Flags().StringVar(&flags.timeZone, "time-zone", "", "New time zone for the trigger")
 	cmd.Flags().StringVar(&flags.at, "at", "", "New ISO 8601 datetime for timer trigger")
-	cmd.Flags().StringVar(&flags.agentID, "agent-id", "", "New project-scoped agent ID")
+	cmd.Flags().StringVar(&flags.cronExpression, "cron", "", "New cron expression for recurring trigger")
+	cmd.Flags().StringVar(&flags.agentName, "agent-name", "", "New project-scoped agent name")
 	cmd.Flags().StringVar(&flags.agentEndpointID, "agent-endpoint-id", "", "New agent endpoint ID")
 	cmd.Flags().StringVar(&flags.conversationID, "conversation-id", "", "New conversation ID (preview)")
 	cmd.Flags().StringVar(&flags.sessionID, "session-id", "", "New session ID")
@@ -121,17 +123,18 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 	descChanged := cmd.Flags().Changed("description")
 	tzChanged := cmd.Flags().Changed("time-zone")
 	atChanged := cmd.Flags().Changed("at")
-	agentIDChanged := cmd.Flags().Changed("agent-id")
+	cronChanged := cmd.Flags().Changed("cron")
+	agentNameChanged := cmd.Flags().Changed("agent-name")
 	agentEpChanged := cmd.Flags().Changed("agent-endpoint-id")
 	convIDChanged := cmd.Flags().Changed("conversation-id")
 	sessIDChanged := cmd.Flags().Changed("session-id")
 
 	flagChanged, err := applyUpdateFlags(
 		existing,
-		flags.description, flags.timeZone, flags.at,
-		flags.agentID, flags.agentEndpointID, flags.conversationID, flags.sessionID,
-		descChanged, tzChanged, atChanged,
-		agentIDChanged, agentEpChanged, convIDChanged, sessIDChanged,
+		flags.description, flags.timeZone, flags.at, flags.cronExpression,
+		flags.agentName, flags.agentEndpointID, flags.conversationID, flags.sessionID,
+		descChanged, tzChanged, atChanged, cronChanged,
+		agentNameChanged, agentEpChanged, convIDChanged, sessIDChanged,
 	)
 	if err != nil {
 		return err

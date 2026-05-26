@@ -37,11 +37,9 @@ type Client struct {
 // newHTTPClient returns the *http.Client used by the data-plane pipeline.
 //
 // The default azcore transport relies on Go's HTTP/2 client, which can wait
-// minutes before surfacing a server-side stream reset (RST_STREAM). The
-// Foundry Routines data plane returns 500s for certain inputs via stream
-// resets, so callers were observing ~6 minute hangs on what curl reports as
-// a sub-second failure. We use a transport with explicit response-header and
-// connection-level timeouts so failures surface within tens of seconds.
+// minutes before surfacing a server-side stream reset (RST_STREAM). We set
+// explicit response-header and connection-level timeouts so failures surface
+// within tens of seconds.
 func newHTTPClient() *http.Client {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
@@ -63,10 +61,6 @@ func newHTTPClient() *http.Client {
 func NewClient(endpoint string, cred azcore.TokenCredential) *Client {
 	clientOptions := &policy.ClientOptions{
 		Transport: newHTTPClient(),
-		// Limit retries so HTTP/2 stream-reset failures surface quickly to the
-		// user. The azcore default is 3 retries which, combined with a 60s
-		// response-header timeout, can hide a fast server-side failure behind
-		// a 4-minute wait. CLI callers can simply re-run the command.
 		Retry: policy.RetryOptions{
 			MaxRetries: 1,
 			TryTimeout: 30 * time.Second,
@@ -107,8 +101,7 @@ func (c *Client) routinesURL(extraQuery ...string) string {
 }
 
 // routineActionURL returns the URL for a named routine action route
-// (e.g. :dispatch, :dispatchAsync). The action segment is case-sensitive
-// and must match the TypeSpec route exactly.
+// (e.g. :enable, :disable, :dispatch_async).
 func (c *Client) routineActionURL(name, action string) string {
 	return fmt.Sprintf("%s/routines/%s:%s?api-version=%s", c.endpoint, url.PathEscape(name), action, routinesAPIVersion)
 }
@@ -122,7 +115,6 @@ func (c *Client) routineRunsURL(routineName string, extraQuery ...string) string
 	return base
 }
 
-// addPreviewHeader adds the required Routines preview opt-in header to a request.
 func addPreviewHeader(req *policy.Request) {
 	req.Raw().Header.Set(routinesPreviewHeader, routinesPreviewValue)
 }
@@ -168,9 +160,6 @@ func (c *Client) ListRoutines(ctx context.Context) ([]Routine, error) {
 		}
 
 		all = append(all, page.Value...)
-		// The service returns an absolute nextLink URL when more pages exist
-		// (Azure.Core.Page<Routine>). We follow it verbatim after a same-origin
-		// check rather than re-deriving the continuation query string.
 		nextURL = page.NextLink
 	}
 
@@ -178,8 +167,6 @@ func (c *Client) ListRoutines(ctx context.Context) ([]Routine, error) {
 }
 
 // getPage performs a paginated GET and decodes the body into out.
-// It scopes resp.Body.Close() to a single iteration to avoid file-descriptor
-// accumulation when callers loop across many pages.
 func (c *Client) getPage(ctx context.Context, pageURL string, out any) error {
 	req, err := runtime.NewRequest(ctx, http.MethodGet, pageURL)
 	if err != nil {
@@ -250,50 +237,49 @@ func (c *Client) DeleteRoutine(ctx context.Context, name string) error {
 	return nil
 }
 
-// EnableRoutine flips `enabled` to true on the routine.
-//
-// Spec PR #43186 added a dedicated `POST /routines/{name}:enable` route,
-// but the live service still returns 404 for it. We fall back to a GET+PUT
-// on the routine resource; revisit when the service exposes the route.
+// EnableRoutine enables a routine.
 func (c *Client) EnableRoutine(ctx context.Context, name string) (*Routine, error) {
-	return c.setEnabled(ctx, name, true)
+	return c.postRoutineAction(ctx, name, "enable")
 }
 
-// DisableRoutine flips `enabled` to false on the routine.
-//
-// Spec PR #43186 added a dedicated `POST /routines/{name}:disable` route,
-// but the live service still returns 404 for it. We fall back to a GET+PUT
-// on the routine resource; revisit when the service exposes the route.
+// DisableRoutine disables a routine.
 func (c *Client) DisableRoutine(ctx context.Context, name string) (*Routine, error) {
-	return c.setEnabled(ctx, name, false)
+	return c.postRoutineAction(ctx, name, "disable")
 }
 
-// setEnabled performs a GET + PUT to mutate the `enabled` field. It returns
-// the current routine without an extra round-trip if the field is already
-// at the desired value (idempotent enable/disable).
-func (c *Client) setEnabled(ctx context.Context, name string, enabled bool) (*Routine, error) {
-	existing, err := c.GetRoutine(ctx, name)
+// postRoutineAction calls a POST :<action> route on a routine and returns the
+// updated resource.
+func (c *Client) postRoutineAction(ctx context.Context, name, action string) (*Routine, error) {
+	req, err := runtime.NewRequest(ctx, http.MethodPost, c.routineActionURL(name, action))
 	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	addPreviewHeader(req)
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	var result Routine
+	if err := decodeJSON(resp.Body, &result); err != nil {
 		return nil, err
 	}
-	if existing.Enabled != nil && *existing.Enabled == enabled {
-		return existing, nil
-	}
-	existing.Enabled = &enabled
-	return c.PutRoutine(ctx, name, existing)
+	return &result, nil
 }
 
-// DispatchRoutineAsync calls the routine async-dispatch action route.
-//
-// Spec PR #43186 names this route `:dispatch_async` (snake_case). The live
-// service only exposes the camelCase form `:dispatchAsync`, so we use that
-// here. Revisit when the service catches up to the spec.
+// DispatchRoutineAsync calls the routine async-dispatch route.
 func (c *Client) DispatchRoutineAsync(
 	ctx context.Context,
 	name string,
 	payload *DispatchRoutineRequest,
 ) (*DispatchRoutineResponse, error) {
-	req, err := runtime.NewRequest(ctx, http.MethodPost, c.routineActionURL(name, "dispatchAsync"))
+	req, err := runtime.NewRequest(ctx, http.MethodPost, c.routineActionURL(name, "dispatch_async"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -361,7 +347,6 @@ func (c *Client) ListRoutineRuns(
 
 		all = append(all, page.Value...)
 
-		// Respect Top cap across pages.
 		if opts.Top > 0 && len(all) >= opts.Top {
 			all = all[:opts.Top]
 			break
@@ -406,7 +391,6 @@ func (c *Client) validateSameOrigin(targetURL string) error {
 	return nil
 }
 
-// decodeJSON reads and unmarshals a JSON response body.
 func decodeJSON(body io.Reader, v any) error {
 	data, err := io.ReadAll(body)
 	if err != nil {
@@ -418,7 +402,6 @@ func decodeJSON(body io.Reader, v any) error {
 	return nil
 }
 
-// setJSONBody marshals v as JSON and sets it as the request body.
 func setJSONBody(req *policy.Request, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {

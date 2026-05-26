@@ -20,8 +20,9 @@ type routineCreateFlags struct {
 	trigger         string
 	timeZone        string
 	at              string
+	cronExpression  string
 	action          string
-	agentID         string
+	agentName       string
 	agentEndpointID string
 	conversationID  string
 	sessionID       string
@@ -54,15 +55,17 @@ Use --file to create from a YAML/JSON manifest file instead of individual flags.
 	}
 
 	cmd.Flags().StringVar(&flags.trigger, "trigger", "",
-		"Trigger type: timer (required unless --file is used)")
+		"Trigger type: timer or recurring (required unless --file is used)")
 	cmd.Flags().StringVar(&flags.timeZone, "time-zone", "UTC",
 		"Time zone for the trigger (e.g. 'America/New_York')")
 	cmd.Flags().StringVar(&flags.at, "at", "",
 		"ISO 8601 datetime for timer trigger (e.g. '2026-04-24T15:00:00Z')")
+	cmd.Flags().StringVar(&flags.cronExpression, "cron", "",
+		"5-field cron expression for recurring trigger (minimum interval 5 minutes)")
 	cmd.Flags().StringVar(&flags.action, "action", "agent-response",
 		"Action type: agent-response (default), agent-invoke")
-	cmd.Flags().StringVar(&flags.agentID, "agent-id", "",
-		"Project-scoped agent ID (for agent-response action)")
+	cmd.Flags().StringVar(&flags.agentName, "agent-name", "",
+		"Project-scoped agent name (for agent-response action)")
 	cmd.Flags().StringVar(&flags.agentEndpointID, "agent-endpoint-id", "",
 		"Agent endpoint ID (for agent-response or agent-invoke action)")
 	cmd.Flags().StringVar(&flags.conversationID, "conversation-id", "",
@@ -126,7 +129,7 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 			return exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"--trigger is required when --file is not provided",
-				"specify --trigger timer, or use --file",
+				"specify --trigger timer or --trigger recurring, or use --file",
 			)
 		}
 
@@ -139,7 +142,7 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 		}
 
 		action, err := buildAction(
-			flags.action, flags.agentID, flags.agentEndpointID,
+			flags.action, flags.agentName, flags.agentEndpointID,
 			flags.conversationID, flags.sessionID,
 		)
 		if err != nil {
@@ -191,24 +194,15 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 
 // buildTrigger constructs a RoutineTrigger from CLI flags.
 //
-// Only the `timer` trigger is exposed at the CLI surface in this PR. The
-// `recurring` (schedule) and `github-issue` triggers are deferred until the
-// Foundry service is ready (see PR #8241 description and AGENTS.md). The
-// underlying model and wire support for both triggers are retained so
-// re-enabling them is just a CLI flag wiring change.
+// Supported triggers: timer (one-shot, --at) and recurring (cron, --cron).
+// The github-issue trigger is deferred until the Foundry service accepts the
+// renamed github_issue_opened discriminator.
 func buildTrigger(flags *routineCreateFlags) (routines.RoutineTrigger, error) {
 	if flags.trigger == "github-issue" {
 		return routines.RoutineTrigger{}, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"trigger type 'github-issue' is not yet supported by the CLI",
-			"use --trigger timer; github-issue is deferred to a future release",
-		)
-	}
-	if flags.trigger == "recurring" {
-		return routines.RoutineTrigger{}, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"trigger type 'recurring' is not yet supported by the CLI",
-			"use --trigger timer; recurring/schedule is deferred until the Foundry service is ready",
+			"use --trigger timer or --trigger recurring; github-issue is deferred to a future release",
 		)
 	}
 
@@ -217,7 +211,7 @@ func buildTrigger(flags *routineCreateFlags) (routines.RoutineTrigger, error) {
 		return routines.RoutineTrigger{}, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("unknown trigger type %q", flags.trigger),
-			"supported triggers: timer",
+			"supported triggers: timer, recurring",
 		)
 	}
 
@@ -236,13 +230,22 @@ func buildTrigger(flags *routineCreateFlags) (routines.RoutineTrigger, error) {
 			)
 		}
 		t.At = flags.at
+	case "recurring":
+		if flags.cronExpression == "" {
+			return t, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--cron is required for trigger type 'recurring'",
+				"provide a 5-field cron expression, e.g. '0 8 * * *' (minimum interval 5 minutes)",
+			)
+		}
+		t.CronExpression = flags.cronExpression
 	}
 
 	return t, nil
 }
 
 // buildAction constructs a RoutineAction from CLI flags.
-func buildAction(actionType, agentID, agentEndpointID, conversationID, sessionID string) (routines.RoutineAction, error) {
+func buildAction(actionType, agentName, agentEndpointID, conversationID, sessionID string) (routines.RoutineAction, error) {
 	wireType, ok := routines.ActionCLIToWire[actionType]
 	if !ok {
 		return routines.RoutineAction{}, exterrors.Validation(
@@ -256,18 +259,18 @@ func buildAction(actionType, agentID, agentEndpointID, conversationID, sessionID
 
 	switch actionType {
 	case "agent-response":
-		if agentID != "" && agentEndpointID != "" {
+		if agentName != "" && agentEndpointID != "" {
 			return a, exterrors.Validation(
 				exterrors.CodeConflictingArguments,
-				"--agent-id and --agent-endpoint-id are mutually exclusive for agent-response action",
-				"provide either --agent-id or --agent-endpoint-id, not both",
+				"--agent-name and --agent-endpoint-id are mutually exclusive for agent-response action",
+				"provide either --agent-name or --agent-endpoint-id, not both",
 			)
 		}
-		if agentID == "" && agentEndpointID == "" {
+		if agentName == "" && agentEndpointID == "" {
 			return a, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
-				"one of --agent-id or --agent-endpoint-id is required for agent-response action",
-				"provide --agent-id <id> or --agent-endpoint-id <id>",
+				"one of --agent-name or --agent-endpoint-id is required for agent-response action",
+				"provide --agent-name <id> or --agent-endpoint-id <id>",
 			)
 		}
 		if sessionID != "" {
@@ -277,7 +280,7 @@ func buildAction(actionType, agentID, agentEndpointID, conversationID, sessionID
 				"use --session-id with --action agent-invoke, or omit --session-id",
 			)
 		}
-		a.AgentID = agentID
+		a.AgentName = agentName
 		a.AgentEndpointID = agentEndpointID
 		a.ConversationID = conversationID
 	case "agent-invoke":
@@ -288,11 +291,11 @@ func buildAction(actionType, agentID, agentEndpointID, conversationID, sessionID
 				"provide --agent-endpoint-id <id>",
 			)
 		}
-		if agentID != "" {
+		if agentName != "" {
 			return a, exterrors.Validation(
 				exterrors.CodeConflictingArguments,
-				"--agent-id is not applicable to agent-invoke action",
-				"use --agent-endpoint-id for agent-invoke, or omit --agent-id",
+				"--agent-name is not applicable to agent-invoke action",
+				"use --agent-endpoint-id for agent-invoke, or omit --agent-name",
 			)
 		}
 		if conversationID != "" {

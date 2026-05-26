@@ -112,12 +112,12 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 			false,
 			false,
 			Writers{
-				Output: os.Stdout,
+				Output: io.Discard,
 			},
 			ConsoleHandles{
 				Stderr: os.Stderr,
 				Stdin:  os.Stdin,
-				Stdout: os.Stdout,
+				Stdout: io.Discard,
 			},
 			nil,
 			externalPromptCfg,

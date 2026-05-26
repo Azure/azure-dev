@@ -64,7 +64,7 @@ func Test_CLI_Experiment_AssignmentContextInTelemetry(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "env", "new", envName, "--trace-log-file", traceFilePath)
 	require.NoError(t, err)
-	fmt.Printf("envName: %s\n", envName)
+	t.Logf("envName: %s", envName)
 
 	traceContent, err := os.ReadFile(traceFilePath)
 	require.NoError(t, err)

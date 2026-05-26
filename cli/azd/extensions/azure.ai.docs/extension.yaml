@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
+capabilities:
+    - custom-commands
+    - metadata
+description: Agent-ready documentation and workflows for the Foundry azd extensions. (Preview)
+displayName: Foundry docs for AI agents (Preview)
+id: azure.ai.docs
+language: go
+namespace: ai.doc
+tags:
+    - ai
+    - docs
+    - agent-skills
+usage: azd ai doc <command> [options]
+version: 0.0.1-preview

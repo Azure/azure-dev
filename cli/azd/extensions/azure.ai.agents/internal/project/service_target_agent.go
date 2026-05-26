@@ -47,9 +47,6 @@ import (
 
 // Reference implementation
 
-// agentAPIVersion is the API version used for agent management operations.
-const agentAPIVersion = "v1"
-
 // displayableProtocolEntry defines a protocol that produces user-visible invocation endpoints.
 type displayableProtocolEntry struct {
 	Protocol  agent_api.AgentProtocol
@@ -899,7 +896,7 @@ func writeExistingAgentVersionWarningIfPresent(
 	agentChecker agents.AgentChecker,
 	agentName string,
 ) bool {
-	exists, err := agents.AgentExists(ctx, agentChecker, agentName, agentAPIVersion)
+	exists, err := agents.AgentExists(ctx, agentChecker, agentName, agent_api.AgentEndpointAPIVersion)
 	if err != nil {
 		log.Printf("existing agent name check skipped for %q: %v", agentName, err)
 		return false
@@ -1030,7 +1027,7 @@ func (p *AgentServiceTargetProvider) patchAgentEndpointFields(
 		AgentCard:     agentCard,
 	}
 
-	_, err := agentClient.PatchAgent(ctx, agentName, patchRequest, agentAPIVersion)
+	_, err := agentClient.PatchAgent(ctx, agentName, patchRequest, agent_api.AgentEndpointAPIVersion)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	}
@@ -1518,7 +1515,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Check if agent already exists (GET /agents/{name})
 	progress("Creating agent")
-	_, getErr := agentClient.GetAgent(ctx, agentDef.Name, agentAPIVersion)
+	_, getErr := agentClient.GetAgent(ctx, agentDef.Name, agent_api.AgentEndpointAPIVersion)
 	var agentResp *agent_api.AgentObject
 
 	if getErr != nil {
@@ -1528,7 +1525,9 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 		// Agent doesn't exist — create
 		fmt.Fprintf(os.Stderr, "Creating new agent: %s\n", agentDef.Name)
-		agentResp, err = agentClient.CreateAgentFromZip(ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agentAPIVersion)
+		agentResp, err = agentClient.CreateAgentFromZip(
+			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
+		)
 		if err != nil {
 			return nil, exterrors.Internal(
 				exterrors.CodeAgentCreateFailed,
@@ -1538,7 +1537,9 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	} else {
 		// Agent exists — update
 		writeExistingAgentVersionWarning(agentDef.Name)
-		agentResp, err = agentClient.UpdateAgentFromZip(ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agentAPIVersion)
+		agentResp, err = agentClient.UpdateAgentFromZip(
+			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
+		)
 		if err != nil {
 			return nil, exterrors.Internal(
 				exterrors.CodeAgentCreateFailed,
@@ -1850,7 +1851,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		attempt++
 		progress(fmt.Sprintf("Polling agent status (%d/%d)", attempt, maxAttempts))
 
-		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agentAPIVersion)
+		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agent_api.AgentEndpointAPIVersion)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
 			// Reset counters on error — don't count transient failures
@@ -1923,7 +1924,9 @@ func (p *AgentServiceTargetProvider) createAgent(
 	}
 
 	// Create agent version
-	agentVersionResponse, err := agentClient.CreateAgentVersion(ctx, request.Name, versionRequest, agentAPIVersion)
+	agentVersionResponse, err := agentClient.CreateAgentVersion(
+		ctx, request.Name, versionRequest, agent_api.AgentEndpointAPIVersion,
+	)
 	if err != nil {
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	}

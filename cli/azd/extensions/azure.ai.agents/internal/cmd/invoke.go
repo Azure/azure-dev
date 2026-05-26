@@ -600,7 +600,7 @@ func (rc *remoteContext) nextStepName() string {
 // and avoid unnecessary token round-trips on invalid input. Callers must close
 // rc.azdClient when non-nil.
 func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext, error) {
-	rc := &remoteContext{apiVersion: AgentEndpointAPIVersion, version: a.flags.version}
+	rc := &remoteContext{apiVersion: DefaultAgentAPIVersion, version: a.flags.version}
 
 	if a.endpoint != nil {
 		rc.name = a.endpoint.AgentName
@@ -703,7 +703,7 @@ func (a *InvokeAction) resolveRemoteSessionID(ctx context.Context, rc *remoteCon
 
 	apiVersion := rc.apiVersion
 	if apiVersion == "" {
-		apiVersion = AgentEndpointAPIVersion
+		apiVersion = DefaultAgentAPIVersion
 	}
 	session, err := createInvokeVersionSession(ctx, rc.projectEndpoint, rc.name, rc.version, apiVersion)
 	if err != nil {
@@ -731,7 +731,7 @@ func createInvokeVersionSessionImpl(
 	apiVersion string,
 ) (*agent_api.AgentSessionResource, error) {
 	if apiVersion == "" {
-		apiVersion = AgentEndpointAPIVersion
+		apiVersion = DefaultAgentAPIVersion
 	}
 
 	credential, err := newAgentCredential()
@@ -1315,7 +1315,7 @@ func handleInvocationLRO(
 	}
 	if pollURL == "" {
 		if apiVersion == "" {
-			apiVersion = AgentEndpointAPIVersion
+			apiVersion = DefaultAgentAPIVersion
 		}
 		pollURL = fmt.Sprintf(
 			"%s/agents/%s/endpoint/protocols/invocations/%s?api-version=%s",
@@ -1416,7 +1416,7 @@ func createConversation(
 ) (string, error) {
 	convURL := fmt.Sprintf(
 		"%s/agents/%s/endpoint/protocols/openai/conversations?api-version=%s",
-		projectEndpoint, agentName, ConversationsAPIVersion,
+		projectEndpoint, agentName, DefaultAgentAPIVersion,
 	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, convURL, bytes.NewReader([]byte("{}")))
 	if err != nil {

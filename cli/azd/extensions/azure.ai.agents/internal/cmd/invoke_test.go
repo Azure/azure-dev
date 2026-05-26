@@ -1761,8 +1761,8 @@ func TestCreateConversation(t *testing.T) {
 				}
 
 				// Verify api-version query parameter uses the constant
-				if got := r.URL.Query().Get("api-version"); got != ConversationsAPIVersion {
-					t.Errorf("api-version = %q, want %q", got, ConversationsAPIVersion)
+				if got := r.URL.Query().Get("api-version"); got != DefaultAgentAPIVersion {
+					t.Errorf("api-version = %q, want %q", got, DefaultAgentAPIVersion)
 				}
 
 				// Verify auth header

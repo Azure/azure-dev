@@ -126,18 +126,19 @@ func verifyPipeSecurity(pipePath string) error {
 	allowedSids := []*windows.SID{currentUserSid, systemSid, adminsSid}
 
 	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
-		var aceHdr *windows.ACCESS_ALLOWED_ACE
-		if err := windows.GetAce(dacl, i, &aceHdr); err != nil {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		if err := windows.GetAce(dacl, i, &ace); err != nil {
 			return fmt.Errorf("reading ACE %d: %w", i, err)
 		}
-		// Only ACCESS_ALLOWED_ACE_TYPE (and its callback variant) grant
-		// access via the layout exposed by ACCESS_ALLOWED_ACE. Deny / audit
-		// ACEs are ignored — they do not widen access. Object ACE types
-		// (used for AD) are not expected on a named pipe; if encountered,
-		// refuse defensively because their SID lives at a different offset.
-		switch aceHdr.Header.AceType {
+		// For ACCESS_ALLOWED_ACE_TYPE and its callback variant, the ACE
+		// layout starts with ACE_HEADER + ACCESS_MASK and is immediately
+		// followed by the SID in place; ACCESS_ALLOWED_ACE.SidStart marks
+		// that first SID byte. The unsafe cast below is only valid for
+		// those two AceType values — object ACEs interleave GUID fields
+		// before the SID and are handled separately.
+		switch ace.Header.AceType {
 		case windows.ACCESS_ALLOWED_ACE_TYPE, accessAllowedCallbackAceType:
-			sid := (*windows.SID)(unsafe.Pointer(&aceHdr.SidStart))
+			sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
 			if !sidInList(sid, allowedSids) {
 				return fmt.Errorf(
 					"permissions too permissive: pipe %q grants access to SID %q "+
@@ -146,7 +147,8 @@ func verifyPipeSecurity(pipePath string) error {
 			}
 		case accessAllowedObjectAceType, accessAllowedCallbackObjectAceType:
 			return fmt.Errorf(
-				"permissions too permissive: pipe %q has an object allow ACE which is not supported",
+				"permissions too permissive: pipe %q has an Active Directory-style object "+
+					"allow ACE which is not expected on a named pipe",
 				pipePath)
 		default:
 			// Deny / audit / other ACE types do not grant access; skip.

@@ -672,11 +672,21 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			// tailored starter prompt to the clipboard, and exits
 			// without running the existing init flow. On No, returns
 			// handled=false and the existing flow continues.
-			if !flags.noPrompt {
-				cwd, cwdErr := os.Getwd()
-				if cwdErr != nil {
-					return fmt.Errorf("resolve working directory: %w", cwdErr)
-				}
+			//
+			// shouldRunPreflow gates this so the question is only asked
+			// for a true greenfield start. See init_preflow_gate.go for
+			// the full set of skip conditions (explicit flags, existing
+			// agent setup, prior azd configuration).
+			cwd, cwdErr := os.Getwd()
+			if cwdErr != nil {
+				return fmt.Errorf("resolve working directory: %w", cwdErr)
+			}
+
+			runPreflow, gateErr := shouldRunPreflow(flags, cwd)
+			if gateErr != nil {
+				return gateErr
+			}
+			if runPreflow {
 				preflow := &InitPreflowAction{
 					out:          cmd.OutOrStdout(),
 					azdClient:    azdClient,

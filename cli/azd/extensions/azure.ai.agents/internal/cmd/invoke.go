@@ -998,7 +998,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		fmt.Printf("Invocation:   %s\n", invID)
 	}
 
-	if err := handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout(), "", nil); err != nil {
+	if err := handleInvocationResponse(ctx, resp, "", "", agentName, a.httpTimeout(), "", nil); err != nil {
 		// See invocationsRemote for the status-code rationale.
 		if resp.StatusCode >= 400 {
 			a.emitInvokeFailureNextStep(nextstep.InvokeLocal, agentName, "")

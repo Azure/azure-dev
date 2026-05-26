@@ -46,7 +46,8 @@ connections:
     target: https://api.githubcopilot.com/mcp
     authType: CustomKeys
     credentials:
-      Authorization: ${PARAM_GITHUB_MCP_CONN_AUTHORIZATION}
+      keys:
+        Authorization: ${PARAM_GITHUB_MCP_CONN_KEYS_AUTHORIZATION}
 toolboxes:
   - name: agent-tools
     tools:

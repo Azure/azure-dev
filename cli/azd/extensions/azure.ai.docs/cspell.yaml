@@ -38,6 +38,8 @@ words:
   # Filesystem terms used in skill_install.go (target directories + cross-filesystem renames)
   - subdirs
   - tmpfs
+  # Used in skill_install.go comments describing the JSON wire shape
+  - parseable
 overrides:
   - filename: internal/cmd/doc_catalog.go
     words:

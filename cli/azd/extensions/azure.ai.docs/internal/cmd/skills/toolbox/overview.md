@@ -33,7 +33,7 @@ Then `azd ai toolbox --help` to see the verbs.
 | `azd ai toolbox update <name> --default-version <ver>`                           | Re-point the default version (the only field `update` supports today). |
 | `azd ai toolbox delete <name> [--version <ver>] [--force]`                       | Delete a whole toolbox, or a single version.                  |
 
-Every mutation publishes a new immutable version. The first version of a new toolbox is automatically the default; subsequent versions require an explicit `update --default-version` to promote.
+Every mutation publishes a new immutable version and promotes it to default (`toolbox create`, `connection add`, `connection remove`). Use `update --default-version` later to re-point at an older version (rollback) or to fix a previous promotion.
 
 ## Connections must already exist
 

@@ -29,7 +29,7 @@ if ($CodeCoverageEnabled) {
 
 $tagsFlag = "-tags=cfi,cfg,osusergo"
 
-$ldFlag = "-ldflags=-s -w -X azure.ai.skills/internal/cmd.Version=$Version -X azure.ai.skills/internal/cmd.Commit=$SourceVersion -X azure.ai.skills/internal/cmd.BuildDate=$(Get-Date -Format o) "
+$ldFlag = "-ldflags=-s -w -X azure.ai.docs/internal/cmd.Version=$Version -X azure.ai.docs/internal/cmd.Commit=$SourceVersion -X azure.ai.docs/internal/cmd.BuildDate=$(Get-Date -Format o) "
 
 if ($IsWindows) {
     $msg = "Building for Windows"

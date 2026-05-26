@@ -70,7 +70,74 @@ The server should take this request and fetch a token using the given configurat
 
 The message is returned as is as the `error` for the `GetToken` call on the client side.
 
-## Implementation
+## Transport selection via URL scheme
+
+Starting with `azd` 1.26, `AZD_AUTH_ENDPOINT` accepts three URL schemes that
+select the transport used to reach the host's token server. The HTTP request
+body, response shape, and `api-version` are identical across schemes — only
+how `azd` dials the server changes.
+
+### `https:` (existing)
+
+Loopback HTTPS server.
+
+- URL form: `https://host:port` (host is typically `127.0.0.1`).
+- `AZD_AUTH_CERT` is **required** and must be a base64-encoded DER X.509
+  certificate that the host's HTTPS server presents. `azd` pins the
+  connection to this certificate.
+- `AZD_AUTH_KEY` is **required** and is sent as `Authorization: Bearer <key>`.
+- `azd` rejects the `https:` scheme when no cert is provided.
+
+### `unix:` (new, POSIX only)
+
+Unix domain socket transport. The OS enforces caller identity via filesystem
+permissions, so no TLS handshake and no shared bearer secret are required.
+
+- URL form: `unix:/absolute/path/to/socket` or
+  `unix:///absolute/path/to/socket`. The socket path is taken from the URL's
+  path component. Relative paths are an error.
+- `AZD_AUTH_CERT` **MUST NOT** be set. If set, `azd` fails fast with a clear
+  error.
+- `AZD_AUTH_KEY` **MAY** be omitted. If set, `azd` still sends it as
+  `Authorization: Bearer <key>` for defense in depth.
+- **IDE host requirements:** the socket file MUST be created with mode `0600`
+  and the parent directory MUST be mode `0700`, both owned by the current
+  uid. `azd` `stat()`s the socket and the parent directory on first connect
+  and refuses if either is group- or world-accessible, or if the owner
+  differs from the `azd` process's effective uid. The connection fails with
+  a clear "permissions too permissive" error.
+- The HTTP request line still targets `/token?api-version=2023-07-12-preview`;
+  the URL host is irrelevant and `azd` rewrites the request URL to
+  `http://azd-auth/token?...` before dispatch.
+- Path length: callers should be aware of OS limits (108 bytes on Linux, 104
+  on macOS including the null terminator).
+
+### `npipe:` (new, Windows only)
+
+Windows named pipe transport. The OS enforces caller identity via the pipe's
+security descriptor, so no TLS handshake and no shared bearer secret are
+required.
+
+- URL form: `npipe:azd-auth-<arbitrary>` (the value after `npipe:` is the
+  pipe name; `azd` prepends `\\.\pipe\` automatically) **or**
+  `npipe:////./pipe/azd-auth-<arbitrary>` (fully qualified). Both forms are
+  accepted.
+- `AZD_AUTH_CERT` **MUST NOT** be set. Same handling as `unix:`.
+- `AZD_AUTH_KEY` **MAY** be omitted. Same handling as `unix:`.
+- **IDE host requirements:** the pipe MUST be created with a security
+  descriptor that grants access only to the current user SID (and SYSTEM /
+  Administrators, as is conventional). `azd` queries the pipe's DACL after
+  connecting and refuses if any other SID has an allow ACE. The connection
+  fails with a clear "permissions too permissive" error.
+- Same `/token?api-version=...` and URL-rewrite behavior as `unix:`.
+
+### Backward compatibility
+
+An `AZD_AUTH_ENDPOINT` without a scheme, or with `https:`, behaves exactly as
+it always has. No existing IDE host configuration is broken by the addition
+of `unix:` and `npipe:`.
+
+
 
 The `azd` CLI implements the client side of this feature in the [`pkg/auth/remote_credential.go`](../pkg/auth/remote_credential.go).
 

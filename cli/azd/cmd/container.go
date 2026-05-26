@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -50,7 +49,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/helm"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -624,36 +623,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(config.NewManager)
 	container.MustRegisterSingleton(config.NewFileConfigManager)
 	container.MustRegisterScoped(func() (auth.ExternalAuthConfiguration, error) {
-		cert := os.Getenv("AZD_AUTH_CERT")
-		endpoint := os.Getenv("AZD_AUTH_ENDPOINT")
-		key := os.Getenv("AZD_AUTH_KEY")
-
-		client := &http.Client{}
-		if len(cert) > 0 {
-			transport, err := httputil.TlsEnabledTransport(cert)
-			if err != nil {
-				return auth.ExternalAuthConfiguration{},
-					fmt.Errorf("parsing AZD_AUTH_CERT: %w", err)
-			}
-			client.Transport = transport
-
-			endpointUrl, err := url.Parse(endpoint)
-			if err != nil {
-				return auth.ExternalAuthConfiguration{},
-					fmt.Errorf("invalid AZD_AUTH_ENDPOINT value '%s': %w", endpoint, err)
-			}
-
-			if endpointUrl.Scheme != "https" {
-				return auth.ExternalAuthConfiguration{},
-					fmt.Errorf("invalid AZD_AUTH_ENDPOINT value '%s': scheme must be 'https' when certificate is provided",
-						endpoint)
-			}
-		}
-		return auth.ExternalAuthConfiguration{
-			Endpoint:    endpoint,
-			Transporter: client,
-			Key:         key,
-		}, nil
+		return buildExternalAuthConfiguration(
+			os.Getenv("AZD_AUTH_ENDPOINT"),
+			os.Getenv("AZD_AUTH_KEY"),
+			os.Getenv("AZD_AUTH_CERT"),
+		)
 	})
 	container.MustRegisterSingleton(func() auth.UserAgent {
 		return auth.UserAgent(internal.UserAgent())

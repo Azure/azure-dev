@@ -12,11 +12,18 @@ azd ai skill create <name> --file ./SKILL.md
 azd ai skill create <name> --file ./skill.zip
 
 azd ai skill update <name> [--description "..."] [--instructions "..."] [--file ./SKILL.md]
+azd ai skill update <name> --set-default-version <version>
 azd ai skill show <name>
 azd ai skill list [--top N] [--orderby <field>]
-azd ai skill download <name> [--output-dir <path>] [--raw] [--force]
+azd ai skill download <name> [--version <ver>] [--output-dir <path>] [--raw] [--force]
 azd ai skill delete <name> [--force]
 ```
+
+Skills are **versioned and immutable**. `create` uploads the first default
+version; `update` uploads a new default version (or, with
+`--set-default-version`, just repoints `default_version` at an existing
+version). Names follow the agentskills.io spec
+(`^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$`, max 64 chars).
 
 All commands accept the standard cross-cutting flags: `-p` / `--project-endpoint`,
 `--output table|json`, `--no-prompt`, and `--debug`.

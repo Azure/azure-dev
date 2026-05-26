@@ -64,9 +64,16 @@ Each `--debug` run writes to `azd-ai-skills-<date>.log` in the current working d
 ## File handling
 
 - `--file` is **not** a manifest. It is read at invocation time only; the CLI does not track or re-read it after the command returns.
-- `create`: accepts `.md` or `.zip`. Mode is inferred from extension; conflicting modes (inline + `--file`) are rejected.
-- `update`: accepts `.md` only. `.zip` is rejected with a structured suggestion to use `create --force`.
-- `download`: writes either an extracted directory (default) or the unmodified ZIP archive (`--raw`).
+- `create`: accepts `.md` or `.zip`. Mode is inferred from extension; conflicting modes (inline + `--file`) are rejected. `.md` and inline modes send `inline_content` JSON; `.zip` is uploaded as `multipart/form-data` with a single `files[]` part.
+- `update`: accepts `.md` only. `.zip` is rejected with a structured suggestion to use `create --force` (which deletes the skill and all its versions before re-creating). Pass `--set-default-version <ver>` to repoint `default_version` at an existing immutable version without uploading new content.
+- `download`: writes either an extracted directory (default) or the unmodified zip archive (`--raw`). Pass `--version <ver>` to download a non-default version. The server always returns `application/zip` (from `GET /skills/{name}/content` or `GET /skills/{name}/versions/{version}/content`).
+
+## Versioning
+
+Skill versions are immutable. The Skill resource itself only carries
+`id`, `name`, `description`, `default_version`, `latest_version`, and
+`created_at`; per-version content lives in `inline_content` (or uploaded
+files) on each `SkillVersion`.
 
 ## Release preparation
 

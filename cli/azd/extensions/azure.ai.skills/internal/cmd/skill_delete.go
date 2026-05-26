@@ -56,7 +56,7 @@ func (a *deleteAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, err := skillCtx.client.Delete(ctx, a.flags.name); err != nil {
+	if _, err := skillCtx.client.DeleteSkill(ctx, a.flags.name); err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpDeleteSkill)
 	}
 	return a.printResult(deleteResult{Name: a.flags.name, Deleted: true})

@@ -23,16 +23,19 @@ func TestValidateSkillName(t *testing.T) {
 		{"a", false},
 		{"my-skill", false},
 		{"abc123", false},
-		{"Skill1-2-3", false},
+		{"skill1-2-3", false},
 		{"", true},
 		{"   ", true},
 		{"-leading-hyphen", true},
 		{"trailing-hyphen-", true},
 		{"under_score", true},
 		{"contains space", true},
-		// 63 char limit
-		{string(makeRune('a', 63)), false},
-		{string(makeRune('a', 64)), true},
+		// new spec: lowercase only — uppercase rejected.
+		{"Skill1", true},
+		{"UPPER", true},
+		// 64 char limit (was 63 in old spec)
+		{string(makeRune('a', 64)), false},
+		{string(makeRune('a', 65)), true},
 	}
 	for _, c := range cases {
 		err := validateSkillName(c.name)

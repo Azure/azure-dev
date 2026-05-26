@@ -28,7 +28,7 @@ func (a *showAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	s, err := skillCtx.client.Get(ctx, a.flags.name)
+	s, err := skillCtx.client.GetSkill(ctx, a.flags.name)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetSkill)
 	}
@@ -42,9 +42,8 @@ func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <name>",
 		Short: "Show metadata for a Foundry skill.",
-		Long: `Show the metadata returned by the service for a skill.
-
-This command returns metadata only. To retrieve the skill body, use
+		Long: `Show the metadata returned by the service for a skill — including
+default_version and latest_version. To retrieve skill content, use
 'azd ai skill download <name>'.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

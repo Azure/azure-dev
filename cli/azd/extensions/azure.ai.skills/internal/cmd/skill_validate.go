@@ -11,10 +11,13 @@ import (
 	"azureaiskills/internal/exterrors"
 )
 
-// skillNamePattern matches the agent name pattern in azure.ai.agents so users
-// see one rule across resource kinds: 1-63 alphanumerics with hyphens only
-// in the middle. The service makes the final decision.
-var skillNamePattern = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
+// skillNamePattern matches the SkillName scalar from the Foundry Skills
+// API spec (agentskills.io alignment): lowercase letters / digits / hyphens,
+// must not start or end with a hyphen, max 64 chars. The service makes the
+// final decision.
+var skillNamePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$`)
+
+const skillNameMaxLen = 64
 
 func validateSkillName(name string) error {
 	trimmed := strings.TrimSpace(name)
@@ -25,11 +28,11 @@ func validateSkillName(name string) error {
 			"pass a non-empty <name> argument",
 		)
 	}
-	if !skillNamePattern.MatchString(trimmed) {
+	if len(trimmed) > skillNameMaxLen || !skillNamePattern.MatchString(trimmed) {
 		return exterrors.Validation(
 			exterrors.CodeInvalidSkillName,
 			fmt.Sprintf("skill name %q is invalid", trimmed),
-			"use 1-63 alphanumeric characters; hyphens are allowed only in the middle",
+			"use 1-64 lowercase letters, digits, and hyphens; must not start or end with a hyphen",
 		)
 	}
 	return nil

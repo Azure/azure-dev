@@ -74,7 +74,7 @@ func (a *createAction) Run(ctx context.Context) error {
 	}
 
 	if a.flags.force {
-		if _, delErr := skillCtx.client.Delete(ctx, a.flags.name); delErr != nil && !isNotFound(delErr) {
+		if _, delErr := skillCtx.client.DeleteSkill(ctx, a.flags.name); delErr != nil && !isNotFound(delErr) {
 			return exterrors.ServiceFromAzure(delErr, exterrors.OpDeleteSkill)
 		}
 	}
@@ -110,15 +110,17 @@ func (a *createAction) runInline(ctx context.Context, client *skill_api.Client) 
 		)
 	}
 
-	created, err := client.CreateInline(ctx, skill_api.CreateRequest{
-		Name:         a.flags.name,
-		Description:  a.flags.description,
-		Instructions: a.flags.instructions,
+	version, err := client.CreateVersionInline(ctx, a.flags.name, skill_api.CreateVersionRequest{
+		InlineContent: &skill_api.SkillInlineContent{
+			Description:  a.flags.description,
+			Instructions: a.flags.instructions,
+		},
+		Default: true,
 	})
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
 	}
-	return printCreateResult(created, a.flags.output)
+	return a.printCreateResult(ctx, client, version)
 }
 
 func (a *createAction) runFileMd(ctx context.Context, client *skill_api.Client) error {
@@ -142,16 +144,18 @@ func (a *createAction) runFileMd(ctx context.Context, client *skill_api.Client) 
 		)
 	}
 
-	created, err := client.CreateInline(ctx, skill_api.CreateRequest{
-		Name:         a.flags.name,
-		Description:  parsed.Description,
-		Instructions: parsed.Instructions,
-		Metadata:     parsed.Metadata,
+	version, err := client.CreateVersionInline(ctx, a.flags.name, skill_api.CreateVersionRequest{
+		InlineContent: &skill_api.SkillInlineContent{
+			Description:  parsed.Description,
+			Instructions: parsed.Instructions,
+			Metadata:     parsed.Metadata,
+		},
+		Default: true,
 	})
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
 	}
-	return printCreateResult(created, a.flags.output)
+	return a.printCreateResult(ctx, client, version)
 }
 
 func (a *createAction) runFilePackage(ctx context.Context, client *skill_api.Client) error {
@@ -181,19 +185,28 @@ func (a *createAction) runFilePackage(ctx context.Context, client *skill_api.Cli
 	}
 	defer f.Close()
 
-	created, err := client.CreatePackage(ctx, f, info.Size())
+	version, err := client.CreateVersionFromZip(ctx, a.flags.name, filepath.Base(a.flags.file), f, true)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
 	}
-	return printCreateResult(created, a.flags.output)
+	return a.printCreateResult(ctx, client, version)
 }
 
-func printCreateResult(s *skill_api.Skill, format string) error {
-	if format == outputJSON {
-		return printJSON(s)
+// printCreateResult prints either the created version envelope or, when the
+// caller wants a human-readable summary, the freshly-loaded Skill that the
+// version belongs to so users see default_version / latest_version.
+func (a *createAction) printCreateResult(ctx context.Context, client *skill_api.Client, version *skill_api.SkillVersion) error {
+	if a.flags.output == outputJSON {
+		return printJSON(version)
 	}
-	fmt.Printf("Skill %q created.\n", s.Name)
-	return printSkillDetail(s, outputTable)
+	fmt.Printf("Skill %q version %q created.\n", a.flags.name, version.Version)
+	skill, err := client.GetSkill(ctx, a.flags.name)
+	if err != nil {
+		// Don't fail the create just because the follow-up GET failed; fall
+		// back to printing the version envelope instead.
+		return printSkillVersionDetail(version, outputTable)
+	}
+	return printSkillDetail(skill, outputTable)
 }
 
 // verifyPackageNameMatches refuses --force when the archive's SKILL.md
@@ -293,7 +306,7 @@ func promptForInline(ctx context.Context, f *createFlags) error {
 		resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:     "Skill description",
-				HelpMessage: "Short human-readable summary. Sent to the service as `description`.",
+				HelpMessage: "Short human-readable summary. Sent as inline_content.description on the new version.",
 				Required:    true,
 			},
 		})
@@ -308,7 +321,7 @@ func promptForInline(ctx context.Context, f *createFlags) error {
 		resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:     "Skill instructions (Markdown body)",
-				HelpMessage: "Markdown body that defines the skill's behavior. Sent as `instructions`.",
+				HelpMessage: "Markdown body that defines the skill's behavior. Sent as inline_content.instructions.",
 				Required:    true,
 			},
 		})
@@ -332,9 +345,11 @@ func newCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
   1. Inline:   --description "..." --instructions "..."
   2. SKILL.md: --file ./SKILL.md   (CLI parses YAML front matter + body)
-  3. Package:  --file ./skill.zip   (CLI uploads the archive as-is)
+  3. Package:  --file ./skill.zip   (CLI uploads the archive as multipart/form-data)
 
-Pass --force to delete an existing skill of the same name before creating.`,
+Skills are versioned. ` + "`create`" + ` creates a new skill (if it does not exist)
+and uploads its first version as the default. Pass --force to delete an existing
+skill of the same name before creating.`,
 		Example: `  azd ai skill create greet-user --description "Welcomes a new user" --instructions "Greet ..."
   azd ai skill create greet-user --file ./SKILL.md
   azd ai skill create greet-user --file ./skill.zip --force`,

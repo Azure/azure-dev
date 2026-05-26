@@ -62,9 +62,10 @@ func (f ArchiveFormat) String() string {
 }
 
 // DetectArchiveFormat sniffs the first bytes of data. The Foundry Skills
-// service is asymmetric: POST /skills:import requires ZIP (gzip yields 415),
-// but GET /skills/{name}:download returns gzip — so we sniff rather than
-// trust Content-Type.
+// download endpoints (GET /skills/{name}/content and
+// GET /skills/{name}/versions/{version}/content) return application/zip;
+// the gzip-tar branch remains for resilience against legacy or alternate
+// content paths.
 func DetectArchiveFormat(data []byte) ArchiveFormat {
 	switch {
 	case len(data) >= 4 && bytes.Equal(data[:4], []byte{'P', 'K', 0x03, 0x04}):

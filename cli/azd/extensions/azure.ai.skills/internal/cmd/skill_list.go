@@ -25,7 +25,7 @@ func (a *listAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	items, err := skillCtx.client.ListAll(ctx, skill_api.ListOptions{}, 0)
+	items, err := skillCtx.client.ListAllSkills(ctx, skill_api.ListOptions{}, 0)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpListSkills)
 	}

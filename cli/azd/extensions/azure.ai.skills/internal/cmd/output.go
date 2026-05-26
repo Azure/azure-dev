@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"azureaiskills/internal/pkg/skill_api"
 )
@@ -33,18 +34,45 @@ func printSkillDetail(s *skill_api.Skill, format string) error {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	defer tw.Flush()
 	fmt.Fprintf(tw, "Name\t%s\n", s.Name)
-	if s.SkillID != "" {
-		fmt.Fprintf(tw, "Skill ID\t%s\n", s.SkillID)
+	if s.ID != "" {
+		fmt.Fprintf(tw, "ID\t%s\n", s.ID)
 	}
 	if s.Description != "" {
 		fmt.Fprintf(tw, "Description\t%s\n", s.Description)
 	}
-	fmt.Fprintf(tw, "Has Blob\t%t\n", s.HasBlob)
-	if len(s.Metadata) > 0 {
-		fmt.Fprintln(tw, "Metadata\t")
-		for k, v := range s.Metadata {
-			fmt.Fprintf(tw, "  %s\t%s\n", k, v)
-		}
+	if s.DefaultVersion != "" {
+		fmt.Fprintf(tw, "Default Version\t%s\n", s.DefaultVersion)
+	}
+	if s.LatestVersion != "" {
+		fmt.Fprintf(tw, "Latest Version\t%s\n", s.LatestVersion)
+	}
+	if s.CreatedAt != 0 {
+		fmt.Fprintf(tw, "Created At\t%s\n", formatUnix(s.CreatedAt))
+	}
+	return nil
+}
+
+func printSkillVersionDetail(v *skill_api.SkillVersion, format string) error {
+	if format == outputJSON {
+		return printJSON(v)
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	defer tw.Flush()
+	fmt.Fprintf(tw, "Name\t%s\n", v.Name)
+	if v.Version != "" {
+		fmt.Fprintf(tw, "Version\t%s\n", v.Version)
+	}
+	if v.ID != "" {
+		fmt.Fprintf(tw, "Version ID\t%s\n", v.ID)
+	}
+	if v.SkillID != "" {
+		fmt.Fprintf(tw, "Skill ID\t%s\n", v.SkillID)
+	}
+	if v.Description != "" {
+		fmt.Fprintf(tw, "Description\t%s\n", v.Description)
+	}
+	if v.CreatedAt != 0 {
+		fmt.Fprintf(tw, "Created At\t%s\n", formatUnix(v.CreatedAt))
 	}
 	return nil
 }
@@ -62,12 +90,19 @@ func printSkillList(items []skill_api.Skill, format string) error {
 func writeSkillTable(w io.Writer, items []skill_api.Skill) error {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	defer tw.Flush()
-	fmt.Fprintln(tw, "NAME\tDESCRIPTION\tHAS BLOB")
-	fmt.Fprintln(tw, "----\t-----------\t--------")
+	fmt.Fprintln(tw, "NAME\tDESCRIPTION\tDEFAULT\tLATEST")
+	fmt.Fprintln(tw, "----\t-----------\t-------\t------")
 	for _, s := range items {
-		fmt.Fprintf(tw, "%s\t%s\t%t\n", s.Name, truncate(s.Description, 60), s.HasBlob)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", s.Name, truncate(s.Description, 60), s.DefaultVersion, s.LatestVersion)
 	}
 	return nil
+}
+
+func formatUnix(seconds int64) string {
+	if seconds <= 0 {
+		return ""
+	}
+	return time.Unix(seconds, 0).UTC().Format(time.RFC3339)
 }
 
 func truncate(s string, max int) string {

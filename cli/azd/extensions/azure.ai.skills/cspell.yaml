@@ -1,11 +1,14 @@
 import: ../../.vscode/cspell.yaml
 words:
   # Skill commands
+  - agentskills
   - azureaiskills
   - exterrors
   - foundry
   - foundrysdk
   - orderby
+  - repoint
+  - repoints
   - tarball
   - zipslip
   - gzip

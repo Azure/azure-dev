@@ -4,94 +4,89 @@
 // Package skill_api provides a typed REST client for the Foundry Skills
 // data-plane surface, plus helpers for parsing SKILL.md files and safely
 // extracting downloaded skill packages.
+//
+// The wire shapes mirror the versioned Skills API from
+// azure-rest-api-specs (Foundry data-plane, Skills V1Preview):
+// each skill has 1+ immutable versions, and skill content lives on a
+// SkillVersion (via inline_content or uploaded files), not on the Skill
+// resource itself.
 package skill_api
 
-// Skill is the metadata representation of a Foundry skill. JSON fields are
-// camelCase for the published output of the CLI; the wire format is
-// snake_case and is translated via skillWire.
+// Skill is the top-level skill resource. Content lives on a SkillVersion,
+// so this struct intentionally does not carry description/instructions
+// other than the human-readable label.
 type Skill struct {
-	SkillID      string            `json:"skillId,omitempty"`
-	Name         string            `json:"name"`
-	HasBlob      bool              `json:"hasBlob"`
-	Description  string            `json:"description,omitempty"`
-	Instructions string            `json:"instructions,omitempty"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	CreatedAt      int64  `json:"created_at"`
+	DefaultVersion string `json:"default_version"`
+	LatestVersion  string `json:"latest_version"`
 }
 
-type skillWire struct {
-	SkillID      string            `json:"skill_id,omitempty"`
-	Name         string            `json:"name"`
-	HasBlob      bool              `json:"has_blob,omitempty"`
-	Description  string            `json:"description,omitempty"`
-	Instructions string            `json:"instructions,omitempty"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
+// SkillVersion is an immutable version of a skill. The wire response does
+// not echo back inline_content / files, only the version envelope.
+type SkillVersion struct {
+	ID          string `json:"id"`
+	SkillID     string `json:"skill_id"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+	CreatedAt   int64  `json:"created_at"`
 }
 
-func (w skillWire) toSkill() Skill {
-	return Skill{
-		SkillID:      w.SkillID,
-		Name:         w.Name,
-		HasBlob:      w.HasBlob,
-		Description:  w.Description,
-		Instructions: w.Instructions,
-		Metadata:     w.Metadata,
-	}
+// SkillInlineContent is the JSON body that backs a skill version when
+// the caller does not upload files. Matches the agentskills.io SKILL.md
+// specification field-for-field.
+type SkillInlineContent struct {
+	Description   string            `json:"description"`
+	Instructions  string            `json:"instructions"`
+	License       string            `json:"license,omitempty"`
+	Compatibility string            `json:"compatibility,omitempty"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
+	AllowedTools  []string          `json:"allowed_tools,omitempty"`
 }
 
-// CreateRequest is the JSON body for POST /skills. The CLI populates Name
-// from the positional argument and never trusts a value from front matter.
-type CreateRequest struct {
-	Name         string            `json:"name"`
-	Description  string            `json:"description,omitempty"`
-	Instructions string            `json:"instructions,omitempty"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
+// CreateVersionRequest is the JSON body for
+// POST /skills/{name}/versions with application/json content type.
+// When the skill does not yet exist, the service auto-creates it.
+type CreateVersionRequest struct {
+	InlineContent *SkillInlineContent `json:"inline_content,omitempty"`
+	Default       bool                `json:"default,omitempty"`
 }
 
-// UpdateRequest is the merged JSON body for POST /skills/{name}.
-type UpdateRequest struct {
-	Description  string            `json:"description,omitempty"`
-	Instructions string            `json:"instructions,omitempty"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
+// UpdateSkillRequest is the JSON body for POST /skills/{name}.
+// Only the default version pointer is mutable on the Skill itself.
+type UpdateSkillRequest struct {
+	DefaultVersion string `json:"default_version"`
 }
 
-// DeleteResponse is the JSON body returned by DELETE /skills/{name}.
-type DeleteResponse struct {
+// DeleteSkillResponse is returned by DELETE /skills/{name}.
+type DeleteSkillResponse struct {
+	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Deleted bool   `json:"deleted"`
 }
 
-// PagedSkills is one page of the GET /skills response.
-type PagedSkills struct {
-	Data    []Skill `json:"data"`
-	FirstID string  `json:"firstId,omitempty"`
-	LastID  string  `json:"lastId,omitempty"`
-	HasMore bool    `json:"hasMore"`
+// DeleteSkillVersionResponse is returned by DELETE /skills/{name}/versions/{version}.
+type DeleteSkillVersionResponse struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Deleted bool   `json:"deleted"`
 }
 
-type pagedSkillsWire struct {
-	Data    []skillWire `json:"data"`
-	FirstID string      `json:"first_id,omitempty"`
-	LastID  string      `json:"last_id,omitempty"`
-	HasMore bool        `json:"has_more"`
+// PagedResult is the standard Foundry paged-list envelope used by
+// GET /skills and GET /skills/{name}/versions.
+type PagedResult[T any] struct {
+	Data    []T    `json:"data"`
+	FirstID string `json:"first_id,omitempty"`
+	LastID  string `json:"last_id,omitempty"`
+	HasMore bool   `json:"has_more"`
 }
 
-func (w pagedSkillsWire) toPagedSkills() PagedSkills {
-	out := PagedSkills{
-		FirstID: w.FirstID,
-		LastID:  w.LastID,
-		HasMore: w.HasMore,
-	}
-	if len(w.Data) > 0 {
-		out.Data = make([]Skill, 0, len(w.Data))
-		for _, item := range w.Data {
-			out.Data = append(out.Data, item.toSkill())
-		}
-	}
-	return out
-}
-
-// ListOptions configures a GET /skills request. Zero values use service defaults.
+// ListOptions configures a paged list request. Zero values use service defaults.
 type ListOptions struct {
-	Top     int
-	OrderBy string
+	Limit int
+	Order string // "asc" | "desc"
 }

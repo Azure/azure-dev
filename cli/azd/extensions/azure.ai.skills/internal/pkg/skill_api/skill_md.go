@@ -6,90 +6,17 @@ package skill_api
 import (
 	"bytes"
 	"fmt"
-	"sort"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
 
-// SkillMdFileName is the canonical on-disk filename for a materialized skill.
+// SkillMdFileName is the canonical on-disk filename for a SKILL.md document.
 const SkillMdFileName = "SKILL.md"
-
-// MarshalSkillMd serializes a SkillMd back to a SKILL.md document with the
-// canonical `---`-delimited YAML front matter followed by the Markdown body.
-// The front matter keys are ordered (name, description, metadata) so the
-// generated file is stable across invocations.
-func MarshalSkillMd(md *SkillMd) ([]byte, error) {
-	if md == nil {
-		return nil, fmt.Errorf("MarshalSkillMd: skill is nil")
-	}
-	if strings.TrimSpace(md.Name) == "" {
-		return nil, fmt.Errorf("MarshalSkillMd: skill name is required")
-	}
-
-	var fmBuf bytes.Buffer
-	enc := yaml.NewEncoder(&fmBuf)
-	enc.SetIndent(2)
-
-	root := &yaml.Node{Kind: yaml.MappingNode}
-	appendStringField(root, "name", md.Name)
-	if md.Description != "" {
-		appendStringField(root, "description", md.Description)
-	}
-	if len(md.Metadata) > 0 {
-		appendMetadataField(root, md.Metadata)
-	}
-	if err := enc.Encode(root); err != nil {
-		return nil, fmt.Errorf("marshal front matter: %w", err)
-	}
-	if err := enc.Close(); err != nil {
-		return nil, fmt.Errorf("close front matter encoder: %w", err)
-	}
-
-	var out bytes.Buffer
-	out.WriteString(frontMatterDelimiter)
-	out.WriteByte('\n')
-	out.Write(fmBuf.Bytes())
-	out.WriteString(frontMatterDelimiter)
-	out.WriteByte('\n')
-	if md.Instructions != "" {
-		out.WriteString(md.Instructions)
-		if !strings.HasSuffix(md.Instructions, "\n") {
-			out.WriteByte('\n')
-		}
-	}
-	return out.Bytes(), nil
-}
-
-func appendStringField(root *yaml.Node, key, value string) {
-	root.Content = append(root.Content,
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value},
-	)
-}
-
-func appendMetadataField(root *yaml.Node, metadata map[string]string) {
-	keys := make([]string, 0, len(metadata))
-	for k := range metadata {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	mapNode := &yaml.Node{Kind: yaml.MappingNode}
-	for _, k := range keys {
-		mapNode.Content = append(mapNode.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: k},
-			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: metadata[k]},
-		)
-	}
-	root.Content = append(root.Content,
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "metadata"},
-		mapNode,
-	)
-}
 
 // SkillMd is the parsed form of a SKILL.md document: a YAML front matter block
 // delimited by `---` lines, followed by a Markdown body that becomes the
-// skill's `instructions`.
+// skill version's `inline_content.instructions`.
 type SkillMd struct {
 	Name           string
 	Description    string

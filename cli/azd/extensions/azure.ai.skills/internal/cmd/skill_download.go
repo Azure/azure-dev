@@ -19,6 +19,7 @@ import (
 
 type downloadFlags struct {
 	name            string
+	version         string
 	outputDir       string
 	raw             bool
 	force           bool
@@ -33,6 +34,7 @@ type downloadAction struct{ flags *downloadFlags }
 // downloadResult is the JSON shape printed when --output=json. Public contract.
 type downloadResult struct {
 	Skill     string   `json:"skill"`
+	Version   string   `json:"version,omitempty"`
 	OutputDir string   `json:"outputDir"`
 	Files     []string `json:"files,omitempty"`
 	Archive   string   `json:"archive,omitempty"`
@@ -62,24 +64,12 @@ func (a *downloadAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Pre-flight Get so we know whether to download the package blob or
-	// materialize a SKILL.md from the metadata returned by the service.
-	skill, err := skillCtx.client.Get(ctx, a.flags.name)
-	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpGetSkill)
+	var body []byte
+	if a.flags.version != "" {
+		body, err = skillCtx.client.DownloadVersionContent(ctx, a.flags.name, a.flags.version)
+	} else {
+		body, err = skillCtx.client.DownloadSkillContent(ctx, a.flags.name)
 	}
-	if !skill.HasBlob {
-		if a.flags.raw {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				fmt.Sprintf("skill %q has no archive; --raw cannot be used", a.flags.name),
-				"omit --raw to materialize a SKILL.md from the skill metadata",
-			)
-		}
-		return a.writeSkillMd(skill, absOut)
-	}
-
-	body, err := skillCtx.client.Download(ctx, a.flags.name)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpDownloadSkill)
 	}
@@ -90,83 +80,12 @@ func (a *downloadAction) Run(ctx context.Context) error {
 	return a.writeExtracted(body, absOut)
 }
 
-// writeSkillMd materializes a SKILL.md from the metadata returned by GET
-// /skills/{name}. Used when the skill was created inline (no uploaded
-// archive) and the service has no blob to stream back.
-func (a *downloadAction) writeSkillMd(skill *skill_api.Skill, outputDir string) error {
-	data, err := skill_api.MarshalSkillMd(&skill_api.SkillMd{
-		Name:         skill.Name,
-		Description:  skill.Description,
-		Metadata:     skill.Metadata,
-		Instructions: skill.Instructions,
-	})
-	if err != nil {
-		return fmt.Errorf("materialize SKILL.md: %w", err)
-	}
-
-	if err := os.MkdirAll(outputDir, 0700); err != nil {
-		return fmt.Errorf("create output dir: %w", err)
-	}
-	skillMdPath := filepath.Join(outputDir, skill_api.SkillMdFileName)
-
-	// Always Lstat (even with --force) so we never follow a symlink and so we
-	// refuse to overwrite a non-regular file.
-	if statInfo, statErr := os.Lstat(skillMdPath); statErr == nil {
-		if statInfo.Mode()&os.ModeSymlink != 0 {
-			return exterrors.Validation(
-				exterrors.CodeSkillOutputCollision,
-				fmt.Sprintf("%s is a symlink; refusing to follow", skillMdPath),
-				"remove the symlink and re-run",
-			)
-		}
-		if !statInfo.Mode().IsRegular() {
-			return exterrors.Validation(
-				exterrors.CodeSkillOutputCollision,
-				fmt.Sprintf("%s exists and is not a regular file", skillMdPath),
-				"remove or rename the existing entry and re-run",
-			)
-		}
-		if !a.flags.force {
-			return exterrors.Validation(
-				exterrors.CodeSkillOutputCollision,
-				fmt.Sprintf("%s already exists", skillMdPath),
-				"pass --force to overwrite",
-			)
-		}
-		// Remove first so the subsequent O_EXCL open is atomic — closes the
-		// TOCTOU window where the path could be swapped for a symlink.
-		if rmErr := os.Remove(skillMdPath); rmErr != nil {
-			return fmt.Errorf("remove existing SKILL.md: %w", rmErr)
-		}
-	} else if !errors.Is(statErr, os.ErrNotExist) {
-		return fmt.Errorf("stat %s: %w", skillMdPath, statErr)
-	}
-
-	//nolint:gosec // skillMdPath is built from user-supplied --output-dir + skill name, written on user behalf
-	f, err := os.OpenFile(skillMdPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0600)
-	if err != nil {
-		return fmt.Errorf("create SKILL.md: %w", err)
-	}
-	if _, copyErr := f.Write(data); copyErr != nil {
-		_ = f.Close()
-		return fmt.Errorf("write SKILL.md: %w", copyErr)
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("close SKILL.md: %w", err)
-	}
-
-	return a.printResult(downloadResult{
-		Skill: a.flags.name, OutputDir: outputDir, Files: []string{skill_api.SkillMdFileName},
-	})
-}
-
 func (a *downloadAction) writeRaw(body []byte, outputDir string) error {
 	if err := os.MkdirAll(outputDir, 0700); err != nil {
 		return fmt.Errorf("create output dir: %w", err)
 	}
 
-	// Pick the extension that matches the actual bytes (service is asymmetric).
-	archiveName := a.flags.name + archiveExtension(skill_api.DetectArchiveFormat(body))
+	archiveName := a.flags.name + ".zip"
 	archivePath := filepath.Join(outputDir, archiveName)
 
 	// Always Lstat (even with --force) so we never follow a symlink and so we
@@ -216,21 +135,8 @@ func (a *downloadAction) writeRaw(body []byte, outputDir string) error {
 	}
 
 	return a.printResult(downloadResult{
-		Skill: a.flags.name, OutputDir: outputDir, Archive: archiveName, Raw: true,
+		Skill: a.flags.name, Version: a.flags.version, OutputDir: outputDir, Archive: archiveName, Raw: true,
 	})
-}
-
-// archiveExtension picks the on-disk extension based on the magic bytes the
-// service returned. Falls back to .bin so the file is still preserved.
-func archiveExtension(format skill_api.ArchiveFormat) string {
-	switch format {
-	case skill_api.ArchiveZip:
-		return ".zip"
-	case skill_api.ArchiveTarGz:
-		return ".tar.gz"
-	default:
-		return ".bin"
-	}
 }
 
 func (a *downloadAction) writeExtracted(body []byte, outputDir string) error {
@@ -242,7 +148,7 @@ func (a *downloadAction) writeExtracted(body []byte, outputDir string) error {
 		return classifyExtractError(err, outputDir)
 	}
 	return a.printResult(downloadResult{
-		Skill: a.flags.name, OutputDir: outputDir, Files: result.Files,
+		Skill: a.flags.name, Version: a.flags.version, OutputDir: outputDir, Files: result.Files,
 	})
 }
 
@@ -250,10 +156,14 @@ func (a *downloadAction) printResult(res downloadResult) error {
 	if a.flags.output == outputJSON {
 		return printJSON(res)
 	}
+	versionSuffix := ""
+	if res.Version != "" {
+		versionSuffix = fmt.Sprintf(" (version %s)", res.Version)
+	}
 	if res.Raw {
-		fmt.Printf("Skill %q downloaded to %s\n", res.Skill, filepath.Join(res.OutputDir, res.Archive))
+		fmt.Printf("Skill %q%s downloaded to %s\n", res.Skill, versionSuffix, filepath.Join(res.OutputDir, res.Archive))
 	} else {
-		fmt.Printf("Skill %q extracted into %s (%d files)\n", res.Skill, res.OutputDir, len(res.Files))
+		fmt.Printf("Skill %q%s extracted into %s (%d files)\n", res.Skill, versionSuffix, res.OutputDir, len(res.Files))
 		for _, name := range res.Files {
 			fmt.Printf("  %s\n", name)
 		}
@@ -287,7 +197,7 @@ func classifyExtractError(err error, outputDir string) error {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			err.Error(),
-			"the service did not return a recognizable ZIP or gzip archive; retry or contact support",
+			"the service did not return a recognizable ZIP archive; retry or contact support",
 		)
 	}
 	return err
@@ -300,15 +210,10 @@ func newDownloadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "download <name>",
 		Short: "Download a Foundry skill package.",
-		Long: `Download a skill's package or materialize its SKILL.md.
-
-If the skill was created from a ` + "`.zip`" + ` archive, the CLI extracts the
-archive into --output-dir (default './.agents/skills/<name>/') by default.
-Pass --raw to write the unmodified archive into --output-dir instead.
-
-If the skill was created inline (no uploaded archive), the CLI materializes a
-SKILL.md file from the skill's metadata into --output-dir. --raw is not
-supported in this mode because there is no archive to write.
+		Long: `Download the zip content for a skill and extract it into --output-dir
+(default ` + "`./.agents/skills/<name>/`" + `). Pass --raw to write the unmodified
+zip archive instead of extracting it. Pass --version <ver> to download a
+specific version rather than the skill's default.
 
 Extraction enforces strict safety rules: no absolute paths, no '..' segments,
 no symlinks / non-regular entries, and a 10,000-entry / 512 MB cap on the
@@ -323,8 +228,9 @@ total uncompressed size.`,
 		},
 	}
 
+	cmd.Flags().StringVar(&flags.version, "version", "", "Download a specific version (defaults to the skill's default_version)")
 	cmd.Flags().StringVar(&flags.outputDir, "output-dir", "", "Directory to write the extracted skill (default: ./.agents/skills/<name>/)")
-	cmd.Flags().BoolVar(&flags.raw, "raw", false, "Skip extraction; write the archive as-is to --output-dir")
+	cmd.Flags().BoolVar(&flags.raw, "raw", false, "Skip extraction; write the zip archive as-is to --output-dir")
 	cmd.Flags().BoolVar(&flags.force, "force", false, "Overwrite existing files in --output-dir")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{outputJSON, outputTable}, Default: outputTable,

@@ -84,6 +84,32 @@ func resolveProjectPath(ctx context.Context, azdClient *azdext.AzdClient) string
 	return projectResponse.Project.Path
 }
 
+// readmeExistsForProject returns a closure suitable for passing to the
+// nextstep resolvers (e.g. ResolveAfterInit, ResolveAfterRun,
+// ResolveAfterDeploy). Given a service-relative path it checks for a
+// canonical "README.md" file inside the project root and returns true
+// when present. Only the canonical casing is checked to match the
+// rendered guidance ("see <relPath>/README.md").
+//
+// Behavior is nil-safe: if the project path cannot be resolved (e.g.
+// azdClient is nil or the gRPC call fails) the returned closure always
+// reports false, which causes the resolvers to fall back to the bare
+// placeholder payload — never a false-positive README pointer.
+func readmeExistsForProject(ctx context.Context, azdClient *azdext.AzdClient) func(string) bool {
+	projectRoot := resolveProjectPath(ctx, azdClient)
+	return func(relativePath string) bool {
+		if projectRoot == "" {
+			return false
+		}
+		readmePath, err := paths.JoinAllowRoot(projectRoot, relativePath, "README.md")
+		if err != nil {
+			return false
+		}
+		_, err = os.Stat(readmePath)
+		return err == nil
+	}
+}
+
 // loadLocalContext reads the legacy .foundry-agent.json state file.
 // Used only for migration. New code should use getContextValue/setContextValue.
 func loadLocalContext(configPath string) *AgentLocalContext {

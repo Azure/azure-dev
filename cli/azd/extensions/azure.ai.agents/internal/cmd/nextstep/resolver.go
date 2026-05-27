@@ -10,9 +10,6 @@ import (
 	"strings"
 )
 
-// Default-payload literals used when the resolver cannot derive a sample
-// payload from the agent's OpenAPI spec. Two protocols are recognized;
-// anything else falls back to ProtocolDefaultPayload.
 const (
 	// ProtocolInvocations is the value of `agent.yaml#protocol` for
 	// JSON-body /invocations agents.
@@ -21,8 +18,19 @@ const (
 	// text /responses agents.
 	ProtocolResponses = "responses"
 
-	invokeInvocationsPayload = `'{"message": "Hello!"}'`
-	invokeResponsesPayload   = `"Hello!"`
+	// placeholderPayload is the single-quoted literal the resolver
+	// emits as the body argument when no concrete payload is known —
+	// either because no OpenAPI sample has been extracted yet, or
+	// because the agent's schema is genuinely opaque to azd. It
+	// replaces the legacy `'{"message": "Hello!"}'` (invocations) and
+	// `"Hello!"` (responses) fallbacks: those literals only matched
+	// the basic sample's schema and silently 400'd on every other
+	// agent shape. `'<payload>'` is honest — it signals "substitute
+	// your own body here" instead of pretending we know the right
+	// one. When the service has a sibling README on disk, the resolver
+	// pairs the placeholder with a `see <relPath>/README.md` pointer
+	// so the user has somewhere concrete to look for the real shape.
+	placeholderPayload = `'<payload>'`
 
 	// maxFixupLines caps the number of `azd env set` / `edit agent.yaml`
 	// hints emitted by ResolveAfterInit per missing-input category so the
@@ -73,19 +81,25 @@ const (
 //     --local <payload>` secondary
 //     Spec: issue #7975 lines 96-103. The invoke-local secondary
 //     lets the user test the agent in another terminal once it's
-//     running. Payload is protocol-aware when the project has
-//     exactly one service in state (the unqualified `invoke --local`
-//     resolves to that service). For multi-agent projects the
-//     payload defaults to the responses-style `"Hello!"` and the
-//     command is left unqualified — the user picks the target at
-//     runtime via the interactive prompt or `--service` flag, the
-//     same shape the spec example uses.
+//     running. Single-agent projects route through resolveInvokeArg,
+//     which prefers a sibling README pointer + `'<payload>'`
+//     placeholder over a hardcoded sample that could mismatch the
+//     agent's schema. Multi-agent projects emit a single unqualified
+//     invoke line with a bare placeholder — the user picks the
+//     target at runtime via the interactive prompt or `--service`
+//     flag, the same shape the spec example uses, and no per-service
+//     README hint can be picked deterministically at this layer.
 //     Both lines are skipped when only UnresolvedPlaceholders are
 //     present, because running locally with literal `{{NAME}}`
 //     values is broken.
 //
+// readmeExists is consulted by resolveInvokeArg to decide whether
+// to emit a sibling `see <relPath>/README.md` hint immediately before
+// the invoke line. A nil callback disables README detection (tests
+// and dry-run callers can pass nil safely).
+//
 // All paths append the static "When ready to deploy to Azure…" tail.
-func ResolveAfterInit(state *State) []Suggestion {
+func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool) []Suggestion {
 	if state == nil {
 		return nil
 	}
@@ -176,20 +190,24 @@ func ResolveAfterInit(state *State) []Suggestion {
 		// Invoke-local secondary (issue #7975 lines 99-100). The
 		// spec's "everything ready" example shows the user a second
 		// command to try once the agent is running:
-		//   azd ai agent invoke --local "Hello!"  -- test it in another terminal
-		// Single-agent projects get a protocol-aware payload (matches
-		// the protocol the agent's `/invocations` or `/responses`
-		// endpoint expects). Multi-agent projects fall back to the
-		// responses-style "Hello!" literal because the unqualified
-		// command shape doesn't know which service the user will
-		// pick at runtime — mirroring the spec example which also
-		// uses the unqualified form.
-		invokePayload := invokeResponsesPayload
+		//   azd ai agent invoke --local '<payload>'  -- test it in another terminal
+		// Single-agent projects route through resolveInvokeArg so
+		// they get a README pointer + placeholder pair when a
+		// sibling README is present; multi-agent projects emit a
+		// bare placeholder with no per-service README hint (we
+		// cannot pick one deterministically without knowing which
+		// service the user will target).
+		var svc *ServiceState
 		if len(state.Services) == 1 {
-			invokePayload = defaultInvokePayload(&state.Services[0])
+			svc = &state.Services[0]
+		}
+		invokeArg, readmeHint := resolveInvokeArg(svc, "", readmeExists, priority)
+		if readmeHint != nil {
+			out = append(out, *readmeHint)
+			priority++
 		}
 		out = append(out, Suggestion{
-			Command:     fmt.Sprintf("azd ai agent invoke --local %s", invokePayload),
+			Command:     fmt.Sprintf("azd ai agent invoke --local %s", invokeArg),
 			Description: "test it in another terminal",
 			Priority:    priority,
 		})
@@ -210,30 +228,45 @@ func ResolveAfterInit(state *State) []Suggestion {
 //
 // Decision tree:
 //   - HasOpenAPI + OpenAPIPayload non-empty → invoke with extracted payload
-//   - ServiceState.Protocol == ProtocolInvocations → invoke with {"message"…}
-//   - Otherwise (ProtocolResponses or unknown) → invoke with "Hello!"
+//   - No cached payload, sibling README on disk → README pointer +
+//     invoke with '<payload>' placeholder. The README pointer is
+//     preferred over the generic curl hint when both could fire,
+//     because a project-local README is usually the more concrete
+//     guide than the live spec URL.
+//   - Otherwise → invoke with '<payload>' placeholder + the
+//     curl-the-spec tip, so the user has somewhere to look when no
+//     README is available.
 //
-// When the resolver wanted a richer payload but could not extract one
-// (HasOpenAPI=false), the Tip suggestion is appended so the user knows
-// where to look up the agent's exact contract.
-func ResolveAfterRun(state *State, serviceName string) []Suggestion {
+// readmeExists is consulted by resolveInvokeArg to decide whether to
+// surface the README pointer. A nil callback disables README
+// detection (tests can pass nil safely).
+func ResolveAfterRun(state *State, serviceName string, readmeExists func(relativePath string) bool) []Suggestion {
 	if state == nil {
 		return nil
 	}
 
 	svc := findService(state, serviceName)
-	payload := defaultInvokePayload(svc)
+
+	cachedPayload := ""
 	if state.HasOpenAPI && state.OpenAPIPayload != "" {
-		payload = shellEscapeSingleQuoted(state.OpenAPIPayload)
+		cachedPayload = state.OpenAPIPayload
 	}
 
-	out := []Suggestion{{
-		Command:     fmt.Sprintf("azd ai agent invoke --local %s", payload),
+	invokeArg, readmeHint := resolveInvokeArg(svc, cachedPayload, readmeExists, 5)
+
+	out := make([]Suggestion, 0, 3)
+	if readmeHint != nil {
+		out = append(out, *readmeHint)
+	}
+	out = append(out, Suggestion{
+		Command:     fmt.Sprintf("azd ai agent invoke --local %s", invokeArg),
 		Description: "send a sample request to the running agent",
 		Priority:    10,
-	}}
+	})
 
-	if !state.HasOpenAPI {
+	// Tip suppressed when a README pointer is already shown: the README
+	// is the more concrete reference and the tip would just add noise.
+	if !state.HasOpenAPI && readmeHint == nil {
 		out = append(out, Suggestion{
 			Command:     "curl http://localhost:<port>/invocations/docs/openapi.json",
 			Description: "tip: inspect the spec to learn the agent's exact payload",
@@ -458,9 +491,10 @@ type AfterDeployOpts struct {
 // artifact note. Issue #7975 fix B9 spec (lines 228-242):
 //
 //   - Single-agent project: emit one `azd ai agent show <name>` line
-//     followed by one `azd ai agent invoke <name> '<payload>'` line
-//     or, when no cached payload is available but a README exists, a
-//     README pointer followed by a placeholder invoke command.
+//     followed by one `azd ai agent invoke <name> '<payload>'` line.
+//     When no cached payload is available but a sibling README exists,
+//     resolveInvokeArg inserts a README pointer immediately before the
+//     invoke line so the user has somewhere concrete to look first.
 //   - Multi-agent project: emit all `show <name>` lines first (one
 //     per service, in declaration order), then all `invoke <name>`
 //     lines. Descriptions include the agent name —
@@ -476,21 +510,16 @@ type AfterDeployOpts struct {
 //
 // cachedPayload is injected by the caller (typically a closure over
 // ReadCachedOpenAPISpec + ExtractInvokeExample) so the resolver itself
-// stays pure and unit-testable. The cached sample is used verbatim
-// (POSIX-escaped) when present. When no cached payload is available,
-// services with a README get a README pointer first and an explicit
-// '<payload>' placeholder instead of a concrete generic payload that
-// may not match the agent's schema.
+// stays pure and unit-testable. Per-service routing is delegated to
+// resolveInvokeArg, which decides between (a) the POSIX-escaped real
+// payload, (b) a README pointer + `'<payload>'` placeholder, or
+// (c) a bare `'<payload>'` placeholder.
 //
-// readmeExists, also injected, controls whether the
-// "See <relPath>/README.md for a sample payload" line is emitted
-// for a given service. The hint is emitted only when:
-// (1) no cached payload was available for that service,
-// (2) the service has a RelativePath, and
-// (3) readmeExists reports a README on disk at that path.
+// readmeExists, also injected, controls whether resolveInvokeArg
+// surfaces a `see <relPath>/README.md` pointer for a given service.
 // In the multi-agent layout each service's README hint is rendered
 // immediately before that service's placeholder invoke line so users
-// can find the sample-specific payload before running the command.
+// can scan rows top-to-bottom and find each agent's hint in context.
 //
 // opts is variadic for backward compatibility but is no longer
 // consulted — every field of AfterDeployOpts is now a no-op post-B9.
@@ -526,44 +555,28 @@ func ResolveAfterDeploy(
 	// Pass 2: all `azd ai agent invoke <name> <payload>` lines, each
 	// preceded by its README hint when applicable. Grouping invokes
 	// after shows matches the spec example output (lines 238-241).
-	for _, svc := range state.Services {
-		payload := ""
-		if cachedPayload != nil {
-			payload = cachedPayload(svc.Name)
-		}
-		hasReadme := payload == "" &&
-			readmeExists != nil &&
-			readmeExists(svc.RelativePath)
+	for i := range state.Services {
+		svc := &state.Services[i]
 
-		invokeArg := defaultInvokePayload(&svc)
-		if payload != "" {
-			invokeArg = shellEscapeSingleQuoted(payload)
-		} else if hasReadme {
-			invokeArg = "'<payload>'"
+		cached := ""
+		if cachedPayload != nil {
+			cached = cachedPayload(svc.Name)
 		}
+
+		invokeArg, readmeHint := resolveInvokeArg(svc, cached, readmeExists, priority)
 
 		desc := fmt.Sprintf("test %s", svc.Name)
 		if singleAgent {
 			desc = "test the deployment"
 		}
-
-		if payload == "" {
-			if hasReadme {
+		if cached == "" {
+			if readmeHint != nil {
 				desc = fmt.Sprintf("test %s with the sample-specific payload", svc.Name)
 				if singleAgent {
 					desc = "test with the sample-specific payload"
 				}
-				out = append(out, Suggestion{
-					Command:     readmeCommand(svc.RelativePath),
-					Description: "find the sample-specific payload",
-					Priority:    priority,
-				})
+				out = append(out, *readmeHint)
 				priority++
-			} else {
-				desc = fmt.Sprintf("test %s with a generic payload", svc.Name)
-				if singleAgent {
-					desc = "test with a generic payload"
-				}
 			}
 		}
 
@@ -608,14 +621,44 @@ func findService(state *State, serviceName string) *ServiceState {
 	return nil
 }
 
-// defaultInvokePayload returns the protocol-appropriate fallback payload
-// string (already quoted) for a service. Unknown protocols and a nil
-// service fall back to the /responses-style "Hello!" literal.
-func defaultInvokePayload(svc *ServiceState) string {
-	if svc != nil && svc.Protocol == ProtocolInvocations {
-		return invokeInvocationsPayload
+// resolveInvokeArg returns the payload argument to use in an
+// `azd ai agent invoke ...` command for svc, and an optional
+// README-pointer Suggestion that should be emitted immediately before
+// the invoke suggestion. Centralizing this logic keeps ResolveAfterInit,
+// ResolveAfterRun, and ResolveAfterDeploy in sync — all three need the
+// same "real payload > README hint + placeholder > placeholder" chain,
+// and prior to extraction each had its own slightly different copy.
+//
+// Priority:
+//  1. cachedPayload non-empty → POSIX-escaped real payload, no hint.
+//     The caller is responsible for sourcing this (e.g. the run-time
+//     OpenAPI extractor in ResolveAfterRun, or the doctor's spec
+//     cache in ResolveAfterDeploy).
+//  2. svc has a README on disk → placeholderPayload + README hint.
+//     The hint points the user at the sibling README so they can
+//     copy the real payload before running the command.
+//  3. Otherwise → placeholderPayload, no hint.
+//
+// When a hint is returned, callers should append it to the output
+// slice first (so it renders before the invoke line) and use
+// hintPriority as the next priority counter value.
+func resolveInvokeArg(
+	svc *ServiceState,
+	cachedPayload string,
+	readmeExists func(string) bool,
+	hintPriority int,
+) (invokeArg string, readmeHint *Suggestion) {
+	if cachedPayload != "" {
+		return shellEscapeSingleQuoted(cachedPayload), nil
 	}
-	return invokeResponsesPayload
+	if svc != nil && readmeExists != nil && readmeExists(svc.RelativePath) {
+		return placeholderPayload, &Suggestion{
+			Command:     readmeCommand(svc.RelativePath),
+			Description: "find the sample-specific payload",
+			Priority:    hintPriority,
+		}
+	}
+	return placeholderPayload, nil
 }
 
 // shellEscapeSingleQuoted wraps s in single quotes for POSIX shells.

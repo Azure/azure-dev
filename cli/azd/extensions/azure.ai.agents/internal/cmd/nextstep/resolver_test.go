@@ -122,7 +122,7 @@ func TestResolveAfterInit(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			out := ResolveAfterInit(tt.state)
+			out := ResolveAfterInit(tt.state, nil)
 			require.NotEmpty(t, out)
 
 			// The trailing line is always present and flagged Trailing so
@@ -162,7 +162,7 @@ func TestResolveAfterInit_ManualVarsCapAtThree(t *testing.T) {
 		HasProjectEndpoint: true,
 		MissingManualVars:  []string{"V1", "V2", "V3", "V4", "V5"},
 	}
-	out := ResolveAfterInit(state)
+	out := ResolveAfterInit(state, nil)
 	// 3 env-set lines (capped) + 1 `azd ai agent run` follow-up + 1
 	// trailing `azd deploy`.
 	require.Len(t, out, 5)
@@ -178,7 +178,7 @@ func TestResolveAfterInit_ManualVarsCapAtThree(t *testing.T) {
 
 func TestResolveAfterInit_NilState(t *testing.T) {
 	t.Parallel()
-	assert.Nil(t, ResolveAfterInit(nil))
+	assert.Nil(t, ResolveAfterInit(nil, nil))
 }
 
 func TestResolveAfterInit_CreatedFolder(t *testing.T) {
@@ -190,7 +190,7 @@ func TestResolveAfterInit_CreatedFolder(t *testing.T) {
 			HasProjectEndpoint:   true,
 			CreatedFolderDisplay: "my-agent",
 		}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		require.NotEmpty(t, out)
 		assert.Equal(t, "cd my-agent", out[0].Command)
 		assert.Equal(t, "enter your new project folder", out[0].Description)
@@ -203,7 +203,7 @@ func TestResolveAfterInit_CreatedFolder(t *testing.T) {
 	t.Run("no cd suggestion when no folder created", func(t *testing.T) {
 		t.Parallel()
 		state := &State{HasProjectEndpoint: true}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		require.NotEmpty(t, out)
 		for _, s := range out {
 			assert.False(t, strings.HasPrefix(s.Command, "cd "),
@@ -216,7 +216,7 @@ func TestResolveAfterInit_CreatedFolder(t *testing.T) {
 		state := &State{
 			CreatedFolderDisplay: "hello-world",
 		}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		require.True(t, len(out) >= 2)
 		assert.Equal(t, "cd hello-world", out[0].Command)
 		assert.Equal(t, "azd provision", out[1].Command)
@@ -237,7 +237,7 @@ func TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape(t *testing.T) {
 		HasProjectEndpoint: true,
 		MissingManualVars:  []string{"MY_API_KEY"},
 	}
-	out := ResolveAfterInit(state)
+	out := ResolveAfterInit(state, nil)
 	// 1 env-set + 1 run follow-up + 1 trailing.
 	require.Len(t, out, 3)
 
@@ -263,15 +263,15 @@ func TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape(t *testing.T) {
 func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T) {
 	t.Parallel()
 
-	t.Run("zero services → unqualified invoke with responses payload", func(t *testing.T) {
+	t.Run("zero services → unqualified invoke with placeholder payload", func(t *testing.T) {
 		t.Parallel()
 		state := &State{HasProjectEndpoint: true}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		// run + invoke --local + trailing.
 		require.Len(t, out, 3)
 		assert.Equal(t, "azd ai agent run", out[0].Command)
 		assert.Equal(t, "start the agent locally", out[0].Description)
-		assert.Equal(t, `azd ai agent invoke --local "Hello!"`, out[1].Command)
+		assert.Equal(t, `azd ai agent invoke --local '<payload>'`, out[1].Command)
 		assert.Equal(t, "test it in another terminal", out[1].Description)
 		assert.Less(t, out[0].Priority, out[1].Priority,
 			"run must precede invoke --local; the renderer sorts by Priority")
@@ -279,31 +279,31 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 		assert.True(t, out[2].Trailing)
 	})
 
-	t.Run("single-agent responses protocol → invoke uses \"Hello!\"", func(t *testing.T) {
+	t.Run("single-agent responses protocol → invoke uses placeholder", func(t *testing.T) {
 		t.Parallel()
 		state := &State{
 			HasProjectEndpoint: true,
 			Services:           []ServiceState{{Name: "echo", Protocol: ProtocolResponses}},
 		}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		require.Len(t, out, 3)
 		assert.Equal(t, "azd ai agent run", out[0].Command)
-		assert.Equal(t, `azd ai agent invoke --local "Hello!"`, out[1].Command)
+		assert.Equal(t, `azd ai agent invoke --local '<payload>'`, out[1].Command)
 	})
 
-	t.Run("single-agent invocations protocol → invoke uses JSON envelope", func(t *testing.T) {
+	t.Run("single-agent invocations protocol → invoke uses placeholder", func(t *testing.T) {
 		t.Parallel()
 		state := &State{
 			HasProjectEndpoint: true,
 			Services:           []ServiceState{{Name: "echo", Protocol: ProtocolInvocations}},
 		}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		require.Len(t, out, 3)
 		assert.Equal(t, "azd ai agent run", out[0].Command)
-		assert.Equal(t, `azd ai agent invoke --local '{"message": "Hello!"}'`, out[1].Command)
+		assert.Equal(t, `azd ai agent invoke --local '<payload>'`, out[1].Command)
 	})
 
-	t.Run("multi-agent → invoke stays unqualified, defaults to responses payload", func(t *testing.T) {
+	t.Run("multi-agent → invoke stays unqualified, uses placeholder payload", func(t *testing.T) {
 		t.Parallel()
 		state := &State{
 			HasProjectEndpoint: true,
@@ -312,14 +312,14 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 				{Name: "beta", Protocol: ProtocolResponses},
 			},
 		}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		require.Len(t, out, 3)
 		assert.Equal(t, "azd ai agent run", out[0].Command)
 		// Multi-agent: the unqualified `invoke --local` doesn't know
-		// which service the user will pick at runtime, so use the
-		// safest generic payload (responses-style "Hello!") instead
-		// of picking one service's protocol arbitrarily.
-		assert.Equal(t, `azd ai agent invoke --local "Hello!"`, out[1].Command)
+		// which service the user will pick at runtime, so emit the
+		// bare '<payload>' placeholder rather than a per-protocol
+		// payload that may not match the user's chosen service.
+		assert.Equal(t, `azd ai agent invoke --local '<payload>'`, out[1].Command)
 	})
 
 	t.Run("placeholders present → invoke-local secondary suppressed (with run)", func(t *testing.T) {
@@ -332,7 +332,7 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 			HasProjectEndpoint:     true,
 			UnresolvedPlaceholders: []string{"FOO"},
 		}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		for _, s := range out {
 			assert.NotContains(t, s.Command, "azd ai agent invoke --local",
 				"invoke --local must not be emitted while placeholders are unresolved")
@@ -359,7 +359,7 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 	}
 
 	var buf strings.Builder
-	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state)))
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,
@@ -447,7 +447,7 @@ func TestResolveAfterInit_UnresolvedPlaceholders(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			out := ResolveAfterInit(tt.state)
+			out := ResolveAfterInit(tt.state, nil)
 			require.NotEmpty(t, out)
 
 			// Walk the output:
@@ -514,35 +514,35 @@ func TestResolveAfterRun(t *testing.T) {
 			},
 		},
 		{
-			name: "invocations protocol, no spec → default JSON payload + tip",
+			name: "invocations protocol, no spec, no README → placeholder + tip",
 			state: &State{
 				Services: []ServiceState{{Name: "echo", Protocol: ProtocolInvocations}},
 			},
 			serviceName: "echo",
 			want: []string{
-				`azd ai agent invoke --local '{"message": "Hello!"}'`,
+				`azd ai agent invoke --local '<payload>'`,
 				`curl http://localhost:<port>/invocations/docs/openapi.json`,
 			},
 		},
 		{
-			name: "responses protocol, no spec → Hello! string + tip",
+			name: "responses protocol, no spec, no README → placeholder + tip",
 			state: &State{
 				Services: []ServiceState{{Name: "echo", Protocol: ProtocolResponses}},
 			},
 			serviceName: "echo",
 			want: []string{
-				`azd ai agent invoke --local "Hello!"`,
+				`azd ai agent invoke --local '<payload>'`,
 				`curl http://localhost:<port>/invocations/docs/openapi.json`,
 			},
 		},
 		{
-			name: "unknown protocol falls back to responses default",
+			name: "unknown protocol, no README → placeholder + tip",
 			state: &State{
 				Services: []ServiceState{{Name: "echo", Protocol: ""}},
 			},
 			serviceName: "echo",
 			want: []string{
-				`azd ai agent invoke --local "Hello!"`,
+				`azd ai agent invoke --local '<payload>'`,
 				`curl http://localhost:<port>/invocations/docs/openapi.json`,
 			},
 		},
@@ -553,7 +553,7 @@ func TestResolveAfterRun(t *testing.T) {
 			},
 			serviceName: "",
 			want: []string{
-				`azd ai agent invoke --local '{"message": "Hello!"}'`,
+				`azd ai agent invoke --local '<payload>'`,
 				`curl http://localhost:<port>/invocations/docs/openapi.json`,
 			},
 		},
@@ -574,7 +574,7 @@ func TestResolveAfterRun(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			out := ResolveAfterRun(tt.state, tt.serviceName)
+			out := ResolveAfterRun(tt.state, tt.serviceName, nil)
 			require.Len(t, out, len(tt.want))
 			for i, snippet := range tt.want {
 				assert.Contains(t, out[i].Command, snippet)
@@ -585,7 +585,7 @@ func TestResolveAfterRun(t *testing.T) {
 
 func TestResolveAfterRun_NilState(t *testing.T) {
 	t.Parallel()
-	assert.Nil(t, ResolveAfterRun(nil, ""))
+	assert.Nil(t, ResolveAfterRun(nil, "", nil))
 }
 
 func TestResolveAfterInvoke_Success(t *testing.T) {
@@ -820,10 +820,10 @@ func TestResolveAfterDeploy(t *testing.T) {
 		assert.Equal(t, "verify alpha is running", out[0].Description)
 		assert.Equal(t, "azd ai agent show beta", out[1].Command)
 		assert.Equal(t, "verify beta is running", out[1].Description)
-		assert.Equal(t, `azd ai agent invoke alpha '{"message": "Hello!"}'`, out[2].Command)
-		assert.Equal(t, "test alpha with a generic payload", out[2].Description)
-		assert.Equal(t, `azd ai agent invoke beta "Hello!"`, out[3].Command)
-		assert.Equal(t, "test beta with a generic payload", out[3].Description)
+		assert.Equal(t, `azd ai agent invoke alpha '<payload>'`, out[2].Command)
+		assert.Equal(t, "test alpha", out[2].Description)
+		assert.Equal(t, `azd ai agent invoke beta '<payload>'`, out[3].Command)
+		assert.Equal(t, "test beta", out[3].Description)
 	})
 
 	t.Run("multi-agent README hint placement → before the corresponding placeholder invoke", func(t *testing.T) {
@@ -842,8 +842,8 @@ func TestResolveAfterDeploy(t *testing.T) {
 		assert.Equal(t, "find the sample-specific payload", out[2].Description)
 		assert.Equal(t, `azd ai agent invoke alpha '<payload>'`, out[3].Command)
 		assert.Equal(t, "test alpha with the sample-specific payload", out[3].Description)
-		assert.Equal(t, `azd ai agent invoke beta "Hello!"`, out[4].Command)
-		assert.Equal(t, "test beta with a generic payload", out[4].Description)
+		assert.Equal(t, `azd ai agent invoke beta '<payload>'`, out[4].Command)
+		assert.Equal(t, "test beta", out[4].Description)
 	})
 
 	t.Run("README hint skipped when cached payload is present", func(t *testing.T) {
@@ -888,7 +888,7 @@ func TestResolveAfterDeploy(t *testing.T) {
 		require.Equal(t, baseline, out)
 		require.Len(t, out, 2)
 		assert.Equal(t, "azd ai agent show echo", out[0].Command)
-		assert.Equal(t, `azd ai agent invoke echo '{"message": "Hello!"}'`, out[1].Command)
+		assert.Equal(t, `azd ai agent invoke echo '<payload>'`, out[1].Command)
 	})
 
 	t.Run("ForceQualified=false on len==1 → no-op, also qualified", func(t *testing.T) {
@@ -899,7 +899,7 @@ func TestResolveAfterDeploy(t *testing.T) {
 		out := ResolveAfterDeploy(state, nil, nil, AfterDeployOpts{ForceQualified: false})
 		require.Len(t, out, 2)
 		assert.Equal(t, "azd ai agent show echo", out[0].Command)
-		assert.Equal(t, `azd ai agent invoke echo '{"message": "Hello!"}'`, out[1].Command)
+		assert.Equal(t, `azd ai agent invoke echo '<payload>'`, out[1].Command)
 	})
 
 	t.Run("ForceQualified=true with cached payload → qualified invoke uses payload", func(t *testing.T) {
@@ -922,8 +922,8 @@ func TestResolveAfterDeploy(t *testing.T) {
 		require.Len(t, out, 4)
 		assert.Equal(t, "azd ai agent show alpha", out[0].Command)
 		assert.Equal(t, "azd ai agent show beta", out[1].Command)
-		assert.Equal(t, `azd ai agent invoke alpha '{"message": "Hello!"}'`, out[2].Command)
-		assert.Equal(t, `azd ai agent invoke beta "Hello!"`, out[3].Command)
+		assert.Equal(t, `azd ai agent invoke alpha '<payload>'`, out[2].Command)
+		assert.Equal(t, `azd ai agent invoke beta '<payload>'`, out[3].Command)
 	})
 
 	t.Run("extra opts elements beyond [0] are ignored", func(t *testing.T) {

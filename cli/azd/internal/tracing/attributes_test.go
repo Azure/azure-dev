@@ -4,6 +4,7 @@
 package tracing
 
 import (
+	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/baggage"
@@ -200,4 +201,117 @@ func TestIncrementAttribute(t *testing.T) {
 			assert.ElementsMatch(t, attributes, tt.expected)
 		})
 	}
+}
+
+// resetGlobalAttributesForTest clears global attributes. Tests that mutate
+// process-global attribute state should call this to avoid cross-test
+// pollution.
+func resetGlobalAttributesForTest() {
+	globalVal.val.Store(baggage.NewBaggage())
+}
+
+// TestPublicAttributeHelpers exercises the public Set/Get/Append/Increment
+// wrappers on the package-level globalVal and usageVal stores. These
+// wrappers are thin delegates to the internal set/get/appendTo/increment
+// helpers and are normally only invoked from cross-package callers; this
+// test asserts the wiring directly so the package-local coverage report
+// reflects them.
+//
+// The test mutates process-global state and must not run with t.Parallel().
+func TestPublicAttributeHelpers(t *testing.T) {
+	t.Run("UsageAttributes_SetGetReset", func(t *testing.T) {
+		ResetUsageAttributesForTest()
+		t.Cleanup(ResetUsageAttributesForTest)
+
+		SetUsageAttributes(
+			attribute.String("usage.str", "hello"),
+			attribute.Bool("usage.bool", true),
+			attribute.Int64("usage.int64", 42),
+		)
+		got := GetUsageAttributes()
+		assert.ElementsMatch(t, got, []attribute.KeyValue{
+			attribute.String("usage.str", "hello"),
+			attribute.Bool("usage.bool", true),
+			attribute.Int64("usage.int64", 42),
+		})
+
+		ResetUsageAttributesForTest()
+		assert.Empty(t, GetUsageAttributes(),
+			"ResetUsageAttributesForTest should clear all usage attributes")
+	})
+
+	t.Run("AppendUsageAttribute", func(t *testing.T) {
+		ResetUsageAttributesForTest()
+		t.Cleanup(ResetUsageAttributesForTest)
+
+		AppendUsageAttribute(attribute.StringSlice("usage.list", []string{"a"}))
+		AppendUsageAttribute(attribute.StringSlice("usage.list", []string{"b"}))
+
+		got := GetUsageAttributes()
+		assert.Len(t, got, 1)
+		assert.Equal(t, []string{"a", "b"}, got[0].Value.AsStringSlice())
+	})
+
+	t.Run("AppendUsageAttributeUnique", func(t *testing.T) {
+		ResetUsageAttributesForTest()
+		t.Cleanup(ResetUsageAttributesForTest)
+
+		AppendUsageAttributeUnique(attribute.StringSlice("usage.set", []string{"x"}))
+		AppendUsageAttributeUnique(attribute.StringSlice("usage.set", []string{"x", "y"}))
+
+		got := GetUsageAttributes()
+		assert.Len(t, got, 1)
+		assert.ElementsMatch(t, []string{"x", "y"}, got[0].Value.AsStringSlice())
+	})
+
+	t.Run("IncrementUsageAttribute", func(t *testing.T) {
+		ResetUsageAttributesForTest()
+		t.Cleanup(ResetUsageAttributesForTest)
+
+		IncrementUsageAttribute(attribute.Int64("usage.count", 3))
+		IncrementUsageAttribute(attribute.Int64("usage.count", 4))
+
+		got := GetUsageAttributes()
+		assert.Len(t, got, 1)
+		assert.Equal(t, int64(7), got[0].Value.AsInt64())
+	})
+
+	t.Run("GlobalAttributes_SetGet", func(t *testing.T) {
+		resetGlobalAttributesForTest()
+		t.Cleanup(resetGlobalAttributesForTest)
+
+		SetGlobalAttributes(
+			attribute.String("global.k", "v"),
+			attribute.Int64("global.n", 1),
+		)
+		got := GetGlobalAttributes()
+		assert.ElementsMatch(t, got, []attribute.KeyValue{
+			attribute.String("global.k", "v"),
+			attribute.Int64("global.n", 1),
+		})
+	})
+}
+
+// TestSetBaggageInContext verifies the public context-baggage wrappers do
+// not panic when invoked with a background context (no active span) and
+// that SetBaggageInContext returns a derived context carrying the supplied
+// attributes via the package-internal baggage helper.
+func TestSetBaggageInContext(t *testing.T) {
+	ctx := context.Background()
+	attrs := []attribute.KeyValue{
+		attribute.String("ctx.k", "v"),
+		attribute.Int64("ctx.n", 7),
+	}
+
+	// SetAttributesInContext is a no-op when no span is attached; it
+	// should run cleanly without panicking.
+	assert.NotPanics(t, func() {
+		SetAttributesInContext(ctx, attrs...)
+	})
+
+	// SetBaggageInContext must return a context that carries the
+	// supplied attributes as baggage.
+	out := SetBaggageInContext(ctx, attrs...)
+	got := baggage.BaggageFromContext(out).Attributes()
+	assert.ElementsMatch(t, got, attrs)
 }

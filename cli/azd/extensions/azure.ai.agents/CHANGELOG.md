@@ -1,5 +1,9 @@
 # Release History
 
+## 0.1.35-preview (Unreleased)
+
+- [[#8384]](https://github.com/Azure/azure-dev/issues/8384) Honor `.azdignore` in `azd ai agent init` across local manifest copy, GitHub URL download, and the interactive "from code" starter template flow. Matches the contract documented for core `azd init`: the root `.azdignore` is processed; ignored paths are filtered from the consumer's project; and every `.azdignore` (root and nested) is removed from the final output.
+
 ## 0.1.34-preview (2026-05-22)
 
 - [[#8264]](https://github.com/Azure/azure-dev/pull/8264) Launch Agent Inspector automatically on `azd ai agent run`. Use `--no-inspector` to opt out. Requires the `azure.ai.inspector` extension.

@@ -27,6 +27,7 @@ import (
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/azdignore"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
 
@@ -2059,6 +2060,14 @@ func (a *InitAction) downloadAgentYaml(
 				if err != nil {
 					return nil, "", fmt.Errorf("copying parent directory: %w", err)
 				}
+				// Honor .azdignore in the copied template tree (parity
+				// with `azd init -t <template>`). This runs after the
+				// full copy so the matcher reads the root .azdignore
+				// from targetDir and prunes matches, then removes the
+				// root + any nested .azdignore files from the output.
+				if err := azdignore.Apply(targetDir); err != nil {
+					return nil, "", fmt.Errorf("applying %s rules: %w", azdignore.FileName, err)
+				}
 			}
 		}
 	} else if isGitHubUrl {
@@ -2075,6 +2084,14 @@ func (a *InitAction) downloadAgentYaml(
 					fmt.Sprintf("downloading parent directory: %s", err),
 					"verify the URL points to a valid repository and you have access",
 				)
+			}
+			// Honor .azdignore in the downloaded template tree. Apply
+			// matches core's "copy then prune" model: the recursive
+			// GitHub download intentionally fetches everything, then
+			// the ignore rules trim the result and the .azdignore
+			// files themselves are removed.
+			if err := azdignore.Apply(targetDir); err != nil {
+				return nil, "", fmt.Errorf("applying %s rules: %w", azdignore.FileName, err)
 			}
 		}
 	}

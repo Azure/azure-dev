@@ -145,13 +145,12 @@ func (c *EvalClient) GetEvaluatorRaw(
 func (c *EvalClient) CreateOpenAIEval(
 	ctx context.Context,
 	request *CreateOpenAIEvalRequest,
-	_ string,
 ) (*OpenAIEval, error) {
 	return doRequestTyped[OpenAIEval](c, ctx, http.MethodPost, pathOpenAIEvals, nil, request, "")
 }
 
 // ListOpenAIEvals lists OpenAI eval definitions.
-func (c *EvalClient) ListOpenAIEvals(ctx context.Context, limit int, _ string) (*OpenAIEvalList, error) {
+func (c *EvalClient) ListOpenAIEvals(ctx context.Context, limit int) (*OpenAIEvalList, error) {
 	query := map[string]string{}
 	if limit > 0 {
 		query["limit"] = strconv.Itoa(limit)
@@ -161,7 +160,7 @@ func (c *EvalClient) ListOpenAIEvals(ctx context.Context, limit int, _ string) (
 }
 
 // GetOpenAIEval gets an OpenAI eval definition.
-func (c *EvalClient) GetOpenAIEval(ctx context.Context, evalID string, _ string) (*OpenAIEval, error) {
+func (c *EvalClient) GetOpenAIEval(ctx context.Context, evalID string) (*OpenAIEval, error) {
 	path := pathOpenAIEvals + "/" + url.PathEscape(evalID)
 	return doRequestTyped[OpenAIEval](c, ctx, http.MethodGet, path, nil, nil, "")
 }
@@ -171,7 +170,6 @@ func (c *EvalClient) CreateOpenAIEvalRun(
 	ctx context.Context,
 	evalID string,
 	request *CreateOpenAIEvalRunRequest,
-	_ string,
 ) (*OpenAIEvalRun, error) {
 	path := fmt.Sprintf("%s/%s/runs", pathOpenAIEvals, url.PathEscape(evalID))
 	return doRequestTyped[OpenAIEvalRun](c, ctx, http.MethodPost, path, nil, request, "")
@@ -182,7 +180,6 @@ func (c *EvalClient) ListOpenAIEvalRuns(
 	ctx context.Context,
 	evalID string,
 	limit int,
-	_ string,
 ) (*OpenAIEvalRunList, error) {
 	query := map[string]string{}
 	if limit > 0 {
@@ -198,7 +195,6 @@ func (c *EvalClient) GetOpenAIEvalRun(
 	ctx context.Context,
 	evalID string,
 	runID string,
-	_ string,
 ) (*OpenAIEvalRun, error) {
 	path := fmt.Sprintf("%s/%s/runs/%s", pathOpenAIEvals, url.PathEscape(evalID), url.PathEscape(runID))
 	return doRequestTyped[OpenAIEvalRun](c, ctx, http.MethodGet, path, nil, nil, "")

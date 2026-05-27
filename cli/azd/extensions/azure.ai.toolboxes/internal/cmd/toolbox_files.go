@@ -106,7 +106,7 @@ func suggestionForParseError(out any, err error) string {
 				"in v1 a toolbox's description is set at create time and cannot be changed later"
 		case strings.Contains(msg, "skills"):
 			return "the 'skills' field is only accepted by `toolbox create`; " +
-				"skills attached at create time are carried forward across `connection add`/`remove` automatically"
+				"use `azd ai toolbox skill add` / `skill remove` to change skills on an existing toolbox"
 		}
 	}
 	return "fix the file and retry; see `azd ai toolbox create --help` " +

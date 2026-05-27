@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"azure.ai.toolboxes/internal/exterrors"
 	"azure.ai.toolboxes/internal/pkg/azure"
@@ -82,6 +83,9 @@ func runSkillRemoveWith(
 	toolboxName, skillName string,
 	verb skillRemoveFlags, parent toolboxFlags,
 ) error {
+	// Normalize whitespace so callers that pass `" beta "` match the stored
+	// entry (validateSkillName trims internally during input validation).
+	skillName = strings.TrimSpace(skillName)
 	tb, err := client.GetToolbox(ctx, toolboxName)
 	if err != nil {
 		return toolboxNotFoundOrService(err, toolboxName, exterrors.OpGetToolbox)

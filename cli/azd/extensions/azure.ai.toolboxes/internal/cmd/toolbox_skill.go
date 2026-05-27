@@ -44,7 +44,7 @@ func parseSkillFlag(s string) (skillSpec, error) {
 	name := trimmed
 	version := ""
 	if before, after, ok := strings.Cut(trimmed, "@"); ok {
-		name = before
+		name = strings.TrimSpace(before)
 		version = strings.TrimSpace(after)
 		if version == "" {
 			return skillSpec{}, exterrors.Validation(

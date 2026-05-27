@@ -187,6 +187,30 @@ func TestRunSkillRemoveWith_LastSkillAllowed(t *testing.T) {
 	assert.Empty(t, client.createVersionCalls[0].req.Skills, "removing the last skill is allowed")
 }
 
+// Regression: skillName with surrounding whitespace must match the stored
+// canonical entry rather than producing a misleading "not in toolbox" error.
+func TestRunSkillRemoveWith_TrimsSkillName(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1",
+		Tools: []map[string]any{{"type": "mcp", "name": "a", "project_connection_id": "/c/a"}},
+		Skills: []map[string]any{
+			{"type": "skill_reference", "name": "beta"},
+		},
+	}}
+
+	err := runSkillRemoveWith(
+		t.Context(), client, "tb", "  beta  ",
+		skillRemoveFlags{force: true}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	assert.Empty(t, client.createVersionCalls[0].req.Skills)
+}
+
 func TestRunSkillRemoveWith_NotAttached(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{

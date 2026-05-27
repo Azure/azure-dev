@@ -168,14 +168,14 @@ func emitShowTable(
 		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(tw, "SKILL\tVERSION\tTYPE")
 		fmt.Fprintln(tw, "-----\t-------\t----")
-		for _, sk := range version.Skills {
-			name, _ := sk["name"].(string)
-			skType, _ := sk["type"].(string)
-			ver, _ := sk["version"].(string)
+		// Use extractSkillRows so malformed entries are skipped consistently
+		// with `skill list`.
+		for _, r := range extractSkillRows(version.Skills) {
+			ver := r["version"]
 			if ver == "" {
 				ver = "(default)"
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\n", name, ver, skType)
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", r["name"], ver, r["type"])
 		}
 		if err := tw.Flush(); err != nil {
 			return err

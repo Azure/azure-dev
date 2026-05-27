@@ -35,6 +35,16 @@ func TestParseSkillFlag(t *testing.T) {
 		assert.Equal(t, "v1.0.0", spec.Version)
 	})
 
+	t.Run("name with inner whitespace before @ trimmed", func(t *testing.T) {
+		// Regression: parseSkillFlag must not store a trailing space on Name
+		// after splitting on '@'. Otherwise the wire entry won't match
+		// duplicate / remove lookups later.
+		spec, err := parseSkillFlag("my-skill @2")
+		require.NoError(t, err)
+		assert.Equal(t, "my-skill", spec.Name)
+		assert.Equal(t, "2", spec.Version)
+	})
+
 	t.Run("empty rejected", func(t *testing.T) {
 		_, err := parseSkillFlag("")
 		requireLocalError(t, err, exterrors.CodeInvalidSkillSpec)

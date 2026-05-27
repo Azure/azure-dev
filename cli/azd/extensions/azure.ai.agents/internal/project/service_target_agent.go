@@ -16,8 +16,10 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -47,21 +49,79 @@ import (
 
 // Reference implementation
 
-// agentAPIVersion is the API version used for agent endpoint invocation URLs.
-const agentAPIVersion = "2025-11-15-preview"
-
 // displayableProtocolEntry defines a protocol that produces user-visible invocation endpoints.
 type displayableProtocolEntry struct {
 	Protocol  agent_api.AgentProtocol
-	URLPath   string // path suffix in the invocation URL
+	URLPath   string // path suffix in the invocation URL (empty when BuildURL is set)
 	EnvSuffix string // suffix used in AGENT_{KEY}_{SUFFIX}_ENDPOINT env vars
+	// BuildURL optionally builds a custom invocation URL for this protocol.
+	// When set, it overrides the generic URL template that uses URLPath.
+	// projectEndpoint is the Foundry project root
+	// (https://<account>.services.ai.azure.com/api/projects/<project>).
+	BuildURL func(projectEndpoint, agentName string) string
 }
 
 // displayableProtocols is the single source of truth for protocols that produce
 // user-facing invocation endpoints and env vars.
 var displayableProtocols = []displayableProtocolEntry{
-	{Protocol: agent_api.AgentProtocolResponses, URLPath: "openai/responses", EnvSuffix: "RESPONSES"},
-	{Protocol: agent_api.AgentProtocolInvocations, URLPath: "invocations", EnvSuffix: "INVOCATIONS"},
+	{
+		Protocol:  agent_api.AgentProtocolResponses,
+		EnvSuffix: "RESPONSES",
+		BuildURL:  buildResponsesProtocolURL,
+	},
+	{
+		Protocol:  agent_api.AgentProtocolInvocations,
+		EnvSuffix: "INVOCATIONS",
+		BuildURL:  buildInvocationsProtocolURL,
+	},
+	{
+		Protocol:  agent_api.AgentProtocolInvocationsWS,
+		EnvSuffix: "INVOCATIONS_WS",
+		BuildURL:  buildInvocationsWSProtocolURL,
+	},
+}
+
+// buildResponsesProtocolURL builds the per-agent HTTPS URL for the "responses" protocol.
+func buildResponsesProtocolURL(projectEndpoint, agentName string) string {
+	return fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/openai/v1/responses", projectEndpoint, agentName,
+	)
+}
+
+// buildInvocationsProtocolURL builds the per-agent HTTPS URL for the "invocations" protocol.
+func buildInvocationsProtocolURL(projectEndpoint, agentName string) string {
+	return fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/invocations?api-version=%s",
+		projectEndpoint, agentName, agent_api.AgentEndpointAPIVersion,
+	)
+}
+
+// buildInvocationsWSProtocolURL builds the Foundry dispatcher-form WebSocket URL for the
+// "invocations_ws" protocol. Unlike the per-agent HTTP protocols, invocations_ws uses a
+// fixed data-plane route under /api/projects/agents/endpoint/protocols/invocations_ws and
+// selects the agent via the project_name and agent_name query parameters. Callers must add
+// their own agent_session_id query parameter when establishing a session.
+//
+// Returns "" if projectEndpoint cannot be parsed into a URL with a host: the dispatcher route
+// requires both a host (for the wss:// authority) and a project name (derived from the URL
+// path) to be callable, so emitting a partial URL would only register a non-callable endpoint.
+// Callers (agentInvocationEndpoints) filter out empty results.
+func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
+	projectEndpoint = strings.TrimSpace(projectEndpoint)
+	u, err := url.Parse(projectEndpoint)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+
+	projectName := path.Base(u.Path)
+	q := url.Values{}
+	q.Set("api-version", agent_api.AgentEndpointAPIVersion)
+	q.Set("project_name", projectName)
+	q.Set("agent_name", agentName)
+	return fmt.Sprintf(
+		"wss://%s/api/projects/agents/endpoint/protocols/invocations_ws?%s",
+		u.Host, q.Encode(),
+	)
 }
 
 // ProtocolEnvSuffix pairs a user-facing label with the env var suffix
@@ -899,7 +959,7 @@ func writeExistingAgentVersionWarningIfPresent(
 	agentChecker agents.AgentChecker,
 	agentName string,
 ) bool {
-	exists, err := agents.AgentExists(ctx, agentChecker, agentName, agentAPIVersion)
+	exists, err := agents.AgentExists(ctx, agentChecker, agentName, agent_api.AgentEndpointAPIVersion)
 	if err != nil {
 		log.Printf("existing agent name check skipped for %q: %v", agentName, err)
 		return false
@@ -1030,7 +1090,7 @@ func (p *AgentServiceTargetProvider) patchAgentEndpointFields(
 		AgentCard:     agentCard,
 	}
 
-	_, err := agentClient.PatchAgent(ctx, agentName, patchRequest, agentAPIVersion)
+	_, err := agentClient.PatchAgent(ctx, agentName, patchRequest, agent_api.AgentEndpointAPIVersion)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	}
@@ -1518,7 +1578,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Check if agent already exists (GET /agents/{name})
 	progress("Creating agent")
-	_, getErr := agentClient.GetAgent(ctx, agentDef.Name, agentAPIVersion)
+	_, getErr := agentClient.GetAgent(ctx, agentDef.Name, agent_api.AgentEndpointAPIVersion)
 	var agentResp *agent_api.AgentObject
 
 	if getErr != nil {
@@ -1528,7 +1588,9 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 		// Agent doesn't exist — create
 		fmt.Fprintf(os.Stderr, "Creating new agent: %s\n", agentDef.Name)
-		agentResp, err = agentClient.CreateAgentFromZip(ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agentAPIVersion)
+		agentResp, err = agentClient.CreateAgentFromZip(
+			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
+		)
 		if err != nil {
 			return nil, exterrors.Internal(
 				exterrors.CodeAgentCreateFailed,
@@ -1538,7 +1600,9 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	} else {
 		// Agent exists — update
 		writeExistingAgentVersionWarning(agentDef.Name)
-		agentResp, err = agentClient.UpdateAgentFromZip(ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agentAPIVersion)
+		agentResp, err = agentClient.UpdateAgentFromZip(
+			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
+		)
 		if err != nil {
 			return nil, exterrors.Internal(
 				exterrors.CodeAgentCreateFailed,
@@ -1743,15 +1807,15 @@ type protocolEndpointInfo struct {
 	URL      string
 }
 
-// protocolPath maps an agent protocol to its URL path suffix.
-// Returns empty string for protocols that should not be displayed.
-func protocolPath(protocol string) string {
-	for _, dp := range displayableProtocols {
+// displayableProtocolFor returns the displayable protocol entry matching the given
+// protocol string, or nil if the protocol does not produce a user-visible endpoint.
+func displayableProtocolFor(protocol string) *displayableProtocolEntry {
+	for i, dp := range displayableProtocols {
 		if agent_api.AgentProtocol(protocol) == dp.Protocol {
-			return dp.URLPath
+			return &displayableProtocols[i]
 		}
 	}
-	return ""
+	return nil
 }
 
 // agentInvocationEndpoints builds the list of displayable invocation endpoints
@@ -1763,15 +1827,33 @@ func agentInvocationEndpoints(
 ) []protocolEndpointInfo {
 	var endpoints []protocolEndpointInfo
 	for _, p := range protocols {
-		path := protocolPath(p.Protocol)
-		if path == "" {
+		dp := displayableProtocolFor(p.Protocol)
+		if dp == nil {
 			continue
 		}
+
+		var endpointURL string
+		if dp.BuildURL != nil {
+			endpointURL = dp.BuildURL(projectEndpoint, agentName)
+			if endpointURL == "" {
+				// A protocol builder may decline to produce a URL when its inputs
+				// cannot yield a callable endpoint (e.g. a malformed projectEndpoint
+				// that fails to parse, for invocations_ws). Skip rather than
+				// registering a broken URL.
+				continue
+			}
+		} else {
+			endpointURL = fmt.Sprintf(
+				"%s/agents/%s/endpoint/protocols/%s", projectEndpoint, agentName, dp.URLPath,
+			)
+			if !strings.HasPrefix(dp.URLPath, "openai/") {
+				endpointURL += fmt.Sprintf("?api-version=%s", agent_api.AgentEndpointAPIVersion)
+			}
+		}
+
 		endpoints = append(endpoints, protocolEndpointInfo{
 			Protocol: p.Protocol,
-			URL: fmt.Sprintf(
-				"%s/agents/%s/endpoint/protocols/%s?api-version=%s",
-				projectEndpoint, agentName, path, agentAPIVersion),
+			URL:      endpointURL,
 		})
 	}
 	return endpoints
@@ -1850,7 +1932,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		attempt++
 		progress(fmt.Sprintf("Polling agent status (%d/%d)", attempt, maxAttempts))
 
-		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agentAPIVersion)
+		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agent_api.AgentEndpointAPIVersion)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
 			// Reset counters on error — don't count transient failures
@@ -1923,7 +2005,9 @@ func (p *AgentServiceTargetProvider) createAgent(
 	}
 
 	// Create agent version
-	agentVersionResponse, err := agentClient.CreateAgentVersion(ctx, request.Name, versionRequest, agentAPIVersion)
+	agentVersionResponse, err := agentClient.CreateAgentVersion(
+		ctx, request.Name, versionRequest, agent_api.AgentEndpointAPIVersion,
+	)
 	if err != nil {
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	}

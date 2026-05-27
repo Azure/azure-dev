@@ -245,7 +245,7 @@ func TestHandleInvocationResponse_RawDumpsErrorBody(t *testing.T) {
 
 	stdout, err := captureStdout(t, func() error {
 		return handleInvocationResponse(
-			t.Context(), resp, "", "", "test-agent", 10*time.Second, nil, true,
+			t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil, true,
 		)
 	})
 
@@ -302,7 +302,7 @@ func TestHandleInvocationLRO_Raw(t *testing.T) {
 
 	stdout, err := captureStdout(t, func() error {
 		return handleInvocationLRO(
-			t.Context(), resp, "", "", "test-agent", 10*time.Second, nil, true,
+			t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil, true,
 		)
 	})
 	if err != nil {
@@ -363,7 +363,7 @@ func TestHandleInvocationLRO_RawPollErrorDoesNotDuplicateBody(t *testing.T) {
 
 	stdout, err := captureStdout(t, func() error {
 		return handleInvocationLRO(
-			t.Context(), resp, "", "", "test-agent", 10*time.Second, nil, true,
+			t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil, true,
 		)
 	})
 

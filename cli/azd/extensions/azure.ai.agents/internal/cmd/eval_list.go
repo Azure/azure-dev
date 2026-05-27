@@ -62,7 +62,7 @@ func runEvalList(ctx context.Context, flags *evalListFlags) error {
 		activeEvalID = state.EvalID
 	}
 
-	resp, err := resolved.evalClient.ListOpenAIEvals(ctx, flags.limit, DefaultAgentAPIVersion)
+	resp, err := resolved.evalClient.ListOpenAIEvals(ctx, flags.limit)
 	if err != nil {
 		return fmt.Errorf("failed to list evals: %w", err)
 	}
@@ -81,7 +81,7 @@ func runEvalList(ctx context.Context, flags *evalListFlags) error {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			runs, err := resolved.evalClient.ListOpenAIEvalRuns(ctx, evalID, 10, DefaultAgentAPIVersion)
+			runs, err := resolved.evalClient.ListOpenAIEvalRuns(ctx, evalID, 10)
 			if err != nil || runs == nil {
 				return
 			}

@@ -76,6 +76,12 @@ type State struct {
 	// surface an actionable hint.
 	MissingInfraVars []string
 
+	// MissingAzureContextVars names Azure environment values that must be
+	// set before provisioning can create the Foundry project and related
+	// resources. Init can intentionally defer these under --no-prompt so
+	// local files are still written in headless environments.
+	MissingAzureContextVars []string
+
 	// MissingManualVars names ${...} references that map to user-supplied
 	// variables which are not set in the azd environment.
 	//

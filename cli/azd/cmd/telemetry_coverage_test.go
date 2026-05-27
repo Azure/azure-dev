@@ -80,6 +80,91 @@ func TestTelemetryFieldConstants(t *testing.T) {
 			require.Equal(t, provider, kv.Value.AsString())
 		}
 	})
+
+	// Tool command telemetry fields
+	t.Run("ToolFields", func(t *testing.T) {
+		t.Parallel()
+
+		// First-run experience fields
+		kvSkip := fields.ToolFirstRunSkipReasonKey.String("ci_cd")
+		require.Equal(t, "tool.firstrun.skip_reason", string(kvSkip.Key))
+		require.Equal(t, "ci_cd", kvSkip.Value.AsString())
+
+		kvOptIn := fields.ToolFirstRunOptInKey.Bool(true)
+		require.Equal(t, "tool.firstrun.opt_in", string(kvOptIn.Key))
+		require.Equal(t, true, kvOptIn.Value.AsBool())
+
+		kvDetected := fields.ToolFirstRunToolsDetectedKey.Int(5)
+		require.Equal(t, "tool.firstrun.tools_detected", string(kvDetected.Key))
+		require.Equal(t, int64(5), kvDetected.Value.AsInt64())
+
+		kvOffered := fields.ToolFirstRunToolsOfferedKey.Int(3)
+		require.Equal(t, "tool.firstrun.tools_offered", string(kvOffered.Key))
+
+		kvSelected := fields.ToolFirstRunToolsSelectedKey.Int(2)
+		require.Equal(t, "tool.firstrun.tools_selected", string(kvSelected.Key))
+
+		kvSelectedNames := fields.ToolFirstRunToolsSelectedNamesKey.String("kubectl,helm")
+		require.Equal(t, "tool.firstrun.tools_selected_names", string(kvSelectedNames.Key))
+
+		kvDeselectedNames := fields.ToolFirstRunToolsDeselectedNamesKey.String("docker")
+		require.Equal(t, "tool.firstrun.tools_deselected_names", string(kvDeselectedNames.Key))
+
+		kvOutcome := fields.ToolFirstRunOutcomeKey.String("completed")
+		require.Equal(t, "tool.firstrun.outcome", string(kvOutcome.Key))
+		require.Equal(t, "completed", kvOutcome.Value.AsString())
+
+		// Per-operation fields
+		kvID := fields.ToolIdKey.String("kubectl")
+		require.Equal(t, "tool.id", string(kvID.Key))
+		require.Equal(t, "kubectl", kvID.Value.AsString())
+
+		kvIDs := fields.ToolIdsKey.String("kubectl,helm")
+		require.Equal(t, "tool.ids", string(kvIDs.Key))
+
+		kvDryRun := fields.ToolDryRunKey.Bool(true)
+		require.Equal(t, "tool.dry_run", string(kvDryRun.Key))
+
+		kvStrategy := fields.ToolInstallStrategyKey.String("winget")
+		require.Equal(t, "tool.install.strategy", string(kvStrategy.Key))
+
+		kvSuccess := fields.ToolInstallSuccessKey.Bool(true)
+		require.Equal(t, "tool.install.success", string(kvSuccess.Key))
+
+		kvSuccessCount := fields.ToolInstallSuccessCountKey.Int(2)
+		require.Equal(t, "tool.install.success_count", string(kvSuccessCount.Key))
+
+		kvFailureCount := fields.ToolInstallFailureCountKey.Int(1)
+		require.Equal(t, "tool.install.failure_count", string(kvFailureCount.Key))
+
+		kvFailedIDs := fields.ToolInstallFailedIdsKey.String("kubectl")
+		require.Equal(t, "tool.install.failed_ids", string(kvFailedIDs.Key))
+
+		kvDuration := fields.ToolInstallDurationMsKey.Int64(1234)
+		require.Equal(t, "tool.install.duration_ms", string(kvDuration.Key))
+		require.Equal(t, int64(1234), kvDuration.Value.AsInt64())
+
+		kvFRInstallSuccessCount := fields.ToolFirstRunInstallSuccessCountKey.Int(2)
+		require.Equal(t, "tool.firstrun.install_success_count", string(kvFRInstallSuccessCount.Key))
+
+		kvFRInstallFailureCount := fields.ToolFirstRunInstallFailureCountKey.Int(1)
+		require.Equal(t, "tool.firstrun.install_failure_count", string(kvFRInstallFailureCount.Key))
+
+		kvFRInstallFailedIDs := fields.ToolFirstRunInstallFailedIdsKey.String("kubectl")
+		require.Equal(t, "tool.firstrun.install_failed_ids", string(kvFRInstallFailedIDs.Key))
+
+		kvFRInstallDuration := fields.ToolFirstRunInstallDurationMsKey.Int64(1234)
+		require.Equal(t, "tool.firstrun.install_duration_ms", string(kvFRInstallDuration.Key))
+
+		kvFromVer := fields.ToolUpgradeFromVersionKey.String("1.0.0")
+		require.Equal(t, "tool.upgrade.from_version", string(kvFromVer.Key))
+
+		kvToVer := fields.ToolUpgradeToVersionKey.String("1.1.0")
+		require.Equal(t, "tool.upgrade.to_version", string(kvToVer.Key))
+
+		kvUpdates := fields.ToolCheckUpdatesAvailableKey.Int(3)
+		require.Equal(t, "tool.check.updates_available", string(kvUpdates.Key))
+	})
 }
 
 // TestCommandTelemetryCoverage ensures every user-facing command is explicitly categorized
@@ -114,6 +199,10 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"pipeline config", // pipeline.provider, pipeline.auth
 		"provision",       // infra.provider (via hooks middleware)
 		"restore",         // (via hooks middleware)
+		"tool check",      // tool.check.updates_available
+		"tool install",    // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
+		"tool show",       // tool.id
+		"tool upgrade",    // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.upgrade.* versions
 		"up",              // infra.provider (via hooks middleware, composes provision+deploy)
 		"update",          // update.* fields
 	}
@@ -153,6 +242,8 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"template source add",    // Global telemetry sufficient — command name captures operation
 		"template source list",   // Global telemetry sufficient — command name captures operation
 		"template source remove", // Global telemetry sufficient — command name captures operation
+		"tool",                   // Parent group — first-run middleware telemetry attaches to invoked subcommand
+		"tool list",              // Listing tool registry — global telemetry sufficient
 		"version",                // Telemetry explicitly disabled (DisableTelemetry: true)
 		"vs-server",              // JSON-RPC server — telemetry handled by rpc.* fields per call
 	}

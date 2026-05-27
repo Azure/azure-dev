@@ -1461,6 +1461,61 @@ func TestManifestHasModelResources(t *testing.T) {
 	}
 }
 
+func TestConfigureModelChoice_NoPromptMissingAzureContextDefersModelResources(t *testing.T) {
+	const envName = "test-env"
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{envName: {}},
+	}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+	manifest := &agent_yaml.AgentManifest{
+		Name: "test-hosted",
+		Template: agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Name: "test-hosted",
+				Kind: agent_yaml.AgentKindHosted,
+			},
+		},
+		Resources: []any{
+			agent_yaml.ModelResource{
+				Resource: agent_yaml.Resource{
+					Name: "my-model",
+					Kind: agent_yaml.ResourceKindModel,
+				},
+				Id: "gpt-4o",
+			},
+		},
+	}
+	action := &InitAction{
+		azdClient:    azdClient,
+		environment:  &azdext.Environment{Name: envName},
+		azureContext: &azdext.AzureContext{Scope: &azdext.AzureScope{}},
+		flags:        &initFlags{noPrompt: true},
+	}
+
+	var got *agent_yaml.AgentManifest
+	output, err := captureStdout(t, func() error {
+		var runErr error
+		got, runErr = action.configureModelChoice(t.Context(), manifest)
+		return runErr
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != manifest {
+		t.Fatalf("configureModelChoice returned a different manifest")
+	}
+	if envServer.values[envName]["USE_EXISTING_AI_PROJECT"] != "false" {
+		t.Fatalf("USE_EXISTING_AI_PROJECT = %q, want false", envServer.values[envName]["USE_EXISTING_AI_PROJECT"])
+	}
+	if got := envServer.values[envName][pendingProvisionEnvVar]; got != pendingReasonProject {
+		t.Fatalf("%s = %q, want %q", pendingProvisionEnvVar, got, pendingReasonProject)
+	}
+	if !strings.Contains(output, "Model resource configuration was deferred") {
+		t.Fatalf("output missing deferred model warning:\n%s", output)
+	}
+}
+
 func TestResolvePositionalArg(t *testing.T) {
 	t.Parallel()
 

@@ -130,7 +130,7 @@ suppressed in raw mode.`,
 
   # Invoke a deployed agent from any directory using the endpoint URL shown by 'azd ai agent show'
   azd ai agent invoke \
-       --agent-endpoint https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/openai/responses?api-version=2025-11-15-preview \
+	  --agent-endpoint https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/openai/v1/responses \
        "Hello!"`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -761,7 +761,11 @@ func (a *InvokeAction) resolveRemoteSessionID(ctx context.Context, rc *remoteCon
 		}
 	}
 
-	session, err := createInvokeVersionSession(ctx, rc.projectEndpoint, rc.name, rc.version)
+	apiVersion := rc.apiVersion
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
+	session, err := createInvokeVersionSession(ctx, rc.projectEndpoint, rc.name, rc.version, apiVersion)
 	if err != nil {
 		return "", err
 	}
@@ -784,7 +788,12 @@ func createInvokeVersionSessionImpl(
 	projectEndpoint string,
 	agentName string,
 	agentVersion string,
+	apiVersion string,
 ) (*agent_api.AgentSessionResource, error) {
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
+
 	credential, err := newAgentCredential()
 	if err != nil {
 		return nil, err
@@ -800,7 +809,7 @@ func createInvokeVersionSessionImpl(
 				AgentVersion: agentVersion,
 			},
 		},
-		DefaultAgentAPIVersion,
+		apiVersion,
 		nil,
 	)
 	if err != nil {
@@ -936,7 +945,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	respURL := buildResponsesURL(rc.projectEndpoint, rc.name, rc.apiVersion)
+	respURL := buildResponsesURL(rc.projectEndpoint, rc.name)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, respURL, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -1088,7 +1097,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		}
 	}
 
-	if err := handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout(), nil, raw); err != nil {
+	if err := handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout(), "", nil, raw); err != nil {
 		// See invocationsRemote for the status-code rationale.
 		if !raw && resp.StatusCode >= 400 {
 			a.emitInvokeFailureNextStep(nextstep.InvokeLocal, agentName, "")
@@ -1212,6 +1221,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		rc.bearerToken,
 		rc.name,
 		a.httpTimeout(),
+		rc.apiVersion,
 		a.flags.sessionRequestOptions(),
 		raw,
 	); err != nil {
@@ -1253,12 +1263,13 @@ func handleInvocationResponse(
 	bearerToken string,
 	agentName string,
 	timeout time.Duration,
+	apiVersion string,
 	options *agent_api.SessionRequestOptions,
 	raw bool,
 ) error {
 	if raw {
 		if resp.StatusCode == http.StatusAccepted {
-			return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout, options, raw)
+			return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw)
 		}
 		if err := writeRawResponse(os.Stdout, resp); err != nil {
 			return err
@@ -1293,7 +1304,7 @@ func handleInvocationResponse(
 	}
 
 	if resp.StatusCode == http.StatusAccepted {
-		return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout, options, raw)
+		return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw)
 	}
 
 	contentType := resp.Header.Get("Content-Type")
@@ -1412,6 +1423,7 @@ func handleInvocationLRO(
 	bearerToken string,
 	agentName string,
 	timeout time.Duration,
+	apiVersion string,
 	options *agent_api.SessionRequestOptions,
 	raw bool,
 ) error {
@@ -1476,9 +1488,12 @@ func handleInvocationLRO(
 		}
 	}
 	if pollURL == "" {
+		if apiVersion == "" {
+			apiVersion = DefaultAgentAPIVersion
+		}
 		pollURL = fmt.Sprintf(
 			"%s/agents/%s/endpoint/protocols/invocations/%s?api-version=%s",
-			endpoint, agentName, invocationID, DefaultAgentAPIVersion,
+			endpoint, agentName, invocationID, url.QueryEscape(apiVersion),
 		)
 	}
 
@@ -1616,8 +1631,8 @@ func createConversation(
 	options *agent_api.SessionRequestOptions,
 ) (string, error) {
 	convURL := fmt.Sprintf(
-		"%s/agents/%s/endpoint/protocols/openai/conversations?api-version=%s",
-		projectEndpoint, agentName, ConversationsAPIVersion,
+		"%s/agents/%s/endpoint/protocols/openai/v1/conversations",
+		projectEndpoint, agentName,
 	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, convURL, bytes.NewReader([]byte("{}")))
 	if err != nil {

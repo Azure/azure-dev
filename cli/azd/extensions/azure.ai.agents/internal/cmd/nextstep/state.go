@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -286,7 +287,70 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 		populateManifestResources(project.Path, state)
 	}
 
+	// Partition toolbox-derived endpoint vars out of MissingManualVars
+	// into MissingToolboxEndpoints. This must run AFTER
+	// populateManifestResources because it depends on state.Toolboxes
+	// being populated — without the manifest's toolbox list we cannot
+	// tell a toolbox-derived var ("TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT"
+	// for a manifest-declared `web-search-tools` toolbox) apart from a
+	// generic user-named variable that happens to start with TOOLBOX_.
+	// See MissingToolboxEndpoints docs (types.go) for the rationale.
+	partitionToolboxEndpointVars(state)
+
 	return state, errs
+}
+
+// partitionToolboxEndpointVars moves any entry in state.MissingManualVars
+// whose name is the canonical TOOLBOX_<NAME>_MCP_ENDPOINT key for a
+// manifest-declared toolbox into state.MissingToolboxEndpoints. The
+// partition is a no-op when state.Toolboxes is empty: any TOOLBOX_*
+// entry in MissingManualVars without a corresponding manifest toolbox
+// is a generic user variable and stays where it is.
+//
+// Order is preserved in both buckets so the resolver's existing
+// "first sorted entry → paste-ready command" logic still works.
+func partitionToolboxEndpointVars(state *State) {
+	if len(state.MissingManualVars) == 0 || len(state.Toolboxes) == 0 {
+		return
+	}
+
+	// keyToToolbox maps each declared toolbox's canonical endpoint key
+	// to its ResourceRef. envkey.ToolboxMCPEndpoint is the single
+	// source of truth for the key normalization (sanitize → upper →
+	// "TOOLBOX_<X>_MCP_ENDPOINT") shared with the provisioner and the
+	// local.toolboxes doctor check; computing the lookup here ensures
+	// any future normalization change ripples consistently.
+	keyToToolbox := make(map[string]ResourceRef, len(state.Toolboxes))
+	for _, tb := range state.Toolboxes {
+		keyToToolbox[envkey.ToolboxMCPEndpoint(tb.Name)] = tb
+	}
+
+	remaining := make([]string, 0, len(state.MissingManualVars))
+	var matched []ResourceRef
+	for _, name := range state.MissingManualVars {
+		if tb, ok := keyToToolbox[name]; ok {
+			matched = append(matched, tb)
+			continue
+		}
+		remaining = append(remaining, name)
+	}
+	if len(matched) == 0 {
+		return
+	}
+
+	state.MissingManualVars = remaining
+	// Sort matched by (Name, ServiceName) for deterministic rendering;
+	// state.Toolboxes is already sorted but `matched` was built by
+	// MissingManualVars iteration order, which is sorted by var name
+	// rather than toolbox name. Re-sort so callers see the same
+	// ordering they'd see if they iterated state.Toolboxes directly.
+	slices.SortFunc(matched, func(a, b ResourceRef) int {
+		if c := strings.Compare(a.Name, b.Name); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ServiceName, b.ServiceName)
+	})
+	state.MissingToolboxEndpoints = matched
 }
 
 // populateOpenAPIPayload locates a sample invoke payload for the

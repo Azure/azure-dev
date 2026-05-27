@@ -360,18 +360,25 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 
 // TestResolveAfterInit_ToolboxReproRendersAllCategories locks the full
 // regression for the toolbox-sample bug end-to-end: the state contains
-// BOTH an unresolved manifest placeholder AND a missing manual env var,
-// and the rendered "Next:" block must surface both fix-up categories
-// plus the trailing `azd deploy` reminder. PrintNext would silently
-// drop one category here because of its 2-line cap; PrintAllNext must
-// not.
+// BOTH an unresolved manifest placeholder AND a manifest-declared
+// toolbox whose azd-injected endpoint env var is unset. The rendered
+// "Next:" block must surface the placeholder fix-up AND route the
+// missing toolbox endpoint to `azd provision` (NOT to `azd env set`),
+// plus the trailing `azd deploy` reminder.
+//
+// Before #8198's toolbox-endpoint partition this would have rendered
+// "azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>" — see
+// the test body's NotContains assertion below for the historical bug
+// shape we're locking out.
 func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 	t.Parallel()
 
 	state := &State{
 		HasProjectEndpoint:     true,
 		UnresolvedPlaceholders: []string{"TOOLBOX_ENDPOINT"},
-		MissingManualVars:      []string{"TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT"},
+		MissingToolboxEndpoints: []ResourceRef{
+			{Name: "web-search-tools", ServiceName: "agent"},
+		},
 	}
 
 	var buf strings.Builder
@@ -381,17 +388,203 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 	assert.Contains(t, rendered,
 		"edit agent.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value",
 		"placeholder fix-up missing")
-	assert.Contains(t, rendered,
-		"azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>",
-		"manual-var fix-up missing — this is the original toolbox-sample regression")
-	// `azd ai agent run` follow-up is intentionally suppressed when
-	// UnresolvedPlaceholders are also present: running locally with
-	// literal `{{NAME}}` values produces a broken agent. The user
-	// must fix the placeholder first; the trailing `azd deploy`
-	// still applies.
-	assert.NotContains(t, rendered, "start the agent locally once the values above are set",
-		"run follow-up should be suppressed while placeholders are unresolved")
+	assert.Contains(t, rendered, "azd provision",
+		"toolbox-endpoint branch should route to azd provision")
+	assert.Contains(t, rendered, "azd ai agent doctor",
+		"toolbox-endpoint branch should surface doctor as an existence-check follow-up")
+	// Historical bug: the resolver used to emit `azd env set` for
+	// toolbox-derived endpoint vars. Those vars are azd-managed
+	// outputs of `azd provision`, not operator-supplied, so the
+	// `azd env set` shape is wrong here regardless of the user's
+	// `<value>` placeholder gripe.
+	assert.NotContains(t, rendered,
+		"azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT",
+		"toolbox endpoint var must not be routed through `azd env set`")
 	assert.Contains(t, rendered, "azd deploy", "trailing deploy reminder missing")
+}
+
+// TestResolveAfterInit_ToolboxEndpointsEmitsRunAndInvokeLocal locks the
+// "happy path" for the toolbox-endpoint branch: when the only thing
+// blocking the user is a manifest-declared toolbox whose
+// TOOLBOX_<NAME>_MCP_ENDPOINT var is unset (no placeholders, no
+// pending provision reasons), the resolver must render the full
+// post-init sequence:
+//
+//  1. `azd provision`               — create the toolbox in Foundry
+//  2. `azd ai agent doctor`         — optional existence-check follow-up
+//  3. `azd ai agent run`            — start locally once provision completes
+//  4. `azd ai agent invoke --local` — secondary; test the running agent
+//  5. `azd deploy`                  — trailing reminder
+//
+// Steps 3 and 4 are crucial: once provision finishes, main.py's
+// runtime fallback (constructed from FOUNDRY_PROJECT_ENDPOINT +
+// TOOLBOX_NAME) satisfies the agent even without the user setting
+// the azd-injected endpoint var, so the local-test commands MUST
+// appear here just as they do in the MissingManualVars branch.
+// Dropping them was the regression this test guards against.
+func TestResolveAfterInit_ToolboxEndpointsEmitsRunAndInvokeLocal(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint: true,
+		MissingToolboxEndpoints: []ResourceRef{
+			{Name: "web-search-tools", ServiceName: "agent"},
+		},
+	}
+
+	var buf strings.Builder
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
+	rendered := buf.String()
+
+	assert.Contains(t, rendered, "azd provision",
+		"toolbox-endpoint branch should route to azd provision")
+	assert.Contains(t, rendered, "azd ai agent doctor",
+		"toolbox-endpoint branch should surface doctor as an existence-check follow-up")
+	assert.Contains(t, rendered, "azd ai agent run",
+		"toolbox-endpoint branch should emit local run follow-up once provision completes")
+	assert.Contains(t, rendered, "once provision completes",
+		"toolbox-only run description must name provision as the prerequisite")
+	assert.Contains(t, rendered, "azd ai agent invoke --local",
+		"toolbox-endpoint branch should emit invoke-local secondary")
+	assert.NotContains(t, rendered,
+		"azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT",
+		"toolbox endpoint var must not be routed through `azd env set`")
+	assert.Contains(t, rendered, "azd deploy", "trailing deploy reminder missing")
+}
+
+// TestResolveAfterInit_ToolboxAndManualVarsCoexist locks the bug both
+// reviewers caught: when MissingToolboxEndpoints AND MissingManualVars
+// are populated, the previously-exclusive switch hid the manual
+// `azd env set` lines while still emitting `azd ai agent run` — so
+// the user was directed to run locally with required manual vars
+// still unset.
+//
+// Expected output for state with one toolbox + one unrelated manual
+// var (e.g. an API key):
+//
+//  1. `azd provision`              — create the toolbox in Foundry
+//  2. `azd ai agent doctor`        — optional existence-check follow-up
+//  3. `azd env set MY_API_KEY …`   — surface the manual var
+//  4. `azd ai agent run`           — start locally once the steps above are complete
+//  5. `azd ai agent invoke --local` — secondary
+//  6. `azd deploy`                 — trailing
+//
+// The `azd env set TOOLBOX_…` line must still NOT appear — that's the
+// original (separate) bug Commit A locked out.
+func TestResolveAfterInit_ToolboxAndManualVarsCoexist(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint: true,
+		MissingToolboxEndpoints: []ResourceRef{
+			{Name: "web-search-tools", ServiceName: "agent"},
+		},
+		MissingManualVars: []string{"MY_API_KEY"},
+	}
+
+	var buf strings.Builder
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
+	rendered := buf.String()
+
+	assert.Contains(t, rendered, "azd provision",
+		"coexistence: toolbox sub-branch must still emit provision")
+	assert.Contains(t, rendered, "azd ai agent doctor",
+		"coexistence: toolbox sub-branch must still emit doctor follow-up")
+	assert.Contains(t, rendered, "azd env set MY_API_KEY <value>",
+		"coexistence: manual sub-branch must surface the unrelated env-set line")
+	assert.Contains(t, rendered, "azd ai agent run",
+		"coexistence: run follow-up must be emitted (no placeholders blocking)")
+	assert.Contains(t, rendered, "once the steps above are complete",
+		"coexistence: run description must reflect that both provision and env-set are prerequisites")
+	assert.Contains(t, rendered, "azd ai agent invoke --local",
+		"coexistence: invoke-local secondary must be emitted")
+	assert.NotContains(t, rendered,
+		"azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT",
+		"coexistence: toolbox endpoint var must not be routed through `azd env set`")
+	assert.Contains(t, rendered, "azd deploy", "trailing deploy reminder missing")
+}
+
+// TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders
+// verifies the run/invoke suppression also fires for the coexistence
+// case: when placeholders are also unresolved, the run + invoke-local
+// pair must be suppressed regardless of which sub-branches contributed
+// guidance above them.
+func TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint:     true,
+		UnresolvedPlaceholders: []string{"AGENT_NAME"},
+		MissingToolboxEndpoints: []ResourceRef{
+			{Name: "web-search-tools", ServiceName: "agent"},
+		},
+		MissingManualVars: []string{"MY_API_KEY"},
+	}
+
+	var buf strings.Builder
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
+	rendered := buf.String()
+
+	assert.Contains(t, rendered,
+		"edit agent.yaml: replace {{AGENT_NAME}} with the actual value",
+		"placeholder fix-up missing")
+	assert.Contains(t, rendered, "azd provision",
+		"coexistence+placeholders: toolbox sub-branch must still emit provision")
+	assert.Contains(t, rendered, "azd ai agent doctor",
+		"coexistence+placeholders: toolbox sub-branch must still emit doctor follow-up")
+	assert.Contains(t, rendered, "azd env set MY_API_KEY <value>",
+		"coexistence+placeholders: manual sub-branch must still surface env-set")
+	assert.NotContains(t, rendered, "azd ai agent run",
+		"coexistence+placeholders: run must be suppressed while placeholders are unresolved")
+	assert.NotContains(t, rendered, "azd ai agent invoke --local",
+		"coexistence+placeholders: invoke-local must be suppressed while placeholders are unresolved")
+	assert.Contains(t, rendered, "azd deploy", "trailing deploy reminder missing")
+}
+
+// TestRunFollowUpDescription exercises the helper directly so future
+// changes to the description text (or a regression in the conditional
+// branching) get caught even when the higher-level resolver tests
+// happen to overlap on substrings.
+func TestRunFollowUpDescription(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		hasToolboxEndpoint bool
+		hasManualVars      bool
+		want               string
+	}{
+		{
+			name:               "both",
+			hasToolboxEndpoint: true,
+			hasManualVars:      true,
+			want:               "start the agent locally once the steps above are complete",
+		},
+		{
+			name:               "toolbox only",
+			hasToolboxEndpoint: true,
+			want:               "start the agent locally once provision completes",
+		},
+		{
+			name:          "manual only",
+			hasManualVars: true,
+			want:          "start the agent locally once the values above are set",
+		},
+		{
+			// Defensive fallthrough — unreachable from ResolveAfterInit's
+			// combined case (guarded by `hasToolboxEndpoints ||
+			// hasManualVars`) but the helper is total over its inputs.
+			name: "neither",
+			want: "start the agent locally",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := runFollowUpDescription(tc.hasToolboxEndpoint, tc.hasManualVars)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestResolveAfterInit_UnresolvedPlaceholders(t *testing.T) {

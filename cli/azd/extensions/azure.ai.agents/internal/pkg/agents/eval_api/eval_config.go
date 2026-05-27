@@ -115,7 +115,6 @@ func (c *EvalConfig) ToAgentTargetAdaptableEvalGroupRequest() *CreateOpenAIEvalR
 				"type": "object",
 				"properties": map[string]any{
 					"query": map[string]any{"type": "string"},
-					//"ground_truth": map[string]any{"type": "string"},
 				},
 			},
 		},
@@ -133,9 +132,7 @@ func (c *EvalConfig) ToAgentTargetAdaptableEvalGroupRequest() *CreateOpenAIEvalR
 			Name:          apiName,
 			EvaluatorName: evaluator.Name,
 			DataMapping: map[string]string{
-				//"messages": "{{item.messages}}",
-				"query": "{{item.query}}",
-				//"ground_truth":     "{{item.ground_truth}}",
+				"query":            "{{item.query}}",
 				"response":         "{{sample.output_items}}",
 				"tool_calls":       "{{sample.tool_calls}}",
 				"tool_definitions": "{{sample.tool_definitions}}",

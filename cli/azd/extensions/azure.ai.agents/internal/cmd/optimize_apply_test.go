@@ -358,26 +358,6 @@ func TestWriteAgentConfigFromCandidate(t *testing.T) {
 	})
 }
 
-// ---- cleanOtherCandidates ----
-
-func TestCleanOtherCandidates(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-
-	// Create baseline, current candidate, and old candidate directories.
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, opt_eval.BaselineDir), 0750))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "cand_current"), 0750))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "cand_old"), 0750))
-
-	var buf bytes.Buffer
-	cleanOtherCandidates(dir, "cand_current", &buf)
-
-	// baseline and cand_current should remain; cand_old should be removed.
-	assert.DirExists(t, filepath.Join(dir, opt_eval.BaselineDir))
-	assert.DirExists(t, filepath.Join(dir, "cand_current"))
-	assert.NoDirExists(t, filepath.Join(dir, "cand_old"))
-}
-
 // ---- isSkillFile ----
 
 func TestIsSkillFile(t *testing.T) {
@@ -424,7 +404,7 @@ func TestIsReservedEnvVarError(t *testing.T) {
 
 // ---- writeToolsFile ----
 
-func TestWriteToolsFile_NoKeys(t *testing.T) {
+func TestWriteToolsFile_NoTools(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	err := writeToolsFile(dir, map[string]any{"name": "agent"})
@@ -432,79 +412,30 @@ func TestWriteToolsFile_NoKeys(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(dir, opt_eval.ToolsFile))
 }
 
-func TestWriteToolsFile_OnlyToolDefinitions(t *testing.T) {
+func TestWriteToolsFile_WithTools(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	defs := []any{
+	tools := []any{
 		map[string]any{"type": "function", "function": map[string]any{"name": "search"}},
 	}
-	err := writeToolsFile(dir, map[string]any{"toolDefinitions": defs})
+	err := writeToolsFile(dir, map[string]any{"tools": tools})
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(filepath.Join(dir, opt_eval.ToolsFile)) //nolint:gosec // test file path
 	require.NoError(t, err)
 
-	// Should be written as a raw list (no wrapper object).
 	var parsed []any
 	require.NoError(t, json.Unmarshal(data, &parsed))
 	assert.Len(t, parsed, 1)
 }
 
-func TestWriteToolsFile_OnlyToolDescriptions(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	descs := map[string]any{
-		"lookup_policy": map[string]any{
-			"description": "Look up policy",
-			"parameters":  map[string]any{},
-		},
-	}
-	err := writeToolsFile(dir, map[string]any{"toolDescriptions": descs})
-	require.NoError(t, err)
-
-	data, err := os.ReadFile(filepath.Join(dir, opt_eval.ToolsFile)) //nolint:gosec // test file path
-	require.NoError(t, err)
-
-	// Should be written as a raw object (no wrapper).
-	var parsed map[string]any
-	require.NoError(t, json.Unmarshal(data, &parsed))
-	assert.Contains(t, parsed, "lookup_policy")
-}
-
-func TestWriteToolsFile_BothKeys(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	defs := []any{
-		map[string]any{"type": "function", "function": map[string]any{"name": "search"}},
-	}
-	descs := map[string]any{
-		"search": map[string]any{"description": "Search stuff", "parameters": map[string]any{}},
-	}
-	err := writeToolsFile(dir, map[string]any{
-		"toolDefinitions":  defs,
-		"toolDescriptions": descs,
-	})
-	require.NoError(t, err)
-
-	data, err := os.ReadFile(filepath.Join(dir, opt_eval.ToolsFile)) //nolint:gosec // test file path
-	require.NoError(t, err)
-
-	var parsed map[string]any
-	require.NoError(t, json.Unmarshal(data, &parsed))
-	assert.Contains(t, parsed, "toolDefinitions")
-	assert.Contains(t, parsed, "toolDescriptions")
-}
-
-func TestWriteAgentConfigFromCandidate_WithToolDescriptions(t *testing.T) {
+func TestWriteAgentConfigFromCandidate_WithTools(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	config := mustMarshal(t, map[string]any{
 		"systemPrompt": "prompt",
-		"toolDescriptions": map[string]any{
-			"check_budget": map[string]any{
-				"description": "Check the budget",
-				"parameters":  map[string]any{},
-			},
+		"tools": []any{
+			map[string]any{"type": "function", "function": map[string]any{"name": "lookup_travel_policy"}},
 		},
 	})
 
@@ -517,4 +448,126 @@ func TestWriteAgentConfigFromCandidate_WithToolDescriptions(t *testing.T) {
 	metaData, err := os.ReadFile(filepath.Join(dir, opt_eval.MetadataFile)) //nolint:gosec // test file path
 	require.NoError(t, err)
 	assert.Contains(t, string(metaData), "tools_file")
+}
+
+// ---- writeToolsFile: ignores legacy keys ----
+
+func TestWriteToolsFile_IgnoresToolDefinitions(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// toolDefinitions is no longer supported — should not produce a file.
+	err := writeToolsFile(dir, map[string]any{
+		"toolDefinitions": []any{
+			map[string]any{"type": "function", "function": map[string]any{"name": "search"}},
+		},
+	})
+	require.NoError(t, err)
+	assert.NoFileExists(t, filepath.Join(dir, opt_eval.ToolsFile))
+}
+
+func TestWriteToolsFile_IgnoresToolDescriptions(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// toolDescriptions is no longer supported — should not produce a file.
+	err := writeToolsFile(dir, map[string]any{
+		"toolDescriptions": map[string]any{
+			"lookup": map[string]any{"description": "Look up stuff"},
+		},
+	})
+	require.NoError(t, err)
+	assert.NoFileExists(t, filepath.Join(dir, opt_eval.ToolsFile))
+}
+
+// ---- writeAgentConfigFromCandidate: model in metadata ----
+
+func TestWriteAgentConfigFromCandidate_ModelInMetadata(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	config := mustMarshal(t, map[string]any{
+		"name":         "travel-approver",
+		"model":        "gpt-4o",
+		"instructions": "Approve travel.",
+	})
+
+	err := writeAgentConfigFromCandidate(dir, config)
+	require.NoError(t, err)
+
+	metaData, err := os.ReadFile(filepath.Join(dir, opt_eval.MetadataFile)) //nolint:gosec // test file path
+	require.NoError(t, err)
+	assert.Contains(t, string(metaData), "model: gpt-4o")
+}
+
+func TestWriteAgentConfigFromCandidate_NoModel(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	config := mustMarshal(t, map[string]any{
+		"name":         "travel-approver",
+		"instructions": "Approve travel.",
+	})
+
+	err := writeAgentConfigFromCandidate(dir, config)
+	require.NoError(t, err)
+
+	metaData, err := os.ReadFile(filepath.Join(dir, opt_eval.MetadataFile)) //nolint:gosec // test file path
+	require.NoError(t, err)
+	// model is omitempty, so it should not appear when not set.
+	assert.NotContains(t, string(metaData), "model:")
+}
+
+// ---- writeAgentConfigFromCandidate: full candidate config ----
+
+func TestWriteAgentConfigFromCandidate_FullConfig(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	config := mustMarshal(t, map[string]any{
+		"name":         "travel-approver",
+		"model":        "gpt-4o",
+		"instructions": "Review and approve travel requests.",
+		"skills": []any{
+			map[string]any{
+				"name":        "policy-reviewer",
+				"description": "Reviews travel requests",
+				"body":        "# Policy Reviewer\nApprove everything.",
+			},
+		},
+		"tools": []any{
+			map[string]any{
+				"type": "function",
+				"function": map[string]any{
+					"name":        "lookup_travel_policy",
+					"description": "Look up travel policy",
+				},
+			},
+		},
+	})
+
+	err := writeAgentConfigFromCandidate(dir, config)
+	require.NoError(t, err)
+
+	// Verify all files are created.
+	assert.FileExists(t, filepath.Join(dir, opt_eval.MetadataFile))
+	assert.FileExists(t, filepath.Join(dir, opt_eval.InstructionFile))
+	assert.FileExists(t, filepath.Join(dir, opt_eval.ToolsFile))
+	assert.FileExists(t, filepath.Join(dir, opt_eval.SkillsDir, "policy-reviewer", "SKILL.md"))
+
+	// Verify metadata has all fields.
+	metaData, err := os.ReadFile(filepath.Join(dir, opt_eval.MetadataFile)) //nolint:gosec // test file path
+	require.NoError(t, err)
+	metaStr := string(metaData)
+	assert.Contains(t, metaStr, "model: gpt-4o")
+	assert.Contains(t, metaStr, "instruction_file")
+	assert.Contains(t, metaStr, "skill_dir")
+	assert.Contains(t, metaStr, "tools_file")
+
+	// Verify instructions content.
+	instrData, err := os.ReadFile(filepath.Join(dir, opt_eval.InstructionFile)) //nolint:gosec // test file path
+	require.NoError(t, err)
+	assert.Equal(t, "Review and approve travel requests.", string(instrData))
+
+	// Verify tools.json is a list.
+	toolsData, err := os.ReadFile(filepath.Join(dir, opt_eval.ToolsFile)) //nolint:gosec // test file path
+	require.NoError(t, err)
+	var toolsParsed []any
+	require.NoError(t, json.Unmarshal(toolsData, &toolsParsed))
+	assert.Len(t, toolsParsed, 1)
 }

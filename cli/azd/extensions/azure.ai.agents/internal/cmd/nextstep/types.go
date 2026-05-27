@@ -109,6 +109,12 @@ type State struct {
 	// example. Empty when HasOpenAPI is false.
 	OpenAPIPayload string
 
+	// CreatedFolderDisplay is a pre-computed, user-friendly relative path
+	// to the project folder created during init (e.g., "my-agent"). Empty
+	// when init did not create a new directory. The resolver uses it to
+	// prepend a `cd <folder>` suggestion to the Next: block.
+	CreatedFolderDisplay string
+
 	// HasModels, HasToolboxes, HasConnections are aggregate flags
 	// derived from each azure.ai.agent service's agent.manifest.yaml
 	// (when present). They are true when at least one resource of the

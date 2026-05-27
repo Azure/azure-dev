@@ -12,6 +12,8 @@ import "encoding/json"
 const APIVersion = "v1"
 
 // Optimization job status constants.
+// The server may return either the old names (pending/running/completed) or
+// the new names (queued/in_progress/succeeded). Both sets are accepted.
 const (
 	StatusPending   = "pending"
 	StatusRunning   = "running"
@@ -19,15 +21,16 @@ const (
 	StatusFailed    = "failed"
 	StatusCancelled = "cancelled"
 
-	// StatusQueued is a deprecated alias for StatusPending.
-	// The API returns "pending", not "queued".
-	StatusQueued = StatusPending
+	// New-style status values returned by newer server versions.
+	StatusQueued     = "queued"
+	StatusInProgress = "in_progress"
+	StatusSucceeded  = "succeeded"
 )
 
 // IsTerminal returns true if the status represents a terminal state.
 func IsTerminal(status string) bool {
 	switch status {
-	case StatusCompleted, StatusFailed, StatusCancelled:
+	case StatusCompleted, StatusSucceeded, StatusFailed, StatusCancelled:
 		return true
 	default:
 		return false
@@ -38,24 +41,18 @@ func IsTerminal(status string) bool {
 
 // OptimizeRequest is the top-level payload sent to POST /optimize.
 type OptimizeRequest struct {
-	Agent                      AgentDefinition   `json:"agent"`
-	Dataset                    []DatasetTask     `json:"dataset,omitempty"`
+	Agent                      AgentIdentifier   `json:"agent"`
+	Dataset                    []json.RawMessage `json:"dataset,omitempty"`
 	TrainDatasetReference      *DatasetReference `json:"trainDatasetReference,omitempty"`
 	ValidationDatasetReference *DatasetReference `json:"validationDatasetReference,omitempty"`
 	Evaluators                 []string          `json:"evaluators,omitempty"`
-	Criteria                   []Criterion       `json:"criteria,omitempty"`
 	Options                    OptimizeOptions   `json:"options"`
 }
 
-// AgentDefinition identifies the agent to optimize.
-type AgentDefinition struct {
-	FoundryProjectURL string            `json:"foundryProjectUrl"`
-	AgentName         string            `json:"agentName"`
-	AgentVersion      string            `json:"agentVersion,omitempty"`
-	Model             string            `json:"model,omitempty"`
-	SystemPrompt      string            `json:"systemPrompt,omitempty"`
-	Skills            []SkillDefinition `json:"skills,omitempty"`
-	ToolDefinitions   []ToolDefinition  `json:"tools,omitempty"`
+// AgentIdentifier references the agent to optimize by name and optional version.
+type AgentIdentifier struct {
+	AgentName    string `json:"agentName"`
+	AgentVersion string `json:"agentVersion,omitempty"`
 }
 
 // SkillDefinition describes a skill attached to an agent.
@@ -102,24 +99,13 @@ type Criterion struct {
 	Instruction string `json:"instruction"`
 }
 
-// TargetConfig specifies model candidates and other target-specific configuration.
-type TargetConfig struct {
-	Model []string `json:"model,omitempty"`
-}
-
 // OptimizeOptions controls the optimization run.
 type OptimizeOptions struct {
-	MaxIterations *int   `json:"maxIterations,omitempty"`
-	EvalModel     string `json:"evalModel,omitempty"`
-	// Send as both "strategies" (current server) and "targetAttributes" (future).
-	Strategies         []string      `json:"strategies,omitempty"`
-	TargetAttributes   []string      `json:"targetAttributes,omitempty"`
-	TargetConfig       *TargetConfig `json:"targetConfig,omitempty"`
-	KeepVersions       bool          `json:"keepVersions,omitempty"`
-	TasksPerIteration  int           `json:"tasksPerIteration,omitempty"`
-	MaxReflectionTasks int           `json:"maxReflectionTasks,omitempty"`
-	ReflectionModel    string        `json:"reflectionModel,omitempty"`
-	EvaluationLevel    string        `json:"evaluationLevel,omitempty"`
+	MaxIterations      *int                       `json:"maxIterations,omitempty"`
+	EvalModel          string                     `json:"evalModel,omitempty"`
+	OptimizationConfig map[string]json.RawMessage `json:"optimizationConfig,omitempty"`
+	OptimizationModel  string                     `json:"optimizationModel,omitempty"`
+	EvaluationLevel    string                     `json:"evaluationLevel,omitempty"`
 }
 
 // --- Response models ---
@@ -136,7 +122,7 @@ type OptimizeJobStatus struct {
 	Status                    string            `json:"status"`
 	CreatedAt                 string            `json:"createdAt"`
 	UpdatedAt                 string            `json:"updatedAt"`
-	Agent                     *AgentDefinition  `json:"agent,omitempty"`
+	Agent                     *AgentIdentifier  `json:"agent,omitempty"`
 	Progress                  *JobProgress      `json:"progress,omitempty"`
 	Error                     *JobError         `json:"error,omitempty"`
 	Baseline                  *CandidateResult  `json:"baseline,omitempty"`
@@ -182,24 +168,13 @@ func (e *JobError) UnmarshalJSON(data []byte) error {
 
 // CandidateResult holds the evaluation result for a single candidate.
 type CandidateResult struct {
-	Name        string         `json:"name"`
-	AvgScore    float64        `json:"avgScore"`
-	AvgTokens   float64        `json:"avgTokens"`
-	PassRate    float64        `json:"passRate"`
-	Mutations   map[string]any `json:"mutations,omitempty"`
-	Rationale   string         `json:"rationale,omitempty"`
-	CandidateID string         `json:"candidateId,omitempty"`
-	TaskScores  []TaskScore    `json:"taskScores,omitempty"`
-}
-
-// TaskScore captures per-task evaluation metrics.
-type TaskScore struct {
-	TaskName       string             `json:"taskName"`
-	Scores         map[string]float64 `json:"scores"`
-	CompositeScore float64            `json:"compositeScore"`
-	Tokens         int                `json:"tokens"`
-	Duration       float64            `json:"durationSeconds"`
-	Passed         bool               `json:"passed"`
+	Name            string  `json:"name"`
+	AvgScore        float64 `json:"avgScore"`
+	AvgTokens       float64 `json:"avgTokens"`
+	PassRate        float64 `json:"passRate"`
+	IsParetoOptimal bool    `json:"isParetoOptimal,omitempty"`
+	Rationale       string  `json:"rationale,omitempty"`
+	CandidateID     string  `json:"candidateId,omitempty"`
 }
 
 // --- List response ---

@@ -151,26 +151,9 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 			}
 		}
 
-		choices := buildModelChoices(deployedModel)
-		defaultIndex := int32(0)
-		resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message:       "Select the model for evaluation and generation",
-				Choices:       choices,
-				SelectedIndex: &defaultIndex,
-			},
-		})
+		selected, err := promptModelSelection(ctx, azdClient, "Select the model for evaluation and generation", deployedModel)
 		if err != nil {
-			return fmt.Errorf("prompting for evaluation model: %w", err)
-		}
-		selected := choices[int(*resp.Value)].Value
-
-		// User chose to pick from another deployment in the project.
-		if selected == selectOtherDeployment {
-			selected, err = promptProjectDeployment(ctx, resolved)
-			if err != nil {
-				return err
-			}
+			return err
 		}
 		flags.evalModel = selected
 	}
@@ -196,77 +179,6 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 	}
 
 	return nil
-}
-
-// selectOtherDeployment is the sentinel value for the "Select another deployment"
-// choice in the model prompt.
-const selectOtherDeployment = "__select_other_deployment__"
-
-// buildModelChoices builds the initial model choices for the generation model
-// prompt. When deployedModel is non-empty it appears first as the default.
-// A "Select another deployment" option is always appended so the user can
-// browse all deployments in the Foundry project.
-func buildModelChoices(deployedModel string) []*azdext.SelectChoice {
-	var choices []*azdext.SelectChoice
-	if deployedModel != "" {
-		choices = append(choices, &azdext.SelectChoice{
-			Label: deployedModel + " (deployed)",
-			Value: deployedModel,
-		})
-	}
-	choices = append(choices, &azdext.SelectChoice{
-		Label: "Select another deployment",
-		Value: selectOtherDeployment,
-	})
-	return choices
-}
-
-// promptProjectDeployment fetches model deployments from the Foundry project
-// and prompts the user to select one.
-func promptProjectDeployment(ctx context.Context, resolved *evalResolvedContext) (string, error) {
-	var deployments []FoundryDeploymentInfo
-	if resolved.envName != "" {
-		if v, err := resolved.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: resolved.envName,
-			Key:     "AZURE_AI_PROJECT_ID",
-		}); err == nil && v.Value != "" {
-			if project, err := extractProjectDetails(v.Value); err == nil {
-				if cred, err := newAgentCredential(); err == nil {
-					deployments, _ = listProjectDeployments(
-						ctx, cred,
-						project.SubscriptionId,
-						project.ResourceGroupName,
-						project.AccountName,
-					)
-				}
-			}
-		}
-	}
-	if len(deployments) == 0 {
-		return "", fmt.Errorf("no model deployments found in the Foundry project")
-	}
-
-	choices := make([]*azdext.SelectChoice, len(deployments))
-	for i, d := range deployments {
-		label := d.Name
-		if d.ModelName != "" {
-			label = fmt.Sprintf("%s (%s)", d.Name, d.ModelName)
-		}
-		choices[i] = &azdext.SelectChoice{Label: label, Value: d.Name}
-	}
-
-	defaultIndex := int32(0)
-	resp, err := resolved.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message:       "Select a model deployment",
-			Choices:       choices,
-			SelectedIndex: &defaultIndex,
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("prompting for model deployment: %w", err)
-	}
-	return choices[int(*resp.Value)].Value, nil
 }
 
 // promptRegenerateChoices asks the user whether to regenerate the existing

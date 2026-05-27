@@ -10,6 +10,7 @@ import (
 	"log"
 	"maps"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"azure.ai.connections/internal/connections/pkg/connections"
@@ -190,18 +191,23 @@ func newConnectionShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 // connectionCreateFlags holds validated input for ConnectionCreateAction.
 type connectionCreateFlags struct {
-	name            string
-	kind            string
-	target          string
-	authType        string
-	key             string
-	customKeys      []string
-	metadata        []string
-	force           bool
-	projectEndpoint string
-	clientID        string // OAuth2 client ID
-	clientSecret    string // OAuth2 client secret
-	audience        string // Token audience for user-entra-token / agentic-identity
+	name             string
+	kind             string
+	target           string
+	authType         string
+	key              string
+	customKeys       []string
+	metadata         []string
+	force            bool
+	projectEndpoint  string
+	clientID         string   // OAuth2 client ID
+	clientSecret     string   // OAuth2 client secret
+	audience         string   // Token audience for user-entra-token / agentic-identity / project-managed-identity
+	authorizationURL string   // OAuth2 authorization endpoint
+	tokenURL         string   // OAuth2 token endpoint
+	refreshURL       string   // OAuth2 refresh endpoint
+	scopes           []string // OAuth2 scopes
+	connectorName    string   // Managed connector name
 }
 
 // ConnectionCreateAction implements connection creation.
@@ -239,25 +245,82 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 			"Specify at least one custom key (e.g., --custom-key x-api-key=value).",
 		)
 	}
-	if a.flags.authType == "oauth2" && (a.flags.clientID == "" || a.flags.clientSecret == "") {
-		return exterrors.Validation(
-			exterrors.CodeMissingConnectionField,
-			"Missing required flags --client-id and --client-secret for oauth2 auth.",
-			"Specify both OAuth2 client credentials.",
-		)
+	// OAuth2-only flags must not be used with other auth types.
+	if a.flags.authType != "oauth2" {
+		if a.flags.clientID != "" || a.flags.clientSecret != "" {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--client-id and --client-secret are only valid with --auth-type oauth2.",
+				"",
+			)
+		}
+		if a.flags.authorizationURL != "" || a.flags.tokenURL != "" ||
+			a.flags.refreshURL != "" || len(a.flags.scopes) > 0 || a.flags.connectorName != "" {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--authorization-url, --token-url, --refresh-url, --scopes, and --connector-name "+
+					"are only valid with --auth-type oauth2.",
+				"",
+			)
+		}
 	}
-	if a.flags.authType != "oauth2" && (a.flags.clientID != "" || a.flags.clientSecret != "") {
-		return exterrors.Validation(
-			exterrors.CodeConflictingArguments,
-			"--client-id and --client-secret are only valid with --auth-type oauth2.",
-			"",
-		)
+	// OAuth2 validation: either --connector-name alone (managed connector) or all of
+	// --authorization-url, --token-url, --refresh-url, --scopes, --client-id, --client-secret.
+	if a.flags.authType == "oauth2" {
+		hasConnector := a.flags.connectorName != ""
+		hasBYO := a.flags.authorizationURL != "" || a.flags.tokenURL != "" ||
+			a.flags.refreshURL != "" || len(a.flags.scopes) > 0 ||
+			a.flags.clientID != "" || a.flags.clientSecret != ""
+
+		if hasConnector && hasBYO {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--connector-name cannot be combined with --authorization-url, --token-url, "+
+					"--refresh-url, --scopes, --client-id, or --client-secret. "+
+					"Use --connector-name alone for managed connectors, or provide the other flags for BYO OAuth2.",
+				"",
+			)
+		}
+		if !hasConnector && !hasBYO {
+			return exterrors.Validation(
+				exterrors.CodeMissingConnectionField,
+				"OAuth2 auth requires either --connector-name (managed connector) or "+
+					"--authorization-url, --token-url, --client-id, --client-secret "+
+					"(and optionally --refresh-url, --scopes).",
+				"",
+			)
+		}
+		if !hasConnector {
+			// BYO mode — required: authorization-url, token-url, client-id, client-secret.
+			// Optional: refresh-url, scopes.
+			missing := []string{}
+			if a.flags.authorizationURL == "" {
+				missing = append(missing, "--authorization-url")
+			}
+			if a.flags.tokenURL == "" {
+				missing = append(missing, "--token-url")
+			}
+			if a.flags.clientID == "" {
+				missing = append(missing, "--client-id")
+			}
+			if a.flags.clientSecret == "" {
+				missing = append(missing, "--client-secret")
+			}
+			if len(missing) > 0 {
+				return exterrors.Validation(
+					exterrors.CodeMissingConnectionField,
+					"BYO OAuth2 requires: --authorization-url, --token-url, --client-id, "+
+						"--client-secret. Missing: "+strings.Join(missing, ", "),
+					"",
+				)
+			}
+		}
 	}
 	if a.flags.audience != "" && a.flags.authType != "user-entra-token" &&
-		a.flags.authType != "agentic-identity" {
+		a.flags.authType != "agentic-identity" && a.flags.authType != "project-managed-identity" {
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments,
-			"--audience is only valid with --auth-type user-entra-token or agentic-identity.",
+			"--audience is only valid with --auth-type user-entra-token, agentic-identity, or project-managed-identity.",
 			"",
 		)
 	}
@@ -283,18 +346,26 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 
 	// Route to raw REST or typed SDK based on auth type
 	switch a.flags.authType {
-	case "user-entra-token", "project-managed-identity", "agentic-identity":
-		err = rawCreateConnection(
-			ctx, connCtx,
-			a.flags.name,
-			rawConnectionProperties{
-				AuthType: normalizeAuthTypeToARM(a.flags.authType),
-				Category: normalizeKind(a.flags.kind),
-				Target:   a.flags.target,
-				Audience: a.flags.audience,
-				Metadata: parseKVMap(a.flags.metadata),
-			},
-		)
+	case "oauth2", "user-entra-token", "project-managed-identity", "agentic-identity":
+		props := rawConnectionProperties{
+			AuthType:         normalizeAuthTypeToARM(a.flags.authType),
+			Category:         normalizeKind(a.flags.kind),
+			Target:           a.flags.target,
+			Audience:         a.flags.audience,
+			Metadata:         parseKVMap(a.flags.metadata),
+			AuthorizationURL: a.flags.authorizationURL,
+			TokenURL:         a.flags.tokenURL,
+			RefreshURL:       a.flags.refreshURL,
+			Scopes:           a.flags.scopes,
+			ConnectorName:    a.flags.connectorName,
+		}
+		if a.flags.clientID != "" || a.flags.clientSecret != "" {
+			props.Credentials = &rawCredentials{
+				ClientID:     a.flags.clientID,
+				ClientSecret: a.flags.clientSecret,
+			}
+		}
+		err = rawCreateConnection(ctx, connCtx, a.flags.name, props)
 	default:
 		body, buildErr := buildConnectionBody(
 			a.flags.kind, a.flags.target, a.flags.authType,
@@ -361,11 +432,21 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Replace existing connection (upsert)")
 	cmd.Flags().StringVar(&flags.clientID, "client-id", "",
-		"OAuth2 client ID (required for oauth2 auth)")
+		"OAuth2 client ID (required for BYO OAuth2)")
 	cmd.Flags().StringVar(&flags.clientSecret, "client-secret", "",
-		"OAuth2 client secret (required for oauth2 auth)")
+		"OAuth2 client secret (required for BYO OAuth2)")
 	cmd.Flags().StringVar(&flags.audience, "audience", "",
-		"Token audience for user-entra-token/agentic-identity auth")
+		"Token audience for user-entra-token/agentic-identity/project-managed-identity auth")
+	cmd.Flags().StringVar(&flags.authorizationURL, "authorization-url", "",
+		"OAuth2 authorization endpoint URL")
+	cmd.Flags().StringVar(&flags.tokenURL, "token-url", "",
+		"OAuth2 token endpoint URL")
+	cmd.Flags().StringVar(&flags.refreshURL, "refresh-url", "",
+		"OAuth2 token refresh URL")
+	cmd.Flags().StringSliceVar(&flags.scopes, "scopes", nil,
+		"OAuth2 scopes (repeatable or comma-separated, e.g. --scopes read:user,user:email)")
+	cmd.Flags().StringVar(&flags.connectorName, "connector-name", "",
+		"Managed connector name (for OAuth2 connectors)")
 	return cmd
 }
 
@@ -471,8 +552,8 @@ func (a *ConnectionUpdateAction) Run(ctx context.Context) error {
 
 	// Route to raw REST or typed SDK based on auth type
 	switch normalizedAuth {
-	case "user-entra-token", "project-managed-identity", "agentic-identity":
-		// Identity auth types lack ARM SDK structs — update via raw REST
+	case "oauth2", "user-entra-token", "project-managed-identity", "agentic-identity":
+		// Auth types that lack full ARM SDK support — update via raw REST
 		err = rawCreateConnection(
 			ctx, connCtx,
 			a.flags.name,
@@ -736,31 +817,12 @@ func buildConnectionBody(
 			},
 		}, nil
 
-	case "oauth2":
-		at := armcognitiveservices.ConnectionAuthTypeOAuth2
-		creds := &armcognitiveservices.ConnectionOAuth2{}
-		if clientID != "" {
-			creds.ClientID = &clientID
-		}
-		if clientSecret != "" {
-			creds.ClientSecret = &clientSecret
-		}
-		return &armcognitiveservices.ConnectionPropertiesV2BasicResource{
-			Properties: &armcognitiveservices.OAuth2AuthTypeConnectionProperties{
-				AuthType:    &at,
-				Category:    &cat,
-				Target:      &target,
-				Credentials: creds,
-				Metadata:    metaMap,
-			},
-		}, nil
-
 	default:
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAuthType,
 			fmt.Sprintf("Unsupported auth type %q.", authType),
-			"Supported: api-key, custom-keys, none, oauth2. "+
-				"For identity-based auth types (user-entra-token, project-managed-identity, "+
+			"Supported: api-key, custom-keys, none. "+
+				"For oauth2 and identity-based auth types (user-entra-token, project-managed-identity, "+
 				"agentic-identity), use 'connection create' directly.",
 		)
 	}
@@ -899,6 +961,8 @@ func normalizeAuthType(armAuthType string) string {
 // Used for auth types that lack ARM SDK structs and require raw REST.
 func normalizeAuthTypeToARM(cliAuthType string) string {
 	switch cliAuthType {
+	case "oauth2":
+		return "OAuth2"
 	case "user-entra-token":
 		return "UserEntraToken"
 	case "project-managed-identity":

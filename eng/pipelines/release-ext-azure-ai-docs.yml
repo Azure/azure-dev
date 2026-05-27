@@ -1,0 +1,40 @@
+# Continuous deployment trigger
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - go.mod
+      - cli/azd/extensions/azure.ai.docs
+      - eng/pipelines/release-azd-extension.yml
+      - /eng/pipelines/templates/jobs/build-azd-extension.yml
+      - /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
+      - /eng/pipelines/templates/variables/image.yml
+
+pr:
+  paths:
+    include:
+      - cli/azd/extensions/azure.ai.docs
+      - eng/pipelines/release-ext-azure-ai-docs.yml
+      - eng/pipelines/release-azd-extension.yml
+      - eng/pipelines/templates/steps/publish-cli.yml
+    exclude:
+      - cli/azd/docs/**
+
+parameters:
+  - name: PublishToDevRegistry
+    displayName: Publish to dev registry
+    type: boolean
+    default: false
+
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - template: /eng/pipelines/templates/stages/release-azd-extension.yml
+        parameters: 
+          AzdExtensionId: azure.ai.docs
+          SanitizedExtensionId: azure-ai-docs
+          AzdExtensionDirectory: cli/azd/extensions/azure.ai.docs
+          PublishToDevRegistry: ${{ parameters.PublishToDevRegistry }}

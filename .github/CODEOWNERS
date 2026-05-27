@@ -13,6 +13,7 @@
 # ── CLI extensions (AI) ──────────────────────────────────────────────────────
 /cli/azd/extensions/azure.ai.agents/        @JeffreyCA @trangevi @trrwilson @therealjohn
 /cli/azd/extensions/azure.ai.connections/   @JeffreyCA @trangevi @trrwilson @therealjohn
+/cli/azd/extensions/azure.ai.docs/          @JeffreyCA @trangevi @trrwilson @therealjohn
 /cli/azd/extensions/azure.ai.finetune/      @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 /cli/azd/extensions/azure.ai.inspector/     @JeffreyCA @trangevi @trrwilson @therealjohn
 /cli/azd/extensions/azure.ai.models/        @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft

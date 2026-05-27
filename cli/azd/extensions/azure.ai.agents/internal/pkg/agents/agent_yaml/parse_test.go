@@ -130,6 +130,9 @@ template:
           kind: Header
   agent_card:
     description: image-agent card
+    skills:
+      - name: chat
+        description: Basic chat capability
 `)
 
 	agent, err := ExtractAgentDefinition(yamlContent)

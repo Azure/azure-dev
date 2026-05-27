@@ -16,6 +16,7 @@ type AgentProtocol string
 const (
 	AgentProtocolActivityProtocol AgentProtocol = "activity_protocol"
 	AgentProtocolInvocations      AgentProtocol = "invocations"
+	AgentProtocolInvocationsWS    AgentProtocol = "invocations_ws"
 	AgentProtocolResponses        AgentProtocol = "responses"
 	AgentProtocolA2A              AgentProtocol = "a2a"
 )

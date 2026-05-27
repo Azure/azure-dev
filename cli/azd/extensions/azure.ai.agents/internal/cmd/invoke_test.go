@@ -1262,9 +1262,7 @@ func TestHandleInvocationResponse_Routing(t *testing.T) {
 				resp.Header.Set(k, v)
 			}
 
-			err := handleInvocationResponse(
-				t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil,
-			)
+			err := handleInvocationResponse(t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil, false)
 
 			if tt.wantErr {
 				if err == nil {
@@ -1517,9 +1515,7 @@ func TestHandleInvocationLRO(t *testing.T) {
 				resp.Header.Set("x-agent-invocation-id", tt.initial202Header)
 			}
 
-			err := handleInvocationLRO(
-				t.Context(), resp, "", "", "test-agent", tt.timeout, "", nil,
-			)
+			err := handleInvocationLRO(t.Context(), resp, "", "", "test-agent", tt.timeout, "", nil, false)
 
 			if tt.wantErr {
 				if err == nil {
@@ -1636,6 +1632,7 @@ func captureInvocationLROPollRequests(
 		time.Second,
 		"",
 		options,
+		false,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

@@ -132,9 +132,9 @@ func TestResolveAfterInit(t *testing.T) {
 			assert.True(t, last.Trailing, "last suggestion must be flagged Trailing")
 
 			if len(tt.wantManualVarKeys) > 0 {
-				// N env-set lines + 1 `azd ai agent run` follow-up + 1
-				// trailing `azd deploy`.
-				assert.Len(t, out, len(tt.wantManualVarKeys)+2)
+				// N env-set lines + 1 `azd ai agent run` follow-up +
+				// 1 invoke-local secondary + 1 trailing `azd deploy`.
+				assert.Len(t, out, len(tt.wantManualVarKeys)+3)
 				for i, key := range tt.wantManualVarKeys {
 					assert.True(t,
 						strings.HasPrefix(out[i].Command, "azd env set "+key+" "),
@@ -148,6 +148,16 @@ func TestResolveAfterInit(t *testing.T) {
 					"expected `azd ai agent run` follow-up after env-set lines")
 				assert.False(t, followUp.Trailing,
 					"run follow-up must be a primary suggestion, not Trailing")
+				// The slot after the run follow-up is the invoke-local
+				// secondary that tells the user how to test the agent
+				// once it's running.
+				invokeLocal := out[len(tt.wantManualVarKeys)+1]
+				assert.True(t,
+					strings.HasPrefix(invokeLocal.Command, "azd ai agent invoke --local "),
+					"expected invoke-local secondary after run follow-up, got %q",
+					invokeLocal.Command)
+				assert.False(t, invokeLocal.Trailing,
+					"invoke-local secondary must be a primary suggestion, not Trailing")
 			} else {
 				assert.Contains(t, out[0].Command, tt.wantPrimaryHas)
 			}
@@ -163,17 +173,19 @@ func TestResolveAfterInit_ManualVarsCapAtThree(t *testing.T) {
 		MissingManualVars:  []string{"V1", "V2", "V3", "V4", "V5"},
 	}
 	out := ResolveAfterInit(state, nil)
-	// 3 env-set lines (capped) + 1 `azd ai agent run` follow-up + 1
-	// trailing `azd deploy`.
-	require.Len(t, out, 5)
+	// 3 env-set lines (capped) + 1 `azd ai agent run` follow-up +
+	// 1 `azd ai agent invoke --local` secondary + 1 trailing `azd deploy`.
+	require.Len(t, out, 6)
 	for i := range 3 {
 		assert.True(t, strings.HasPrefix(out[i].Command, "azd env set "),
 			"slot %d should be an env-set line, got %q", i, out[i].Command)
 	}
 	assert.Equal(t, "azd ai agent run", out[3].Command,
 		"slot 3 should be the run follow-up")
-	assert.Equal(t, "azd deploy", out[4].Command)
-	assert.True(t, out[4].Trailing, "deploy footer must be Trailing")
+	assert.True(t, strings.HasPrefix(out[4].Command, "azd ai agent invoke --local "),
+		"slot 4 should be the invoke-local secondary, got %q", out[4].Command)
+	assert.Equal(t, "azd deploy", out[5].Command)
+	assert.True(t, out[5].Trailing, "deploy footer must be Trailing")
 }
 
 func TestResolveAfterInit_NilState(t *testing.T) {
@@ -238,8 +250,8 @@ func TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape(t *testing.T) {
 		MissingManualVars:  []string{"MY_API_KEY"},
 	}
 	out := ResolveAfterInit(state, nil)
-	// 1 env-set + 1 run follow-up + 1 trailing.
-	require.Len(t, out, 3)
+	// 1 env-set + 1 run follow-up + 1 invoke-local secondary + 1 trailing.
+	require.Len(t, out, 4)
 
 	assert.Equal(t, "azd env set MY_API_KEY <value>", out[0].Command)
 	assert.Equal(t, "referenced by agent.yaml but not set in azd env", out[0].Description,
@@ -250,8 +262,12 @@ func TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape(t *testing.T) {
 	assert.Equal(t, "start the agent locally once the values above are set", out[1].Description)
 	assert.False(t, out[1].Trailing, "run follow-up must be a primary suggestion")
 
-	assert.Equal(t, "azd deploy", out[2].Command)
-	assert.True(t, out[2].Trailing)
+	assert.Equal(t, `azd ai agent invoke --local '<payload>'`, out[2].Command)
+	assert.Equal(t, "test it in another terminal", out[2].Description)
+	assert.False(t, out[2].Trailing, "invoke-local secondary must be a primary suggestion")
+
+	assert.Equal(t, "azd deploy", out[3].Command)
+	assert.True(t, out[3].Trailing)
 }
 
 // TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary locks

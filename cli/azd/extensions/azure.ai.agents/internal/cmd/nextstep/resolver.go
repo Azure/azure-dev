@@ -174,6 +174,12 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 				Description: "start the agent locally once the values above are set",
 				Priority:    priority,
 			})
+			priority++
+			// Tail with the invoke-local secondary so the user has a
+			// concrete "what to try once it's running" command. Without
+			// this the Next: block jumps from `run` straight to `deploy`
+			// and leaves the user to guess the invoke incantation.
+			out, priority = appendInvokeLocalSecondary(out, state, readmeExists, priority)
 		}
 	case hasPlaceholders:
 		// Only unresolved placeholders remain — do not emit
@@ -191,26 +197,7 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		// spec's "everything ready" example shows the user a second
 		// command to try once the agent is running:
 		//   azd ai agent invoke --local '<payload>'  -- test it in another terminal
-		// Single-agent projects route through resolveInvokeArg so
-		// they get a README pointer + placeholder pair when a
-		// sibling README is present; multi-agent projects emit a
-		// bare placeholder with no per-service README hint (we
-		// cannot pick one deterministically without knowing which
-		// service the user will target).
-		var svc *ServiceState
-		if len(state.Services) == 1 {
-			svc = &state.Services[0]
-		}
-		invokeArg, readmeHint := resolveInvokeArg(svc, "", readmeExists, priority)
-		if readmeHint != nil {
-			out = append(out, *readmeHint)
-			priority++
-		}
-		out = append(out, Suggestion{
-			Command:     fmt.Sprintf("azd ai agent invoke --local %s", invokeArg),
-			Description: "test it in another terminal",
-			Priority:    priority,
-		})
+		out, _ = appendInvokeLocalSecondary(out, state, readmeExists, priority)
 	}
 
 	out = append(out, Suggestion{
@@ -659,6 +646,44 @@ func resolveInvokeArg(
 		}
 	}
 	return placeholderPayload, nil
+}
+
+// appendInvokeLocalSecondary appends the post-`azd ai agent run`
+// invoke-local Suggestion (and its optional README hint) to out. It is
+// shared by ResolveAfterInit's "everything ready" and "manual vars
+// missing" branches so both paths give the user a concrete "what to try
+// once it's running" command instead of bottoming out at `azd deploy`.
+//
+// Service selection: when state has exactly one service we route it
+// through resolveInvokeArg so the user gets a per-service README pointer
+// when applicable. With zero or multiple services we pass nil — the
+// resolver cannot pick deterministically which service the user will
+// target with an unqualified `azd ai agent invoke --local`, so it emits
+// the bare placeholderPayload without a README hint.
+//
+// Returns the updated slice and the next priority counter value so
+// callers can continue numbering subsequent suggestions.
+func appendInvokeLocalSecondary(
+	out []Suggestion,
+	state *State,
+	readmeExists func(string) bool,
+	priority int,
+) ([]Suggestion, int) {
+	var svc *ServiceState
+	if len(state.Services) == 1 {
+		svc = &state.Services[0]
+	}
+	invokeArg, readmeHint := resolveInvokeArg(svc, "", readmeExists, priority)
+	if readmeHint != nil {
+		out = append(out, *readmeHint)
+		priority++
+	}
+	out = append(out, Suggestion{
+		Command:     fmt.Sprintf("azd ai agent invoke --local %s", invokeArg),
+		Description: "test it in another terminal",
+		Priority:    priority,
+	})
+	return out, priority + 1
 }
 
 // shellEscapeSingleQuoted wraps s in single quotes for POSIX shells.

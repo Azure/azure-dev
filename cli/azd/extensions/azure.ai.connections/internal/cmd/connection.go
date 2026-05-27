@@ -13,8 +13,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"azureaiagent/internal/connections/exterrors"
-	"azureaiagent/internal/connections/pkg/connections"
+	"azure.ai.connections/internal/exterrors"
+	"azure.ai.connections/internal/pkg/connections"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -291,7 +291,7 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 			)
 		}
 		if !hasConnector {
-			// BYO mode — required: authorization-url, token-url, client-id, client-secret.
+			// BYO mode ΓÇö required: authorization-url, token-url, client-id, client-secret.
 			// Optional: refresh-url, scopes.
 			missing := []string{}
 			if a.flags.authorizationURL == "" {
@@ -553,7 +553,7 @@ func (a *ConnectionUpdateAction) Run(ctx context.Context) error {
 	// Route to raw REST or typed SDK based on auth type
 	switch normalizedAuth {
 	case "oauth2", "user-entra-token", "project-managed-identity", "agentic-identity":
-		// Auth types that lack full ARM SDK support — update via raw REST
+		// Auth types that lack full ARM SDK support ΓÇö update via raw REST
 		err = rawCreateConnection(
 			ctx, connCtx,
 			a.flags.name,
@@ -603,9 +603,9 @@ func newConnectionUpdateCommand(
 Only the specified flags are changed; all other fields are preserved.
 Does not accept --auth-type (delete and recreate to change auth type).
 For metadata changes, use the 'metadata' subcommand.`,
-		Example: `  azd ai agent connection update prod-search --key "$NEW_SEARCH_KEY"
-  azd ai agent connection update my-conn --target https://new-endpoint.com
-  azd ai agent connection update my-mcp --custom-key "x-api-key=new-key"`,
+		Example: `  azd ai connection update prod-search --key "$NEW_SEARCH_KEY"
+  azd ai connection update my-conn --target https://new-endpoint.com
+  azd ai connection update my-mcp --custom-key "x-api-key=new-key"`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]

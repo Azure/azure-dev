@@ -236,33 +236,37 @@ func (a *InitAction) getModelDeploymentDetails(
 				model.Id,
 			)
 
-			noMatchChoices := []*azdext.SelectChoice{
-				{
-					Label: fmt.Sprintf("Deploy a new '%s' model to the selected Foundry project", model.Id),
-					Value: "deploy_new",
-				},
-				{
-					Label: "Use a different model already deployed in this project",
-					Value: "use_different",
-				},
-			}
-
-			defaultIdx := int32(0)
-			noMatchResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-				Options: &azdext.SelectOptions{
-					Message:       "How would you like to proceed?",
-					Choices:       noMatchChoices,
-					SelectedIndex: &defaultIdx,
-				},
-			})
-			if err != nil {
-				if exterrors.IsCancellation(err) {
-					return nil, false, exterrors.Cancelled("model deployment selection was cancelled")
+			noMatchChoice := "deploy_new"
+			if !a.flags.noPrompt {
+				noMatchChoices := []*azdext.SelectChoice{
+					{
+						Label: fmt.Sprintf("Deploy a new '%s' model to the selected Foundry project", model.Id),
+						Value: "deploy_new",
+					},
+					{
+						Label: "Use a different model already deployed in this project",
+						Value: "use_different",
+					},
 				}
-				return nil, false, fmt.Errorf("failed to prompt for no-match choice: %w", err)
+
+				defaultIdx := int32(0)
+				noMatchResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+					Options: &azdext.SelectOptions{
+						Message:       "How would you like to proceed?",
+						Choices:       noMatchChoices,
+						SelectedIndex: &defaultIdx,
+					},
+				})
+				if err != nil {
+					if exterrors.IsCancellation(err) {
+						return nil, false, exterrors.Cancelled("model deployment selection was cancelled")
+					}
+					return nil, false, fmt.Errorf("failed to prompt for no-match choice: %w", err)
+				}
+				noMatchChoice = noMatchChoices[*noMatchResp.Value].Value
 			}
 
-			if noMatchChoices[*noMatchResp.Value].Value == "use_different" {
+			if noMatchChoice == "use_different" {
 				if len(allDeployments) == 0 {
 					fmt.Println("No deployments found in this project. A new deployment will be configured.")
 				} else {
@@ -309,20 +313,23 @@ func (a *InitAction) getModelDeploymentDetails(
 		return nil, false, fmt.Errorf("failed to get model details: %w", err)
 	}
 
-	message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name)", modelDetails.ModelName)
+	modelDeployment := modelDetails.ModelName
+	if !a.flags.noPrompt {
+		message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name)", modelDetails.ModelName)
 
-	modelDeploymentInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:        message,
-			IgnoreHintKeys: true,
-			DefaultValue:   modelDetails.ModelName,
-		},
-	})
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to prompt for text value: %w", err)
+		modelDeploymentInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:        message,
+				IgnoreHintKeys: true,
+				DefaultValue:   modelDetails.ModelName,
+			},
+		})
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to prompt for text value: %w", err)
+		}
+
+		modelDeployment = modelDeploymentInput.Value
 	}
-
-	modelDeployment := modelDeploymentInput.Value
 
 	return &project.Deployment{
 		Name: modelDeployment,

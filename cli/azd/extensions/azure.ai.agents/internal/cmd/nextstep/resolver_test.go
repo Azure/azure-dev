@@ -117,6 +117,15 @@ func TestResolveAfterInit(t *testing.T) {
 			wantPrimaryHas: "azd provision",
 			wantTrailing:   "azd deploy",
 		},
+		{
+			name: "provision needed with missing Azure context → env set before provision",
+			state: &State{
+				PendingProvisionReasons: []string{"project"},
+				MissingAzureContextVars: []string{"AZURE_SUBSCRIPTION_ID", "AZURE_LOCATION"},
+			},
+			wantPrimaryHas: "azd env set AZURE_SUBSCRIPTION_ID",
+			wantTrailing:   "azd deploy",
+		},
 	}
 
 	for _, tt := range tests {
@@ -186,6 +195,23 @@ func TestResolveAfterInit_ManualVarsCapAtThree(t *testing.T) {
 		"slot 4 should be the invoke-local secondary, got %q", out[4].Command)
 	assert.Equal(t, "azd deploy", out[5].Command)
 	assert.True(t, out[5].Trailing, "deploy footer must be Trailing")
+}
+
+func TestResolveAfterInit_MissingAzureContextVarsPrecedeProvision(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		PendingProvisionReasons: []string{"project"},
+		MissingAzureContextVars: []string{"AZURE_SUBSCRIPTION_ID", "AZURE_LOCATION"},
+	}
+	out := ResolveAfterInit(state, nil)
+	require.Len(t, out, 4)
+	assert.Equal(t, "azd env set AZURE_SUBSCRIPTION_ID <value>", out[0].Command)
+	assert.Equal(t, "required before provisioning Azure resources", out[0].Description)
+	assert.Equal(t, "azd env set AZURE_LOCATION <value>", out[1].Command)
+	assert.Equal(t, "azd provision", out[2].Command)
+	assert.Equal(t, "azd deploy", out[3].Command)
+	assert.True(t, out[3].Trailing, "deploy footer must be Trailing")
 }
 
 func TestResolveAfterInit_NilState(t *testing.T) {

@@ -71,7 +71,7 @@ func runEvalShow(ctx context.Context, evalID string, flags *evalShowFlags) error
 	}
 
 	if flags.evalRunID != "" {
-		run, err := resolved.evalClient.GetOpenAIEvalRun(ctx, evalID, flags.evalRunID, DefaultAgentAPIVersion)
+		run, err := resolved.evalClient.GetOpenAIEvalRun(ctx, evalID, flags.evalRunID)
 		if err != nil {
 			return fmt.Errorf("failed to get eval run: %w", err)
 		}
@@ -81,11 +81,11 @@ func runEvalShow(ctx context.Context, evalID string, flags *evalShowFlags) error
 		return printEvalRunSummary(evalID, run)
 	}
 
-	evalObj, err := resolved.evalClient.GetOpenAIEval(ctx, evalID, DefaultAgentAPIVersion)
+	evalObj, err := resolved.evalClient.GetOpenAIEval(ctx, evalID)
 	if err != nil {
 		return fmt.Errorf("failed to get eval: %w", err)
 	}
-	runs, err := resolved.evalClient.ListOpenAIEvalRuns(ctx, evalID, flags.limit, DefaultAgentAPIVersion)
+	runs, err := resolved.evalClient.ListOpenAIEvalRuns(ctx, evalID, flags.limit)
 	if err != nil {
 		return fmt.Errorf("failed to list eval runs: %w", err)
 	}

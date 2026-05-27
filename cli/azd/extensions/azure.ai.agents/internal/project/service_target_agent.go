@@ -57,7 +57,7 @@ type displayableProtocolEntry struct {
 // displayableProtocols is the single source of truth for protocols that produce
 // user-facing invocation endpoints and env vars.
 var displayableProtocols = []displayableProtocolEntry{
-	{Protocol: agent_api.AgentProtocolResponses, URLPath: "openai/responses", EnvSuffix: "RESPONSES"},
+	{Protocol: agent_api.AgentProtocolResponses, URLPath: "openai/v1/responses", EnvSuffix: "RESPONSES"},
 	{Protocol: agent_api.AgentProtocolInvocations, URLPath: "invocations", EnvSuffix: "INVOCATIONS"},
 }
 
@@ -1768,11 +1768,13 @@ func agentInvocationEndpoints(
 		if path == "" {
 			continue
 		}
+		endpointURL := fmt.Sprintf("%s/agents/%s/endpoint/protocols/%s", projectEndpoint, agentName, path)
+		if !strings.HasPrefix(path, "openai/") {
+			endpointURL += fmt.Sprintf("?api-version=%s", agent_api.AgentEndpointAPIVersion)
+		}
 		endpoints = append(endpoints, protocolEndpointInfo{
 			Protocol: p.Protocol,
-			URL: fmt.Sprintf(
-				"%s/agents/%s/endpoint/protocols/%s?api-version=%s",
-				projectEndpoint, agentName, path, agent_api.AgentEndpointAPIVersion),
+			URL:      endpointURL,
 		})
 	}
 	return endpoints

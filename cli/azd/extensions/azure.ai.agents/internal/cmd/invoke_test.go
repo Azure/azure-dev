@@ -1755,14 +1755,14 @@ func TestCreateConversation(t *testing.T) {
 
 				// Verify path includes the agent name and conversations endpoint
 				wantPath := "/agents/" + tt.agentName +
-					"/endpoint/protocols/openai/conversations"
+					"/endpoint/protocols/openai/v1/conversations"
 				if r.URL.Path != wantPath {
 					t.Errorf("path = %s, want %s", r.URL.Path, wantPath)
 				}
 
-				// Verify api-version query parameter uses the constant
-				if got := r.URL.Query().Get("api-version"); got != DefaultAgentAPIVersion {
-					t.Errorf("api-version = %q, want %q", got, DefaultAgentAPIVersion)
+				// OpenAI v1 routes should not include an api-version query parameter.
+				if got := r.URL.Query().Get("api-version"); got != "" {
+					t.Errorf("api-version = %q, want empty", got)
 				}
 
 				// Verify auth header

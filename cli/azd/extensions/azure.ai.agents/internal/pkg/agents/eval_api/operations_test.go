@@ -208,7 +208,7 @@ func TestCreateOpenAIEval_Success(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	assert.Equal(t, "/openai/evals", capturedPath)
+	assert.Equal(t, "/openai/v1/evals", capturedPath)
 	assert.Equal(t, "eval-001", result.ID)
 }
 
@@ -284,7 +284,7 @@ func TestGetOpenAIEval_Success(t *testing.T) {
 	result, err := client.GetOpenAIEval(t.Context(), "eval-001", "v1")
 
 	require.NoError(t, err)
-	assert.Equal(t, "/openai/evals/eval-001", capturedPath)
+	assert.Equal(t, "/openai/v1/evals/eval-001", capturedPath)
 	assert.Equal(t, "smoke-core", result.Name)
 }
 
@@ -314,7 +314,7 @@ func TestCreateOpenAIEvalRun_Success(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	assert.Equal(t, "/openai/evals/eval-001/runs", capturedPath)
+	assert.Equal(t, "/openai/v1/evals/eval-001/runs", capturedPath)
 	assert.Equal(t, "run-001", result.ID)
 }
 
@@ -341,7 +341,7 @@ func TestListOpenAIEvalRuns_Success(t *testing.T) {
 	result, err := client.ListOpenAIEvalRuns(t.Context(), "eval-001", 5, "v1")
 
 	require.NoError(t, err)
-	assert.Equal(t, "/openai/evals/eval-001/runs", capturedPath)
+	assert.Equal(t, "/openai/v1/evals/eval-001/runs", capturedPath)
 	assert.Equal(t, "5", capturedLimit)
 	assert.Len(t, result.Data, 1)
 }
@@ -368,7 +368,7 @@ func TestGetOpenAIEvalRun_Success(t *testing.T) {
 	result, err := client.GetOpenAIEvalRun(t.Context(), "eval-001", "run-001", "v1")
 
 	require.NoError(t, err)
-	assert.Equal(t, "/openai/evals/eval-001/runs/run-001", capturedPath)
+	assert.Equal(t, "/openai/v1/evals/eval-001/runs/run-001", capturedPath)
 	assert.Equal(t, "completed", result.Status)
 }
 
@@ -401,7 +401,7 @@ func TestDoRequest_EmptyBody(t *testing.T) {
 	assert.Empty(t, result.Data)
 }
 
-func TestDoRequest_APIVersionInQuery(t *testing.T) {
+func TestDoRequest_NoAPIVersionInOpenAIQuery(t *testing.T) {
 	t.Parallel()
 
 	var capturedAPIVersion string
@@ -416,7 +416,7 @@ func TestDoRequest_APIVersionInQuery(t *testing.T) {
 	client, _ := newTestClient(t, handler)
 	_, err := client.GetOpenAIEval(t.Context(), "eval-1", "v1")
 	require.NoError(t, err)
-	assert.Equal(t, "v1", capturedAPIVersion)
+	assert.Equal(t, "", capturedAPIVersion)
 }
 
 func TestDoRequest_RequestBodySent(t *testing.T) {

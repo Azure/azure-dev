@@ -110,7 +110,7 @@ and --chat-isolation-key on each remote invoke.`,
 
   # Invoke a deployed agent from any directory using the endpoint URL shown by 'azd ai agent show'
   azd ai agent invoke \
-       --agent-endpoint https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/openai/responses?api-version=v1 \
+	  --agent-endpoint https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/openai/v1/responses \
        "Hello!"`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -882,7 +882,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	respURL := buildResponsesURL(rc.projectEndpoint, rc.name, rc.apiVersion)
+	respURL := buildResponsesURL(rc.projectEndpoint, rc.name)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, respURL, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -1415,8 +1415,8 @@ func createConversation(
 	options *agent_api.SessionRequestOptions,
 ) (string, error) {
 	convURL := fmt.Sprintf(
-		"%s/agents/%s/endpoint/protocols/openai/conversations?api-version=%s",
-		projectEndpoint, agentName, DefaultAgentAPIVersion,
+		"%s/agents/%s/endpoint/protocols/openai/v1/conversations",
+		projectEndpoint, agentName,
 	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, convURL, bytes.NewReader([]byte("{}")))
 	if err != nil {

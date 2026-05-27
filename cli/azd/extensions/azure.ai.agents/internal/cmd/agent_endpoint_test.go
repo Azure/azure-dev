@@ -38,12 +38,11 @@ func TestParseAgentEndpoint(t *testing.T) {
 			wantProto: agent_api.AgentProtocolInvocations,
 		},
 		{
-			name:       "responses (openai/responses)",
-			raw:        "https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/responses?api-version=v1",
-			wantProj:   "https://acct.services.ai.azure.com/api/projects/proj",
-			wantAgent:  "echo",
-			wantProto:  agent_api.AgentProtocolResponses,
-			wantAPIVer: "v1",
+			name:      "responses (openai/v1/responses)",
+			raw:       "https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/v1/responses",
+			wantProj:  "https://acct.services.ai.azure.com/api/projects/proj",
+			wantAgent: "echo",
+			wantProto: agent_api.AgentProtocolResponses,
 		},
 		{
 			name:      "trailing slash tolerated",
@@ -186,26 +185,20 @@ func TestParseAgentEndpoint_RejectsInvalidAgentNames(t *testing.T) {
 	}
 }
 
-// TestBuildResponsesURL verifies that the responses URL builder uses the parsed
-// api-version (rather than the default fallback) and URL-encodes it.
+// TestBuildResponsesURL verifies that the responses URL builder uses the
+// openai/v1 path with no api-version query parameter.
 func TestBuildResponsesURL(t *testing.T) {
 	t.Parallel()
 	parsed, err := parseAgentEndpoint(
-		"https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/responses?api-version=custom-version",
+		"https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/v1/responses",
 	)
 	if err != nil {
 		t.Fatalf("parseAgentEndpoint: %v", err)
 	}
-	got := buildResponsesURL(parsed.ProjectEndpoint, parsed.AgentName, parsed.APIVersion)
-	want := "https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/responses?api-version=custom-version"
+	got := buildResponsesURL(parsed.ProjectEndpoint, parsed.AgentName)
+	want := "https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/v1/responses"
 	if got != want {
 		t.Errorf("buildResponsesURL = %q, want %q", got, want)
-	}
-
-	// api-version must be query-escaped so unusual characters cannot break out.
-	gotEscaped := buildResponsesURL("https://acct.services.ai.azure.com/api/projects/proj", "echo", "weird value&x=1")
-	if !strings.Contains(gotEscaped, "api-version=weird+value%26x%3D1") {
-		t.Errorf("buildResponsesURL did not escape api-version: %q", gotEscaped)
 	}
 }
 
@@ -265,7 +258,7 @@ func TestResolveRemoteContext_EphemeralMode(t *testing.T) {
 		{
 			name: "api-version omitted falls back to default",
 			raw: "https://acct.services.ai.azure.com/api/projects/proj/agents/" +
-				"hello/endpoint/protocols/openai/responses",
+				"hello/endpoint/protocols/openai/v1/responses",
 			wantAPIVersion: "v1",
 			wantName:       "hello",
 			wantProject:    "https://acct.services.ai.azure.com/api/projects/proj",

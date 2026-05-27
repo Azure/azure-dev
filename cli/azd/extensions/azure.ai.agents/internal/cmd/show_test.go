@@ -158,7 +158,7 @@ func TestPrintAgentVersionJSON_Format(t *testing.T) {
 		AgentVersionObject: version,
 		PlaygroundURL:      "https://ai.azure.com/nextgen/r/test/build/agents/test-agent/build?version=2",
 		Endpoints: map[string]string{
-			"Responses": "https://acct.services.ai.azure.com/api/projects/proj/agents/test-agent/endpoint/protocols/openai/responses?api-version=v1",
+			"Responses": "https://acct.services.ai.azure.com/api/projects/proj/agents/test-agent/endpoint/protocols/openai/v1/responses",
 		},
 	}
 

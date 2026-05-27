@@ -232,7 +232,7 @@ func TestSkillInstallAction_LeavesForeignFilesUntouched(t *testing.T) {
 	require.NoError(t, os.MkdirAll(dest, 0o755))
 	// Foreign file -- not in the pack manifest. Must survive both
 	// initial install and --force re-install.
-	require.NoError(t, os.WriteFile(filepath.Join(dest, "notes.md"), []byte("user notes"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dest, "notes.md"), []byte("user notes"), 0o600))
 
 	action := &SkillInstallAction{
 		flags:    &skillInstallFlags{target: "copilot", force: true, output: "text"},
@@ -251,7 +251,7 @@ func TestSkillInstallAction_IdempotentWhenContentMatches(t *testing.T) {
 	pack := newTestPack(map[string]string{"SKILL.md": "same"})
 	dest := filepath.Join(cwd, ".agents", "skills", "azd-ai-skill")
 	require.NoError(t, os.MkdirAll(dest, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dest, "SKILL.md"), []byte("same"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dest, "SKILL.md"), []byte("same"), 0o600))
 
 	// Re-install with the same content; no conflict, no --force needed.
 	action := &SkillInstallAction{

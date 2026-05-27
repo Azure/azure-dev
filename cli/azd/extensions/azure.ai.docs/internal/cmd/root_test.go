@@ -26,6 +26,8 @@ func TestNewRootCommand_HasAgentSubcommand(t *testing.T) {
 		"azd ai doc must expose the toolbox subgroup")
 	assert.Contains(t, names, "skill",
 		"azd ai doc must expose the skill subgroup (Foundry skill resource docs)")
+	assert.Contains(t, names, "routine",
+		"azd ai doc must expose the routine subgroup (Foundry routine resource docs)")
 	assert.Contains(t, names, "install",
 		"azd ai doc must expose the install subgroup (embedded skill-pack installer)")
 }
@@ -84,6 +86,26 @@ func TestSkillsFS_HasAllSkillTopics(t *testing.T) {
 		"manage",
 		"share",
 		"consume",
+	}, got)
+}
+
+func TestSkillsFS_HasAllRoutineTopics(t *testing.T) {
+	// Pins the topic set for the Foundry routine resource docs (the
+	// azure.ai.routines extension). A future drop or rename is a
+	// deliberate test update -- topic names are the wire contract
+	// callers rely on (`azd ai doc routine <topic>`).
+	topics, err := loadCategoryTopics("routine")
+	require.NoError(t, err)
+	var got []string
+	for _, top := range topics {
+		got = append(got, top.Name)
+	}
+	assert.ElementsMatch(t, []string{
+		"overview",
+		"triggers",
+		"actions",
+		"manage",
+		"dispatch",
 	}, got)
 }
 

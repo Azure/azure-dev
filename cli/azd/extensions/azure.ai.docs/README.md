@@ -28,6 +28,14 @@ azd ai doc skill manage
 azd ai doc skill share
 azd ai doc skill consume
 
+# List topics for Foundry routines (azure.ai.routines)
+azd ai doc routine
+azd ai doc routine overview
+azd ai doc routine triggers
+azd ai doc routine actions
+azd ai doc routine manage
+azd ai doc routine dispatch
+
 # Install the embedded azd-ai-skill coding-agent pack into the project
 azd ai doc install skill --target copilot
 ```
@@ -88,11 +96,18 @@ internal/cmd/
       manage.md
       share.md
       consume.md
+    routine/          <-- topics for azure.ai.routines (Foundry routine resource)
+      overview.md
+      triggers.md
+      actions.md
+      manage.md
+      dispatch.md
   doc_catalog.go      <-- docCategories table (one entry per skills/ subdir)
   doc_agent.go        <-- per-extension subcommand (one per category)
   doc_connection.go
   doc_toolbox.go
   doc_skill.go
+  doc_routine.go
 ```
 
 To add a new sibling:

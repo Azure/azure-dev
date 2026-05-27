@@ -1,7 +1,7 @@
 ---
 name: azd-ai-skill
 description: Set up, scaffold, configure, deploy, evaluate, and operate AI agents on Microsoft Foundry using the Azure Developer CLI (azd) and the azure.ai.agents extension. USE FOR azd ai agent, azd ai toolbox, foundry agent, agent.yaml, azure.yaml service config, hosted agent, deploying agents to Azure, running an agent locally, evaluating an agent, optimizing an agent, adding a tool to an agent, web search, code interpreter, file search, function tool, MCP server, OpenAPI tool, A2A peer agent, Azure AI Search RAG, Bing grounding, Bing Custom Search, toolbox, toolbox version, toolbox connection, connection, RemoteTool, CognitiveSearch, RemoteA2A, GroundingWithCustomSearch, OAuth2, UserEntraToken, AgenticIdentity, ProjectManagedIdentity, ApiKey, CustomKeys, model deployment, Foundry project endpoint. DO NOT USE FOR generic Azure CLI tasks unrelated to Foundry, or LLM application code that does not deploy to a Foundry hosted agent.
-allowed-tools: ["azd", "azd ai agent", "azd ai project", "azd ai toolbox", "azd ai connection", "azd ai skill", "azd ai doc", "azd version", "azd extension list", "azd auth login", "azd config get defaults", "azd env get-values"]
+allowed-tools: ["azd", "azd ai agent", "azd ai project", "azd ai toolbox", "azd ai connection", "azd ai skill", "azd ai routine", "azd ai doc", "azd version", "azd extension list", "azd auth login", "azd config get defaults", "azd env get-values"]
 ---
 # AZD AI skill
 
@@ -97,6 +97,22 @@ azd ai doc skill <topic>
 | CLI reference (create / update / show / list / download / delete) | `manage`      |
 | Cross-team / cross-project sharing via download              | `share`       |
 | Wire downloaded SKILL.md into a Hosted agent + redeploy flow | `consume`     |
+
+## Topics: routines
+
+For managing **Foundry routines** -- trigger + action pairs that fire on a schedule, a one-shot timer, or an external event and invoke a deployed agent (the `azure.ai.routines` extension; `azd ai routine <verb>`). Routines are how a deployed agent gets billed work that fires on its own, as opposed to the on-demand `azd ai agent invoke` path:
+
+```bash
+azd ai doc routine <topic>
+```
+
+| Want to ...                                                  | Topic         |
+| ------------------------------------------------------------ | ------------- |
+| Mental model + trigger+action lifecycle + `azd ai routine` CLI surface | `overview`    |
+| Trigger types reference (timer / recurring / github_issue)   | `triggers`    |
+| Action types reference (agent-response / agent-invoke)       | `actions`     |
+| CLI reference (create / update / show / list / delete / enable / disable + manifest format) | `manage`      |
+| Manual dispatch + run history + debugging a failed run       | `dispatch`    |
 
 ## Resolving subscription, location, project ID
 

@@ -64,10 +64,10 @@ func TestDocRootHelp_StyledSections(t *testing.T) {
 		"third catalog example title missing")
 
 	// Cobra's Available Commands listing should include the visible
-	// leaves (agent, connection, toolbox, skill, install, version;
-	// metadata is reserved by the SDK and may appear as well -- not
-	// asserted).
-	for _, name := range []string{"agent", "connection", "toolbox", "skill", "install", "version"} {
+	// leaves (agent, connection, toolbox, skill, routine, install,
+	// version; metadata is reserved by the SDK and may appear as well
+	// -- not asserted).
+	for _, name := range []string{"agent", "connection", "toolbox", "skill", "routine", "install", "version"} {
 		assert.True(t, strings.Contains(out, name),
 			"Cobra subcommand list missing %q", name)
 	}

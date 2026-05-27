@@ -255,6 +255,8 @@ func categoryExtensionName(cat DocCategory) string {
 		return "azure.ai.agents"
 	case "skill":
 		return "azure.ai.skills"
+	case "routine":
+		return "azure.ai.routines"
 	default:
 		return fmt.Sprintf("azure.ai.%s", cat.Name)
 	}

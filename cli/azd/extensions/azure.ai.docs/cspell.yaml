@@ -42,11 +42,14 @@ words:
   - parseable
   # Foundry-skills terms used in skill/* topic markdown bodies.
   # `agentskills` references the agentskills.io naming spec.
-  # `repoint` / `repoints` describe the metadata-only default-version
-  # update flow on Foundry skills (mirrors azure.ai.skills cspell.yaml).
+  # `repoint` / `repoints` / `repointed` describe the metadata-only
+  # default-version update flow on Foundry skills (mirrors azure.ai.skills cspell.yaml).
   - agentskills
   - repoint
   - repoints
+  - repointed
+  # Used in routine triggers.md when discussing one-shot timer firings.
+  - datetimes
 overrides:
   - filename: internal/cmd/doc_catalog.go
     words:

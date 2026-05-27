@@ -40,6 +40,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newConnectionCommand())
 	rootCmd.AddCommand(newToolboxCommand())
 	rootCmd.AddCommand(newSkillCommand())
+	rootCmd.AddCommand(newRoutineCommand())
 	rootCmd.AddCommand(newInstallCommand(extCtx))
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
@@ -99,6 +100,19 @@ func NewRootCommand() *cobra.Command {
 		if cat := FindCategory("skill"); cat != nil {
 			c := *cat
 			helpformat.Install(skillCmd, helpformat.Options{
+				Description: func(*cobra.Command) string { return renderCatalogBody(c) },
+				Footer:      func(*cobra.Command) string { return renderCatalogExamples(c) },
+			})
+		}
+	}
+
+	// Same wiring for the routine category command. Mirrors the agent /
+	// connection / toolbox / skill blocks above. doc_routine.go stays
+	// cobra-only.
+	if routineCmd := findChild(rootCmd, "routine"); routineCmd != nil {
+		if cat := FindCategory("routine"); cat != nil {
+			c := *cat
+			helpformat.Install(routineCmd, helpformat.Options{
 				Description: func(*cobra.Command) string { return renderCatalogBody(c) },
 				Footer:      func(*cobra.Command) string { return renderCatalogExamples(c) },
 			})

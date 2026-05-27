@@ -201,6 +201,34 @@ var docCategories = []DocCategory{
 			"Print the hosted-agent consumption guide.": "azd ai doc skill consume",
 		},
 	},
+	{
+		Name:        "routine",
+		DisplayName: "Foundry routines (azure.ai.routines)",
+		// Foundry routines pair a trigger (timer / recurring / event)
+		// with an action (invoke an agent). Managed via the
+		// `azd ai routine` CLI (from the `azure.ai.routines`
+		// extension). This is how a deployed agent gets billed work
+		// that fires on its own (scheduled or event-driven), as
+		// opposed to the on-demand `azd ai agent invoke` path.
+		Short: "Manage Foundry routines -- trigger + action pairs that fire on a schedule or event and invoke an agent " +
+			"(azure.ai.routines).",
+		Preamble: []string{
+			"A routine pairs a trigger (timer, recurring schedule, or external event) with an action " +
+				"(invoke an agent). Foundry fires the routine on its own when the trigger matches, " +
+				"or you can fire it manually with `azd ai routine dispatch`. Each firing records a " +
+				"RoutineRun row visible via `routine run list`.",
+			"Use `azd ai doc routine <topic>` to print one topic's body in full. " +
+				"Start with `overview` for the mental model, then `manage` for the CLI.",
+		},
+		Examples: map[string]string{
+			"List topics for routines.":               "azd ai doc routine",
+			"Print the overview topic.":               "azd ai doc routine overview",
+			"Print the trigger-types reference.":      "azd ai doc routine triggers",
+			"Print the action-types reference.":       "azd ai doc routine actions",
+			"Print the management CLI reference.":     "azd ai doc routine manage",
+			"Print the dispatch + run-history guide.": "azd ai doc routine dispatch",
+		},
+	},
 }
 
 // init populates the Topics field of every DocCategory from the

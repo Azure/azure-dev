@@ -40,15 +40,19 @@ and stop — no issue is needed.
 governance gate uses — the GraphQL `closingIssuesReferences` API:
 
 ```bash
-gh api graphql -f query='query {
-  repository(owner: "OWNER", name: "REPO") {
-    pullRequest(number: PR_NUMBER) {
-      closingIssuesReferences(first: 10) {
-        nodes { number title url }
+gh api graphql \
+  -f owner="$OWNER" \
+  -f repo="$REPO" \
+  -F number="$PR_NUMBER" \
+  -f query='query($owner: String!, $repo: String!, $number: Int!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $number) {
+        closingIssuesReferences(first: 10) {
+          nodes { number title url }
+        }
       }
     }
-  }
-}'
+  }'
 ```
 
 This covers issues linked via:

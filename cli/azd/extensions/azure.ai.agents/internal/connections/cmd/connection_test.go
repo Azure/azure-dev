@@ -4,7 +4,10 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -562,4 +565,96 @@ func TestBuildCredentialReferences(t *testing.T) {
 			require.Equal(t, tt.want, result)
 		})
 	}
+}
+
+func TestPrintDetail_IncludesMetadata(t *testing.T) {
+	v1 := "value1"
+	v2 := "value2"
+	result := connectionDetailResult{
+		Name:     "test-conn",
+		Kind:     "RemoteTool",
+		AuthType: "None",
+		Target:   "https://example.com",
+		Metadata: map[string]*string{
+			"key1": &v1,
+			"key2": &v2,
+		},
+	}
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := printDetail(result, "table")
+	require.NoError(t, err)
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	output := buf.String()
+
+	require.Contains(t, output, "Metadata:")
+	require.Contains(t, output, "key1: value1")
+	require.Contains(t, output, "key2: value2")
+}
+
+func TestPrintDetail_OmitsEmptyMetadata(t *testing.T) {
+	result := connectionDetailResult{
+		Name:     "test-conn",
+		Kind:     "RemoteTool",
+		AuthType: "None",
+		Target:   "https://example.com",
+	}
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := printDetail(result, "table")
+	require.NoError(t, err)
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	output := buf.String()
+
+	require.NotContains(t, output, "Metadata:")
+}
+
+func TestPrintDetail_JSON_IncludesMetadata(t *testing.T) {
+	v1 := "val1"
+	result := connectionDetailResult{
+		Name:     "test-conn",
+		Kind:     "RemoteTool",
+		AuthType: "None",
+		Target:   "https://example.com",
+		Metadata: map[string]*string{
+			"foo": &v1,
+		},
+	}
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := printDetail(result, "json")
+	require.NoError(t, err)
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+
+	meta, ok := parsed["metadata"].(map[string]any)
+	require.True(t, ok, "metadata should be present in JSON output")
+	require.Equal(t, "val1", meta["foo"])
 }

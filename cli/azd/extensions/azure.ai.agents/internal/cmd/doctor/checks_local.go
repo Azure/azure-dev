@@ -160,12 +160,6 @@ type Dependencies struct {
 		principals []project.AgentPrincipal,
 	) (*project.AgentIdentityRolesResult, error)
 
-	// probeModelDeployments was the test seam for `remote.model-deployments`,
-	// which has been removed pending a redesign that reads the resolved
-	// deployment name from `agent.yaml` env vars instead of the manifest's
-	// logical alias. The field has been deleted from this struct; new
-	// model-deployment checks should add their own seam when they land.
-
 	// lookupToolboxEnv is a test seam for the `local.toolboxes`
 	// check (Phase 5 C14). When non-nil it replaces the production
 	// `makeRealToolboxEnvLookup` closure inside the check, letting

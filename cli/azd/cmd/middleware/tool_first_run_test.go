@@ -506,3 +506,88 @@ func TestToolFirstRunMiddleware_DisplayToolStatuses(t *testing.T) {
 	assert.Contains(t, kubectlLine, "installed")
 	assert.NotContains(t, kubectlLine, "not installed")
 }
+
+// ---------------------------------------------------------------------------
+// NewToolFirstRunMiddleware constructor
+// ---------------------------------------------------------------------------
+
+// TestNewToolFirstRunMiddleware verifies the public constructor populates
+// every dependency on the returned middleware. This guards against future
+// refactors that silently drop a field assignment.
+func TestNewToolFirstRunMiddleware(t *testing.T) {
+	alphaMgr := alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig())
+	console := mockinput.NewMockConsole()
+	ucm := &mockUserConfigManager{cfg: config.NewEmptyConfig()}
+	opts := &internal.GlobalCommandOptions{}
+
+	mw := NewToolFirstRunMiddleware(alphaMgr, ucm, console, nil, opts)
+	require.NotNil(t, mw)
+
+	concrete, ok := mw.(*ToolFirstRunMiddleware)
+	require.True(t, ok, "NewToolFirstRunMiddleware must return a *ToolFirstRunMiddleware")
+	assert.Same(t, alphaMgr, concrete.alphaManager)
+	assert.Same(t, ucm, concrete.configManager)
+	assert.Same(t, console, concrete.console)
+	assert.Nil(t, concrete.manager)
+	assert.Same(t, opts, concrete.options)
+}
+
+// ---------------------------------------------------------------------------
+// offerInstall — interactive error path
+// ---------------------------------------------------------------------------
+
+// TestToolFirstRunMiddleware_OfferInstall_PromptError exercises offerInstall
+// with an empty stdin so the underlying multi-select prompt fails on read.
+// This covers attribute emission (tools_offered), prompt setup, and error
+// handling without requiring a real terminal or an installable Manager.
+func TestToolFirstRunMiddleware_OfferInstall_PromptError(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+	t.Cleanup(tracing.ResetUsageAttributesForTest)
+
+	console := mockinput.NewMockConsole()
+	m := &ToolFirstRunMiddleware{
+		console: console,
+		manager: nil, // multi-select fails before manager is invoked
+	}
+
+	missing := []*tool.ToolStatus{
+		{
+			Tool: &tool.ToolDefinition{
+				Id:          "az-cli",
+				Name:        "Azure CLI",
+				Description: "Microsoft Azure CLI",
+				Priority:    tool.ToolPriorityRecommended,
+			},
+			Installed: false,
+		},
+		{
+			Tool: &tool.ToolDefinition{
+				Id:          "github-copilot-cli",
+				Name:        "GitHub Copilot CLI",
+				Description: "GitHub Copilot in the terminal",
+				Priority:    tool.ToolPriorityRecommended,
+			},
+			Installed: false,
+		},
+	}
+
+	// Empty stdin from MockConsole.Handles() forces multi-select to fail
+	// on read. Whether that surfaces as ErrCancelled (outcomeCancelled
+	// branch) or a wrapped error, offerInstall must not panic and must
+	// emit the tools_offered count.
+	outcome, err := m.offerInstall(t.Context(), missing)
+	_ = outcome
+	_ = err
+
+	var offered int64
+	var found bool
+	for _, a := range tracing.GetUsageAttributes() {
+		if a.Key == fields.ToolFirstRunToolsOfferedKey.Key {
+			offered = a.Value.AsInt64()
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "offerInstall must emit tool.firstrun.tools_offered")
+	assert.Equal(t, int64(2), offered, "tools_offered must reflect missing count")
+}

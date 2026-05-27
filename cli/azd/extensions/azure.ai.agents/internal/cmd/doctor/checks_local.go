@@ -160,19 +160,11 @@ type Dependencies struct {
 		principals []project.AgentPrincipal,
 	) (*project.AgentIdentityRolesResult, error)
 
-	// probeModelDeployments is a test seam for the
-	// `remote.model-deployments` check (Phase 5 C13). When non-nil it
-	// replaces the production `realProbeModelDeployments` call inside
-	// the check, letting unit tests cover the all-match / partial /
-	// none / transport-error branches without spinning up an ARM
-	// `DeploymentsClient`. The probe receives a per-account scope
-	// (subscription, resourceGroup, accountName) and returns the
-	// deployment names that exist under that account. Production
-	// wiring leaves this nil.
-	probeModelDeployments func(
-		ctx context.Context,
-		subscriptionID, resourceGroup, accountName string,
-	) ([]string, error)
+	// probeModelDeployments was the test seam for `remote.model-deployments`,
+	// which has been removed pending a redesign that reads the resolved
+	// deployment name from `agent.yaml` env vars instead of the manifest's
+	// logical alias. The field has been deleted from this struct; new
+	// model-deployment checks should add their own seam when they land.
 
 	// lookupToolboxEnv is a test seam for the `local.toolboxes`
 	// check (Phase 5 C14). When non-nil it replaces the production

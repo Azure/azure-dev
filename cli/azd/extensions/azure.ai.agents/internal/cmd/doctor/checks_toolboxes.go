@@ -50,11 +50,10 @@ type toolboxEnvLookupFn func(ctx context.Context, key string) (value string, err
 // # Why this check is not gated on `remote.auth` /
 // `remote.foundry-endpoint`
 //
-// Unlike `remote.model-deployments`, this check does NOT talk to ARM
-// or Foundry; it only reads local azd env state. Gating on remote
-// upstream checks would surface a false Skip in the (legitimate) case
-// where ARM is down but the user can still diagnose a missing local
-// env var.
+// This check does NOT talk to ARM or Foundry; it only reads local
+// azd env state. Gating on remote upstream checks would surface a
+// false Skip in the (legitimate) case where ARM is down but the
+// user can still diagnose a missing local env var.
 //
 // # Classification
 //

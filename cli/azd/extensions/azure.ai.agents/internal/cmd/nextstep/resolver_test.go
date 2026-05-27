@@ -117,12 +117,21 @@ func TestResolveAfterInit(t *testing.T) {
 			wantPrimaryHas: "azd provision",
 			wantTrailing:   "azd deploy",
 		},
+		{
+			name: "provision needed with missing Azure context → env set before provision",
+			state: &State{
+				PendingProvisionReasons: []string{"project"},
+				MissingAzureContextVars: []string{"AZURE_SUBSCRIPTION_ID", "AZURE_LOCATION"},
+			},
+			wantPrimaryHas: "azd env set AZURE_SUBSCRIPTION_ID",
+			wantTrailing:   "azd deploy",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			out := ResolveAfterInit(tt.state)
+			out := ResolveAfterInit(tt.state, nil)
 			require.NotEmpty(t, out)
 
 			// The trailing line is always present and flagged Trailing so
@@ -132,9 +141,9 @@ func TestResolveAfterInit(t *testing.T) {
 			assert.True(t, last.Trailing, "last suggestion must be flagged Trailing")
 
 			if len(tt.wantManualVarKeys) > 0 {
-				// N env-set lines + 1 `azd ai agent run` follow-up + 1
-				// trailing `azd deploy`.
-				assert.Len(t, out, len(tt.wantManualVarKeys)+2)
+				// N env-set lines + 1 `azd ai agent run` follow-up +
+				// 1 invoke-local secondary + 1 trailing `azd deploy`.
+				assert.Len(t, out, len(tt.wantManualVarKeys)+3)
 				for i, key := range tt.wantManualVarKeys {
 					assert.True(t,
 						strings.HasPrefix(out[i].Command, "azd env set "+key+" "),
@@ -148,6 +157,16 @@ func TestResolveAfterInit(t *testing.T) {
 					"expected `azd ai agent run` follow-up after env-set lines")
 				assert.False(t, followUp.Trailing,
 					"run follow-up must be a primary suggestion, not Trailing")
+				// The slot after the run follow-up is the invoke-local
+				// secondary that tells the user how to test the agent
+				// once it's running.
+				invokeLocal := out[len(tt.wantManualVarKeys)+1]
+				assert.True(t,
+					strings.HasPrefix(invokeLocal.Command, "azd ai agent invoke --local "),
+					"expected invoke-local secondary after run follow-up, got %q",
+					invokeLocal.Command)
+				assert.False(t, invokeLocal.Trailing,
+					"invoke-local secondary must be a primary suggestion, not Trailing")
 			} else {
 				assert.Contains(t, out[0].Command, tt.wantPrimaryHas)
 			}
@@ -162,23 +181,42 @@ func TestResolveAfterInit_ManualVarsCapAtThree(t *testing.T) {
 		HasProjectEndpoint: true,
 		MissingManualVars:  []string{"V1", "V2", "V3", "V4", "V5"},
 	}
-	out := ResolveAfterInit(state)
-	// 3 env-set lines (capped) + 1 `azd ai agent run` follow-up + 1
-	// trailing `azd deploy`.
-	require.Len(t, out, 5)
+	out := ResolveAfterInit(state, nil)
+	// 3 env-set lines (capped) + 1 `azd ai agent run` follow-up +
+	// 1 `azd ai agent invoke --local` secondary + 1 trailing `azd deploy`.
+	require.Len(t, out, 6)
 	for i := range 3 {
 		assert.True(t, strings.HasPrefix(out[i].Command, "azd env set "),
 			"slot %d should be an env-set line, got %q", i, out[i].Command)
 	}
 	assert.Equal(t, "azd ai agent run", out[3].Command,
 		"slot 3 should be the run follow-up")
-	assert.Equal(t, "azd deploy", out[4].Command)
-	assert.True(t, out[4].Trailing, "deploy footer must be Trailing")
+	assert.True(t, strings.HasPrefix(out[4].Command, "azd ai agent invoke --local "),
+		"slot 4 should be the invoke-local secondary, got %q", out[4].Command)
+	assert.Equal(t, "azd deploy", out[5].Command)
+	assert.True(t, out[5].Trailing, "deploy footer must be Trailing")
+}
+
+func TestResolveAfterInit_MissingAzureContextVarsPrecedeProvision(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		PendingProvisionReasons: []string{"project"},
+		MissingAzureContextVars: []string{"AZURE_SUBSCRIPTION_ID", "AZURE_LOCATION"},
+	}
+	out := ResolveAfterInit(state, nil)
+	require.Len(t, out, 4)
+	assert.Equal(t, "azd env set AZURE_SUBSCRIPTION_ID <value>", out[0].Command)
+	assert.Equal(t, "required before provisioning Azure resources", out[0].Description)
+	assert.Equal(t, "azd env set AZURE_LOCATION <value>", out[1].Command)
+	assert.Equal(t, "azd provision", out[2].Command)
+	assert.Equal(t, "azd deploy", out[3].Command)
+	assert.True(t, out[3].Trailing, "deploy footer must be Trailing")
 }
 
 func TestResolveAfterInit_NilState(t *testing.T) {
 	t.Parallel()
-	assert.Nil(t, ResolveAfterInit(nil))
+	assert.Nil(t, ResolveAfterInit(nil, nil))
 }
 
 func TestResolveAfterInit_CreatedFolder(t *testing.T) {
@@ -190,7 +228,7 @@ func TestResolveAfterInit_CreatedFolder(t *testing.T) {
 			HasProjectEndpoint:   true,
 			CreatedFolderDisplay: "my-agent",
 		}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		require.NotEmpty(t, out)
 		assert.Equal(t, "cd my-agent", out[0].Command)
 		assert.Equal(t, "enter your new project folder", out[0].Description)
@@ -203,7 +241,7 @@ func TestResolveAfterInit_CreatedFolder(t *testing.T) {
 	t.Run("no cd suggestion when no folder created", func(t *testing.T) {
 		t.Parallel()
 		state := &State{HasProjectEndpoint: true}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		require.NotEmpty(t, out)
 		for _, s := range out {
 			assert.False(t, strings.HasPrefix(s.Command, "cd "),
@@ -216,7 +254,7 @@ func TestResolveAfterInit_CreatedFolder(t *testing.T) {
 		state := &State{
 			CreatedFolderDisplay: "hello-world",
 		}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		require.True(t, len(out) >= 2)
 		assert.Equal(t, "cd hello-world", out[0].Command)
 		assert.Equal(t, "azd provision", out[1].Command)
@@ -237,9 +275,9 @@ func TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape(t *testing.T) {
 		HasProjectEndpoint: true,
 		MissingManualVars:  []string{"MY_API_KEY"},
 	}
-	out := ResolveAfterInit(state)
-	// 1 env-set + 1 run follow-up + 1 trailing.
-	require.Len(t, out, 3)
+	out := ResolveAfterInit(state, nil)
+	// 1 env-set + 1 run follow-up + 1 invoke-local secondary + 1 trailing.
+	require.Len(t, out, 4)
 
 	assert.Equal(t, "azd env set MY_API_KEY <value>", out[0].Command)
 	assert.Equal(t, "referenced by agent.yaml but not set in azd env", out[0].Description,
@@ -250,8 +288,12 @@ func TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape(t *testing.T) {
 	assert.Equal(t, "start the agent locally once the values above are set", out[1].Description)
 	assert.False(t, out[1].Trailing, "run follow-up must be a primary suggestion")
 
-	assert.Equal(t, "azd deploy", out[2].Command)
-	assert.True(t, out[2].Trailing)
+	assert.Equal(t, `azd ai agent invoke --local '<payload>'`, out[2].Command)
+	assert.Equal(t, "test it in another terminal", out[2].Description)
+	assert.False(t, out[2].Trailing, "invoke-local secondary must be a primary suggestion")
+
+	assert.Equal(t, "azd deploy", out[3].Command)
+	assert.True(t, out[3].Trailing)
 }
 
 // TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary locks
@@ -263,15 +305,15 @@ func TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape(t *testing.T) {
 func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T) {
 	t.Parallel()
 
-	t.Run("zero services → unqualified invoke with responses payload", func(t *testing.T) {
+	t.Run("zero services → unqualified invoke with placeholder payload", func(t *testing.T) {
 		t.Parallel()
 		state := &State{HasProjectEndpoint: true}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		// run + invoke --local + trailing.
 		require.Len(t, out, 3)
 		assert.Equal(t, "azd ai agent run", out[0].Command)
 		assert.Equal(t, "start the agent locally", out[0].Description)
-		assert.Equal(t, `azd ai agent invoke --local "Hello!"`, out[1].Command)
+		assert.Equal(t, `azd ai agent invoke --local '<payload>'`, out[1].Command)
 		assert.Equal(t, "test it in another terminal", out[1].Description)
 		assert.Less(t, out[0].Priority, out[1].Priority,
 			"run must precede invoke --local; the renderer sorts by Priority")
@@ -279,31 +321,31 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 		assert.True(t, out[2].Trailing)
 	})
 
-	t.Run("single-agent responses protocol → invoke uses \"Hello!\"", func(t *testing.T) {
+	t.Run("single-agent responses protocol → invoke uses placeholder", func(t *testing.T) {
 		t.Parallel()
 		state := &State{
 			HasProjectEndpoint: true,
 			Services:           []ServiceState{{Name: "echo", Protocol: ProtocolResponses}},
 		}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		require.Len(t, out, 3)
 		assert.Equal(t, "azd ai agent run", out[0].Command)
-		assert.Equal(t, `azd ai agent invoke --local "Hello!"`, out[1].Command)
+		assert.Equal(t, `azd ai agent invoke --local '<payload>'`, out[1].Command)
 	})
 
-	t.Run("single-agent invocations protocol → invoke uses JSON envelope", func(t *testing.T) {
+	t.Run("single-agent invocations protocol → invoke uses placeholder", func(t *testing.T) {
 		t.Parallel()
 		state := &State{
 			HasProjectEndpoint: true,
 			Services:           []ServiceState{{Name: "echo", Protocol: ProtocolInvocations}},
 		}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		require.Len(t, out, 3)
 		assert.Equal(t, "azd ai agent run", out[0].Command)
-		assert.Equal(t, `azd ai agent invoke --local '{"message": "Hello!"}'`, out[1].Command)
+		assert.Equal(t, `azd ai agent invoke --local '<payload>'`, out[1].Command)
 	})
 
-	t.Run("multi-agent → invoke stays unqualified, defaults to responses payload", func(t *testing.T) {
+	t.Run("multi-agent → invoke stays unqualified, uses placeholder payload", func(t *testing.T) {
 		t.Parallel()
 		state := &State{
 			HasProjectEndpoint: true,
@@ -312,14 +354,14 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 				{Name: "beta", Protocol: ProtocolResponses},
 			},
 		}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		require.Len(t, out, 3)
 		assert.Equal(t, "azd ai agent run", out[0].Command)
 		// Multi-agent: the unqualified `invoke --local` doesn't know
-		// which service the user will pick at runtime, so use the
-		// safest generic payload (responses-style "Hello!") instead
-		// of picking one service's protocol arbitrarily.
-		assert.Equal(t, `azd ai agent invoke --local "Hello!"`, out[1].Command)
+		// which service the user will pick at runtime, so emit the
+		// bare '<payload>' placeholder rather than a per-protocol
+		// payload that may not match the user's chosen service.
+		assert.Equal(t, `azd ai agent invoke --local '<payload>'`, out[1].Command)
 	})
 
 	t.Run("placeholders present → invoke-local secondary suppressed (with run)", func(t *testing.T) {
@@ -332,7 +374,7 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 			HasProjectEndpoint:     true,
 			UnresolvedPlaceholders: []string{"FOO"},
 		}
-		out := ResolveAfterInit(state)
+		out := ResolveAfterInit(state, nil)
 		for _, s := range out {
 			assert.NotContains(t, s.Command, "azd ai agent invoke --local",
 				"invoke --local must not be emitted while placeholders are unresolved")
@@ -344,38 +386,231 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 
 // TestResolveAfterInit_ToolboxReproRendersAllCategories locks the full
 // regression for the toolbox-sample bug end-to-end: the state contains
-// BOTH an unresolved manifest placeholder AND a missing manual env var,
-// and the rendered "Next:" block must surface both fix-up categories
-// plus the trailing `azd deploy` reminder. PrintNext would silently
-// drop one category here because of its 2-line cap; PrintAllNext must
-// not.
+// BOTH an unresolved manifest placeholder AND a manifest-declared
+// toolbox whose azd-injected endpoint env var is unset. The rendered
+// "Next:" block must surface the placeholder fix-up AND route the
+// missing toolbox endpoint to `azd provision` (NOT to `azd env set`),
+// plus the trailing `azd deploy` reminder.
+//
+// Before #8198's toolbox-endpoint partition this would have rendered
+// "azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>" — see
+// the test body's NotContains assertion below for the historical bug
+// shape we're locking out.
 func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 	t.Parallel()
 
 	state := &State{
 		HasProjectEndpoint:     true,
 		UnresolvedPlaceholders: []string{"TOOLBOX_ENDPOINT"},
-		MissingManualVars:      []string{"TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT"},
+		MissingToolboxEndpoints: []ResourceRef{
+			{Name: "web-search-tools", ServiceName: "agent"},
+		},
 	}
 
 	var buf strings.Builder
-	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state)))
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,
 		"edit agent.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value",
 		"placeholder fix-up missing")
-	assert.Contains(t, rendered,
-		"azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>",
-		"manual-var fix-up missing — this is the original toolbox-sample regression")
-	// `azd ai agent run` follow-up is intentionally suppressed when
-	// UnresolvedPlaceholders are also present: running locally with
-	// literal `{{NAME}}` values produces a broken agent. The user
-	// must fix the placeholder first; the trailing `azd deploy`
-	// still applies.
-	assert.NotContains(t, rendered, "start the agent locally once the values above are set",
-		"run follow-up should be suppressed while placeholders are unresolved")
+	assert.Contains(t, rendered, "azd provision",
+		"toolbox-endpoint branch should route to azd provision")
+	assert.Contains(t, rendered, "azd ai agent doctor",
+		"toolbox-endpoint branch should surface doctor as an existence-check follow-up")
+	// Historical bug: the resolver used to emit `azd env set` for
+	// toolbox-derived endpoint vars. Those vars are azd-managed
+	// outputs of `azd provision`, not operator-supplied, so the
+	// `azd env set` shape is wrong here regardless of the user's
+	// `<value>` placeholder gripe.
+	assert.NotContains(t, rendered,
+		"azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT",
+		"toolbox endpoint var must not be routed through `azd env set`")
 	assert.Contains(t, rendered, "azd deploy", "trailing deploy reminder missing")
+}
+
+// TestResolveAfterInit_ToolboxEndpointsEmitsRunAndInvokeLocal locks the
+// "happy path" for the toolbox-endpoint branch: when the only thing
+// blocking the user is a manifest-declared toolbox whose
+// TOOLBOX_<NAME>_MCP_ENDPOINT var is unset (no placeholders, no
+// pending provision reasons), the resolver must render the full
+// post-init sequence:
+//
+//  1. `azd provision`               — create the toolbox in Foundry
+//  2. `azd ai agent doctor`         — optional existence-check follow-up
+//  3. `azd ai agent run`            — start locally once provision completes
+//  4. `azd ai agent invoke --local` — secondary; test the running agent
+//  5. `azd deploy`                  — trailing reminder
+//
+// Steps 3 and 4 are crucial: once provision finishes, main.py's
+// runtime fallback (constructed from FOUNDRY_PROJECT_ENDPOINT +
+// TOOLBOX_NAME) satisfies the agent even without the user setting
+// the azd-injected endpoint var, so the local-test commands MUST
+// appear here just as they do in the MissingManualVars branch.
+// Dropping them was the regression this test guards against.
+func TestResolveAfterInit_ToolboxEndpointsEmitsRunAndInvokeLocal(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint: true,
+		MissingToolboxEndpoints: []ResourceRef{
+			{Name: "web-search-tools", ServiceName: "agent"},
+		},
+	}
+
+	var buf strings.Builder
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
+	rendered := buf.String()
+
+	assert.Contains(t, rendered, "azd provision",
+		"toolbox-endpoint branch should route to azd provision")
+	assert.Contains(t, rendered, "azd ai agent doctor",
+		"toolbox-endpoint branch should surface doctor as an existence-check follow-up")
+	assert.Contains(t, rendered, "azd ai agent run",
+		"toolbox-endpoint branch should emit local run follow-up once provision completes")
+	assert.Contains(t, rendered, "once provision completes",
+		"toolbox-only run description must name provision as the prerequisite")
+	assert.Contains(t, rendered, "azd ai agent invoke --local",
+		"toolbox-endpoint branch should emit invoke-local secondary")
+	assert.NotContains(t, rendered,
+		"azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT",
+		"toolbox endpoint var must not be routed through `azd env set`")
+	assert.Contains(t, rendered, "azd deploy", "trailing deploy reminder missing")
+}
+
+// TestResolveAfterInit_ToolboxAndManualVarsCoexist locks the bug both
+// reviewers caught: when MissingToolboxEndpoints AND MissingManualVars
+// are populated, the previously-exclusive switch hid the manual
+// `azd env set` lines while still emitting `azd ai agent run` — so
+// the user was directed to run locally with required manual vars
+// still unset.
+//
+// Expected output for state with one toolbox + one unrelated manual
+// var (e.g. an API key):
+//
+//  1. `azd provision`              — create the toolbox in Foundry
+//  2. `azd ai agent doctor`        — optional existence-check follow-up
+//  3. `azd env set MY_API_KEY …`   — surface the manual var
+//  4. `azd ai agent run`           — start locally once the steps above are complete
+//  5. `azd ai agent invoke --local` — secondary
+//  6. `azd deploy`                 — trailing
+//
+// The `azd env set TOOLBOX_…` line must still NOT appear — that's the
+// original (separate) bug Commit A locked out.
+func TestResolveAfterInit_ToolboxAndManualVarsCoexist(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint: true,
+		MissingToolboxEndpoints: []ResourceRef{
+			{Name: "web-search-tools", ServiceName: "agent"},
+		},
+		MissingManualVars: []string{"MY_API_KEY"},
+	}
+
+	var buf strings.Builder
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
+	rendered := buf.String()
+
+	assert.Contains(t, rendered, "azd provision",
+		"coexistence: toolbox sub-branch must still emit provision")
+	assert.Contains(t, rendered, "azd ai agent doctor",
+		"coexistence: toolbox sub-branch must still emit doctor follow-up")
+	assert.Contains(t, rendered, "azd env set MY_API_KEY <value>",
+		"coexistence: manual sub-branch must surface the unrelated env-set line")
+	assert.Contains(t, rendered, "azd ai agent run",
+		"coexistence: run follow-up must be emitted (no placeholders blocking)")
+	assert.Contains(t, rendered, "once the steps above are complete",
+		"coexistence: run description must reflect that both provision and env-set are prerequisites")
+	assert.Contains(t, rendered, "azd ai agent invoke --local",
+		"coexistence: invoke-local secondary must be emitted")
+	assert.NotContains(t, rendered,
+		"azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT",
+		"coexistence: toolbox endpoint var must not be routed through `azd env set`")
+	assert.Contains(t, rendered, "azd deploy", "trailing deploy reminder missing")
+}
+
+// TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders
+// verifies the run/invoke suppression also fires for the coexistence
+// case: when placeholders are also unresolved, the run + invoke-local
+// pair must be suppressed regardless of which sub-branches contributed
+// guidance above them.
+func TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint:     true,
+		UnresolvedPlaceholders: []string{"AGENT_NAME"},
+		MissingToolboxEndpoints: []ResourceRef{
+			{Name: "web-search-tools", ServiceName: "agent"},
+		},
+		MissingManualVars: []string{"MY_API_KEY"},
+	}
+
+	var buf strings.Builder
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
+	rendered := buf.String()
+
+	assert.Contains(t, rendered,
+		"edit agent.yaml: replace {{AGENT_NAME}} with the actual value",
+		"placeholder fix-up missing")
+	assert.Contains(t, rendered, "azd provision",
+		"coexistence+placeholders: toolbox sub-branch must still emit provision")
+	assert.Contains(t, rendered, "azd ai agent doctor",
+		"coexistence+placeholders: toolbox sub-branch must still emit doctor follow-up")
+	assert.Contains(t, rendered, "azd env set MY_API_KEY <value>",
+		"coexistence+placeholders: manual sub-branch must still surface env-set")
+	assert.NotContains(t, rendered, "azd ai agent run",
+		"coexistence+placeholders: run must be suppressed while placeholders are unresolved")
+	assert.NotContains(t, rendered, "azd ai agent invoke --local",
+		"coexistence+placeholders: invoke-local must be suppressed while placeholders are unresolved")
+	assert.Contains(t, rendered, "azd deploy", "trailing deploy reminder missing")
+}
+
+// TestRunFollowUpDescription exercises the helper directly so future
+// changes to the description text (or a regression in the conditional
+// branching) get caught even when the higher-level resolver tests
+// happen to overlap on substrings.
+func TestRunFollowUpDescription(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		hasToolboxEndpoint bool
+		hasManualVars      bool
+		want               string
+	}{
+		{
+			name:               "both",
+			hasToolboxEndpoint: true,
+			hasManualVars:      true,
+			want:               "start the agent locally once the steps above are complete",
+		},
+		{
+			name:               "toolbox only",
+			hasToolboxEndpoint: true,
+			want:               "start the agent locally once provision completes",
+		},
+		{
+			name:          "manual only",
+			hasManualVars: true,
+			want:          "start the agent locally once the values above are set",
+		},
+		{
+			// Defensive fallthrough — unreachable from ResolveAfterInit's
+			// combined case (guarded by `hasToolboxEndpoints ||
+			// hasManualVars`) but the helper is total over its inputs.
+			name: "neither",
+			want: "start the agent locally",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := runFollowUpDescription(tc.hasToolboxEndpoint, tc.hasManualVars)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestResolveAfterInit_UnresolvedPlaceholders(t *testing.T) {
@@ -447,7 +682,7 @@ func TestResolveAfterInit_UnresolvedPlaceholders(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			out := ResolveAfterInit(tt.state)
+			out := ResolveAfterInit(tt.state, nil)
 			require.NotEmpty(t, out)
 
 			// Walk the output:
@@ -514,35 +749,35 @@ func TestResolveAfterRun(t *testing.T) {
 			},
 		},
 		{
-			name: "invocations protocol, no spec → default JSON payload + tip",
+			name: "invocations protocol, no spec, no README → placeholder + tip",
 			state: &State{
 				Services: []ServiceState{{Name: "echo", Protocol: ProtocolInvocations}},
 			},
 			serviceName: "echo",
 			want: []string{
-				`azd ai agent invoke --local '{"message": "Hello!"}'`,
+				`azd ai agent invoke --local '<payload>'`,
 				`curl http://localhost:<port>/invocations/docs/openapi.json`,
 			},
 		},
 		{
-			name: "responses protocol, no spec → Hello! string + tip",
+			name: "responses protocol, no spec, no README → placeholder + tip",
 			state: &State{
 				Services: []ServiceState{{Name: "echo", Protocol: ProtocolResponses}},
 			},
 			serviceName: "echo",
 			want: []string{
-				`azd ai agent invoke --local "Hello!"`,
+				`azd ai agent invoke --local '<payload>'`,
 				`curl http://localhost:<port>/invocations/docs/openapi.json`,
 			},
 		},
 		{
-			name: "unknown protocol falls back to responses default",
+			name: "unknown protocol, no README → placeholder + tip",
 			state: &State{
 				Services: []ServiceState{{Name: "echo", Protocol: ""}},
 			},
 			serviceName: "echo",
 			want: []string{
-				`azd ai agent invoke --local "Hello!"`,
+				`azd ai agent invoke --local '<payload>'`,
 				`curl http://localhost:<port>/invocations/docs/openapi.json`,
 			},
 		},
@@ -553,7 +788,7 @@ func TestResolveAfterRun(t *testing.T) {
 			},
 			serviceName: "",
 			want: []string{
-				`azd ai agent invoke --local '{"message": "Hello!"}'`,
+				`azd ai agent invoke --local '<payload>'`,
 				`curl http://localhost:<port>/invocations/docs/openapi.json`,
 			},
 		},
@@ -574,7 +809,7 @@ func TestResolveAfterRun(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			out := ResolveAfterRun(tt.state, tt.serviceName)
+			out := ResolveAfterRun(tt.state, tt.serviceName, nil)
 			require.Len(t, out, len(tt.want))
 			for i, snippet := range tt.want {
 				assert.Contains(t, out[i].Command, snippet)
@@ -585,7 +820,7 @@ func TestResolveAfterRun(t *testing.T) {
 
 func TestResolveAfterRun_NilState(t *testing.T) {
 	t.Parallel()
-	assert.Nil(t, ResolveAfterRun(nil, ""))
+	assert.Nil(t, ResolveAfterRun(nil, "", nil))
 }
 
 func TestResolveAfterInvoke_Success(t *testing.T) {
@@ -820,10 +1055,10 @@ func TestResolveAfterDeploy(t *testing.T) {
 		assert.Equal(t, "verify alpha is running", out[0].Description)
 		assert.Equal(t, "azd ai agent show beta", out[1].Command)
 		assert.Equal(t, "verify beta is running", out[1].Description)
-		assert.Equal(t, `azd ai agent invoke alpha '{"message": "Hello!"}'`, out[2].Command)
-		assert.Equal(t, "test alpha with a generic payload", out[2].Description)
-		assert.Equal(t, `azd ai agent invoke beta "Hello!"`, out[3].Command)
-		assert.Equal(t, "test beta with a generic payload", out[3].Description)
+		assert.Equal(t, `azd ai agent invoke alpha '<payload>'`, out[2].Command)
+		assert.Equal(t, "test alpha", out[2].Description)
+		assert.Equal(t, `azd ai agent invoke beta '<payload>'`, out[3].Command)
+		assert.Equal(t, "test beta", out[3].Description)
 	})
 
 	t.Run("multi-agent README hint placement → before the corresponding placeholder invoke", func(t *testing.T) {
@@ -842,8 +1077,8 @@ func TestResolveAfterDeploy(t *testing.T) {
 		assert.Equal(t, "find the sample-specific payload", out[2].Description)
 		assert.Equal(t, `azd ai agent invoke alpha '<payload>'`, out[3].Command)
 		assert.Equal(t, "test alpha with the sample-specific payload", out[3].Description)
-		assert.Equal(t, `azd ai agent invoke beta "Hello!"`, out[4].Command)
-		assert.Equal(t, "test beta with a generic payload", out[4].Description)
+		assert.Equal(t, `azd ai agent invoke beta '<payload>'`, out[4].Command)
+		assert.Equal(t, "test beta", out[4].Description)
 	})
 
 	t.Run("README hint skipped when cached payload is present", func(t *testing.T) {
@@ -888,7 +1123,7 @@ func TestResolveAfterDeploy(t *testing.T) {
 		require.Equal(t, baseline, out)
 		require.Len(t, out, 2)
 		assert.Equal(t, "azd ai agent show echo", out[0].Command)
-		assert.Equal(t, `azd ai agent invoke echo '{"message": "Hello!"}'`, out[1].Command)
+		assert.Equal(t, `azd ai agent invoke echo '<payload>'`, out[1].Command)
 	})
 
 	t.Run("ForceQualified=false on len==1 → no-op, also qualified", func(t *testing.T) {
@@ -899,7 +1134,7 @@ func TestResolveAfterDeploy(t *testing.T) {
 		out := ResolveAfterDeploy(state, nil, nil, AfterDeployOpts{ForceQualified: false})
 		require.Len(t, out, 2)
 		assert.Equal(t, "azd ai agent show echo", out[0].Command)
-		assert.Equal(t, `azd ai agent invoke echo '{"message": "Hello!"}'`, out[1].Command)
+		assert.Equal(t, `azd ai agent invoke echo '<payload>'`, out[1].Command)
 	})
 
 	t.Run("ForceQualified=true with cached payload → qualified invoke uses payload", func(t *testing.T) {
@@ -922,8 +1157,8 @@ func TestResolveAfterDeploy(t *testing.T) {
 		require.Len(t, out, 4)
 		assert.Equal(t, "azd ai agent show alpha", out[0].Command)
 		assert.Equal(t, "azd ai agent show beta", out[1].Command)
-		assert.Equal(t, `azd ai agent invoke alpha '{"message": "Hello!"}'`, out[2].Command)
-		assert.Equal(t, `azd ai agent invoke beta "Hello!"`, out[3].Command)
+		assert.Equal(t, `azd ai agent invoke alpha '<payload>'`, out[2].Command)
+		assert.Equal(t, `azd ai agent invoke beta '<payload>'`, out[3].Command)
 	})
 
 	t.Run("extra opts elements beyond [0] are ignored", func(t *testing.T) {

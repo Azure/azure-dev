@@ -859,6 +859,12 @@ func printDetail(result connectionDetailResult, format string) error {
 	fmt.Printf("Kind:      %s\n", result.Kind)
 	fmt.Printf("Auth Type: %s\n", result.AuthType)
 	fmt.Printf("Target:    %s\n", result.Target)
+	if len(result.Metadata) > 0 {
+		fmt.Println("\nMetadata:")
+		for k, v := range result.Metadata {
+			fmt.Printf("  %s: %s\n", k, deref(v))
+		}
+	}
 	if len(result.Credentials) > 0 {
 		fmt.Println("\nCredentials:")
 		for k, v := range result.Credentials {

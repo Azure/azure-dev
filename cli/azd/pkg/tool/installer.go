@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -43,6 +44,48 @@ type InstallResult struct {
 	Duration time.Duration
 	// Error holds any error encountered during the operation.
 	Error error
+}
+
+// AggregateInstallResults summarizes a batch install or upgrade outcome for
+// telemetry. It returns success and failure counts plus the sorted IDs of
+// failed tools (sorted so N! permutations of the same set collapse to a
+// single canonical value, keeping attribute cardinality bounded).
+//
+// When opErr is non-nil and results is empty (a batch-infrastructure failure
+// where no per-tool work was recorded), failures are synthesized for every
+// entry in requestedIDs so the aggregate reflects that every requested tool
+// effectively failed, instead of silently reporting zero. On this synthesized
+// path the invariant successCount + failureCount == len(requestedIDs) holds.
+//
+// When opErr is non-nil but results is populated, the per-tool entries are
+// trusted as-is (the per-tool failures were already recorded) and no
+// synthesis happens — synthesizing on top would double-count.
+//
+// Callers are responsible for emitting the returned values via their own
+// attribute keys (tool.* vs tool.firstrun.* etc.).
+func AggregateInstallResults(
+	results []*InstallResult,
+	opErr error,
+	requestedIDs []string,
+) (successCount, failureCount int, sortedFailedIDs []string) {
+	sortedFailedIDs = make([]string, 0, len(results)+len(requestedIDs))
+	if opErr != nil && len(results) == 0 {
+		failureCount = len(requestedIDs)
+		sortedFailedIDs = append(sortedFailedIDs, requestedIDs...)
+	} else {
+		for _, r := range results {
+			if r.Success {
+				successCount++
+				continue
+			}
+			failureCount++
+			if r.Tool != nil {
+				sortedFailedIDs = append(sortedFailedIDs, r.Tool.Id)
+			}
+		}
+	}
+	slices.Sort(sortedFailedIDs)
+	return
 }
 
 // Installer defines the contract for installing and upgrading tools on

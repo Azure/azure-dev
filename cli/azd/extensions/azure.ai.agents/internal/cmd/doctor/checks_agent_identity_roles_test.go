@@ -48,7 +48,7 @@ func runIdentityCheck(t *testing.T, deps Dependencies, prior []Result) Result {
 		deps.AzdClient = &azdext.AzdClient{}
 	}
 	if deps.AgentAPIVersion == "" {
-		deps.AgentAPIVersion = "2025-11-15-preview"
+		deps.AgentAPIVersion = "v1"
 	}
 	if deps.readProjectResourceIDFn == nil {
 		deps.readProjectResourceIDFn = func(_ context.Context, _ *azdext.AzdClient) (string, error) {
@@ -441,7 +441,7 @@ func TestCheckAgentIdentityRoles_RedactedDetailsDoNotLeakIdentifiers(t *testing.
 			return agentIdentityProbeResult{PrincipalID: rawPrincipal, StatusCode: 200}
 		},
 		queryAgentIdentityRoles: makeQueryReturning(canned),
-		AgentAPIVersion:         "2025-11-15-preview",
+		AgentAPIVersion:         "v1",
 	})
 	resU := check.Fn(t.Context(), Options{Unredacted: true}, prior)
 	detailsUnredacted := flattenDetails(resU.Details)

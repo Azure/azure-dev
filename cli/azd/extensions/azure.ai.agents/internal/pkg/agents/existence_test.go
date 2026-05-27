@@ -55,7 +55,7 @@ func TestAgentExists(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			exists, err := AgentExists(t.Context(), fakeAgentGetter{err: tt.err}, "my-agent", "2025-11-15-preview")
+			exists, err := AgentExists(t.Context(), fakeAgentGetter{err: tt.err}, "my-agent", "v1")
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error")

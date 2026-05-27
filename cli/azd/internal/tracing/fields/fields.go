@@ -490,7 +490,7 @@ var (
 	//   - "install_failed" — the install batch itself errored at infrastructure level
 	//
 	// Replaces the prior `tool.firstrun.completed` bool field, which was
-	// always `true` and therefore unfilterable for the failure / decline
+	// always `true` and therefore not filterable for the failure / decline
 	// cases described above.
 	ToolFirstRunOutcomeKey = AttributeKey{
 		Key:            attribute.Key("tool.firstrun.outcome"),

@@ -172,7 +172,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		// intentionally ignored: the resolver degrades gracefully on
 		// partial state per the design spec.
 		state, _ := nextstep.AssembleState(ctx, a.azdClient)
-		_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state))
+		_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, a.azdClient)))
 	}
 
 	return nil

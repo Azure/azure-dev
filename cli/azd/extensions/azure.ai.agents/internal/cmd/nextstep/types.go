@@ -78,7 +78,30 @@ type State struct {
 
 	// MissingManualVars names ${...} references that map to user-supplied
 	// variables which are not set in the azd environment.
+	//
+	// Toolbox-derived endpoint variables (`TOOLBOX_<NAME>_MCP_ENDPOINT`
+	// keys that correspond to a manifest-declared toolbox) are
+	// partitioned out into MissingToolboxEndpoints — they are
+	// azd-managed outputs of `azd provision`, not operator-supplied,
+	// and routing them to `azd env set` is misleading.
 	MissingManualVars []string
+
+	// MissingToolboxEndpoints lists manifest-declared toolboxes whose
+	// azd-injected TOOLBOX_<NAME>_MCP_ENDPOINT variable is unset in the
+	// active azd environment. AssembleState partitions these out of
+	// MissingManualVars because they are produced by
+	// `azd provision` (listen.go::registerToolboxEnvVars), not by the
+	// user — the right remediation is `azd provision` (which creates
+	// the toolbox in the Foundry project on first run and sets the
+	// derived env var), not `azd env set`.
+	//
+	// Each entry carries the manifest's resource Name and the owning
+	// ServiceName so the resolver and doctor checks can render
+	// per-service guidance. The Detail field is unused (toolbox
+	// endpoints have no kind-specific identifier beyond Name) but the
+	// shared ResourceRef shape keeps the renderer code uniform with
+	// state.Toolboxes / state.ModelRefs / state.Connections.
+	MissingToolboxEndpoints []ResourceRef
 
 	// UnresolvedPlaceholders names {{NAME}} Mustache-style placeholders
 	// still present (literally) inside agent.yaml's environment_variables

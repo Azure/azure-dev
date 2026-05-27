@@ -504,6 +504,6 @@ func TestFilterDeployedServices_ChainedIntoResolveAfterDeploy(t *testing.T) {
 	require.Len(t, out, 2, "filtered state has one deployed service → show + invoke")
 	assert.Equal(t, "azd ai agent show alpha", out[0].Command,
 		"command must be service-qualified even when filtered list has len==1")
-	assert.Equal(t, `azd ai agent invoke alpha "Hello!"`, out[1].Command,
+	assert.Equal(t, `azd ai agent invoke alpha '<payload>'`, out[1].Command,
 		"invoke command must also be service-qualified")
 }

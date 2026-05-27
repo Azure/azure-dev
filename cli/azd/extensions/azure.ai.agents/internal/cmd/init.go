@@ -2311,7 +2311,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		stateOpts = append(stateOpts, nextstep.WithCreatedFolder(a.createdFolderDisplay))
 	}
 	state, _ := nextstep.AssembleState(ctx, a.azdClient, stateOpts...)
-	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state))
+	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, a.azdClient)))
 	return nil
 }
 

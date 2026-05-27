@@ -12,7 +12,6 @@ import (
 
 	"azureaiagent/internal/cmd/doctor"
 	"azureaiagent/internal/cmd/nextstep"
-	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/version"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -186,11 +185,11 @@ func resolveDoctorTrailing(ctx context.Context, azdClient *azdext.AzdClient) []n
 		return nextstep.ResolveAfterDeploy(
 			filterDeployedServices(state),
 			doctorCachedPayload(ctx, azdClient),
-			doctorReadmeExists(ctx, azdClient),
+			readmeExistsForProject(ctx, azdClient),
 		)
 	}
 
-	return nextstep.ResolveAfterInit(state)
+	return nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, azdClient))
 }
 
 func anyServiceDeployed(services []nextstep.ServiceState) bool {
@@ -261,19 +260,7 @@ func doctorCachedPayload(ctx context.Context, azdClient *azdext.AzdClient) func(
 	}
 }
 
-// doctorReadmeExists returns a readmeExists closure for ResolveAfterDeploy.
-// Only canonical "README.md" casing is checked to match rendered guidance.
-func doctorReadmeExists(ctx context.Context, azdClient *azdext.AzdClient) func(string) bool {
-	projectRoot := resolveProjectPath(ctx, azdClient)
-	return func(relativePath string) bool {
-		if projectRoot == "" {
-			return false
-		}
-		readmePath, err := paths.JoinAllowRoot(projectRoot, relativePath, "README.md")
-		if err != nil {
-			return false
-		}
-		_, err = os.Stat(readmePath)
-		return err == nil
-	}
-}
+// doctorReadmeExists has moved to helpers.go as readmeExistsForProject
+// so that ResolveAfterInit / ResolveAfterRun / ResolveAfterDeploy
+// callers (init.go, init_from_code.go, run.go, doctor.go) all share
+// the same README-detection contract.

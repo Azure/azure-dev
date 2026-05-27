@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"azure.ai.toolboxes/internal/exterrors"
@@ -75,22 +76,22 @@ func TestParseSkillFlag(t *testing.T) {
 	})
 
 	t.Run("over 64 chars rejected", func(t *testing.T) {
-		long := ""
+		var long strings.Builder
 		for range 65 {
-			long += "a"
+			long.WriteString("a")
 		}
-		_, err := parseSkillFlag(long)
+		_, err := parseSkillFlag(long.String())
 		requireLocalError(t, err, exterrors.CodeInvalidSkillName)
 	})
 
 	t.Run("exactly 64 chars accepted", func(t *testing.T) {
-		long := ""
+		var long strings.Builder
 		for range 64 {
-			long += "a"
+			long.WriteString("a")
 		}
-		spec, err := parseSkillFlag(long)
+		spec, err := parseSkillFlag(long.String())
 		require.NoError(t, err)
-		assert.Equal(t, long, spec.Name)
+		assert.Equal(t, long.String(), spec.Name)
 	})
 }
 

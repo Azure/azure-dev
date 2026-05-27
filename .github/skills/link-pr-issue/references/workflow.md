@@ -10,12 +10,33 @@ Determine the target PR number. Use one of these sources (in priority order):
 
 If no PR can be identified, ask the user for the PR number.
 
-### Step 2 — Fetch PR Details
+### Step 2 — Fetch PR Details and Check for Existing Linked Issues
 
 Use `gh pr view <number> --json number,title,body,url` to retrieve the PR's
-title, body, and URL. Parse the body to check whether an issue is already linked
-(look for `Fixes #`, `Closes #`, or `Resolves #` patterns). If a link already
-exists, inform the user and stop — no action needed.
+title, body, and URL.
+
+Before creating an issue, check whether one is already linked using the same
+source the CI governance gate uses — the GraphQL `closingIssuesReferences` API:
+
+```bash
+gh api graphql -f query='query {
+  repository(owner: "OWNER", name: "REPO") {
+    pullRequest(number: PR_NUMBER) {
+      closingIssuesReferences(first: 10) {
+        nodes { number title url }
+      }
+    }
+  }
+}'
+```
+
+This covers issues linked via:
+- Closing keywords in the PR body (`Fixes #`, `Closes #`, `Resolves #`)
+- The GitHub sidebar "Linked issues" UI
+- Commit messages with closing keywords
+
+If `closingIssuesReferences.nodes` is non-empty, an issue is already linked.
+Inform the user which issue(s) are linked and stop — no action needed.
 
 ### Step 3 — Draft the Issue
 

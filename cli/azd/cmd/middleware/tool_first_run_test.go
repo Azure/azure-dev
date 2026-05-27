@@ -6,6 +6,7 @@ package middleware
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -311,9 +312,9 @@ func TestToolFirstRunMiddleware_EmitsSkipReason(t *testing.T) {
 			t.Setenv(envKeySkipFirstRun, "")
 			os.Unsetenv(envKeySkipFirstRun)
 
-			// Reset the skip_reason attribute to a sentinel so we can
-			// verify the middleware overwrote it during this test.
-			tracing.SetUsageAttributes(fields.ToolFirstRunSkipReasonKey.String("__unset__"))
+			// Reset usage attributes so we can verify the middleware
+			// affirmatively writes tool.firstrun.skip_reason in this path.
+			tracing.ResetUsageAttributesForTest()
 
 			console := mockinput.NewMockConsole()
 			cfg := config.NewEmptyConfig()
@@ -367,8 +368,7 @@ func TestToolFirstRunMiddleware_NoSkipReasonForSilentPaths(t *testing.T) {
 				t.Setenv("AZD_ALPHA_ENABLE_TOOL", "false")
 			}
 
-			sentinel := "__silent_" + tc.name + "__"
-			tracing.SetUsageAttributes(fields.ToolFirstRunSkipReasonKey.String(sentinel))
+			tracing.ResetUsageAttributesForTest()
 
 			console := mockinput.NewMockConsole()
 			cfg := config.NewEmptyConfig()
@@ -393,12 +393,12 @@ func TestToolFirstRunMiddleware_NoSkipReasonForSilentPaths(t *testing.T) {
 			require.NoError(t, err)
 			assert.True(t, nextCalled)
 
-			// Because alpha-disabled / child-action paths are silent, the
-			// sentinel we wrote before invocation must still be the value.
-			got, ok := lookupUsageAttr(string(fields.ToolFirstRunSkipReasonKey.Key))
-			require.True(t, ok)
-			assert.Equal(t, sentinel, got,
-				"silent skip path must not overwrite tool.firstrun.skip_reason")
+			// Silent skip paths (alpha-disabled / child-action) must not
+			// emit tool.firstrun.skip_reason at all — the user had no
+			// opportunity to opt in/out, so there's nothing to record.
+			_, ok := lookupUsageAttr(string(fields.ToolFirstRunSkipReasonKey.Key))
+			assert.False(t, ok,
+				"silent skip path must not emit tool.firstrun.skip_reason")
 		})
 	}
 }
@@ -479,14 +479,30 @@ func TestToolFirstRunMiddleware_DisplayToolStatuses(t *testing.T) {
 	})
 
 	output := console.Output()
-	joined := ""
+	var sb strings.Builder
 	for _, line := range output {
-		joined += line + "\n"
+		sb.WriteString(line)
+		sb.WriteByte('\n')
 	}
+	joined := sb.String()
 	assert.Contains(t, joined, "Azure CLI")
 	assert.Contains(t, joined, "2.73.0")
-	assert.Contains(t, joined, "kubectl")
-	assert.Contains(t, joined, "installed")
 	assert.Contains(t, joined, "Helm")
 	assert.Contains(t, joined, "not installed")
+
+	// The kubectl status has Installed=true but no InstalledVersion; the
+	// renderer must produce a kubectl-specific line containing "installed"
+	// (without the "not " prefix). A bare assert.Contains(joined, "installed")
+	// would pass on az-cli's "installed 2.73.0" line alone, so locate the
+	// kubectl line explicitly.
+	var kubectlLine string
+	for _, line := range output {
+		if strings.Contains(line, "kubectl") {
+			kubectlLine = line
+			break
+		}
+	}
+	require.NotEmpty(t, kubectlLine, "kubectl status line must be rendered")
+	assert.Contains(t, kubectlLine, "installed")
+	assert.NotContains(t, kubectlLine, "not installed")
 }

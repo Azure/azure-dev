@@ -164,6 +164,21 @@ func GetUsageAttributes() []attribute.KeyValue {
 	return get(&usageVal)
 }
 
+// ResetUsageAttributesForTest clears all usage attributes set via
+// SetUsageAttributes / AppendUsageAttribute / IncrementUsageAttribute.
+//
+// Intended exclusively for use by tests that need to make negative
+// assertions about which usage attributes a code path emits (i.e. assert
+// that a key was NOT written). After this call, the only values present
+// are those written by the code under test, so absence checks become
+// reliable instead of relying on a sentinel survival idiom.
+//
+// Note: usage attribute state is process-global; tests that rely on it
+// should not run with t.Parallel().
+func ResetUsageAttributesForTest() {
+	usageVal.val.Store(baggage.NewBaggage())
+}
+
 // Sets or appends a value to a slice-type usage attribute that possibly exists.
 // The attribute is expected to be a slice-type value, and matches the existing type.
 // Otherwise, a strict replacement is performed.

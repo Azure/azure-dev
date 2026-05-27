@@ -91,7 +91,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		require.Equal(t, "ci_cd", kvSkip.Value.AsString())
 
 		kvOptIn := fields.ToolFirstRunOptInKey.Bool(true)
-		require.Equal(t, "tool.firstrun.optin", string(kvOptIn.Key))
+		require.Equal(t, "tool.firstrun.opt_in", string(kvOptIn.Key))
 		require.Equal(t, true, kvOptIn.Value.AsBool())
 
 		kvDetected := fields.ToolFirstRunToolsDetectedKey.Int(5)
@@ -110,8 +110,9 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		kvDeselectedNames := fields.ToolFirstRunToolsDeselectedNamesKey.String("docker")
 		require.Equal(t, "tool.firstrun.tools_deselected_names", string(kvDeselectedNames.Key))
 
-		kvCompleted := fields.ToolFirstRunCompletedKey.Bool(true)
-		require.Equal(t, "tool.firstrun.completed", string(kvCompleted.Key))
+		kvOutcome := fields.ToolFirstRunOutcomeKey.String("completed")
+		require.Equal(t, "tool.firstrun.outcome", string(kvOutcome.Key))
+		require.Equal(t, "completed", kvOutcome.Value.AsString())
 
 		// Per-operation fields
 		kvID := fields.ToolIdKey.String("kubectl")

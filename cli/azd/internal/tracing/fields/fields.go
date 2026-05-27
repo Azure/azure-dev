@@ -426,7 +426,7 @@ var (
 	// ToolFirstRunOptInKey records whether the user accepted the first-run
 	// "Would you like to check your Azure development tools?" prompt.
 	ToolFirstRunOptInKey = AttributeKey{
-		Key:            attribute.Key("tool.firstrun.optin"),
+		Key:            attribute.Key("tool.firstrun.opt_in"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
@@ -476,13 +476,24 @@ var (
 		Purpose:        FeatureInsight,
 	}
 
-	// ToolFirstRunCompletedKey records that the first-run experience
-	// reached the completion-persistence step and `tool.firstRunCompleted`
-	// was written to user config. Emitted as `true` only on the success
-	// path; the attribute is unset when the user cancels, detection
-	// fails, or the flow is otherwise short-circuited.
-	ToolFirstRunCompletedKey = AttributeKey{
-		Key:            attribute.Key("tool.firstrun.completed"),
+	// ToolFirstRunOutcomeKey records the terminal state of the first-run
+	// experience as a low-cardinality string enum. Mutually exclusive with
+	// fields.ToolFirstRunSkipReasonKey — `skip_reason` is set only when the
+	// flow never ran, while `outcome` is set only when the flow ran to a
+	// terminal state.
+	//
+	// Values:
+	//   - "completed"      — full flow succeeded (with or without installs)
+	//   - "declined"       — user declined the opt-in prompt
+	//   - "cancelled"      — user cancelled a prompt mid-flow (Ctrl+C / Esc)
+	//   - "detect_failed"  — tool detection failed before any selection was offered
+	//   - "install_failed" — the install batch itself errored at infrastructure level
+	//
+	// Replaces the prior `tool.firstrun.completed` bool field, which was
+	// always `true` and therefore unfilterable for the failure / decline
+	// cases described above.
+	ToolFirstRunOutcomeKey = AttributeKey{
+		Key:            attribute.Key("tool.firstrun.outcome"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
@@ -616,7 +627,8 @@ var (
 	}
 
 	// ToolUpgradeToVersionKey records the new version after upgrade
-	// (single-target upgrades only).
+	// (single-target upgrades only). Emitted only when the upgrade
+	// succeeds.
 	ToolUpgradeToVersionKey = AttributeKey{
 		Key:            attribute.Key("tool.upgrade.to_version"),
 		Classification: SystemMetadata,

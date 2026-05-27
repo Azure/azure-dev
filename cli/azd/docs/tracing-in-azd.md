@@ -209,46 +209,46 @@ These example PRs include adding both new spans and events and can be used as re
 
 The `azd tool` command group emits telemetry that captures both the **first-run experience adoption funnel** and **per-operation outcomes** for install, upgrade, check, and show.  All attributes are attached as **usage attributes** via `tracing.SetUsageAttributes`, which means they appear on the user's actual command span (e.g. `cmd.tool.install`) rather than on a separate child span.
 
-### First-run experience
+### First-Run Experience
 
 The first-run middleware (`cmd/middleware/tool_first_run.go`) emits attributes once per `azd` invocation when the `tool` alpha feature is enabled and the command is not a child action.
 
 | Attribute | Type | Emitted when | Notes |
 | --- | --- | --- | --- |
 | `tool.firstrun.skip_reason` | string | First-run was bypassed | One of `env_var`, `no_prompt`, `ci_cd`, `non_interactive`, `already_completed`, `config_error`. The alpha-disabled and child-action skip paths are intentionally silent because the user has no opportunity to opt in. |
-| `tool.firstrun.optin` | bool | User answered the welcome prompt | `true` = accepted, `false` = declined. |
-| `tool.firstrun.tools_detected` | int | Optin = `true` | Count of built-in tools already installed locally. |
-| `tool.firstrun.tools_offered` | int | Optin = `true` | Count of recommended tools offered for installation. `0` when nothing is missing. |
+| `tool.firstrun.opt_in` | bool | User answered the welcome prompt | `true` = accepted, `false` = declined. |
+| `tool.firstrun.tools_detected` | int | Opt-in = `true` | Count of built-in tools already installed locally. |
+| `tool.firstrun.tools_offered` | int | Opt-in = `true` | Count of recommended tools offered for installation. `0` when nothing is missing. |
 | `tool.firstrun.tools_selected` | int | At least one tool was offered | Count of tools the user kept selected. |
-| `tool.firstrun.tools_selected_names` | string | At least one tool selected | Comma-separated built-in tool IDs (low-cardinality, no PII). |
-| `tool.firstrun.tools_deselected_names` | string | User deselected at least one offered tool | Comma-separated built-in tool IDs. |
-| `tool.firstrun.completed` | bool | First-run flow reached the completion-persistence step | Emitted as `true` once `tool.firstRunCompleted` is written to user config. Unset on cancel / detection-failure paths. |
+| `tool.firstrun.tools_selected_names` | string | At least one tool selected | Comma-separated **sorted** built-in tool IDs (low-cardinality, no PII). Sorting collapses permutations of the same set into a single canonical value. |
+| `tool.firstrun.tools_deselected_names` | string | User deselected at least one offered tool | Comma-separated **sorted** built-in tool IDs. |
+| `tool.firstrun.outcome` | string | First-run flow ran to a terminal state | One of `completed` (full flow succeeded), `declined` (user declined the opt-in), `cancelled` (user interrupted a prompt), `detect_failed` (tool detection failed), `install_failed` (install batch errored). Mutually exclusive with `tool.firstrun.skip_reason` — `skip_reason` is set only when the flow never ran. Replaces the prior `tool.firstrun.completed` bool, which was unfilterable for the failure and decline cases. |
 | `tool.firstrun.install_success_count` | int | First-run installed tools | Number of tools that succeeded during the first-run batch install. Mirrors `tool.install.success_count` but is namespaced so a subsequent `azd tool install` action on the same span does not overwrite it. |
 | `tool.firstrun.install_failure_count` | int | First-run installed tools | Number of tools that failed during the first-run batch install. |
-| `tool.firstrun.install_failed_ids` | string | First-run had at least one failure | Comma-separated tool IDs whose first-run install failed. |
+| `tool.firstrun.install_failed_ids` | string | First-run had at least one failure | Comma-separated **sorted** tool IDs whose first-run install failed. |
 | `tool.firstrun.install_duration_ms` | int | First-run installed tools | Wall-clock duration of the first-run install batch in milliseconds. |
 
-### Per-operation attributes
+### Per-Operation Attributes
 
 The `tool install` / `tool upgrade` / `tool check` / `tool show` actions emit:
 
 | Attribute | Type | Emitted by | Notes |
 | --- | --- | --- | --- |
-| `tool.id` | string | Single-target install / upgrade / show | The built-in tool identifier. |
-| `tool.ids` | string | Batch install / upgrade | Comma-separated tool IDs. |
+| `tool.id` | string | Single-target install / upgrade / show (`len(ids) == 1`) | The built-in tool identifier. Mutually exclusive with `tool.ids`. |
+| `tool.ids` | string | Multi-target batch install / upgrade (`len(ids) > 1`) | Comma-separated **sorted** built-in tool IDs. Mutually exclusive with `tool.id` — single-tool operations emit only `tool.id`. Sorting keeps attribute cardinality bounded (set vs permutation). |
 | `tool.dry_run` | bool | install / upgrade | Reflects the `--dry-run` flag. |
 | `tool.install.strategy` | string | Single-target install / upgrade | E.g. `winget`, `brew`, `manual`. |
 | `tool.install.success` | bool | Single-target install / upgrade | Whether the per-tool operation succeeded. |
 | `tool.install.success_count` | int | Batch install / upgrade | Number of tools that succeeded. |
 | `tool.install.failure_count` | int | Batch install / upgrade | Number of tools that failed. |
-| `tool.install.failed_ids` | string | At least one failure | Comma-separated tool IDs whose operation failed. **Only tool IDs are recorded — error messages flow through the global error middleware (`error.message`).** |
-| `tool.install.duration_ms` | int | Batch install / upgrade | Wall-clock duration of the operation in milliseconds. |
-| `tool.upgrade.from_version` | string | Single-target upgrade | Pre-upgrade installed version (when detection was run). |
-| `tool.upgrade.to_version` | string | Single-target upgrade | Post-upgrade installed version. |
+| `tool.install.failed_ids` | string | At least one failure | Comma-separated **sorted** tool IDs whose operation failed. **Only tool IDs are recorded — error messages flow through the global error middleware (`error.message`).** When the batch call itself errors before any per-tool result is produced, the count of failed IDs may be **less than `failure_count`** (failures are synthesized from the requested set, but a synthesized entry with no `Tool` reference is omitted from the ID list to avoid emitting "unknown"). |
+| `tool.install.duration_ms` | int | Batch install / upgrade | Wall-clock duration of the operation in milliseconds. Per-tool durations are intentionally **not** emitted: the cardinality cost would be `O(tools × installs)` for limited diagnostic value, and the aggregate captures the only number actionable at fleet scale. Per-tool durations remain available in the in-process `InstallResult.Duration` for local logging / dry-run reporting. |
+| `tool.upgrade.from_version` | string | Single-target upgrade | Pre-upgrade installed version. Captured via detection on both the explicit-args (`azd tool upgrade <id>`) and auto-detect (`azd tool upgrade`) paths. Unset only when detection failed or the tool was not previously installed. |
+| `tool.upgrade.to_version` | string | Single-target upgrade succeeded | Post-upgrade installed version. Only emitted when the upgrade succeeded — on failure `InstalledVersion` is either the unchanged pre-upgrade value or empty, which would be ambiguous against `from_version`. |
 | `tool.check.updates_available` | int | `tool check` | Count of tools whose `UpdateAvailable` is `true`. |
 
 > **PII rule:** Never include free-form error strings, file paths, or user input in tool telemetry.  Stick to built-in tool IDs and semver-style version strings.  Error messages are already captured by the global error middleware on the same span.
 
-### Coverage test
+### Coverage Test
 
 Every new `tool` subcommand must be classified in `cmd/telemetry_coverage_test.go` (either `commandsWithSpecificTelemetry` or `commandsWithOnlyGlobalTelemetry`), and any new field constant added to `internal/tracing/fields/fields.go` should have a sub-assertion in `TestTelemetryFieldConstants`.

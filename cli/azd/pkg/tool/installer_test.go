@@ -1000,3 +1000,85 @@ func TestInstall_DirectDownload_ChecksumMismatch(t *testing.T) {
 		"checksum verification failed",
 	)
 }
+
+
+// ---------------------------------------------------------------------------
+// AggregateInstallResults
+// ---------------------------------------------------------------------------
+
+func TestAggregateInstallResults_AllSuccess(t *testing.T) {
+	results := []*InstallResult{
+		{Tool: &ToolDefinition{Id: "kubectl"}, Success: true},
+		{Tool: &ToolDefinition{Id: "helm"}, Success: true},
+	}
+
+	successCount, failureCount, failedIDs := AggregateInstallResults(results, nil, []string{"kubectl", "helm"})
+
+	assert.Equal(t, 2, successCount)
+	assert.Equal(t, 0, failureCount)
+	assert.Empty(t, failedIDs)
+}
+
+func TestAggregateInstallResults_MixedResults(t *testing.T) {
+	results := []*InstallResult{
+		{Tool: &ToolDefinition{Id: "kubectl"}, Success: true},
+		{Tool: &ToolDefinition{Id: "terraform"}, Success: false},
+		{Tool: &ToolDefinition{Id: "helm"}, Success: false},
+	}
+
+	successCount, failureCount, failedIDs := AggregateInstallResults(
+		results, nil, []string{"kubectl", "terraform", "helm"})
+
+	assert.Equal(t, 1, successCount)
+	assert.Equal(t, 2, failureCount)
+	// Sorted, so "helm" comes before "terraform" even though terraform appeared first in results.
+	assert.Equal(t, []string{"helm", "terraform"}, failedIDs)
+}
+
+func TestAggregateInstallResults_OperationErrorSynthesizesFailures(t *testing.T) {
+	// Batch call failed and produced no per-tool results: synthesize failures
+	// for every requested tool so the aggregate isn't silently zero.
+	successCount, failureCount, failedIDs := AggregateInstallResults(
+		nil, errors.New("batch failed"), []string{"terraform", "helm", "kubectl"})
+
+	assert.Equal(t, 0, successCount)
+	assert.Equal(t, 3, failureCount)
+	assert.Equal(t, []string{"helm", "kubectl", "terraform"}, failedIDs)
+}
+
+func TestAggregateInstallResults_OperationErrorWithResultsTrustsResults(t *testing.T) {
+	// Per-tool results exist alongside opErr: trust the per-tool entries — synthesizing would double-count.
+	results := []*InstallResult{
+		{Tool: &ToolDefinition{Id: "kubectl"}, Success: true},
+		{Tool: &ToolDefinition{Id: "helm"}, Success: false},
+	}
+
+	successCount, failureCount, failedIDs := AggregateInstallResults(
+		results, errors.New("batch ended with errors"), []string{"kubectl", "helm", "terraform"})
+
+	assert.Equal(t, 1, successCount)
+	assert.Equal(t, 1, failureCount)
+	assert.Equal(t, []string{"helm"}, failedIDs)
+}
+
+func TestAggregateInstallResults_NilToolInFailureSkipped(t *testing.T) {
+	// A failure with a nil Tool can't contribute an ID; it still bumps the count but is omitted from failed_ids.
+	results := []*InstallResult{
+		{Tool: nil, Success: false},
+		{Tool: &ToolDefinition{Id: "helm"}, Success: false},
+	}
+
+	successCount, failureCount, failedIDs := AggregateInstallResults(results, nil, []string{"helm", "kubectl"})
+
+	assert.Equal(t, 0, successCount)
+	assert.Equal(t, 2, failureCount)
+	assert.Equal(t, []string{"helm"}, failedIDs)
+}
+
+func TestAggregateInstallResults_EmptyInputs(t *testing.T) {
+	successCount, failureCount, failedIDs := AggregateInstallResults(nil, nil, nil)
+
+	assert.Equal(t, 0, successCount)
+	assert.Equal(t, 0, failureCount)
+	assert.Empty(t, failedIDs)
+}

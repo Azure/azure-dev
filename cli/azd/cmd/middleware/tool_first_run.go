@@ -9,9 +9,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -24,7 +27,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tool"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 // configKeyFirstRunCompleted is the user-config path that records
@@ -40,6 +42,16 @@ const envKeySkipFirstRun = "AZD_SKIP_FIRST_RUN"
 // did not run. Keep in sync with the documentation on
 // fields.ToolFirstRunSkipReasonKey.
 //
+// `no_prompt` and `non_interactive` are intentionally distinct:
+//   - `no_prompt` is the user-facing `--no-prompt` CLI flag — an explicit
+//     opt-out by someone who could have answered the prompt.
+//   - `non_interactive` is environmental: stdin/stdout is not a terminal
+//     (piped input, redirected output) so we can't safely prompt at all.
+//     Most CI runs that don't set the dedicated CI envs fall here.
+//
+// Keep them separate so dashboards can distinguish "user told us not to ask"
+// from "we had no choice but to skip".
+//
 // Skip reasons are *not* emitted for the alpha-disabled and child-action
 // paths: when the alpha feature is off the user has no opportunity to opt in,
 // and child actions (e.g. workflow steps) inherit the parent's first-run
@@ -51,6 +63,16 @@ const (
 	skipReasonNonInteractive   = "non_interactive"
 	skipReasonAlreadyCompleted = "already_completed"
 	skipReasonConfigError      = "config_error"
+)
+
+// Outcome values for fields.ToolFirstRunOutcomeKey. Mutually exclusive with
+// skipReason* — outcome is set only when the flow ran to a terminal state.
+const (
+	outcomeCompleted     = "completed"
+	outcomeDeclined      = "declined"
+	outcomeCancelled     = "cancelled"
+	outcomeDetectFailed  = "detect_failed"
+	outcomeInstallFailed = "install_failed"
 )
 
 // ToolFirstRunMiddleware presents a one-time welcome experience
@@ -181,6 +203,9 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 		// Confirm can fail on interrupt/cancel — don't mark completed
 		// so the user gets another chance on next invocation.
 		if errors.Is(err, uxlib.ErrCancelled) {
+			tracing.SetUsageAttributes(
+				fields.ToolFirstRunOutcomeKey.String(outcomeCancelled),
+			)
 			return nil
 		}
 		return fmt.Errorf("prompting for tool check: %w", err)
@@ -189,7 +214,7 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 	if runCheck == nil || !*runCheck {
 		tracing.SetUsageAttributes(
 			fields.ToolFirstRunOptInKey.Bool(false),
-			fields.ToolFirstRunCompletedKey.Bool(true),
+			fields.ToolFirstRunOutcomeKey.String(outcomeDeclined),
 		)
 		m.markCompleted()
 		return nil
@@ -212,7 +237,11 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 		statuses, detectErr = m.manager.DetectAll(ctx)
 		return detectErr
 	}); err != nil {
-		// Detection failed — don't mark completed, let user retry next time.
+		// Detection failed — record outcome and don't mark completed,
+		// so the user gets another chance next invocation.
+		tracing.SetUsageAttributes(
+			fields.ToolFirstRunOutcomeKey.String(outcomeDetectFailed),
+		)
 		log.Printf("tool first-run: detection failed: %v", err)
 		return fmt.Errorf("detecting tools: %w", err)
 	}
@@ -244,9 +273,16 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 		}
 	}
 
+	// Default outcome is "completed" — overridden below when offerInstall
+	// reports a terminal sub-outcome (cancelled / install_failed).
+	finalOutcome := outcomeCompleted
 	if len(missingRecommended) > 0 {
-		if err := m.offerInstall(ctx, missingRecommended); err != nil {
+		subOutcome, err := m.offerInstall(ctx, missingRecommended)
+		if err != nil {
 			log.Printf("tool first-run: install offer failed: %v", err)
+		}
+		if subOutcome != "" {
+			finalOutcome = subOutcome
 		}
 	} else {
 		tracing.SetUsageAttributes(
@@ -254,7 +290,7 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 		)
 	}
 
-	tracing.SetUsageAttributes(fields.ToolFirstRunCompletedKey.Bool(true))
+	tracing.SetUsageAttributes(fields.ToolFirstRunOutcomeKey.String(finalOutcome))
 	m.markCompleted()
 	return nil
 }
@@ -287,10 +323,15 @@ func (m *ToolFirstRunMiddleware) displayToolStatuses(
 
 // offerInstall prompts the user to select missing recommended tools
 // for installation and installs any selected tools.
+//
+// Returns a non-empty sub-outcome ("cancelled" or "install_failed") when the
+// caller should record that terminal state on fields.ToolFirstRunOutcomeKey;
+// returns "" for the normal completion path (including the "user selected
+// nothing" case, which is still a completed flow).
 func (m *ToolFirstRunMiddleware) offerInstall(
 	ctx context.Context,
 	missing []*tool.ToolStatus,
-) error {
+) (string, error) {
 	tracing.SetUsageAttributes(
 		fields.ToolFirstRunToolsOfferedKey.Int(len(missing)),
 	)
@@ -319,9 +360,9 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 			tracing.SetUsageAttributes(
 				fields.ToolFirstRunToolsSelectedKey.Int(0),
 			)
-			return nil
+			return outcomeCancelled, nil
 		}
-		return fmt.Errorf("prompting for tool selection: %w", err)
+		return "", fmt.Errorf("prompting for tool selection: %w", err)
 	}
 
 	// Extract selected tool IDs.
@@ -344,17 +385,23 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 		fields.ToolFirstRunToolsSelectedKey.Int(len(selectedIDs)),
 	}
 	if len(selectedIDs) > 0 {
-		attrs = append(attrs, fields.ToolFirstRunToolsSelectedNamesKey.String(strings.Join(selectedIDs, ",")))
+		// Sort before joining: keeps attribute cardinality bounded
+		// (set vs permutation), matching the discipline in tool.go.
+		sortedSelected := slices.Clone(selectedIDs)
+		slices.Sort(sortedSelected)
+		attrs = append(attrs, fields.ToolFirstRunToolsSelectedNamesKey.String(strings.Join(sortedSelected, ",")))
 	}
 	if len(deselectedIDs) > 0 {
-		attrs = append(attrs, fields.ToolFirstRunToolsDeselectedNamesKey.String(strings.Join(deselectedIDs, ",")))
+		sortedDeselected := slices.Clone(deselectedIDs)
+		slices.Sort(sortedDeselected)
+		attrs = append(attrs, fields.ToolFirstRunToolsDeselectedNamesKey.String(strings.Join(sortedDeselected, ",")))
 	}
 	tracing.SetUsageAttributes(attrs...)
 
 	if len(selected) == 0 {
 		m.console.Message(ctx, output.WithGrayFormat(
 			"No tools selected.  You can install them later with 'azd tool install'."))
-		return nil
+		return "", nil
 	}
 
 	// Install selected tools.
@@ -366,41 +413,36 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 		Text:        "Installing tools...",
 		ClearOnStop: true,
 	})
-	if err := installSpinner.Run(ctx, func(ctx context.Context) error {
-		var installErr error
-		results, installErr = m.manager.InstallTools(ctx, selectedIDs)
-		return installErr
-	}); err != nil {
-		tracing.SetUsageAttributes(
-			fields.ToolFirstRunInstallDurationMsKey.Int64(time.Since(installStart).Milliseconds()),
-		)
-		return fmt.Errorf("installing tools: %w", err)
-	}
+	installErr := installSpinner.Run(ctx, func(ctx context.Context) error {
+		var batchErr error
+		results, batchErr = m.manager.InstallTools(ctx, selectedIDs)
+		return batchErr
+	})
 
-	successCount := 0
-	failureCount := 0
-	failedIDs := make([]string, 0)
-	for _, r := range results {
-		if r.Success {
-			successCount++
-			continue
-		}
-		failureCount++
-		if r.Tool != nil {
-			failedIDs = append(failedIDs, r.Tool.Id)
-		}
-	}
+	successCount, failureCount, sortedFailedIDs := tool.AggregateInstallResults(results, installErr, selectedIDs)
+	// Namespaced under tool.firstrun.install_* — we deliberately do NOT emit
+	// tool.id / tool.ids / tool.install.* / tool.dry_run from this middleware.
+	// The first-run experience runs *before* the user's actual subcommand on
+	// the same span, so emitting non-namespaced attributes here would cause
+	// last-write-wins to clobber whatever the subcommand (or a subsequent
+	// `azd tool install` invocation) writes. Future contributors: keep new
+	// first-run attributes under the `tool.firstrun.` prefix unless you
+	// specifically want to be overwritten by the subcommand.
 	installAttrs := []attribute.KeyValue{
 		fields.ToolFirstRunInstallSuccessCountKey.Int(successCount),
 		fields.ToolFirstRunInstallFailureCountKey.Int(failureCount),
 		fields.ToolFirstRunInstallDurationMsKey.Int64(time.Since(installStart).Milliseconds()),
 	}
-	if len(failedIDs) > 0 {
+	if len(sortedFailedIDs) > 0 {
 		installAttrs = append(installAttrs,
-			fields.ToolFirstRunInstallFailedIdsKey.String(strings.Join(failedIDs, ",")),
+			fields.ToolFirstRunInstallFailedIdsKey.String(strings.Join(sortedFailedIDs, ",")),
 		)
 	}
 	tracing.SetUsageAttributes(installAttrs...)
+
+	if installErr != nil {
+		return outcomeInstallFailed, fmt.Errorf("installing tools: %w", installErr)
+	}
 
 	// Display install results.
 	m.console.Message(ctx, "")
@@ -427,7 +469,7 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 	}
 
 	m.console.Message(ctx, "")
-	return nil
+	return "", nil
 }
 
 // markCompleted persists a timestamp in the user config so the

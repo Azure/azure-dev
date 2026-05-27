@@ -43,10 +43,11 @@ for file in $(find "$DIRECTORY" -name '*_test.go' -not -path '*/vendor/*'); do
     fi
 
     # Check for fmt.Print, fmt.Println, fmt.Printf (bare calls that write to stdout)
-    # Exclude fmt.Fprint*, fmt.Sprint*, fmt.Errorf which write to a writer or return strings
-    # Use fmt\.Print(f|ln)?\( to match actual function calls, avoiding substring matches
-    if grep -nE 'fmt\.(Print|Println|Printf)\(' "$file" | grep -vE 'fmt\.(Fprint|Sprint|Errorf|Fprintf|Fprintln|Sprintf)\(' > /dev/null 2>&1; then
-        grep -nE 'fmt\.(Print|Println|Printf)\(' "$file" | grep -vE 'fmt\.(Fprint|Sprint|Errorf|Fprintf|Fprintln|Sprintf)\(' | while read -r match; do
+    # The pattern matches fmt.Print( / fmt.Println( / fmt.Printf( while naturally
+    # excluding fmt.Fprint / fmt.Sprint / fmt.Fprintf / fmt.Sprintf because those
+    # have a prefix letter before "print" that makes the alternation not match.
+    if grep -nE '[^A-Za-z]fmt\.(Print|Println|Printf)\(|^fmt\.(Print|Println|Printf)\(' "$file" > /dev/null 2>&1; then
+        grep -nE '[^A-Za-z]fmt\.(Print|Println|Printf)\(|^fmt\.(Print|Println|Printf)\(' "$file" | while read -r match; do
             # Skip lines with nolint:forbidigo or nolint:test-stdout
             case "$match" in
                 *nolint*) continue ;;

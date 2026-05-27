@@ -194,8 +194,8 @@ type ContainerAgent struct {
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
 	Resources            *ContainerResources     `json:"resources,omitempty" yaml:"resources,omitempty"`
 	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environment_variables,omitempty"`
-	AgentEndpoint        *AgentEndpoint          `json:"agentEndpoint,omitempty" yaml:"agentEndpoint,omitempty"`
-	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agentCard,omitempty"`
+	AgentEndpoint        *AgentEndpoint          `json:"agentEndpoint,omitempty" yaml:"agent_endpoint,omitempty"`
+	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agent_card,omitempty"`
 	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
 }
 

@@ -7,6 +7,7 @@ import (
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/azdignore"
 	"azureaiagent/internal/project"
 	"context"
 	"encoding/json"
@@ -26,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+	gitignore "github.com/denormal/go-gitignore"
 	"github.com/fatih/color"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v3"
@@ -232,6 +234,84 @@ func setGitHubAuthHeader(req *http.Request, token string) {
 	}
 }
 
+// treeEntry is the minimal shape of a single entry returned by the
+// GitHub Git Trees API. Declared here so helpers can accept the slice
+// without coupling to the anonymous struct declared inline in
+// scaffoldTemplate.
+type treeEntry struct {
+	Path string `json:"path"`
+	Type string `json:"type"`
+}
+
+// fetchAzdIgnoreMatcher fetches the root .azdignore from a GitHub repo
+// branch when the tree listing reports one, and returns a matcher
+// suitable for pre-filtering paths during the from-code starter
+// template flow. Returns nil when:
+//
+//   - the tree contains no root .azdignore,
+//   - the file exceeds azdignore.MaxSize,
+//   - the file is empty after BOM stripping, or
+//   - any HTTP/read error occurs (best-effort; the caller falls back
+//     to the unfiltered behavior).
+//
+// Errors are deliberately swallowed (logged at debug) because the
+// alternative -- failing init when an optional metadata file cannot be
+// read -- regresses users whose templates do not ship one.
+func fetchAzdIgnoreMatcher(
+	ctx context.Context,
+	httpClient *http.Client,
+	repoSlug, branch, ghToken string,
+	tree []treeEntry,
+) gitignore.GitIgnore {
+	hasRootIgnore := false
+	for _, entry := range tree {
+		if entry.Type == "blob" && entry.Path == azdignore.FileName {
+			hasRootIgnore = true
+			break
+		}
+	}
+	if !hasRootIgnore {
+		return nil
+	}
+
+	rawURL := fmt.Sprintf(
+		"https://raw.githubusercontent.com/%s/%s/%s",
+		repoSlug, branch, azdignore.FileName,
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		log.Printf("skipping %s: %v", azdignore.FileName, err)
+		return nil
+	}
+	setGitHubAuthHeader(req, ghToken)
+
+	//nolint:gosec // URL is constructed from validated repo slug + constant filename
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		log.Printf("skipping %s: fetch failed: %v", azdignore.FileName, err)
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("skipping %s: status %d", azdignore.FileName, resp.StatusCode)
+		return nil
+	}
+
+	// Cap reads at azdignore.MaxSize+1 so an oversized server response
+	// cannot exhaust memory and we still detect the overflow.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, azdignore.MaxSize+1))
+	if err != nil {
+		log.Printf("skipping %s: read failed: %v", azdignore.FileName, err)
+		return nil
+	}
+	if int64(len(data)) > azdignore.MaxSize {
+		log.Printf("skipping %s: exceeds maximum size (%d bytes)", azdignore.FileName, azdignore.MaxSize)
+		return nil
+	}
+
+	return azdignore.ParseBytes(data, ".")
+}
+
 // scaffoldTemplate downloads a GitHub template repo into the current directory,
 // checking for file collisions before writing. Files that don't collide are shown
 // in green; colliding files are shown in yellow and the user is prompted for how
@@ -272,14 +352,17 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 	}
 
 	var treeResp struct {
-		Tree []struct {
-			Path string `json:"path"`
-			Type string `json:"type"` // "blob" or "tree"
-		} `json:"tree"`
+		Tree []treeEntry `json:"tree"`
 	}
 	if err := json.Unmarshal(body, &treeResp); err != nil {
 		return fmt.Errorf("parsing tree response: %w", err)
 	}
+
+	// Best-effort fetch of the root .azdignore from the same repo+branch.
+	// When present, it pre-filters the file list so ignored entries never
+	// appear in the displayed plan or get downloaded. Fetch errors are
+	// non-fatal: the legacy behavior (no filtering) is the safe fallback.
+	azdIgnoreMatcher := fetchAzdIgnoreMatcher(ctx, a.httpClient, repoSlug, branch, ghToken, treeResp.Tree)
 
 	// Collect only files (blobs) from the infra folder and azure.yaml
 	var files []templateFileInfo
@@ -296,6 +379,13 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 		cleanPath := posixpath.Clean(entry.Path)
 		if posixpath.IsAbs(cleanPath) || strings.HasPrefix(cleanPath, "..") {
 			return fmt.Errorf("invalid path in repository tree: %s", entry.Path)
+		}
+		// Honor .azdignore from the template repo if one was published.
+		// Filtering happens before display/prompt/download so the user
+		// only ever sees the post-filter file plan.
+		if azdIgnoreMatcher != nil && azdignore.IsIgnored(azdIgnoreMatcher, cleanPath) {
+			log.Printf("Skipping %s due to .azdignore rule", cleanPath)
+			continue
 		}
 		downloadURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", repoSlug, branch, cleanPath)
 		collides := false

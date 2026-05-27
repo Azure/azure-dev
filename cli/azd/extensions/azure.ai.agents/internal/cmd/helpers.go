@@ -326,13 +326,15 @@ func printSessionStatus(label, sid string) {
 	if sid != "" {
 		fmt.Printf("%s%s\n", label, sid)
 	} else {
-		fmt.Printf("%s(new — server will assign)\n", label)
+		fmt.Printf("%s(new -- server will assign)\n", label)
 	}
 }
 
 // captureResponseSession reads the x-agent-session-id header from a response
 // and saves it when the caller had no pre-existing session (sid == "").
-// label is the formatted prefix for printing (e.g. "Session:  ").
+// label is the formatted prefix for printing (e.g. "Session:  "). When label
+// is empty the session is persisted silently (used by --output raw mode so
+// stdout stays pristine).
 func captureResponseSession(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -346,7 +348,9 @@ func captureResponseSession(
 	}
 	if newSid := resp.Header.Get("x-agent-session-id"); newSid != "" {
 		saveContextValue(ctx, azdClient, agentKey, newSid, "sessions")
-		fmt.Printf("%s%s (assigned by server)\n", label, newSid)
+		if label != "" {
+			fmt.Printf("%s%s (assigned by server)\n", label, newSid)
+		}
 	}
 }
 

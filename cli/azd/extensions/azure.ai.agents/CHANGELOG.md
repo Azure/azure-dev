@@ -1,5 +1,9 @@
 # Release History
 
+## 0.1.35-preview
+
+- [[#8353]](https://github.com/Azure/azure-dev/issues/8353) Add `--output raw` (`-o raw`) flag to `azd ai agent invoke` to dump the unmodified server response (status line, headers, and body verbatim) to stdout. Useful for debugging server behavior and inspecting response headers such as the agent version. Friendly summary lines (`Session:`, `Invocation:`, `Trace ID:`, `Version:`) are suppressed in raw mode.
+
 ## 0.1.34-preview (2026-05-22)
 
 - [[#8264]](https://github.com/Azure/azure-dev/pull/8264) Launch Agent Inspector automatically on `azd ai agent run`. Use `--no-inspector` to opt out. Requires the `azure.ai.inspector` extension.

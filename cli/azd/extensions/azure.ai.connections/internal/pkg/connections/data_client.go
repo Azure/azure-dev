@@ -47,7 +47,7 @@ func NewDataClient(endpoint string, cred azcore.TokenCredential) *DataClient {
 
 	pipeline := runtime.NewPipeline(
 		"azure-ai-connections-data",
-		"v1.0.0",
+		version.Version,
 		runtime.PipelineOptions{},
 		clientOptions,
 	)

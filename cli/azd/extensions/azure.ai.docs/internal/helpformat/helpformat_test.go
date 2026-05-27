@@ -351,7 +351,7 @@ func TestInstall_DescriptionWithTemplateLiterals(t *testing.T) {
 			return Description(hostile, Note("And ${{ ANOTHER }} in a bullet."))
 		},
 		Footer: func(c *cobra.Command) string {
-			return Examples(map[string]string{
+			return Examples(map[string]string{ //nolint:gosec // not a credential
 				"Use a workflow secret.": "demo --token ${{ secrets.FOO }}",
 			})
 		},

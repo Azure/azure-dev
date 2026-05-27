@@ -184,8 +184,8 @@ var docCategories = []DocCategory{
 		// the embedded `azd-ai-skill` pack installed by
 		// `azd ai doc install skill` -- that is a coding-agent pack
 		// consumed by tools like Claude Code / GitHub Copilot.
-		Short: "Manage Foundry skills -- versioned, project-scoped behavioral guidelines a Hosted agent downloads and injects " +
-			"(azure.ai.skills).",
+		Short: "Manage Foundry skills -- versioned, project-scoped behavioral guidelines " +
+			"a Hosted agent downloads and injects (azure.ai.skills).",
 		Preamble: []string{
 			"Foundry skills are reusable behavioral guidelines stored centrally on a Foundry project. " +
 				"A Hosted agent downloads them at build time and the agent runtime injects them as " +

@@ -493,6 +493,7 @@ func writeOwnedFile(destAbs string, f packFile) error {
 	}
 
 	tmp := target + ".tmp"
+	//nolint:gosec // skills files should remain readable by project tooling
 	if err := os.WriteFile(tmp, f.content, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", f.relPath, err)
 	}

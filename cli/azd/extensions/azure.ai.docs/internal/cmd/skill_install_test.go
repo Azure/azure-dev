@@ -190,7 +190,7 @@ func TestSkillInstallAction_RefusesToOverwriteModifiedOwnedFile(t *testing.T) {
 	pack := newTestPack(map[string]string{"SKILL.md": "bundled body"})
 	dest := filepath.Join(cwd, ".agents", "skills", "azd-ai-skill")
 	require.NoError(t, os.MkdirAll(dest, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dest, "SKILL.md"), []byte("user edited"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dest, "SKILL.md"), []byte("user edited"), 0o600))
 
 	action := &SkillInstallAction{
 		flags:    &skillInstallFlags{target: "copilot", output: "text"},
@@ -212,7 +212,7 @@ func TestSkillInstallAction_ForceOverwritesModifiedOwnedFile(t *testing.T) {
 	pack := newTestPack(map[string]string{"SKILL.md": "bundled body"})
 	dest := filepath.Join(cwd, ".agents", "skills", "azd-ai-skill")
 	require.NoError(t, os.MkdirAll(dest, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dest, "SKILL.md"), []byte("user edited"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dest, "SKILL.md"), []byte("user edited"), 0o600))
 
 	action := &SkillInstallAction{
 		flags:    &skillInstallFlags{target: "copilot", force: true, output: "text"},

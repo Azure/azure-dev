@@ -36,6 +36,10 @@ type Printer interface {
 	CursorPosition() CursorPosition
 	SetCursorPosition(position CursorPosition)
 	Size() CanvasSize
+
+	// Width returns the terminal width in columns.
+	// Visuals can use this to truncate output and prevent line wrapping.
+	Width() int
 }
 
 // NewPrinter creates a new Printer instance.
@@ -75,6 +79,11 @@ type printer struct {
 
 func (p *printer) Size() CanvasSize {
 	return *p.size
+}
+
+// Width returns the terminal width in columns.
+func (p *printer) Width() int {
+	return p.consoleWidth
 }
 
 // CursorPosition represents the position of the cursor on the screen.

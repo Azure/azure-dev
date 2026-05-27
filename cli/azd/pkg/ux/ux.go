@@ -86,6 +86,66 @@ func VisibleLength(s string) int {
 	return utf8.RuneCountInString(cleaned)
 }
 
+// TruncateVisible truncates a string to fit within maxWidth visible characters,
+// preserving ANSI escape sequences (which don't consume terminal columns).
+// If the visible text exceeds maxWidth, it is truncated and "..." is appended.
+// Returns the original string unchanged if it fits within maxWidth.
+func TruncateVisible(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+
+	visLen := VisibleLength(s)
+	if visLen <= maxWidth {
+		return s
+	}
+
+	const ellipsis = "..."
+	ellipsisLen := len(ellipsis)
+
+	// Target visible length: leave room for ellipsis
+	targetVisible := maxWidth - ellipsisLen
+	if targetVisible <= 0 {
+		// Not enough room even for ellipsis; just return dots that fit
+		return ellipsis[:maxWidth]
+	}
+
+	// Walk the string, counting visible characters while preserving ANSI sequences
+	var result strings.Builder
+	result.Grow(len(s))
+	visible := 0
+	i := 0
+
+	for i < len(s) && visible < targetVisible {
+		// Check for ANSI escape sequence start
+		if i < len(s)-1 && s[i] == '\x1b' && s[i+1] == '[' {
+			// Read until the terminating letter (any byte in 0x40-0x7E)
+			j := i + 2
+			for j < len(s) && (s[j] < 0x40 || s[j] > 0x7E) {
+				j++
+			}
+			if j < len(s) {
+				j++ // include the terminating byte
+			}
+			result.WriteString(s[i:j])
+			i = j
+			continue
+		}
+
+		// Regular character (may be multi-byte UTF-8)
+		_, size := utf8.DecodeRuneInString(s[i:])
+		result.WriteString(s[i : i+size])
+		i += size
+		visible++
+	}
+
+	result.WriteString(ellipsis)
+	// Append a reset sequence to ensure no color bleeds past the truncation point
+	result.WriteString("\x1b[0m")
+
+	return result.String()
+}
+
 // ConsoleWidth returns the width of the console in characters.
 // It uses the consolesize package to get the size and falls back to check the COLUMNS environment variable
 // Defaults to 120 if the console size cannot be determined.

@@ -153,3 +153,63 @@ func Test_VisibleLength(t *testing.T) {
 		})
 	}
 }
+
+func Test_TruncateVisible(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		maxWidth int
+		expected string
+	}{
+		// No truncation needed
+		{"Short plain text", "Hello", 10, "Hello"},
+		{"Exact fit", "Hello", 5, "Hello"},
+		{"Empty string", "", 10, ""},
+
+		// Basic truncation
+		{"Plain text truncated", "Hello World!", 8, "Hello...\x1b[0m"},
+		{"Truncated to minimum", "Hello", 3, "..."},
+
+		// Edge cases
+		{"Width 0", "Hello", 0, ""},
+		{"Width 1", "Hello", 1, "."},
+		{"Width 2", "Hello", 2, ".."},
+		{
+			"ANSI not counted in width",
+			"\x1b[31mHello World\x1b[0m",
+			8,
+			"\x1b[31mHello...\x1b[0m",
+		},
+		{
+			"ANSI fits within width",
+			"\x1b[31mHi\x1b[0m",
+			10,
+			"\x1b[31mHi\x1b[0m",
+		},
+		{
+			"Multiple ANSI sequences truncated",
+			"\x1b[1m\x1b[31mBold Red Text\x1b[0m",
+			10,
+			"\x1b[1m\x1b[31mBold Re...\x1b[0m",
+		},
+
+		// Unicode
+		{"Unicode truncated", "日本語テスト", 5, "日本...\x1b[0m"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := TruncateVisible(tc.input, tc.maxWidth)
+			if result != tc.expected {
+				t.Errorf("expected %q, got %q", tc.expected, result)
+			}
+			// Verify the result doesn't exceed maxWidth visible chars
+			if tc.maxWidth > 0 {
+				visLen := VisibleLength(result)
+				if visLen > tc.maxWidth {
+					t.Errorf("visible length %d exceeds maxWidth %d", visLen, tc.maxWidth)
+				}
+			}
+		})
+	}
+}

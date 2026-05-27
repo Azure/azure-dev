@@ -374,7 +374,33 @@ type DatasetRef struct {
 // OptimizationConfig is a per-target-attribute map of configuration overrides.
 // Each key is a target attribute name (e.g. "model") and the value is the
 // JSON-encoded configuration for that attribute.
-type OptimizationConfig = map[string]json.RawMessage
+//
+// Implements yaml.Unmarshaler so YAML native types (strings, lists, maps) are
+// automatically converted to json.RawMessage, allowing users to write:
+//
+//	optimization_config:
+//	  model: ["gpt-4o", "gpt-5"]
+//	  baselineModel: gpt-4o
+type OptimizationConfig map[string]json.RawMessage
+
+// UnmarshalYAML decodes each value as a YAML native type and re-encodes it as
+// JSON, so users don't need to quote JSON strings in YAML.
+func (oc *OptimizationConfig) UnmarshalYAML(value *yaml.Node) error {
+	var raw map[string]any
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	result := make(OptimizationConfig, len(raw))
+	for k, v := range raw {
+		data, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Errorf("marshaling optimization_config[%q]: %w", k, err)
+		}
+		result[k] = data
+	}
+	*oc = result
+	return nil
+}
 
 // Options holds run-time options for eval and optimize.
 // Eval only uses EvalModel; optimize uses all fields.

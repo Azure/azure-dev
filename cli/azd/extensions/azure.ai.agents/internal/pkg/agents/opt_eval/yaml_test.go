@@ -200,3 +200,31 @@ optimization_model: gpt-4o
 	assert.Equal(t, 10, *opts.MaxIterations)
 	assert.Equal(t, "gpt-4o", opts.OptimizationModel)
 }
+
+func TestOptions_OptimizationConfig_NativeYAML(t *testing.T) {
+	t.Parallel()
+
+	input := `
+eval_model: gpt-4o
+optimization_model: gpt-5.1
+optimization_config:
+  model:
+    - gpt-4o
+    - gpt-5
+    - gpt-5.1
+  baselineModel: gpt-4o
+`
+	var opts Options
+	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
+
+	assert.Equal(t, "gpt-4o", opts.EvalModel)
+	assert.Equal(t, "gpt-5.1", opts.OptimizationModel)
+
+	require.NotNil(t, opts.OptimizationConfig)
+
+	// model should be a JSON array.
+	assert.JSONEq(t, `["gpt-4o","gpt-5","gpt-5.1"]`, string(opts.OptimizationConfig["model"]))
+
+	// baselineModel should be a JSON string.
+	assert.JSONEq(t, `"gpt-4o"`, string(opts.OptimizationConfig["baselineModel"]))
+}

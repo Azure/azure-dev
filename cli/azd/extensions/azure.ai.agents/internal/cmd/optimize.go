@@ -225,25 +225,30 @@ func (a *OptimizeAction) resolveConfig(
 	agentProject = resolved.agentProject
 
 	// Check if eval.yaml exists in the agent project and offer to use it.
+	// In --no-prompt mode, use it automatically.
 	if resolved.agentProject != "" {
 		evalPath := filepath.Join(resolved.agentProject, defaultEvalConfigName)
-		if _, statErr := os.Stat(evalPath); statErr == nil && !a.noPrompt {
-			azdClient, clientErr := azdext.NewAzdClient()
-			if clientErr == nil {
-				defer azdClient.Close()
-				resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-					Options: &azdext.ConfirmOptions{
-						Message:      fmt.Sprintf("Found %s in project. Use it for optimization?", defaultEvalConfigName),
-						DefaultValue: new(true),
-					},
-				})
-				if promptErr == nil && resp.Value != nil && *resp.Value {
-					cfg, err = LoadOptimizeConfig(evalPath)
-					if err != nil {
-						return nil, "", "", fmt.Errorf("failed to load %s: %w", evalPath, err)
-					}
-					configSource = evalPath
+		if _, statErr := os.Stat(evalPath); statErr == nil {
+			useEval := a.noPrompt // auto-use in no-prompt mode
+			if !a.noPrompt {
+				azdClient, clientErr := azdext.NewAzdClient()
+				if clientErr == nil {
+					defer azdClient.Close()
+					resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+						Options: &azdext.ConfirmOptions{
+							Message:      fmt.Sprintf("Found %s in project. Use it for optimization?", defaultEvalConfigName),
+							DefaultValue: new(true),
+						},
+					})
+					useEval = promptErr == nil && resp.Value != nil && *resp.Value
 				}
+			}
+			if useEval {
+				cfg, err = LoadOptimizeConfig(evalPath)
+				if err != nil {
+					return nil, "", "", fmt.Errorf("failed to load %s: %w", evalPath, err)
+				}
+				configSource = evalPath
 			}
 		}
 	}

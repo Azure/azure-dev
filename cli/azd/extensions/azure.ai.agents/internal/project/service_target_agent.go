@@ -64,13 +64,36 @@ type displayableProtocolEntry struct {
 // displayableProtocols is the single source of truth for protocols that produce
 // user-facing invocation endpoints and env vars.
 var displayableProtocols = []displayableProtocolEntry{
-	{Protocol: agent_api.AgentProtocolResponses, URLPath: "openai/v1/responses", EnvSuffix: "RESPONSES"},
-	{Protocol: agent_api.AgentProtocolInvocations, URLPath: "invocations", EnvSuffix: "INVOCATIONS"},
+	{
+		Protocol:  agent_api.AgentProtocolResponses,
+		EnvSuffix: "RESPONSES",
+		BuildURL:  buildResponsesProtocolURL,
+	},
+	{
+		Protocol:  agent_api.AgentProtocolInvocations,
+		EnvSuffix: "INVOCATIONS",
+		BuildURL:  buildInvocationsProtocolURL,
+	},
 	{
 		Protocol:  agent_api.AgentProtocolInvocationsWS,
 		EnvSuffix: "INVOCATIONS_WS",
 		BuildURL:  buildInvocationsWSProtocolURL,
 	},
+}
+
+// buildResponsesProtocolURL builds the per-agent HTTPS URL for the "responses" protocol.
+func buildResponsesProtocolURL(projectEndpoint, agentName string) string {
+	return fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/openai/v1/responses", projectEndpoint, agentName,
+	)
+}
+
+// buildInvocationsProtocolURL builds the per-agent HTTPS URL for the "invocations" protocol.
+func buildInvocationsProtocolURL(projectEndpoint, agentName string) string {
+	return fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/invocations?api-version=%s",
+		projectEndpoint, agentName, agent_api.AgentEndpointAPIVersion,
+	)
 }
 
 // buildInvocationsWSProtocolURL builds the Foundry dispatcher-form WebSocket URL for the

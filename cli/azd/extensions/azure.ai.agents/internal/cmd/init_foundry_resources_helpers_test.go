@@ -654,4 +654,6 @@ func TestConfigureDeferredInitAzureContext_PersistsProjectSignalOnly(t *testing.
 	require.Contains(t, output, "azd env set AZURE_LOCATION <region>")
 	require.NotContains(t, output, "azd env set AZURE_SUBSCRIPTION_ID")
 	require.Contains(t, output, "Model resource configuration was deferred")
+	require.Contains(t, output, "deployments:")
+	require.Contains(t, output, "format: OpenAI")
 }

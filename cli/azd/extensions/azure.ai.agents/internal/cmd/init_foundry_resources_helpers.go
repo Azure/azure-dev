@@ -761,8 +761,20 @@ func configureDeferredInitAzureContext(
 			"Model resource configuration was deferred because model lookup requires the missing Azure values.\n",
 		))
 		fmt.Println(output.WithGrayFormat(
-			"Set the missing values, then re-run init or configure model deployments in azure.yaml before provisioning.",
+			"Set the missing values, then re-run init to resolve model deployments automatically.",
 		))
+		fmt.Println(output.WithGrayFormat(
+			"To configure deployments manually, add a deployment under the agent service config in azure.yaml, for example:",
+		))
+		fmt.Println(output.WithGrayFormat("  deployments:"))
+		fmt.Println(output.WithGrayFormat("    - name: <deployment-name>"))
+		fmt.Println(output.WithGrayFormat("      model:"))
+		fmt.Println(output.WithGrayFormat("        name: <model-name>"))
+		fmt.Println(output.WithGrayFormat("        format: OpenAI"))
+		fmt.Println(output.WithGrayFormat("        version: <model-version>"))
+		fmt.Println(output.WithGrayFormat("      sku:"))
+		fmt.Println(output.WithGrayFormat("        name: GlobalStandard"))
+		fmt.Println(output.WithGrayFormat("        capacity: 1"))
 	}
 
 	if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
@@ -773,6 +785,28 @@ func configureDeferredInitAzureContext(
 	}
 
 	return nil
+}
+
+func configureNewProjectForNoPrompt(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	azureContext *azdext.AzureContext,
+	subscriptionMessage string,
+) (azcore.TokenCredential, error) {
+	newCred, err := ensureSubscriptionAndLocation(ctx, azdClient, azureContext, envName, subscriptionMessage)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
+		return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+	}
+	if err := updatePendingProjectSignal(ctx, azdClient, envName, false); err != nil {
+		log.Printf("warning: failed to update project provision signal: %v", err)
+	}
+
+	return newCred, nil
 }
 
 // --- Shared subscription/location helpers ---

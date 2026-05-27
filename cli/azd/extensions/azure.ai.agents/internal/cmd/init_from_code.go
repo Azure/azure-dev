@@ -484,17 +484,16 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		if env := getExistingEnvironment(ctx, a.flags.env, a.azdClient); env != nil {
 			a.environment = env
 			a.flags.env = env.Name
+		} else {
+			envName := sanitizeAgentName(agentName + "-dev")
+			env, err := createNewEnvironment(ctx, a.azdClient, envName)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create azd environment: %w", err)
+			}
+			a.environment = env
+			a.flags.env = envName
+			fmt.Printf("  %s  %s\n", color.GreenString("+"), color.GreenString(".azure/%s/.env", envName))
 		}
-	}
-	if a.environment == nil {
-		envName := sanitizeAgentName(agentName + "-dev")
-		env, err := createNewEnvironment(ctx, a.azdClient, envName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create azd environment: %w", err)
-		}
-		a.environment = env
-		a.flags.env = envName
-		fmt.Printf("  %s  %s\n", color.GreenString("+"), color.GreenString(".azure/%s/.env", envName))
 	}
 	if a.azureContext == nil || a.azureContext.Scope == nil ||
 		(a.azureContext.Scope.SubscriptionId == "" &&
@@ -575,6 +574,8 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 		}
 	} else if shouldDeferInitAzureContext(a.flags.noPrompt, a.azureContext) {
+		// In headless init, missing Azure values should not block local scaffold generation.
+		// Defer project/model setup and print the values required before provisioning.
 		if err := configureDeferredInitAzureContext(
 			ctx, a.azdClient, a.environment.Name, a.azureContext, false,
 		); err != nil {
@@ -582,21 +583,14 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 		deferredAzureContext = true
 	} else if a.flags.noPrompt {
-		newCred, err := ensureSubscriptionAndLocation(
-			ctx, a.azdClient, a.azureContext, a.environment.Name,
+		newCred, err := configureNewProjectForNoPrompt(
+			ctx, a.azdClient, a.environment.Name, a.azureContext,
 			"Select an Azure subscription to look up available models and provision your Foundry project resources.",
 		)
 		if err != nil {
 			return nil, err
 		}
 		a.credential = newCred
-
-		if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
-			return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
-		}
-		if err := updatePendingProjectSignal(ctx, a.azdClient, a.environment.Name, false); err != nil {
-			log.Printf("warning: failed to update project provision signal: %v", err)
-		}
 	} else {
 		projectChoices := []*azdext.SelectChoice{
 			{Label: "Use an existing Foundry project", Value: "existing"},

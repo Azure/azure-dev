@@ -1199,6 +1199,8 @@ func (a *InitAction) configureModelChoice(
 
 	hasModelResources := manifestHasModelResources(agentManifest)
 	if a.flags.projectResourceId == "" && shouldDeferInitAzureContext(a.flags.noPrompt, a.azureContext) {
+		// In headless init, missing Azure values should not block local scaffold generation.
+		// Defer project/model setup and print the values required before provisioning.
 		if err := configureDeferredInitAzureContext(
 			ctx, a.azdClient, a.environment.Name, a.azureContext, hasModelResources,
 		); err != nil {
@@ -1250,25 +1252,14 @@ func (a *InitAction) configureModelChoice(
 				log.Printf("warning: failed to update project provision signal: %v", err)
 			}
 		} else if a.flags.noPrompt {
-			newCred, err := ensureSubscriptionAndLocation(
-				ctx, a.azdClient, a.azureContext, a.environment.Name,
+			newCred, err := configureNewProjectForNoPrompt(
+				ctx, a.azdClient, a.environment.Name, a.azureContext,
 				"Select an Azure subscription to provision your agent and Foundry project resources.",
 			)
 			if err != nil {
 				return nil, err
 			}
 			a.credential = newCred
-
-			if err := setEnvValue(
-				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
-			); err != nil {
-				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
-			}
-			if err := updatePendingProjectSignal(
-				ctx, a.azdClient, a.environment.Name, false,
-			); err != nil {
-				log.Printf("warning: failed to update project provision signal: %v", err)
-			}
 		} else {
 			// Prompt user to pick an existing Foundry project or create new resources
 			projectChoices := []*azdext.SelectChoice{

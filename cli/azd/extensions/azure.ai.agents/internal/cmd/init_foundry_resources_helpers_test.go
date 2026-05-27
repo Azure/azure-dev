@@ -210,6 +210,18 @@ func (s *testEnvironmentServiceServer) GetValue(
 	return nil, status.Error(codes.NotFound, "key not found")
 }
 
+func (s *testEnvironmentServiceServer) GetValues(
+	_ context.Context, req *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	values := s.values[req.Name]
+	keyValues := make([]*azdext.KeyValue, 0, len(values))
+	for key, value := range values {
+		keyValues = append(keyValues, &azdext.KeyValue{Key: key, Value: value})
+	}
+
+	return &azdext.KeyValueListResponse{KeyValues: keyValues}, nil
+}
+
 type testWorkflowServiceServer struct {
 	azdext.UnimplementedWorkflowServiceServer
 	runCalls int
@@ -551,4 +563,97 @@ func TestSetEnvValue_PersistsKeyValue(t *testing.T) {
 
 	// Verify the value was updated
 	require.Equal(t, "false", envServer.values[envName]["USE_EXISTING_AI_PROJECT"])
+}
+
+func TestMissingInitAzureContextValues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		azureContext *azdext.AzureContext
+		want         []string
+	}{
+		{
+			name: "nil context",
+			want: []string{"AZURE_SUBSCRIPTION_ID", "AZURE_LOCATION"},
+		},
+		{
+			name:         "nil scope",
+			azureContext: &azdext.AzureContext{},
+			want:         []string{"AZURE_SUBSCRIPTION_ID", "AZURE_LOCATION"},
+		},
+		{
+			name: "missing both",
+			azureContext: &azdext.AzureContext{
+				Scope: &azdext.AzureScope{},
+			},
+			want: []string{"AZURE_SUBSCRIPTION_ID", "AZURE_LOCATION"},
+		},
+		{
+			name: "missing subscription",
+			azureContext: &azdext.AzureContext{
+				Scope: &azdext.AzureScope{Location: "eastus"},
+			},
+			want: []string{"AZURE_SUBSCRIPTION_ID"},
+		},
+		{
+			name: "missing location",
+			azureContext: &azdext.AzureContext{
+				Scope: &azdext.AzureScope{SubscriptionId: "sub-id"},
+			},
+			want: []string{"AZURE_LOCATION"},
+		},
+		{
+			name: "complete",
+			azureContext: &azdext.AzureContext{
+				Scope: &azdext.AzureScope{SubscriptionId: "sub-id", Location: "eastus"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tt.want, missingInitAzureContextValues(tt.azureContext))
+		})
+	}
+}
+
+func TestShouldDeferInitAzureContext(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, shouldDeferInitAzureContext(false, &azdext.AzureContext{}))
+	require.True(t, shouldDeferInitAzureContext(true, &azdext.AzureContext{}))
+	require.False(t, shouldDeferInitAzureContext(true, &azdext.AzureContext{
+		Scope: &azdext.AzureScope{SubscriptionId: "sub-id", Location: "eastus"},
+	}))
+}
+
+func TestConfigureDeferredInitAzureContext_PersistsProjectSignalOnly(t *testing.T) {
+	const envName = "test-env"
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{envName: {}},
+	}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+	azureContext := &azdext.AzureContext{
+		Scope: &azdext.AzureScope{SubscriptionId: "sub-id"},
+	}
+
+	output, err := captureStdout(t, func() error {
+		return configureDeferredInitAzureContext(
+			t.Context(), azdClient, envName, azureContext, true,
+		)
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "false", envServer.values[envName]["USE_EXISTING_AI_PROJECT"])
+	require.Equal(t, pendingReasonProject, envServer.values[envName][pendingProvisionEnvVar])
+	require.Contains(t, output, "Missing Azure environment values: AZURE_LOCATION")
+	require.Contains(t, output, "azd env set AZURE_LOCATION <region>")
+	require.NotContains(t, output, "azd env set AZURE_SUBSCRIPTION_ID")
+	require.Contains(t, output, "Model resource configuration was deferred")
+	require.Contains(t, output, "deployments:")
+	require.Contains(t, output, "format: OpenAI")
 }

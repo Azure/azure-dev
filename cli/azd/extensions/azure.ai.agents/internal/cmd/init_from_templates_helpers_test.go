@@ -196,6 +196,29 @@ func TestPartitionFeaturedNoneFeatured(t *testing.T) {
 	require.Len(t, rest, 2)
 }
 
+func TestPromptInitMode_NoPromptNonEmptyDirUsesCurrentDirectory(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	err := os.WriteFile(filepath.Join(dir, "main.py"), []byte("print('hello')\n"), 0600)
+	require.NoError(t, err)
+
+	mode, err := promptInitMode(t.Context(), nil, true)
+
+	require.NoError(t, err)
+	require.Equal(t, initModeFromCode, mode)
+}
+
+func TestPromptInitMode_NoPromptEmptyDirUsesTemplate(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	mode, err := promptInitMode(t.Context(), nil, true)
+
+	require.NoError(t, err)
+	require.Equal(t, initModeTemplate, mode)
+}
+
 func TestFindRecommendedIndex(t *testing.T) {
 	t.Parallel()
 

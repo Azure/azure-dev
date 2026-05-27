@@ -57,6 +57,9 @@ const (
 	// because nextstep is a leaf package with no dependency on cmd
 	// — both packages share the same string literal contract.
 	pendingProvisionVar = "AI_AGENT_PENDING_PROVISION"
+
+	azureSubscriptionIdVar = "AZURE_SUBSCRIPTION_ID"
+	azureLocationVar       = "AZURE_LOCATION"
 )
 
 // envVarRefPattern captures ${VAR} references inside YAML string values.
@@ -267,6 +270,8 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 			errs = append(errs, fmt.Errorf("read %s: %w", pendingProvisionVar, err))
 		}
 		state.PendingProvisionReasons = parsePendingProvisionReasons(pending)
+
+		state.MissingAzureContextVars = detectMissingAzureContextVars(ctx, src, envName, &errs)
 	}
 
 	project, err := src.Project(ctx)
@@ -298,6 +303,23 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 	partitionToolboxEndpointVars(state)
 
 	return state, errs
+}
+
+func detectMissingAzureContextVars(ctx context.Context, src Source, envName string, errs *[]error) []string {
+	requiredVars := []string{azureSubscriptionIdVar, azureLocationVar}
+	missing := make([]string, 0, len(requiredVars))
+	for _, key := range requiredVars {
+		value, err := src.EnvValue(ctx, envName, key)
+		if err != nil {
+			*errs = append(*errs, fmt.Errorf("read %s: %w", key, err))
+			continue
+		}
+		if strings.TrimSpace(value) == "" {
+			missing = append(missing, key)
+		}
+	}
+
+	return missing
 }
 
 // partitionToolboxEndpointVars moves any entry in state.MissingManualVars

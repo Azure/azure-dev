@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- Add `invocations_ws` as a displayable agent protocol. `azd deploy` now registers the callable Foundry data-plane WebSocket URL (`wss://<account>.services.ai.azure.com/api/projects/agents/endpoint/protocols/invocations_ws?api-version=v1&project_name=<project>&agent_name=<agent>`) as `AGENT_{KEY}_INVOCATIONS_WS_ENDPOINT`, and `azd ai agent show` displays it as `Endpoint (invocations_ws)`. Previously, `invocations_ws` agents fell back to the legacy resource URL labeled `Endpoint (Agent)`.
+
 ## 0.1.34-preview (2026-05-22)
 
 - [[#8264]](https://github.com/Azure/azure-dev/pull/8264) Launch Agent Inspector automatically on `azd ai agent run`. Use `--no-inspector` to opt out. Requires the `azure.ai.inspector` extension.

@@ -547,24 +547,72 @@ func TestRegisterAgentEnvironmentVariables_EmptyVersion(t *testing.T) {
 	require.Contains(t, err.Error(), "agent version is empty")
 }
 
-func TestProtocolPath(t *testing.T) {
+func TestDisplayableProtocolFor(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		protocol string
-		expected string
+		name             string
+		protocol         string
+		wantNil          bool
+		wantProtocol     agent_api.AgentProtocol
+		wantEnvSuffix    string
+		wantURLContains  string
+		wantURLScheme    string // "https" or "wss"
+		wantURLOmitAgent bool   // true when the protocol does not embed the agent name in the path
 	}{
-		{"responses", "responses", "openai/responses"},
-		{"invocations", "invocations", "invocations"},
-		{"activity_protocol excluded", "activity_protocol", ""},
-		{"unknown excluded", "unknown_proto", ""},
+		{
+			name:            "responses",
+			protocol:        "responses",
+			wantProtocol:    agent_api.AgentProtocolResponses,
+			wantEnvSuffix:   "RESPONSES",
+			wantURLContains: "/agents/my-agent/endpoint/protocols/openai/responses",
+			wantURLScheme:   "https",
+		},
+		{
+			name:            "invocations",
+			protocol:        "invocations",
+			wantProtocol:    agent_api.AgentProtocolInvocations,
+			wantEnvSuffix:   "INVOCATIONS",
+			wantURLContains: "/agents/my-agent/endpoint/protocols/invocations",
+			wantURLScheme:   "https",
+		},
+		{
+			name:             "invocations_ws",
+			protocol:         "invocations_ws",
+			wantProtocol:     agent_api.AgentProtocolInvocationsWS,
+			wantEnvSuffix:    "INVOCATIONS_WS",
+			wantURLContains:  "/api/projects/agents/endpoint/protocols/invocations_ws",
+			wantURLScheme:    "wss",
+			wantURLOmitAgent: true,
+		},
+		{name: "activity_protocol excluded", protocol: "activity_protocol", wantNil: true},
+		{name: "unknown excluded", protocol: "unknown_proto", wantNil: true},
 	}
+
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+	const agentName = "my-agent"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := protocolPath(tt.protocol)
-			require.Equal(t, tt.expected, got)
+			got := displayableProtocolFor(tt.protocol)
+			if tt.wantNil {
+				require.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			require.Equal(t, tt.wantProtocol, got.Protocol)
+			require.Equal(t, tt.wantEnvSuffix, got.EnvSuffix)
+			require.NotNil(t, got.BuildURL)
+
+			url := got.BuildURL(projectEndpoint, agentName)
+			require.True(t, strings.HasPrefix(url, tt.wantURLScheme+"://"),
+				"url %q should use %s scheme", url, tt.wantURLScheme)
+			require.Contains(t, url, tt.wantURLContains)
+			if tt.wantURLOmitAgent {
+				require.NotContains(t, url, "/agents/"+agentName+"/")
+				require.Contains(t, url, "agent_name="+agentName)
+				require.Contains(t, url, "project_name=proj")
+			}
 		})
 	}
 }
@@ -572,9 +620,15 @@ func TestProtocolPath(t *testing.T) {
 func TestAgentInvocationEndpoints(t *testing.T) {
 	t.Parallel()
 
-	const endpoint = "https://myproject.services.ai.azure.com"
+	const endpoint = "https://myproject.services.ai.azure.com/api/projects/proj"
 	const agentName = "my-agent"
 	baseURL := endpoint + "/agents/" + agentName + "/endpoint/protocols/"
+
+	const wsBase = "wss://myproject.services.ai.azure.com" +
+		"/api/projects/agents/endpoint/protocols/invocations_ws"
+	const wsQuery = "agent_name=" + agentName +
+		"&api-version=" + invocationsWebSocketAPIVersion +
+		"&project_name=proj"
 
 	tests := []struct {
 		name      string
@@ -606,11 +660,24 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			},
 		},
 		{
+			name: "single invocations_ws protocol uses dispatcher form",
+			protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "invocations_ws", Version: "1.0.0"},
+			},
+			expected: []protocolEndpointInfo{
+				{
+					Protocol: "invocations_ws",
+					URL:      wsBase + "?" + wsQuery,
+				},
+			},
+		},
+		{
 			name: "multiple protocols with activity_protocol excluded",
 			protocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "responses", Version: "1.0.0"},
 				{Protocol: "activity_protocol", Version: "1.0.0"},
 				{Protocol: "invocations", Version: "1.0.0"},
+				{Protocol: "invocations_ws", Version: "1.0.0"},
 			},
 			expected: []protocolEndpointInfo{
 				{
@@ -620,6 +687,10 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 				{
 					Protocol: "invocations",
 					URL:      baseURL + "invocations?api-version=" + agentAPIVersion,
+				},
+				{
+					Protocol: "invocations_ws",
+					URL:      wsBase + "?" + wsQuery,
 				},
 			},
 		},
@@ -643,6 +714,56 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			require.Equal(t, tt.expected, got)
 		})
 	}
+}
+
+func TestBuildInvocationsWSProtocolURL_MalformedEndpoint(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		projectEndpoint string
+	}{
+		{name: "empty", projectEndpoint: ""},
+		{name: "missing scheme", projectEndpoint: "myproject.services.ai.azure.com/api/projects/proj"},
+		{name: "leading whitespace only", projectEndpoint: "   "},
+		{name: "control characters", projectEndpoint: "https://%zz/api/projects/proj"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Empty(t, buildInvocationsWSProtocolURL(tt.projectEndpoint, "my-agent"),
+				"expected empty result for malformed projectEndpoint %q", tt.projectEndpoint)
+		})
+	}
+}
+
+func TestBuildInvocationsWSProtocolURL_TrimsWhitespace(t *testing.T) {
+	t.Parallel()
+
+	got := buildInvocationsWSProtocolURL(
+		"  https://myproject.services.ai.azure.com/api/projects/proj  ",
+		"my-agent",
+	)
+	require.NotEmpty(t, got)
+	require.Contains(t, got, "wss://myproject.services.ai.azure.com")
+	require.Contains(t, got, "project_name=proj")
+	require.Contains(t, got, "agent_name=my-agent")
+}
+
+func TestAgentInvocationEndpoints_SkipsInvocationsWSWithMalformedEndpoint(t *testing.T) {
+	t.Parallel()
+
+	const malformed = "not-a-url"
+	const agentName = "my-agent"
+
+	protocols := []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "responses", Version: "1.0.0"},
+		{Protocol: "invocations_ws", Version: "1.0.0"},
+	}
+
+	got := agentInvocationEndpoints(malformed, agentName, protocols)
+	require.Len(t, got, 1, "invocations_ws entry should be filtered when builder returns empty")
+	require.Equal(t, "responses", got[0].Protocol)
 }
 
 func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {

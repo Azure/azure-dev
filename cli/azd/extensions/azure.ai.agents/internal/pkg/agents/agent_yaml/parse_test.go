@@ -121,6 +121,18 @@ template:
   protocols:
     - protocol: invocations
       version: 1.0.0
+  agent_endpoint:
+    protocols:
+      - responses
+    authorization_schemes:
+      - type: Entra
+        isolation_key_source:
+          kind: Header
+  agent_card:
+    description: image-agent card
+    skills:
+      - name: chat
+        description: Basic chat capability
 `)
 
 	agent, err := ExtractAgentDefinition(yamlContent)
@@ -135,6 +147,19 @@ template:
 
 	if containerAgent.Image != "myregistry.azurecr.io/myimage:v1" {
 		t.Errorf("Expected image 'myregistry.azurecr.io/myimage:v1', got '%s'", containerAgent.Image)
+	}
+
+	if containerAgent.AgentEndpoint == nil {
+		t.Fatal("Expected AgentEndpoint to be set, got nil")
+	}
+	if len(containerAgent.AgentEndpoint.AuthorizationSchemes) != 1 ||
+		containerAgent.AgentEndpoint.AuthorizationSchemes[0].IsolationKeySource == nil ||
+		containerAgent.AgentEndpoint.AuthorizationSchemes[0].IsolationKeySource.Kind != "Header" {
+		t.Errorf("Expected isolation_key_source.kind 'Header', got %+v",
+			containerAgent.AgentEndpoint.AuthorizationSchemes)
+	}
+	if containerAgent.AgentCard == nil || containerAgent.AgentCard.Description != "image-agent card" {
+		t.Errorf("Expected agent_card.description 'image-agent card', got %+v", containerAgent.AgentCard)
 	}
 
 	marshaled, err := yaml.Marshal(containerAgent)

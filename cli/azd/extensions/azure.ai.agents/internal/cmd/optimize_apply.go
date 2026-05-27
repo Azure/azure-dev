@@ -132,9 +132,6 @@ func (a *OptimizeApplyAction) apply(
 		return fmt.Errorf("failed to create optimization directory: %w", err)
 	}
 
-	// Clean up other candidate directories, keeping only baseline and the current candidate.
-	cleanOtherCandidates(filepath.Join(serviceDir, agentConfigsDir), a.flags.candidate, out)
-
 	// Step 2: Download skill files into the candidate directory (before metadata.yaml
 	// so the skills/ dir exists when writeAgentConfigFromCandidate checks for it).
 	if n, dlErr := downloadSkillFilesToDir(ctx, optClient, a.flags.candidate, candidateDir, out); dlErr != nil {
@@ -401,31 +398,14 @@ func writeInlineSkills(candidateDir string, config map[string]any) error {
 	return nil
 }
 
-// writeToolsFile writes the candidate config as tools.json, preserving its
-// original structure (may be a list or an object).
+// writeToolsFile writes the "tools" array from the candidate config as tools.json.
 func writeToolsFile(candidateDir string, config map[string]any) error {
-	toolDefs, hasDefs := config["toolDefinitions"]
-	toolDescriptions, hasToolDescriptions := config["toolDescriptions"]
-	if !hasDefs && !hasToolDescriptions {
+	tools, ok := config["tools"]
+	if !ok {
 		return nil
 	}
 
-	// Write whichever is present. If only one key exists, write its value
-	// directly (preserves array or object). If both exist, wrap in an object.
-	var payload any
-	switch {
-	case hasDefs && hasToolDescriptions:
-		payload = map[string]any{
-			"toolDefinitions":  toolDefs,
-			"toolDescriptions": toolDescriptions,
-		}
-	case hasDefs:
-		payload = toolDefs
-	default:
-		payload = toolDescriptions
-	}
-
-	data, err := json.MarshalIndent(payload, "", "  ")
+	data, err := json.MarshalIndent(tools, "", "  ")
 	if err != nil {
 		return fmt.Errorf("serializing tools file: %w", err)
 	}
@@ -487,31 +467,6 @@ func downloadSkillFilesToDir(
 	}
 
 	return count, nil
-}
-
-// cleanOtherCandidates removes all subdirectories in the optimization folder
-// except the baseline and the candidate being applied.
-func cleanOtherCandidates(optimizeDir, currentCandidate string, out io.Writer) {
-	entries, err := os.ReadDir(optimizeDir)
-	if err != nil {
-		return
-	}
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if name == opt_eval.BaselineDir || name == currentCandidate {
-			continue
-		}
-		dir := filepath.Join(optimizeDir, name)
-		if err := os.RemoveAll(dir); err != nil {
-			fmt.Fprintf(out, "  warning: failed to remove old candidate %s: %s\n", name, err)
-		} else {
-			fmt.Fprintf(out, "  Removed old candidate: %s\n", name)
-		}
-	}
 }
 
 // extractInstructions retrieves the system prompt string from a candidate config

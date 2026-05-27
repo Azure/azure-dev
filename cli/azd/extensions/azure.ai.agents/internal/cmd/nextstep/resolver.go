@@ -10,9 +10,6 @@ import (
 	"strings"
 )
 
-// Default-payload literals used when the resolver cannot derive a sample
-// payload from the agent's OpenAPI spec. Two protocols are recognized;
-// anything else falls back to ProtocolDefaultPayload.
 const (
 	// ProtocolInvocations is the value of `agent.yaml#protocol` for
 	// JSON-body /invocations agents.
@@ -21,8 +18,19 @@ const (
 	// text /responses agents.
 	ProtocolResponses = "responses"
 
-	invokeInvocationsPayload = `'{"message": "Hello!"}'`
-	invokeResponsesPayload   = `"Hello!"`
+	// placeholderPayload is the single-quoted literal the resolver
+	// emits as the body argument when no concrete payload is known —
+	// either because no OpenAPI sample has been extracted yet, or
+	// because the agent's schema is genuinely opaque to azd. It
+	// replaces the legacy `'{"message": "Hello!"}'` (invocations) and
+	// `"Hello!"` (responses) fallbacks: those literals only matched
+	// the basic sample's schema and silently 400'd on every other
+	// agent shape. `'<payload>'` is honest — it signals "substitute
+	// your own body here" instead of pretending we know the right
+	// one. When the service has a sibling README on disk, the resolver
+	// pairs the placeholder with a `see <relPath>/README.md` pointer
+	// so the user has somewhere concrete to look for the real shape.
+	placeholderPayload = `'<payload>'`
 
 	// maxFixupLines caps the number of `azd env set` / `edit agent.yaml`
 	// hints emitted by ResolveAfterInit per missing-input category so the
@@ -35,12 +43,14 @@ const (
 // successful `azd ai agent init`. Pure function over *State.
 //
 // Decision tree:
+//
 //   - UnresolvedPlaceholders (always shown first when present, regardless
 //     of other branches) → one "edit agent.yaml: replace {{NAME}}" line
 //     per unresolved Mustache placeholder (up to maxFixupLines). These
 //     are deploy-time landmines: the literal `{{NAME}}` would otherwise
 //     land in the container. They never reach `azd env set` because the
 //     value lives in agent.yaml itself, not the azd environment.
+//
 //   - len(PendingProvisionReasons) > 0 OR !HasProjectEndpoint OR
 //     MissingInfraVars → required Azure-context `azd env set` fixups,
 //     then `azd provision`
@@ -63,36 +73,82 @@ const (
 //     sibling environment cannot mislead the resolver into
 //     suggesting `azd ai agent run`. See state.PendingProvisionReasons
 //     for the env-var contract.
-//   - MissingManualVars  → one `azd env set <KEY> <value>` per missing var
-//     (up to maxFixupLines) plus an `azd ai agent run` follow-up so
-//     the user knows what to do after supplying the values. Matches
+//
+//   - MissingToolboxEndpoints OR MissingManualVars (or BOTH) → a
+//     combined "fix things before you can run locally" branch. The two
+//     sub-branches are additive (not mutually exclusive) so a manifest
+//     that declares a toolbox AND references an unrelated manual var
+//     (e.g. an API key) surfaces guidance for both — otherwise the
+//     toolbox sub-branch would silently swallow the `azd env set` lines
+//     and still emit `azd ai agent run`, leaving the user to discover
+//     the unset manual var when the agent crashes.
+//
+//     Toolbox sub-branch: emits `azd provision` (with an
+//     `azd ai agent doctor` follow-up so the user can verify whether
+//     the toolbox already exists in their Foundry project before
+//     publishing a fresh version). Toolbox-derived endpoint vars
+//     (`TOOLBOX_<NAME>_MCP_ENDPOINT`) are azd-managed outputs of
+//     provision (see listen.go::registerToolboxEnvVars), not operator-
+//     supplied; suggesting `azd env set` for them would be misleading
+//     because the value is the URL of a Foundry resource that doesn't
+//     yet exist at this point in the lifecycle. The actual live
+//     existence check requires a Foundry API call and lives in
+//     `azd ai agent doctor`'s local.toolboxes check, not here —
+//     ResolveAfterInit is offline by contract.
+//
+//     Manual-vars sub-branch: one `azd env set <KEY> <value>` per
+//     missing operator-supplied var (up to maxFixupLines). Matches
 //     issue #7975's "Then run 'azd ai agent run' to start locally"
-//     manual-vars example. The run follow-up is suppressed when
-//     UnresolvedPlaceholders are also present, since literal
-//     `{{NAME}}` values would still break the local agent.
+//     manual-vars example.
+//
+//     A single `azd ai agent run` + invoke-local secondary follows
+//     both sub-branches, with a description that names the prerequisite
+//     ("once provision completes", "once the values above are set", or
+//     "once the steps above are complete" when both apply). The
+//     run/invoke pair is suppressed when UnresolvedPlaceholders are
+//     also present, since literal `{{NAME}}` values would still break
+//     the local agent.
+//
 //   - Otherwise          → `azd ai agent run` + `azd ai agent invoke
 //     --local <payload>` secondary
 //     Spec: issue #7975 lines 96-103. The invoke-local secondary
 //     lets the user test the agent in another terminal once it's
-//     running. Payload is protocol-aware when the project has
-//     exactly one service in state (the unqualified `invoke --local`
-//     resolves to that service). For multi-agent projects the
-//     payload defaults to the responses-style `"Hello!"` and the
-//     command is left unqualified — the user picks the target at
-//     runtime via the interactive prompt or `--service` flag, the
-//     same shape the spec example uses.
+//     running. Single-agent projects route through resolveInvokeArg,
+//     which prefers a sibling README pointer + `'<payload>'`
+//     placeholder over a hardcoded sample that could mismatch the
+//     agent's schema. Multi-agent projects emit a single unqualified
+//     invoke line with a bare placeholder — the user picks the
+//     target at runtime via the interactive prompt or `--service`
+//     flag, the same shape the spec example uses, and no per-service
+//     README hint can be picked deterministically at this layer.
 //     Both lines are skipped when only UnresolvedPlaceholders are
 //     present, because running locally with literal `{{NAME}}`
 //     values is broken.
 //
+// readmeExists is consulted by resolveInvokeArg to decide whether
+// to emit a sibling `see <relPath>/README.md` hint immediately before
+// the invoke line. A nil callback disables README detection (tests
+// and dry-run callers can pass nil safely).
+//
 // All paths append the static "When ready to deploy to Azure…" tail.
-func ResolveAfterInit(state *State) []Suggestion {
+func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool) []Suggestion {
 	if state == nil {
 		return nil
 	}
 
 	out := make([]Suggestion, 0, 4)
 	priority := 5
+
+	// When init created a new project folder, the user's shell is still
+	// in the original directory. A leading `cd` suggestion lets them
+	// navigate before running any subsequent commands.
+	if state.CreatedFolderDisplay != "" {
+		out = append(out, Suggestion{
+			Command:     fmt.Sprintf("cd %s", state.CreatedFolderDisplay),
+			Description: "enter your new project folder",
+			Priority:    0,
+		})
+	}
 
 	// Placeholder fix-ups always come first when present: they are broken
 	// state in agent.yaml itself and block both `run` and `deploy`. The
@@ -113,6 +169,9 @@ func ResolveAfterInit(state *State) []Suggestion {
 		}
 	}
 
+	hasToolboxEndpoints := len(state.MissingToolboxEndpoints) > 0
+	hasManualVars := len(state.MissingManualVars) > 0
+
 	needsProvision := len(state.PendingProvisionReasons) > 0 ||
 		!state.HasProjectEndpoint ||
 		len(state.MissingInfraVars) > 0
@@ -132,34 +191,75 @@ func ResolveAfterInit(state *State) []Suggestion {
 			Description: "set up your Foundry project, models, and connections",
 			Priority:    priority,
 		})
-	case len(state.MissingManualVars) > 0:
-		manual := slices.Clone(state.MissingManualVars)
-		slices.Sort(manual)
-		limit := min(len(manual), maxFixupLines)
-		for _, key := range manual[:limit] {
+	case hasToolboxEndpoints || hasManualVars:
+		// Combined branch for the two "things the user has to fix before
+		// running locally" categories. They are intentionally additive
+		// (not mutually exclusive) so a manifest that declares a
+		// toolbox AND references an unrelated manual var (e.g. an API
+		// key) surfaces guidance for BOTH — otherwise the toolbox
+		// branch would silently swallow the `azd env set` lines and
+		// still emit `azd ai agent run`, leaving the user to discover
+		// the unset manual var when the agent crashes.
+		//
+		// Toolbox sub-branch: manifest declares one or more toolboxes
+		// whose azd-injected TOOLBOX_<NAME>_MCP_ENDPOINT variable is
+		// not yet present in the azd environment. The variable is
+		// written by `azd provision` (listen.go::registerToolboxEnvVars)
+		// after the FoundryToolboxClient publishes the toolbox version,
+		// so the canonical fix is provision — NOT `azd env set`, which
+		// the generic manual-vars sub-branch below would otherwise
+		// suggest. We also surface `azd ai agent doctor` as a follow-up
+		// so the user can check whether the toolbox already exists in
+		// their Foundry project. The actual live existence check
+		// belongs in doctor's local.toolboxes (one HTTP GET per
+		// toolbox); ResolveAfterInit is offline by contract and must
+		// not initiate Foundry API calls.
+		if hasToolboxEndpoints {
 			out = append(out, Suggestion{
-				Command:     fmt.Sprintf("azd env set %s <value>", key),
-				Description: "referenced by agent.yaml but not set in azd env",
+				Command:     "azd provision",
+				Description: "create your toolbox(es) in Foundry",
+				Priority:    priority,
+			})
+			priority++
+			out = append(out, Suggestion{
+				Command:     "azd ai agent doctor",
+				Description: "(optional) check whether your toolbox(es) already exist in Foundry",
 				Priority:    priority,
 			})
 			priority++
 		}
-		// Follow-up: once the user supplies the values above, the next
-		// productive command is `azd ai agent run`. Without this hint
-		// the post-init Next: block stops at the env-set lines and the
-		// user has to remember the run step themselves — that's the
-		// "Then run 'azd ai agent run' to start locally" line in
-		// issue #7975's manual-vars example output. Suppressed when
-		// placeholders are also unresolved — running locally with
-		// literal `{{NAME}}` values produces a broken agent, so the
-		// user must finish the placeholder fix-ups first; the
-		// trailing `azd deploy` reminder still applies.
+		// Manual-vars sub-branch: one `azd env set <KEY> <value>` per
+		// missing operator-supplied var (up to maxFixupLines). Matches
+		// issue #7975's "Then run 'azd ai agent run' to start locally"
+		// manual-vars example.
+		if hasManualVars {
+			manual := slices.Clone(state.MissingManualVars)
+			slices.Sort(manual)
+			limit := min(len(manual), maxFixupLines)
+			for _, key := range manual[:limit] {
+				out = append(out, Suggestion{
+					Command:     fmt.Sprintf("azd env set %s <value>", key),
+					Description: "referenced by agent.yaml but not set in azd env",
+					Priority:    priority,
+				})
+				priority++
+			}
+		}
+		// Follow-up: once the user finishes the steps above (provision
+		// for toolboxes, env-set for manual vars), the next productive
+		// command is `azd ai agent run` and the invoke-local secondary.
+		// Suppressed when placeholders are also unresolved because
+		// literal `{{NAME}}` values in agent.yaml still break the local
+		// agent — the user must finish the placeholder fix-ups first;
+		// the trailing `azd deploy` reminder still applies.
 		if !hasPlaceholders {
 			out = append(out, Suggestion{
 				Command:     "azd ai agent run",
-				Description: "start the agent locally once the values above are set",
+				Description: runFollowUpDescription(hasToolboxEndpoints, hasManualVars),
 				Priority:    priority,
 			})
+			priority++
+			out, _ = appendInvokeLocalSecondary(out, state, readmeExists, priority)
 		}
 	case hasPlaceholders:
 		// Only unresolved placeholders remain — do not emit
@@ -176,23 +276,8 @@ func ResolveAfterInit(state *State) []Suggestion {
 		// Invoke-local secondary (issue #7975 lines 99-100). The
 		// spec's "everything ready" example shows the user a second
 		// command to try once the agent is running:
-		//   azd ai agent invoke --local "Hello!"  -- test it in another terminal
-		// Single-agent projects get a protocol-aware payload (matches
-		// the protocol the agent's `/invocations` or `/responses`
-		// endpoint expects). Multi-agent projects fall back to the
-		// responses-style "Hello!" literal because the unqualified
-		// command shape doesn't know which service the user will
-		// pick at runtime — mirroring the spec example which also
-		// uses the unqualified form.
-		invokePayload := invokeResponsesPayload
-		if len(state.Services) == 1 {
-			invokePayload = defaultInvokePayload(&state.Services[0])
-		}
-		out = append(out, Suggestion{
-			Command:     fmt.Sprintf("azd ai agent invoke --local %s", invokePayload),
-			Description: "test it in another terminal",
-			Priority:    priority,
-		})
+		//   azd ai agent invoke --local '<payload>'  -- test it in another terminal
+		out, _ = appendInvokeLocalSecondary(out, state, readmeExists, priority)
 	}
 
 	out = append(out, Suggestion{
@@ -205,35 +290,67 @@ func ResolveAfterInit(state *State) []Suggestion {
 	return out
 }
 
+// runFollowUpDescription picks the description for the
+// `azd ai agent run` follow-up emitted after the toolbox / manual-vars
+// branch, so the suffix reflects which categories of work the user
+// still has to complete first.
+func runFollowUpDescription(hasToolboxEndpoints, hasManualVars bool) string {
+	switch {
+	case hasToolboxEndpoints && hasManualVars:
+		return "start the agent locally once the steps above are complete"
+	case hasToolboxEndpoints:
+		return "start the agent locally once provision completes"
+	case hasManualVars:
+		return "start the agent locally once the values above are set"
+	default:
+		return "start the agent locally"
+	}
+}
+
 // ResolveAfterRun produces the Next: block printed when the running
 // agent first responds to its OpenAPI probe. Pure function over *State.
 //
 // Decision tree:
 //   - HasOpenAPI + OpenAPIPayload non-empty → invoke with extracted payload
-//   - ServiceState.Protocol == ProtocolInvocations → invoke with {"message"…}
-//   - Otherwise (ProtocolResponses or unknown) → invoke with "Hello!"
+//   - No cached payload, sibling README on disk → README pointer +
+//     invoke with '<payload>' placeholder. The README pointer is
+//     preferred over the generic curl hint when both could fire,
+//     because a project-local README is usually the more concrete
+//     guide than the live spec URL.
+//   - Otherwise → invoke with '<payload>' placeholder + the
+//     curl-the-spec tip, so the user has somewhere to look when no
+//     README is available.
 //
-// When the resolver wanted a richer payload but could not extract one
-// (HasOpenAPI=false), the Tip suggestion is appended so the user knows
-// where to look up the agent's exact contract.
-func ResolveAfterRun(state *State, serviceName string) []Suggestion {
+// readmeExists is consulted by resolveInvokeArg to decide whether to
+// surface the README pointer. A nil callback disables README
+// detection (tests can pass nil safely).
+func ResolveAfterRun(state *State, serviceName string, readmeExists func(relativePath string) bool) []Suggestion {
 	if state == nil {
 		return nil
 	}
 
 	svc := findService(state, serviceName)
-	payload := defaultInvokePayload(svc)
+
+	cachedPayload := ""
 	if state.HasOpenAPI && state.OpenAPIPayload != "" {
-		payload = shellEscapeSingleQuoted(state.OpenAPIPayload)
+		cachedPayload = state.OpenAPIPayload
 	}
 
-	out := []Suggestion{{
-		Command:     fmt.Sprintf("azd ai agent invoke --local %s", payload),
+	invokeArg, readmeHint := resolveInvokeArg(svc, cachedPayload, readmeExists, 5)
+
+	out := make([]Suggestion, 0, 3)
+	if readmeHint != nil {
+		out = append(out, *readmeHint)
+	}
+	out = append(out, Suggestion{
+		Command:     fmt.Sprintf("azd ai agent invoke --local %s", invokeArg),
 		Description: "send a sample request to the running agent",
 		Priority:    10,
-	}}
+	})
 
-	if !state.HasOpenAPI {
+	// Tip suppressed when a README pointer is already shown: the README
+	// is the more concrete reference and the tip would just add noise.
+	if !state.HasOpenAPI && readmeHint == nil {
 		out = append(out, Suggestion{
 			Command:     "curl http://localhost:<port>/invocations/docs/openapi.json",
 			Description: "tip: inspect the spec to learn the agent's exact payload",
@@ -458,9 +575,10 @@ type AfterDeployOpts struct {
 // artifact note. Issue #7975 fix B9 spec (lines 228-242):
 //
 //   - Single-agent project: emit one `azd ai agent show <name>` line
-//     followed by one `azd ai agent invoke <name> '<payload>'` line
-//     or, when no cached payload is available but a README exists, a
-//     README pointer followed by a placeholder invoke command.
+//     followed by one `azd ai agent invoke <name> '<payload>'` line.
+//     When no cached payload is available but a sibling README exists,
+//     resolveInvokeArg inserts a README pointer immediately before the
+//     invoke line so the user has somewhere concrete to look first.
 //   - Multi-agent project: emit all `show <name>` lines first (one
 //     per service, in declaration order), then all `invoke <name>`
 //     lines. Descriptions include the agent name —
@@ -476,21 +594,16 @@ type AfterDeployOpts struct {
 //
 // cachedPayload is injected by the caller (typically a closure over
 // ReadCachedOpenAPISpec + ExtractInvokeExample) so the resolver itself
-// stays pure and unit-testable. The cached sample is used verbatim
-// (POSIX-escaped) when present. When no cached payload is available,
-// services with a README get a README pointer first and an explicit
-// '<payload>' placeholder instead of a concrete generic payload that
-// may not match the agent's schema.
+// stays pure and unit-testable. Per-service routing is delegated to
+// resolveInvokeArg, which decides between (a) the POSIX-escaped real
+// payload, (b) a README pointer + `'<payload>'` placeholder, or
+// (c) a bare `'<payload>'` placeholder.
 //
-// readmeExists, also injected, controls whether the
-// "See <relPath>/README.md for a sample payload" line is emitted
-// for a given service. The hint is emitted only when:
-// (1) no cached payload was available for that service,
-// (2) the service has a RelativePath, and
-// (3) readmeExists reports a README on disk at that path.
+// readmeExists, also injected, controls whether resolveInvokeArg
+// surfaces a `see <relPath>/README.md` pointer for a given service.
 // In the multi-agent layout each service's README hint is rendered
 // immediately before that service's placeholder invoke line so users
-// can find the sample-specific payload before running the command.
+// can scan rows top-to-bottom and find each agent's hint in context.
 //
 // opts is variadic for backward compatibility but is no longer
 // consulted — every field of AfterDeployOpts is now a no-op post-B9.
@@ -526,44 +639,28 @@ func ResolveAfterDeploy(
 	// Pass 2: all `azd ai agent invoke <name> <payload>` lines, each
 	// preceded by its README hint when applicable. Grouping invokes
 	// after shows matches the spec example output (lines 238-241).
-	for _, svc := range state.Services {
-		payload := ""
-		if cachedPayload != nil {
-			payload = cachedPayload(svc.Name)
-		}
-		hasReadme := payload == "" &&
-			readmeExists != nil &&
-			readmeExists(svc.RelativePath)
+	for i := range state.Services {
+		svc := &state.Services[i]
 
-		invokeArg := defaultInvokePayload(&svc)
-		if payload != "" {
-			invokeArg = shellEscapeSingleQuoted(payload)
-		} else if hasReadme {
-			invokeArg = "'<payload>'"
+		cached := ""
+		if cachedPayload != nil {
+			cached = cachedPayload(svc.Name)
 		}
+
+		invokeArg, readmeHint := resolveInvokeArg(svc, cached, readmeExists, priority)
 
 		desc := fmt.Sprintf("test %s", svc.Name)
 		if singleAgent {
 			desc = "test the deployment"
 		}
-
-		if payload == "" {
-			if hasReadme {
+		if cached == "" {
+			if readmeHint != nil {
 				desc = fmt.Sprintf("test %s with the sample-specific payload", svc.Name)
 				if singleAgent {
 					desc = "test with the sample-specific payload"
 				}
-				out = append(out, Suggestion{
-					Command:     readmeCommand(svc.RelativePath),
-					Description: "find the sample-specific payload",
-					Priority:    priority,
-				})
+				out = append(out, *readmeHint)
 				priority++
-			} else {
-				desc = fmt.Sprintf("test %s with a generic payload", svc.Name)
-				if singleAgent {
-					desc = "test with a generic payload"
-				}
 			}
 		}
 
@@ -608,14 +705,82 @@ func findService(state *State, serviceName string) *ServiceState {
 	return nil
 }
 
-// defaultInvokePayload returns the protocol-appropriate fallback payload
-// string (already quoted) for a service. Unknown protocols and a nil
-// service fall back to the /responses-style "Hello!" literal.
-func defaultInvokePayload(svc *ServiceState) string {
-	if svc != nil && svc.Protocol == ProtocolInvocations {
-		return invokeInvocationsPayload
+// resolveInvokeArg returns the payload argument to use in an
+// `azd ai agent invoke ...` command for svc, and an optional
+// README-pointer Suggestion that should be emitted immediately before
+// the invoke suggestion. Centralizing this logic keeps ResolveAfterInit,
+// ResolveAfterRun, and ResolveAfterDeploy in sync — all three need the
+// same "real payload > README hint + placeholder > placeholder" chain,
+// and prior to extraction each had its own slightly different copy.
+//
+// Priority:
+//  1. cachedPayload non-empty → POSIX-escaped real payload, no hint.
+//     The caller is responsible for sourcing this (e.g. the run-time
+//     OpenAPI extractor in ResolveAfterRun, or the doctor's spec
+//     cache in ResolveAfterDeploy).
+//  2. svc has a README on disk → placeholderPayload + README hint.
+//     The hint points the user at the sibling README so they can
+//     copy the real payload before running the command.
+//  3. Otherwise → placeholderPayload, no hint.
+//
+// When a hint is returned, callers should append it to the output
+// slice first (so it renders before the invoke line) and use
+// hintPriority as the next priority counter value.
+func resolveInvokeArg(
+	svc *ServiceState,
+	cachedPayload string,
+	readmeExists func(string) bool,
+	hintPriority int,
+) (invokeArg string, readmeHint *Suggestion) {
+	if cachedPayload != "" {
+		return shellEscapeSingleQuoted(cachedPayload), nil
 	}
-	return invokeResponsesPayload
+	if svc != nil && readmeExists != nil && readmeExists(svc.RelativePath) {
+		return placeholderPayload, &Suggestion{
+			Command:     readmeCommand(svc.RelativePath),
+			Description: "find the sample-specific payload",
+			Priority:    hintPriority,
+		}
+	}
+	return placeholderPayload, nil
+}
+
+// appendInvokeLocalSecondary appends the post-`azd ai agent run`
+// invoke-local Suggestion (and its optional README hint) to out. It is
+// shared by ResolveAfterInit's "everything ready" and "manual vars
+// missing" branches so both paths give the user a concrete "what to try
+// once it's running" command instead of bottoming out at `azd deploy`.
+//
+// Service selection: when state has exactly one service we route it
+// through resolveInvokeArg so the user gets a per-service README pointer
+// when applicable. With zero or multiple services we pass nil — the
+// resolver cannot pick deterministically which service the user will
+// target with an unqualified `azd ai agent invoke --local`, so it emits
+// the bare placeholderPayload without a README hint.
+//
+// Returns the updated slice and the next priority counter value so
+// callers can continue numbering subsequent suggestions.
+func appendInvokeLocalSecondary(
+	out []Suggestion,
+	state *State,
+	readmeExists func(string) bool,
+	priority int,
+) ([]Suggestion, int) {
+	var svc *ServiceState
+	if len(state.Services) == 1 {
+		svc = &state.Services[0]
+	}
+	invokeArg, readmeHint := resolveInvokeArg(svc, "", readmeExists, priority)
+	if readmeHint != nil {
+		out = append(out, *readmeHint)
+		priority++
+	}
+	out = append(out, Suggestion{
+		Command:     fmt.Sprintf("azd ai agent invoke --local %s", invokeArg),
+		Description: "test it in another terminal",
+		Priority:    priority,
+	})
+	return out, priority + 1
 }
 
 // shellEscapeSingleQuoted wraps s in single quotes for POSIX shells.

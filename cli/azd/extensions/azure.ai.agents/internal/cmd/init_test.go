@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -2386,6 +2387,199 @@ func TestCodeDeployFlagValidation(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// createdFolder path computation after Chdir
+// (covers PR review — directory creation tracking and message accuracy)
+// ---------------------------------------------------------------------------
+
+// TestCreatedFolderPath_AfterChdir verifies that formatCreatedFolderMessage
+// produces the correct relative display path even after the process has
+// chdir'd into the new project directory.
+func TestCreatedFolderPath_AfterChdir(t *testing.T) {
+	tests := []struct {
+		name     string
+		folder   string
+		wantPath string
+	}{
+		{
+			name:     "simple folder name",
+			folder:   "my-agent",
+			wantPath: "my-agent",
+		},
+		{
+			name:     "sanitized folder name",
+			folder:   folderNameStrippingParenSuffix("Hello World (Python)"),
+			wantPath: "hello-world",
+		},
+		{
+			name:     "folder with numbers",
+			folder:   "agent-v2",
+			wantPath: "agent-v2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			originalCwd := t.TempDir()
+
+			// Create the subdirectory (simulates azd init creating it)
+			folderPath := filepath.Join(originalCwd, tt.folder)
+			//nolint:gosec // test fixture directory permissions are intentional
+			if err := os.MkdirAll(folderPath, 0o755); err != nil {
+				t.Fatalf("MkdirAll: %v", err)
+			}
+
+			// Simulate the chdir that happens after azd init
+			t.Chdir(folderPath)
+
+			msg := formatCreatedFolderMessage(originalCwd, folderPath, "")
+			wantSuffix := "cd " + tt.wantPath + "\n"
+			if !strings.Contains(msg, tt.wantPath) {
+				t.Errorf("message missing display path %q:\n%s", tt.wantPath, msg)
+			}
+			if !strings.HasSuffix(msg, wantSuffix) {
+				t.Errorf("message should end with %q, got:\n%s", wantSuffix, msg)
+			}
+		})
+	}
+}
+
+// TestCreatedFolderPath_NotSetWhenDirectoryExists verifies that the
+// newlyCreated check correctly identifies an existing directory.
+func TestCreatedFolderPath_NotSetWhenDirectoryExists(t *testing.T) {
+	originalCwd := t.TempDir()
+	t.Chdir(originalCwd)
+
+	folderName := "existing-project"
+
+	// Pre-create the directory (simulates an existing project)
+	existingDir := filepath.Join(originalCwd, folderName)
+	//nolint:gosec // test fixture directory permissions are intentional
+	if err := os.MkdirAll(existingDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	// Mirror production logic: stat + errors.Is
+	_, statErr := os.Stat(folderName)
+	newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+
+	if newlyCreated {
+		t.Error("newlyCreated should be false when directory already exists")
+	}
+}
+
+// TestCreatedFolderPath_SetWhenDirectoryDoesNotExist verifies that the
+// newlyCreated check correctly identifies a missing directory.
+func TestCreatedFolderPath_SetWhenDirectoryDoesNotExist(t *testing.T) {
+	originalCwd := t.TempDir()
+	t.Chdir(originalCwd)
+
+	folderName := "new-agent-project"
+
+	// Do NOT create the directory — simulates fresh init
+	_, statErr := os.Stat(folderName)
+	newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+
+	if !newlyCreated {
+		t.Error("newlyCreated should be true when directory does not exist")
+	}
+
+	// Verify formatCreatedFolderMessage produces valid output
+	createdFolder := filepath.Join(originalCwd, folderName)
+	msg := formatCreatedFolderMessage(originalCwd, createdFolder, "")
+	if !strings.Contains(msg, folderName) {
+		t.Errorf("message should contain %q:\n%s", folderName, msg)
+	}
+}
+
+// TestCreatedFolderPath_AzdTemplateCase verifies the full flow for the
+// TemplateTypeAzd case: folderNameFromTitle derives the name, and the message
+// includes a template-title notice when the name changed.
+func TestCreatedFolderPath_AzdTemplateCase(t *testing.T) {
+	originalCwd := t.TempDir()
+
+	templateTitle := "Basic Agent (Python)"
+	folderName := folderNameStrippingParenSuffix(templateTitle)
+
+	// folderNameFromTitle should strip parenthetical suffix
+	if strings.Contains(folderName, "python") {
+		t.Errorf("folderName should not contain parenthetical suffix, got %q", folderName)
+	}
+
+	createdFolder := filepath.Join(originalCwd, folderName)
+	msg := formatCreatedFolderMessage(originalCwd, createdFolder, templateTitle)
+
+	// Should contain the template notice since name differs from title
+	if !strings.Contains(msg, templateTitle) {
+		t.Errorf("message should reference original title %q:\n%s", templateTitle, msg)
+	}
+	// Should contain the cd hint
+	if !strings.Contains(msg, "cd "+folderName) {
+		t.Errorf("message should contain cd hint:\n%s", msg)
+	}
+}
+
+// TestCreatedFolderPath_ManifestTemplateExistingProject verifies that no
+// "created" message is produced when an existing project is found for the
+// agent manifest template flow.
+func TestCreatedFolderPath_ManifestTemplateExistingProject(t *testing.T) {
+	originalCwd := t.TempDir()
+	t.Chdir(originalCwd)
+
+	folderName := "my-agent"
+
+	// Pre-create directory and azure.yaml to simulate existing project
+	projectDir := filepath.Join(originalCwd, folderName)
+	//nolint:gosec // test fixture directory permissions are intentional
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(
+		filepath.Join(projectDir, "azure.yaml"),
+		[]byte("name: my-agent\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// Mirror production logic: directory exists, so newlyCreated is false
+	_, statErr := os.Stat(folderName)
+	newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+
+	if newlyCreated {
+		t.Error("newlyCreated should be false for existing project directory")
+	}
+}
+
+func TestFolderNameFromTitle(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		title string
+		want  string
+	}{
+		{name: "strips parenthetical suffix", title: "Basic Agent (Python)", want: "basic-agent"},
+		{name: "no parenthetical", title: "My Cool Agent", want: "my-cool-agent"},
+		{name: "parenthetical with spaces", title: "Agent  ( Preview )", want: "agent"},
+		{name: "non-ASCII title", title: "Ünö Agent (Test)", want: "n-agent"},
+		{name: "all non-ASCII before paren", title: "日本語 (Python)", want: "my-agent"},
+		{name: "empty title", title: "", want: "my-agent"},
+		{name: "only parenthetical", title: "(Python)", want: "my-agent"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := folderNameStrippingParenSuffix(tt.title)
+			if got != tt.want {
+				t.Errorf("folderNameFromTitle(%q) = %q, want %q", tt.title, got, tt.want)
 			}
 		})
 	}

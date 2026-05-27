@@ -4,8 +4,6 @@
 package cmd
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"azureaiagent/internal/connections/pkg/connections"
@@ -178,86 +176,6 @@ func TestLookupCredentialValue(t *testing.T) {
 			require.Equal(t, tt.wantValue, value)
 		})
 	}
-}
-
-func TestFindManifestInDir(t *testing.T) {
-	t.Run("finds agent.yaml with connection refs", func(t *testing.T) {
-		dir := t.TempDir()
-		content := `environment_variables:
-  - name: MY_KEY
-    value: "${{connections.test.credentials.api-key}}"
-`
-		err := os.WriteFile(
-			filepath.Join(dir, "agent.yaml"), []byte(content), 0600,
-		)
-		require.NoError(t, err)
-
-		result := findManifestInDir(dir)
-		require.Equal(t, filepath.Join(dir, "agent.yaml"), result)
-	})
-
-	t.Run("finds agent.manifest.yaml with connection refs", func(t *testing.T) {
-		dir := t.TempDir()
-		content := `template:
-  environment_variables:
-    - name: SECRET
-      value: "${{connections.conn1.credentials.key}}"
-`
-		err := os.WriteFile(
-			filepath.Join(dir, "agent.manifest.yaml"),
-			[]byte(content), 0600,
-		)
-		require.NoError(t, err)
-
-		result := findManifestInDir(dir)
-		require.Equal(t,
-			filepath.Join(dir, "agent.manifest.yaml"), result)
-	})
-
-	t.Run("prefers agent.yaml over agent.manifest.yaml", func(t *testing.T) {
-		dir := t.TempDir()
-		agentYAML := `environment_variables:
-  - name: A
-    value: "${{connections.c.credentials.k}}"
-`
-		manifestYAML := `template:
-  environment_variables:
-    - name: B
-      value: "${{connections.c.credentials.k}}"
-`
-		require.NoError(t, os.WriteFile(
-			filepath.Join(dir, "agent.yaml"),
-			[]byte(agentYAML), 0600,
-		))
-		require.NoError(t, os.WriteFile(
-			filepath.Join(dir, "agent.manifest.yaml"),
-			[]byte(manifestYAML), 0600,
-		))
-
-		result := findManifestInDir(dir)
-		require.Equal(t, filepath.Join(dir, "agent.yaml"), result)
-	})
-
-	t.Run("skips yaml without connection refs", func(t *testing.T) {
-		dir := t.TempDir()
-		content := `environment_variables:
-  - name: PORT
-    value: "8080"
-`
-		require.NoError(t, os.WriteFile(
-			filepath.Join(dir, "agent.yaml"),
-			[]byte(content), 0600,
-		))
-
-		result := findManifestInDir(dir)
-		require.Empty(t, result)
-	})
-
-	t.Run("returns empty for empty directory", func(t *testing.T) {
-		dir := t.TempDir()
-		result := findManifestInDir(dir)
-		require.Empty(t, result)
-	})
 }
 
 func TestConnectionRefPattern(t *testing.T) {

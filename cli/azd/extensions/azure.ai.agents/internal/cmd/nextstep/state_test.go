@@ -1213,6 +1213,101 @@ environment_variables:
 	assert.Equal(t, []string{"TOOLBOX_ENDPOINT"}, state.UnresolvedPlaceholders)
 }
 
+// TestAssembleState_PartitionsToolboxEndpointVars locks the partition
+// behavior added for the toolbox-sample post-init UX: when a service
+// has a manifest-declared toolbox AND agent.yaml references the
+// canonical TOOLBOX_<NAME>_MCP_ENDPOINT env var, the missing-var
+// classifier must route the entry into MissingToolboxEndpoints
+// (provision-managed) rather than MissingManualVars (operator-supplied).
+// Non-toolbox manual vars in the same agent.yaml must still appear in
+// MissingManualVars.
+func TestAssembleState_PartitionsToolboxEndpointVars(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	// agent.manifest.yaml declares the toolbox by name; envkey derives
+	// "TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT" from "web-search-tools",
+	// matching the ${...} ref in agent.yaml below.
+	writeManifest(t, projectRoot, "echo", `
+template:
+  kind: containerAgent
+  name: hello
+resources:
+  - name: web-search-tools
+    kind: toolbox
+    tools:
+      - id: tool-1
+`)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "echo", "agent.yaml"),
+		[]byte(`kind: hostedAgent
+environment_variables:
+  - name: MCP_ENDPOINT
+    value: ${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}
+  - name: API_KEY
+    value: ${MY_API_KEY}
+`),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	assert.Empty(t, state.MissingInfraVars)
+	// Toolbox endpoint var moved into the dedicated bucket; the
+	// generic manual-var bucket only carries the truly user-supplied
+	// API key.
+	assert.Equal(t, []string{"MY_API_KEY"}, state.MissingManualVars)
+	require.Len(t, state.MissingToolboxEndpoints, 1)
+	assert.Equal(t, "web-search-tools", state.MissingToolboxEndpoints[0].Name)
+	assert.Equal(t, "echo", state.MissingToolboxEndpoints[0].ServiceName)
+}
+
+// TestAssembleState_ToolboxEndpointWithoutManifestStaysManual locks
+// the partition's guard: a TOOLBOX_*_MCP_ENDPOINT-shaped variable
+// whose name does NOT match a manifest-declared toolbox is treated
+// as a generic user variable and stays in MissingManualVars. The
+// partition is a no-op when no manifest toolbox claims the key.
+func TestAssembleState_ToolboxEndpointWithoutManifestStaysManual(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "echo", "agent.yaml"),
+		[]byte(`kind: hostedAgent
+environment_variables:
+  - name: MCP_ENDPOINT
+    value: ${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}
+`),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	assert.Equal(t, []string{"TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT"}, state.MissingManualVars)
+	assert.Empty(t, state.MissingToolboxEndpoints)
+}
+
 func TestAssembleState_PlaceholdersDedupedAcrossServices(t *testing.T) {
 	t.Parallel()
 

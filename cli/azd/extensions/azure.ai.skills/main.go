@@ -4,7 +4,7 @@
 package main
 
 import (
-	"azure.ai.skills/internal/cmd"
+	"azureaiskills/internal/cmd"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )

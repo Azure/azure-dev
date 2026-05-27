@@ -10,13 +10,25 @@ Determine the target PR number. Use one of these sources (in priority order):
 
 If no PR can be identified, ask the user for the PR number.
 
-### Step 2 — Fetch PR Details and Check for Existing Linked Issues
+### Step 2 — Fetch PR Details and Check Skip Conditions
 
-Use `gh pr view <number> --json number,title,body,url` to retrieve the PR's
-title, body, and URL.
+Use `gh pr view <number> --json number,title,body,url,isDraft,author,labels` to
+retrieve the PR metadata.
 
-Before creating an issue, check whether one is already linked using the same
-source the CI governance gate uses — the GraphQL `closingIssuesReferences` API:
+**Before creating an issue, check whether the PR is exempt from governance.**
+The CI governance gate (`.github/scripts/pr-governance-issue-check.js`) skips
+PRs that match any of these conditions:
+
+1. **Draft PRs** — `isDraft` is `true`.
+2. **Automated authors** — author login is `dependabot[bot]`, `dependabot`,
+   `app/dependabot`, or `azure-sdk`.
+3. **Skip label** — the PR carries the `skip-governance` label.
+
+If any skip condition applies, inform the user the PR is exempt from governance
+and stop — no issue is needed.
+
+**Then check whether an issue is already linked** using the same source the CI
+governance gate uses — the GraphQL `closingIssuesReferences` API:
 
 ```bash
 gh api graphql -f query='query {
@@ -52,18 +64,38 @@ Compose an issue with:
 
 ### Step 4 — Confirm with User
 
-Present the drafted issue title and body to the user via `ask_user`.
-Ask whether to proceed, modify, or cancel.
+Present **both** planned changes to the user via `ask_user`:
+
+1. The drafted issue title and body.
+2. The exact PR body update — show the `Fixes #<issue_number>` line that will
+   be appended to the current PR body.
+
+Ask whether to proceed with both, modify, or cancel. Both the issue creation
+and the PR edit must be confirmed before any changes are made.
 
 ### Step 5 — Create the Issue
 
-Run `gh issue create --repo <owner/repo> --title "<title>" --body "<body>"`
-to create the issue. Capture the new issue number from the output.
+Write the issue body to a temporary file and use `--body-file` to avoid
+shell injection from PR-derived content:
+
+```bash
+echo "$ISSUE_BODY" > /tmp/issue-body.md
+gh issue create --repo <owner/repo> --title "$TITLE" --body-file /tmp/issue-body.md
+rm /tmp/issue-body.md
+```
+
+Capture the new issue number from the output.
 
 ### Step 6 — Link the PR
 
-Append `\n\nFixes #<issue_number>` to the existing PR body using
-`gh pr edit <number> --body "<updated_body>"`.
+Write the updated PR body to a temporary file and use `--body-file` to avoid
+shell metacharacter issues with user-controlled markdown:
+
+```bash
+printf '%s\n\nFixes #%d\n' "$CURRENT_BODY" "$ISSUE_NUMBER" > /tmp/pr-body.md
+gh pr edit <number> --body-file /tmp/pr-body.md
+rm /tmp/pr-body.md
+```
 
 ### Step 7 — Report Success
 

@@ -422,6 +422,77 @@ connections:
 	assert.Len(t, client.createVersionCalls[0].req.Tools, 1)
 }
 
+func TestRunToolboxCreateWith_SkillsFromFile(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	resolver := newStubConnectionResolver()
+	resolver.byName["mcp"] = &projectConnection{
+		ID: "/c/mcp", Category: connections.ConnectionTypeRemoteTool, Name: "mcp",
+		Target: "https://mcp.example.com",
+	}
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+description: tb with skills
+connections:
+  - name: mcp
+skills:
+  - name: pinned
+    version: "3"
+  - name: unpinned
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, resolver, "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath},
+		toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+
+	skills := client.createVersionCalls[0].req.Skills
+	require.Len(t, skills, 2)
+
+	byName := map[string]map[string]any{}
+	for _, s := range skills {
+		n, _ := s["name"].(string)
+		byName[n] = s
+	}
+	require.Contains(t, byName, "pinned")
+	require.Contains(t, byName, "unpinned")
+	assert.Equal(t, "skill_reference", byName["pinned"]["type"])
+	assert.Equal(t, "3", byName["pinned"]["version"])
+	_, hasVersion := byName["unpinned"]["version"]
+	assert.False(t, hasVersion, "skill without version must omit the version key")
+}
+
+func TestRunToolboxCreateWith_DuplicateSkillRejected(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	resolver := newStubConnectionResolver()
+	resolver.byName["mcp"] = &projectConnection{
+		ID: "/c/mcp", Category: connections.ConnectionTypeRemoteTool, Name: "mcp",
+		Target: "https://mcp.example.com",
+	}
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+description: tb
+connections:
+  - name: mcp
+skills:
+  - name: dup
+  - name: dup
+    version: "2"
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, resolver, "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath},
+		toolboxFlags{output: "json"},
+	)
+	requireLocalError(t, err, exterrors.CodeDuplicateSkill)
+	assert.Empty(t, client.createVersionCalls, "no version should be created when local validation fails")
+}
+
 func TestRunToolboxCreateWith_AlreadyExists(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{Name: "tb", DefaultVersion: "1"}}
@@ -513,4 +584,70 @@ func TestRunConnectionRemove_NoPromptWithoutForce(t *testing.T) {
 		newStubConnectionResolver(),
 	)
 	requireLocalError(t, err, exterrors.CodeMissingForceFlag)
+}
+
+// Carry-forward: skills attached to the current default version must survive
+// across new versions published by `connection add`.
+func TestRunConnectionAddWith_CarriesForwardSkills(t *testing.T) {
+	skills := []map[string]any{
+		{"type": "skill_reference", "name": "alpha", "version": "1"},
+		{"type": "skill_reference", "name": "beta"},
+	}
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1", Description: "first",
+		Tools: []map[string]any{
+			{"type": "mcp", "name": "a", "project_connection_id": "/c/a"},
+		},
+		Skills: skills,
+	}}
+	resolver := newStubConnectionResolver()
+	resolver.byName["b"] = &projectConnection{
+		ID: "/c/b", Category: connections.ConnectionTypeRemoteTool, Name: "b", Target: "https://mcp-b",
+	}
+
+	err := runConnectionAddWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", "b", connectionAddFlags{}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	assert.Equal(t, skills, client.createVersionCalls[0].req.Skills,
+		"skills must be carried forward verbatim into the new version")
+}
+
+// Carry-forward: skills attached to the current default version must survive
+// across new versions published by `connection remove`.
+func TestRunConnectionRemoveWith_CarriesForwardSkills(t *testing.T) {
+	skills := []map[string]any{
+		{"type": "skill_reference", "name": "alpha"},
+	}
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1",
+		Tools: []map[string]any{
+			{"type": "mcp", "name": "a", "project_connection_id": "/c/a"},
+			{"type": "mcp", "name": "b", "project_connection_id": "/c/b"},
+		},
+		Skills: skills,
+	}}
+	resolver := newStubConnectionResolver()
+	resolver.byName["a"] = &projectConnection{
+		ID: "/c/a", Category: connections.ConnectionTypeRemoteTool, Name: "a",
+	}
+
+	err := runConnectionRemoveWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", "a", connectionRemoveFlags{force: true}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	assert.Equal(t, skills, client.createVersionCalls[0].req.Skills,
+		"skills must be carried forward verbatim into the new version")
 }

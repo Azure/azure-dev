@@ -113,6 +113,7 @@ func runToolboxCreateWith(
 
 	description := ""
 	entries := []map[string]any{}
+	skillEntries := []map[string]any{}
 
 	if strings.TrimSpace(verb.fromFile) != "" {
 		var input toolboxCreateFile
@@ -125,6 +126,15 @@ func runToolboxCreateWith(
 			return err
 		}
 		entries = append(entries, resolvedEntries...)
+		for _, s := range input.Skills {
+			if err := validateSkillName(s.Name); err != nil {
+				return err
+			}
+			skillEntries = append(skillEntries, buildSkillEntry(skillSpec{
+				Name:    strings.TrimSpace(s.Name),
+				Version: strings.TrimSpace(s.Version),
+			}))
+		}
 	}
 
 	if len(entries) == 0 {
@@ -138,10 +148,14 @@ func runToolboxCreateWith(
 	if err := validateNoDuplicateConnectionIDs(entries); err != nil {
 		return err
 	}
+	if err := validateNoDuplicateSkills(skillEntries); err != nil {
+		return err
+	}
 
 	req := &azure.CreateToolboxVersionRequest{
 		Description: description,
 		Tools:       entries,
+		Skills:      skillEntries,
 	}
 	created, err := client.CreateToolboxVersion(ctx, name, req)
 	if err != nil {

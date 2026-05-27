@@ -20,6 +20,10 @@ func fileShapeBlurb(includeDescription bool) string {
       { "name": "my-search", "index": "products" },
       { "name": "my-bing",   "instance_name": "docs-config" },
       { "name": "my-a2a" }
+    ],
+    "skills": [
+      { "name": "my-skill", "version": "2" },
+      { "name": "qa-skill" }
     ]
   }
 
@@ -33,6 +37,10 @@ Equivalent YAML:
     - name: my-bing
       instance_name: docs-config
     - name: my-a2a
+  skills:
+    - name: my-skill
+      version: "2"
+    - name: qa-skill
 
 Fields:
   description     Optional. Stored on the initial toolbox version.
@@ -44,6 +52,9 @@ Fields:
                   Supported connection categories: RemoteTool (MCP),
                   CognitiveSearch (Azure AI Search), RemoteA2A,
                   GroundingWithCustomSearch.
+  skills          Optional. Existing project skills to attach by reference.
+                  Each entry needs 'name'; 'version' is optional (omit to
+                  follow the skill's default version).
 
 Project connections must already exist on the Foundry project; this command
 does not create them. Run 'azd ai agent connection list' to see available

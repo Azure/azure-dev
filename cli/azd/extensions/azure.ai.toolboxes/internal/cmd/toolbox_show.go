@@ -142,6 +142,7 @@ func emitShowTable(
 	fmt.Fprintf(w, "Description\t%s\n", version.Description)
 	fmt.Fprintf(w, "Endpoint\t%s\n", mcpURL)
 	fmt.Fprintf(w, "Tools\t%d\n", len(version.Tools))
+	fmt.Fprintf(w, "Skills\t%d\n", len(version.Skills))
 	if err := w.Flush(); err != nil {
 		return err
 	}
@@ -156,6 +157,25 @@ func emitShowTable(
 			toolType, _ := tool["type"].(string)
 			detail := describeToolDetail(tool)
 			fmt.Fprintf(tw, "%s\t%s\t%s\n", toolName, toolType, detail)
+		}
+		if err := tw.Flush(); err != nil {
+			return err
+		}
+	}
+
+	if len(version.Skills) > 0 {
+		fmt.Println()
+		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, "SKILL\tVERSION\tTYPE")
+		fmt.Fprintln(tw, "-----\t-------\t----")
+		for _, sk := range version.Skills {
+			name, _ := sk["name"].(string)
+			skType, _ := sk["type"].(string)
+			ver, _ := sk["version"].(string)
+			if ver == "" {
+				ver = "(default)"
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", name, ver, skType)
 		}
 		if err := tw.Flush(); err != nil {
 			return err

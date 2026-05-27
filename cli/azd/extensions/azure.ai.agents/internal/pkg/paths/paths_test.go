@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -133,7 +134,8 @@ func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
 	t.Helper()
 
 	if err := os.Symlink(oldname, newname); err != nil {
-		if errors.Is(err, os.ErrPermission) {
+		if errors.Is(err, os.ErrPermission) || os.IsPermission(err) ||
+			strings.Contains(strings.ToLower(err.Error()), "privilege") {
 			t.Skipf("symlink creation not permitted: %v", err)
 		}
 		t.Fatalf("create symlink: %v", err)

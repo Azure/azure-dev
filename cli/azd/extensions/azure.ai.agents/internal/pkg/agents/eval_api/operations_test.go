@@ -144,7 +144,7 @@ func TestCreateEvaluatorGenerationJob_Success(t *testing.T) {
 
 	client, _ := newTestClient(t, handler)
 	result, err := client.CreateEvaluatorGenerationJob(
-		t.Context(), &EvaluatorGenerationJobRequest{Name: "my-eval"}, "2025-11-15-preview",
+		t.Context(), &EvaluatorGenerationJobRequest{Name: "my-eval"}, "v1",
 	)
 
 	require.NoError(t, err)
@@ -175,7 +175,7 @@ func TestGetEvaluatorGenerationJob_Success(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	result, err := client.GetEvaluatorGenerationJob(t.Context(), "eval-op-456", "2025-11-15-preview")
+	result, err := client.GetEvaluatorGenerationJob(t.Context(), "eval-op-456", "v1")
 
 	require.NoError(t, err)
 	assert.Equal(t, "/evaluator_generation_jobs/eval-op-456", capturedPath)
@@ -204,11 +204,11 @@ func TestCreateOpenAIEval_Success(t *testing.T) {
 
 	client, _ := newTestClient(t, handler)
 	result, err := client.CreateOpenAIEval(
-		t.Context(), &CreateOpenAIEvalRequest{Name: "smoke-core"}, "2025-11-15-preview",
+		t.Context(), &CreateOpenAIEvalRequest{Name: "smoke-core"},
 	)
 
 	require.NoError(t, err)
-	assert.Equal(t, "/openai/evals", capturedPath)
+	assert.Equal(t, "/openai/v1/evals", capturedPath)
 	assert.Equal(t, "eval-001", result.ID)
 }
 
@@ -236,7 +236,7 @@ func TestListOpenAIEvals_Success(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	result, err := client.ListOpenAIEvals(t.Context(), 10, "2025-11-15-preview")
+	result, err := client.ListOpenAIEvals(t.Context(), 10)
 
 	require.NoError(t, err)
 	assert.Equal(t, "10", capturedLimit)
@@ -256,7 +256,7 @@ func TestListOpenAIEvals_ZeroLimit(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	_, err := client.ListOpenAIEvals(t.Context(), 0, "2025-11-15-preview")
+	_, err := client.ListOpenAIEvals(t.Context(), 0)
 
 	require.NoError(t, err)
 	assert.False(t, hasLimitParam, "limit should not be set when 0")
@@ -281,10 +281,10 @@ func TestGetOpenAIEval_Success(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	result, err := client.GetOpenAIEval(t.Context(), "eval-001", "2025-11-15-preview")
+	result, err := client.GetOpenAIEval(t.Context(), "eval-001")
 
 	require.NoError(t, err)
-	assert.Equal(t, "/openai/evals/eval-001", capturedPath)
+	assert.Equal(t, "/openai/v1/evals/eval-001", capturedPath)
 	assert.Equal(t, "smoke-core", result.Name)
 }
 
@@ -310,11 +310,11 @@ func TestCreateOpenAIEvalRun_Success(t *testing.T) {
 	result, err := client.CreateOpenAIEvalRun(
 		t.Context(), "eval-001", &CreateOpenAIEvalRunRequest{
 			Metadata: map[string]string{"agent": "a"},
-		}, "2025-11-15-preview",
+		},
 	)
 
 	require.NoError(t, err)
-	assert.Equal(t, "/openai/evals/eval-001/runs", capturedPath)
+	assert.Equal(t, "/openai/v1/evals/eval-001/runs", capturedPath)
 	assert.Equal(t, "run-001", result.ID)
 }
 
@@ -338,10 +338,10 @@ func TestListOpenAIEvalRuns_Success(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	result, err := client.ListOpenAIEvalRuns(t.Context(), "eval-001", 5, "2025-11-15-preview")
+	result, err := client.ListOpenAIEvalRuns(t.Context(), "eval-001", 5)
 
 	require.NoError(t, err)
-	assert.Equal(t, "/openai/evals/eval-001/runs", capturedPath)
+	assert.Equal(t, "/openai/v1/evals/eval-001/runs", capturedPath)
 	assert.Equal(t, "5", capturedLimit)
 	assert.Len(t, result.Data, 1)
 }
@@ -365,10 +365,10 @@ func TestGetOpenAIEvalRun_Success(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	result, err := client.GetOpenAIEvalRun(t.Context(), "eval-001", "run-001", "2025-11-15-preview")
+	result, err := client.GetOpenAIEvalRun(t.Context(), "eval-001", "run-001")
 
 	require.NoError(t, err)
-	assert.Equal(t, "/openai/evals/eval-001/runs/run-001", capturedPath)
+	assert.Equal(t, "/openai/v1/evals/eval-001/runs/run-001", capturedPath)
 	assert.Equal(t, "completed", result.Status)
 }
 
@@ -384,7 +384,7 @@ func TestDoRequest_ServerError(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	_, err := client.CreateOpenAIEval(t.Context(), &CreateOpenAIEvalRequest{}, "2025-11-15-preview")
+	_, err := client.CreateOpenAIEval(t.Context(), &CreateOpenAIEvalRequest{})
 	assert.Error(t, err)
 }
 
@@ -396,12 +396,12 @@ func TestDoRequest_EmptyBody(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	result, err := client.ListOpenAIEvals(t.Context(), 0, "2025-11-15-preview")
+	result, err := client.ListOpenAIEvals(t.Context(), 0)
 	require.NoError(t, err)
 	assert.Empty(t, result.Data)
 }
 
-func TestDoRequest_APIVersionInQuery(t *testing.T) {
+func TestDoRequest_NoAPIVersionInOpenAIQuery(t *testing.T) {
 	t.Parallel()
 
 	var capturedAPIVersion string
@@ -414,9 +414,9 @@ func TestDoRequest_APIVersionInQuery(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	_, err := client.GetOpenAIEval(t.Context(), "eval-1", "2025-11-15-preview")
+	_, err := client.GetOpenAIEval(t.Context(), "eval-1")
 	require.NoError(t, err)
-	assert.Equal(t, "2025-11-15-preview", capturedAPIVersion)
+	assert.Equal(t, "", capturedAPIVersion)
 }
 
 func TestDoRequest_RequestBodySent(t *testing.T) {

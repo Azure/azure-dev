@@ -29,7 +29,7 @@ const (
 	pathEvaluatorGenerationJobs = "/evaluator_generation_jobs"
 	pathEvaluators              = "/evaluators"
 	pathDatasets                = "/datasets"
-	pathOpenAIEvals             = "/openai/evals"
+	pathOpenAIEvals             = "/openai/v1/evals"
 )
 
 // EvalClient provides methods for interacting with the Azure AI eval APIs.
@@ -145,25 +145,24 @@ func (c *EvalClient) GetEvaluatorRaw(
 func (c *EvalClient) CreateOpenAIEval(
 	ctx context.Context,
 	request *CreateOpenAIEvalRequest,
-	apiVersion string,
 ) (*OpenAIEval, error) {
-	return doRequestTyped[OpenAIEval](c, ctx, http.MethodPost, pathOpenAIEvals, nil, request, apiVersion)
+	return doRequestTyped[OpenAIEval](c, ctx, http.MethodPost, pathOpenAIEvals, nil, request, "")
 }
 
 // ListOpenAIEvals lists OpenAI eval definitions.
-func (c *EvalClient) ListOpenAIEvals(ctx context.Context, limit int, apiVersion string) (*OpenAIEvalList, error) {
+func (c *EvalClient) ListOpenAIEvals(ctx context.Context, limit int) (*OpenAIEvalList, error) {
 	query := map[string]string{}
 	if limit > 0 {
 		query["limit"] = strconv.Itoa(limit)
 	}
 
-	return doRequestTyped[OpenAIEvalList](c, ctx, http.MethodGet, pathOpenAIEvals, query, nil, apiVersion)
+	return doRequestTyped[OpenAIEvalList](c, ctx, http.MethodGet, pathOpenAIEvals, query, nil, "")
 }
 
 // GetOpenAIEval gets an OpenAI eval definition.
-func (c *EvalClient) GetOpenAIEval(ctx context.Context, evalID string, apiVersion string) (*OpenAIEval, error) {
+func (c *EvalClient) GetOpenAIEval(ctx context.Context, evalID string) (*OpenAIEval, error) {
 	path := pathOpenAIEvals + "/" + url.PathEscape(evalID)
-	return doRequestTyped[OpenAIEval](c, ctx, http.MethodGet, path, nil, nil, apiVersion)
+	return doRequestTyped[OpenAIEval](c, ctx, http.MethodGet, path, nil, nil, "")
 }
 
 // CreateOpenAIEvalRun starts a run for an OpenAI eval definition.
@@ -171,10 +170,9 @@ func (c *EvalClient) CreateOpenAIEvalRun(
 	ctx context.Context,
 	evalID string,
 	request *CreateOpenAIEvalRunRequest,
-	apiVersion string,
 ) (*OpenAIEvalRun, error) {
 	path := fmt.Sprintf("%s/%s/runs", pathOpenAIEvals, url.PathEscape(evalID))
-	return doRequestTyped[OpenAIEvalRun](c, ctx, http.MethodPost, path, nil, request, apiVersion)
+	return doRequestTyped[OpenAIEvalRun](c, ctx, http.MethodPost, path, nil, request, "")
 }
 
 // ListOpenAIEvalRuns lists runs for an OpenAI eval definition.
@@ -182,7 +180,6 @@ func (c *EvalClient) ListOpenAIEvalRuns(
 	ctx context.Context,
 	evalID string,
 	limit int,
-	apiVersion string,
 ) (*OpenAIEvalRunList, error) {
 	query := map[string]string{}
 	if limit > 0 {
@@ -190,7 +187,7 @@ func (c *EvalClient) ListOpenAIEvalRuns(
 	}
 
 	path := fmt.Sprintf("%s/%s/runs", pathOpenAIEvals, url.PathEscape(evalID))
-	return doRequestTyped[OpenAIEvalRunList](c, ctx, http.MethodGet, path, query, nil, apiVersion)
+	return doRequestTyped[OpenAIEvalRunList](c, ctx, http.MethodGet, path, query, nil, "")
 }
 
 // GetOpenAIEvalRun gets a run for an OpenAI eval definition.
@@ -198,10 +195,9 @@ func (c *EvalClient) GetOpenAIEvalRun(
 	ctx context.Context,
 	evalID string,
 	runID string,
-	apiVersion string,
 ) (*OpenAIEvalRun, error) {
 	path := fmt.Sprintf("%s/%s/runs/%s", pathOpenAIEvals, url.PathEscape(evalID), url.PathEscape(runID))
-	return doRequestTyped[OpenAIEvalRun](c, ctx, http.MethodGet, path, nil, nil, apiVersion)
+	return doRequestTyped[OpenAIEvalRun](c, ctx, http.MethodGet, path, nil, nil, "")
 }
 
 func (c *EvalClient) doRequest(

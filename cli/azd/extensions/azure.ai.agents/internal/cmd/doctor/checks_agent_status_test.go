@@ -86,7 +86,7 @@ func runCheckWithDeps(t *testing.T, deps Dependencies, prior []Result) Result {
 		deps.AzdClient = &azdext.AzdClient{}
 	}
 	if deps.AgentAPIVersion == "" {
-		deps.AgentAPIVersion = "2025-11-15-preview"
+		deps.AgentAPIVersion = "v1"
 	}
 	c := newCheckAgentStatus(deps)
 	require.NotNil(t, c.Fn, "newCheckAgentStatus must return a non-nil Fn")
@@ -202,7 +202,7 @@ func TestCheckAgentStatus_SkipsWhenEndpointMissingFromUpstream(t *testing.T) {
 
 func TestCheckAgentStatus_SkipsWhenAgentServiceListMissingFromUpstream(t *testing.T) {
 	t.Parallel()
-	deps := Dependencies{AzdClient: &azdext.AzdClient{}, AgentAPIVersion: "2025-11-15-preview"}
+	deps := Dependencies{AzdClient: &azdext.AzdClient{}, AgentAPIVersion: "v1"}
 	prior := []Result{
 		{ID: "local.environment-selected", Status: StatusPass},
 		// agent-service-detected passed but didn't surface the list:
@@ -769,7 +769,7 @@ func TestMakeRealProbeAgentStatus_ReturnsNonNilCloser(t *testing.T) {
 	// but we can pin the factory: it must return a non-nil closure that
 	// surfaces a credential-creation error or a network error rather
 	// than panicking when called.
-	probe := makeRealProbeAgentStatus("2025-11-15-preview")
+	probe := makeRealProbeAgentStatus("v1")
 	require.NotNil(t, probe)
 	// Invoking with an obviously-invalid endpoint should still
 	// produce a structured result (not a panic). We pass a very

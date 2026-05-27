@@ -137,20 +137,30 @@ func Apply(dir string) error {
 // .azdignore files the template might contain. Templates may not put
 // rules in nested .azdignore files, but the contract is that consumers
 // never see them in the output.
+//
+// Paths are collected during the walk and removed afterward so the
+// removal phase runs outside the WalkDir callback. This mirrors Apply
+// and avoids gosec's G122 race-prone-path warning for filesystem
+// mutations inside walk callbacks.
 func removeAllIgnoreFiles(dir string) error {
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	var toRemove []string
+	walkErr := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
 		if !d.IsDir() && d.Name() == FileName {
-			if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-				return fmt.Errorf("removing %s file: %w", FileName, removeErr)
-			}
+			toRemove = append(toRemove, path)
 		}
 		return nil
 	})
-	if err != nil {
-		return fmt.Errorf("cleaning nested %s files: %w", FileName, err)
+	if walkErr != nil {
+		return fmt.Errorf("cleaning nested %s files: %w", FileName, walkErr)
+	}
+
+	for _, p := range toRemove {
+		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("removing %s file: %w", FileName, err)
+		}
 	}
 	return nil
 }

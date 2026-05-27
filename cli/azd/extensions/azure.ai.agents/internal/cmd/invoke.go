@@ -1097,7 +1097,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		}
 	}
 
-	if err := handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout(), "", nil, raw); err != nil {
+	if err := handleInvocationResponse(ctx, resp, "", "", agentName, a.httpTimeout(), "", nil, raw); err != nil {
 		// See invocationsRemote for the status-code rationale.
 		if !raw && resp.StatusCode >= 400 {
 			a.emitInvokeFailureNextStep(nextstep.InvokeLocal, agentName, "")

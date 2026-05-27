@@ -2,18 +2,27 @@
 
 ### Step 1 — Identify the PR
 
-Determine the target PR number. Use one of these sources (in priority order):
+Determine the target PR number **and repository**. Use one of these sources
+(in priority order):
 
-1. **Explicit user input** — the user provides a PR number or URL.
-2. **Current branch** — run `gh pr view --json number` to find the PR for the
-   checked-out branch.
+1. **Explicit user input** — the user provides a PR URL (e.g.,
+   `https://github.com/OWNER/REPO/pull/123`). Extract the owner, repo, and
+   number from the URL.
+2. **Explicit PR number** — the user provides just a number. Resolve the
+   repository from the current checkout: `gh repo view --json owner,name`.
+3. **Current branch** — run `gh pr view --json number,url` to find the PR
+   for the checked-out branch. Extract owner/repo from the URL.
 
-If no PR can be identified, ask the user for the PR number.
+If no PR can be identified, ask the user for the PR number or URL.
+
+**Carry the resolved `OWNER`, `REPO`, and `PR_NUMBER` through all subsequent
+steps.** Always pass `--repo OWNER/REPO` to `gh` commands so they work
+regardless of the current working directory.
 
 ### Step 2 — Fetch PR Details and Check Skip Conditions
 
-Use `gh pr view <number> --json number,title,body,url,isDraft,author,labels` to
-retrieve the PR metadata.
+Use `gh pr view <PR_NUMBER> --repo OWNER/REPO --json number,title,body,url,isDraft,author,labels`
+to retrieve the PR metadata.
 
 **Before creating an issue, check whether the PR is exempt from governance.**
 The CI governance gate (`.github/scripts/pr-governance-issue-check.js`) skips
@@ -73,9 +82,10 @@ Write the issue body to a temporary file and use `--body-file` to avoid
 shell injection from PR-derived content:
 
 ```bash
-echo "$ISSUE_BODY" > /tmp/issue-body.md
-gh issue create --repo <owner/repo> --title "$TITLE" --body-file /tmp/issue-body.md
-rm /tmp/issue-body.md
+TMPFILE=$(mktemp)
+printf '%s' "$ISSUE_BODY" > "$TMPFILE"
+gh issue create --repo OWNER/REPO --title "$TITLE" --body-file "$TMPFILE"
+rm "$TMPFILE"
 ```
 
 Capture the new issue number from the output.
@@ -93,9 +103,10 @@ Once confirmed, write the updated PR body to a temporary file and use
 `--body-file` to avoid shell metacharacter issues with user-controlled markdown:
 
 ```bash
-printf '%s\n\nFixes #%d\n' "$CURRENT_BODY" "$ISSUE_NUMBER" > /tmp/pr-body.md
-gh pr edit <number> --body-file /tmp/pr-body.md
-rm /tmp/pr-body.md
+TMPFILE=$(mktemp)
+printf '%s\n\nFixes #%d\n' "$CURRENT_BODY" "$ISSUE_NUMBER" > "$TMPFILE"
+gh pr edit "$PR_NUMBER" --repo OWNER/REPO --body-file "$TMPFILE"
+rm "$TMPFILE"
 ```
 
 ### Step 7 — Report Success

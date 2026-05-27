@@ -199,10 +199,10 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		// the generic manual-vars sub-branch below would otherwise
 		// suggest. We also surface `azd ai agent doctor` as a follow-up
 		// so the user can check whether the toolbox already exists in
-		// their Foundry project before running provision. The actual
-		// live existence check belongs in doctor's local.toolboxes (one
-		// HTTP GET per toolbox); ResolveAfterInit is offline by
-		// contract and must not initiate Foundry API calls.
+		// their Foundry project. The actual live existence check
+		// belongs in doctor's local.toolboxes (one HTTP GET per
+		// toolbox); ResolveAfterInit is offline by contract and must
+		// not initiate Foundry API calls.
 		if hasToolboxEndpoints {
 			out = append(out, Suggestion{
 				Command:     "azd provision",
@@ -212,7 +212,7 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 			priority++
 			out = append(out, Suggestion{
 				Command:     "azd ai agent doctor",
-				Description: "(optional) verify whether your toolbox(es) already exist before provisioning",
+				Description: "(optional) check whether your toolbox(es) already exist in Foundry",
 				Priority:    priority,
 			})
 			priority++

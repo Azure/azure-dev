@@ -307,8 +307,11 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 // entry in MissingManualVars without a corresponding manifest toolbox
 // is a generic user variable and stays where it is.
 //
-// Order is preserved in both buckets so the resolver's existing
-// "first sorted entry → paste-ready command" logic still works.
+// state.MissingManualVars order is preserved (caller-visible sorting
+// happens in the resolver). The matched ResourceRefs are then sorted
+// by (Name, ServiceName) before being written to MissingToolboxEndpoints
+// so callers see a stable ordering that matches state.Toolboxes regardless
+// of how MissingManualVars happens to be ordered.
 func partitionToolboxEndpointVars(state *State) {
 	if len(state.MissingManualVars) == 0 || len(state.Toolboxes) == 0 {
 		return

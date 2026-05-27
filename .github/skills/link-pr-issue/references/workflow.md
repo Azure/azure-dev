@@ -62,16 +62,10 @@ Compose an issue with:
   - Any external issue references found in the PR body (e.g., links to
     upstream issues in other repos).
 
-### Step 4 — Confirm with User
+### Step 4 — Confirm Issue Draft with User
 
-Present **both** planned changes to the user via `ask_user`:
-
-1. The drafted issue title and body.
-2. The exact PR body update — show the `Fixes #<issue_number>` line that will
-   be appended to the current PR body.
-
-Ask whether to proceed with both, modify, or cancel. Both the issue creation
-and the PR edit must be confirmed before any changes are made.
+Present the drafted issue title and body to the user via `ask_user`.
+Ask whether to proceed, modify, or cancel.
 
 ### Step 5 — Create the Issue
 
@@ -86,10 +80,17 @@ rm /tmp/issue-body.md
 
 Capture the new issue number from the output.
 
-### Step 6 — Link the PR
+### Step 6 — Confirm and Link the PR
 
-Write the updated PR body to a temporary file and use `--body-file` to avoid
-shell metacharacter issues with user-controlled markdown:
+Now that the issue number is known, show the user the exact PR body update:
+
+> The following line will be appended to the PR body:
+> `Fixes #<issue_number>`
+
+Ask the user to confirm via `ask_user` before editing the PR.
+
+Once confirmed, write the updated PR body to a temporary file and use
+`--body-file` to avoid shell metacharacter issues with user-controlled markdown:
 
 ```bash
 printf '%s\n\nFixes #%d\n' "$CURRENT_BODY" "$ISSUE_NUMBER" > /tmp/pr-body.md

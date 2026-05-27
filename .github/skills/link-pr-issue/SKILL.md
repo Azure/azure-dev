@@ -36,4 +36,4 @@ the boilerplate of creating a matching issue and editing the PR body.
 
 - A new GitHub issue exists with a title and body derived from the PR.
 - The PR body contains `Fixes #<issue_number>`.
-- The user has confirmed both the issue content and the PR edit before changes were made.
+- The user has confirmed the issue content before creation and the PR body edit before linking.

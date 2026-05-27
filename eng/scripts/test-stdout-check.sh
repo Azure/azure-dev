@@ -44,8 +44,9 @@ for file in $(find "$DIRECTORY" -name '*_test.go' -not -path '*/vendor/*'); do
 
     # Check for fmt.Print, fmt.Println, fmt.Printf (bare calls that write to stdout)
     # Exclude fmt.Fprint*, fmt.Sprint*, fmt.Errorf which write to a writer or return strings
-    if grep -nE '\bfmt\.(Print|Println|Printf)\b' "$file" | grep -vE 'fmt\.(Fprint|Sprint|Errorf|Fprintf|Fprintln|Sprintf)' > /dev/null 2>&1; then
-        grep -nE '\bfmt\.(Print|Println|Printf)\b' "$file" | grep -vE 'fmt\.(Fprint|Sprint|Errorf|Fprintf|Fprintln|Sprintf)' | while read -r match; do
+    # Use fmt\.Print(f|ln)?\( to match actual function calls, avoiding substring matches
+    if grep -nE 'fmt\.(Print|Println|Printf)\(' "$file" | grep -vE 'fmt\.(Fprint|Sprint|Errorf|Fprintf|Fprintln|Sprintf)\(' > /dev/null 2>&1; then
+        grep -nE 'fmt\.(Print|Println|Printf)\(' "$file" | grep -vE 'fmt\.(Fprint|Sprint|Errorf|Fprintf|Fprintln|Sprintf)\(' | while read -r match; do
             # Skip lines with nolint:forbidigo or nolint:test-stdout
             case "$match" in
                 *nolint*) continue ;;
@@ -57,8 +58,9 @@ for file in $(find "$DIRECTORY" -name '*_test.go' -not -path '*/vendor/*'); do
     fi
 
     # Check for os.Stdout references (exclude read-only .Stat() and comments)
-    if grep -nE '\bos\.Stdout\b' "$file" | grep -vE '\.Stat\(\)|^[[:space:]]*//' > /dev/null 2>&1; then
-        grep -nE '\bos\.Stdout\b' "$file" | grep -vE '\.Stat\(\)|^[[:space:]]*//' | while read -r match; do
+    # Match os.Stdout as a standalone reference (not as part of another identifier)
+    if grep -nE 'os\.Stdout[^a-zA-Z_]|os\.Stdout$' "$file" | grep -vE '\.Stat\(\)|^[[:space:]]*//' > /dev/null 2>&1; then
+        grep -nE 'os\.Stdout[^a-zA-Z_]|os\.Stdout$' "$file" | grep -vE '\.Stat\(\)|^[[:space:]]*//' | while read -r match; do
             case "$match" in
                 *nolint*) continue ;;
             esac

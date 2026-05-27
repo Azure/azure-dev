@@ -589,7 +589,7 @@ func TestPrintDetail_IncludesMetadata(t *testing.T) {
 	err := printDetail(result, "table")
 	require.NoError(t, err)
 
-	w.Close()
+	require.NoError(t, w.Close())
 	os.Stdout = old
 
 	var buf bytes.Buffer
@@ -616,7 +616,7 @@ func TestPrintDetail_OmitsEmptyMetadata(t *testing.T) {
 	err := printDetail(result, "table")
 	require.NoError(t, err)
 
-	w.Close()
+	require.NoError(t, w.Close())
 	os.Stdout = old
 
 	var buf bytes.Buffer
@@ -645,7 +645,7 @@ func TestPrintDetail_JSON_IncludesMetadata(t *testing.T) {
 	err := printDetail(result, "json")
 	require.NoError(t, err)
 
-	w.Close()
+	require.NoError(t, w.Close())
 	os.Stdout = old
 
 	var buf bytes.Buffer

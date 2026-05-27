@@ -174,6 +174,33 @@ var docCategories = []DocCategory{
 			"Print the consumer-side runtime guide.":  "azd ai doc toolbox consume",
 		},
 	},
+	{
+		Name:        "skill",
+		DisplayName: "Foundry skills (azure.ai.skills)",
+		// Foundry skills are centrally-stored, versioned behavioral
+		// guidelines a Hosted agent downloads and injects as
+		// instructions. Managed via the `azd ai skill` CLI (from the
+		// `azure.ai.skills` extension). Intentionally distinct from
+		// the embedded `azd-ai-skill` pack installed by
+		// `azd ai doc install skill` -- that is a coding-agent pack
+		// consumed by tools like Claude Code / GitHub Copilot.
+		Short: "Manage Foundry skills -- versioned, project-scoped behavioral guidelines a Hosted agent downloads and injects " +
+			"(azure.ai.skills).",
+		Preamble: []string{
+			"Foundry skills are reusable behavioral guidelines stored centrally on a Foundry project. " +
+				"A Hosted agent downloads them at build time and the agent runtime injects them as " +
+				"additional instructions on every session.",
+			"Use `azd ai doc skill <topic>` to print one topic's body in full. " +
+				"Start with `overview` for the mental model, then `manage` for the CLI.",
+		},
+		Examples: map[string]string{
+			"List topics for skills.":                   "azd ai doc skill",
+			"Print the overview topic.":                 "azd ai doc skill overview",
+			"Print the management CLI reference.":       "azd ai doc skill manage",
+			"Print the cross-project sharing recipes.":  "azd ai doc skill share",
+			"Print the hosted-agent consumption guide.": "azd ai doc skill consume",
+		},
+	},
 }
 
 // init populates the Topics field of every DocCategory from the

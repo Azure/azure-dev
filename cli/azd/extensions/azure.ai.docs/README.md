@@ -20,11 +20,27 @@ azd ai doc agent initialize
 azd ai doc agent configure
 azd ai doc agent investigate
 azd ai doc agent operate
+
+# List topics for the Foundry skill resource (azure.ai.skills)
+azd ai doc skill
+azd ai doc skill overview
+azd ai doc skill manage
+azd ai doc skill share
+azd ai doc skill consume
+
+# Install the embedded azd-ai-skill coding-agent pack into the project
+azd ai doc install skill --target copilot
 ```
 
 Each topic is a contract an agent reads to drive the matching CLI
 commands: exact invocations, JSON shape examples, error codes,
 confirmation-envelope handling.
+
+> Note: the `skill` doc category covers the **Foundry skill resource**
+> managed by the `azure.ai.skills` extension. It is intentionally
+> distinct from `install skill`, which copies the embedded
+> coding-agent pack (`azd-ai-skill`) into the user's project for tools
+> like Claude Code / GitHub Copilot.
 
 ## Local development
 
@@ -59,20 +75,34 @@ internal/cmd/
       configure.md
       investigate.md
       operate.md
-    toolbox/          <-- future: topics for azure.ai.toolboxes
+    connection/       <-- topics for azure.ai.connections (today under azd ai agent connection)
+      overview.md
+      add.md
       ...
-    project/          <-- future: topics for azure.ai.projects
+    toolbox/          <-- topics for azure.ai.toolboxes
+      overview.md
+      add.md
       ...
-  doc_index.go        <-- docCategories table (one entry per skills/ subdir)
-  doc_agent.go        <-- per-extension subcommand
+    skill/            <-- topics for azure.ai.skills (Foundry skill resource)
+      overview.md
+      manage.md
+      share.md
+      consume.md
+  doc_catalog.go      <-- docCategories table (one entry per skills/ subdir)
+  doc_agent.go        <-- per-extension subcommand (one per category)
+  doc_connection.go
+  doc_toolbox.go
+  doc_skill.go
 ```
 
 To add a new sibling:
 
 1. Drop `skills/<sibling>/<topic>.md` files into this extension.
-2. Add an entry to `docCategories` in `doc_index.go`.
-3. Add a `new<Sibling>Command()` constructor mirroring `newAgentCommand()`
-   and register it in `root.go`.
+2. Add an entry to `docCategories` in `doc_catalog.go` (plus a
+   `categoryExtensionName` case in `doc_renderer.go`).
+3. Add a `new<Sibling>Command()` constructor mirroring `newSkillCommand()`
+   and register it (plus the matching `helpformat.Install` block) in
+   `root.go`.
 
 No coordination with the sibling extension is required; this extension is
 the source of truth for its agent-friendly docs.

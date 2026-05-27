@@ -20,6 +20,14 @@ func TestNewRootCommand_HasAgentSubcommand(t *testing.T) {
 	}
 	assert.Contains(t, names, "agent",
 		"azd ai doc must expose the agent subgroup")
+	assert.Contains(t, names, "connection",
+		"azd ai doc must expose the connection subgroup")
+	assert.Contains(t, names, "toolbox",
+		"azd ai doc must expose the toolbox subgroup")
+	assert.Contains(t, names, "skill",
+		"azd ai doc must expose the skill subgroup (Foundry skill resource docs)")
+	assert.Contains(t, names, "install",
+		"azd ai doc must expose the install subgroup (embedded skill-pack installer)")
 }
 
 func TestNewRootCommand_RunsIndexAsDefault(t *testing.T) {
@@ -57,6 +65,25 @@ func TestSkillsFS_HasAllAgentTopics(t *testing.T) {
 		"evaluate",
 		"operate",
 		"investigate",
+	}, got)
+}
+
+func TestSkillsFS_HasAllSkillTopics(t *testing.T) {
+	// Pins the topic set for the Foundry skill resource docs (the
+	// azure.ai.skills extension). A future drop or rename is a
+	// deliberate test update -- topic names are the wire contract
+	// callers rely on (`azd ai doc skill <topic>`).
+	topics, err := loadCategoryTopics("skill")
+	require.NoError(t, err)
+	var got []string
+	for _, top := range topics {
+		got = append(got, top.Name)
+	}
+	assert.ElementsMatch(t, []string{
+		"overview",
+		"manage",
+		"share",
+		"consume",
 	}, got)
 }
 

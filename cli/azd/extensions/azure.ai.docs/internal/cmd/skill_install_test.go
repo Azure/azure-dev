@@ -335,12 +335,12 @@ func relPaths(files []packFile) []string {
 	return out
 }
 
-// TestNewSkillInstallCommand_DoesNotRegisterReservedOutputFlag pins the
+// TestNewInstallSkillCommand_DoesNotRegisterReservedOutputFlag pins the
 // reserved-flag contract: --output MUST be registered via the SDK helper,
 // not via cmd.Flags().StringVar. The azd host rejects extensions that
 // define their own --output cobra flag (see PR #b28ae56fd).
-func TestNewSkillInstallCommand_DoesNotRegisterReservedOutputFlag(t *testing.T) {
-	cmd := newSkillInstallCommand(nil)
+func TestNewInstallSkillCommand_DoesNotRegisterReservedOutputFlag(t *testing.T) {
+	cmd := newInstallSkillCommand(nil)
 	// If the install command ever falls back to cmd.Flags().StringVar
 	// for --output, the flag will be visible on the cobra FlagSet AND
 	// the azd host startup will reject the extension. The SDK helper

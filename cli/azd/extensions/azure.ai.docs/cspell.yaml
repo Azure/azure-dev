@@ -40,6 +40,13 @@ words:
   - tmpfs
   # Used in skill_install.go comments describing the JSON wire shape
   - parseable
+  # Foundry-skills terms used in skill/* topic markdown bodies.
+  # `agentskills` references the agentskills.io naming spec.
+  # `repoint` / `repoints` describe the metadata-only default-version
+  # update flow on Foundry skills (mirrors azure.ai.skills cspell.yaml).
+  - agentskills
+  - repoint
+  - repoints
 overrides:
   - filename: internal/cmd/doc_catalog.go
     words:

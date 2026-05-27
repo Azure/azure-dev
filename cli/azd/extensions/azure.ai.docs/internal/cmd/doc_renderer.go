@@ -253,6 +253,8 @@ func categoryExtensionName(cat DocCategory) string {
 		return "azure.ai.connections"
 	case "toolbox":
 		return "azure.ai.agents"
+	case "skill":
+		return "azure.ai.skills"
 	default:
 		return fmt.Sprintf("azure.ai.%s", cat.Name)
 	}

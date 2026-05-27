@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// skill_install.go implements `azd ai doc skills install` -- installs an
+// skill_install.go implements `azd ai doc install skill` -- installs an
 // embedded skill pack into a tool-specific destination directory in the
 // user's project. The destination is decided by --target (claude, codex,
 // gemini, copilot, opencode) or --path (when --target=custom).
@@ -117,15 +117,15 @@ type skillInstallResult struct {
 	Files  []string `json:"files"`
 }
 
-// newSkillInstallCommand wires the cobra command. The RunE follows the
+// newInstallSkillCommand wires the cobra command. The RunE follows the
 // established action-object pattern: parse output context, validate
 // flags, construct SkillInstallAction, call Run(ctx).
-func newSkillInstallCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+func newInstallSkillCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &skillInstallFlags{}
 	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
-		Use:   "install",
+		Use:   "skill",
 		Short: "Install an agent-friendly skill pack into your project.",
 		Long: `Install an agent-friendly skill pack (SKILL.md and supporting files)
 into your project at a tool-specific path.
@@ -150,16 +150,16 @@ Safety:
     current working directory, or when an existing parent symlinks
     outside the project root.`,
 		Example: `  # Install for GitHub Copilot
-  azd ai doc skills install --target copilot
+  azd ai doc install skill --target copilot
 
   # Force overwrite of previously installed (modified) files
-  azd ai doc skills install --target copilot --force
+  azd ai doc install skill --target copilot --force
 
   # Install to a custom directory
-  azd ai doc skills install --target custom --path .my-tool/skills/foundry
+  azd ai doc install skill --target custom --path .my-tool/skills/foundry
 
   # JSON output for scripting
-  azd ai doc skills install --target copilot --output json`,
+  azd ai doc install skill --target copilot --output json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.output = extCtx.OutputFormat

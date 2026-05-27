@@ -63,10 +63,11 @@ func TestDocRootHelp_StyledSections(t *testing.T) {
 	assert.Contains(t, out, "Print the samples topic body.",
 		"third catalog example title missing")
 
-	// Cobra's Available Commands listing should include the 3 visible
-	// leaves (agent, skills, version; metadata is reserved by the SDK
-	// and may appear as well -- not asserted).
-	for _, name := range []string{"agent", "skills", "version"} {
+	// Cobra's Available Commands listing should include the visible
+	// leaves (agent, connection, toolbox, skill, install, version;
+	// metadata is reserved by the SDK and may appear as well -- not
+	// asserted).
+	for _, name := range []string{"agent", "connection", "toolbox", "skill", "install", "version"} {
 		assert.True(t, strings.Contains(out, name),
 			"Cobra subcommand list missing %q", name)
 	}
@@ -99,21 +100,21 @@ func TestDocAgentHelp_Smoke(t *testing.T) {
 		"first catalog example title missing")
 }
 
-// TestDocSkillsInstallHelp_BulletPreambleAndExamples confirms the
-// long-form skill install command -- which has an existing Long
+// TestDocInstallSkillHelp_BulletPreambleAndExamples confirms the
+// long-form `install skill` command -- which has an existing Long
 // containing bullet items written into the cobra.Command literal --
 // renders those as plain text alongside the styled section headers
 // and migrated Examples. This is the "leave existing Long verbatim"
 // path: no Description override, just styling around it.
-func TestDocSkillsInstallHelp_BulletPreambleAndExamples(t *testing.T) {
+func TestDocInstallSkillHelp_BulletPreambleAndExamples(t *testing.T) {
 	withColorDisabled(t)
 
-	out := helpOf(t, "skills", "install")
+	out := helpOf(t, "install", "skill")
 	assert.Contains(t, out, "Built-in targets:")
 	assert.Contains(t, out, "Usage:")
 	assert.Contains(t, out, "Flags:")
-	assert.Contains(t, out, "--target", "install's --target flag should appear in Flags section")
-	assert.Contains(t, out, "Examples:", "skills install has migrated examples")
+	assert.Contains(t, out, "--target", "install skill's --target flag should appear in Flags section")
+	assert.Contains(t, out, "Examples:", "install skill has migrated examples")
 }
 
 // runE runs the root command with args (no --help) and returns the

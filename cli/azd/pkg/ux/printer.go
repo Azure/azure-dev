@@ -60,7 +60,7 @@ func NewPrinter(writer io.Writer) Printer {
 		cursorPosition: nil,
 	}
 
-	printer.consoleWidth.Store(int32(width))
+	printer.consoleWidth.Store(int64(width))
 	printer.listenForResize()
 
 	return printer
@@ -70,7 +70,7 @@ type printer struct {
 	internal.Cursor
 
 	writer         io.Writer
-	consoleWidth   atomic.Int32
+	consoleWidth   atomic.Int64
 	currentLine    string
 	size           *CanvasSize
 	cursorPosition *CursorPosition
@@ -184,7 +184,7 @@ func (p *printer) listenForResize() {
 	go func() {
 		for range sigChan {
 			w, _ := consolesize.GetConsoleSize()
-			p.consoleWidth.Store(int32(w))
+			p.consoleWidth.Store(int64(w))
 		}
 	}()
 }

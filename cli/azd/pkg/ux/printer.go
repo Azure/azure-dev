@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
@@ -57,9 +58,9 @@ func NewPrinter(writer io.Writer) Printer {
 		currentLine:    "",
 		size:           newCanvasSize(),
 		cursorPosition: nil,
-		consoleWidth:   width,
 	}
 
+	printer.consoleWidth.Store(int32(width))
 	printer.listenForResize()
 
 	return printer
@@ -69,7 +70,7 @@ type printer struct {
 	internal.Cursor
 
 	writer         io.Writer
-	consoleWidth   int
+	consoleWidth   atomic.Int32
 	currentLine    string
 	size           *CanvasSize
 	cursorPosition *CursorPosition
@@ -83,7 +84,7 @@ func (p *printer) Size() CanvasSize {
 
 // Width returns the terminal width in columns.
 func (p *printer) Width() int {
-	return p.consoleWidth
+	return int(p.consoleWidth.Load())
 }
 
 // CursorPosition represents the position of the cursor on the screen.
@@ -144,8 +145,10 @@ func (p *printer) Fprintf(format string, a ...any) {
 	// Check if the content includes any line breaks
 	hasNewLines := strings.Count(content, "\n") > 0
 
+	width := int(p.consoleWidth.Load())
+
 	// Wrapping already counted for the current accumulated line
-	alreadyCounted := CountLineBreaks(p.currentLine, p.consoleWidth)
+	alreadyCounted := CountLineBreaks(p.currentLine, width)
 
 	var lastLine string
 	newLines := 0
@@ -158,14 +161,14 @@ func (p *printer) Fprintf(format string, a ...any) {
 
 		// Include accumulated currentLine for accurate wrapping of the first line
 		fullContent := p.currentLine + content
-		newLines = CountLineBreaks(fullContent, p.consoleWidth) - alreadyCounted
+		newLines = CountLineBreaks(fullContent, width) - alreadyCounted
 		p.currentLine = lastLine
 	} else {
 		// Need to see if appending content to the current line will cause wrapping
 		// (i.e. if the line is longer than the console width)
 		p.currentLine += content
 		// Only count NEW wrapping lines (delta from what was already tracked)
-		newLines = CountLineBreaks(p.currentLine, p.consoleWidth) - alreadyCounted
+		newLines = CountLineBreaks(p.currentLine, width) - alreadyCounted
 	}
 
 	fmt.Fprint(p.writer, content)
@@ -180,9 +183,8 @@ func (p *printer) listenForResize() {
 
 	go func() {
 		for range sigChan {
-			p.writeLock.Lock()
-			p.consoleWidth, _ = consolesize.GetConsoleSize()
-			p.writeLock.Unlock()
+			w, _ := consolesize.GetConsoleSize()
+			p.consoleWidth.Store(int32(w))
 		}
 	}()
 }

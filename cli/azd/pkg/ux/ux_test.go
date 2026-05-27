@@ -167,7 +167,7 @@ func Test_TruncateVisible(t *testing.T) {
 		{"Empty string", "", 10, ""},
 
 		// Basic truncation
-		{"Plain text truncated", "Hello World!", 8, "Hello...\x1b[0m"},
+		{"Plain text truncated", "Hello World!", 8, "Hello..."},
 		{"Truncated to minimum", "Hello", 3, "..."},
 
 		// Edge cases
@@ -193,8 +193,8 @@ func Test_TruncateVisible(t *testing.T) {
 			"\x1b[1m\x1b[31mBold Re...\x1b[0m",
 		},
 
-		// Unicode
-		{"Unicode truncated", "日本語テスト", 5, "日本...\x1b[0m"},
+		// Unicode (CJK characters are 2 columns wide)
+		{"Unicode truncated", "日本語テスト", 7, "日本..."},
 	}
 
 	for _, tc := range testCases {

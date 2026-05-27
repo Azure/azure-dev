@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/terminal"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
 	"github.com/fatih/color"
+	"github.com/mattn/go-runewidth"
 	"github.com/nathan-fiscaletti/consolesize-go"
 )
 
@@ -77,13 +78,12 @@ func CountLineBreaks(content string, width int) int {
 }
 
 // visibleLength calculates the number of visible characters in a string
-// by removing ANSI codes and counting the actual characters.
-// Cannot use len() as it counts bytes not runes
+// by removing ANSI codes and counting the display width (CJK/emoji = 2 columns).
 func VisibleLength(s string) int {
 	// Remove ANSI codes such as color, formatting, etc.
 	cleaned := specialTextRegex.ReplaceAllString(s, "")
-	// Count actual visible characters
-	return utf8.RuneCountInString(cleaned)
+	// Count display width (handles CJK/emoji as 2 columns)
+	return runewidth.StringWidth(cleaned)
 }
 
 // TruncateVisible truncates a string to fit within maxWidth visible characters,
@@ -133,15 +133,22 @@ func TruncateVisible(s string, maxWidth int) string {
 		}
 
 		// Regular character (may be multi-byte UTF-8)
-		_, size := utf8.DecodeRuneInString(s[i:])
+		r, size := utf8.DecodeRuneInString(s[i:])
+		w := runewidth.RuneWidth(r)
+		if visible+w > targetVisible {
+			break
+		}
 		result.WriteString(s[i : i+size])
 		i += size
-		visible++
+		visible += w
 	}
 
 	result.WriteString(ellipsis)
-	// Append a reset sequence to ensure no color bleeds past the truncation point
-	result.WriteString("\x1b[0m")
+	// Only append ANSI reset if the original string contained ANSI sequences,
+	// to avoid injecting escape codes into plain text (e.g., NO_COLOR mode).
+	if strings.Contains(s, "\x1b[") {
+		result.WriteString("\x1b[0m")
+	}
 
 	return result.String()
 }

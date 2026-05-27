@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"azure.ai.connections/internal/connections/pkg/connections"
+	"azure.ai.connections/internal/pkg/connections"
 
 	"github.com/stretchr/testify/require"
 )
@@ -125,9 +125,9 @@ func TestNormalizeKind(t *testing.T) {
 		{"ai-services", "AIServices"},
 		{"container-registry", "ContainerRegistry"},
 		{"custom-keys", "CustomKeys"},
-		// Already PascalCase — pass through
+		// Already PascalCase ΓÇö pass through
 		{"RemoteTool", "RemoteTool"},
-		// Unknown kind — pass through
+		// Unknown kind ΓÇö pass through
 		{"my-custom-kind", "my-custom-kind"},
 		// Empty
 		{"", ""},
@@ -152,7 +152,7 @@ func TestNormalizeAuthType(t *testing.T) {
 		{"UserEntraToken", "user-entra-token"},
 		{"ProjectManagedIdentity", "project-managed-identity"},
 		{"AgenticIdentityToken", "agentic-identity"},
-		// Unknown — pass through
+		// Unknown ΓÇö pass through
 		{"AAD", "AAD"},
 		{"", ""},
 	}
@@ -259,7 +259,7 @@ func TestOAuth2Validation(t *testing.T) {
 			connectorName: "github",
 		}
 		err := runValidation(flags)
-		// Should pass validation — any error here is from resolveConnectionContext, not validation
+		// Should pass validation ΓÇö any error here is from resolveConnectionContext, not validation
 		require.False(t, isValidationError(err, "connector-name"))
 		require.False(t, isValidationError(err, "Missing"))
 	})
@@ -275,7 +275,7 @@ func TestOAuth2Validation(t *testing.T) {
 			clientSecret:     "csec",
 		}
 		err := runValidation(flags)
-		// Should pass validation — any error here is from resolveConnectionContext, not validation
+		// Should pass validation ΓÇö any error here is from resolveConnectionContext, not validation
 		require.False(t, isValidationError(err, "Missing"))
 		require.False(t, isValidationError(err, "requires"))
 	})
@@ -311,7 +311,7 @@ func TestOAuth2Validation(t *testing.T) {
 }
 
 func TestRawConnectionBody_OAuth2_FullFields(t *testing.T) {
-	// BYO OAuth2 — no ConnectorName (CLI makes connector-name and BYO mutually exclusive).
+	// BYO OAuth2 ΓÇö no ConnectorName (CLI makes connector-name and BYO mutually exclusive).
 	props := rawConnectionProperties{ //nolint:gosec // test credentials, not real
 		AuthType:         "OAuth2",
 		Category:         "RemoteTool",
@@ -472,7 +472,7 @@ func TestParseKVPtrMap(t *testing.T) {
 }
 
 func TestRawConnectionBody_OAuth2_ConnectorNameOnly(t *testing.T) {
-	// When using a managed connector, only connectorName is set — no credentials.
+	// When using a managed connector, only connectorName is set ΓÇö no credentials.
 	props := rawConnectionProperties{
 		AuthType:      "OAuth2",
 		Category:      "RemoteTool",

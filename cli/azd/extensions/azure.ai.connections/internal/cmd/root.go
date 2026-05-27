@@ -4,8 +4,6 @@
 package cmd
 
 import (
-	connectioncmd "azure.ai.connections/internal/connections/cmd"
-
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -34,8 +32,12 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.PersistentFlags().StringP("project-endpoint", "p", "",
 		"Foundry project endpoint URL (overrides env var and config)")
 
-	// Connection management subcommands migrated from the azure.ai.agents extension.
-	connectioncmd.RegisterCommands(rootCmd, extCtx)
+	// Connection CRUD subcommands (migrated from the azure.ai.agents extension).
+	rootCmd.AddCommand(newConnectionListCommand(extCtx))
+	rootCmd.AddCommand(newConnectionShowCommand(extCtx))
+	rootCmd.AddCommand(newConnectionCreateCommand(extCtx))
+	rootCmd.AddCommand(newConnectionUpdateCommand(extCtx))
+	rootCmd.AddCommand(newConnectionDeleteCommand(extCtx))
 
 	return rootCmd
 }

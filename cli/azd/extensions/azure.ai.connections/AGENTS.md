@@ -15,12 +15,12 @@ Foundry project.
 
 Useful places to start:
 
-- `internal/cmd/`: extension boilerplate (context, version, metadata) plus the
-  root command that wires in the connection subcommands.
-- `internal/connections/cmd/`: connection CRUD verb implementations, ARM/
-  data-plane glue (`resolveConnectionContext`, `discoverARMContext`).
-- `internal/connections/pkg/connections/`: Foundry data-plane client and
-  credential models.
+- `internal/cmd/`: extension boilerplate (context, version, metadata),
+  the extension root command, the connection CRUD verb implementations,
+  and the ARM / data-plane glue (`resolveConnectionContext`,
+  `discoverARMContext`).
+- `internal/pkg/connections/`: Foundry data-plane client and credential
+  models.
 - `internal/foundry/projectctx/`: Foundry project-endpoint cascade and URL
   validation shared with sibling extensions.
 - `internal/exterrors/`: structured error factories and extension-specific codes.
@@ -33,15 +33,15 @@ to be lifted into a shared module later. Two rules keep that future lift
 mechanical:
 
 1. **One-way import contract.** Files under `internal/foundry/` MUST NOT
-   import anything under `internal/cmd/` or `internal/connections/`. Files
-   under `internal/cmd/` and `internal/connections/cmd/` may import
-   `internal/foundry/...` freely.
+   import anything under `internal/cmd/` or `internal/pkg/`. Files under
+   `internal/cmd/` and `internal/pkg/` may import `internal/foundry/...`
+   freely.
 2. **No connection-specific logic inside `internal/foundry/`.** Keep that
    package to primitives any sibling Foundry extension would also need
    (project-endpoint resolution, URL validation). Connection-specific
    concepts (data-plane models, ARM resource-ID parsing, the connection
-   ARM/data-plane clients) live in `internal/connections/` and must not
-   leak into `internal/foundry/`.
+   ARM/data-plane clients) live in `internal/cmd/` and
+   `internal/pkg/connections/` and must not leak into `internal/foundry/`.
 
 When this primitive is lifted into a shared module (e.g. promoted out of
 `azure.ai.projects` into an exported `pkg/projectctx`), this extension should
@@ -97,7 +97,7 @@ code can confidently answer all three of these:
 That usually means:
 
 - lower-level helpers return `fmt.Errorf("context: %w", err)`
-- user-facing orchestration code in `internal/connections/cmd/` classifies the
+- user-facing orchestration code in `internal/cmd/` classifies the
   failure with `exterrors.*`
 
 ### Most important rule

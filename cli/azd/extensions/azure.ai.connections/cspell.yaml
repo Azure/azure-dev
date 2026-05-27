@@ -1,6 +1,5 @@
 import: ../../.vscode/cspell.yaml
 words:
-    - connectioncmd
     - exterrors
     - projectctx
     - tavily

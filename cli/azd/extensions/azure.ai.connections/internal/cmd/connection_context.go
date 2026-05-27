@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"log"
 
-	"azure.ai.connections/internal/connections/pkg/connections"
 	"azure.ai.connections/internal/exterrors"
 	"azure.ai.connections/internal/foundry/projectctx"
+	"azure.ai.connections/internal/pkg/connections"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"

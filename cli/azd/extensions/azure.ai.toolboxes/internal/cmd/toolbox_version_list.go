@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newToolboxVersionListCommand returns `azd ai toolbox version list <toolbox>`.
+// newToolboxVersionListCommand returns `azd ai toolbox versions list <toolbox>`.
 func newToolboxVersionListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 
@@ -53,7 +53,7 @@ func runToolboxVersionList(ctx context.Context, toolboxName string, parent toolb
 	if err != nil {
 		return err
 	}
-	logResolvedEndpoint("toolbox version list", resolved)
+	logResolvedEndpoint("toolbox versions list", resolved)
 
 	return runToolboxVersionListWith(ctx, client, toolboxName, parent)
 }

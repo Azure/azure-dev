@@ -97,9 +97,9 @@ func Test_CountLineBreaks(t *testing.T) {
 		{"Mixed Short and Long Lines", "Short\nThis is a very long line that wraps.\nAnother short one", 30, 3},
 
 		// Unicode & special characters
-		{"Emoji Characters", "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥", 10, 0},             // Should be 1 line
-		{"Emoji Line Wrap", "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥", 10, 1},             // Should wrap to 2 lines
-		{"Mixing Emoji and Text", "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥 Hello!", 10, 1}, // Wraps text correctly
+		{"Emoji Characters", "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥", 10, 1},             // 10 emoji × 2 cols = 20 cols, wraps once
+		{"Emoji Line Wrap", "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥", 10, 2},             // 11 emoji × 2 cols = 22 cols, wraps twice
+		{"Mixing Emoji and Text", "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥 Hello!", 10, 2}, // 20 + 7 = 27 cols, wraps twice
 
 		// Trailing newlines shouldn't overcount
 		{"Two Printf calls (simulated)", "line 1\nline 2\n", 100, 2}, // Should be exactly 2 lines
@@ -135,8 +135,8 @@ func Test_VisibleLength(t *testing.T) {
 		{"Long ANSI Sequence", "\x1b[38;5;82mGreen Text\x1b[0m", 10},
 
 		// Unicode & special characters
-		{"Unicode Characters", "🔥🔥🔥", 3},
-		{"Mix of ANSI and Unicode", "\x1b[31m🔥🔥🔥\x1b[0m", 3},
+		{"Unicode Characters", "🔥🔥🔥", 6},
+		{"Mix of ANSI and Unicode", "\x1b[31m🔥🔥🔥\x1b[0m", 6},
 
 		// Edge Cases
 		{"Edge Case: Leading ANSI Code", "\x1b[31mRed\x1b[0mText", 7},

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -25,6 +26,13 @@ import (
 )
 
 var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standard"}
+
+// errModelSkipped is a sentinel error returned by getModelDetails when the
+// user explicitly chooses "Skip this model" from the model-selection prompt.
+// Callers MUST use errors.Is to detect this case and drop the model from the
+// manifest rather than treating it as a failure. The resource is removed
+// from manifest.Resources in ProcessModels so no deployment is provisioned.
+var errModelSkipped = errors.New("user skipped model")
 
 func (a *modelSelector) loadAiCatalog(ctx context.Context) error {
 	if a.modelCatalog != nil {
@@ -330,8 +338,13 @@ func (a *InitAction) getModelDeploymentDetails(
 		}
 	}
 
-	modelDetails, err := a.getModelSelector().getModelDetails(ctx, model.Id)
+	modelDetails, err := a.getModelSelector().getModelDetails(ctx, model.Id, true)
 	if err != nil {
+		if errors.Is(err, errModelSkipped) {
+			// Propagate the sentinel unwrapped so ProcessModels can detect
+			// the skip and drop the resource from manifest.Resources.
+			return nil, false, err
+		}
 		return nil, false, fmt.Errorf("failed to get model details: %w", err)
 	}
 
@@ -367,7 +380,9 @@ func (a *InitAction) getModelDeploymentDetails(
 	}, true, nil
 }
 
-func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (*azdext.AiModelDeployment, error) {
+func (a *modelSelector) getModelDetails(
+	ctx context.Context, modelName string, allowSkip bool,
+) (*azdext.AiModelDeployment, error) {
 	if err := a.loadAiCatalog(ctx); err != nil {
 		return nil, err
 	}
@@ -382,14 +397,19 @@ func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (
 			return nil, fmt.Errorf("no model selected, exiting")
 		}
 		model = selectedModel
-	} else if a.userProvidedManifest {
-		// Model found - auto-accept from manifest without prompting
-		log.Printf("Using model from manifest: %s", model.Name)
 	} else if !a.flags.noPrompt {
-		// Model found in catalog — let user confirm or choose a different one
+		// Model found in catalog -- let user confirm, choose a different one,
+		// or (when allowed) skip the model entirely. This is the standard
+		// selector for both interactively-detected manifests and the -m flow.
 		choices := []*azdext.SelectChoice{
 			{Label: fmt.Sprintf("Use '%s' (from manifest)", model.Name), Value: "keep"},
 			{Label: "Choose a different model", Value: "change"},
+		}
+		if allowSkip {
+			choices = append(choices, &azdext.SelectChoice{
+				Label: "Skip this model (do not deploy)",
+				Value: "skip",
+			})
 		}
 
 		defaultIdx := int32(0)
@@ -407,7 +427,8 @@ func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (
 			return nil, fmt.Errorf("failed to prompt for model choice: %w", err)
 		}
 
-		if choices[*resp.Value].Value == "change" {
+		switch choices[*resp.Value].Value {
+		case "change":
 			selectedModel, err := a.promptModelFromCatalog(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("failed to select alternative model: %w", err)
@@ -416,6 +437,12 @@ func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (
 				return nil, fmt.Errorf("no model selected, exiting")
 			}
 			model = selectedModel
+		case "skip":
+			fmt.Println(output.WithWarningFormat(
+				"Skipped model '%s'. The agent will not have a model deployed.", model.Name))
+			fmt.Println(output.WithGrayFormat(
+				"Configure your agent's model manually before running 'azd provision'."))
+			return nil, errModelSkipped
 		}
 	}
 
@@ -882,6 +909,11 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 	// branch was taken.
 	anyModelProcessed := false
 	anyNewDeployment := false
+	// skippedModelResources collects names of model resources the user
+	// explicitly chose to skip via the model-selection prompt. After the
+	// loop, these are dropped from manifest.Resources so no deployment is
+	// provisioned for them.
+	skippedModelResources := map[string]struct{}{}
 	switch agentDef.Kind {
 	case agent_yaml.AgentKindHosted:
 		for _, resource := range manifest.Resources {
@@ -900,6 +932,14 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 				model := agent_yaml.Model{Id: resource.Id}
 				modelDeployment, isNew, err := a.getModelDeploymentDetails(ctx, model)
 				if err != nil {
+					if errors.Is(err, errModelSkipped) {
+						// User chose "Skip this model" in the selector. Drop
+						// the resource from manifest.Resources below so no
+						// deployment is provisioned. Don't touch the pending
+						// provision signal for this resource.
+						skippedModelResources[resource.Name] = struct{}{}
+						continue
+					}
 					return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
 				}
 				deploymentDetails = append(deploymentDetails, *modelDeployment)
@@ -910,6 +950,20 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 				}
 			}
 		}
+	}
+
+	// Drop any model resources the user chose to skip so they aren't
+	// provisioned. Non-model resources and resources of other kinds are
+	// preserved unchanged.
+	if len(skippedModelResources) > 0 {
+		manifest.Resources = slices.DeleteFunc(manifest.Resources, func(r any) bool {
+			mr, ok := r.(agent_yaml.ModelResource)
+			if !ok {
+				return false
+			}
+			_, skipped := skippedModelResources[mr.Name]
+			return skipped
+		})
 	}
 
 	updatedManifest, err := agent_yaml.InjectParameterValuesIntoManifest(manifest, paramValues)

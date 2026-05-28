@@ -113,17 +113,15 @@ type modelSelector struct {
 
 	modelCatalog         map[string]*azdext.AiModel
 	locationWarningShown bool
-	userProvidedManifest bool
 }
 
 func (a *InitAction) getModelSelector() *modelSelector {
 	if a.models == nil {
 		a.models = &modelSelector{
-			azdClient:            a.azdClient,
-			azureContext:         a.azureContext,
-			environment:          a.environment,
-			flags:                a.flags,
-			userProvidedManifest: a.userProvidedManifest,
+			azdClient:    a.azdClient,
+			azureContext: a.azureContext,
+			environment:  a.environment,
+			flags:        a.flags,
 		}
 	}
 	return a.models

@@ -970,7 +970,9 @@ func (a *InitFromCodeAction) resolveSelectedModelDeployment(
 		flags:        a.flags,
 	}
 
-	return selector.getModelDetails(ctx, model.Name)
+	// allowSkip=false: in this recovery path the user already explicitly chose
+	// the model via selectNewModel earlier, so offering "Skip" would be confusing.
+	return selector.getModelDetails(ctx, model.Name, false)
 }
 
 // appendEnvVar appends an environment variable to a possibly-nil slice pointer,

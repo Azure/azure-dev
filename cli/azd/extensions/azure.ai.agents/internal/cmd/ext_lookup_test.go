@@ -124,7 +124,7 @@ func TestInstallExtension_PropagatesError(t *testing.T) {
 
 func TestRunChildAzd_PassesArgsVerbatim(t *testing.T) {
 	runner := &fakeRunner{}
-	args := []string{"ai", "doc", "skills", "install", "--target", "copilot", "--no-prompt"}
+	args := []string{"ai", "doc", "install", "skill", "--target", "copilot", "--no-prompt"}
 	require.NoError(t, runChildAzd(context.Background(), runner, args, io.Discard, io.Discard))
 	require.Len(t, runner.runCalls, 1)
 	assert.Equal(t, args, runner.runCalls[0].args)

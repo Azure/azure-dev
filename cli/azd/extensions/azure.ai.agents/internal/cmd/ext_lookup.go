@@ -20,7 +20,7 @@
 // that detects when a command belongs to an uninstalled extension and
 // offers to install it. In `--no-prompt` mode `console.Confirm` returns
 // the prompt's DefaultValue (`true` for the auto-install prompt), so in
-// theory shelling out to `azd ai doc skills install --no-prompt` would
+// theory shelling out to `azd ai doc install skill --no-prompt` would
 // silently install azure.ai.docs and re-run the command.
 //
 // In practice the re-run breaks for our use case. The pre-parser
@@ -147,7 +147,7 @@ func installExtension(ctx context.Context, runner azdRunner, id string, stdout, 
 // through. Returns the process error verbatim so the caller can pattern-
 // match on exit codes / unwrap exec.ExitError when needed.
 //
-// Used by the init pre-flow to dispatch `azd ai doc skills install`.
+// Used by the init pre-flow to dispatch `azd ai doc install skill`.
 // Always pass --no-prompt + --output json from the caller; this helper
 // makes no assumption about flags so it can be reused for other
 // cross-extension calls in the future.

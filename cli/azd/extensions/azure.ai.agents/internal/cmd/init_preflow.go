@@ -20,7 +20,7 @@
 //                 (claude / codex / gemini / copilot / opencode / custom)
 //                 custom -> prompt for path
 //
-//   Install       Shell out to `azd ai doc skills install ...`. If the
+//   Install       Shell out to `azd ai doc install skill ...`. If the
 //                 docs extension is missing, offer to install it first.
 //
 //   Render        Print the starter prompt, optionally copy it to the
@@ -49,7 +49,7 @@ import (
 )
 
 // docsExtensionID is the canonical ID of the docs front-door extension
-// that owns `azd ai doc skills install`. Kept as a constant so the
+// that owns `azd ai doc install skill`. Kept as a constant so the
 // install-detection helper and the dispatch helper agree on the spelling.
 const docsExtensionID = "azure.ai.docs"
 
@@ -59,7 +59,7 @@ const docsExtensionID = "azure.ai.docs"
 // path) and pasteInstruction (used in the ready-to-go block).
 type preflowTarget struct {
 	// targetValue is the --target argument passed to
-	// `azd ai doc skills install` (e.g. "copilot").
+	// `azd ai doc install skill` (e.g. "copilot").
 	targetValue string
 	// displayName is the tool's user-facing name (e.g. "GitHub Copilot").
 	displayName string
@@ -332,7 +332,7 @@ func (a *InitPreflowAction) installSkill(ctx context.Context, target preflowTarg
 		return "", err
 	}
 
-	args := []string{"ai", "doc", "skills", "install",
+	args := []string{"ai", "doc", "install", "skill",
 		"--target", target.targetValue,
 		"--no-prompt",
 		"--output", "json",
@@ -351,7 +351,7 @@ func (a *InitPreflowAction) installSkill(ctx context.Context, target preflowTarg
 		// above (see ext_lookup.go for the rationale on why we don't
 		// rely on azd's auto-install). Any error here is from the
 		// install command itself; wrap and re-raise.
-		return "", fmt.Errorf("run `azd ai doc skills install`: %w", err)
+		return "", fmt.Errorf("run `azd ai doc install skill`: %w", err)
 	}
 
 	var result skillInstallReceipt
@@ -381,7 +381,7 @@ func (a *InitPreflowAction) installSkill(ctx context.Context, target preflowTarg
 }
 
 // skillInstallReceipt mirrors the JSON wire shape emitted by
-// `azd ai doc skills install --output json`. Decoupled from the
+// `azd ai doc install skill --output json`. Decoupled from the
 // azure.ai.docs source struct so the two extensions can ship
 // independently without cross-extension type imports.
 type skillInstallReceipt struct {

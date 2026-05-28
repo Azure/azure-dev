@@ -847,7 +847,7 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 					return err
 				}
 			} else {
-			// No manifest provided - prompt user for init mode.
+				// No manifest provided - prompt user for init mode.
 				// The helper short-circuits on --from-code and returns
 				// initModeFromCode in --no-prompt mode rather than
 				// failing on Select.

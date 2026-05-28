@@ -207,56 +207,101 @@ func (a *InitAction) getModelDeploymentDetails(
 		}
 
 		if len(matchingDeployments) > 0 {
-			// When the user provided a manifest (-m) and there's exactly one match,
-			// auto-select it without prompting.
-			if a.userProvidedManifest && len(matchingDeployments) == 1 {
-				for name, deployment := range matchingDeployments {
-					log.Printf("Using existing model deployment: %s (version: %s, name: %s)", model.Id, deployment.Version, name)
-					return &project.Deployment{
-						Name: name,
-						Model: project.DeploymentModel{
-							Name:    model.Id,
-							Format:  deployment.ModelFormat,
-							Version: deployment.Version,
-						},
-						Sku: project.DeploymentSku{
-							Name:     deployment.SkuName,
-							Capacity: deployment.SkuCapacity,
-						},
-					}, false, nil
-				}
+			// Build a deterministically-ordered list of matching deployment names
+			// so options, defaults, and --no-prompt selection are stable across runs.
+			sortedNames := make([]string, 0, len(matchingDeployments))
+			for name := range matchingDeployments {
+				sortedNames = append(sortedNames, name)
+			}
+			slices.Sort(sortedNames)
+
+			// In --no-prompt mode, auto-select the first matching deployment
+			// deterministically so headless/CI flows don't block on a prompt.
+			if a.flags.noPrompt {
+				name := sortedNames[0]
+				deployment := matchingDeployments[name]
+				log.Printf(
+					"--no-prompt: using existing model deployment '%s' (version: %s) for model '%s'",
+					name, deployment.Version, model.Id,
+				)
+				return &project.Deployment{
+					Name: name,
+					Model: project.DeploymentModel{
+						Name:    model.Id,
+						Format:  deployment.ModelFormat,
+						Version: deployment.Version,
+					},
+					Sku: project.DeploymentSku{
+						Name:     deployment.SkuName,
+						Capacity: deployment.SkuCapacity,
+					},
+				}, false, nil
 			}
 
-			fmt.Printf("In your Microsoft Foundry project, found %d existing model deployment(s) matching your model %s.\n", len(matchingDeployments), model.Id)
-
-			var options []string
-			for deploymentName := range matchingDeployments {
-				options = append(options, deploymentName)
+			// Interactive Use/Change/Skip-style selector that mirrors the
+			// standard manifest model prompt (init_models.go ~line 400). Each
+			// existing deployment becomes a "use:<name>" option; "deploy_new"
+			// falls through to the new-deployment configuration path below;
+			// "skip" returns errModelSkipped so ProcessModels drops the model
+			// resource from the manifest.
+			choices := make([]*azdext.SelectChoice, 0, len(sortedNames)+2)
+			for _, name := range sortedNames {
+				d := matchingDeployments[name]
+				choices = append(choices, &azdext.SelectChoice{
+					Value: "use:" + name,
+					Label: fmt.Sprintf("Use existing deployment '%s' (version: %s)", name, d.Version),
+				})
 			}
-			options = append(options, "Create new model deployment")
+			choices = append(choices,
+				&azdext.SelectChoice{Value: "deploy_new", Label: "Deploy a new model"},
+				&azdext.SelectChoice{Value: "skip", Label: "Skip this model (do not deploy)"},
+			)
 
-			selection, err := a.selectFromList(ctx, "deployment", options, options[0])
+			defaultIdx := int32(0)
+			resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+				Options: &azdext.SelectOptions{
+					Message: fmt.Sprintf(
+						"Found %d existing deployment(s) for model '%s' in the selected Foundry project. How would you like to proceed?",
+						len(sortedNames), model.Id,
+					),
+					Choices:       choices,
+					SelectedIndex: &defaultIdx,
+				},
+			})
 			if err != nil {
+				if exterrors.IsCancellation(err) {
+					return nil, false, exterrors.Cancelled("model deployment selection was cancelled")
+				}
 				return nil, false, fmt.Errorf("failed to select deployment: %w", err)
 			}
 
-			if selection != "Create new model deployment" {
-				fmt.Printf("Using existing model deployment: %s\n", selection)
-
-				if deployment, exists := matchingDeployments[selection]; exists {
-					return &project.Deployment{
-						Name: selection,
-						Model: project.DeploymentModel{
-							Name:    model.Id,
-							Format:  deployment.ModelFormat,
-							Version: deployment.Version,
-						},
-						Sku: project.DeploymentSku{
-							Name:     deployment.SkuName,
-							Capacity: deployment.SkuCapacity,
-						},
-					}, false, nil
-				}
+			selected := choices[*resp.Value].Value
+			switch {
+			case selected == "skip":
+				fmt.Println(output.WithWarningFormat(
+					"Skipped model '%s'. The agent will not have a model deployed.", model.Id))
+				fmt.Println(output.WithGrayFormat(
+					"Configure your agent's model manually before running 'azd provision'."))
+				return nil, false, errModelSkipped
+			case selected == "deploy_new":
+				// Fall through to the deploy-new logic below.
+			case strings.HasPrefix(selected, "use:"):
+				name := strings.TrimPrefix(selected, "use:")
+				deployment := matchingDeployments[name]
+				log.Printf("Using existing model deployment '%s' (version: %s) for model '%s'",
+					name, deployment.Version, model.Id)
+				return &project.Deployment{
+					Name: name,
+					Model: project.DeploymentModel{
+						Name:    model.Id,
+						Format:  deployment.ModelFormat,
+						Version: deployment.Version,
+					},
+					Sku: project.DeploymentSku{
+						Name:     deployment.SkuName,
+						Capacity: deployment.SkuCapacity,
+					},
+				}, false, nil
 			}
 		} else {
 			color.Yellow(

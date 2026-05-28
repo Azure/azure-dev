@@ -3646,6 +3646,10 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['--reset'],
+							description: 'Clear all cached authentication data before logging in.',
+						},
+						{
 							name: ['--tenant-id'],
 							description: 'The tenant id or domain name to authenticate with.',
 							args: [

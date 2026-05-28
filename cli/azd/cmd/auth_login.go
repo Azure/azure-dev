@@ -72,6 +72,7 @@ type loginFlags struct {
 	onlyCheckStatus        bool
 	browser                bool
 	managedIdentity        bool
+	reset                  bool
 	useDeviceCode          boolPtr
 	tenantID               string
 	clientID               string
@@ -138,6 +139,12 @@ const (
 
 func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&lf.onlyCheckStatus, "check-status", false, "Checks the log-in status instead of logging in.")
+	local.BoolVar(
+		&lf.reset,
+		"reset",
+		false,
+		"Clear all cached authentication data before logging in.",
+	)
 	f := local.VarPF(
 		&lf.useDeviceCode,
 		"use-device-code",
@@ -214,6 +221,8 @@ func newLoginCmd(parent string) *cobra.Command {
 		To log in using a managed identity, pass --managed-identity, which will use the system assigned managed identity.
 		To use a user assigned managed identity, pass --client-id in addition to --managed-identity with the client id of
 		the user assigned managed identity you wish to use.
+
+		To clear all cached authentication data (such as stale tokens) before logging in, pass --reset.
 		`),
 		Annotations: map[string]string{
 			loginCmdParentAnnotation: parent,
@@ -255,6 +264,16 @@ func newAuthLoginAction(
 }
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if la.flags.reset {
+		if err := la.authManager.CleanAllAuthCache(); err != nil {
+			return nil, fmt.Errorf("clearing auth cache: %w", err)
+		}
+		if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
+			return nil, fmt.Errorf("clearing subscriptions cache: %w", err)
+		}
+		la.console.Message(ctx, "Authentication data cleared.")
+	}
+
 	loginMode, err := la.authManager.Mode()
 	if err != nil {
 		return nil, err

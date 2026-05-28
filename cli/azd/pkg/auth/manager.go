@@ -1093,6 +1093,43 @@ func (m *Manager) Logout(ctx context.Context) error {
 	return nil
 }
 
+// CleanAllAuthCache removes all cached authentication data, including MSAL token cache files,
+// credential cache files, auth config, and claims. This provides a clean slate for re-authentication,
+// which resolves stale token issues (e.g. AADSTS700082 expired refresh tokens).
+func (m *Manager) CleanAllAuthCache() error {
+	cfgRoot, err := config.GetUserConfigDir()
+	if err != nil {
+		return fmt.Errorf("getting config dir: %w", err)
+	}
+
+	// Remove the entire auth directory (contains msal/ cache and credential files)
+	authRoot := filepath.Join(cfgRoot, "auth")
+	if err := os.RemoveAll(authRoot); err != nil {
+		return fmt.Errorf("removing auth directory: %w", err)
+	}
+
+	// Remove auth.json (current user config)
+	authCfgFile := filepath.Join(cfgRoot, authConfigFileName)
+	if err := os.Remove(authCfgFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("removing auth config: %w", err)
+	}
+
+	// Remove claims file
+	if claimsFile, err := claimsFilePath(); err == nil {
+		if err := os.Remove(claimsFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("removing claims file: %w", err)
+		}
+	}
+
+	// Recreate the auth/msal directory structure so subsequent login can proceed
+	cacheRoot := filepath.Join(authRoot, "msal")
+	if err := os.MkdirAll(cacheRoot, osutil.PermissionDirectoryOwnerOnly); err != nil {
+		return fmt.Errorf("recreating msal cache directory: %w", err)
+	}
+
+	return nil
+}
+
 func (m *Manager) UseExternalAuth() bool {
 	return m.externalAuthCfg.Endpoint != "" && m.externalAuthCfg.Key != ""
 }

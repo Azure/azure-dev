@@ -581,6 +581,69 @@ func TestLogout_NotLoggedIn(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// --- CleanAllAuthCache ---
+
+func TestCleanAllAuthCache(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", tempDir)
+
+	// Create auth directory structure with files
+	authDir := tempDir + "/auth"
+	msalDir := authDir + "/msal"
+	require.NoError(t, os.MkdirAll(msalDir, 0700))
+
+	// Create MSAL cache file
+	require.NoError(t, os.WriteFile(msalDir+"/cache.json", []byte(`{"tokens":"stale"}`), 0600))
+
+	// Create credential cache file
+	require.NoError(t, os.WriteFile(authDir+"/credtenant.client.json", []byte(`{"secret":"old"}`), 0600))
+
+	// Create auth.json
+	require.NoError(t, os.WriteFile(tempDir+"/auth.json", []byte(`{"auth.account.currentUser":{}}`), 0600))
+
+	// Create auth.claims
+	require.NoError(t, os.WriteFile(tempDir+"/auth.claims", []byte(`claims-data`), 0600))
+
+	m := &Manager{}
+	err := m.CleanAllAuthCache()
+	require.NoError(t, err)
+
+	// auth.json should be removed
+	_, err = os.Stat(tempDir + "/auth.json")
+	assert.True(t, os.IsNotExist(err), "auth.json should be deleted")
+
+	// auth.claims should be removed
+	_, err = os.Stat(tempDir + "/auth.claims")
+	assert.True(t, os.IsNotExist(err), "auth.claims should be deleted")
+
+	// Old MSAL cache files should be gone
+	_, err = os.Stat(msalDir + "/cache.json")
+	assert.True(t, os.IsNotExist(err), "MSAL cache should be deleted")
+
+	// Old credential files should be gone
+	_, err = os.Stat(authDir + "/credtenant.client.json")
+	assert.True(t, os.IsNotExist(err), "credential cache should be deleted")
+
+	// auth/msal directory should be recreated (empty)
+	info, err := os.Stat(msalDir)
+	require.NoError(t, err, "msal directory should be recreated")
+	assert.True(t, info.IsDir())
+}
+
+func TestCleanAllAuthCache_NoExistingFiles(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", tempDir)
+
+	m := &Manager{}
+	err := m.CleanAllAuthCache()
+	require.NoError(t, err, "should succeed even when no auth files exist")
+
+	// auth/msal directory should still be created
+	info, err := os.Stat(tempDir + "/auth/msal")
+	require.NoError(t, err)
+	assert.True(t, info.IsDir())
+}
+
 // --- EnsureLoggedInCredential ---
 
 func TestEnsureLoggedInCredential_Success(t *testing.T) {

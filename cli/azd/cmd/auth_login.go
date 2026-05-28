@@ -265,7 +265,7 @@ func newAuthLoginAction(
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if la.flags.reset && la.flags.onlyCheckStatus {
-		return nil, errors.New("cannot use --reset with --check-status")
+		return nil, fmt.Errorf("cannot use --reset with --check-status: %w", internal.ErrInvalidFlagCombination)
 	}
 
 	if la.flags.reset {

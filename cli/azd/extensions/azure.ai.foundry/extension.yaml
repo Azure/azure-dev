@@ -12,7 +12,7 @@ dependencies:
   - id: azure.ai.connections
     version: "~0.1.0-preview"
   - id: azure.ai.inspector
-    version: "~0.1.0-preview"
+    version: "~0.0.1-preview"
   - id: azure.ai.projects
     version: "~0.1.0-preview"
   - id: azure.ai.routines

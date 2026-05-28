@@ -21,7 +21,8 @@
 //                 custom -> prompt for path
 //
 //   Install       Shell out to `azd ai doc install skill ...`. If the
-//                 docs extension is missing, offer to install it first.
+//                 docs extension is missing, warn with the install
+//                 command and skip the skill install.
 //
 //   Render        Print the starter prompt, optionally copy it to the
 //                 system clipboard, show a tool-specific "you're ready
@@ -154,8 +155,9 @@ func (a *InitPreflowAction) Run(ctx context.Context) (bool, error) {
 	// handled=true so the caller skips InitAction.
 
 	// chosen tracks the tool the user picked at Q3. When Q2=No (no
-	// install) we never run Q3 -- fall back to the "custom" copy in the
-	// ready-to-go block since we cannot name a specific tool then.
+	// install) or when the docs extension is missing (so Q2 is skipped),
+	// we never run Q3 -- fall back to the "custom" copy in the ready-to-go
+	// block since we cannot name a specific tool then.
 	//
 	// We MUST track the chosen target directly rather than recover it
 	// from the install path because codex/gemini/copilot/opencode all
@@ -166,21 +168,29 @@ func (a *InitPreflowAction) Run(ctx context.Context) (bool, error) {
 	chosen := preflowTargets[len(preflowTargets)-1] // "custom" default
 
 	var installedAt string
-	wantInstall, err := a.askInstallSkill(ctx)
-	if err != nil {
-		return true, err
-	}
-	if wantInstall {
-		target, customPath, err := a.askTargetTool(ctx)
+	// Gate Q2/Q3/install on the docs extension being installed: prompting
+	// "Install the AZD AI skill?" when the dispatch target (azd ai doc
+	// install skill) isn't available would mislead the user. When it's
+	// missing, checkDocsExtension prints a warning with the install command
+	// so they know how to get it later; the rest of the pre-flow (Foundry
+	// project, model, starter prompt) still runs.
+	if a.checkDocsExtension(ctx) {
+		wantInstall, err := a.askInstallSkill(ctx)
 		if err != nil {
 			return true, err
 		}
-		chosen = target
-		path, err := a.installSkill(ctx, target, customPath)
-		if err != nil {
-			return true, err
+		if wantInstall {
+			target, customPath, err := a.askTargetTool(ctx)
+			if err != nil {
+				return true, err
+			}
+			chosen = target
+			path, err := a.installSkill(ctx, target, customPath)
+			if err != nil {
+				return true, err
+			}
+			installedAt = path
 		}
-		installedAt = path
 	}
 
 	// Q4: Foundry project selection.
@@ -325,13 +335,10 @@ func targetSelectLabel(t preflowTarget) string {
 }
 
 // installSkill performs the actual install via the docs front-door
-// extension. Returns the install path on success (used for the starter
-// prompt's SkillPath substitution).
+// extension. The caller MUST gate this on checkDocsExtension returning
+// true (the Run() pre-flow does so) -- otherwise the runner shell-out
+// below would fail when azure.ai.docs is missing.
 func (a *InitPreflowAction) installSkill(ctx context.Context, target preflowTarget, customPath string) (string, error) {
-	if err := a.ensureDocsExtension(ctx); err != nil {
-		return "", err
-	}
-
 	args := []string{"ai", "doc", "install", "skill",
 		"--target", target.targetValue,
 		"--no-prompt",
@@ -347,10 +354,9 @@ func (a *InitPreflowAction) installSkill(ctx context.Context, target preflowTarg
 	// runner.Run would discard stderr (os/exec drops nil Cmd.Stderr).
 	var stdout strings.Builder
 	if err := a.runner.Run(ctx, args, &stdout, a.out); err != nil {
-		// We pre-checked docs-extension presence in ensureDocsExtension
-		// above (see ext_lookup.go for the rationale on why we don't
-		// rely on azd's auto-install). Any error here is from the
-		// install command itself; wrap and re-raise.
+		// Caller pre-checked docs-extension presence via
+		// checkDocsExtension, so any error here is from the install
+		// command itself; wrap and re-raise.
 		return "", fmt.Errorf("run `azd ai doc install skill`: %w", err)
 	}
 
@@ -391,51 +397,21 @@ type skillInstallReceipt struct {
 	Files  []string `json:"files"`
 }
 
-// ensureDocsExtension verifies that azure.ai.docs is installed. When it
-// is not, prompts the user to install it and shells out to
-// `azd ext install azure.ai.docs` on confirm. Returns an error explaining
-// what to run when the user declines.
-func (a *InitPreflowAction) ensureDocsExtension(ctx context.Context) error {
+// checkDocsExtension reports whether azure.ai.docs is installed. When the
+// extension is missing -- or when its install state cannot be determined
+// -- this prints a one-line gray hint with the install command and returns
+// false so the caller can skip the skill-install prompts without aborting
+// the broader init flow. The user can install the docs extension and
+// re-run any time.
+func (a *InitPreflowAction) checkDocsExtension(ctx context.Context) bool {
 	lookup, err := lookupExtension(ctx, a.runner, docsExtensionID)
-	if err != nil {
-		// Lookup failure is treated as a soft warning rather than a hard
-		// stop: the install dispatch below may still work (e.g. the user
-		// installed via an unusual source). The shell-out's own error
-		// surfaces if the dispatch really does fail.
-		fmt.Fprintf(a.out, "%s could not check whether %s is installed: %v\n",
-			color.YellowString("warning:"), docsExtensionID, err)
-		return nil
+	if err == nil && lookup.Installed {
+		return true
 	}
-	if lookup.Installed {
-		return nil
-	}
-
-	resp, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-		Options: &azdext.ConfirmOptions{
-			Message: fmt.Sprintf(
-				"The %s extension is required. Install it now?", docsExtensionID),
-			DefaultValue: new(true),
-		},
-	})
-	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return exterrors.Cancelled("initialization was cancelled")
-		}
-		return fmt.Errorf("prompt install %s: %w", docsExtensionID, err)
-	}
-
-	if resp == nil || resp.Value == nil || !*resp.Value {
-		return fmt.Errorf(
-			"%s is not installed. Run `azd ext install %s` and re-try",
-			docsExtensionID, docsExtensionID)
-	}
-
-	fmt.Fprintln(a.out)
-	fmt.Fprintf(a.out, "Installing %s...\n", docsExtensionID)
-	if err := installExtension(ctx, a.runner, docsExtensionID, a.out, a.out); err != nil {
-		return fmt.Errorf("auto-install %s: %w", docsExtensionID, err)
-	}
-	return nil
+	fmt.Fprintln(a.out, output.WithGrayFormat(
+		"Tip: install the %s extension to enable agent skills (azd ext install %s).",
+		docsExtensionID, docsExtensionID))
+	return false
 }
 
 // handleClipboard offers to copy the prompt to the system clipboard

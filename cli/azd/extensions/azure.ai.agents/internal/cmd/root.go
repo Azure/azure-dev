@@ -36,14 +36,11 @@ func NewRootCommand() *cobra.Command {
 		return nil
 	}
 
-	// Show the ASCII art banner above the default help text for the root command
-	defaultHelp := rootCmd.HelpFunc()
-	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		if cmd == rootCmd {
-			printBanner(cmd.OutOrStdout())
-		}
-		defaultHelp(cmd, args)
-	})
+	// Show the ASCII banner + state-aware "Get started" preamble +
+	// Environments & Environment Variables + Docs & Agent Skills sections
+	// on `azd ai agent --help`. installAgentsHelpOutput wraps the default
+	// cobra help func so subcommand --help output is unaffected.
+	installAgentsHelpOutput(rootCmd)
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 

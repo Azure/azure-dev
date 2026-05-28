@@ -190,7 +190,6 @@ do
         symlink_folder="$1"
         ;;
     --no-telemetry)
-        shift
         no_telemetry=true
         ;;
     -v|--verbose)

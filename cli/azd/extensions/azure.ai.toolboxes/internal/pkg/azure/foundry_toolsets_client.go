@@ -188,7 +188,10 @@ type CreateToolboxVersionRequest struct {
 	Description string            `json:"description,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	Tools       []map[string]any  `json:"tools"`
-	Policies    *ToolboxPolicies  `json:"policies,omitempty"`
+	// Skills holds ToolboxSkill discriminated objects. []map[string]any keeps
+	// future ToolboxSkill variants flowing through without recompiling.
+	Skills   []map[string]any `json:"skills,omitempty"`
+	Policies *ToolboxPolicies `json:"policies,omitempty"`
 }
 
 // ToolboxPolicies mirrors the data-plane ToolboxPolicies model: per-version
@@ -219,7 +222,9 @@ type ToolboxVersionObject struct {
 	CreatedAt   int64             `json:"created_at"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	Tools       []map[string]any  `json:"tools"`
-	Policies    *ToolboxPolicies  `json:"policies,omitempty"`
+	// Skills has no omitempty: the service always emits "skills":[] on reads.
+	Skills   []map[string]any `json:"skills"`
+	Policies *ToolboxPolicies `json:"policies,omitempty"`
 }
 
 // toolboxURL builds the canonical toolboxes URL with the api-version query.

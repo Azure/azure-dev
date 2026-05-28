@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"azure.ai.toolboxes/internal/exterrors"
@@ -26,17 +27,24 @@ func newToolboxConnectionRemoveCommand(extCtx *azdext.ExtensionContext) *cobra.C
 	flags := &connectionRemoveFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "remove <toolbox> <connection>",
-		Short: "Detach a project connection from a toolbox.",
-		Long: `Detach a project connection from a toolbox.
+		Use:   "remove <toolbox> <connection>...",
+		Short: "Detach one or more connections from a toolbox.",
+		Long: `Detach one or more connections from a toolbox and create a new version.
 
-Publishes a new default version with the named connection's tool entry
-removed. Refuses to leave the toolbox with zero tools (use 'toolbox delete'
-instead).`,
-		Args: cobra.ExactArgs(2),
+Pass one or more connection short names as positionals. All removals are
+applied atomically: each invocation creates exactly one new toolbox version.
+
+Refuses to leave the toolbox with zero tools (use 'toolbox delete' instead).
+
+Examples:
+
+  azd ai toolbox connection remove research my-mcp
+  azd ai toolbox connection remove research a b c --force
+`,
+		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runConnectionRemove(
-				cmd.Context(), args[0], args[1],
+				cmd.Context(), args[0], args[1:],
 				*flags,
 				readToolboxFlags(cmd, extCtx),
 				defaultConnectionResolver{},
@@ -52,7 +60,7 @@ instead).`,
 }
 
 func runConnectionRemove(
-	ctx context.Context, toolboxName, connName string,
+	ctx context.Context, toolboxName string, connNames []string,
 	verb connectionRemoveFlags,
 	parent toolboxFlags, resolver connectionResolver,
 ) error {
@@ -62,12 +70,21 @@ func runConnectionRemove(
 	if err := validateOutputFormat(parent.output); err != nil {
 		return err
 	}
-	if strings.TrimSpace(connName) == "" {
+	if len(connNames) == 0 {
 		return exterrors.Validation(
 			exterrors.CodeInvalidPositionalArg,
-			"<connection> must not be empty",
-			"pass the short name of a project connection",
+			"at least one <connection> must be provided",
+			"pass one or more connection short names",
 		)
+	}
+	for _, n := range connNames {
+		if strings.TrimSpace(n) == "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidPositionalArg,
+				"<connection> must not be empty",
+				"remove empty entries from the argument list",
+			)
+		}
 	}
 	if parent.noPrompt && !verb.force {
 		return exterrors.Validation(
@@ -84,47 +101,59 @@ func runConnectionRemove(
 	logResolvedEndpoint("toolbox connection remove", resolved)
 
 	return runConnectionRemoveWith(ctx, client, resolver, resolved.Endpoint,
-		toolboxName, connName, verb, parent)
+		toolboxName, connNames, verb, parent)
 }
 
 func runConnectionRemoveWith(
 	ctx context.Context, client toolboxClient, resolver connectionResolver,
-	endpoint, toolboxName, connName string,
+	endpoint, toolboxName string, connNames []string,
 	verb connectionRemoveFlags,
 	parent toolboxFlags,
 ) error {
-	conn, err := resolver.resolveConnection(ctx, endpoint, connName)
-	if err != nil {
-		return err
+	// Normalize whitespace so callers that pass `" foo "` match the stored
+	// entry. Parity with `skill remove`.
+	names := make([]string, 0, len(connNames))
+	for _, n := range connNames {
+		names = append(names, strings.TrimSpace(n))
 	}
 
 	tb, err := client.GetToolbox(ctx, toolboxName)
 	if err != nil {
 		return toolboxNotFoundOrService(err, toolboxName, exterrors.OpGetToolbox)
 	}
-
 	current, err := client.GetToolboxVersion(ctx, toolboxName, tb.DefaultVersion)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolboxVersion)
 	}
 
-	filtered, removed := filterOutConnection(current.Tools, conn.ID)
-	if !removed {
-		return exterrors.Validation(
-			exterrors.CodeConnectionNotInToolbox,
-			fmt.Sprintf(
-				"connection %q is not attached to toolbox %q's current default version",
-				connName, toolboxName,
-			),
-			fmt.Sprintf("run 'azd ai toolbox connection list %q'", toolboxName),
-		)
+	// Resolve each name and strip from the tools[].
+	filtered := slices.Clone(current.Tools)
+	removedConns := make([]*projectConnection, 0, len(names))
+	for _, name := range names {
+		conn, err := resolver.resolveConnection(ctx, endpoint, name)
+		if err != nil {
+			return err
+		}
+		var didRemove bool
+		filtered, didRemove = filterOutConnection(filtered, conn.ID)
+		if !didRemove {
+			return exterrors.Validation(
+				exterrors.CodeConnectionNotInToolbox,
+				fmt.Sprintf(
+					"connection %q is not attached to toolbox %q's current default version",
+					name, toolboxName,
+				),
+				fmt.Sprintf("run 'azd ai toolbox connection list %q'", toolboxName),
+			)
+		}
+		removedConns = append(removedConns, conn)
 	}
 	if len(filtered) == 0 {
 		return exterrors.Validation(
 			exterrors.CodeLastToolRemoval,
 			fmt.Sprintf(
-				"removing %q would leave toolbox %q with zero tools",
-				connName, toolboxName,
+				"removing the listed connections would leave toolbox %q with zero tools",
+				toolboxName,
 			),
 			fmt.Sprintf(
 				"delete the toolbox with `azd ai toolbox delete %q` instead",
@@ -135,14 +164,14 @@ func runConnectionRemoveWith(
 
 	if !verb.force {
 		shouldProceed := true
+		summary := summarizeConnectionNames(removedConns)
 		err := withAzdClient(func(azdClient *azdext.AzdClient) error {
 			confirmed, err := confirmToolboxDelete(
 				ctx,
 				azdClient,
 				fmt.Sprintf(
-					"Detach connection %q from toolbox %q (publishes a new version)?",
-					connName,
-					toolboxName,
+					"Detach %s from toolbox %q (creates a new version)?",
+					summary, toolboxName,
 				),
 			)
 			if err != nil {
@@ -166,44 +195,70 @@ func runConnectionRemoveWith(
 		Description: current.Description,
 		Metadata:    current.Metadata,
 		Tools:       filtered,
+		Skills:      current.Skills,
 		Policies:    current.Policies,
 	}
 	created, err := client.CreateToolboxVersion(ctx, toolboxName, req)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
 	}
-	if _, err := client.SetDefaultVersion(ctx, toolboxName, created.Version); err != nil {
-		return exterrors.Dependency(
-			exterrors.CodeSetDefaultVersionFailed,
-			fmt.Sprintf(
-				"toolbox %q version %q was created but could not be promoted to default: %s",
-				toolboxName, created.Version, err,
-			),
-			fmt.Sprintf(
-				"run `azd ai toolbox update %q --default-version %q` to retarget the default",
-				toolboxName, created.Version,
-			),
-		)
-	}
 
-	return emitConnectionRemoveResult(toolboxName, created.Version, conn, parent.output)
+	return emitConnectionRemoveResult(toolboxName, created.Version, removedConns, parent.output)
+}
+
+// summarizeConnectionNames renders "connection \"a\"" or "connections [\"a\", \"b\"]".
+func summarizeConnectionNames(conns []*projectConnection) string {
+	if len(conns) == 1 {
+		return fmt.Sprintf("connection %q", conns[0].Name)
+	}
+	quoted := make([]string, 0, len(conns))
+	for _, c := range conns {
+		quoted = append(quoted, fmt.Sprintf("%q", c.Name))
+	}
+	return "connections [" + strings.Join(quoted, ", ") + "]"
 }
 
 func emitConnectionRemoveResult(
-	toolboxName, newVersion string, conn *projectConnection, output string,
+	toolboxName, newVersion string, conns []*projectConnection, output string,
 ) error {
 	if output == "json" {
-		payload := map[string]any{
-			"toolbox":       toolboxName,
-			"version":       newVersion,
-			"connection":    conn.Name,
-			"connection_id": conn.ID,
+		if len(conns) == 1 {
+			return emitJSON(map[string]any{
+				"toolbox":       toolboxName,
+				"version":       newVersion,
+				"connection":    conns[0].Name,
+				"connection_id": conns[0].ID,
+			})
 		}
-		return emitJSON(payload)
+		rows := make([]map[string]string, 0, len(conns))
+		for _, c := range conns {
+			rows = append(rows, map[string]string{
+				"connection":    c.Name,
+				"connection_id": c.ID,
+			})
+		}
+		return emitJSON(map[string]any{
+			"toolbox":     toolboxName,
+			"version":     newVersion,
+			"connections": rows,
+		})
 	}
-	fmt.Printf(
-		"Detached connection %s from toolbox %s (now at version %s).\n",
-		conn.Name, toolboxName, newVersion,
-	)
+	if len(conns) == 1 {
+		fmt.Printf(
+			"Created toolbox %s version %s (detached connection %s).\n",
+			toolboxName, newVersion, conns[0].Name,
+		)
+	} else {
+		names := make([]string, 0, len(conns))
+		for _, c := range conns {
+			names = append(names, c.Name)
+		}
+		fmt.Printf(
+			"Created toolbox %s version %s (detached connections [%s]).\n",
+			toolboxName, newVersion, strings.Join(names, ", "),
+		)
+	}
+	fmt.Printf("The default version is unchanged; "+
+		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
 	return nil
 }

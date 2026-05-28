@@ -21,6 +21,10 @@ func fileShapeBlurb(includeDescription bool) string {
       { "name": "my-bing",   "instance_name": "docs-config" },
       { "name": "my-a2a" }
     ],
+    "skills": [
+      { "name": "my-skill", "version": "2" },
+      { "name": "qa-skill" }
+    ],
     "tools": [
       { "type": "web_search",   "name": "web" },
       { "type": "file_search",  "name": "files" }
@@ -40,6 +44,10 @@ Equivalent YAML:
     - name: my-bing
       instance_name: docs-config
     - name: my-a2a
+  skills:
+    - name: my-skill
+      version: "2"
+    - name: qa-skill
   tools:
     - type: web_search
       name: web
@@ -59,6 +67,9 @@ Fields:
                   Supported connection categories: RemoteTool (MCP),
                   CognitiveSearch (Azure AI Search), RemoteA2A,
                   GroundingWithCustomSearch.
+  skills          Optional. Existing project skills to attach by reference.
+                  Each entry needs 'name'; 'version' is optional (omit to
+                  follow the skill's default version).
   tools           List of raw Foundry tool entries (OpenAI.Tool shape),
                   forwarded verbatim. Use for connectionless tools (e.g.,
                   built-in web_search, file_search, code_interpreter,
@@ -70,7 +81,7 @@ Fields:
                   AI content-filter policy applied to this toolbox version
                   (the alias 'name' is also accepted).
 
-At least one of 'connections' or 'tools' must be non-empty.
+At least one of 'connections', 'skills', or 'tools' must be non-empty.
 
 Project connections must already exist on the Foundry project; this command
 does not create them. Run 'azd ai agent connection list' to see available
@@ -108,8 +119,8 @@ Fields:
                   CognitiveSearch (Azure AI Search), RemoteA2A,
                   GroundingWithCustomSearch.
 
-The toolbox's existing description is carried forward unchanged; use
-'azd ai toolbox update' to change it.
+The toolbox's existing description is carried forward unchanged; the
+description is set at create time and cannot be changed later.
 
 Project connections must already exist on the Foundry project; this command
 does not create them. Run 'azd ai agent connection list' to see available

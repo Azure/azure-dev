@@ -31,7 +31,7 @@ func newToolboxConnectionAddCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
 	cmd := &cobra.Command{
 		Use:   "add <toolbox> [connection]",
 		Short: "Attach one or more connections to a toolbox.",
-		Long: `Attach one or more tools to a toolbox and publish a new default version.
+		Long: `Attach one or more tools to a toolbox and create a new version.
 
 This command has two modes:
 
@@ -42,15 +42,17 @@ Single-connection mode:
 Pass the project connection's short name as the positional. --index is
 required when the connection's category is CognitiveSearch (Azure AI Search).
 --instance-name is required when the category is GroundingWithCustomSearch.
-Only one tool is appended; the new version becomes the default.
 
 File mode:
 
   azd ai toolbox connection add <toolbox> --from-file <path>
 
 Provide a JSON or YAML file with multiple connections. All inputs from a
-single invocation publish exactly one new toolbox version, so adding three
+single invocation create exactly one new toolbox version, so adding three
 connections this way produces v(N+1), not v(N+3).
+
+The new version is created but the toolbox's default version is unchanged;
+run 'azd ai toolbox publish <toolbox> <version>' to promote it.
 
 ` + fileShapeBlurb(false) + `
 
@@ -237,25 +239,12 @@ func runConnectionAddWith(
 		Description: current.Description,
 		Metadata:    current.Metadata,
 		Tools:       newTools,
+		Skills:      current.Skills,
 		Policies:    current.Policies,
 	}
 	created, err := client.CreateToolboxVersion(ctx, toolboxName, req)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
-	}
-
-	if _, err := client.SetDefaultVersion(ctx, toolboxName, created.Version); err != nil {
-		return exterrors.Dependency(
-			exterrors.CodeSetDefaultVersionFailed,
-			fmt.Sprintf(
-				"toolbox %q version %q was created but could not be promoted to default: %s",
-				toolboxName, created.Version, err,
-			),
-			fmt.Sprintf(
-				"run `azd ai toolbox update %q --default-version %q` to retarget the default",
-				toolboxName, created.Version,
-			),
-		)
 	}
 
 	return emitConnectionAddResult(toolboxName, created.Version, addedConnectionNames, parent.output, endpoint)
@@ -311,10 +300,12 @@ func emitConnectionAddResult(
 		return emitJSON(payload)
 	}
 
-	fmt.Printf("Attached connection(s) to toolbox %s (now at version %s).\n", toolboxName, newVersion)
+	fmt.Printf("Created toolbox %s version %s.\n", toolboxName, newVersion)
 	if len(connectionNames) > 0 {
 		fmt.Printf("Connections: %s\n", strings.Join(connectionNames, ", "))
 	}
 	fmt.Printf("Endpoint: %s\n", mcpURL)
+	fmt.Printf("The default version is unchanged; "+
+		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
 	return nil
 }

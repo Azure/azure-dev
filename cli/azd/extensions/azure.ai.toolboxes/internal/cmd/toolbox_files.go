@@ -25,14 +25,23 @@ type toolboxConnectionSpec struct {
 	InstanceName string `json:"instance_name,omitempty" yaml:"instance_name,omitempty"`
 }
 
+// toolboxSkillSpec is one skill reference input for the file shape. Empty
+// Version means "use the skill's default version".
+type toolboxSkillSpec struct {
+	Name    string `json:"name" yaml:"name"`
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+}
+
 // toolboxToolsFile is the file shape for `toolbox connection add --from-file`.
-//
-// Each connections[] item resolves through the project's connections
-// data-plane and is converted into a service tool entry. The toolbox's
-// existing description and metadata are carried forward; the file does not
-// accept `description` (set at create time only in v1).
+// Description and skills are not accepted here; use `skill add`/`skill remove`
+// to change skills, and set description at create time.
 type toolboxToolsFile struct {
 	Connections []toolboxConnectionSpec `json:"connections,omitempty" yaml:"connections,omitempty"`
+}
+
+// toolboxSkillsFile is the file shape for `toolbox skill add --from-file`.
+type toolboxSkillsFile struct {
+	Skills []toolboxSkillSpec `json:"skills,omitempty" yaml:"skills,omitempty"`
 }
 
 // toolboxCreateFile is the file shape for `toolbox create --from-file`.
@@ -46,6 +55,7 @@ type toolboxToolsFile struct {
 type toolboxCreateFile struct {
 	Description string                  `json:"description,omitempty" yaml:"description,omitempty"`
 	Connections []toolboxConnectionSpec `json:"connections,omitempty" yaml:"connections,omitempty"`
+	Skills      []toolboxSkillSpec      `json:"skills,omitempty"      yaml:"skills,omitempty"`
 	Tools       []map[string]any        `json:"tools,omitempty"       yaml:"tools,omitempty"`
 	Policies    *toolboxPoliciesSpec    `json:"policies,omitempty"    yaml:"policies,omitempty"`
 }
@@ -126,16 +136,29 @@ func parseToolboxFile(path string, out any) error {
 	}
 }
 
-// suggestionForParseError returns a context-aware fix-it hint. The common
-// surprise is putting `description` in a `connection add` file (the field
-// only applies to `create`); call that out explicitly so the user does not
-// have to read the file-shape doc to know why their description was rejected.
+// suggestionForParseError returns a context-aware fix-it hint for common
+// shape mistakes (e.g. putting `description` or `skills` in a `connection add`
+// file).
 func suggestionForParseError(out any, err error) string {
 	msg := err.Error()
-	if _, ok := out.(*toolboxToolsFile); ok && strings.Contains(msg, "description") {
-		return "the 'description' field is only accepted by `toolbox create`; " +
-			"in v1 a toolbox's description is set at create time and cannot be changed later"
+	if _, ok := out.(*toolboxToolsFile); ok {
+		switch {
+		case strings.Contains(msg, "description"):
+			return "the 'description' field is only accepted by `toolbox create`; " +
+				"a toolbox's description is set at create time and cannot be changed later"
+		case strings.Contains(msg, "skills"):
+			return "the 'skills' field belongs in a skills file; " +
+				"use `azd ai toolbox skill add --from-file` instead"
+		}
 	}
-	return "fix the file and retry; see `azd ai toolbox create --help` " +
-		"or `azd ai toolbox connection add --help` for the supported file shape"
+	if _, ok := out.(*toolboxSkillsFile); ok {
+		switch {
+		case strings.Contains(msg, "connections"):
+			return "the 'connections' field belongs in a connections file; " +
+				"use `azd ai toolbox connection add --from-file` instead"
+		case strings.Contains(msg, "description"):
+			return "the 'description' field is only accepted by `toolbox create`"
+		}
+	}
+	return "fix the file and retry; see the verb's --help for the supported file shape"
 }

@@ -29,8 +29,8 @@ func newToolboxCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "create <name> --from-file <path>",
-		Short: "Create a toolbox and publish its initial version from a file.",
-		Long: `Create a toolbox and publish its initial version.
+		Short: "Create a toolbox and its initial version from a file.",
+		Long: `Create a toolbox and its initial version.
 
 The Foundry service requires the initial version to ship with at least one
 tool entry, so 'create' takes its inputs from a JSON or YAML file via
@@ -105,7 +105,8 @@ func runToolboxCreateWith(
 		return exterrors.Validation(
 			exterrors.CodeInvalidToolboxName,
 			fmt.Sprintf("toolbox %q already exists", name),
-			"run 'azd ai toolbox update' or 'connection add/remove' to change it",
+			"use 'connection add/remove' or 'skill add/remove' to create a new version, "+
+				"then 'azd ai toolbox publish <name> <version>' to promote it",
 		)
 	} else if !isAzureNotFound(err) {
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolbox)
@@ -113,6 +114,7 @@ func runToolboxCreateWith(
 
 	description := ""
 	entries := []map[string]any{}
+	skillEntries := []map[string]any{}
 	var policies *azure.ToolboxPolicies
 
 	if strings.TrimSpace(verb.fromFile) != "" {
@@ -126,6 +128,15 @@ func runToolboxCreateWith(
 			return err
 		}
 		entries = append(entries, resolvedEntries...)
+		for _, s := range input.Skills {
+			if err := validateSkillName(s.Name); err != nil {
+				return err
+			}
+			skillEntries = append(skillEntries, buildSkillEntry(skillSpec{
+				Name:    strings.TrimSpace(s.Name),
+				Version: strings.TrimSpace(s.Version),
+			}))
+		}
 
 		rawEntries, err := validateRawToolEntries(input.Tools)
 		if err != nil {
@@ -150,6 +161,9 @@ func runToolboxCreateWith(
 	if err := validateNoDuplicateConnectionIDs(entries); err != nil {
 		return err
 	}
+	if err := validateNoDuplicateSkills(skillEntries); err != nil {
+		return err
+	}
 	if err := validateNoDuplicateToolNames(entries); err != nil {
 		return err
 	}
@@ -157,6 +171,7 @@ func runToolboxCreateWith(
 	req := &azure.CreateToolboxVersionRequest{
 		Description: description,
 		Tools:       entries,
+		Skills:      skillEntries,
 		Policies:    policies,
 	}
 	created, err := client.CreateToolboxVersion(ctx, name, req)

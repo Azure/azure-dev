@@ -257,7 +257,9 @@ func (a *InitAction) getModelDeploymentDetails(
 			)
 
 			noMatchChoice := "deploy_new"
-			if !a.flags.noPrompt && !a.userProvidedManifest {
+			if a.userProvidedManifest {
+				fmt.Printf("  %s Model deployment: will deploy new '%s' — no existing deployment found\n", output.WithSuccessFormat("✓"), model.Id)
+			} else if !a.flags.noPrompt {
 				noMatchChoices := []*azdext.SelectChoice{
 					{
 						Label: fmt.Sprintf("Deploy a new '%s' model to the selected Foundry project", model.Id),

@@ -2594,6 +2594,10 @@ func (a *InitAction) populateContainerSettings(
 
 	// When the user provided a manifest explicitly (-m), auto-select the default
 	// resource tier without prompting to minimize interactive steps.
+	// Note: In the primary quickstart path (Python/.NET + -m), deploy mode auto-selects
+	// "code" so this function is not reached. This branch triggers when:
+	//   - showCodeDeploy=false (non-Python/non-.NET project → container mode)
+	//   - User explicitly overrides with --deploy-mode container
 	if a.userProvidedManifest {
 		selected := project.ResourceTiers[defaultIndex]
 		fmt.Printf("  %s Compute: %s (default)\n", output.WithSuccessFormat("✓"), selected.String())

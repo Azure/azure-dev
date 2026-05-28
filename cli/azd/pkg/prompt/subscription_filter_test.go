@@ -172,3 +172,19 @@ func TestMultipleTenantsIndependentFilters(t *testing.T) {
 	require.True(t, exists2)
 	require.Equal(t, []string{"sub-b"}, ids2)
 }
+
+func TestSaveSubscriptionFilter_EmptyTenantId(t *testing.T) {
+	cfg := config.NewConfig(nil)
+
+	err := SaveSubscriptionFilter(cfg, "", []string{"sub-a"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "tenantId must not be empty")
+}
+
+func TestRemoveSubscriptionFilter_EmptyTenantId(t *testing.T) {
+	cfg := config.NewConfig(nil)
+
+	err := RemoveSubscriptionFilter(cfg, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "tenantId must not be empty")
+}

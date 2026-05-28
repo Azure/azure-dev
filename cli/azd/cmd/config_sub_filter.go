@@ -155,10 +155,24 @@ func (a *subFilterSetAction) Run(
 		return nil, nil
 	}
 
-	// Map selected display strings back to subscription IDs
-	selectedIds := subscriptionIdsByDisplayName(
-		tenantSubs, displayFn, selected,
-	)
+	// Map selected display strings back to subscription IDs.
+	// Use a set for O(1) lookup; this handles duplicate display
+	// labels (e.g. demo-mode collisions) by matching all subs
+	// whose display string was selected.
+	selectedSet := make(map[string]bool, len(selected))
+	for _, s := range selected {
+		selectedSet[s] = true
+	}
+
+	selectedIds := make([]string, 0, len(selected))
+	for i := range tenantSubs {
+		if selectedSet[displayFn(&tenantSubs[i])] {
+			selectedIds = append(
+				selectedIds, tenantSubs[i].Id,
+			)
+		}
+	}
+	slices.Sort(selectedIds)
 
 	// Save filter
 	if err := prompt.SaveSubscriptionFilter(
@@ -371,27 +385,4 @@ func (a *subFilterRemoveAction) resolveTenant(
 
 	return tenants[selectedIndex].Id,
 		tenants[selectedIndex].DisplayName, nil
-}
-
-// subscriptionIdsByDisplayName maps selected display strings back
-// to subscription IDs.
-func subscriptionIdsByDisplayName(
-	subscriptions []account.Subscription,
-	displayFn func(*account.Subscription) string,
-	selected []string,
-) []string {
-	optToId := make(map[string]string, len(subscriptions))
-	for i := range subscriptions {
-		optToId[displayFn(&subscriptions[i])] = subscriptions[i].Id
-	}
-
-	ids := make([]string, 0, len(selected))
-	for _, opt := range selected {
-		if id, ok := optToId[opt]; ok {
-			ids = append(ids, id)
-		}
-	}
-
-	slices.Sort(ids)
-	return ids
 }

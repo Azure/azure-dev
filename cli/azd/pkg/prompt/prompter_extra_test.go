@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -222,6 +223,91 @@ func TestDefaultPrompter_PromptLocation_WithDefaultSelectedLocation(t *testing.T
 	require.Equal(t, "westus", loc)
 	require.NotNil(t, defaultValue)
 	require.Contains(t, defaultValue.(string), "West US")
+}
+
+func newTestPrompterWithConfig(
+	t *testing.T,
+	mockAccount *mockaccount.MockAccountManager,
+	ucm config.UserConfigManager,
+) (*DefaultPrompter, *mocks.MockContext) {
+	t.Helper()
+	mockContext := mocks.NewMockContext(t.Context())
+	env := environment.New("test")
+	resourceService := azapi.NewResourceService(
+		mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+
+	p := NewDefaultPrompter(
+		env, mockContext.Console, mockAccount, ucm, resourceService, cloud.AzurePublic(),
+	).(*DefaultPrompter)
+
+	return p, mockContext
+}
+
+func TestDefaultPrompter_PromptSubscription_FilterApplied(t *testing.T) {
+	t.Parallel()
+
+	// Two subs in the same tenant; filter includes only sub-alpha.
+	mockAccount := &mockaccount.MockAccountManager{
+		Subscriptions: []account.Subscription{
+			{Id: "sub-alpha", Name: "Alpha", TenantId: "t1", UserAccessTenantId: "t1"},
+			{Id: "sub-bravo", Name: "Bravo", TenantId: "t1", UserAccessTenantId: "t1"},
+		},
+	}
+
+	cfg := config.NewEmptyConfig()
+	_ = SaveSubscriptionFilter(cfg, "t1", []string{"sub-alpha"})
+	ucm := newInMemoryUserConfigManager(cfg)
+
+	p, mockCtx := newTestPrompterWithConfig(t, mockAccount, ucm)
+
+	// Capture the options presented and pick the first (Alpha).
+	var shownOptions []string
+	mockCtx.Console.WhenSelect(func(opts input.ConsoleOptions) bool {
+		shownOptions = opts.Options
+		return strings.Contains(opts.Message, "sub")
+	}).Respond(0)
+
+	subId, err := p.PromptSubscription(t.Context(), "Select a sub")
+	require.NoError(t, err)
+	require.Equal(t, "sub-alpha", subId)
+	// Should show only 1 sub + "Show all subscriptions"
+	require.Len(t, shownOptions, 2)
+	require.Equal(t, ShowAllSubscriptionsOption, shownOptions[len(shownOptions)-1])
+}
+
+func TestDefaultPrompter_PromptSubscription_ShowAll(t *testing.T) {
+	t.Parallel()
+
+	mockAccount := &mockaccount.MockAccountManager{
+		Subscriptions: []account.Subscription{
+			{Id: "sub-alpha", Name: "Alpha", TenantId: "t1", UserAccessTenantId: "t1"},
+			{Id: "sub-bravo", Name: "Bravo", TenantId: "t1", UserAccessTenantId: "t1"},
+		},
+	}
+
+	cfg := config.NewEmptyConfig()
+	_ = SaveSubscriptionFilter(cfg, "t1", []string{"sub-alpha"})
+	ucm := newInMemoryUserConfigManager(cfg)
+
+	p, mockCtx := newTestPrompterWithConfig(t, mockAccount, ucm)
+
+	selectCount := 0
+	mockCtx.Console.WhenSelect(func(opts input.ConsoleOptions) bool {
+		return strings.Contains(opts.Message, "sub")
+	}).RespondFn(func(opts input.ConsoleOptions) (any, error) {
+		selectCount++
+		if selectCount == 1 {
+			// Pick "Show all subscriptions" (last option)
+			return len(opts.Options) - 1, nil
+		}
+		// Second prompt shows all subs; pick Bravo (index 1 after sort)
+		return 1, nil
+	})
+
+	subId, err := p.PromptSubscription(t.Context(), "Select a sub")
+	require.NoError(t, err)
+	require.Equal(t, "sub-bravo", subId)
+	require.Equal(t, 2, selectCount)
 }
 
 func TestDefaultPrompter_FormatSubscriptionOptions_DemoMode(t *testing.T) {

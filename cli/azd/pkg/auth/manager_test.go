@@ -190,6 +190,39 @@ func TestLegacyAzCliCredentialSupport(t *testing.T) {
 	require.IsType(t, new(azidentity.AzureCLICredential), cred)
 }
 
+func TestLegacyAzCliCredentialIsCached(t *testing.T) {
+	mgr := newMemoryUserConfigManager()
+
+	cfg, err := mgr.Load()
+	require.NoError(t, err)
+
+	err = cfg.Set(useAzCliAuthKey, "true")
+	require.NoError(t, err)
+
+	err = mgr.Save(cfg)
+	require.NoError(t, err)
+
+	m := Manager{
+		userConfigManager: mgr,
+	}
+
+	// The same credential instance should be returned on subsequent calls for the same tenant so that the
+	// azidentity SDK can collapse concurrent token requests into a single `az` subprocess.
+	first, err := m.CredentialForCurrentUser(t.Context(), nil)
+	require.NoError(t, err)
+
+	second, err := m.CredentialForCurrentUser(t.Context(), nil)
+	require.NoError(t, err)
+
+	require.Same(t, first, second)
+
+	// A different tenant should yield a distinct credential instance.
+	other, err := m.CredentialForCurrentUser(t.Context(), &CredentialForCurrentUserOptions{TenantID: "other-tenant"})
+	require.NoError(t, err)
+
+	require.NotSame(t, first, other)
+}
+
 func TestCloudShellCredentialSupport(t *testing.T) {
 	t.Setenv(runcontext.AzdInCloudShellEnvVar, "1")
 	m := Manager{

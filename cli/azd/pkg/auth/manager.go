@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	azcloud "github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
@@ -100,6 +101,12 @@ type Manager struct {
 	externalAuthCfg     ExternalAuthConfiguration
 	azCli               az.AzCli
 	userAgent           string
+
+	// azCliCredentials caches AzureCLICredential instances keyed by tenant ID when auth.useAzCliAuth is set.
+	// Sharing a single instance per tenant allows the azidentity SDK to collapse concurrent first-time
+	// GetToken calls into a single `az` subprocess, avoiding spawning many `az` processes in parallel.
+	azCliCredentials   map[string]azcore.TokenCredential
+	azCliCredentialsMu sync.Mutex
 }
 
 // UserAgent is a typed string for the application user-agent,
@@ -169,6 +176,7 @@ func NewManager(
 		externalAuthCfg:     externalAuthCfg,
 		azCli:               azCli,
 		userAgent:           string(userAgent),
+		azCliCredentials:    map[string]azcore.TokenCredential{},
 	}, nil
 }
 
@@ -258,13 +266,7 @@ func (m *Manager) CredentialForCurrentUser(
 
 	if shouldUseLegacyAuth(userConfig) {
 		log.Printf("delegating auth to az since %s is set to true", useAzCliAuthKey)
-		cred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
-			TenantID: options.TenantID,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create credential: %w: %w", err, ErrNoCurrentUser)
-		}
-		return cred, nil
+		return m.azCliCredentialForTenant(options.TenantID)
 	}
 
 	authConfig, err := m.readAuthConfig()
@@ -395,6 +397,34 @@ func (m *Manager) CredentialForCurrentUser(
 }
 
 type ClaimsForCurrentUserOptions = CredentialForCurrentUserOptions
+
+// azCliCredentialForTenant returns a cached AzureCLICredential for the given tenant, creating one if needed.
+//
+// A single credential instance is shared per tenant so that the azidentity SDK can collapse multiple
+// concurrent first-time GetToken calls into a single `az account get-access-token` subprocess. Returning a
+// brand-new credential on every call (each with its own empty token cache) would instead spawn one `az`
+// subprocess per concurrent caller, which can exhaust memory in constrained environments like Cloud Shell.
+func (m *Manager) azCliCredentialForTenant(tenantID string) (azcore.TokenCredential, error) {
+	m.azCliCredentialsMu.Lock()
+	defer m.azCliCredentialsMu.Unlock()
+
+	if cred, ok := m.azCliCredentials[tenantID]; ok {
+		return cred, nil
+	}
+
+	cred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create credential: %w: %w", err, ErrNoCurrentUser)
+	}
+
+	if m.azCliCredentials == nil {
+		m.azCliCredentials = map[string]azcore.TokenCredential{}
+	}
+	m.azCliCredentials[tenantID] = cred
+	return cred, nil
+}
 
 // ClaimsForCurrentUser returns claims for the currently logged in user.
 func (m *Manager) ClaimsForCurrentUser(ctx context.Context, options *ClaimsForCurrentUserOptions) (TokenClaims, error) {

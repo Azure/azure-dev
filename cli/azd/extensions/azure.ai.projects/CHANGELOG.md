@@ -1,6 +1,6 @@
 # Release History
 
-## 0.0.1-preview (2026-05-28)
+## 0.1.0-preview (2026-05-28)
 
 Initial preview release of the Foundry Projects extension.
 

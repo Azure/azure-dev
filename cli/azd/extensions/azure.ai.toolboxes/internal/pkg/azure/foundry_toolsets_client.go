@@ -221,7 +221,7 @@ type ToolboxVersionObject struct {
 	Description string            `json:"description,omitempty"`
 	CreatedAt   int64             `json:"created_at"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
-	Tools    []map[string]any `json:"tools"`
+	Tools       []map[string]any  `json:"tools"`
 	// Skills has no omitempty: the service always emits "skills":[] on reads.
 	Skills   []map[string]any `json:"skills"`
 	Policies *ToolboxPolicies `json:"policies,omitempty"`

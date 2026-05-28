@@ -363,6 +363,11 @@ func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, 
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
+	// Opt-in to the hosted-agents preview feature. The Foundry v1 endpoint
+	// gates POST /agents/{name}/versions with definition.kind=="hosted" behind
+	// this header and returns HTTP 403 (preview_feature_required) without it.
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}

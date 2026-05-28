@@ -189,3 +189,109 @@ func TestSubFilterRemoveAction_CancelledRemoval(t *testing.T) {
 	require.True(t, exists)
 	require.Equal(t, []string{"sub-1"}, ids)
 }
+
+func TestSubFilterSetAction_MultiTenant_SavesFilterForSelectedTenant(
+	t *testing.T,
+) {
+	mockConsole := mockinput.NewMockConsole()
+	ucm := newTestUserConfigManager(t)
+
+	mockAccount := &mockaccount.MockAccountManager{
+		Subscriptions: []account.Subscription{
+			{Id: "sub-1", Name: "Alpha", TenantId: "t1", UserAccessTenantId: "t1"},
+			{Id: "sub-2", Name: "Bravo", TenantId: "t2", UserAccessTenantId: "t2"},
+			{Id: "sub-3", Name: "Charlie", TenantId: "t2", UserAccessTenantId: "t2"},
+		},
+	}
+
+	action := &subFilterSetAction{
+		accountManager:    mockAccount,
+		userConfigManager: ucm,
+		console:           mockConsole,
+	}
+
+	// Select second tenant (index 1)
+	mockConsole.WhenSelect(func(opts input.ConsoleOptions) bool {
+		return strings.Contains(opts.Message, "tenant")
+	}).Respond(1)
+
+	// Pick the first subscription from tenant t2
+	mockConsole.WhenMultiSelect(func(opts input.ConsoleOptions) bool {
+		return strings.Contains(opts.Message, "subscription")
+	}).RespondFn(func(opts input.ConsoleOptions) (any, error) {
+		if len(opts.Options) > 0 {
+			return []string{opts.Options[0]}, nil
+		}
+		return []string{}, nil
+	})
+
+	result, err := action.Run(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, result.Message.Header, "Saved subscription filter")
+
+	// Verify filter was saved under t2
+	cfg, err := ucm.Load()
+	require.NoError(t, err)
+	ids, exists := prompt.LoadSubscriptionFilter(cfg, "t2")
+	require.True(t, exists)
+	require.Len(t, ids, 1)
+
+	// Verify no filter saved under t1
+	_, exists = prompt.LoadSubscriptionFilter(cfg, "t1")
+	require.False(t, exists)
+}
+
+func TestSubFilterRemoveAction_MultiTenant_RemovesCorrectTenant(
+	t *testing.T,
+) {
+	mockConsole := mockinput.NewMockConsole()
+	ucm := newTestUserConfigManager(t)
+
+	// Pre-save filters for both tenants
+	cfg, err := ucm.Load()
+	require.NoError(t, err)
+	err = prompt.SaveSubscriptionFilter(cfg, "t1", []string{"sub-1"})
+	require.NoError(t, err)
+	err = prompt.SaveSubscriptionFilter(cfg, "t2", []string{"sub-2"})
+	require.NoError(t, err)
+	err = ucm.Save(cfg)
+	require.NoError(t, err)
+
+	mockAccount := &mockaccount.MockAccountManager{
+		Subscriptions: []account.Subscription{
+			{Id: "sub-1", Name: "Alpha", TenantId: "t1", UserAccessTenantId: "t1"},
+			{Id: "sub-2", Name: "Bravo", TenantId: "t2", UserAccessTenantId: "t2"},
+		},
+	}
+
+	action := &subFilterRemoveAction{
+		accountManager:    mockAccount,
+		userConfigManager: ucm,
+		console:           mockConsole,
+	}
+
+	// Select second tenant (index 1)
+	mockConsole.WhenSelect(func(opts input.ConsoleOptions) bool {
+		return strings.Contains(opts.Message, "tenant")
+	}).Respond(1)
+
+	// Confirm removal
+	mockConsole.WhenConfirm(func(opts input.ConsoleOptions) bool {
+		return strings.Contains(opts.Message, "Remove subscription filter")
+	}).Respond(true)
+
+	result, err := action.Run(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, result.Message.Header, "Removed subscription filter")
+
+	// Verify t2 filter removed, t1 still exists
+	cfg, err = ucm.Load()
+	require.NoError(t, err)
+	_, exists := prompt.LoadSubscriptionFilter(cfg, "t2")
+	require.False(t, exists)
+	ids, exists := prompt.LoadSubscriptionFilter(cfg, "t1")
+	require.True(t, exists)
+	require.Equal(t, []string{"sub-1"}, ids)
+}

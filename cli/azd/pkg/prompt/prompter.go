@@ -141,8 +141,10 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 
 	// Add "Show all subscriptions" option when filter is active
 	if filterApplied {
+		nextIdx := len(subscriptionOptions) + 1
 		subscriptionOptions = append(
-			subscriptionOptions, ShowAllSubscriptionsOption,
+			subscriptionOptions,
+			fmt.Sprintf("%2d. %s", nextIdx, ShowAllSubscriptionsOption),
 		)
 		subscriptions = append(
 			subscriptions, ShowAllSubscriptionsOption,

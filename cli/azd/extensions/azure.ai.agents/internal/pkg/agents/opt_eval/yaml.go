@@ -392,6 +392,15 @@ func (oc *OptimizationConfig) UnmarshalYAML(value *yaml.Node) error {
 	}
 	result := make(OptimizationConfig, len(raw))
 	for k, v := range raw {
+		// If the YAML value is already a valid JSON string (e.g. '["gpt-4o"]'),
+		// store it directly to avoid double-encoding.
+		if s, ok := v.(string); ok {
+			trimmed := strings.TrimSpace(s)
+			if json.Valid([]byte(trimmed)) {
+				result[k] = json.RawMessage(trimmed)
+				continue
+			}
+		}
 		data, err := json.Marshal(v)
 		if err != nil {
 			return fmt.Errorf("marshaling optimization_config[%q]: %w", k, err)

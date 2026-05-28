@@ -1,6 +1,6 @@
 # Release History
 
-## 0.0.1-preview (Unreleased)
+## 0.0.1-preview (2026-05-28)
 
 - Initial preview release of the `azure.ai.skills` extension.
 - Adds the `azd ai skill` command group on top of the versioned Foundry

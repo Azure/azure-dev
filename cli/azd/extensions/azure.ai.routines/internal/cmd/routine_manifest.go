@@ -109,6 +109,48 @@ func overwriteRoutineFromFile(existing *routines.Routine, file *routines.Routine
 	return changed
 }
 
+// ensureTimerTriggersHaveAt validates that every timer trigger on `r` has a
+// non-empty `at`. The Foundry service currently omits `at` on GET for timer
+// triggers (see issue #8421 Bug 5), so the GET → mutate → PUT round-trip used
+// by `routine update` drops the field and the service rejects the PUT with
+// a 400. Surfacing a clear local error here is far more actionable than
+// forwarding the opaque service error.
+func ensureTimerTriggersHaveAt(r *routines.Routine) error {
+	const timerWireType = "timer"
+
+	var missing []string
+	for _, key := range sortedKeys(r.Triggers) {
+		t := r.Triggers[key]
+		if t.Type == timerWireType && t.At == "" {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+
+	var message string
+	if len(missing) == 1 {
+		message = fmt.Sprintf(
+			"trigger %q is a timer trigger but 'at' is not set; the service does not "+
+				"return 'at' on GET, so it must be re-supplied when updating",
+			missing[0],
+		)
+	} else {
+		message = fmt.Sprintf(
+			"timer triggers %v have no 'at' set; the service does not return 'at' on GET, "+
+				"so it must be re-supplied when updating",
+			missing,
+		)
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		message,
+		"re-supply '--at <RFC 3339 datetime>' for a flag-mode update, or use "+
+			"'--file <manifest>' with a complete trigger block",
+	)
+}
+
 // applyUpdateFlags applies named CLI update flags onto an existing routine body.
 // It returns the count of fields changed.
 func applyUpdateFlags(
@@ -143,6 +185,9 @@ func applyUpdateFlags(
 				"cannot set --at: routine has no default trigger",
 				"add a trigger by recreating the routine, or omit --at",
 			)
+		}
+		if err := validateAt(at); err != nil {
+			return 0, err
 		}
 		trigger.At = at
 		changed++

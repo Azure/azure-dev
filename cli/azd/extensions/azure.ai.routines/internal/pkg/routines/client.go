@@ -59,6 +59,17 @@ func newHTTPClient() *http.Client {
 
 // NewClient creates a new Routines data-plane client.
 func NewClient(endpoint string, cred azcore.TokenCredential) *Client {
+	return newClient(endpoint, cred, false)
+}
+
+// newClient is the internal constructor. allowInsecureHTTP is a test-only knob
+// that flips on `BearerTokenOptions.InsecureAllowCredentialWithHTTP` so
+// httptest plain-HTTP servers can exercise the real pipeline; production
+// callers go through [NewClient] and always use HTTPS.
+func newClient(endpoint string, cred azcore.TokenCredential, allowInsecureHTTP bool) *Client {
+	bearerOpts := &policy.BearerTokenOptions{
+		InsecureAllowCredentialWithHTTP: allowInsecureHTTP,
+	}
 	clientOptions := &policy.ClientOptions{
 		Transport: newHTTPClient(),
 		Logging: policy.LogOptions{
@@ -72,11 +83,12 @@ func NewClient(endpoint string, cred azcore.TokenCredential) *Client {
 			runtime.NewBearerTokenPolicy(
 				cred,
 				[]string{"https://ai.azure.com/.default"},
-				nil,
+				bearerOpts,
 			),
 			azsdk.NewMsCorrelationPolicy(),
 			azsdk.NewUserAgentPolicy("azd-ext-azure-ai-routines/0.1.0"),
 		},
+		InsecureAllowCredentialWithHTTP: allowInsecureHTTP,
 	}
 
 	pipeline := runtime.NewPipeline(
@@ -162,8 +174,18 @@ func (c *Client) ListRoutines(ctx context.Context) ([]Routine, error) {
 			return nil, err
 		}
 
-		all = append(all, page.Value...)
-		nextURL = page.NextLink
+		all = append(all, page.Items()...)
+
+		// Prefer the spec-shaped cursor (`?after=<last_id>`); fall back to
+		// the legacy absolute `nextLink` URL during the rollout window.
+		switch {
+		case page.NextCursor() != "":
+			nextURL = c.routinesURL("after=" + url.QueryEscape(page.NextCursor()))
+		case page.NextLinkURL() != "":
+			nextURL = page.NextLinkURL()
+		default:
+			nextURL = ""
+		}
 	}
 
 	return all, nil
@@ -324,7 +346,7 @@ func (c *Client) ListRoutineRuns(
 ) ([]RoutineRun, error) {
 	var all []RoutineRun
 
-	// baseQuery holds the original filter, preserved across pages. maxResults is
+	// baseQuery holds the original filter, preserved across pages. Limit is
 	// only sent on the first page (we cap totals client-side via opts.Top).
 	var baseQuery []string
 	if opts.Filter != "" {
@@ -333,7 +355,9 @@ func (c *Client) ListRoutineRuns(
 
 	firstPageQuery := slices.Clone(baseQuery)
 	if opts.Top > 0 {
-		firstPageQuery = append(firstPageQuery, fmt.Sprintf("maxResults=%d", opts.Top))
+		// Spec uses `?limit=` for cursor pagination; the previous
+		// `?maxResults=` parameter no longer reaches the server.
+		firstPageQuery = append(firstPageQuery, fmt.Sprintf("limit=%d", opts.Top))
 	}
 
 	nextURL := c.routineRunsURL(routineName, firstPageQuery...)
@@ -348,20 +372,22 @@ func (c *Client) ListRoutineRuns(
 			return nil, err
 		}
 
-		all = append(all, page.Value...)
+		all = append(all, page.Items()...)
 
 		if opts.Top > 0 && len(all) >= opts.Top {
 			all = all[:opts.Top]
 			break
 		}
 
-		if page.NextPageToken != "" {
-			pageQuery := append(slices.Clone(baseQuery),
-				"pageToken="+url.QueryEscape(page.NextPageToken))
-			nextURL = c.routineRunsURL(routineName, pageQuery...)
-		} else {
+		cursor := page.NextCursor()
+		if cursor == "" {
 			nextURL = ""
+			continue
 		}
+		// Spec replaces the legacy `?pageToken=` parameter with `?after=`.
+		pageQuery := append(slices.Clone(baseQuery),
+			"after="+url.QueryEscape(cursor))
+		nextURL = c.routineRunsURL(routineName, pageQuery...)
 	}
 
 	return all, nil

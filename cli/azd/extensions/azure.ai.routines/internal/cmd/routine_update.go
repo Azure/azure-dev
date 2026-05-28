@@ -146,6 +146,13 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 		return nil
 	}
 
+	// Defensive check before the PUT: the service GET response for a timer
+	// routine omits `at`, so a flag-only update that leaves `at` empty would
+	// be rejected by the server with an opaque 400. See issue #8421 (Bug 4).
+	if err := ensureTimerTriggersHaveAt(existing); err != nil {
+		return err
+	}
+
 	// PUT the updated body.
 	result, err := client.PutRoutine(ctx, flags.name, existing)
 	if err != nil {

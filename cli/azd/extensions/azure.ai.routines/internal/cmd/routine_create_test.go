@@ -55,6 +55,40 @@ func TestBuildTrigger_TimerMissingAt(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestBuildTrigger_TimerInvalidAt covers issue #8421 Bug 6: `--at` accepts
+// arbitrary strings today, and the CLI should reject obvious garbage with a
+// clear local error instead of round-tripping a 400 through the service.
+func TestBuildTrigger_TimerInvalidAt(t *testing.T) {
+	t.Parallel()
+	flags := &routineCreateFlags{
+		trigger:  "timer",
+		at:       "not-a-date",
+		timeZone: "UTC",
+	}
+	_, err := buildTrigger(flags)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "RFC 3339",
+		"error message must reference RFC 3339 so users know what format is expected")
+	assert.Contains(t, err.Error(), "not-a-date",
+		"error message must echo back the invalid value the user provided")
+}
+
+// TestBuildTrigger_TimerAtVariants accepts every flavor that time.RFC3339
+// parses so users can write standard datetimes with or without a numeric zone.
+func TestBuildTrigger_TimerAtVariants(t *testing.T) {
+	t.Parallel()
+	for _, at := range []string{
+		"2026-04-24T15:00:00Z",
+		"2026-04-24T15:00:00+02:00",
+		"2026-04-24T15:00:00-07:00",
+	} {
+		flags := &routineCreateFlags{trigger: "timer", at: at}
+		got, err := buildTrigger(flags)
+		require.NoErrorf(t, err, "RFC 3339 datetime %q should parse", at)
+		assert.Equal(t, at, got.At)
+	}
+}
+
 func TestBuildTrigger_UnknownType(t *testing.T) {
 	t.Parallel()
 	flags := &routineCreateFlags{trigger: "unknown-trigger"}

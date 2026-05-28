@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"azure.ai.routines/internal/exterrors"
 	"azure.ai.routines/internal/pkg/routines"
@@ -192,6 +193,25 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 	return nil
 }
 
+// validateAt parses an `--at` value as an RFC 3339 datetime. Foundry's
+// `TimerRoutineTrigger.at` field is a `utcDateTime` per the TypeSpec, so any
+// value the service accepts must round-trip through `time.Parse(time.RFC3339)`.
+// Returning a clear local error here avoids surfacing an opaque 400 from the
+// service for trivially malformed input.
+func validateAt(value string) error {
+	if _, err := time.Parse(time.RFC3339, value); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"--at must be an ISO 8601 / RFC 3339 datetime, e.g. '2026-04-24T15:00:00Z' (got %q)",
+				value,
+			),
+			"provide an RFC 3339 datetime such as '2026-04-24T15:00:00Z'",
+		)
+	}
+	return nil
+}
+
 // buildTrigger constructs a RoutineTrigger from CLI flags.
 //
 // Supported triggers: timer (one-shot, --at) and recurring (cron, --cron).
@@ -228,6 +248,9 @@ func buildTrigger(flags *routineCreateFlags) (routines.RoutineTrigger, error) {
 				"--at is required for trigger type 'timer'",
 				"provide an ISO 8601 datetime, e.g. '2026-04-24T15:00:00Z'",
 			)
+		}
+		if err := validateAt(flags.at); err != nil {
+			return t, err
 		}
 		t.At = flags.at
 	case "recurring":

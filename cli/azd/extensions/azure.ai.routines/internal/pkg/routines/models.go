@@ -51,9 +51,48 @@ type RoutineAction struct {
 }
 
 // PagedRoutine represents a page of routine resources.
+//
+// Wire shape is `AgentsPagedResult<Routine>` from the Foundry TypeSpec (see
+// `azure-rest-api-specs` PR #43498): `{ data, first_id, last_id, has_more }`
+// with `?after=<last_id>` as the continuation cursor.
+//
+// `Value` and `NextLink` are kept as fallback decode targets so the CLI still
+// works against any region that has not yet rolled out the new envelope.
+// Use [PagedRoutine.Items] and [PagedRoutine.NextCursor] / [PagedRoutine.NextLinkURL]
+// instead of reading the fields directly.
 type PagedRoutine struct {
-	Value    []Routine `json:"value"`
+	Data    []Routine `json:"data,omitempty"`
+	FirstID string    `json:"first_id,omitempty"`
+	LastID  string    `json:"last_id,omitempty"`
+	HasMore bool      `json:"has_more,omitempty"`
+
+	// Legacy fields kept for backward compatibility with the previous spec.
+	Value    []Routine `json:"value,omitempty"`
 	NextLink string    `json:"nextLink,omitempty"`
+}
+
+// Items returns the routines on the page, preferring the spec-shaped `data`
+// field and falling back to the legacy `value` field.
+func (p *PagedRoutine) Items() []Routine {
+	if len(p.Data) > 0 {
+		return p.Data
+	}
+	return p.Value
+}
+
+// NextCursor returns the opaque cursor to send as `?after=<cursor>` to fetch
+// the next page, or the empty string if there is no next page.
+func (p *PagedRoutine) NextCursor() string {
+	if p.HasMore && p.LastID != "" {
+		return p.LastID
+	}
+	return ""
+}
+
+// NextLinkURL returns the legacy absolute pagination URL, or the empty
+// string if the response does not carry one.
+func (p *PagedRoutine) NextLinkURL() string {
+	return p.NextLink
 }
 
 // RoutineRun represents a single routine execution record.
@@ -76,9 +115,43 @@ type RoutineRun struct {
 }
 
 // PagedRoutineRun represents a page of routine run records.
+//
+// Wire shape is `AgentsPagedResult<RoutineRun>` from the Foundry TypeSpec
+// (see `azure-rest-api-specs` PR #43498): `{ data, first_id, last_id, has_more }`
+// with `?after=<last_id>` as the continuation cursor.
+//
+// `Value` and `NextPageToken` are kept as fallback decode targets so the CLI
+// still works against any region that has not yet rolled out the new envelope.
+// Use [PagedRoutineRun.Items] and [PagedRoutineRun.NextCursor] /
+// [PagedRoutineRun.NextLegacyPageToken] instead of reading the fields directly.
 type PagedRoutineRun struct {
-	Value         []RoutineRun `json:"value"`
+	Data    []RoutineRun `json:"data,omitempty"`
+	FirstID string       `json:"first_id,omitempty"`
+	LastID  string       `json:"last_id,omitempty"`
+	HasMore bool         `json:"has_more,omitempty"`
+
+	// Legacy fields kept for backward compatibility with the previous spec.
+	Value         []RoutineRun `json:"value,omitempty"`
 	NextPageToken string       `json:"nextPageToken,omitempty"`
+}
+
+// Items returns the runs on the page, preferring the spec-shaped `data` field
+// and falling back to the legacy `value` field.
+func (p *PagedRoutineRun) Items() []RoutineRun {
+	if len(p.Data) > 0 {
+		return p.Data
+	}
+	return p.Value
+}
+
+// NextCursor returns the opaque cursor to send as `?after=<cursor>` to fetch
+// the next page. It prefers the spec-shaped `has_more`+`last_id` pair and
+// falls back to the legacy `nextPageToken` field.
+func (p *PagedRoutineRun) NextCursor() string {
+	if p.HasMore && p.LastID != "" {
+		return p.LastID
+	}
+	return p.NextPageToken
 }
 
 // RoutineDispatchPayload is the discriminated dispatch payload. The "type"

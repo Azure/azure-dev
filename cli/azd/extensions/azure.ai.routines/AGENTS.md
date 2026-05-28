@@ -134,13 +134,15 @@ log.Printf("No routines found on project")                     // use fmt.Print*
 ## API spec alignment
 
 The authoritative TypeSpec is in
-[`azure-rest-api-specs` PR #43186](https://github.com/Azure/azure-rest-api-specs/pull/43186)
-(`specification/ai-foundry/data-plane/Foundry/src/routines/`). The client in
-`internal/pkg/routines/` tracks that spec, with a small number of remaining
-divergences kept for compatibility with the currently deployed Foundry service:
+[`azure-rest-api-specs` PR #43498](https://github.com/Azure/azure-rest-api-specs/pull/43498)
+(`specification/ai-foundry/data-plane/Foundry/src/routines/`), which replaced
+the earlier #43186 draft. The client in `internal/pkg/routines/` tracks that
+spec, with a small number of remaining divergences kept for compatibility
+with the currently deployed Foundry service:
 
-| Concern | Spec | Live service | Client choice |
+| Concern | Spec (#43498) | Live service today | Client choice |
 |---|---|---|---|
-| `github_issue_opened` trigger | renamed in spec | still accepts only `github_issue` | keep `github_issue` wire value (CLI surface is deferred) |
-| `AgentsPagedResult<T>` envelope | `data` + `last_id` + `has_more` | `value` + `nextLink` (routines) / `value` + `nextPageToken` (runs) | match service shape |
+| `github_issue` trigger | retained as `github_issue` | accepts `github_issue` | match; CLI surface deferred |
+| List envelope | `AgentsPagedResult<T>`: `{ data, first_id, last_id, has_more }` with `?limit`/`?after` cursor | rolling out — older regions may still emit `{ value, nextLink }` / `{ value, nextPageToken }` | decode the spec shape via `Items()` / `NextCursor()` and fall back to the legacy fields during the rollout window |
+| Timer trigger `at` | `utcDateTime` (RFC 3339) — validated client-side via `time.Parse(time.RFC3339, …)` | accepts RFC 3339 on PUT; **omits `at` on GET** today (see issue #8421 Bug 5) | validate on input, and refuse a flag-only `routine update` that would PUT a timer trigger with empty `at` |
 

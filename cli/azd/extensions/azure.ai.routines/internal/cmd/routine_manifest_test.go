@@ -296,6 +296,110 @@ func TestApplyUpdateFlags_SessIDRejectedForAgentResponse(t *testing.T) {
 	assert.Error(t, err, "--session-id must be rejected for agent-response actions")
 }
 
+// TestApplyUpdateFlags_AtSucceedsWithRFC3339 documents the happy path for
+// issue #8421 Bug 6 in the update verb.
+func TestApplyUpdateFlags_AtSucceedsWithRFC3339(t *testing.T) {
+	t.Parallel()
+	r := &routines.Routine{
+		Triggers: map[string]routines.RoutineTrigger{
+			"default": {Type: "timer", At: "2026-01-01T00:00:00Z"},
+		},
+	}
+	n, err := applyUpdateFlags(r,
+		"", "", "2026-06-26T21:37:26Z", "", "", "", "", "",
+		false, false, true, false, false, false, false, false,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+	assert.Equal(t, "2026-06-26T21:37:26Z", r.Triggers["default"].At)
+}
+
+// TestApplyUpdateFlags_AtRejectsInvalidString covers issue #8421 Bug 6 in
+// the update verb. The new RFC 3339 check must run before the value reaches
+// the service.
+func TestApplyUpdateFlags_AtRejectsInvalidString(t *testing.T) {
+	t.Parallel()
+	r := &routines.Routine{
+		Triggers: map[string]routines.RoutineTrigger{
+			"default": {Type: "timer", At: "2026-01-01T00:00:00Z"},
+		},
+	}
+	_, err := applyUpdateFlags(r,
+		"", "", "definitely-not-a-date", "", "", "", "", "",
+		false, false, true, false, false, false, false, false,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "RFC 3339")
+	assert.Contains(t, err.Error(), "definitely-not-a-date")
+}
+
+// ─── ensureTimerTriggersHaveAt (issue #8421 Bug 4) ────────────────────────────
+
+// TestEnsureTimerTriggersHaveAt_OKWhenAtPresent documents the no-op case.
+func TestEnsureTimerTriggersHaveAt_OKWhenAtPresent(t *testing.T) {
+	t.Parallel()
+	r := &routines.Routine{
+		Triggers: map[string]routines.RoutineTrigger{
+			"default": {Type: "timer", At: "2026-01-01T00:00:00Z"},
+		},
+	}
+	assert.NoError(t, ensureTimerTriggersHaveAt(r))
+}
+
+// TestEnsureTimerTriggersHaveAt_FailsForTimerMissingAt is the core regression
+// guard for Bug 4. The Foundry GET response omits `at` for timer triggers, so
+// without this check the GET → mutate → PUT round-trip would forward an
+// invalid body to the service.
+func TestEnsureTimerTriggersHaveAt_FailsForTimerMissingAt(t *testing.T) {
+	t.Parallel()
+	r := &routines.Routine{
+		Triggers: map[string]routines.RoutineTrigger{
+			"default": {Type: "timer", TimeZone: "UTC" /* no At */},
+		},
+	}
+	err := ensureTimerTriggersHaveAt(r)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "timer")
+	assert.Contains(t, err.Error(), "at")
+	assert.Contains(t, err.Error(), "default",
+		"the offending trigger key should appear in the error message")
+}
+
+// TestEnsureTimerTriggersHaveAt_IgnoresScheduleTriggers confirms the guard
+// only fires for timer triggers — schedule (cron) triggers do not have `at`.
+func TestEnsureTimerTriggersHaveAt_IgnoresScheduleTriggers(t *testing.T) {
+	t.Parallel()
+	r := &routines.Routine{
+		Triggers: map[string]routines.RoutineTrigger{
+			"default": {Type: "schedule", CronExpression: "0 8 * * *"},
+		},
+	}
+	assert.NoError(t, ensureTimerTriggersHaveAt(r))
+}
+
+// TestEnsureTimerTriggersHaveAt_NoTriggers handles a routine with no triggers
+// (e.g. an action-only definition during edits) without false positives.
+func TestEnsureTimerTriggersHaveAt_NoTriggers(t *testing.T) {
+	t.Parallel()
+	assert.NoError(t, ensureTimerTriggersHaveAt(&routines.Routine{}))
+}
+
+// TestEnsureTimerTriggersHaveAt_MultipleTimerTriggersAllListed ensures the
+// error message names every offending trigger when there is more than one.
+func TestEnsureTimerTriggersHaveAt_MultipleTimerTriggersAllListed(t *testing.T) {
+	t.Parallel()
+	r := &routines.Routine{
+		Triggers: map[string]routines.RoutineTrigger{
+			"a": {Type: "timer"},
+			"b": {Type: "timer"},
+		},
+	}
+	err := ensureTimerTriggersHaveAt(r)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "a")
+	assert.Contains(t, err.Error(), "b")
+}
+
 // ─── getTrigger / getAction ───────────────────────────────────────────────────
 
 func TestGetTrigger_NilWhenEmpty(t *testing.T) {

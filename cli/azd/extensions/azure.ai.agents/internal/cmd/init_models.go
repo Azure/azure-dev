@@ -203,7 +203,7 @@ func (a *InitAction) getModelDeploymentDetails(
 			// auto-select it without prompting.
 			if a.userProvidedManifest && len(matchingDeployments) == 1 {
 				for name, deployment := range matchingDeployments {
-					fmt.Printf("  %s Model deployment: %s (version: %s) — using existing deployment '%s'\n", output.WithSuccessFormat("✓"), model.Id, deployment.Version, name)
+					log.Printf("Using existing model deployment: %s (version: %s, name: %s)", model.Id, deployment.Version, name)
 					return &project.Deployment{
 						Name: name,
 						Model: project.DeploymentModel{
@@ -258,7 +258,7 @@ func (a *InitAction) getModelDeploymentDetails(
 
 			noMatchChoice := "deploy_new"
 			if a.userProvidedManifest {
-				fmt.Printf("  %s Model deployment: will deploy new '%s' — no existing deployment found\n", output.WithSuccessFormat("✓"), model.Id)
+				log.Printf("Will deploy new model '%s' (no existing deployment found)", model.Id)
 			} else if !a.flags.noPrompt {
 				noMatchChoices := []*azdext.SelectChoice{
 					{
@@ -383,8 +383,8 @@ func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (
 		}
 		model = selectedModel
 	} else if a.userProvidedManifest {
-		// Model found — auto-accept from manifest without prompting
-		fmt.Printf("  %s Model: %s (from manifest)\n", output.WithSuccessFormat("✓"), model.Name)
+		// Model found - auto-accept from manifest without prompting
+		log.Printf("Using model from manifest: %s", model.Name)
 	} else if !a.flags.noPrompt {
 		// Model found in catalog — let user confirm or choose a different one
 		choices := []*azdext.SelectChoice{
@@ -937,7 +937,7 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 		log.Printf("warning: failed to update model_deployment provision signal: %v", err)
 	}
 
-	fmt.Println("Model deployment details processed and injected into agent definition. Deployment details can also be found in the JSON formatted AI_PROJECT_DEPLOYMENTS environment variable.")
+	log.Println("Model deployment details processed and injected into agent definition. Deployment details can also be found in the JSON formatted AI_PROJECT_DEPLOYMENTS environment variable.")
 
 	return updatedManifest, deploymentDetails, nil
 }

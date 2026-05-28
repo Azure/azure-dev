@@ -1359,7 +1359,7 @@ func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt
 	// When the user provided a manifest explicitly (-m) and the project supports
 	// code deploy, auto-select code deploy without prompting.
 	if userProvidedManifest {
-		fmt.Printf("  %s Deploy mode: Source Code (ZIP upload) — project supports code deploy\n", output.WithSuccessFormat("✓"))
+		log.Printf("Auto-selected deploy mode: code (project supports code deploy)")
 		return "code", nil
 	}
 
@@ -1488,9 +1488,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 		} else {
 			runtime = "python_3_13"
 		}
-		if userProvidedManifest {
-			fmt.Printf("  %s Runtime: %s — auto-detected\n", output.WithSuccessFormat("✓"), runtime)
-		}
+		log.Printf("Auto-detected runtime: %s", runtime)
 	} else {
 		defaultIdx := int32(0) // First item in the filtered list
 		runtimeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
@@ -1517,9 +1515,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 		entryPoint = opts.entryPoint
 	} else if noPrompt || userProvidedManifest {
 		entryPoint = defaultEntryPoint
-		if userProvidedManifest {
-			fmt.Printf("  %s Entry point: %s — auto-detected\n", output.WithSuccessFormat("✓"), entryPoint)
-		}
+		log.Printf("Auto-detected entry point: %s", entryPoint)
 	} else {
 		entryPointResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
@@ -1547,9 +1543,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 		depResolution = opts.depResolution
 	} else if noPrompt || userProvidedManifest {
 		depResolution = "remote_build"
-		if userProvidedManifest {
-			fmt.Printf("  %s Dependencies: remote_build (default)\n", output.WithSuccessFormat("✓"))
-		}
+		log.Printf("Defaulted dependency resolution to remote_build")
 	} else {
 		depDefaultIdx := int32(0)
 		depResResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{

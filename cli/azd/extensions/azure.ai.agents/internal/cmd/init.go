@@ -2178,7 +2178,7 @@ func writeAgentDefinitionFile(targetDir string, agentManifest *agent_yaml.AgentM
 		return fmt.Errorf("saving file to %s: %w", filePath, err)
 	}
 
-	fmt.Println(output.WithGrayFormat("Processed agent.yaml at %s", filePath))
+	log.Printf("Processed agent.yaml at %s", filePath)
 
 	// Generate .agentignore if it doesn't already exist
 	agentIgnorePath := filepath.Join(targetDir, ".agentignore")
@@ -2600,7 +2600,7 @@ func (a *InitAction) populateContainerSettings(
 	//   - User explicitly overrides with --deploy-mode container
 	if a.userProvidedManifest {
 		selected := project.ResourceTiers[defaultIndex]
-		fmt.Printf("  %s Compute: %s (default)\n", output.WithSuccessFormat("✓"), selected.String())
+		log.Printf("Defaulted compute tier: %s", selected.String())
 		return &project.ContainerSettings{
 			Resources: &project.ResourceSettings{
 				Memory: selected.Memory,

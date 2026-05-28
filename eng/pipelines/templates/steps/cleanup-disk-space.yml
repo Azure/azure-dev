@@ -11,6 +11,9 @@ parameters:
   - name: CleanDotNet
     type: boolean
     default: false
+  - name: CleanSystemCaches
+    type: boolean
+    default: false
   - name: Condition
     type: string
     default: succeeded()
@@ -46,6 +49,16 @@ steps:
         rm -rf /tmp/NuGetScratch
         rm -rf /tmp/.dotnet
       displayName: Cleanup .NET temp artifacts
+      condition: and(${{ parameters.Condition }}, eq(variables['Agent.OS'], 'Linux'))
+      continueOnError: true
+
+  - ${{ if eq(parameters.CleanSystemCaches, true) }}:
+    - bash: |
+        sudo apt-get clean
+        sudo rm -rf /var/lib/apt/lists/*
+        sudo rm -rf /var/cache/apt/archives/*
+        rm -rf /tmp/go-build*
+      displayName: Cleanup system caches
       condition: and(${{ parameters.Condition }}, eq(variables['Agent.OS'], 'Linux'))
       continueOnError: true
 

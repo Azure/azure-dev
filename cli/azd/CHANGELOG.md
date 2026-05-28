@@ -10,6 +10,7 @@
 
 ### Other Changes
 
+- [[#8440]](https://github.com/Azure/azure-dev/pull/8440) Promote the `azd tool` command group out of alpha, making it available by default along with its first-run welcome and update-check experiences.
 - [[#8316]](https://github.com/Azure/azure-dev/pull/8316) Improve `azd extension upgrade` dependency handling by reconciling declared dependencies to the latest compatible versions, adding `--no-dependency-upgrades` to opt out, and reporting dependency updates via `dependencyUpgrades` in `--output json`.
 
 ## 1.25.2 (2026-05-22)

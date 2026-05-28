@@ -20,38 +20,20 @@ import (
 )
 
 func TestToolCommandGating(t *testing.T) {
-	t.Run("present when alpha feature disabled", func(t *testing.T) {
-		configDir := t.TempDir()
-		t.Setenv("AZD_CONFIG_DIR", configDir)
-		// The tool command is now always registered, regardless of the alpha feature.
-		t.Setenv("AZD_ALPHA_ENABLE_TOOL", "false")
+	// The "tool" command group is always registered, regardless of any
+	// alpha feature gating.
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
 
-		root := NewRootCmd(true, nil, nil)
-		found := false
-		for _, c := range root.Commands() {
-			if c.Name() == "tool" {
-				found = true
-				break
-			}
+	root := NewRootCmd(true, nil, nil)
+	found := false
+	for _, c := range root.Commands() {
+		if c.Name() == "tool" {
+			found = true
+			break
 		}
-		require.True(t, found, "expected 'tool' subcommand to be present even when alpha feature is disabled")
-	})
-
-	t.Run("present when alpha feature enabled", func(t *testing.T) {
-		configDir := t.TempDir()
-		t.Setenv("AZD_CONFIG_DIR", configDir)
-		t.Setenv("AZD_ALPHA_ENABLE_TOOL", "true")
-
-		root := NewRootCmd(true, nil, nil)
-		found := false
-		for _, c := range root.Commands() {
-			if c.Name() == "tool" {
-				found = true
-				break
-			}
-		}
-		require.True(t, found, "expected 'tool' subcommand to be present when alpha feature is enabled")
-	})
+	}
+	require.True(t, found, "expected 'tool' subcommand to always be present")
 }
 
 func TestRunToolOperationUnsuccessfulResultReturnsError(t *testing.T) {

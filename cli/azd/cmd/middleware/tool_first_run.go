@@ -21,7 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -52,10 +51,9 @@ const envKeySkipFirstRun = "AZD_SKIP_FIRST_RUN"
 // Keep them separate so dashboards can distinguish "user told us not to ask"
 // from "we had no choice but to skip".
 //
-// Skip reasons are *not* emitted for the alpha-disabled and child-action
-// paths: when the alpha feature is off the user has no opportunity to opt in,
-// and child actions (e.g. workflow steps) inherit the parent's first-run
-// state.  Neither contributes useful signal to first-run adoption analysis.
+// A skip reason is *not* emitted for the child-action path: child actions
+// (e.g. workflow steps) inherit the parent's first-run state and do not
+// contribute useful signal to first-run adoption analysis.
 const (
 	skipReasonEnvVar           = "env_var"
 	skipReasonNoPrompt         = "no_prompt"
@@ -80,7 +78,6 @@ const (
 // installed Azure development tools and optionally offers to
 // install any missing recommended tools.
 type ToolFirstRunMiddleware struct {
-	alphaManager  *alpha.FeatureManager
 	configManager config.UserConfigManager
 	console       input.Console
 	manager       *tool.Manager
@@ -89,14 +86,12 @@ type ToolFirstRunMiddleware struct {
 
 // NewToolFirstRunMiddleware creates a new [ToolFirstRunMiddleware].
 func NewToolFirstRunMiddleware(
-	alphaManager *alpha.FeatureManager,
 	configManager config.UserConfigManager,
 	console input.Console,
 	manager *tool.Manager,
 	options *internal.GlobalCommandOptions,
 ) Middleware {
 	return &ToolFirstRunMiddleware{
-		alphaManager:  alphaManager,
 		configManager: configManager,
 		console:       console,
 		manager:       manager,
@@ -109,11 +104,6 @@ func NewToolFirstRunMiddleware(
 // always delegates to nextFn so the user's intended command is
 // never blocked.
 func (m *ToolFirstRunMiddleware) Run(ctx context.Context, nextFn NextFn) (*actions.ActionResult, error) {
-	// Skip when the tool alpha feature is not enabled.
-	if !m.alphaManager.IsEnabled(tool.FeatureAlphaTool) {
-		return nextFn(ctx)
-	}
-
 	// Skip for child actions (e.g. workflow steps).
 	if IsChildAction(ctx) {
 		return nextFn(ctx)

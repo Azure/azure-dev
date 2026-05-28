@@ -210,13 +210,19 @@ func (a *subFilterSetAction) Run(
 		displayTenant = tenantId
 	}
 
+	subWord := "subscription"
+	if len(selectedIds) != 1 {
+		subWord = "subscriptions"
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf(
 				"Saved subscription filter for tenant %s"+
-					" (%d subscription(s))",
+					" (%d %s)",
 				displayTenant,
 				len(selectedIds),
+				subWord,
 			),
 		},
 	}, nil

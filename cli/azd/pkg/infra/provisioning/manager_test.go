@@ -355,7 +355,7 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 
 	mockContext.Container.MustRegisterSingleton(azapi.NewResourceService)
 	mockContext.Container.MustRegisterSingleton(func() config.UserConfigManager {
-		return config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+		return config.NewUserConfigManager(mockContext.ConfigManager)
 	})
 	mockContext.Container.MustRegisterSingleton(prompt.NewDefaultPrompter)
 	mockContext.Container.MustRegisterNamedTransient(string(provisioning.Test), test.NewTestProvider)

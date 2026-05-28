@@ -142,3 +142,55 @@ func TestParseToolboxFile_RejectsMissingFile(t *testing.T) {
 	err := parseToolboxFile(filepath.Join(t.TempDir(), "nope.json"), &out)
 	requireLocalError(t, err, exterrors.CodeInvalidParameter)
 }
+
+// `policies.rai_config` is accepted by `toolbox create` and the wire-shaped
+// `rai_policy_name` field round-trips through the file struct.
+func TestParseToolboxFile_AcceptsPolicies(t *testing.T) {
+	t.Run("yaml with rai_policy_name", func(t *testing.T) {
+		path := writeTempFile(t, ".yaml", `
+description: with policy
+connections:
+  - name: my-mcp
+policies:
+  rai_config:
+    rai_policy_name: Microsoft.Default
+`)
+		var out toolboxCreateFile
+		require.NoError(t, parseToolboxFile(path, &out))
+		require.NotNil(t, out.Policies)
+		require.NotNil(t, out.Policies.RaiConfig)
+		assert.Equal(t, "Microsoft.Default", out.Policies.RaiConfig.RaiPolicyName)
+		assert.Equal(t, "Microsoft.Default", out.Policies.RaiConfig.resolvedPolicyName())
+	})
+
+	// The friendlier `name` alias also resolves, but is not the wire field.
+	t.Run("yaml with name alias", func(t *testing.T) {
+		path := writeTempFile(t, ".yaml", `
+description: with policy
+connections:
+  - name: my-mcp
+policies:
+  rai_config:
+    name: Microsoft.Default
+`)
+		var out toolboxCreateFile
+		require.NoError(t, parseToolboxFile(path, &out))
+		require.NotNil(t, out.Policies)
+		require.NotNil(t, out.Policies.RaiConfig)
+		assert.Equal(t, "", out.Policies.RaiConfig.RaiPolicyName)
+		assert.Equal(t, "Microsoft.Default", out.Policies.RaiConfig.Name)
+		assert.Equal(t, "Microsoft.Default", out.Policies.RaiConfig.resolvedPolicyName())
+	})
+
+	// rai_policy_name wins over name when both are set.
+	t.Run("rai_policy_name wins over name alias", func(t *testing.T) {
+		spec := &toolboxRaiConfigSpec{RaiPolicyName: "wire", Name: "alias"}
+		assert.Equal(t, "wire", spec.resolvedPolicyName())
+	})
+
+	// Empty/whitespace-only fields return "" so the create flow can reject.
+	t.Run("empty resolves to empty string", func(t *testing.T) {
+		spec := &toolboxRaiConfigSpec{RaiPolicyName: "  "}
+		assert.Equal(t, "", spec.resolvedPolicyName())
+	})
+}

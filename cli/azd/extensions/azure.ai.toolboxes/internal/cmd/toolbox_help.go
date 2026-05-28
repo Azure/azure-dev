@@ -20,7 +20,10 @@ func fileShapeBlurb(includeDescription bool) string {
       { "name": "my-search", "index": "products" },
       { "name": "my-bing",   "instance_name": "docs-config" },
       { "name": "my-a2a" }
-    ]
+    ],
+    "policies": {
+      "rai_config": { "rai_policy_name": "Microsoft.Default" }
+    }
   }
 
 Equivalent YAML:
@@ -33,6 +36,9 @@ Equivalent YAML:
     - name: my-bing
       instance_name: docs-config
     - name: my-a2a
+  policies:
+    rai_config:
+      rai_policy_name: Microsoft.Default
 
 Fields:
   description     Optional. Stored on the initial toolbox version.
@@ -44,6 +50,10 @@ Fields:
                   Supported connection categories: RemoteTool (MCP),
                   CognitiveSearch (Azure AI Search), RemoteA2A,
                   GroundingWithCustomSearch.
+  policies        Optional. Per-version governance settings.
+                  policies.rai_config.rai_policy_name selects the Responsible
+                  AI content-filter policy applied to this toolbox version
+                  (the alias 'name' is also accepted).
 
 Project connections must already exist on the Foundry project; this command
 does not create them. Run 'azd ai agent connection list' to see available

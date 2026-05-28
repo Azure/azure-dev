@@ -113,6 +113,7 @@ func runToolboxCreateWith(
 
 	description := ""
 	entries := []map[string]any{}
+	var policies *azure.ToolboxPolicies
 
 	if strings.TrimSpace(verb.fromFile) != "" {
 		var input toolboxCreateFile
@@ -125,6 +126,11 @@ func runToolboxCreateWith(
 			return err
 		}
 		entries = append(entries, resolvedEntries...)
+
+		policies, err = buildToolboxPolicies(input.Policies)
+		if err != nil {
+			return err
+		}
 	}
 
 	if len(entries) == 0 {
@@ -142,6 +148,7 @@ func runToolboxCreateWith(
 	req := &azure.CreateToolboxVersionRequest{
 		Description: description,
 		Tools:       entries,
+		Policies:    policies,
 	}
 	created, err := client.CreateToolboxVersion(ctx, name, req)
 	if err != nil {
@@ -216,4 +223,24 @@ func validateNoDuplicateConnectionIDs(entries []map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// buildToolboxPolicies converts the file-shaped policy spec into the
+// data-plane request shape. Returns nil when no policies are configured.
+// Currently the only supported policy is the RAI policy name.
+func buildToolboxPolicies(spec *toolboxPoliciesSpec) (*azure.ToolboxPolicies, error) {
+	if spec == nil || spec.RaiConfig == nil {
+		return nil, nil
+	}
+	name := spec.RaiConfig.resolvedPolicyName()
+	if name == "" {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"policies.rai_config requires a policy name",
+			"set policies.rai_config.rai_policy_name (or 'name') to the RAI policy to apply",
+		)
+	}
+	return &azure.ToolboxPolicies{
+		RaiConfig: &azure.RaiConfig{RaiPolicyName: name},
+	}, nil
 }

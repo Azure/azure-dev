@@ -39,9 +39,39 @@ type toolboxToolsFile struct {
 //
 // description is optional and stored on the initial version.
 // connections[] is required and lists existing project connections to attach.
+// policies carries the toolbox version's RAI policy.
 type toolboxCreateFile struct {
 	Description string                  `json:"description,omitempty" yaml:"description,omitempty"`
 	Connections []toolboxConnectionSpec `json:"connections,omitempty" yaml:"connections,omitempty"`
+	Policies    *toolboxPoliciesSpec    `json:"policies,omitempty"    yaml:"policies,omitempty"`
+}
+
+// toolboxPoliciesSpec mirrors the data-plane ToolboxPolicies model.
+type toolboxPoliciesSpec struct {
+	RaiConfig *toolboxRaiConfigSpec `json:"rai_config,omitempty" yaml:"rai_config,omitempty"`
+}
+
+// toolboxRaiConfigSpec mirrors the data-plane RaiConfig model.
+//
+// The wire field per the Foundry TypeSpec is `rai_policy_name`. We also accept
+// the friendlier `name` alias and map it onto `rai_policy_name` at validation
+// time so existing user docs that use either form keep working.
+type toolboxRaiConfigSpec struct {
+	RaiPolicyName string `json:"rai_policy_name,omitempty" yaml:"rai_policy_name,omitempty"`
+	Name          string `json:"name,omitempty"            yaml:"name,omitempty"`
+}
+
+// resolvedPolicyName returns the effective RAI policy name from the spec,
+// preferring the wire-shaped `rai_policy_name` over the `name` alias.
+// Returns "" if neither is set.
+func (r *toolboxRaiConfigSpec) resolvedPolicyName() string {
+	if r == nil {
+		return ""
+	}
+	if strings.TrimSpace(r.RaiPolicyName) != "" {
+		return strings.TrimSpace(r.RaiPolicyName)
+	}
+	return strings.TrimSpace(r.Name)
 }
 
 // parseToolboxFile reads a JSON or YAML file into out. Unknown fields are

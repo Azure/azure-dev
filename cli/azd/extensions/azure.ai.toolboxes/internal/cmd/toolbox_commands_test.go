@@ -444,6 +444,65 @@ func TestRunToolboxCreateWith_NoConnectionsRejected(t *testing.T) {
 	assert.Empty(t, client.createVersionCalls)
 }
 
+// policies.rai_config in --from-file is forwarded to the data-plane request
+// as ToolboxPolicies.RaiConfig.RaiPolicyName.
+func TestRunToolboxCreateWith_ForwardsRaiPolicy(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	resolver := newStubConnectionResolver()
+	resolver.byName["mcp"] = &projectConnection{
+		ID: "/c/mcp", Category: connections.ConnectionTypeRemoteTool, Name: "mcp",
+		Target: "https://mcp.example.com",
+	}
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+description: tb with rai
+connections:
+  - name: mcp
+policies:
+  rai_config:
+    rai_policy_name: Microsoft.Default
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, resolver, "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	req := client.createVersionCalls[0].req
+	require.NotNil(t, req.Policies)
+	require.NotNil(t, req.Policies.RaiConfig)
+	assert.Equal(t, "Microsoft.Default", req.Policies.RaiConfig.RaiPolicyName)
+}
+
+// policies.rai_config with an empty/whitespace name is rejected locally with a
+// fix-it suggestion rather than forwarded to the data plane.
+func TestRunToolboxCreateWith_EmptyRaiPolicyNameRejected(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	resolver := newStubConnectionResolver()
+	resolver.byName["mcp"] = &projectConnection{
+		ID: "/c/mcp", Category: connections.ConnectionTypeRemoteTool, Name: "mcp",
+		Target: "https://mcp.example.com",
+	}
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+connections:
+  - name: mcp
+policies:
+  rai_config:
+    rai_policy_name: "   "
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, resolver, "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "table"},
+	)
+	requireLocalError(t, err, exterrors.CodeInvalidParameter)
+	assert.Empty(t, client.createVersionCalls)
+}
+
 // Client-side ^[A-Za-z0-9_-]+$ enforcement on tool entry names.
 func TestBuildToolEntry_RejectsInvalidName(t *testing.T) {
 	_, err := buildToolEntry(&projectConnection{

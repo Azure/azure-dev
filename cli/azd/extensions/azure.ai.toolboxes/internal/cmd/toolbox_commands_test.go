@@ -43,7 +43,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 			toolboxDeleteFlags{version: "2", force: true}, toolboxFlags{output: "table"},
 		)
 		le := requireLocalError(t, err, exterrors.CodeDefaultVersionDelete)
-		assert.Contains(t, le.Suggestion, "azd ai toolbox update")
+		assert.Contains(t, le.Suggestion, "azd ai toolbox publish")
 		assert.Empty(t, client.deleteVersionCalls, "service must not be called")
 	})
 
@@ -406,10 +406,9 @@ func TestRunConnectionListWith_EmitsAllShapes(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestRunToolboxUpdate_MissingDefaultVersion(t *testing.T) {
-	err := runToolboxUpdate(
-		t.Context(), "tb",
-		toolboxUpdateFlags{},
+func TestRunToolboxPublish_WhitespaceVersion(t *testing.T) {
+	err := runToolboxPublish(
+		t.Context(), "tb", "  ",
 		toolboxFlags{output: "table"},
 	)
 	requireLocalError(t, err, exterrors.CodeMissingUpdateField)
@@ -819,7 +818,7 @@ func TestRunConnectionRemove_NoPromptWithoutForce(t *testing.T) {
 }
 
 // Carry-forward: skills attached to the current default version must survive
-// across new versions published by `connection add`.
+// across new versions created by `connection add`.
 func TestRunConnectionAddWith_CarriesForwardSkills(t *testing.T) {
 	skills := []map[string]any{
 		{"type": "skill_reference", "name": "alpha", "version": "1"},
@@ -852,7 +851,7 @@ func TestRunConnectionAddWith_CarriesForwardSkills(t *testing.T) {
 }
 
 // Carry-forward: skills attached to the current default version must survive
-// across new versions published by `connection remove`.
+// across new versions created by `connection remove`.
 func TestRunConnectionRemoveWith_CarriesForwardSkills(t *testing.T) {
 	skills := []map[string]any{
 		{"type": "skill_reference", "name": "alpha"},
@@ -910,7 +909,7 @@ func TestRunConnectionRemoveWith_VariadicPositionals(t *testing.T) {
 		connectionRemoveFlags{force: true}, toolboxFlags{output: "json"},
 	)
 	require.NoError(t, err)
-	require.Len(t, client.createVersionCalls, 1, "one new version published for the whole batch")
+	require.Len(t, client.createVersionCalls, 1, "one new version created for the whole batch")
 	require.Len(t, client.createVersionCalls[0].req.Tools, 1)
 	assert.Equal(t, "/c/c", client.createVersionCalls[0].req.Tools[0]["project_connection_id"])
 }

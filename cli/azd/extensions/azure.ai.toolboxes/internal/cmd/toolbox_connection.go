@@ -24,8 +24,8 @@ func newToolboxConnectionCommand(extCtx *azdext.ExtensionContext) *cobra.Command
 
 Tools are project connections. Supported categories: RemoteTool (MCP),
 CognitiveSearch (Azure AI Search), RemoteA2A, and GroundingWithCustomSearch.
-Each mutation publishes a new immutable version; the toolbox's default version
-is unchanged. Use 'azd ai toolbox update <toolbox> --default-version <version>'
+Each mutation creates a new immutable version; the toolbox's default version
+is unchanged. Use 'azd ai toolbox publish <toolbox> <version>'
 to promote a version.`,
 	}
 	cmd.AddCommand(newToolboxConnectionAddCommand(extCtx))

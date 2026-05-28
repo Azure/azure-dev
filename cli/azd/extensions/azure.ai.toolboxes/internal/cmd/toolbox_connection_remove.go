@@ -29,10 +29,10 @@ func newToolboxConnectionRemoveCommand(extCtx *azdext.ExtensionContext) *cobra.C
 	cmd := &cobra.Command{
 		Use:   "remove <toolbox> <connection>...",
 		Short: "Detach one or more connections from a toolbox.",
-		Long: `Detach one or more connections from a toolbox and publish a new version.
+		Long: `Detach one or more connections from a toolbox and create a new version.
 
 Pass one or more connection short names as positionals. All removals are
-applied atomically: each invocation publishes exactly one new toolbox version.
+applied atomically: each invocation creates exactly one new toolbox version.
 
 Refuses to leave the toolbox with zero tools (use 'toolbox delete' instead).
 
@@ -170,7 +170,7 @@ func runConnectionRemoveWith(
 				ctx,
 				azdClient,
 				fmt.Sprintf(
-					"Detach %s from toolbox %q (publishes a new version)?",
+					"Detach %s from toolbox %q (creates a new version)?",
 					summary, toolboxName,
 				),
 			)
@@ -245,7 +245,7 @@ func emitConnectionRemoveResult(
 	}
 	if len(conns) == 1 {
 		fmt.Printf(
-			"Published toolbox %s version %s (detached connection %s).\n",
+			"Created toolbox %s version %s (detached connection %s).\n",
 			toolboxName, newVersion, conns[0].Name,
 		)
 	} else {
@@ -254,11 +254,11 @@ func emitConnectionRemoveResult(
 			names = append(names, c.Name)
 		}
 		fmt.Printf(
-			"Published toolbox %s version %s (detached connections [%s]).\n",
+			"Created toolbox %s version %s (detached connections [%s]).\n",
 			toolboxName, newVersion, strings.Join(names, ", "),
 		)
 	}
 	fmt.Printf("The default version is unchanged; "+
-		"run `azd ai toolbox update %q --default-version %q` to promote.\n", toolboxName, newVersion)
+		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
 	return nil
 }

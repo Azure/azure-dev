@@ -32,9 +32,9 @@ func newToolboxSkillAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Attach one or more skill references to a toolbox.
 
 Pass a single skill as the positional, or many via --from-file. Either way
-the invocation publishes exactly one new toolbox version. The toolbox's
+the invocation creates exactly one new toolbox version. The toolbox's
 default version is unchanged; run
-'azd ai toolbox update <toolbox> --default-version <version>' to promote it.
+'azd ai toolbox publish <toolbox> <version>' to promote it.
 
 When the version is omitted, the reference resolves to the skill's default
 version at read time.
@@ -241,7 +241,7 @@ func emitSkillAddResult(toolboxName, newVersion string, specs []skillSpec, outpu
 			pinned = "@" + specs[0].Version
 		}
 		fmt.Printf(
-			"Published toolbox %s version %s (attached skill %s%s).\n",
+			"Created toolbox %s version %s (attached skill %s%s).\n",
 			toolboxName, newVersion, specs[0].Name, pinned,
 		)
 	} else {
@@ -254,11 +254,11 @@ func emitSkillAddResult(toolboxName, newVersion string, specs []skillSpec, outpu
 			names = append(names, entry)
 		}
 		fmt.Printf(
-			"Published toolbox %s version %s (attached skills [%s]).\n",
+			"Created toolbox %s version %s (attached skills [%s]).\n",
 			toolboxName, newVersion, strings.Join(names, ", "),
 		)
 	}
 	fmt.Printf("The default version is unchanged; "+
-		"run `azd ai toolbox update %q --default-version %q` to promote.\n", toolboxName, newVersion)
+		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
 	return nil
 }

@@ -29,10 +29,10 @@ func newToolboxSkillRemoveCommand(extCtx *azdext.ExtensionContext) *cobra.Comman
 	cmd := &cobra.Command{
 		Use:   "remove <toolbox> <skill>...",
 		Short: "Detach one or more skill references from a toolbox.",
-		Long: `Detach one or more skill references from a toolbox and publish a new version.
+		Long: `Detach one or more skill references from a toolbox and create a new version.
 
 Pass one or more skill short names as positionals. All removals are applied
-atomically: each invocation publishes exactly one new toolbox version.
+atomically: each invocation creates exactly one new toolbox version.
 
 Removing the last skill is allowed.
 
@@ -140,7 +140,7 @@ func runSkillRemoveWith(
 				ctx,
 				azdClient,
 				fmt.Sprintf(
-					"Detach %s from toolbox %q (publishes a new version)?",
+					"Detach %s from toolbox %q (creates a new version)?",
 					summary, toolboxName,
 				),
 			)
@@ -204,16 +204,16 @@ func emitSkillRemoveResult(toolboxName, newVersion string, names []string, outpu
 	}
 	if len(names) == 1 {
 		fmt.Printf(
-			"Published toolbox %s version %s (detached skill %s).\n",
+			"Created toolbox %s version %s (detached skill %s).\n",
 			toolboxName, newVersion, names[0],
 		)
 	} else {
 		fmt.Printf(
-			"Published toolbox %s version %s (detached skills [%s]).\n",
+			"Created toolbox %s version %s (detached skills [%s]).\n",
 			toolboxName, newVersion, strings.Join(names, ", "),
 		)
 	}
 	fmt.Printf("The default version is unchanged; "+
-		"run `azd ai toolbox update %q --default-version %q` to promote.\n", toolboxName, newVersion)
+		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
 	return nil
 }

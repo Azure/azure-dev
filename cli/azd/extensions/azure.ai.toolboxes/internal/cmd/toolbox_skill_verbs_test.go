@@ -122,7 +122,7 @@ func TestRunSkillAddWith_AlreadyAttached(t *testing.T) {
 
 	err := runSkillAddWith(t.Context(), client, "tb", "dup@2", skillAddFlags{}, toolboxFlags{output: "json"})
 	requireLocalError(t, err, exterrors.CodeSkillAlreadyAttached)
-	assert.Empty(t, client.createVersionCalls, "no version should be published when validation fails")
+	assert.Empty(t, client.createVersionCalls, "no version should be created when validation fails")
 }
 
 func TestRunSkillAddWith_InvalidSpec(t *testing.T) {
@@ -297,7 +297,7 @@ func TestRunSkillRemoveWith_VariadicPositionals(t *testing.T) {
 		skillRemoveFlags{force: true}, toolboxFlags{output: "json"},
 	)
 	require.NoError(t, err)
-	require.Len(t, client.createVersionCalls, 1, "one new version published for the whole batch")
+	require.Len(t, client.createVersionCalls, 1, "one new version created for the whole batch")
 	require.Len(t, client.createVersionCalls[0].req.Skills, 1)
 	assert.Equal(t, "beta", client.createVersionCalls[0].req.Skills[0]["name"])
 }

@@ -31,7 +31,7 @@ func newToolboxConnectionAddCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
 	cmd := &cobra.Command{
 		Use:   "add <toolbox> [connection]",
 		Short: "Attach one or more connections to a toolbox.",
-		Long: `Attach one or more tools to a toolbox and publish a new version.
+		Long: `Attach one or more tools to a toolbox and create a new version.
 
 This command has two modes:
 
@@ -48,11 +48,11 @@ File mode:
   azd ai toolbox connection add <toolbox> --from-file <path>
 
 Provide a JSON or YAML file with multiple connections. All inputs from a
-single invocation publish exactly one new toolbox version, so adding three
+single invocation create exactly one new toolbox version, so adding three
 connections this way produces v(N+1), not v(N+3).
 
-The new version is published but the toolbox's default version is unchanged;
-run 'azd ai toolbox update <toolbox> --default-version <version>' to promote it.
+The new version is created but the toolbox's default version is unchanged;
+run 'azd ai toolbox publish <toolbox> <version>' to promote it.
 
 ` + fileShapeBlurb(false) + `
 
@@ -300,12 +300,12 @@ func emitConnectionAddResult(
 		return emitJSON(payload)
 	}
 
-	fmt.Printf("Published toolbox %s version %s.\n", toolboxName, newVersion)
+	fmt.Printf("Created toolbox %s version %s.\n", toolboxName, newVersion)
 	if len(connectionNames) > 0 {
 		fmt.Printf("Connections: %s\n", strings.Join(connectionNames, ", "))
 	}
 	fmt.Printf("Endpoint: %s\n", mcpURL)
 	fmt.Printf("The default version is unchanged; "+
-		"run `azd ai toolbox update %q --default-version %q` to promote.\n", toolboxName, newVersion)
+		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
 	return nil
 }

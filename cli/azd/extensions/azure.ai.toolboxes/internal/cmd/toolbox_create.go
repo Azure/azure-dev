@@ -29,8 +29,8 @@ func newToolboxCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "create <name> --from-file <path>",
-		Short: "Create a toolbox and publish its initial version from a file.",
-		Long: `Create a toolbox and publish its initial version.
+		Short: "Create a toolbox and its initial version from a file.",
+		Long: `Create a toolbox and its initial version.
 
 The Foundry service requires the initial version to ship with at least one
 tool entry, so 'create' takes its inputs from a JSON or YAML file via
@@ -105,8 +105,8 @@ func runToolboxCreateWith(
 		return exterrors.Validation(
 			exterrors.CodeInvalidToolboxName,
 			fmt.Sprintf("toolbox %q already exists", name),
-			"use 'connection add/remove' or 'skill add/remove' to publish a new version, "+
-				"then 'azd ai toolbox update <name> --default-version <version>' to promote it",
+			"use 'connection add/remove' or 'skill add/remove' to create a new version, "+
+				"then 'azd ai toolbox publish <name> <version>' to promote it",
 		)
 	} else if !isAzureNotFound(err) {
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolbox)

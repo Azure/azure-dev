@@ -772,3 +772,39 @@ func TestZipDeployRequest_NoAgentNameHeader_OnUpdate(t *testing.T) {
 	require.Equal(t, "CodeAgents=V1Preview,HostedAgents=V1Preview", transport.lastReq.Header.Get("Foundry-Features"))
 	require.Equal(t, "sha", transport.lastReq.Header.Get("x-ms-code-zip-sha256"))
 }
+
+func TestCreateAgentVersion_SetsHostedAgentsPreviewHeader(t *testing.T) {
+	// The Foundry v1 endpoint gates POST /agents/{name}/versions on the
+	// HostedAgents=V1Preview opt-in header and returns 403 preview_feature_required
+	// without it. Make sure the client always sends the header so callers don't
+	// silently regress to the pre-v1 (preview-API-version) behavior.
+	versionResp := `{
+		"object": "agent.version",
+		"id": "test-agent:1",
+		"name": "test-agent",
+		"version": "1"
+	}`
+	transport := &capturingTransport{statusCode: http.StatusCreated, respBody: versionResp}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	desc := "test desc"
+	req := &CreateAgentVersionRequest{Description: &desc}
+
+	_, err := client.CreateAgentVersion(context.Background(), "test-agent", req, "v1")
+	require.NoError(t, err)
+
+	require.NotNil(t, transport.lastReq, "expected request to be captured")
+	require.Equal(t, http.MethodPost, transport.lastReq.Method)
+	require.Equal(
+		t,
+		"https://test.example.com/api/projects/proj/agents/test-agent/versions",
+		transport.lastReq.URL.Scheme+"://"+transport.lastReq.URL.Host+transport.lastReq.URL.Path,
+	)
+	require.Equal(t, "v1", transport.lastReq.URL.Query().Get("api-version"))
+	require.Equal(
+		t,
+		"HostedAgents=V1Preview",
+		transport.lastReq.Header.Get("Foundry-Features"),
+		"CreateAgentVersion must opt in to HostedAgents=V1Preview on the v1 endpoint",
+	)
+}

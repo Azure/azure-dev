@@ -163,7 +163,7 @@ func TestRoutineTrigger_CustomFields(t *testing.T) {
 	assert.Equal(t, "custom", trig.Type)
 	assert.Equal(t, "my-provider", trig.Provider)
 	assert.Equal(t, "my-event", trig.EventName)
-	assert.Equal(t, "bar", trig.Parameters["foo"])
+	assert.Equal(t, "bar", (*trig.Parameters)["foo"])
 }
 
 // RoutineAction.Conversation replaces the old conversation_id wire field.

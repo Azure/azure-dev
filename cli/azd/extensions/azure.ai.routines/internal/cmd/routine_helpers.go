@@ -110,7 +110,7 @@ func routineSummaryTable(r *routines.Routine) {
 		if t.EventName != "" {
 			fmt.Fprintf(tw, "  EventName:\t%s\n", t.EventName)
 		}
-		if len(t.Parameters) > 0 {
+		if t.Parameters != nil && len(*t.Parameters) > 0 {
 			if data, err := json.Marshal(t.Parameters); err == nil {
 				fmt.Fprintf(tw, "  Parameters:\t%s\n", string(data))
 			}

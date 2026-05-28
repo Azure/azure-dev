@@ -349,7 +349,7 @@ func TestApplyUpdateFlags_CustomParameters(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
-	assert.Equal(t, float64(1), r.Triggers["default"].Parameters["x"])
+	assert.Equal(t, float64(1), (*r.Triggers["default"].Parameters)["x"])
 }
 
 func TestApplyUpdateFlags_CustomParametersBadJSON(t *testing.T) {

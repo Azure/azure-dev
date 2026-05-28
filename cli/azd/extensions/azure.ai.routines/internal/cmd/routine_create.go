@@ -290,19 +290,24 @@ func buildTrigger(flags *routineCreateFlags) (routines.RoutineTrigger, error) {
 				"provide --provider <external-provider-id>",
 			)
 		}
+		if flags.parametersJSON == "" {
+			return t, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--parameters is required for trigger type 'custom'",
+				"provide a JSON object literal, e.g. --parameters '{\"key\":\"value\"}'",
+			)
+		}
+		var params map[string]any
+		if err := json.Unmarshal([]byte(flags.parametersJSON), &params); err != nil {
+			return t, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("--parameters is not valid JSON: %v", err),
+				"provide a JSON object literal, e.g. --parameters '{\"key\":\"value\"}'",
+			)
+		}
 		t.Provider = flags.provider
 		t.EventName = flags.eventName
-		if flags.parametersJSON != "" {
-			var params map[string]any
-			if err := json.Unmarshal([]byte(flags.parametersJSON), &params); err != nil {
-				return t, exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					fmt.Sprintf("--parameters is not valid JSON: %v", err),
-					"provide a JSON object literal, e.g. --parameters '{\"key\":\"value\"}'",
-				)
-			}
-			t.Parameters = params
-		}
+		t.Parameters = &params
 	}
 
 	return t, nil

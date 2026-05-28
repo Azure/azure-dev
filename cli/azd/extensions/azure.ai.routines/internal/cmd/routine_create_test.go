@@ -109,12 +109,19 @@ func TestBuildTrigger_Custom(t *testing.T) {
 	assert.Equal(t, "custom", got.Type)
 	assert.Equal(t, "stripe", got.Provider)
 	assert.Equal(t, "charge.succeeded", got.EventName)
-	assert.Equal(t, float64(1000), got.Parameters["amount"])
+	assert.Equal(t, float64(1000), (*got.Parameters)["amount"])
 }
 
 func TestBuildTrigger_CustomMissingProvider(t *testing.T) {
 	t.Parallel()
 	flags := &routineCreateFlags{trigger: "custom"}
+	_, err := buildTrigger(flags)
+	assert.Error(t, err)
+}
+
+func TestBuildTrigger_CustomMissingParameters(t *testing.T) {
+	t.Parallel()
+	flags := &routineCreateFlags{trigger: "custom", provider: "stripe"}
 	_, err := buildTrigger(flags)
 	assert.Error(t, err)
 }

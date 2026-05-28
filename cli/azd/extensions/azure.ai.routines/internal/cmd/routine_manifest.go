@@ -294,7 +294,7 @@ func applyUpdateFlags(existing *routines.Routine, c routineUpdateChanges) (int, 
 					"provide a JSON object literal, e.g. --parameters '{\"key\":\"value\"}'",
 				)
 			}
-			trigger.Parameters = params
+			trigger.Parameters = &params
 		}
 		changed++
 	}

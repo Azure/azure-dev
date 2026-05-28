@@ -6,7 +6,6 @@ package cmd
 import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/azure"
-	"azureaiagent/internal/project"
 	"context"
 	"fmt"
 	"log"
@@ -1234,11 +1233,17 @@ func selectFoundryProject(
 		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
 	}
 
-	// When code deploy is selected, restrict to regions that support it.
+	// When code deploy is selected, restrict to regions that support hosted agents.
+	// Code deploy is available in all hosted-agent regions (no separate allowlist).
 	if skipACR {
-		projects = slices.DeleteFunc(projects, func(p FoundryProjectInfo) bool {
-			return !locationAllowed(p.Location, project.CodeDeployRegions)
-		})
+		supportedRegions, regErr := supportedRegionsForInit(ctx)
+		if regErr != nil {
+			log.Printf("warning: failed to fetch supported regions, skipping code-deploy region filter: %v", regErr)
+		} else if len(supportedRegions) > 0 {
+			projects = slices.DeleteFunc(projects, func(p FoundryProjectInfo) bool {
+				return !locationAllowed(p.Location, supportedRegions)
+			})
+		}
 	}
 
 	if len(projects) == 0 {

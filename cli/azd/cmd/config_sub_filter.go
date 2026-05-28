@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -115,6 +116,13 @@ func (a *subFilterSetAction) Run(
 			"no subscriptions found for tenant %s", tenantId,
 		)
 	}
+
+	// Sort subscriptions by name for a stable, scannable list
+	slices.SortFunc(tenantSubs, func(a, b account.Subscription) int {
+		return cmp.Compare(
+			strings.ToLower(a.Name), strings.ToLower(b.Name),
+		)
+	})
 
 	// Build options for multi-select with unique index prefixes
 	// to avoid ambiguity when display names collide (e.g. demo mode).
@@ -232,12 +240,9 @@ func (a *subFilterSetAction) resolveTenant(
 	ctx context.Context,
 	subscriptions []account.Subscription,
 ) (string, string, error) {
-	tenantNames, err := a.accountManager.GetTenantDisplayNames(ctx)
-	if err != nil {
-		tenantNames = nil
-	}
-
-	tenants := prompt.ExtractUniqueTenants(subscriptions, tenantNames)
+	// Extract tenants without display names first to avoid an unnecessary
+	// API call when only a single tenant exists.
+	tenants := prompt.ExtractUniqueTenants(subscriptions, nil)
 	if len(tenants) == 0 {
 		return "", "", fmt.Errorf("no tenants found")
 	}
@@ -245,6 +250,14 @@ func (a *subFilterSetAction) resolveTenant(
 	if len(tenants) == 1 {
 		return tenants[0].Id, tenants[0].DisplayName, nil
 	}
+
+	// Multiple tenants — fetch display names for the prompt
+	tenantNames, err := a.accountManager.GetTenantDisplayNames(ctx)
+	if err != nil {
+		tenantNames = nil
+	}
+
+	tenants = prompt.ExtractUniqueTenants(subscriptions, tenantNames)
 
 	// Build options without "All tenants" — filter must be per-tenant
 	options := make([]string, len(tenants))
@@ -382,12 +395,9 @@ func (a *subFilterRemoveAction) resolveTenant(
 	ctx context.Context,
 	subscriptions []account.Subscription,
 ) (string, string, error) {
-	tenantNames, err := a.accountManager.GetTenantDisplayNames(ctx)
-	if err != nil {
-		tenantNames = nil
-	}
-
-	tenants := prompt.ExtractUniqueTenants(subscriptions, tenantNames)
+	// Extract tenants without display names first to avoid an unnecessary
+	// API call when only a single tenant exists.
+	tenants := prompt.ExtractUniqueTenants(subscriptions, nil)
 	if len(tenants) == 0 {
 		return "", "", fmt.Errorf("no tenants found")
 	}
@@ -395,6 +405,14 @@ func (a *subFilterRemoveAction) resolveTenant(
 	if len(tenants) == 1 {
 		return tenants[0].Id, tenants[0].DisplayName, nil
 	}
+
+	// Multiple tenants — fetch display names for the prompt
+	tenantNames, err := a.accountManager.GetTenantDisplayNames(ctx)
+	if err != nil {
+		tenantNames = nil
+	}
+
+	tenants = prompt.ExtractUniqueTenants(subscriptions, tenantNames)
 
 	options := make([]string, len(tenants))
 	for i, t := range tenants {

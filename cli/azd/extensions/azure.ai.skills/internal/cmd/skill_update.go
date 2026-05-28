@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -160,6 +161,17 @@ func (a *updateAction) validateFlags() error {
 	}
 
 	if fileProvided {
+		// Detect directory uploads before extension matching: update is
+		// inline-only by design, so a multi-file directory is rejected the
+		// same way .zip is — with a pointer to `create --force`.
+		if info, statErr := os.Stat(a.flags.file); statErr == nil && info.IsDir() {
+			return exterrors.Validation(
+				exterrors.CodeInvalidSkillFile,
+				"directory uploads cannot be applied via `skill update`",
+				"use `azd ai skill create <name> --file <directory> --force` to replace the skill "+
+					"(this deletes the existing skill and all of its versions first)",
+			)
+		}
 		ext := strings.ToLower(filepath.Ext(a.flags.file))
 		switch ext {
 		case ".md":

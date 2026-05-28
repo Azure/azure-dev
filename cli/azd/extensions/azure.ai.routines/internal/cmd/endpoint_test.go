@@ -5,8 +5,10 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -169,6 +171,36 @@ func TestResolveProjectEndpoint_GlobalConfig(t *testing.T) {
 	assert.Equal(t, "https://cfgaccount.services.ai.azure.com/api/projects/cfg", got.Endpoint)
 }
 
+func TestResolveProjectEndpoint_GlobalConfig_PrefersAiProjectsOverLegacyAgents(t *testing.T) {
+	isolateFromAzdDaemon(t)
+	stubAzdProjectSources(t, azdProjectSources{
+		CfgEndpoint:          "https://new.services.ai.azure.com/api/projects/new",
+		CfgFound:             true,
+		LegacyAgentsEndpoint: "https://legacy.services.ai.azure.com/api/projects/legacy",
+		LegacyAgentsFound:    true,
+	}, nil)
+
+	got, err := resolveProjectEndpoint(t.Context(), "")
+	require.NoError(t, err)
+	assert.Equal(t, SourceGlobalConfig, got.Source)
+	assert.Equal(t, "https://new.services.ai.azure.com/api/projects/new", got.Endpoint,
+		"the new ai-projects.context key must win over legacy ai-agents.project.context")
+}
+
+func TestResolveProjectEndpoint_GlobalConfig_FallsBackToLegacyAgents(t *testing.T) {
+	isolateFromAzdDaemon(t)
+	stubAzdProjectSources(t, azdProjectSources{
+		LegacyAgentsEndpoint: "https://legacy.services.ai.azure.com/api/projects/legacy",
+		LegacyAgentsFound:    true,
+	}, nil)
+
+	got, err := resolveProjectEndpoint(t.Context(), "")
+	require.NoError(t, err)
+	assert.Equal(t, SourceGlobalConfig, got.Source,
+		"a legacy-only hit still surfaces as globalConfig source")
+	assert.Equal(t, "https://legacy.services.ai.azure.com/api/projects/legacy", got.Endpoint)
+}
+
 func TestResolveProjectEndpoint_FoundryEnv(t *testing.T) {
 	isolateFromAzdDaemon(t)
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://fenv.services.ai.azure.com/api/projects/fe")
@@ -184,7 +216,13 @@ func TestResolveProjectEndpoint_NoSourceReturnsError(t *testing.T) {
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
 
 	_, err := resolveProjectEndpoint(t.Context(), "")
-	assert.Error(t, err)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no Foundry project endpoint resolved")
+
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le), "expected a LocalError")
+	assert.Contains(t, le.Suggestion, "azd ai project set",
+		"the dependency-error suggestion should point at the supported `azd ai project set` command")
 }
 
 func TestResolveProjectEndpoint_FlagNormalizesURL(t *testing.T) {

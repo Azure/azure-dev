@@ -28,6 +28,8 @@
   - `azd ai skill delete <name>` — confirmation by default, `--force` to skip.
 - Skill names follow the agentskills.io spec:
   `^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$`, max 64 chars (lowercase only).
-- Shares the Foundry project-endpoint resolution cascade with `azure.ai.agents`,
-  reading `extensions.ai-skills.project.context.endpoint` first and falling
-  back to `extensions.ai-agents.project.context.endpoint`.
+- Shares the Foundry project-endpoint resolution cascade with `azure.ai.projects`,
+  reading `extensions.ai-projects.context.endpoint` (written by
+  `azd ai project set`) first and falling back to the legacy
+  `extensions.ai-skills.project.context.endpoint` and
+  `extensions.ai-agents.project.context.endpoint` keys.

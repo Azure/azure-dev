@@ -109,53 +109,193 @@ func overwriteRoutineFromFile(existing *routines.Routine, file *routines.Routine
 	return changed
 }
 
+// routineUpdateChanges captures which fields the user wants to update on an
+// existing routine and the new values for those fields. Each field is paired
+// with a "changed" bool because the empty string is a meaningful "clear this
+// field" value when the user explicitly passed the flag.
+type routineUpdateChanges struct {
+	description string
+	timeZone    string
+	at          string
+	cron        string
+
+	// github_issue
+	connectionID string
+	owner        string
+	repository   string
+	issueEvent   string
+
+	// custom
+	provider       string
+	eventName      string
+	parametersJSON string
+
+	// action
+	agentName       string
+	agentEndpointID string
+	conversationID  string
+	sessionID       string
+
+	descChanged, tzChanged, atChanged, cronChanged       bool
+	connChanged, ownerChanged, repoChanged, eventChanged bool
+	providerChanged, eventNameChanged, paramsChanged     bool
+	agentNameChanged, agentEpChanged                     bool
+	convIDChanged, sessIDChanged                         bool
+}
+
 // applyUpdateFlags applies named CLI update flags onto an existing routine body.
 // It returns the count of fields changed.
-func applyUpdateFlags(
-	existing *routines.Routine,
-	description, timeZone, at, cronExpression, agentName, agentEndpointID, conversationID, sessionID string,
-	descChanged, tzChanged, atChanged, cronChanged, agentNameChanged, agentEpChanged, convIDChanged, sessIDChanged bool,
-) (int, error) {
+func applyUpdateFlags(existing *routines.Routine, c routineUpdateChanges) (int, error) {
 	changed := 0
 
-	if descChanged {
-		existing.Description = description
+	if c.descChanged {
+		existing.Description = c.description
 		changed++
 	}
 
 	// Trigger field updates
 	trigger := getTrigger(existing)
-	if tzChanged {
+	triggerType := ""
+	if trigger != nil {
+		triggerType = trigger.Type
+	}
+	mustHaveTrigger := func(flagName string) error {
 		if trigger == nil {
-			return 0, exterrors.Validation(
+			return exterrors.Validation(
 				exterrors.CodeInvalidParameter,
-				"cannot set --time-zone: routine has no default trigger",
-				"add a trigger by recreating the routine, or omit --time-zone",
+				fmt.Sprintf("cannot set %s: routine has no default trigger", flagName),
+				fmt.Sprintf("add a trigger by recreating the routine, or omit %s", flagName),
 			)
 		}
-		trigger.TimeZone = timeZone
+		return nil
+	}
+	wrongTrigger := func(flagName, wantType string) error {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			fmt.Sprintf("%s is not applicable to trigger type %q", flagName, triggerType),
+			fmt.Sprintf("use %s only when the routine's trigger is %s", flagName, wantType),
+		)
+	}
+
+	if c.tzChanged {
+		if err := mustHaveTrigger("--time-zone"); err != nil {
+			return 0, err
+		}
+		if triggerType != "schedule" {
+			return 0, wrongTrigger("--time-zone", "recurring (schedule)")
+		}
+		trigger.TimeZone = c.timeZone
 		changed++
 	}
-	if atChanged {
-		if trigger == nil {
-			return 0, exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"cannot set --at: routine has no default trigger",
-				"add a trigger by recreating the routine, or omit --at",
-			)
+	if c.atChanged {
+		if err := mustHaveTrigger("--at"); err != nil {
+			return 0, err
 		}
-		trigger.At = at
+		if triggerType != "timer" {
+			return 0, wrongTrigger("--at", "timer")
+		}
+		trigger.At = c.at
 		changed++
 	}
-	if cronChanged {
-		if trigger == nil {
+	if c.cronChanged {
+		if err := mustHaveTrigger("--cron"); err != nil {
+			return 0, err
+		}
+		if triggerType != "schedule" {
+			return 0, wrongTrigger("--cron", "recurring (schedule)")
+		}
+		trigger.CronExpression = c.cron
+		changed++
+	}
+	if c.connChanged {
+		if err := mustHaveTrigger("--connection-id"); err != nil {
+			return 0, err
+		}
+		if triggerType != "github_issue" {
+			return 0, wrongTrigger("--connection-id", "github-issue")
+		}
+		trigger.ConnectionID = c.connectionID
+		changed++
+	}
+	if c.ownerChanged {
+		if err := mustHaveTrigger("--owner"); err != nil {
+			return 0, err
+		}
+		if triggerType != "github_issue" {
+			return 0, wrongTrigger("--owner", "github-issue")
+		}
+		trigger.Owner = c.owner
+		changed++
+	}
+	if c.repoChanged {
+		if err := mustHaveTrigger("--repository"); err != nil {
+			return 0, err
+		}
+		if triggerType != "github_issue" {
+			return 0, wrongTrigger("--repository", "github-issue")
+		}
+		trigger.Repository = c.repository
+		changed++
+	}
+	if c.eventChanged {
+		if err := mustHaveTrigger("--issue-event"); err != nil {
+			return 0, err
+		}
+		if triggerType != "github_issue" {
+			return 0, wrongTrigger("--issue-event", "github-issue")
+		}
+		switch c.issueEvent {
+		case routines.GitHubIssueEventOpened, routines.GitHubIssueEventClosed:
+		default:
 			return 0, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
-				"cannot set --cron: routine has no default trigger",
-				"add a trigger by recreating the routine, or omit --cron",
+				fmt.Sprintf("unsupported --issue-event value %q", c.issueEvent),
+				"supported values: opened, closed",
 			)
 		}
-		trigger.CronExpression = cronExpression
+		trigger.IssueEvent = c.issueEvent
+		changed++
+	}
+	if c.providerChanged {
+		if err := mustHaveTrigger("--provider"); err != nil {
+			return 0, err
+		}
+		if triggerType != "custom" {
+			return 0, wrongTrigger("--provider", "custom")
+		}
+		trigger.Provider = c.provider
+		changed++
+	}
+	if c.eventNameChanged {
+		if err := mustHaveTrigger("--event-name"); err != nil {
+			return 0, err
+		}
+		if triggerType != "custom" {
+			return 0, wrongTrigger("--event-name", "custom")
+		}
+		trigger.EventName = c.eventName
+		changed++
+	}
+	if c.paramsChanged {
+		if err := mustHaveTrigger("--parameters"); err != nil {
+			return 0, err
+		}
+		if triggerType != "custom" {
+			return 0, wrongTrigger("--parameters", "custom")
+		}
+		if c.parametersJSON == "" {
+			trigger.Parameters = nil
+		} else {
+			var params map[string]any
+			if err := json.Unmarshal([]byte(c.parametersJSON), &params); err != nil {
+				return 0, exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					fmt.Sprintf("--parameters is not valid JSON: %v", err),
+					"provide a JSON object literal, e.g. --parameters '{\"key\":\"value\"}'",
+				)
+			}
+			trigger.Parameters = &params
+		}
 		changed++
 	}
 	if trigger != nil {
@@ -167,7 +307,7 @@ func applyUpdateFlags(
 
 	// Action field updates
 	action := getAction(existing)
-	if agentNameChanged || agentEpChanged {
+	if c.agentNameChanged || c.agentEpChanged {
 		if action == nil {
 			return 0, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
@@ -175,37 +315,30 @@ func applyUpdateFlags(
 				"add an action by recreating the routine, or omit --agent-name / --agent-endpoint-id",
 			)
 		}
-		if agentNameChanged && action.Type == routines.ActionCLIToWire["agent-invoke"] {
-			return 0, exterrors.Validation(
-				exterrors.CodeConflictingArguments,
-				"--agent-name is not applicable to agent-invoke actions",
-				"use --agent-endpoint-id for agent-invoke, or recreate the routine with agent-response",
-			)
-		}
 		// agent-name and agent-endpoint-id are mutually exclusive; specifying one clears the other.
-		if agentNameChanged && agentEpChanged && agentName != "" && agentEndpointID != "" {
+		if c.agentNameChanged && c.agentEpChanged && c.agentName != "" && c.agentEndpointID != "" {
 			return 0, exterrors.Validation(
 				exterrors.CodeConflictingArguments,
 				"--agent-name and --agent-endpoint-id are mutually exclusive",
 				"provide either --agent-name or --agent-endpoint-id, not both",
 			)
 		}
-		if agentNameChanged {
-			action.AgentName = agentName
-			if agentName != "" {
+		if c.agentNameChanged {
+			action.AgentName = c.agentName
+			if c.agentName != "" {
 				action.AgentEndpointID = "" // specifying agent-name clears agent-endpoint-id
 			}
 			changed++
 		}
-		if agentEpChanged {
-			action.AgentEndpointID = agentEndpointID
-			if agentEndpointID != "" {
+		if c.agentEpChanged {
+			action.AgentEndpointID = c.agentEndpointID
+			if c.agentEndpointID != "" {
 				action.AgentName = "" // specifying agent-endpoint-id clears agent-name
 			}
 			changed++
 		}
 	}
-	if convIDChanged {
+	if c.convIDChanged {
 		if action == nil {
 			return 0, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
@@ -220,10 +353,10 @@ func applyUpdateFlags(
 				"use --session-id for agent-invoke, or recreate the routine with agent-response",
 			)
 		}
-		action.ConversationID = conversationID
+		action.Conversation = c.conversationID
 		changed++
 	}
-	if sessIDChanged {
+	if c.sessIDChanged {
 		if action == nil {
 			return 0, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
@@ -238,7 +371,7 @@ func applyUpdateFlags(
 				"use --conversation-id for agent-response, or recreate the routine with agent-invoke",
 			)
 		}
-		action.SessionID = sessionID
+		action.SessionID = c.sessionID
 		changed++
 	}
 	if action != nil {

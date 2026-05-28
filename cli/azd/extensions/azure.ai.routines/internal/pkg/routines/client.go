@@ -153,17 +153,16 @@ func (c *Client) ListRoutines(ctx context.Context) ([]Routine, error) {
 	nextURL := c.routinesURL()
 
 	for nextURL != "" {
-		if err := c.validateSameOrigin(nextURL); err != nil {
-			return nil, err
-		}
-
 		var page PagedRoutine
 		if err := c.getPage(ctx, nextURL, &page); err != nil {
 			return nil, err
 		}
 
 		all = append(all, page.Value...)
-		nextURL = page.NextLink
+		if page.ContinuationToken == "" {
+			break
+		}
+		nextURL = c.routinesURL("after=" + url.QueryEscape(page.ContinuationToken))
 	}
 
 	return all, nil
@@ -324,7 +323,7 @@ func (c *Client) ListRoutineRuns(
 ) ([]RoutineRun, error) {
 	var all []RoutineRun
 
-	// baseQuery holds the original filter, preserved across pages. maxResults is
+	// baseQuery holds the original filter, preserved across pages. limit is
 	// only sent on the first page (we cap totals client-side via opts.Top).
 	var baseQuery []string
 	if opts.Filter != "" {
@@ -333,16 +332,12 @@ func (c *Client) ListRoutineRuns(
 
 	firstPageQuery := slices.Clone(baseQuery)
 	if opts.Top > 0 {
-		firstPageQuery = append(firstPageQuery, fmt.Sprintf("maxResults=%d", opts.Top))
+		firstPageQuery = append(firstPageQuery, fmt.Sprintf("limit=%d", opts.Top))
 	}
 
 	nextURL := c.routineRunsURL(routineName, firstPageQuery...)
 
 	for nextURL != "" {
-		if err := c.validateSameOrigin(nextURL); err != nil {
-			return nil, err
-		}
-
 		var page PagedRoutineRun
 		if err := c.getPage(ctx, nextURL, &page); err != nil {
 			return nil, err
@@ -357,7 +352,7 @@ func (c *Client) ListRoutineRuns(
 
 		if page.NextPageToken != "" {
 			pageQuery := append(slices.Clone(baseQuery),
-				"pageToken="+url.QueryEscape(page.NextPageToken))
+				"after="+url.QueryEscape(page.NextPageToken))
 			nextURL = c.routineRunsURL(routineName, pageQuery...)
 		} else {
 			nextURL = ""
@@ -365,33 +360,6 @@ func (c *Client) ListRoutineRuns(
 	}
 
 	return all, nil
-}
-
-// validateSameOrigin ensures a pagination URL has the same origin as the configured endpoint.
-func (c *Client) validateSameOrigin(targetURL string) error {
-	endpointURL, err := url.Parse(c.endpoint)
-	if err != nil {
-		return fmt.Errorf("invalid endpoint URL: %w", err)
-	}
-
-	linkURL, err := url.Parse(targetURL)
-	if err != nil {
-		return fmt.Errorf("invalid pagination URL: %w", err)
-	}
-
-	if linkURL.Scheme == "" {
-		return fmt.Errorf("pagination URL must have an explicit scheme, got %q", targetURL)
-	}
-
-	if !strings.EqualFold(linkURL.Scheme, endpointURL.Scheme) ||
-		!strings.EqualFold(linkURL.Host, endpointURL.Host) {
-		return fmt.Errorf(
-			"pagination URL origin mismatch: expected %s://%s, got %s://%s",
-			endpointURL.Scheme, endpointURL.Host, linkURL.Scheme, linkURL.Host,
-		)
-	}
-
-	return nil
 }
 
 func decodeJSON(body io.Reader, v any) error {

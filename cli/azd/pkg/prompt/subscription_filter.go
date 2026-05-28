@@ -5,7 +5,6 @@ package prompt
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -162,41 +161,9 @@ func SubscriptionsMatchingFilter(
 	return preSelected
 }
 
-// resolveSelectedTenantId determines the effective tenant ID for a subscription.
-// Prefers UserAccessTenantId, falls back to TenantId.
-func resolveSelectedTenantId(sub *account.Subscription) string {
-	if sub.UserAccessTenantId != "" {
-		return sub.UserAccessTenantId
-	}
-	return sub.TenantId
-}
-
 // FilteredSubscriptionNote is the message shown when a subscription filter is active.
 const FilteredSubscriptionNote = "Using saved subscription filter." +
 	" Run 'azd config sub-filter set' to update."
 
 // ShowAllSubscriptionsOption is the sentinel option text appended to filtered lists.
 const ShowAllSubscriptionsOption = "Show all subscriptions"
-
-// subscriptionIdsByOptions maps option display strings back to subscription IDs.
-// This is used after MultiSelect to determine which subscriptions were selected.
-func subscriptionIdsByOptions(
-	subscriptions []account.Subscription,
-	displayFn func(*account.Subscription) string,
-	selectedOptions []string,
-) []string {
-	optionToId := make(map[string]string, len(subscriptions))
-	for i := range subscriptions {
-		optionToId[displayFn(&subscriptions[i])] = subscriptions[i].Id
-	}
-
-	ids := make([]string, 0, len(selectedOptions))
-	for _, opt := range selectedOptions {
-		if id, ok := optionToId[opt]; ok {
-			ids = append(ids, id)
-		}
-	}
-
-	slices.Sort(ids)
-	return ids
-}

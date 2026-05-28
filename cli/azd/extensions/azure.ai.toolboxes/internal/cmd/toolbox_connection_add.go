@@ -240,6 +240,7 @@ func runConnectionAddWith(
 		Metadata:    current.Metadata,
 		Tools:       newTools,
 		Skills:      current.Skills,
+		Policies:    current.Policies,
 	}
 	created, err := client.CreateToolboxVersion(ctx, toolboxName, req)
 	if err != nil {

@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"strings"
@@ -34,9 +35,20 @@ var foundryHostSuffixes = []string{
 	".services.ai.azure.com",
 }
 
-// projectContextConfigPath is the global config path for the persisted project context.
-// Matches the azure.ai.agents extension for cross-extension compatibility.
-const projectContextConfigPath = "extensions.ai-agents.project.context"
+// projectContextConfigPath is the global config path for the persisted project
+// context written by the sibling `azure.ai.projects` extension's
+// `azd ai project set` command. The routines extension reads this path; it
+// never writes it.
+const projectContextConfigPath = "extensions.ai-projects.context"
+
+// legacyAgentsContextPath is the global config path written by the removed
+// `azd ai agent project set` command. Read as a fallback so users who
+// configured the endpoint there before the `azure.ai.projects` extension
+// existed still resolve. The `azure.ai.projects` extension auto-migrates
+// this key into projectContextConfigPath the first time any
+// `azd ai project` command runs; the fallback exists for the window in
+// between.
+const legacyAgentsContextPath = "extensions.ai-agents.project.context"
 
 // isFoundryHost reports whether the hostname ends with a recognized Foundry suffix.
 func isFoundryHost(hostname string) bool {
@@ -117,10 +129,19 @@ type azdProjectSources struct {
 	EnvValue string
 	// EnvName is the active azd env name. Only meaningful when EnvValue != "".
 	EnvName string
-	// CfgEndpoint is the endpoint persisted in global config, or "".
+	// CfgEndpoint is the endpoint persisted at projectContextConfigPath
+	// (`extensions.ai-projects.context.endpoint`) in global config, or "".
 	CfgEndpoint string
-	// CfgFound is true when the global config path was found and had a non-empty endpoint.
+	// CfgFound is true when projectContextConfigPath was found and had a
+	// non-empty endpoint.
 	CfgFound bool
+	// LegacyAgentsEndpoint is the endpoint persisted at
+	// legacyAgentsContextPath (`extensions.ai-agents.project.context.endpoint`)
+	// in global config, or "". Read as a fallback only.
+	LegacyAgentsEndpoint string
+	// LegacyAgentsFound is true when legacyAgentsContextPath was found and
+	// had a non-empty endpoint.
+	LegacyAgentsFound bool
 }
 
 // readAzdProjectSourcesFunc is a package-level seam so tests can stub the
@@ -152,7 +173,10 @@ func readAzdProjectSources(ctx context.Context) (azdProjectSources, error) {
 		}
 	}
 
-	// Level 3: global config → extensions.ai-agents.project.context.endpoint.
+	// Level 3: global config. Prefer the new `extensions.ai-projects.context`
+	// path written by `azd ai project set`; fall back to the legacy
+	// `extensions.ai-agents.project.context` path written by the removed
+	// `azd ai agent project set` command.
 	ch, cfgErr := azdext.NewConfigHelper(azdClient)
 	if cfgErr == nil {
 		var state struct {
@@ -161,6 +185,13 @@ func readAzdProjectSources(ctx context.Context) (azdProjectSources, error) {
 		if found, err := ch.GetUserJSON(ctx, projectContextConfigPath, &state); err == nil && found && state.Endpoint != "" {
 			out.CfgEndpoint = state.Endpoint
 			out.CfgFound = true
+		}
+		var legacy struct {
+			Endpoint string `json:"endpoint"`
+		}
+		if found, err := ch.GetUserJSON(ctx, legacyAgentsContextPath, &legacy); err == nil && found && legacy.Endpoint != "" {
+			out.LegacyAgentsEndpoint = legacy.Endpoint
+			out.LegacyAgentsFound = true
 		}
 	}
 
@@ -171,7 +202,8 @@ func readAzdProjectSources(ctx context.Context) (azdProjectSources, error) {
 //
 //  1. -p / --project-endpoint flag
 //  2. Active azd env → AZURE_AI_PROJECT_ENDPOINT
-//  3. Global config → extensions.ai-agents.project.context.endpoint
+//  3. Global config → extensions.ai-projects.context.endpoint (primary),
+//     falling back to extensions.ai-agents.project.context.endpoint
 //  4. FOUNDRY_PROJECT_ENDPOINT environment variable
 //  5. Structured dependency error
 func resolveProjectEndpoint(ctx context.Context, flagValue string) (*resolvedEndpoint, error) {
@@ -206,6 +238,16 @@ func resolveProjectEndpoint(ctx context.Context, flagValue string) (*resolvedEnd
 		return &resolvedEndpoint{Endpoint: normalized, Source: SourceGlobalConfig}, nil
 	}
 
+	if sources.LegacyAgentsFound && sources.LegacyAgentsEndpoint != "" {
+		normalized, err := validateProjectEndpoint(sources.LegacyAgentsEndpoint)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("resolveProjectEndpoint: using fallback global config key %q; "+
+			"run `azd ai project set <endpoint>` to migrate", legacyAgentsContextPath)
+		return &resolvedEndpoint{Endpoint: normalized, Source: SourceGlobalConfig}, nil
+	}
+
 	// Level 4: FOUNDRY_PROJECT_ENDPOINT env var.
 	if ep := os.Getenv("FOUNDRY_PROJECT_ENDPOINT"); ep != "" {
 		normalized, err := validateProjectEndpoint(ep)
@@ -219,7 +261,7 @@ func resolveProjectEndpoint(ctx context.Context, flagValue string) (*resolvedEnd
 	return nil, exterrors.Dependency(
 		exterrors.CodeMissingProjectEndpoint,
 		"no Foundry project endpoint resolved",
-		"pass -p / --project-endpoint, run 'azd ai agent project set <endpoint>', "+
+		"pass -p / --project-endpoint, run `azd ai project set <endpoint>`, "+
 			"set AZURE_AI_PROJECT_ENDPOINT in the active azd environment, "+
 			"or export FOUNDRY_PROJECT_ENDPOINT in your shell",
 	)

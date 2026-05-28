@@ -32,13 +32,13 @@ func newToolboxCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Create a toolbox and publish its initial version from a file.",
 		Long: `Create a toolbox and publish its initial version.
 
-The Foundry service requires the initial version to ship with a non-empty
-connection list, so 'create' takes its inputs from a JSON or YAML file via
+The Foundry service requires the initial version to ship with at least one
+tool entry, so 'create' takes its inputs from a JSON or YAML file via
 --from-file.
 
 ` + fileShapeBlurb(true) + `
 
-At least one connection must be provided.
+At least one of 'connections' or 'tools' must be non-empty.
 
 Examples:
 
@@ -115,6 +115,7 @@ func runToolboxCreateWith(
 	description := ""
 	entries := []map[string]any{}
 	skillEntries := []map[string]any{}
+	var policies *azure.ToolboxPolicies
 
 	if strings.TrimSpace(verb.fromFile) != "" {
 		var input toolboxCreateFile
@@ -136,13 +137,24 @@ func runToolboxCreateWith(
 				Version: strings.TrimSpace(s.Version),
 			}))
 		}
+
+		rawEntries, err := validateRawToolEntries(input.Tools)
+		if err != nil {
+			return err
+		}
+		entries = append(entries, rawEntries...)
+
+		policies, err = buildToolboxPolicies(input.Policies)
+		if err != nil {
+			return err
+		}
 	}
 
 	if len(entries) == 0 {
 		return exterrors.Validation(
 			exterrors.CodeInvalidToolboxName,
-			"toolbox create requires at least one connection",
-			"pass --from-file with a non-empty 'connections' list",
+			"toolbox create requires at least one tool entry",
+			"pass --from-file with a non-empty 'connections' or 'tools' list",
 		)
 	}
 
@@ -152,11 +164,15 @@ func runToolboxCreateWith(
 	if err := validateNoDuplicateSkills(skillEntries); err != nil {
 		return err
 	}
+	if err := validateNoDuplicateToolNames(entries); err != nil {
+		return err
+	}
 
 	req := &azure.CreateToolboxVersionRequest{
 		Description: description,
 		Tools:       entries,
 		Skills:      skillEntries,
+		Policies:    policies,
 	}
 	created, err := client.CreateToolboxVersion(ctx, name, req)
 	if err != nil {
@@ -227,6 +243,91 @@ func validateNoDuplicateConnectionIDs(entries []map[string]any) error {
 				exterrors.CodeDuplicateConnection,
 				fmt.Sprintf("connection %q appears more than once in the input", ids[i]),
 				"remove duplicate connection entries",
+			)
+		}
+	}
+	return nil
+}
+
+// buildToolboxPolicies converts the file-shaped policy spec into the
+// data-plane request shape. Returns nil when no policies are configured.
+// Currently the only supported policy is the RAI policy name.
+func buildToolboxPolicies(spec *toolboxPoliciesSpec) (*azure.ToolboxPolicies, error) {
+	if spec == nil || spec.RaiConfig == nil {
+		return nil, nil
+	}
+	name := spec.RaiConfig.resolvedPolicyName()
+	if name == "" {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"policies.rai_config requires a policy name",
+			"set policies.rai_config.rai_policy_name (or 'name') to the RAI policy to apply",
+		)
+	}
+	return &azure.ToolboxPolicies{
+		RaiConfig: &azure.RaiConfig{RaiPolicyName: name},
+	}, nil
+}
+
+// validateRawToolEntries checks the local invariants on a verbatim tools[]
+// entry: non-empty object, required `type` discriminator, and (when set) a
+// `name` that matches the service regex. Type-specific shape is left to the
+// data plane.
+func validateRawToolEntries(tools []map[string]any) ([]map[string]any, error) {
+	out := make([]map[string]any, 0, len(tools))
+	for i, t := range tools {
+		if len(t) == 0 {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("tools[%d] is empty", i),
+				"each entry must be an object with at least a 'type' field",
+			)
+		}
+		typeVal, _ := t["type"].(string)
+		if strings.TrimSpace(typeVal) == "" {
+			return nil, exterrors.Validation(
+				exterrors.CodeMissingToolType,
+				fmt.Sprintf("tools[%d] is missing the required 'type' field", i),
+				"set 'type' to a Foundry tool type (e.g. web_search, file_search, code_interpreter)",
+			)
+		}
+		if raw, present := t["name"]; present {
+			nameVal, ok := raw.(string)
+			if !ok {
+				return nil, exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					fmt.Sprintf("tools[%d].name must be a string, got %T", i, raw),
+					"set 'name' to a string matching ^[A-Za-z0-9_-]+$ or omit it",
+				)
+			}
+			if err := validateToolName(nameVal); err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, t)
+	}
+	return out, nil
+}
+
+// validateNoDuplicateToolNames rejects entries that share the same top-level
+// `name`. Names are optional on raw entries but collide in `tools/list` and
+// tool_search when set.
+func validateNoDuplicateToolNames(entries []map[string]any) error {
+	names := []string{}
+	for _, t := range entries {
+		name, _ := t["name"].(string)
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for i := 1; i < len(names); i++ {
+		if names[i] == names[i-1] {
+			return exterrors.Validation(
+				exterrors.CodeDuplicateToolName,
+				fmt.Sprintf("tool name %q appears more than once in the input", names[i]),
+				"give each tool entry a unique 'name'",
 			)
 		}
 	}

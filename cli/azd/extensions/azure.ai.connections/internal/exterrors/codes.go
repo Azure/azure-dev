@@ -17,6 +17,7 @@ const (
 // Error codes for endpoint resolution.
 const (
 	CodeMissingProjectEndpoint = "missing_project_endpoint"
+	CodeInvalidParameter       = "invalid_parameter"
 )
 
 // Error codes for auth.

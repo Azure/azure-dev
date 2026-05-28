@@ -46,6 +46,8 @@ const (
 	CodeSkillNotInToolbox             = "skill_not_in_toolbox"
 	CodeSkillAlreadyAttached          = "skill_already_attached"
 	CodeDuplicateConnection           = "duplicate_connection"
+	CodeDuplicateToolName             = "duplicate_tool_name"
+	CodeMissingToolType               = "missing_tool_type"
 	CodeConnectionNotFound            = "connection_not_found"
 	CodeConnectionNotInToolbox        = "connection_not_in_toolbox"
 	CodeConnectionMissingTarget       = "connection_missing_target"

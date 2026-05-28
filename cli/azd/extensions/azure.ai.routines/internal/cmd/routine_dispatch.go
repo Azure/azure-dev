@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"azure.ai.routines/internal/exterrors"
@@ -39,13 +40,38 @@ results.`,
 	cmd.Flags().BoolVar(&asyncMode, "async", false,
 		"Suppress descriptive output; useful for scripting")
 	cmd.Flags().StringVar(&input, "input", "",
-		"Plain-text user-message payload for the routine dispatch")
+		"Payload sent to the routine dispatch. If the value parses as JSON, it is forwarded as that JSON value (object, array, number, boolean, or null); otherwise it is forwarded as a plain string.")
 
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{"json", "table"}, Default: "table",
 	})
 
 	return cmd
+}
+
+// parseDispatchInput coerces the --input flag into the any value sent on the
+// wire. If the raw flag value parses as JSON, the parsed value is returned;
+// otherwise the raw string is returned verbatim.
+func parseDispatchInput(raw string) any {
+	trimmed := raw
+	// Only attempt JSON parsing for values that look like JSON literals to
+	// avoid accidentally turning "123" into a number when the user meant a
+	// string-typed agent id. Object/array/string/null/bool literals are
+	// detected by their first non-space byte.
+	for len(trimmed) > 0 && (trimmed[0] == ' ' || trimmed[0] == '\t') {
+		trimmed = trimmed[1:]
+	}
+	if len(trimmed) == 0 {
+		return raw
+	}
+	switch trimmed[0] {
+	case '{', '[', '"', 't', 'f', 'n', '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+		var v any
+		if err := json.Unmarshal([]byte(raw), &v); err == nil {
+			return v
+		}
+	}
+	return raw
 }
 
 func runRoutineDispatch(
@@ -84,7 +110,7 @@ func runRoutineDispatch(
 		payload = &routines.DispatchRoutineRequest{
 			Payload: &routines.RoutineDispatchPayload{
 				Type:  routine.Action.Type,
-				Input: input,
+				Input: parseDispatchInput(input),
 			},
 		}
 	}

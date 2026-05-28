@@ -190,7 +190,20 @@ type CreateToolboxVersionRequest struct {
 	Tools       []map[string]any  `json:"tools"`
 	// Skills holds ToolboxSkill discriminated objects. []map[string]any keeps
 	// future ToolboxSkill variants flowing through without recompiling.
-	Skills []map[string]any `json:"skills,omitempty"`
+	Skills   []map[string]any `json:"skills,omitempty"`
+	Policies *ToolboxPolicies `json:"policies,omitempty"`
+}
+
+// ToolboxPolicies mirrors the data-plane ToolboxPolicies model: per-version
+// governance settings (currently RAI content filtering).
+type ToolboxPolicies struct {
+	RaiConfig *RaiConfig `json:"rai_config,omitempty"`
+}
+
+// RaiConfig mirrors the data-plane RaiConfig model: the name of the
+// Responsible AI policy to apply to this toolbox version.
+type RaiConfig struct {
+	RaiPolicyName string `json:"rai_policy_name"`
 }
 
 // ToolboxObject is the lightweight response for a toolbox (no tools list).
@@ -208,9 +221,10 @@ type ToolboxVersionObject struct {
 	Description string            `json:"description,omitempty"`
 	CreatedAt   int64             `json:"created_at"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
-	Tools       []map[string]any  `json:"tools"`
+	Tools    []map[string]any `json:"tools"`
 	// Skills has no omitempty: the service always emits "skills":[] on reads.
-	Skills []map[string]any `json:"skills"`
+	Skills   []map[string]any `json:"skills"`
+	Policies *ToolboxPolicies `json:"policies,omitempty"`
 }
 
 // toolboxURL builds the canonical toolboxes URL with the api-version query.

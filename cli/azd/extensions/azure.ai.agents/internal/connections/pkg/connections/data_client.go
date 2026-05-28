@@ -18,7 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 )
 
-const dataPlaneAPIVersion = "2025-11-15-preview"
+const dataPlaneAPIVersion = "v1"
 
 // DataClient provides read operations via the Foundry data plane.
 // Used for listing connections (including ARM ID discovery) and fetching credentials.

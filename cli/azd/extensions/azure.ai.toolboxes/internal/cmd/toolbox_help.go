@@ -24,7 +24,14 @@ func fileShapeBlurb(includeDescription bool) string {
     "skills": [
       { "name": "my-skill", "version": "2" },
       { "name": "qa-skill" }
-    ]
+    ],
+    "tools": [
+      { "type": "web_search",   "name": "web" },
+      { "type": "file_search",  "name": "files" }
+    ],
+    "policies": {
+      "rai_config": { "rai_policy_name": "Microsoft.Default" }
+    }
   }
 
 Equivalent YAML:
@@ -41,11 +48,19 @@ Equivalent YAML:
     - name: my-skill
       version: "2"
     - name: qa-skill
+  tools:
+    - type: web_search
+      name: web
+    - type: file_search
+      name: files
+  policies:
+    rai_config:
+      rai_policy_name: Microsoft.Default
 
 Fields:
   description     Optional. Stored on the initial toolbox version.
-  connections     Required. List of existing project connections to attach.
-                  Each entry needs 'name' (the project connection short name).
+  connections     List of existing project connections to attach. Each entry
+                  needs 'name' (the project connection short name).
                   'index' is required only for CognitiveSearch connections.
                   'instance_name' is required only for
                   GroundingWithCustomSearch connections.
@@ -55,6 +70,18 @@ Fields:
   skills          Optional. Existing project skills to attach by reference.
                   Each entry needs 'name'; 'version' is optional (omit to
                   follow the skill's default version).
+  tools           List of raw Foundry tool entries (OpenAI.Tool shape),
+                  forwarded verbatim. Use for connectionless tools (e.g.,
+                  built-in web_search, file_search, code_interpreter,
+                  capture_structured_outputs) or any tool type not yet
+                  exposed by 'connections'. Each entry must include 'type';
+                  an optional 'name' must match ^[A-Za-z0-9_-]+$.
+  policies        Optional. Per-version governance settings.
+                  policies.rai_config.rai_policy_name selects the Responsible
+                  AI content-filter policy applied to this toolbox version
+                  (the alias 'name' is also accepted).
+
+At least one of 'connections', 'skills', or 'tools' must be non-empty.
 
 Project connections must already exist on the Foundry project; this command
 does not create them. Run 'azd ai agent connection list' to see available

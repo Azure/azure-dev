@@ -80,6 +80,13 @@ func newSubFilterSetAction(
 func (a *subFilterSetAction) Run(
 	ctx context.Context,
 ) (*actions.ActionResult, error) {
+	if a.console.IsNoPromptMode() {
+		return nil, fmt.Errorf(
+			"subscription filter set requires interactive mode" +
+				" (cannot run with --no-prompt)",
+		)
+	}
+
 	// Load subscriptions
 	var subscriptions []account.Subscription
 	loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
@@ -269,6 +276,13 @@ func newSubFilterRemoveAction(
 func (a *subFilterRemoveAction) Run(
 	ctx context.Context,
 ) (*actions.ActionResult, error) {
+	if a.console.IsNoPromptMode() {
+		return nil, fmt.Errorf(
+			"subscription filter remove requires interactive mode" +
+				" (cannot run with --no-prompt)",
+		)
+	}
+
 	// Load subscriptions for tenant resolution
 	var subscriptions []account.Subscription
 	loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{

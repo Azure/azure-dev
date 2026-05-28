@@ -189,3 +189,71 @@ func withColorOn(t *testing.T) {
 	color.NoColor = false
 	t.Cleanup(func() { color.NoColor = prev })
 }
+
+// TestRenderRootBody_HasCommandsSectionWithInstall pins the curated
+// Commands section that surfaces real cobra subcommands (today: just
+// `install`) at the top of `azd ai doc` so an agent running the bare
+// command can discover the actionable verb without first having to
+// consult --help. The section MUST appear before "Available
+// Documentation:" -- ordering is part of the contract the user asked
+// for ("at the top of the output").
+func TestRenderRootBody_HasCommandsSectionWithInstall(t *testing.T) {
+	withColorOff(t)
+	got := renderRootBody(docCategories)
+
+	assert.Contains(t, got, "Commands:",
+		"root body must include a curated Commands: section")
+	cmdsIdx := strings.Index(got, "Commands:")
+	docsIdx := strings.Index(got, "Available Documentation:")
+	require.Positive(t, cmdsIdx, "Commands: header missing")
+	require.Positive(t, docsIdx, "Available Documentation: header missing")
+	assert.Less(t, cmdsIdx, docsIdx,
+		"Commands: section must appear BEFORE Available Documentation: -- "+
+			"the user asked for the install command at the top of the output")
+
+	// The install row uses the same "  name  -- short" shape as a
+	// category row. Asserting the full row prefix locks the rendered
+	// shape so a refactor of the row format trips this test.
+	assert.Contains(t, got, "  install  -- ",
+		"install row must render with the same '  <name>  -- <short>' shape as a category row")
+}
+
+// TestRenderRootBody_InstallNotInAvailableDocumentation pins the
+// design decision that `install` is a COMMAND, not a doc topic. It
+// must never appear as a row under any category's "Topics:" listing
+// (which uses a 6-space indent), only in the Commands section above
+// (which uses a 2-space indent).
+func TestRenderRootBody_InstallNotInAvailableDocumentation(t *testing.T) {
+	withColorOff(t)
+	got := renderRootBody(docCategories)
+
+	// Topic rows are indented with 6 spaces; the Commands row uses 2.
+	// A 6-space-prefixed "install" would mean install leaked into a
+	// category's Topics: listing.
+	assert.NotContains(t, got, "      install",
+		"install must NOT render as a 6-space-indented topic row under any category")
+
+	// Belt-and-suspenders: the substring "install" should only appear
+	// in the Commands section, NOT in the Available Documentation
+	// block below it. Slice the output at the Documentation header
+	// and confirm the docs slice doesn't mention install.
+	docsIdx := strings.Index(got, "Available Documentation:")
+	require.Positive(t, docsIdx, "Available Documentation: header missing")
+	docsSlice := got[docsIdx:]
+	assert.NotContains(t, docsSlice, "install",
+		"install must not appear anywhere in the Available Documentation block -- it is a command, not a doc topic")
+}
+
+// TestRenderRootExamples_IncludesInstallExample asserts the Examples
+// block at the bottom of `azd ai doc` includes a ready-to-run
+// `install` invocation so an agent has an actionable next step right
+// next to the Commands section above.
+func TestRenderRootExamples_IncludesInstallExample(t *testing.T) {
+	withColorOff(t)
+	got := renderRootExamples(docCategories)
+
+	assert.Contains(t, got, "Install the AZD AI skill pack for GitHub Copilot.",
+		"Examples block must include the install example title")
+	assert.Contains(t, got, "azd ai doc install skill --target copilot",
+		"Examples block must include the literal install command so an agent can copy it verbatim")
+}

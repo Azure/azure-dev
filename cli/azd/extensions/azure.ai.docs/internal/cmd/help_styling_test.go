@@ -41,6 +41,7 @@ func helpOf(t *testing.T, args ...string) string {
 // TestDocRootHelp_StyledSections asserts the styled headers and
 // catalog-driven Examples block appear under `doc --help`. With the
 // catalog wiring, the root command's --help shows:
+//   - "Commands:" (curated cobra-subcommand surface via Description)
 //   - "Available Documentation:" (catalog body via Description)
 //   - "Available Commands:" (cobra's subcommand list via UsageTemplate)
 //   - "Examples:" (catalog examples via Footer; EXACTLY ONCE -- see
@@ -51,6 +52,9 @@ func TestDocRootHelp_StyledSections(t *testing.T) {
 	out := helpOf(t)
 
 	assert.Contains(t, out, "Usage:")
+	assert.Contains(t, out, "Commands:",
+		"catalog body must contribute the curated Commands: section "+
+			"(distinct from cobra's auto-generated Available Commands list)")
 	assert.Contains(t, out, "Available Documentation:",
 		"catalog body must contribute its Available Documentation header")
 	assert.Contains(t, out, "Available Commands:",
@@ -71,6 +75,37 @@ func TestDocRootHelp_StyledSections(t *testing.T) {
 		assert.True(t, strings.Contains(out, name),
 			"Cobra subcommand list missing %q", name)
 	}
+}
+
+// TestDocRootHelp_CommandsSectionBeforeAvailableDocumentation pins the
+// ordering contract the user asked for: the curated "Commands:" block
+// (which surfaces `install`) must render ABOVE "Available
+// Documentation:" so an agent reading top-to-bottom encounters the
+// actionable command first, then the catalog of doc topics. The
+// ordering must hold in --help (Description slot) just as it does in
+// bare `azd ai doc` (RunE path) -- both share renderRootBody.
+func TestDocRootHelp_CommandsSectionBeforeAvailableDocumentation(t *testing.T) {
+	withColorDisabled(t)
+
+	out := helpOf(t)
+
+	cmdsIdx := strings.Index(out, "Commands:")
+	docsIdx := strings.Index(out, "Available Documentation:")
+	availCmdsIdx := strings.Index(out, "Available Commands:")
+
+	require.Positive(t, cmdsIdx, "Commands: header missing from --help output")
+	require.Positive(t, docsIdx, "Available Documentation: header missing from --help output")
+	require.Positive(t, availCmdsIdx, "cobra Available Commands: header missing from --help output")
+
+	assert.Less(t, cmdsIdx, docsIdx,
+		"curated Commands: must appear BEFORE Available Documentation: (the user-requested ordering)")
+	assert.Less(t, docsIdx, availCmdsIdx,
+		"both catalog headers (from Description) must appear BEFORE cobra's auto-generated Available Commands:")
+
+	// Sanity-check that the install row text from the curated Commands
+	// section is actually present (not just the header).
+	assert.Contains(t, out, "  install  -- ",
+		"install row must render in --help's curated Commands section")
 }
 
 // TestDocRootHelp_NoLegacyExamplesInLong is the regression for the
@@ -147,12 +182,18 @@ func TestDocCommandOutput_RichStyledCatalog(t *testing.T) {
 	assert.Contains(t, out, "agent-friendly documentation front door",
 		"preamble title should appear")
 	assert.Contains(t, out, "  * ", "preamble should include bullets")
+	assert.Contains(t, out, "Commands:",
+		"bare `azd ai doc` must surface the curated Commands section so an agent discovers `install` without --help")
+	assert.Contains(t, out, "  install  -- ",
+		"bare `azd ai doc` must include the install row in the Commands section")
 	assert.Contains(t, out, "Available Documentation:",
 		"root catalog body uses Available Documentation (not Available Commands)")
 	assert.NotContains(t, out, "Available Commands:",
 		"root direct output must NOT use Available Commands -- avoids cobra-style confusion")
 	assert.Contains(t, out, "agent", "agent category row missing")
 	assert.Contains(t, out, "Examples:", "Examples block missing from direct invocation")
+	assert.Contains(t, out, "azd ai doc install skill --target copilot",
+		"Examples block must include the install example so an agent has a ready-to-run invocation")
 }
 
 // TestDocAgentCommandOutput_RichStyledCatalog covers the direct

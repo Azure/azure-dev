@@ -19,6 +19,38 @@ import (
 	"azure.ai.docs/internal/helpformat"
 )
 
+// rootCommand describes a curated cobra subcommand surfaced at the top
+// of `azd ai doc` so agents (and humans) running the bare command can
+// discover actionable verbs without first having to consult --help.
+// These entries are NOT doc-catalog topics -- they are real cobra
+// subcommands -- which is why they render under a separate "Commands:"
+// section that is intentionally distinct from "Available Documentation:".
+// The slice shape exists so future installable verbs (e.g. additional
+// `install <thing>` children, or future curated utilities) slot in
+// without restructuring the renderer.
+type rootCommand struct {
+	name  string
+	short string
+}
+
+// rootCommands lists the curated cobra subcommands surfaced at the top
+// of `azd ai doc`. Order here is the order rendered. Keep this list
+// SHORT -- this is the discovery surface for agents, not a complete
+// cobra dump (cobra renders its own "Available Commands:" list in
+// --help for the full set including utilities like `version`).
+//
+// Today the only entry is `install`, which drops the embedded
+// `azd-ai-skill` pack into a tool-specific destination directory under
+// the current project. Surfacing it here is what lets a coding agent
+// pick up the skill from a bare `azd ai doc` invocation.
+var rootCommands = []rootCommand{
+	{
+		name: "install",
+		short: "Install agent-friendly skills into your project " +
+			"so a coding agent (Claude Code, Codex, Gemini CLI, GitHub Copilot, Opencode) can pick them up.",
+	},
+}
+
 // renderRootBody returns the rendered body for `azd ai doc`: preamble
 // followed by an "Available Documentation:" section listing every
 // category with its Short description AND every topic nested under
@@ -47,6 +79,25 @@ func renderRootBody(cats []DocCategory) string {
 		"The agent-friendly documentation front door for Azure AI Foundry extensions.",
 		notes...,
 	))
+	// Curated commands block: real cobra subcommands surfaced here so
+	// an agent running bare `azd ai doc` can discover the actionable
+	// verbs (today: `install`) without first having to know to run
+	// --help. The header is "Commands:" (NOT "Available Commands:")
+	// deliberately so a reader of `--help` -- where THIS section AND
+	// cobra's own "Available Commands:" both render -- can tell the
+	// curated discovery view from the raw cobra subcommand dump.
+	if len(rootCommands) > 0 {
+		b.WriteString(helpformat.SectionHeader("Commands"))
+		b.WriteString("\n\n")
+		for _, rc := range rootCommands {
+			b.WriteString("  ")
+			b.WriteString(helpformat.Command(rc.name))
+			b.WriteString("  -- ")
+			b.WriteString(rc.short)
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
 	b.WriteString(helpformat.SectionHeader("Available Documentation"))
 	b.WriteString("\n\n")
 	for i, c := range cats {
@@ -108,9 +159,17 @@ func renderRootBody(cats []DocCategory) string {
 // commands; the rendering layer owns the styling.
 func renderRootExamples(cats []DocCategory) string {
 	samples := map[string]string{
-		// Lexical sort: "List ..." (L) < "Print ..." (P). Titles
-		// chosen so the sorted order reads as a natural progression.
+		// Lexical sort: "Install ..." (I) < "List ..." (L) < "Print ..." (P).
+		// Titles chosen so the sorted order reads as a natural progression
+		// from "make the skill installable" -> "discover docs" -> "read a doc".
 		"List available documentation groups.": helpformat.Command("azd ai doc"),
+		// Install example surfaces the actionable `install` command at
+		// the bottom of the same body the bare `azd ai doc` prints, so
+		// an agent (or human) has a ready-to-run invocation right
+		// next to the discovery listing above.
+		"Install the AZD AI skill pack for GitHub Copilot.": helpformat.Command(
+			"azd ai doc install skill --target copilot",
+		),
 	}
 	if len(cats) > 0 {
 		first := cats[0]

@@ -27,8 +27,8 @@ import (
 func newInstallCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install <command> [options]",
-		Short: "Install agent-friendly packs into your project.",
-		Long: `Install agent-friendly packs into your project so a coding agent
+		Short: "Install agent-friendly skills into your project.",
+		Long: `Install agent-friendly skills into your project so a coding agent
 (Claude Code, Codex, Gemini CLI, GitHub Copilot, Opencode, or a custom
 integration) can follow them.
 

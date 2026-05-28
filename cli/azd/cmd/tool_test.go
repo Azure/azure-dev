@@ -20,10 +20,10 @@ import (
 )
 
 func TestToolCommandGating(t *testing.T) {
-	t.Run("hidden when alpha feature disabled", func(t *testing.T) {
+	t.Run("present when alpha feature disabled", func(t *testing.T) {
 		configDir := t.TempDir()
 		t.Setenv("AZD_CONFIG_DIR", configDir)
-		// Ensure the tool alpha feature is NOT enabled.
+		// The tool command is now always registered, regardless of the alpha feature.
 		t.Setenv("AZD_ALPHA_ENABLE_TOOL", "false")
 
 		root := NewRootCmd(true, nil, nil)
@@ -34,7 +34,7 @@ func TestToolCommandGating(t *testing.T) {
 				break
 			}
 		}
-		require.False(t, found, "expected 'tool' subcommand to be absent when alpha feature is disabled")
+		require.True(t, found, "expected 'tool' subcommand to be present even when alpha feature is disabled")
 	})
 
 	t.Run("present when alpha feature enabled", func(t *testing.T) {

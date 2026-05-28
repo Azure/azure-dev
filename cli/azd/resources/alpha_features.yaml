@@ -15,4 +15,4 @@
 - id: language.custom
   description: "Enables support for services to use custom language."
 - id: tool
-  description: "Enables the 'azd tool' command group for discovering, installing, and upgrading Azure development tools."
+  description: "Enables the automatic first-run experience and update notifications for the 'azd tool' command group."

@@ -88,7 +88,6 @@ func emitToolInstallTelemetry(
 }
 
 // toolActions registers the "azd tool" command group and all of its subcommands.
-// The caller is responsible for gating on the "tool" alpha feature flag.
 func toolActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	toolCmd := &cobra.Command{
 		Use:   "tool",

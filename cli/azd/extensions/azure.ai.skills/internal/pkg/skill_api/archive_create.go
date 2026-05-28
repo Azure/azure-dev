@@ -85,7 +85,7 @@ func ArchiveDirectory(srcDir string, opts ArchiveOptions) ([]byte, error) {
 
 		entryInfo, lstatErr := os.Lstat(path)
 		if lstatErr != nil {
-			return fmt.Errorf("stat %q: %w", relSlash, lstatErr)
+			return fmt.Errorf("lstat %q: %w", relSlash, lstatErr)
 		}
 		mode := entryInfo.Mode()
 
@@ -173,7 +173,7 @@ func LocateSkillMdInDir(dir string) (string, bool, error) {
 		return "", false, nil
 	}
 	if err != nil {
-		return "", false, fmt.Errorf("stat %q: %w", candidate, err)
+		return "", false, fmt.Errorf("lstat %q: %w", candidate, err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
 		return "", false, fmt.Errorf("%w: %q is a symlink", ErrUnsafeEntry, candidate)

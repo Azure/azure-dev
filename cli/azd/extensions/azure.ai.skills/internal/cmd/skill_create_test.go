@@ -192,6 +192,23 @@ func TestSelectCreateMode_FileWithoutExtensionFailsClean(t *testing.T) {
 	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
 }
 
+// TestSelectCreateMode_MissingNoExtPathSurfacesStatError guards the
+// regression where a --file value with no extension that did not exist on
+// disk produced a misleading "unsupported --file extension \"\"" error. With
+// directory uploads supported, the more actionable message is the underlying
+// stat failure (typically fs.ErrNotExist).
+func TestSelectCreateMode_MissingNoExtPathSurfacesStatError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	mode, err := selectCreateMode(&createFlags{file: missing})
+	require.Error(t, err)
+	require.Equal(t, modeNone, mode)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
+	require.NotContains(t, le.Message, `unsupported --file extension ""`)
+	require.Contains(t, le.Message, "inspect --file")
+}
+
 // --- verifyFileNameMatches (directory mode) ---
 
 func TestVerifyFileNameMatches_DirectoryMatch(t *testing.T) {

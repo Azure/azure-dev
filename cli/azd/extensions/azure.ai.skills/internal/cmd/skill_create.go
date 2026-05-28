@@ -412,22 +412,35 @@ func selectCreateMode(f *createFlags) (createMode, error) {
 		// Detect directories before extension matching so callers can point
 		// --file at the directory `azd ai skill download` extracted (which
 		// has no file extension at all).
-		if info, err := os.Stat(f.file); err == nil && info.IsDir() {
+		info, statErr := os.Stat(f.file)
+		if statErr == nil && info.IsDir() {
 			return modeFileDirectory, nil
 		}
-		switch strings.ToLower(filepath.Ext(f.file)) {
+		ext := strings.ToLower(filepath.Ext(f.file))
+		switch ext {
 		case ".md":
 			return modeFileMd, nil
 		case ".zip":
 			return modeFilePackage, nil
-		default:
+		}
+		// A --file value with no extension can only be a directory; if
+		// stat failed (typically fs.ErrNotExist), surface the stat error
+		// so users aren't told the extension is unsupported when the path
+		// is simply missing or unreadable.
+		if statErr != nil && ext == "" {
 			return modeNone, exterrors.Validation(
 				exterrors.CodeInvalidSkillFile,
-				fmt.Sprintf("unsupported --file extension %q", filepath.Ext(f.file)),
-				"use .md for inline metadata, .zip for a package upload, "+
+				fmt.Sprintf("inspect --file %q: %s", f.file, statErr),
+				"verify the path exists and points to a SKILL.md, a .zip, "+
 					"or a directory containing SKILL.md",
 			)
 		}
+		return modeNone, exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("unsupported --file extension %q", ext),
+			"use .md for inline metadata, .zip for a package upload, "+
+				"or a directory containing SKILL.md",
+		)
 	}
 
 	if inlineProvided {

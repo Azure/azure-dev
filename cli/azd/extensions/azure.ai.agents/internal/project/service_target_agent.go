@@ -22,7 +22,6 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -1499,24 +1498,13 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 ) (*deployResult, error) {
 	progress("Deploying hosted agent (code deploy)")
 
-	// Validate that the Foundry project's region supports code deploy.
-	projectLocation := strings.ToLower(strings.TrimSpace(azdEnv["AZURE_LOCATION"]))
-	if projectLocation == "" {
+	// Validate that AZURE_LOCATION is set (region validation is handled server-side;
+	// code deploy is supported in all hosted-agent regions).
+	if strings.TrimSpace(azdEnv["AZURE_LOCATION"]) == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeAgentCreateFailed,
 			"AZURE_LOCATION is not set; the Foundry project region is required for code deploy",
 			"run 'azd provision' or 'azd ai agent init' to set the project location",
-		)
-	}
-	if !slices.Contains(CodeDeployRegions, projectLocation) {
-		return nil, exterrors.Dependency(
-			exterrors.CodeAgentCreateFailed,
-			fmt.Sprintf(
-				"code deploy is not supported in region %q; supported regions: %s",
-				azdEnv["AZURE_LOCATION"],
-				strings.Join(CodeDeployRegions, ", "),
-			),
-			"select a Foundry project in a supported region or use container deploy instead",
 		)
 	}
 

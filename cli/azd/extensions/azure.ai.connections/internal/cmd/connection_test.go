@@ -475,13 +475,25 @@ func TestParseKVPtrMap(t *testing.T) {
 }
 
 func TestRawConnectionBody_OAuth2_ConnectorNameOnly(t *testing.T) {
-	// When using a managed connector, only connectorName is set ΓÇö no credentials.
+	// Regression test for #8418. When using a managed connector (gateway_connector),
+	// connectorName is set and no --client-id/--client-secret are supplied. The
+	// ConnectionCreateAction.Run path must still populate props.Credentials so the
+	// PUT body marshals to `"credentials": {}` — otherwise the ARM API rejects with
+	// `400 ValidationError: Credentials Property can't be empty for auth type OAuth2`.
+	//
+	// We exercise the same decision Run makes via buildOAuth2Credentials and then
+	// marshal a full body so this guards both the predicate and the resulting JSON.
 	props := rawConnectionProperties{
 		AuthType:      "OAuth2",
 		Category:      "RemoteTool",
 		Target:        "https://example.com",
 		ConnectorName: "github",
+		Credentials:   buildOAuth2Credentials("oauth2", "", ""),
 	}
+	require.NotNil(t, props.Credentials,
+		"buildOAuth2Credentials must return a non-nil object for --auth-type oauth2 "+
+			"with no client id/secret (managed-connector path)")
+
 	body := rawConnectionBody{Properties: props}
 	data, err := json.Marshal(body)
 	require.NoError(t, err)
@@ -492,10 +504,75 @@ func TestRawConnectionBody_OAuth2_ConnectorNameOnly(t *testing.T) {
 	p := parsed["properties"].(map[string]any)
 	require.Equal(t, "OAuth2", p["authType"])
 	require.Equal(t, "github", p["connectorName"])
-	_, hasCreds := p["credentials"]
-	require.False(t, hasCreds, "credentials should be omitted for connector-name-only")
+
+	creds, hasCreds := p["credentials"]
+	require.True(t, hasCreds, "credentials must be present (empty object) for managed-connector OAuth2")
+	credsMap, ok := creds.(map[string]any)
+	require.True(t, ok, "credentials should marshal as a JSON object")
+	require.Empty(t, credsMap, "credentials should be an empty object when no clientId/clientSecret supplied")
+
+	// The raw JSON should literally contain `"credentials":{}`.
+	require.Contains(t, string(data), `"credentials":{}`)
+
 	_, hasAuthURL := p["authorizationUrl"]
 	require.False(t, hasAuthURL, "authorizationUrl should be omitted for connector-name-only")
+}
+
+func TestBuildOAuth2Credentials(t *testing.T) {
+	tests := []struct {
+		name         string
+		authType     string
+		clientID     string
+		clientSecret string
+		wantNil      bool
+		wantID       string
+		wantSecret   string
+	}{
+		{
+			name:     "oauth2 managed connector emits empty object",
+			authType: "oauth2",
+			wantNil:  false,
+		},
+		{
+			name:         "oauth2 BYO emits client id and secret",
+			authType:     "oauth2",
+			clientID:     "test-cid",
+			clientSecret: "test-csec", //nolint:gosec // test credential, not real
+			wantNil:      false,
+			wantID:       "test-cid",
+			wantSecret:   "test-csec",
+		},
+		{
+			name:     "api-key with no creds returns nil",
+			authType: "api-key",
+			wantNil:  true,
+		},
+		{
+			name:     "user-entra-token with no creds returns nil",
+			authType: "user-entra-token",
+			wantNil:  true,
+		},
+		{
+			name:     "non-oauth2 with client id still emits creds",
+			authType: "api-key",
+			clientID: "cid",
+			wantNil:  false,
+			wantID:   "cid",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildOAuth2Credentials(tt.authType, tt.clientID, tt.clientSecret)
+			if tt.wantNil {
+				require.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			require.Equal(t, tt.wantID, got.ClientID)
+			require.Equal(t, tt.wantSecret, got.ClientSecret)
+		})
+	}
 }
 
 func TestBuildCredentialReferences(t *testing.T) {

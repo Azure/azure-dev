@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"azure.ai.routines/internal/exterrors"
@@ -21,6 +22,13 @@ type routineCreateFlags struct {
 	timeZone        string
 	at              string
 	cronExpression  string
+	connectionID    string
+	owner           string
+	repository      string
+	issueEvent      string
+	provider        string
+	eventName       string
+	parametersJSON  string
 	action          string
 	agentName       string
 	agentEndpointID string
@@ -55,23 +63,37 @@ Use --file to create from a YAML/JSON manifest file instead of individual flags.
 	}
 
 	cmd.Flags().StringVar(&flags.trigger, "trigger", "",
-		"Trigger type: timer or recurring (required unless --file is used)")
+		"Trigger type: timer, recurring, github-issue, or custom (required unless --file is used)")
 	cmd.Flags().StringVar(&flags.timeZone, "time-zone", "UTC",
-		"Time zone for the trigger (e.g. 'America/New_York')")
+		"Time zone for the recurring trigger (e.g. 'America/New_York')")
 	cmd.Flags().StringVar(&flags.at, "at", "",
 		"ISO 8601 datetime for timer trigger (e.g. '2026-04-24T15:00:00Z')")
 	cmd.Flags().StringVar(&flags.cronExpression, "cron", "",
 		"5-field cron expression for recurring trigger (minimum interval 5 minutes)")
+	cmd.Flags().StringVar(&flags.connectionID, "connection-id", "",
+		"Workspace connection ID (for github-issue trigger)")
+	cmd.Flags().StringVar(&flags.owner, "owner", "",
+		"GitHub owner or organization (for github-issue trigger)")
+	cmd.Flags().StringVar(&flags.repository, "repository", "",
+		"GitHub repository name (for github-issue trigger)")
+	cmd.Flags().StringVar(&flags.issueEvent, "issue-event", "",
+		"GitHub issue event: opened or closed (for github-issue trigger)")
+	cmd.Flags().StringVar(&flags.provider, "provider", "",
+		"External event provider (for custom trigger)")
+	cmd.Flags().StringVar(&flags.eventName, "event-name", "",
+		"Provider-specific event name (for custom trigger)")
+	cmd.Flags().StringVar(&flags.parametersJSON, "parameters", "",
+		"Provider-specific trigger parameters as a JSON object (for custom trigger)")
 	cmd.Flags().StringVar(&flags.action, "action", "agent-response",
 		"Action type: agent-response (default), agent-invoke")
 	cmd.Flags().StringVar(&flags.agentName, "agent-name", "",
-		"Project-scoped agent name (for agent-response action)")
+		"Project-scoped agent name (for agent-response or agent-invoke action)")
 	cmd.Flags().StringVar(&flags.agentEndpointID, "agent-endpoint-id", "",
 		"Agent endpoint ID (for agent-response or agent-invoke action)")
 	cmd.Flags().StringVar(&flags.conversationID, "conversation-id", "",
-		"Conversation ID (for agent-response action, preview)")
+		"Existing conversation to continue (for agent-response action, preview)")
 	cmd.Flags().StringVar(&flags.sessionID, "session-id", "",
-		"Session ID (for agent-invoke action)")
+		"Existing session to continue (for agent-invoke action)")
 	cmd.Flags().StringVar(&flags.description, "description", "",
 		"Description for the routine")
 	cmd.Flags().BoolVar(&flags.enabled, "enabled", true,
@@ -194,31 +216,20 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 
 // buildTrigger constructs a RoutineTrigger from CLI flags.
 //
-// Supported triggers: timer (one-shot, --at) and recurring (cron, --cron).
-// The github-issue trigger is deferred until the Foundry service accepts the
-// renamed github_issue_opened discriminator.
+// Supported triggers: timer (one-shot, --at), recurring (cron, --cron),
+// github-issue (--connection-id/--owner/--repository/--issue-event), and
+// custom (--provider/--event-name/--parameters).
 func buildTrigger(flags *routineCreateFlags) (routines.RoutineTrigger, error) {
-	if flags.trigger == "github-issue" {
-		return routines.RoutineTrigger{}, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"trigger type 'github-issue' is not yet supported by the CLI",
-			"use --trigger timer or --trigger recurring; github-issue is deferred to a future release",
-		)
-	}
-
 	wireType, ok := routines.TriggerCLIToWire[flags.trigger]
 	if !ok {
 		return routines.RoutineTrigger{}, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("unknown trigger type %q", flags.trigger),
-			"supported triggers: timer, recurring",
+			"supported triggers: timer, recurring, github-issue, custom",
 		)
 	}
 
-	t := routines.RoutineTrigger{
-		Type:     wireType,
-		TimeZone: flags.timeZone,
-	}
+	t := routines.RoutineTrigger{Type: wireType}
 
 	switch flags.trigger {
 	case "timer":
@@ -230,6 +241,15 @@ func buildTrigger(flags *routineCreateFlags) (routines.RoutineTrigger, error) {
 			)
 		}
 		t.At = flags.at
+		// timer no longer carries time_zone in the v1 spec; silently ignore the
+		// flag's default ("UTC") and only error if the user passed a non-UTC.
+		if flags.timeZone != "" && flags.timeZone != "UTC" {
+			return t, exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--time-zone is not applicable to trigger type 'timer'",
+				"omit --time-zone; pass an absolute UTC --at instead",
+			)
+		}
 	case "recurring":
 		if flags.cronExpression == "" {
 			return t, exterrors.Validation(
@@ -239,6 +259,55 @@ func buildTrigger(flags *routineCreateFlags) (routines.RoutineTrigger, error) {
 			)
 		}
 		t.CronExpression = flags.cronExpression
+		t.TimeZone = flags.timeZone
+	case "github-issue":
+		if flags.connectionID == "" || flags.owner == "" ||
+			flags.repository == "" || flags.issueEvent == "" {
+			return t, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--connection-id, --owner, --repository, and --issue-event are required for trigger type 'github-issue'",
+				"provide all four flags, e.g. --connection-id conn --owner github --repository azure-dev --issue-event opened",
+			)
+		}
+		switch flags.issueEvent {
+		case routines.GitHubIssueEventOpened, routines.GitHubIssueEventClosed:
+		default:
+			return t, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("unsupported --issue-event value %q", flags.issueEvent),
+				"supported values: opened, closed",
+			)
+		}
+		t.ConnectionID = flags.connectionID
+		t.Owner = flags.owner
+		t.Repository = flags.repository
+		t.IssueEvent = flags.issueEvent
+	case "custom":
+		if flags.provider == "" {
+			return t, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--provider is required for trigger type 'custom'",
+				"provide --provider <external-provider-id>",
+			)
+		}
+		if flags.parametersJSON == "" {
+			return t, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--parameters is required for trigger type 'custom'",
+				"provide a JSON object literal, e.g. --parameters '{\"key\":\"value\"}'",
+			)
+		}
+		var params map[string]any
+		if err := json.Unmarshal([]byte(flags.parametersJSON), &params); err != nil {
+			return t, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("--parameters is not valid JSON: %v", err),
+				"provide a JSON object literal, e.g. --parameters '{\"key\":\"value\"}'",
+			)
+		}
+		t.Provider = flags.provider
+		t.EventName = flags.eventName
+		t.Parameters = &params
 	}
 
 	return t, nil
@@ -282,20 +351,20 @@ func buildAction(actionType, agentName, agentEndpointID, conversationID, session
 		}
 		a.AgentName = agentName
 		a.AgentEndpointID = agentEndpointID
-		a.ConversationID = conversationID
+		a.Conversation = conversationID
 	case "agent-invoke":
-		if agentEndpointID == "" {
-			return a, exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"--agent-endpoint-id is required for agent-invoke action",
-				"provide --agent-endpoint-id <id>",
-			)
-		}
-		if agentName != "" {
+		if agentName != "" && agentEndpointID != "" {
 			return a, exterrors.Validation(
 				exterrors.CodeConflictingArguments,
-				"--agent-name is not applicable to agent-invoke action",
-				"use --agent-endpoint-id for agent-invoke, or omit --agent-name",
+				"--agent-name and --agent-endpoint-id are mutually exclusive for agent-invoke action",
+				"provide either --agent-name or --agent-endpoint-id, not both",
+			)
+		}
+		if agentName == "" && agentEndpointID == "" {
+			return a, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"one of --agent-name or --agent-endpoint-id is required for agent-invoke action",
+				"provide --agent-name <id> or --agent-endpoint-id <id>",
 			)
 		}
 		if conversationID != "" {
@@ -305,6 +374,7 @@ func buildAction(actionType, agentName, agentEndpointID, conversationID, session
 				"use --session-id for agent-invoke, or omit --conversation-id",
 			)
 		}
+		a.AgentName = agentName
 		a.AgentEndpointID = agentEndpointID
 		a.SessionID = sessionID
 	}

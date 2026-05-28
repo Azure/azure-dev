@@ -43,7 +43,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 			toolboxDeleteFlags{version: "2", force: true}, toolboxFlags{output: "table"},
 		)
 		le := requireLocalError(t, err, exterrors.CodeDefaultVersionDelete)
-		assert.Contains(t, le.Suggestion, "default-version")
+		assert.Contains(t, le.Suggestion, "azd ai toolbox publish")
 		assert.Empty(t, client.deleteVersionCalls, "service must not be called")
 	})
 
@@ -208,6 +208,9 @@ func TestRunConnectionAddWith_AppendsAndPromotesDefault(t *testing.T) {
 		Name: "tb", Version: "1", Description: "first", Tools: []map[string]any{
 			{"type": "mcp", "name": "a", "project_connection_id": "/c/a"},
 		},
+		Policies: &azure.ToolboxPolicies{
+			RaiConfig: &azure.RaiConfig{RaiPolicyName: "Microsoft.Default"},
+		},
 	}}
 
 	resolver := newStubConnectionResolver()
@@ -221,9 +224,13 @@ func TestRunConnectionAddWith_AppendsAndPromotesDefault(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1)
-	assert.Equal(t, "first", client.createVersionCalls[0].req.Description, "description carried forward")
-	assert.Len(t, client.createVersionCalls[0].req.Tools, 2)
-	require.Len(t, client.setDefaultCalls, 1, "default version must be retargeted")
+	req := client.createVersionCalls[0].req
+	assert.Equal(t, "first", req.Description, "description carried forward")
+	assert.Len(t, req.Tools, 2)
+	require.NotNil(t, req.Policies, "policies must be carried forward")
+	require.NotNil(t, req.Policies.RaiConfig)
+	assert.Equal(t, "Microsoft.Default", req.Policies.RaiConfig.RaiPolicyName)
+	assert.Empty(t, client.setDefaultCalls, "mutation verbs no longer auto-promote default")
 }
 
 func TestRunConnectionAddWith_ConnectionNotFound(t *testing.T) {
@@ -283,7 +290,7 @@ func TestRunConnectionAddWith_FromFileAddsMultipleToolsSingleVersion(t *testing.
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1, "single version increment for batch input")
 	assert.Len(t, client.createVersionCalls[0].req.Tools, 3, "existing + 2 additions")
-	require.Len(t, client.setDefaultCalls, 1)
+	assert.Empty(t, client.setDefaultCalls)
 }
 
 // Public entry-point validation: empty connection without --from-file.
@@ -312,7 +319,9 @@ func TestRunConnectionRemoveWith_LastToolBlocks(t *testing.T) {
 
 	err := runConnectionRemoveWith(
 		t.Context(), client, resolver, "https://e/",
-		"tb", "a", connectionRemoveFlags{force: true}, toolboxFlags{output: "table"},
+		"tb", []string{"a"},
+		connectionRemoveFlags{force: true},
+		toolboxFlags{output: "table"},
 	)
 	requireLocalError(t, err, exterrors.CodeLastToolRemoval)
 	assert.Empty(t, client.createVersionCalls)
@@ -326,6 +335,9 @@ func TestRunConnectionRemoveWith_FilteredAndPromoted(t *testing.T) {
 			{"type": "mcp", "name": "a", "project_connection_id": "/c/a"},
 			{"type": "mcp", "name": "b", "project_connection_id": "/c/b"},
 		},
+		Policies: &azure.ToolboxPolicies{
+			RaiConfig: &azure.RaiConfig{RaiPolicyName: "Microsoft.Default"},
+		},
 	}}
 	resolver := newStubConnectionResolver()
 	resolver.byName["a"] = &projectConnection{
@@ -334,12 +346,17 @@ func TestRunConnectionRemoveWith_FilteredAndPromoted(t *testing.T) {
 
 	err := runConnectionRemoveWith(
 		t.Context(), client, resolver, "https://e/",
-		"tb", "a", connectionRemoveFlags{force: true}, toolboxFlags{output: "json"},
+		"tb", []string{"a"},
+		connectionRemoveFlags{force: true},
+		toolboxFlags{output: "json"},
 	)
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1)
-	assert.Len(t, client.createVersionCalls[0].req.Tools, 1)
-	require.Len(t, client.setDefaultCalls, 1)
+	req := client.createVersionCalls[0].req
+	assert.Len(t, req.Tools, 1)
+	require.NotNil(t, req.Policies, "policies must be carried forward on remove")
+	assert.Equal(t, "Microsoft.Default", req.Policies.RaiConfig.RaiPolicyName)
+	assert.Empty(t, client.setDefaultCalls)
 }
 
 func TestRunConnectionRemoveWith_ConnectionNotInToolbox(t *testing.T) {
@@ -357,7 +374,9 @@ func TestRunConnectionRemoveWith_ConnectionNotInToolbox(t *testing.T) {
 
 	err := runConnectionRemoveWith(
 		t.Context(), client, resolver, "https://e/",
-		"tb", "a", connectionRemoveFlags{force: true}, toolboxFlags{output: "table"},
+		"tb", []string{"a"},
+		connectionRemoveFlags{force: true},
+		toolboxFlags{output: "table"},
 	)
 	requireLocalError(t, err, exterrors.CodeConnectionNotInToolbox)
 }
@@ -387,10 +406,9 @@ func TestRunConnectionListWith_EmitsAllShapes(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestRunToolboxUpdate_MissingDefaultVersion(t *testing.T) {
-	err := runToolboxUpdate(
-		t.Context(), "tb",
-		toolboxUpdateFlags{},
+func TestRunToolboxPublish_WhitespaceVersion(t *testing.T) {
+	err := runToolboxPublish(
+		t.Context(), "tb", "  ",
 		toolboxFlags{output: "table"},
 	)
 	requireLocalError(t, err, exterrors.CodeMissingUpdateField)
@@ -422,6 +440,77 @@ connections:
 	assert.Len(t, client.createVersionCalls[0].req.Tools, 1)
 }
 
+func TestRunToolboxCreateWith_SkillsFromFile(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	resolver := newStubConnectionResolver()
+	resolver.byName["mcp"] = &projectConnection{
+		ID: "/c/mcp", Category: connections.ConnectionTypeRemoteTool, Name: "mcp",
+		Target: "https://mcp.example.com",
+	}
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+description: tb with skills
+connections:
+  - name: mcp
+skills:
+  - name: pinned
+    version: "3"
+  - name: unpinned
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, resolver, "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath},
+		toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+
+	skills := client.createVersionCalls[0].req.Skills
+	require.Len(t, skills, 2)
+
+	byName := map[string]map[string]any{}
+	for _, s := range skills {
+		n, _ := s["name"].(string)
+		byName[n] = s
+	}
+	require.Contains(t, byName, "pinned")
+	require.Contains(t, byName, "unpinned")
+	assert.Equal(t, "skill_reference", byName["pinned"]["type"])
+	assert.Equal(t, "3", byName["pinned"]["version"])
+	_, hasVersion := byName["unpinned"]["version"]
+	assert.False(t, hasVersion, "skill without version must omit the version key")
+}
+
+func TestRunToolboxCreateWith_DuplicateSkillRejected(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	resolver := newStubConnectionResolver()
+	resolver.byName["mcp"] = &projectConnection{
+		ID: "/c/mcp", Category: connections.ConnectionTypeRemoteTool, Name: "mcp",
+		Target: "https://mcp.example.com",
+	}
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+description: tb
+connections:
+  - name: mcp
+skills:
+  - name: dup
+  - name: dup
+    version: "2"
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, resolver, "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath},
+		toolboxFlags{output: "json"},
+	)
+	requireLocalError(t, err, exterrors.CodeDuplicateSkill)
+	assert.Empty(t, client.createVersionCalls, "no version should be created when local validation fails")
+}
+
 func TestRunToolboxCreateWith_AlreadyExists(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{Name: "tb", DefaultVersion: "1"}}
@@ -433,7 +522,7 @@ func TestRunToolboxCreateWith_AlreadyExists(t *testing.T) {
 	requireLocalError(t, err, exterrors.CodeInvalidToolboxName)
 }
 
-func TestRunToolboxCreateWith_NoConnectionsRejected(t *testing.T) {
+func TestRunToolboxCreateWith_NoEntriesRejected(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 
 	err := runToolboxCreateWith(
@@ -441,6 +530,220 @@ func TestRunToolboxCreateWith_NoConnectionsRejected(t *testing.T) {
 		toolboxCreateFlags{}, toolboxFlags{output: "table"},
 	)
 	requireLocalError(t, err, exterrors.CodeInvalidToolboxName)
+	assert.Empty(t, client.createVersionCalls)
+}
+
+// policies.rai_config in --from-file is forwarded to the data-plane request
+// as ToolboxPolicies.RaiConfig.RaiPolicyName.
+func TestRunToolboxCreateWith_ForwardsRaiPolicy(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	resolver := newStubConnectionResolver()
+	resolver.byName["mcp"] = &projectConnection{
+		ID: "/c/mcp", Category: connections.ConnectionTypeRemoteTool, Name: "mcp",
+		Target: "https://mcp.example.com",
+	}
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+description: tb with rai
+connections:
+  - name: mcp
+policies:
+  rai_config:
+    rai_policy_name: Microsoft.Default
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, resolver, "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	req := client.createVersionCalls[0].req
+	require.NotNil(t, req.Policies)
+	require.NotNil(t, req.Policies.RaiConfig)
+	assert.Equal(t, "Microsoft.Default", req.Policies.RaiConfig.RaiPolicyName)
+}
+
+// policies.rai_config with an empty/whitespace name is rejected locally with a
+// fix-it suggestion rather than forwarded to the data plane.
+func TestRunToolboxCreateWith_EmptyRaiPolicyNameRejected(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	resolver := newStubConnectionResolver()
+	resolver.byName["mcp"] = &projectConnection{
+		ID: "/c/mcp", Category: connections.ConnectionTypeRemoteTool, Name: "mcp",
+		Target: "https://mcp.example.com",
+	}
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+connections:
+  - name: mcp
+policies:
+  rai_config:
+    rai_policy_name: "   "
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, resolver, "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "table"},
+	)
+	requireLocalError(t, err, exterrors.CodeInvalidParameter)
+	assert.Empty(t, client.createVersionCalls)
+}
+
+// A tools-only --from-file payload (no connections) is valid and the raw
+// entries reach the data plane verbatim.
+func TestRunToolboxCreateWith_ToolsOnlyFromFile(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+description: connectionless toolbox
+tools:
+  - type: web_search
+    name: web
+  - type: file_search
+    name: files
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	tools := client.createVersionCalls[0].req.Tools
+	require.Len(t, tools, 2)
+	assert.Equal(t, "web_search", tools[0]["type"])
+	assert.Equal(t, "file_search", tools[1]["type"])
+}
+
+// Connection-backed entries come first, raw tools[] entries after.
+func TestRunToolboxCreateWith_MixedConnectionsAndTools(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	resolver := newStubConnectionResolver()
+	resolver.byName["mcp"] = &projectConnection{
+		ID: "/c/mcp", Category: connections.ConnectionTypeRemoteTool, Name: "mcp",
+		Target: "https://mcp.example.com",
+	}
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+connections:
+  - name: mcp
+tools:
+  - type: web_search
+    name: web
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, resolver, "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	tools := client.createVersionCalls[0].req.Tools
+	require.Len(t, tools, 2)
+	assert.Equal(t, "mcp", tools[0]["type"])
+	assert.Equal(t, "web_search", tools[1]["type"])
+}
+
+// A tools[] entry missing the discriminator `type` is rejected locally.
+func TestRunToolboxCreateWith_RawToolMissingType(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+tools:
+  - name: oops
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "table"},
+	)
+	requireLocalError(t, err, exterrors.CodeMissingToolType)
+	assert.Empty(t, client.createVersionCalls)
+}
+
+// A raw tools[] entry whose `name` violates the service regex is rejected
+// locally rather than producing a generic 400. Covers invalid characters,
+// explicit empty string, and non-string YAML scalars.
+func TestRunToolboxCreateWith_RawToolInvalidName(t *testing.T) {
+	cases := []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{
+			name: "invalid chars",
+			yaml: `
+tools:
+  - type: web_search
+    name: bad.name
+`,
+			wantErr: exterrors.CodeInvalidToolboxName,
+		},
+		{
+			name: "empty string",
+			yaml: `
+tools:
+  - type: web_search
+    name: ""
+`,
+			wantErr: exterrors.CodeInvalidToolboxName,
+		},
+		{
+			name: "non-string scalar",
+			yaml: `
+tools:
+  - type: web_search
+    name: 42
+`,
+			wantErr: exterrors.CodeInvalidParameter,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := newMockToolboxClient("https://e/")
+			inputPath := t.TempDir() + "/create.yaml"
+			require.NoError(t, os.WriteFile(inputPath, []byte(tc.yaml), 0o600))
+
+			err := runToolboxCreateWith(
+				t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
+				toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "table"},
+			)
+			requireLocalError(t, err, tc.wantErr)
+			assert.Empty(t, client.createVersionCalls)
+		})
+	}
+}
+
+// Two entries sharing the same `name` collide regardless of source. A common
+// mistake is a raw tool whose name matches an attached connection's short name.
+func TestRunToolboxCreateWith_DuplicateToolNameRejected(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	resolver := newStubConnectionResolver()
+	resolver.byName["mcp"] = &projectConnection{
+		ID: "/c/mcp", Category: connections.ConnectionTypeRemoteTool, Name: "mcp",
+		Target: "https://mcp.example.com",
+	}
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+connections:
+  - name: mcp
+tools:
+  - type: web_search
+    name: mcp
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, resolver, "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "table"},
+	)
+	requireLocalError(t, err, exterrors.CodeDuplicateToolName)
 	assert.Empty(t, client.createVersionCalls)
 }
 
@@ -506,11 +809,107 @@ func TestRunToolboxVersionListWith_ListVersionsServiceError(t *testing.T) {
 }
 
 func TestRunConnectionRemove_NoPromptWithoutForce(t *testing.T) {
-	err := runConnectionRemove(
-		t.Context(), "tb", "conn",
+	err := runConnectionRemove(t.Context(), "tb", []string{"conn"},
 		connectionRemoveFlags{force: false},
 		toolboxFlags{output: "table", noPrompt: true},
 		newStubConnectionResolver(),
 	)
 	requireLocalError(t, err, exterrors.CodeMissingForceFlag)
+}
+
+// Carry-forward: skills attached to the current default version must survive
+// across new versions created by `connection add`.
+func TestRunConnectionAddWith_CarriesForwardSkills(t *testing.T) {
+	skills := []map[string]any{
+		{"type": "skill_reference", "name": "alpha", "version": "1"},
+		{"type": "skill_reference", "name": "beta"},
+	}
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1", Description: "first",
+		Tools: []map[string]any{
+			{"type": "mcp", "name": "a", "project_connection_id": "/c/a"},
+		},
+		Skills: skills,
+	}}
+	resolver := newStubConnectionResolver()
+	resolver.byName["b"] = &projectConnection{
+		ID: "/c/b", Category: connections.ConnectionTypeRemoteTool, Name: "b", Target: "https://mcp-b",
+	}
+
+	err := runConnectionAddWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", "b", connectionAddFlags{}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	assert.Equal(t, skills, client.createVersionCalls[0].req.Skills,
+		"skills must be carried forward verbatim into the new version")
+}
+
+// Carry-forward: skills attached to the current default version must survive
+// across new versions created by `connection remove`.
+func TestRunConnectionRemoveWith_CarriesForwardSkills(t *testing.T) {
+	skills := []map[string]any{
+		{"type": "skill_reference", "name": "alpha"},
+	}
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1",
+		Tools: []map[string]any{
+			{"type": "mcp", "name": "a", "project_connection_id": "/c/a"},
+			{"type": "mcp", "name": "b", "project_connection_id": "/c/b"},
+		},
+		Skills: skills,
+	}}
+	resolver := newStubConnectionResolver()
+	resolver.byName["a"] = &projectConnection{
+		ID: "/c/a", Category: connections.ConnectionTypeRemoteTool, Name: "a",
+	}
+
+	err := runConnectionRemoveWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", []string{"a"},
+		connectionRemoveFlags{force: true},
+		toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	assert.Equal(t, skills, client.createVersionCalls[0].req.Skills,
+		"skills must be carried forward verbatim into the new version")
+}
+
+// Batch removal via variadic positionals.
+func TestRunConnectionRemoveWith_VariadicPositionals(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1",
+		Tools: []map[string]any{
+			{"type": "mcp", "name": "a", "project_connection_id": "/c/a"},
+			{"type": "mcp", "name": "b", "project_connection_id": "/c/b"},
+			{"type": "mcp", "name": "c", "project_connection_id": "/c/c"},
+		},
+	}}
+	resolver := newStubConnectionResolver()
+	resolver.byName["a"] = &projectConnection{ID: "/c/a", Name: "a", Category: connections.ConnectionTypeRemoteTool}
+	resolver.byName["b"] = &projectConnection{ID: "/c/b", Name: "b", Category: connections.ConnectionTypeRemoteTool}
+
+	err := runConnectionRemoveWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", []string{"a", "b"},
+		connectionRemoveFlags{force: true}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1, "one new version created for the whole batch")
+	require.Len(t, client.createVersionCalls[0].req.Tools, 1)
+	assert.Equal(t, "/c/c", client.createVersionCalls[0].req.Tools[0]["project_connection_id"])
 }

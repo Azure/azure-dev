@@ -101,7 +101,7 @@ func validateToolName(name string) error {
 					"to match ^[A-Za-z0-9_-]+$ (max %d characters)",
 				name, maxToolboxNameLength,
 			),
-			"rename the project connection so its short name matches the regex",
+			"rename the tool entry (or the underlying project connection) so the name matches the regex",
 		)
 	}
 	return nil

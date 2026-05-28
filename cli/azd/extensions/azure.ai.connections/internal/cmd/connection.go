@@ -359,12 +359,11 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 			Scopes:           a.flags.scopes,
 			ConnectorName:    a.flags.connectorName,
 		}
-		if a.flags.clientID != "" || a.flags.clientSecret != "" {
-			props.Credentials = &rawCredentials{
-				ClientID:     a.flags.clientID,
-				ClientSecret: a.flags.clientSecret,
-			}
-		}
+		// For OAuth2, the ARM connections API requires `credentials` to be present in the
+		// request body even when empty (managed-connector / gateway_connector path uses
+		// Microsoft's OAuth app, so no client id/secret is supplied). An empty object `{}`
+		// is valid; omitting the field entirely returns 400 ValidationError.
+		props.Credentials = buildOAuth2Credentials(a.flags.authType, a.flags.clientID, a.flags.clientSecret)
 		err = rawCreateConnection(ctx, connCtx, a.flags.name, props)
 	default:
 		body, buildErr := buildConnectionBody(

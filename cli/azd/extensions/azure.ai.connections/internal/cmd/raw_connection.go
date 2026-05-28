@@ -40,6 +40,29 @@ type rawCredentials struct {
 	ClientSecret string `json:"clientSecret,omitempty"`
 }
 
+// buildOAuth2Credentials returns the credentials object to embed in a connection
+// PUT body, based on the user-supplied auth type and (optional) BYO OAuth2 client
+// id / secret.
+//
+// The ARM connections API requires `properties.credentials` to be present in the
+// request body for `--auth-type oauth2`, even when no client id/secret is supplied
+// (the managed-connector / gateway_connector path uses Microsoft's OAuth app).
+// Omitting the field entirely returns `400 ValidationError: Credentials Property
+// can't be empty for auth type OAuth2`. An empty object `{}` is valid for that
+// path. See issue #8418.
+//
+// Returns nil for non-OAuth2 auth types that do not supply a client id/secret,
+// so callers can rely on `omitempty` to drop the field.
+func buildOAuth2Credentials(authType, clientID, clientSecret string) *rawCredentials {
+	if authType != "oauth2" && clientID == "" && clientSecret == "" {
+		return nil
+	}
+	return &rawCredentials{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+	}
+}
+
 type rawConnectionBody struct {
 	Properties rawConnectionProperties `json:"properties"`
 }

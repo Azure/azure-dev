@@ -40,13 +40,19 @@ const (
 	CodeUnsupportedIndexFlag          = "unsupported_index_flag"
 	CodeMissingInstanceName           = "missing_instance_name"
 	CodeUnsupportedInstanceNameFlag   = "unsupported_instance_name_flag"
+	CodeInvalidSkillName              = "invalid_skill_name"
+	CodeInvalidSkillSpec              = "invalid_skill_spec"
+	CodeDuplicateSkill                = "duplicate_skill"
+	CodeSkillNotInToolbox             = "skill_not_in_toolbox"
+	CodeSkillAlreadyAttached          = "skill_already_attached"
 	CodeDuplicateConnection           = "duplicate_connection"
+	CodeDuplicateToolName             = "duplicate_tool_name"
+	CodeMissingToolType               = "missing_tool_type"
 	CodeConnectionNotFound            = "connection_not_found"
 	CodeConnectionNotInToolbox        = "connection_not_in_toolbox"
 	CodeConnectionMissingTarget       = "connection_missing_target"
 	CodeLastToolRemoval               = "last_tool_removal"
 	CodePendingToolboxStoreFailed     = "pending_toolbox_store_failed"
-	CodeSetDefaultVersionFailed       = "set_default_version_failed"
 )
 
 // Operation names for [ServiceFromAzure] errors.

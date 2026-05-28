@@ -1,6 +1,6 @@
 # Release History
 
-## 0.0.1-preview (2026-05-28)
+## 0.1.0-preview (2026-05-28)
 
 - [[#8241]](https://github.com/Azure/azure-dev/pull/8241) Initial preview
   release of the `azure.ai.routines` extension.

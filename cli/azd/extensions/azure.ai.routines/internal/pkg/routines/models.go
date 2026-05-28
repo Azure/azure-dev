@@ -40,8 +40,8 @@ type RoutineTrigger struct {
 	IssueEvent   string `json:"issue_event,omitempty"         yaml:"issue_event,omitempty"`
 
 	// custom fields
-	Provider   string         `json:"provider,omitempty"            yaml:"provider,omitempty"`
-	EventName  string         `json:"event_name,omitempty"          yaml:"event_name,omitempty"`
+	Provider   string          `json:"provider,omitempty"            yaml:"provider,omitempty"`
+	EventName  string          `json:"event_name,omitempty"          yaml:"event_name,omitempty"`
 	Parameters *map[string]any `json:"parameters,omitempty"          yaml:"parameters,omitempty"`
 }
 

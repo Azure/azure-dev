@@ -276,7 +276,15 @@ func validateRawToolEntries(tools []map[string]any) ([]map[string]any, error) {
 				"set 'type' to a Foundry tool type (e.g. web_search, file_search, code_interpreter)",
 			)
 		}
-		if nameVal, ok := t["name"].(string); ok && nameVal != "" {
+		if raw, present := t["name"]; present {
+			nameVal, ok := raw.(string)
+			if !ok {
+				return nil, exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					fmt.Sprintf("tools[%d].name must be a string, got %T", i, raw),
+					"set 'name' to a string matching ^[A-Za-z0-9_-]+$ or omit it",
+				)
+			}
 			if err := validateToolName(nameVal); err != nil {
 				return nil, err
 			}

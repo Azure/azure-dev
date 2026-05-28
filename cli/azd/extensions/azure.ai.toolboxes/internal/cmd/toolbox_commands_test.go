@@ -208,6 +208,9 @@ func TestRunConnectionAddWith_AppendsAndPromotesDefault(t *testing.T) {
 		Name: "tb", Version: "1", Description: "first", Tools: []map[string]any{
 			{"type": "mcp", "name": "a", "project_connection_id": "/c/a"},
 		},
+		Policies: &azure.ToolboxPolicies{
+			RaiConfig: &azure.RaiConfig{RaiPolicyName: "Microsoft.Default"},
+		},
 	}}
 
 	resolver := newStubConnectionResolver()
@@ -221,8 +224,12 @@ func TestRunConnectionAddWith_AppendsAndPromotesDefault(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1)
-	assert.Equal(t, "first", client.createVersionCalls[0].req.Description, "description carried forward")
-	assert.Len(t, client.createVersionCalls[0].req.Tools, 2)
+	req := client.createVersionCalls[0].req
+	assert.Equal(t, "first", req.Description, "description carried forward")
+	assert.Len(t, req.Tools, 2)
+	require.NotNil(t, req.Policies, "policies must be carried forward")
+	require.NotNil(t, req.Policies.RaiConfig)
+	assert.Equal(t, "Microsoft.Default", req.Policies.RaiConfig.RaiPolicyName)
 	require.Len(t, client.setDefaultCalls, 1, "default version must be retargeted")
 }
 
@@ -326,6 +333,9 @@ func TestRunConnectionRemoveWith_FilteredAndPromoted(t *testing.T) {
 			{"type": "mcp", "name": "a", "project_connection_id": "/c/a"},
 			{"type": "mcp", "name": "b", "project_connection_id": "/c/b"},
 		},
+		Policies: &azure.ToolboxPolicies{
+			RaiConfig: &azure.RaiConfig{RaiPolicyName: "Microsoft.Default"},
+		},
 	}}
 	resolver := newStubConnectionResolver()
 	resolver.byName["a"] = &projectConnection{
@@ -338,7 +348,10 @@ func TestRunConnectionRemoveWith_FilteredAndPromoted(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1)
-	assert.Len(t, client.createVersionCalls[0].req.Tools, 1)
+	req := client.createVersionCalls[0].req
+	assert.Len(t, req.Tools, 1)
+	require.NotNil(t, req.Policies, "policies must be carried forward on remove")
+	assert.Equal(t, "Microsoft.Default", req.Policies.RaiConfig.RaiPolicyName)
 	require.Len(t, client.setDefaultCalls, 1)
 }
 
@@ -579,23 +592,56 @@ tools:
 }
 
 // A raw tools[] entry whose `name` violates the service regex is rejected
-// locally rather than producing a generic 400.
+// locally rather than producing a generic 400. Covers invalid characters,
+// explicit empty string, and non-string YAML scalars.
 func TestRunToolboxCreateWith_RawToolInvalidName(t *testing.T) {
-	client := newMockToolboxClient("https://e/")
-
-	inputPath := t.TempDir() + "/create.yaml"
-	require.NoError(t, os.WriteFile(inputPath, []byte(`
+	cases := []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{
+			name: "invalid chars",
+			yaml: `
 tools:
   - type: web_search
     name: bad.name
-`), 0o600))
+`,
+			wantErr: exterrors.CodeInvalidToolboxName,
+		},
+		{
+			name: "empty string",
+			yaml: `
+tools:
+  - type: web_search
+    name: ""
+`,
+			wantErr: exterrors.CodeInvalidToolboxName,
+		},
+		{
+			name: "non-string scalar",
+			yaml: `
+tools:
+  - type: web_search
+    name: 42
+`,
+			wantErr: exterrors.CodeInvalidParameter,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := newMockToolboxClient("https://e/")
+			inputPath := t.TempDir() + "/create.yaml"
+			require.NoError(t, os.WriteFile(inputPath, []byte(tc.yaml), 0o600))
 
-	err := runToolboxCreateWith(
-		t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
-		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "table"},
-	)
-	requireLocalError(t, err, exterrors.CodeInvalidToolboxName)
-	assert.Empty(t, client.createVersionCalls)
+			err := runToolboxCreateWith(
+				t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
+				toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "table"},
+			)
+			requireLocalError(t, err, tc.wantErr)
+			assert.Empty(t, client.createVersionCalls)
+		})
+	}
 }
 
 // Two entries sharing the same `name` collide regardless of source. A common

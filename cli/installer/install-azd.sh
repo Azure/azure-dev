@@ -24,7 +24,7 @@ save_error_report_if_enabled() {
     collect_telemetry=$(echo "$env_collect_telemetry" | tr "[:upper:]" "[:lower:]")
 
     # If user has opted out of telemetry return immediately
-    if [ "$no_telemetry" = 1 ] || [ "$collect_telemetry" = "no" ]; then
+    if [ "$no_telemetry" = true ] || [ "$collect_telemetry" = "no" ]; then
         say_verbose "Telemetry disabled. No error report data stored."
         return
     fi
@@ -148,7 +148,7 @@ dry_run=false
 skip_verify=false
 symlink_folder="/usr/local/bin"
 install_folder="/opt/microsoft/azd"
-no_telemetry=0
+no_telemetry=false
 verbose=false
 
 while [[ $# -ne 0 ]];
@@ -189,7 +189,7 @@ do
         shift
         symlink_folder="$1"
         ;;
-    --no-telemetry)
+    -t|--no-telemetry)
         no_telemetry=true
         ;;
     -v|--verbose)

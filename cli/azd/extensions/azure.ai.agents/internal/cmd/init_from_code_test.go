@@ -892,13 +892,14 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		noPrompt       bool
-		showCodeDeploy bool
-		flag           string
-		want           string
-		wantErr        bool
-		wantErrContain string
+		name                 string
+		noPrompt             bool
+		showCodeDeploy       bool
+		flag                 string
+		userProvidedManifest bool
+		want                 string
+		wantErr              bool
+		wantErrContain       string
 	}{
 		{
 			name:           "flag=container returns container",
@@ -943,12 +944,36 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 			flag:           "",
 			want:           "container",
 		},
+		{
+			name:                 "userProvidedManifest + showCodeDeploy auto-selects code",
+			noPrompt:             false,
+			showCodeDeploy:       true,
+			flag:                 "",
+			userProvidedManifest: true,
+			want:                 "code",
+		},
+		{
+			name:                 "userProvidedManifest + showCodeDeploy=false defaults to container",
+			noPrompt:             false,
+			showCodeDeploy:       false,
+			flag:                 "",
+			userProvidedManifest: true,
+			want:                 "container",
+		},
+		{
+			name:                 "explicit flag overrides userProvidedManifest",
+			noPrompt:             false,
+			showCodeDeploy:       true,
+			flag:                 "container",
+			userProvidedManifest: true,
+			want:                 "container",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := promptDeployMode(t.Context(), nil, tt.noPrompt, tt.showCodeDeploy, tt.flag)
+			got, err := promptDeployMode(t.Context(), nil, tt.noPrompt, tt.showCodeDeploy, tt.flag, tt.userProvidedManifest)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -972,13 +997,14 @@ func TestPromptCodeConfig_FlagOverrides(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		files       []string // files to create in temp dir
-		noPrompt    bool
-		opts        codeDeployOptions
-		wantRuntime string
-		wantEntry   string
-		wantDepRes  string
+		name                 string
+		files                []string // files to create in temp dir
+		noPrompt             bool
+		userProvidedManifest bool
+		opts                 codeDeployOptions
+		wantRuntime          string
+		wantEntry            string
+		wantDepRes           string
 	}{
 		{
 			name:        "all opts provided",
@@ -1024,6 +1050,36 @@ func TestPromptCodeConfig_FlagOverrides(t *testing.T) {
 			wantEntry:   "app.py",
 			wantDepRes:  "remote_build",
 		},
+		{
+			name:                 "userProvidedManifest auto-detects python defaults",
+			files:                []string{"requirements.txt", "app.py"},
+			noPrompt:             false,
+			userProvidedManifest: true,
+			opts:                 codeDeployOptions{},
+			wantRuntime:          "python_3_13",
+			wantEntry:            "app.py",
+			wantDepRes:           "remote_build",
+		},
+		{
+			name:                 "userProvidedManifest auto-detects dotnet defaults",
+			files:                []string{"MyAgent.csproj"},
+			noPrompt:             false,
+			userProvidedManifest: true,
+			opts:                 codeDeployOptions{},
+			wantRuntime:          "dotnet_10",
+			wantEntry:            "MyAgent.dll",
+			wantDepRes:           "remote_build",
+		},
+		{
+			name:                 "opts override userProvidedManifest defaults",
+			files:                []string{"requirements.txt", "app.py"},
+			noPrompt:             false,
+			userProvidedManifest: true,
+			opts:                 codeDeployOptions{runtime: "python_3_14", entryPoint: "bot.py", depResolution: "bundled"},
+			wantRuntime:          "python_3_14",
+			wantEntry:            "bot.py",
+			wantDepRes:           "bundled",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1036,7 +1092,7 @@ func TestPromptCodeConfig_FlagOverrides(t *testing.T) {
 				}
 			}
 
-			got, err := promptCodeConfig(t.Context(), nil, dir, tt.noPrompt, tt.opts)
+			got, err := promptCodeConfig(t.Context(), nil, dir, tt.noPrompt, tt.opts, tt.userProvidedManifest)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

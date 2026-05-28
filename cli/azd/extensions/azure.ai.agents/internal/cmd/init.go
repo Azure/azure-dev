@@ -95,6 +95,11 @@ type InitAction struct {
 	httpClient           *http.Client
 	serviceNameOverride  string // when set, addToProject uses this instead of the manifest name
 	createdFolderDisplay string // pre-computed relative display path for the created folder
+
+	// userProvidedManifest is true when the user explicitly provided a manifest via
+	// the -m flag or positional argument (not auto-detected from the working directory).
+	// When true, the init flow applies opinionated defaults to minimize interactive prompts.
+	userProvidedManifest bool
 }
 
 // modelSelector encapsulates the dependencies needed for model selection and
@@ -108,15 +113,17 @@ type modelSelector struct {
 
 	modelCatalog         map[string]*azdext.AiModel
 	locationWarningShown bool
+	userProvidedManifest bool
 }
 
 func (a *InitAction) getModelSelector() *modelSelector {
 	if a.models == nil {
 		a.models = &modelSelector{
-			azdClient:    a.azdClient,
-			azureContext: a.azureContext,
-			environment:  a.environment,
-			flags:        a.flags,
+			azdClient:            a.azdClient,
+			azureContext:         a.azureContext,
+			environment:          a.environment,
+			flags:                a.flags,
+			userProvidedManifest: a.userProvidedManifest,
 		}
 	}
 	return a.models
@@ -542,6 +549,7 @@ func runInitFromManifest(
 	httpClient *http.Client,
 	targetDir string,
 	createdFolderDisplay string,
+	userProvidedManifest bool,
 ) error {
 	// Ensure project and environment exist (no subscription/location prompting yet)
 	projectConfig, err := ensureProject(ctx, flags, azdClient, targetDir)
@@ -603,6 +611,7 @@ func runInitFromManifest(
 		flags:                flags,
 		httpClient:           httpClient,
 		createdFolderDisplay: createdFolderDisplay,
+		userProvidedManifest: userProvidedManifest,
 	}
 
 	return action.Run(ctx)
@@ -653,6 +662,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					return err
 				}
 			}
+
+			// Capture whether the user explicitly provided a manifest (via -m flag
+			// or positional argument) BEFORE the auto-detection logic below may also
+			// set flags.manifestPointer. This drives the opinionated-defaults path.
+			userProvidedManifest := flags.manifestPointer != ""
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 
@@ -781,7 +795,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					return err
 				}
 
-				if err := runInitFromManifest(ctx, flags, azdClient, httpClient, ".", ""); err != nil {
+				if err := runInitFromManifest(ctx, flags, azdClient, httpClient, ".", "", userProvidedManifest); err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
 					}
@@ -889,7 +903,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						if manifestPath != "" {
 							flags.manifestPointer = manifestPath
 							if err := runInitFromManifest(
-								ctx, flags, azdClient, httpClient, ".", folderDisplay,
+								ctx, flags, azdClient, httpClient, ".", folderDisplay, false,
 							); err != nil {
 								if exterrors.IsCancellation(err) {
 									return exterrors.Cancelled("initialization was cancelled")
@@ -914,7 +928,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 						flags.manifestPointer = selectedTemplate.Source
 						if err := runInitFromManifest(
-							ctx, flags, azdClient, httpClient, folderName, folderDisplay,
+							ctx, flags, azdClient, httpClient, folderName, folderDisplay, false,
 						); err != nil {
 							if exterrors.IsCancellation(err) {
 								return exterrors.Cancelled("initialization was cancelled")
@@ -1040,7 +1054,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		// Code deploy is supported for Python and .NET projects.
 		if _, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
 			showCodeDeploy := isPythonProject(targetDir) || isDotnetProject(targetDir)
-			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, a.flags.deployMode)
+			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, a.flags.deployMode, a.userProvidedManifest)
 			if err != nil {
 				return fmt.Errorf("prompting for deploy mode: %w", err)
 			}
@@ -1052,7 +1066,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 					runtime:       a.flags.runtime,
 					entryPoint:    a.flags.entryPoint,
 					depResolution: a.flags.depResolution,
-				})
+				}, a.userProvidedManifest)
 				if err != nil {
 					return fmt.Errorf("prompting for code configuration: %w", err)
 				}
@@ -2568,14 +2582,6 @@ func (a *InitAction) populateContainerSettings(
 	ctx context.Context,
 	manifestResources *agent_yaml.ContainerResources,
 ) (*project.ContainerSettings, error) {
-	choices := make([]*azdext.SelectChoice, len(project.ResourceTiers))
-	for i, t := range project.ResourceTiers {
-		choices[i] = &azdext.SelectChoice{
-			Label: t.String(),
-			Value: fmt.Sprintf("%d", i),
-		}
-	}
-
 	defaultIndex := int32(0)
 	if manifestResources != nil {
 		for i, t := range project.ResourceTiers {
@@ -2583,6 +2589,27 @@ func (a *InitAction) populateContainerSettings(
 				defaultIndex = boundedInt32Index(i)
 				break
 			}
+		}
+	}
+
+	// When the user provided a manifest explicitly (-m), auto-select the default
+	// resource tier without prompting to minimize interactive steps.
+	if a.userProvidedManifest {
+		selected := project.ResourceTiers[defaultIndex]
+		fmt.Printf("  %s Compute: %s (default)\n", output.WithSuccessFormat("✓"), selected.String())
+		return &project.ContainerSettings{
+			Resources: &project.ResourceSettings{
+				Memory: selected.Memory,
+				Cpu:    selected.Cpu,
+			},
+		}, nil
+	}
+
+	choices := make([]*azdext.SelectChoice, len(project.ResourceTiers))
+	for i, t := range project.ResourceTiers {
+		choices[i] = &azdext.SelectChoice{
+			Label: t.String(),
+			Value: fmt.Sprintf("%d", i),
 		}
 	}
 

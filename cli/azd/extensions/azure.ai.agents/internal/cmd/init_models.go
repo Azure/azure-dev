@@ -199,6 +199,26 @@ func (a *InitAction) getModelDeploymentDetails(
 		}
 
 		if len(matchingDeployments) > 0 {
+			// When the user provided a manifest (-m) and there's exactly one match,
+			// auto-select it without prompting.
+			if a.userProvidedManifest && len(matchingDeployments) == 1 {
+				for name, deployment := range matchingDeployments {
+					fmt.Printf("  %s Model: %s — using existing deployment '%s'\n", output.WithSuccessFormat("✓"), model.Id, name)
+					return &project.Deployment{
+						Name: name,
+						Model: project.DeploymentModel{
+							Name:    model.Id,
+							Format:  deployment.ModelFormat,
+							Version: deployment.Version,
+						},
+						Sku: project.DeploymentSku{
+							Name:     deployment.SkuName,
+							Capacity: deployment.SkuCapacity,
+						},
+					}, false, nil
+				}
+			}
+
 			fmt.Printf("In your Microsoft Foundry project, found %d existing model deployment(s) matching your model %s.\n", len(matchingDeployments), model.Id)
 
 			var options []string
@@ -360,7 +380,7 @@ func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (
 			return nil, fmt.Errorf("no model selected, exiting")
 		}
 		model = selectedModel
-	} else if !a.flags.noPrompt {
+	} else if !a.flags.noPrompt && !a.userProvidedManifest {
 		// Model found in catalog — let user confirm or choose a different one
 		choices := []*azdext.SelectChoice{
 			{Label: fmt.Sprintf("Use '%s' (from manifest)", model.Name), Value: "keep"},

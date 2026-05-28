@@ -106,7 +106,7 @@ func TestGetAllSubscriptionFilters(t *testing.T) {
 	_ = SaveSubscriptionFilter(cfg, "tid-1", []string{"sub-a"})
 	_ = SaveSubscriptionFilter(cfg, "tid-2", []string{"sub-b", "sub-c"})
 
-	filters := GetAllSubscriptionFilters(cfg)
+	filters := getAllSubscriptionFilters(cfg)
 	require.Len(t, filters, 2)
 	require.Equal(t, []string{"sub-a"}, filters["tid-1"])
 	require.Equal(t, []string{"sub-b", "sub-c"}, filters["tid-2"])
@@ -115,7 +115,7 @@ func TestGetAllSubscriptionFilters(t *testing.T) {
 func TestGetAllSubscriptionFilters_Empty(t *testing.T) {
 	cfg := config.NewConfig(nil)
 
-	filters := GetAllSubscriptionFilters(cfg)
+	filters := getAllSubscriptionFilters(cfg)
 	require.Nil(t, filters)
 }
 
@@ -130,7 +130,7 @@ func TestSubscriptionsMatchingFilter(t *testing.T) {
 		return s.Name
 	}
 
-	result := SubscriptionsMatchingFilter(
+	result := subscriptionsMatchingFilter(
 		subs, []string{"sub-1", "sub-3"}, displayFn,
 	)
 	require.Equal(t, []string{"Alpha", "Charlie"}, result)
@@ -145,7 +145,7 @@ func TestSubscriptionsMatchingFilter_EmptyFilter(t *testing.T) {
 		return s.Name
 	}
 
-	result := SubscriptionsMatchingFilter(subs, nil, displayFn)
+	result := subscriptionsMatchingFilter(subs, nil, displayFn)
 	require.Nil(t, result)
 }
 

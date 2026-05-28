@@ -13,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/tool"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -74,7 +73,6 @@ func passthroughNext(called *bool) NextFn {
 func TestToolFirstRunMiddleware_SkipConditions(t *testing.T) {
 	// These tests modify env vars via t.Setenv so they cannot be
 	// parallel with each other or with tests that read the same vars.
-	t.Setenv("AZD_ALPHA_ENABLE_TOOL", "true")
 
 	tests := []struct {
 		name     string
@@ -158,7 +156,6 @@ func TestToolFirstRunMiddleware_SkipConditions(t *testing.T) {
 			ucm := &mockUserConfigManager{cfg: cfg}
 
 			m := &ToolFirstRunMiddleware{
-				alphaManager:  alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 				configManager: ucm,
 				console:       console,
 				manager:       nil, // not needed for skip paths
@@ -195,7 +192,6 @@ func TestToolFirstRunMiddleware_TriggersWhenNoSkip(t *testing.T) {
 	clearCIVars(t)
 	t.Setenv(envKeySkipFirstRun, "")
 	os.Unsetenv(envKeySkipFirstRun)
-	t.Setenv("AZD_ALPHA_ENABLE_TOOL", "true")
 
 	console := mockinput.NewMockConsole()
 	cfg := config.NewEmptyConfig()
@@ -203,7 +199,6 @@ func TestToolFirstRunMiddleware_TriggersWhenNoSkip(t *testing.T) {
 	ucm := &mockUserConfigManager{cfg: cfg}
 
 	m := &ToolFirstRunMiddleware{
-		alphaManager:  alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 		configManager: ucm,
 		console:       console,
 		manager:       nil, // runFirstRunExperience will fail at prompt
@@ -226,44 +221,10 @@ func TestToolFirstRunMiddleware_TriggersWhenNoSkip(t *testing.T) {
 		"triggered first-run experience should produce console output")
 }
 
-// TestToolFirstRunMiddleware_SkipsWhenAlphaDisabled verifies that the
-// middleware is a no-op when the tool alpha feature is not enabled.
-func TestToolFirstRunMiddleware_SkipsWhenAlphaDisabled(t *testing.T) {
-	clearCIVars(t)
-	t.Setenv(envKeySkipFirstRun, "")
-	os.Unsetenv(envKeySkipFirstRun)
-	t.Setenv("AZD_ALPHA_ENABLE_TOOL", "false")
-
-	console := mockinput.NewMockConsole()
-	cfg := config.NewEmptyConfig()
-	opts := &internal.GlobalCommandOptions{}
-	ucm := &mockUserConfigManager{cfg: cfg}
-
-	m := &ToolFirstRunMiddleware{
-		alphaManager:  alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
-		configManager: ucm,
-		console:       console,
-		manager:       nil,
-		options:       opts,
-	}
-
-	nextCalled := false
-	result, err := m.Run(t.Context(), passthroughNext(&nextCalled))
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	assert.True(t, nextCalled,
-		"nextFn must always be called even when alpha is disabled")
-	assert.Empty(t, console.Output(),
-		"alpha-disabled should skip the first-run experience entirely")
-}
-
 // TestToolFirstRunMiddleware_EmitsSkipReason verifies that each documented
 // skip path sets the tool.firstrun.skip_reason usage attribute to the
 // expected value.
 func TestToolFirstRunMiddleware_EmitsSkipReason(t *testing.T) {
-	t.Setenv("AZD_ALPHA_ENABLE_TOOL", "true")
-
 	tests := []struct {
 		name       string
 		setup      func(t *testing.T, console *mockinput.MockConsole, cfg config.Config, opts *internal.GlobalCommandOptions)
@@ -323,7 +284,6 @@ func TestToolFirstRunMiddleware_EmitsSkipReason(t *testing.T) {
 
 			ucm := &mockUserConfigManager{cfg: cfg}
 			m := &ToolFirstRunMiddleware{
-				alphaManager:  alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 				configManager: ucm,
 				console:       console,
 				manager:       nil,
@@ -342,65 +302,42 @@ func TestToolFirstRunMiddleware_EmitsSkipReason(t *testing.T) {
 	}
 }
 
-// TestToolFirstRunMiddleware_NoSkipReasonForSilentPaths verifies that the
-// alpha-disabled and child-action skip paths do NOT emit
-// tool.firstrun.skip_reason (these paths are intentionally silent because the
-// user has no opportunity to opt in / out).
-func TestToolFirstRunMiddleware_NoSkipReasonForSilentPaths(t *testing.T) {
+// TestToolFirstRunMiddleware_NoSkipReasonForChildAction verifies that the
+// child-action skip path does NOT emit tool.firstrun.skip_reason — child
+// actions inherit their parent's first-run state and shouldn't contribute
+// to first-run adoption analysis.
+func TestToolFirstRunMiddleware_NoSkipReasonForChildAction(t *testing.T) {
 	clearCIVars(t)
 	t.Setenv(envKeySkipFirstRun, "")
 	os.Unsetenv(envKeySkipFirstRun)
 
-	cases := []struct {
-		name     string
-		alphaOn  bool
-		childCtx bool
-	}{
-		{name: "alpha_disabled", alphaOn: false},
-		{name: "child_action", alphaOn: true, childCtx: true},
+	tracing.ResetUsageAttributesForTest()
+
+	console := mockinput.NewMockConsole()
+	cfg := config.NewEmptyConfig()
+	opts := &internal.GlobalCommandOptions{}
+	ucm := &mockUserConfigManager{cfg: cfg}
+
+	m := &ToolFirstRunMiddleware{
+		configManager: ucm,
+		console:       console,
+		manager:       nil,
+		options:       opts,
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if tc.alphaOn {
-				t.Setenv("AZD_ALPHA_ENABLE_TOOL", "true")
-			} else {
-				t.Setenv("AZD_ALPHA_ENABLE_TOOL", "false")
-			}
+	ctx := WithChildAction(t.Context())
 
-			tracing.ResetUsageAttributesForTest()
+	nextCalled := false
+	_, err := m.Run(ctx, passthroughNext(&nextCalled))
+	require.NoError(t, err)
+	assert.True(t, nextCalled)
 
-			console := mockinput.NewMockConsole()
-			cfg := config.NewEmptyConfig()
-			opts := &internal.GlobalCommandOptions{}
-			ucm := &mockUserConfigManager{cfg: cfg}
-
-			m := &ToolFirstRunMiddleware{
-				alphaManager:  alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
-				configManager: ucm,
-				console:       console,
-				manager:       nil,
-				options:       opts,
-			}
-
-			ctx := t.Context()
-			if tc.childCtx {
-				ctx = WithChildAction(ctx)
-			}
-
-			nextCalled := false
-			_, err := m.Run(ctx, passthroughNext(&nextCalled))
-			require.NoError(t, err)
-			assert.True(t, nextCalled)
-
-			// Silent skip paths (alpha-disabled / child-action) must not
-			// emit tool.firstrun.skip_reason at all — the user had no
-			// opportunity to opt in/out, so there's nothing to record.
-			_, ok := lookupUsageAttr(string(fields.ToolFirstRunSkipReasonKey.Key))
-			assert.False(t, ok,
-				"silent skip path must not emit tool.firstrun.skip_reason")
-		})
-	}
+	// Child-action skip path must not emit tool.firstrun.skip_reason —
+	// child actions inherit the parent's first-run state, so there's
+	// nothing meaningful to record.
+	_, ok := lookupUsageAttr(string(fields.ToolFirstRunSkipReasonKey.Key))
+	assert.False(t, ok,
+		"child-action skip path must not emit tool.firstrun.skip_reason")
 }
 
 // ---------------------------------------------------------------------------
@@ -515,17 +452,15 @@ func TestToolFirstRunMiddleware_DisplayToolStatuses(t *testing.T) {
 // every dependency on the returned middleware. This guards against future
 // refactors that silently drop a field assignment.
 func TestNewToolFirstRunMiddleware(t *testing.T) {
-	alphaMgr := alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig())
 	console := mockinput.NewMockConsole()
 	ucm := &mockUserConfigManager{cfg: config.NewEmptyConfig()}
 	opts := &internal.GlobalCommandOptions{}
 
-	mw := NewToolFirstRunMiddleware(alphaMgr, ucm, console, nil, opts)
+	mw := NewToolFirstRunMiddleware(ucm, console, nil, opts)
 	require.NotNil(t, mw)
 
 	concrete, ok := mw.(*ToolFirstRunMiddleware)
 	require.True(t, ok, "NewToolFirstRunMiddleware must return a *ToolFirstRunMiddleware")
-	assert.Same(t, alphaMgr, concrete.alphaManager)
 	assert.Same(t, ucm, concrete.configManager)
 	assert.Same(t, console, concrete.console)
 	assert.Nil(t, concrete.manager)

@@ -272,7 +272,7 @@ func TestDefaultPrompter_PromptSubscription_FilterApplied(t *testing.T) {
 	require.Equal(t, "sub-alpha", subId)
 	// Should show only 1 sub + "Show all subscriptions"
 	require.Len(t, shownOptions, 2)
-	require.Equal(t, ShowAllSubscriptionsOption, shownOptions[len(shownOptions)-1])
+	require.Equal(t, " 2. "+ShowAllSubscriptionsOption, shownOptions[len(shownOptions)-1])
 }
 
 func TestDefaultPrompter_PromptSubscription_ShowAll(t *testing.T) {

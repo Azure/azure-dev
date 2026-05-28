@@ -363,12 +363,7 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 		// request body even when empty (managed-connector / gateway_connector path uses
 		// Microsoft's OAuth app, so no client id/secret is supplied). An empty object `{}`
 		// is valid; omitting the field entirely returns 400 ValidationError.
-		if a.flags.authType == "oauth2" || a.flags.clientID != "" || a.flags.clientSecret != "" {
-			props.Credentials = &rawCredentials{
-				ClientID:     a.flags.clientID,
-				ClientSecret: a.flags.clientSecret,
-			}
-		}
+		props.Credentials = buildOAuth2Credentials(a.flags.authType, a.flags.clientID, a.flags.clientSecret)
 		err = rawCreateConnection(ctx, connCtx, a.flags.name, props)
 	default:
 		body, buildErr := buildConnectionBody(

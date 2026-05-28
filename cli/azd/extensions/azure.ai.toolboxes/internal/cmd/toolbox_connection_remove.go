@@ -110,6 +110,13 @@ func runConnectionRemoveWith(
 	verb connectionRemoveFlags,
 	parent toolboxFlags,
 ) error {
+	// Normalize whitespace so callers that pass `" foo "` match the stored
+	// entry. Parity with `skill remove`.
+	names := make([]string, 0, len(connNames))
+	for _, n := range connNames {
+		names = append(names, strings.TrimSpace(n))
+	}
+
 	tb, err := client.GetToolbox(ctx, toolboxName)
 	if err != nil {
 		return toolboxNotFoundOrService(err, toolboxName, exterrors.OpGetToolbox)
@@ -121,8 +128,8 @@ func runConnectionRemoveWith(
 
 	// Resolve each name and strip from the tools[].
 	filtered := slices.Clone(current.Tools)
-	removedConns := make([]*projectConnection, 0, len(connNames))
-	for _, name := range connNames {
+	removedConns := make([]*projectConnection, 0, len(names))
+	for _, name := range names {
 		conn, err := resolver.resolveConnection(ctx, endpoint, name)
 		if err != nil {
 			return err

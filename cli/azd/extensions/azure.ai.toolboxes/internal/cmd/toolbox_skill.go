@@ -21,9 +21,9 @@ var skillNamePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$`)
 
 const skillNameMaxLen = 64
 
-// skillSpec is the parsed form of a --skill or skills[] entry. Empty Version
-// means "use the skill's default version" per the ToolboxSkillReference
-// contract.
+// skillSpec is the parsed form of a positional skill argument or a skills[]
+// file entry. Empty Version means "use the skill's default version" per the
+// ToolboxSkillReference contract.
 type skillSpec struct {
 	Name    string
 	Version string
@@ -36,8 +36,8 @@ func parseSkillFlag(s string) (skillSpec, error) {
 	if trimmed == "" {
 		return skillSpec{}, exterrors.Validation(
 			exterrors.CodeInvalidSkillSpec,
-			"--skill value must not be empty",
-			"pass --skill <name>[@<version>]",
+			"<skill> must not be empty",
+			"pass a skill name as <name>[@<version>]",
 		)
 	}
 
@@ -49,7 +49,7 @@ func parseSkillFlag(s string) (skillSpec, error) {
 		if version == "" {
 			return skillSpec{}, exterrors.Validation(
 				exterrors.CodeInvalidSkillSpec,
-				fmt.Sprintf("--skill %q has an empty version after '@'", trimmed),
+				fmt.Sprintf("<skill> %q has an empty version after '@'", trimmed),
 				"either drop the trailing '@' to use the skill's default version, "+
 					"or pass <name>@<version>",
 			)
@@ -110,7 +110,7 @@ func validateNoDuplicateSkills(entries []map[string]any) error {
 			return exterrors.Validation(
 				exterrors.CodeDuplicateSkill,
 				fmt.Sprintf("skill %q appears more than once in the input", names[i]),
-				"remove duplicate --skill entries (or duplicate skills[] entries in the file)",
+				"remove duplicate skills[] entries from the input file",
 			)
 		}
 	}

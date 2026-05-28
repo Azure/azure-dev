@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"os"
 	"testing"
 
 	"azure.ai.toolboxes/internal/exterrors"
@@ -67,7 +68,7 @@ func TestRunSkillAddWith_AppendsAndCarriesForward(t *testing.T) {
 		},
 	}}
 
-	err := runSkillAddWith(t.Context(), client, "tb", "new-skill@3", toolboxFlags{output: "json"})
+	err := runSkillAddWith(t.Context(), client, "tb", "new-skill@3", skillAddFlags{}, toolboxFlags{output: "json"})
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1)
 
@@ -97,7 +98,7 @@ func TestRunSkillAddWith_NoExistingSkills(t *testing.T) {
 		// Skills nil — exercises the "first skill on a toolbox without any" path.
 	}}
 
-	err := runSkillAddWith(t.Context(), client, "tb", "first-skill", toolboxFlags{output: "json"})
+	err := runSkillAddWith(t.Context(), client, "tb", "first-skill", skillAddFlags{}, toolboxFlags{output: "json"})
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1)
 	require.Len(t, client.createVersionCalls[0].req.Skills, 1)
@@ -119,7 +120,7 @@ func TestRunSkillAddWith_AlreadyAttached(t *testing.T) {
 		},
 	}}
 
-	err := runSkillAddWith(t.Context(), client, "tb", "dup@2", toolboxFlags{output: "json"})
+	err := runSkillAddWith(t.Context(), client, "tb", "dup@2", skillAddFlags{}, toolboxFlags{output: "json"})
 	requireLocalError(t, err, exterrors.CodeSkillAlreadyAttached)
 	assert.Empty(t, client.createVersionCalls, "no version should be published when validation fails")
 }
@@ -134,7 +135,7 @@ func TestRunSkillAddWith_InvalidSpec(t *testing.T) {
 		Tools: []map[string]any{{"type": "mcp", "name": "a"}},
 	}}
 
-	err := runSkillAddWith(t.Context(), client, "tb", "BadName@", toolboxFlags{output: "json"})
+	err := runSkillAddWith(t.Context(), client, "tb", "BadName@", skillAddFlags{}, toolboxFlags{output: "json"})
 	requireLocalError(t, err, exterrors.CodeInvalidSkillSpec)
 }
 
@@ -152,8 +153,7 @@ func TestRunSkillRemoveWith_FilteredAndPromoted(t *testing.T) {
 		},
 	}}
 
-	err := runSkillRemoveWith(
-		t.Context(), client, "tb", "drop",
+	err := runSkillRemoveWith(t.Context(), client, "tb", []string{"drop"},
 		skillRemoveFlags{force: true}, toolboxFlags{output: "json"},
 	)
 	require.NoError(t, err)
@@ -178,8 +178,7 @@ func TestRunSkillRemoveWith_LastSkillAllowed(t *testing.T) {
 		},
 	}}
 
-	err := runSkillRemoveWith(
-		t.Context(), client, "tb", "only",
+	err := runSkillRemoveWith(t.Context(), client, "tb", []string{"only"},
 		skillRemoveFlags{force: true}, toolboxFlags{output: "json"},
 	)
 	require.NoError(t, err)
@@ -202,8 +201,7 @@ func TestRunSkillRemoveWith_TrimsSkillName(t *testing.T) {
 		},
 	}}
 
-	err := runSkillRemoveWith(
-		t.Context(), client, "tb", "  beta  ",
+	err := runSkillRemoveWith(t.Context(), client, "tb", []string{"  beta  "},
 		skillRemoveFlags{force: true}, toolboxFlags{output: "json"},
 	)
 	require.NoError(t, err)
@@ -224,8 +222,7 @@ func TestRunSkillRemoveWith_NotAttached(t *testing.T) {
 		},
 	}}
 
-	err := runSkillRemoveWith(
-		t.Context(), client, "tb", "missing",
+	err := runSkillRemoveWith(t.Context(), client, "tb", []string{"missing"},
 		skillRemoveFlags{force: true}, toolboxFlags{output: "json"},
 	)
 	requireLocalError(t, err, exterrors.CodeSkillNotInToolbox)
@@ -233,7 +230,7 @@ func TestRunSkillRemoveWith_NotAttached(t *testing.T) {
 
 func TestRunSkillRemove_NoPromptWithoutForce(t *testing.T) {
 	err := runSkillRemove(
-		t.Context(), "tb", "any-skill",
+		t.Context(), "tb", []string{"any-skill"},
 		skillRemoveFlags{force: false},
 		toolboxFlags{output: "table", noPrompt: true},
 	)
@@ -278,4 +275,62 @@ func TestExtractSkillRows_SkipsMalformedEntries(t *testing.T) {
 	rows := extractSkillRows(skills)
 	require.Len(t, rows, 1)
 	assert.Equal(t, "ok", rows[0]["name"])
+}
+
+// Batch removal via variadic positionals.
+func TestRunSkillRemoveWith_VariadicPositionals(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1",
+		Tools: []map[string]any{{"type": "mcp", "name": "a", "project_connection_id": "/c/a"}},
+		Skills: []map[string]any{
+			{"type": "skill_reference", "name": "alpha"},
+			{"type": "skill_reference", "name": "beta"},
+			{"type": "skill_reference", "name": "gamma"},
+		},
+	}}
+
+	err := runSkillRemoveWith(t.Context(), client, "tb", []string{"alpha", "gamma"},
+		skillRemoveFlags{force: true}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1, "one new version published for the whole batch")
+	require.Len(t, client.createVersionCalls[0].req.Skills, 1)
+	assert.Equal(t, "beta", client.createVersionCalls[0].req.Skills[0]["name"])
+}
+
+// Batch attachment via --from-file.
+func TestRunSkillAddWith_FromFile(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1",
+		Tools: []map[string]any{{"type": "mcp", "name": "a"}},
+	}}
+
+	inputPath := t.TempDir() + "/skills.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+skills:
+  - name: alpha
+  - name: beta
+    version: "2"
+`), 0o600))
+
+	err := runSkillAddWith(t.Context(), client, "tb", "",
+		skillAddFlags{fromFile: inputPath},
+		toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	require.Len(t, client.createVersionCalls[0].req.Skills, 2)
+	names := []string{
+		client.createVersionCalls[0].req.Skills[0]["name"].(string),
+		client.createVersionCalls[0].req.Skills[1]["name"].(string),
+	}
+	assert.ElementsMatch(t, []string{"alpha", "beta"}, names)
 }

@@ -310,10 +310,7 @@ func TestRunConnectionRemoveWith_LastToolBlocks(t *testing.T) {
 		ID: "/c/a", Category: connections.ConnectionTypeRemoteTool, Name: "a",
 	}
 
-	err := runConnectionRemoveWith(
-		t.Context(), client, resolver, "https://e/",
-		"tb", "a", connectionRemoveFlags{force: true}, toolboxFlags{output: "table"},
-	)
+	err := runConnectionRemoveWith(t.Context(), client, resolver, "https://e/", "tb", []string{"a"}, connectionRemoveFlags{force: true}, toolboxFlags{output: "table"})
 	requireLocalError(t, err, exterrors.CodeLastToolRemoval)
 	assert.Empty(t, client.createVersionCalls)
 }
@@ -332,10 +329,7 @@ func TestRunConnectionRemoveWith_FilteredAndPromoted(t *testing.T) {
 		ID: "/c/a", Category: connections.ConnectionTypeRemoteTool, Name: "a",
 	}
 
-	err := runConnectionRemoveWith(
-		t.Context(), client, resolver, "https://e/",
-		"tb", "a", connectionRemoveFlags{force: true}, toolboxFlags{output: "json"},
-	)
+	err := runConnectionRemoveWith(t.Context(), client, resolver, "https://e/", "tb", []string{"a"}, connectionRemoveFlags{force: true}, toolboxFlags{output: "json"})
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1)
 	assert.Len(t, client.createVersionCalls[0].req.Tools, 1)
@@ -355,10 +349,7 @@ func TestRunConnectionRemoveWith_ConnectionNotInToolbox(t *testing.T) {
 		ID: "/c/a", Category: connections.ConnectionTypeRemoteTool, Name: "a",
 	}
 
-	err := runConnectionRemoveWith(
-		t.Context(), client, resolver, "https://e/",
-		"tb", "a", connectionRemoveFlags{force: true}, toolboxFlags{output: "table"},
-	)
+	err := runConnectionRemoveWith(t.Context(), client, resolver, "https://e/", "tb", []string{"a"}, connectionRemoveFlags{force: true}, toolboxFlags{output: "table"})
 	requireLocalError(t, err, exterrors.CodeConnectionNotInToolbox)
 }
 
@@ -577,8 +568,7 @@ func TestRunToolboxVersionListWith_ListVersionsServiceError(t *testing.T) {
 }
 
 func TestRunConnectionRemove_NoPromptWithoutForce(t *testing.T) {
-	err := runConnectionRemove(
-		t.Context(), "tb", "conn",
+	err := runConnectionRemove(t.Context(), "tb", []string{"conn"},
 		connectionRemoveFlags{force: false},
 		toolboxFlags{output: "table", noPrompt: true},
 		newStubConnectionResolver(),
@@ -642,12 +632,38 @@ func TestRunConnectionRemoveWith_CarriesForwardSkills(t *testing.T) {
 		ID: "/c/a", Category: connections.ConnectionTypeRemoteTool, Name: "a",
 	}
 
-	err := runConnectionRemoveWith(
-		t.Context(), client, resolver, "https://e/",
-		"tb", "a", connectionRemoveFlags{force: true}, toolboxFlags{output: "json"},
-	)
+	err := runConnectionRemoveWith(t.Context(), client, resolver, "https://e/", "tb", []string{"a"}, connectionRemoveFlags{force: true}, toolboxFlags{output: "json"})
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1)
 	assert.Equal(t, skills, client.createVersionCalls[0].req.Skills,
 		"skills must be carried forward verbatim into the new version")
+}
+
+// Batch removal via variadic positionals.
+func TestRunConnectionRemoveWith_VariadicPositionals(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "tb", DefaultVersion: "1",
+	}}
+	client.versionResults["tb/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "tb", Version: "1",
+		Tools: []map[string]any{
+			{"type": "mcp", "name": "a", "project_connection_id": "/c/a"},
+			{"type": "mcp", "name": "b", "project_connection_id": "/c/b"},
+			{"type": "mcp", "name": "c", "project_connection_id": "/c/c"},
+		},
+	}}
+	resolver := newStubConnectionResolver()
+	resolver.byName["a"] = &projectConnection{ID: "/c/a", Name: "a", Category: connections.ConnectionTypeRemoteTool}
+	resolver.byName["b"] = &projectConnection{ID: "/c/b", Name: "b", Category: connections.ConnectionTypeRemoteTool}
+
+	err := runConnectionRemoveWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", []string{"a", "b"},
+		connectionRemoveFlags{force: true}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1, "one new version published for the whole batch")
+	require.Len(t, client.createVersionCalls[0].req.Tools, 1)
+	assert.Equal(t, "/c/c", client.createVersionCalls[0].req.Tools[0]["project_connection_id"])
 }

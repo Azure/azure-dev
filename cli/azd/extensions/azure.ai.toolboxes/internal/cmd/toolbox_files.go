@@ -39,6 +39,11 @@ type toolboxToolsFile struct {
 	Connections []toolboxConnectionSpec `json:"connections,omitempty" yaml:"connections,omitempty"`
 }
 
+// toolboxSkillsFile is the file shape for `toolbox skill add --from-file`.
+type toolboxSkillsFile struct {
+	Skills []toolboxSkillSpec `json:"skills,omitempty" yaml:"skills,omitempty"`
+}
+
 // toolboxCreateFile is the file shape for `toolbox create --from-file`.
 type toolboxCreateFile struct {
 	Description string                  `json:"description,omitempty" yaml:"description,omitempty"`
@@ -103,12 +108,20 @@ func suggestionForParseError(out any, err error) string {
 		switch {
 		case strings.Contains(msg, "description"):
 			return "the 'description' field is only accepted by `toolbox create`; " +
-				"in v1 a toolbox's description is set at create time and cannot be changed later"
+				"a toolbox's description is set at create time and cannot be changed later"
 		case strings.Contains(msg, "skills"):
-			return "the 'skills' field is only accepted by `toolbox create`; " +
-				"use `azd ai toolbox skill add` / `skill remove` to change skills on an existing toolbox"
+			return "the 'skills' field belongs in a skills file; " +
+				"use `azd ai toolbox skill add --from-file` instead"
 		}
 	}
-	return "fix the file and retry; see `azd ai toolbox create --help` " +
-		"or `azd ai toolbox connection add --help` for the supported file shape"
+	if _, ok := out.(*toolboxSkillsFile); ok {
+		switch {
+		case strings.Contains(msg, "connections"):
+			return "the 'connections' field belongs in a connections file; " +
+				"use `azd ai toolbox connection add --from-file` instead"
+		case strings.Contains(msg, "description"):
+			return "the 'description' field is only accepted by `toolbox create`"
+		}
+	}
+	return "fix the file and retry; see the verb's --help for the supported file shape"
 }

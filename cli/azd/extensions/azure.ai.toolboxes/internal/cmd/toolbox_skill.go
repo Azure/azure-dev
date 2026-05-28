@@ -83,8 +83,7 @@ func validateSkillName(name string) error {
 	return nil
 }
 
-// buildSkillEntry returns the wire map for a ToolboxSkillReference (the only
-// ToolboxSkill variant in the spec today).
+// buildSkillEntry returns the wire map for a skill_reference entry.
 func buildSkillEntry(spec skillSpec) map[string]any {
 	entry := map[string]any{
 		"type": "skill_reference",

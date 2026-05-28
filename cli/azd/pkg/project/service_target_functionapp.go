@@ -77,6 +77,12 @@ func resolveFunctionAppRemoteBuild(serviceConfig *ServiceConfig) (remoteBuild bo
 		}
 
 		return *serviceConfig.RemoteBuild, nil
+	case ServiceLanguageGo:
+		// Go compiles to a static binary — no remote build needed
+		if serviceConfig.RemoteBuild != nil {
+			return *serviceConfig.RemoteBuild, nil
+		}
+		return false, nil
 	default:
 		if serviceConfig.RemoteBuild != nil {
 			return *serviceConfig.RemoteBuild, nil

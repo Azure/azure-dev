@@ -1331,6 +1331,13 @@ func knownProtocolNames() string {
 // When noPrompt is true and no flag is provided, defaults to "container" for backward compatibility.
 // When showCodeDeploy is false and no explicit flag overrides, code deploy is not offered.
 func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool, showCodeDeploy bool, deployModeFlag string, userProvidedManifest bool) (string, error) {
+	// Resolution precedence:
+	//   1. Explicit flag (--deploy-mode) — always wins
+	//   2. !showCodeDeploy — container is the only option (not Python/.NET)
+	//   3. userProvidedManifest (-m) — auto-select "code" (stronger signal)
+	//   4. noPrompt — "container" for backward compatibility (no signal)
+	//   5. Interactive prompt
+
 	// Explicit flag takes precedence
 	if deployModeFlag != "" {
 		switch deployModeFlag {

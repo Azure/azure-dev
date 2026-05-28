@@ -953,7 +953,7 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 			want:                 "code",
 		},
 		{
-			name:                 "userProvidedManifest + showCodeDeploy=false defaults to container",
+			name:                 "showCodeDeploy=false returns container regardless of userProvidedManifest",
 			noPrompt:             false,
 			showCodeDeploy:       false,
 			flag:                 "",

@@ -1462,6 +1462,11 @@ func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 
 	currentUser, err := readUserProperties(cfg)
 	if err != nil {
+		// In Cloud Shell azd uses the ambient credential, so report that user
+		// rather than treating the session as unauthenticated.
+		if runcontext.IsRunningInCloudShell() {
+			return m.cloudShellLogInDetails(ctx)
+		}
 		return nil, ErrNoCurrentUser
 	}
 
@@ -1486,6 +1491,21 @@ func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 	}
 
 	return nil, ErrNoCurrentUser
+}
+
+// cloudShellLogInDetails reports the Cloud Shell user, derived from the ambient
+// credential. The session is always a valid user, so an empty account (no
+// username claim) is not an error.
+func (m *Manager) cloudShellLogInDetails(ctx context.Context) (*LogInDetails, error) {
+	claims, err := m.ClaimsForCurrentUser(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetching claims for Cloud Shell user: %w", err)
+	}
+
+	return &LogInDetails{
+		LoginType: EmailLoginType,
+		Account:   strings.TrimSpace(claims.DisplayUsername()),
+	}, nil
 }
 
 type AuthSource string

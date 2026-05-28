@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -115,15 +116,24 @@ func (a *subFilterSetAction) Run(
 		)
 	}
 
-	// Build options for multi-select
+	// Build options for multi-select with unique index prefixes
+	// to avoid ambiguity when display names collide (e.g. demo mode).
 	hideId := prompt.IsDemoModeEnabled()
-	displayFn := func(sub *account.Subscription) string {
-		return prompt.FormatSubscriptionDisplay(sub, hideId)
-	}
 
 	options := make([]string, len(tenantSubs))
 	for i := range tenantSubs {
-		options[i] = displayFn(&tenantSubs[i])
+		label := prompt.FormatSubscriptionDisplay(
+			&tenantSubs[i], hideId,
+		)
+		options[i] = fmt.Sprintf("%d. %s", i+1, label)
+	}
+
+	// displayFn must match the indexed option format for preSelected matching
+	indexedDisplayFn := func(
+		sub *account.Subscription, idx int,
+	) string {
+		label := prompt.FormatSubscriptionDisplay(sub, hideId)
+		return fmt.Sprintf("%d. %s", idx+1, label)
 	}
 
 	// Load existing filter to pre-check items
@@ -133,9 +143,23 @@ func (a *subFilterSetAction) Run(
 	}
 
 	existingFilter, _ := prompt.LoadSubscriptionFilter(cfg, tenantId)
-	preSelected := prompt.SubscriptionsMatchingFilter(
-		tenantSubs, existingFilter, displayFn,
-	)
+
+	// Build preSelected with indexed labels
+	var preSelected []string
+	if len(existingFilter) > 0 {
+		filterSet := make(map[string]bool, len(existingFilter))
+		for _, id := range existingFilter {
+			filterSet[strings.ToLower(id)] = true
+		}
+		for i := range tenantSubs {
+			if filterSet[strings.ToLower(tenantSubs[i].Id)] {
+				preSelected = append(
+					preSelected,
+					indexedDisplayFn(&tenantSubs[i], i),
+				)
+			}
+		}
+	}
 
 	// Prompt multi-select
 	selected, err := a.console.MultiSelect(ctx, input.ConsoleOptions{
@@ -155,21 +179,17 @@ func (a *subFilterSetAction) Run(
 		return nil, nil
 	}
 
-	// Map selected display strings back to subscription IDs.
-	// Use a set for O(1) lookup; this handles duplicate display
-	// labels (e.g. demo-mode collisions) by matching all subs
-	// whose display string was selected.
-	selectedSet := make(map[string]bool, len(selected))
-	for _, s := range selected {
-		selectedSet[s] = true
+	// Map selected indexed options back to subscription IDs.
+	// Each option string is unique due to the index prefix.
+	optionToId := make(map[string]string, len(tenantSubs))
+	for i := range tenantSubs {
+		optionToId[options[i]] = tenantSubs[i].Id
 	}
 
 	selectedIds := make([]string, 0, len(selected))
-	for i := range tenantSubs {
-		if selectedSet[displayFn(&tenantSubs[i])] {
-			selectedIds = append(
-				selectedIds, tenantSubs[i].Id,
-			)
+	for _, opt := range selected {
+		if id, ok := optionToId[opt]; ok {
+			selectedIds = append(selectedIds, id)
 		}
 	}
 	slices.Sort(selectedIds)

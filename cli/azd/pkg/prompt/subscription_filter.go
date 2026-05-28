@@ -49,12 +49,16 @@ func LoadSubscriptionFilter(
 }
 
 // SaveSubscriptionFilter saves a subscription filter for the given tenant
-// to user config.
+// to user config. Returns an error if tenantId is empty.
 func SaveSubscriptionFilter(
 	cfg config.Config,
 	tenantId string,
 	subscriptionIds []string,
 ) error {
+	if tenantId == "" {
+		return fmt.Errorf("tenantId must not be empty")
+	}
+
 	// Convert to []any for config storage compatibility
 	values := make([]any, len(subscriptionIds))
 	for i, id := range subscriptionIds {
@@ -64,8 +68,11 @@ func SaveSubscriptionFilter(
 }
 
 // RemoveSubscriptionFilter removes the subscription filter for the given tenant
-// from user config.
+// from user config. Returns an error if tenantId is empty.
 func RemoveSubscriptionFilter(cfg config.Config, tenantId string) error {
+	if tenantId == "" {
+		return fmt.Errorf("tenantId must not be empty")
+	}
 	return cfg.Unset(subscriptionFilterConfigPath(tenantId))
 }
 

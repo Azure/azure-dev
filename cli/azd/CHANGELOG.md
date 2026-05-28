@@ -1,26 +1,16 @@
 # Release History
 
-## 1.27.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.25.3 (2026-05-28)
 
 ### Bugs Fixed
+
+- [[#8316]](https://github.com/Azure/azure-dev/pull/8316) Fix extension pack support gaps: extension manifests can declare `dependencies` without top-level `capabilities`, semver dependency ranges resolve to the highest compatible published version, and install-time dependency cycles fail with a clear error.
+- [[#8402]](https://github.com/Azure/azure-dev/pull/8402) Fix the progress widget printing stale, overlapping output on narrow terminals by truncating each rendered line to the terminal width.
+- [[#8263]](https://github.com/Azure/azure-dev/pull/8263) Fix lifecycle hook output (`preprovision`, `postprovision`, and `predeploy`) being silently suppressed during `azd up`.
 
 ### Other Changes
 
-## 1.26.0 (2026-05-28)
-
-### Features Added
-
-- [[#8316]](https://github.com/Azure/azure-dev/pull/8316) Add extension pack support: a pack manifest can declare `dependencies` (with semver range constraints such as `>=0.1.0`, `^0.1`, or `~0.1.0-preview`) without top-level `capabilities`, and `azd` resolves each dependency to the highest published version that satisfies the range and is compatible with the running CLI.
-- [[#8316]](https://github.com/Azure/azure-dev/pull/8316) `azd extension upgrade` now reconciles an extension's declared dependencies to the latest compatible versions (with a new `--no-dependency-upgrades` flag to opt out), and reports them in both text and `--output json` output via a `dependencyUpgrades` field.
-
-### Bugs Fixed
-
-- [[#8402]](https://github.com/Azure/azure-dev/pull/8402) Fix the progress widget printing stale, overlapping output on narrow terminals by truncating each rendered line to the terminal width.
-- [[#8263]](https://github.com/Azure/azure-dev/pull/8263) Fix lifecycle hook output (`preprovision`, `postprovision`, and `predeploy`) being silently suppressed during `azd up`.
+- [[#8316]](https://github.com/Azure/azure-dev/pull/8316) Improve `azd extension upgrade` dependency handling by reconciling declared dependencies to the latest compatible versions, adding `--no-dependency-upgrades` to opt out, and reporting dependency updates via `dependencyUpgrades` in `--output json`.
 
 ## 1.25.2 (2026-05-22)
 

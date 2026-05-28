@@ -945,12 +945,12 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 			want:           "container",
 		},
 		{
-			name:                 "userProvidedManifest + showCodeDeploy auto-selects code",
+			name:                 "userProvidedManifest + showCodeDeploy auto-selects container",
 			noPrompt:             false,
 			showCodeDeploy:       true,
 			flag:                 "",
 			userProvidedManifest: true,
-			want:                 "code",
+			want:                 "container",
 		},
 		{
 			name:                 "showCodeDeploy=false returns container regardless of userProvidedManifest",

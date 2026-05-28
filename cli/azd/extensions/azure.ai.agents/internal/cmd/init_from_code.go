@@ -1336,7 +1336,7 @@ func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt
 	// Resolution precedence:
 	//   1. Explicit flag (--deploy-mode) — always wins
 	//   2. !showCodeDeploy — container is the only option (not Python/.NET)
-	//   3. userProvidedManifest (-m) — auto-select "code" (stronger signal)
+	//   3. userProvidedManifest (-m) — auto-select "container" (opinionated default)
 	//   4. noPrompt — "container" for backward compatibility (no signal)
 	//   5. Interactive prompt
 
@@ -1358,11 +1358,12 @@ func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt
 		return "container", nil
 	}
 
-	// When the user provided a manifest explicitly (-m) and the project supports
-	// code deploy, auto-select code deploy without prompting.
+	// When the user provided a manifest explicitly (-m), auto-select the
+	// opinionated default (container) without prompting. Users who want
+	// code deploy with -m can pass --deploy-mode code explicitly.
 	if userProvidedManifest {
-		log.Printf("Auto-selected deploy mode: code (project supports code deploy)")
-		return "code", nil
+		log.Printf("Auto-selected deploy mode: container (use --deploy-mode code for code deploy)")
+		return "container", nil
 	}
 
 	if noPrompt {

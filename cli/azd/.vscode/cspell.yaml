@@ -478,6 +478,11 @@ overrides:
       - azurekubernetesservicechaosmesh
   - filename: AGENTS.md
     words:
+      - forbidigo
+      - Logf
+  - filename: .golangci.yaml
+    words:
+      - forbidigo
       - Logf
 ignorePaths:
   - "**/*_test.go"

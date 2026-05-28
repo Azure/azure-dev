@@ -4,9 +4,21 @@ linters:
     - errcheck # TODO: check for unhandled errors
   enable:
     - errorlint
+    - forbidigo
     - gosec
     - lll
   settings:
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^fmt\.Print.*$
+          msg: >-
+            Use t.Log/t.Logf in tests instead of fmt.Print* to avoid
+            corrupting go test -json output.
+        - pattern: ^os\.Stdout$
+          msg: >-
+            Do not reference os.Stdout in tests; use io.Discard or a
+            bytes.Buffer.
     errorlint:
       errorf: true
       asserts: true
@@ -40,6 +52,31 @@ linters:
         - G104 # TODO: Errors unhandled
         - G117 # Exported struct fields matching secret patterns (false positives on field names)
         - G122 # TODO: Filesystem operation in filepath.Walk/WalkDir callback uses race-prone path
+  exclusions:
+    rules:
+      # forbidigo: only enforce in test files
+      - path-except: _test\.go$
+        linters:
+          - forbidigo
+      # forbidigo: allow stdout in files that intentionally test stdout behavior
+      - path: testing_helpers_test\.go$
+        linters:
+          - forbidigo
+      - path: extension_commands_test\.go$
+        linters:
+          - forbidigo
+      - path: show_test\.go$
+        linters:
+          - forbidigo
+      - path: external_prompt_test\.go$
+        linters:
+          - forbidigo
+      - path: colors_test\.go$
+        linters:
+          - forbidigo
+      - path: ux_test\.go$
+        linters:
+          - forbidigo
 formatters:
   enable:
     - gofmt

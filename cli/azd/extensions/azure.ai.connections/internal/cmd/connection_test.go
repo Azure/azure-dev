@@ -475,12 +475,16 @@ func TestParseKVPtrMap(t *testing.T) {
 }
 
 func TestRawConnectionBody_OAuth2_ConnectorNameOnly(t *testing.T) {
-	// When using a managed connector, only connectorName is set ΓÇö no credentials.
+	// When using a managed connector (gateway_connector), connectorName is set and
+	// credentials must be present as an empty object. The ARM connections API rejects
+	// the PUT with `400 ValidationError: Credentials Property can't be empty for auth
+	// type OAuth2` when the field is omitted entirely. See issue #8418.
 	props := rawConnectionProperties{
 		AuthType:      "OAuth2",
 		Category:      "RemoteTool",
 		Target:        "https://example.com",
 		ConnectorName: "github",
+		Credentials:   &rawCredentials{},
 	}
 	body := rawConnectionBody{Properties: props}
 	data, err := json.Marshal(body)
@@ -492,8 +496,16 @@ func TestRawConnectionBody_OAuth2_ConnectorNameOnly(t *testing.T) {
 	p := parsed["properties"].(map[string]any)
 	require.Equal(t, "OAuth2", p["authType"])
 	require.Equal(t, "github", p["connectorName"])
-	_, hasCreds := p["credentials"]
-	require.False(t, hasCreds, "credentials should be omitted for connector-name-only")
+
+	creds, hasCreds := p["credentials"]
+	require.True(t, hasCreds, "credentials must be present (empty object) for managed-connector OAuth2")
+	credsMap, ok := creds.(map[string]any)
+	require.True(t, ok, "credentials should marshal as a JSON object")
+	require.Empty(t, credsMap, "credentials should be an empty object when no clientId/clientSecret supplied")
+
+	// The raw JSON should literally contain `"credentials":{}`.
+	require.Contains(t, string(data), `"credentials":{}`)
+
 	_, hasAuthURL := p["authorizationUrl"]
 	require.False(t, hasAuthURL, "authorizationUrl should be omitted for connector-name-only")
 }

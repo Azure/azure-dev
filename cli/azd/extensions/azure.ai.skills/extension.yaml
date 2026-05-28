@@ -5,7 +5,7 @@ displayName: Foundry skills (Preview)
 description: Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Preview)
 usage: azd ai skill <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 0.0.1-preview
+version: 0.1.0-preview
 requiredAzdVersion: ">1.23.13"
 language: go
 capabilities:

@@ -76,9 +76,38 @@ type State struct {
 	// surface an actionable hint.
 	MissingInfraVars []string
 
+	// MissingAzureContextVars names Azure environment values that must be
+	// set before provisioning can create the Foundry project and related
+	// resources. Init can intentionally defer these under --no-prompt so
+	// local files are still written in headless environments.
+	MissingAzureContextVars []string
+
 	// MissingManualVars names ${...} references that map to user-supplied
 	// variables which are not set in the azd environment.
+	//
+	// Toolbox-derived endpoint variables (`TOOLBOX_<NAME>_MCP_ENDPOINT`
+	// keys that correspond to a manifest-declared toolbox) are
+	// partitioned out into MissingToolboxEndpoints — they are
+	// azd-managed outputs of `azd provision`, not operator-supplied,
+	// and routing them to `azd env set` is misleading.
 	MissingManualVars []string
+
+	// MissingToolboxEndpoints lists manifest-declared toolboxes whose
+	// azd-injected TOOLBOX_<NAME>_MCP_ENDPOINT variable is unset in the
+	// active azd environment. AssembleState partitions these out of
+	// MissingManualVars because they are produced by
+	// `azd provision` (listen.go::registerToolboxEnvVars), not by the
+	// user — the right remediation is `azd provision` (which creates
+	// the toolbox in the Foundry project on first run and sets the
+	// derived env var), not `azd env set`.
+	//
+	// Each entry carries the manifest's resource Name and the owning
+	// ServiceName so the resolver and doctor checks can render
+	// per-service guidance. The Detail field is unused (toolbox
+	// endpoints have no kind-specific identifier beyond Name) but the
+	// shared ResourceRef shape keeps the renderer code uniform with
+	// state.Toolboxes / state.ModelRefs / state.Connections.
+	MissingToolboxEndpoints []ResourceRef
 
 	// UnresolvedPlaceholders names {{NAME}} Mustache-style placeholders
 	// still present (literally) inside agent.yaml's environment_variables
@@ -108,6 +137,12 @@ type State struct {
 	// agent's OpenAPI spec, suitable for an `azd ai agent invoke '...'`
 	// example. Empty when HasOpenAPI is false.
 	OpenAPIPayload string
+
+	// CreatedFolderDisplay is a pre-computed, user-friendly relative path
+	// to the project folder created during init (e.g., "my-agent"). Empty
+	// when init did not create a new directory. The resolver uses it to
+	// prepend a `cd <folder>` suggestion to the Next: block.
+	CreatedFolderDisplay string
 
 	// HasModels, HasToolboxes, HasConnections are aggregate flags
 	// derived from each azure.ai.agent service's agent.manifest.yaml

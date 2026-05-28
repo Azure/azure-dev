@@ -85,7 +85,7 @@ func runReuseDefinition(
 		displayPath, def.Name,
 	))
 
-	projectConfig, err := ensureProject(ctx, flags, azdClient)
+	projectConfig, err := ensureProject(ctx, flags, azdClient, ".")
 	if err != nil {
 		return err
 	}

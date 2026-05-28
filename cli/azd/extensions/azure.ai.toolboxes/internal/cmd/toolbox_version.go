@@ -8,11 +8,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newToolboxVersionCommand returns the `azd ai toolbox version` parent.
+// newToolboxVersionCommand returns the `azd ai toolbox versions` parent.
 func newToolboxVersionCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	cmd := &cobra.Command{
-		Use:   "version",
+		Use:   "versions",
 		Short: "Inspect toolbox versions.",
 		Long: `Inspect toolbox versions.
 

@@ -27,5 +27,17 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
 
+	// Register -p / --project-endpoint as a persistent flag inherited by
+	// connection CRUD subcommands (list, show, create, update, delete).
+	rootCmd.PersistentFlags().StringP("project-endpoint", "p", "",
+		"Foundry project endpoint URL (overrides env var and config)")
+
+	// Connection CRUD subcommands (migrated from the azure.ai.agents extension).
+	rootCmd.AddCommand(newConnectionListCommand(extCtx))
+	rootCmd.AddCommand(newConnectionShowCommand(extCtx))
+	rootCmd.AddCommand(newConnectionCreateCommand(extCtx))
+	rootCmd.AddCommand(newConnectionUpdateCommand(extCtx))
+	rootCmd.AddCommand(newConnectionDeleteCommand(extCtx))
+
 	return rootCmd
 }

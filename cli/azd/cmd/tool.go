@@ -11,16 +11,81 @@ import (
 	"slices"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tool"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/attribute"
 )
+
+// singleResultCommonAttrs returns the usage attributes shared by single-target
+// `azd tool install` and `azd tool upgrade`: success, tool.id, and the
+// installation strategy. Callers append upgrade-specific version attrs
+// (tool.upgrade.{from,to}_version) on top.
+//
+// Returns nil if r is nil so callers can safely pass through results without
+// pre-validating the slice element.
+func singleResultCommonAttrs(r *tool.InstallResult) []attribute.KeyValue {
+	if r == nil {
+		return nil
+	}
+	attrs := []attribute.KeyValue{
+		fields.ToolInstallSuccessKey.Bool(r.Success),
+	}
+	if r.Tool != nil {
+		attrs = append(attrs, fields.ToolIdKey.String(r.Tool.Id))
+	}
+	if r.Strategy != "" {
+		attrs = append(attrs, fields.ToolInstallStrategyKey.String(r.Strategy))
+	}
+	return attrs
+}
+
+// emitToolInstallTelemetry emits aggregate telemetry attributes for a batch
+// install or upgrade operation. When the batch contains exactly one tool the
+// caller is responsible for also emitting tool.id, tool.install.strategy, and
+// tool.install.success (and, for upgrades, tool.upgrade.{from,to}_version).
+//
+// When the batch infrastructure itself fails (opErr != nil and results is
+// empty) every requested tool is counted as a failure and its ID is added to
+// failed_ids. This preserves the invariant
+// success_count + failure_count == len(requested) and prevents a hard
+// operation error from being indistinguishable from a no-op.
+func emitToolInstallTelemetry(
+	results []*tool.InstallResult,
+	elapsed time.Duration,
+	opErr error,
+	requested []*tool.ToolDefinition,
+) {
+	requestedIDs := make([]string, 0, len(requested))
+	for _, t := range requested {
+		if t != nil {
+			requestedIDs = append(requestedIDs, t.Id)
+		}
+	}
+
+	successCount, failureCount, sortedFailedIDs := tool.AggregateInstallResults(results, opErr, requestedIDs)
+
+	attrs := []attribute.KeyValue{
+		fields.ToolInstallSuccessCountKey.Int(successCount),
+		fields.ToolInstallFailureCountKey.Int(failureCount),
+		fields.ToolInstallDurationMsKey.Int64(elapsed.Milliseconds()),
+	}
+	if len(sortedFailedIDs) > 0 {
+		attrs = append(attrs,
+			fields.ToolInstallFailedIdsKey.String(strings.Join(sortedFailedIDs, ",")),
+		)
+	}
+	tracing.SetUsageAttributes(attrs...)
+}
 
 // toolActions registers the "azd tool" command group and all of its subcommands.
 // The caller is responsible for gating on the "tool" alpha feature flag.
@@ -234,11 +299,10 @@ func (a *toolAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return a.manager.InstallTools(ctx, allIDs)
 	}
 
-	_, err = runToolOperation(ctx, tools, operationFn, "Installing", "install", a.console)
-	if err != nil {
-		// runToolOperation already displayed warnings; swallow the task-list error.
-		_ = err
-	}
+	_ = runToolOperation(ctx, tools, operationFn, "Installing", "install", a.console)
+	// runToolOperation already displayed warnings; we intentionally
+	// discard the outcome here — child tasks have surfaced what the user
+	// needs to see, and this caller does not propagate the task error.
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
@@ -446,19 +510,49 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 	})
 
 	tools := make([]*tool.ToolDefinition, 0, len(ids))
+	resolvedIDs := make([]string, 0, len(ids))
 	for _, id := range ids {
 		toolDef, findErr := a.manager.FindTool(id)
 		if findErr != nil {
 			return nil, wrapToolNotFoundIfErr(findErr)
 		}
 		tools = append(tools, toolDef)
+		resolvedIDs = append(resolvedIDs, toolDef.Id)
 	}
+
+	// Emit tool.id for single-target installs and tool.ids for multi-target
+	// installs — never both. The two attributes are documented as mutually
+	// exclusive (tracing-in-azd.md: "Single-target" vs "Batch"), so co-emit
+	// would double-count single-tool installs in any downstream query
+	// against tool.ids. Sort before joining for batch so the attribute
+	// value is a canonical set rather than a permutation.
+
+	idAttrs := []attribute.KeyValue{
+		fields.ToolDryRunKey.Bool(a.flags.dryRun),
+	}
+	if len(resolvedIDs) == 1 {
+		idAttrs = append(idAttrs, fields.ToolIdKey.String(resolvedIDs[0]))
+	} else {
+		sortedIDs := slices.Clone(resolvedIDs)
+		slices.Sort(sortedIDs)
+		idAttrs = append(idAttrs, fields.ToolIdsKey.String(strings.Join(sortedIDs, ",")))
+	}
+	tracing.SetUsageAttributes(idAttrs...)
 
 	operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
 		return a.manager.InstallTools(ctx, allIDs)
 	}
 
-	installResults, _ := runToolOperation(ctx, tools, operationFn, "Installing", "install", a.console)
+	start := time.Now()
+	outcome := runToolOperation(ctx, tools, operationFn, "Installing", "install", a.console)
+	installResults := outcome.Items
+	rawResults := outcome.Results
+	opErr := outcome.Err
+	emitToolInstallTelemetry(rawResults, time.Since(start), opErr, tools)
+
+	if len(rawResults) == 1 {
+		tracing.SetUsageAttributes(singleResultCommonAttrs(rawResults[0])...)
+	}
 
 	if a.formatter.Kind() == output.JsonFormat {
 		return nil, a.formatter.Format(installResults, a.writer, nil)
@@ -478,6 +572,7 @@ func (a *toolInstallAction) dryRun(
 	ids []string,
 ) (*actions.ActionResult, error) {
 	rows := make([]toolDryRunItem, 0, len(ids))
+	resolvedIDs := make([]string, 0, len(ids))
 
 	for _, id := range ids {
 		toolDef, findErr := a.manager.FindTool(id)
@@ -503,7 +598,25 @@ func (a *toolInstallAction) dryRun(
 			CurrentVersion: currentVersion,
 			Action:         action,
 		})
+		resolvedIDs = append(resolvedIDs, id)
 	}
+
+	// Emit tool.id vs tool.ids on the dry-run path with the same
+	// mutual-exclusion discipline as the real install path. Values are
+	// built from canonical toolDef.Id strings already validated by
+	// FindTool. tool.dry_run is emitted alongside so the contract is
+	// uniform: dry_run never appears without a matching tool.id/ids.
+	idAttrs := []attribute.KeyValue{
+		fields.ToolDryRunKey.Bool(true),
+	}
+	if len(resolvedIDs) == 1 {
+		idAttrs = append(idAttrs, fields.ToolIdKey.String(resolvedIDs[0]))
+	} else {
+		sortedIDs := slices.Clone(resolvedIDs)
+		slices.Sort(sortedIDs)
+		idAttrs = append(idAttrs, fields.ToolIdsKey.String(strings.Join(sortedIDs, ",")))
+	}
+	tracing.SetUsageAttributes(idAttrs...)
 
 	if a.formatter.Kind() == output.JsonFormat {
 		return nil, a.formatter.Format(rows, a.writer, nil)
@@ -657,6 +770,14 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 	// so that the spinner reflects real-time progress.
 	var toolsToUpgrade []*tool.ToolDefinition
 
+	// fromVersions captures the pre-upgrade installed version per tool ID,
+	// populated on both branches so that tool.upgrade.from_version is
+	// emitted on the single-tool path regardless of whether the user
+	// supplied explicit args. Detection failures are non-fatal here —
+	// from_version is a best-effort telemetry signal, not a precondition
+	// for upgrading.
+	fromVersions := make(map[string]string)
+
 	if len(a.args) > 0 {
 		for _, id := range a.args {
 			toolDef, findErr := a.manager.FindTool(id)
@@ -664,6 +785,10 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 				return nil, wrapToolNotFoundIfErr(findErr)
 			}
 			toolsToUpgrade = append(toolsToUpgrade, toolDef)
+			if status, detectErr := a.manager.DetectTool(ctx, toolDef.Id); detectErr == nil &&
+				status != nil && status.Installed {
+				fromVersions[toolDef.Id] = status.InstalledVersion
+			}
 		}
 	} else {
 		var statuses []*tool.ToolStatus
@@ -681,6 +806,9 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		for _, s := range statuses {
 			if s.Installed {
 				toolsToUpgrade = append(toolsToUpgrade, s.Tool)
+				if s.Tool != nil {
+					fromVersions[s.Tool.Id] = s.InstalledVersion
+				}
 			}
 		}
 	}
@@ -691,6 +819,24 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		))
 		return nil, nil
 	}
+
+	upgradeIDs := make([]string, 0, len(toolsToUpgrade))
+	for _, t := range toolsToUpgrade {
+		upgradeIDs = append(upgradeIDs, t.Id)
+	}
+	// Mutually exclusive tool.id vs tool.ids — see the install action for
+	// the same discipline and the rationale in tracing-in-azd.md.
+	usageAttrs := []attribute.KeyValue{
+		fields.ToolDryRunKey.Bool(a.flags.dryRun),
+	}
+	if len(upgradeIDs) == 1 {
+		usageAttrs = append(usageAttrs, fields.ToolIdKey.String(upgradeIDs[0]))
+	} else {
+		sortedUpgradeIDs := slices.Clone(upgradeIDs)
+		slices.Sort(sortedUpgradeIDs)
+		usageAttrs = append(usageAttrs, fields.ToolIdsKey.String(strings.Join(sortedUpgradeIDs, ",")))
+	}
+	tracing.SetUsageAttributes(usageAttrs...)
 
 	// --dry-run: display what would be upgraded without making
 	// changes.
@@ -707,7 +853,26 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return a.manager.UpgradeTools(ctx, allIDs)
 	}
 
-	upgradeResults, _ := runToolOperation(ctx, toolsToUpgrade, operationFn, "Upgrading", "upgrade", a.console)
+	start := time.Now()
+	outcome := runToolOperation(ctx, toolsToUpgrade, operationFn, "Upgrading", "upgrade", a.console)
+	upgradeResults := outcome.Items
+	rawResults := outcome.Results
+	opErr := outcome.Err
+	emitToolInstallTelemetry(rawResults, time.Since(start), opErr, toolsToUpgrade)
+
+	if len(rawResults) == 1 {
+		r := rawResults[0]
+		singleAttrs := singleResultCommonAttrs(r)
+		if r.Tool != nil {
+			if from, ok := fromVersions[r.Tool.Id]; ok && from != "" {
+				singleAttrs = append(singleAttrs, fields.ToolUpgradeFromVersionKey.String(from))
+			}
+		}
+		if r.Success && r.InstalledVersion != "" {
+			singleAttrs = append(singleAttrs, fields.ToolUpgradeToVersionKey.String(r.InstalledVersion))
+		}
+		tracing.SetUsageAttributes(singleAttrs...)
+	}
 
 	if a.formatter.Kind() == output.JsonFormat {
 		return nil, a.formatter.Format(upgradeResults, a.writer, nil)
@@ -824,7 +989,11 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 
 	rows := make([]toolCheckItem, 0, len(results))
+	updatesAvailable := 0
 	for _, r := range results {
+		if r.UpdateAvailable {
+			updatesAvailable++
+		}
 		rows = append(rows, toolCheckItem{
 			Id:               r.Tool.Id,
 			Name:             r.Tool.Name,
@@ -833,6 +1002,9 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 			UpdateAvailable:  r.UpdateAvailable,
 		})
 	}
+	tracing.SetUsageAttributes(
+		fields.ToolCheckUpdatesAvailableKey.Int(updatesAvailable),
+	)
 
 	if len(rows) == 0 {
 		a.console.Message(ctx, output.WithGrayFormat("No tools found."))
@@ -957,6 +1129,9 @@ func (a *toolShowAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	if err != nil {
 		return nil, wrapToolNotFoundIfErr(fmt.Errorf("finding tool: %w", err))
 	}
+
+	// Emit tool.id only after FindTool succeeds
+	tracing.SetUsageAttributes(fields.ToolIdKey.String(toolDef.Id))
 
 	var status *tool.ToolStatus
 	if a.formatter.Kind() != output.JsonFormat {
@@ -1153,6 +1328,16 @@ func wrapToolNotFoundIfErr(err error) error {
 // runToolOperation can handle both operations uniformly.
 type toolOperationFn func(ctx context.Context, ids []string) ([]*tool.InstallResult, error)
 
+// toolOpOutcome is the named result of runToolOperation. Items is the
+// formatted, user-visible result list; Results is the raw installer output
+// that telemetry / version-emission paths consume; Err is the TaskList's
+// aggregate error (non-nil when any task reported failure).
+type toolOpOutcome struct {
+	Items   []*toolInstallResultItem
+	Results []*tool.InstallResult
+	Err     error
+}
+
 // runToolOperation executes a batch tool operation (install or upgrade) with a
 // single call to operationFn, then maps the results to per-tool TaskList entries
 // for user-visible progress. This avoids the N+1 problem of calling the
@@ -1171,7 +1356,7 @@ func runToolOperation(
 	title string,
 	action string,
 	console input.Console,
-) ([]*toolInstallResultItem, error) {
+) toolOpOutcome {
 	// Collect all IDs and run the operation once.
 	ids := make([]string, len(tools))
 	for i, t := range tools {
@@ -1318,7 +1503,7 @@ func runToolOperation(
 		))
 	}
 
-	return resultItems, taskErr
+	return toolOpOutcome{Items: resultItems, Results: results, Err: taskErr}
 }
 
 // writeDryRunTable renders a dry-run results table using tabwriter.

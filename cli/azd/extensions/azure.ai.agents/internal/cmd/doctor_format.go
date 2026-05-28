@@ -362,7 +362,6 @@ func remediationForCheckID(id string) (remediation, bool) {
 	case "remote.auth":
 		return remediation{command: "azd auth login", desc: "sign in to Azure", order: 10}, true
 	case "remote.foundry-endpoint",
-		"remote.model-deployments",
 		"remote.connections",
 		"remote.agent-identity-roles":
 		return remediation{

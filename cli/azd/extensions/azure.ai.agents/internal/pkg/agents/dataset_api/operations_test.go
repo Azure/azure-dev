@@ -78,7 +78,7 @@ func TestCreateDataset_Success(t *testing.T) {
 		Version: "v1",
 		Format:  "jsonl",
 		Content: `{"input":"hello"}`,
-	}, "2025-11-15-preview")
+	}, "v1")
 
 	require.NoError(t, err)
 	assert.Equal(t, "/datasets", capturedPath)
@@ -107,7 +107,7 @@ func TestGetDataset_Success(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	result, err := client.GetDataset(t.Context(), "golden", "v2", "2025-11-15-preview")
+	result, err := client.GetDataset(t.Context(), "golden", "v2", "v1")
 
 	require.NoError(t, err)
 	assert.Equal(t, "/datasets/golden/versions/v2", capturedPath)
@@ -172,7 +172,7 @@ func TestGetDatasetCredential_Success(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	result, err := client.GetDatasetCredential(t.Context(), "golden", "v2", "2025-11-15-preview")
+	result, err := client.GetDatasetCredential(t.Context(), "golden", "v2", "v1")
 
 	require.NoError(t, err)
 	assert.Equal(t, "/datasets/golden/versions/v2/credentials", capturedPath)
@@ -234,7 +234,7 @@ func TestGetDataset_NotFound(t *testing.T) {
 	})
 
 	client, _ := newTestClient(t, handler)
-	_, err := client.GetDataset(t.Context(), "missing", "v1", "2025-11-15-preview")
+	_, err := client.GetDataset(t.Context(), "missing", "v1", "v1")
 
 	require.Error(t, err)
 }

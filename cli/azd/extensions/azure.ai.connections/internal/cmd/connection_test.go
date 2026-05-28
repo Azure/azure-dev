@@ -4,11 +4,14 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
-	"azureaiagent/internal/connections/pkg/connections"
+	"azure.ai.connections/internal/pkg/connections"
 
 	"github.com/stretchr/testify/require"
 )
@@ -125,9 +128,9 @@ func TestNormalizeKind(t *testing.T) {
 		{"ai-services", "AIServices"},
 		{"container-registry", "ContainerRegistry"},
 		{"custom-keys", "CustomKeys"},
-		// Already PascalCase — pass through
+		// Already PascalCase ΓÇö pass through
 		{"RemoteTool", "RemoteTool"},
-		// Unknown kind — pass through
+		// Unknown kind ΓÇö pass through
 		{"my-custom-kind", "my-custom-kind"},
 		// Empty
 		{"", ""},
@@ -152,7 +155,7 @@ func TestNormalizeAuthType(t *testing.T) {
 		{"UserEntraToken", "user-entra-token"},
 		{"ProjectManagedIdentity", "project-managed-identity"},
 		{"AgenticIdentityToken", "agentic-identity"},
-		// Unknown — pass through
+		// Unknown ΓÇö pass through
 		{"AAD", "AAD"},
 		{"", ""},
 	}
@@ -259,7 +262,7 @@ func TestOAuth2Validation(t *testing.T) {
 			connectorName: "github",
 		}
 		err := runValidation(flags)
-		// Should pass validation — any error here is from resolveConnectionContext, not validation
+		// Should pass validation ΓÇö any error here is from resolveConnectionContext, not validation
 		require.False(t, isValidationError(err, "connector-name"))
 		require.False(t, isValidationError(err, "Missing"))
 	})
@@ -275,7 +278,7 @@ func TestOAuth2Validation(t *testing.T) {
 			clientSecret:     "csec",
 		}
 		err := runValidation(flags)
-		// Should pass validation — any error here is from resolveConnectionContext, not validation
+		// Should pass validation ΓÇö any error here is from resolveConnectionContext, not validation
 		require.False(t, isValidationError(err, "Missing"))
 		require.False(t, isValidationError(err, "requires"))
 	})
@@ -311,7 +314,7 @@ func TestOAuth2Validation(t *testing.T) {
 }
 
 func TestRawConnectionBody_OAuth2_FullFields(t *testing.T) {
-	// BYO OAuth2 — no ConnectorName (CLI makes connector-name and BYO mutually exclusive).
+	// BYO OAuth2 ΓÇö no ConnectorName (CLI makes connector-name and BYO mutually exclusive).
 	props := rawConnectionProperties{ //nolint:gosec // test credentials, not real
 		AuthType:         "OAuth2",
 		Category:         "RemoteTool",
@@ -472,7 +475,7 @@ func TestParseKVPtrMap(t *testing.T) {
 }
 
 func TestRawConnectionBody_OAuth2_ConnectorNameOnly(t *testing.T) {
-	// When using a managed connector, only connectorName is set — no credentials.
+	// When using a managed connector, only connectorName is set ΓÇö no credentials.
 	props := rawConnectionProperties{
 		AuthType:      "OAuth2",
 		Category:      "RemoteTool",
@@ -562,4 +565,96 @@ func TestBuildCredentialReferences(t *testing.T) {
 			require.Equal(t, tt.want, result)
 		})
 	}
+}
+
+func TestPrintDetail_IncludesMetadata(t *testing.T) {
+	v1 := "value1"
+	v2 := "value2"
+	result := connectionDetailResult{
+		Name:     "test-conn",
+		Kind:     "RemoteTool",
+		AuthType: "None",
+		Target:   "https://example.com",
+		Metadata: map[string]*string{
+			"key1": &v1,
+			"key2": &v2,
+		},
+	}
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := printDetail(result, "table")
+	require.NoError(t, err)
+
+	require.NoError(t, w.Close())
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	output := buf.String()
+
+	require.Contains(t, output, "Metadata:")
+	require.Contains(t, output, "key1: value1")
+	require.Contains(t, output, "key2: value2")
+}
+
+func TestPrintDetail_OmitsEmptyMetadata(t *testing.T) {
+	result := connectionDetailResult{
+		Name:     "test-conn",
+		Kind:     "RemoteTool",
+		AuthType: "None",
+		Target:   "https://example.com",
+	}
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := printDetail(result, "table")
+	require.NoError(t, err)
+
+	require.NoError(t, w.Close())
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	output := buf.String()
+
+	require.NotContains(t, output, "Metadata:")
+}
+
+func TestPrintDetail_JSON_IncludesMetadata(t *testing.T) {
+	v1 := "val1"
+	result := connectionDetailResult{
+		Name:     "test-conn",
+		Kind:     "RemoteTool",
+		AuthType: "None",
+		Target:   "https://example.com",
+		Metadata: map[string]*string{
+			"foo": &v1,
+		},
+	}
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := printDetail(result, "json")
+	require.NoError(t, err)
+
+	require.NoError(t, w.Close())
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+
+	meta, ok := parsed["metadata"].(map[string]any)
+	require.True(t, ok, "metadata should be present in JSON output")
+	require.Equal(t, "val1", meta["foo"])
 }

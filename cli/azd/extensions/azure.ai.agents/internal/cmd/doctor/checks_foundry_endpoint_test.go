@@ -16,11 +16,11 @@ import (
 
 // foundryProbeStub builds a Dependencies whose probeFoundryEndpoint
 // seam returns a fixed foundryProbeResult and an AgentAPIVersion of
-// `2025-11-15-preview`. Centralised so every status-code test reads
+// `v1`. Centralised so every status-code test reads
 // at the same level of abstraction.
 func foundryProbeStub(res foundryProbeResult) Dependencies {
 	return Dependencies{
-		AgentAPIVersion: "2025-11-15-preview",
+		AgentAPIVersion: "v1",
 		probeFoundryEndpoint: func(_ context.Context, _ string) foundryProbeResult {
 			return res
 		},
@@ -135,7 +135,7 @@ func TestCheckFoundryEndpoint_PassesOn200(t *testing.T) {
 	endpoint := "https://acct.services.ai.azure.com/api/projects/proj"
 	check := newCheckFoundryEndpoint(foundryProbeStub(foundryProbeResult{
 		statusCode:   http.StatusOK,
-		requestedURL: endpoint + "/agents?api-version=2025-11-15-preview&limit=1",
+		requestedURL: endpoint + "/agents?api-version=v1&limit=1",
 	}))
 
 	got := check.Fn(t.Context(), Options{}, passingPriors(endpoint))
@@ -278,7 +278,7 @@ func TestCheckFoundryEndpoint_SkipsOnUserCancellation(t *testing.T) {
 
 	endpoint := "https://acct.services.ai.azure.com/api/projects/proj"
 	check := newCheckFoundryEndpoint(Dependencies{
-		AgentAPIVersion: "2025-11-15-preview",
+		AgentAPIVersion: "v1",
 		probeFoundryEndpoint: func(ctx context.Context, _ string) foundryProbeResult {
 			<-ctx.Done()
 			return foundryProbeResult{err: ctx.Err()}
@@ -298,7 +298,7 @@ func TestCheckFoundryEndpoint_FailsOnProbeTimeout(t *testing.T) {
 
 	endpoint := "https://acct.services.ai.azure.com/api/projects/proj"
 	check := newCheckFoundryEndpoint(Dependencies{
-		AgentAPIVersion: "2025-11-15-preview",
+		AgentAPIVersion: "v1",
 		probeFoundryEndpoint: func(_ context.Context, _ string) foundryProbeResult {
 			return foundryProbeResult{err: context.DeadlineExceeded}
 		},
@@ -322,7 +322,7 @@ func TestCheckFoundryEndpoint_FallsBackToRealProbeWhenSeamMissing(t *testing.T) 
 	// regardless of the host's network state, and assert the
 	// cancellation classification kicks in.
 	check := newCheckFoundryEndpoint(Dependencies{
-		AgentAPIVersion: "2025-11-15-preview",
+		AgentAPIVersion: "v1",
 	})
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -360,7 +360,7 @@ func TestRealProbeFoundryEndpoint_RequestShapeAgainstHTTPTestServer(t *testing.T
 	}))
 	defer srv.Close()
 
-	got, err := buildFoundryProbeURL(srv.URL, "2025-11-15-preview")
+	got, err := buildFoundryProbeURL(srv.URL, "v1")
 	require.NoError(t, err)
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, got, nil)
@@ -373,7 +373,7 @@ func TestRealProbeFoundryEndpoint_RequestShapeAgainstHTTPTestServer(t *testing.T
 
 	require.Equal(t, "/agents", seenPath,
 		"the built URL must resolve to /agents on the wire")
-	require.Contains(t, seenQuery, "api-version=2025-11-15-preview")
+	require.Contains(t, seenQuery, "api-version=v1")
 	require.Contains(t, seenQuery, "limit=1",
 		"the probe must use limit=1 (matches production "+
 			"agent_api/operations.go) — not $top=1")
@@ -395,7 +395,7 @@ func TestBuildFoundryProbeURL(t *testing.T) {
 			endpoint: "https://x.services.ai.azure.com/api/projects/proj",
 			wantContains: []string{
 				"https://x.services.ai.azure.com/api/projects/proj/agents?",
-				"api-version=2025-11-15-preview",
+				"api-version=v1",
 				"limit=1",
 			},
 		},
@@ -412,7 +412,7 @@ func TestBuildFoundryProbeURL(t *testing.T) {
 			endpoint: "https://x.services.ai.azure.com/api/projects/proj?api-version=evil&injected=x",
 			wantContains: []string{
 				"/api/projects/proj/agents?",
-				"api-version=2025-11-15-preview",
+				"api-version=v1",
 				"limit=1",
 			},
 			wantMissing: []string{"api-version=evil", "injected=x"},
@@ -422,7 +422,7 @@ func TestBuildFoundryProbeURL(t *testing.T) {
 			endpoint: "https://x.services.ai.azure.com/api/projects/proj#evil/agents",
 			wantContains: []string{
 				"/api/projects/proj/agents?",
-				"api-version=2025-11-15-preview",
+				"api-version=v1",
 				"limit=1",
 			},
 			wantMissing: []string{"#"},
@@ -439,7 +439,7 @@ func TestBuildFoundryProbeURL(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := buildFoundryProbeURL(tc.endpoint, "2025-11-15-preview")
+			got, err := buildFoundryProbeURL(tc.endpoint, "v1")
 			require.NoError(t, err)
 			for _, sub := range tc.wantContains {
 				require.Containsf(t, got, sub, "URL %q missing substring %q", got, sub)
@@ -481,7 +481,7 @@ func TestBuildFoundryProbeURL_RejectsNonHTTPSOrMalformedEndpoint(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := buildFoundryProbeURL(tc.endpoint, "2025-11-15-preview")
+			_, err := buildFoundryProbeURL(tc.endpoint, "v1")
 			require.Error(t, err,
 				"builder must reject non-HTTPS / relative / malformed "+
 					"endpoints so the probe never sends a bearer token "+
@@ -540,7 +540,7 @@ func TestCheckFoundryEndpoint_FailsOnNonHTTPSEndpoint(t *testing.T) {
 	// the request at validation time, BEFORE any token is acquired
 	// or any probe is dispatched.
 	check := newCheckFoundryEndpoint(Dependencies{
-		AgentAPIVersion: "2025-11-15-preview",
+		AgentAPIVersion: "v1",
 		probeFoundryEndpoint: func(_ context.Context, _ string) foundryProbeResult {
 			t.Fatal("probe must not be invoked for a non-HTTPS endpoint")
 			return foundryProbeResult{}
@@ -561,7 +561,7 @@ func TestCheckFoundryEndpoint_FailsOnMalformedEndpoint(t *testing.T) {
 	t.Parallel()
 
 	check := newCheckFoundryEndpoint(Dependencies{
-		AgentAPIVersion: "2025-11-15-preview",
+		AgentAPIVersion: "v1",
 		probeFoundryEndpoint: func(_ context.Context, _ string) foundryProbeResult {
 			t.Fatal("probe must not be invoked for a malformed endpoint")
 			return foundryProbeResult{}
@@ -648,7 +648,7 @@ func TestFoundryDetails_IncludesStatusAndURLWhenSet(t *testing.T) {
 
 	d := foundryDetails("https://x", foundryProbeResult{
 		statusCode:   200,
-		requestedURL: "https://x/agents?api-version=2025-11-15-preview&limit=1",
+		requestedURL: "https://x/agents?api-version=v1&limit=1",
 	})
 	require.Equal(t, 200, d["statusCode"])
 	require.Contains(t, d["requestedURL"], "/agents")
@@ -665,7 +665,7 @@ func TestFoundryDetails_NeverContainsToken(t *testing.T) {
 	// refuse to surface it.
 	d := foundryDetails("https://x", foundryProbeResult{
 		statusCode:   200,
-		requestedURL: "https://x/agents?api-version=2025-11-15-preview",
+		requestedURL: "https://x/agents?api-version=v1",
 	})
 	for k, v := range d {
 		require.NotContains(t, strings.ToLower(k), "token",

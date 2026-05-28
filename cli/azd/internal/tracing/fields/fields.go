@@ -407,6 +407,244 @@ var (
 	}
 )
 
+// Tool command related fields — telemetry for the `azd tool` feature
+// (first-run experience and tool install/upgrade/check operations).
+//
+// Privacy: only built-in tool IDs (e.g. "az-cli") and version strings are
+// captured. No file paths, no user-identifiable data, no raw error text.
+var (
+	// ToolFirstRunSkipReasonKey records why the first-run experience was
+	// bypassed for this invocation.
+	// Example: "env_var", "no_prompt", "ci_cd", "non_interactive",
+	//          "already_completed", "config_error"
+	ToolFirstRunSkipReasonKey = AttributeKey{
+		Key:            attribute.Key("tool.firstrun.skip_reason"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ToolFirstRunOptInKey records whether the user accepted the first-run
+	// "Would you like to check your Azure development tools?" prompt.
+	ToolFirstRunOptInKey = AttributeKey{
+		Key:            attribute.Key("tool.firstrun.opt_in"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ToolFirstRunToolsDetectedKey records the number of built-in tools that
+	// were already installed when the first-run check ran.
+	ToolFirstRunToolsDetectedKey = AttributeKey{
+		Key:            attribute.Key("tool.firstrun.tools_detected"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+
+	// ToolFirstRunToolsOfferedKey records the number of recommended tools
+	// offered to the user for installation during first-run.
+	ToolFirstRunToolsOfferedKey = AttributeKey{
+		Key:            attribute.Key("tool.firstrun.tools_offered"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+
+	// ToolFirstRunToolsSelectedKey records the number of tools the user
+	// selected to install from the offered set.
+	ToolFirstRunToolsSelectedKey = AttributeKey{
+		Key:            attribute.Key("tool.firstrun.tools_selected"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+
+	// ToolFirstRunToolsSelectedNamesKey records the comma-separated list of
+	// built-in tool IDs the user selected for installation during first-run.
+	//
+	// Example: "az-cli,docker,git"
+	ToolFirstRunToolsSelectedNamesKey = AttributeKey{
+		Key:            attribute.Key("tool.firstrun.tools_selected_names"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ToolFirstRunToolsDeselectedNamesKey records the comma-separated list of
+	// offered built-in tool IDs the user deselected during first-run.
+	ToolFirstRunToolsDeselectedNamesKey = AttributeKey{
+		Key:            attribute.Key("tool.firstrun.tools_deselected_names"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ToolFirstRunOutcomeKey records the terminal state of the first-run
+	// experience as a low-cardinality string enum. Mutually exclusive with
+	// fields.ToolFirstRunSkipReasonKey — `skip_reason` is set only when the
+	// flow never ran, while `outcome` is set only when the flow ran to a
+	// terminal state.
+	//
+	// Values:
+	//   - "completed"      — full flow succeeded (with or without installs)
+	//   - "declined"       — user declined the opt-in prompt
+	//   - "cancelled"      — user cancelled a prompt mid-flow (Ctrl+C / Esc)
+	//   - "detect_failed"  — tool detection failed before any selection was offered
+	//   - "install_failed" — the install batch itself errored at infrastructure level
+	//
+	// Replaces the prior `tool.firstrun.completed` bool field, which was
+	// always `true` and therefore not filterable for the failure / decline
+	// cases described above.
+	ToolFirstRunOutcomeKey = AttributeKey{
+		Key:            attribute.Key("tool.firstrun.outcome"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ToolIdKey records the built-in tool ID for single-tool operations
+	// (e.g., `azd tool show`, single-target `azd tool install`).
+	//
+	// Example: "az-cli", "docker", "git", "node"
+	ToolIdKey = AttributeKey{
+		Key:            attribute.Key("tool.id"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ToolIdsKey records the comma-separated list of built-in tool IDs
+	// targeted by a batch operation (e.g., `azd tool install az-cli docker`).
+	ToolIdsKey = AttributeKey{
+		Key:            attribute.Key("tool.ids"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ToolDryRunKey records whether `--dry-run` was specified for an
+	// `azd tool install` or `azd tool upgrade` invocation.
+	ToolDryRunKey = AttributeKey{
+		Key:            attribute.Key("tool.dry_run"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ToolInstallStrategyKey records the installation strategy used by a
+	// single-target install/upgrade.
+	//
+	// Example: "winget", "brew", "apt", "npm", "manual"
+	ToolInstallStrategyKey = AttributeKey{
+		Key:            attribute.Key("tool.install.strategy"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ToolInstallSuccessKey records whether a single-target tool install or
+	// upgrade succeeded.
+	ToolInstallSuccessKey = AttributeKey{
+		Key:            attribute.Key("tool.install.success"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ToolInstallSuccessCountKey records the number of tools that succeeded
+	// in a batch install / upgrade.
+	ToolInstallSuccessCountKey = AttributeKey{
+		Key:            attribute.Key("tool.install.success_count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+
+	// ToolInstallFailureCountKey records the number of tools that failed in
+	// a batch install / upgrade.
+	ToolInstallFailureCountKey = AttributeKey{
+		Key:            attribute.Key("tool.install.failure_count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+
+	// ToolInstallFailedIdsKey records the comma-separated list of built-in
+	// tool IDs whose install / upgrade did not succeed.  Per-tool error
+	// messages are intentionally *not* captured — only the IDs that failed
+	// — so the global error middleware remains the source of error detail
+	// and no PII can leak through tool-specific error strings.
+	ToolInstallFailedIdsKey = AttributeKey{
+		Key:            attribute.Key("tool.install.failed_ids"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ToolInstallDurationMsKey records the total duration of an install /
+	// upgrade operation in milliseconds.
+	ToolInstallDurationMsKey = AttributeKey{
+		Key:            attribute.Key("tool.install.duration_ms"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+
+	// ToolFirstRunInstallSuccessCountKey mirrors ToolInstallSuccessCountKey
+	// but is emitted only from the first-run middleware, so the user's
+	// subsequent `azd tool install` / `azd tool upgrade` command (which
+	// emits its own `tool.install.success_count`) does not overwrite the
+	// first-run signal on the same span.
+	ToolFirstRunInstallSuccessCountKey = AttributeKey{
+		Key:            attribute.Key("tool.firstrun.install_success_count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+
+	// ToolFirstRunInstallFailureCountKey — first-run counterpart of
+	// ToolInstallFailureCountKey. See ToolFirstRunInstallSuccessCountKey.
+	ToolFirstRunInstallFailureCountKey = AttributeKey{
+		Key:            attribute.Key("tool.firstrun.install_failure_count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+
+	// ToolFirstRunInstallFailedIdsKey — first-run counterpart of
+	// ToolInstallFailedIdsKey. See ToolFirstRunInstallSuccessCountKey.
+	ToolFirstRunInstallFailedIdsKey = AttributeKey{
+		Key:            attribute.Key("tool.firstrun.install_failed_ids"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ToolFirstRunInstallDurationMsKey — first-run counterpart of
+	// ToolInstallDurationMsKey. See ToolFirstRunInstallSuccessCountKey.
+	ToolFirstRunInstallDurationMsKey = AttributeKey{
+		Key:            attribute.Key("tool.firstrun.install_duration_ms"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+
+	// ToolUpgradeFromVersionKey records the previous version of a tool
+	// being upgraded (single-target upgrades only).
+	ToolUpgradeFromVersionKey = AttributeKey{
+		Key:            attribute.Key("tool.upgrade.from_version"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ToolUpgradeToVersionKey records the new version after upgrade
+	// (single-target upgrades only). Emitted only when the upgrade
+	// succeeds.
+	ToolUpgradeToVersionKey = AttributeKey{
+		Key:            attribute.Key("tool.upgrade.to_version"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ToolCheckUpdatesAvailableKey records the number of installed tools
+	// that have an available update, as reported by `azd tool check`.
+	ToolCheckUpdatesAvailableKey = AttributeKey{
+		Key:            attribute.Key("tool.check.updates_available"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+)
+
 // Preflight validation related fields
 var (
 	// PreflightOutcomeKey records the outcome of preflight validation.

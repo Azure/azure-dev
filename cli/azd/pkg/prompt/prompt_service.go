@@ -281,6 +281,7 @@ func (ps *promptService) PromptSubscription(
 
 	// Apply subscription filter if one exists for the selected tenant
 	var filterApplied bool
+	unfilteredSubs := subscriptionList
 	if selectedTenantId != "" && userConfig != nil {
 		filterIds, hasFilter := LoadSubscriptionFilter(
 			userConfig, selectedTenantId,
@@ -354,22 +355,11 @@ func (ps *promptService) PromptSubscription(
 
 	// If user selected "Show all subscriptions", re-prompt with full list
 	if result != nil && result.Id == ShowAllSubscriptionsOption {
-		allSubs, loadErr := ps.subscriptionManager.GetSubscriptions(ctx)
-		if loadErr != nil {
-			return nil, fmt.Errorf(
-				"listing subscriptions: %w", loadErr,
-			)
-		}
-		allSubs = filterByTenantEnvVar(allSubs)
-		if selectedTenantId != "" {
-			allSubs = FilterSubscriptionsByTenantId(
-				allSubs, selectedTenantId,
-			)
-		}
-
-		allSubPtrs := make([]*account.Subscription, len(allSubs))
-		for i := range allSubs {
-			allSubPtrs[i] = &allSubs[i]
+		allSubPtrs := make(
+			[]*account.Subscription, len(unfilteredSubs),
+		)
+		for i := range unfilteredSubs {
+			allSubPtrs[i] = &unfilteredSubs[i]
 		}
 
 		return PromptCustomResource(

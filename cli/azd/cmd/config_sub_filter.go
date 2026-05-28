@@ -240,41 +240,10 @@ func (a *subFilterSetAction) resolveTenant(
 	ctx context.Context,
 	subscriptions []account.Subscription,
 ) (string, string, error) {
-	// Extract tenants without display names first to avoid an unnecessary
-	// API call when only a single tenant exists.
-	tenants := prompt.ExtractUniqueTenants(subscriptions, nil)
-	if len(tenants) == 0 {
-		return "", "", fmt.Errorf("no tenants found")
-	}
-
-	if len(tenants) == 1 {
-		return tenants[0].Id, tenants[0].DisplayName, nil
-	}
-
-	// Multiple tenants — fetch display names for the prompt
-	tenantNames, err := a.accountManager.GetTenantDisplayNames(ctx)
-	if err != nil {
-		tenantNames = nil
-	}
-
-	tenants = prompt.ExtractUniqueTenants(subscriptions, tenantNames)
-
-	// Build options without "All tenants" — filter must be per-tenant
-	options := make([]string, len(tenants))
-	for i, t := range tenants {
-		options[i] = prompt.FormatTenantDisplay(i+1, t)
-	}
-
-	selectedIndex, err := a.console.Select(ctx, input.ConsoleOptions{
-		Message: "Select a tenant to set a subscription filter for",
-		Options: options,
-	})
-	if err != nil {
-		return "", "", fmt.Errorf("selecting tenant: %w", err)
-	}
-
-	return tenants[selectedIndex].Id,
-		tenants[selectedIndex].DisplayName, nil
+	return resolveTenantForFilter(
+		ctx, subscriptions, a.console, a.accountManager,
+		"Select a tenant to set a subscription filter for",
+	)
 }
 
 // azd config sub-filter remove
@@ -395,6 +364,22 @@ func (a *subFilterRemoveAction) resolveTenant(
 	ctx context.Context,
 	subscriptions []account.Subscription,
 ) (string, string, error) {
+	return resolveTenantForFilter(
+		ctx, subscriptions, a.console, a.accountManager,
+		"Select a tenant to remove the subscription filter for",
+	)
+}
+
+// resolveTenantForFilter resolves the tenant to use for a sub-filter
+// operation. If only one tenant exists, it is returned directly without
+// an API call for display names. Otherwise the user is prompted.
+func resolveTenantForFilter(
+	ctx context.Context,
+	subscriptions []account.Subscription,
+	console input.Console,
+	accountManager account.Manager,
+	promptMessage string,
+) (string, string, error) {
 	// Extract tenants without display names first to avoid an unnecessary
 	// API call when only a single tenant exists.
 	tenants := prompt.ExtractUniqueTenants(subscriptions, nil)
@@ -407,7 +392,7 @@ func (a *subFilterRemoveAction) resolveTenant(
 	}
 
 	// Multiple tenants — fetch display names for the prompt
-	tenantNames, err := a.accountManager.GetTenantDisplayNames(ctx)
+	tenantNames, err := accountManager.GetTenantDisplayNames(ctx)
 	if err != nil {
 		tenantNames = nil
 	}
@@ -419,8 +404,8 @@ func (a *subFilterRemoveAction) resolveTenant(
 		options[i] = prompt.FormatTenantDisplay(i+1, t)
 	}
 
-	selectedIndex, err := a.console.Select(ctx, input.ConsoleOptions{
-		Message: "Select a tenant to remove the subscription filter for",
+	selectedIndex, err := console.Select(ctx, input.ConsoleOptions{
+		Message: promptMessage,
 		Options: options,
 	})
 	if err != nil {

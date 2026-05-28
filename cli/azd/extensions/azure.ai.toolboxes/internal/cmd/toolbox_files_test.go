@@ -137,6 +137,44 @@ func TestParseToolboxFile_RejectsUnsupportedExtension(t *testing.T) {
 	assert.Contains(t, le.Suggestion, ".json")
 }
 
+// `tools` on the create shape is accepted as a raw OpenAI.Tool[] pass-through.
+// YAML must decode nested objects as map[string]any (not map[any]any) so the
+// JSON marshaller in the data-plane client emits valid JSON.
+func TestParseToolboxFile_AcceptsRawToolsOnCreate(t *testing.T) {
+	t.Run("json", func(t *testing.T) {
+		path := writeTempFile(t, ".json", `
+{
+  "tools": [
+    { "type": "web_search",  "name": "web" },
+    { "type": "file_search", "name": "files" }
+  ]
+}`)
+		var out toolboxCreateFile
+		require.NoError(t, parseToolboxFile(path, &out))
+		require.Len(t, out.Tools, 2)
+		assert.Equal(t, "web_search", out.Tools[0]["type"])
+		assert.Equal(t, "files", out.Tools[1]["name"])
+	})
+
+	t.Run("yaml decodes nested maps as map[string]any", func(t *testing.T) {
+		path := writeTempFile(t, ".yaml", `
+tools:
+  - type: web_search
+    name: web
+  - type: code_interpreter
+    name: ci
+    container:
+      type: auto
+`)
+		var out toolboxCreateFile
+		require.NoError(t, parseToolboxFile(path, &out))
+		require.Len(t, out.Tools, 2)
+		nested, ok := out.Tools[1]["container"].(map[string]any)
+		require.True(t, ok, "expected nested map[string]any, got %T", out.Tools[1]["container"])
+		assert.Equal(t, "auto", nested["type"])
+	})
+}
+
 func TestParseToolboxFile_RejectsMissingFile(t *testing.T) {
 	var out toolboxCreateFile
 	err := parseToolboxFile(filepath.Join(t.TempDir(), "nope.json"), &out)

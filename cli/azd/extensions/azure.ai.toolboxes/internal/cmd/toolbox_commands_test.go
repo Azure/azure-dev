@@ -433,7 +433,7 @@ func TestRunToolboxCreateWith_AlreadyExists(t *testing.T) {
 	requireLocalError(t, err, exterrors.CodeInvalidToolboxName)
 }
 
-func TestRunToolboxCreateWith_NoConnectionsRejected(t *testing.T) {
+func TestRunToolboxCreateWith_NoEntriesRejected(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 
 	err := runToolboxCreateWith(
@@ -500,6 +500,128 @@ policies:
 		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "table"},
 	)
 	requireLocalError(t, err, exterrors.CodeInvalidParameter)
+	assert.Empty(t, client.createVersionCalls)
+}
+
+// A tools-only --from-file payload (no connections) is valid and the raw
+// entries reach the data plane verbatim.
+func TestRunToolboxCreateWith_ToolsOnlyFromFile(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+description: connectionless toolbox
+tools:
+  - type: web_search
+    name: web
+  - type: file_search
+    name: files
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	tools := client.createVersionCalls[0].req.Tools
+	require.Len(t, tools, 2)
+	assert.Equal(t, "web_search", tools[0]["type"])
+	assert.Equal(t, "file_search", tools[1]["type"])
+}
+
+// Connection-backed entries come first, raw tools[] entries after.
+func TestRunToolboxCreateWith_MixedConnectionsAndTools(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	resolver := newStubConnectionResolver()
+	resolver.byName["mcp"] = &projectConnection{
+		ID: "/c/mcp", Category: connections.ConnectionTypeRemoteTool, Name: "mcp",
+		Target: "https://mcp.example.com",
+	}
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+connections:
+  - name: mcp
+tools:
+  - type: web_search
+    name: web
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, resolver, "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	tools := client.createVersionCalls[0].req.Tools
+	require.Len(t, tools, 2)
+	assert.Equal(t, "mcp", tools[0]["type"])
+	assert.Equal(t, "web_search", tools[1]["type"])
+}
+
+// A tools[] entry missing the discriminator `type` is rejected locally.
+func TestRunToolboxCreateWith_RawToolMissingType(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+tools:
+  - name: oops
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "table"},
+	)
+	requireLocalError(t, err, exterrors.CodeMissingToolType)
+	assert.Empty(t, client.createVersionCalls)
+}
+
+// A raw tools[] entry whose `name` violates the service regex is rejected
+// locally rather than producing a generic 400.
+func TestRunToolboxCreateWith_RawToolInvalidName(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+tools:
+  - type: web_search
+    name: bad.name
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "table"},
+	)
+	requireLocalError(t, err, exterrors.CodeInvalidToolboxName)
+	assert.Empty(t, client.createVersionCalls)
+}
+
+// Two entries sharing the same `name` collide regardless of source. A common
+// mistake is a raw tool whose name matches an attached connection's short name.
+func TestRunToolboxCreateWith_DuplicateToolNameRejected(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+	resolver := newStubConnectionResolver()
+	resolver.byName["mcp"] = &projectConnection{
+		ID: "/c/mcp", Category: connections.ConnectionTypeRemoteTool, Name: "mcp",
+		Target: "https://mcp.example.com",
+	}
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+connections:
+  - name: mcp
+tools:
+  - type: web_search
+    name: mcp
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, resolver, "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "table"},
+	)
+	requireLocalError(t, err, exterrors.CodeDuplicateToolName)
 	assert.Empty(t, client.createVersionCalls)
 }
 

@@ -37,12 +37,16 @@ type toolboxToolsFile struct {
 
 // toolboxCreateFile is the file shape for `toolbox create --from-file`.
 //
-// description is optional and stored on the initial version.
-// connections[] is required and lists existing project connections to attach.
-// policies carries the toolbox version's RAI policy.
+// connections[] is azd sugar over the project connections data-plane and
+// builds the matching tool entry (mcp, azure_ai_search, a2a_preview, or
+// connection-backed web_search). tools[] is a verbatim pass-through to the
+// data plane's OpenAI.Tool[] shape; use it for connectionless tools (built-in
+// web_search, file_search, code_interpreter, ...) or any tool type not yet
+// exposed by connections[]. At least one of the two must be non-empty.
 type toolboxCreateFile struct {
 	Description string                  `json:"description,omitempty" yaml:"description,omitempty"`
 	Connections []toolboxConnectionSpec `json:"connections,omitempty" yaml:"connections,omitempty"`
+	Tools       []map[string]any        `json:"tools,omitempty"       yaml:"tools,omitempty"`
 	Policies    *toolboxPoliciesSpec    `json:"policies,omitempty"    yaml:"policies,omitempty"`
 }
 

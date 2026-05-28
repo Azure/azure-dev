@@ -9,6 +9,6 @@ Initial preview release of the Foundry Projects extension.
 - Added `azd ai project set <endpoint>` to persist a default Foundry project endpoint to the azd global config (`~/.azd/config.json`). Other AI extensions resolve this endpoint when no azd environment variable or explicit flag is available.
 - Added `azd ai project show` to display the currently resolved Foundry project endpoint and the source that provided it, for easy debugging.
 - Added `azd ai project unset` to clear the persisted Foundry project endpoint from global config (idempotent — safe to run when no endpoint is set).
-- Endpoint resolution uses a 5-level cascade: explicit `--project-endpoint` flag → active azd environment's `AZURE_AI_PROJECT_ENDPOINT` → global config (`extensions.ai-projects.context.endpoint`) → host `FOUNDRY_PROJECT_ENDPOINT` environment variable → actionable structured error.
+- Endpoint resolution uses a 5-level cascade: explicit `--project-endpoint` flag → active azd environment's `FOUNDRY_PROJECT_ENDPOINT` → global config (`extensions.ai-projects.context.endpoint`) → host `FOUNDRY_PROJECT_ENDPOINT` environment variable → actionable structured error.
 - One-time auto-migration from the legacy `extensions.ai-agents.project.context` key (written by the removed `azd ai agent project set` command) into the new `extensions.ai-projects.context` key.
 - All commands support `--output table` (default) and `--output json` for machine-readable output.

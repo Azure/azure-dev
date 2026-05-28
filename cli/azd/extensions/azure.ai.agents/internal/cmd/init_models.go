@@ -203,7 +203,7 @@ func (a *InitAction) getModelDeploymentDetails(
 			// auto-select it without prompting.
 			if a.userProvidedManifest && len(matchingDeployments) == 1 {
 				for name, deployment := range matchingDeployments {
-					fmt.Printf("  %s Model: %s — using existing deployment '%s'\n", output.WithSuccessFormat("✓"), model.Id, name)
+					fmt.Printf("  %s Model deployment: %s (version: %s) — using existing deployment '%s'\n", output.WithSuccessFormat("✓"), model.Id, deployment.Version, name)
 					return &project.Deployment{
 						Name: name,
 						Model: project.DeploymentModel{
@@ -380,7 +380,10 @@ func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (
 			return nil, fmt.Errorf("no model selected, exiting")
 		}
 		model = selectedModel
-	} else if !a.flags.noPrompt && !a.userProvidedManifest {
+	} else if a.userProvidedManifest {
+		// Model found — auto-accept from manifest without prompting
+		fmt.Printf("  %s Model: %s (from manifest)\n", output.WithSuccessFormat("✓"), model.Name)
+	} else if !a.flags.noPrompt {
 		// Model found in catalog — let user confirm or choose a different one
 		choices := []*azdext.SelectChoice{
 			{Label: fmt.Sprintf("Use '%s' (from manifest)", model.Name), Value: "keep"},

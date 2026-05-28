@@ -106,9 +106,9 @@ func ApplySubscriptionFilter(
 	return filtered, true
 }
 
-// GetAllSubscriptionFilters returns all saved subscription filters from user config
+// getAllSubscriptionFilters returns all saved subscription filters from user config
 // as a map of tenantId -> []subscriptionId.
-func GetAllSubscriptionFilters(
+func getAllSubscriptionFilters(
 	cfg config.Config,
 ) map[string][]string {
 	raw, exists := cfg.GetMap(subscriptionFiltersConfigKey)
@@ -134,10 +134,10 @@ func GetAllSubscriptionFilters(
 	return result
 }
 
-// SubscriptionsMatchingFilter returns the subscriptions that match saved filter IDs,
+// subscriptionsMatchingFilter returns the subscriptions that match saved filter IDs,
 // preserving the order of the subscription list. Pre-selected items are returned
 // as their display option strings for use with MultiSelect DefaultValue.
-func SubscriptionsMatchingFilter(
+func subscriptionsMatchingFilter(
 	subscriptions []account.Subscription,
 	filterIds []string,
 	displayFn func(*account.Subscription) string,

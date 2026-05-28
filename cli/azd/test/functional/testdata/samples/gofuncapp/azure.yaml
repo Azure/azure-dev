@@ -1,0 +1,8 @@
+name: gofuncapp
+metadata:
+  template: azd-test/gofunctestapp@v1
+services:
+  gofunc:
+    project: .
+    host: function
+    language: go

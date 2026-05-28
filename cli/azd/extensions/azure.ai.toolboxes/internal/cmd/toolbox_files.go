@@ -37,11 +37,45 @@ type toolboxToolsFile struct {
 
 // toolboxCreateFile is the file shape for `toolbox create --from-file`.
 //
-// description is optional and stored on the initial version.
-// connections[] is required and lists existing project connections to attach.
+// connections[] is azd sugar over the project connections data-plane and
+// builds the matching tool entry (mcp, azure_ai_search, a2a_preview, or
+// connection-backed web_search). tools[] is a verbatim pass-through to the
+// data plane's OpenAI.Tool[] shape; use it for connectionless tools (built-in
+// web_search, file_search, code_interpreter, ...) or any tool type not yet
+// exposed by connections[]. At least one of the two must be non-empty.
 type toolboxCreateFile struct {
 	Description string                  `json:"description,omitempty" yaml:"description,omitempty"`
 	Connections []toolboxConnectionSpec `json:"connections,omitempty" yaml:"connections,omitempty"`
+	Tools       []map[string]any        `json:"tools,omitempty"       yaml:"tools,omitempty"`
+	Policies    *toolboxPoliciesSpec    `json:"policies,omitempty"    yaml:"policies,omitempty"`
+}
+
+// toolboxPoliciesSpec mirrors the data-plane ToolboxPolicies model.
+type toolboxPoliciesSpec struct {
+	RaiConfig *toolboxRaiConfigSpec `json:"rai_config,omitempty" yaml:"rai_config,omitempty"`
+}
+
+// toolboxRaiConfigSpec mirrors the data-plane RaiConfig model.
+//
+// The wire field per the Foundry TypeSpec is `rai_policy_name`. We also accept
+// the friendlier `name` alias and map it onto `rai_policy_name` at validation
+// time so existing user docs that use either form keep working.
+type toolboxRaiConfigSpec struct {
+	RaiPolicyName string `json:"rai_policy_name,omitempty" yaml:"rai_policy_name,omitempty"`
+	Name          string `json:"name,omitempty"            yaml:"name,omitempty"`
+}
+
+// resolvedPolicyName returns the effective RAI policy name from the spec,
+// preferring the wire-shaped `rai_policy_name` over the `name` alias.
+// Returns "" if neither is set.
+func (r *toolboxRaiConfigSpec) resolvedPolicyName() string {
+	if r == nil {
+		return ""
+	}
+	if strings.TrimSpace(r.RaiPolicyName) != "" {
+		return strings.TrimSpace(r.RaiPolicyName)
+	}
+	return strings.TrimSpace(r.Name)
 }
 
 // parseToolboxFile reads a JSON or YAML file into out. Unknown fields are

@@ -166,6 +166,7 @@ func runConnectionRemoveWith(
 		Description: current.Description,
 		Metadata:    current.Metadata,
 		Tools:       filtered,
+		Policies:    current.Policies,
 	}
 	created, err := client.CreateToolboxVersion(ctx, toolboxName, req)
 	if err != nil {

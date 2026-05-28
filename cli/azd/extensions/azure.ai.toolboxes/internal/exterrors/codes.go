@@ -41,6 +41,8 @@ const (
 	CodeMissingInstanceName           = "missing_instance_name"
 	CodeUnsupportedInstanceNameFlag   = "unsupported_instance_name_flag"
 	CodeDuplicateConnection           = "duplicate_connection"
+	CodeDuplicateToolName             = "duplicate_tool_name"
+	CodeMissingToolType               = "missing_tool_type"
 	CodeConnectionNotFound            = "connection_not_found"
 	CodeConnectionNotInToolbox        = "connection_not_in_toolbox"
 	CodeConnectionMissingTarget       = "connection_missing_target"

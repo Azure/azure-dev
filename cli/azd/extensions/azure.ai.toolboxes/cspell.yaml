@@ -1,5 +1,6 @@
 import: ../../.vscode/cspell.yaml
 words:
+    - connectionless
     - exterrors
     - projectctx
     - retarget

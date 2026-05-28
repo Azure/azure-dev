@@ -1115,10 +1115,9 @@ func (m *Manager) CleanAllAuthCache() error {
 	}
 
 	// Remove claims file
-	if claimsFile, err := claimsFilePath(); err == nil {
-		if err := os.Remove(claimsFile); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("removing claims file: %w", err)
-		}
+	claimsFile := filepath.Join(cfgRoot, "auth.claims")
+	if err := os.Remove(claimsFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("removing claims file: %w", err)
 	}
 
 	// Recreate the auth/msal directory structure so subsequent login can proceed

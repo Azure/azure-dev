@@ -264,6 +264,10 @@ func newAuthLoginAction(
 }
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if la.flags.reset && la.flags.onlyCheckStatus {
+		return nil, errors.New("cannot use --reset with --check-status")
+	}
+
 	if la.flags.reset {
 		if err := la.authManager.CleanAllAuthCache(); err != nil {
 			return nil, fmt.Errorf("clearing auth cache: %w", err)

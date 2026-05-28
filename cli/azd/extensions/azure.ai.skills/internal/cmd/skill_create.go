@@ -231,6 +231,10 @@ func (a *createAction) runFileDirectory(ctx context.Context, client *skill_api.C
 
 // classifyArchiveDirectoryError wraps ArchiveDirectory's sentinel errors in
 // structured extension errors so the host prints a useful message.
+// Non-sentinel I/O errors (permission denied mid-walk, EvalSymlinks failure,
+// TOCTOU file-disappeared, etc.) fall through to the default case so they
+// still surface as a structured CodeInvalidSkillFile rather than a raw Go
+// error with no Suggestion or telemetry code.
 func classifyArchiveDirectoryError(err error, srcDir string) error {
 	switch {
 	case errors.Is(err, skill_api.ErrUnsafeEntry):
@@ -251,8 +255,13 @@ func classifyArchiveDirectoryError(err error, srcDir string) error {
 			err.Error(),
 			"verify the directory exists, is readable, and contains at least one file",
 		)
+	default:
+		return exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("failed to package %s: %s", srcDir, err),
+			"verify the directory and its contents are readable",
+		)
 	}
-	return err
 }
 
 // printCreateResult prints either the created version envelope or, when the

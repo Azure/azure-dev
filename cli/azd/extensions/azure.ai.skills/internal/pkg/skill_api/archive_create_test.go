@@ -194,12 +194,14 @@ func TestLocateSkillMdInDir_RejectsSymlink(t *testing.T) {
 	require.ErrorIs(t, err, ErrUnsafeEntry)
 }
 
-// Ensure errors.Is wiring matches what callers can branch on.
-func TestArchiveDirectory_ErrorsAreSentinels(t *testing.T) {
+// TestArchiveDirectory_MissingDirPropagatesCause guards against a future
+// refactor that might swallow the underlying fs.PathError cause when the
+// source directory does not exist. The error is intentionally *not* a
+// sentinel (it bubbles up from os.Stat), so callers can use errors.As to
+// recover the path-level detail.
+func TestArchiveDirectory_MissingDirPropagatesCause(t *testing.T) {
 	_, err := ArchiveDirectory(filepath.Join(t.TempDir(), "does-not-exist"), ArchiveOptions{})
 	require.Error(t, err)
-	// The underlying error is fs.PathError — not a sentinel — so this just
-	// guards against future refactors that might swallow the cause.
 	var pathErr *os.PathError
 	require.True(t, errors.As(err, &pathErr) || strings.Contains(err.Error(), "stat"))
 }

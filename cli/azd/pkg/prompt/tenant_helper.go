@@ -172,7 +172,8 @@ type TenantDisplayNameProvider func(ctx context.Context) (map[string]string, err
 
 // promptAndFilterByTenant prompts the user to select a tenant when subscriptions span multiple tenants.
 // It extracts unique tenants, fetches display names only when needed, and returns filtered subscriptions
-// along with the selected tenant ID (empty if "All tenants" was chosen or only one tenant exists).
+// along with the selected tenant ID (empty only if "All tenants" was chosen; returns the tenant ID
+// even when a single tenant is auto-selected).
 func promptAndFilterByTenant(
 	ctx context.Context,
 	console input.Console,

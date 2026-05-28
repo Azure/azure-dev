@@ -34,9 +34,12 @@ The Foundry project endpoint is resolved in this order:
 
 1. `-p` / `--project-endpoint` flag on the command.
 2. Active azd env value `AZURE_AI_PROJECT_ENDPOINT`.
-3. Global config `extensions.ai-skills.project.context.endpoint`
-   (falls back to `extensions.ai-agents.project.context.endpoint` so users who
-   configured the endpoint via the agents extension are not forced to re-run `set`).
+3. Global config `extensions.ai-projects.context.endpoint` (written by
+   `azd ai project set`). Falls back to the legacy
+   `extensions.ai-skills.project.context.endpoint` and
+   `extensions.ai-agents.project.context.endpoint` keys so users who
+   configured the endpoint via earlier extensions are not forced to re-run
+   `set`.
 4. Host environment variable `FOUNDRY_PROJECT_ENDPOINT`.
 5. Structured error with an actionable suggestion.
 

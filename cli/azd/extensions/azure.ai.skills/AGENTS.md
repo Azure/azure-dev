@@ -12,12 +12,12 @@ Useful places to start:
 - `internal/pkg/skill_api/`: typed Foundry Skills REST client, models, SKILL.md parser, and safe ZIP extractor
 - `internal/exterrors/`: structured error factories and extension-specific codes
 
-## Relationship to `azure.ai.agents`
+## Relationship to `azure.ai.projects` and `azure.ai.agents`
 
-This extension is intentionally separate from `azure.ai.agents`. It shares no code symbols but cooperates with it via the global-config endpoint key:
+This extension is intentionally separate from `azure.ai.agents` and shares no code symbols, but it cooperates with `azure.ai.projects` for the Foundry project endpoint:
 
-- This extension writes to `extensions.ai-skills.project.context.endpoint` (none yet — read-only today).
-- This extension reads `extensions.ai-skills.project.context.endpoint` first, then falls back to `extensions.ai-agents.project.context.endpoint` so users who already configured the endpoint via the agents extension are not forced to re-run `set`.
+- This extension **never writes** any project-context global-config key. The persisted endpoint comes from `azd ai project set` (in `azure.ai.projects`).
+- This extension reads `extensions.ai-projects.context.endpoint` first, then falls back to the legacy `extensions.ai-skills.project.context.endpoint` and `extensions.ai-agents.project.context.endpoint` keys so users who configured the endpoint via earlier extensions are not forced to re-run `set`.
 
 `AgentCardSkill` (in `azure.ai.agents`) is unrelated to the `Skill` resource managed here and lives in a different Go module.
 

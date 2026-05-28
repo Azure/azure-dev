@@ -31,6 +31,7 @@ const (
 const (
 	CodeToolboxNotFound               = "toolbox_not_found"
 	CodeInvalidToolboxName            = "invalid_toolbox_name"
+	CodeMissingUpdateField            = "missing_update_field"
 	CodeDefaultVersionDelete          = "default_version_delete"
 	CodeOnlyVersionDelete             = "only_version_delete"
 	CodeMissingForceFlag              = "missing_force_flag"

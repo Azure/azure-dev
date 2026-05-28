@@ -30,7 +30,7 @@ func newToolboxVersionListCommand(extCtx *azdext.ExtensionContext) *cobra.Comman
 		Long: `List published versions for a toolbox.
 
 Shows one row per published version and marks which one is currently the
-default. Use this when choosing a target for 'toolbox publish'.`,
+default. Use this when choosing a target for 'toolbox update --default-version'.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runToolboxVersionList(cmd.Context(), args[0], readToolboxFlags(cmd, extCtx))

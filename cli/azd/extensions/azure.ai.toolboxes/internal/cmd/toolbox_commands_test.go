@@ -43,7 +43,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 			toolboxDeleteFlags{version: "2", force: true}, toolboxFlags{output: "table"},
 		)
 		le := requireLocalError(t, err, exterrors.CodeDefaultVersionDelete)
-		assert.Contains(t, le.Suggestion, "azd ai toolbox publish")
+		assert.Contains(t, le.Suggestion, "azd ai toolbox update")
 		assert.Empty(t, client.deleteVersionCalls, "service must not be called")
 	})
 
@@ -310,7 +310,12 @@ func TestRunConnectionRemoveWith_LastToolBlocks(t *testing.T) {
 		ID: "/c/a", Category: connections.ConnectionTypeRemoteTool, Name: "a",
 	}
 
-	err := runConnectionRemoveWith(t.Context(), client, resolver, "https://e/", "tb", []string{"a"}, connectionRemoveFlags{force: true}, toolboxFlags{output: "table"})
+	err := runConnectionRemoveWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", []string{"a"},
+		connectionRemoveFlags{force: true},
+		toolboxFlags{output: "table"},
+	)
 	requireLocalError(t, err, exterrors.CodeLastToolRemoval)
 	assert.Empty(t, client.createVersionCalls)
 }
@@ -329,7 +334,12 @@ func TestRunConnectionRemoveWith_FilteredAndPromoted(t *testing.T) {
 		ID: "/c/a", Category: connections.ConnectionTypeRemoteTool, Name: "a",
 	}
 
-	err := runConnectionRemoveWith(t.Context(), client, resolver, "https://e/", "tb", []string{"a"}, connectionRemoveFlags{force: true}, toolboxFlags{output: "json"})
+	err := runConnectionRemoveWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", []string{"a"},
+		connectionRemoveFlags{force: true},
+		toolboxFlags{output: "json"},
+	)
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1)
 	assert.Len(t, client.createVersionCalls[0].req.Tools, 1)
@@ -349,7 +359,12 @@ func TestRunConnectionRemoveWith_ConnectionNotInToolbox(t *testing.T) {
 		ID: "/c/a", Category: connections.ConnectionTypeRemoteTool, Name: "a",
 	}
 
-	err := runConnectionRemoveWith(t.Context(), client, resolver, "https://e/", "tb", []string{"a"}, connectionRemoveFlags{force: true}, toolboxFlags{output: "table"})
+	err := runConnectionRemoveWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", []string{"a"},
+		connectionRemoveFlags{force: true},
+		toolboxFlags{output: "table"},
+	)
 	requireLocalError(t, err, exterrors.CodeConnectionNotInToolbox)
 }
 
@@ -378,12 +393,13 @@ func TestRunConnectionListWith_EmitsAllShapes(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestRunToolboxPublish_EmptyVersionRejected(t *testing.T) {
-	err := runToolboxPublish(
-		t.Context(), "tb", "",
+func TestRunToolboxUpdate_MissingDefaultVersion(t *testing.T) {
+	err := runToolboxUpdate(
+		t.Context(), "tb",
+		toolboxUpdateFlags{},
 		toolboxFlags{output: "table"},
 	)
-	requireLocalError(t, err, exterrors.CodeInvalidPositionalArg)
+	requireLocalError(t, err, exterrors.CodeMissingUpdateField)
 }
 
 func TestRunToolboxCreateWith_FromFileCreatesInitialVersion(t *testing.T) {
@@ -631,7 +647,12 @@ func TestRunConnectionRemoveWith_CarriesForwardSkills(t *testing.T) {
 		ID: "/c/a", Category: connections.ConnectionTypeRemoteTool, Name: "a",
 	}
 
-	err := runConnectionRemoveWith(t.Context(), client, resolver, "https://e/", "tb", []string{"a"}, connectionRemoveFlags{force: true}, toolboxFlags{output: "json"})
+	err := runConnectionRemoveWith(
+		t.Context(), client, resolver, "https://e/",
+		"tb", []string{"a"},
+		connectionRemoveFlags{force: true},
+		toolboxFlags{output: "json"},
+	)
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1)
 	assert.Equal(t, skills, client.createVersionCalls[0].req.Skills,

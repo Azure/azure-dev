@@ -16,9 +16,10 @@ func NewRootCommand() *cobra.Command {
 		Long: `Manage Foundry toolboxes.
 
 A toolbox is a versioned, named collection of connection-backed tools that
-agents reference at run time. Each version is immutable and carries the full
-tool list; mutations publish a new version and (after the first one) require
-an explicit update to retarget the default.`,
+agents reference at run time. Each version is immutable: mutations (connection
+add/remove, skill add/remove) publish a new version but never change which
+version is the default. Use 'azd ai toolbox update --default-version' to
+promote a version.`,
 	})
 
 	rootCmd.SilenceUsage = true
@@ -42,7 +43,7 @@ an explicit update to retarget the default.`,
 	registerToolboxOutputFlag(rootCmd)
 
 	rootCmd.AddCommand(newToolboxCreateCommand(extCtx))
-	rootCmd.AddCommand(newToolboxPublishCommand(extCtx))
+	rootCmd.AddCommand(newToolboxUpdateCommand(extCtx))
 	rootCmd.AddCommand(newToolboxDeleteCommand(extCtx))
 	rootCmd.AddCommand(newToolboxShowCommand(extCtx))
 	rootCmd.AddCommand(newToolboxListCommand(extCtx))

@@ -214,6 +214,6 @@ func emitSkillRemoveResult(toolboxName, newVersion string, names []string, outpu
 		)
 	}
 	fmt.Printf("The default version is unchanged; "+
-		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
+		"run `azd ai toolbox update %q --default-version %q` to promote.\n", toolboxName, newVersion)
 	return nil
 }

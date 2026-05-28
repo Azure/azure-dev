@@ -31,7 +31,7 @@ func newToolboxConnectionAddCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
 	cmd := &cobra.Command{
 		Use:   "add <toolbox> [connection]",
 		Short: "Attach one or more connections to a toolbox.",
-		Long: `Attach one or more tools to a toolbox and publish a new default version.
+		Long: `Attach one or more tools to a toolbox and publish a new version.
 
 This command has two modes:
 
@@ -42,7 +42,6 @@ Single-connection mode:
 Pass the project connection's short name as the positional. --index is
 required when the connection's category is CognitiveSearch (Azure AI Search).
 --instance-name is required when the category is GroundingWithCustomSearch.
-Only one tool is appended; the new version becomes the default.
 
 File mode:
 
@@ -51,6 +50,9 @@ File mode:
 Provide a JSON or YAML file with multiple connections. All inputs from a
 single invocation publish exactly one new toolbox version, so adding three
 connections this way produces v(N+1), not v(N+3).
+
+The new version is published but the toolbox's default version is unchanged;
+run 'azd ai toolbox update <toolbox> --default-version <version>' to promote it.
 
 ` + fileShapeBlurb(false) + `
 
@@ -303,6 +305,6 @@ func emitConnectionAddResult(
 	}
 	fmt.Printf("Endpoint: %s\n", mcpURL)
 	fmt.Printf("The default version is unchanged; "+
-		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
+		"run `azd ai toolbox update %q --default-version %q` to promote.\n", toolboxName, newVersion)
 	return nil
 }

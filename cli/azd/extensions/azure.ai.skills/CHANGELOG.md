@@ -8,12 +8,16 @@
   - `azd ai skill create <name>` — creates a skill and uploads its first
     default version via `POST /skills/{name}/versions`. Modes: inline
     (`--description` + `--instructions`), SKILL.md file (`--file ./SKILL.md`),
-    or ZIP package via `multipart/form-data` (`--file ./skill.zip`).
+    ZIP package via `multipart/form-data` (`--file ./skill.zip`), or a
+    directory whose root contains `SKILL.md` (`--file ./skill-src/`) — the
+    CLI packages the directory in memory and uploads it as multipart, so the
+    output of `azd ai skill download` round-trips back through `create`
+    without a manual zip step.
   - `azd ai skill update <name>` — uploads a new default version using the
-    same inline / SKILL.md modes; ZIP is rejected with a pointer to
-    `create --force`. Pass `--set-default-version <ver>` to repoint
-    `default_version` at an existing version without uploading new content
-    (`POST /skills/{name}`).
+    same inline / SKILL.md modes; ZIP and directory `--file` inputs are
+    rejected with a pointer to `create --force`. Pass `--set-default-version
+    <ver>` to repoint `default_version` at an existing version without
+    uploading new content (`POST /skills/{name}`).
   - `azd ai skill show <name>` — returns `Skill { id, name, description,
     default_version, latest_version, created_at }`.
   - `azd ai skill list` — paginated, supports `--top` and `--orderby`.

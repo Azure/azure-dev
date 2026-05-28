@@ -10,6 +10,7 @@ terminal.
 azd ai skill create <name> [--description "..." --instructions "..."]
 azd ai skill create <name> --file ./SKILL.md
 azd ai skill create <name> --file ./skill.zip
+azd ai skill create <name> --file ./skill-src/
 
 azd ai skill update <name> [--description "..."] [--instructions "..."] [--file ./SKILL.md]
 azd ai skill update <name> --set-default-version <version>
@@ -24,6 +25,16 @@ version; `update` uploads a new default version (or, with
 `--set-default-version`, just repoints `default_version` at an existing
 version). Names follow the agentskills.io spec
 (`^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$`, max 64 chars).
+
+`create` accepts inline content (`--description` / `--instructions`), a
+single `SKILL.md` file, a `.zip` package, or a directory whose root contains
+a `SKILL.md`. Directory mode is the round-trip inverse of
+`azd ai skill download`: the CLI packages the directory as a zip in memory
+and uploads it as multipart/form-data, identical to the `.zip` path.
+
+`update` is inline-only: a `.zip` or a directory is rejected with a pointer
+to `azd ai skill create --force` (a destructive delete-then-create), since
+swapping the entire package shape is a `create` concern, not an `update`.
 
 All commands accept the standard cross-cutting flags: `-p` / `--project-endpoint`,
 `--output table|json`, `--no-prompt`, and `--debug`.

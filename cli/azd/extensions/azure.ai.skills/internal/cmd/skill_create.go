@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -87,6 +88,8 @@ func (a *createAction) Run(ctx context.Context) error {
 		return a.runFileMd(ctx, skillCtx.client)
 	case modeFilePackage:
 		return a.runFilePackage(ctx, skillCtx.client)
+	case modeFileDirectory:
+		return a.runFileDirectory(ctx, skillCtx.client)
 	}
 	return exterrors.Validation(
 		exterrors.CodeInvalidParameter,
@@ -193,6 +196,65 @@ func (a *createAction) runFilePackage(ctx context.Context, client *skill_api.Cli
 	return a.printCreateResult(ctx, client, version)
 }
 
+// runFileDirectory packages the directory as an in-memory zip and uploads
+// it via the same multipart path as runFilePackage. The directory must
+// contain a SKILL.md at its root (matching what `azd ai skill download`
+// writes by default), so the natural download → edit → create flow works
+// without any manual zip step.
+func (a *createAction) runFileDirectory(ctx context.Context, client *skill_api.Client) error {
+	if _, found, err := skill_api.LocateSkillMdInDir(a.flags.file); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("cannot inspect SKILL.md in %s: %s", a.flags.file, err),
+			"verify the directory is readable and SKILL.md is a regular file",
+		)
+	} else if !found {
+		return exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("--file %s is a directory without a SKILL.md at its root", a.flags.file),
+			"add a SKILL.md to the directory root (matches `azd ai skill download` output) or pass a .zip archive",
+		)
+	}
+
+	data, archiveErr := skill_api.ArchiveDirectory(a.flags.file, skill_api.ArchiveOptions{})
+	if archiveErr != nil {
+		return classifyArchiveDirectoryError(archiveErr, a.flags.file)
+	}
+
+	archiveName := filepath.Base(filepath.Clean(a.flags.file)) + ".zip"
+	version, err := client.CreateVersionFromZip(ctx, a.flags.name, archiveName, bytes.NewReader(data), true)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
+	}
+	return a.printCreateResult(ctx, client, version)
+}
+
+// classifyArchiveDirectoryError wraps ArchiveDirectory's sentinel errors in
+// structured extension errors so the host prints a useful message.
+func classifyArchiveDirectoryError(err error, srcDir string) error {
+	switch {
+	case errors.Is(err, skill_api.ErrUnsafeEntry):
+		return exterrors.Validation(
+			exterrors.CodeSkillArchiveUnsafe,
+			err.Error(),
+			"remove symlinks and non-regular files from the directory and re-run",
+		)
+	case errors.Is(err, skill_api.ErrLimitExceeded):
+		return exterrors.Validation(
+			exterrors.CodeSkillArchiveUnsafe,
+			err.Error(),
+			fmt.Sprintf("the contents of %s exceed the per-skill archive safety limit", srcDir),
+		)
+	case errors.Is(err, skill_api.ErrInvalidArchive):
+		return exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			err.Error(),
+			"verify the directory exists, is readable, and contains at least one file",
+		)
+	}
+	return err
+}
+
 // printCreateResult prints either the created version envelope or, when the
 // caller wants a human-readable summary, the freshly-loaded Skill that the
 // version belongs to so users see default_version / latest_version.
@@ -219,8 +281,32 @@ func verifyFileNameMatches(filePath, positionalName string, mode createMode) err
 		return verifyPackageNameMatches(filePath, positionalName)
 	case modeFileMd:
 		return verifyMdNameMatches(filePath, positionalName)
+	case modeFileDirectory:
+		return verifyDirectoryNameMatches(filePath, positionalName)
 	}
 	return nil
+}
+
+// verifyDirectoryNameMatches reads the directory's SKILL.md and refuses
+// --force on a `name` mismatch. Returns nil when SKILL.md omits `name` or
+// the names agree.
+func verifyDirectoryNameMatches(dirPath, positionalName string) error {
+	mdPath, found, err := skill_api.LocateSkillMdInDir(dirPath)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("cannot inspect SKILL.md in %s: %s", dirPath, err),
+			"verify the directory is readable and SKILL.md is a regular file",
+		)
+	}
+	if !found {
+		return exterrors.Validation(
+			exterrors.CodeInvalidSkillFile,
+			fmt.Sprintf("--file %s is a directory without a SKILL.md at its root", dirPath),
+			"add a SKILL.md to the directory root before re-running with --force",
+		)
+	}
+	return verifyMdNameMatches(mdPath, positionalName)
 }
 
 // verifyMdNameMatches reads the SKILL.md front matter and refuses --force on
@@ -298,6 +384,7 @@ const (
 	modeInline
 	modeFileMd
 	modeFilePackage
+	modeFileDirectory
 )
 
 func selectCreateMode(f *createFlags) (createMode, error) {
@@ -313,6 +400,12 @@ func selectCreateMode(f *createFlags) (createMode, error) {
 	}
 
 	if fileProvided {
+		// Detect directories before extension matching so callers can point
+		// --file at the directory `azd ai skill download` extracted (which
+		// has no file extension at all).
+		if info, err := os.Stat(f.file); err == nil && info.IsDir() {
+			return modeFileDirectory, nil
+		}
 		switch strings.ToLower(filepath.Ext(f.file)) {
 		case ".md":
 			return modeFileMd, nil
@@ -322,7 +415,8 @@ func selectCreateMode(f *createFlags) (createMode, error) {
 			return modeNone, exterrors.Validation(
 				exterrors.CodeInvalidSkillFile,
 				fmt.Sprintf("unsupported --file extension %q", filepath.Ext(f.file)),
-				"use .md for inline metadata or .zip for a package upload",
+				"use .md for inline metadata, .zip for a package upload, "+
+					"or a directory containing SKILL.md",
 			)
 		}
 	}
@@ -383,18 +477,24 @@ func newCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Create a new Foundry skill.",
-		Long: `Create a new Foundry skill in one of three mutually exclusive modes:
+		Long: `Create a new Foundry skill in one of four mutually exclusive modes:
 
-  1. Inline:   --description "..." --instructions "..."
-  2. SKILL.md: --file ./SKILL.md   (CLI parses YAML front matter + body)
-  3. Package:  --file ./skill.zip   (CLI uploads the archive as multipart/form-data)
+  1. Inline:    --description "..." --instructions "..."
+  2. SKILL.md:  --file ./SKILL.md   (CLI parses YAML front matter + body)
+  3. Package:   --file ./skill.zip  (CLI uploads the archive as multipart/form-data)
+  4. Directory: --file ./skill-src  (CLI packages the directory as a zip and uploads it)
+
+Directory mode requires SKILL.md at the root of the directory — the same
+layout that ` + "`azd ai skill download`" + ` writes by default, so the natural
+round-trip works without a manual zip step.
 
 Skills are versioned. ` + "`create`" + ` creates a new skill (if it does not exist)
 and uploads its first version as the default. Pass --force to delete an existing
 skill of the same name before creating.`,
 		Example: `  azd ai skill create greet-user --description "Welcomes a new user" --instructions "Greet ..."
   azd ai skill create greet-user --file ./SKILL.md
-  azd ai skill create greet-user --file ./skill.zip --force`,
+  azd ai skill create greet-user --file ./skill.zip --force
+  azd ai skill create greet-user --file ./skill-src/ --force`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
@@ -409,7 +509,8 @@ skill of the same name before creating.`,
 
 	cmd.Flags().StringVar(&flags.description, "description", "", "Inline mode: human-readable summary of the skill")
 	cmd.Flags().StringVar(&flags.instructions, "instructions", "", "Inline mode: Markdown body defining skill behavior")
-	cmd.Flags().StringVar(&flags.file, "file", "", "Path to SKILL.md (.md) or a ZIP package (.zip)")
+	cmd.Flags().StringVar(&flags.file, "file", "",
+		"Path to SKILL.md (.md), a ZIP package (.zip), or a directory containing SKILL.md at its root")
 	cmd.Flags().BoolVar(&flags.force, "force", false, "Delete an existing skill of the same name before creating")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{outputJSON, outputTable}, Default: outputJSON,

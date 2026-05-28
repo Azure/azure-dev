@@ -105,7 +105,7 @@ func runToolboxCreateWith(
 		return exterrors.Validation(
 			exterrors.CodeInvalidToolboxName,
 			fmt.Sprintf("toolbox %q already exists", name),
-			"run 'azd ai toolbox update' or 'connection add/remove' to change it",
+			"run 'azd ai toolbox publish' or 'connection add/remove' to change it",
 		)
 	} else if !isAzureNotFound(err) {
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolbox)

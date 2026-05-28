@@ -31,7 +31,6 @@ const (
 const (
 	CodeToolboxNotFound               = "toolbox_not_found"
 	CodeInvalidToolboxName            = "invalid_toolbox_name"
-	CodeMissingUpdateField            = "missing_update_field"
 	CodeDefaultVersionDelete          = "default_version_delete"
 	CodeOnlyVersionDelete             = "only_version_delete"
 	CodeMissingForceFlag              = "missing_force_flag"
@@ -51,7 +50,6 @@ const (
 	CodeConnectionMissingTarget       = "connection_missing_target"
 	CodeLastToolRemoval               = "last_tool_removal"
 	CodePendingToolboxStoreFailed     = "pending_toolbox_store_failed"
-	CodeSetDefaultVersionFailed       = "set_default_version_failed"
 )
 
 // Operation names for [ServiceFromAzure] errors.

@@ -92,8 +92,8 @@ Fields:
                   CognitiveSearch (Azure AI Search), RemoteA2A,
                   GroundingWithCustomSearch.
 
-The toolbox's existing description is carried forward unchanged; use
-'azd ai toolbox update' to change it.
+The toolbox's existing description is carried forward unchanged; the
+description is set at create time and cannot be changed later.
 
 Project connections must already exist on the Foundry project; this command
 does not create them. Run 'azd ai agent connection list' to see available

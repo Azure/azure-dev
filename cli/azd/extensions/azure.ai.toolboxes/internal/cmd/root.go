@@ -42,7 +42,7 @@ an explicit update to retarget the default.`,
 	registerToolboxOutputFlag(rootCmd)
 
 	rootCmd.AddCommand(newToolboxCreateCommand(extCtx))
-	rootCmd.AddCommand(newToolboxUpdateCommand(extCtx))
+	rootCmd.AddCommand(newToolboxPublishCommand(extCtx))
 	rootCmd.AddCommand(newToolboxDeleteCommand(extCtx))
 	rootCmd.AddCommand(newToolboxShowCommand(extCtx))
 	rootCmd.AddCommand(newToolboxListCommand(extCtx))

@@ -169,19 +169,6 @@ func runSkillAddWith(
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
 	}
-	if _, err := client.SetDefaultVersion(ctx, toolboxName, created.Version); err != nil {
-		return exterrors.Dependency(
-			exterrors.CodeSetDefaultVersionFailed,
-			fmt.Sprintf(
-				"toolbox %q version %q was created but could not be promoted to default: %s",
-				toolboxName, created.Version, err,
-			),
-			fmt.Sprintf(
-				"run `azd ai toolbox update %q --default-version %q` to retarget the default",
-				toolboxName, created.Version,
-			),
-		)
-	}
 
 	return emitSkillAddResult(toolboxName, created.Version, specs, parent.output)
 }
@@ -253,22 +240,24 @@ func emitSkillAddResult(toolboxName, newVersion string, specs []skillSpec, outpu
 			pinned = "@" + specs[0].Version
 		}
 		fmt.Printf(
-			"Attached skill %s%s to toolbox %s (now at version %s).\n",
-			specs[0].Name, pinned, toolboxName, newVersion,
+			"Published toolbox %s version %s (attached skill %s%s).\n",
+			toolboxName, newVersion, specs[0].Name, pinned,
 		)
-		return nil
-	}
-	names := make([]string, 0, len(specs))
-	for _, s := range specs {
-		entry := s.Name
-		if s.Version != "" {
-			entry += "@" + s.Version
+	} else {
+		names := make([]string, 0, len(specs))
+		for _, s := range specs {
+			entry := s.Name
+			if s.Version != "" {
+				entry += "@" + s.Version
+			}
+			names = append(names, entry)
 		}
-		names = append(names, entry)
+		fmt.Printf(
+			"Published toolbox %s version %s (attached skills [%s]).\n",
+			toolboxName, newVersion, strings.Join(names, ", "),
+		)
 	}
-	fmt.Printf(
-		"Attached skills [%s] to toolbox %s (now at version %s).\n",
-		strings.Join(names, ", "), toolboxName, newVersion,
-	)
+	fmt.Printf("The default version is unchanged; "+
+		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
 	return nil
 }

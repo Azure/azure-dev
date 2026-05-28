@@ -43,7 +43,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 			toolboxDeleteFlags{version: "2", force: true}, toolboxFlags{output: "table"},
 		)
 		le := requireLocalError(t, err, exterrors.CodeDefaultVersionDelete)
-		assert.Contains(t, le.Suggestion, "default-version")
+		assert.Contains(t, le.Suggestion, "azd ai toolbox publish")
 		assert.Empty(t, client.deleteVersionCalls, "service must not be called")
 	})
 
@@ -223,7 +223,7 @@ func TestRunConnectionAddWith_AppendsAndPromotesDefault(t *testing.T) {
 	require.Len(t, client.createVersionCalls, 1)
 	assert.Equal(t, "first", client.createVersionCalls[0].req.Description, "description carried forward")
 	assert.Len(t, client.createVersionCalls[0].req.Tools, 2)
-	require.Len(t, client.setDefaultCalls, 1, "default version must be retargeted")
+	assert.Empty(t, client.setDefaultCalls, "mutation verbs no longer auto-promote default")
 }
 
 func TestRunConnectionAddWith_ConnectionNotFound(t *testing.T) {
@@ -283,7 +283,7 @@ func TestRunConnectionAddWith_FromFileAddsMultipleToolsSingleVersion(t *testing.
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1, "single version increment for batch input")
 	assert.Len(t, client.createVersionCalls[0].req.Tools, 3, "existing + 2 additions")
-	require.Len(t, client.setDefaultCalls, 1)
+	assert.Empty(t, client.setDefaultCalls)
 }
 
 // Public entry-point validation: empty connection without --from-file.
@@ -333,7 +333,7 @@ func TestRunConnectionRemoveWith_FilteredAndPromoted(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1)
 	assert.Len(t, client.createVersionCalls[0].req.Tools, 1)
-	require.Len(t, client.setDefaultCalls, 1)
+	assert.Empty(t, client.setDefaultCalls)
 }
 
 func TestRunConnectionRemoveWith_ConnectionNotInToolbox(t *testing.T) {
@@ -378,13 +378,12 @@ func TestRunConnectionListWith_EmitsAllShapes(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestRunToolboxUpdate_MissingDefaultVersion(t *testing.T) {
-	err := runToolboxUpdate(
-		t.Context(), "tb",
-		toolboxUpdateFlags{},
+func TestRunToolboxPublish_EmptyVersionRejected(t *testing.T) {
+	err := runToolboxPublish(
+		t.Context(), "tb", "",
 		toolboxFlags{output: "table"},
 	)
-	requireLocalError(t, err, exterrors.CodeMissingUpdateField)
+	requireLocalError(t, err, exterrors.CodeInvalidPositionalArg)
 }
 
 func TestRunToolboxCreateWith_FromFileCreatesInitialVersion(t *testing.T) {

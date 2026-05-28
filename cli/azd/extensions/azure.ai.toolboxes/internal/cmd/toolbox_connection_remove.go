@@ -194,19 +194,6 @@ func runConnectionRemoveWith(
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
 	}
-	if _, err := client.SetDefaultVersion(ctx, toolboxName, created.Version); err != nil {
-		return exterrors.Dependency(
-			exterrors.CodeSetDefaultVersionFailed,
-			fmt.Sprintf(
-				"toolbox %q version %q was created but could not be promoted to default: %s",
-				toolboxName, created.Version, err,
-			),
-			fmt.Sprintf(
-				"run `azd ai toolbox update %q --default-version %q` to retarget the default",
-				toolboxName, created.Version,
-			),
-		)
-	}
 
 	return emitConnectionRemoveResult(toolboxName, created.Version, removedConns, parent.output)
 }
@@ -250,18 +237,20 @@ func emitConnectionRemoveResult(
 	}
 	if len(conns) == 1 {
 		fmt.Printf(
-			"Detached connection %s from toolbox %s (now at version %s).\n",
-			conns[0].Name, toolboxName, newVersion,
+			"Published toolbox %s version %s (detached connection %s).\n",
+			toolboxName, newVersion, conns[0].Name,
 		)
-		return nil
+	} else {
+		names := make([]string, 0, len(conns))
+		for _, c := range conns {
+			names = append(names, c.Name)
+		}
+		fmt.Printf(
+			"Published toolbox %s version %s (detached connections [%s]).\n",
+			toolboxName, newVersion, strings.Join(names, ", "),
+		)
 	}
-	names := make([]string, 0, len(conns))
-	for _, c := range conns {
-		names = append(names, c.Name)
-	}
-	fmt.Printf(
-		"Detached connections [%s] from toolbox %s (now at version %s).\n",
-		strings.Join(names, ", "), toolboxName, newVersion,
-	)
+	fmt.Printf("The default version is unchanged; "+
+		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
 	return nil
 }

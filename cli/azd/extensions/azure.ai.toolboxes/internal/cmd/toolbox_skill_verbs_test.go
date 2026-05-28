@@ -82,7 +82,7 @@ func TestRunSkillAddWith_AppendsAndCarriesForward(t *testing.T) {
 	assert.Equal(t, "3", req.Skills[1]["version"])
 	assert.Equal(t, "skill_reference", req.Skills[1]["type"])
 
-	require.Len(t, client.setDefaultCalls, 1, "new version must be promoted to default")
+	assert.Empty(t, client.setDefaultCalls, "mutation verbs no longer auto-promote default")
 }
 
 func TestRunSkillAddWith_NoExistingSkills(t *testing.T) {
@@ -161,7 +161,7 @@ func TestRunSkillRemoveWith_FilteredAndPromoted(t *testing.T) {
 	skills := client.createVersionCalls[0].req.Skills
 	require.Len(t, skills, 1)
 	assert.Equal(t, "keep", skills[0]["name"])
-	require.Len(t, client.setDefaultCalls, 1)
+	assert.Empty(t, client.setDefaultCalls)
 }
 
 // Removing the only skill is allowed (no last-skill block).

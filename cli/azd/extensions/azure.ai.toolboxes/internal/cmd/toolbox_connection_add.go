@@ -244,20 +244,6 @@ func runConnectionAddWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
 	}
 
-	if _, err := client.SetDefaultVersion(ctx, toolboxName, created.Version); err != nil {
-		return exterrors.Dependency(
-			exterrors.CodeSetDefaultVersionFailed,
-			fmt.Sprintf(
-				"toolbox %q version %q was created but could not be promoted to default: %s",
-				toolboxName, created.Version, err,
-			),
-			fmt.Sprintf(
-				"run `azd ai toolbox update %q --default-version %q` to retarget the default",
-				toolboxName, created.Version,
-			),
-		)
-	}
-
 	return emitConnectionAddResult(toolboxName, created.Version, addedConnectionNames, parent.output, endpoint)
 }
 
@@ -311,10 +297,12 @@ func emitConnectionAddResult(
 		return emitJSON(payload)
 	}
 
-	fmt.Printf("Attached connection(s) to toolbox %s (now at version %s).\n", toolboxName, newVersion)
+	fmt.Printf("Published toolbox %s version %s.\n", toolboxName, newVersion)
 	if len(connectionNames) > 0 {
 		fmt.Printf("Connections: %s\n", strings.Join(connectionNames, ", "))
 	}
 	fmt.Printf("Endpoint: %s\n", mcpURL)
+	fmt.Printf("The default version is unchanged; "+
+		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
 	return nil
 }

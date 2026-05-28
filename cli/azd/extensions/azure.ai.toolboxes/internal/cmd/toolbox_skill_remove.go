@@ -171,19 +171,6 @@ func runSkillRemoveWith(
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
 	}
-	if _, err := client.SetDefaultVersion(ctx, toolboxName, created.Version); err != nil {
-		return exterrors.Dependency(
-			exterrors.CodeSetDefaultVersionFailed,
-			fmt.Sprintf(
-				"toolbox %q version %q was created but could not be promoted to default: %s",
-				toolboxName, created.Version, err,
-			),
-			fmt.Sprintf(
-				"run `azd ai toolbox update %q --default-version %q` to retarget the default",
-				toolboxName, created.Version,
-			),
-		)
-	}
 
 	return emitSkillRemoveResult(toolboxName, created.Version, names, parent.output)
 }
@@ -217,14 +204,16 @@ func emitSkillRemoveResult(toolboxName, newVersion string, names []string, outpu
 	}
 	if len(names) == 1 {
 		fmt.Printf(
-			"Detached skill %s from toolbox %s (now at version %s).\n",
-			names[0], toolboxName, newVersion,
+			"Published toolbox %s version %s (detached skill %s).\n",
+			toolboxName, newVersion, names[0],
 		)
-		return nil
+	} else {
+		fmt.Printf(
+			"Published toolbox %s version %s (detached skills [%s]).\n",
+			toolboxName, newVersion, strings.Join(names, ", "),
+		)
 	}
-	fmt.Printf(
-		"Detached skills [%s] from toolbox %s (now at version %s).\n",
-		strings.Join(names, ", "), toolboxName, newVersion,
-	)
+	fmt.Printf("The default version is unchanged; "+
+		"run `azd ai toolbox publish %q %q` to promote.\n", toolboxName, newVersion)
 	return nil
 }

@@ -5,14 +5,10 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"azureaiagent/internal/exterrors"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -52,32 +48,16 @@ func TestPromptInitMode_EmptyDirSelectsTemplate(t *testing.T) {
 	assert.Equal(t, initModeTemplate, mode)
 }
 
-// TestPromptInitMode_NonEmptyNoPromptReturnsSuggestion covers routing
+// TestPromptInitMode_NonEmptyNoPromptDefaultsToFromCode covers routing
 // rule #3 -- the path coding agents land on when they call
 // `azd ai agent init --no-prompt` without `-m <url>` or `--from-code`.
-// Rather than letting the Select RPC fail opaquely, we return an
-// ErrorWithSuggestion the coding agent can act on.
-func TestPromptInitMode_NonEmptyNoPromptReturnsSuggestion(t *testing.T) {
+// In non-interactive mode with existing local files, we default to using
+// the current directory (from-code) rather than erroring.
+func TestPromptInitMode_NonEmptyNoPromptDefaultsToFromCode(t *testing.T) {
 	dir := chdirTo(t)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.py"), []byte("x\n"), 0o644)) //nolint:gosec
 
-	_, err := promptInitMode(context.Background(), nil, &initFlags{noPrompt: true})
-	require.Error(t, err)
-
-	// The suggestion should name BOTH escape hatches so the caller
-	// (often a coding agent) can pick the right one. LocalError.Error()
-	// returns only Message, so we assert on the Suggestion field
-	// directly via the structured error.
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok, "expected *azdext.LocalError, got %T: %v", err, err)
-
-	assert.Contains(t, localErr.Suggestion, "--from-code",
-		"suggestion should mention --from-code as the 'use existing code' escape hatch")
-	assert.Contains(t, localErr.Suggestion, "--manifest",
-		"suggestion should mention --manifest as the 'pick an agent template' escape hatch")
-
-	assert.Equal(t, exterrors.CodePromptFailed, localErr.Code,
-		"non-interactive init-mode failure should be tagged with CodePromptFailed for telemetry")
-	assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category,
-		"the failure is a user-input issue, not a dependency or auth failure")
+	mode, err := promptInitMode(context.Background(), nil, &initFlags{noPrompt: true})
+	require.NoError(t, err)
+	assert.Equal(t, initModeFromCode, mode)
 }

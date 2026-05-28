@@ -109,7 +109,7 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 
 	if evalID == "" {
 		created, err := resolved.evalClient.CreateOpenAIEval(
-			ctx, buildOpenAIEvalRequest(evalCfg), DefaultAgentAPIVersion,
+			ctx, buildOpenAIEvalRequest(evalCfg),
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create eval: %w", err)
@@ -154,7 +154,6 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 		ctx,
 		evalID,
 		runReq,
-		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to start eval run: %w", err)
@@ -255,7 +254,7 @@ func pollEvalRun(
 		case <-time.After(defaultEvalPollInterval):
 		}
 
-		run, err := client.GetOpenAIEvalRun(ctx, evalID, runID, DefaultAgentAPIVersion)
+		run, err := client.GetOpenAIEvalRun(ctx, evalID, runID)
 		if err != nil {
 			if agents.IsTransientError(err) {
 				consecutiveTransient++

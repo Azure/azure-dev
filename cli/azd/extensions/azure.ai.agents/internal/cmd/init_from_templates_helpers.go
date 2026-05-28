@@ -90,16 +90,9 @@ const (
 // from a template" (initModeTemplate). The routing order is:
 //
 //  1. flags.fromCode set -> initModeFromCode (explicit user/agent intent).
-//
 //  2. cwd is empty -> initModeTemplate (no code to use; offer templates).
-//
-//  3. cwd is non-empty AND --no-prompt is set -> deterministic
-//     ErrorWithSuggestion. The interactive Select would have no way to
-//     resolve in non-interactive mode; surfacing the failure with an
-//     actionable suggestion (pass --from-code or --manifest) is better
-//     than letting the prompt RPC error out. This is the path coding
-//     agents land on when they forget to pass `-m` or `--from-code`.
-//
+//  3. cwd is non-empty AND --no-prompt -> initModeFromCode (default to
+//     using the existing code in non-interactive mode).
 //  4. Otherwise -> interactive Select prompt (the legacy behavior).
 func promptInitMode(
 	ctx context.Context,
@@ -121,16 +114,9 @@ func promptInitMode(
 		return initModeTemplate, nil
 	}
 
-	// 3. Non-empty, --no-prompt: bail with a clear suggestion rather
-	// than letting the Select RPC fail opaquely.
+	// 3. Non-empty + no-prompt: default to using existing code.
 	if flags != nil && flags.noPrompt {
-		return "", exterrors.Validation(
-			exterrors.CodePromptFailed,
-			"cannot determine init mode in non-interactive mode "+
-				"(directory is not empty)",
-			"Pass --from-code to use the existing code, or "+
-				"--manifest <path> to use an agent manifest.",
-		)
+		return initModeFromCode, nil
 	}
 
 	// 4. Interactive Select (legacy behavior).

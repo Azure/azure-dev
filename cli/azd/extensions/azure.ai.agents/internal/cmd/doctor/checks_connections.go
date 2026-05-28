@@ -19,8 +19,7 @@ import (
 )
 
 // foundryConnectionsProbeTimeout caps the per-project connections
-// list round trip. Same 10s budget as model-deployments — the design
-// doc allocates that envelope per remote probe so a stuck VPN or
+// list round trip. 10s budget per remote probe so a stuck VPN or
 // transient Foundry hiccup never drags the whole doctor run.
 const foundryConnectionsProbeTimeout = 10 * time.Second
 
@@ -196,10 +195,8 @@ func newCheckConnections(deps Dependencies) Check {
 //	/subscriptions/<sub>/resourceGroups/<rg>/providers/
 //	  Microsoft.CognitiveServices/accounts/<account>/projects/<project>
 //
-// Sibling of `parseAccountFromProjectID` (C13) — left as a separate
-// helper so the C13 signature does not churn for a single new
-// caller. Both parsers are case-insensitive on segment markers
-// because ARM occasionally normalizes casing on round-trip.
+// Case-insensitive on segment markers because ARM occasionally
+// normalizes casing on round-trip.
 func parseAccountProjectFromProjectID(projectID string) (account, project string, err error) {
 	parts := strings.Split(projectID, "/")
 	for i := 0; i+1 < len(parts); i++ {

@@ -300,7 +300,7 @@ func TestWriteEvalReviewArtifacts_SkipsWhenResultExists(t *testing.T) {
 
 func TestDownloadDatasetArtifact_NilDataset(t *testing.T) {
 	t.Parallel()
-	_, err := eval_api.DownloadDatasetArtifact(t.Context(), nil, t.TempDir(), nil, "2025-11-15-preview")
+	_, err := eval_api.DownloadDatasetArtifact(t.Context(), nil, t.TempDir(), nil, "v1")
 	require.NoError(t, err)
 }
 
@@ -320,7 +320,7 @@ func TestDownloadDatasetArtifact_WritesBlob(t *testing.T) {
 	dir := t.TempDir()
 
 	ref := &evalDatasetRef{Name: "test-ds", Version: "v1"}
-	_, err := eval_api.DownloadDatasetArtifact(t.Context(), client, dir, ref, "2025-11-15-preview")
+	_, err := eval_api.DownloadDatasetArtifact(t.Context(), client, dir, ref, "v1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "getting dataset credential")
 

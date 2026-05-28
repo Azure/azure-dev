@@ -100,6 +100,16 @@ func TestSanitizeAgentName(t *testing.T) {
 			input:    "---",
 			expected: "my-agent",
 		},
+		{
+			name:     "non-ASCII characters stripped",
+			input:    "Ünö Ägent",
+			expected: "n-gent",
+		},
+		{
+			name:     "all non-ASCII falls back to default",
+			input:    "日本語エージェント",
+			expected: "my-agent",
+		},
 	}
 
 	for _, tt := range tests {
@@ -511,6 +521,63 @@ func TestWriteDefinitionToSrcDir(t *testing.T) {
 			t.Errorf("written content missing expected fields:\n%s", string(content))
 		}
 	})
+}
+
+func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	if err := os.WriteFile(filepath.Join(dir, "main.py"), []byte("print('hello')\n"), 0600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	const envName = "agent-dev"
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{envName: {}},
+	}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+	action := &InitFromCodeAction{
+		azdClient:    azdClient,
+		environment:  &azdext.Environment{Name: envName},
+		azureContext: nil,
+		flags: &initFlags{
+			noPrompt: true,
+			env:      envName,
+			model:    "gpt-4o",
+		},
+	}
+
+	var definition *agent_yaml.ContainerAgent
+	output, err := captureStdout(t, func() error {
+		var runErr error
+		definition, runErr = action.createDefinitionFromLocalAgent(t.Context())
+		return runErr
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if definition == nil {
+		t.Fatal("expected definition")
+	}
+	if envServer.values[envName]["USE_EXISTING_AI_PROJECT"] != "false" {
+		t.Fatalf("USE_EXISTING_AI_PROJECT = %q, want false", envServer.values[envName]["USE_EXISTING_AI_PROJECT"])
+	}
+	if got := envServer.values[envName][pendingProvisionEnvVar]; got != pendingReasonProject {
+		t.Fatalf("%s = %q, want %q", pendingProvisionEnvVar, got, pendingReasonProject)
+	}
+	if len(action.deploymentDetails) != 0 {
+		t.Fatalf("deploymentDetails length = %d, want 0", len(action.deploymentDetails))
+	}
+	if !strings.Contains(output, "Model configuration was deferred") {
+		t.Fatalf("output missing deferred model warning:\n%s", output)
+	}
+	if definition.EnvironmentVariables != nil {
+		for _, envVar := range *definition.EnvironmentVariables {
+			if envVar.Name == "AZURE_AI_MODEL_DEPLOYMENT_NAME" {
+				t.Fatalf("deferred model configuration should not add %s", envVar.Name)
+			}
+		}
+	}
 }
 
 func TestFoundryDeploymentInfo(t *testing.T) {

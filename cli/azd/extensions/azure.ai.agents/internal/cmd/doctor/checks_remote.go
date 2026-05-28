@@ -63,11 +63,18 @@ func NewRemoteChecks(deps Dependencies) []Check {
 	//   - C12 (landed): per-agent managed-identity role
 	//     listing across project/account/RG scopes
 	//     (`remote.agent-identity-roles`)
-	//   - C13 (landed): manifest model deployments exist on
-	//     the Foundry project's Cognitive Services account
-	//     (`remote.model-deployments`)
-	//   - C15 (this commit): manifest connections exist on the
+	//   - C15 (landed): manifest connections exist on the
 	//     Foundry project (`remote.connections`)
+	//
+	// Note: a `remote.model-deployments` check (C13) was removed
+	// after release because its comparison was incorrect — the
+	// manifest's `resources[].name` is a logical alias used to bind
+	// `{{token}}` placeholders in `agent.yaml`, not a Foundry
+	// deployment name. The redesign needs to read the resolved
+	// deployment name from `agent.yaml`'s `environment_variables`
+	// (or the azd env) instead. See manifest.go's walker for the
+	// populated `state.ModelRefs` slice that the new check can reuse.
+	//
 	// Ordering matters for skip-cascade: each entry reads `prior
 	// []Result` produced by every check earlier in the combined
 	// local-then-remote sequence. Append checks in the order their
@@ -79,7 +86,6 @@ func NewRemoteChecks(deps Dependencies) []Check {
 		newCheckRBAC(deps),
 		newCheckAgentStatus(deps),
 		newCheckAgentIdentityRoles(deps),
-		newCheckModelDeployments(deps),
 		newCheckConnections(deps),
 	}
 }

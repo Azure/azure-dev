@@ -87,14 +87,16 @@ func runOptimizeStatus(cmd *cobra.Command, flags *optimizeStatusFlags, operation
 
 	printOptimizeJobSummary(out, status)
 
+	hasProject := isInAzdProject(cmd.Context())
+
 	if flags.watch && !optimize_api.IsTerminal(status.Status) {
 		finalStatus, err := pollOptimizeJob(cmd, client, flags.pollInterval, operationID)
 		if err != nil {
 			return err
 		}
-		printOptimizeResults(out, finalStatus, false)
+		printOptimizeResults(cmd.Context(), out, finalStatus, hasProject)
 	} else if len(status.Candidates) > 0 {
-		printOptimizeResults(out, status, false)
+		printOptimizeResults(cmd.Context(), out, status, hasProject)
 	}
 
 	if status.Error != nil {

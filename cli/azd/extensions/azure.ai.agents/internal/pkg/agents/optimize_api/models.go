@@ -175,6 +175,8 @@ type CandidateResult struct {
 	IsParetoOptimal bool    `json:"isParetoOptimal,omitempty"`
 	Rationale       string  `json:"rationale,omitempty"`
 	CandidateID     string  `json:"candidateId,omitempty"`
+	EvalID          string  `json:"evalId,omitempty"`
+	EvalRunID       string  `json:"evalRunId,omitempty"`
 }
 
 // --- List response ---

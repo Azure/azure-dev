@@ -529,3 +529,50 @@ func TestToRequest_BaselineModelInJSON(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(data), `"baselineModel"`)
 }
+
+// ---------------------------------------------------------------------------
+// loadSkillsFromDir — empty file handling
+// ---------------------------------------------------------------------------
+
+func TestLoadSkillsFromDir_SkipsEmptyFiles(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Completely empty file — should be skipped.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "empty.md"), []byte(""), 0600))
+
+	// Valid skill — should be included.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "valid.md"), []byte("# Real skill\nDoes things."), 0600))
+
+	skills, err := loadSkillsFromDir(dir)
+	require.NoError(t, err)
+	require.Len(t, skills, 1)
+	assert.Equal(t, "valid", skills[0].Name)
+}
+
+func TestLoadSkillsFromDir_SkipsPreambleOnlyEmptyBody(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Preamble with name+description but no body — description is non-empty, should be kept.
+	md := "---\nname: meta-only\ndescription: Has description\n---\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "meta.md"), []byte(md), 0600))
+
+	skills, err := loadSkillsFromDir(dir)
+	require.NoError(t, err)
+	require.Len(t, skills, 1)
+	assert.Equal(t, "meta-only", skills[0].Name)
+	assert.Equal(t, "Has description", skills[0].Description)
+}
+
+func TestLoadSkillsFromDir_AllEmpty(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.md"), []byte(""), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.md"), []byte(""), 0600))
+
+	skills, err := loadSkillsFromDir(dir)
+	require.NoError(t, err)
+	assert.Empty(t, skills)
+}

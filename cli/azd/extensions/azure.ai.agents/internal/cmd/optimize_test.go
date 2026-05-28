@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/opt_eval"
@@ -345,7 +346,7 @@ func TestResolveOptimizeDataset_NoPrompt_ReturnsError(t *testing.T) {
 		Options: &opt_eval.Options{EvalModel: "gpt-4o"},
 	}
 
-	err := resolveOptimizeDataset(t.Context(), cfg, "", true)
+	err := resolveOptimizeDataset(t.Context(), nil, cfg, "", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "a dataset is required")
 }
@@ -369,4 +370,86 @@ func TestApplyOverrides_NoPrompt_NoDataset_ReturnsError(t *testing.T) {
 	err := action.applyOverrides(t.Context(), cfg, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "a dataset is required")
+}
+
+// ---- printOptimizeResults — table format ----
+
+func TestPrintOptimizeResults_TableHasCandidateScorePass(t *testing.T) {
+	t.Parallel()
+
+	status := &optimize_api.OptimizeJobStatus{
+		Candidates: []optimize_api.CandidateResult{
+			{Name: "baseline", AvgScore: 0.91, PassRate: 1.0},
+			{Name: "candidate_1", AvgScore: 0.95, PassRate: 1.0},
+		},
+		Best: &optimize_api.CandidateResult{Name: "candidate_1"},
+	}
+
+	var buf strings.Builder
+	printOptimizeResults(t.Context(), &buf, status, false)
+	out := buf.String()
+
+	// Verify header columns.
+	assert.Contains(t, out, "Candidate")
+	assert.Contains(t, out, "Score")
+	assert.Contains(t, out, "Pass")
+
+	// Verify no removed columns.
+	assert.NotContains(t, out, "Strategies")
+	assert.NotContains(t, out, "Tokens")
+	assert.NotContains(t, out, "Optimal")
+
+	// Verify candidate data.
+	assert.Contains(t, out, "baseline")
+	assert.Contains(t, out, "candidate_1")
+	assert.Contains(t, out, "0.91")
+	assert.Contains(t, out, "0.95")
+	assert.Contains(t, out, "100%")
+}
+
+func TestPrintOptimizeResults_BestMarkedWithStar(t *testing.T) {
+	t.Parallel()
+
+	status := &optimize_api.OptimizeJobStatus{
+		Candidates: []optimize_api.CandidateResult{
+			{Name: "baseline", AvgScore: 0.80, PassRate: 0.7},
+			{Name: "candidate_1", AvgScore: 0.95, PassRate: 1.0},
+		},
+		Best: &optimize_api.CandidateResult{Name: "candidate_1"},
+	}
+
+	var buf strings.Builder
+	printOptimizeResults(t.Context(), &buf, status, false)
+
+	assert.Contains(t, buf.String(), "candidate_1 ★")
+}
+
+func TestPrintOptimizeResults_NoCandidates(t *testing.T) {
+	t.Parallel()
+
+	status := &optimize_api.OptimizeJobStatus{}
+	var buf strings.Builder
+	printOptimizeResults(t.Context(), &buf, status, false)
+
+	// Should print nothing for an empty candidates list.
+	assert.Empty(t, buf.String())
+}
+
+func TestPrintOptimizeResults_ShowsCandidateIDs(t *testing.T) {
+	t.Parallel()
+
+	status := &optimize_api.OptimizeJobStatus{
+		Candidates: []optimize_api.CandidateResult{
+			{Name: "candidate_1", AvgScore: 0.95, PassRate: 1.0, CandidateID: "abc-123"},
+		},
+		Best: &optimize_api.CandidateResult{Name: "candidate_1", CandidateID: "abc-123"},
+	}
+
+	var buf strings.Builder
+	printOptimizeResults(t.Context(), &buf, status, true)
+	out := buf.String()
+
+	assert.Contains(t, out, "Candidate IDs")
+	assert.Contains(t, out, "abc-123")
+	assert.Contains(t, out, "optimize apply")
 }

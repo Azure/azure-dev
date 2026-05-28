@@ -1238,6 +1238,10 @@ func selectFoundryProject(
 	if skipACR {
 		supportedRegions, regErr := supportedRegionsForInit(ctx)
 		if regErr != nil {
+			// Propagate context cancellation/timeout — these are not recoverable fetch failures.
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			log.Printf("warning: failed to fetch supported regions, skipping code-deploy region filter: %v", regErr)
 		} else if len(supportedRegions) > 0 {
 			projects = slices.DeleteFunc(projects, func(p FoundryProjectInfo) bool {

@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/terminal"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
 	"github.com/fatih/color"
+	"github.com/mattn/go-runewidth"
 	"github.com/nathan-fiscaletti/consolesize-go"
 )
 
@@ -77,13 +78,79 @@ func CountLineBreaks(content string, width int) int {
 }
 
 // visibleLength calculates the number of visible characters in a string
-// by removing ANSI codes and counting the actual characters.
-// Cannot use len() as it counts bytes not runes
+// by removing ANSI codes and counting the display width (CJK/emoji = 2 columns).
 func VisibleLength(s string) int {
 	// Remove ANSI codes such as color, formatting, etc.
 	cleaned := specialTextRegex.ReplaceAllString(s, "")
-	// Count actual visible characters
-	return utf8.RuneCountInString(cleaned)
+	// Count display width (handles CJK/emoji as 2 columns)
+	return runewidth.StringWidth(cleaned)
+}
+
+// TruncateVisible truncates a string to fit within maxWidth visible characters,
+// preserving ANSI escape sequences (which don't consume terminal columns).
+// If the visible text exceeds maxWidth, it is truncated and "..." is appended.
+// Returns the original string unchanged if it fits within maxWidth.
+func TruncateVisible(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+
+	visLen := VisibleLength(s)
+	if visLen <= maxWidth {
+		return s
+	}
+
+	const ellipsis = "..."
+	ellipsisLen := len(ellipsis)
+
+	// Target visible length: leave room for ellipsis
+	targetVisible := maxWidth - ellipsisLen
+	if targetVisible <= 0 {
+		// Not enough room even for ellipsis; just return dots that fit
+		return ellipsis[:maxWidth]
+	}
+
+	// Walk the string, counting visible characters while preserving ANSI sequences
+	var result strings.Builder
+	result.Grow(len(s))
+	visible := 0
+	i := 0
+
+	for i < len(s) && visible < targetVisible {
+		// Check for ANSI escape sequence start
+		if i < len(s)-1 && s[i] == '\x1b' && s[i+1] == '[' {
+			// Read until the terminating letter (any byte in 0x40-0x7E)
+			j := i + 2
+			for j < len(s) && (s[j] < 0x40 || s[j] > 0x7E) {
+				j++
+			}
+			if j < len(s) {
+				j++ // include the terminating byte
+			}
+			result.WriteString(s[i:j])
+			i = j
+			continue
+		}
+
+		// Regular character (may be multi-byte UTF-8)
+		r, size := utf8.DecodeRuneInString(s[i:])
+		w := runewidth.RuneWidth(r)
+		if visible+w > targetVisible {
+			break
+		}
+		result.WriteString(s[i : i+size])
+		i += size
+		visible += w
+	}
+
+	result.WriteString(ellipsis)
+	// Only append ANSI reset if the original string contained ANSI sequences,
+	// to avoid injecting escape codes into plain text (e.g., NO_COLOR mode).
+	if strings.Contains(s, "\x1b[") {
+		result.WriteString("\x1b[0m")
+	}
+
+	return result.String()
 }
 
 // ConsoleWidth returns the width of the console in characters.

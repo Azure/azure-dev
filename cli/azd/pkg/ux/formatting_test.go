@@ -40,14 +40,14 @@ func TestVisibleLength(t *testing.T) {
 			0,
 		},
 		{"unicode characters", "héllo", 5},
-		{"CJK characters", "日本語", 3},
+		{"CJK characters", "日本語", 6},
 		{"emoji single codepoint", "★", 1},
 		{
 			"mixed ANSI and unicode",
 			"\x1b[36m日本\x1b[0m",
-			2,
+			4,
 		},
-		{"tab and printable", "a\tb", 3},
+		{"tab and printable", "a\tb", 2},
 	}
 
 	for _, tt := range tests {

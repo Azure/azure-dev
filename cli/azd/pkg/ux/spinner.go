@@ -5,6 +5,7 @@ package ux
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"time"
@@ -154,7 +155,10 @@ func (s *Spinner) Render(printer Printer) error {
 		return nil
 	}
 
-	printer.Fprintf("%s %s", output.WithHintFormat(s.options.Animation[s.animationIndex]), s.text)
+	// Truncate to terminal width to prevent line wrapping on narrow terminals
+	maxWidth := max(printer.Width()-1, 1)
+	line := fmt.Sprintf("%s %s", output.WithHintFormat(s.options.Animation[s.animationIndex]), s.text)
+	printer.Fprintf("%s", TruncateVisible(line, maxWidth))
 
 	if s.animationIndex == len(s.options.Animation)-1 {
 		s.animationIndex = 0

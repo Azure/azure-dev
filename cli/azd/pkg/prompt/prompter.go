@@ -105,6 +105,7 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 
 	// Apply subscription filter if one exists for the selected tenant
 	var filterApplied bool
+	unfilteredSubs := subscriptionInfos
 	if selectedTenantId != "" && p.userConfigManager != nil {
 		userCfg, cfgErr := p.userConfigManager.Load()
 		if cfgErr == nil {
@@ -165,16 +166,7 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 	// If "Show all subscriptions" was selected, re-prompt with full list
 	if subscriptionId == ShowAllSubscriptionsOption {
 		subscriptionId = ""
-		allSubs, loadErr := p.accountManager.GetSubscriptions(ctx)
-		if loadErr != nil {
-			return "", fmt.Errorf("listing subscriptions: %w", loadErr)
-		}
-		allSubs = filterByTenantEnvVar(allSubs)
-		if selectedTenantId != "" {
-			allSubs = FilterSubscriptionsByTenantId(
-				allSubs, selectedTenantId,
-			)
-		}
+		allSubs := unfilteredSubs
 
 		slices.SortFunc(allSubs, func(a, b account.Subscription) int {
 			return stringutil.CompareLower(a.Name, b.Name)

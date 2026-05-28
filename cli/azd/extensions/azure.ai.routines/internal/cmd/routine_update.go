@@ -22,6 +22,13 @@ type routineUpdateFlags struct {
 	timeZone        string
 	at              string
 	cronExpression  string
+	connectionID    string
+	owner           string
+	repository      string
+	issueEvent      string
+	provider        string
+	eventName       string
+	parametersJSON  string
 	agentName       string
 	agentEndpointID string
 	conversationID  string
@@ -58,13 +65,20 @@ To change the trigger or action type, delete and recreate the routine.`,
 	_ = cmd.Flags().MarkHidden("action")
 
 	cmd.Flags().StringVar(&flags.description, "description", "", "New description for the routine")
-	cmd.Flags().StringVar(&flags.timeZone, "time-zone", "", "New time zone for the trigger")
-	cmd.Flags().StringVar(&flags.at, "at", "", "New ISO 8601 datetime for timer trigger")
-	cmd.Flags().StringVar(&flags.cronExpression, "cron", "", "New cron expression for recurring trigger")
+	cmd.Flags().StringVar(&flags.timeZone, "time-zone", "", "New time zone (recurring trigger only)")
+	cmd.Flags().StringVar(&flags.at, "at", "", "New ISO 8601 datetime (timer trigger only)")
+	cmd.Flags().StringVar(&flags.cronExpression, "cron", "", "New cron expression (recurring trigger only)")
+	cmd.Flags().StringVar(&flags.connectionID, "connection-id", "", "New workspace connection ID (github-issue trigger only)")
+	cmd.Flags().StringVar(&flags.owner, "owner", "", "New GitHub owner (github-issue trigger only)")
+	cmd.Flags().StringVar(&flags.repository, "repository", "", "New GitHub repository (github-issue trigger only)")
+	cmd.Flags().StringVar(&flags.issueEvent, "issue-event", "", "New GitHub issue event: opened or closed (github-issue trigger only)")
+	cmd.Flags().StringVar(&flags.provider, "provider", "", "New external provider (custom trigger only)")
+	cmd.Flags().StringVar(&flags.eventName, "event-name", "", "New event name (custom trigger only)")
+	cmd.Flags().StringVar(&flags.parametersJSON, "parameters", "", "New parameters JSON object (custom trigger only)")
 	cmd.Flags().StringVar(&flags.agentName, "agent-name", "", "New project-scoped agent name")
 	cmd.Flags().StringVar(&flags.agentEndpointID, "agent-endpoint-id", "", "New agent endpoint ID")
-	cmd.Flags().StringVar(&flags.conversationID, "conversation-id", "", "New conversation ID (preview)")
-	cmd.Flags().StringVar(&flags.sessionID, "session-id", "", "New session ID")
+	cmd.Flags().StringVar(&flags.conversationID, "conversation-id", "", "New conversation to continue (preview)")
+	cmd.Flags().StringVar(&flags.sessionID, "session-id", "", "New session to continue")
 	cmd.Flags().StringVar(&flags.file, "file", "",
 		"Path to a YAML/JSON manifest; merged fields win unless overridden by flags")
 
@@ -120,22 +134,41 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 	}
 
 	// Apply named flag changes (flag presence, not just non-empty value).
-	descChanged := cmd.Flags().Changed("description")
-	tzChanged := cmd.Flags().Changed("time-zone")
-	atChanged := cmd.Flags().Changed("at")
-	cronChanged := cmd.Flags().Changed("cron")
-	agentNameChanged := cmd.Flags().Changed("agent-name")
-	agentEpChanged := cmd.Flags().Changed("agent-endpoint-id")
-	convIDChanged := cmd.Flags().Changed("conversation-id")
-	sessIDChanged := cmd.Flags().Changed("session-id")
+	changes := routineUpdateChanges{
+		description:     flags.description,
+		timeZone:        flags.timeZone,
+		at:              flags.at,
+		cron:            flags.cronExpression,
+		connectionID:    flags.connectionID,
+		owner:           flags.owner,
+		repository:      flags.repository,
+		issueEvent:      flags.issueEvent,
+		provider:        flags.provider,
+		eventName:       flags.eventName,
+		parametersJSON:  flags.parametersJSON,
+		agentName:       flags.agentName,
+		agentEndpointID: flags.agentEndpointID,
+		conversationID:  flags.conversationID,
+		sessionID:       flags.sessionID,
 
-	flagChanged, err := applyUpdateFlags(
-		existing,
-		flags.description, flags.timeZone, flags.at, flags.cronExpression,
-		flags.agentName, flags.agentEndpointID, flags.conversationID, flags.sessionID,
-		descChanged, tzChanged, atChanged, cronChanged,
-		agentNameChanged, agentEpChanged, convIDChanged, sessIDChanged,
-	)
+		descChanged:      cmd.Flags().Changed("description"),
+		tzChanged:        cmd.Flags().Changed("time-zone"),
+		atChanged:        cmd.Flags().Changed("at"),
+		cronChanged:      cmd.Flags().Changed("cron"),
+		connChanged:      cmd.Flags().Changed("connection-id"),
+		ownerChanged:     cmd.Flags().Changed("owner"),
+		repoChanged:      cmd.Flags().Changed("repository"),
+		eventChanged:     cmd.Flags().Changed("issue-event"),
+		providerChanged:  cmd.Flags().Changed("provider"),
+		eventNameChanged: cmd.Flags().Changed("event-name"),
+		paramsChanged:    cmd.Flags().Changed("parameters"),
+		agentNameChanged: cmd.Flags().Changed("agent-name"),
+		agentEpChanged:   cmd.Flags().Changed("agent-endpoint-id"),
+		convIDChanged:    cmd.Flags().Changed("conversation-id"),
+		sessIDChanged:    cmd.Flags().Changed("session-id"),
+	}
+
+	flagChanged, err := applyUpdateFlags(existing, changes)
 	if err != nil {
 		return err
 	}

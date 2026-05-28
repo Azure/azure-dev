@@ -92,6 +92,29 @@ func routineSummaryTable(r *routines.Routine) {
 		if t.TimeZone != "" {
 			fmt.Fprintf(tw, "  TimeZone:\t%s\n", t.TimeZone)
 		}
+		if t.ConnectionID != "" {
+			fmt.Fprintf(tw, "  ConnectionID:\t%s\n", t.ConnectionID)
+		}
+		if t.Owner != "" {
+			fmt.Fprintf(tw, "  Owner:\t%s\n", t.Owner)
+		}
+		if t.Repository != "" {
+			fmt.Fprintf(tw, "  Repository:\t%s\n", t.Repository)
+		}
+		if t.IssueEvent != "" {
+			fmt.Fprintf(tw, "  IssueEvent:\t%s\n", t.IssueEvent)
+		}
+		if t.Provider != "" {
+			fmt.Fprintf(tw, "  Provider:\t%s\n", t.Provider)
+		}
+		if t.EventName != "" {
+			fmt.Fprintf(tw, "  EventName:\t%s\n", t.EventName)
+		}
+		if len(t.Parameters) > 0 {
+			if data, err := json.Marshal(t.Parameters); err == nil {
+				fmt.Fprintf(tw, "  Parameters:\t%s\n", string(data))
+			}
+		}
 	}
 	if r.Action != nil {
 		a := r.Action
@@ -101,6 +124,17 @@ func routineSummaryTable(r *routines.Routine) {
 		}
 		if a.AgentEndpointID != "" {
 			fmt.Fprintf(tw, "  AgentEndpointID:\t%s\n", a.AgentEndpointID)
+		}
+		if a.Conversation != "" {
+			fmt.Fprintf(tw, "  Conversation:\t%s\n", a.Conversation)
+		}
+		if a.SessionID != "" {
+			fmt.Fprintf(tw, "  SessionID:\t%s\n", a.SessionID)
+		}
+		if a.Input != nil {
+			if data, err := json.Marshal(a.Input); err == nil {
+				fmt.Fprintf(tw, "  Input:\t%s\n", string(data))
+			}
 		}
 	}
 }

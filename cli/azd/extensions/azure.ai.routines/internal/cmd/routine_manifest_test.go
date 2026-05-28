@@ -184,10 +184,9 @@ func routineWithScheduleAndAgentResp() *routines.Routine {
 func TestApplyUpdateFlags_Description(t *testing.T) {
 	t.Parallel()
 	r := routineWithScheduleAndAgentResp()
-	n, err := applyUpdateFlags(r,
-		"new desc", "", "", "", "", "", "", "",
-		true, false, false, false, false, false, false, false,
-	)
+	n, err := applyUpdateFlags(r, routineUpdateChanges{
+		description: "new desc", descChanged: true,
+	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 	assert.Equal(t, "new desc", r.Description)
@@ -196,10 +195,9 @@ func TestApplyUpdateFlags_Description(t *testing.T) {
 func TestApplyUpdateFlags_TimeZone(t *testing.T) {
 	t.Parallel()
 	r := routineWithScheduleAndAgentResp()
-	n, err := applyUpdateFlags(r,
-		"", "America/New_York", "", "", "", "", "", "",
-		false, true, false, false, false, false, false, false,
-	)
+	n, err := applyUpdateFlags(r, routineUpdateChanges{
+		timeZone: "America/New_York", tzChanged: true,
+	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 	assert.Equal(t, "America/New_York", r.Triggers["default"].TimeZone)
@@ -211,10 +209,9 @@ func TestApplyUpdateFlags_AgentNameClearsEndpointID(t *testing.T) {
 		Action:   &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentEndpointID: "old-ep"},
 		Triggers: map[string]routines.RoutineTrigger{"default": {Type: "schedule"}},
 	}
-	n, err := applyUpdateFlags(r,
-		"", "", "", "", "new-agent-name", "", "", "",
-		false, false, false, false, true, false, false, false,
-	)
+	n, err := applyUpdateFlags(r, routineUpdateChanges{
+		agentName: "new-agent-name", agentNameChanged: true,
+	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 	require.NotNil(t, r.Action)
@@ -228,10 +225,9 @@ func TestApplyUpdateFlags_AgentEndpointIDClearsID(t *testing.T) {
 		Action:   &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: "old-agent-name"},
 		Triggers: map[string]routines.RoutineTrigger{"default": {Type: "schedule"}},
 	}
-	n, err := applyUpdateFlags(r,
-		"", "", "", "", "", "new-ep", "", "",
-		false, false, false, false, false, true, false, false,
-	)
+	n, err := applyUpdateFlags(r, routineUpdateChanges{
+		agentEndpointID: "new-ep", agentEpChanged: true,
+	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 	require.NotNil(t, r.Action)
@@ -242,35 +238,37 @@ func TestApplyUpdateFlags_AgentEndpointIDClearsID(t *testing.T) {
 func TestApplyUpdateFlags_MutuallyExclusiveAgentFields(t *testing.T) {
 	t.Parallel()
 	r := routineWithScheduleAndAgentResp()
-	_, err := applyUpdateFlags(r,
-		"", "", "", "", "new-agent-name", "new-ep", "", "",
-		false, false, false, false, true, true, false, false,
-	)
+	_, err := applyUpdateFlags(r, routineUpdateChanges{
+		agentName: "new-agent-name", agentEndpointID: "new-ep",
+		agentNameChanged: true, agentEpChanged: true,
+	})
 	assert.Error(t, err)
 }
 
 func TestApplyUpdateFlags_NoChangesReturnsZero(t *testing.T) {
 	t.Parallel()
 	r := routineWithScheduleAndAgentResp()
-	n, err := applyUpdateFlags(r,
-		"", "", "", "", "", "", "", "",
-		false, false, false, false, false, false, false, false,
-	)
+	n, err := applyUpdateFlags(r, routineUpdateChanges{})
 	require.NoError(t, err)
 	assert.Equal(t, 0, n)
 }
 
-func TestApplyUpdateFlags_AgentNameRejectedForAgentInvoke(t *testing.T) {
+// Spec PR #43498: agent-invoke now accepts agent_name. The pre-PR test that
+// rejected this is replaced by one that allows it.
+func TestApplyUpdateFlags_AgentNameAllowedForAgentInvoke(t *testing.T) {
 	t.Parallel()
 	r := &routines.Routine{
 		Action:   &routines.RoutineAction{Type: "invoke_agent_invocations_api", AgentEndpointID: "ep"},
 		Triggers: map[string]routines.RoutineTrigger{"default": {Type: "timer"}},
 	}
-	_, err := applyUpdateFlags(r,
-		"", "", "", "", "new-agent-name", "", "", "",
-		false, false, false, false, true, false, false, false,
-	)
-	assert.Error(t, err, "--agent-name must be rejected for agent-invoke actions")
+	n, err := applyUpdateFlags(r, routineUpdateChanges{
+		agentName: "new-agent-name", agentNameChanged: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+	require.NotNil(t, r.Action)
+	assert.Equal(t, "new-agent-name", r.Action.AgentName)
+	assert.Empty(t, r.Action.AgentEndpointID)
 }
 
 func TestApplyUpdateFlags_ConvIDRejectedForAgentInvoke(t *testing.T) {
@@ -279,21 +277,94 @@ func TestApplyUpdateFlags_ConvIDRejectedForAgentInvoke(t *testing.T) {
 		Action:   &routines.RoutineAction{Type: "invoke_agent_invocations_api", AgentEndpointID: "ep"},
 		Triggers: map[string]routines.RoutineTrigger{"default": {Type: "timer"}},
 	}
-	_, err := applyUpdateFlags(r,
-		"", "", "", "", "", "", "conv-1", "",
-		false, false, false, false, false, false, true, false,
-	)
+	_, err := applyUpdateFlags(r, routineUpdateChanges{
+		conversationID: "conv-1", convIDChanged: true,
+	})
 	assert.Error(t, err, "--conversation-id must be rejected for agent-invoke actions")
 }
 
 func TestApplyUpdateFlags_SessIDRejectedForAgentResponse(t *testing.T) {
 	t.Parallel()
 	r := routineWithScheduleAndAgentResp()
-	_, err := applyUpdateFlags(r,
-		"", "", "", "", "", "", "", "sess-1",
-		false, false, false, false, false, false, false, true,
-	)
+	_, err := applyUpdateFlags(r, routineUpdateChanges{
+		sessionID: "sess-1", sessIDChanged: true,
+	})
 	assert.Error(t, err, "--session-id must be rejected for agent-response actions")
+}
+
+func TestApplyUpdateFlags_TimeZoneRejectedForTimer(t *testing.T) {
+	t.Parallel()
+	r := &routines.Routine{
+		Action:   &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: "a"},
+		Triggers: map[string]routines.RoutineTrigger{"default": {Type: "timer", At: "2026-01-01T00:00:00Z"}},
+	}
+	_, err := applyUpdateFlags(r, routineUpdateChanges{
+		timeZone: "UTC", tzChanged: true,
+	})
+	assert.Error(t, err, "--time-zone is not applicable to timer triggers")
+}
+
+func TestApplyUpdateFlags_GithubIssueFields(t *testing.T) {
+	t.Parallel()
+	r := &routines.Routine{
+		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: "a"},
+		Triggers: map[string]routines.RoutineTrigger{"default": {
+			Type:         "github_issue",
+			ConnectionID: "old-conn",
+			Owner:        "old-owner",
+			Repository:   "old-repo",
+			IssueEvent:   "opened",
+		}},
+	}
+	n, err := applyUpdateFlags(r, routineUpdateChanges{
+		owner: "new-owner", ownerChanged: true,
+		issueEvent: "closed", eventChanged: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	assert.Equal(t, "new-owner", r.Triggers["default"].Owner)
+	assert.Equal(t, "closed", r.Triggers["default"].IssueEvent)
+}
+
+func TestApplyUpdateFlags_GithubIssueRejectedForSchedule(t *testing.T) {
+	t.Parallel()
+	r := routineWithScheduleAndAgentResp()
+	_, err := applyUpdateFlags(r, routineUpdateChanges{
+		owner: "x", ownerChanged: true,
+	})
+	assert.Error(t, err, "--owner is not applicable to schedule triggers")
+}
+
+func TestApplyUpdateFlags_CustomParameters(t *testing.T) {
+	t.Parallel()
+	r := &routines.Routine{
+		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: "a"},
+		Triggers: map[string]routines.RoutineTrigger{"default": {
+			Type:     "custom",
+			Provider: "stripe",
+		}},
+	}
+	n, err := applyUpdateFlags(r, routineUpdateChanges{
+		parametersJSON: `{"x":1}`, paramsChanged: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+	assert.Equal(t, float64(1), r.Triggers["default"].Parameters["x"])
+}
+
+func TestApplyUpdateFlags_CustomParametersBadJSON(t *testing.T) {
+	t.Parallel()
+	r := &routines.Routine{
+		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: "a"},
+		Triggers: map[string]routines.RoutineTrigger{"default": {
+			Type:     "custom",
+			Provider: "stripe",
+		}},
+	}
+	_, err := applyUpdateFlags(r, routineUpdateChanges{
+		parametersJSON: "not-json", paramsChanged: true,
+	})
+	assert.Error(t, err)
 }
 
 // ─── getTrigger / getAction ───────────────────────────────────────────────────

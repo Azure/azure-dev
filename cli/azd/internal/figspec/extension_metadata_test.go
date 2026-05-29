@@ -106,6 +106,75 @@ func TestConvertExtensionCommand(t *testing.T) {
 			wantArgs:      0,
 		},
 		{
+			name: "default inherited output flag is filtered out",
+			cmd: extensions.Command{
+				Name:  []string{"run"},
+				Short: "Run something",
+				Flags: []extensions.Flag{
+					{
+						Name:        "output",
+						Shorthand:   "o",
+						Description: defaultExtensionOutputFlagUsage,
+						Type:        "string",
+						Default:     defaultExtensionOutputFlagValue,
+					},
+				},
+			},
+			includeHidden: false,
+			wantNil:       false,
+			wantName:      []string{"run"},
+			wantDesc:      "Run something",
+			wantSubcmds:   0,
+			wantOptions:   0,
+			wantArgs:      0,
+		},
+		{
+			name: "registered output format flag is preserved",
+			cmd: extensions.Command{
+				Name:  []string{"list"},
+				Short: "List things",
+				Flags: []extensions.Flag{
+					{
+						Name:        "output",
+						Shorthand:   "o",
+						Description: defaultExtensionOutputFlagUsage,
+						Type:        "string",
+						Default:     "json",
+						ValidValues: []string{"json", "table"},
+					},
+				},
+			},
+			includeHidden: false,
+			wantNil:       false,
+			wantName:      []string{"list"},
+			wantDesc:      "List things",
+			wantSubcmds:   0,
+			wantOptions:   1,
+			wantArgs:      0,
+		},
+		{
+			name: "registered output path flag is preserved",
+			cmd: extensions.Command{
+				Name:  []string{"pack"},
+				Short: "Pack things",
+				Flags: []extensions.Flag{
+					{
+						Name:        "output",
+						Shorthand:   "o",
+						Description: "Path to the output directory.",
+						Type:        "string",
+					},
+				},
+			},
+			includeHidden: false,
+			wantNil:       false,
+			wantName:      []string{"pack"},
+			wantDesc:      "Pack things",
+			wantSubcmds:   0,
+			wantOptions:   1,
+			wantArgs:      0,
+		},
+		{
 			name: "global flags are filtered out",
 			cmd: extensions.Command{
 				Name:  []string{"test"},

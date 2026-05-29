@@ -344,6 +344,7 @@ func TestNewSpecBuilder(t *testing.T) {
 		sb := NewSpecBuilder(false)
 		require.NotNil(t, sb)
 		require.False(t, sb.includeHidden)
+		require.False(t, sb.includeHelpSubcommands)
 		require.NotNil(t, sb.suggestionProvider)
 		require.NotNil(t, sb.generatorProvider)
 		require.NotNil(t, sb.argsProvider)
@@ -354,6 +355,16 @@ func TestNewSpecBuilder(t *testing.T) {
 		sb := NewSpecBuilder(true)
 		require.True(t, sb.includeHidden)
 	})
+}
+
+func TestWithHelpSubcommands(t *testing.T) {
+	sb := NewSpecBuilder(false)
+	require.False(t, sb.includeHelpSubcommands)
+
+	result := sb.WithHelpSubcommands(true)
+
+	require.Same(t, sb, result)
+	require.True(t, sb.includeHelpSubcommands)
 }
 
 func TestWithExtensionMetadata(t *testing.T) {
@@ -455,8 +466,7 @@ func TestBuildSpec_HelpCommandPresent(t *testing.T) {
 		if sub.Name[0] == "help" {
 			found = true
 			require.Equal(t, "Help about any command", sub.Description)
-			// Help subcommands should mirror the command tree
-			require.NotEmpty(t, sub.Subcommands)
+			require.Empty(t, sub.Subcommands)
 		}
 	}
 	require.True(t, found, "expected help subcommand")
@@ -1127,7 +1137,7 @@ func TestBuildSpec_GeneratesHelpTree(t *testing.T) {
 	env.AddCommand(&cobra.Command{Use: "list", Short: "List"})
 	root.AddCommand(env)
 
-	sb := newTestSpecBuilder(false)
+	sb := newTestSpecBuilder(false).WithHelpSubcommands(true)
 	spec := sb.BuildSpec(root)
 
 	var helpSub *Subcommand

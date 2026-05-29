@@ -63,7 +63,7 @@ func NewMetadataCommand(schemaVersion, extensionId string, rootCmdProvider func(
 // NewVersionCommand creates the standard "version" command.
 // outputFormat is a pointer to the output format string (for JSON support).
 func NewVersionCommand(extensionId, version string, outputFormat *string) *cobra.Command {
-	return &cobra.Command{
+	return RegisterFlagOptions(&cobra.Command{
 		Use:   "version",
 		Short: "Display the extension version",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -85,5 +85,5 @@ func NewVersionCommand(extensionId, version string, outputFormat *string) *cobra
 
 			return nil
 		},
-	}
+	}, FlagOptions{Name: "output", AllowedValues: []string{"json"}})
 }

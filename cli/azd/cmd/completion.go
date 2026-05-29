@@ -131,13 +131,20 @@ func newCompletionPowerShellAction(cmd *cobra.Command) actions.Action {
 
 // Fig completion action and flags
 type completionFigFlags struct {
-	includeHidden bool
+	includeHidden          bool
+	includeHelpSubcommands bool
 }
 
 func newCompletionFigFlags(cmd *cobra.Command) *completionFigFlags {
 	flags := &completionFigFlags{}
 	cmd.Flags().BoolVar(&flags.includeHidden, "include-hidden", false, "Include hidden commands in the Fig spec")
 	_ = cmd.Flags().MarkHidden("include-hidden")
+	cmd.Flags().BoolVar(
+		&flags.includeHelpSubcommands,
+		"include-help-subcommands",
+		false,
+		"Include subcommands under the help command in the Fig spec",
+	)
 	return flags
 }
 
@@ -191,6 +198,7 @@ func (a *completionFigAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 	// Generate the Fig spec
 	builder := figspec.NewSpecBuilder(a.flags.includeHidden).
+		WithHelpSubcommands(a.flags.includeHelpSubcommands).
 		WithExtensionMetadata(a.extensionManager)
 	spec := builder.BuildSpec(rootCmd)
 

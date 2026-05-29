@@ -156,8 +156,14 @@ func (m *ToolFirstRunMiddleware) shouldSkip(ctx context.Context) (string, bool) 
 		return skipReasonConfigError, true // err on the side of not blocking the user
 	}
 
-	if _, ok := cfg.Get(configKeyFirstRunCompleted); ok {
-		return skipReasonAlreadyCompleted, true
+	if v, ok := cfg.Get(configKeyFirstRunCompleted); ok {
+		s, _ := v.(string)
+		if check, err := strconv.ParseBool(s); err == nil && check {
+			return skipReasonAlreadyCompleted, true
+		}
+		if _, err := time.Parse(time.RFC3339, s); err == nil {
+			return skipReasonAlreadyCompleted, true
+		}
 	}
 
 	return "", false

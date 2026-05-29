@@ -5825,6 +5825,77 @@
       ]
     },
     {
+      "id": "azure.ai.routines",
+      "namespace": "ai.routine",
+      "displayName": "Foundry Routines (Preview)",
+      "description": "Manage Microsoft Foundry Routines from your terminal. (Preview)",
+      "versions": [
+        {
+          "version": "0.1.0-preview",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd ai routine \u003ccommand\u003e [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "104a6c37b12dbf9df0aa12f8a6d6e65ac3aa6e4e7620008a3396c00a476564bf"
+              },
+              "entryPoint": "azure-ai-routines-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_0.1.0-preview/azure-ai-routines-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9807a195ad454869ef7241dc5ee604001d5cfa866b63fc2add089c8f8ac8aa27"
+              },
+              "entryPoint": "azure-ai-routines-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_0.1.0-preview/azure-ai-routines-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "00357f3f43e9c560e52b4ca4f752d02d07ae7ca048eeb288f3f61e3517f5cac4"
+              },
+              "entryPoint": "azure-ai-routines-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_0.1.0-preview/azure-ai-routines-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "be7d6e43a7fb5ebb04babaa10caf8a40318210a241bfe2ed7d480323b05bda4f"
+              },
+              "entryPoint": "azure-ai-routines-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_0.1.0-preview/azure-ai-routines-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "991bac0c60820687da64ad08d4da7a055afd159164baab237961b878ef779b3e"
+              },
+              "entryPoint": "azure-ai-routines-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_0.1.0-preview/azure-ai-routines-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "fcc69e80d50a77eb737638bbed06c315bb17e2b5e108925a7bd12adb08baf0a1"
+              },
+              "entryPoint": "azure-ai-routines-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_0.1.0-preview/azure-ai-routines-windows-arm64.zip"
+            }
+          }
+        }
+      ],
+      "tags": [
+        "ai",
+        "routine"
+      ]
+    },
+    {
       "id": "azure.ai.skills",
       "namespace": "ai.skill",
       "displayName": "Foundry skills (Preview)",

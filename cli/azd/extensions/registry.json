@@ -5754,6 +5754,307 @@
       ]
     },
     {
+      "id": "azure.ai.connections",
+      "namespace": "ai.connection",
+      "displayName": "Foundry Connections (Preview)",
+      "description": "Manage Microsoft Foundry Connections from your terminal. (Preview)",
+      "versions": [
+        {
+          "version": "0.1.0-preview",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd ai connection \u003ccommand\u003e [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5bbb15af6f33cfb27615f278dafd8b1a9f4892b4a5b350ebb4eba8ec91b9de1f"
+              },
+              "entryPoint": "azure-ai-connections-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_0.1.0-preview/azure-ai-connections-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "3f73a211f7cfd0801e6b4e16f13d89ec48a141fd5f07c8bb9a7511565eda6479"
+              },
+              "entryPoint": "azure-ai-connections-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_0.1.0-preview/azure-ai-connections-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8f6aab4b4c60bc8fc6150e7beb2ca6e13e3fd977e57f2bd7afbb756136844bea"
+              },
+              "entryPoint": "azure-ai-connections-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_0.1.0-preview/azure-ai-connections-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d74941d383957ba8c37cc340e0a0fc10e8e6dfb2bbcd0d47916a5a54b75491fe"
+              },
+              "entryPoint": "azure-ai-connections-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_0.1.0-preview/azure-ai-connections-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5b929c90d8d47f9bdf9c0d6cdac0772fe6a94930ae5940ae5982687c30b03065"
+              },
+              "entryPoint": "azure-ai-connections-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_0.1.0-preview/azure-ai-connections-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "1b19ed9f9040f34914bbb3a8ed1e472a5ad4663381d4b4a40f81112e881cd334"
+              },
+              "entryPoint": "azure-ai-connections-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_0.1.0-preview/azure-ai-connections-windows-arm64.zip"
+            }
+          }
+        }
+      ],
+      "tags": [
+        "ai",
+        "connection"
+      ]
+    },
+    {
+      "id": "azure.ai.projects",
+      "namespace": "ai.project",
+      "displayName": "Foundry Projects (Preview)",
+      "description": "Manage Microsoft Foundry Project resources from your terminal. (Preview)",
+      "versions": [
+        {
+          "version": "0.1.0-preview",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd ai project \u003ccommand\u003e [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "05ab0ec11fab528f5e1b0a8dca18106a36cce43fb43fac1042adda480b631a96"
+              },
+              "entryPoint": "azure-ai-projects-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_0.1.0-preview/azure-ai-projects-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "0c5933acfa44010d8b22c5d6aab67004b45966bf1c727faa2243bb79e42709f9"
+              },
+              "entryPoint": "azure-ai-projects-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_0.1.0-preview/azure-ai-projects-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "dd8adde884d890d014af00305d5809b4b8ac63e7cffa0491ab4a5b0d6ed7d961"
+              },
+              "entryPoint": "azure-ai-projects-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_0.1.0-preview/azure-ai-projects-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "c1f0776f370b944d5e2bc6f598c0a8fe774a2d366435bf67425d422e7f82bba8"
+              },
+              "entryPoint": "azure-ai-projects-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_0.1.0-preview/azure-ai-projects-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "ab46a77b23df002ec6f966d97291e88118eb0949937aecacc1f910561ac46099"
+              },
+              "entryPoint": "azure-ai-projects-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_0.1.0-preview/azure-ai-projects-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "530938820b0db2340499c8251d28594a793146e5a0fdc3ba3e21e2eb28caf731"
+              },
+              "entryPoint": "azure-ai-projects-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_0.1.0-preview/azure-ai-projects-windows-arm64.zip"
+            }
+          }
+        }
+      ],
+      "tags": [
+        "ai",
+        "project"
+      ]
+    },
+    {
+      "id": "azure.ai.routines",
+      "namespace": "ai.routine",
+      "displayName": "Foundry Routines (Preview)",
+      "description": "Manage Microsoft Foundry Routines from your terminal. (Preview)",
+      "versions": [
+        {
+          "version": "0.1.0-preview",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd ai routine \u003ccommand\u003e [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "104a6c37b12dbf9df0aa12f8a6d6e65ac3aa6e4e7620008a3396c00a476564bf"
+              },
+              "entryPoint": "azure-ai-routines-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_0.1.0-preview/azure-ai-routines-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9807a195ad454869ef7241dc5ee604001d5cfa866b63fc2add089c8f8ac8aa27"
+              },
+              "entryPoint": "azure-ai-routines-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_0.1.0-preview/azure-ai-routines-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "00357f3f43e9c560e52b4ca4f752d02d07ae7ca048eeb288f3f61e3517f5cac4"
+              },
+              "entryPoint": "azure-ai-routines-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_0.1.0-preview/azure-ai-routines-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "be7d6e43a7fb5ebb04babaa10caf8a40318210a241bfe2ed7d480323b05bda4f"
+              },
+              "entryPoint": "azure-ai-routines-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_0.1.0-preview/azure-ai-routines-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "991bac0c60820687da64ad08d4da7a055afd159164baab237961b878ef779b3e"
+              },
+              "entryPoint": "azure-ai-routines-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_0.1.0-preview/azure-ai-routines-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "fcc69e80d50a77eb737638bbed06c315bb17e2b5e108925a7bd12adb08baf0a1"
+              },
+              "entryPoint": "azure-ai-routines-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_0.1.0-preview/azure-ai-routines-windows-arm64.zip"
+            }
+          }
+        }
+      ],
+      "tags": [
+        "ai",
+        "routine"
+      ]
+    },
+    {
+      "id": "azure.ai.skills",
+      "namespace": "ai.skill",
+      "displayName": "Foundry skills (Preview)",
+      "description": "Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Preview)",
+      "versions": [
+        {
+          "version": "0.1.0-preview",
+          "requiredAzdVersion": "\u003e1.23.13",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd ai skill \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "list",
+              "description": "List skills in the current Foundry project.",
+              "usage": "azd ai skill list"
+            },
+            {
+              "name": "create",
+              "description": "Create a skill from a SKILL.md file.",
+              "usage": "azd ai skill create my-skill --file ./SKILL.md"
+            },
+            {
+              "name": "download",
+              "description": "Download and extract a skill into ./.agents/skills/.",
+              "usage": "azd ai skill download my-skill"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8f804b02a9bea8e4574bbba9115d9e7f987e2cf1d6ff326632fe4cf6ab805c32"
+              },
+              "entryPoint": "azure-ai-skills-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-skills_0.1.0-preview/azure-ai-skills-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8bcce6fef9d02f0c41d66bb1210855adc8dcb60e42a1f72eabf554451145d1a6"
+              },
+              "entryPoint": "azure-ai-skills-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-skills_0.1.0-preview/azure-ai-skills-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "bc2c5e8007abb97602f0dbe9b7abce31c829b58cfae94be2ae3920c64720ff62"
+              },
+              "entryPoint": "azure-ai-skills-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-skills_0.1.0-preview/azure-ai-skills-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "ec9435f10028cdc3527c077f3c1fcd13ba1691e66f70c3345831b6e381e49fa2"
+              },
+              "entryPoint": "azure-ai-skills-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-skills_0.1.0-preview/azure-ai-skills-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5e3dc4b30aef457f98d5372ed898b3e670bac4649d823673f382fdf79db5562c"
+              },
+              "entryPoint": "azure-ai-skills-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-skills_0.1.0-preview/azure-ai-skills-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "7c57b9d78626c838e4d47861208976994c125b76a1827c0795c9cce198544064"
+              },
+              "entryPoint": "azure-ai-skills-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-skills_0.1.0-preview/azure-ai-skills-windows-arm64.zip"
+            }
+          }
+        }
+      ],
+      "tags": [
+        "ai",
+        "skill"
+      ]
+    },
+    {
       "id": "azure.ai.toolboxes",
       "namespace": "ai.toolbox",
       "displayName": "Foundry Toolboxes (Preview)",

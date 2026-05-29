@@ -169,9 +169,12 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 	// Tool check banner
 	// ---------------------------------------------------------------
 	m.console.Message(ctx, "")
-	m.console.Message(ctx, output.WithBold("Checking your Azure development tools..."))
+	m.console.Message(ctx, output.WithBold("Let's get your development environment ready."))
 	m.console.Message(ctx, "")
-	m.console.Message(ctx, "Let's make sure your development environment is up to date.")
+	m.console.Message(
+		ctx,
+		"Discover and install Azure development tools such as Azure CLI, GitHub Copilot CLI, and Azure AI extensions.",
+	)
 	m.console.Message(ctx, output.WithGrayFormat(
 		"To skip this check, set %s or run %s.",
 		output.WithHighLightFormat("AZD_SKIP_FIRST_RUN=true"),
@@ -278,6 +281,8 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 		tracing.SetUsageAttributes(
 			fields.ToolFirstRunToolsOfferedKey.Int(0),
 		)
+		m.console.Message(ctx, output.WithGrayFormat(
+			"All recommended tools are installed. You're all set!"))
 	}
 
 	tracing.SetUsageAttributes(fields.ToolFirstRunOutcomeKey.String(finalOutcome))
@@ -340,8 +345,11 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 	multiSelect := uxlib.NewMultiSelect(&uxlib.MultiSelectOptions{
 		Writer:  m.console.Handles().Stdout,
 		Reader:  m.console.Handles().Stdin,
-		Message: "Select recommended tools to install:",
+		Message: "Select recommended tools to install",
 		Choices: choices,
+		// Allow proceeding without selecting any tools; the "no tools selected"
+		// path below is a valid completion of the first-run flow.
+		AllowEmptySelection: new(true),
 	})
 
 	selected, err := multiSelect.Ask(ctx)
@@ -390,7 +398,7 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 
 	if len(selected) == 0 {
 		m.console.Message(ctx, output.WithGrayFormat(
-			"No tools selected.  You can install them later with 'azd tool install'."))
+			"No tools selected. You can install them later with 'azd tool install'."))
 		return "", nil
 	}
 

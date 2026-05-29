@@ -1,14 +1,10 @@
 # Release History
 
-## 1.26.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.25.4 (2026-05-29)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#8487]](https://github.com/Azure/azure-dev/pull/8487) Fix the `azd tool` first-run prompt blocking users who deselect all recommended tools, and clarify its setup wording.
 
 ## 1.25.3 (2026-05-28)
 

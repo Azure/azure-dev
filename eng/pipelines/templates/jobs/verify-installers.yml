@@ -76,9 +76,7 @@ jobs:
 
       - template: /eng/common/pipelines/templates/steps/create-authenticated-npmrc.yml
         parameters:
-          registryUrl: 'https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-js/npm/registry/'
-          npmrcPath: $(HOME)/.npmrc
-          CustomCondition: and(succeeded(), not(contains(variables['Agent.OS'], 'Windows')))
+          npmrcPath: $(Agent.TempDirectory)/verify/.npmrc
 
       - bash: nohup npx -y http-server &
         displayName: Start server in hosting/ (bash)

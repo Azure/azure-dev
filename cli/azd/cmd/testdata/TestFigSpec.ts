@@ -223,288 +223,6 @@ const completionSpec: Fig.Spec = {
 					description: 'Ship agents with Microsoft Foundry from your terminal. (Preview)',
 					subcommands: [
 						{
-							name: ['connection'],
-							description: 'Manage Foundry project connections. (Preview)',
-							subcommands: [
-								{
-									name: ['create'],
-									description: 'Create a new Foundry project connection.',
-									options: [
-										{
-											name: ['--audience'],
-											description: 'Token audience for user-entra-token/agentic-identity auth',
-											args: [
-												{
-													name: 'audience',
-												},
-											],
-										},
-										{
-											name: ['--auth-type'],
-											description: 'Auth type: api-key, custom-keys, none, oauth2, user-entra-token, project-managed-identity, agentic-identity',
-											args: [
-												{
-													name: 'auth-type',
-												},
-											],
-										},
-										{
-											name: ['--client-id'],
-											description: 'OAuth2 client ID (required for oauth2 auth)',
-											args: [
-												{
-													name: 'client-id',
-												},
-											],
-										},
-										{
-											name: ['--client-secret'],
-											description: 'OAuth2 client secret (required for oauth2 auth)',
-											args: [
-												{
-													name: 'client-secret',
-												},
-											],
-										},
-										{
-											name: ['--custom-key'],
-											description: 'Custom key=value (repeatable, for custom-keys auth)',
-											isRepeatable: true,
-											args: [
-												{
-													name: 'custom-key',
-												},
-											],
-										},
-										{
-											name: ['--force'],
-											description: 'Replace existing connection (upsert)',
-											isDangerous: true,
-										},
-										{
-											name: ['--key'],
-											description: 'API key (for api-key auth)',
-											args: [
-												{
-													name: 'key',
-												},
-											],
-										},
-										{
-											name: ['--kind'],
-											description: 'Connection kind (e.g., remote-tool, remote-a2a, cognitive-search)',
-											args: [
-												{
-													name: 'kind',
-												},
-											],
-										},
-										{
-											name: ['--metadata'],
-											description: 'Metadata key=value (repeatable)',
-											isRepeatable: true,
-											args: [
-												{
-													name: 'metadata',
-												},
-											],
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-												},
-											],
-										},
-										{
-											name: ['--project-endpoint', '-p'],
-											description: 'Foundry project endpoint URL (overrides env var and config)',
-											args: [
-												{
-													name: 'project-endpoint',
-												},
-											],
-										},
-										{
-											name: ['--target'],
-											description: 'Target URL or ARM resource ID',
-											args: [
-												{
-													name: 'target',
-												},
-											],
-										},
-									],
-								},
-								{
-									name: ['delete'],
-									description: 'Delete a connection.',
-									options: [
-										{
-											name: ['--force'],
-											description: 'Skip confirmation prompt',
-											isDangerous: true,
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-												},
-											],
-										},
-										{
-											name: ['--project-endpoint', '-p'],
-											description: 'Foundry project endpoint URL (overrides env var and config)',
-											args: [
-												{
-													name: 'project-endpoint',
-												},
-											],
-										},
-									],
-								},
-								{
-									name: ['list'],
-									description: 'List connections in the Foundry project.',
-									options: [
-										{
-											name: ['--kind'],
-											description: 'Filter by connection kind (e.g., remote-tool)',
-											args: [
-												{
-													name: 'kind',
-												},
-											],
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-													suggestions: ['json', 'table'],
-												},
-											],
-										},
-										{
-											name: ['--project-endpoint', '-p'],
-											description: 'Foundry project endpoint URL (overrides env var and config)',
-											args: [
-												{
-													name: 'project-endpoint',
-												},
-											],
-										},
-									],
-								},
-								{
-									name: ['show'],
-									description: 'Show connection details.',
-									options: [
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-													suggestions: ['json', 'table'],
-												},
-											],
-										},
-										{
-											name: ['--project-endpoint', '-p'],
-											description: 'Foundry project endpoint URL (overrides env var and config)',
-											args: [
-												{
-													name: 'project-endpoint',
-												},
-											],
-										},
-										{
-											name: ['--show-credentials'],
-											description: 'Fetch credential values from the data plane',
-										},
-									],
-								},
-								{
-									name: ['update'],
-									description: 'Update a connection\'s target or credentials.',
-									options: [
-										{
-											name: ['--custom-key'],
-											description: 'Update custom key=value (repeatable, for custom-keys auth)',
-											isRepeatable: true,
-											args: [
-												{
-													name: 'custom-key',
-												},
-											],
-										},
-										{
-											name: ['--key'],
-											description: 'New API key value (for api-key auth)',
-											args: [
-												{
-													name: 'key',
-												},
-											],
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-												},
-											],
-										},
-										{
-											name: ['--project-endpoint', '-p'],
-											description: 'Foundry project endpoint URL (overrides env var and config)',
-											args: [
-												{
-													name: 'project-endpoint',
-												},
-											],
-										},
-										{
-											name: ['--target'],
-											description: 'New target URL or ARM resource ID',
-											args: [
-												{
-													name: 'target',
-												},
-											],
-										},
-									],
-								},
-							],
-							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-										},
-									],
-								},
-								{
-									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
-									args: [
-										{
-											name: 'project-endpoint',
-										},
-									],
-								},
-							],
-						},
-						{
 							name: ['doctor'],
 							description: 'Diagnose problems with an azd ai agent project.',
 							options: [
@@ -1395,6 +1113,7 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'output',
+											suggestions: ['default', 'raw'],
 										},
 									],
 								},
@@ -1775,10 +1494,19 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--config', '-c'],
-									description: 'Path to YAML config file (optional — uses defaults if omitted)',
+									description: 'Path to YAML config file (optional — values are prompted interactively if omitted)',
 									args: [
 										{
 											name: 'config',
+										},
+									],
+								},
+								{
+									name: ['--dataset', '-d'],
+									description: 'Existing local file or registered dataset name',
+									args: [
+										{
+											name: 'dataset',
 										},
 									],
 								},
@@ -1793,7 +1521,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--eval-model', '-m'],
-									description: 'Model for evaluation',
+									description: 'Model for evaluation (required)',
 									args: [
 										{
 											name: 'eval-model',
@@ -1801,8 +1529,26 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--max-iterations'],
+									description: 'Maximum number of optimization iterations (must be >= 1; default: 5)',
+									args: [
+										{
+											name: 'max-iterations',
+										},
+									],
+								},
+								{
 									name: ['--no-wait'],
 									description: 'Submit job and return immediately without waiting for completion',
+								},
+								{
+									name: ['--optimize-model'],
+									description: 'Model for optimization reasoning (gpt-5 family recommended; falls back to eval model when not set)',
+									args: [
+										{
+											name: 'optimize-model',
+										},
+									],
 								},
 								{
 									name: ['--output', '-o'],
@@ -1828,16 +1574,6 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
-										},
-									],
-								},
-								{
-									name: ['--target', '-t'],
-									description: 'Target attribute for optimization: instruction, skill (repeatable)',
-									isRepeatable: true,
-									args: [
-										{
-											name: 'target',
 										},
 									],
 								},
@@ -7296,32 +7032,6 @@ const completionSpec: Fig.Spec = {
 							name: ['agent'],
 							description: 'Ship agents with Microsoft Foundry from your terminal. (Preview)',
 							subcommands: [
-								{
-									name: ['connection'],
-									description: 'Manage Foundry project connections. (Preview)',
-									subcommands: [
-										{
-											name: ['create'],
-											description: 'Create a new Foundry project connection.',
-										},
-										{
-											name: ['delete'],
-											description: 'Delete a connection.',
-										},
-										{
-											name: ['list'],
-											description: 'List connections in the Foundry project.',
-										},
-										{
-											name: ['show'],
-											description: 'Show connection details.',
-										},
-										{
-											name: ['update'],
-											description: 'Update a connection\'s target or credentials.',
-										},
-									],
-								},
 								{
 									name: ['doctor'],
 									description: 'Diagnose problems with an azd ai agent project.',

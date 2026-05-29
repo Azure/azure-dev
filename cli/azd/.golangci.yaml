@@ -59,22 +59,7 @@ linters:
         linters:
           - forbidigo
       # forbidigo: allow stdout in files that intentionally test stdout behavior
-      - path: testing_helpers_test\.go$
-        linters:
-          - forbidigo
-      - path: extension_commands_test\.go$
-        linters:
-          - forbidigo
-      - path: show_test\.go$
-        linters:
-          - forbidigo
-      - path: external_prompt_test\.go$
-        linters:
-          - forbidigo
-      - path: colors_test\.go$
-        linters:
-          - forbidigo
-      - path: ux_test\.go$
+      - path: (testing_helpers|extension_commands|show|external_prompt|colors|ux)_test\.go$
         linters:
           - forbidigo
 formatters:

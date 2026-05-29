@@ -5754,6 +5754,77 @@
       ]
     },
     {
+      "id": "azure.ai.connections",
+      "namespace": "ai.connection",
+      "displayName": "Foundry Connections (Preview)",
+      "description": "Manage Microsoft Foundry Connections from your terminal. (Preview)",
+      "versions": [
+        {
+          "version": "0.1.0-preview",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd ai connection \u003ccommand\u003e [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5bbb15af6f33cfb27615f278dafd8b1a9f4892b4a5b350ebb4eba8ec91b9de1f"
+              },
+              "entryPoint": "azure-ai-connections-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_0.1.0-preview/azure-ai-connections-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "3f73a211f7cfd0801e6b4e16f13d89ec48a141fd5f07c8bb9a7511565eda6479"
+              },
+              "entryPoint": "azure-ai-connections-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_0.1.0-preview/azure-ai-connections-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8f6aab4b4c60bc8fc6150e7beb2ca6e13e3fd977e57f2bd7afbb756136844bea"
+              },
+              "entryPoint": "azure-ai-connections-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_0.1.0-preview/azure-ai-connections-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d74941d383957ba8c37cc340e0a0fc10e8e6dfb2bbcd0d47916a5a54b75491fe"
+              },
+              "entryPoint": "azure-ai-connections-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_0.1.0-preview/azure-ai-connections-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5b929c90d8d47f9bdf9c0d6cdac0772fe6a94930ae5940ae5982687c30b03065"
+              },
+              "entryPoint": "azure-ai-connections-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_0.1.0-preview/azure-ai-connections-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "1b19ed9f9040f34914bbb3a8ed1e472a5ad4663381d4b4a40f81112e881cd334"
+              },
+              "entryPoint": "azure-ai-connections-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-connections_0.1.0-preview/azure-ai-connections-windows-arm64.zip"
+            }
+          }
+        }
+      ],
+      "tags": [
+        "ai",
+        "connection"
+      ]
+    },
+    {
       "id": "azure.ai.skills",
       "namespace": "ai.skill",
       "displayName": "Foundry skills (Preview)",

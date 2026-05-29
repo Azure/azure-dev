@@ -2211,6 +2211,362 @@ const completionSpec: Fig.Spec = {
 					],
 				},
 				{
+					name: ['connection'],
+					description: 'Manage Microsoft Foundry Connections from your terminal. (Preview)',
+					subcommands: [
+						{
+							name: ['context'],
+							description: 'Get the context of the azd project & environment.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['create'],
+							description: 'Create a new Foundry project connection.',
+							options: [
+								{
+									name: ['--audience'],
+									description: 'Token audience for user-entra-token/agentic-identity/project-managed-identity auth',
+									args: [
+										{
+											name: 'audience',
+										},
+									],
+								},
+								{
+									name: ['--auth-type'],
+									description: 'Auth type: api-key, custom-keys, none, oauth2, user-entra-token, project-managed-identity, agentic-identity',
+									args: [
+										{
+											name: 'auth-type',
+										},
+									],
+								},
+								{
+									name: ['--authorization-url'],
+									description: 'OAuth2 authorization endpoint URL',
+									args: [
+										{
+											name: 'authorization-url',
+										},
+									],
+								},
+								{
+									name: ['--client-id'],
+									description: 'OAuth2 client ID (required for BYO OAuth2)',
+									args: [
+										{
+											name: 'client-id',
+										},
+									],
+								},
+								{
+									name: ['--client-secret'],
+									description: 'OAuth2 client secret (required for BYO OAuth2)',
+									args: [
+										{
+											name: 'client-secret',
+										},
+									],
+								},
+								{
+									name: ['--connector-name'],
+									description: 'Managed connector name (for OAuth2 connectors)',
+									args: [
+										{
+											name: 'connector-name',
+										},
+									],
+								},
+								{
+									name: ['--custom-key'],
+									description: 'Custom key=value (repeatable, for custom-keys auth)',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'custom-key',
+										},
+									],
+								},
+								{
+									name: ['--force'],
+									description: 'Replace existing connection (upsert)',
+									isDangerous: true,
+								},
+								{
+									name: ['--key'],
+									description: 'API key (for api-key auth)',
+									args: [
+										{
+											name: 'key',
+										},
+									],
+								},
+								{
+									name: ['--kind'],
+									description: 'Connection kind (e.g., remote-tool, remote-a2a, cognitive-search)',
+									args: [
+										{
+											name: 'kind',
+										},
+									],
+								},
+								{
+									name: ['--metadata'],
+									description: 'Metadata key=value (repeatable)',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'metadata',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--refresh-url'],
+									description: 'OAuth2 token refresh URL',
+									args: [
+										{
+											name: 'refresh-url',
+										},
+									],
+								},
+								{
+									name: ['--scopes'],
+									description: 'OAuth2 scopes (repeatable or comma-separated, e.g. --scopes read:user,user:email)',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'scopes',
+										},
+									],
+								},
+								{
+									name: ['--target'],
+									description: 'Target URL or ARM resource ID',
+									args: [
+										{
+											name: 'target',
+										},
+									],
+								},
+								{
+									name: ['--token-url'],
+									description: 'OAuth2 token endpoint URL',
+									args: [
+										{
+											name: 'token-url',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['delete'],
+							description: 'Delete a connection.',
+							options: [
+								{
+									name: ['--force'],
+									description: 'Skip confirmation prompt',
+									isDangerous: true,
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['list'],
+							description: 'List connections in the Foundry project.',
+							options: [
+								{
+									name: ['--kind'],
+									description: 'Filter by connection kind (e.g., remote-tool)',
+									args: [
+										{
+											name: 'kind',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['show'],
+							description: 'Show connection details.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--show-credentials'],
+									description: 'Fetch credential values from the data plane',
+								},
+							],
+						},
+						{
+							name: ['update'],
+							description: 'Update a connection\'s target or credentials.',
+							options: [
+								{
+									name: ['--custom-key'],
+									description: 'Update custom key=value (repeatable, for custom-keys auth)',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'custom-key',
+										},
+									],
+								},
+								{
+									name: ['--key'],
+									description: 'New API key value (for api-key auth)',
+									args: [
+										{
+											name: 'key',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--target'],
+									description: 'New target URL or ARM resource ID',
+									args: [
+										{
+											name: 'target',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+				{
 					name: ['finetuning'],
 					description: 'Extension for Foundry Fine Tuning. (Preview)',
 					subcommands: [
@@ -6377,6 +6733,40 @@ const completionSpec: Fig.Spec = {
 								{
 									name: ['version'],
 									description: 'Prints the version of the application',
+								},
+							],
+						},
+						{
+							name: ['connection'],
+							description: 'Manage Microsoft Foundry Connections from your terminal. (Preview)',
+							subcommands: [
+								{
+									name: ['context'],
+									description: 'Get the context of the azd project & environment.',
+								},
+								{
+									name: ['create'],
+									description: 'Create a new Foundry project connection.',
+								},
+								{
+									name: ['delete'],
+									description: 'Delete a connection.',
+								},
+								{
+									name: ['list'],
+									description: 'List connections in the Foundry project.',
+								},
+								{
+									name: ['show'],
+									description: 'Show connection details.',
+								},
+								{
+									name: ['update'],
+									description: 'Update a connection\'s target or credentials.',
+								},
+								{
+									name: ['version'],
+									description: 'Display the extension version',
 								},
 							],
 						},

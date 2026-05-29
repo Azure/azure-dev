@@ -14,6 +14,7 @@
 /cli/azd/extensions/azure.ai.agents/        @JeffreyCA @trangevi @trrwilson @therealjohn
 /cli/azd/extensions/azure.ai.connections/   @JeffreyCA @trangevi @trrwilson @therealjohn
 /cli/azd/extensions/azure.ai.finetune/      @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
+/cli/azd/extensions/azure.ai.foundry/       @JeffreyCA @trangevi @trrwilson @therealjohn
 /cli/azd/extensions/azure.ai.inspector/     @JeffreyCA @trangevi @trrwilson @therealjohn
 /cli/azd/extensions/azure.ai.models/        @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 /cli/azd/extensions/azure.ai.projects/      @JeffreyCA @trangevi @trrwilson @therealjohn @huimiu

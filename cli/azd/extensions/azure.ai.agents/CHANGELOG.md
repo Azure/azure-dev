@@ -19,7 +19,9 @@
 - [[#8422]](https://github.com/Azure/azure-dev/pull/8422) Remove the hardcoded code-deploy region allowlist and use dynamic hosted-agent region resolution.
 - [[#8392]](https://github.com/Azure/azure-dev/pull/8392) Improve optimize config YAML deserialization/UX and align generation endpoint calls to `2025-11-15-preview`.
 - [[#8426]](https://github.com/Azure/azure-dev/pull/8426) Add opinionated defaults for manifest-driven `azd ai agent init -m` to reduce interactive prompts.
+- [[#8441]](https://github.com/Azure/azure-dev/pull/8441) Fix hosted-agent deploy failures on `CreateAgentVersion` by including `Foundry-Features: HostedAgents=V1Preview` on v1 requests.
 - [[#8479]](https://github.com/Azure/azure-dev/pull/8479) Add dependency on `azure.ai.inspector`, for handling with `azd ai agent run`.
+- [[#8482]](https://github.com/Azure/azure-dev/pull/8482) Improve ACR publish error handling by classifying permission-denied failures and surfacing actionable RBAC/code-deploy remediation guidance.
 
 ### Breaking Changes
 - [[#8210]](https://github.com/Azure/azure-dev/pull/8210) Update sample-based init flow to create a new folder during `azd ai agent init`.

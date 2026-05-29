@@ -1463,11 +1463,16 @@ func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 	currentUser, err := readUserProperties(cfg)
 	if err != nil {
 		// In Cloud Shell azd uses the ambient credential, so report that user
-		// rather than treating the session as unauthenticated.
-		if runcontext.IsRunningInCloudShell() {
-			return m.cloudShellLogInDetails(ctx)
+		// rather than treating the session as unauthenticated. Only fall back
+		// when there is genuinely no logged-in user; other errors (e.g. corrupted
+		// stored user properties) should surface so they aren't silently hidden.
+		if errors.Is(err, ErrNoCurrentUser) {
+			if runcontext.IsRunningInCloudShell() {
+				return m.cloudShellLogInDetails(ctx)
+			}
+			return nil, ErrNoCurrentUser
 		}
-		return nil, ErrNoCurrentUser
+		return nil, fmt.Errorf("reading current user properties: %w", err)
 	}
 
 	if currentUser.HomeAccountID != nil {

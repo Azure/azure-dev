@@ -478,6 +478,29 @@ func TestLogInDetails(t *testing.T) {
 		require.Empty(t, details.Account)
 	})
 
+	t.Run("cloud shell - corrupted user properties surface error instead of fallback", func(t *testing.T) {
+		t.Setenv(runcontext.AzdInCloudShellEnvVar, "1")
+
+		// A stored currentUser value that cannot be unmarshalled into userProperties
+		// represents real config corruption. It must surface as an error rather than
+		// being silently masked by the Cloud Shell fallback.
+		userCfg := config.NewEmptyConfig()
+		require.NoError(t, userCfg.Set(currentUserKey, "not-an-object"))
+
+		userCfgMgr := newMemoryUserConfigManager()
+		require.NoError(t, userCfgMgr.Save(userCfg))
+
+		m := Manager{
+			configManager:     newMemoryConfigManager(),
+			userConfigManager: userCfgMgr,
+			cloud:             cloud.AzurePublic(),
+		}
+
+		_, err := m.LogInDetails(t.Context())
+		require.Error(t, err)
+		require.NotErrorIs(t, err, ErrNoCurrentUser)
+	})
+
 	t.Run("external auth - error when token has no usable account identifier", func(t *testing.T) {
 		// Build a JWT token with no username claims
 		token := buildTestJWT(t, map[string]any{

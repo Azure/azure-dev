@@ -12,11 +12,11 @@
             "custom-commands",
             "lifecycle-events"
           ],
-          "usage": "azd demo <command> [options]",
+          "usage": "azd demo \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "context",
-              "description": "Displays the current `azd` project & environment context.",
+              "description": "Displays the current `azd` project \u0026 environment context.",
               "usage": "azd demo context"
             },
             {
@@ -83,11 +83,11 @@
             "lifecycle-events",
             "mcp-server"
           ],
-          "usage": "azd demo <command> [options]",
+          "usage": "azd demo \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "context",
-              "description": "Displays the current `azd` project & environment context.",
+              "description": "Displays the current `azd` project \u0026 environment context.",
               "usage": "azd demo context"
             },
             {
@@ -168,11 +168,11 @@
               "description": "Deploys application components to demo"
             }
           ],
-          "usage": "azd demo <command> [options]",
+          "usage": "azd demo \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "context",
-              "description": "Displays the current `azd` project & environment context.",
+              "description": "Displays the current `azd` project \u0026 environment context.",
               "usage": "azd demo context"
             },
             {
@@ -254,11 +254,11 @@
               "description": "Deploys application components to demo"
             }
           ],
-          "usage": "azd demo <command> [options]",
+          "usage": "azd demo \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "context",
-              "description": "Displays the current `azd` project & environment context.",
+              "description": "Displays the current `azd` project \u0026 environment context.",
               "usage": "azd demo context"
             },
             {
@@ -340,11 +340,11 @@
               "description": "Deploys application components to demo"
             }
           ],
-          "usage": "azd demo <command> [options]",
+          "usage": "azd demo \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "context",
-              "description": "Displays the current `azd` project & environment context.",
+              "description": "Displays the current `azd` project \u0026 environment context.",
               "usage": "azd demo context"
             },
             {
@@ -437,7 +437,7 @@
           "capabilities": [
             "custom-commands"
           ],
-          "usage": "azd x <command> [options]",
+          "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -521,7 +521,7 @@
           "capabilities": [
             "custom-commands"
           ],
-          "usage": "azd x <command> [options]",
+          "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -610,7 +610,7 @@
           "capabilities": [
             "custom-commands"
           ],
-          "usage": "azd x <command> [options]",
+          "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -699,7 +699,7 @@
           "capabilities": [
             "custom-commands"
           ],
-          "usage": "azd x <command> [options]",
+          "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -788,7 +788,7 @@
           "capabilities": [
             "custom-commands"
           ],
-          "usage": "azd x <command> [options]",
+          "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -877,7 +877,7 @@
           "capabilities": [
             "custom-commands"
           ],
-          "usage": "azd x <command> [options]",
+          "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -967,7 +967,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd x <command> [options]",
+          "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -1057,7 +1057,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd x <command> [options]",
+          "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -1147,7 +1147,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd x <command> [options]",
+          "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -1244,7 +1244,7 @@
           "capabilities": [
             "custom-commands"
           ],
-          "usage": "azd coding-agent <command> [options]",
+          "usage": "azd coding-agent \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
             "darwin/amd64": {
@@ -1302,7 +1302,7 @@
           "capabilities": [
             "custom-commands"
           ],
-          "usage": "azd coding-agent <command> [options]",
+          "usage": "azd coding-agent \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
             "darwin/amd64": {
@@ -1360,7 +1360,7 @@
           "capabilities": [
             "custom-commands"
           ],
-          "usage": "azd coding-agent <command> [options]",
+          "usage": "azd coding-agent \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
             "darwin/amd64": {
@@ -1419,7 +1419,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd coding-agent <command> [options]",
+          "usage": "azd coding-agent \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
             "darwin/amd64": {
@@ -1478,7 +1478,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd coding-agent <command> [options]",
+          "usage": "azd coding-agent \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
             "darwin/amd64": {
@@ -1554,7 +1554,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -1628,7 +1628,7 @@
               "description": "Deploys agents to the Foundry Agent Service."
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -1702,7 +1702,7 @@
               "description": "Deploys agents to the Foundry Agent Service."
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -1776,7 +1776,7 @@
               "description": "Deploys agents to the Foundry Agent Service."
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -1850,7 +1850,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -1924,7 +1924,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -1998,7 +1998,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -2072,7 +2072,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -2147,7 +2147,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -2222,7 +2222,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -2297,7 +2297,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -2358,7 +2358,7 @@
         },
         {
           "version": "0.1.10-preview",
-          "requiredAzdVersion": ">1.23.4",
+          "requiredAzdVersion": "\u003e1.23.4",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -2373,7 +2373,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -2434,7 +2434,7 @@
         },
         {
           "version": "0.1.11-preview",
-          "requiredAzdVersion": ">1.23.4",
+          "requiredAzdVersion": "\u003e1.23.4",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -2449,7 +2449,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -2510,7 +2510,7 @@
         },
         {
           "version": "0.1.12-preview",
-          "requiredAzdVersion": ">1.23.6",
+          "requiredAzdVersion": "\u003e1.23.6",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -2525,7 +2525,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -2586,7 +2586,7 @@
         },
         {
           "version": "0.1.13-preview",
-          "requiredAzdVersion": ">1.23.6",
+          "requiredAzdVersion": "\u003e1.23.6",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -2601,7 +2601,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -2662,7 +2662,7 @@
         },
         {
           "version": "0.1.14-preview",
-          "requiredAzdVersion": ">1.23.6",
+          "requiredAzdVersion": "\u003e1.23.6",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -2677,7 +2677,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -2738,7 +2738,7 @@
         },
         {
           "version": "0.1.15-preview",
-          "requiredAzdVersion": ">1.23.6",
+          "requiredAzdVersion": "\u003e1.23.6",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -2753,7 +2753,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -2814,7 +2814,7 @@
         },
         {
           "version": "0.1.16-preview",
-          "requiredAzdVersion": ">1.23.6",
+          "requiredAzdVersion": "\u003e1.23.6",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -2829,7 +2829,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -2890,7 +2890,7 @@
         },
         {
           "version": "0.1.17-preview",
-          "requiredAzdVersion": ">1.23.6",
+          "requiredAzdVersion": "\u003e1.23.6",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -2905,7 +2905,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -2966,7 +2966,7 @@
         },
         {
           "version": "0.1.18-preview",
-          "requiredAzdVersion": ">1.23.6",
+          "requiredAzdVersion": "\u003e1.23.6",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -2981,7 +2981,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -3042,7 +3042,7 @@
         },
         {
           "version": "0.1.19-preview",
-          "requiredAzdVersion": ">1.23.6",
+          "requiredAzdVersion": "\u003e1.23.6",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -3057,7 +3057,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -3118,7 +3118,7 @@
         },
         {
           "version": "0.1.20-preview",
-          "requiredAzdVersion": ">1.23.6",
+          "requiredAzdVersion": "\u003e1.23.6",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -3133,7 +3133,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -3194,7 +3194,7 @@
         },
         {
           "version": "0.1.21-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -3209,7 +3209,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -3270,7 +3270,7 @@
         },
         {
           "version": "0.1.22-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -3285,7 +3285,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -3346,7 +3346,7 @@
         },
         {
           "version": "0.1.23-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -3361,7 +3361,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -3422,7 +3422,7 @@
         },
         {
           "version": "0.1.24-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -3437,7 +3437,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -3498,7 +3498,7 @@
         },
         {
           "version": "0.1.25-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -3513,7 +3513,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -3574,7 +3574,7 @@
         },
         {
           "version": "0.1.26-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -3589,7 +3589,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -3650,7 +3650,7 @@
         },
         {
           "version": "0.1.27-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -3665,7 +3665,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -3726,7 +3726,7 @@
         },
         {
           "version": "0.1.28-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -3741,7 +3741,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -3802,7 +3802,7 @@
         },
         {
           "version": "0.1.29-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -3817,7 +3817,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -3878,7 +3878,7 @@
         },
         {
           "version": "0.1.30-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -3893,7 +3893,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -3954,7 +3954,7 @@
         },
         {
           "version": "0.1.31-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -3969,7 +3969,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -4030,7 +4030,7 @@
         },
         {
           "version": "0.1.32-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -4045,7 +4045,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -4106,7 +4106,7 @@
         },
         {
           "version": "0.1.33-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -4121,7 +4121,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -4182,7 +4182,7 @@
         },
         {
           "version": "0.1.34-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -4197,7 +4197,7 @@
               "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
-          "usage": "azd ai agent <command> [options]",
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -4255,6 +4255,88 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.34-preview/azure-ai-agents-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "0.1.35-preview",
+          "requiredAzdVersion": "\u003e1.25.2",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI agent project.",
+              "usage": "azd ai agent init"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "3d63fc59f473a9b09cdbc3d6d141a93c06974bb5f5f17849bead025a6f495fb3"
+              },
+              "entryPoint": "azure-ai-agents-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.35-preview/azure-ai-agents-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "46dd13c9d28b77b7acf997845316b712e4676da5c40c7b58dbf8b586bf3d9be0"
+              },
+              "entryPoint": "azure-ai-agents-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.35-preview/azure-ai-agents-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "44e30aae1e93ee4d255ce66bafc59ad54f11f263f61b6738b3b8253b4d668aec"
+              },
+              "entryPoint": "azure-ai-agents-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.35-preview/azure-ai-agents-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "af0f9d751bf417c5f1da9cbe91aed19b5d367803c736ec6bb2c3c156c0ee1631"
+              },
+              "entryPoint": "azure-ai-agents-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.35-preview/azure-ai-agents-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "2c332b02783c831f088fa0dc7845479968681c314735075b8e3eadd064c024a2"
+              },
+              "entryPoint": "azure-ai-agents-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.35-preview/azure-ai-agents-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "332b41979a2257548f9dcc9289470928a5c29f6dee3be484487222f0cbe3d1e4"
+              },
+              "entryPoint": "azure-ai-agents-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.35-preview/azure-ai-agents-windows-arm64.zip"
+            }
+          },
+          "dependencies": [
+            {
+              "id": "azure.ai.inspector",
+              "version": "~0.0.1-preview"
+            }
+          ]
         }
       ]
     },
@@ -4269,7 +4351,7 @@
           "capabilities": [
             "custom-commands"
           ],
-          "usage": "azd concurx <command> [options]",
+          "usage": "azd concurx \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
             "darwin/amd64": {
@@ -4328,7 +4410,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd concurx <command> [options]",
+          "usage": "azd concurx \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
             "darwin/amd64": {
@@ -4387,7 +4469,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd concurx <command> [options]",
+          "usage": "azd concurx \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
             "darwin/amd64": {
@@ -4453,7 +4535,7 @@
           "capabilities": [
             "custom-commands"
           ],
-          "usage": "azd ai finetuning <command> [options]",
+          "usage": "azd ai finetuning \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -4522,7 +4604,7 @@
           "capabilities": [
             "custom-commands"
           ],
-          "usage": "azd ai finetuning <command> [options]",
+          "usage": "azd ai finetuning \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -4592,7 +4674,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai finetuning <command> [options]",
+          "usage": "azd ai finetuning \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -4662,7 +4744,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai finetuning <command> [options]",
+          "usage": "azd ai finetuning \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -4732,7 +4814,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai finetuning <command> [options]",
+          "usage": "azd ai finetuning \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -4802,7 +4884,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai finetuning <command> [options]",
+          "usage": "azd ai finetuning \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -4872,7 +4954,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai finetuning <command> [options]",
+          "usage": "azd ai finetuning \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -4942,7 +5024,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai finetuning <command> [options]",
+          "usage": "azd ai finetuning \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -5020,7 +5102,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai models <command> [options]",
+          "usage": "azd ai models \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -5105,7 +5187,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai models <command> [options]",
+          "usage": "azd ai models \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -5190,7 +5272,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai models <command> [options]",
+          "usage": "azd ai models \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -5275,7 +5357,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai models <command> [options]",
+          "usage": "azd ai models \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -5360,7 +5442,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai models <command> [options]",
+          "usage": "azd ai models \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -5450,7 +5532,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai models <command> [options]",
+          "usage": "azd ai models \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -5548,12 +5630,12 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd appservice <command> [options]",
+          "usage": "azd appservice \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "swap",
               "description": "Swap deployment slots for an App Service.",
-              "usage": "azd appservice swap --service <service-name> --src <source-slot> --dst <destination-slot>"
+              "usage": "azd appservice swap --service \u003cservice-name\u003e --src \u003csource-slot\u003e --dst \u003cdestination-slot\u003e"
             }
           ],
           "artifacts": {
@@ -5613,12 +5695,12 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd appservice <command> [options]",
+          "usage": "azd appservice \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "swap",
               "description": "Swap deployment slots for an App Service.",
-              "usage": "azd appservice swap --service <service-name> --src <source-slot> --dst <destination-slot>"
+              "usage": "azd appservice swap --service \u003cservice-name\u003e --src \u003csource-slot\u003e --dst \u003cdestination-slot\u003e"
             }
           ],
           "artifacts": {
@@ -5682,12 +5764,12 @@
       "versions": [
         {
           "version": "0.0.1-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai inspector <command> [options]",
+          "usage": "azd ai inspector \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "launch",
@@ -5760,7 +5842,7 @@
       "versions": [
         {
           "version": "0.1.0-preview",
-          "requiredAzdVersion": ">1.25.2",
+          "requiredAzdVersion": "\u003e1.25.2",
           "usage": "",
           "examples": null,
           "dependencies": [
@@ -5812,7 +5894,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai connection <command> [options]",
+          "usage": "azd ai connection \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
             "darwin/amd64": {
@@ -5883,7 +5965,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai project <command> [options]",
+          "usage": "azd ai project \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
             "darwin/amd64": {
@@ -5954,7 +6036,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai routine <command> [options]",
+          "usage": "azd ai routine \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
             "darwin/amd64": {
@@ -6021,12 +6103,12 @@
       "versions": [
         {
           "version": "0.1.0-preview",
-          "requiredAzdVersion": ">1.23.13",
+          "requiredAzdVersion": "\u003e1.23.13",
           "capabilities": [
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai skill <command> [options]",
+          "usage": "azd ai skill \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "list",
@@ -6113,7 +6195,7 @@
             "custom-commands",
             "metadata"
           ],
-          "usage": "azd ai toolbox <command> [options]",
+          "usage": "azd ai toolbox \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
             "darwin/amd64": {

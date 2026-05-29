@@ -10,6 +10,14 @@ module.exports = async ({ github, context, core }) => {
     return;
   }
 
+  // Skip for fork PRs (read-only token cannot leave actionable governance comments)
+  const isForkPr = pr.head?.repo?.full_name && pr.head.repo.full_name !== `${context.repo.owner}/${context.repo.repo}`;
+  if (isForkPr) {
+    console.log(`Skipping: fork PR from ${pr.head.repo.full_name}`);
+    core.setOutput('skipped', 'true');
+    return;
+  }
+
   // Skip for dependabot and automated PRs
   const skipAuthors = ['dependabot[bot]', 'dependabot', 'app/dependabot', 'azure-sdk'];
   if (skipAuthors.includes(pr.user.login)) {

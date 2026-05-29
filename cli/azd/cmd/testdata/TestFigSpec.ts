@@ -3538,6 +3538,492 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 				},
+				{
+					name: ['toolbox'],
+					description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Preview)',
+					subcommands: [
+						{
+							name: ['connection'],
+							description: 'Manage the connection-backed tools attached to a toolbox.',
+							subcommands: [
+								{
+									name: ['add'],
+									description: 'Attach one or more connections to a toolbox.',
+									options: [
+										{
+											name: ['--from-file'],
+											description: 'Path to a JSON/YAML file describing the connections to add (see --help for the file shape).',
+											args: [
+												{
+													name: 'from-file',
+												},
+											],
+										},
+										{
+											name: ['--index'],
+											description: 'Search index name. Only valid for CognitiveSearch (Azure AI Search) connections; required there.',
+											args: [
+												{
+													name: 'index',
+												},
+											],
+										},
+										{
+											name: ['--instance-name'],
+											description: 'Bing custom-search configuration name. Only valid for GroundingWithCustomSearch connections; required there.',
+											args: [
+												{
+													name: 'instance-name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['list'],
+									description: 'List the connection-backed tools attached to a toolbox.',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['remove'],
+									description: 'Detach one or more connections from a toolbox.',
+									options: [
+										{
+											name: ['--force'],
+											description: 'Skip confirmation prompts and apply the removal immediately.',
+											isDangerous: true,
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['create'],
+							description: 'Create a toolbox and its initial version from a file.',
+							options: [
+								{
+									name: ['--from-file'],
+									description: 'Path to a JSON/YAML file describing the initial version (see --help for the file shape).',
+									args: [
+										{
+											name: 'from-file',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['table', 'json'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['delete'],
+							description: 'Delete a toolbox or a single version.',
+							options: [
+								{
+									name: ['--force'],
+									description: 'Skip confirmation prompts and override safety checks where allowed.',
+									isDangerous: true,
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['table', 'json'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Delete a single version instead of the whole toolbox.',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['list'],
+							description: 'List toolboxes on the project.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['table', 'json'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['publish'],
+							description: 'Set the default version for a toolbox.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['table', 'json'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['show'],
+							description: 'Show a toolbox version, including its computed MCP endpoint.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['table', 'json'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Specific version to show. Defaults to the server\'s default version.',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['skill'],
+							description: 'Manage skill references attached to a toolbox.',
+							subcommands: [
+								{
+									name: ['add'],
+									description: 'Attach one or more skill references to a toolbox.',
+									options: [
+										{
+											name: ['--from-file'],
+											description: 'Path to a JSON/YAML file listing skills to attach (skills[] block).',
+											args: [
+												{
+													name: 'from-file',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['list'],
+									description: 'List the skill references attached to a toolbox.',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['remove'],
+									description: 'Detach one or more skill references from a toolbox.',
+									options: [
+										{
+											name: ['--force'],
+											description: 'Skip confirmation prompts and apply the removal immediately.',
+											isDangerous: true,
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['versions'],
+							description: 'Inspect toolbox versions.',
+							subcommands: [
+								{
+									name: ['list'],
+									description: 'List published versions for a toolbox.',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+					],
+				},
 			],
 		},
 		{
@@ -5709,6 +6195,82 @@ const completionSpec: Fig.Spec = {
 								{
 									name: ['version'],
 									description: 'Prints the version of the application',
+								},
+							],
+						},
+						{
+							name: ['toolbox'],
+							description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Preview)',
+							subcommands: [
+								{
+									name: ['connection'],
+									description: 'Manage the connection-backed tools attached to a toolbox.',
+									subcommands: [
+										{
+											name: ['add'],
+											description: 'Attach one or more connections to a toolbox.',
+										},
+										{
+											name: ['list'],
+											description: 'List the connection-backed tools attached to a toolbox.',
+										},
+										{
+											name: ['remove'],
+											description: 'Detach one or more connections from a toolbox.',
+										},
+									],
+								},
+								{
+									name: ['create'],
+									description: 'Create a toolbox and its initial version from a file.',
+								},
+								{
+									name: ['delete'],
+									description: 'Delete a toolbox or a single version.',
+								},
+								{
+									name: ['list'],
+									description: 'List toolboxes on the project.',
+								},
+								{
+									name: ['publish'],
+									description: 'Set the default version for a toolbox.',
+								},
+								{
+									name: ['show'],
+									description: 'Show a toolbox version, including its computed MCP endpoint.',
+								},
+								{
+									name: ['skill'],
+									description: 'Manage skill references attached to a toolbox.',
+									subcommands: [
+										{
+											name: ['add'],
+											description: 'Attach one or more skill references to a toolbox.',
+										},
+										{
+											name: ['list'],
+											description: 'List the skill references attached to a toolbox.',
+										},
+										{
+											name: ['remove'],
+											description: 'Detach one or more skill references from a toolbox.',
+										},
+									],
+								},
+								{
+									name: ['version'],
+									description: 'Display the extension version',
+								},
+								{
+									name: ['versions'],
+									description: 'Inspect toolbox versions.',
+									subcommands: [
+										{
+											name: ['list'],
+											description: 'List published versions for a toolbox.',
+										},
+									],
 								},
 							],
 						},

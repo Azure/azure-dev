@@ -1,9 +1,31 @@
 # Release History
 
-## 0.1.35-preview
+## 0.1.35-preview (2026-05-29)
 
-- [[#8353]](https://github.com/Azure/azure-dev/issues/8353) Add `--output raw` (`-o raw`) flag to `azd ai agent invoke` to dump the unmodified server response (status line, headers, and body verbatim) to stdout. Useful for debugging server behavior and inspecting response headers such as the agent version. Friendly summary lines (`Session:`, `Invocation:`, `Trace ID:`, `Version:`) are suppressed in raw mode.
-- Add `invocations_ws` as a displayable agent protocol. `azd deploy` now registers the callable Foundry data-plane WebSocket URL (`wss://<account>.services.ai.azure.com/api/projects/agents/endpoint/protocols/invocations_ws?api-version=v1&project_name=<project>&agent_name=<agent>`) as `AGENT_{KEY}_INVOCATIONS_WS_ENDPOINT`, and `azd ai agent show` displays it as `Endpoint (invocations_ws)`. Previously, `invocations_ws` agents fell back to the legacy resource URL labeled `Endpoint (Agent)`.
+- [[#8406]](https://github.com/Azure/azure-dev/pull/8406) Add `--output raw` (`-o raw`) flag to `azd ai agent invoke` to dump the unmodified server response (status line, headers, and body verbatim) to stdout. Useful for debugging server behavior and inspecting response headers such as the agent version. Friendly summary lines (`Session:`, `Invocation:`, `Trace ID:`, `Version:`) are suppressed in raw mode.
+- [[#8403]](https://github.com/Azure/azure-dev/pull/8403) Add `invocations_ws` as a displayable agent protocol. `azd deploy` now registers the callable Foundry data-plane WebSocket URL (`wss://<account>.services.ai.azure.com/api/projects/agents/endpoint/protocols/invocations_ws?api-version=v1&project_name=<project>&agent_name=<agent>`) as `AGENT_{KEY}_INVOCATIONS_WS_ENDPOINT`, and `azd ai agent show` displays it as `Endpoint (invocations_ws)`. Previously, `invocations_ws` agents fell back to the legacy resource URL labeled `Endpoint (Agent)`.
+- [[#8358]](https://github.com/Azure/azure-dev/pull/8358) Add full OAuth2 fields and connector-name support to `azd ai agent connection create`, including validation for managed-connector vs bring-your-own OAuth2 flows.
+- [[#8326]](https://github.com/Azure/azure-dev/pull/8326) Reuse an existing local `agent.yaml` definition during `azd ai agent init` instead of prompting to overwrite or failing in no-prompt mode.
+- [[#8364]](https://github.com/Azure/azure-dev/pull/8364) Adapt `azd ai agent optimize` to the updated optimize service request/response contract, including the new `optimizationConfig` model.
+- [[#8389]](https://github.com/Azure/azure-dev/pull/8389) Honor `.azdignore` during `azd ai agent init` template and manifest materialization flows.
+- [[#8378]](https://github.com/Azure/azure-dev/pull/8378) Update environment-variable parsing behavior for `azd ai agent run`.
+- [[#8394]](https://github.com/Azure/azure-dev/pull/8394) Remove the broken `doctor` model-deployments check that produced false failures from manifest alias names.
+- [[#8393]](https://github.com/Azure/azure-dev/pull/8393) Improve post-init/run `Next:` guidance for toolbox scenarios and standardize local invoke examples.
+- [[#8398]](https://github.com/Azure/azure-dev/pull/8398) Add `germanywestcentral` and `canadaeast` to the hosted-agent supported regions list.
+- [[#8400]](https://github.com/Azure/azure-dev/pull/8400) Show connection metadata key/value pairs in `azd ai agent connection show` table output.
+- [[#8405]](https://github.com/Azure/azure-dev/pull/8405) Fix YAML tags to use snake_case (`agent_endpoint`, `agent_card`) so agent endpoint settings are correctly loaded from `agent.yaml`.
+- [[#8363]](https://github.com/Azure/azure-dev/pull/8363) Allow `azd ai agent init --no-prompt` to defer Azure/model setup when Azure context variables are missing.
+- [[#8347]](https://github.com/Azure/azure-dev/pull/8347) Use `api-version=v1` for hosted agent endpoint protocol and session requests.
+- [[#8422]](https://github.com/Azure/azure-dev/pull/8422) Remove the hardcoded code-deploy region allowlist and use dynamic hosted-agent region resolution.
+- [[#8392]](https://github.com/Azure/azure-dev/pull/8392) Improve optimize config YAML deserialization/UX and align generation endpoint calls to `2025-11-15-preview`.
+- [[#8426]](https://github.com/Azure/azure-dev/pull/8426) Add opinionated defaults for manifest-driven `azd ai agent init -m` to reduce interactive prompts.
+- [[#8441]](https://github.com/Azure/azure-dev/pull/8441) Fix hosted-agent deploy failures on `CreateAgentVersion` by including `Foundry-Features: HostedAgents=V1Preview` on v1 requests.
+- [[#8479]](https://github.com/Azure/azure-dev/pull/8479) Add dependency on `azure.ai.inspector`, for handling with `azd ai agent run`.
+- [[#8482]](https://github.com/Azure/azure-dev/pull/8482) Improve ACR publish error handling by classifying permission-denied failures and surfacing actionable RBAC/code-deploy remediation guidance.
+
+### Breaking Changes
+- [[#8210]](https://github.com/Azure/azure-dev/pull/8210) Update sample-based init flow to create a new folder during `azd ai agent init`.
+- [[#8357]](https://github.com/Azure/azure-dev/pull/8357) Migrate connection CRUD commands from `azure.ai.agents` to the `azure.ai.connections` extension.
 
 ## 0.1.34-preview (2026-05-22)
 

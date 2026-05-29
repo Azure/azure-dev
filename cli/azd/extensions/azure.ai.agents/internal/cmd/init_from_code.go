@@ -1336,7 +1336,8 @@ func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt
 	// Resolution precedence:
 	//   1. Explicit flag (--deploy-mode) — always wins
 	//   2. !showCodeDeploy — container is the only option (not Python/.NET)
-	//   3. userProvidedManifest (-m) — auto-select "container" (opinionated default)
+	//   3. userProvidedManifest — auto-select "container" (opinionated default;
+	//      triggered by -m flag OR interactive template selection)
 	//   4. noPrompt — "container" for backward compatibility (no signal)
 	//   5. Interactive prompt
 

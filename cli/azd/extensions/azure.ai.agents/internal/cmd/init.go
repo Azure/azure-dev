@@ -96,9 +96,10 @@ type InitAction struct {
 	serviceNameOverride  string // when set, addToProject uses this instead of the manifest name
 	createdFolderDisplay string // pre-computed relative display path for the created folder
 
-	// userProvidedManifest is true when the user explicitly provided a manifest via
-	// the -m flag or positional argument (not auto-detected from the working directory).
-	// When true, the init flow applies opinionated defaults to minimize interactive prompts.
+	// userProvidedManifest is true when the init flow is driven by a manifest —
+	// either explicitly via the -m flag/positional argument, or when the user
+	// interactively selects a template that resolves to a manifest. When true,
+	// the init flow applies opinionated defaults to minimize interactive prompts.
 	userProvidedManifest bool
 }
 
@@ -901,7 +902,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						if manifestPath != "" {
 							flags.manifestPointer = manifestPath
 							if err := runInitFromManifest(
-								ctx, flags, azdClient, httpClient, ".", folderDisplay, false,
+								ctx, flags, azdClient, httpClient, ".", folderDisplay, true,
 							); err != nil {
 								if exterrors.IsCancellation(err) {
 									return exterrors.Cancelled("initialization was cancelled")
@@ -926,7 +927,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 						flags.manifestPointer = selectedTemplate.Source
 						if err := runInitFromManifest(
-							ctx, flags, azdClient, httpClient, folderName, folderDisplay, false,
+							ctx, flags, azdClient, httpClient, folderName, folderDisplay, true,
 						); err != nil {
 							if exterrors.IsCancellation(err) {
 								return exterrors.Cancelled("initialization was cancelled")

@@ -324,6 +324,21 @@ func TestMultiSelect_validate_no_selection(t *testing.T) {
 	)
 }
 
+func TestMultiSelect_validate_no_selection_allowed(t *testing.T) {
+	ms := NewMultiSelect(&MultiSelectOptions{
+		Message: "Pick many",
+		Choices: []*MultiSelectChoice{
+			{Value: "a", Label: "Alpha"},
+		},
+		AllowEmptySelection: new(true),
+	})
+	ms.submitted = true
+	ms.validate()
+
+	assert.False(t, ms.hasValidationError)
+	assert.Empty(t, ms.validationMessage)
+}
+
 func TestMultiSelect_validate_with_selection(t *testing.T) {
 	ms := NewMultiSelect(&MultiSelectOptions{
 		Message: "Pick many",

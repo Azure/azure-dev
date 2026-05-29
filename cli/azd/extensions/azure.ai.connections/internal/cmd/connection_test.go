@@ -13,6 +13,7 @@ import (
 
 	"azure.ai.connections/internal/pkg/connections"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -734,4 +735,32 @@ func TestPrintDetail_JSON_IncludesMetadata(t *testing.T) {
 	meta, ok := parsed["metadata"].(map[string]any)
 	require.True(t, ok, "metadata should be present in JSON output")
 	require.Equal(t, "val1", meta["foo"])
+}
+
+func TestUpdateValidation_NoFieldsToUpdate(t *testing.T) {
+	action := &ConnectionUpdateAction{
+		flags: &connectionUpdateFlags{
+			name: "test-conn",
+		},
+	}
+	err := action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "No fields to update")
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	require.Contains(t, localErr.Suggestion, "--metadata")
+}
+
+func TestUpdateValidation_MetadataAloneIsValid(t *testing.T) {
+	action := &ConnectionUpdateAction{
+		flags: &connectionUpdateFlags{
+			name:            "test-conn",
+			metadata:        []string{"type=gateway_connector"},
+			metadataChanged: true,
+		},
+	}
+	err := action.Run(t.Context())
+	// Should pass validation — error here is from resolveConnectionContext (no env), not validation
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "No fields to update")
 }

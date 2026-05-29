@@ -40,6 +40,20 @@ type rawCredentials struct {
 	ClientSecret string `json:"clientSecret,omitempty"`
 }
 
+func (c *rawCredentials) clientIDOrEmpty() string {
+	if c == nil {
+		return ""
+	}
+	return c.ClientID
+}
+
+func (c *rawCredentials) clientSecretOrEmpty() string {
+	if c == nil {
+		return ""
+	}
+	return c.ClientSecret
+}
+
 // buildOAuth2Credentials returns the credentials object to embed in a connection
 // PUT body, based on the user-supplied auth type and (optional) BYO OAuth2 client
 // id / secret.
@@ -120,6 +134,56 @@ func rawCreateConnection(
 	}
 
 	return nil
+}
+
+// rawGetConnection performs a GET on the ARM connections endpoint using raw REST,
+// returning the full properties including OAuth2-specific fields (connectorName,
+// authorizationUrl, tokenUrl, etc.) that the typed ARM SDK does not expose.
+func rawGetConnection(
+	ctx context.Context,
+	connCtx *connectionContext,
+	name string,
+) (*rawConnectionProperties, error) {
+	apiVersion := "2025-04-01-preview"
+	armURL := fmt.Sprintf(
+		"https://management.azure.com/subscriptions/%s/resourceGroups/%s/"+
+			"providers/Microsoft.CognitiveServices/accounts/%s/projects/%s/"+
+			"connections/%s?api-version=%s",
+		connCtx.sub, connCtx.rg, connCtx.account, connCtx.project,
+		url.PathEscape(name), apiVersion,
+	)
+
+	pipeline := runtime.NewPipeline("azd-connection-raw", "1.0.0",
+		runtime.PipelineOptions{
+			PerCall: []policy.Policy{
+				runtime.NewBearerTokenPolicy(connCtx.cred,
+					[]string{"https://management.azure.com/.default"}, nil),
+			},
+		},
+		&policy.ClientOptions{},
+	)
+
+	req, err := runtime.NewRequest(ctx, http.MethodGet, armURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("ARM request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	var body rawConnectionBody
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &body.Properties, nil
 }
 
 // parseKVMap parses "key=value" pairs into a map[string]string.

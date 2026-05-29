@@ -457,9 +457,11 @@ type connectionUpdateFlags struct {
 	target           string
 	key              string
 	customKeys       []string
+	metadata         []string
 	targetChanged    bool
 	keyChanged       bool
 	customKeyChanged bool
+	metadataChanged  bool
 	projectEndpoint  string
 }
 
@@ -471,11 +473,11 @@ type ConnectionUpdateAction struct {
 // Run executes the update operation.
 func (a *ConnectionUpdateAction) Run(ctx context.Context) error {
 	if !a.flags.targetChanged && !a.flags.keyChanged &&
-		!a.flags.customKeyChanged {
+		!a.flags.customKeyChanged && !a.flags.metadataChanged {
 		return exterrors.Validation(
 			exterrors.CodeMissingConnectionField,
 			"No fields to update.",
-			"Specify --target, --key, or --custom-key.",
+			"Specify --target, --key, --custom-key, or --metadata.",
 		)
 	}
 
@@ -539,6 +541,10 @@ func (a *ConnectionUpdateAction) Run(ctx context.Context) error {
 			metaPairs = append(metaPairs, k+"="+*v)
 		}
 	}
+	// Merge user-supplied --metadata on top of existing metadata
+	if a.flags.metadataChanged {
+		metaPairs = append(metaPairs, a.flags.metadata...)
+	}
 
 	var credKey string
 	var credCustomKeys []string
@@ -552,17 +558,23 @@ func (a *ConnectionUpdateAction) Run(ctx context.Context) error {
 	// Route to raw REST or typed SDK based on auth type
 	switch normalizedAuth {
 	case "oauth2", "user-entra-token", "project-managed-identity", "agentic-identity":
-		// Auth types that lack full ARM SDK support ΓÇö update via raw REST
-		err = rawCreateConnection(
-			ctx, connCtx,
-			a.flags.name,
-			rawConnectionProperties{
-				AuthType: normalizeAuthTypeToARM(normalizedAuth),
-				Category: kindStr,
-				Target:   newTarget,
-				Metadata: parseKVMap(metaPairs),
-			},
+		// Auth types that lack full ARM SDK support — update via raw REST.
+		// Use raw GET to retrieve OAuth2-specific fields (connectorName,
+		// authorizationUrl, tokenUrl, etc.) that the typed SDK does not expose,
+		// then merge changes on top before doing the full-replace PUT.
+		rawProps, getErr := rawGetConnection(ctx, connCtx, a.flags.name)
+		if getErr != nil {
+			return fmt.Errorf("failed to read current connection properties: %w", getErr)
+		}
+		if a.flags.targetChanged {
+			rawProps.Target = newTarget
+		}
+		rawProps.Metadata = parseKVMap(metaPairs)
+		rawProps.Credentials = buildOAuth2Credentials(normalizedAuth,
+			rawProps.Credentials.clientIDOrEmpty(),
+			rawProps.Credentials.clientSecretOrEmpty(),
 		)
+		err = rawCreateConnection(ctx, connCtx, a.flags.name, *rawProps)
 	default:
 		body, buildErr := buildConnectionBody(
 			kindStr, newTarget, normalizedAuth,
@@ -596,15 +608,15 @@ func newConnectionUpdateCommand(
 
 	cmd := &cobra.Command{
 		Use:   "update <name>",
-		Short: "Update a connection's target or credentials.",
-		Long: `Update a connection's target URL or credential values.
+		Short: "Update a connection's target, credentials, or metadata.",
+		Long: `Update a connection's target URL, credential values, or metadata.
 
 Only the specified flags are changed; all other fields are preserved.
-Does not accept --auth-type (delete and recreate to change auth type).
-For metadata changes, use the 'metadata' subcommand.`,
+Does not accept --auth-type (delete and recreate to change auth type).`,
 		Example: `  azd ai connection update prod-search --key "$NEW_SEARCH_KEY"
   azd ai connection update my-conn --target https://new-endpoint.com
-  azd ai connection update my-mcp --custom-key "x-api-key=new-key"`,
+  azd ai connection update my-mcp --custom-key "x-api-key=new-key"
+  azd ai connection update my-box --metadata "type=gateway_connector"`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
@@ -612,6 +624,7 @@ For metadata changes, use the 'metadata' subcommand.`,
 			flags.targetChanged = cmd.Flags().Changed("target")
 			flags.keyChanged = cmd.Flags().Changed("key")
 			flags.customKeyChanged = cmd.Flags().Changed("custom-key")
+			flags.metadataChanged = cmd.Flags().Changed("metadata")
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 			return action.Run(ctx)
@@ -624,6 +637,8 @@ For metadata changes, use the 'metadata' subcommand.`,
 		"New API key value (for api-key auth)")
 	cmd.Flags().StringArrayVar(&flags.customKeys, "custom-key", nil,
 		"Update custom key=value (repeatable, for custom-keys auth)")
+	cmd.Flags().StringArrayVar(&flags.metadata, "metadata", nil,
+		"Set metadata key=value (repeatable, merged with existing metadata)")
 	return cmd
 }
 

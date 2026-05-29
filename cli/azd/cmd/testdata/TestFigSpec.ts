@@ -3539,6 +3539,310 @@ const completionSpec: Fig.Spec = {
 					],
 				},
 				{
+					name: ['skill'],
+					description: 'Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Preview)',
+					subcommands: [
+						{
+							name: ['context'],
+							description: 'Get the context of the azd project & environment.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['create'],
+							description: 'Create a new Foundry skill.',
+							options: [
+								{
+									name: ['--description'],
+									description: 'Inline mode: human-readable summary of the skill',
+									args: [
+										{
+											name: 'description',
+										},
+									],
+								},
+								{
+									name: ['--file'],
+									description: 'Path to SKILL.md (.md), a ZIP package (.zip), or a directory containing SKILL.md at its root',
+									args: [
+										{
+											name: 'file',
+										},
+									],
+								},
+								{
+									name: ['--force'],
+									description: 'Delete an existing skill of the same name before creating',
+									isDangerous: true,
+								},
+								{
+									name: ['--instructions'],
+									description: 'Inline mode: Markdown body defining skill behavior',
+									args: [
+										{
+											name: 'instructions',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['delete'],
+							description: 'Delete a Foundry skill.',
+							options: [
+								{
+									name: ['--force'],
+									description: 'Skip the confirmation prompt',
+									isDangerous: true,
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['download'],
+							description: 'Download a Foundry skill package.',
+							options: [
+								{
+									name: ['--force'],
+									description: 'Overwrite existing files in --output-dir',
+									isDangerous: true,
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--output-dir'],
+									description: 'Directory to write the extracted skill (default: ./.agents/skills/<name>/)',
+									args: [
+										{
+											name: 'output-dir',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--raw'],
+									description: 'Skip extraction; write the zip archive as-is to --output-dir',
+								},
+								{
+									name: ['--version'],
+									description: 'Download a specific version (defaults to the skill\'s default_version)',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['list'],
+							description: 'List Foundry skills in the project.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['show'],
+							description: 'Show metadata for a Foundry skill.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['update'],
+							description: 'Create a new default version for a Foundry skill.',
+							options: [
+								{
+									name: ['--description'],
+									description: 'New human-readable summary for the next version',
+									args: [
+										{
+											name: 'description',
+										},
+									],
+								},
+								{
+									name: ['--file'],
+									description: 'Path to a SKILL.md file whose values become the next version\'s inline content',
+									args: [
+										{
+											name: 'file',
+										},
+									],
+								},
+								{
+									name: ['--instructions'],
+									description: 'New Markdown instructions body for the next version',
+									args: [
+										{
+											name: 'instructions',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--set-default-version'],
+									description: 'Set the skill\'s default_version to an existing version without uploading new content',
+									args: [
+										{
+											name: 'set-default-version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Print the extension version.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+				{
 					name: ['toolbox'],
 					description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Preview)',
 					subcommands: [
@@ -6199,6 +6503,44 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['skill'],
+							description: 'Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Preview)',
+							subcommands: [
+								{
+									name: ['context'],
+									description: 'Get the context of the azd project & environment.',
+								},
+								{
+									name: ['create'],
+									description: 'Create a new Foundry skill.',
+								},
+								{
+									name: ['delete'],
+									description: 'Delete a Foundry skill.',
+								},
+								{
+									name: ['download'],
+									description: 'Download a Foundry skill package.',
+								},
+								{
+									name: ['list'],
+									description: 'List Foundry skills in the project.',
+								},
+								{
+									name: ['show'],
+									description: 'Show metadata for a Foundry skill.',
+								},
+								{
+									name: ['update'],
+									description: 'Create a new default version for a Foundry skill.',
+								},
+								{
+									name: ['version'],
+									description: 'Print the extension version.',
+								},
+							],
+						},
+						{
 							name: ['toolbox'],
 							description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Preview)',
 							subcommands: [
@@ -6822,4 +7164,3 @@ const completionSpec: Fig.Spec = {
 };
 
 export default completionSpec;
-

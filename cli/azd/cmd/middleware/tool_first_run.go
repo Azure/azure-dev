@@ -171,7 +171,10 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 	m.console.Message(ctx, "")
 	m.console.Message(ctx, output.WithBold("Let's get your development environment ready."))
 	m.console.Message(ctx, "")
-	m.console.Message(ctx, "Discover and install Azure development tools such as Azure CLI, GitHub Copilot CLI, and Azure AI extensions.")
+	m.console.Message(
+		ctx,
+		"Discover and install Azure development tools such as Azure CLI, GitHub Copilot CLI, and Azure AI extensions.",
+	)
 	m.console.Message(ctx, output.WithGrayFormat(
 		"To skip this check, set %s or run %s.",
 		output.WithHighLightFormat("AZD_SKIP_FIRST_RUN=true"),

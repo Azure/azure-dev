@@ -28,6 +28,7 @@ words:
   - westeurope
   # Project terms
   - ABAC
+  - acrpush
   - agentignore
   - ADLS
   - agentserver
@@ -35,6 +36,7 @@ words:
   - Alphanum
   - anonymousconnection
   - aoai
+  - authorizationfailed
   - azdaiagent
   - CLIENTSECRET
   - curr
@@ -46,6 +48,7 @@ words:
   - hostedagent
   - hostedagents
   - kval
+  - listbuildsourceuploadurl
   - logstream
   - mcpservertoolalwaysrequireapprovalmode
   - mcpservertoolneverrequireapprovalmode
@@ -58,6 +61,7 @@ words:
   - projectpkg
   - protocolversionrecord
   - Qdrant
+  - schedulerun
   - Toolsets
   - underscoped
   - Vnext

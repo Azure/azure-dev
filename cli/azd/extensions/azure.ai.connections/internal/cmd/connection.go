@@ -558,15 +558,16 @@ func (a *ConnectionUpdateAction) Run(ctx context.Context) error {
 	// Route to raw REST or typed SDK based on auth type
 	switch normalizedAuth {
 	case "oauth2", "user-entra-token", "project-managed-identity", "agentic-identity":
-		// Auth types that lack full ARM SDK support ΓÇö update via raw REST
+		// Auth types that lack full ARM SDK support — update via raw REST
 		err = rawCreateConnection(
 			ctx, connCtx,
 			a.flags.name,
 			rawConnectionProperties{
-				AuthType: normalizeAuthTypeToARM(normalizedAuth),
-				Category: kindStr,
-				Target:   newTarget,
-				Metadata: parseKVMap(metaPairs),
+				AuthType:    normalizeAuthTypeToARM(normalizedAuth),
+				Category:    kindStr,
+				Target:      newTarget,
+				Metadata:    parseKVMap(metaPairs),
+				Credentials: buildOAuth2Credentials(normalizedAuth, "", ""),
 			},
 		)
 	default:

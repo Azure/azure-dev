@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 
@@ -90,7 +91,8 @@ func (a *subFilterSetAction) Run(
 	// Load subscriptions
 	var subscriptions []account.Subscription
 	loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text: "Loading subscriptions...",
+		Text:   "Loading subscriptions...",
+		Writer: spinnerWriter(a.console),
 	})
 
 	err := loadingSpinner.Run(ctx, func(ctx context.Context) error {
@@ -286,7 +288,8 @@ func (a *subFilterRemoveAction) Run(
 	// Load subscriptions for tenant resolution
 	var subscriptions []account.Subscription
 	loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text: "Loading subscriptions...",
+		Text:   "Loading subscriptions...",
+		Writer: spinnerWriter(a.console),
 	})
 
 	err := loadingSpinner.Run(ctx, func(ctx context.Context) error {
@@ -428,4 +431,13 @@ func resolveTenantForFilter(
 
 	return tenants[selectedIndex].Id,
 		tenants[selectedIndex].DisplayName, nil
+}
+
+// spinnerWriter returns the console's writer for spinner output,
+// falling back to io.Discard when nil (e.g. in tests).
+func spinnerWriter(console input.Console) io.Writer {
+	if w := console.GetWriter(); w != nil {
+		return w
+	}
+	return io.Discard
 }

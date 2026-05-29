@@ -355,11 +355,11 @@ func (ps *promptService) PromptSubscription(
 
 	// If user selected "Show all subscriptions", re-prompt with full list
 	if result != nil && result.Id == ShowAllSubscriptionsOption {
-		allSubPtrs := make(
+		allSubSlice := make(
 			[]*account.Subscription, len(unfilteredSubs),
 		)
 		for i := range unfilteredSubs {
-			allSubPtrs[i] = &unfilteredSubs[i]
+			allSubSlice[i] = &unfilteredSubs[i]
 		}
 
 		return PromptCustomResource(
@@ -368,7 +368,7 @@ func (ps *promptService) PromptSubscription(
 				LoadData: func(
 					ctx context.Context,
 				) ([]*account.Subscription, error) {
-					return allSubPtrs, nil
+					return allSubSlice, nil
 				},
 				DisplayResource: func(
 					subscription *account.Subscription,

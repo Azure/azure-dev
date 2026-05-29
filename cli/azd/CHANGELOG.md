@@ -1,5 +1,15 @@
 # Release History
 
+## 1.26.0-beta.1 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
 ## 1.25.3 (2026-05-28)
 
 ### Bugs Fixed

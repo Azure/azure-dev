@@ -5752,6 +5752,94 @@
           }
         }
       ]
+    },
+    {
+      "id": "azure.ai.skills",
+      "namespace": "ai.skill",
+      "displayName": "Foundry skills (Preview)",
+      "description": "Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Preview)",
+      "versions": [
+        {
+          "version": "0.1.0-preview",
+          "requiredAzdVersion": "\u003e1.23.13",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd ai skill \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "list",
+              "description": "List skills in the current Foundry project.",
+              "usage": "azd ai skill list"
+            },
+            {
+              "name": "create",
+              "description": "Create a skill from a SKILL.md file.",
+              "usage": "azd ai skill create my-skill --file ./SKILL.md"
+            },
+            {
+              "name": "download",
+              "description": "Download and extract a skill into ./.agents/skills/.",
+              "usage": "azd ai skill download my-skill"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8f804b02a9bea8e4574bbba9115d9e7f987e2cf1d6ff326632fe4cf6ab805c32"
+              },
+              "entryPoint": "azure-ai-skills-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-skills_0.1.0-preview/azure-ai-skills-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8bcce6fef9d02f0c41d66bb1210855adc8dcb60e42a1f72eabf554451145d1a6"
+              },
+              "entryPoint": "azure-ai-skills-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-skills_0.1.0-preview/azure-ai-skills-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "bc2c5e8007abb97602f0dbe9b7abce31c829b58cfae94be2ae3920c64720ff62"
+              },
+              "entryPoint": "azure-ai-skills-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-skills_0.1.0-preview/azure-ai-skills-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "ec9435f10028cdc3527c077f3c1fcd13ba1691e66f70c3345831b6e381e49fa2"
+              },
+              "entryPoint": "azure-ai-skills-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-skills_0.1.0-preview/azure-ai-skills-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5e3dc4b30aef457f98d5372ed898b3e670bac4649d823673f382fdf79db5562c"
+              },
+              "entryPoint": "azure-ai-skills-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-skills_0.1.0-preview/azure-ai-skills-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "7c57b9d78626c838e4d47861208976994c125b76a1827c0795c9cce198544064"
+              },
+              "entryPoint": "azure-ai-skills-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-skills_0.1.0-preview/azure-ai-skills-windows-arm64.zip"
+            }
+          }
+        }
+      ],
+      "tags": [
+        "ai",
+        "skill"
+      ]
     }
   ]
 }

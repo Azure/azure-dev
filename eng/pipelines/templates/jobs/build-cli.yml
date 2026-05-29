@@ -173,6 +173,7 @@ jobs:
 
       - template: /eng/pipelines/templates/steps/cleanup-disk-space.yml
         parameters:
+          Condition: succeededOrFailed()
           CleanNuGet: true
           CleanDotNet: true
 

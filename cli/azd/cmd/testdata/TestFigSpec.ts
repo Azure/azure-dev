@@ -3895,6 +3895,90 @@ const completionSpec: Fig.Spec = {
 					],
 				},
 				{
+					name: ['project'],
+					description: 'Manage Microsoft Foundry Project resources from your terminal. (Preview)',
+					subcommands: [
+						{
+							name: ['context'],
+							description: 'Get the context of the azd project & environment.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['set'],
+							description: 'Persist a default Foundry project endpoint.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['show'],
+							description: 'Display the currently resolved Foundry project endpoint.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['unset'],
+							description: 'Clear the persisted Foundry project endpoint.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+				{
 					name: ['routine'],
 					description: 'Manage Microsoft Foundry Routines from your terminal. (Preview)',
 					subcommands: [
@@ -7545,6 +7629,32 @@ const completionSpec: Fig.Spec = {
 								{
 									name: ['version'],
 									description: 'Prints the version of the application',
+								},
+							],
+						},
+						{
+							name: ['project'],
+							description: 'Manage Microsoft Foundry Project resources from your terminal. (Preview)',
+							subcommands: [
+								{
+									name: ['context'],
+									description: 'Get the context of the azd project & environment.',
+								},
+								{
+									name: ['set'],
+									description: 'Persist a default Foundry project endpoint.',
+								},
+								{
+									name: ['show'],
+									description: 'Display the currently resolved Foundry project endpoint.',
+								},
+								{
+									name: ['unset'],
+									description: 'Clear the persisted Foundry project endpoint.',
+								},
+								{
+									name: ['version'],
+									description: 'Display the extension version',
 								},
 							],
 						},

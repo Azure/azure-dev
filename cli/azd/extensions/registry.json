@@ -5825,6 +5825,77 @@
       ]
     },
     {
+      "id": "azure.ai.projects",
+      "namespace": "ai.project",
+      "displayName": "Foundry Projects (Preview)",
+      "description": "Manage Microsoft Foundry Project resources from your terminal. (Preview)",
+      "versions": [
+        {
+          "version": "0.1.0-preview",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd ai project \u003ccommand\u003e [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "05ab0ec11fab528f5e1b0a8dca18106a36cce43fb43fac1042adda480b631a96"
+              },
+              "entryPoint": "azure-ai-projects-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_0.1.0-preview/azure-ai-projects-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "0c5933acfa44010d8b22c5d6aab67004b45966bf1c727faa2243bb79e42709f9"
+              },
+              "entryPoint": "azure-ai-projects-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_0.1.0-preview/azure-ai-projects-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "dd8adde884d890d014af00305d5809b4b8ac63e7cffa0491ab4a5b0d6ed7d961"
+              },
+              "entryPoint": "azure-ai-projects-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_0.1.0-preview/azure-ai-projects-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "c1f0776f370b944d5e2bc6f598c0a8fe774a2d366435bf67425d422e7f82bba8"
+              },
+              "entryPoint": "azure-ai-projects-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_0.1.0-preview/azure-ai-projects-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "ab46a77b23df002ec6f966d97291e88118eb0949937aecacc1f910561ac46099"
+              },
+              "entryPoint": "azure-ai-projects-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_0.1.0-preview/azure-ai-projects-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "530938820b0db2340499c8251d28594a793146e5a0fdc3ba3e21e2eb28caf731"
+              },
+              "entryPoint": "azure-ai-projects-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_0.1.0-preview/azure-ai-projects-windows-arm64.zip"
+            }
+          }
+        }
+      ],
+      "tags": [
+        "ai",
+        "project"
+      ]
+    },
+    {
       "id": "azure.ai.routines",
       "namespace": "ai.routine",
       "displayName": "Foundry Routines (Preview)",

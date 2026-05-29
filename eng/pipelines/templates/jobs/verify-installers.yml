@@ -82,6 +82,8 @@ jobs:
         displayName: Start server in hosting/ (bash)
         condition: and(succeeded(), not(contains(variables['Agent.OS'], 'Windows')))
         workingDirectory: hosting
+        env:
+          npm_config_userconfig: "$(Agent.TempDirectory)/verify/.npmrc"
 
       - pwsh: |
           Start-Process npx.cmd `

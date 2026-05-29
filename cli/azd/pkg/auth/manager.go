@@ -102,9 +102,10 @@ type Manager struct {
 	azCli               az.AzCli
 	userAgent           string
 
-	// azCliCredentials caches AzureCLICredential instances keyed by tenant ID when auth.useAzCliAuth is set.
-	// Sharing a single instance per tenant allows the azidentity SDK to collapse concurrent first-time
-	// GetToken calls into a single `az` subprocess, avoiding spawning many `az` processes in parallel.
+	// azCliCredentials caches az CLI credentials keyed by tenant ID when auth.useAzCliAuth is set.
+	// Each entry is a cachingCredential wrapping an AzureCLICredential. Sharing a single instance per
+	// tenant lets concurrent callers reuse one in-memory token instead of each spawning its own `az`
+	// subprocess, which avoids exhausting memory and serializing many `az` processes in parallel.
 	azCliCredentials   map[string]azcore.TokenCredential
 	azCliCredentialsMu sync.Mutex
 }
@@ -398,12 +399,14 @@ func (m *Manager) CredentialForCurrentUser(
 
 type ClaimsForCurrentUserOptions = CredentialForCurrentUserOptions
 
-// azCliCredentialForTenant returns a cached AzureCLICredential for the given tenant, creating one if needed.
+// azCliCredentialForTenant returns a cached az CLI credential for the given tenant, creating one if needed.
 //
-// A single credential instance is shared per tenant so that the azidentity SDK can collapse multiple
-// concurrent first-time GetToken calls into a single `az account get-access-token` subprocess. Returning a
-// brand-new credential on every call (each with its own empty token cache) would instead spawn one `az`
-// subprocess per concurrent caller, which can exhaust memory in constrained environments like Cloud Shell.
+// The returned credential is a cachingCredential wrapping an AzureCLICredential. A single instance is
+// shared per tenant so that concurrent callers reuse one in-memory token. AzureCLICredential performs no
+// caching of its own and spawns an `az account get-access-token` subprocess on every GetToken call, so
+// without this wrapper a fan-out of concurrent Azure SDK clients (e.g. listing the AI model catalog across
+// every region) would spawn one `az` subprocess per caller, serialized behind the credential's internal
+// mutex. That is both slow and, in constrained environments like Cloud Shell, memory-exhausting.
 func (m *Manager) azCliCredentialForTenant(tenantID string) (azcore.TokenCredential, error) {
 	m.azCliCredentialsMu.Lock()
 	defer m.azCliCredentialsMu.Unlock()
@@ -412,12 +415,14 @@ func (m *Manager) azCliCredentialForTenant(tenantID string) (azcore.TokenCredent
 		return cred, nil
 	}
 
-	cred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
+	azCred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
 		TenantID: tenantID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create credential: %w: %w", err, ErrNoCurrentUser)
 	}
+
+	cred := newCachingCredential(azCred)
 
 	if m.azCliCredentials == nil {
 		m.azCliCredentials = map[string]azcore.TokenCredential{}

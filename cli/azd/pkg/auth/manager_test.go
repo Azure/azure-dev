@@ -187,7 +187,10 @@ func TestLegacyAzCliCredentialSupport(t *testing.T) {
 	cred, err := m.CredentialForCurrentUser(t.Context(), nil)
 
 	require.NoError(t, err)
-	require.IsType(t, new(azidentity.AzureCLICredential), cred)
+	// The credential is wrapped in a cachingCredential that reuses tokens across concurrent callers,
+	// backed by an AzureCLICredential.
+	require.IsType(t, new(cachingCredential), cred)
+	require.IsType(t, new(azidentity.AzureCLICredential), cred.(*cachingCredential).inner)
 }
 
 func TestLegacyAzCliCredentialIsCached(t *testing.T) {

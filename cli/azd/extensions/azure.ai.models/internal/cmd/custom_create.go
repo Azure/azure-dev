@@ -58,6 +58,12 @@ provide a file containing the URL instead.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 
+			// --base-model is required for all weight types except DraftModel,
+			// where MRS infers the base model from the uploaded artifacts.
+			if flags.BaseModel == "" && !strings.EqualFold(flags.WeightType, "DraftModel") {
+				return fmt.Errorf("--base-model is required when --weight-type is %q", flags.WeightType)
+			}
+
 			// If --version not explicitly set, try to extract from --base-model URI
 			if !cmd.Flags().Changed("version") {
 				if v := extractVersionFromURI(flags.BaseModel); v != "" {
@@ -90,19 +96,21 @@ provide a file containing the URL instead.`,
 	cmd.Flags().StringVar(&flags.SourceFile, "source-file", "", "Path to a file containing the source URL (useful for URLs with special characters)")
 	cmd.Flags().StringVar(&flags.Version, "version", "1", "Model version")
 	cmd.Flags().StringVar(&flags.Description, "description", "", "Model description")
-	cmd.Flags().StringVar(&flags.BaseModel, "base-model", "", "Base model identifier (e.g., FW-GPT-OSS-120B or full azureml:// URI)")
-	cmd.Flags().StringVar(&flags.WeightType, "weight-type", "FullWeight", "Weight type (e.g., FullWeight, LoRA)")
+	cmd.Flags().StringVar(&flags.BaseModel, "base-model",
+		"", "Base model identifier (e.g., FW-GPT-OSS-120B or full azureml:// URI). Required unless --weight-type is DraftModel.")
+	cmd.Flags().StringVar(&flags.WeightType, "weight-type", "FullWeight", "Weight type (e.g., FullWeight, LoRA, DraftModel)")
 	cmd.Flags().StringVar(&flags.Publisher, "publisher", "", "Model publisher ID for catalog info (e.g., Fireworks)")
 	cmd.Flags().StringVar(&flags.AzcopyPath, "azcopy-path", "", "Path to azcopy binary (auto-detected if not provided)")
 	cmd.Flags().BoolVar(&flags.NoWait, "no-wait", false, "Start async registration and return immediately with the operation URL")
-	cmd.Flags().IntVar(&flags.LoRARank, "lora-rank", 0, "LoRA rank (r) — required when --weight-type is LoRA")
-	cmd.Flags().IntVar(&flags.LoRAAlpha, "lora-alpha", 0, "LoRA scaling factor (alpha) — required when --weight-type is LoRA")
+	cmd.Flags().IntVar(&flags.LoRARank, "lora-rank",
+		0, "LoRA rank (r) — optional; if omitted, the value from the uploaded adapter_config.json is used")
+	cmd.Flags().IntVar(&flags.LoRAAlpha, "lora-alpha",
+		0, "LoRA scaling factor (alpha) — optional; if omitted, the value from the uploaded adapter_config.json is used")
 	cmd.Flags().StringVar(&flags.LoRATargetModules, "lora-target-modules", "",
 		"Comma-separated list of target modules (e.g., \"q_proj,v_proj,k_proj,o_proj\")")
 	cmd.Flags().Float64Var(&flags.LoRADropout, "lora-dropout", 0, "LoRA dropout rate used during training (informational)")
 
 	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("base-model")
 
 	return cmd
 }
@@ -262,7 +270,7 @@ func runCustomCreate(ctx context.Context, cmd *cobra.Command, parentFlags *custo
 		}
 	}
 
-	// Attach pre-validated LoRA config
+	// Attach pre-validated LoRA config (may be nil if user provided no LoRA-specific values)
 	if loraConfig != nil {
 		regReq.LoRAConfig = loraConfig
 	}
@@ -364,17 +372,21 @@ func extractVersionFromURI(uri string) string {
 }
 
 // buildLoRAConfig validates LoRA flags and builds a LoRAConfig for the registration request.
+// All LoRA fields are optional; when omitted, MRS reads them from the uploaded adapter_config.json.
 func buildLoRAConfig(cmd *cobra.Command, flags *customCreateFlags) (*models.LoRAConfig, error) {
-	if flags.LoRARank <= 0 {
-		return nil, fmt.Errorf("--lora-rank is required and must be a positive integer when --weight-type is LoRA")
+	if cmd.Flags().Changed("lora-rank") && flags.LoRARank <= 0 {
+		return nil, fmt.Errorf("--lora-rank must be a positive integer when specified")
 	}
-	if flags.LoRAAlpha <= 0 {
-		return nil, fmt.Errorf("--lora-alpha is required and must be a positive integer when --weight-type is LoRA")
+	if cmd.Flags().Changed("lora-alpha") && flags.LoRAAlpha <= 0 {
+		return nil, fmt.Errorf("--lora-alpha must be a positive integer when specified")
 	}
 
-	config := &models.LoRAConfig{
-		Rank:  new(flags.LoRARank),
-		Alpha: new(flags.LoRAAlpha),
+	config := &models.LoRAConfig{}
+	if cmd.Flags().Changed("lora-rank") {
+		config.Rank = new(flags.LoRARank)
+	}
+	if cmd.Flags().Changed("lora-alpha") {
+		config.Alpha = new(flags.LoRAAlpha)
 	}
 
 	if flags.LoRATargetModules != "" {
@@ -390,6 +402,12 @@ func buildLoRAConfig(cmd *cobra.Command, flags *customCreateFlags) (*models.LoRA
 
 	if cmd.Flags().Changed("lora-dropout") {
 		config.Dropout = new(flags.LoRADropout)
+	}
+
+	// If no fields were set, return nil so the request omits loraConfig entirely
+	// and MRS fully derives the configuration from adapter_config.json.
+	if config.Rank == nil && config.Alpha == nil && config.Dropout == nil && len(config.TargetModules) == 0 {
+		return nil, nil
 	}
 
 	return config, nil

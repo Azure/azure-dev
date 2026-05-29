@@ -121,34 +121,55 @@ func TestBuildLoRAConfig(t *testing.T) {
 		name        string
 		args        []string
 		wantErr     string
-		wantRank    int
-		wantAlpha   int
+		wantNil     bool
+		wantRank    *int
+		wantAlpha   *int
 		wantModules []string
 		wantDropout *float64
 	}{
 		{
-			name:    "missing rank",
-			args:    []string{"--lora-alpha", "32"},
-			wantErr: "--lora-rank is required",
+			name:    "invalid rank",
+			args:    []string{"--lora-rank", "0", "--lora-alpha", "32"},
+			wantErr: "--lora-rank must be a positive integer",
 		},
 		{
-			name:    "missing alpha",
-			args:    []string{"--lora-rank", "16"},
-			wantErr: "--lora-alpha is required",
+			name:    "invalid alpha",
+			args:    []string{"--lora-rank", "16", "--lora-alpha", "-1"},
+			wantErr: "--lora-alpha must be a positive integer",
 		},
 		{
-			name:      "rank and alpha only",
+			name:    "no flags returns nil config",
+			args:    []string{},
+			wantNil: true,
+		},
+		{
+			name:      "rank only",
+			args:      []string{"--lora-rank", "16"},
+			wantRank:  new(16),
+		},
+		{
+			name:      "alpha only",
+			args:      []string{"--lora-alpha", "32"},
+			wantAlpha: new(32),
+		},
+		{
+			name:      "rank and alpha",
 			args:      []string{"--lora-rank", "16", "--lora-alpha", "32"},
-			wantRank:  16,
-			wantAlpha: 32,
+			wantRank:  new(16),
+			wantAlpha: new(32),
 		},
 		{
 			name:        "all fields",
 			args:        []string{"--lora-rank", "8", "--lora-alpha", "16", "--lora-target-modules", "q_proj,v_proj", "--lora-dropout", "0.05"},
-			wantRank:    8,
-			wantAlpha:   16,
+			wantRank:    new(8),
+			wantAlpha:   new(16),
 			wantModules: []string{"q_proj", "v_proj"},
 			wantDropout: new(0.05),
+		},
+		{
+			name:        "target modules only",
+			args:        []string{"--lora-target-modules", "q_proj,v_proj"},
+			wantModules: []string{"q_proj", "v_proj"},
 		},
 		{
 			name:    "empty entry in target modules",
@@ -178,11 +199,28 @@ func TestBuildLoRAConfig(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if got.Rank == nil || *got.Rank != tt.wantRank {
-				t.Errorf("Rank = %v, want %d", got.Rank, tt.wantRank)
+			if tt.wantNil {
+				if got != nil {
+					t.Fatalf("expected nil LoRAConfig, got %+v", got)
+				}
+				return
 			}
-			if got.Alpha == nil || *got.Alpha != tt.wantAlpha {
-				t.Errorf("Alpha = %v, want %d", got.Alpha, tt.wantAlpha)
+			if got == nil {
+				t.Fatal("expected non-nil LoRAConfig")
+			}
+			if tt.wantRank == nil {
+				if got.Rank != nil {
+					t.Errorf("Rank = %v, want nil", *got.Rank)
+				}
+			} else if got.Rank == nil || *got.Rank != *tt.wantRank {
+				t.Errorf("Rank = %v, want %d", got.Rank, *tt.wantRank)
+			}
+			if tt.wantAlpha == nil {
+				if got.Alpha != nil {
+					t.Errorf("Alpha = %v, want nil", *got.Alpha)
+				}
+			} else if got.Alpha == nil || *got.Alpha != *tt.wantAlpha {
+				t.Errorf("Alpha = %v, want %d", got.Alpha, *tt.wantAlpha)
 			}
 			if len(tt.wantModules) > 0 {
 				if len(got.TargetModules) != len(tt.wantModules) {

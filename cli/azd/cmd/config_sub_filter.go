@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -83,8 +84,8 @@ func (a *subFilterSetAction) Run(
 ) (*actions.ActionResult, error) {
 	if a.console.IsNoPromptMode() {
 		return nil, fmt.Errorf(
-			"subscription filter set requires interactive mode" +
-				" (cannot run with --no-prompt)",
+			"subscription filter set requires interactive mode (cannot run with --no-prompt): %w",
+			internal.ErrInteractiveRequired,
 		)
 	}
 
@@ -105,7 +106,10 @@ func (a *subFilterSetAction) Run(
 	}
 
 	if len(subscriptions) == 0 {
-		return nil, fmt.Errorf("no subscriptions found")
+		return nil, fmt.Errorf(
+			"no subscriptions found: %w",
+			internal.ErrNoSubscriptionsFound,
+		)
 	}
 
 	// Resolve tenant
@@ -122,7 +126,8 @@ func (a *subFilterSetAction) Run(
 	)
 	if len(tenantSubs) == 0 {
 		return nil, fmt.Errorf(
-			"no subscriptions found for tenant %s", tenantId,
+			"no subscriptions found for tenant %s: %w",
+			tenantId, internal.ErrNoSubscriptionsFound,
 		)
 	}
 
@@ -280,8 +285,8 @@ func (a *subFilterRemoveAction) Run(
 ) (*actions.ActionResult, error) {
 	if a.console.IsNoPromptMode() {
 		return nil, fmt.Errorf(
-			"subscription filter remove requires interactive mode" +
-				" (cannot run with --no-prompt)",
+			"subscription filter remove requires interactive mode (cannot run with --no-prompt): %w",
+			internal.ErrInteractiveRequired,
 		)
 	}
 
@@ -302,7 +307,10 @@ func (a *subFilterRemoveAction) Run(
 	}
 
 	if len(subscriptions) == 0 {
-		return nil, fmt.Errorf("no subscriptions found")
+		return nil, fmt.Errorf(
+			"no subscriptions found: %w",
+			internal.ErrNoSubscriptionsFound,
+		)
 	}
 
 	// Resolve tenant
@@ -401,7 +409,9 @@ func resolveTenantForFilter(
 	// API call when only a single tenant exists.
 	tenants := prompt.ExtractUniqueTenants(subscriptions, nil)
 	if len(tenants) == 0 {
-		return "", "", fmt.Errorf("no tenants found")
+		return "", "", fmt.Errorf(
+			"no tenants found: %w", internal.ErrNoTenantsFound,
+		)
 	}
 
 	if len(tenants) == 1 {

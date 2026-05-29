@@ -123,6 +123,14 @@ var (
 	ErrToolUpgradeFailed = errors.New("tool upgrade did not succeed")
 )
 
+// Subscription filter errors
+var (
+	ErrInteractiveRequired    = errors.New("interactive mode required")
+	ErrNoSubscriptionsFound   = errors.New("no subscriptions found")
+	ErrNoTenantsFound         = errors.New("no tenants found")
+	ErrNoFilterExists         = errors.New("no saved filter exists")
+)
+
 // ExitCodeError wraps an error with a specific process exit code.
 // When returned from an action, main.go uses the exit code instead of the
 // default exit code 1. This is used by `azd exec` to propagate the child

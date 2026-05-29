@@ -2584,3 +2584,359 @@ func TestFolderNameFromTitle(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// peekManifestName: best-effort manifest name extraction for -m folder
+// creation (covers PR review — parity with template-flow folder creation)
+// ---------------------------------------------------------------------------
+
+func TestPeekManifestName_LocalFile_WithName(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte("name: my-cool-agent\ndescription: hi\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := peekManifestName(t.Context(), path, &http.Client{})
+	if got != "my-cool-agent" {
+		t.Errorf("peekManifestName = %q, want %q", got, "my-cool-agent")
+	}
+}
+
+func TestPeekManifestName_LocalFile_WithoutName(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte("description: missing top-level name\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := peekManifestName(t.Context(), path, &http.Client{})
+	if got != "" {
+		t.Errorf("peekManifestName = %q, want empty", got)
+	}
+}
+
+func TestPeekManifestName_LocalFile_EmptyName(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte("name: \"   \"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := peekManifestName(t.Context(), path, &http.Client{})
+	if got != "" {
+		t.Errorf("peekManifestName = %q, want empty (whitespace-only name)", got)
+	}
+}
+
+func TestPeekManifestName_LocalFile_NonExistent(t *testing.T) {
+	t.Parallel()
+	got := peekManifestName(t.Context(), filepath.Join(t.TempDir(), "does-not-exist.yaml"), &http.Client{})
+	if got != "" {
+		t.Errorf("peekManifestName = %q, want empty for missing file", got)
+	}
+}
+
+func TestPeekManifestName_LocalFile_Directory(t *testing.T) {
+	t.Parallel()
+	// Pointing at a directory should not be treated as a manifest — full
+	// validation runs in checkNotDirectory; peek must not panic or return
+	// noise.
+	got := peekManifestName(t.Context(), t.TempDir(), &http.Client{})
+	if got != "" {
+		t.Errorf("peekManifestName = %q, want empty for directory", got)
+	}
+}
+
+func TestPeekManifestName_LocalFile_MalformedYAML(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte("name: [unterminated\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := peekManifestName(t.Context(), path, &http.Client{})
+	if got != "" {
+		t.Errorf("peekManifestName = %q, want empty for malformed yaml", got)
+	}
+}
+
+func TestPeekManifestName_LocalFile_NestedFieldsIgnored(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.yaml")
+	manifest := "" +
+		"name: nested-agent\n" +
+		"description: hi\n" +
+		"tools:\n" +
+		"  - name: not-the-agent-name\n" +
+		"  - name: also-not-it\n" +
+		"environment:\n" +
+		"  - name: SOME_ENV\n" +
+		"    value: x\n"
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte(manifest), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := peekManifestName(t.Context(), path, &http.Client{})
+	if got != "nested-agent" {
+		t.Errorf("peekManifestName = %q, want nested-agent (top-level only)", got)
+	}
+}
+
+func TestPeekManifestName_EmptyPointer(t *testing.T) {
+	t.Parallel()
+	got := peekManifestName(t.Context(), "", &http.Client{})
+	if got != "" {
+		t.Errorf("peekManifestName(\"\") = %q, want empty", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// resolveAgentNameFromManifestPointer: validates that the agent name is
+// resolved (via --agent-name flag or peek+default in noPrompt) BEFORE any
+// project folder is created, so the folder / agent identity / service entry /
+// src subfolder / cd hint all use the same name.
+// ---------------------------------------------------------------------------
+
+func TestResolveAgentNameFromManifestPointer_FlagWinsWithoutPeek(t *testing.T) {
+	t.Parallel()
+
+	flags := &initFlags{agentName: "flag-agent", noPrompt: true}
+	// Manifest pointer is intentionally unreachable to prove the flag short-circuits
+	// the peek entirely.
+	got, err := resolveAgentNameFromManifestPointer(
+		t.Context(), nil, flags, filepath.Join(t.TempDir(), "does-not-exist.yaml"), &http.Client{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "flag-agent" {
+		t.Errorf("got name = %q, want %q", got, "flag-agent")
+	}
+	if flags.agentName != "flag-agent" {
+		t.Errorf("flags.agentName = %q, want pinned to flag value", flags.agentName)
+	}
+}
+
+func TestResolveAgentNameFromManifestPointer_NoPromptUsesPeekedDefault(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte("name: from-manifest\ndescription: hi\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	flags := &initFlags{noPrompt: true}
+	got, err := resolveAgentNameFromManifestPointer(
+		t.Context(), nil, flags, path, &http.Client{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "from-manifest" {
+		t.Errorf("got name = %q, want %q", got, "from-manifest")
+	}
+	if flags.agentName != "from-manifest" {
+		t.Errorf("flags.agentName = %q, want pinned to peeked default", flags.agentName)
+	}
+}
+
+func TestResolveAgentNameFromManifestPointer_PeekFailsReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	// Peek will fail (nonexistent local path, no flag). Helper must return ""
+	// and leave flags.agentName empty so the caller falls back to the deferred
+	// inner resolution.
+	flags := &initFlags{noPrompt: true}
+	got, err := resolveAgentNameFromManifestPointer(
+		t.Context(), nil, flags, filepath.Join(t.TempDir(), "does-not-exist.yaml"), &http.Client{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "" {
+		t.Errorf("got name = %q, want empty when peek fails and no flag", got)
+	}
+	if flags.agentName != "" {
+		t.Errorf("flags.agentName = %q, want unchanged when peek fails", flags.agentName)
+	}
+}
+
+func TestResolveAgentNameFromManifestPointer_InvalidFlagReturnsError(t *testing.T) {
+	t.Parallel()
+
+	// Invalid flag value must surface a validation error rather than silently
+	// falling back to peek — the user explicitly asked for this name.
+	flags := &initFlags{agentName: "INVALID NAME with spaces", noPrompt: true}
+	_, err := resolveAgentNameFromManifestPointer(
+		t.Context(), nil, flags, filepath.Join(t.TempDir(), "ignored.yaml"), &http.Client{},
+	)
+	if err == nil {
+		t.Fatalf("expected validation error for invalid --agent-name, got nil")
+	}
+}
+
+func TestResolveAgentNameFromManifestPointer_FlagPeekConsistency(t *testing.T) {
+	t.Parallel()
+
+	// When --agent-name matches what peek would return, the resolved name and
+	// the flag value should agree and the manifest never needs to be read.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte("name: shared-name\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	flags := &initFlags{agentName: "shared-name", noPrompt: true}
+	got, err := resolveAgentNameFromManifestPointer(
+		t.Context(), nil, flags, path, &http.Client{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "shared-name" {
+		t.Errorf("got name = %q, want %q", got, "shared-name")
+	}
+}
+
+func TestPeekManifestName_NonGitHubURL(t *testing.T) {
+	t.Parallel()
+	// Non-GitHub URLs are unsupported by the naive peek path and must return
+	// "" (the caller then falls back to targetDir=".").
+	got := peekManifestName(t.Context(), "https://example.com/some/manifest.yaml", &http.Client{})
+	if got != "" {
+		t.Errorf("peekManifestName = %q, want empty for non-GitHub URL", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// absolutizeRelativeManifestPaths: ensures the -m manifest path survives
+// ensureProject chdir into the newly created project directory. flags.src
+// is intentionally NOT absolutized (see godoc on the helper for why).
+// ---------------------------------------------------------------------------
+
+func TestAbsolutizeRelativeManifestPaths_RelativeLocalManifest(t *testing.T) {
+	tmp := t.TempDir()
+	t.Chdir(tmp)
+
+	flags := &initFlags{
+		manifestPointer: "agent.yaml",
+		src:             "src",
+	}
+	if err := absolutizeRelativeManifestPaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	}
+	if !filepath.IsAbs(flags.manifestPointer) {
+		t.Errorf("manifestPointer should be absolute, got %q", flags.manifestPointer)
+	}
+	// Regression guard: --src is an output target (where the agent
+	// definition is downloaded to, relative to the project root).
+	// Absolutizing it before ensureProject chdirs into the new project
+	// folder would cause InitAction.Run's filepath.Rel rewrite to produce
+	// "..\src", writing the agent definition outside the new project.
+	if flags.src != "src" {
+		t.Errorf("src should remain relative %q, got %q", "src", flags.src)
+	}
+}
+
+func TestAbsolutizeRelativeManifestPaths_AbsoluteLocalUnchanged(t *testing.T) {
+	t.Parallel()
+	absManifest := filepath.Join(t.TempDir(), "agent.yaml")
+
+	flags := &initFlags{
+		manifestPointer: absManifest,
+		src:             "src",
+	}
+	if err := absolutizeRelativeManifestPaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	}
+	if flags.manifestPointer != absManifest {
+		t.Errorf("absolute manifestPointer should be unchanged, got %q", flags.manifestPointer)
+	}
+	if flags.src != "src" {
+		t.Errorf("src should be unchanged, got %q", flags.src)
+	}
+}
+
+func TestAbsolutizeRelativeManifestPaths_URLPointerUnchanged(t *testing.T) {
+	t.Parallel()
+	const ghURL = "https://github.com/owner/repo/blob/main/agent.yaml"
+	flags := &initFlags{
+		manifestPointer: ghURL,
+		src:             "",
+	}
+	if err := absolutizeRelativeManifestPaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	}
+	if flags.manifestPointer != ghURL {
+		t.Errorf("URL manifestPointer should be unchanged, got %q", flags.manifestPointer)
+	}
+}
+
+func TestAbsolutizeRelativeManifestPaths_EmptyFields(t *testing.T) {
+	t.Parallel()
+	flags := &initFlags{}
+	if err := absolutizeRelativeManifestPaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	}
+	if flags.manifestPointer != "" {
+		t.Errorf("empty manifestPointer should remain empty, got %q", flags.manifestPointer)
+	}
+	if flags.src != "" {
+		t.Errorf("empty src should remain empty, got %q", flags.src)
+	}
+}
+
+// TestAbsolutizeRelativeManifestPaths_SrcEscapeRegression specifically guards
+// against the bug where absolutizing --src before chdir + relativization in
+// InitAction.Run would produce "..\src" and write agent files outside the
+// newly created project directory.
+func TestAbsolutizeRelativeManifestPaths_SrcEscapeRegression(t *testing.T) {
+	originalCwd := t.TempDir()
+	t.Chdir(originalCwd)
+
+	flags := &initFlags{
+		manifestPointer: "agent.yaml",
+		src:             "src",
+	}
+	if err := absolutizeRelativeManifestPaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	}
+
+	// Simulate ensureProject creating + chdir'ing into the project folder.
+	projectDir := filepath.Join(originalCwd, "my-agent")
+	//nolint:gosec // test fixture directory permissions are intentional
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Chdir(projectDir)
+
+	// Mirror what InitAction.Run does: relativize absolute src against the
+	// project root. This must NOT escape the project.
+	if filepath.IsAbs(flags.src) {
+		rel, err := filepath.Rel(projectDir, flags.src)
+		if err != nil {
+			t.Fatalf("filepath.Rel: %v", err)
+		}
+		if strings.HasPrefix(rel, "..") {
+			t.Fatalf("src rewrite escapes project: %q (was abs %q)", rel, flags.src)
+		}
+	}
+	// Even simpler: src should never have been touched in the first place.
+	if flags.src != "src" {
+		t.Errorf("src must remain relative %q to stay inside project, got %q", "src", flags.src)
+	}
+}

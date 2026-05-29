@@ -62,6 +62,7 @@ const (
 // Error codes for ACR dependency errors.
 const (
 	CodePrivateACRNetworkAccessFailed = "private_acr_network_access_failed"
+	CodeACRPermissionDenied           = "acr_permission_denied"
 )
 
 // Error codes commonly used for auth errors.

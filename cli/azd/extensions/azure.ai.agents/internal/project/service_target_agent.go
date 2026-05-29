@@ -618,11 +618,118 @@ func classifyContainerPublishError(err error) error {
 		)
 	}
 
+	if isACRPermissionError(err) {
+		return exterrors.Dependency(
+			exterrors.CodeACRPermissionDenied,
+			fmt.Sprintf(
+				"container publish failed because your identity does not have permission to push "+
+					"to the Azure Container Registry: %s",
+				err,
+			),
+			acrPermissionSuggestionFor(err),
+		)
+	}
+
 	if actionable := azdext.ActionableErrorDetailFromError(err); actionable != nil && actionable.GetSuggestion() != "" {
 		return err
 	}
 
 	return exterrors.Internal(exterrors.OpContainerPublish, fmt.Sprintf("container publish failed: %s", err))
+}
+
+// acrPermissionSuggestionFor is the user-facing remediation text for
+// CodeACRPermissionDenied. It offers a primary RBAC fix and an in-place
+// fallback that switches the service to code (zip) deploy without re-running
+// `azd ai agent init`.
+//
+// The recommended role depends on which API was denied:
+//   - Remote-build path (docker.remoteBuild: true -- the new container deploy
+//     default): the failing action is typically
+//     Microsoft.ContainerRegistry/registries/listBuildSourceUploadUrl/action
+//     or .../scheduleRun/action. AcrPush is data-plane only and does NOT grant
+//     these; the correct role is "Container Registry Tasks Contributor".
+//   - Local-push path (docker.remoteBuild: false): the failing action is the
+//     docker push itself; AcrPush is sufficient.
+//
+// The emitted `az role assignment create` command uses the role definition
+// GUID (not the display name) for the --role argument. GUIDs are guaranteed
+// stable; display names could in principle be renamed by Azure. The human
+// role name is still shown in the surrounding prose so the user understands
+// what they are assigning.
+//
+// When the underlying error includes the principal's object id and/or the ACR
+// resource scope (typical of ARM 403 responses), those values are substituted
+// into the command so the user can paste it as-is. Otherwise placeholders
+// are shown. ASCII-only per repo style.
+func acrPermissionSuggestionFor(err error) string {
+	assignee := "<your-object-id>"
+	scope := "<acr-resource-id>"
+	msgRaw := ""
+	if err != nil {
+		msgRaw = err.Error()
+		if m := armObjectIDRe.FindStringSubmatch(msgRaw); len(m) == 2 {
+			assignee = m[1]
+		}
+		if m := armACRScopeRe.FindStringSubmatch(msgRaw); len(m) == 2 {
+			scope = m[1]
+		}
+	}
+
+	isRemoteBuildPath := false
+	if msgRaw != "" {
+		lower := strings.ToLower(msgRaw)
+		isRemoteBuildPath = containsAny(lower,
+			"listbuildsourceuploadurl",
+			"schedulerun",
+			"remote build failed",
+		)
+	}
+
+	// Role identifiers come from developer_rbac_check.go (same package).
+	// Names are for prose; IDs are what the `az` command actually uses.
+	primaryRoleName := "AcrPush"
+	primaryRoleID := roleAcrPush
+	pathContext := "data-plane push (used when docker.remoteBuild: false)"
+	abacLine := fmt.Sprintf(
+		"    - Container Registry Repository Writer   (role ID: %s)   for ABAC-mode registries",
+		roleAcrRepositoryWriter,
+	)
+	if isRemoteBuildPath {
+		primaryRoleName = "Container Registry Tasks Contributor"
+		primaryRoleID = roleContainerRegistryTasksContributor
+		pathContext = "ACR Tasks remote build (used when docker.remoteBuild: true)"
+		// For Tasks-based builds on ABAC-mode registries, RepositoryWriter alone
+		// does not cover Tasks actions. Owner / Contributor remain the broad
+		// options.
+		abacLine = "    - For ABAC-mode registries, an Owner or Contributor assignment may also be needed"
+	}
+
+	primaryLine := fmt.Sprintf("    - %s   (role ID: %s)", primaryRoleName, primaryRoleID)
+	azCommand := fmt.Sprintf(
+		`az role assignment create --assignee %s --role %s --scope %s`,
+		assignee, primaryRoleID, scope,
+	)
+
+	return "Your identity needs permission to push container images to the Azure Container Registry.\n\n" +
+		"This deployment failed on the " + pathContext + " path.\n\n" +
+		"Recommended fix (keep container deploy):\n" +
+		"  Ask a subscription Owner or User Access Administrator to assign one of these roles to your\n" +
+		"  identity, then re-run `azd up`:\n" +
+		primaryLine + "\n" +
+		abacLine + "\n\n" +
+		"  Example (run as a subscription Owner or User Access Administrator):\n" +
+		"    " + azCommand + "\n\n" +
+		"Alternative (switch this service to code (zip) deploy in place; no need to re-run\n" +
+		"`azd ai agent init`):\n" +
+		"  1. Open the service's agent.yaml and add a `code_configuration:` block under\n" +
+		"     the hosted agent, for example:\n" +
+		"        code_configuration:\n" +
+		"          runtime: python_3_13          # or dotnet_10\n" +
+		"          entry_point: app.py            # or MyAgent.dll\n" +
+		"  2. Run: azd env set AZD_AGENT_SKIP_ACR true\n" +
+		"     (subsequent provisioning will skip creating ACR; an already-provisioned\n" +
+		"     ACR is not deleted automatically)\n" +
+		"  3. Re-run: azd up"
 }
 
 func isPrivateACRNetworkAccessError(err error) bool {
@@ -631,20 +738,13 @@ func isPrivateACRNetworkAccessError(err error) bool {
 	}
 
 	message := strings.ToLower(err.Error())
-	acrContext := []string{
-		".azurecr.io",
-		"azure container registry",
-		"container registry",
-	}
-	hasACRContext := containsAny(message, acrContext...)
+	hasACRContext := containsAny(message, acrContextSignals...)
 
 	networkSignals := []string{
 		"public network access",
 		"private endpoint",
 		"network rule",
 		"firewall",
-		"not allowed access",
-		"forbidden",
 		"i/o timeout",
 		"connection timed out",
 		"tls handshake timeout",
@@ -653,18 +753,94 @@ func isPrivateACRNetworkAccessError(err error) bool {
 	}
 	hasNetworkSignal := containsAny(message, networkSignals...)
 
+	// Specific signal: ACR firewall block list. The "client with ip address ...
+	// not allowed access" wording is unambiguous so we accept it standalone.
 	if strings.Contains(message, "client with ip address") &&
 		strings.Contains(message, "not allowed access") {
 		return true
 	}
 
+	// Remote-build wrapper: require BOTH an explicit network signal AND ACR
+	// context. The previous OR variant false-classified RBAC failures whose
+	// only "signal" was the word "forbidden" -- those are now handled by
+	// isACRPermissionError.
 	if strings.Contains(message, "remote build failed") &&
 		strings.Contains(message, "local fallback unavailable") {
-		return hasNetworkSignal || hasACRContext
+		return hasNetworkSignal && hasACRContext
 	}
 
 	return hasACRContext && hasNetworkSignal
 }
+
+// isACRPermissionError reports whether err is an ACR push/build failure caused
+// by missing RBAC or auth (as opposed to network access). Predicate is AND:
+// the error must reference ACR (by login server, ARM resource type, or
+// human-readable name) AND carry an explicit permission signal.
+func isACRPermissionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+
+	if !containsAny(message, acrContextSignals...) {
+		return false
+	}
+
+	permissionSignals := []string{
+		"denied: requested access to the resource is denied",
+		"unauthorized",
+		"authentication required",
+		"authorization failed",
+		"authorizationfailed", // ARM ErrorCode (no space)
+		"does not have authorization",
+		"does not have rbac permission",
+		"acrpush",
+		"insufficient_scope",
+		"repository access not allowed",
+		"failed to fetch oauth token",
+		"acr_token",
+		"token exchange",
+	}
+	if containsAny(message, permissionSignals...) {
+		return true
+	}
+
+	// Word-bounded 401/403 plus an explicit permission noun nearby. Avoid
+	// bare "forbidden" / "token" matches that overlap with other failure modes.
+	if has40xRe.MatchString(message) &&
+		containsAny(message, "denied", "forbidden", "permission", "not authorized") {
+		return true
+	}
+
+	return false
+}
+
+// acrContextSignals are substrings that indicate the error references an
+// Azure Container Registry. ".azurecr.io" covers docker-push errors;
+// "microsoft.containerregistry" covers ARM-side errors from the remote-build
+// path (e.g. listBuildSourceUploadUrl/scheduleRun) which do NOT include the
+// login server in the URL. The human-readable variants catch wrapper text.
+var acrContextSignals = []string{
+	".azurecr.io",
+	"microsoft.containerregistry",
+	"azure container registry",
+	"container registry",
+}
+
+// has40xRe matches a bare 401 or 403 status code with word boundaries to avoid
+// false positives on arbitrary digit runs.
+var has40xRe = regexp.MustCompile(`(?i)\b40[13]\b`)
+
+// armObjectIDRe extracts the principal object id from an ARM AuthorizationFailed
+// error message of the form: ... with object id '<guid>' does not have authorization ...
+var armObjectIDRe = regexp.MustCompile(`(?i)with object id '([0-9a-f-]{36})'`)
+
+// armACRScopeRe extracts the ACR resource scope from an ARM AuthorizationFailed
+// error message of the form: ... over scope '/subscriptions/.../Microsoft.ContainerRegistry/registries/<name>' ...
+// Anchored to Microsoft.ContainerRegistry so we don't match unrelated scopes.
+var armACRScopeRe = regexp.MustCompile(
+	`(?i)over scope '(/subscriptions/[^']+/providers/Microsoft\.ContainerRegistry/registries/[^']+)'`,
+)
 
 func containsAny(s string, values ...string) bool {
 	for _, value := range values {

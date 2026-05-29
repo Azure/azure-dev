@@ -724,8 +724,7 @@ func TestParseGitHubUrlNaive(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			a := &InitAction{}
-			result := a.parseGitHubUrlNaive(tt.url)
+			result := parseGitHubUrlNaive(tt.url)
 
 			if tt.expected == nil {
 				if result != nil {

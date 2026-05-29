@@ -2263,7 +2263,7 @@ func (a *InitAction) downloadAgentYaml(
 		var contentStr string
 		// First try naive parsing assuming branch is a single word. This allows users to not have to authenticate
 		// with gh CLI for public repositories.
-		urlInfo = a.parseGitHubUrlNaive(manifestPointer)
+		urlInfo = parseGitHubUrlNaive(manifestPointer)
 		if urlInfo != nil {
 			// Construct GitHub Contents API URL with ref query parameter
 			fileApiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
@@ -2950,19 +2950,6 @@ func downloadGithubManifest(
 	}
 
 	return content, nil
-}
-
-// parseGitHubUrlNaive attempts to parse a GitHub URL assuming a simple single-word branch name.
-// Returns nil if the URL doesn't match the expected pattern.
-// Expected formats:
-//   - https://github.com/{owner}/{repo}/blob/{branch}/{path}
-//   - https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/{branch}/{path}
-//
-// parseGitHubUrlNaive delegates to the package-level parseGitHubUrlNaive so the
-// peek path (which runs before InitAction is constructed) and the full
-// downloadAgentYaml path share the same parsing logic.
-func (a *InitAction) parseGitHubUrlNaive(manifestPointer string) *GitHubUrlInfo {
-	return parseGitHubUrlNaive(manifestPointer)
 }
 
 // parseGitHubUrl extracts repository information from various GitHub URL formats using extension framework

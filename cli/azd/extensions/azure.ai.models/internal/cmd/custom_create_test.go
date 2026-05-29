@@ -143,9 +143,9 @@ func TestBuildLoRAConfig(t *testing.T) {
 			wantNil: true,
 		},
 		{
-			name:      "rank only",
-			args:      []string{"--lora-rank", "16"},
-			wantRank:  new(16),
+			name:     "rank only",
+			args:     []string{"--lora-rank", "16"},
+			wantRank: new(16),
 		},
 		{
 			name:      "alpha only",

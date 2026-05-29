@@ -4,6 +4,18 @@
 
 - [[#8406]](https://github.com/Azure/azure-dev/pull/8406) Add `--output raw` (`-o raw`) flag to `azd ai agent invoke` to dump the unmodified server response (status line, headers, and body verbatim) to stdout. Useful for debugging server behavior and inspecting response headers such as the agent version. Friendly summary lines (`Session:`, `Invocation:`, `Trace ID:`, `Version:`) are suppressed in raw mode.
 - [[#8403]](https://github.com/Azure/azure-dev/pull/8403) Add `invocations_ws` as a displayable agent protocol. `azd deploy` now registers the callable Foundry data-plane WebSocket URL (`wss://<account>.services.ai.azure.com/api/projects/agents/endpoint/protocols/invocations_ws?api-version=v1&project_name=<project>&agent_name=<agent>`) as `AGENT_{KEY}_INVOCATIONS_WS_ENDPOINT`, and `azd ai agent show` displays it as `Endpoint (invocations_ws)`. Previously, `invocations_ws` agents fell back to the legacy resource URL labeled `Endpoint (Agent)`.
+- [[#8397]](https://github.com/Azure/azure-dev/pull/8397) Improve account endpoint copy and output formatting in `azd ai agent show`.
+- [[#8394]](https://github.com/Azure/azure-dev/pull/8394) Add host mode support in `azd ai agent run`.
+- [[#8389]](https://github.com/Azure/azure-dev/pull/8389) Add `isDefault` support for `azd ai model list`.
+- [[#8388]](https://github.com/Azure/azure-dev/pull/8388) Add a command to remove indexes from a vector store.
+- [[#8384]](https://github.com/Azure/azure-dev/pull/8384) Add trace show command and invocation display in trace list output.
+- [[#8378]](https://github.com/Azure/azure-dev/pull/8378) Add invoke operation metadata and local run trace ID support.
+- [[#8372]](https://github.com/Azure/azure-dev/pull/8372) Add `--session` option and rich output formats to `azd ai agent invoke`.
+- [[#8368]](https://github.com/Azure/azure-dev/pull/8368) Add support for listing endpoint resources in `azd ai model list`.
+- [[#8366]](https://github.com/Azure/azure-dev/pull/8366) Add support for invoking extension operations with custom API versions.
+- [[#8363]](https://github.com/Azure/azure-dev/pull/8363) Add support for setting worker counts in app deployment config.
+- [[#8362]](https://github.com/Azure/azure-dev/pull/8362) Add model version support to service config deployment options.
+- [[#8354]](https://github.com/Azure/azure-dev/pull/8354) Add support for agent protocol APIs in deploy and show commands.
 
 ## 0.1.34-preview (2026-05-22)
 

@@ -760,6 +760,7 @@ func TestUpdateValidation_MetadataAloneIsValid(t *testing.T) {
 		},
 	}
 	err := action.Run(t.Context())
-	// Should pass validation — any error here is from resolveConnectionContext, not validation
+	// Should pass validation — error here is from resolveConnectionContext (no env), not validation
+	require.Error(t, err)
 	require.NotContains(t, err.Error(), "No fields to update")
 }

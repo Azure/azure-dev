@@ -558,18 +558,23 @@ func (a *ConnectionUpdateAction) Run(ctx context.Context) error {
 	// Route to raw REST or typed SDK based on auth type
 	switch normalizedAuth {
 	case "oauth2", "user-entra-token", "project-managed-identity", "agentic-identity":
-		// Auth types that lack full ARM SDK support — update via raw REST
-		err = rawCreateConnection(
-			ctx, connCtx,
-			a.flags.name,
-			rawConnectionProperties{
-				AuthType:    normalizeAuthTypeToARM(normalizedAuth),
-				Category:    kindStr,
-				Target:      newTarget,
-				Metadata:    parseKVMap(metaPairs),
-				Credentials: buildOAuth2Credentials(normalizedAuth, "", ""),
-			},
+		// Auth types that lack full ARM SDK support — update via raw REST.
+		// Use raw GET to retrieve OAuth2-specific fields (connectorName,
+		// authorizationUrl, tokenUrl, etc.) that the typed SDK does not expose,
+		// then merge changes on top before doing the full-replace PUT.
+		rawProps, getErr := rawGetConnection(ctx, connCtx, a.flags.name)
+		if getErr != nil {
+			return fmt.Errorf("failed to read current connection properties: %w", getErr)
+		}
+		if a.flags.targetChanged {
+			rawProps.Target = newTarget
+		}
+		rawProps.Metadata = parseKVMap(metaPairs)
+		rawProps.Credentials = buildOAuth2Credentials(normalizedAuth,
+			rawProps.Credentials.clientIDOrEmpty(),
+			rawProps.Credentials.clientSecretOrEmpty(),
 		)
+		err = rawCreateConnection(ctx, connCtx, a.flags.name, *rawProps)
 	default:
 		body, buildErr := buildConnectionBody(
 			kindStr, newTarget, normalizedAuth,

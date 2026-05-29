@@ -613,7 +613,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		srcDir, _ = os.Getwd()
 	}
 	showCodeDeploy := isPythonProject(srcDir) || isDotnetProject(srcDir)
-	deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, a.flags.deployMode)
+	deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, a.flags.deployMode, false)
 	if err != nil {
 		return nil, err
 	}
@@ -970,7 +970,9 @@ func (a *InitFromCodeAction) resolveSelectedModelDeployment(
 		flags:        a.flags,
 	}
 
-	return selector.getModelDetails(ctx, model.Name)
+	// allowSkip=false: in this recovery path the user already explicitly chose
+	// the model via selectNewModel earlier, so offering "Skip" would be confusing.
+	return selector.getModelDetails(ctx, model.Name, false)
 }
 
 // appendEnvVar appends an environment variable to a possibly-nil slice pointer,
@@ -1200,7 +1202,7 @@ func (a *InitFromCodeAction) promptCodeConfiguration(ctx context.Context, srcDir
 		runtime:       a.flags.runtime,
 		entryPoint:    a.flags.entryPoint,
 		depResolution: a.flags.depResolution,
-	})
+	}, false)
 }
 
 // protocolInfo pairs a protocol name with the default version used when generating agent.yaml.
@@ -1330,7 +1332,15 @@ func knownProtocolNames() string {
 // When deployModeFlag is set, it is used directly (for --no-prompt with explicit flag).
 // When noPrompt is true and no flag is provided, defaults to "container" for backward compatibility.
 // When showCodeDeploy is false and no explicit flag overrides, code deploy is not offered.
-func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool, showCodeDeploy bool, deployModeFlag string) (string, error) {
+func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool, showCodeDeploy bool, deployModeFlag string, userProvidedManifest bool) (string, error) {
+	// Resolution precedence:
+	//   1. Explicit flag (--deploy-mode) — always wins
+	//   2. !showCodeDeploy — container is the only option (not Python/.NET)
+	//   3. userProvidedManifest — auto-select "container" (opinionated default;
+	//      triggered by -m flag OR interactive template selection)
+	//   4. noPrompt — "container" for backward compatibility (no signal)
+	//   5. Interactive prompt
+
 	// Explicit flag takes precedence
 	if deployModeFlag != "" {
 		switch deployModeFlag {
@@ -1346,6 +1356,14 @@ func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt
 	}
 
 	if !showCodeDeploy {
+		return "container", nil
+	}
+
+	// When the user provided a manifest explicitly (-m), auto-select the
+	// opinionated default (container) without prompting. Users who want
+	// code deploy with -m can pass --deploy-mode code explicitly.
+	if userProvidedManifest {
+		log.Printf("Auto-selected deploy mode: container (use --deploy-mode code for code deploy)")
 		return "container", nil
 	}
 
@@ -1437,7 +1455,7 @@ type codeDeployOptions struct {
 
 // promptCodeConfig prompts for code deploy configuration (runtime, entry point,
 // dependency resolution). When noPrompt is true, flags or defaults are used without prompting.
-func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir string, noPrompt bool, opts codeDeployOptions) (*agent_yaml.CodeConfiguration, error) {
+func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir string, noPrompt bool, opts codeDeployOptions, userProvidedManifest bool) (*agent_yaml.CodeConfiguration, error) {
 	if srcDir == "" {
 		srcDir = "."
 	}
@@ -1468,12 +1486,13 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 	var runtime string
 	if opts.runtime != "" {
 		runtime = opts.runtime
-	} else if noPrompt {
+	} else if noPrompt || userProvidedManifest {
 		if isDotnet && !isPython {
 			runtime = "dotnet_10"
 		} else {
-			runtime = "python_3_13" // default to Python for mixed/unknown repos (language preference, not version compat)
+			runtime = "python_3_13"
 		}
+		log.Printf("Auto-detected runtime: %s", runtime)
 	} else {
 		defaultIdx := int32(0) // First item in the filtered list
 		runtimeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
@@ -1498,8 +1517,9 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 	var entryPoint string
 	if opts.entryPoint != "" {
 		entryPoint = opts.entryPoint
-	} else if noPrompt {
+	} else if noPrompt || userProvidedManifest {
 		entryPoint = defaultEntryPoint
+		log.Printf("Auto-detected entry point: %s", entryPoint)
 	} else {
 		entryPointResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
@@ -1525,8 +1545,9 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 	var depResolution string
 	if opts.depResolution != "" {
 		depResolution = opts.depResolution
-	} else if noPrompt {
+	} else if noPrompt || userProvidedManifest {
 		depResolution = "remote_build"
+		log.Printf("Defaulted dependency resolution to remote_build")
 	} else {
 		depDefaultIdx := int32(0)
 		depResResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{

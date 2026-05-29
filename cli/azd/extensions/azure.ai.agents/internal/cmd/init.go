@@ -95,6 +95,12 @@ type InitAction struct {
 	httpClient           *http.Client
 	serviceNameOverride  string // when set, addToProject uses this instead of the manifest name
 	createdFolderDisplay string // pre-computed relative display path for the created folder
+
+	// userProvidedManifest is true when the init flow is driven by a manifest —
+	// either explicitly via the -m flag/positional argument, or when the user
+	// interactively selects a template that resolves to a manifest. When true,
+	// the init flow applies opinionated defaults to minimize interactive prompts.
+	userProvidedManifest bool
 }
 
 // modelSelector encapsulates the dependencies needed for model selection and
@@ -265,6 +271,54 @@ func resolveInitAgentName(
 	return validateInitAgentName(agentName)
 }
 
+// resolveAgentNameFromManifestPointer resolves the agent name BEFORE any
+// project folder is created so the project folder, the agent identity, the
+// service entry, the src subfolder, and the post-init "cd" hint all use the
+// same name.
+//
+// Resolution order:
+//   - If --agent-name is set, that value is used (validated) and pinned.
+//   - Else, peek the manifest's `name` field to seed the prompt default.
+//     If peek succeeds, prompt the user (or use the default in --no-prompt mode)
+//     and pin the result.
+//   - Else (peek failed: unsupported URL form, parse error, missing name),
+//     return "" so the caller falls back to today's defer behavior, which
+//     leaves name resolution to the inner downloadAgentYaml flow once the
+//     fully-loaded manifest is available.
+//
+// When a name is resolved, flags.agentName is set so the inner
+// resolveInitAgentName call short-circuits without re-prompting the user.
+func resolveAgentNameFromManifestPointer(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	flags *initFlags,
+	manifestPointer string,
+	httpClient *http.Client,
+) (string, error) {
+	if flags.agentName != "" {
+		validated, err := validateInitAgentName(flags.agentName)
+		if err != nil {
+			return "", err
+		}
+		flags.agentName = validated
+		return validated, nil
+	}
+
+	peeked := peekManifestName(ctx, manifestPointer, httpClient)
+	if peeked == "" {
+		// Defer to the inner flow which has access to the fully-loaded manifest.
+		return "", nil
+	}
+
+	resolved, err := resolveInitAgentName(ctx, azdClient, flags, peeked)
+	if err != nil {
+		return "", err
+	}
+	// Pin so the inner resolveInitAgentName call is a no-op.
+	flags.agentName = resolved
+	return resolved, nil
+}
+
 func validateInitAgentName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if err := agent_yaml.ValidateAgentName(name); err != nil {
@@ -307,11 +361,198 @@ func setAgentNameOnTemplate(agentManifest *agent_yaml.AgentManifest, agentName s
 	return nil
 }
 
+// absolutizeRelativeManifestPaths converts the -m manifest pointer to absolute
+// when it refers to a local path so it remains valid after ensureProject
+// changes into a newly created project directory. URLs and already-absolute
+// paths are left unchanged. Errors here are surfaced because they indicate a
+// problem the user can fix (e.g. invalid pathname).
+//
+// Note: flags.src is intentionally left unchanged. It is the output target
+// for the downloaded agent definition (defaults to src/<agent-id> inside the
+// project). InitAction.Run rewrites absolute --src values relative to the
+// project root via filepath.Rel; converting a user-supplied relative --src
+// to absolute before ensureProject changes into the new project folder would
+// cause that rewrite to produce a "..\<src>" path that escapes the project
+// directory.
+func absolutizeRelativeManifestPaths(flags *initFlags) error {
+	if flags.manifestPointer == "" {
+		return nil
+	}
+	if strings.HasPrefix(flags.manifestPointer, "http://") ||
+		strings.HasPrefix(flags.manifestPointer, "https://") {
+		return nil
+	}
+	if filepath.IsAbs(flags.manifestPointer) {
+		return nil
+	}
+
+	abs, err := filepath.Abs(flags.manifestPointer)
+	if err != nil {
+		return fmt.Errorf("resolve manifest path: %w", err)
+	}
+	flags.manifestPointer = abs
+	return nil
+}
+
 func folderNameStrippingParenSuffix(title string) string {
 	if idx := strings.IndexByte(title, '('); idx >= 0 {
 		title = strings.TrimSpace(title[:idx])
 	}
 	return sanitizeAgentName(title)
+}
+
+// peekManifestName makes a best-effort attempt to read just the top-level
+// "name" field from an agent manifest at the given pointer. It is used by the
+// -m flow to derive a project folder name before the full manifest is loaded
+// inside InitAction.Run. Any failure (read error, parse error, missing name,
+// unsupported pointer type) returns an empty string, leaving the caller to
+// choose a conservative fallback. Errors are logged at debug level only — the
+// authoritative download/parse happens later in downloadAgentYaml and surfaces
+// the real diagnostic to the user.
+//
+// Supported pointer types:
+//   - local file paths (read via os.ReadFile)
+//   - GitHub URLs in the form recognized by parseGitHubUrlNaive (fetched via
+//     plain HTTP against the contents API, no `gh` CLI required)
+//
+// Other URL forms (private GitHub repos that need `gh` auth, non-GitHub URLs)
+// return "" — the caller falls back to not creating a subdirectory in that
+// case.
+func peekManifestName(ctx context.Context, manifestPointer string, httpClient *http.Client) string {
+	if manifestPointer == "" {
+		return ""
+	}
+
+	content, ok := readManifestContentForPeek(ctx, manifestPointer, httpClient)
+	if !ok {
+		return ""
+	}
+
+	var head struct {
+		Name string `yaml:"name"`
+	}
+	if err := yaml.Unmarshal(content, &head); err != nil {
+		log.Printf("peek manifest name: parse: %v", err)
+		return ""
+	}
+	return strings.TrimSpace(head.Name)
+}
+
+// readManifestContentForPeek returns the raw manifest bytes for a best-effort
+// peek. It mirrors the local-file and naive-GitHub-URL fast paths of
+// downloadAgentYaml without invoking the `gh` CLI. Returns ok=false on any
+// failure or unsupported pointer type.
+func readManifestContentForPeek(
+	ctx context.Context, manifestPointer string, httpClient *http.Client,
+) ([]byte, bool) {
+	// Local file path: bypass URL handling entirely so a relative path like
+	// "agent.yaml" that happens to look URL-ish is still read from disk.
+	if !strings.HasPrefix(manifestPointer, "http://") && !strings.HasPrefix(manifestPointer, "https://") {
+		info, statErr := os.Stat(manifestPointer)
+		if statErr != nil || info.IsDir() {
+			return nil, false
+		}
+		//nolint:gosec // manifest path is an explicit user-provided local path; same trust model as downloadAgentYaml
+		content, err := os.ReadFile(manifestPointer)
+		if err != nil {
+			log.Printf("peek manifest name: read %s: %v", manifestPointer, err)
+			return nil, false
+		}
+		return content, true
+	}
+
+	// GitHub URL: try the same naive parse + unauthenticated HTTP GET used
+	// inside downloadAgentYaml for public repositories.
+	urlInfo := parseGitHubUrlNaive(manifestPointer)
+	if urlInfo == nil {
+		return nil, false
+	}
+	if httpClient == nil {
+		return nil, false
+	}
+
+	fileApiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
+	if urlInfo.Branch != "" {
+		fileApiUrl += "?ref=" + url.QueryEscape(urlInfo.Branch)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileApiUrl, nil)
+	if err != nil {
+		log.Printf("peek manifest name: request: %v", err)
+		return nil, false
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3.raw")
+
+	//nolint:gosec // URL is constrained to the GitHub contents API built from a parsed GitHub URL
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		log.Printf("peek manifest name: http: %v", err)
+		return nil, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("peek manifest name: http status %d", resp.StatusCode)
+		return nil, false
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("peek manifest name: read body: %v", err)
+		return nil, false
+	}
+	return body, true
+}
+
+// parseGitHubUrlNaive mirrors (*InitAction).parseGitHubUrlNaive for callers
+// that do not have an InitAction available (e.g. peekManifestName, which runs
+// before the action is constructed). The receiver-bound version is kept in
+// place so the existing downloadAgentYaml code path is untouched.
+func parseGitHubUrlNaive(manifestPointer string) *GitHubUrlInfo {
+	parsedURL, err := url.Parse(manifestPointer)
+	if err != nil {
+		return nil
+	}
+
+	if parsedURL.Host == "github.com" && strings.Contains(parsedURL.Path, "/blob/") {
+		parts := strings.SplitN(parsedURL.Path, "/blob/", 2)
+		if len(parts) != 2 {
+			return nil
+		}
+		repoSlug := strings.TrimPrefix(parts[0], "/")
+		branch, filePath, ok := strings.Cut(parts[1], "/")
+		if !ok || strings.Contains(branch, "/") {
+			return nil
+		}
+		return &GitHubUrlInfo{
+			RepoSlug: repoSlug,
+			Branch:   branch,
+			FilePath: filePath,
+			Hostname: "github.com",
+		}
+	}
+
+	if parsedURL.Host == "raw.githubusercontent.com" {
+		pathPart := strings.TrimPrefix(parsedURL.Path, "/")
+		parts := strings.SplitN(pathPart, "/", 3)
+		if len(parts) < 3 {
+			return nil
+		}
+		repoSlug := parts[0] + "/" + parts[1]
+		if rest, ok := strings.CutPrefix(parts[2], "refs/heads/"); ok {
+			branch, filePath, ok := strings.Cut(rest, "/")
+			if !ok || strings.Contains(branch, "/") {
+				return nil
+			}
+			return &GitHubUrlInfo{
+				RepoSlug: repoSlug,
+				Branch:   branch,
+				FilePath: filePath,
+				Hostname: "github.com",
+			}
+		}
+	}
+
+	return nil
 }
 
 func updateAgentDefinition(
@@ -542,6 +783,7 @@ func runInitFromManifest(
 	httpClient *http.Client,
 	targetDir string,
 	createdFolderDisplay string,
+	userProvidedManifest bool,
 ) error {
 	// Ensure project and environment exist (no subscription/location prompting yet)
 	projectConfig, err := ensureProject(ctx, flags, azdClient, targetDir)
@@ -603,6 +845,7 @@ func runInitFromManifest(
 		flags:                flags,
 		httpClient:           httpClient,
 		createdFolderDisplay: createdFolderDisplay,
+		userProvidedManifest: userProvidedManifest,
 	}
 
 	return action.Run(ctx)
@@ -653,6 +896,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					return err
 				}
 			}
+
+			// Capture whether the user explicitly provided a manifest (via -m flag
+			// or positional argument) BEFORE the auto-detection logic below may also
+			// set flags.manifestPointer. This drives the opinionated-defaults path.
+			userProvidedManifest := flags.manifestPointer != ""
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 
@@ -781,7 +1029,50 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					return err
 				}
 
-				if err := runInitFromManifest(ctx, flags, azdClient, httpClient, ".", ""); err != nil {
+				// Resolve the agent name BEFORE creating the project folder
+				// so the folder, the agent identity, the service entry, and
+				// the cd hint all use the same user-chosen name. Peeking the
+				// manifest seeds the prompt default; an explicit --agent-name
+				// flag wins outright. See resolveAgentNameFromManifestPointer.
+				resolvedName, err := resolveAgentNameFromManifestPointer(
+					ctx, azdClient, flags, flags.manifestPointer, httpClient,
+				)
+				if err != nil {
+					if exterrors.IsCancellation(err) {
+						return exterrors.Cancelled("initialization was cancelled")
+					}
+					return err
+				}
+
+				// Mirror the template flow (#8210) and create a project folder
+				// derived from the resolved agent name. When the peek failed
+				// AND no --agent-name was provided (resolvedName == ""), fall
+				// back to the prior behavior of initializing in the current
+				// directory so we never leave the user with an empty folder +
+				// starter project after a downloadAgentYaml failure.
+				targetDir := "."
+				var folderDisplay string
+				if resolvedName != "" {
+					folderName := sanitizeAgentName(resolvedName)
+					// Make a local relative manifest path absolute before
+					// ensureProject changes into the new project directory,
+					// otherwise downloadAgentYaml will look for the manifest
+					// in the wrong place. flags.src is left as-is (see
+					// absolutizeRelativeManifestPaths comment for why).
+					if err := absolutizeRelativeManifestPaths(flags); err != nil {
+						return err
+					}
+					_, statErr := os.Stat(folderName)
+					newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+					targetDir = folderName
+					if newlyCreated && !existingProject {
+						folderDisplay = filepath.ToSlash(folderName)
+					}
+				}
+
+				if err := runInitFromManifest(
+					ctx, flags, azdClient, httpClient, targetDir, folderDisplay, userProvidedManifest,
+				); err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
 					}
@@ -889,7 +1180,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						if manifestPath != "" {
 							flags.manifestPointer = manifestPath
 							if err := runInitFromManifest(
-								ctx, flags, azdClient, httpClient, ".", folderDisplay,
+								ctx, flags, azdClient, httpClient, ".", folderDisplay, true,
 							); err != nil {
 								if exterrors.IsCancellation(err) {
 									return exterrors.Cancelled("initialization was cancelled")
@@ -902,8 +1193,31 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 					default:
 						// Agent manifest template - use existing -m flow.
-						// Create project in a new subdirectory derived from the template title.
+						flags.manifestPointer = selectedTemplate.Source
+
+						// Resolve the agent name BEFORE creating the project
+						// folder so the folder, the agent identity, the service
+						// entry, and the cd hint all use the same user-chosen
+						// name. Peeking the template's manifest seeds the prompt
+						// default; --agent-name wins outright.
+						resolvedName, err := resolveAgentNameFromManifestPointer(
+							ctx, azdClient, flags, selectedTemplate.Source, httpClient,
+						)
+						if err != nil {
+							if exterrors.IsCancellation(err) {
+								return exterrors.Cancelled("initialization was cancelled")
+							}
+							return err
+						}
+
+						// Prefer the resolved agent name for the project folder.
+						// Fall back to the template title only when manifest peek
+						// failed (e.g. unsupported URL form) AND no --agent-name
+						// was provided.
 						folderName := folderNameStrippingParenSuffix(selectedTemplate.Title)
+						if resolvedName != "" {
+							folderName = sanitizeAgentName(resolvedName)
+						}
 						// Check whether the target directory already exists so we
 						// only report "created" when a new directory was made.
 						_, statErr := os.Stat(folderName)
@@ -912,9 +1226,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						if newlyCreated && !existingProject {
 							folderDisplay = filepath.ToSlash(folderName)
 						}
-						flags.manifestPointer = selectedTemplate.Source
 						if err := runInitFromManifest(
-							ctx, flags, azdClient, httpClient, folderName, folderDisplay,
+							ctx, flags, azdClient, httpClient, folderName, folderDisplay, true,
 						); err != nil {
 							if exterrors.IsCancellation(err) {
 								return exterrors.Cancelled("initialization was cancelled")
@@ -1040,7 +1353,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		// Code deploy is supported for Python and .NET projects.
 		if _, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
 			showCodeDeploy := isPythonProject(targetDir) || isDotnetProject(targetDir)
-			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, a.flags.deployMode)
+			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, a.flags.deployMode, a.userProvidedManifest)
 			if err != nil {
 				return fmt.Errorf("prompting for deploy mode: %w", err)
 			}
@@ -1052,7 +1365,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 					runtime:       a.flags.runtime,
 					entryPoint:    a.flags.entryPoint,
 					depResolution: a.flags.depResolution,
-				})
+				}, a.userProvidedManifest)
 				if err != nil {
 					return fmt.Errorf("prompting for code configuration: %w", err)
 				}
@@ -1950,7 +2263,7 @@ func (a *InitAction) downloadAgentYaml(
 		var contentStr string
 		// First try naive parsing assuming branch is a single word. This allows users to not have to authenticate
 		// with gh CLI for public repositories.
-		urlInfo = a.parseGitHubUrlNaive(manifestPointer)
+		urlInfo = parseGitHubUrlNaive(manifestPointer)
 		if urlInfo != nil {
 			// Construct GitHub Contents API URL with ref query parameter
 			fileApiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
@@ -2164,7 +2477,7 @@ func writeAgentDefinitionFile(targetDir string, agentManifest *agent_yaml.AgentM
 		return fmt.Errorf("saving file to %s: %w", filePath, err)
 	}
 
-	fmt.Println(output.WithGrayFormat("Processed agent.yaml at %s", filePath))
+	log.Printf("Processed agent.yaml at %s", filePath)
 
 	// Generate .agentignore if it doesn't already exist
 	agentIgnorePath := filepath.Join(targetDir, ".agentignore")
@@ -2568,14 +2881,6 @@ func (a *InitAction) populateContainerSettings(
 	ctx context.Context,
 	manifestResources *agent_yaml.ContainerResources,
 ) (*project.ContainerSettings, error) {
-	choices := make([]*azdext.SelectChoice, len(project.ResourceTiers))
-	for i, t := range project.ResourceTiers {
-		choices[i] = &azdext.SelectChoice{
-			Label: t.String(),
-			Value: fmt.Sprintf("%d", i),
-		}
-	}
-
 	defaultIndex := int32(0)
 	if manifestResources != nil {
 		for i, t := range project.ResourceTiers {
@@ -2583,6 +2888,29 @@ func (a *InitAction) populateContainerSettings(
 				defaultIndex = boundedInt32Index(i)
 				break
 			}
+		}
+	}
+
+	// When the user provided a manifest explicitly (-m), auto-select the default
+	// resource tier without prompting to minimize interactive steps. In the
+	// primary -m quickstart path (Python/.NET), deploy mode auto-selects
+	// "container" so this function is reached for the default flow.
+	if a.userProvidedManifest {
+		selected := project.ResourceTiers[defaultIndex]
+		log.Printf("Defaulted compute tier: %s", selected.String())
+		return &project.ContainerSettings{
+			Resources: &project.ResourceSettings{
+				Memory: selected.Memory,
+				Cpu:    selected.Cpu,
+			},
+		}, nil
+	}
+
+	choices := make([]*azdext.SelectChoice, len(project.ResourceTiers))
+	for i, t := range project.ResourceTiers {
+		choices[i] = &azdext.SelectChoice{
+			Label: t.String(),
+			Value: fmt.Sprintf("%d", i),
 		}
 	}
 
@@ -2622,88 +2950,6 @@ func downloadGithubManifest(
 	}
 
 	return content, nil
-}
-
-// parseGitHubUrlNaive attempts to parse a GitHub URL assuming a simple single-word branch name.
-// Returns nil if the URL doesn't match the expected pattern.
-// Expected formats:
-//   - https://github.com/{owner}/{repo}/blob/{branch}/{path}
-//   - https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/{branch}/{path}
-func (a *InitAction) parseGitHubUrlNaive(manifestPointer string) *GitHubUrlInfo {
-	// Parse URL to properly handle query parameters and fragments
-	parsedURL, err := url.Parse(manifestPointer)
-	if err != nil {
-		return nil
-	}
-
-	// Try parsing github.com/blob format: https://github.com/{owner}/{repo}/blob/{branch}/{path}
-	if parsedURL.Host == "github.com" && strings.Contains(parsedURL.Path, "/blob/") {
-		hostname := "github.com"
-
-		// Split by /blob/
-		parts := strings.SplitN(parsedURL.Path, "/blob/", 2)
-		if len(parts) != 2 {
-			return nil
-		}
-
-		// Extract repo slug (owner/repo) from the first part
-		repoPath := strings.TrimPrefix(parts[0], "/")
-		repoSlug := repoPath
-
-		branch, filePath, ok := strings.Cut(parts[1], "/")
-		if !ok {
-			return nil
-		}
-
-		// Only use naive parsing if branch looks like a simple single word (no slashes)
-		if strings.Contains(branch, "/") {
-			return nil
-		}
-
-		return &GitHubUrlInfo{
-			RepoSlug: repoSlug,
-			Branch:   branch,
-			FilePath: filePath,
-			Hostname: hostname,
-		}
-	}
-
-	// Try parsing raw.githubusercontent.com format: https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/{branch}/{path}
-	if parsedURL.Host == "raw.githubusercontent.com" {
-		hostname := "github.com" // API calls still use github.com
-
-		// Remove leading slash from path
-		pathPart := strings.TrimPrefix(parsedURL.Path, "/")
-
-		// Split path: {owner}/{repo}/refs/heads/{branch}/{file-path}
-		parts := strings.SplitN(pathPart, "/", 3) // owner, repo, rest
-		if len(parts) < 3 {
-			return nil
-		}
-
-		repoSlug := parts[0] + "/" + parts[1]
-		rest := parts[2]
-		if rest, ok := strings.CutPrefix(rest, "refs/heads/"); ok {
-			branch, filePath, ok := strings.Cut(rest, "/")
-			if !ok {
-				return nil
-			}
-
-			// Only use naive parsing if branch looks like a simple single word
-			if strings.Contains(branch, "/") {
-				return nil
-			}
-
-			return &GitHubUrlInfo{
-				RepoSlug: repoSlug,
-				Branch:   branch,
-				FilePath: filePath,
-				Hostname: hostname,
-			}
-		}
-	}
-
-	return nil
 }
 
 // parseGitHubUrl extracts repository information from various GitHub URL formats using extension framework

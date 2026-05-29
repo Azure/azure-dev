@@ -719,8 +719,14 @@ func acrPermissionSuggestionFor(err error) string {
 		abacLine + "\n\n" +
 		"  Example (run as a subscription Owner or User Access Administrator):\n" +
 		"    " + azCommand + "\n\n" +
-		"Alternative (switch this service to code (zip) deploy in place; no need to re-run\n" +
-		"`azd ai agent init`):\n" +
+		"Alternative (switch this service to code (zip) deploy; no ACR push required):\n" +
+		"  Code (zip) deploy uploads your source code directly to Foundry Agent Service.\n" +
+		"  The service runs your agent in a Microsoft-managed platform container -- you do\n" +
+		"  NOT need a Dockerfile or a custom container image. No container is built or\n" +
+		"  pushed, so no ACR permissions are needed.\n\n" +
+		"  Supported runtimes: python_3_13, python_3_14, dotnet_10\n\n" +
+		"  Learn more: https://learn.microsoft.com/azure/foundry/agents/how-to/deploy-hosted-agent-code\n\n" +
+		"  To switch (no need to re-run `azd ai agent init`):\n" +
 		"  1. Open the service's agent.yaml and add a `code_configuration:` block under\n" +
 		"     the hosted agent, for example:\n" +
 		"        code_configuration:\n" +

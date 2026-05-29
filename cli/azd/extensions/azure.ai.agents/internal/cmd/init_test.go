@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"io/fs"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -2937,5 +2939,27 @@ func TestAbsolutizeRelativeManifestPaths_SrcEscapeRegression(t *testing.T) {
 	// Even simpler: src should never have been touched in the first place.
 	if flags.src != "src" {
 		t.Errorf("src must remain relative %q to stay inside project, got %q", "src", flags.src)
+	}
+}
+
+func TestGenerateResourceTokenSalt(t *testing.T) {
+	salt, err := generateResourceTokenSalt()
+	require.NoError(t, err)
+
+	// Should be 8-character hex string (4 random bytes = 8 hex chars)
+	require.Len(t, salt, 8)
+
+	// Should be valid hex
+	_, err = hex.DecodeString(salt)
+	require.NoError(t, err)
+}
+
+func TestGenerateResourceTokenSalt_Unique(t *testing.T) {
+	seen := make(map[string]bool)
+	for range 100 {
+		salt, err := generateResourceTokenSalt()
+		require.NoError(t, err)
+		require.False(t, seen[salt], "duplicate salt generated: %s", salt)
+		seen[salt] = true
 	}
 }

@@ -79,6 +79,11 @@ func TestIsRecommendedOptimizationModel(t *testing.T) {
 		{"GPT-5", true},
 		{"gpt-5.1", true},
 		{"gpt-5.2", true},
+		{"gpt-5.4", true},
+		{"gpt-5.5", true},
+		{"deepseek-v4-pro", true},
+		{"Deepseek-V4-Pro", true},
+		{"deepseek-v3.2", true},
 		{"gpt-4o", false},
 		{"gpt-4o-mini", false},
 		{"", false},
@@ -89,4 +94,93 @@ func TestIsRecommendedOptimizationModel(t *testing.T) {
 			assert.Equal(t, tt.want, isRecommendedOptimizationModel(tt.model))
 		})
 	}
+}
+
+// ---- buildOptimizeModelChoices — baseline exclusion ----
+// buildOptimizeModelChoices requires a real azdClient to list deployments,
+// so its baseline-exclusion logic is validated by TestResolveOptimizeTargetModels_*.
+
+// ---- resolveOptimizeSystemPrompt — nil azdClient ----
+
+func TestResolveOptimizeSystemPrompt_NilClient_WithInstruction(t *testing.T) {
+	t.Parallel()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent: opt_eval.AgentRef{
+				Instruction: opt_eval.InstructionRef{Value: "Be helpful"},
+			},
+		},
+	}
+
+	err := resolveOptimizeSystemPrompt(t.Context(), nil, cfg, "", false, false)
+	assert.NoError(t, err)
+}
+
+func TestResolveOptimizeSystemPrompt_NilClient_NoInstruction(t *testing.T) {
+	t.Parallel()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent: opt_eval.AgentRef{},
+		},
+	}
+
+	err := resolveOptimizeSystemPrompt(t.Context(), nil, cfg, "", false, false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "instruction is required")
+}
+
+// ---- resolveOptimizeEvalModel — nil azdClient ----
+
+func TestResolveOptimizeEvalModel_NilClient(t *testing.T) {
+	t.Parallel()
+
+	cfg := &OptimizeConfig{Options: &opt_eval.Options{}}
+	err := resolveOptimizeEvalModel(t.Context(), nil, cfg, false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot prompt")
+}
+
+// ---- resolveOptimizeDataset — nil azdClient ----
+
+func TestResolveOptimizeDataset_NilClient(t *testing.T) {
+	t.Parallel()
+
+	cfg := &OptimizeConfig{Options: &opt_eval.Options{}}
+	err := resolveOptimizeDataset(t.Context(), nil, cfg, "", false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot prompt")
+}
+
+// ---- resolveOptimizeOptimizationModel — nil azdClient ----
+
+func TestResolveOptimizeOptimizationModel_NilClient(t *testing.T) {
+	t.Parallel()
+
+	cfg := &OptimizeConfig{Options: &opt_eval.Options{}}
+	err := resolveOptimizeOptimizationModel(t.Context(), nil, cfg)
+	assert.NoError(t, err) // silently skips
+	assert.Empty(t, cfg.Options.OptimizationModel)
+}
+
+// ---- resolveOptimizeTargetModels — nil azdClient ----
+
+func TestResolveOptimizeTargetModels_NilClient(t *testing.T) {
+	t.Parallel()
+
+	cfg := &OptimizeConfig{Options: &opt_eval.Options{}}
+	err := resolveOptimizeTargetModels(t.Context(), nil, cfg)
+	assert.NoError(t, err) // silently skips
+	assert.Nil(t, cfg.Options.OptimizationConfig)
+}
+
+// ---- promptOptimizeConfigConfirmation — nil azdClient ----
+
+func TestPromptOptimizeConfigConfirmation_NilClient(t *testing.T) {
+	t.Parallel()
+
+	cfg := &OptimizeConfig{}
+	err := promptOptimizeConfigConfirmation(t.Context(), nil, cfg, "")
+	assert.NoError(t, err) // silently skips
 }

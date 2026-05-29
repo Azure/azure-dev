@@ -30,6 +30,7 @@ import (
 // Relative file paths are resolved against agentProject.
 func resolveOptimizeSystemPrompt(
 	ctx context.Context,
+	azdClient *azdext.AzdClient,
 	cfg *OptimizeConfig,
 	agentProject string,
 	hasProject bool,
@@ -63,11 +64,9 @@ func resolveOptimizeSystemPrompt(
 			"  3. Run without --no-prompt to enter it interactively")
 	}
 
-	azdClient, clientErr := azdext.NewAzdClient()
-	if clientErr != nil {
-		return fmt.Errorf("instruction is required but could not open interactive prompt: %w", clientErr)
+	if azdClient == nil {
+		return fmt.Errorf("instruction is required but could not open interactive prompt")
 	}
-	defer azdClient.Close()
 
 	inputChoices := []*azdext.SelectChoice{
 		{Label: "Type inline", Value: "inline"},
@@ -127,6 +126,7 @@ func resolveOptimizeSystemPrompt(
 //  3. Interactive prompt: ask the user to provide a path or skip.
 func resolveOptimizeSkillDir(
 	ctx context.Context,
+	azdClient *azdext.AzdClient,
 	cfg *OptimizeConfig,
 	agentProject string,
 	noPrompt bool,
@@ -147,12 +147,10 @@ func resolveOptimizeSkillDir(
 		return nil
 	}
 
-	azdClient, clientErr := azdext.NewAzdClient()
-	if clientErr != nil {
+	if azdClient == nil {
 		cfg.SkillDir = detectedDir
 		return nil
 	}
-	defer azdClient.Close()
 
 	if detectedDir != "" {
 		// Found a skill directory — ask user to confirm or provide a different one.
@@ -225,12 +223,15 @@ func resolveOptimizeSkillDir(
 // promptOptimizeConfigConfirmation shows the resolved values from the baseline
 // config and lets the user confirm or override instruction file, skills
 // directory, and tools file.
-func promptOptimizeConfigConfirmation(ctx context.Context, cfg *OptimizeConfig, agentProject string) error {
-	azdClient, clientErr := azdext.NewAzdClient()
-	if clientErr != nil {
+func promptOptimizeConfigConfirmation(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	cfg *OptimizeConfig,
+	agentProject string,
+) error {
+	if azdClient == nil {
 		return nil // non-fatal — skip confirmation prompts
 	}
-	defer azdClient.Close()
 	prompt := azdClient.Prompt()
 
 	// Instruction file.
@@ -305,6 +306,7 @@ func promptOptimizeConfigConfirmation(ctx context.Context, cfg *OptimizeConfig, 
 // when --eval-model was not provided. In --no-prompt mode, returns an error.
 func resolveOptimizeEvalModel(
 	ctx context.Context,
+	azdClient *azdext.AzdClient,
 	cfg *OptimizeConfig,
 	noPrompt bool,
 ) error {
@@ -312,11 +314,9 @@ func resolveOptimizeEvalModel(
 		return fmt.Errorf("options.eval_model is required: use --eval-model <model> to specify the evaluation model")
 	}
 
-	azdClient, clientErr := azdext.NewAzdClient()
-	if clientErr != nil {
-		return fmt.Errorf("eval_model is required but cannot prompt: %w", clientErr)
+	if azdClient == nil {
+		return fmt.Errorf("eval_model is required but cannot prompt")
 	}
-	defer azdClient.Close()
 
 	deployedModel := getDeployedModelFromEnv(ctx, azdClient)
 
@@ -333,6 +333,7 @@ func resolveOptimizeEvalModel(
 // specified via config or --dataset flag. In --no-prompt mode, returns an error.
 func resolveOptimizeDataset(
 	ctx context.Context,
+	azdClient *azdext.AzdClient,
 	cfg *OptimizeConfig,
 	agentProject string,
 	noPrompt bool,
@@ -343,11 +344,9 @@ func resolveOptimizeDataset(
 				"in your config, or run 'azd ai agent eval init' to generate one")
 	}
 
-	azdClient, clientErr := azdext.NewAzdClient()
-	if clientErr != nil {
-		return fmt.Errorf("dataset is required but cannot prompt: %w", clientErr)
+	if azdClient == nil {
+		return fmt.Errorf("dataset is required but cannot prompt")
 	}
-	defer azdClient.Close()
 
 	file, ref, err := promptDatasetSelection(ctx, azdClient, agentProject)
 	if err != nil {
@@ -372,13 +371,12 @@ func hasModelConfig(oc opt_eval.OptimizationConfig) bool {
 // Foundry project and allows multi-select.
 func resolveOptimizeTargetModels(
 	ctx context.Context,
+	azdClient *azdext.AzdClient,
 	cfg *OptimizeConfig,
 ) error {
-	azdClient, clientErr := azdext.NewAzdClient()
-	if clientErr != nil {
+	if azdClient == nil {
 		return nil
 	}
-	defer azdClient.Close()
 
 	currentModel := cfg.Agent.Model
 
@@ -397,7 +395,7 @@ func resolveOptimizeTargetModels(
 
 	message := "Select target models for optimization"
 	if currentModel != "" {
-		message = fmt.Sprintf("Select target models for optimization (current: %s)", currentModel)
+		message = fmt.Sprintf("Select target models for optimization (baseline: %s, excluded)", currentModel)
 	}
 
 	multiResp, multiErr := azdClient.Prompt().MultiSelect(ctx, &azdext.MultiSelectRequest{
@@ -428,7 +426,15 @@ func resolveOptimizeTargetModels(
 
 // recommendedOptimizationModels is the set of model names recommended as
 // optimization models by the server (exact match, case-insensitive).
-var recommendedOptimizationModels = []string{"gpt-5", "gpt-5.1", "gpt-5.2"}
+var recommendedOptimizationModels = []string{
+	"gpt-5",
+	"gpt-5.1",
+	"gpt-5.2",
+	"gpt-5.4",
+	"gpt-5.5",
+	"deepseek-v4-pro",
+	"deepseek-v3.2",
+}
 
 // isRecommendedOptimizationModel checks whether a model name matches a
 // recommended optimization model (exact match, case-insensitive).
@@ -442,35 +448,45 @@ func isRecommendedOptimizationModel(modelName string) bool {
 }
 
 // resolveOptimizeOptimizationModel prompts the user to select an optimization
-// model. The eval model is offered as default (Skip), followed by a "Select
-// another deployment" option to browse all deployments. If the user picks a
-// model not in the recommended set, a warning is printed.
-func resolveOptimizeOptimizationModel(ctx context.Context, cfg *OptimizeConfig) error {
-	azdClient, clientErr := azdext.NewAzdClient()
-	if clientErr != nil {
+// model. Recommended deployments (gpt-5 family, deepseek) are listed first,
+// followed by the remaining deployments. If the user picks a model not in
+// the recommended set, a warning is printed.
+func resolveOptimizeOptimizationModel(ctx context.Context, azdClient *azdext.AzdClient, cfg *OptimizeConfig) error {
+	if azdClient == nil {
 		return nil
 	}
-	defer azdClient.Close()
 
-	allowedList := strings.Join(recommendedOptimizationModels, ", ")
+	// Fetch deployments once and build a single list: recommended first, then others.
+	deployments := listDeploymentsFromEnv(ctx, azdClient)
 
-	var choices []*azdext.SelectChoice
-	// First choice: skip (use the eval model).
-	choices = append(choices, &azdext.SelectChoice{
-		Label: fmt.Sprintf("Skip (use eval model: %s)", cfg.Options.EvalModel),
-		Value: "",
-	})
-	// Second choice: browse deployments.
-	choices = append(choices, &azdext.SelectChoice{
-		Label: "Select another deployment",
-		Value: selectOtherDeploymentValue,
-	})
+	var recommended, others []*azdext.SelectChoice
+	seen := make(map[string]bool)
+	for _, d := range deployments {
+		if seen[d.Name] {
+			continue
+		}
+		label := d.Name
+		if d.ModelName != "" && d.ModelName != d.Name {
+			label = fmt.Sprintf("%s (%s)", d.Name, d.ModelName)
+		}
+		choice := &azdext.SelectChoice{Label: label, Value: d.Name}
+		if isRecommendedOptimizationModel(d.ModelName) {
+			recommended = append(recommended, choice)
+		} else {
+			others = append(others, choice)
+		}
+		seen[d.Name] = true
+	}
 
-	message := fmt.Sprintf("Select an optimization model (recommended: %s)", allowedList)
+	choices := append(recommended, others...)
+	if len(choices) == 0 {
+		return nil
+	}
+
 	defaultIndex := int32(0)
 	selectResp, selectErr := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message:       message,
+			Message:       "Select an optimization model (gpt-5 family recommended)",
 			Choices:       choices,
 			SelectedIndex: &defaultIndex,
 		},
@@ -480,25 +496,13 @@ func resolveOptimizeOptimizationModel(ctx context.Context, cfg *OptimizeConfig) 
 	}
 
 	selected := choices[int(*selectResp.Value)].Value
-	if selected == "" {
-		// Skip — leave OptimizationModel empty (server uses eval model).
-		return nil
-	}
-
-	if selected == selectOtherDeploymentValue {
-		picked, err := promptAllDeployments(ctx, azdClient)
-		if err != nil {
-			return nil // no deployments — silently skip
-		}
-		selected = picked
-	}
 
 	// Warn if the selected deployment's model is not in the recommended set.
-	deployments := listDeploymentsFromEnv(ctx, azdClient)
 	for _, d := range deployments {
 		if d.Name == selected && !isRecommendedOptimizationModel(d.ModelName) {
-			fmt.Printf("%s deployment %q uses model %q which is not in the recommended "+
-				"optimization model set (%s). The server may reject it.\n", color.YellowString("Warning:"), selected, d.ModelName, allowedList)
+			fmt.Printf("%s deployment %q uses model %q which is not a recommended "+
+				"optimization model (gpt-5 family recommended). The server may reject it.\n",
+				color.YellowString("Warning:"), selected, d.ModelName)
 			break
 		}
 	}
@@ -508,7 +512,8 @@ func resolveOptimizeOptimizationModel(ctx context.Context, cfg *OptimizeConfig) 
 }
 
 // buildOptimizeModelChoices fetches Foundry project deployments and returns
-// MultiSelectChoice items. The current deployed model is pre-selected.
+// MultiSelectChoice items. The baseline model (currentModel) is excluded
+// from the list since it is already used as the baseline.
 // Falls back to an empty list if deployments cannot be fetched.
 func buildOptimizeModelChoices(ctx context.Context, azdClient *azdext.AzdClient, currentModel string) []*azdext.MultiSelectChoice {
 	deployments := listDeploymentsFromEnv(ctx, azdClient)
@@ -516,24 +521,9 @@ func buildOptimizeModelChoices(ctx context.Context, azdClient *azdext.AzdClient,
 	var choices []*azdext.MultiSelectChoice
 	seen := make(map[string]bool)
 
-	// If current model is present in deployments, it will be marked below.
-	// If not (and it's non-empty), prepend it as a pre-selected entry.
+	// Exclude the baseline model from candidate choices.
 	if currentModel != "" {
-		found := false
-		for _, d := range deployments {
-			if d.Name == currentModel {
-				found = true
-				break
-			}
-		}
-		if !found {
-			choices = append(choices, &azdext.MultiSelectChoice{
-				Label:    currentModel + " (current)",
-				Value:    currentModel,
-				Selected: true,
-			})
-			seen[currentModel] = true
-		}
+		seen[currentModel] = true
 	}
 
 	for _, d := range deployments {
@@ -544,14 +534,9 @@ func buildOptimizeModelChoices(ctx context.Context, azdClient *azdext.AzdClient,
 		if d.ModelName != "" && d.ModelName != d.Name {
 			label = fmt.Sprintf("%s (%s)", d.Name, d.ModelName)
 		}
-		selected := d.Name == currentModel
-		if selected {
-			label += " (current)"
-		}
 		choices = append(choices, &azdext.MultiSelectChoice{
-			Label:    label,
-			Value:    d.Name,
-			Selected: selected,
+			Label: label,
+			Value: d.Name,
 		})
 		seen[d.Name] = true
 	}

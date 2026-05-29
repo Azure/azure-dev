@@ -280,6 +280,9 @@ func loadSkillsFromDir(dir string) ([]optimize_api.SkillDefinition, error) {
 		}
 
 		skill := parseSkillFile(entry.Name(), string(data))
+		if skill.Body == "" && skill.Description == "" {
+			continue
+		}
 		skills = append(skills, skill)
 	}
 

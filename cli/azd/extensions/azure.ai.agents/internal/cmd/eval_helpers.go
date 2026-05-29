@@ -26,6 +26,10 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+// ProjectEndpointAPIVersion is the default API version for project endpoint calls
+// (optimize, dataset operations).
+const ProjectEndpointAPIVersion = "2025-11-15-preview"
+
 // resolvePortalPrefix reads AZURE_AI_PROJECT_ID from the azd environment and
 // returns a PortalPrefix for building Foundry portal URLs.
 // Returns nil on any failure.

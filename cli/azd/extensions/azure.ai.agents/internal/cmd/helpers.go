@@ -444,6 +444,7 @@ func resolveConversationID(
 	projectEndpoint string,
 	bearerToken string,
 	agentName string,
+	apiVersion string,
 	options *agent_api.SessionRequestOptions,
 	legacyKeys ...string,
 ) (string, error) {
@@ -461,7 +462,7 @@ func resolveConversationID(
 	}
 
 	// Create and persist a new conversation for multi-turn memory.
-	newConvID, err := createConversation(ctx, projectEndpoint, agentName, bearerToken, options)
+	newConvID, err := createConversation(ctx, projectEndpoint, agentName, bearerToken, apiVersion, options)
 	if err != nil {
 		return "", fmt.Errorf("failed to create conversation: %w", err)
 	}

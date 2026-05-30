@@ -83,7 +83,8 @@ var displayableProtocols = []displayableProtocolEntry{
 // buildResponsesProtocolURL builds the per-agent HTTPS URL for the "responses" protocol.
 func buildResponsesProtocolURL(projectEndpoint, agentName string) string {
 	return fmt.Sprintf(
-		"%s/agents/%s/endpoint/protocols/openai/v1/responses", projectEndpoint, agentName,
+		"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
+		projectEndpoint, agentName, agent_api.AgentEndpointAPIVersion,
 	)
 }
 

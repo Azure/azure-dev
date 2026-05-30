@@ -2,7 +2,7 @@
 
 ## 0.1.36-preview (2026-05-30)
 
-- [[#8500]](https://github.com/Azure/azure-dev/pull/8500) Fix `api-version` query parameter handling for OpenAI agent endpoints.
+- [[#8500]](https://github.com/Azure/azure-dev/pull/8500) workaround: api-version query param for non-conformant openai agent endpoints
 
 ## 0.1.35-preview (2026-05-29)
 

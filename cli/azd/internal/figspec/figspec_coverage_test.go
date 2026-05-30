@@ -4,6 +4,7 @@
 package figspec
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -492,6 +493,19 @@ func TestBuildSpec_Aliases(t *testing.T) {
 	t.Fatal("expected environment subcommand with aliases")
 }
 
+func TestGenerateNonPersistentGlobalOptions(t *testing.T) {
+	root := &cobra.Command{Use: "azd", Short: "CLI"}
+	root.Flags().Bool("docs", false, "Open documentation")
+	root.Flags().Bool("local-only", false, "Local flag")
+
+	sb := newTestSpecBuilder(false)
+	opts := sb.generateNonPersistentGlobalOptions(root)
+
+	require.Len(t, opts, 1)
+	require.Equal(t, []string{"--docs"}, opts[0].Name)
+	require.True(t, opts[0].IsPersistent)
+}
+
 func TestGenerateOptions_FlagTypes(t *testing.T) {
 	t.Run("bool_flag_no_args", func(t *testing.T) {
 		fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
@@ -957,6 +971,15 @@ func TestTryGenerateExtensionSubcommand(t *testing.T) {
 		require.Nil(t, result)
 	})
 
+	t.Run("load_error_returns_nil", func(t *testing.T) {
+		sb := newTestSpecBuilder(false)
+		sb.extensionMetadataProvider = &mockExtensionProvider{hasCapability: true, loadErr: errors.New("load failed")}
+		cmd := &cobra.Command{Use: "ext", Short: "Extension"}
+		cmd.Annotations = map[string]string{"extension.id": "test-ext"}
+		result := sb.tryGenerateExtensionSubcommand(cmd, []string{"ext"})
+		require.Nil(t, result)
+	})
+
 	t.Run("success_with_metadata", func(t *testing.T) {
 		sb := newTestSpecBuilder(false)
 		sb.globalFlagNames = map[string]bool{"help": true}
@@ -978,6 +1001,32 @@ func TestTryGenerateExtensionSubcommand(t *testing.T) {
 	})
 }
 
+func TestGenerateSubcommands_ExtensionMetadata(t *testing.T) {
+	root := &cobra.Command{Use: "azd", Short: "CLI"}
+	ext := &cobra.Command{Use: "ext", Short: "Extension"}
+	ext.Annotations = map[string]string{"extension.id": "test-ext"}
+	root.AddCommand(ext)
+
+	sb := newTestSpecBuilder(false)
+	sb.globalFlagNames = map[string]bool{}
+	sb.extensionMetadataProvider = &mockExtensionProvider{
+		hasCapability: true,
+		metadata: &extensions.ExtensionCommandMetadata{
+			Commands: []extensions.Command{
+				{Name: []string{"child"}, Short: "Child cmd"},
+			},
+		},
+	}
+
+	subs := sb.generateSubcommands(root, &CommandContext{Command: root, CommandPath: "azd"})
+
+	require.Len(t, subs, 2)
+	require.Equal(t, "ext", subs[0].Name[0])
+	require.Len(t, subs[0].Subcommands, 1)
+	require.Equal(t, "child", subs[0].Subcommands[0].Name[0])
+	require.Equal(t, "help", subs[1].Name[0])
+}
+
 func TestTryGenerateExtensionHelpSubcommand(t *testing.T) {
 	t.Run("nil_provider_returns_nil", func(t *testing.T) {
 		sb := newTestSpecBuilder(false)
@@ -993,6 +1042,33 @@ func TestTryGenerateExtensionHelpSubcommand(t *testing.T) {
 		sb.extensionMetadataProvider = &mockExtensionProvider{hasCapability: true}
 		cmd := &cobra.Command{Use: "plain"}
 		result := sb.tryGenerateExtensionHelpSubcommand(cmd, []string{"plain"})
+		require.Nil(t, result)
+	})
+
+	t.Run("no_capability_returns_nil", func(t *testing.T) {
+		sb := newTestSpecBuilder(false)
+		sb.extensionMetadataProvider = &mockExtensionProvider{hasCapability: false}
+		cmd := &cobra.Command{Use: "ext"}
+		cmd.Annotations = map[string]string{"extension.id": "test-ext"}
+		result := sb.tryGenerateExtensionHelpSubcommand(cmd, []string{"ext"})
+		require.Nil(t, result)
+	})
+
+	t.Run("load_error_returns_nil", func(t *testing.T) {
+		sb := newTestSpecBuilder(false)
+		sb.extensionMetadataProvider = &mockExtensionProvider{hasCapability: true, loadErr: errors.New("load failed")}
+		cmd := &cobra.Command{Use: "ext"}
+		cmd.Annotations = map[string]string{"extension.id": "test-ext"}
+		result := sb.tryGenerateExtensionHelpSubcommand(cmd, []string{"ext"})
+		require.Nil(t, result)
+	})
+
+	t.Run("nil_metadata_returns_nil", func(t *testing.T) {
+		sb := newTestSpecBuilder(false)
+		sb.extensionMetadataProvider = &mockExtensionProvider{hasCapability: true}
+		cmd := &cobra.Command{Use: "ext"}
+		cmd.Annotations = map[string]string{"extension.id": "test-ext"}
+		result := sb.tryGenerateExtensionHelpSubcommand(cmd, []string{"ext"})
 		require.Nil(t, result)
 	})
 
@@ -1056,6 +1132,18 @@ func TestGenerateHelpSubcommands_MirrorsTree(t *testing.T) {
 	require.Len(t, helpSubs[0].Subcommands, 2)
 }
 
+func TestGenerateHelpSubcommands_SkipsHelpCommand(t *testing.T) {
+	root := &cobra.Command{Use: "azd", Short: "CLI"}
+	root.AddCommand(&cobra.Command{Use: "init", Short: "Init"})
+	root.InitDefaultHelpCmd()
+
+	sb := newTestSpecBuilder(false)
+	helpSubs := sb.generateHelpSubcommands(root)
+
+	require.Len(t, helpSubs, 1)
+	require.Equal(t, "init", helpSubs[0].Name[0])
+}
+
 func TestGenerateHelpSubcommands_HiddenExcluded(t *testing.T) {
 	root := &cobra.Command{Use: "azd", Short: "CLI"}
 	visible := &cobra.Command{Use: "init", Short: "Init"}
@@ -1070,6 +1158,30 @@ func TestGenerateHelpSubcommands_HiddenExcluded(t *testing.T) {
 	for _, sub := range helpSubs {
 		require.NotEqual(t, "secret", sub.Name[0], "hidden command should not appear in help tree")
 	}
+}
+
+func TestGenerateHelpSubcommands_ExtensionMetadata(t *testing.T) {
+	root := &cobra.Command{Use: "azd", Short: "CLI"}
+	ext := &cobra.Command{Use: "ext", Short: "Extension"}
+	ext.Annotations = map[string]string{"extension.id": "test-ext"}
+	root.AddCommand(ext)
+
+	sb := newTestSpecBuilder(false)
+	sb.extensionMetadataProvider = &mockExtensionProvider{
+		hasCapability: true,
+		metadata: &extensions.ExtensionCommandMetadata{
+			Commands: []extensions.Command{
+				{Name: []string{"child"}, Short: "Child cmd"},
+			},
+		},
+	}
+
+	helpSubs := sb.generateHelpSubcommands(root)
+
+	require.Len(t, helpSubs, 1)
+	require.Equal(t, "ext", helpSubs[0].Name[0])
+	require.Len(t, helpSubs[0].Subcommands, 1)
+	require.Equal(t, "child", helpSubs[0].Subcommands[0].Name[0])
 }
 
 // ============================================================================

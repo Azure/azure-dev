@@ -6,6 +6,7 @@ package internal
 import (
 	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -373,10 +374,14 @@ func CreateLocalRegistry() error {
 		"registry": []any{},
 	}
 
-	registryJson, err := json.MarshalIndent(emptyRegistry, "", "  ")
-	if err != nil {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(emptyRegistry); err != nil {
 		return fmt.Errorf("failed to marshal empty registry: %w", err)
 	}
+	registryJson := buf.Bytes()
 
 	//nolint:gosec // G703: path from azd config directory
 	if err := os.WriteFile(localRegistryPath, registryJson, PermissionFile); err != nil {

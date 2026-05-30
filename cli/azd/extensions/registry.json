@@ -5836,7 +5836,7 @@
       ]
     },
     {
-      "id": "azure.ai.foundry",
+      "id": "microsoft.foundry",
       "displayName": "Microsoft Foundry (Preview)",
       "description": "A meta-package, bundling together all of the Microsoft Foundry AZD extensions for easy install. (Preview)",
       "versions": [

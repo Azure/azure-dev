@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
 description: A meta-package, bundling together all of the Microsoft Foundry AZD extensions for easy install. (Preview)
 displayName: Microsoft Foundry (Preview)
-id: azure.ai.foundry
+id: microsoft.foundry
 tags:
     - ai
     - foundry

@@ -479,6 +479,14 @@ overrides:
   - filename: pkg/infra/provisioning/bicep/bicep_provider.go
     words:
       - azurekubernetesservicechaosmesh
+  - filename: AGENTS.md
+    words:
+      - forbidigo
+      - Logf
+  - filename: .golangci.yaml
+    words:
+      - forbidigo
+      - Logf
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

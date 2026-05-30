@@ -6,6 +6,7 @@ package ux
 import (
 	"bytes"
 	"errors"
+	"io"
 	"testing"
 	"time"
 
@@ -297,7 +298,7 @@ func TestTaskList_WithCanvas(t *testing.T) {
 // --- Spinner tests ---
 
 func TestNewSpinner_defaults(t *testing.T) {
-	s := NewSpinner(&SpinnerOptions{})
+	s := NewSpinner(&SpinnerOptions{Writer: io.Discard})
 	require.NotNil(t, s)
 	assert.Equal(t, "Loading...", s.text)
 	assert.Len(t, s.options.Animation, 4)
@@ -307,13 +308,13 @@ func TestNewSpinner_defaults(t *testing.T) {
 }
 
 func TestNewSpinner_custom_text(t *testing.T) {
-	s := NewSpinner(&SpinnerOptions{Text: "Please wait"})
+	s := NewSpinner(&SpinnerOptions{Text: "Please wait", Writer: io.Discard})
 	require.NotNil(t, s)
 	assert.Equal(t, "Please wait", s.text)
 }
 
 func TestSpinner_UpdateText(t *testing.T) {
-	s := NewSpinner(&SpinnerOptions{})
+	s := NewSpinner(&SpinnerOptions{Writer: io.Discard})
 	s.UpdateText("new text")
 	assert.Equal(t, "new text", s.text)
 }
@@ -325,6 +326,7 @@ func TestSpinner_Render(t *testing.T) {
 	s := NewSpinner(&SpinnerOptions{
 		Text:      "Working...",
 		Animation: []string{"|", "/", "-", "\\"},
+		Writer:    io.Discard,
 	})
 
 	err := s.Render(printer)
@@ -337,6 +339,7 @@ func TestSpinner_Render(t *testing.T) {
 func TestSpinner_Render_cycles_animation(t *testing.T) {
 	s := NewSpinner(&SpinnerOptions{
 		Animation: []string{"a", "b", "c"},
+		Writer:    io.Discard,
 	})
 
 	// Render multiple times to cycle through animation
@@ -355,7 +358,7 @@ func TestSpinner_Render_clear_returns_nil(t *testing.T) {
 	var buf bytes.Buffer
 	printer := NewPrinter(&buf)
 
-	s := NewSpinner(&SpinnerOptions{})
+	s := NewSpinner(&SpinnerOptions{Writer: io.Discard})
 	s.clear = true
 
 	err := s.Render(printer)
@@ -364,7 +367,7 @@ func TestSpinner_Render_clear_returns_nil(t *testing.T) {
 }
 
 func TestSpinner_WithCanvas(t *testing.T) {
-	s := NewSpinner(&SpinnerOptions{})
+	s := NewSpinner(&SpinnerOptions{Writer: io.Discard})
 	var buf bytes.Buffer
 	c := NewCanvas().WithWriter(&buf)
 	defer c.Close()
@@ -374,7 +377,7 @@ func TestSpinner_WithCanvas(t *testing.T) {
 }
 
 func TestSpinner_WithCanvas_nil(t *testing.T) {
-	s := NewSpinner(&SpinnerOptions{})
+	s := NewSpinner(&SpinnerOptions{Writer: io.Discard})
 	result := s.WithCanvas(nil)
 	assert.Equal(t, s, result)
 	assert.Nil(t, s.canvas)

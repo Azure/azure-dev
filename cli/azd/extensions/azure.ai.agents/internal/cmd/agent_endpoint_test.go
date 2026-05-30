@@ -45,6 +45,14 @@ func TestParseAgentEndpoint(t *testing.T) {
 			wantProto: agent_api.AgentProtocolResponses,
 		},
 		{
+			name:       "responses canonical (openai/responses?api-version=v1)",
+			raw:        "https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/responses?api-version=v1",
+			wantProj:   "https://acct.services.ai.azure.com/api/projects/proj",
+			wantAgent:  "echo",
+			wantProto:  agent_api.AgentProtocolResponses,
+			wantAPIVer: "v1",
+		},
+		{
 			name:      "trailing slash tolerated",
 			raw:       "https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/invocations/",
 			wantProj:  "https://acct.services.ai.azure.com/api/projects/proj",
@@ -186,7 +194,9 @@ func TestParseAgentEndpoint_RejectsInvalidAgentNames(t *testing.T) {
 }
 
 // TestBuildResponsesURL verifies that the responses URL builder uses the
-// openai/v1 path with no api-version query parameter.
+// openai/responses path with the api-version query parameter, and that the
+// openai/v1/responses input is still accepted and rebuilt to the canonical
+// query-parameter form.
 func TestBuildResponsesURL(t *testing.T) {
 	t.Parallel()
 	parsed, err := parseAgentEndpoint(
@@ -195,8 +205,8 @@ func TestBuildResponsesURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseAgentEndpoint: %v", err)
 	}
-	got := buildResponsesURL(parsed.ProjectEndpoint, parsed.AgentName)
-	want := "https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/v1/responses"
+	got := buildResponsesURL(parsed.ProjectEndpoint, parsed.AgentName, parsed.APIVersion)
+	want := "https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/responses?api-version=v1"
 	if got != want {
 		t.Errorf("buildResponsesURL = %q, want %q", got, want)
 	}

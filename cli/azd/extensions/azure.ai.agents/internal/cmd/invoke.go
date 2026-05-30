@@ -130,7 +130,7 @@ suppressed in raw mode.`,
 
   # Invoke a deployed agent from any directory using the endpoint URL shown by 'azd ai agent show'
   azd ai agent invoke \
-	  --agent-endpoint https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/openai/v1/responses \
+	  --agent-endpoint https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/openai/responses?api-version=v1 \
        "Hello!"`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -906,6 +906,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			rc.projectEndpoint,
 			rc.bearerToken,
 			rc.name,
+			rc.apiVersion,
 			a.flags.sessionRequestOptions(),
 			rc.legacyKeys()...,
 		)
@@ -920,6 +921,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			rc.projectEndpoint,
 			rc.name,
 			rc.bearerToken,
+			rc.apiVersion,
 			a.flags.sessionRequestOptions(),
 		)
 		if err != nil {
@@ -945,7 +947,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	respURL := buildResponsesURL(rc.projectEndpoint, rc.name)
+	respURL := buildResponsesURL(rc.projectEndpoint, rc.name, rc.apiVersion)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, respURL, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -1627,12 +1629,15 @@ func handleInvocationLRO(
 // createConversation creates a new Foundry conversation for multi-turn memory.
 func createConversation(
 	ctx context.Context,
-	projectEndpoint, agentName, bearerToken string,
+	projectEndpoint, agentName, bearerToken, apiVersion string,
 	options *agent_api.SessionRequestOptions,
 ) (string, error) {
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
 	convURL := fmt.Sprintf(
-		"%s/agents/%s/endpoint/protocols/openai/v1/conversations",
-		projectEndpoint, agentName,
+		"%s/agents/%s/endpoint/protocols/openai/conversations?api-version=%s",
+		projectEndpoint, agentName, url.QueryEscape(apiVersion),
 	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, convURL, bytes.NewReader([]byte("{}")))
 	if err != nil {

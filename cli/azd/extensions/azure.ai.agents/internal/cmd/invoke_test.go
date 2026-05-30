@@ -1004,6 +1004,7 @@ func TestVersionedExplicitConversationPersistsUnderVersionKey(t *testing.T) {
 		projectEndpoint,
 		"token",
 		"hello",
+		"v1",
 		nil,
 	)
 	if err != nil {
@@ -1752,14 +1753,14 @@ func TestCreateConversation(t *testing.T) {
 
 				// Verify path includes the agent name and conversations endpoint
 				wantPath := "/agents/" + tt.agentName +
-					"/endpoint/protocols/openai/v1/conversations"
+					"/endpoint/protocols/openai/conversations"
 				if r.URL.Path != wantPath {
 					t.Errorf("path = %s, want %s", r.URL.Path, wantPath)
 				}
 
-				// OpenAI v1 routes should not include an api-version query parameter.
-				if got := r.URL.Query().Get("api-version"); got != "" {
-					t.Errorf("api-version = %q, want empty", got)
+				// The api-version must travel as a query parameter, not in the route.
+				if got := r.URL.Query().Get("api-version"); got != "v1" {
+					t.Errorf("api-version = %q, want %q", got, "v1")
 				}
 
 				// Verify auth header
@@ -1777,7 +1778,7 @@ func TestCreateConversation(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			id, err := createConversation(t.Context(), srv.URL, tt.agentName, "test-token", nil)
+			id, err := createConversation(t.Context(), srv.URL, tt.agentName, "test-token", "v1", nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -1817,6 +1818,7 @@ func TestCreateConversation_PropagatesIsolationHeaders(t *testing.T) {
 		srv.URL,
 		"my-agent",
 		"test-token",
+		"v1",
 		&agent_api.SessionRequestOptions{
 			UserIsolationKey: "user-1",
 			ChatIsolationKey: "chat-1",

@@ -459,7 +459,7 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 	require.Contains(t, envStub.values, "AGENT_MY_SVC_RESPONSES_ENDPOINT")
 	require.Equal(
 		t,
-		"https://proj.azure.com/agents/my-agent/endpoint/protocols/openai/v1/responses",
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/openai/responses?api-version=v1",
 		envStub.values["AGENT_MY_SVC_RESPONSES_ENDPOINT"],
 	)
 	require.Contains(t, envStub.values, "AGENT_MY_SVC_INVOCATIONS_ENDPOINT")
@@ -570,7 +570,7 @@ func TestDisplayableProtocolFor(t *testing.T) {
 			protocol:        "responses",
 			wantProtocol:    agent_api.AgentProtocolResponses,
 			wantEnvSuffix:   "RESPONSES",
-			wantURLContains: "/agents/my-agent/endpoint/protocols/openai/v1/responses",
+			wantURLContains: "/agents/my-agent/endpoint/protocols/openai/responses?api-version=v1",
 			wantURLScheme:   "https",
 		},
 		{
@@ -651,7 +651,7 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			expected: []protocolEndpointInfo{
 				{
 					Protocol: "responses",
-					URL:      baseURL + "openai/v1/responses",
+					URL:      baseURL + "openai/responses?api-version=v1",
 				},
 			},
 		},
@@ -690,7 +690,7 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			expected: []protocolEndpointInfo{
 				{
 					Protocol: "responses",
-					URL:      baseURL + "openai/v1/responses",
+					URL:      baseURL + "openai/responses?api-version=v1",
 				},
 				{
 					Protocol: "invocations",
@@ -796,7 +796,7 @@ func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
 	require.Len(t, artifacts, 2)
 
 	wantResponses := ep +
-		"/agents/test-agent/endpoint/protocols/openai/v1/responses"
+		"/agents/test-agent/endpoint/protocols/openai/responses?api-version=v1"
 	require.Equal(t, wantResponses, artifacts[0].Location)
 	require.Equal(t, "Agent endpoint (responses)", artifacts[0].Metadata["label"])
 	require.Empty(t, artifacts[0].Metadata["note"],
@@ -829,7 +829,7 @@ func TestDeployArtifacts_ResponsesProtocol(t *testing.T) {
 
 	require.Len(t, artifacts, 1)
 	wantURL := ep +
-		"/agents/prompt-agent/endpoint/protocols/openai/v1/responses"
+		"/agents/prompt-agent/endpoint/protocols/openai/responses?api-version=v1"
 	require.Equal(t, wantURL, artifacts[0].Location)
 	require.Equal(t, "Agent endpoint (responses)", artifacts[0].Metadata["label"])
 	require.Contains(t, artifacts[0].Metadata["note"], "invoking the agent")

@@ -1,5 +1,9 @@
 # Release History
 
+## 0.1.36-preview (2026-05-30)
+
+- [[#8500]](https://github.com/Azure/azure-dev/pull/8500) Fix `api-version` query parameter handling for OpenAI agent endpoints.
+
 ## 0.1.35-preview (2026-05-29)
 
 - [[#8406]](https://github.com/Azure/azure-dev/pull/8406) Add `--output raw` (`-o raw`) flag to `azd ai agent invoke` to dump the unmodified server response (status line, headers, and body verbatim) to stdout. Useful for debugging server behavior and inspecting response headers such as the agent version. Friendly summary lines (`Session:`, `Invocation:`, `Trace ID:`, `Version:`) are suppressed in raw mode.

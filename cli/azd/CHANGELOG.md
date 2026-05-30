@@ -5,6 +5,7 @@
 ### Bugs Fixed
 
 - [[#8487]](https://github.com/Azure/azure-dev/pull/8487) Fix the `azd tool` first-run prompt blocking users who deselect all recommended tools, and clarify its setup wording.
+- [[#8494]](https://github.com/Azure/azure-dev/pull/8494) Fix `azd config set tool.firstRunCompleted false` not re-enabling the `azd tool` first-run prompt; the value is now parsed (accepting true or RFC3339 timestamp) instead of treated as a presence-only marker.
 
 ## 1.25.3 (2026-05-28)
 

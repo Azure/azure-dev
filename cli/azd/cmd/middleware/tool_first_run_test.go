@@ -128,7 +128,7 @@ func TestToolFirstRunMiddleware_SkipConditions(t *testing.T) {
 			) {
 				_ = cfg.Set(
 					configKeyFirstRunCompleted,
-					"2024-01-01T00:00:00Z",
+					"true",
 				)
 			},
 			wantSkip: true,
@@ -261,7 +261,7 @@ func TestToolFirstRunMiddleware_EmitsSkipReason(t *testing.T) {
 		{
 			name: "already_completed",
 			setup: func(_ *testing.T, _ *mockinput.MockConsole, cfg config.Config, _ *internal.GlobalCommandOptions) {
-				_ = cfg.Set(configKeyFirstRunCompleted, "2024-01-01T00:00:00Z")
+				_ = cfg.Set(configKeyFirstRunCompleted, "true")
 			},
 			wantReason: skipReasonAlreadyCompleted,
 		},
@@ -338,6 +338,48 @@ func TestToolFirstRunMiddleware_NoSkipReasonForChildAction(t *testing.T) {
 	_, ok := lookupUsageAttr(string(fields.ToolFirstRunSkipReasonKey.Key))
 	assert.False(t, ok,
 		"child-action skip path must not emit tool.firstrun.skip_reason")
+}
+
+// TestToolFirstRunMiddleware_ShouldSkip_FirstRunCompletedValue verifies
+// that the `tool.firstRunCompleted` value is interpreted via
+// strconv.ParseBool. Only a parseable truthy value suppresses the
+// first-run prompt; anything else (including falsy values, empty
+// string, and unparseable strings) lets it run, so users can re-enable
+// the prompt with `azd config set tool.firstRunCompleted false`
+// instead of `azd config unset`.
+func TestToolFirstRunMiddleware_ShouldSkip_FirstRunCompletedValue(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		wantSkip bool
+	}{
+		{name: "explicit_true", value: "true", wantSkip: true},
+		{name: "explicit_one", value: "1", wantSkip: true},
+		{name: "explicit_false", value: "false", wantSkip: false},
+		{name: "explicit_zero", value: "0", wantSkip: false},
+		{name: "empty_string", value: "", wantSkip: false},
+		{name: "rfc3339_timestamp", value: "2024-01-01T00:00:00Z", wantSkip: true},
+		{name: "garbage_string", value: "not-a-bool-or-timestamp", wantSkip: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearCIVars(t)
+			t.Setenv(envKeySkipFirstRun, "")
+			os.Unsetenv(envKeySkipFirstRun)
+
+			cfg := config.NewEmptyConfig()
+			require.NoError(t, cfg.Set(configKeyFirstRunCompleted, tt.value))
+
+			m := &ToolFirstRunMiddleware{
+				configManager: &mockUserConfigManager{cfg: cfg},
+				console:       mockinput.NewMockConsole(),
+				options:       &internal.GlobalCommandOptions{},
+			}
+
+			_, skip := m.shouldSkip(t.Context())
+			assert.Equal(t, tt.wantSkip, skip)
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -368,6 +368,81 @@ func TestConvertExtensionFlag(t *testing.T) {
 	}
 }
 
+func TestShouldSkipExtensionFlag(t *testing.T) {
+	tests := []struct {
+		name string
+		flag extensions.Flag
+		want bool
+	}{
+		{
+			name: "default inherited output flag",
+			flag: extensions.Flag{
+				Name:        "output",
+				Shorthand:   "o",
+				Description: defaultExtensionOutputFlagUsage,
+				Default:     defaultExtensionOutputFlagValue,
+			},
+			want: true,
+		},
+		{
+			name: "output flag with valid values",
+			flag: extensions.Flag{
+				Name:        "output",
+				Shorthand:   "o",
+				Description: defaultExtensionOutputFlagUsage,
+				Default:     defaultExtensionOutputFlagValue,
+				ValidValues: []string{"json", "table"},
+			},
+			want: false,
+		},
+		{
+			name: "output flag with custom description",
+			flag: extensions.Flag{
+				Name:        "output",
+				Shorthand:   "o",
+				Description: "Path to the output directory.",
+				Default:     defaultExtensionOutputFlagValue,
+			},
+			want: false,
+		},
+		{
+			name: "output flag with custom default",
+			flag: extensions.Flag{
+				Name:        "output",
+				Shorthand:   "o",
+				Description: defaultExtensionOutputFlagUsage,
+				Default:     "json",
+			},
+			want: false,
+		},
+		{
+			name: "output flag without shorthand",
+			flag: extensions.Flag{
+				Name:        "output",
+				Description: defaultExtensionOutputFlagUsage,
+				Default:     defaultExtensionOutputFlagValue,
+			},
+			want: false,
+		},
+		{
+			name: "different flag",
+			flag: extensions.Flag{
+				Name:        "format",
+				Shorthand:   "o",
+				Description: defaultExtensionOutputFlagUsage,
+				Default:     defaultExtensionOutputFlagValue,
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, shouldSkipExtensionFlag(tt.flag))
+		})
+	}
+}
+
 func TestConvertExtensionArg(t *testing.T) {
 	tests := []struct {
 		name            string

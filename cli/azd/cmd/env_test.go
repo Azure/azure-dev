@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -217,6 +218,20 @@ func TestHasUnsupportedHostError(t *testing.T) {
 				},
 				Suggestion: "install an extension",
 			}),
+			expected: true,
+		},
+		{
+			name: "errors.Join with UnsupportedServiceHostError",
+			err: errors.Join(
+				fmt.Errorf("initializing service 'agent', %w", &project.UnsupportedServiceHostError{
+					Host:        "azure.ai.agent",
+					ServiceName: "agent",
+				}),
+				fmt.Errorf("initializing service 'other', %w", &project.UnsupportedServiceHostError{
+					Host:        "azure.ai.other",
+					ServiceName: "other",
+				}),
+			),
 			expected: true,
 		},
 	}

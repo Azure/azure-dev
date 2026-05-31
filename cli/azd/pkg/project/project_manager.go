@@ -92,7 +92,9 @@ func NewProjectManager(
 	}
 }
 
-// Initializes the project and all child services defined within the project configuration
+// Initializes the project and all child services defined within the project configuration.
+// Services with unsupported hosts (e.g., extension-provided hosts that are not loaded) are skipped,
+// and the resulting UnsupportedServiceHostError is returned after all other services are initialized.
 func (pm *projectManager) Initialize(ctx context.Context, projectConfig *ProjectConfig) error {
 	servicesStable, err := pm.importManager.ServiceStable(ctx, projectConfig)
 	if err != nil {
@@ -106,10 +108,20 @@ func (pm *projectManager) Initialize(ctx context.Context, projectConfig *Project
 
 	tracing.SetUsageAttributes(fields.ProjectServiceTargetsKey.StringSlice(serviceTargets))
 
+	var unsupportedHostErrors []error
 	for _, svc := range servicesStable {
 		if err := pm.serviceManager.Initialize(ctx, svc); err != nil {
-			return fmt.Errorf("initializing service '%s', %w", svc.Name, err)
+			initErr := fmt.Errorf("initializing service '%s', %w", svc.Name, err)
+			if _, ok := errors.AsType[*UnsupportedServiceHostError](err); ok {
+				unsupportedHostErrors = append(unsupportedHostErrors, initErr)
+				continue
+			}
+			return initErr
 		}
+	}
+
+	if len(unsupportedHostErrors) > 0 {
+		return errors.Join(unsupportedHostErrors...)
 	}
 
 	return nil
@@ -155,6 +167,7 @@ func (pm *projectManager) EnsureAllTools(
 		return err
 	}
 
+	var unsupportedHostErrors []error
 	for _, svc := range servicesStable {
 		if serviceFilterFn != nil && !serviceFilterFn(svc) {
 			continue
@@ -162,6 +175,10 @@ func (pm *projectManager) EnsureAllTools(
 
 		svcTools, err := pm.serviceManager.GetRequiredTools(ctx, svc)
 		if err != nil {
+			if _, ok := errors.AsType[*UnsupportedServiceHostError](err); ok {
+				unsupportedHostErrors = append(unsupportedHostErrors, fmt.Errorf("getting service required tools: %w", err))
+				continue
+			}
 			return fmt.Errorf("getting service required tools: %w", err)
 		}
 
@@ -170,6 +187,10 @@ func (pm *projectManager) EnsureAllTools(
 
 	if err := tools.EnsureInstalled(ctx, tools.Unique(projectTools)...); err != nil {
 		return err
+	}
+
+	if len(unsupportedHostErrors) > 0 {
+		return errors.Join(unsupportedHostErrors...)
 	}
 
 	return nil

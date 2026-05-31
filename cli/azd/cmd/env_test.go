@@ -4,8 +4,11 @@
 package cmd
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -169,4 +172,60 @@ func TestNewEnvConfigUnsetCmd(t *testing.T) {
 	cmd := newEnvConfigUnsetCmd()
 	require.Equal(t, "unset <path>", cmd.Use)
 	require.NotEmpty(t, cmd.Short)
+}
+
+func TestHasUnsupportedHostError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "unrelated error",
+			err:      assert.AnError,
+			expected: false,
+		},
+		{
+			name: "direct UnsupportedServiceHostError",
+			err: &project.UnsupportedServiceHostError{
+				Host:        "azure.ai.agent",
+				ServiceName: "agent",
+			},
+			expected: true,
+		},
+		{
+			name: "wrapped UnsupportedServiceHostError",
+			err: fmt.Errorf("initializing service 'agent', %w", &project.UnsupportedServiceHostError{
+				Host:        "azure.ai.agent",
+				ServiceName: "agent",
+			}),
+			expected: true,
+		},
+		{
+			name: "wrapped in ErrorWithSuggestion",
+			err: fmt.Errorf("getting service target: %w", &internal.ErrorWithSuggestion{
+				Err: &project.UnsupportedServiceHostError{
+					Host:        "azure.ai.agent",
+					ServiceName: "agent",
+				},
+				Suggestion: "install an extension",
+			}),
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := hasUnsupportedHostError(tt.err)
+			assert.Equal(t, tt.expected, got)
+		})
+	}
 }

@@ -1151,12 +1151,19 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		Title: fmt.Sprintf("Refreshing environment %s (azd env refresh)", ef.env.Name()),
 	})
 
+	// Initialize services, skipping any with unsupported hosts (e.g., extension-provided hosts
+	// that are not currently loaded). Env refresh only needs infrastructure outputs from Azure;
+	// services with unsupported hosts simply won't receive the environment-updated event.
 	if err := ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {
-		return nil, err
+		if !hasUnsupportedHostError(err) {
+			return nil, err
+		}
 	}
 
 	if err := ef.projectManager.EnsureAllTools(ctx, ef.projectConfig, nil); err != nil {
-		return nil, err
+		if !hasUnsupportedHostError(err) {
+			return nil, err
+		}
 	}
 
 	infra, err := ef.importManager.ProjectInfrastructure(ctx, ef.projectConfig)
@@ -1251,6 +1258,14 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 			FollowUp: fmt.Sprintf("View environment variables at %s", output.WithHyperlink(localEnvPath, localEnvPath)),
 		},
 	}, nil
+}
+
+// hasUnsupportedHostError reports whether err (or any error in its chain) is caused by
+// an unsupported service host. This lets env refresh continue when extension-provided hosts
+// (e.g., azure.ai.agent) are not loaded.
+func hasUnsupportedHostError(err error) bool {
+	_, ok := errors.AsType[*project.UnsupportedServiceHostError](err)
+	return ok
 }
 
 func newEnvGetValuesFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envGetValuesFlags {

@@ -391,6 +391,7 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 
 			require.NoError(t, tt.call(client, options))
 			require.Len(t, transport.requests, 1)
+			require.Equal(t, "HostedAgents=V1Preview", transport.requests[0].Header.Get("Foundry-Features"))
 			requireIsolationHeaders(t, transport.requests[0], "user-1", "chat-1", tt.wantSession)
 		})
 	}
@@ -555,6 +556,7 @@ func TestGetAgentSessionLogStream_ApplyIsolationHeaders(t *testing.T) {
 	}
 	require.NotNil(t, request)
 	require.Equal(t, "Bearer test-token", request.Header.Get("Authorization"))
+	require.Equal(t, "HostedAgents=V1Preview", request.Header.Get("Foundry-Features"))
 	requireIsolationHeaders(t, request, "user-1", "chat-1", "")
 }
 

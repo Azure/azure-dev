@@ -217,3 +217,19 @@ func TestConnectionResourceNewFieldsYAMLRoundTrip(t *testing.T) {
 		t.Errorf("scopes dropped: got %v", got.Scopes)
 	}
 }
+
+func TestNormalizeConnectionAuthType(t *testing.T) {
+	t.Parallel()
+
+	if got := NormalizeConnectionAuthType(AuthTypeAgenticIdentity); got != AuthTypeAgenticIdentityToken {
+		t.Fatalf("NormalizeConnectionAuthType(AgenticIdentity) = %q, want %q", got, AuthTypeAgenticIdentityToken)
+	}
+
+	if got := NormalizeConnectionAuthType(AuthTypeAgenticIdentityToken); got != AuthTypeAgenticIdentityToken {
+		t.Fatalf("NormalizeConnectionAuthType(AgenticIdentityToken) = %q, want %q", got, AuthTypeAgenticIdentityToken)
+	}
+
+	if got := NormalizeConnectionAuthType(AuthTypeOAuth2); got != AuthTypeOAuth2 {
+		t.Fatalf("NormalizeConnectionAuthType(OAuth2) = %q, want %q", got, AuthTypeOAuth2)
+	}
+}

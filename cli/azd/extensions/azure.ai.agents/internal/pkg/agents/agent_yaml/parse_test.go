@@ -602,6 +602,8 @@ func TestExtractResourceDefinitions_ConnectionAllAuthTypes(t *testing.T) {
 		AuthTypeNone,
 		AuthTypeOAuth2,
 		AuthTypePAT,
+		AuthTypeAgenticIdentity,
+		AuthTypeAgenticIdentityToken,
 	}
 
 	for _, authType := range authTypes {

@@ -1,5 +1,11 @@
 # Release History
 
+## 0.1.37-preview (2026-06-01)
+
+- [[#8512]](https://github.com/Azure/azure-dev/pull/8512) Normalize connection auth `AgenticIdentity` values to the ARM-required `AgenticIdentityToken`.
+- [[#8508]](https://github.com/Azure/azure-dev/pull/8508) Add `Foundry-Features: HostedAgents=V1Preview` on all Foundry data-plane endpoint requests to prevent preview feature failures.
+- [[#8488]](https://github.com/Azure/azure-dev/pull/8488) Add a resource-token salt to avoid 404 failures when recreating AI agents.
+
 ## 0.1.36-preview (2026-05-30)
 
 - [[#8500]](https://github.com/Azure/azure-dev/pull/8500) workaround: api-version query param for non-conformant openai agent endpoints

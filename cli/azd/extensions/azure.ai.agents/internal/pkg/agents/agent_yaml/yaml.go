@@ -99,6 +99,8 @@ const (
 
 // NormalizeConnectionAuthType maps auth types accepted in agent.yaml to
 // the management-plane value required for project connection provisioning.
+// Legacy AgenticIdentity values are normalized to AgenticIdentityToken
+// for API compatibility.
 func NormalizeConnectionAuthType(authType AuthType) AuthType {
 	if authType == AuthTypeAgenticIdentity {
 		return AuthTypeAgenticIdentityToken

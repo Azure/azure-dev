@@ -7,6 +7,8 @@ import (
 	"azureaiagent/internal/project"
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -316,4 +318,84 @@ func TestUpdateEnvLocation(t *testing.T) {
 			assert.Equal(t, tt.wantLocation, ms.azureContext.Scope.Location)
 		})
 	}
+}
+
+func TestNewModelSelector_PopulatesSupportedRegions(t *testing.T) {
+	resetRegionsCache(t, []string{"eastus2", "westus3"})
+
+	ms, err := newModelSelector(
+		t.Context(),
+		nil, // azdClient is unused by construction
+		&azdext.AzureContext{Scope: &azdext.AzureScope{Location: "eastus2"}},
+		&azdext.Environment{Name: "test-env"},
+		&initFlags{},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, ms)
+	assert.Equal(t, []string{"eastus2", "westus3"}, ms.supportedRegions)
+	// Mutating the returned slice must not affect the global cache.
+	ms.supportedRegions[0] = "mutated"
+	again, err := supportedRegionsForInit(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"eastus2", "westus3"}, again)
+}
+
+func TestGetModelSelector_MemoizesAcrossCalls(t *testing.T) {
+	resetRegionsCache(t, []string{"eastus2"})
+
+	action := &InitAction{
+		azureContext: &azdext.AzureContext{Scope: &azdext.AzureScope{Location: "eastus2"}},
+		environment:  &azdext.Environment{Name: "test-env"},
+		flags:        &initFlags{},
+	}
+
+	first, err := action.getModelSelector(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	assert.Equal(t, []string{"eastus2"}, first.supportedRegions)
+
+	// Mutate selector state so we can confirm the same instance is returned —
+	// memoization is what preserves modelCatalog/locationWarningShown across
+	// the per-model loop in ProcessModels.
+	first.locationWarningShown = true
+	first.modelCatalog = map[string]*azdext.AiModel{"gpt-4.1-mini": {Name: "gpt-4.1-mini"}}
+
+	second, err := action.getModelSelector(t.Context())
+	require.NoError(t, err)
+	assert.Same(t, first, second, "getModelSelector must return the cached instance")
+	assert.True(t, second.locationWarningShown)
+	assert.Contains(t, second.modelCatalog, "gpt-4.1-mini")
+}
+
+func TestNewModelSelector_PropagatesContextCancellation(t *testing.T) {
+	// Empty cache forces a fetch; canceled ctx makes the select in
+	// supportedRegionsForInit return ctx.Err without waiting on the background fetch.
+	resetRegionsCache(t, nil)
+
+	// Point the fetch at a server that hangs long enough that the canceled-ctx
+	// branch wins the select even on slow CI. The fetch goroutine itself uses
+	// context.WithoutCancel and will eventually time out via the fetch's own
+	// timeout; we don't wait for it.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	t.Cleanup(server.Close)
+
+	prev := hostedAgentRegionsURL
+	hostedAgentRegionsURL = server.URL
+	t.Cleanup(func() { hostedAgentRegionsURL = prev })
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	ms, err := newModelSelector(
+		ctx,
+		nil,
+		&azdext.AzureContext{Scope: &azdext.AzureScope{Location: "eastus2"}},
+		&azdext.Environment{Name: "test-env"},
+		&initFlags{},
+	)
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Nil(t, ms)
 }

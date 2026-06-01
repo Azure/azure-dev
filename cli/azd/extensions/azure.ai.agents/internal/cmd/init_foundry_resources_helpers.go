@@ -1007,6 +1007,13 @@ func promptLocationForInit(
 	return locationResponse.Location.Name, nil
 }
 
+// agentModelFilter builds the ListModels/PromptAiModel filter used by init flows.
+//
+// Passing a nil or empty locations slice disables region filtering entirely, which
+// will surface models from regions that are not supported for hosted agents. Init
+// flows should pass the result of supportedRegionsForInit(ctx) (optionally further
+// narrowed to the current scope location) so the catalog stays within the
+// hosted-agent allowlist.
 func agentModelFilter(locations []string, excludeModelNames []string) *azdext.AiModelFilterOptions {
 	filter := &azdext.AiModelFilterOptions{
 		Capabilities: []string{agentsV2ModelCapability},

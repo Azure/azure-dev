@@ -50,7 +50,7 @@ func (a *modelSelector) loadAiCatalog(ctx context.Context) error {
 
 	modelResp, err := a.azdClient.Ai().ListModels(ctx, &azdext.ListModelsRequest{
 		AzureContext: a.azureContext,
-		Filter:       agentModelFilter(nil, nil),
+		Filter:       agentModelFilter(a.supportedRegions, nil),
 	})
 	stopErr := spinner.Stop(ctx)
 	if err != nil {
@@ -383,7 +383,12 @@ func (a *InitAction) getModelDeploymentDetails(
 		}
 	}
 
-	modelDetails, err := a.getModelSelector().getModelDetails(ctx, model.Id, true)
+	selector, err := a.getModelSelector(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+
+	modelDetails, err := selector.getModelDetails(ctx, model.Id, true)
 	if err != nil {
 		if errors.Is(err, errModelSkipped) {
 			// Propagate the sentinel unwrapped so ProcessModels can detect
@@ -697,9 +702,11 @@ func (a *modelSelector) promptForAlternativeModel(
 		return nil, fmt.Errorf("failed to prompt for region choice: %w", err)
 	}
 
+	// "All available models" still means "all models the user might pick from",
+	// but we keep the catalog within hosted-agent-supported regions.
 	promptReq := &azdext.PromptAiModelRequest{
 		AzureContext: a.azureContext,
-		Filter:       agentModelFilter(nil, nil),
+		Filter:       agentModelFilter(a.supportedRegions, nil),
 		SelectOptions: &azdext.SelectOptions{
 			Message: "Select a model",
 		},
@@ -761,7 +768,7 @@ func (a *modelSelector) promptForModelLocationMismatch(
 
 		choices := []*azdext.SelectChoice{
 			{Label: modelChoiceLabel, Value: "model"},
-			{Label: "Choose a different model (all regions)", Value: "model_all_regions"},
+			{Label: "Choose a different model (all supported regions)", Value: "model_all_regions"},
 			{Label: fmt.Sprintf("Choose a different location for %s", currentModel.Name), Value: "location"},
 			{Label: "Exit setup", Value: "exit"},
 		}
@@ -837,17 +844,17 @@ func (a *modelSelector) promptForModelLocationMismatch(
 		if selectedChoice == "model_all_regions" {
 			modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, &azdext.PromptAiModelRequest{
 				AzureContext: a.azureContext,
-				Filter:       agentModelFilter(nil, []string{currentModel.Name}),
+				Filter:       agentModelFilter(a.supportedRegions, []string{currentModel.Name}),
 				Quota: &azdext.QuotaCheckOptions{
 					MinRemainingCapacity: 1,
 				},
 				SelectOptions: &azdext.SelectOptions{
-					Message: "Select a model from all regions",
+					Message: "Select a model from all supported regions",
 				},
 			})
 			if err != nil {
 				if hasAiErrorReason(err, azdext.AiErrorReasonNoModelsMatch) {
-					message = "No alternative models were found across all regions."
+					message = "No alternative models were found across all supported regions."
 					continue
 				}
 

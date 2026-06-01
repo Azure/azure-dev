@@ -963,11 +963,9 @@ func (a *InitFromCodeAction) resolveSelectedModelDeployment(
 		return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
 	}
 
-	selector := &modelSelector{
-		azdClient:    a.azdClient,
-		azureContext: a.azureContext,
-		environment:  a.environment,
-		flags:        a.flags,
+	selector, err := newModelSelector(ctx, a.azdClient, a.azureContext, a.environment, a.flags)
+	if err != nil {
+		return nil, err
 	}
 
 	// allowSkip=false: in this recovery path the user already explicitly chose

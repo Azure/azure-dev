@@ -114,20 +114,53 @@ type modelSelector struct {
 	environment  *azdext.Environment
 	flags        *initFlags
 
+	// supportedRegions is the hosted-agent region allowlist, populated once at
+	// construction by newModelSelector. Pass this to agentModelFilter for any
+	// "all regions" catalog query so init flows stay within supported regions
+	// instead of surfacing models from regions hosted agents can't run in.
+	supportedRegions []string
+
 	modelCatalog         map[string]*azdext.AiModel
 	locationWarningShown bool
 }
 
-func (a *InitAction) getModelSelector() *modelSelector {
-	if a.models == nil {
-		a.models = &modelSelector{
-			azdClient:    a.azdClient,
-			azureContext: a.azureContext,
-			environment:  a.environment,
-			flags:        a.flags,
-		}
+// newModelSelector constructs a modelSelector, fetching the hosted-agent
+// supported-regions allowlist eagerly so callers don't need to re-fetch it at
+// every catalog-query site. The fetch is itself globally cached by
+// supportedRegionsForInit, so repeated construction is cheap.
+func newModelSelector(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	environment *azdext.Environment,
+	flags *initFlags,
+) (*modelSelector, error) {
+	supportedRegions, err := supportedRegionsForInit(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return a.models
+
+	return &modelSelector{
+		azdClient:        azdClient,
+		azureContext:     azureContext,
+		environment:      environment,
+		flags:            flags,
+		supportedRegions: supportedRegions,
+	}, nil
+}
+
+func (a *InitAction) getModelSelector(ctx context.Context) (*modelSelector, error) {
+	if a.models != nil {
+		return a.models, nil
+	}
+
+	ms, err := newModelSelector(ctx, a.azdClient, a.azureContext, a.environment, a.flags)
+	if err != nil {
+		return nil, err
+	}
+
+	a.models = ms
+	return ms, nil
 }
 
 // GitHubUrlInfo holds parsed information from a GitHub URL

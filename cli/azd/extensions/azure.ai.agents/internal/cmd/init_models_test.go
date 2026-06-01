@@ -4,12 +4,13 @@
 package cmd
 
 import (
-	"azureaiagent/internal/project"
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"

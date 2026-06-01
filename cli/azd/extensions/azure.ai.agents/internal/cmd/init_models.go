@@ -688,7 +688,7 @@ func (a *modelSelector) promptForAlternativeModel(
 
 	regionChoices := []*azdext.SelectChoice{
 		{Label: fmt.Sprintf("Models available in my current region (%s)", a.azureContext.Scope.Location), Value: "region"},
-		{Label: "All available models", Value: "all"},
+		{Label: "All models supported for hosted agents", Value: "all"},
 	}
 
 	regionResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
@@ -702,8 +702,9 @@ func (a *modelSelector) promptForAlternativeModel(
 		return nil, fmt.Errorf("failed to prompt for region choice: %w", err)
 	}
 
-	// "All available models" still means "all models the user might pick from",
-	// but we keep the catalog within hosted-agent-supported regions.
+	// Default to the "all" branch: every model in the catalog, but restricted to
+	// the hosted-agent-supported regions so we don't surface models from regions
+	// that hosted agents can't run in.
 	promptReq := &azdext.PromptAiModelRequest{
 		AzureContext: a.azureContext,
 		Filter:       agentModelFilter(a.supportedRegions, nil),

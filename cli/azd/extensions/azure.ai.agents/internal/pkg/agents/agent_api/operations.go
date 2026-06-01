@@ -816,6 +816,7 @@ func (c *AgentClient) GetAgentSessionLogStream(
 
 	req.Header.Set("Authorization", "Bearer "+token.Token)
 	req.Header.Set("User-Agent", fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version))
+	req.Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Header)
 
 	httpClient := &http.Client{}

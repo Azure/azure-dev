@@ -6,6 +6,8 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1472,12 +1474,8 @@ func ensureProject(
 		fmt.Println("Let's get your project initialized.")
 
 		// Environment creation is handled separately in ensureEnvironment
-		initArgs := []string{
-			"init", "-t", "Azure-Samples/azd-ai-starter-basic", targetDir,
-		}
-		if flags.env != "" {
-			initArgs = append(initArgs, "--environment", flags.env)
-		} else {
+		envName := flags.env
+		if envName == "" {
 			// Derive environment name from target folder
 			envBase := targetDir
 			if targetDir == "." {
@@ -1490,8 +1488,12 @@ func ensureProject(
 			if len(base) > 59 {
 				base = strings.TrimRight(base[:59], "-")
 			}
-			envName := base + "-dev"
-			initArgs = append(initArgs, "--environment", envName)
+			envName = base + "-dev"
+		}
+
+		initArgs := []string{
+			"init", "-t", "Azure-Samples/azd-ai-starter-basic", targetDir,
+			"--environment", envName,
 		}
 
 		// We don't have a project yet
@@ -1517,6 +1519,11 @@ func ensureProject(
 				"",
 			)
 		}
+
+		// Best-effort: generate a salt so uniqueString()-based resource names
+		// differ across project recreations. If anything fails the Bicep
+		// templates fall back to the original deterministic hash.
+		ensureResourceTokenSalt(ctx, azdClient, envName)
 
 		// Sync the extension process into the new project directory so that
 		// subsequent local file operations see the scaffolded project.
@@ -2671,6 +2678,47 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	state, _ := nextstep.AssembleState(ctx, a.azdClient, stateOpts...)
 	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, a.azdClient)))
 	return nil
+}
+
+//nolint:gosec // env var key name, not a credential
+const resourceTokenSaltKey = "AZD_RESOURCE_TOKEN_SALT"
+
+// ensureResourceTokenSalt checks whether the current azd environment already
+// has a resource token salt. If not, it generates and stores one.
+// Failures are silently ignored so the Bicep templates fall back to the
+// original deterministic uniqueString() hash.
+func ensureResourceTokenSalt(ctx context.Context, azdClient *azdext.AzdClient, envName string) {
+	// Already have a salt from a previous init — keep it so resource names stay stable.
+	existing, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     resourceTokenSaltKey,
+	})
+	if err == nil && existing.Value != "" {
+		return
+	}
+
+	// Generate a random salt; if entropy fails, fall back to deterministic naming.
+	salt, err := generateResourceTokenSalt()
+	if err != nil {
+		return
+	}
+
+	// Persist the salt into the azd environment; if storage fails, provision
+	// will still work with the original deterministic resource names.
+	_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: envName,
+		Key:     resourceTokenSaltKey,
+		Value:   salt,
+	})
+}
+
+// generateResourceTokenSalt returns a random 8-character hex string.
+func generateResourceTokenSalt() (string, error) {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // resolveCollisions checks whether the auto-computed target directory or

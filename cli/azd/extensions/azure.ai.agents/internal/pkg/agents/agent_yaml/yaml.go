@@ -80,21 +80,32 @@ func NormalizeToolKind(kind ToolKind) ToolKind {
 type AuthType string
 
 const (
-	AuthTypeAAD              AuthType = "AAD"
-	AuthTypeApiKey           AuthType = "ApiKey"
-	AuthTypeCustomKeys       AuthType = "CustomKeys"
-	AuthTypeNone             AuthType = "None"
-	AuthTypeOAuth2           AuthType = "OAuth2"
-	AuthTypePAT              AuthType = "PAT"
-	AuthTypeUserEntraToken   AuthType = "UserEntraToken"
-	AuthTypeAgenticIdentity  AuthType = "AgenticIdentity"
-	AuthTypeManagedIdentity  AuthType = "ProjectManagedIdentity"
-	AuthTypeServicePrincipal AuthType = "ServicePrincipal"
-	AuthTypeUsernamePassword AuthType = "UsernamePassword"
-	AuthTypeAccessKey        AuthType = "AccessKey"
-	AuthTypeAccountKey       AuthType = "AccountKey"
-	AuthTypeSAS              AuthType = "SAS"
+	AuthTypeAAD                  AuthType = "AAD"
+	AuthTypeApiKey               AuthType = "ApiKey"
+	AuthTypeCustomKeys           AuthType = "CustomKeys"
+	AuthTypeNone                 AuthType = "None"
+	AuthTypeOAuth2               AuthType = "OAuth2"
+	AuthTypePAT                  AuthType = "PAT"
+	AuthTypeUserEntraToken       AuthType = "UserEntraToken"
+	AuthTypeAgenticIdentity      AuthType = "AgenticIdentity"
+	AuthTypeAgenticIdentityToken AuthType = "AgenticIdentityToken"
+	AuthTypeManagedIdentity      AuthType = "ProjectManagedIdentity"
+	AuthTypeServicePrincipal     AuthType = "ServicePrincipal"
+	AuthTypeUsernamePassword     AuthType = "UsernamePassword"
+	AuthTypeAccessKey            AuthType = "AccessKey"
+	AuthTypeAccountKey           AuthType = "AccountKey"
+	AuthTypeSAS                  AuthType = "SAS"
 )
+
+// NormalizeConnectionAuthType maps auth types accepted in agent.yaml to
+// the management-plane value required for project connection provisioning.
+func NormalizeConnectionAuthType(authType AuthType) AuthType {
+	if authType == AuthTypeAgenticIdentity {
+		return AuthTypeAgenticIdentityToken
+	}
+
+	return authType
+}
 
 // CategoryKind represents the category of a connection resource.
 type CategoryKind string

@@ -911,6 +911,46 @@ func TestExtractToolboxAndConnectionConfigs_RawToolsFallback(t *testing.T) {
 	}
 }
 
+func TestExtractToolboxAndConnectionConfigs_NormalizesAgenticIdentityAuthType(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Resources: []any{
+			agent_yaml.ToolboxResource{
+				Resource: agent_yaml.Resource{
+					Name: "platform-tools",
+					Kind: agent_yaml.ResourceKindToolbox,
+				},
+				Tools: []any{
+					map[string]any{
+						"type":     "mcp",
+						"name":     "agentic-tool",
+						"target":   "https://example.com/mcp",
+						"authType": "AgenticIdentity",
+					},
+				},
+			},
+		},
+	}
+
+	_, connections, _, err := extractToolboxAndConnectionConfigs(manifest)
+	if err != nil {
+		t.Fatalf("extractToolboxAndConnectionConfigs failed: %v", err)
+	}
+
+	if len(connections) != 1 {
+		t.Fatalf("Expected 1 connection, got %d", len(connections))
+	}
+
+	if connections[0].AuthType != string(agent_yaml.AuthTypeAgenticIdentityToken) {
+		t.Errorf(
+			"Expected authType %q, got %q",
+			agent_yaml.AuthTypeAgenticIdentityToken,
+			connections[0].AuthType,
+		)
+	}
+}
+
 func TestExtractToolboxAndConnectionConfigs_NilManifest(t *testing.T) {
 	t.Parallel()
 
@@ -1202,6 +1242,42 @@ func TestExtractConnectionConfigs_SurfacesCredentialsType(t *testing.T) {
 			wantCredHasType:  true,
 			wantCredKeyCount: 2,
 			wantEnvVarCount:  2, // both "type" and "key" externalized
+		},
+		{
+			name: "normalizes explicit AgenticIdentity authType",
+			connResource: agent_yaml.ConnectionResource{
+				Resource: agent_yaml.Resource{
+					Name: "my-conn",
+					Kind: agent_yaml.ResourceKindConnection,
+				},
+				Target:   "https://example.com",
+				AuthType: agent_yaml.AuthTypeAgenticIdentity,
+				Credentials: map[string]any{
+					"key": "val",
+				},
+			},
+			wantAuthType:     string(agent_yaml.AuthTypeAgenticIdentityToken),
+			wantCredHasType:  false,
+			wantCredKeyCount: 1,
+			wantEnvVarCount:  1,
+		},
+		{
+			name: "normalizes credentials.type AgenticIdentity when authType is empty",
+			connResource: agent_yaml.ConnectionResource{
+				Resource: agent_yaml.Resource{
+					Name: "my-conn",
+					Kind: agent_yaml.ResourceKindConnection,
+				},
+				Target: "https://example.com",
+				Credentials: map[string]any{
+					"type": "AgenticIdentity",
+					"key":  "secret-value",
+				},
+			},
+			wantAuthType:     string(agent_yaml.AuthTypeAgenticIdentityToken),
+			wantCredHasType:  false,
+			wantCredKeyCount: 1,
+			wantEnvVarCount:  1,
 		},
 		{
 			name: "no credentials.type and no authType stays empty",

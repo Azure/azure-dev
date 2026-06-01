@@ -3459,7 +3459,8 @@ func extractConnectionConfigs(
 		authType := string(agent_yaml.NormalizeConnectionAuthType(connResource.AuthType))
 
 		// Surface credentials.type to top-level authType when not explicitly set.
-		// This must happen before externalization so we capture the raw value.
+		// Do this before externalization so "type" isn't converted into an env var entry,
+		// and normalize legacy auth types for provisioning compatibility.
 		if authType == "" && len(creds) > 0 {
 			if credType, ok := creds["type"].(string); ok && credType != "" {
 				authType = string(agent_yaml.NormalizeConnectionAuthType(agent_yaml.AuthType(credType)))

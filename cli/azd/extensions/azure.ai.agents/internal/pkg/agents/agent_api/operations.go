@@ -1190,7 +1190,7 @@ func (c *AgentClient) CreateSession(
 		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", "AgentEndpoints=V1Preview")
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
@@ -1241,7 +1241,7 @@ func (c *AgentClient) GetSession(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", "AgentEndpoints=V1Preview")
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
@@ -1292,7 +1292,7 @@ func (c *AgentClient) DeleteSession(
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", "AgentEndpoints=V1Preview")
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)
@@ -1341,7 +1341,7 @@ func (c *AgentClient) ListSessions(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", "AgentEndpoints=V1Preview")
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 	options.ApplyHeaders(req.Raw().Header)
 
 	resp, err := c.pipeline.Do(req)

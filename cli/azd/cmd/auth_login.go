@@ -72,7 +72,6 @@ type loginFlags struct {
 	onlyCheckStatus        bool
 	browser                bool
 	managedIdentity        bool
-	reset                  bool
 	useDeviceCode          boolPtr
 	tenantID               string
 	clientID               string
@@ -139,12 +138,6 @@ const (
 
 func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&lf.onlyCheckStatus, "check-status", false, "Checks the log-in status instead of logging in.")
-	local.BoolVar(
-		&lf.reset,
-		"reset",
-		false,
-		"Clear all cached authentication data before logging in.",
-	)
 	f := local.VarPF(
 		&lf.useDeviceCode,
 		"use-device-code",
@@ -222,7 +215,9 @@ func newLoginCmd(parent string) *cobra.Command {
 		To use a user assigned managed identity, pass --client-id in addition to --managed-identity with the client id of
 		the user assigned managed identity you wish to use.
 
-		To clear all cached authentication data (such as stale tokens) before logging in, pass --reset.
+		When already logged in, azd automatically clears cached authentication data (such as stale tokens)
+		before re-authenticating. This ensures a clean login state and prevents issues with expired or
+		corrupted cached credentials.
 		`),
 		Annotations: map[string]string{
 			loginCmdParentAnnotation: parent,
@@ -264,20 +259,6 @@ func newAuthLoginAction(
 }
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if la.flags.reset && la.flags.onlyCheckStatus {
-		return nil, fmt.Errorf("cannot use --reset with --check-status: %w", internal.ErrInvalidFlagCombination)
-	}
-
-	if la.flags.reset {
-		if err := la.authManager.CleanAllAuthCache(); err != nil {
-			return nil, fmt.Errorf("clearing auth cache: %w", err)
-		}
-		if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
-			return nil, fmt.Errorf("clearing subscriptions cache: %w", err)
-		}
-		la.console.Message(ctx, "Authentication data cleared.")
-	}
-
 	loginMode, err := la.authManager.Mode()
 	if err != nil {
 		return nil, err
@@ -383,6 +364,18 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				LoginType:  ux.LoginType(details.LoginType),
 			})
 			return nil, nil
+		}
+	}
+
+	// When already logged in, clear cached auth data before re-authenticating.
+	// This prevents issues with stale MSAL tokens or corrupted credential cache files
+	// that can cause AADSTS700082 errors even after a successful login.
+	if _, err := la.authManager.LogInDetails(ctx); err == nil {
+		if err := la.authManager.CleanAllAuthCache(); err != nil {
+			return nil, fmt.Errorf("clearing auth cache: %w", err)
+		}
+		if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
+			return nil, fmt.Errorf("clearing subscriptions cache: %w", err)
 		}
 	}
 

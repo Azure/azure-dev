@@ -165,7 +165,7 @@ azd auth logout
 This removes the current user from the MSAL cache, deletes stored service principal credentials,
 and clears the subscriptions cache.
 
-## Resetting authentication state (`--reset`)
+## Automatic authentication state cleanup on re-login
 
 > **Added in:** [#7541](https://github.com/Azure/azure-dev/issues/7541)
 
@@ -174,14 +174,12 @@ token has expired due to inactivity`) even immediately after a successful `azd a
 happens because stale data in the local MSAL token cache or credential files can interfere with
 the new login session.
 
-The `--reset` flag performs a complete cleanup of all locally cached authentication data **before**
-logging in, giving you a clean slate:
+To prevent this, `azd auth login` automatically detects when you are already logged in and clears
+all locally cached authentication data before re-authenticating. This gives you a clean slate
+without requiring any extra flags. If you are not currently logged in, `azd auth login` proceeds
+directly with the normal login flow without clearing anything.
 
-```bash
-azd auth login --reset
-```
-
-### What `--reset` clears
+### What is cleared on re-login
 
 | Item | Path | Description |
 |---|---|---|
@@ -194,28 +192,15 @@ azd auth login --reset
 After clearing, the directory structure is recreated and the normal login flow proceeds. This is
 equivalent to manually deleting these files and then running `azd auth login`.
 
-### When to use `--reset`
+### When automatic cleanup helps
 
-Use `--reset` when:
+The automatic cleanup resolves situations where:
 
 - You see `AADSTS700082` or similar stale-token errors right after logging in successfully
 - `azd` commands fail with authentication errors that persist across multiple `azd auth login`
   attempts
-- You want to ensure a completely fresh authentication state (e.g. after switching tenants
-  or accounts)
-
-The flag can be combined with any other login method:
-
-```bash
-# Reset and log in interactively
-azd auth login --reset
-
-# Reset and log in with device code
-azd auth login --reset --use-device-code
-
-# Reset and log in as a service principal
-azd auth login --reset --client-id <app-id> --tenant-id <tenant-id> --client-secret <secret>
-```
+- You are switching tenants or accounts and want to ensure a completely fresh authentication
+  state
 
 ## How authentication state is stored
 

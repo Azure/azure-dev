@@ -408,7 +408,7 @@ func Test_Cli_BuildContainerLocal(t *testing.T) {
 				return exec.NewRunResult(0, successContainerOutput, ""), nil
 			})
 
-		port, image, err := cli.BuildContainerLocal(t.Context(), "p.csproj", "Release", "myrepo")
+		port, image, err := cli.BuildContainerLocal(t.Context(), "p.csproj", "Release", "myrepo", "")
 		require.NoError(t, err)
 		require.Equal(t, 8080, port)
 		require.Equal(t, "myrepo:latest", image)
@@ -431,7 +431,7 @@ func Test_Cli_BuildContainerLocal(t *testing.T) {
 			})
 
 		proj := filepath.Join("some", "dir", "apphost.cs")
-		_, _, err := cli.BuildContainerLocal(t.Context(), proj, "Release", "img:v1")
+		_, _, err := cli.BuildContainerLocal(t.Context(), proj, "Release", "img:v1", "")
 		require.NoError(t, err)
 		require.Equal(t, filepath.Dir(proj), captured.Cwd)
 		require.Equal(t, "apphost.cs", captured.Args[1])
@@ -446,7 +446,7 @@ func Test_Cli_BuildContainerLocal(t *testing.T) {
 				return exec.RunResult{}, errors.New("nope")
 			})
 
-		_, _, err := cli.BuildContainerLocal(t.Context(), "p.csproj", "Release", "img")
+		_, _, err := cli.BuildContainerLocal(t.Context(), "p.csproj", "Release", "img", "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "dotnet publish on project 'p.csproj' failed")
 	})
@@ -457,7 +457,7 @@ func Test_Cli_BuildContainerLocal(t *testing.T) {
 		runner.When(matchDotnetArg0("publish")).
 			Respond(exec.NewRunResult(0, "", ""))
 
-		_, _, err := cli.BuildContainerLocal(t.Context(), "p.csproj", "Release", "img")
+		_, _, err := cli.BuildContainerLocal(t.Context(), "p.csproj", "Release", "img", "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get dotnet target port")
 	})
@@ -477,7 +477,7 @@ func Test_Cli_PublishContainer(t *testing.T) {
 			})
 
 		port, err := cli.PublishContainer(
-			t.Context(), "p.csproj", "Release", "repo", "registry.example.com", "user", "secret",
+			t.Context(), "p.csproj", "Release", "repo", "registry.example.com", "user", "secret", "",
 		)
 		require.NoError(t, err)
 		require.Equal(t, 8080, port)
@@ -500,7 +500,7 @@ func Test_Cli_PublishContainer(t *testing.T) {
 			})
 
 		proj := filepath.Join("d", "apphost.cs")
-		_, err := cli.PublishContainer(t.Context(), proj, "Release", "img", "r", "u", "p")
+		_, err := cli.PublishContainer(t.Context(), proj, "Release", "img", "r", "u", "p", "")
 		require.NoError(t, err)
 		require.Equal(t, filepath.Dir(proj), captured.Cwd)
 		require.Equal(t, "apphost.cs", captured.Args[1])
@@ -515,7 +515,7 @@ func Test_Cli_PublishContainer(t *testing.T) {
 				return exec.RunResult{}, errors.New("boom")
 			})
 
-		_, err := cli.PublishContainer(t.Context(), "p.csproj", "Release", "img", "r", "u", "p")
+		_, err := cli.PublishContainer(t.Context(), "p.csproj", "Release", "img", "r", "u", "p", "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "dotnet publish on project 'p.csproj' failed")
 	})
@@ -526,7 +526,7 @@ func Test_Cli_PublishContainer(t *testing.T) {
 		runner.When(matchDotnetArg0("publish")).
 			Respond(exec.NewRunResult(0, "", ""))
 
-		_, err := cli.PublishContainer(t.Context(), "p.csproj", "Release", "img", "r", "u", "p")
+		_, err := cli.PublishContainer(t.Context(), "p.csproj", "Release", "img", "r", "u", "p", "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get dotnet target port")
 	})
@@ -546,7 +546,7 @@ func Test_Cli_ArtifactsPathContext(t *testing.T) {
 			})
 
 		ctx := ContextWithArtifactsPath(t.Context(), "/tmp/artifacts-svc1")
-		_, err := cli.PublishContainer(ctx, "p.csproj", "Release", "img", "r", "u", "p")
+		_, err := cli.PublishContainer(ctx, "p.csproj", "Release", "img", "r", "u", "p", "")
 		require.NoError(t, err)
 		joined := strings.Join(captured.Args, " ")
 		require.Contains(t, joined, "--artifacts-path")
@@ -564,7 +564,7 @@ func Test_Cli_ArtifactsPathContext(t *testing.T) {
 			})
 
 		ctx := ContextWithArtifactsPath(t.Context(), "/tmp/artifacts-svc2")
-		_, _, err := cli.BuildContainerLocal(ctx, "p.csproj", "Release", "img")
+		_, _, err := cli.BuildContainerLocal(ctx, "p.csproj", "Release", "img", "")
 		require.NoError(t, err)
 		joined := strings.Join(captured.Args, " ")
 		require.Contains(t, joined, "--artifacts-path")
@@ -581,10 +581,86 @@ func Test_Cli_ArtifactsPathContext(t *testing.T) {
 				return exec.NewRunResult(0, successContainerOutput, ""), nil
 			})
 
-		_, err := cli.PublishContainer(t.Context(), "p.csproj", "Release", "img", "r", "u", "p")
+		_, err := cli.PublishContainer(t.Context(), "p.csproj", "Release", "img", "r", "u", "p", "")
 		require.NoError(t, err)
 		joined := strings.Join(captured.Args, " ")
 		require.NotContains(t, joined, "--artifacts-path")
+	})
+}
+
+func Test_Cli_ContainerEngine(t *testing.T) {
+	t.Parallel()
+
+	t.Run("podman engine appends ContainerEngine property", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		var captured exec.RunArgs
+		runner.When(matchDotnetArg0("publish")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				captured = args
+				return exec.NewRunResult(0, successContainerOutput, ""), nil
+			})
+
+		_, _, err := cli.BuildContainerLocal(
+			t.Context(), "p.csproj", "Release", "img", "podman",
+		)
+		require.NoError(t, err)
+		joined := strings.Join(captured.Args, " ")
+		require.Contains(t, joined, "-p:ContainerEngine=podman")
+	})
+
+	t.Run("docker engine does not append ContainerEngine property", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		var captured exec.RunArgs
+		runner.When(matchDotnetArg0("publish")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				captured = args
+				return exec.NewRunResult(0, successContainerOutput, ""), nil
+			})
+
+		_, _, err := cli.BuildContainerLocal(
+			t.Context(), "p.csproj", "Release", "img", "docker",
+		)
+		require.NoError(t, err)
+		joined := strings.Join(captured.Args, " ")
+		require.NotContains(t, joined, "-p:ContainerEngine=")
+	})
+
+	t.Run("empty engine does not append ContainerEngine property", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		var captured exec.RunArgs
+		runner.When(matchDotnetArg0("publish")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				captured = args
+				return exec.NewRunResult(0, successContainerOutput, ""), nil
+			})
+
+		_, _, err := cli.BuildContainerLocal(
+			t.Context(), "p.csproj", "Release", "img", "",
+		)
+		require.NoError(t, err)
+		joined := strings.Join(captured.Args, " ")
+		require.NotContains(t, joined, "-p:ContainerEngine=")
+	})
+
+	t.Run("podman engine on PublishContainer", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		var captured exec.RunArgs
+		runner.When(matchDotnetArg0("publish")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				captured = args
+				return exec.NewRunResult(0, successContainerOutput, ""), nil
+			})
+
+		_, err := cli.PublishContainer(
+			t.Context(), "p.csproj", "Release", "img", "r", "u", "p", "podman",
+		)
+		require.NoError(t, err)
+		joined := strings.Join(captured.Args, " ")
+		require.Contains(t, joined, "-p:ContainerEngine=podman")
 	})
 }
 

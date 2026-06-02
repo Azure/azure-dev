@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"testing"
 
@@ -53,34 +52,8 @@ func TestDeleteCommand_OutputFlagAnnotation(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Error classification tests
+// Error classification tests — calls the real classifyDeleteError from delete.go
 // ---------------------------------------------------------------------------
-
-// classifyDeleteAgentError reproduces the error handling from DeleteAction.Run
-// so we can test the classification without an end-to-end context.
-func classifyDeleteAgentError(err error, agentName string) error {
-	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
-		switch respErr.StatusCode {
-		case http.StatusNotFound:
-			return exterrors.Validation(
-				exterrors.CodeAgentNotFound,
-				fmt.Sprintf("agent %q not found", agentName),
-				"use 'azd ai agent show' to verify the agent exists",
-			)
-		case http.StatusConflict:
-			return exterrors.Validation(
-				exterrors.CodeAgentHasActiveSessions,
-				fmt.Sprintf(
-					"agent %q has active sessions and cannot be deleted",
-					agentName,
-				),
-				"pass --force to terminate active sessions and delete the agent, "+
-					"or delete sessions first with 'azd ai agent sessions delete'",
-			)
-		}
-	}
-	return exterrors.ServiceFromAzure(err, exterrors.OpDeleteAgent)
-}
 
 func TestDeleteAgent_404_ProducesValidationError(t *testing.T) {
 	azErr := &azcore.ResponseError{
@@ -88,7 +61,7 @@ func TestDeleteAgent_404_ProducesValidationError(t *testing.T) {
 		ErrorCode:  "not_found",
 	}
 
-	result := classifyDeleteAgentError(azErr, "my-agent")
+	result := classifyDeleteError(azErr, "my-agent")
 	require.Error(t, result)
 
 	var localErr *azdext.LocalError
@@ -107,7 +80,7 @@ func TestDeleteAgent_409_ProducesValidationError(t *testing.T) {
 		ErrorCode:  "conflict",
 	}
 
-	result := classifyDeleteAgentError(azErr, "my-agent")
+	result := classifyDeleteError(azErr, "my-agent")
 	require.Error(t, result)
 
 	var localErr *azdext.LocalError
@@ -126,7 +99,7 @@ func TestDeleteAgent_500_ProducesServiceError(t *testing.T) {
 		ErrorCode:  "internal_error",
 	}
 
-	result := classifyDeleteAgentError(azErr, "my-agent")
+	result := classifyDeleteError(azErr, "my-agent")
 	require.Error(t, result)
 
 	var svcErr *azdext.ServiceError

@@ -147,27 +147,7 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 
 	result, err := client.DeleteAgent(ctx, agentName, DefaultAgentAPIVersion, a.flags.force)
 	if err != nil {
-		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
-			switch respErr.StatusCode {
-			case http.StatusNotFound:
-				return exterrors.Validation(
-					exterrors.CodeAgentNotFound,
-					fmt.Sprintf("agent %q not found", agentName),
-					"use 'azd ai agent show' to verify the agent exists",
-				)
-			case http.StatusConflict:
-				return exterrors.Validation(
-					exterrors.CodeAgentHasActiveSessions,
-					fmt.Sprintf(
-						"agent %q has active sessions and cannot be deleted",
-						agentName,
-					),
-					"pass --force to terminate active sessions and delete the agent, "+
-						"or delete sessions first with 'azd ai agent sessions delete'",
-				)
-			}
-		}
-		return exterrors.ServiceFromAzure(err, exterrors.OpDeleteAgent)
+		return classifyDeleteError(err, agentName)
 	}
 
 	// Best-effort: clear AGENT_{KEY}_NAME and AGENT_{KEY}_VERSION env vars
@@ -217,4 +197,30 @@ func (a *DeleteAction) cleanupEnvVars(ctx context.Context, azdClient *azdext.Azd
 			log.Printf("delete: failed to clear env var %s: %v", key, err)
 		}
 	}
+}
+
+// classifyDeleteError maps Azure API errors from the delete operation into
+// user-friendly typed errors. Exported for testing.
+func classifyDeleteError(err error, agentName string) error {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
+		switch respErr.StatusCode {
+		case http.StatusNotFound:
+			return exterrors.Validation(
+				exterrors.CodeAgentNotFound,
+				fmt.Sprintf("agent %q not found", agentName),
+				"use 'azd ai agent show' to verify the agent exists",
+			)
+		case http.StatusConflict:
+			return exterrors.Validation(
+				exterrors.CodeAgentHasActiveSessions,
+				fmt.Sprintf(
+					"agent %q has active sessions and cannot be deleted",
+					agentName,
+				),
+				"pass --force to terminate active sessions and delete the agent, "+
+					"or delete sessions first with 'azd ai agent sessions delete'",
+			)
+		}
+	}
+	return exterrors.ServiceFromAzure(err, exterrors.OpDeleteAgent)
 }

@@ -379,7 +379,7 @@ func CreateLocalRegistry() error {
 	encoder.SetEscapeHTML(false)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(emptyRegistry); err != nil {
-		return fmt.Errorf("failed to marshal empty registry: %w", err)
+		return fmt.Errorf("failed to encode empty registry: %w", err)
 	}
 	registryJson := buf.Bytes()
 

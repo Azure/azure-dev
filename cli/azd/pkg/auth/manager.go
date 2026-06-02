@@ -1402,6 +1402,9 @@ type LogInDetails struct {
 // return the account name from the az CLI. When external authentication is
 // configured, it will acquire a token from the external auth endpoint (an
 // outbound HTTP call) and derive the account identifier from the token claims.
+// When running in Azure Cloud Shell and no azd-managed user is logged in,
+// it derives the account from the ambient Cloud Shell credential and reports
+// an authenticated user.
 func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 	if m.UseExternalAuth() {
 		claims, err := m.ClaimsForCurrentUser(ctx, nil)

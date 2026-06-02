@@ -499,6 +499,7 @@ func TestLogInDetails(t *testing.T) {
 		_, err := m.LogInDetails(t.Context())
 		require.Error(t, err)
 		require.NotErrorIs(t, err, ErrNoCurrentUser)
+		require.ErrorContains(t, err, "reading current user properties")
 	})
 
 	t.Run("external auth - error when token has no usable account identifier", func(t *testing.T) {

@@ -6,7 +6,6 @@ package cmd
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -48,20 +47,33 @@ func TestCopyDirectory(t *testing.T) {
 		}
 	})
 
-	t.Run("subpath_error", func(t *testing.T) {
+	t.Run("subpath_copies_with_exclusion", func(t *testing.T) {
 		t.Parallel()
 		src := t.TempDir()
 		dst := filepath.Join(src, "child")
 		if err := os.MkdirAll(dst, 0750); err != nil {
 			t.Fatal(err)
 		}
+		//nolint:gosec // test fixture file permissions are intentional
+		if err := os.WriteFile(filepath.Join(src, "hello.txt"), []byte("world"), 0644); err != nil {
+			t.Fatal(err)
+		}
 
 		err := copyDirectory(src, dst)
-		if err == nil {
-			t.Fatal("expected error when dst is subpath of src")
+		if err != nil {
+			t.Fatalf("expected no error when dst is subpath of src (should skip dst): %v", err)
 		}
-		if !strings.Contains(err.Error(), "refusing to copy") {
-			t.Errorf("unexpected error message: %v", err)
+		// Verify file was copied
+		content, err := os.ReadFile(filepath.Join(dst, "hello.txt")) //nolint:gosec // test fixture read
+		if err != nil {
+			t.Fatalf("expected hello.txt to be copied: %v", err)
+		}
+		if string(content) != "world" {
+			t.Fatalf("expected content 'world', got %q", string(content))
+		}
+		// Verify no recursive copy
+		if _, err := os.Stat(filepath.Join(dst, "child")); !os.IsNotExist(err) {
+			t.Fatal("expected dst/child to NOT exist (should have been skipped)")
 		}
 	})
 

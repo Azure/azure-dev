@@ -440,27 +440,6 @@ func TestHasAiErrorReason(t *testing.T) {
 	}
 }
 
-func TestCopyDirectory_RefusesToCopyIntoSubtree(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	src := filepath.Join(root, "src")
-	dst := filepath.Join(src, "child")
-
-	//nolint:gosec // test fixture directory permissions are intentional
-	if err := os.MkdirAll(src, 0755); err != nil {
-		t.Fatalf("mkdir src: %v", err)
-	}
-	//nolint:gosec // test fixture file permissions are intentional
-	if err := os.WriteFile(filepath.Join(src, "file.txt"), []byte("hello"), 0644); err != nil {
-		t.Fatalf("write src file: %v", err)
-	}
-
-	if err := copyDirectory(src, dst); err == nil {
-		t.Fatalf("expected error when destination is inside source")
-	}
-}
-
 func TestCopyDirectory_NoOpWhenSamePath(t *testing.T) {
 	t.Parallel()
 
@@ -494,6 +473,25 @@ func TestValidateLocalContainerAgentCopy_AllowsReinitInPlace(t *testing.T) {
 	a := &InitAction{}
 	if err := a.validateLocalContainerAgentCopy(t.Context(), manifestPointer, dir); err != nil {
 		t.Fatalf("expected no error for re-init in place: %v", err)
+	}
+}
+
+func TestValidateLocalContainerAgentCopy_AllowsSubpath(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	manifestPointer := filepath.Join(dir, "agent.manifest.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(manifestPointer, []byte("name: test"), 0644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	// Target is a subdirectory of the manifest directory (auto-detect in CWD scenario)
+	targetDir := filepath.Join(dir, "my-agent", "src", "my-agent")
+
+	a := &InitAction{}
+	if err := a.validateLocalContainerAgentCopy(t.Context(), manifestPointer, targetDir); err != nil {
+		t.Fatalf("expected no error when target is subpath of manifest dir: %v", err)
 	}
 }
 

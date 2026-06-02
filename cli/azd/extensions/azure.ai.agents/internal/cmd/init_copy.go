@@ -42,20 +42,38 @@ func (a *InitAction) validateLocalContainerAgentCopy(ctx context.Context, manife
 		return nil
 	}
 
-	if isSubpath(dstAbs, srcAbs) {
-		return fmt.Errorf(
-			"cannot copy agent files: target '%s' is inside the manifest directory '%s'.\n"+
-				"Move the manifest to a separate directory containing only the agent files.",
-			dstAbs,
-			srcAbs,
-		)
-	}
+	// When the target is inside the manifest directory (e.g. auto-detected manifest in CWD
+	// with ensureProject creating a subdirectory), we allow the copy but exclude the target
+	// directory itself to prevent infinite recursion. The actual exclusion is handled by
+	// copyDirectory which skips any path under the destination when src contains dst.
+	// Fall through to the confirmation logic below so users with large directories
+	// are still prompted before a bulk copy.
 
 	entries, err := os.ReadDir(srcAbs)
 	if err != nil {
 		return fmt.Errorf("reading manifest directory %s: %w", srcAbs, err)
 	}
-	entryCount := len(entries)
+
+	// When copying into a subdirectory of src, exclude the target directory's
+	// first-level ancestor from the count and preview since it will be skipped during copy.
+	isSubpathCopy := isSubpath(dstAbs, srcAbs)
+	filteredEntries := entries
+	if isSubpathCopy {
+		rel, relErr := filepath.Rel(srcAbs, dstAbs)
+		if relErr == nil {
+			firstComponent := strings.SplitN(filepath.ToSlash(rel), "/", 2)[0]
+			filtered := make([]os.DirEntry, 0, len(entries))
+			for _, e := range entries {
+				if e.IsDir() && e.Name() == firstComponent {
+					continue
+				}
+				filtered = append(filtered, e)
+			}
+			filteredEntries = filtered
+		}
+	}
+
+	entryCount := len(filteredEntries)
 	if entryCount <= copyConfirmThreshold {
 		return nil
 	}
@@ -64,7 +82,7 @@ func (a *InitAction) validateLocalContainerAgentCopy(ctx context.Context, manife
 		return nil
 	}
 
-	preview, err := formatDirectoryPreview(entries, previewLimit)
+	preview, err := formatDirectoryPreview(filteredEntries, previewLimit)
 	if err != nil {
 		return fmt.Errorf("formatting directory preview for %s: %w", srcAbs, err)
 	}
@@ -142,13 +160,19 @@ func copyDirectory(src, dst string) error {
 		return nil
 	}
 
-	if isSubpath(dstAbs, srcAbs) {
-		return fmt.Errorf("refusing to copy directory '%s' into its own subtree '%s'", srcAbs, dstAbs)
-	}
+	// When the destination is inside the source (e.g. auto-detected manifest in CWD
+	// with the project subdirectory created under it), we allow the copy but skip
+	// the destination subtree to prevent infinite recursion.
+	skipDst := isSubpath(dstAbs, srcAbs)
 
 	return filepath.WalkDir(srcAbs, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+
+		// Skip the destination directory itself to prevent recursive copy loops.
+		if skipDst && d.IsDir() && isSamePath(path, dstAbs) {
+			return filepath.SkipDir
 		}
 
 		// Calculate the destination path

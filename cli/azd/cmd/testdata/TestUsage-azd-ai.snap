@@ -6,9 +6,14 @@ Usage
 
 Available Commands
   agent     	: Ship agents with Microsoft Foundry from your terminal. (Preview)
+  connection	: Manage Microsoft Foundry Connections from your terminal. (Preview)
   finetuning	: Extension for Foundry Fine Tuning. (Preview)
   inspector 	: Browser-based inspector UI for locally running Foundry agents. (Preview)
   models    	: Extension for managing custom models in Azure AI Foundry. (Preview)
+  project   	: Manage Microsoft Foundry Project resources from your terminal. (Preview)
+  routine   	: Manage Microsoft Foundry Routines from your terminal. (Preview)
+  skill     	: Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Preview)
+  toolbox   	: Manage Microsoft Foundry Toolboxes from your terminal. (Preview)
 
 Global Flags
     -C, --cwd string         	: Sets the current working directory.

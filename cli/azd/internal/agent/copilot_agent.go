@@ -147,7 +147,7 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (resu
 		HelpMessage:     "Higher reasoning uses more premium requests and may cost more. You can change this later.",
 		Choices:         effortChoices,
 		SelectedIndex:   new(1),
-		DisplayNumbers:  uxlib.Ptr(true),
+		DisplayNumbers:  new(true),
 		EnableFiltering: new(false),
 		DisplayCount:    3,
 	})
@@ -189,8 +189,8 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (resu
 		HelpMessage:     "Premium models may use more requests. You can change this later.",
 		Choices:         modelChoices,
 		SelectedIndex:   new(0),
-		DisplayNumbers:  uxlib.Ptr(true),
-		EnableFiltering: uxlib.Ptr(true),
+		DisplayNumbers:  new(true),
+		EnableFiltering: new(true),
 		DisplayCount:    min(len(modelChoices), 10),
 	})
 
@@ -263,8 +263,8 @@ func (a *CopilotAgent) SelectSession(ctx context.Context) (*SessionMetadata, err
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
 		Message:         "Previous sessions found",
 		Choices:         choices,
-		EnableFiltering: uxlib.Ptr(true),
-		DisplayNumbers:  uxlib.Ptr(true),
+		EnableFiltering: new(true),
+		DisplayNumbers:  new(true),
 		DisplayCount:    min(len(choices), 6),
 	})
 
@@ -985,7 +985,7 @@ func (a *CopilotAgent) createUserInputHandler(ctx context.Context) copilot.UserI
 				Message:         question,
 				Choices:         choices,
 				EnableFiltering: new(false),
-				DisplayNumbers:  uxlib.Ptr(true),
+				DisplayNumbers:  new(true),
 				DisplayCount:    min(len(choices), 10),
 			})
 
@@ -1060,7 +1060,7 @@ func (a *CopilotAgent) handleErrorWithRetryPrompt(ctx context.Context, err error
 
 	retryPrompt := uxlib.NewConfirm(&uxlib.ConfirmOptions{
 		Message:      "Want to try again?",
-		DefaultValue: uxlib.Ptr(true),
+		DefaultValue: new(true),
 	})
 
 	shouldRetry, promptErr := retryPrompt.Ask(ctx)
@@ -1099,7 +1099,7 @@ func (a *CopilotAgent) ensureAuthenticated(ctx context.Context) error {
 		HelpMessage: fmt.Sprintf(
 			"%s requires GitHub authentication to access AI models and agent capabilities.",
 			agentcopilot.DisplayTitle),
-		DefaultValue: uxlib.Ptr(true),
+		DefaultValue: new(true),
 	})
 
 	shouldLogin, err := confirm.Ask(ctx)

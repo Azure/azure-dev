@@ -220,6 +220,9 @@ func (t *TaskList) Render(printer Printer) error {
 	renderTasks = append(renderTasks, runningTasks...)
 	renderTasks = append(renderTasks, pendingTasks...)
 
+	// Use terminal width minus 1 to prevent cursor wrap on exact-width lines (Windows)
+	maxWidth := max(printer.Width()-1, 1)
+
 	printer.Fprintln()
 
 	for _, task := range renderTasks {
@@ -248,51 +251,54 @@ func (t *TaskList) Render(printer Printer) error {
 			progressText = fmt.Sprintf(" (%s)", task.progress)
 		}
 
+		var line string
 		switch task.State {
 		case Pending:
-			printer.Fprintf("%s %s\n", output.WithGrayFormat(t.options.PendingStyle), task.Title)
+			line = fmt.Sprintf("%s %s", output.WithGrayFormat(t.options.PendingStyle), task.Title)
 		case Running:
-			printer.Fprintf(
-				"%s %s%s %s\n",
+			line = fmt.Sprintf(
+				"%s %s%s %s",
 				output.WithHighLightFormat(t.options.RunningStyle),
 				task.Title,
 				progressText,
 				elapsedText,
 			)
 		case Warning:
-			printer.Fprintf(
-				"%s %s %s %s\n",
+			line = fmt.Sprintf(
+				"%s %s %s %s",
 				output.WithWarningFormat(t.options.WarningStyle),
 				task.Title,
 				elapsedText,
 				output.WithWarningFormat("(%s)", statusDescription),
 			)
 		case Error:
-			printer.Fprintf(
-				"%s %s %s %s\n",
+			line = fmt.Sprintf(
+				"%s %s %s %s",
 				output.WithErrorFormat(t.options.ErrorStyle),
 				task.Title,
 				elapsedText,
 				output.WithErrorFormat("(%s)", statusDescription),
 			)
 		case Success:
-			printer.Fprintf("%s %s  %s\n", output.WithSuccessFormat(t.options.SuccessStyle), task.Title, elapsedText)
+			line = fmt.Sprintf("%s %s  %s", output.WithSuccessFormat(t.options.SuccessStyle), task.Title, elapsedText)
 		case Skipped:
 			if statusDescription == "" {
-				printer.Fprintf(
-					"%s %s\n",
+				line = fmt.Sprintf(
+					"%s %s",
 					output.WithGrayFormat(t.options.SkippedStyle),
 					task.Title,
 				)
 			} else {
-				printer.Fprintf(
-					"%s %s %s\n",
+				line = fmt.Sprintf(
+					"%s %s %s",
 					output.WithGrayFormat(t.options.SkippedStyle),
 					task.Title,
 					output.WithErrorFormat("(%s)", statusDescription),
 				)
 			}
 		}
+
+		printer.Fprintf("%s\n", TruncateVisible(line, maxWidth))
 	}
 
 	printer.Fprintln()

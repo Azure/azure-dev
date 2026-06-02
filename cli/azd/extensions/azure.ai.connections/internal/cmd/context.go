@@ -73,7 +73,7 @@ func newContextCommand() *cobra.Command {
 				fmt.Println()
 			} else {
 				color.Yellow("WARNING: No azd project found in current working directory")
-				fmt.Printf("Run %s to create a new project.\n", color.CyanString("azd init"))
+				fmt.Printf("Run %s to create a new project.\n", color.CyanString("azd ai agent init"))
 				return nil
 			}
 

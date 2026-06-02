@@ -35,7 +35,9 @@ func newToolboxShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 By default shows the default version. Use --version to inspect a specific
 version. The output includes the toolbox's runtime MCP endpoint, which agents
-consume via the TOOLBOX_<NAME>_ENDPOINT environment variable convention.`,
+consume via the TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT environment variable
+convention, where <NORMALIZED_NAME> is the toolbox name uppercased with
+non-alphanumeric character runs replaced by underscores.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runToolboxShow(cmd.Context(), args[0], *flags, readToolboxFlags(cmd, extCtx))
@@ -140,6 +142,7 @@ func emitShowTable(
 	fmt.Fprintf(w, "Description\t%s\n", version.Description)
 	fmt.Fprintf(w, "Endpoint\t%s\n", mcpURL)
 	fmt.Fprintf(w, "Tools\t%d\n", len(version.Tools))
+	fmt.Fprintf(w, "Skills\t%d\n", len(version.Skills))
 	if err := w.Flush(); err != nil {
 		return err
 	}
@@ -154,6 +157,25 @@ func emitShowTable(
 			toolType, _ := tool["type"].(string)
 			detail := describeToolDetail(tool)
 			fmt.Fprintf(tw, "%s\t%s\t%s\n", toolName, toolType, detail)
+		}
+		if err := tw.Flush(); err != nil {
+			return err
+		}
+	}
+
+	if len(version.Skills) > 0 {
+		fmt.Println()
+		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, "SKILL\tVERSION\tTYPE")
+		fmt.Fprintln(tw, "-----\t-------\t----")
+		// Use extractSkillRows so malformed entries are skipped consistently
+		// with `skill list`.
+		for _, r := range extractSkillRows(version.Skills) {
+			ver := r["version"]
+			if ver == "" {
+				ver = "(default)"
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", r["name"], ver, r["type"])
 		}
 		if err := tw.Flush(); err != nil {
 			return err

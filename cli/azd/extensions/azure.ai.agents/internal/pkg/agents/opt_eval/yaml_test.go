@@ -189,37 +189,64 @@ func TestOptions_YAMLFields(t *testing.T) {
 
 	input := `
 eval_model: gpt-4.1
-target_attributes:
-  - prompt
-  - tool
 max_iterations: 10
-keep_versions: true
-tasks_per_iteration: 20
-reflection_model: gpt-4o
+optimization_model: gpt-4o
 `
 	var opts Options
 	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
 
 	assert.Equal(t, "gpt-4.1", opts.EvalModel)
-	assert.Equal(t, []string{"prompt", "tool"}, opts.TargetAttributes)
 	require.NotNil(t, opts.MaxIterations)
 	assert.Equal(t, 10, *opts.MaxIterations)
-	assert.True(t, opts.KeepVersions)
-	assert.Equal(t, 20, opts.TasksPerIteration)
-	assert.Equal(t, "gpt-4o", opts.ReflectionModel)
+	assert.Equal(t, "gpt-4o", opts.OptimizationModel)
 }
 
-func TestOptions_LegacyStrategiesBackwardCompat(t *testing.T) {
+func TestOptions_OptimizationConfig_NativeYAML(t *testing.T) {
 	t.Parallel()
 
 	input := `
-eval_model: gpt-4.1
-strategies:
-  - prompt
-  - tool
+eval_model: gpt-4o
+optimization_model: gpt-5.1
+optimization_config:
+  model:
+    - gpt-4o
+    - gpt-5
+    - gpt-5.1
+  baselineModel: gpt-4o
 `
 	var opts Options
 	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
 
-	assert.Equal(t, []string{"prompt", "tool"}, opts.TargetAttributes)
+	assert.Equal(t, "gpt-4o", opts.EvalModel)
+	assert.Equal(t, "gpt-5.1", opts.OptimizationModel)
+
+	require.NotNil(t, opts.OptimizationConfig)
+
+	// model should be a JSON array.
+	assert.JSONEq(t, `["gpt-4o","gpt-5","gpt-5.1"]`, string(opts.OptimizationConfig["model"]))
+
+	// baselineModel should be a JSON string.
+	assert.JSONEq(t, `"gpt-4o"`, string(opts.OptimizationConfig["baselineModel"]))
+}
+
+func TestOptions_OptimizationConfig_QuotedJSON(t *testing.T) {
+	t.Parallel()
+
+	// Users may provide pre-encoded JSON strings in YAML (legacy format).
+	// These should be stored as-is, not double-encoded.
+	input := `
+optimization_config:
+  model: '["gpt-4o","gpt-5"]'
+  baselineModel: '"gpt-4o"'
+`
+	var opts Options
+	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
+
+	require.NotNil(t, opts.OptimizationConfig)
+
+	// model should be the JSON array, not a JSON-encoded string.
+	assert.JSONEq(t, `["gpt-4o","gpt-5"]`, string(opts.OptimizationConfig["model"]))
+
+	// baselineModel should be the JSON string, not double-quoted.
+	assert.JSONEq(t, `"gpt-4o"`, string(opts.OptimizationConfig["baselineModel"]))
 }

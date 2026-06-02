@@ -1,14 +1,26 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
-capabilities:
-    - custom-commands
-    - metadata
-description: Manage Microsoft Foundry Skills from your terminal. (Preview)
-displayName: Foundry Skills (Preview)
+# yaml-language-server: $schema=../extension.schema.json
 id: azure.ai.skills
-language: go
 namespace: ai.skill
-tags:
-    - ai
-    - skill
+displayName: Foundry skills (Preview)
+description: Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Preview)
 usage: azd ai skill <command> [options]
-version: 0.0.1-preview
+# NOTE: Make sure version.txt is in sync with this version.
+version: 0.1.0-preview
+requiredAzdVersion: ">1.23.13"
+language: go
+capabilities:
+  - custom-commands
+  - metadata
+tags:
+  - ai
+  - skill
+examples:
+  - name: list
+    description: List skills in the current Foundry project.
+    usage: azd ai skill list
+  - name: create
+    description: Create a skill from a SKILL.md file.
+    usage: azd ai skill create my-skill --file ./SKILL.md
+  - name: download
+    description: Download and extract a skill into ./.agents/skills/.
+    usage: azd ai skill download my-skill

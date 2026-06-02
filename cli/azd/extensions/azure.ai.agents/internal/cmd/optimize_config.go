@@ -27,20 +27,12 @@ type OptimizeConfig struct {
 	opt_eval.Config `yaml:",inline"`
 
 	// Optimize-specific YAML fields.
-	ValidationReference *opt_eval.DatasetRef       `yaml:"validation_reference,omitempty"`
-	Criteria            []OptimizeConfigCriterion  `yaml:"criteria,omitempty"`
-	Options             *opt_eval.Options          `yaml:"options"`
-	InlineDataset       []optimize_api.DatasetTask `yaml:"-"` // populated by defaultOptimizeConfig, not from YAML
+	ValidationReference *opt_eval.DatasetRef `yaml:"validation_reference,omitempty"`
+	Options             *opt_eval.Options    `yaml:"options"`
 
 	// Runtime-only: resolved skill directory and tools file (not serialized to YAML).
 	SkillDir  string `yaml:"-"`
 	ToolsFile string `yaml:"-"`
-}
-
-// OptimizeConfigCriterion is a named evaluation criterion with a natural-language instruction.
-type OptimizeConfigCriterion struct {
-	Name        string `yaml:"name"`
-	Instruction string `yaml:"instruction"`
 }
 
 // LoadOptimizeConfig reads and parses a YAML optimization config file.
@@ -70,115 +62,67 @@ func (c *OptimizeConfig) Validate() error {
 
 	hasFile := c.DatasetFile != ""
 	hasRef := c.DatasetReference != nil
-	hasInline := len(c.InlineDataset) > 0
 
 	if hasFile && hasRef {
 		return fmt.Errorf("dataset_file and dataset_reference are mutually exclusive; specify one, not both")
 	}
 
-	if !hasFile && !hasRef && !hasInline {
-		return fmt.Errorf("one of dataset_file or dataset_reference is required")
+	if !hasFile && !hasRef {
+		return fmt.Errorf(
+			"a dataset is required: provide dataset_file or dataset_reference in your config, " +
+				"or run 'azd ai agent eval init' to generate one")
 	}
 
 	return nil
 }
 
-// defaultOptimizeConfig returns a config with sensible defaults and a built-in
-// evaluation dataset.
+// defaultOptimizeConfig returns a minimal config skeleton with sensible defaults.
+// Dataset, eval model, and other values are resolved interactively or via flags.
 func defaultOptimizeConfig(agentName string) *OptimizeConfig {
 	return &OptimizeConfig{
 		Config: opt_eval.Config{
 			Agent:      opt_eval.AgentRef{Name: agentName},
 			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
-		InlineDataset: defaultDataset,
 		Options: &opt_eval.Options{
-			EvalModel:        defaultEvalModel,
-			TargetAttributes: []string{"instruction", "skill"},
+			MaxIterations: new(5),
 		},
 	}
 }
 
-var defaultDataset = []optimize_api.DatasetTask{
-	{
-		Name: "calculator_module",
-		Prompt: "Create a Python module calc.py with four functions: add, subtract, multiply, divide. " +
-			"Each takes two numbers and returns the result. Include a brief test at the bottom " +
-			"(if __name__ == '__main__') that exercises each function and prints the results. Then run it.",
-		Criteria: []optimize_api.Criterion{
-			{Name: "decimal_types", Instruction: "ALL functions MUST use and return Python's decimal.Decimal type, NOT float."},
-			{Name: "error_code_prefix", Instruction: "ALL error messages raised by any function MUST include a bracketed error code prefix [CALC-NNN]."},
-			{Name: "version_constant", Instruction: "The module MUST define VERSION = '0.1.0' and __version__ = VERSION near the top."},
-			{Name: "module_exports", Instruction: "The module MUST define __all__ = ['add', 'subtract', 'multiply', 'divide'] at the top."},
-		},
-	},
-	{
-		Name: "csv_report",
-		Prompt: "Create a Python script report.py that generates a CSV file 'sales_report.csv' " +
-			"with 10 rows of sample sales data. Columns: date, product, quantity, unit_price, total. " +
-			"Then read the CSV back and print a summary: total revenue and the top-selling product " +
-			"by quantity. Run the script.",
-		Criteria: []optimize_api.Criterion{
-			{Name: "pipe_delimiter", Instruction: "The CSV file MUST use pipe '|' as the delimiter, NOT comma."},
-			{Name: "zero_padded_quantity", Instruction: "ALL quantity values MUST be zero-padded to exactly 4 digits (e.g. '0042' not '42')."},
-			{Name: "logging_not_print", Instruction: "The script MUST use Python's logging module for progress messages, NOT print()."},
-			{Name: "summary_footer", Instruction: "The LAST line of the CSV file MUST be a comment starting with '# SUMMARY:' including total revenue."},
-		},
-	},
-	{
-		Name: "api_response_builder",
-		Prompt: "Create a Python module api_utils.py with a function build_response(data, " +
-			"status_code=200) that builds a JSON-ready dictionary representing an API response. " +
-			"Also create a function validate_email(email: str) -> bool that checks if an email " +
-			"is roughly valid. Write a test block that demonstrates both functions with a few " +
-			"examples and prints the JSON output. Run it.",
-		Criteria: []optimize_api.Criterion{
-			{Name: "named_tuple_validation", Instruction: "validate_email() MUST return a typing.NamedTuple with fields (is_valid: bool, reason: str), NOT a bare bool."},
-			{Name: "request_id", Instruction: "build_response() MUST include a 'requestId' field containing a UUID4 string."},
-			{Name: "rfc7807_errors", Instruction: "When status_code >= 400, the response MUST follow RFC 7807 with 'type', 'title', 'detail', 'status' keys."},
-			{Name: "camel_case_keys", Instruction: "ALL dictionary keys in the response MUST be camelCase (e.g. 'statusCode', NOT 'status_code')."},
-		},
-	},
-}
-
 // ToRequest converts the YAML config into an API OptimizeRequest.
-// If DatasetFile is set, each line of the file is read as a JSON-encoded DatasetTask.
-func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.OptimizeRequest, error) {
+// If DatasetFile is set, each line is passed through as raw JSON.
+// Returns the request, any non-fatal warnings, and an error.
+func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, error) {
 	req := &optimize_api.OptimizeRequest{
-		Agent: optimize_api.AgentDefinition{
-			FoundryProjectURL: projectEndpoint,
-			AgentName:         c.Agent.Name,
-			AgentVersion:      c.Agent.Version,
-			Model:             c.Agent.Model,
-			SystemPrompt:      c.Agent.ResolvedSystemPrompt(),
+		Agent: optimize_api.AgentIdentifier{
+			AgentName:    c.Agent.Name,
+			AgentVersion: c.Agent.Version,
 		},
 		Evaluators: c.Evaluators.Names(),
 		Options: optimize_api.OptimizeOptions{
 			EvalModel:         c.Options.EvalModel,
 			MaxIterations:     c.Options.MaxIterations,
-			Strategies:        c.Options.TargetAttributes,
-			TargetAttributes:  c.Options.TargetAttributes,
-			KeepVersions:      c.Options.KeepVersions,
-			TasksPerIteration: c.Options.TasksPerIteration,
-			ReflectionModel:   c.Options.ReflectionModel,
+			OptimizationModel: c.Options.OptimizationModel,
 			EvaluationLevel:   c.Options.EvaluationLevel,
 		},
 	}
 
-	// Map target_config from YAML to API format.
-	if c.Options.TargetConfig != nil {
-		req.Options.TargetConfig = &optimize_api.TargetConfig{
-			Model: c.Options.TargetConfig.Model,
-		}
+	// Map optimization_config from YAML to API format.
+	if c.Options.OptimizationConfig != nil {
+		req.Options.OptimizationConfig = c.Options.OptimizationConfig
 	}
 
-	// Map criteria from config schema to API schema.
-	for _, crit := range c.Criteria {
-		req.Criteria = append(req.Criteria, optimize_api.Criterion{
-			Name:        crit.Name,
-			Instruction: crit.Instruction,
-		})
+	// Put baselineModel into optimizationConfig.
+	if c.Agent.Model != "" {
+		if req.Options.OptimizationConfig == nil {
+			req.Options.OptimizationConfig = make(map[string]json.RawMessage)
+		}
+		raw, _ := json.Marshal(c.Agent.Model)
+		req.Options.OptimizationConfig["baselineModel"] = raw
 	}
+
+	var warnings []string
 
 	if c.DatasetReference != nil {
 		req.TrainDatasetReference = &optimize_api.DatasetReference{
@@ -195,50 +139,114 @@ func (c *OptimizeConfig) ToRequest(projectEndpoint string) (*optimize_api.Optimi
 	}
 
 	if c.DatasetFile != "" {
-		tasks, err := loadJSONLFile[optimize_api.DatasetTask](c.DatasetFile)
+		lines, err := loadJSONLRawFile(c.DatasetFile)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		req.Dataset = tasks
-	} else if len(c.InlineDataset) > 0 {
-		req.Dataset = c.InlineDataset
+		req.Dataset = lines
+	}
+
+	// Populate optimization_config with systemPrompt, skills, tools.
+	ensureOptConfig := func() {
+		if req.Options.OptimizationConfig == nil {
+			req.Options.OptimizationConfig = make(map[string]json.RawMessage)
+		}
+	}
+
+	if prompt := c.Agent.ResolvedSystemPrompt(); prompt != "" {
+		ensureOptConfig()
+		raw, _ := json.Marshal(prompt)
+		req.Options.OptimizationConfig["systemPrompt"] = raw
 	}
 
 	// Load skills from skill_dir if specified.
 	if c.SkillDir != "" {
 		skills, err := loadSkillsFromDir(c.SkillDir)
 		if err != nil {
-			return nil, fmt.Errorf("loading skills from %s: %w", c.SkillDir, err)
+			return nil, nil, fmt.Errorf("loading skills from %s: %w", c.SkillDir, err)
 		}
-		req.Agent.Skills = skills
+		ensureOptConfig()
+		raw, _ := json.Marshal(skills)
+		req.Options.OptimizationConfig["skills"] = raw
 	}
 
 	// Load tool definitions if a tools file is specified.
 	if c.ToolsFile != "" {
-		tools, err := loadToolDefinitions(c.ToolsFile)
+		tools, toolWarns, err := loadToolDefinitions(c.ToolsFile)
 		if err != nil {
-			return nil, fmt.Errorf("loading tool definitions from %s: %w", c.ToolsFile, err)
+			return nil, nil, fmt.Errorf("loading tool definitions from %s: %w", c.ToolsFile, err)
 		}
-		req.Agent.ToolDefinitions = tools
+		warnings = append(warnings, toolWarns...)
+		ensureOptConfig()
+		raw, _ := json.Marshal(tools)
+		req.Options.OptimizationConfig["tools"] = raw
 	}
 
-	return req, nil
+	return req, warnings, nil
 }
 
-// loadToolDefinitions reads an OpenAI-format tools JSON file and returns
-// ToolDefinition entries for the optimize API request.
-func loadToolDefinitions(path string) ([]optimize_api.ToolDefinition, error) {
+// loadToolDefinitions reads an OpenAI-format tools JSON file, deserializes
+// into typed ToolDefinition structs, and warns about non-function tool types.
+func loadToolDefinitions(path string) ([]optimize_api.ToolDefinition, []string, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // path derived from project tools file
 	if err != nil {
-		return nil, fmt.Errorf("reading tools file: %w", err)
+		return nil, nil, fmt.Errorf("reading tools file: %w", err)
 	}
 
 	var tools []optimize_api.ToolDefinition
 	if err := json.Unmarshal(data, &tools); err != nil {
-		return nil, fmt.Errorf("parsing tools file: %w", err)
+		return nil, nil, fmt.Errorf("parsing tools file: %w", err)
 	}
 
-	return tools, nil
+	var warnings []string
+	for _, t := range tools {
+		if t.Type != "function" {
+			warnings = append(warnings, fmt.Sprintf(
+				"tool %q has type %q (expected \"function\"); it will be sent but may not be recognized",
+				t.Function.Name, t.Type))
+		}
+	}
+
+	if len(tools) == 0 {
+		warnings = append(warnings, fmt.Sprintf("tools file %s contains no tool definitions", path))
+	}
+
+	return tools, warnings, nil
+}
+
+// loadJSONLRawFile reads a JSONL file and returns each non-empty line as
+// a json.RawMessage, preserving unknown fields. Uses a streaming scanner
+// to avoid loading the entire file into memory at once.
+func loadJSONLRawFile(path string) ([]json.RawMessage, error) {
+	f, err := os.Open(path) //nolint:gosec // path is provided by user for local config
+	if err != nil {
+		return nil, fmt.Errorf("failed to read JSONL file %s: %w", path, err)
+	}
+	defer f.Close()
+
+	var result []json.RawMessage
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		raw := make([]byte, len(line))
+		copy(raw, line)
+		if !json.Valid(raw) {
+			return nil, fmt.Errorf("invalid JSON line in %s: %s", path, line)
+		}
+		result = append(result, json.RawMessage(raw))
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("reading JSONL file %s: %w", path, err)
+	}
+
+	if len(result) == 0 {
+		return nil, fmt.Errorf("JSONL file %s is empty", path)
+	}
+
+	return result, nil
 }
 
 // loadSkillsFromDir reads skill files from a directory and returns SkillDefinitions.
@@ -272,6 +280,9 @@ func loadSkillsFromDir(dir string) ([]optimize_api.SkillDefinition, error) {
 		}
 
 		skill := parseSkillFile(entry.Name(), string(data))
+		if skill.Body == "" && skill.Description == "" {
+			continue
+		}
 		skills = append(skills, skill)
 	}
 

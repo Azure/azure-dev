@@ -16,6 +16,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opt_eval"
@@ -24,6 +25,10 @@ import (
 	"github.com/fatih/color"
 	"go.yaml.in/yaml/v3"
 )
+
+// ProjectEndpointAPIVersion is the default API version for project endpoint calls
+// (optimize, dataset operations).
+const ProjectEndpointAPIVersion = "2025-11-15-preview"
 
 // resolvePortalPrefix reads AZURE_AI_PROJECT_ID from the azd environment and
 // returns a PortalPrefix for building Foundry portal URLs.
@@ -304,4 +309,156 @@ func padColorizedStatus(status string) string {
 	label, colorFn := statusLabelAndColor(status)
 	padded := fmt.Sprintf("%-*s", statusWidth, label)
 	return colorFn(padded)
+}
+
+// ---------------------------------------------------------------------------
+// Shared prompt helpers (used by eval init and optimize)
+// ---------------------------------------------------------------------------
+
+// selectOtherDeploymentValue is the sentinel value for the "Select another
+// deployment" choice in the model picker.
+const selectOtherDeploymentValue = "__select_other_deployment__"
+
+// promptModelSelection presents an interactive model picker. It shows the
+// defaultModel (if non-empty) as the first choice, followed by a "Select
+// another deployment" option. If the user picks "Select another deployment",
+// it fetches all Foundry project deployments and prompts again.
+func promptModelSelection(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	message string,
+	defaultModel string,
+) (string, error) {
+	choices := buildModelSelectionChoices(defaultModel)
+	defaultIndex := int32(0)
+	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       message,
+			Choices:       choices,
+			SelectedIndex: &defaultIndex,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("prompting for model: %w", err)
+	}
+	if resp.Value == nil || int(*resp.Value) >= len(choices) {
+		return "", fmt.Errorf("unexpected prompt response for model selection")
+	}
+	selected := choices[int(*resp.Value)].Value
+
+	if selected == selectOtherDeploymentValue {
+		return promptAllDeployments(ctx, azdClient)
+	}
+
+	return selected, nil
+}
+
+// buildModelSelectionChoices builds the initial choices for the model picker.
+// When defaultModel is non-empty it appears first as the default.
+func buildModelSelectionChoices(defaultModel string) []*azdext.SelectChoice {
+	var choices []*azdext.SelectChoice
+	if defaultModel != "" {
+		choices = append(choices, &azdext.SelectChoice{
+			Label: defaultModel + " (deployed)",
+			Value: defaultModel,
+		})
+	}
+	choices = append(choices, &azdext.SelectChoice{
+		Label: "Select another deployment",
+		Value: selectOtherDeploymentValue,
+	})
+	return choices
+}
+
+// promptAllDeployments fetches all model deployments from the Foundry project
+// and prompts the user to select one.
+func promptAllDeployments(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
+	deployments := listDeploymentsFromEnv(ctx, azdClient)
+	if len(deployments) == 0 {
+		return "", fmt.Errorf("no model deployments found in the Foundry project")
+	}
+
+	choices := make([]*azdext.SelectChoice, len(deployments))
+	seen := make(map[string]bool)
+	i := 0
+	for _, d := range deployments {
+		if seen[d.Name] {
+			continue
+		}
+		label := d.Name
+		if d.ModelName != "" && d.ModelName != d.Name {
+			label = fmt.Sprintf("%s (%s)", d.Name, d.ModelName)
+		}
+		choices[i] = &azdext.SelectChoice{Label: label, Value: d.Name}
+		seen[d.Name] = true
+		i++
+	}
+	choices = choices[:i]
+
+	defaultIndex := int32(0)
+	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "Select a model deployment",
+			Choices:       choices,
+			SelectedIndex: &defaultIndex,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("prompting for model deployment: %w", err)
+	}
+	return choices[int(*resp.Value)].Value, nil
+}
+
+// getDeployedModelFromEnv reads the AZURE_AI_MODEL_DEPLOYMENT_NAME from
+// the current azd environment. Returns empty string if not available.
+func getDeployedModelFromEnv(ctx context.Context, azdClient *azdext.AzdClient) string {
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil || envResp == nil || envResp.Environment == nil {
+		return ""
+	}
+	v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envResp.Environment.Name,
+		Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+	})
+	if err != nil || v.Value == "" {
+		return ""
+	}
+	return v.Value
+}
+
+// promptDatasetSelection prompts the user to enter a dataset file path or
+// registered dataset name and resolves it. Returns the file path and dataset
+// reference (one will be set, the other empty/nil).
+func promptDatasetSelection(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentProject string,
+) (datasetFile string, datasetRef *opt_eval.DatasetRef, err error) {
+	resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:        "Dataset file path or registered dataset name",
+			HelpMessage:    "Enter a local .jsonl file path or a registered dataset name",
+			IgnoreHintKeys: true,
+		},
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("prompting for dataset: %w", err)
+	}
+
+	value := strings.TrimSpace(resp.Value)
+	if value == "" {
+		return "", nil, fmt.Errorf(
+			"a dataset is required: use --dataset <file-or-name>, or provide dataset_file / dataset_reference " +
+				"in your config, or run 'azd ai agent eval init' to generate one")
+	}
+
+	if eval_api.IsDatasetName(value) {
+		return "", &opt_eval.DatasetRef{Name: value}, nil
+	}
+
+	resolved, err := resolveLocalDatasetFile(value, agentProject)
+	if err != nil {
+		return "", nil, err
+	}
+	return resolved, nil, nil
 }

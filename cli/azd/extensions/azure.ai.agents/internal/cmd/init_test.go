@@ -5,7 +5,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,6 +21,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -723,8 +726,7 @@ func TestParseGitHubUrlNaive(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			a := &InitAction{}
-			result := a.parseGitHubUrlNaive(tt.url)
+			result := parseGitHubUrlNaive(tt.url)
 
 			if tt.expected == nil {
 				if result != nil {
@@ -906,6 +908,46 @@ func TestExtractToolboxAndConnectionConfigs_RawToolsFallback(t *testing.T) {
 	}
 	if toolboxes[0].Tools[0]["project_connection_id"] != "existing-conn" {
 		t.Errorf("Expected 'existing-conn', got '%v'", toolboxes[0].Tools[0]["project_connection_id"])
+	}
+}
+
+func TestExtractToolboxAndConnectionConfigs_NormalizesAgenticIdentityAuthType(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Resources: []any{
+			agent_yaml.ToolboxResource{
+				Resource: agent_yaml.Resource{
+					Name: "platform-tools",
+					Kind: agent_yaml.ResourceKindToolbox,
+				},
+				Tools: []any{
+					map[string]any{
+						"type":     "mcp",
+						"name":     "agentic-tool",
+						"target":   "https://example.com/mcp",
+						"authType": "AgenticIdentity",
+					},
+				},
+			},
+		},
+	}
+
+	_, connections, _, err := extractToolboxAndConnectionConfigs(manifest)
+	if err != nil {
+		t.Fatalf("extractToolboxAndConnectionConfigs failed: %v", err)
+	}
+
+	if len(connections) != 1 {
+		t.Fatalf("Expected 1 connection, got %d", len(connections))
+	}
+
+	if connections[0].AuthType != string(agent_yaml.AuthTypeAgenticIdentityToken) {
+		t.Errorf(
+			"Expected authType %q, got %q",
+			agent_yaml.AuthTypeAgenticIdentityToken,
+			connections[0].AuthType,
+		)
 	}
 }
 
@@ -1202,6 +1244,42 @@ func TestExtractConnectionConfigs_SurfacesCredentialsType(t *testing.T) {
 			wantEnvVarCount:  2, // both "type" and "key" externalized
 		},
 		{
+			name: "normalizes explicit AgenticIdentity authType",
+			connResource: agent_yaml.ConnectionResource{
+				Resource: agent_yaml.Resource{
+					Name: "my-conn",
+					Kind: agent_yaml.ResourceKindConnection,
+				},
+				Target:   "https://example.com",
+				AuthType: agent_yaml.AuthTypeAgenticIdentity,
+				Credentials: map[string]any{
+					"key": "val",
+				},
+			},
+			wantAuthType:     string(agent_yaml.AuthTypeAgenticIdentityToken),
+			wantCredHasType:  false,
+			wantCredKeyCount: 1,
+			wantEnvVarCount:  1,
+		},
+		{
+			name: "normalizes credentials.type AgenticIdentity when authType is empty",
+			connResource: agent_yaml.ConnectionResource{
+				Resource: agent_yaml.Resource{
+					Name: "my-conn",
+					Kind: agent_yaml.ResourceKindConnection,
+				},
+				Target: "https://example.com",
+				Credentials: map[string]any{
+					"type": "AgenticIdentity",
+					"key":  "secret-value",
+				},
+			},
+			wantAuthType:     string(agent_yaml.AuthTypeAgenticIdentityToken),
+			wantCredHasType:  false,
+			wantCredKeyCount: 1,
+			wantEnvVarCount:  1,
+		},
+		{
 			name: "no credentials.type and no authType stays empty",
 			connResource: agent_yaml.ConnectionResource{
 				Resource: agent_yaml.Resource{
@@ -1457,6 +1535,61 @@ func TestManifestHasModelResources(t *testing.T) {
 				t.Errorf("manifestHasModelResources() = %v, want %v", result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestConfigureModelChoice_NoPromptMissingAzureContextDefersModelResources(t *testing.T) {
+	const envName = "test-env"
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{envName: {}},
+	}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+	manifest := &agent_yaml.AgentManifest{
+		Name: "test-hosted",
+		Template: agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Name: "test-hosted",
+				Kind: agent_yaml.AgentKindHosted,
+			},
+		},
+		Resources: []any{
+			agent_yaml.ModelResource{
+				Resource: agent_yaml.Resource{
+					Name: "my-model",
+					Kind: agent_yaml.ResourceKindModel,
+				},
+				Id: "gpt-4o",
+			},
+		},
+	}
+	action := &InitAction{
+		azdClient:    azdClient,
+		environment:  &azdext.Environment{Name: envName},
+		azureContext: &azdext.AzureContext{Scope: &azdext.AzureScope{}},
+		flags:        &initFlags{noPrompt: true},
+	}
+
+	var got *agent_yaml.AgentManifest
+	output, err := captureStdout(t, func() error {
+		var runErr error
+		got, runErr = action.configureModelChoice(t.Context(), manifest)
+		return runErr
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != manifest {
+		t.Fatalf("configureModelChoice returned a different manifest")
+	}
+	if envServer.values[envName]["USE_EXISTING_AI_PROJECT"] != "false" {
+		t.Fatalf("USE_EXISTING_AI_PROJECT = %q, want false", envServer.values[envName]["USE_EXISTING_AI_PROJECT"])
+	}
+	if got := envServer.values[envName][pendingProvisionEnvVar]; got != pendingReasonProject {
+		t.Fatalf("%s = %q, want %q", pendingProvisionEnvVar, got, pendingReasonProject)
+	}
+	if !strings.Contains(output, "Model resource configuration was deferred") {
+		t.Fatalf("output missing deferred model warning:\n%s", output)
 	}
 }
 
@@ -2333,5 +2466,576 @@ func TestCodeDeployFlagValidation(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// createdFolder path computation after Chdir
+// (covers PR review — directory creation tracking and message accuracy)
+// ---------------------------------------------------------------------------
+
+// TestCreatedFolderPath_AfterChdir verifies that formatCreatedFolderMessage
+// produces the correct relative display path even after the process has
+// chdir'd into the new project directory.
+func TestCreatedFolderPath_AfterChdir(t *testing.T) {
+	tests := []struct {
+		name     string
+		folder   string
+		wantPath string
+	}{
+		{
+			name:     "simple folder name",
+			folder:   "my-agent",
+			wantPath: "my-agent",
+		},
+		{
+			name:     "sanitized folder name",
+			folder:   folderNameStrippingParenSuffix("Hello World (Python)"),
+			wantPath: "hello-world",
+		},
+		{
+			name:     "folder with numbers",
+			folder:   "agent-v2",
+			wantPath: "agent-v2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			originalCwd := t.TempDir()
+
+			// Create the subdirectory (simulates azd init creating it)
+			folderPath := filepath.Join(originalCwd, tt.folder)
+			//nolint:gosec // test fixture directory permissions are intentional
+			if err := os.MkdirAll(folderPath, 0o755); err != nil {
+				t.Fatalf("MkdirAll: %v", err)
+			}
+
+			// Simulate the chdir that happens after azd init
+			t.Chdir(folderPath)
+
+			msg := formatCreatedFolderMessage(originalCwd, folderPath, "")
+			wantSuffix := "cd " + tt.wantPath + "\n"
+			if !strings.Contains(msg, tt.wantPath) {
+				t.Errorf("message missing display path %q:\n%s", tt.wantPath, msg)
+			}
+			if !strings.HasSuffix(msg, wantSuffix) {
+				t.Errorf("message should end with %q, got:\n%s", wantSuffix, msg)
+			}
+		})
+	}
+}
+
+// TestCreatedFolderPath_NotSetWhenDirectoryExists verifies that the
+// newlyCreated check correctly identifies an existing directory.
+func TestCreatedFolderPath_NotSetWhenDirectoryExists(t *testing.T) {
+	originalCwd := t.TempDir()
+	t.Chdir(originalCwd)
+
+	folderName := "existing-project"
+
+	// Pre-create the directory (simulates an existing project)
+	existingDir := filepath.Join(originalCwd, folderName)
+	//nolint:gosec // test fixture directory permissions are intentional
+	if err := os.MkdirAll(existingDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	// Mirror production logic: stat + errors.Is
+	_, statErr := os.Stat(folderName)
+	newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+
+	if newlyCreated {
+		t.Error("newlyCreated should be false when directory already exists")
+	}
+}
+
+// TestCreatedFolderPath_SetWhenDirectoryDoesNotExist verifies that the
+// newlyCreated check correctly identifies a missing directory.
+func TestCreatedFolderPath_SetWhenDirectoryDoesNotExist(t *testing.T) {
+	originalCwd := t.TempDir()
+	t.Chdir(originalCwd)
+
+	folderName := "new-agent-project"
+
+	// Do NOT create the directory — simulates fresh init
+	_, statErr := os.Stat(folderName)
+	newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+
+	if !newlyCreated {
+		t.Error("newlyCreated should be true when directory does not exist")
+	}
+
+	// Verify formatCreatedFolderMessage produces valid output
+	createdFolder := filepath.Join(originalCwd, folderName)
+	msg := formatCreatedFolderMessage(originalCwd, createdFolder, "")
+	if !strings.Contains(msg, folderName) {
+		t.Errorf("message should contain %q:\n%s", folderName, msg)
+	}
+}
+
+// TestCreatedFolderPath_AzdTemplateCase verifies the full flow for the
+// TemplateTypeAzd case: folderNameFromTitle derives the name, and the message
+// includes a template-title notice when the name changed.
+func TestCreatedFolderPath_AzdTemplateCase(t *testing.T) {
+	originalCwd := t.TempDir()
+
+	templateTitle := "Basic Agent (Python)"
+	folderName := folderNameStrippingParenSuffix(templateTitle)
+
+	// folderNameFromTitle should strip parenthetical suffix
+	if strings.Contains(folderName, "python") {
+		t.Errorf("folderName should not contain parenthetical suffix, got %q", folderName)
+	}
+
+	createdFolder := filepath.Join(originalCwd, folderName)
+	msg := formatCreatedFolderMessage(originalCwd, createdFolder, templateTitle)
+
+	// Should contain the template notice since name differs from title
+	if !strings.Contains(msg, templateTitle) {
+		t.Errorf("message should reference original title %q:\n%s", templateTitle, msg)
+	}
+	// Should contain the cd hint
+	if !strings.Contains(msg, "cd "+folderName) {
+		t.Errorf("message should contain cd hint:\n%s", msg)
+	}
+}
+
+// TestCreatedFolderPath_ManifestTemplateExistingProject verifies that no
+// "created" message is produced when an existing project is found for the
+// agent manifest template flow.
+func TestCreatedFolderPath_ManifestTemplateExistingProject(t *testing.T) {
+	originalCwd := t.TempDir()
+	t.Chdir(originalCwd)
+
+	folderName := "my-agent"
+
+	// Pre-create directory and azure.yaml to simulate existing project
+	projectDir := filepath.Join(originalCwd, folderName)
+	//nolint:gosec // test fixture directory permissions are intentional
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(
+		filepath.Join(projectDir, "azure.yaml"),
+		[]byte("name: my-agent\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// Mirror production logic: directory exists, so newlyCreated is false
+	_, statErr := os.Stat(folderName)
+	newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+
+	if newlyCreated {
+		t.Error("newlyCreated should be false for existing project directory")
+	}
+}
+
+func TestFolderNameFromTitle(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		title string
+		want  string
+	}{
+		{name: "strips parenthetical suffix", title: "Basic Agent (Python)", want: "basic-agent"},
+		{name: "no parenthetical", title: "My Cool Agent", want: "my-cool-agent"},
+		{name: "parenthetical with spaces", title: "Agent  ( Preview )", want: "agent"},
+		{name: "non-ASCII title", title: "Ünö Agent (Test)", want: "n-agent"},
+		{name: "all non-ASCII before paren", title: "日本語 (Python)", want: "my-agent"},
+		{name: "empty title", title: "", want: "my-agent"},
+		{name: "only parenthetical", title: "(Python)", want: "my-agent"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := folderNameStrippingParenSuffix(tt.title)
+			if got != tt.want {
+				t.Errorf("folderNameFromTitle(%q) = %q, want %q", tt.title, got, tt.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// peekManifestName: best-effort manifest name extraction for -m folder
+// creation (covers PR review — parity with template-flow folder creation)
+// ---------------------------------------------------------------------------
+
+func TestPeekManifestName_LocalFile_WithName(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte("name: my-cool-agent\ndescription: hi\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := peekManifestName(t.Context(), path, &http.Client{})
+	if got != "my-cool-agent" {
+		t.Errorf("peekManifestName = %q, want %q", got, "my-cool-agent")
+	}
+}
+
+func TestPeekManifestName_LocalFile_WithoutName(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte("description: missing top-level name\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := peekManifestName(t.Context(), path, &http.Client{})
+	if got != "" {
+		t.Errorf("peekManifestName = %q, want empty", got)
+	}
+}
+
+func TestPeekManifestName_LocalFile_EmptyName(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte("name: \"   \"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := peekManifestName(t.Context(), path, &http.Client{})
+	if got != "" {
+		t.Errorf("peekManifestName = %q, want empty (whitespace-only name)", got)
+	}
+}
+
+func TestPeekManifestName_LocalFile_NonExistent(t *testing.T) {
+	t.Parallel()
+	got := peekManifestName(t.Context(), filepath.Join(t.TempDir(), "does-not-exist.yaml"), &http.Client{})
+	if got != "" {
+		t.Errorf("peekManifestName = %q, want empty for missing file", got)
+	}
+}
+
+func TestPeekManifestName_LocalFile_Directory(t *testing.T) {
+	t.Parallel()
+	// Pointing at a directory should not be treated as a manifest — full
+	// validation runs in checkNotDirectory; peek must not panic or return
+	// noise.
+	got := peekManifestName(t.Context(), t.TempDir(), &http.Client{})
+	if got != "" {
+		t.Errorf("peekManifestName = %q, want empty for directory", got)
+	}
+}
+
+func TestPeekManifestName_LocalFile_MalformedYAML(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte("name: [unterminated\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := peekManifestName(t.Context(), path, &http.Client{})
+	if got != "" {
+		t.Errorf("peekManifestName = %q, want empty for malformed yaml", got)
+	}
+}
+
+func TestPeekManifestName_LocalFile_NestedFieldsIgnored(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.yaml")
+	manifest := "" +
+		"name: nested-agent\n" +
+		"description: hi\n" +
+		"tools:\n" +
+		"  - name: not-the-agent-name\n" +
+		"  - name: also-not-it\n" +
+		"environment:\n" +
+		"  - name: SOME_ENV\n" +
+		"    value: x\n"
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte(manifest), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := peekManifestName(t.Context(), path, &http.Client{})
+	if got != "nested-agent" {
+		t.Errorf("peekManifestName = %q, want nested-agent (top-level only)", got)
+	}
+}
+
+func TestPeekManifestName_EmptyPointer(t *testing.T) {
+	t.Parallel()
+	got := peekManifestName(t.Context(), "", &http.Client{})
+	if got != "" {
+		t.Errorf("peekManifestName(\"\") = %q, want empty", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// resolveAgentNameFromManifestPointer: validates that the agent name is
+// resolved (via --agent-name flag or peek+default in noPrompt) BEFORE any
+// project folder is created, so the folder / agent identity / service entry /
+// src subfolder / cd hint all use the same name.
+// ---------------------------------------------------------------------------
+
+func TestResolveAgentNameFromManifestPointer_FlagWinsWithoutPeek(t *testing.T) {
+	t.Parallel()
+
+	flags := &initFlags{agentName: "flag-agent", noPrompt: true}
+	// Manifest pointer is intentionally unreachable to prove the flag short-circuits
+	// the peek entirely.
+	got, err := resolveAgentNameFromManifestPointer(
+		t.Context(), nil, flags, filepath.Join(t.TempDir(), "does-not-exist.yaml"), &http.Client{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "flag-agent" {
+		t.Errorf("got name = %q, want %q", got, "flag-agent")
+	}
+	if flags.agentName != "flag-agent" {
+		t.Errorf("flags.agentName = %q, want pinned to flag value", flags.agentName)
+	}
+}
+
+func TestResolveAgentNameFromManifestPointer_NoPromptUsesPeekedDefault(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte("name: from-manifest\ndescription: hi\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	flags := &initFlags{noPrompt: true}
+	got, err := resolveAgentNameFromManifestPointer(
+		t.Context(), nil, flags, path, &http.Client{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "from-manifest" {
+		t.Errorf("got name = %q, want %q", got, "from-manifest")
+	}
+	if flags.agentName != "from-manifest" {
+		t.Errorf("flags.agentName = %q, want pinned to peeked default", flags.agentName)
+	}
+}
+
+func TestResolveAgentNameFromManifestPointer_PeekFailsReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	// Peek will fail (nonexistent local path, no flag). Helper must return ""
+	// and leave flags.agentName empty so the caller falls back to the deferred
+	// inner resolution.
+	flags := &initFlags{noPrompt: true}
+	got, err := resolveAgentNameFromManifestPointer(
+		t.Context(), nil, flags, filepath.Join(t.TempDir(), "does-not-exist.yaml"), &http.Client{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "" {
+		t.Errorf("got name = %q, want empty when peek fails and no flag", got)
+	}
+	if flags.agentName != "" {
+		t.Errorf("flags.agentName = %q, want unchanged when peek fails", flags.agentName)
+	}
+}
+
+func TestResolveAgentNameFromManifestPointer_InvalidFlagReturnsError(t *testing.T) {
+	t.Parallel()
+
+	// Invalid flag value must surface a validation error rather than silently
+	// falling back to peek — the user explicitly asked for this name.
+	flags := &initFlags{agentName: "INVALID NAME with spaces", noPrompt: true}
+	_, err := resolveAgentNameFromManifestPointer(
+		t.Context(), nil, flags, filepath.Join(t.TempDir(), "ignored.yaml"), &http.Client{},
+	)
+	if err == nil {
+		t.Fatalf("expected validation error for invalid --agent-name, got nil")
+	}
+}
+
+func TestResolveAgentNameFromManifestPointer_FlagPeekConsistency(t *testing.T) {
+	t.Parallel()
+
+	// When --agent-name matches what peek would return, the resolved name and
+	// the flag value should agree and the manifest never needs to be read.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(path, []byte("name: shared-name\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	flags := &initFlags{agentName: "shared-name", noPrompt: true}
+	got, err := resolveAgentNameFromManifestPointer(
+		t.Context(), nil, flags, path, &http.Client{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "shared-name" {
+		t.Errorf("got name = %q, want %q", got, "shared-name")
+	}
+}
+
+func TestPeekManifestName_NonGitHubURL(t *testing.T) {
+	t.Parallel()
+	// Non-GitHub URLs are unsupported by the naive peek path and must return
+	// "" (the caller then falls back to targetDir=".").
+	got := peekManifestName(t.Context(), "https://example.com/some/manifest.yaml", &http.Client{})
+	if got != "" {
+		t.Errorf("peekManifestName = %q, want empty for non-GitHub URL", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// absolutizeRelativeManifestPaths: ensures the -m manifest path survives
+// ensureProject chdir into the newly created project directory. flags.src
+// is intentionally NOT absolutized (see godoc on the helper for why).
+// ---------------------------------------------------------------------------
+
+func TestAbsolutizeRelativeManifestPaths_RelativeLocalManifest(t *testing.T) {
+	tmp := t.TempDir()
+	t.Chdir(tmp)
+
+	flags := &initFlags{
+		manifestPointer: "agent.yaml",
+		src:             "src",
+	}
+	if err := absolutizeRelativeManifestPaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	}
+	if !filepath.IsAbs(flags.manifestPointer) {
+		t.Errorf("manifestPointer should be absolute, got %q", flags.manifestPointer)
+	}
+	// Regression guard: --src is an output target (where the agent
+	// definition is downloaded to, relative to the project root).
+	// Absolutizing it before ensureProject chdirs into the new project
+	// folder would cause InitAction.Run's filepath.Rel rewrite to produce
+	// "..\src", writing the agent definition outside the new project.
+	if flags.src != "src" {
+		t.Errorf("src should remain relative %q, got %q", "src", flags.src)
+	}
+}
+
+func TestAbsolutizeRelativeManifestPaths_AbsoluteLocalUnchanged(t *testing.T) {
+	t.Parallel()
+	absManifest := filepath.Join(t.TempDir(), "agent.yaml")
+
+	flags := &initFlags{
+		manifestPointer: absManifest,
+		src:             "src",
+	}
+	if err := absolutizeRelativeManifestPaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	}
+	if flags.manifestPointer != absManifest {
+		t.Errorf("absolute manifestPointer should be unchanged, got %q", flags.manifestPointer)
+	}
+	if flags.src != "src" {
+		t.Errorf("src should be unchanged, got %q", flags.src)
+	}
+}
+
+func TestAbsolutizeRelativeManifestPaths_URLPointerUnchanged(t *testing.T) {
+	t.Parallel()
+	const ghURL = "https://github.com/owner/repo/blob/main/agent.yaml"
+	flags := &initFlags{
+		manifestPointer: ghURL,
+		src:             "",
+	}
+	if err := absolutizeRelativeManifestPaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	}
+	if flags.manifestPointer != ghURL {
+		t.Errorf("URL manifestPointer should be unchanged, got %q", flags.manifestPointer)
+	}
+}
+
+func TestAbsolutizeRelativeManifestPaths_EmptyFields(t *testing.T) {
+	t.Parallel()
+	flags := &initFlags{}
+	if err := absolutizeRelativeManifestPaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	}
+	if flags.manifestPointer != "" {
+		t.Errorf("empty manifestPointer should remain empty, got %q", flags.manifestPointer)
+	}
+	if flags.src != "" {
+		t.Errorf("empty src should remain empty, got %q", flags.src)
+	}
+}
+
+// TestAbsolutizeRelativeManifestPaths_SrcEscapeRegression specifically guards
+// against the bug where absolutizing --src before chdir + relativization in
+// InitAction.Run would produce "..\src" and write agent files outside the
+// newly created project directory.
+func TestAbsolutizeRelativeManifestPaths_SrcEscapeRegression(t *testing.T) {
+	originalCwd := t.TempDir()
+	t.Chdir(originalCwd)
+
+	flags := &initFlags{
+		manifestPointer: "agent.yaml",
+		src:             "src",
+	}
+	if err := absolutizeRelativeManifestPaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	}
+
+	// Simulate ensureProject creating + chdir'ing into the project folder.
+	projectDir := filepath.Join(originalCwd, "my-agent")
+	//nolint:gosec // test fixture directory permissions are intentional
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Chdir(projectDir)
+
+	// Mirror what InitAction.Run does: relativize absolute src against the
+	// project root. This must NOT escape the project.
+	if filepath.IsAbs(flags.src) {
+		rel, err := filepath.Rel(projectDir, flags.src)
+		if err != nil {
+			t.Fatalf("filepath.Rel: %v", err)
+		}
+		if strings.HasPrefix(rel, "..") {
+			t.Fatalf("src rewrite escapes project: %q (was abs %q)", rel, flags.src)
+		}
+	}
+	// Even simpler: src should never have been touched in the first place.
+	if flags.src != "src" {
+		t.Errorf("src must remain relative %q to stay inside project, got %q", "src", flags.src)
+	}
+}
+
+func TestGenerateResourceTokenSalt(t *testing.T) {
+	salt, err := generateResourceTokenSalt()
+	require.NoError(t, err)
+
+	// Should be 8-character hex string (4 random bytes = 8 hex chars)
+	require.Len(t, salt, 8)
+
+	// Should be valid hex
+	_, err = hex.DecodeString(salt)
+	require.NoError(t, err)
+}
+
+func TestGenerateResourceTokenSalt_Unique(t *testing.T) {
+	seen := make(map[string]bool)
+	for range 100 {
+		salt, err := generateResourceTokenSalt()
+		require.NoError(t, err)
+		require.False(t, seen[salt], "duplicate salt generated: %s", salt)
+		seen[salt] = true
 	}
 }

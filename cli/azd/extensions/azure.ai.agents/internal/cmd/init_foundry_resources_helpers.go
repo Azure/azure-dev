@@ -6,7 +6,6 @@ package cmd
 import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/azure"
-	"azureaiagent/internal/project"
 	"context"
 	"fmt"
 	"log"
@@ -716,6 +715,99 @@ func loadAzureContext(
 	}, nil
 }
 
+func missingInitAzureContextValues(azureContext *azdext.AzureContext) []string {
+	var missing []string
+	if azureContext == nil || azureContext.Scope == nil {
+		return []string{"AZURE_SUBSCRIPTION_ID", "AZURE_LOCATION"}
+	}
+	if strings.TrimSpace(azureContext.Scope.SubscriptionId) == "" {
+		missing = append(missing, "AZURE_SUBSCRIPTION_ID")
+	}
+	if strings.TrimSpace(azureContext.Scope.Location) == "" {
+		missing = append(missing, "AZURE_LOCATION")
+	}
+	return missing
+}
+
+func shouldDeferInitAzureContext(noPrompt bool, azureContext *azdext.AzureContext) bool {
+	return noPrompt && len(missingInitAzureContextValues(azureContext)) > 0
+}
+
+func configureDeferredInitAzureContext(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	azureContext *azdext.AzureContext,
+	hasModelResources bool,
+) error {
+	missing := missingInitAzureContextValues(azureContext)
+	fmt.Printf("%s", output.WithWarningFormat(
+		"Missing Azure environment values: %s. Continuing because --no-prompt was specified.\n",
+		strings.Join(missing, ", "),
+	))
+	fmt.Println(output.WithGrayFormat("Set the missing values before running azd provision or azd deploy:"))
+	if slices.Contains(missing, "AZURE_SUBSCRIPTION_ID") {
+		fmt.Println(output.WithGrayFormat("  azd env set AZURE_SUBSCRIPTION_ID <subscription-id>"))
+	}
+	if slices.Contains(missing, "AZURE_LOCATION") {
+		fmt.Println(output.WithGrayFormat("  azd env set AZURE_LOCATION <region>"))
+		fmt.Println(output.WithGrayFormat(
+			"  # Optional: azd env set AZURE_AI_DEPLOYMENTS_LOCATION <region>",
+		))
+	}
+	if hasModelResources {
+		fmt.Printf("%s", output.WithWarningFormat(
+			"Model resource configuration was deferred because model lookup requires the missing Azure values.\n",
+		))
+		fmt.Println(output.WithGrayFormat(
+			"Set the missing values, then re-run init to resolve model deployments automatically.",
+		))
+		fmt.Println(output.WithGrayFormat(
+			"To configure deployments manually, add a deployment under the agent service config in azure.yaml, for example:",
+		))
+		fmt.Println(output.WithGrayFormat("  deployments:"))
+		fmt.Println(output.WithGrayFormat("    - name: <deployment-name>"))
+		fmt.Println(output.WithGrayFormat("      model:"))
+		fmt.Println(output.WithGrayFormat("        name: <model-name>"))
+		fmt.Println(output.WithGrayFormat("        format: OpenAI"))
+		fmt.Println(output.WithGrayFormat("        version: <model-version>"))
+		fmt.Println(output.WithGrayFormat("      sku:"))
+		fmt.Println(output.WithGrayFormat("        name: GlobalStandard"))
+		fmt.Println(output.WithGrayFormat("        capacity: 1"))
+	}
+
+	if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
+		return fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+	}
+	if err := updatePendingProjectSignal(ctx, azdClient, envName, false); err != nil {
+		log.Printf("warning: failed to update project provision signal: %v", err)
+	}
+
+	return nil
+}
+
+func configureNewProjectForNoPrompt(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	azureContext *azdext.AzureContext,
+	subscriptionMessage string,
+) (azcore.TokenCredential, error) {
+	newCred, err := ensureSubscriptionAndLocation(ctx, azdClient, azureContext, envName, subscriptionMessage)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
+		return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+	}
+	if err := updatePendingProjectSignal(ctx, azdClient, envName, false); err != nil {
+		log.Printf("warning: failed to update project provision signal: %v", err)
+	}
+
+	return newCred, nil
+}
+
 // --- Shared subscription/location helpers ---
 
 // ensureSubscription prompts for a subscription if not already set in the AzureContext.
@@ -1141,11 +1233,21 @@ func selectFoundryProject(
 		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
 	}
 
-	// When code deploy is selected, restrict to regions that support it.
+	// When code deploy is selected, restrict to regions that support hosted agents.
+	// Code deploy is available in all hosted-agent regions (no separate allowlist).
 	if skipACR {
-		projects = slices.DeleteFunc(projects, func(p FoundryProjectInfo) bool {
-			return !locationAllowed(p.Location, project.CodeDeployRegions)
-		})
+		supportedRegions, regErr := supportedRegionsForInit(ctx)
+		if regErr != nil {
+			// Propagate context cancellation/timeout — these are not recoverable fetch failures.
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			log.Printf("warning: failed to fetch supported regions, skipping code-deploy region filter: %v", regErr)
+		} else if len(supportedRegions) > 0 {
+			projects = slices.DeleteFunc(projects, func(p FoundryProjectInfo) bool {
+				return !locationAllowed(p.Location, supportedRegions)
+			})
+		}
 	}
 
 	if len(projects) == 0 {

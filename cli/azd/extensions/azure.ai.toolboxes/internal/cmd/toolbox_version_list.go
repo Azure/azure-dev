@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newToolboxVersionListCommand returns `azd ai toolbox version list <toolbox>`.
+// newToolboxVersionListCommand returns `azd ai toolbox versions list <toolbox>`.
 func newToolboxVersionListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 
@@ -30,7 +30,7 @@ func newToolboxVersionListCommand(extCtx *azdext.ExtensionContext) *cobra.Comman
 		Long: `List published versions for a toolbox.
 
 Shows one row per published version and marks which one is currently the
-default. Use this when choosing a target for 'toolbox update --default-version'.`,
+default. Use this when choosing a target for 'toolbox publish'.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runToolboxVersionList(cmd.Context(), args[0], readToolboxFlags(cmd, extCtx))
@@ -53,7 +53,7 @@ func runToolboxVersionList(ctx context.Context, toolboxName string, parent toolb
 	if err != nil {
 		return err
 	}
-	logResolvedEndpoint("toolbox version list", resolved)
+	logResolvedEndpoint("toolbox versions list", resolved)
 
 	return runToolboxVersionListWith(ctx, client, toolboxName, parent)
 }
@@ -100,13 +100,14 @@ func emitToolboxVersionListJSON(name, defaultVersion string, versions []azure.To
 	items := make([]map[string]any, 0, len(versions))
 	for _, v := range versions {
 		items = append(items, map[string]any{
-			"id":          v.ID,
-			"name":        v.Name,
-			"version":     v.Version,
-			"description": v.Description,
-			"created_at":  v.CreatedAt,
-			"tools_count": len(v.Tools),
-			"is_default":  v.Version == defaultVersion,
+			"id":           v.ID,
+			"name":         v.Name,
+			"version":      v.Version,
+			"description":  v.Description,
+			"created_at":   v.CreatedAt,
+			"tools_count":  len(v.Tools),
+			"skills_count": len(v.Skills),
+			"is_default":   v.Version == defaultVersion,
 		})
 	}
 
@@ -119,8 +120,8 @@ func emitToolboxVersionListJSON(name, defaultVersion string, versions []azure.To
 
 func emitToolboxVersionListTable(name, defaultVersion string, versions []azure.ToolboxVersionObject) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "VERSION\tDEFAULT\tCREATED\tTOOLS\tDESCRIPTION")
-	fmt.Fprintln(w, "-------\t-------\t-------\t-----\t-----------")
+	fmt.Fprintln(w, "VERSION\tDEFAULT\tCREATED\tTOOLS\tSKILLS\tDESCRIPTION")
+	fmt.Fprintln(w, "-------\t-------\t-------\t-----\t------\t-----------")
 
 	for _, v := range versions {
 		marker := ""
@@ -133,11 +134,12 @@ func emitToolboxVersionListTable(name, defaultVersion string, versions []azure.T
 		}
 		fmt.Fprintf(
 			w,
-			"%s\t%s\t%s\t%d\t%s\n",
+			"%s\t%s\t%s\t%d\t%d\t%s\n",
 			v.Version,
 			marker,
 			created,
 			len(v.Tools),
+			len(v.Skills),
 			v.Description,
 		)
 	}

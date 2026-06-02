@@ -1,0 +1,267 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"archive/zip"
+	"bytes"
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"azureaiskills/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
+)
+
+// --- createAction.Run early-exit paths (no network) ---
+
+func TestCreateAction_RejectsInvalidName(t *testing.T) {
+	a := &createAction{flags: &createFlags{name: "_bad"}}
+	err := a.Run(context.Background())
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidSkillName, le.Code)
+}
+
+func TestCreateAction_NoPromptWithNoInput(t *testing.T) {
+	a := &createAction{flags: &createFlags{name: "my-skill", noPrompt: true}}
+	err := a.Run(context.Background())
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeMissingRequiredField, le.Code)
+}
+
+// TestCreateAction_ConflictingFlagsViRun exercises the full Run path (not just
+// selectCreateMode) so that the validation is also reached via the command
+// entry-point.
+func TestCreateAction_ConflictingFlagsViaRun(t *testing.T) {
+	a := &createAction{flags: &createFlags{
+		name:           "my-skill",
+		descriptionSet: true,
+		description:    "desc",
+		file:           "SKILL.md",
+		noPrompt:       true,
+	}}
+	err := a.Run(context.Background())
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeConflictingArguments, le.Code)
+}
+
+// --- verifyPackageNameMatches ---
+
+func TestVerifyPackageNameMatches_NameMatches(t *testing.T) {
+	path := writeZipWithSkillMd(t, "my-skill")
+	require.NoError(t, verifyPackageNameMatches(path, "my-skill"))
+}
+
+func TestVerifyPackageNameMatches_NameMismatch(t *testing.T) {
+	path := writeZipWithSkillMd(t, "other-skill")
+	err := verifyPackageNameMatches(path, "my-skill")
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
+}
+
+func TestVerifyPackageNameMatches_NoSkillMd(t *testing.T) {
+	// Archive without SKILL.md: no name claim → --force allowed.
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.Create("README.md")
+	require.NoError(t, err)
+	_, _ = w.Write([]byte("hi"))
+	require.NoError(t, zw.Close())
+	p := writeTempFile(t, buf.Bytes(), "*.zip")
+	require.NoError(t, verifyPackageNameMatches(p, "my-skill"))
+}
+
+func TestVerifyPackageNameMatches_MalformedSkillMd(t *testing.T) {
+	// Malformed SKILL.md: PeekArchiveSkillName now propagates the error,
+	// so --force must be blocked to prevent accidental skill deletion.
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.Create("SKILL.md")
+	require.NoError(t, err)
+	_, _ = w.Write([]byte("not valid front matter"))
+	require.NoError(t, zw.Close())
+	p := writeTempFile(t, buf.Bytes(), "*.zip")
+	err = verifyPackageNameMatches(p, "my-skill")
+	require.Error(t, err, "malformed SKILL.md must block --force to prevent accidental deletion")
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
+}
+
+// --- verifyFileNameMatches (md mode) ---
+
+func TestVerifyFileNameMatches_MdMatch(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "SKILL.md")
+	require.NoError(t, os.WriteFile(p, []byte("---\nname: my-skill\n---\nbody"), 0600))
+	require.NoError(t, verifyFileNameMatches(p, "my-skill", modeFileMd))
+}
+
+func TestVerifyFileNameMatches_MdMismatch(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "SKILL.md")
+	require.NoError(t, os.WriteFile(p, []byte("---\nname: other-skill\n---\nbody"), 0600))
+	err := verifyFileNameMatches(p, "my-skill", modeFileMd)
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
+}
+
+func TestVerifyFileNameMatches_MdNoName(t *testing.T) {
+	// SKILL.md without a name claim must allow --force.
+	dir := t.TempDir()
+	p := filepath.Join(dir, "SKILL.md")
+	require.NoError(t, os.WriteFile(p, []byte("---\ndescription: hi\n---\nbody"), 0600))
+	require.NoError(t, verifyFileNameMatches(p, "my-skill", modeFileMd))
+}
+
+func TestVerifyFileNameMatches_InlineNoCheck(t *testing.T) {
+	// Inline mode (no --file) is always allowed.
+	require.NoError(t, verifyFileNameMatches("", "my-skill", modeInline))
+}
+
+// helpers
+
+func writeZipWithSkillMd(t *testing.T, skillName string) string {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.Create("SKILL.md")
+	require.NoError(t, err)
+	_, _ = w.Write([]byte("---\nname: " + skillName + "\n---\nbody\n"))
+	require.NoError(t, zw.Close())
+	return writeTempFile(t, buf.Bytes(), "*.zip")
+}
+
+func writeTempFile(t *testing.T, data []byte, pattern string) string {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), pattern)
+	require.NoError(t, err)
+	_, err = f.Write(data)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+	return filepath.Clean(f.Name())
+}
+
+// writeSkillDir creates a temp directory containing a SKILL.md whose front
+// matter declares skillName. Returns the directory path.
+func writeSkillDir(t *testing.T, skillName string) string {
+	t.Helper()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "SKILL.md"),
+		[]byte("---\nname: "+skillName+"\ndescription: hi\n---\nbody\n"),
+		0600,
+	))
+	return dir
+}
+
+// --- selectCreateMode directory routing ---
+
+func TestSelectCreateMode_DirectoryRoute(t *testing.T) {
+	dir := writeSkillDir(t, "my-skill")
+	mode, err := selectCreateMode(&createFlags{file: dir})
+	require.NoError(t, err)
+	require.Equal(t, modeFileDirectory, mode)
+}
+
+func TestSelectCreateMode_FileWithoutExtensionFailsClean(t *testing.T) {
+	// A file (not a directory) without a .md/.zip extension keeps the
+	// "unsupported --file extension" error path. The directory route must
+	// not accidentally accept a regular file.
+	f := writeTempFile(t, []byte("hi"), "no-ext-*")
+	mode, err := selectCreateMode(&createFlags{file: f})
+	require.Error(t, err)
+	require.Equal(t, modeNone, mode)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
+}
+
+// TestSelectCreateMode_MissingNoExtPathSurfacesStatError guards the
+// regression where a --file value with no extension that did not exist on
+// disk produced a misleading "unsupported --file extension \"\"" error. With
+// directory uploads supported, the more actionable message is the underlying
+// stat failure (typically fs.ErrNotExist).
+func TestSelectCreateMode_MissingNoExtPathSurfacesStatError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	mode, err := selectCreateMode(&createFlags{file: missing})
+	require.Error(t, err)
+	require.Equal(t, modeNone, mode)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
+	require.NotContains(t, le.Message, `unsupported --file extension ""`)
+	require.Contains(t, le.Message, "inspect --file")
+}
+
+// --- verifyFileNameMatches (directory mode) ---
+
+func TestVerifyFileNameMatches_DirectoryMatch(t *testing.T) {
+	dir := writeSkillDir(t, "my-skill")
+	require.NoError(t, verifyFileNameMatches(dir, "my-skill", modeFileDirectory))
+}
+
+func TestVerifyFileNameMatches_DirectoryMismatch(t *testing.T) {
+	dir := writeSkillDir(t, "other-skill")
+	err := verifyFileNameMatches(dir, "my-skill", modeFileDirectory)
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
+}
+
+func TestVerifyFileNameMatches_DirectoryMissingSkillMd(t *testing.T) {
+	// A directory with no SKILL.md cannot prove the name matches; --force
+	// must be blocked rather than silently deleting an existing skill.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte("hi"), 0600))
+	err := verifyFileNameMatches(dir, "my-skill", modeFileDirectory)
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
+}
+
+func TestVerifyFileNameMatches_DirectoryNoNameClaim(t *testing.T) {
+	// SKILL.md without a name field: no claim, --force allowed (matches
+	// MD-mode behavior).
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "SKILL.md"),
+		[]byte("---\ndescription: hi\n---\nbody"),
+		0600,
+	))
+	require.NoError(t, verifyFileNameMatches(dir, "my-skill", modeFileDirectory))
+}
+
+// --- runFileDirectory missing SKILL.md ---
+
+func TestCreateAction_DirectoryWithoutSkillMdFails(t *testing.T) {
+	// A directory without a SKILL.md at its root is rejected by
+	// runFileDirectory before any network call. We don't have a real client,
+	// so we call runFileDirectory directly with a nil client and rely on the
+	// SKILL.md check happening first.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte("hi"), 0600))
+	a := &createAction{flags: &createFlags{name: "my-skill", file: dir}}
+	err := a.runFileDirectory(context.Background(), nil)
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
+}

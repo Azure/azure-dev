@@ -122,7 +122,7 @@ Shows detailed information for a specific extension, including description, tags
 
 Installs one or more extensions from any configured extension source.
 
-- `-v, --version` Specifies the version constraint to apply when installing extensions. Supports any semver constraint notation.
+- `-v, --version` Specifies the exact version to install.
 - `-s, --source` Specifies the extension source used for installations.
 
 #### `azd extension uninstall <extension-ids> [flags]`
@@ -136,8 +136,9 @@ Uninstalls one or more previously installed extensions.
 Upgrades one or more extensions to the latest versions.
 
 - `--all` Upgrades all previously installed extensions when specified.
-- `-v, --version` Upgrades a specified extension using a semver version constraint, if provided.
+- `-v, --version` Upgrades a specified extension to an exact version, if provided.
 - `-s, --source` Specifies the extension source used for installations.
+- `--no-dependency-upgrades` Skips upgrading dependencies declared by extension packs.
 
 ## Developing Extensions
 
@@ -1001,13 +1002,16 @@ A [JSON schema](../../extensions/extension.schema.json) is available to support 
 **Required Properties:**
 - `id`: Unique identifier for the extension
 - `version`: Semantic version following MAJOR.MINOR.PATCH format
-- `capabilities`: Array of extension capabilities (see below)
 - `displayName`: Human-readable name of the extension
 - `description`: Detailed description of the extension
+
+Each manifest must include either `capabilities` or `dependencies`. Extension packs may omit `capabilities`
+when they declare `dependencies` instead and have no executable.
 
 **Optional Properties:**
 - `namespace`: Command namespace for grouping extension commands
 - `entryPoint`: Executable or script that serves as the entry point
+- `capabilities`: Array of extension capabilities (see below)
 - `usage`: Instructions on how to use the extension
 - `examples`: Array of usage examples with name, description, and usage
 - `tags`: Keywords for categorization and filtering
@@ -1108,6 +1112,33 @@ Dependencies support semantic versioning constraints:
 - `^1.0.0`: Compatible with version 1.x.x
 - `~1.2.0`: Compatible with version 1.2.x
 - `>=1.0.0 <2.0.0`: Range specification
+
+azd installs or upgrades to the highest published version that satisfies the dependency constraint.
+Pre-release versions follow standard semver constraint rules: a constraint must include a pre-release comparator to match pre-release versions.
+For example, `>=0.1.0` does not match `0.1.31-preview`; use `>=0.1.0-0` or a pre-release range such as `~0.1.0-preview` when preview versions should be eligible.
+
+#### Extension Packs
+
+An extension pack is an extension manifest that groups related extensions so users can install them with one command. Packs declare `dependencies` but do not provide an executable, command namespace, or runtime capabilities of their own. Use a pack when you want to publish a curated set of extensions, such as a product family or scenario bundle, without asking users to install each extension separately.
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
+
+id: contoso.ai
+displayName: Contoso AI Extension Pack
+description: Installs the Contoso AI azd extensions.
+version: 0.1.0
+
+dependencies:
+  - id: contoso.ai.agents
+    version: "~0.1.0-preview"
+  - id: contoso.ai.models
+    version: "~0.1.0-preview"
+```
+
+Pack manifests must include at least one dependency. They may omit `capabilities`, `namespace`, `entryPoint`, `usage`, and `examples` when the pack has no commands of its own. Installing a pack installs its dependencies recursively from the same extension source as the pack. Dependency versions in the manifest support semver constraints, but command-line `--version` values for `azd extension install` and `azd extension upgrade` are exact versions.
+
+Upgrading a pack upgrades the pack and, by default, reconciles installed dependencies to the highest published versions that satisfy the pack's declared dependency constraints. This dependency reconciliation still runs when the pack itself is already current, because an unchanged pack can point to a dependency range with newer matching versions. Users can disable automatic dependency upgrades with `azd extension upgrade <pack-id> --no-dependency-upgrades`.
 
 #### Provider Registration
 

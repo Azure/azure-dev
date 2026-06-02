@@ -80,21 +80,34 @@ func NormalizeToolKind(kind ToolKind) ToolKind {
 type AuthType string
 
 const (
-	AuthTypeAAD              AuthType = "AAD"
-	AuthTypeApiKey           AuthType = "ApiKey"
-	AuthTypeCustomKeys       AuthType = "CustomKeys"
-	AuthTypeNone             AuthType = "None"
-	AuthTypeOAuth2           AuthType = "OAuth2"
-	AuthTypePAT              AuthType = "PAT"
-	AuthTypeUserEntraToken   AuthType = "UserEntraToken"
-	AuthTypeAgenticIdentity  AuthType = "AgenticIdentity"
-	AuthTypeManagedIdentity  AuthType = "ProjectManagedIdentity"
-	AuthTypeServicePrincipal AuthType = "ServicePrincipal"
-	AuthTypeUsernamePassword AuthType = "UsernamePassword"
-	AuthTypeAccessKey        AuthType = "AccessKey"
-	AuthTypeAccountKey       AuthType = "AccountKey"
-	AuthTypeSAS              AuthType = "SAS"
+	AuthTypeAAD                  AuthType = "AAD"
+	AuthTypeApiKey               AuthType = "ApiKey"
+	AuthTypeCustomKeys           AuthType = "CustomKeys"
+	AuthTypeNone                 AuthType = "None"
+	AuthTypeOAuth2               AuthType = "OAuth2"
+	AuthTypePAT                  AuthType = "PAT"
+	AuthTypeUserEntraToken       AuthType = "UserEntraToken"
+	AuthTypeAgenticIdentity      AuthType = "AgenticIdentity"
+	AuthTypeAgenticIdentityToken AuthType = "AgenticIdentityToken"
+	AuthTypeManagedIdentity      AuthType = "ProjectManagedIdentity"
+	AuthTypeServicePrincipal     AuthType = "ServicePrincipal"
+	AuthTypeUsernamePassword     AuthType = "UsernamePassword"
+	AuthTypeAccessKey            AuthType = "AccessKey"
+	AuthTypeAccountKey           AuthType = "AccountKey"
+	AuthTypeSAS                  AuthType = "SAS"
 )
+
+// NormalizeConnectionAuthType maps auth types accepted in agent.yaml to
+// the management-plane value required for project connection provisioning.
+// Legacy AgenticIdentity values are normalized to AgenticIdentityToken
+// for API compatibility.
+func NormalizeConnectionAuthType(authType AuthType) AuthType {
+	if authType == AuthTypeAgenticIdentity {
+		return AuthTypeAgenticIdentityToken
+	}
+
+	return authType
+}
 
 // CategoryKind represents the category of a connection resource.
 type CategoryKind string
@@ -194,8 +207,8 @@ type ContainerAgent struct {
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
 	Resources            *ContainerResources     `json:"resources,omitempty" yaml:"resources,omitempty"`
 	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environment_variables,omitempty"`
-	AgentEndpoint        *AgentEndpoint          `json:"agentEndpoint,omitempty" yaml:"agentEndpoint,omitempty"`
-	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agentCard,omitempty"`
+	AgentEndpoint        *AgentEndpoint          `json:"agentEndpoint,omitempty" yaml:"agent_endpoint,omitempty"`
+	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agent_card,omitempty"`
 	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
 }
 

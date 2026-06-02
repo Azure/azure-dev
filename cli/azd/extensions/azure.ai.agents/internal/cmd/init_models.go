@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -25,6 +26,13 @@ import (
 )
 
 var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standard"}
+
+// errModelSkipped is a sentinel error returned by getModelDetails when the
+// user explicitly chooses "Skip this model" from the model-selection prompt.
+// Callers MUST use errors.Is to detect this case and drop the model from the
+// manifest rather than treating it as a failure. The resource is removed
+// from manifest.Resources in ProcessModels so no deployment is provisioned.
+var errModelSkipped = errors.New("user skipped model")
 
 func (a *modelSelector) loadAiCatalog(ctx context.Context) error {
 	if a.modelCatalog != nil {
@@ -199,59 +207,64 @@ func (a *InitAction) getModelDeploymentDetails(
 		}
 
 		if len(matchingDeployments) > 0 {
-			fmt.Printf("In your Microsoft Foundry project, found %d existing model deployment(s) matching your model %s.\n", len(matchingDeployments), model.Id)
-
-			var options []string
-			for deploymentName := range matchingDeployments {
-				options = append(options, deploymentName)
+			// Build a deterministically-ordered list of matching deployment names
+			// so options, defaults, and --no-prompt selection are stable across runs.
+			sortedNames := make([]string, 0, len(matchingDeployments))
+			for name := range matchingDeployments {
+				sortedNames = append(sortedNames, name)
 			}
-			options = append(options, "Create new model deployment")
+			slices.Sort(sortedNames)
 
-			selection, err := a.selectFromList(ctx, "deployment", options, options[0])
-			if err != nil {
-				return nil, false, fmt.Errorf("failed to select deployment: %w", err)
+			// In --no-prompt mode, auto-select the first matching deployment
+			// deterministically so headless/CI flows don't block on a prompt.
+			if a.flags.noPrompt {
+				name := sortedNames[0]
+				deployment := matchingDeployments[name]
+				log.Printf(
+					"--no-prompt: using existing model deployment '%s' (version: %s) for model '%s'",
+					name, deployment.Version, model.Id,
+				)
+				return &project.Deployment{
+					Name: name,
+					Model: project.DeploymentModel{
+						Name:    model.Id,
+						Format:  deployment.ModelFormat,
+						Version: deployment.Version,
+					},
+					Sku: project.DeploymentSku{
+						Name:     deployment.SkuName,
+						Capacity: deployment.SkuCapacity,
+					},
+				}, false, nil
 			}
 
-			if selection != "Create new model deployment" {
-				fmt.Printf("Using existing model deployment: %s\n", selection)
-
-				if deployment, exists := matchingDeployments[selection]; exists {
-					return &project.Deployment{
-						Name: selection,
-						Model: project.DeploymentModel{
-							Name:    model.Id,
-							Format:  deployment.ModelFormat,
-							Version: deployment.Version,
-						},
-						Sku: project.DeploymentSku{
-							Name:     deployment.SkuName,
-							Capacity: deployment.SkuCapacity,
-						},
-					}, false, nil
-				}
+			// Interactive Use/Change/Skip-style selector that mirrors the
+			// standard manifest model prompt (init_models.go ~line 400). Each
+			// existing deployment becomes a "use:<name>" option; "deploy_new"
+			// falls through to the new-deployment configuration path below;
+			// "skip" returns errModelSkipped so ProcessModels drops the model
+			// resource from the manifest.
+			choices := make([]*azdext.SelectChoice, 0, len(sortedNames)+2)
+			for _, name := range sortedNames {
+				d := matchingDeployments[name]
+				choices = append(choices, &azdext.SelectChoice{
+					Value: "use:" + name,
+					Label: fmt.Sprintf("Use existing deployment '%s' (version: %s)", name, d.Version),
+				})
 			}
-		} else {
-			color.Yellow(
-				"No existing deployment for model '%s' specified in the selected agent manifest was found in your Foundry project.\n",
-				model.Id,
+			choices = append(choices,
+				&azdext.SelectChoice{Value: "deploy_new", Label: "Deploy a new model"},
+				&azdext.SelectChoice{Value: "skip", Label: "Skip this model (do not deploy)"},
 			)
 
-			noMatchChoices := []*azdext.SelectChoice{
-				{
-					Label: fmt.Sprintf("Deploy a new '%s' model to the selected Foundry project", model.Id),
-					Value: "deploy_new",
-				},
-				{
-					Label: "Use a different model already deployed in this project",
-					Value: "use_different",
-				},
-			}
-
 			defaultIdx := int32(0)
-			noMatchResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 				Options: &azdext.SelectOptions{
-					Message:       "How would you like to proceed?",
-					Choices:       noMatchChoices,
+					Message: fmt.Sprintf(
+						"Found %d existing deployment(s) for model '%s' in the selected Foundry project. How would you like to proceed?",
+						len(sortedNames), model.Id,
+					),
+					Choices:       choices,
 					SelectedIndex: &defaultIdx,
 				},
 			})
@@ -259,10 +272,76 @@ func (a *InitAction) getModelDeploymentDetails(
 				if exterrors.IsCancellation(err) {
 					return nil, false, exterrors.Cancelled("model deployment selection was cancelled")
 				}
-				return nil, false, fmt.Errorf("failed to prompt for no-match choice: %w", err)
+				return nil, false, fmt.Errorf("failed to select deployment: %w", err)
 			}
 
-			if noMatchChoices[*noMatchResp.Value].Value == "use_different" {
+			selected := choices[*resp.Value].Value
+			switch {
+			case selected == "skip":
+				fmt.Println(output.WithWarningFormat(
+					"Skipped model '%s'. The agent will not have a model deployed.", model.Id))
+				fmt.Println(output.WithGrayFormat(
+					"Configure your agent's model manually before running 'azd provision'."))
+				return nil, false, errModelSkipped
+			case selected == "deploy_new":
+				// Fall through to the deploy-new logic below.
+			case strings.HasPrefix(selected, "use:"):
+				name := strings.TrimPrefix(selected, "use:")
+				deployment := matchingDeployments[name]
+				log.Printf("Using existing model deployment '%s' (version: %s) for model '%s'",
+					name, deployment.Version, model.Id)
+				return &project.Deployment{
+					Name: name,
+					Model: project.DeploymentModel{
+						Name:    model.Id,
+						Format:  deployment.ModelFormat,
+						Version: deployment.Version,
+					},
+					Sku: project.DeploymentSku{
+						Name:     deployment.SkuName,
+						Capacity: deployment.SkuCapacity,
+					},
+				}, false, nil
+			}
+		} else {
+			color.Yellow(
+				"No existing deployment for model '%s' specified in the selected agent manifest was found in your Foundry project.\n",
+				model.Id,
+			)
+
+			noMatchChoice := "deploy_new"
+			if a.userProvidedManifest {
+				log.Printf("Will deploy new model '%s' (no existing deployment found)", model.Id)
+			} else if !a.flags.noPrompt {
+				noMatchChoices := []*azdext.SelectChoice{
+					{
+						Label: fmt.Sprintf("Deploy a new '%s' model to the selected Foundry project", model.Id),
+						Value: "deploy_new",
+					},
+					{
+						Label: "Use a different model already deployed in this project",
+						Value: "use_different",
+					},
+				}
+
+				defaultIdx := int32(0)
+				noMatchResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+					Options: &azdext.SelectOptions{
+						Message:       "How would you like to proceed?",
+						Choices:       noMatchChoices,
+						SelectedIndex: &defaultIdx,
+					},
+				})
+				if err != nil {
+					if exterrors.IsCancellation(err) {
+						return nil, false, exterrors.Cancelled("model deployment selection was cancelled")
+					}
+					return nil, false, fmt.Errorf("failed to prompt for no-match choice: %w", err)
+				}
+				noMatchChoice = noMatchChoices[*noMatchResp.Value].Value
+			}
+
+			if noMatchChoice == "use_different" {
 				if len(allDeployments) == 0 {
 					fmt.Println("No deployments found in this project. A new deployment will be configured.")
 				} else {
@@ -304,25 +383,33 @@ func (a *InitAction) getModelDeploymentDetails(
 		}
 	}
 
-	modelDetails, err := a.getModelSelector().getModelDetails(ctx, model.Id)
+	modelDetails, err := a.getModelSelector().getModelDetails(ctx, model.Id, true)
 	if err != nil {
+		if errors.Is(err, errModelSkipped) {
+			// Propagate the sentinel unwrapped so ProcessModels can detect
+			// the skip and drop the resource from manifest.Resources.
+			return nil, false, err
+		}
 		return nil, false, fmt.Errorf("failed to get model details: %w", err)
 	}
 
-	message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name)", modelDetails.ModelName)
+	modelDeployment := modelDetails.ModelName
+	if !a.flags.noPrompt {
+		message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name)", modelDetails.ModelName)
 
-	modelDeploymentInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:        message,
-			IgnoreHintKeys: true,
-			DefaultValue:   modelDetails.ModelName,
-		},
-	})
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to prompt for text value: %w", err)
+		modelDeploymentInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:        message,
+				IgnoreHintKeys: true,
+				DefaultValue:   modelDetails.ModelName,
+			},
+		})
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to prompt for text value: %w", err)
+		}
+
+		modelDeployment = modelDeploymentInput.Value
 	}
-
-	modelDeployment := modelDeploymentInput.Value
 
 	return &project.Deployment{
 		Name: modelDeployment,
@@ -338,7 +425,9 @@ func (a *InitAction) getModelDeploymentDetails(
 	}, true, nil
 }
 
-func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (*azdext.AiModelDeployment, error) {
+func (a *modelSelector) getModelDetails(
+	ctx context.Context, modelName string, allowSkip bool,
+) (*azdext.AiModelDeployment, error) {
 	if err := a.loadAiCatalog(ctx); err != nil {
 		return nil, err
 	}
@@ -354,10 +443,18 @@ func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (
 		}
 		model = selectedModel
 	} else if !a.flags.noPrompt {
-		// Model found in catalog — let user confirm or choose a different one
+		// Model found in catalog -- let user confirm, choose a different one,
+		// or (when allowed) skip the model entirely. This is the standard
+		// selector for both interactively-detected manifests and the -m flow.
 		choices := []*azdext.SelectChoice{
 			{Label: fmt.Sprintf("Use '%s' (from manifest)", model.Name), Value: "keep"},
 			{Label: "Choose a different model", Value: "change"},
+		}
+		if allowSkip {
+			choices = append(choices, &azdext.SelectChoice{
+				Label: "Skip this model (do not deploy)",
+				Value: "skip",
+			})
 		}
 
 		defaultIdx := int32(0)
@@ -375,7 +472,8 @@ func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (
 			return nil, fmt.Errorf("failed to prompt for model choice: %w", err)
 		}
 
-		if choices[*resp.Value].Value == "change" {
+		switch choices[*resp.Value].Value {
+		case "change":
 			selectedModel, err := a.promptModelFromCatalog(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("failed to select alternative model: %w", err)
@@ -384,6 +482,12 @@ func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (
 				return nil, fmt.Errorf("no model selected, exiting")
 			}
 			model = selectedModel
+		case "skip":
+			fmt.Println(output.WithWarningFormat(
+				"Skipped model '%s'. The agent will not have a model deployed.", model.Name))
+			fmt.Println(output.WithGrayFormat(
+				"Configure your agent's model manually before running 'azd provision'."))
+			return nil, errModelSkipped
 		}
 	}
 
@@ -850,6 +954,11 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 	// branch was taken.
 	anyModelProcessed := false
 	anyNewDeployment := false
+	// skippedModelResources collects names of model resources the user
+	// explicitly chose to skip via the model-selection prompt. After the
+	// loop, these are dropped from manifest.Resources so no deployment is
+	// provisioned for them.
+	skippedModelResources := map[string]struct{}{}
 	switch agentDef.Kind {
 	case agent_yaml.AgentKindHosted:
 		for _, resource := range manifest.Resources {
@@ -868,6 +977,14 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 				model := agent_yaml.Model{Id: resource.Id}
 				modelDeployment, isNew, err := a.getModelDeploymentDetails(ctx, model)
 				if err != nil {
+					if errors.Is(err, errModelSkipped) {
+						// User chose "Skip this model" in the selector. Drop
+						// the resource from manifest.Resources below so no
+						// deployment is provisioned. Don't touch the pending
+						// provision signal for this resource.
+						skippedModelResources[resource.Name] = struct{}{}
+						continue
+					}
 					return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
 				}
 				deploymentDetails = append(deploymentDetails, *modelDeployment)
@@ -878,6 +995,20 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 				}
 			}
 		}
+	}
+
+	// Drop any model resources the user chose to skip so they aren't
+	// provisioned. Non-model resources and resources of other kinds are
+	// preserved unchanged.
+	if len(skippedModelResources) > 0 {
+		manifest.Resources = slices.DeleteFunc(manifest.Resources, func(r any) bool {
+			mr, ok := r.(agent_yaml.ModelResource)
+			if !ok {
+				return false
+			}
+			_, skipped := skippedModelResources[mr.Name]
+			return skipped
+		})
 	}
 
 	updatedManifest, err := agent_yaml.InjectParameterValuesIntoManifest(manifest, paramValues)
@@ -905,7 +1036,7 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 		log.Printf("warning: failed to update model_deployment provision signal: %v", err)
 	}
 
-	fmt.Println("Model deployment details processed and injected into agent definition. Deployment details can also be found in the JSON formatted AI_PROJECT_DEPLOYMENTS environment variable.")
+	log.Println("Model deployment details processed and injected into agent definition. Deployment details can also be found in the JSON formatted AI_PROJECT_DEPLOYMENTS environment variable.")
 
 	return updatedManifest, deploymentDetails, nil
 }

@@ -11,7 +11,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/tool"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -40,7 +39,6 @@ func newUpdateCheckMiddleware(
 	}
 
 	return &ToolUpdateCheckMiddleware{
-		alphaManager:  alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 		manager:       manager,
 		console:       console,
 		options:       opts,
@@ -53,8 +51,6 @@ func newUpdateCheckMiddleware(
 // ---------------------------------------------------------------------------
 
 func TestToolUpdateCheckMiddleware_SkipNotification(t *testing.T) {
-	t.Setenv("AZD_ALPHA_ENABLE_TOOL", "true")
-
 	tests := []struct {
 		name  string
 		setup func(
@@ -151,7 +147,6 @@ func TestToolUpdateCheckMiddleware_SkipNotification(t *testing.T) {
 
 func TestToolUpdateCheckMiddleware_ChildAction(t *testing.T) {
 	clearCIVars(t)
-	t.Setenv("AZD_ALPHA_ENABLE_TOOL", "true")
 
 	console := mockinput.NewMockConsole()
 	m := newUpdateCheckMiddleware(
@@ -180,7 +175,6 @@ func TestToolUpdateCheckMiddleware_NotificationGating(t *testing.T) {
 	clearCIVars(t)
 	t.Setenv(envKeySkipFirstRun, "")
 	os.Unsetenv(envKeySkipFirstRun)
-	t.Setenv("AZD_ALPHA_ENABLE_TOOL", "true")
 
 	console := mockinput.NewMockConsole()
 	cfg := config.NewEmptyConfig()
@@ -235,7 +229,6 @@ func TestToolUpdateCheckMiddleware_BackgroundCheckSkippedWhenCI(
 	// early and never calls manager.ShouldCheckForUpdates.
 	clearCIVars(t)
 	t.Setenv("CI", "1")
-	t.Setenv("AZD_ALPHA_ENABLE_TOOL", "true")
 
 	console := mockinput.NewMockConsole()
 
@@ -266,7 +259,6 @@ func TestToolUpdateCheckMiddleware_BackgroundCheckSkippedByEnvVar(
 ) {
 	clearCIVars(t)
 	t.Setenv(envKeySkipFirstRun, "true")
-	t.Setenv("AZD_ALPHA_ENABLE_TOOL", "true")
 
 	console := mockinput.NewMockConsole()
 
@@ -320,33 +312,6 @@ func TestToolUpdateCheckMiddleware_IsToolCommand(t *testing.T) {
 	}
 }
 
-// TestToolUpdateCheckMiddleware_SkipsWhenAlphaDisabled verifies that
-// the middleware is a no-op when the tool alpha feature is not enabled.
-func TestToolUpdateCheckMiddleware_SkipsWhenAlphaDisabled(t *testing.T) {
-	clearCIVars(t)
-	t.Setenv("AZD_ALPHA_ENABLE_TOOL", "false")
-	t.Setenv(envKeySkipFirstRun, "")
-	os.Unsetenv(envKeySkipFirstRun)
-
-	console := mockinput.NewMockConsole()
-	m := newUpdateCheckMiddleware(
-		nil, console,
-		&Options{CommandPath: "azd provision"},
-		&internal.GlobalCommandOptions{},
-	)
-
-	nextCalled := false
-	result, err := m.Run(t.Context(), passthroughNext(&nextCalled))
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	assert.True(t, nextCalled,
-		"nextFn must always be called even when alpha is disabled")
-	assert.Empty(t, console.Output(),
-		"alpha-disabled should skip update check entirely")
-}
-
-// ---------------------------------------------------------------------------
 // TestToolUpdateCheckMiddleware_AlwaysCallsNext
 // ---------------------------------------------------------------------------
 
@@ -354,7 +319,6 @@ func TestToolUpdateCheckMiddleware_AlwaysCallsNext(t *testing.T) {
 	clearCIVars(t)
 	// Skip background check so the nil manager is not accessed.
 	t.Setenv(envKeySkipFirstRun, "true")
-	t.Setenv("AZD_ALPHA_ENABLE_TOOL", "true")
 
 	console := mockinput.NewMockConsole()
 	console.SetNoPromptMode(true) // triggers notification skip

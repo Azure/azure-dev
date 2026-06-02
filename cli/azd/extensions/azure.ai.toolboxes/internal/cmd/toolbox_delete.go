@@ -156,7 +156,7 @@ func runDeleteToolboxVersion(
 					"version %q is the default for toolbox %q and other versions exist",
 					verb.version, name,
 				),
-				"retarget the default with `azd ai toolbox update --default-version <other>` first",
+				"retarget the default with `azd ai toolbox publish <name> <other>` first",
 			)
 		}
 

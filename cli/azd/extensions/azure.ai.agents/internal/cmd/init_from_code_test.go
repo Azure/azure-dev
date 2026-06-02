@@ -100,6 +100,16 @@ func TestSanitizeAgentName(t *testing.T) {
 			input:    "---",
 			expected: "my-agent",
 		},
+		{
+			name:     "non-ASCII characters stripped",
+			input:    "Ünö Ägent",
+			expected: "n-gent",
+		},
+		{
+			name:     "all non-ASCII falls back to default",
+			input:    "日本語エージェント",
+			expected: "my-agent",
+		},
 	}
 
 	for _, tt := range tests {
@@ -513,6 +523,63 @@ func TestWriteDefinitionToSrcDir(t *testing.T) {
 	})
 }
 
+func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	if err := os.WriteFile(filepath.Join(dir, "main.py"), []byte("print('hello')\n"), 0600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	const envName = "agent-dev"
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{envName: {}},
+	}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+	action := &InitFromCodeAction{
+		azdClient:    azdClient,
+		environment:  &azdext.Environment{Name: envName},
+		azureContext: nil,
+		flags: &initFlags{
+			noPrompt: true,
+			env:      envName,
+			model:    "gpt-4o",
+		},
+	}
+
+	var definition *agent_yaml.ContainerAgent
+	output, err := captureStdout(t, func() error {
+		var runErr error
+		definition, runErr = action.createDefinitionFromLocalAgent(t.Context())
+		return runErr
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if definition == nil {
+		t.Fatal("expected definition")
+	}
+	if envServer.values[envName]["USE_EXISTING_AI_PROJECT"] != "false" {
+		t.Fatalf("USE_EXISTING_AI_PROJECT = %q, want false", envServer.values[envName]["USE_EXISTING_AI_PROJECT"])
+	}
+	if got := envServer.values[envName][pendingProvisionEnvVar]; got != pendingReasonProject {
+		t.Fatalf("%s = %q, want %q", pendingProvisionEnvVar, got, pendingReasonProject)
+	}
+	if len(action.deploymentDetails) != 0 {
+		t.Fatalf("deploymentDetails length = %d, want 0", len(action.deploymentDetails))
+	}
+	if !strings.Contains(output, "Model configuration was deferred") {
+		t.Fatalf("output missing deferred model warning:\n%s", output)
+	}
+	if definition.EnvironmentVariables != nil {
+		for _, envVar := range *definition.EnvironmentVariables {
+			if envVar.Name == "AZURE_AI_MODEL_DEPLOYMENT_NAME" {
+				t.Fatalf("deferred model configuration should not add %s", envVar.Name)
+			}
+		}
+	}
+}
+
 func TestFoundryDeploymentInfo(t *testing.T) {
 	t.Parallel()
 
@@ -825,13 +892,14 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		noPrompt       bool
-		showCodeDeploy bool
-		flag           string
-		want           string
-		wantErr        bool
-		wantErrContain string
+		name                 string
+		noPrompt             bool
+		showCodeDeploy       bool
+		flag                 string
+		userProvidedManifest bool
+		want                 string
+		wantErr              bool
+		wantErrContain       string
 	}{
 		{
 			name:           "flag=container returns container",
@@ -876,12 +944,36 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 			flag:           "",
 			want:           "container",
 		},
+		{
+			name:                 "userProvidedManifest + showCodeDeploy auto-selects container",
+			noPrompt:             false,
+			showCodeDeploy:       true,
+			flag:                 "",
+			userProvidedManifest: true,
+			want:                 "container",
+		},
+		{
+			name:                 "showCodeDeploy=false returns container regardless of userProvidedManifest",
+			noPrompt:             false,
+			showCodeDeploy:       false,
+			flag:                 "",
+			userProvidedManifest: true,
+			want:                 "container",
+		},
+		{
+			name:                 "explicit flag overrides userProvidedManifest",
+			noPrompt:             false,
+			showCodeDeploy:       true,
+			flag:                 "container",
+			userProvidedManifest: true,
+			want:                 "container",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := promptDeployMode(t.Context(), nil, tt.noPrompt, tt.showCodeDeploy, tt.flag)
+			got, err := promptDeployMode(t.Context(), nil, tt.noPrompt, tt.showCodeDeploy, tt.flag, tt.userProvidedManifest)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -905,13 +997,14 @@ func TestPromptCodeConfig_FlagOverrides(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		files       []string // files to create in temp dir
-		noPrompt    bool
-		opts        codeDeployOptions
-		wantRuntime string
-		wantEntry   string
-		wantDepRes  string
+		name                 string
+		files                []string // files to create in temp dir
+		noPrompt             bool
+		userProvidedManifest bool
+		opts                 codeDeployOptions
+		wantRuntime          string
+		wantEntry            string
+		wantDepRes           string
 	}{
 		{
 			name:        "all opts provided",
@@ -957,6 +1050,36 @@ func TestPromptCodeConfig_FlagOverrides(t *testing.T) {
 			wantEntry:   "app.py",
 			wantDepRes:  "remote_build",
 		},
+		{
+			name:                 "userProvidedManifest auto-detects python defaults",
+			files:                []string{"requirements.txt", "app.py"},
+			noPrompt:             false,
+			userProvidedManifest: true,
+			opts:                 codeDeployOptions{},
+			wantRuntime:          "python_3_13",
+			wantEntry:            "app.py",
+			wantDepRes:           "remote_build",
+		},
+		{
+			name:                 "userProvidedManifest auto-detects dotnet defaults",
+			files:                []string{"MyAgent.csproj"},
+			noPrompt:             false,
+			userProvidedManifest: true,
+			opts:                 codeDeployOptions{},
+			wantRuntime:          "dotnet_10",
+			wantEntry:            "MyAgent.dll",
+			wantDepRes:           "remote_build",
+		},
+		{
+			name:                 "opts override userProvidedManifest defaults",
+			files:                []string{"requirements.txt", "app.py"},
+			noPrompt:             false,
+			userProvidedManifest: true,
+			opts:                 codeDeployOptions{runtime: "python_3_14", entryPoint: "bot.py", depResolution: "bundled"},
+			wantRuntime:          "python_3_14",
+			wantEntry:            "bot.py",
+			wantDepRes:           "bundled",
+		},
 	}
 
 	for _, tt := range tests {
@@ -969,7 +1092,7 @@ func TestPromptCodeConfig_FlagOverrides(t *testing.T) {
 				}
 			}
 
-			got, err := promptCodeConfig(t.Context(), nil, dir, tt.noPrompt, tt.opts)
+			got, err := promptCodeConfig(t.Context(), nil, dir, tt.noPrompt, tt.opts, tt.userProvidedManifest)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

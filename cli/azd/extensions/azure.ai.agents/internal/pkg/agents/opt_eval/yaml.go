@@ -4,6 +4,7 @@
 package opt_eval
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -370,26 +371,57 @@ type DatasetRef struct {
 	LocalURI string `yaml:"local_uri,omitempty"`
 }
 
-// TargetConfig specifies model candidates and other target-specific configuration.
-type TargetConfig struct {
-	Model []string `yaml:"model,omitempty"`
+// OptimizationConfig is a per-target-attribute map of configuration overrides.
+// Each key is a target attribute name (e.g. "model") and the value is the
+// JSON-encoded configuration for that attribute.
+//
+// Implements yaml.Unmarshaler so YAML native types (strings, lists, maps) are
+// automatically converted to json.RawMessage, allowing users to write:
+//
+//	optimization_config:
+//	  model: ["gpt-4o", "gpt-5"]
+//	  baselineModel: gpt-4o
+type OptimizationConfig map[string]json.RawMessage
+
+// UnmarshalYAML decodes each value as a YAML native type and re-encodes it as
+// JSON, so users don't need to quote JSON strings in YAML.
+func (oc *OptimizationConfig) UnmarshalYAML(value *yaml.Node) error {
+	var raw map[string]any
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	result := make(OptimizationConfig, len(raw))
+	for k, v := range raw {
+		// If the YAML value is already a valid JSON string (e.g. '["gpt-4o"]'),
+		// store it directly to avoid double-encoding.
+		if s, ok := v.(string); ok {
+			trimmed := strings.TrimSpace(s)
+			if json.Valid([]byte(trimmed)) {
+				result[k] = json.RawMessage(trimmed)
+				continue
+			}
+		}
+		data, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Errorf("marshaling optimization_config[%q]: %w", k, err)
+		}
+		result[k] = data
+	}
+	*oc = result
+	return nil
 }
 
 // Options holds run-time options for eval and optimize.
 // Eval only uses EvalModel; optimize uses all fields.
 type Options struct {
-	EvalModel         string        `yaml:"eval_model,omitempty"`
-	TargetAttributes  []string      `yaml:"target_attributes,omitempty"`
-	TargetConfig      *TargetConfig `yaml:"target_config,omitempty"`
-	MaxIterations     *int          `yaml:"max_iterations,omitempty"`
-	KeepVersions      bool          `yaml:"keep_versions,omitempty"`
-	TasksPerIteration int           `yaml:"tasks_per_iteration,omitempty"`
-	ReflectionModel   string        `yaml:"reflection_model,omitempty"`
-	EvaluationLevel   string        `yaml:"evaluation_level,omitempty"`
+	EvalModel          string             `yaml:"eval_model,omitempty"`
+	OptimizationConfig OptimizationConfig `yaml:"optimization_config,omitempty"`
+	MaxIterations      *int               `yaml:"max_iterations,omitempty"`
+	OptimizationModel  string             `yaml:"optimization_model,omitempty"`
+	EvaluationLevel    string             `yaml:"evaluation_level,omitempty"`
 }
 
-// UnmarshalYAML populates default target attributes when the field is absent in YAML.
-// For backward compatibility, the legacy "strategies" key is also accepted.
+// UnmarshalYAML decodes Options from a YAML node.
 func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	// Alias avoids infinite recursion.
 	type raw Options
@@ -397,17 +429,6 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 
-	// Backward compatibility: if "strategies" is present and target_attributes is not,
-	// migrate the value.
-	if len(o.TargetAttributes) == 0 {
-		var legacy struct {
-			Strategies []string `yaml:"strategies"`
-		}
-		_ = value.Decode(&legacy)
-		if len(legacy.Strategies) > 0 {
-			o.TargetAttributes = legacy.Strategies
-		}
-	}
 	return nil
 }
 

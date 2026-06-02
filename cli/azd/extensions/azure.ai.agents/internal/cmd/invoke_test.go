@@ -743,7 +743,7 @@ func TestAgentEndpointFlagValidation(t *testing.T) {
 	t.Parallel()
 
 	const validURL = "https://acct.services.ai.azure.com/api/projects/proj/agents/" +
-		"hello/endpoint/protocols/invocations?api-version=2025-11-15-preview"
+		"hello/endpoint/protocols/invocations?api-version=v1"
 
 	tests := []struct {
 		name    string
@@ -822,6 +822,7 @@ func TestResolveRemoteSessionID_ReusesCachedVersionSession(t *testing.T) {
 		string,
 		string,
 		string,
+		string,
 	) (*agent_api.AgentSessionResource, error) {
 		t.Fatal("createInvokeVersionSession should not be called when a cached session exists")
 		return nil, nil
@@ -858,6 +859,7 @@ func TestResolveRemoteSessionID_NewSessionSkipsCachedVersionSession(t *testing.T
 	var calls int
 	createInvokeVersionSession = func(
 		context.Context,
+		string,
 		string,
 		string,
 		string,
@@ -903,6 +905,7 @@ func TestResolveRemoteSessionID_CreatesSessionForExplicitVersion(t *testing.T) {
 		projectEndpoint string,
 		agentName string,
 		agentVersion string,
+		apiVersion string,
 	) (*agent_api.AgentSessionResource, error) {
 		calls++
 		if projectEndpoint != "https://acct.services.ai.azure.com/api/projects/proj" {
@@ -914,6 +917,9 @@ func TestResolveRemoteSessionID_CreatesSessionForExplicitVersion(t *testing.T) {
 		if agentVersion != "3" {
 			t.Errorf("agentVersion = %q", agentVersion)
 		}
+		if apiVersion != "custom-version" {
+			t.Errorf("apiVersion = %q", apiVersion)
+		}
 		return &agent_api.AgentSessionResource{AgentSessionID: "session-v3"}, nil
 	}
 
@@ -922,6 +928,7 @@ func TestResolveRemoteSessionID_CreatesSessionForExplicitVersion(t *testing.T) {
 		name:            "hello",
 		projectEndpoint: "https://acct.services.ai.azure.com/api/projects/proj",
 		version:         "3",
+		apiVersion:      "custom-version",
 		agentKey:        buildAgentKey("https://acct.services.ai.azure.com/api/projects/proj", "hello", "3", false),
 	}
 
@@ -997,6 +1004,7 @@ func TestVersionedExplicitConversationPersistsUnderVersionKey(t *testing.T) {
 		projectEndpoint,
 		"token",
 		"hello",
+		"v1",
 		nil,
 	)
 	if err != nil {
@@ -1255,7 +1263,7 @@ func TestHandleInvocationResponse_Routing(t *testing.T) {
 				resp.Header.Set(k, v)
 			}
 
-			err := handleInvocationResponse(t.Context(), resp, "", "", "test-agent", 10*time.Second, nil)
+			err := handleInvocationResponse(t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil, false)
 
 			if tt.wantErr {
 				if err == nil {
@@ -1508,7 +1516,7 @@ func TestHandleInvocationLRO(t *testing.T) {
 				resp.Header.Set("x-agent-invocation-id", tt.initial202Header)
 			}
 
-			err := handleInvocationLRO(t.Context(), resp, "", "", "test-agent", tt.timeout, nil)
+			err := handleInvocationLRO(t.Context(), resp, "", "", "test-agent", tt.timeout, "", nil, false)
 
 			if tt.wantErr {
 				if err == nil {
@@ -1623,7 +1631,9 @@ func captureInvocationLROPollRequests(
 		"token",
 		"test-agent",
 		time.Second,
+		"",
 		options,
+		false,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1653,6 +1663,9 @@ func assertPollRequestsHaveHeaders(
 		pollNumber := i + 1
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
 			t.Errorf("poll %d: Authorization = %q, want Bearer token", pollNumber, got)
+		}
+		if got := r.Header.Get("Foundry-Features"); got != "HostedAgents=V1Preview" {
+			t.Errorf("poll %d: Foundry-Features = %q, want HostedAgents=V1Preview", pollNumber, got)
 		}
 		if got := r.Header.Get(agent_api.AgentUserIsolationKeyHeader); got != wantUser {
 			t.Errorf("poll %d: %s = %q, want %q", pollNumber, agent_api.AgentUserIsolationKeyHeader, got, wantUser)
@@ -1748,9 +1761,9 @@ func TestCreateConversation(t *testing.T) {
 					t.Errorf("path = %s, want %s", r.URL.Path, wantPath)
 				}
 
-				// Verify api-version query parameter uses the constant
-				if got := r.URL.Query().Get("api-version"); got != ConversationsAPIVersion {
-					t.Errorf("api-version = %q, want %q", got, ConversationsAPIVersion)
+				// The api-version must travel as a query parameter, not in the route.
+				if got := r.URL.Query().Get("api-version"); got != "v1" {
+					t.Errorf("api-version = %q, want %q", got, "v1")
 				}
 
 				// Verify auth header
@@ -1768,7 +1781,7 @@ func TestCreateConversation(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			id, err := createConversation(t.Context(), srv.URL, tt.agentName, "test-token", nil)
+			id, err := createConversation(t.Context(), srv.URL, tt.agentName, "test-token", "v1", nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -1808,6 +1821,7 @@ func TestCreateConversation_PropagatesIsolationHeaders(t *testing.T) {
 		srv.URL,
 		"my-agent",
 		"test-token",
+		"v1",
 		&agent_api.SessionRequestOptions{
 			UserIsolationKey: "user-1",
 			ChatIsolationKey: "chat-1",
@@ -1821,6 +1835,9 @@ func TestCreateConversation_PropagatesIsolationHeaders(t *testing.T) {
 	}
 
 	request := <-reqCh
+	if got := request.Header.Get("Foundry-Features"); got != "HostedAgents=V1Preview" {
+		t.Errorf("Foundry-Features = %q, want HostedAgents=V1Preview", got)
+	}
 	if got := request.Header.Get(agent_api.AgentUserIsolationKeyHeader); got != "user-1" {
 		t.Errorf("%s = %q, want user-1", agent_api.AgentUserIsolationKeyHeader, got)
 	}

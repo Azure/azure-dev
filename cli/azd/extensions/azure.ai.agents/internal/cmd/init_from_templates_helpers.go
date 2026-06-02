@@ -87,8 +87,9 @@ const (
 
 // promptInitMode asks the user whether to use existing code or start from a template.
 // If the current directory is empty, automatically returns initModeTemplate.
+// In no-prompt mode with existing local files, defaults to using the current directory.
 // Returns initModeFromCode or initModeTemplate.
-func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
+func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool) (string, error) {
 	empty, err := dirIsEmpty(".")
 	if err != nil {
 		return "", fmt.Errorf("checking current directory: %w", err)
@@ -96,6 +97,9 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 
 	if empty {
 		return initModeTemplate, nil
+	}
+	if noPrompt {
+		return initModeFromCode, nil
 	}
 
 	choices := []*azdext.SelectChoice{

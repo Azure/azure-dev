@@ -25,23 +25,67 @@ type toolboxConnectionSpec struct {
 	InstanceName string `json:"instance_name,omitempty" yaml:"instance_name,omitempty"`
 }
 
+// toolboxSkillSpec is one skill reference input for the file shape. Empty
+// Version means "use the skill's default version".
+type toolboxSkillSpec struct {
+	Name    string `json:"name" yaml:"name"`
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+}
+
 // toolboxToolsFile is the file shape for `toolbox connection add --from-file`.
-//
-// Each connections[] item resolves through the project's connections
-// data-plane and is converted into a service tool entry. The toolbox's
-// existing description and metadata are carried forward; the file does not
-// accept `description` (set at create time only in v1).
+// Description and skills are not accepted here; use `skill add`/`skill remove`
+// to change skills, and set description at create time.
 type toolboxToolsFile struct {
 	Connections []toolboxConnectionSpec `json:"connections,omitempty" yaml:"connections,omitempty"`
 }
 
+// toolboxSkillsFile is the file shape for `toolbox skill add --from-file`.
+type toolboxSkillsFile struct {
+	Skills []toolboxSkillSpec `json:"skills,omitempty" yaml:"skills,omitempty"`
+}
+
 // toolboxCreateFile is the file shape for `toolbox create --from-file`.
 //
-// description is optional and stored on the initial version.
-// connections[] is required and lists existing project connections to attach.
+// connections[] is azd sugar over the project connections data-plane and
+// builds the matching tool entry (mcp, azure_ai_search, a2a_preview, or
+// connection-backed web_search). tools[] is a verbatim pass-through to the
+// data plane's OpenAI.Tool[] shape; use it for connectionless tools (built-in
+// web_search, file_search, code_interpreter, ...) or any tool type not yet
+// exposed by connections[]. At least one of the two must be non-empty.
 type toolboxCreateFile struct {
 	Description string                  `json:"description,omitempty" yaml:"description,omitempty"`
 	Connections []toolboxConnectionSpec `json:"connections,omitempty" yaml:"connections,omitempty"`
+	Skills      []toolboxSkillSpec      `json:"skills,omitempty"      yaml:"skills,omitempty"`
+	Tools       []map[string]any        `json:"tools,omitempty"       yaml:"tools,omitempty"`
+	Policies    *toolboxPoliciesSpec    `json:"policies,omitempty"    yaml:"policies,omitempty"`
+}
+
+// toolboxPoliciesSpec mirrors the data-plane ToolboxPolicies model.
+type toolboxPoliciesSpec struct {
+	RaiConfig *toolboxRaiConfigSpec `json:"rai_config,omitempty" yaml:"rai_config,omitempty"`
+}
+
+// toolboxRaiConfigSpec mirrors the data-plane RaiConfig model.
+//
+// The wire field per the Foundry TypeSpec is `rai_policy_name`. We also accept
+// the friendlier `name` alias and map it onto `rai_policy_name` at validation
+// time so existing user docs that use either form keep working.
+type toolboxRaiConfigSpec struct {
+	RaiPolicyName string `json:"rai_policy_name,omitempty" yaml:"rai_policy_name,omitempty"`
+	Name          string `json:"name,omitempty"            yaml:"name,omitempty"`
+}
+
+// resolvedPolicyName returns the effective RAI policy name from the spec,
+// preferring the wire-shaped `rai_policy_name` over the `name` alias.
+// Returns "" if neither is set.
+func (r *toolboxRaiConfigSpec) resolvedPolicyName() string {
+	if r == nil {
+		return ""
+	}
+	if strings.TrimSpace(r.RaiPolicyName) != "" {
+		return strings.TrimSpace(r.RaiPolicyName)
+	}
+	return strings.TrimSpace(r.Name)
 }
 
 // parseToolboxFile reads a JSON or YAML file into out. Unknown fields are
@@ -92,16 +136,29 @@ func parseToolboxFile(path string, out any) error {
 	}
 }
 
-// suggestionForParseError returns a context-aware fix-it hint. The common
-// surprise is putting `description` in a `connection add` file (the field
-// only applies to `create`); call that out explicitly so the user does not
-// have to read the file-shape doc to know why their description was rejected.
+// suggestionForParseError returns a context-aware fix-it hint for common
+// shape mistakes (e.g. putting `description` or `skills` in a `connection add`
+// file).
 func suggestionForParseError(out any, err error) string {
 	msg := err.Error()
-	if _, ok := out.(*toolboxToolsFile); ok && strings.Contains(msg, "description") {
-		return "the 'description' field is only accepted by `toolbox create`; " +
-			"in v1 a toolbox's description is set at create time and cannot be changed later"
+	if _, ok := out.(*toolboxToolsFile); ok {
+		switch {
+		case strings.Contains(msg, "description"):
+			return "the 'description' field is only accepted by `toolbox create`; " +
+				"a toolbox's description is set at create time and cannot be changed later"
+		case strings.Contains(msg, "skills"):
+			return "the 'skills' field belongs in a skills file; " +
+				"use `azd ai toolbox skill add --from-file` instead"
+		}
 	}
-	return "fix the file and retry; see `azd ai toolbox create --help` " +
-		"or `azd ai toolbox connection add --help` for the supported file shape"
+	if _, ok := out.(*toolboxSkillsFile); ok {
+		switch {
+		case strings.Contains(msg, "connections"):
+			return "the 'connections' field belongs in a connections file; " +
+				"use `azd ai toolbox connection add --from-file` instead"
+		case strings.Contains(msg, "description"):
+			return "the 'description' field is only accepted by `toolbox create`"
+		}
+	}
+	return "fix the file and retry; see the verb's --help for the supported file shape"
 }

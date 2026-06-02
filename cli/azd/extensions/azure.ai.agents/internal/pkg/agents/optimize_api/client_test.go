@@ -53,7 +53,7 @@ func TestStartOptimize(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.True(t, strings.HasSuffix(r.URL.Path, "/optimize"))
-		assert.Contains(t, r.URL.RawQuery, "api-version=v1")
+		assert.Contains(t, r.URL.RawQuery, "api-version="+APIVersion)
 
 		w.WriteHeader(http.StatusAccepted)
 		_ = json.NewEncoder(w).Encode(OptimizeResponse{
@@ -65,9 +65,8 @@ func TestStartOptimize(t *testing.T) {
 
 	client := newTestClient(server.URL)
 	resp, err := client.StartOptimize(context.Background(), &OptimizeRequest{
-		Agent: AgentDefinition{
-			FoundryProjectURL: "https://example.com/proj",
-			AgentName:         "agent-1",
+		Agent: AgentIdentifier{
+			AgentName: "agent-1",
 		},
 		Options: OptimizeOptions{EvalModel: "gpt-4o-mini"},
 	})
@@ -83,7 +82,7 @@ func TestGetOptimizeStatus(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
 		assert.Contains(t, r.URL.Path, "/optimize/op-123")
-		assert.Contains(t, r.URL.RawQuery, "api-version=v1")
+		assert.Contains(t, r.URL.RawQuery, "api-version="+APIVersion)
 
 		_ = json.NewEncoder(w).Encode(OptimizeJobStatus{
 			OperationID: "op-123",
@@ -122,7 +121,7 @@ func TestListOptimizeJobs(t *testing.T) {
 		assert.Equal(t, http.MethodGet, r.Method)
 		assert.Contains(t, r.URL.RawQuery, "limit=10")
 		assert.Contains(t, r.URL.RawQuery, "status=running")
-		assert.Contains(t, r.URL.RawQuery, "api-version=v1")
+		assert.Contains(t, r.URL.RawQuery, "api-version="+APIVersion)
 
 		_ = json.NewEncoder(w).Encode(OptimizeListResponse{
 			Data: []OptimizeJobStatus{
@@ -152,7 +151,7 @@ func TestCancelOptimize(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Contains(t, r.URL.Path, "/optimize/op-xyz/cancel")
-		assert.Contains(t, r.URL.RawQuery, "api-version=v1")
+		assert.Contains(t, r.URL.RawQuery, "api-version="+APIVersion)
 
 		_ = json.NewEncoder(w).Encode(OptimizeCancelResponse{
 			OperationID: "op-xyz",
@@ -228,7 +227,7 @@ func TestReportDeployment(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Contains(t, r.URL.Path, "/optimize/candidates/cand-42:promote")
-		assert.Contains(t, r.URL.RawQuery, "api-version=v1")
+		assert.Contains(t, r.URL.RawQuery, "api-version="+APIVersion)
 
 		err := json.NewDecoder(r.Body).Decode(&capturedBody)
 		assert.NoError(t, err)

@@ -16,11 +16,12 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -47,21 +48,80 @@ import (
 
 // Reference implementation
 
-// agentAPIVersion is the API version used for agent endpoint invocation URLs.
-const agentAPIVersion = "2025-11-15-preview"
-
 // displayableProtocolEntry defines a protocol that produces user-visible invocation endpoints.
 type displayableProtocolEntry struct {
 	Protocol  agent_api.AgentProtocol
-	URLPath   string // path suffix in the invocation URL
+	URLPath   string // path suffix in the invocation URL (empty when BuildURL is set)
 	EnvSuffix string // suffix used in AGENT_{KEY}_{SUFFIX}_ENDPOINT env vars
+	// BuildURL optionally builds a custom invocation URL for this protocol.
+	// When set, it overrides the generic URL template that uses URLPath.
+	// projectEndpoint is the Foundry project root
+	// (https://<account>.services.ai.azure.com/api/projects/<project>).
+	BuildURL func(projectEndpoint, agentName string) string
 }
 
 // displayableProtocols is the single source of truth for protocols that produce
 // user-facing invocation endpoints and env vars.
 var displayableProtocols = []displayableProtocolEntry{
-	{Protocol: agent_api.AgentProtocolResponses, URLPath: "openai/responses", EnvSuffix: "RESPONSES"},
-	{Protocol: agent_api.AgentProtocolInvocations, URLPath: "invocations", EnvSuffix: "INVOCATIONS"},
+	{
+		Protocol:  agent_api.AgentProtocolResponses,
+		EnvSuffix: "RESPONSES",
+		BuildURL:  buildResponsesProtocolURL,
+	},
+	{
+		Protocol:  agent_api.AgentProtocolInvocations,
+		EnvSuffix: "INVOCATIONS",
+		BuildURL:  buildInvocationsProtocolURL,
+	},
+	{
+		Protocol:  agent_api.AgentProtocolInvocationsWS,
+		EnvSuffix: "INVOCATIONS_WS",
+		BuildURL:  buildInvocationsWSProtocolURL,
+	},
+}
+
+// buildResponsesProtocolURL builds the per-agent HTTPS URL for the "responses" protocol.
+func buildResponsesProtocolURL(projectEndpoint, agentName string) string {
+	return fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
+		projectEndpoint, agentName, agent_api.AgentEndpointAPIVersion,
+	)
+}
+
+// buildInvocationsProtocolURL builds the per-agent HTTPS URL for the "invocations" protocol.
+func buildInvocationsProtocolURL(projectEndpoint, agentName string) string {
+	return fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/invocations?api-version=%s",
+		projectEndpoint, agentName, agent_api.AgentEndpointAPIVersion,
+	)
+}
+
+// buildInvocationsWSProtocolURL builds the Foundry dispatcher-form WebSocket URL for the
+// "invocations_ws" protocol. Unlike the per-agent HTTP protocols, invocations_ws uses a
+// fixed data-plane route under /api/projects/agents/endpoint/protocols/invocations_ws and
+// selects the agent via the project_name and agent_name query parameters. Callers must add
+// their own agent_session_id query parameter when establishing a session.
+//
+// Returns "" if projectEndpoint cannot be parsed into a URL with a host: the dispatcher route
+// requires both a host (for the wss:// authority) and a project name (derived from the URL
+// path) to be callable, so emitting a partial URL would only register a non-callable endpoint.
+// Callers (agentInvocationEndpoints) filter out empty results.
+func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
+	projectEndpoint = strings.TrimSpace(projectEndpoint)
+	u, err := url.Parse(projectEndpoint)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+
+	projectName := path.Base(u.Path)
+	q := url.Values{}
+	q.Set("api-version", agent_api.AgentEndpointAPIVersion)
+	q.Set("project_name", projectName)
+	q.Set("agent_name", agentName)
+	return fmt.Sprintf(
+		"wss://%s/api/projects/agents/endpoint/protocols/invocations_ws?%s",
+		u.Host, q.Encode(),
+	)
 }
 
 // ProtocolEnvSuffix pairs a user-facing label with the env var suffix
@@ -559,11 +619,124 @@ func classifyContainerPublishError(err error) error {
 		)
 	}
 
+	if isACRPermissionError(err) {
+		return exterrors.Dependency(
+			exterrors.CodeACRPermissionDenied,
+			fmt.Sprintf(
+				"container publish failed because your identity does not have permission to push "+
+					"to the Azure Container Registry: %s",
+				err,
+			),
+			acrPermissionSuggestionFor(err),
+		)
+	}
+
 	if actionable := azdext.ActionableErrorDetailFromError(err); actionable != nil && actionable.GetSuggestion() != "" {
 		return err
 	}
 
 	return exterrors.Internal(exterrors.OpContainerPublish, fmt.Sprintf("container publish failed: %s", err))
+}
+
+// acrPermissionSuggestionFor is the user-facing remediation text for
+// CodeACRPermissionDenied. It offers a primary RBAC fix and an in-place
+// fallback that switches the service to code (zip) deploy without re-running
+// `azd ai agent init`.
+//
+// The recommended role depends on which API was denied:
+//   - Remote-build path (docker.remoteBuild: true -- the new container deploy
+//     default): the failing action is typically
+//     Microsoft.ContainerRegistry/registries/listBuildSourceUploadUrl/action
+//     or .../scheduleRun/action. AcrPush is data-plane only and does NOT grant
+//     these; the correct role is "Container Registry Tasks Contributor".
+//   - Local-push path (docker.remoteBuild: false): the failing action is the
+//     docker push itself; AcrPush is sufficient.
+//
+// The emitted `az role assignment create` command uses the role definition
+// GUID (not the display name) for the --role argument. GUIDs are guaranteed
+// stable; display names could in principle be renamed by Azure. The human
+// role name is still shown in the surrounding prose so the user understands
+// what they are assigning.
+//
+// When the underlying error includes the principal's object id and/or the ACR
+// resource scope (typical of ARM 403 responses), those values are substituted
+// into the command so the user can paste it as-is. Otherwise placeholders
+// are shown. ASCII-only per repo style.
+func acrPermissionSuggestionFor(err error) string {
+	assignee := "<your-object-id>"
+	scope := "<acr-resource-id>"
+	msgRaw := ""
+	if err != nil {
+		msgRaw = err.Error()
+		if m := armObjectIDRe.FindStringSubmatch(msgRaw); len(m) == 2 {
+			assignee = m[1]
+		}
+		if m := armACRScopeRe.FindStringSubmatch(msgRaw); len(m) == 2 {
+			scope = m[1]
+		}
+	}
+
+	isRemoteBuildPath := false
+	if msgRaw != "" {
+		lower := strings.ToLower(msgRaw)
+		isRemoteBuildPath = containsAny(lower,
+			"listbuildsourceuploadurl",
+			"schedulerun",
+			"remote build failed",
+		)
+	}
+
+	// Role identifiers come from developer_rbac_check.go (same package).
+	// Names are for prose; IDs are what the `az` command actually uses.
+	primaryRoleName := "AcrPush"
+	primaryRoleID := roleAcrPush
+	pathContext := "data-plane push (used when docker.remoteBuild: false)"
+	abacLine := fmt.Sprintf(
+		"    - Container Registry Repository Writer   (role ID: %s)   for ABAC-mode registries",
+		roleAcrRepositoryWriter,
+	)
+	if isRemoteBuildPath {
+		primaryRoleName = "Container Registry Tasks Contributor"
+		primaryRoleID = roleContainerRegistryTasksContributor
+		pathContext = "ACR Tasks remote build (used when docker.remoteBuild: true)"
+		// For Tasks-based builds on ABAC-mode registries, RepositoryWriter alone
+		// does not cover Tasks actions. Owner / Contributor remain the broad
+		// options.
+		abacLine = "    - For ABAC-mode registries, an Owner or Contributor assignment may also be needed"
+	}
+
+	primaryLine := fmt.Sprintf("    - %s   (role ID: %s)", primaryRoleName, primaryRoleID)
+	azCommand := fmt.Sprintf(
+		`az role assignment create --assignee %s --role %s --scope %s`,
+		assignee, primaryRoleID, scope,
+	)
+
+	return "Your identity needs permission to push container images to the Azure Container Registry.\n\n" +
+		"This deployment failed on the " + pathContext + " path.\n\n" +
+		"Recommended fix (keep container deploy):\n" +
+		"  Ask a subscription Owner or User Access Administrator to assign one of these roles to your\n" +
+		"  identity, then re-run `azd up`:\n" +
+		primaryLine + "\n" +
+		abacLine + "\n\n" +
+		"  Example (run as a subscription Owner or User Access Administrator):\n" +
+		"    " + azCommand + "\n\n" +
+		"Alternative (switch this service to code (zip) deploy; no ACR push required):\n" +
+		"  Code (zip) deploy uploads your source code directly to Foundry Agent Service.\n" +
+		"  The service runs your agent in a Microsoft-managed platform container -- you do\n" +
+		"  NOT need a Dockerfile or a custom container image. No container is built or\n" +
+		"  pushed, so no ACR permissions are needed.\n\n" +
+		"  Supported runtimes: python_3_13, python_3_14, dotnet_10\n\n" +
+		"  Learn more: https://learn.microsoft.com/azure/foundry/agents/how-to/deploy-hosted-agent-code\n\n" +
+		"  To switch (no need to re-run `azd ai agent init`):\n" +
+		"  1. Open the service's agent.yaml and add a `code_configuration:` block under\n" +
+		"     the hosted agent, for example:\n" +
+		"        code_configuration:\n" +
+		"          runtime: python_3_13          # or dotnet_10\n" +
+		"          entry_point: app.py            # or MyAgent.dll\n" +
+		"  2. Run: azd env set AZD_AGENT_SKIP_ACR true\n" +
+		"     (subsequent provisioning will skip creating ACR; an already-provisioned\n" +
+		"     ACR is not deleted automatically)\n" +
+		"  3. Re-run: azd up"
 }
 
 func isPrivateACRNetworkAccessError(err error) bool {
@@ -572,20 +745,13 @@ func isPrivateACRNetworkAccessError(err error) bool {
 	}
 
 	message := strings.ToLower(err.Error())
-	acrContext := []string{
-		".azurecr.io",
-		"azure container registry",
-		"container registry",
-	}
-	hasACRContext := containsAny(message, acrContext...)
+	hasACRContext := containsAny(message, acrContextSignals...)
 
 	networkSignals := []string{
 		"public network access",
 		"private endpoint",
 		"network rule",
 		"firewall",
-		"not allowed access",
-		"forbidden",
 		"i/o timeout",
 		"connection timed out",
 		"tls handshake timeout",
@@ -594,18 +760,94 @@ func isPrivateACRNetworkAccessError(err error) bool {
 	}
 	hasNetworkSignal := containsAny(message, networkSignals...)
 
+	// Specific signal: ACR firewall block list. The "client with ip address ...
+	// not allowed access" wording is unambiguous so we accept it standalone.
 	if strings.Contains(message, "client with ip address") &&
 		strings.Contains(message, "not allowed access") {
 		return true
 	}
 
+	// Remote-build wrapper: require BOTH an explicit network signal AND ACR
+	// context. The previous OR variant false-classified RBAC failures whose
+	// only "signal" was the word "forbidden" -- those are now handled by
+	// isACRPermissionError.
 	if strings.Contains(message, "remote build failed") &&
 		strings.Contains(message, "local fallback unavailable") {
-		return hasNetworkSignal || hasACRContext
+		return hasNetworkSignal && hasACRContext
 	}
 
 	return hasACRContext && hasNetworkSignal
 }
+
+// isACRPermissionError reports whether err is an ACR push/build failure caused
+// by missing RBAC or auth (as opposed to network access). Predicate is AND:
+// the error must reference ACR (by login server, ARM resource type, or
+// human-readable name) AND carry an explicit permission signal.
+func isACRPermissionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+
+	if !containsAny(message, acrContextSignals...) {
+		return false
+	}
+
+	permissionSignals := []string{
+		"denied: requested access to the resource is denied",
+		"unauthorized",
+		"authentication required",
+		"authorization failed",
+		"authorizationfailed", // ARM ErrorCode (no space)
+		"does not have authorization",
+		"does not have rbac permission",
+		"acrpush",
+		"insufficient_scope",
+		"repository access not allowed",
+		"failed to fetch oauth token",
+		"acr_token",
+		"token exchange",
+	}
+	if containsAny(message, permissionSignals...) {
+		return true
+	}
+
+	// Word-bounded 401/403 plus an explicit permission noun nearby. Avoid
+	// bare "forbidden" / "token" matches that overlap with other failure modes.
+	if has40xRe.MatchString(message) &&
+		containsAny(message, "denied", "forbidden", "permission", "not authorized") {
+		return true
+	}
+
+	return false
+}
+
+// acrContextSignals are substrings that indicate the error references an
+// Azure Container Registry. ".azurecr.io" covers docker-push errors;
+// "microsoft.containerregistry" covers ARM-side errors from the remote-build
+// path (e.g. listBuildSourceUploadUrl/scheduleRun) which do NOT include the
+// login server in the URL. The human-readable variants catch wrapper text.
+var acrContextSignals = []string{
+	".azurecr.io",
+	"microsoft.containerregistry",
+	"azure container registry",
+	"container registry",
+}
+
+// has40xRe matches a bare 401 or 403 status code with word boundaries to avoid
+// false positives on arbitrary digit runs.
+var has40xRe = regexp.MustCompile(`(?i)\b40[13]\b`)
+
+// armObjectIDRe extracts the principal object id from an ARM AuthorizationFailed
+// error message of the form: ... with object id '<guid>' does not have authorization ...
+var armObjectIDRe = regexp.MustCompile(`(?i)with object id '([0-9a-f-]{36})'`)
+
+// armACRScopeRe extracts the ACR resource scope from an ARM AuthorizationFailed
+// error message of the form: ... over scope '/subscriptions/.../Microsoft.ContainerRegistry/registries/<name>' ...
+// Anchored to Microsoft.ContainerRegistry so we don't match unrelated scopes.
+var armACRScopeRe = regexp.MustCompile(
+	`(?i)over scope '(/subscriptions/[^']+/providers/Microsoft\.ContainerRegistry/registries/[^']+)'`,
+)
 
 func containsAny(s string, values ...string) bool {
 	for _, value := range values {
@@ -899,7 +1141,7 @@ func writeExistingAgentVersionWarningIfPresent(
 	agentChecker agents.AgentChecker,
 	agentName string,
 ) bool {
-	exists, err := agents.AgentExists(ctx, agentChecker, agentName, agentAPIVersion)
+	exists, err := agents.AgentExists(ctx, agentChecker, agentName, agent_api.AgentEndpointAPIVersion)
 	if err != nil {
 		log.Printf("existing agent name check skipped for %q: %v", agentName, err)
 		return false
@@ -1030,7 +1272,7 @@ func (p *AgentServiceTargetProvider) patchAgentEndpointFields(
 		AgentCard:     agentCard,
 	}
 
-	_, err := agentClient.PatchAgent(ctx, agentName, patchRequest, agentAPIVersion)
+	_, err := agentClient.PatchAgent(ctx, agentName, patchRequest, agent_api.AgentEndpointAPIVersion)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	}
@@ -1439,24 +1681,13 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 ) (*deployResult, error) {
 	progress("Deploying hosted agent (code deploy)")
 
-	// Validate that the Foundry project's region supports code deploy.
-	projectLocation := strings.ToLower(strings.TrimSpace(azdEnv["AZURE_LOCATION"]))
-	if projectLocation == "" {
+	// Validate that AZURE_LOCATION is set (region validation is handled server-side;
+	// code deploy is supported in all hosted-agent regions).
+	if strings.TrimSpace(azdEnv["AZURE_LOCATION"]) == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeAgentCreateFailed,
 			"AZURE_LOCATION is not set; the Foundry project region is required for code deploy",
 			"run 'azd provision' or 'azd ai agent init' to set the project location",
-		)
-	}
-	if !slices.Contains(CodeDeployRegions, projectLocation) {
-		return nil, exterrors.Dependency(
-			exterrors.CodeAgentCreateFailed,
-			fmt.Sprintf(
-				"code deploy is not supported in region %q; supported regions: %s",
-				azdEnv["AZURE_LOCATION"],
-				strings.Join(CodeDeployRegions, ", "),
-			),
-			"select a Foundry project in a supported region or use container deploy instead",
 		)
 	}
 
@@ -1518,7 +1749,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Check if agent already exists (GET /agents/{name})
 	progress("Creating agent")
-	_, getErr := agentClient.GetAgent(ctx, agentDef.Name, agentAPIVersion)
+	_, getErr := agentClient.GetAgent(ctx, agentDef.Name, agent_api.AgentEndpointAPIVersion)
 	var agentResp *agent_api.AgentObject
 
 	if getErr != nil {
@@ -1528,7 +1759,9 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 		// Agent doesn't exist — create
 		fmt.Fprintf(os.Stderr, "Creating new agent: %s\n", agentDef.Name)
-		agentResp, err = agentClient.CreateAgentFromZip(ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agentAPIVersion)
+		agentResp, err = agentClient.CreateAgentFromZip(
+			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
+		)
 		if err != nil {
 			return nil, exterrors.Internal(
 				exterrors.CodeAgentCreateFailed,
@@ -1538,7 +1771,9 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	} else {
 		// Agent exists — update
 		writeExistingAgentVersionWarning(agentDef.Name)
-		agentResp, err = agentClient.UpdateAgentFromZip(ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agentAPIVersion)
+		agentResp, err = agentClient.UpdateAgentFromZip(
+			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
+		)
 		if err != nil {
 			return nil, exterrors.Internal(
 				exterrors.CodeAgentCreateFailed,
@@ -1743,15 +1978,15 @@ type protocolEndpointInfo struct {
 	URL      string
 }
 
-// protocolPath maps an agent protocol to its URL path suffix.
-// Returns empty string for protocols that should not be displayed.
-func protocolPath(protocol string) string {
-	for _, dp := range displayableProtocols {
+// displayableProtocolFor returns the displayable protocol entry matching the given
+// protocol string, or nil if the protocol does not produce a user-visible endpoint.
+func displayableProtocolFor(protocol string) *displayableProtocolEntry {
+	for i, dp := range displayableProtocols {
 		if agent_api.AgentProtocol(protocol) == dp.Protocol {
-			return dp.URLPath
+			return &displayableProtocols[i]
 		}
 	}
-	return ""
+	return nil
 }
 
 // agentInvocationEndpoints builds the list of displayable invocation endpoints
@@ -1763,15 +1998,33 @@ func agentInvocationEndpoints(
 ) []protocolEndpointInfo {
 	var endpoints []protocolEndpointInfo
 	for _, p := range protocols {
-		path := protocolPath(p.Protocol)
-		if path == "" {
+		dp := displayableProtocolFor(p.Protocol)
+		if dp == nil {
 			continue
 		}
+
+		var endpointURL string
+		if dp.BuildURL != nil {
+			endpointURL = dp.BuildURL(projectEndpoint, agentName)
+			if endpointURL == "" {
+				// A protocol builder may decline to produce a URL when its inputs
+				// cannot yield a callable endpoint (e.g. a malformed projectEndpoint
+				// that fails to parse, for invocations_ws). Skip rather than
+				// registering a broken URL.
+				continue
+			}
+		} else {
+			endpointURL = fmt.Sprintf(
+				"%s/agents/%s/endpoint/protocols/%s", projectEndpoint, agentName, dp.URLPath,
+			)
+			if !strings.HasPrefix(dp.URLPath, "openai/") {
+				endpointURL += fmt.Sprintf("?api-version=%s", agent_api.AgentEndpointAPIVersion)
+			}
+		}
+
 		endpoints = append(endpoints, protocolEndpointInfo{
 			Protocol: p.Protocol,
-			URL: fmt.Sprintf(
-				"%s/agents/%s/endpoint/protocols/%s?api-version=%s",
-				projectEndpoint, agentName, path, agentAPIVersion),
+			URL:      endpointURL,
 		})
 	}
 	return endpoints
@@ -1850,7 +2103,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		attempt++
 		progress(fmt.Sprintf("Polling agent status (%d/%d)", attempt, maxAttempts))
 
-		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agentAPIVersion)
+		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agent_api.AgentEndpointAPIVersion)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
 			// Reset counters on error — don't count transient failures
@@ -1923,7 +2176,9 @@ func (p *AgentServiceTargetProvider) createAgent(
 	}
 
 	// Create agent version
-	agentVersionResponse, err := agentClient.CreateAgentVersion(ctx, request.Name, versionRequest, agentAPIVersion)
+	agentVersionResponse, err := agentClient.CreateAgentVersion(
+		ctx, request.Name, versionRequest, agent_api.AgentEndpointAPIVersion,
+	)
 	if err != nil {
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	}

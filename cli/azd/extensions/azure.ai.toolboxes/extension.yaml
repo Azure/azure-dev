@@ -11,4 +11,4 @@ tags:
     - ai
     - toolbox
 usage: azd ai toolbox <command> [options]
-version: 0.0.1-preview
+version: 0.1.0-preview

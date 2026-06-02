@@ -12,15 +12,14 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
@@ -79,12 +78,14 @@ func resolveOptimizeAgent(ctx context.Context, flagValue string, noPrompt bool) 
 
 // optimizeFlags holds CLI flags for the optimize (submit) command.
 type optimizeFlags struct {
-	configFile       string   // path to YAML config file
-	agent            string   // agent name override
-	evalModel        string   // model for evaluation
-	targetAttributes []string // optimization targets (instruction, skill)
-	noWait           bool     // return immediately after submission
-	pollInterval     int      // polling interval in seconds
+	configFile        string // path to YAML config file
+	agent             string // agent name override
+	dataset           string // existing dataset file or registered dataset name
+	evalModel         string // model for evaluation
+	optimizationModel string // model for optimization reasoning (gpt-5 family)
+	maxIterations     int    // max optimization iterations per strategy
+	noWait            bool   // return immediately after submission
+	pollInterval      int    // polling interval in seconds
 	optimizeConnectionFlags
 }
 
@@ -105,12 +106,6 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
 
   # Optimize a specific agent
   azd ai agent optimize my-agent
-
-  # Optimize with skill target
-  azd ai agent optimize --target skill
-
-  # Optimize with multiple target attributes
-  azd ai agent optimize --target instruction --target skill
 
   # Full control via config file
   azd ai agent optimize --config spec.yaml
@@ -134,11 +129,13 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.configFile, "config", "c", "", "Path to YAML config file (optional — uses defaults if omitted)")
+	cmd.Flags().StringVarP(&flags.configFile, "config", "c", "", "Path to YAML config file (optional — values are prompted interactively if omitted)")
 	cmd.Flags().StringVarP(&flags.agent, "agent", "a", "", "Agent name (auto-detected from azd project if omitted)")
-	cmd.Flags().StringVarP(&flags.evalModel, "eval-model", "m", defaultEvalModel, "Model for evaluation")
-	cmd.Flags().StringArrayVarP(&flags.targetAttributes, "target", "t", nil,
-		"Target attribute for optimization: instruction, skill (repeatable)")
+	cmd.Flags().StringVarP(&flags.dataset, "dataset", "d", "", "Existing local file or registered dataset name")
+	cmd.Flags().StringVarP(&flags.evalModel, "eval-model", "m", "", "Model for evaluation (required)")
+	cmd.Flags().StringVar(&flags.optimizationModel, "optimize-model", "",
+		"Model for optimization reasoning (gpt-5 family recommended; falls back to eval model when not set)")
+	cmd.Flags().IntVar(&flags.maxIterations, "max-iterations", 0, "Maximum number of optimization iterations (must be >= 1; default: 5)")
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Submit job and return immediately without waiting for completion")
 	cmd.Flags().IntVar(&flags.pollInterval, "poll-interval", 5, "Polling interval in seconds")
 	flags.optimizeConnectionFlags.register(cmd)
@@ -160,6 +157,13 @@ type OptimizeAction struct {
 
 // Run executes the optimize command: resolves the agent, loads/builds the config, applies overrides, submits the job, and optionally polls for results.
 func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
+	out := cmd.OutOrStdout()
+
+	fmt.Fprintf(out, "\n  %s Optimization will create new versions of your agent. If your application routes\n"+
+		"  traffic to the \"latest\" version, these new versions may serve live traffic immediately.\n"+
+		"  Consider pinning to a specific version before starting optimization.\n\n",
+		color.YellowString("Warning:"))
+
 	endpoint, err := a.flags.resolve(ctx)
 	if err != nil {
 		return err
@@ -175,13 +179,10 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 		return err
 	}
 
-	out := cmd.OutOrStdout()
 	bold := color.New(color.Bold)
 
 	_, _ = bold.Fprintf(out, "Optimizing agent %q...\n", cfg.Agent.Name)
-	if configSource == "" {
-		fmt.Fprintf(out, "  Dataset: built-in (3 tasks, 12 criteria)\n")
-	} else {
+	if configSource != "" {
 		fmt.Fprintf(out, "  Config: %s\n", configSource)
 	}
 
@@ -195,7 +196,7 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 		if err != nil {
 			return err
 		}
-		printOptimizeResults(out, finalStatus, hasProject)
+		printOptimizeResults(ctx, out, finalStatus, hasProject)
 	}
 
 	return nil
@@ -230,25 +231,30 @@ func (a *OptimizeAction) resolveConfig(
 	agentProject = resolved.agentProject
 
 	// Check if eval.yaml exists in the agent project and offer to use it.
+	// In --no-prompt mode, use it automatically.
 	if resolved.agentProject != "" {
 		evalPath := filepath.Join(resolved.agentProject, defaultEvalConfigName)
-		if _, statErr := os.Stat(evalPath); statErr == nil && !a.noPrompt {
-			azdClient, clientErr := azdext.NewAzdClient()
-			if clientErr == nil {
-				defer azdClient.Close()
-				resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-					Options: &azdext.ConfirmOptions{
-						Message:      fmt.Sprintf("Found %s in project. Use it for optimization?", defaultEvalConfigName),
-						DefaultValue: new(true),
-					},
-				})
-				if promptErr == nil && resp.Value != nil && *resp.Value {
-					cfg, err = LoadOptimizeConfig(evalPath)
-					if err != nil {
-						return nil, "", "", fmt.Errorf("failed to load %s: %w", evalPath, err)
-					}
-					configSource = evalPath
+		if _, statErr := os.Stat(evalPath); statErr == nil {
+			useEval := a.noPrompt // auto-use in no-prompt mode
+			if !a.noPrompt {
+				azdClient, clientErr := azdext.NewAzdClient()
+				if clientErr == nil {
+					defer azdClient.Close()
+					resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+						Options: &azdext.ConfirmOptions{
+							Message:      fmt.Sprintf("Found %s in project. Use it for optimization?", defaultEvalConfigName),
+							DefaultValue: new(true),
+						},
+					})
+					useEval = promptErr == nil && resp.Value != nil && *resp.Value
 				}
+			}
+			if useEval {
+				cfg, err = LoadOptimizeConfig(evalPath)
+				if err != nil {
+					return nil, "", "", fmt.Errorf("failed to load %s: %w", evalPath, err)
+				}
+				configSource = evalPath
 			}
 		}
 	}
@@ -269,18 +275,37 @@ func (a *OptimizeAction) applyOverrides(
 	cfg *OptimizeConfig,
 	agentProject string,
 ) error {
-	if err := cfg.Validate(); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
+	// Apply --dataset flag before anything else.
+	if a.flags.dataset != "" {
+		if eval_api.IsDatasetName(a.flags.dataset) {
+			cfg.DatasetReference = &opt_eval.DatasetRef{Name: a.flags.dataset}
+			cfg.DatasetFile = ""
+		} else {
+			resolved, err := resolveLocalDatasetFile(a.flags.dataset, agentProject)
+			if err != nil {
+				return err
+			}
+			cfg.DatasetFile = resolved
+			cfg.DatasetReference = nil
+		}
+	}
+
+	// Ensure Options is initialized.
+	if cfg.Options == nil {
+		cfg.Options = &opt_eval.Options{}
 	}
 
 	hasProject := agentProject != ""
 
-	// CLI flags override config values.
+	// CLI flags override config values (applied before prompts so prompts skip set values).
 	if a.flags.evalModel != "" {
 		cfg.Options.EvalModel = a.flags.evalModel
 	}
-	if len(a.flags.targetAttributes) > 0 {
-		cfg.Options.TargetAttributes = a.flags.targetAttributes
+	if a.flags.optimizationModel != "" {
+		cfg.Options.OptimizationModel = a.flags.optimizationModel
+	}
+	if a.flags.maxIterations > 0 {
+		cfg.Options.MaxIterations = &a.flags.maxIterations
 	}
 
 	// Resolve agent config: try existing config pointer, then default baseline.
@@ -288,9 +313,23 @@ func (a *OptimizeAction) applyOverrides(
 		mergeAgentBaseline(cfg, agentProject)
 	}
 
+	// Create a single azd client for all interactive prompts and env lookups.
+	// May be nil if running outside an azd project or if the gRPC connection fails.
+	azdClient, _ := azdext.NewAzdClient()
+	if azdClient != nil {
+		defer azdClient.Close()
+	}
+
+	// If the model is still unknown, try the azd environment (set during deploy).
+	if cfg.Agent.Model == "" && azdClient != nil {
+		if m := getDeployedModelFromEnv(ctx, azdClient); m != "" {
+			cfg.Agent.Model = m
+		}
+	}
+
 	// When baseline config is detected, show resolved values and let the user confirm.
 	if cfg.Agent.ConfigFile != "" && hasProject && !a.noPrompt {
-		if err := promptOptimizeConfigConfirmation(ctx, cfg, agentProject); err != nil {
+		if err := promptOptimizeConfigConfirmation(ctx, azdClient, cfg, agentProject); err != nil {
 			return err
 		}
 	}
@@ -309,29 +348,48 @@ func (a *OptimizeAction) applyOverrides(
 	//  1. Config dir pointer (agent.config in eval.yaml) — resolves from metadata.yaml
 	//  2. Config file (eval.yaml / --config) — instruction in the agent section (inline or file reference)
 	//  3. Interactive prompt — ask the user to provide inline text or a file path
-	if err := resolveOptimizeSystemPrompt(ctx, cfg, agentProject, hasProject, a.noPrompt); err != nil {
+	if err := resolveOptimizeSystemPrompt(ctx, azdClient, cfg, agentProject, hasProject, a.noPrompt); err != nil {
 		return err
 	}
 
 	// Resolve skill_dir: auto-detect, check baseline, or prompt user.
 	if cfg.SkillDir == "" && hasProject {
-		if err := resolveOptimizeSkillDir(ctx, cfg, agentProject, a.noPrompt); err != nil {
+		if err := resolveOptimizeSkillDir(ctx, azdClient, cfg, agentProject, a.noPrompt); err != nil {
 			return err
 		}
 	}
 
-	// Resolve target_config.model: prompt user if not set.
-	if (cfg.Options.TargetConfig == nil || len(cfg.Options.TargetConfig.Model) == 0) && !a.noPrompt {
-		if err := resolveOptimizeTargetModels(ctx, cfg); err != nil {
+	// Resolve eval_model: prompt user if not set.
+	if cfg.Options.EvalModel == "" {
+		if err := resolveOptimizeEvalModel(ctx, azdClient, cfg, a.noPrompt); err != nil {
 			return err
 		}
 	}
 
-	// Resolve reflection_model: prompt user if not set.
-	if cfg.Options.ReflectionModel == "" && !a.noPrompt {
-		if err := resolveOptimizeReflectionModel(ctx, cfg); err != nil {
+	// Resolve dataset: prompt user if neither file nor reference is set.
+	if cfg.DatasetFile == "" && cfg.DatasetReference == nil {
+		if err := resolveOptimizeDataset(ctx, azdClient, cfg, agentProject, a.noPrompt); err != nil {
 			return err
 		}
+	}
+
+	// Resolve optimization_config.model: prompt user if not set.
+	if !hasModelConfig(cfg.Options.OptimizationConfig) && !a.noPrompt {
+		if err := resolveOptimizeTargetModels(ctx, azdClient, cfg); err != nil {
+			return err
+		}
+	}
+
+	// Resolve optimization_model: prompt user if not set.
+	if cfg.Options.OptimizationModel == "" && !a.noPrompt {
+		if err := resolveOptimizeOptimizationModel(ctx, azdClient, cfg); err != nil {
+			return err
+		}
+	}
+
+	// Final validation after all overrides and prompts.
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid config: %w", err)
 	}
 
 	return nil
@@ -382,21 +440,21 @@ func (a *OptimizeAction) submitJob(
 
 	client := optimize_api.NewOptimizeClient(endpoint, credential)
 
-	optimizeReq, err := cfg.ToRequest(endpoint)
+	optimizeReq, warnings, err := cfg.ToRequest()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to build optimization request: %w", err)
 	}
 
-	if body, jsonErr := json.MarshalIndent(optimizeReq, "", "  "); jsonErr == nil {
-		log.Printf("[debug] optimization request:\n%s", body)
+	for _, w := range warnings {
+		fmt.Fprintf(out, "  warning: %s\n", w)
 	}
 
 	// Save baseline config before starting optimization.
 	hasProject := agentProject != ""
 	if hasProject {
 		if err := writeBaselineConfig(agentProject, baselineParams{
-			Model:       optimizeReq.Agent.Model,
-			Instruction: optimizeReq.Agent.SystemPrompt,
+			Model:       cfg.Agent.Model,
+			Instruction: cfg.Agent.ResolvedSystemPrompt(),
 			SkillDir:    cfg.SkillDir,
 			ToolsFile:   cfg.ToolsFile,
 		}); err != nil {
@@ -476,7 +534,7 @@ func pollOptimizeJob(
 }
 
 // printOptimizeResults prints the optimization results table and next-step commands.
-func printOptimizeResults(out io.Writer, status *optimize_api.OptimizeJobStatus, hasProject bool) {
+func printOptimizeResults(ctx context.Context, out io.Writer, status *optimize_api.OptimizeJobStatus, hasProject bool) {
 	if status.Error != nil {
 		fmt.Fprintf(out, "\n  %s %s\n", color.RedString("Error:"), status.Error.Message)
 	}
@@ -489,10 +547,20 @@ func printOptimizeResults(out io.Writer, status *optimize_api.OptimizeJobStatus,
 	green := color.New(color.FgGreen)
 
 	_, _ = bold.Fprintln(out, "\nResults:")
-	fmt.Fprintf(out, "  %-20s %7s %7s %8s\n", "Candidate", "Score", "Pass", "Tokens")
-	fmt.Fprintf(out, "  %-20s %7s %7s %8s\n",
-		strings.Repeat("─", 20), strings.Repeat("─", 7),
-		strings.Repeat("─", 7), strings.Repeat("─", 8))
+	// Resolve eval portal prefix once for building hyperlinks in the table.
+	evalURLs := buildCandidateEvalURLs(ctx, status.Candidates)
+	hasEvalLinks := len(evalURLs) > 0
+
+	header := fmt.Sprintf("  %-20s %7s %7s", "Candidate", "Score", "Pass")
+	sep := fmt.Sprintf("  %-20s %7s %7s",
+		strings.Repeat("─", 20),
+		strings.Repeat("─", 7), strings.Repeat("─", 7))
+	if hasEvalLinks {
+		header += "  Eval"
+		sep += "  " + strings.Repeat("─", 6)
+	}
+	fmt.Fprintln(out, header)
+	fmt.Fprintln(out, sep)
 
 	bestName := ""
 	if status.Best != nil {
@@ -506,7 +574,12 @@ func printOptimizeResults(out io.Writer, status *optimize_api.OptimizeJobStatus,
 			name += " ★"
 		}
 
-		line := fmt.Sprintf("  %-20s %7.2f %6.0f%% %8.0f", name, c.AvgScore, c.PassRate*100, c.AvgTokens)
+		line := fmt.Sprintf("  %-20s %7.2f %6.0f%%", name, c.AvgScore, c.PassRate*100)
+		if hasEvalLinks {
+			if url, ok := evalURLs[c.Name]; ok {
+				line += "  " + terminalHyperlink(url, "View")
+			}
+		}
 		if isBest {
 			_, _ = green.Fprintln(out, line)
 		} else {
@@ -552,15 +625,15 @@ func printOptimizeResults(out io.Writer, status *optimize_api.OptimizeJobStatus,
 // formatOptimizeStatus returns a colorized string for the given job status.
 func formatOptimizeStatus(status string) string {
 	switch status {
-	case optimize_api.StatusCompleted:
+	case optimize_api.StatusCompleted, optimize_api.StatusSucceeded:
 		return color.GreenString(status)
 	case optimize_api.StatusFailed:
 		return color.RedString(status)
 	case optimize_api.StatusCancelled:
 		return color.YellowString(status)
-	case optimize_api.StatusRunning:
+	case optimize_api.StatusRunning, optimize_api.StatusInProgress:
 		return color.CyanString(status)
-	case optimize_api.StatusPending:
+	case optimize_api.StatusPending, optimize_api.StatusQueued:
 		return color.BlueString(status)
 	default:
 		return status

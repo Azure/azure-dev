@@ -95,7 +95,7 @@ func (c *OptimizeClient) StartOptimize(
 	}
 	defer resp.Body.Close()
 
-	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusAccepted) {
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated, http.StatusAccepted) {
 		return nil, runtime.NewResponseError(resp)
 	}
 
@@ -130,7 +130,7 @@ func (c *OptimizeClient) GetOptimizeStatus(
 	}
 	defer resp.Body.Close()
 
-	if !runtime.HasStatusCode(resp, http.StatusOK) {
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusAccepted) {
 		return nil, runtime.NewResponseError(resp)
 	}
 

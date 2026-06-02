@@ -141,6 +141,64 @@ func printOptimizePortalLink(ctx context.Context, out io.Writer, agentName, oper
 	})
 }
 
+// isInAzdProject returns true if the current directory is inside an azd project.
+func isInAzdProject(ctx context.Context) bool {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return false
+	}
+	defer azdClient.Close()
+
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	return err == nil && resp != nil && resp.Project != nil
+}
+
+// buildCandidateEvalURLs returns a map of candidate name → Foundry portal eval URL
+// for candidates that have both EvalID and EvalRunID set.
+// Best-effort — returns nil on any failure and never panics.
+func buildCandidateEvalURLs(
+	ctx context.Context,
+	candidates []optimize_api.CandidateResult,
+) (result map[string]string) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[debug] buildCandidateEvalURLs recovered from panic: %v", r)
+			result = nil
+		}
+	}()
+
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return nil
+	}
+	defer azdClient.Close()
+
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil || envResp == nil || envResp.Environment == nil {
+		return nil
+	}
+	envName := envResp.Environment.Name
+
+	urls := make(map[string]string)
+	for _, c := range candidates {
+		url := buildEvalReportURL(ctx, azdClient, envName, c.EvalID, c.EvalRunID)
+		if url != "" {
+			urls[c.Name] = url
+		}
+	}
+	if len(urls) == 0 {
+		return nil
+	}
+	return urls
+}
+
+// terminalHyperlink formats a clickable hyperlink using the OSC 8 escape sequence.
+// Terminals that support it (Windows Terminal, iTerm2, etc.) render the text as
+// a clickable link; unsupported terminals display only the text.
+func terminalHyperlink(url, text string) string {
+	return fmt.Sprintf("\033]8;;%s\033\\%s\033]8;;\033\\", url, text)
+}
+
 // reportOptimizationDeployments reports optimization candidate deployments to the optimization service.
 // For each hosted agent service, if AGENT_{KEY}_OPTIMIZATION_CANDIDATE_ID is set in
 // the azd environment, it calls the promote API and then clears the env var.

@@ -107,7 +107,7 @@ func submitEvaluatorGeneration(
 	request := eval_api.NewEvaluatorGenerationJobRequest(
 		resolveEvalName(flags), flags.evalModel, sources,
 	)
-	return resolved.evalClient.CreateEvaluatorGenerationJob(ctx, request, DefaultAgentAPIVersion)
+	return resolved.evalClient.CreateEvaluatorGenerationJob(ctx, request, ProjectEndpointAPIVersion)
 }
 
 // resolveLocalDatasetFile resolves the dataset flag value to an absolute path
@@ -267,7 +267,7 @@ func pollAndFinalizeJobs(
 
 			if resolved.hasProject {
 				localURI, err := eval_api.DownloadDatasetArtifact(
-					ctx, resolved.datasetClient, resolved.agentProject, dsRef, DefaultAgentAPIVersion,
+					ctx, resolved.datasetClient, resolved.agentProject, dsRef, ProjectEndpointAPIVersion,
 				)
 				if err != nil {
 					log.Printf("warning: downloading dataset artifact for %q: %v", dsRef.Name, err)
@@ -286,7 +286,7 @@ func pollAndFinalizeJobs(
 				var err error
 				completed, err = pollEvalOperationWithSpinner(
 					ctx, "Evaluator generation", state.EvalGenOpID,
-					resolved.evalClient.GetEvaluatorGenerationJob, DefaultAgentAPIVersion,
+					resolved.evalClient.GetEvaluatorGenerationJob, ProjectEndpointAPIVersion,
 					progress,
 				)
 				if err != nil {
@@ -297,7 +297,7 @@ func pollAndFinalizeJobs(
 				// Job was already terminal at submission — fetch it directly.
 				var err error
 				completed, err = resolved.evalClient.GetEvaluatorGenerationJob(
-					ctx, state.EvalGenOpID, DefaultAgentAPIVersion,
+					ctx, state.EvalGenOpID, ProjectEndpointAPIVersion,
 				)
 				if err != nil {
 					evalPollErr = err

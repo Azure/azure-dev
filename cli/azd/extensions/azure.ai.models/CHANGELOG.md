@@ -8,6 +8,8 @@
 - Added LoRA adapter support to `create` command with `--lora-rank`, `--lora-alpha`, `--lora-target-modules`, and `--lora-dropout` flags for registering LoRA adapters (`--weight-type LoRA`)
 - `show` command now displays LoRA Configuration section (rank, alpha, target modules, dropout) for LoRA adapters
 - `list` command now shows Weight Type column to distinguish FullWeight and LoRA models
+- `--base-model` is now optional when `--weight-type` is `DraftModel` (still required for `FullWeight` and `LoRA`); `DraftModel` is also now documented in the `--weight-type` help text
+- `--lora-rank` and `--lora-alpha` are now optional for `--weight-type LoRA`; when omitted, the values are read from the uploaded `adapter_config.json` by the Model Registry Service
 
 ## 0.0.6-preview (Unreleased)
 

@@ -12,6 +12,26 @@
 
 ### Other Changes
 
+## 1.25.4 (2026-05-29)
+
+### Bugs Fixed
+
+- [[#8487]](https://github.com/Azure/azure-dev/pull/8487) Fix the `azd tool` first-run prompt blocking users who deselect all recommended tools, and clarify its setup wording.
+- [[#8494]](https://github.com/Azure/azure-dev/pull/8494) Fix `azd config set tool.firstRunCompleted false` not re-enabling the `azd tool` first-run prompt; the value is now parsed (accepting true or RFC3339 timestamp) instead of treated as a presence-only marker.
+
+## 1.25.3 (2026-05-28)
+
+### Bugs Fixed
+
+- [[#8316]](https://github.com/Azure/azure-dev/pull/8316) Fix extension pack support gaps: extension manifests can declare `dependencies` without top-level `capabilities`, semver dependency ranges resolve to the highest compatible published version, and install-time dependency cycles fail with a clear error.
+- [[#8402]](https://github.com/Azure/azure-dev/pull/8402) Fix the progress widget printing stale, overlapping output on narrow terminals by truncating each rendered line to the terminal width.
+- [[#8263]](https://github.com/Azure/azure-dev/pull/8263) Fix lifecycle hook output (`preprovision`, `postprovision`, and `predeploy`) being silently suppressed during `azd up`.
+
+### Other Changes
+
+- [[#8440]](https://github.com/Azure/azure-dev/pull/8440) Promote the `azd tool` command group out of alpha, making it available by default along with its first-run welcome and update-check experiences.
+- [[#8316]](https://github.com/Azure/azure-dev/pull/8316) Improve `azd extension upgrade` dependency handling by reconciling declared dependencies to the latest compatible versions, adding `--no-dependency-upgrades` to opt out, and reporting dependency updates via `dependencyUpgrades` in `--output json`.
+
 ## 1.25.2 (2026-05-22)
 
 ### Bugs Fixed

@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -41,15 +42,10 @@ dataset_file: ` + datasetPath + `
 evaluators:
   - coherence
   - relevance
-criteria:
-  - name: accuracy
-    instruction: answer must be correct
 options:
   eval_model: gpt-4o-mini
   budget: 100
   max_iterations: 5
-  strategies:
-    - prompt_mutation
 `
 	cfgPath := writeTestFile(t, dir, "optimize.yaml", yamlContent)
 
@@ -57,20 +53,17 @@ options:
 	require.NoError(t, err)
 	require.NoError(t, cfg.Validate())
 
-	req, err := cfg.ToRequest("https://example.ai.azure.com/project/p")
+	req, _, err := cfg.ToRequest()
 	require.NoError(t, err)
 
 	assert.Equal(t, "my-agent", req.Agent.AgentName)
 	assert.Equal(t, "1", req.Agent.AgentVersion)
-	assert.Equal(t, "https://example.ai.azure.com/project/p", req.Agent.FoundryProjectURL)
 	assert.Len(t, req.Dataset, 2)
-	assert.Equal(t, "What is 2+2?", req.Dataset[0].Prompt)
-	assert.Equal(t, "4", req.Dataset[0].GroundTruth)
+	assert.Contains(t, string(req.Dataset[0]), `"What is 2+2?"`)
+	assert.Contains(t, string(req.Dataset[0]), `"groundTruth"`)
 	assert.Nil(t, req.TrainDatasetReference)
 	assert.Equal(t, "gpt-4o-mini", req.Options.EvalModel)
 	assert.Equal(t, []string{"coherence", "relevance"}, req.Evaluators)
-	assert.Len(t, req.Criteria, 1)
-	assert.Equal(t, "accuracy", req.Criteria[0].Name)
 }
 
 func TestLoadOptimizeConfig_WithDatasetReference(t *testing.T) {
@@ -96,7 +89,7 @@ options:
 	require.NoError(t, err)
 	require.NoError(t, cfg.Validate())
 
-	req, err := cfg.ToRequest("https://example.com/proj")
+	req, _, err := cfg.ToRequest()
 	require.NoError(t, err)
 
 	assert.Equal(t, "ref-agent", req.Agent.AgentName)
@@ -165,7 +158,7 @@ func TestValidate_NeitherDatasetFileNorReference(t *testing.T) {
 
 	err := cfg.Validate()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "one of dataset_file or dataset_reference is required")
+	assert.Contains(t, err.Error(), "a dataset is required")
 }
 
 func TestLoadOptimizeConfig_FileNotFound(t *testing.T) {
@@ -240,8 +233,6 @@ evaluators:
 
 options:
   eval_model: gpt-4o
-  strategies:
-    - instruction
   budget: 3
 `
 	datasetPath := writeTestFile(t, dir, "eval.jsonl",
@@ -256,8 +247,6 @@ evaluators:
   - builtin.task_adherence
 options:
   eval_model: gpt-4o
-  strategies:
-    - instruction
   budget: 3
 `
 	cfgPath := writeTestFile(t, dir, "spec.yaml", yamlContent)
@@ -279,11 +268,10 @@ options:
 	// Options
 	require.NotNil(t, cfg.Options)
 	assert.Equal(t, "gpt-4o", cfg.Options.EvalModel)
-	assert.Equal(t, []string{"instruction"}, cfg.Options.TargetAttributes)
 
 	// Validate + ToRequest
 	require.NoError(t, cfg.Validate())
-	req, err := cfg.ToRequest("https://example.ai.azure.com/project/p")
+	req, _, err := cfg.ToRequest()
 	require.NoError(t, err)
 	assert.Equal(t, "my-test-agent", req.Agent.AgentName)
 	assert.Len(t, req.Dataset, 1)
@@ -407,7 +395,7 @@ func TestLoadToolDefinitions_Valid(t *testing.T) {
 ]`
 	path := writeTestFile(t, dir, "tools.json", content)
 
-	tools, err := loadToolDefinitions(path)
+	tools, _, err := loadToolDefinitions(path)
 	require.NoError(t, err)
 	require.Len(t, tools, 2)
 
@@ -422,7 +410,7 @@ func TestLoadToolDefinitions_Valid(t *testing.T) {
 
 func TestLoadToolDefinitions_FileNotFound(t *testing.T) {
 	t.Parallel()
-	_, err := loadToolDefinitions(filepath.Join(t.TempDir(), "nonexistent.json"))
+	_, _, err := loadToolDefinitions(filepath.Join(t.TempDir(), "nonexistent.json"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "reading tools file")
 }
@@ -432,7 +420,7 @@ func TestLoadToolDefinitions_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestFile(t, dir, "tools.json", "not json")
 
-	_, err := loadToolDefinitions(path)
+	_, _, err := loadToolDefinitions(path)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parsing tools file")
 }
@@ -442,9 +430,11 @@ func TestLoadToolDefinitions_EmptyArray(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestFile(t, dir, "tools.json", "[]")
 
-	tools, err := loadToolDefinitions(path)
+	tools, warns, err := loadToolDefinitions(path)
 	require.NoError(t, err)
 	assert.Empty(t, tools)
+	assert.Len(t, warns, 1)
+	assert.Contains(t, warns[0], "no tool definitions")
 }
 
 func TestToRequest_WithToolsFile(t *testing.T) {
@@ -465,9 +455,124 @@ func TestToRequest_WithToolsFile(t *testing.T) {
 		ToolsFile: toolsPath,
 	}
 
-	req, err := cfg.ToRequest("https://example.com")
+	req, _, err := cfg.ToRequest()
 	require.NoError(t, err)
-	require.Len(t, req.Agent.ToolDefinitions, 1)
-	assert.Equal(t, "calculator", req.Agent.ToolDefinitions[0].Function.Name)
-	assert.Equal(t, "Do math", req.Agent.ToolDefinitions[0].Function.Description)
+	require.Contains(t, req.Options.OptimizationConfig, "tools")
+	// Verify tool definitions are serialized into optimization_config.
+	var tools []optimize_api.ToolDefinition
+	require.NoError(t, json.Unmarshal(req.Options.OptimizationConfig["tools"], &tools))
+	require.Len(t, tools, 1)
+	assert.Equal(t, "calculator", tools[0].Function.Name)
+}
+
+// ---- ToRequest: BaselineModel in OptimizationConfig ----
+
+func TestToRequest_SetsBaselineModelInOptimizationConfig(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent", Model: "gpt-4o"},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"prompt":"hi"}`),
+		},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini"},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+
+	require.NotNil(t, req.Options.OptimizationConfig)
+	raw, ok := req.Options.OptimizationConfig["baselineModel"]
+	require.True(t, ok, "baselineModel should be in optimizationConfig")
+	assert.Equal(t, `"gpt-4o"`, string(raw))
+}
+
+func TestToRequest_BaselineModelOmittedWhenEmpty(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"prompt":"hi"}`),
+		},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini"},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+
+	if req.Options.OptimizationConfig != nil {
+		_, hasKey := req.Options.OptimizationConfig["baselineModel"]
+		assert.False(t, hasKey, "baselineModel should not be set when model is empty")
+	}
+}
+
+func TestToRequest_BaselineModelInJSON(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent", Model: "gpt-4o"},
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"prompt":"hi"}`),
+		},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini"},
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+
+	// Verify the JSON output contains baselineModel inside optimizationConfig.
+	data, err := json.Marshal(req)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"baselineModel"`)
+}
+
+// ---------------------------------------------------------------------------
+// loadSkillsFromDir — empty file handling
+// ---------------------------------------------------------------------------
+
+func TestLoadSkillsFromDir_SkipsEmptyFiles(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Completely empty file — should be skipped.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "empty.md"), []byte(""), 0600))
+
+	// Valid skill — should be included.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "valid.md"), []byte("# Real skill\nDoes things."), 0600))
+
+	skills, err := loadSkillsFromDir(dir)
+	require.NoError(t, err)
+	require.Len(t, skills, 1)
+	assert.Equal(t, "valid", skills[0].Name)
+}
+
+func TestLoadSkillsFromDir_SkipsPreambleOnlyEmptyBody(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Preamble with name+description but no body — description is non-empty, should be kept.
+	md := "---\nname: meta-only\ndescription: Has description\n---\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "meta.md"), []byte(md), 0600))
+
+	skills, err := loadSkillsFromDir(dir)
+	require.NoError(t, err)
+	require.Len(t, skills, 1)
+	assert.Equal(t, "meta-only", skills[0].Name)
+	assert.Equal(t, "Has description", skills[0].Description)
+}
+
+func TestLoadSkillsFromDir_AllEmpty(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.md"), []byte(""), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.md"), []byte(""), 0600))
+
+	skills, err := loadSkillsFromDir(dir)
+	require.NoError(t, err)
+	assert.Empty(t, skills)
 }

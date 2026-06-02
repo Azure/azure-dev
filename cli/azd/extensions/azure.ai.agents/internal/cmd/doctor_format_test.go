@@ -234,8 +234,8 @@ func TestPrintDoctorReportText_ToFixBlockOnFailure(t *testing.T) {
 			{ID: "remote.auth", Name: "authentication", Status: doctor.StatusPass},
 			{ID: "remote.foundry-endpoint", Name: "Foundry endpoint",
 				Status: doctor.StatusFail, Message: "endpoint unreachable"},
-			{ID: "remote.model-deployments", Name: "model deployments",
-				Status: doctor.StatusFail, Message: "model missing"},
+			{ID: "remote.connections", Name: "connections",
+				Status: doctor.StatusFail, Message: "connection missing"},
 			{ID: "remote.agent-status", Name: "agents active",
 				Status: doctor.StatusFail, Message: "1 of 1 agents have not been deployed"},
 		},
@@ -504,6 +504,6 @@ func TestFilterDeployedServices_ChainedIntoResolveAfterDeploy(t *testing.T) {
 	require.Len(t, out, 2, "filtered state has one deployed service → show + invoke")
 	assert.Equal(t, "azd ai agent show alpha", out[0].Command,
 		"command must be service-qualified even when filtered list has len==1")
-	assert.Equal(t, `azd ai agent invoke alpha "Hello!"`, out[1].Command,
+	assert.Equal(t, `azd ai agent invoke alpha '<payload>'`, out[1].Command,
 		"invoke command must also be service-qualified")
 }

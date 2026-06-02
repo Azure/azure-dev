@@ -1,8 +1,10 @@
 import: ../../.vscode/cspell.yaml
 words:
+    - connectionless
     - exterrors
     - projectctx
     - retarget
     - retargets
     - subdocument
     - toolsets
+    - uppercased

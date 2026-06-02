@@ -71,6 +71,25 @@ func TestAssembleState(t *testing.T) {
 			assert: func(t *testing.T, state *State, _ []error) {
 				assert.True(t, state.HasProjectEndpoint)
 				assert.Empty(t, state.Services)
+				assert.Equal(t,
+					[]string{"AZURE_SUBSCRIPTION_ID", "AZURE_LOCATION"},
+					state.MissingAzureContextVars,
+				)
+			},
+		},
+		{
+			name: "Azure context vars set: MissingAzureContextVars stays empty",
+			src: &fakeSource{
+				envName: "dev",
+				values: map[string]string{
+					"dev/AZURE_SUBSCRIPTION_ID":    "sub-id",
+					"dev/AZURE_LOCATION":           "eastus",
+					"dev/FOUNDRY_PROJECT_ENDPOINT": "https://x.services.ai.azure.com",
+				},
+				project: &azdext.ProjectConfig{Name: "demo"},
+			},
+			assert: func(t *testing.T, state *State, _ []error) {
+				assert.Empty(t, state.MissingAzureContextVars)
 			},
 		},
 		{
@@ -158,9 +177,10 @@ func TestAssembleState(t *testing.T) {
 				assert.Empty(t, state.PendingProvisionReasons)
 			},
 			// One error each for FOUNDRY_PROJECT_ENDPOINT,
-			// AI_AGENT_PENDING_PROVISION + one per service lookup
-			// (AGENT_ECHO_VERSION) = 3.
-			errCount: 3,
+			// AI_AGENT_PENDING_PROVISION, AZURE_SUBSCRIPTION_ID,
+			// AZURE_LOCATION + one per service lookup
+			// (AGENT_ECHO_VERSION) = 5.
+			errCount: 5,
 		},
 		{
 			name: "AI_AGENT_PENDING_PROVISION unset: PendingProvisionReasons stays empty",
@@ -1149,9 +1169,9 @@ environment_variables:
 	}
 
 	state, errs := assembleState(context.Background(), src)
-	// One error each for FOUNDRY_PROJECT_ENDPOINT +
-	// AI_AGENT_PENDING_PROVISION + AGENT_ECHO_VERSION + MY_API_KEY = 4.
-	assert.Len(t, errs, 4)
+	// One error each for FOUNDRY_PROJECT_ENDPOINT, AI_AGENT_PENDING_PROVISION,
+	// AZURE_SUBSCRIPTION_ID, AZURE_LOCATION, AGENT_ECHO_VERSION, and MY_API_KEY.
+	assert.Len(t, errs, 6)
 	assert.Empty(t, state.MissingInfraVars)
 	assert.Empty(t, state.MissingManualVars)
 }
@@ -1191,6 +1211,101 @@ environment_variables:
 	assert.Empty(t, state.MissingInfraVars)
 	assert.Equal(t, []string{"TOOLBOX_MCP_ENDPOINT"}, state.MissingManualVars)
 	assert.Equal(t, []string{"TOOLBOX_ENDPOINT"}, state.UnresolvedPlaceholders)
+}
+
+// TestAssembleState_PartitionsToolboxEndpointVars locks the partition
+// behavior added for the toolbox-sample post-init UX: when a service
+// has a manifest-declared toolbox AND agent.yaml references the
+// canonical TOOLBOX_<NAME>_MCP_ENDPOINT env var, the missing-var
+// classifier must route the entry into MissingToolboxEndpoints
+// (provision-managed) rather than MissingManualVars (operator-supplied).
+// Non-toolbox manual vars in the same agent.yaml must still appear in
+// MissingManualVars.
+func TestAssembleState_PartitionsToolboxEndpointVars(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	// agent.manifest.yaml declares the toolbox by name; envkey derives
+	// "TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT" from "web-search-tools",
+	// matching the ${...} ref in agent.yaml below.
+	writeManifest(t, projectRoot, "echo", `
+template:
+  kind: containerAgent
+  name: hello
+resources:
+  - name: web-search-tools
+    kind: toolbox
+    tools:
+      - id: tool-1
+`)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "echo", "agent.yaml"),
+		[]byte(`kind: hostedAgent
+environment_variables:
+  - name: MCP_ENDPOINT
+    value: ${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}
+  - name: API_KEY
+    value: ${MY_API_KEY}
+`),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	assert.Empty(t, state.MissingInfraVars)
+	// Toolbox endpoint var moved into the dedicated bucket; the
+	// generic manual-var bucket only carries the truly user-supplied
+	// API key.
+	assert.Equal(t, []string{"MY_API_KEY"}, state.MissingManualVars)
+	require.Len(t, state.MissingToolboxEndpoints, 1)
+	assert.Equal(t, "web-search-tools", state.MissingToolboxEndpoints[0].Name)
+	assert.Equal(t, "echo", state.MissingToolboxEndpoints[0].ServiceName)
+}
+
+// TestAssembleState_ToolboxEndpointWithoutManifestStaysManual locks
+// the partition's guard: a TOOLBOX_*_MCP_ENDPOINT-shaped variable
+// whose name does NOT match a manifest-declared toolbox is treated
+// as a generic user variable and stays in MissingManualVars. The
+// partition is a no-op when no manifest toolbox claims the key.
+func TestAssembleState_ToolboxEndpointWithoutManifestStaysManual(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "echo", "agent.yaml"),
+		[]byte(`kind: hostedAgent
+environment_variables:
+  - name: MCP_ENDPOINT
+    value: ${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}
+`),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	assert.Equal(t, []string{"TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT"}, state.MissingManualVars)
+	assert.Empty(t, state.MissingToolboxEndpoints)
 }
 
 func TestAssembleState_PlaceholdersDedupedAcrossServices(t *testing.T) {

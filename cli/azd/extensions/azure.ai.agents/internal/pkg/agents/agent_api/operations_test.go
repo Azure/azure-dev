@@ -174,7 +174,7 @@ func TestDeleteSession_Accepts200(t *testing.T) {
 	)
 
 	err := client.DeleteSession(
-		t.Context(), "my-agent", "sess-1", "2025-11-15-preview", nil,
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
 	)
 	require.NoError(t, err, "200 OK should be treated as success")
 }
@@ -186,7 +186,7 @@ func TestDeleteSession_Accepts204(t *testing.T) {
 	)
 
 	err := client.DeleteSession(
-		t.Context(), "my-agent", "sess-1", "2025-11-15-preview", nil,
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
 	)
 	require.NoError(t, err, "204 No Content should be treated as success")
 }
@@ -198,7 +198,7 @@ func TestDeleteSession_Rejects500(t *testing.T) {
 	)
 
 	err := client.DeleteSession(
-		t.Context(), "my-agent", "sess-1", "2025-11-15-preview", nil,
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
 	)
 	require.Error(t, err, "500 should be an error")
 }
@@ -210,7 +210,7 @@ func TestGetSession_404ReturnsError(t *testing.T) {
 	)
 
 	_, err := client.GetSession(
-		t.Context(), "my-agent", "sess-1", "2025-11-15-preview", nil,
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
 	)
 	require.Error(t, err, "404 should be an error from GetSession")
 }
@@ -256,7 +256,7 @@ func TestCreateSession_Returns201WithBody(t *testing.T) {
 				AgentVersion: "3",
 			},
 		},
-		"2025-11-15-preview",
+		AgentEndpointAPIVersion,
 		nil,
 	)
 
@@ -290,7 +290,7 @@ func TestListSessions_Returns200WithPagination(t *testing.T) {
 	)
 
 	result, err := client.ListSessions(
-		t.Context(), "my-agent", nil, nil, "2025-11-15-preview", nil,
+		t.Context(), "my-agent", nil, nil, AgentEndpointAPIVersion, nil,
 	)
 
 	require.NoError(t, err)
@@ -326,7 +326,7 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 					t.Context(),
 					"my-agent",
 					&CreateAgentSessionRequest{},
-					"2025-11-15-preview",
+					AgentEndpointAPIVersion,
 					options,
 				)
 				return err
@@ -342,7 +342,7 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 					t.Context(),
 					"my-agent",
 					"sess-1",
-					"2025-11-15-preview",
+					AgentEndpointAPIVersion,
 					options,
 				)
 				return err
@@ -356,7 +356,7 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 					t.Context(),
 					"my-agent",
 					"sess-1",
-					"2025-11-15-preview",
+					AgentEndpointAPIVersion,
 					options,
 				)
 			},
@@ -372,7 +372,7 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 					"my-agent",
 					nil,
 					nil,
-					"2025-11-15-preview",
+					AgentEndpointAPIVersion,
 					options,
 				)
 				return err
@@ -391,6 +391,7 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 
 			require.NoError(t, tt.call(client, options))
 			require.Len(t, transport.requests, 1)
+			require.Equal(t, "HostedAgents=V1Preview", transport.requests[0].Header.Get("Foundry-Features"))
 			requireIsolationHeaders(t, transport.requests[0], "user-1", "chat-1", tt.wantSession)
 		})
 	}
@@ -412,7 +413,7 @@ func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
 					"my-agent",
 					"sess-1",
 					"/data/input.txt",
-					"2025-11-15-preview",
+					"v1",
 					bytes.NewReader([]byte("hello")),
 					options,
 				)
@@ -428,7 +429,7 @@ func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
 					"my-agent",
 					"sess-1",
 					"/data/input.txt",
-					"2025-11-15-preview",
+					"v1",
 					options,
 				)
 				if err != nil {
@@ -447,7 +448,7 @@ func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
 					"my-agent",
 					"sess-1",
 					"",
-					"2025-11-15-preview",
+					"v1",
 					options,
 				)
 				return err
@@ -463,7 +464,7 @@ func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
 					"sess-1",
 					"/data/input.txt",
 					false,
-					"2025-11-15-preview",
+					"v1",
 					options,
 				)
 			},
@@ -477,7 +478,7 @@ func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
 					"my-agent",
 					"sess-1",
 					"/data",
-					"2025-11-15-preview",
+					"v1",
 					options,
 				)
 			},
@@ -492,7 +493,7 @@ func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
 					"my-agent",
 					"sess-1",
 					"/data/input.txt",
-					"2025-11-15-preview",
+					"v1",
 					options,
 				)
 				return err
@@ -536,7 +537,7 @@ func TestGetAgentSessionLogStream_ApplyIsolationHeaders(t *testing.T) {
 		t.Context(),
 		"my-agent",
 		"sess-1",
-		"2025-11-15-preview",
+		"v1",
 		"console",
 		50,
 		false,
@@ -555,6 +556,7 @@ func TestGetAgentSessionLogStream_ApplyIsolationHeaders(t *testing.T) {
 	}
 	require.NotNil(t, request)
 	require.Equal(t, "Bearer test-token", request.Header.Get("Authorization"))
+	require.Equal(t, "HostedAgents=V1Preview", request.Header.Get("Foundry-Features"))
 	requireIsolationHeaders(t, request, "user-1", "chat-1", "")
 }
 
@@ -600,7 +602,7 @@ func TestPatchAgent_Success(t *testing.T) {
 	}
 
 	result, err := client.PatchAgent(
-		t.Context(), "my-agent", req, "2025-11-15-preview",
+		t.Context(), "my-agent", req, "v1",
 	)
 	require.NoError(t, err)
 	require.Equal(t, "my-agent", result.Name)
@@ -619,7 +621,7 @@ func TestPatchAgent_400ReturnsError(t *testing.T) {
 	}
 
 	_, err := client.PatchAgent(
-		t.Context(), "my-agent", req, "2025-11-15-preview",
+		t.Context(), "my-agent", req, "v1",
 	)
 	require.Error(t, err, "400 should be an error")
 }
@@ -633,7 +635,7 @@ func TestPatchAgent_404ReturnsError(t *testing.T) {
 	req := &PatchAgentRequest{}
 
 	_, err := client.PatchAgent(
-		t.Context(), "no-such-agent", req, "2025-11-15-preview",
+		t.Context(), "no-such-agent", req, "v1",
 	)
 	require.Error(t, err, "404 should be an error")
 }
@@ -649,7 +651,7 @@ func TestPatchAgent_500ReturnsError(t *testing.T) {
 	req := &PatchAgentRequest{}
 
 	_, err := client.PatchAgent(
-		t.Context(), "my-agent", req, "2025-11-15-preview",
+		t.Context(), "my-agent", req, "v1",
 	)
 	require.Error(t, err, "500 should be an error")
 }
@@ -771,4 +773,40 @@ func TestZipDeployRequest_NoAgentNameHeader_OnUpdate(t *testing.T) {
 	// But other required headers should still be present
 	require.Equal(t, "CodeAgents=V1Preview,HostedAgents=V1Preview", transport.lastReq.Header.Get("Foundry-Features"))
 	require.Equal(t, "sha", transport.lastReq.Header.Get("x-ms-code-zip-sha256"))
+}
+
+func TestCreateAgentVersion_SetsHostedAgentsPreviewHeader(t *testing.T) {
+	// The Foundry v1 endpoint gates POST /agents/{name}/versions on the
+	// HostedAgents=V1Preview opt-in header and returns 403 preview_feature_required
+	// without it. Make sure the client always sends the header so callers don't
+	// silently regress to the pre-v1 (preview-API-version) behavior.
+	versionResp := `{
+		"object": "agent.version",
+		"id": "test-agent:1",
+		"name": "test-agent",
+		"version": "1"
+	}`
+	transport := &capturingTransport{statusCode: http.StatusCreated, respBody: versionResp}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	desc := "test desc"
+	req := &CreateAgentVersionRequest{Description: &desc}
+
+	_, err := client.CreateAgentVersion(context.Background(), "test-agent", req, "v1")
+	require.NoError(t, err)
+
+	require.NotNil(t, transport.lastReq, "expected request to be captured")
+	require.Equal(t, http.MethodPost, transport.lastReq.Method)
+	require.Equal(
+		t,
+		"https://test.example.com/api/projects/proj/agents/test-agent/versions",
+		transport.lastReq.URL.Scheme+"://"+transport.lastReq.URL.Host+transport.lastReq.URL.Path,
+	)
+	require.Equal(t, "v1", transport.lastReq.URL.Query().Get("api-version"))
+	require.Equal(
+		t,
+		"HostedAgents=V1Preview",
+		transport.lastReq.Header.Get("Foundry-Features"),
+		"CreateAgentVersion must opt in to HostedAgents=V1Preview on the v1 endpoint",
+	)
 }

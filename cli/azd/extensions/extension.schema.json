@@ -47,8 +47,7 @@
         }
       },
       "required": [
-        "id",
-        "version"
+        "id"
       ]
     },
     "Provider": {
@@ -113,7 +112,7 @@
     "capabilities": {
       "type": "array",
       "title": "Capabilities",
-      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events, mcp-server, service-target-provider, framework-service-provider, provisioning-provider, metadata. Select one or more from the allowed list. Each value must be unique.",
+      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events, mcp-server, service-target-provider, framework-service-provider, provisioning-provider, metadata. Select one or more from the allowed list. Each value must be unique. Not required for extension packs, which declare dependencies instead and have no executable.",
       "minItems": 1,
       "uniqueItems": true,
       "items": {
@@ -200,7 +199,8 @@
       "description": "List of other extensions that this extension depends on. These will be resolved and installed automatically.",
       "items": {
         "$ref": "#/definitions/ExtensionDependency"
-      }
+      },
+      "minItems": 1
     },
     "providers": {
       "type": "array",
@@ -259,8 +259,15 @@
   "required": [
     "id",
     "version",
-    "capabilities",
     "displayName",
     "description"
+  ],
+  "anyOf": [
+    {
+      "required": ["capabilities"]
+    },
+    {
+      "required": ["dependencies"]
+    }
   ]
 }

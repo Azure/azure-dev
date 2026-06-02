@@ -153,7 +153,7 @@ func updateDataset(
 		localDir = filepath.Join(filepath.Dir(configPath), localDir)
 	}
 
-	resp, err := client.UploadNewVersion(ctx, ref.Name, ref.Version, localDir, DefaultAgentAPIVersion)
+	resp, err := client.UploadNewVersion(ctx, ref.Name, ref.Version, localDir, ProjectEndpointAPIVersion)
 	if err != nil {
 		fmt.Printf("  %s Failed to update dataset %s: %v\n", color.RedString("x"), ref.Name, err)
 		return 0, nil
@@ -195,7 +195,7 @@ func updateEvaluators(
 			continue
 		}
 
-		current, err := client.GetEvaluatorRaw(ctx, ref.Name, ref.Version, DefaultAgentAPIVersion)
+		current, err := client.GetEvaluatorRaw(ctx, ref.Name, ref.Version, ProjectEndpointAPIVersion)
 		if err != nil {
 			fmt.Printf("  %s Failed to get evaluator %s: %v\n", color.RedString("x"), ref.Name, err)
 			continue
@@ -230,7 +230,7 @@ func updateEvaluators(
 			continue
 		}
 
-		resp, err := client.CreateEvaluatorVersion(ctx, ref.Name, body, DefaultAgentAPIVersion)
+		resp, err := client.CreateEvaluatorVersion(ctx, ref.Name, body, ProjectEndpointAPIVersion)
 		if err != nil {
 			fmt.Printf("  %s Failed to update %s: %v\n", color.RedString("x"), ref.Name, err)
 			continue

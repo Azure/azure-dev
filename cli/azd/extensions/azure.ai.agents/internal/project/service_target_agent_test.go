@@ -366,7 +366,8 @@ func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
 	t.Helper()
 
 	if err := os.Symlink(oldname, newname); err != nil {
-		if errors.Is(err, os.ErrPermission) {
+		if errors.Is(err, os.ErrPermission) || os.IsPermission(err) ||
+			strings.Contains(strings.ToLower(err.Error()), "privilege") {
 			t.Skipf("symlink creation not permitted: %v", err)
 		}
 		t.Fatalf("create symlink: %v", err)
@@ -456,13 +457,17 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 
 	// Per-protocol endpoints
 	require.Contains(t, envStub.values, "AGENT_MY_SVC_RESPONSES_ENDPOINT")
-	require.Contains(t,
+	require.Equal(
+		t,
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/openai/responses?api-version=v1",
 		envStub.values["AGENT_MY_SVC_RESPONSES_ENDPOINT"],
-		"/agents/my-agent/endpoint/protocols/openai/responses")
+	)
 	require.Contains(t, envStub.values, "AGENT_MY_SVC_INVOCATIONS_ENDPOINT")
-	require.Contains(t,
+	require.Equal(
+		t,
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/invocations?api-version=v1",
 		envStub.values["AGENT_MY_SVC_INVOCATIONS_ENDPOINT"],
-		"/agents/my-agent/endpoint/protocols/invocations")
+	)
 
 	// Base agent endpoint for session management
 	require.Contains(t, envStub.values, "AGENT_MY_SVC_ENDPOINT")
@@ -547,24 +552,75 @@ func TestRegisterAgentEnvironmentVariables_EmptyVersion(t *testing.T) {
 	require.Contains(t, err.Error(), "agent version is empty")
 }
 
-func TestProtocolPath(t *testing.T) {
+func TestDisplayableProtocolFor(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		protocol string
-		expected string
+		name             string
+		protocol         string
+		wantNil          bool
+		wantProtocol     agent_api.AgentProtocol
+		wantEnvSuffix    string
+		wantURLContains  string
+		wantURLScheme    string // "https" or "wss"
+		wantURLOmitAgent bool   // true when the protocol does not embed the agent name in the path
 	}{
-		{"responses", "responses", "openai/responses"},
-		{"invocations", "invocations", "invocations"},
-		{"activity_protocol excluded", "activity_protocol", ""},
-		{"unknown excluded", "unknown_proto", ""},
+		{
+			name:            "responses",
+			protocol:        "responses",
+			wantProtocol:    agent_api.AgentProtocolResponses,
+			wantEnvSuffix:   "RESPONSES",
+			wantURLContains: "/agents/my-agent/endpoint/protocols/openai/responses?api-version=v1",
+			wantURLScheme:   "https",
+		},
+		{
+			name:            "invocations",
+			protocol:        "invocations",
+			wantProtocol:    agent_api.AgentProtocolInvocations,
+			wantEnvSuffix:   "INVOCATIONS",
+			wantURLContains: "/agents/my-agent/endpoint/protocols/invocations",
+			wantURLScheme:   "https",
+		},
+		{
+			name:             "invocations_ws",
+			protocol:         "invocations_ws",
+			wantProtocol:     agent_api.AgentProtocolInvocationsWS,
+			wantEnvSuffix:    "INVOCATIONS_WS",
+			wantURLContains:  "/api/projects/agents/endpoint/protocols/invocations_ws",
+			wantURLScheme:    "wss",
+			wantURLOmitAgent: true,
+		},
+		{name: "activity_protocol excluded", protocol: "activity_protocol", wantNil: true},
+		{name: "unknown excluded", protocol: "unknown_proto", wantNil: true},
 	}
+
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+	const agentName = "my-agent"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := protocolPath(tt.protocol)
-			require.Equal(t, tt.expected, got)
+			got := displayableProtocolFor(tt.protocol)
+			if tt.wantNil {
+				require.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			require.Equal(t, tt.wantProtocol, got.Protocol)
+			require.Equal(t, tt.wantEnvSuffix, got.EnvSuffix)
+
+			// Build URL using the same logic as production code
+			eps := agentInvocationEndpoints(projectEndpoint, agentName,
+				[]agent_yaml.ProtocolVersionRecord{{Protocol: tt.protocol, Version: "1.0.0"}})
+			require.Len(t, eps, 1)
+			url := eps[0].URL
+			require.True(t, strings.HasPrefix(url, tt.wantURLScheme+"://"),
+				"url %q should use %s scheme", url, tt.wantURLScheme)
+			require.Contains(t, url, tt.wantURLContains)
+			if tt.wantURLOmitAgent {
+				require.NotContains(t, url, "/agents/"+agentName+"/")
+				require.Contains(t, url, "agent_name="+agentName)
+				require.Contains(t, url, "project_name=proj")
+			}
 		})
 	}
 }
@@ -572,9 +628,15 @@ func TestProtocolPath(t *testing.T) {
 func TestAgentInvocationEndpoints(t *testing.T) {
 	t.Parallel()
 
-	const endpoint = "https://myproject.services.ai.azure.com"
+	const endpoint = "https://myproject.services.ai.azure.com/api/projects/proj"
 	const agentName = "my-agent"
 	baseURL := endpoint + "/agents/" + agentName + "/endpoint/protocols/"
+
+	const wsBase = "wss://myproject.services.ai.azure.com" +
+		"/api/projects/agents/endpoint/protocols/invocations_ws"
+	const wsQuery = "agent_name=" + agentName +
+		"&api-version=" + agent_api.AgentEndpointAPIVersion +
+		"&project_name=proj"
 
 	tests := []struct {
 		name      string
@@ -589,7 +651,7 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			expected: []protocolEndpointInfo{
 				{
 					Protocol: "responses",
-					URL:      baseURL + "openai/responses?api-version=" + agentAPIVersion,
+					URL:      baseURL + "openai/responses?api-version=v1",
 				},
 			},
 		},
@@ -601,7 +663,19 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			expected: []protocolEndpointInfo{
 				{
 					Protocol: "invocations",
-					URL:      baseURL + "invocations?api-version=" + agentAPIVersion,
+					URL:      baseURL + "invocations?api-version=v1",
+				},
+			},
+		},
+		{
+			name: "single invocations_ws protocol uses dispatcher form",
+			protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "invocations_ws", Version: "1.0.0"},
+			},
+			expected: []protocolEndpointInfo{
+				{
+					Protocol: "invocations_ws",
+					URL:      wsBase + "?" + wsQuery,
 				},
 			},
 		},
@@ -611,15 +685,20 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 				{Protocol: "responses", Version: "1.0.0"},
 				{Protocol: "activity_protocol", Version: "1.0.0"},
 				{Protocol: "invocations", Version: "1.0.0"},
+				{Protocol: "invocations_ws", Version: "1.0.0"},
 			},
 			expected: []protocolEndpointInfo{
 				{
 					Protocol: "responses",
-					URL:      baseURL + "openai/responses?api-version=" + agentAPIVersion,
+					URL:      baseURL + "openai/responses?api-version=v1",
 				},
 				{
 					Protocol: "invocations",
-					URL:      baseURL + "invocations?api-version=" + agentAPIVersion,
+					URL:      baseURL + "invocations?api-version=v1",
+				},
+				{
+					Protocol: "invocations_ws",
+					URL:      wsBase + "?" + wsQuery,
 				},
 			},
 		},
@@ -645,6 +724,56 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 	}
 }
 
+func TestBuildInvocationsWSProtocolURL_MalformedEndpoint(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		projectEndpoint string
+	}{
+		{name: "empty", projectEndpoint: ""},
+		{name: "missing scheme", projectEndpoint: "myproject.services.ai.azure.com/api/projects/proj"},
+		{name: "leading whitespace only", projectEndpoint: "   "},
+		{name: "control characters", projectEndpoint: "https://%zz/api/projects/proj"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Empty(t, buildInvocationsWSProtocolURL(tt.projectEndpoint, "my-agent"),
+				"expected empty result for malformed projectEndpoint %q", tt.projectEndpoint)
+		})
+	}
+}
+
+func TestBuildInvocationsWSProtocolURL_TrimsWhitespace(t *testing.T) {
+	t.Parallel()
+
+	got := buildInvocationsWSProtocolURL(
+		"  https://myproject.services.ai.azure.com/api/projects/proj  ",
+		"my-agent",
+	)
+	require.NotEmpty(t, got)
+	require.Contains(t, got, "wss://myproject.services.ai.azure.com")
+	require.Contains(t, got, "project_name=proj")
+	require.Contains(t, got, "agent_name=my-agent")
+}
+
+func TestAgentInvocationEndpoints_SkipsInvocationsWSWithMalformedEndpoint(t *testing.T) {
+	t.Parallel()
+
+	const malformed = "not-a-url"
+	const agentName = "my-agent"
+
+	protocols := []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "responses", Version: "1.0.0"},
+		{Protocol: "invocations_ws", Version: "1.0.0"},
+	}
+
+	got := agentInvocationEndpoints(malformed, agentName, protocols)
+	require.Len(t, got, 1, "invocations_ws entry should be filtered when builder returns empty")
+	require.Equal(t, "responses", got[0].Protocol)
+}
+
 func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
 	t.Parallel()
 
@@ -667,8 +796,7 @@ func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
 	require.Len(t, artifacts, 2)
 
 	wantResponses := ep +
-		"/agents/test-agent/endpoint/protocols/openai/responses" +
-		"?api-version=" + agentAPIVersion
+		"/agents/test-agent/endpoint/protocols/openai/responses?api-version=v1"
 	require.Equal(t, wantResponses, artifacts[0].Location)
 	require.Equal(t, "Agent endpoint (responses)", artifacts[0].Metadata["label"])
 	require.Empty(t, artifacts[0].Metadata["note"],
@@ -676,7 +804,7 @@ func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
 
 	wantInvocations := ep +
 		"/agents/test-agent/endpoint/protocols/invocations" +
-		"?api-version=" + agentAPIVersion
+		"?api-version=v1"
 	require.Equal(t, wantInvocations, artifacts[1].Location)
 	require.Equal(t, "Agent endpoint (invocations)", artifacts[1].Metadata["label"])
 	require.Contains(t, artifacts[1].Metadata["note"], "invoking the agent")
@@ -701,8 +829,7 @@ func TestDeployArtifacts_ResponsesProtocol(t *testing.T) {
 
 	require.Len(t, artifacts, 1)
 	wantURL := ep +
-		"/agents/prompt-agent/endpoint/protocols/openai/responses" +
-		"?api-version=" + agentAPIVersion
+		"/agents/prompt-agent/endpoint/protocols/openai/responses?api-version=v1"
 	require.Equal(t, wantURL, artifacts[0].Location)
 	require.Equal(t, "Agent endpoint (responses)", artifacts[0].Metadata["label"])
 	require.Contains(t, artifacts[0].Metadata["note"], "invoking the agent")
@@ -1055,9 +1182,9 @@ func TestPublish_PrivateACRNetworkAccessGuidance(t *testing.T) {
 		err  error
 	}{
 		{
-			name: "remote build failed and local fallback unavailable",
+			name: "remote build failed and local fallback unavailable with acr context",
 			err: errors.New(
-				"remote build failed: registry firewall blocked source upload\n\n" +
+				"remote build failed: myregistry.azurecr.io firewall blocked source upload\n\n" +
 					"Local fallback unavailable: Docker is not installed",
 			),
 		},
@@ -1069,11 +1196,10 @@ func TestPublish_PrivateACRNetworkAccessGuidance(t *testing.T) {
 			),
 		},
 		{
-			name: "generic host docker login suggestion is overridden",
-			err: actionableStatusError(
-				t,
-				"pushing image to myregistry.azurecr.io failed: Forbidden",
-				"When pushing to an external registry, run 'docker login' and try again",
+			name: "private endpoint without public access on ARM call",
+			err: errors.New(
+				"POST https://management.azure.com/.../Microsoft.ContainerRegistry/registries/myregistry/" +
+					"listBuildSourceUploadUrl: private endpoint required; public network access disabled",
 			),
 		},
 	}
@@ -1097,6 +1223,187 @@ func TestPublish_PrivateACRNetworkAccessGuidance(t *testing.T) {
 	}
 }
 
+// initTest15RemoteBuildRBACError is the wire-format error captured on
+// 2026-05-29 from a repro on the init-test-15 project when running
+// `azd deploy` as a service principal with Reader-only access. It exercises
+// the new default container deploy path (docker.remoteBuild: true) hitting
+// ARM's listBuildSourceUploadUrl with no ACR push role. The error is
+// preserved verbatim so future refactors cannot silently re-introduce the
+// pre-2026-05 misclassification ("Container Registry may be blocking network
+// access") on what is actually an RBAC failure.
+const initTest15RemoteBuildRBACError = "rpc error: code = Unknown desc = remote build failed: " +
+	"POST https://management.azure.com/subscriptions/5f416acb-98a5-411a-808e-f37c0fbbbdb5/" +
+	"resourceGroups/rg-init-test-15-dev/providers/Microsoft.ContainerRegistry/" +
+	"registries/crpjhtjmfdtwcau/listBuildSourceUploadUrl\n" +
+	"--------------------------------------------------------------------------------\n" +
+	"RESPONSE 403: 403 Forbidden\n" +
+	"ERROR CODE: AuthorizationFailed\n" +
+	"--------------------------------------------------------------------------------\n" +
+	"{\n" +
+	"  \"error\": {\n" +
+	"    \"code\": \"AuthorizationFailed\",\n" +
+	"    \"message\": \"The client 'cdd73b03-a291-42d1-8fd5-903957338f08' with object id " +
+	"'209256b0-0f0c-41f4-a7e2-bceaba1ca711' does not have authorization to perform action " +
+	"'Microsoft.ContainerRegistry/registries/listBuildSourceUploadUrl/action' over scope " +
+	"'/subscriptions/5f416acb-98a5-411a-808e-f37c0fbbbdb5/resourceGroups/rg-init-test-15-dev/" +
+	"providers/Microsoft.ContainerRegistry/registries/crpjhtjmfdtwcau' or the scope is invalid. " +
+	"If access was recently granted, please refresh your credentials.\"\n" +
+	"  }\n" +
+	"}\n" +
+	"--------------------------------------------------------------------------------\n\n" +
+	"Local fallback unavailable: the docker service is not running, please start it: exit code: 1"
+
+func TestPublish_ACRPermissionGuidance(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                string
+		err                 error
+		expectedPrimaryRole string
+		expectedRoleID      string
+		expectedPathContext string
+	}{
+		{
+			name:                "init-test-15 remote build RBAC fixture",
+			err:                 errors.New(initTest15RemoteBuildRBACError),
+			expectedPrimaryRole: "Container Registry Tasks Contributor",
+			expectedRoleID:      roleContainerRegistryTasksContributor,
+			expectedPathContext: "ACR Tasks remote build",
+		},
+		{
+			name: "docker push denied requested access",
+			err: errors.New(
+				"failed to push image to myregistry.azurecr.io/app:v1: " +
+					"denied: requested access to the resource is denied",
+			),
+			expectedPrimaryRole: "AcrPush",
+			expectedRoleID:      roleAcrPush,
+			expectedPathContext: "data-plane push",
+		},
+		{
+			name: "docker push 401 unauthorized authentication required",
+			err: errors.New(
+				"pushing to myregistry.azurecr.io: 401 Unauthorized: authentication required",
+			),
+			expectedPrimaryRole: "AcrPush",
+			expectedRoleID:      roleAcrPush,
+			expectedPathContext: "data-plane push",
+		},
+		{
+			name: "acr token exchange failure",
+			err: errors.New(
+				"failed to fetch oauth token for myregistry.azurecr.io: insufficient_scope",
+			),
+			expectedPrimaryRole: "AcrPush",
+			expectedRoleID:      roleAcrPush,
+			expectedPathContext: "data-plane push",
+		},
+		{
+			name: "actionable docker login suggestion is overridden",
+			err: actionableStatusError(
+				t,
+				"pushing image to myregistry.azurecr.io failed: 403 Forbidden",
+				"When pushing to an external registry, run 'docker login' and try again",
+			),
+			expectedPrimaryRole: "AcrPush",
+			expectedRoleID:      roleAcrPush,
+			expectedPathContext: "data-plane push",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := publishWithContainerError(t, tt.err)
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected LocalError, got %T: %v", err, err)
+			require.Equal(t, exterrors.CodeACRPermissionDenied, localErr.Code,
+				"should classify as permission denied, not %q", localErr.Code)
+			require.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+			require.Contains(t, localErr.Message,
+				"does not have permission to push")
+			require.Contains(t, localErr.Suggestion, tt.expectedPathContext,
+				"suggestion should identify the failing path")
+			require.Contains(t, localErr.Suggestion, tt.expectedPrimaryRole,
+				"suggestion prose should name the role")
+			require.Contains(t, localErr.Suggestion, tt.expectedRoleID,
+				"suggestion should include the role ID alongside the name")
+			require.Contains(t, localErr.Suggestion,
+				fmt.Sprintf(`--role %s`, tt.expectedRoleID),
+				"az command should use the role GUID for stability")
+			require.NotContains(t, localErr.Suggestion,
+				fmt.Sprintf(`--role "%s"`, tt.expectedPrimaryRole),
+				"az command should not use the display name -- use the GUID instead")
+			require.Contains(t, localErr.Suggestion, "AZD_AGENT_SKIP_ACR")
+			require.Contains(t, localErr.Suggestion, "code_configuration")
+			require.Contains(t, localErr.Suggestion, "azd up")
+			require.NotContains(t, localErr.Suggestion, "docker login")
+			require.NotContains(t, localErr.Suggestion, "allowlist the public outbound IP/CIDR")
+		})
+	}
+}
+
+// TestPublish_ACRPermissionGuidance_DynamicSubstitution verifies that when the
+// underlying ARM error includes the principal object id and ACR resource scope
+// (typical of remoteBuild=true RBAC failures), those values are substituted
+// into the example `az role assignment create` command so the user can copy
+// and paste it directly. Also confirms the remote-build path triggers the
+// "Container Registry Tasks Contributor" recommendation (via GUID), not
+// "AcrPush" (AcrPush is data-plane only and does NOT grant
+// listBuildSourceUploadUrl).
+func TestPublish_ACRPermissionGuidance_DynamicSubstitution(t *testing.T) {
+	t.Parallel()
+
+	err := publishWithContainerError(t, errors.New(initTest15RemoteBuildRBACError))
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected LocalError, got %T: %v", err, err)
+	require.Equal(t, exterrors.CodeACRPermissionDenied, localErr.Code)
+
+	// Both identifiers from the captured fixture must appear inline in the
+	// command -- not as placeholders -- so the user can paste it as-is.
+	// The role is identified by its definition GUID, not its display name,
+	// so the command remains valid even if Azure ever renames the role.
+	expectedCmd := fmt.Sprintf(
+		`az role assignment create `+
+			`--assignee 209256b0-0f0c-41f4-a7e2-bceaba1ca711 `+
+			`--role %s `+
+			`--scope /subscriptions/5f416acb-98a5-411a-808e-f37c0fbbbdb5/`+
+			`resourceGroups/rg-init-test-15-dev/providers/Microsoft.ContainerRegistry/`+
+			`registries/crpjhtjmfdtwcau`,
+		roleContainerRegistryTasksContributor,
+	)
+	require.Contains(t, localErr.Suggestion, expectedCmd)
+	require.NotContains(t, localErr.Suggestion, "<your-object-id>")
+	require.NotContains(t, localErr.Suggestion, "<acr-resource-id>")
+}
+
+// TestPublish_ACRPermissionGuidance_PlaceholderFallback verifies that when the
+// error shape lacks an object id and/or ACR scope (e.g. docker-push errors
+// from the local-build path), the suggestion gracefully falls back to
+// placeholder tokens rather than emitting a broken command. The local-push
+// path also gets the AcrPush GUID recommendation, not Tasks Contributor.
+func TestPublish_ACRPermissionGuidance_PlaceholderFallback(t *testing.T) {
+	t.Parallel()
+
+	err := publishWithContainerError(t, errors.New(
+		"failed to push image to myregistry.azurecr.io/app:v1: "+
+			"denied: requested access to the resource is denied",
+	))
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected LocalError, got %T: %v", err, err)
+	require.Equal(t, exterrors.CodeACRPermissionDenied, localErr.Code)
+	require.Contains(t, localErr.Suggestion, "<your-object-id>")
+	require.Contains(t, localErr.Suggestion, "<acr-resource-id>")
+	require.Contains(t, localErr.Suggestion, fmt.Sprintf(
+		`az role assignment create --assignee <your-object-id> --role %s --scope <acr-resource-id>`,
+		roleAcrPush,
+	))
+}
+
 func TestPublish_GenericPublishErrorsAreNotClassifiedAsPrivateACR(t *testing.T) {
 	t.Parallel()
 
@@ -1113,7 +1420,11 @@ func TestPublish_GenericPublishErrorsAreNotClassifiedAsPrivateACR(t *testing.T) 
 			err:  errors.New("denied: requested access to the resource is denied"),
 		},
 		{
-			name: "remote build dockerfile failure without acr network signal",
+			name: "non-acr 403 forbidden",
+			err:  errors.New("403 forbidden from foundry control plane"),
+		},
+		{
+			name: "remote build dockerfile failure without acr context",
 			err: errors.New(
 				"remote build failed: Dockerfile parse error\n\n" +
 					"Local fallback unavailable: Docker is not installed",
@@ -1129,7 +1440,8 @@ func TestPublish_GenericPublishErrorsAreNotClassifiedAsPrivateACR(t *testing.T) 
 
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok, "expected LocalError, got %T: %v", err, err)
-			require.Equal(t, exterrors.OpContainerPublish, localErr.Code)
+			require.Equal(t, exterrors.OpContainerPublish, localErr.Code,
+				"should fall through to internal, not %q", localErr.Code)
 			require.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
 			require.Contains(t, localErr.Message, "container publish failed")
 		})

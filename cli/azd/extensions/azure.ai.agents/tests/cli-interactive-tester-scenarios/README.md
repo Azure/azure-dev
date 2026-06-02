@@ -1,4 +1,4 @@
-<!-- cspell:ignore benhanrahan -->
+<!-- cspell:ignore benhanrahan azdaiagent -->
 # `azd ai agent` — cli-interactive-tester scenarios
 
 Goal-based scenarios for driving the `azure.ai.agents` extension through the
@@ -47,6 +47,34 @@ Implications:
 
 On macOS/Linux these are simply native paths (no WSL involved).
 
+## Authentication
+
+Tier 1 and Tier 2 scenarios read from / write to Azure, so a **human must log in
+manually before** starting a run. The scenarios do **not** perform login
+themselves, and the test-driving agent **cannot** complete it either: `az login`
+opens a **separate browser window** for account selection that requires
+human interaction outside the terminal the agent controls. Treat auth as a
+one-time manual prerequisite, not a scenario step.
+
+Inside WSL, a human runs:
+
+```
+az login --tenant azdaiagent.onmicrosoft.com
+```
+
+This opens the interactive sign-in flow and then:
+
+1. **Browser account selection** — a separate browser window opens; the human
+   picks the account in the `azdaiagent.onmicrosoft.com` tenant. (The agent
+   cannot do this.)
+2. **Subscription selection** — back in the terminal, select the
+   `azd ai agent development` subscription.
+
+Tier 0 (`00-`) scenarios need no auth. Run this `az login` step once per WSL
+session **before** asking the agent to drive any Tier 1/Tier 2 scenario; all of
+them reuse that session credential.
+
+
 ## Tiers
 
 Scenarios are organized into three tiers by cost and prerequisites.
@@ -68,7 +96,7 @@ in any order, any time.
 | `00-init-picker-navigation.yaml` | `init` interactive picker UX (abort before Azure) |
 
 ### Tier 1 — Auth, scaffold only (prefix `10-`)
-Requires `azd auth login` (reads subscriptions/Foundry projects) but **does not
+Requires Azure login (reads subscriptions/Foundry projects) but **does not
 provision** any resources and incurs no cost. Each completes a project scaffold
 and verifies the generated files, then stops before `azd provision`.
 
@@ -116,6 +144,12 @@ so they operate on the same deployed agent.
 - **Subscription**: `azd ai agent development`
 - **Region**: `East US 2`
 - **Model**: `gpt-4.1-mini` (cheap/fast for testing)
+- **Resource name prefix**: every newly created Azure resource (Foundry
+  project/account, azd environment, agent, model deployment, resource group) is
+  named with a `trangevi-` prefix so test resources are easy to identify and
+  clean up. Note that some fields lowercase the value and replace invalid
+  characters with hyphens — that normalization is expected (see
+  `sanitizeAgentName` in the extension).
 - `command:` invokes the installed extension as `azd ai agent …`.
 - Init scenarios set `env: AZD_DISABLE_AGENT_DETECT: "1"` to disable agent
   auto-detection prompts.

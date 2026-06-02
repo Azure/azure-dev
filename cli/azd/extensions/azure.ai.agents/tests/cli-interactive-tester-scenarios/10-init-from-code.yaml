@@ -1,6 +1,6 @@
 # Tier 1 (auth, scaffold only) — init from existing code in the current directory.
 #
-# Requires `azd auth login`. Does NOT run `azd provision`; no cost incurred.
+# Requires Azure login (see README "Authentication"): `az login --tenant azdaiagent.onmicrosoft.com`. Does NOT run `azd provision`; no cost incurred.
 # Precondition: the cwd should already contain agent source code (and ideally an
 # agent manifest). The pre hooks seed a committed Python fixture so this is
 # guaranteed and the run is idempotent. Override the fixture location with
@@ -21,9 +21,10 @@ pre:
     name: "seed from-code agent fixture (app.py + requirements.txt)"
 
 goals:
+  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with 'trangevi-' (e.g. 'trangevi-basic-responses'). Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected."
   - "Wait for the tool to inspect the current directory and treat its code as the agent source."
   - "If an existing agent manifest is detected, confirm that you want to reuse it (answer yes / confirm)."
-  - "If asked to select an Azure AI Foundry project, choose to create a new one and follow the prompts."
+  - "If asked to select an Azure AI Foundry project, choose to create a new one, naming it with the 'trangevi-' prefix, and follow the prompts."
   - "If asked to select a subscription, search for and select the 'azd ai agent development' subscription."
   - "If asked for a location/region, select 'East US 2'."
   - "If asked to select a model, choose 'gpt-4.1-mini' and accept the remaining model defaults."

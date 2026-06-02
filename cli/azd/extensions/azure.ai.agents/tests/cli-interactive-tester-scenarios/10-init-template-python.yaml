@@ -1,6 +1,6 @@
 # Tier 1 (auth, scaffold only) — init from a Python template, stop before provision.
 #
-# Requires `azd auth login`. Reads subscriptions/Foundry projects but does NOT
+# Requires Azure login (see README "Authentication"): `az login --tenant azdaiagent.onmicrosoft.com`. Reads subscriptions/Foundry projects but does NOT
 # run `azd provision`, so no resources are created and no cost is incurred.
 name: "init-template-python"
 command: "azd ai agent init"
@@ -16,15 +16,16 @@ pre:
     name: "reset working dir"
 
 goals:
+  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with 'trangevi-' (e.g. 'trangevi-basic-responses'). Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected."
   - "When asked how to initialize, select 'Start new from a template'."
   - "Select Python as the language."
   - "Pick the first starter template in the list."
   - "When asked how to deploy, select 'Container' (hosted agent)."
-  - "If asked to select an Azure AI Foundry project, choose to create a new one and follow the prompts."
+  - "If asked to select an Azure AI Foundry project, choose to create a new one, naming it with the 'trangevi-' prefix, and follow the prompts."
   - "If asked to select a subscription, search for and select the 'azd ai agent development' subscription."
   - "If asked for a location/region, select 'East US 2'."
   - "When asked to select a model, choose 'gpt-4.1-mini'."
-  - "Accept the defaults for model version, SKU, capacity, and deployment name."
+  - "Accept the defaults for model version, SKU, capacity. If prompted for a model deployment name, use a 'trangevi-'-prefixed name."
   - "If asked for container/resource size, select 'Small'."
   - "Wait for initialization to complete — look for 'Next:' or a success message."
   - "Verify the scaffold: confirm azure.yaml exists and references an azure.ai.agent service, and that an agent.yaml was generated."

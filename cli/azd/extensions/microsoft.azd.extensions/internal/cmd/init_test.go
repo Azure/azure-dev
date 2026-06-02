@@ -468,6 +468,23 @@ func TestValidationWarningSummary(t *testing.T) {
 	assert.Equal(t, "2 validation warnings", validationWarningSummary([]string{"first", "second"}))
 }
 
+func TestWriteBuildFailureOutput(t *testing.T) {
+	t.Run("writes heading and output when present", func(t *testing.T) {
+		var buf bytes.Buffer
+		writeBuildFailureOutput(&buf, "\n build failed at step 2 \n")
+
+		out := buf.String()
+		assert.Contains(t, out, "Build output:")
+		assert.Contains(t, out, "build failed at step 2")
+	})
+
+	t.Run("no output when empty", func(t *testing.T) {
+		var buf bytes.Buffer
+		writeBuildFailureOutput(&buf, "  \n\t")
+		assert.Empty(t, buf.String())
+	})
+}
+
 func TestSubprocessErrorTail(t *testing.T) {
 	tests := []struct {
 		name string

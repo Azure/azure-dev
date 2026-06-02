@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -124,9 +125,13 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 	}
 
 	var buildWarnings []string
+	var buildFailureOutput string
 	// Flush collected validation warnings after the live TaskList canvas completes,
 	// regardless of whether a later task fails.
-	defer func() { writeCollectedWarnings(os.Stdout, buildWarnings) }()
+	defer func() {
+		writeCollectedWarnings(os.Stdout, buildWarnings)
+		writeBuildFailureOutput(os.Stderr, buildFailureOutput)
+	}()
 
 	taskList := ux.NewTaskList(nil).
 		AddTask(ux.TaskOptions{
@@ -203,10 +208,11 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 
 					if result, err := cmd.CombinedOutput(); err != nil {
 						flags.skipInstall = true
+						buildFailureOutput = string(result)
 
 						return ux.Error, common.NewDetailedError(
-							"Build Failed",
-							fmt.Errorf("failed to build artifacts: %s, %w", string(result), err),
+							"Build failed"+subprocessErrorTail(result),
+							fmt.Errorf("failed to build artifacts: %w", err),
 						)
 					}
 				}
@@ -419,4 +425,15 @@ func defaultBuildFlags(flags *buildFlags) {
 	if flags.outputPath == "" {
 		flags.outputPath = "bin"
 	}
+}
+
+func writeBuildFailureOutput(writer io.Writer, buildOutput string) {
+	trimmed := strings.TrimSpace(buildOutput)
+	if trimmed == "" {
+		return
+	}
+
+	fmt.Fprintln(writer, output.WithErrorFormat("Build output:"))
+	fmt.Fprintln(writer, trimmed)
+	fmt.Fprintln(writer)
 }

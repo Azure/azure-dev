@@ -257,9 +257,10 @@ func (c *AgentClient) PatchAgent(
 	return &agent, nil
 }
 
-// DeleteAgent deletes an agent
-func (c *AgentClient) DeleteAgent(ctx context.Context, agentName, apiVersion string) (*DeleteAgentResponse, error) {
-	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
+// DeleteAgent deletes an agent. When force is true, the agent is deleted even
+// if it has active sessions.
+func (c *AgentClient) DeleteAgent(ctx context.Context, agentName, apiVersion string, force bool) (*DeleteAgentResponse, error) {
+	url := fmt.Sprintf("%s/agents/%s?api-version=%s&force=%t", c.endpoint, agentName, apiVersion, force)
 
 	req, err := runtime.NewRequest(ctx, http.MethodDelete, url)
 	if err != nil {

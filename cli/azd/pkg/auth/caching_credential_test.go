@@ -5,6 +5,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -20,6 +21,7 @@ import (
 type countingCredential struct {
 	calls     atomic.Int32
 	token     azcore.AccessToken
+	err       error
 	gate      chan struct{}
 	gateReady chan struct{}
 }
@@ -32,6 +34,9 @@ func (c *countingCredential) GetToken(
 	if c.gate != nil {
 		c.gateReady <- struct{}{}
 		<-c.gate
+	}
+	if c.err != nil {
+		return azcore.AccessToken{}, c.err
 	}
 	return c.token, nil
 }
@@ -83,6 +88,28 @@ func TestCachingCredentialRefreshesNearExpiry(t *testing.T) {
 	_, err = cred.GetToken(t.Context(), opts)
 	require.NoError(t, err)
 
+	require.Equal(t, int32(2), inner.calls.Load())
+}
+
+func TestCachingCredentialDoesNotCacheErrors(t *testing.T) {
+	inner := &countingCredential{err: errors.New("boom")}
+	cred := newCachingCredential(inner)
+
+	opts := policy.TokenRequestOptions{Scopes: []string{"scope"}}
+
+	// A failed acquisition must not be written to the cache, otherwise a single transient `az`
+	// failure would wedge auth for the rest of the command.
+	_, err := cred.GetToken(t.Context(), opts)
+	require.Error(t, err)
+
+	// A subsequent successful acquisition for the same key should reach the inner credential and
+	// return the fresh token rather than a cached error.
+	inner.err = nil
+	inner.token = azcore.AccessToken{Token: "ok", ExpiresOn: time.Now().Add(time.Hour)}
+
+	tk, err := cred.GetToken(t.Context(), opts)
+	require.NoError(t, err)
+	require.Equal(t, "ok", tk.Token)
 	require.Equal(t, int32(2), inner.calls.Load())
 }
 

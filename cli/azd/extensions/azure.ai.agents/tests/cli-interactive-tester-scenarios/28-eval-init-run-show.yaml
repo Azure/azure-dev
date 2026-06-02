@@ -1,0 +1,23 @@
+# Tier 2 (cloud E2E) — `eval` flow: init a suite, run it, then list/show results.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully
+# (a deployed agent is required to generate and run evals).
+name: "eval-init-run-show"
+command: "bash"
+cwd: "~/working/azd-agents-shared"
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Run: azd ai agent eval init --gen-instruction \"This agent answers general questions concisely.\" --eval-model gpt-4.1-mini --max-samples 15 and wait for it to generate an eval config and dataset."
+  - "Confirm an eval.yaml (and dataset) is written to the project root."
+  - "Run: azd ai agent eval run and wait for the evaluation run to complete."
+  - "Run: azd ai agent eval list and confirm the run appears."
+  - "Run: azd ai agent eval show and confirm run details / scores are displayed."
+  - "Take a screenshot after init, run, and show."
+  - "Report a finding if generation fails, eval.yaml is malformed, the run errors, or results are missing/unreadable."

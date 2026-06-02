@@ -1,0 +1,30 @@
+# Tier 2 (cloud E2E) — run the agent locally and invoke it via --local.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run (project scaffolded).
+# `azd ai agent run` blocks the terminal, so this needs TWO sessions: one runs the
+# agent, a second invokes it with --local.
+name: "run-local-and-invoke-local"
+command: "azd ai agent run --no-inspector"
+cwd: "~/working/azd-agents-shared"
+
+notes: |
+  Use two tester sessions:
+    - session_id "run": runs 'azd ai agent run --no-inspector' (this 'command').
+    - session_id "invoke": a bash session for 'azd ai agent invoke --local'.
+  The agent listens on port 8088 by default. Stop the run session with Ctrl-C at the end.
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "In the run session, wait until the local agent reports it is listening (look for a port 8088 / 'listening' message). --no-inspector is used so the Agent Inspector is not launched."
+  - "Start a SECOND session (session_id 'invoke') running bash in the same cwd."
+  - "In the invoke session, run: azd ai agent invoke --local \"Hello from local!\" and wait for a response from the locally running agent."
+  - "Confirm the response comes from the local process (not Foundry) and is non-empty."
+  - "Take a screenshot of both the run session (showing it listening) and the invoke response."
+  - "Stop the run session with Ctrl-C and confirm the local agent shuts down cleanly."
+  - "Report a finding if the local server fails to start, if --local invoke cannot reach it, or if shutdown is messy."

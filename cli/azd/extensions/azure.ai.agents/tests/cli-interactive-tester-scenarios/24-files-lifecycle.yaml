@@ -1,0 +1,28 @@
+# Tier 2 (cloud E2E) — `files` lifecycle: upload, list, stat, mkdir, download, delete.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+# Targets the `files` command group end-to-end against the last invoke session.
+# Note: file operations target a session — run an invoke first if no session exists.
+name: "files-lifecycle"
+command: "bash"
+cwd: "~/working/azd-agents-shared"
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Ensure a session exists: run 'azd ai agent invoke \"hi\"' first so files commands have a session to target (or pass --session-id consistently)."
+  - "Create a local test file: printf 'col1,col2\\n1,2\\n' > sample.csv"
+  - "Run: azd ai agent files upload ./sample.csv --target-path /data/sample.csv. Confirm success."
+  - "Run: azd ai agent files list /data --output table. Confirm sample.csv is listed."
+  - "Run: azd ai agent files stat /data/sample.csv. Confirm metadata (size/type) is returned."
+  - "Run: azd ai agent files mkdir /data/output. Confirm the directory is created."
+  - "Run: azd ai agent files download /data/sample.csv --target-path ./downloaded.csv. Confirm the file downloads and its contents match the original."
+  - "Run: azd ai agent files delete /data/output --recursive and azd ai agent files delete /data/sample.csv. Confirm both are removed."
+  - "Run: azd ai agent files list /data and confirm the deleted entries are gone."
+  - "Take a screenshot after each step."
+  - "Report a finding if any subcommand errors, if upload/download corrupts the file, or if a session cannot be resolved."

@@ -1,0 +1,17 @@
+# Tier 0 (offline) — `doctor --local-only` skips remote checks.
+name: "doctor-local-only"
+command: "azd ai agent doctor --local-only"
+cwd: "~/working/azd-agents-doctor-empty"
+
+# Guarantee an empty working dir for a deterministic local-only run.
+pre:
+  - run: "rm -rf ~/working/azd-agents-doctor-empty"
+    cwd: "~/working"
+    name: "reset to an empty working dir"
+
+goals:
+  - "Run doctor with --local-only. Wait for the report to render."
+  - "Confirm only local checks are attempted and remote/network-dependent checks are skipped (the report should indicate skipped remote checks)."
+  - "Confirm the run completes without attempting any network calls and without crashing."
+  - "Take a screenshot of the report."
+  - "Report a finding if remote checks still run, or if the output is confusing about what was skipped."

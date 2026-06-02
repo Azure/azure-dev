@@ -1,0 +1,11 @@
+# Tier 0 (offline) — verify root help lists every expected subcommand.
+name: "help-root"
+command: "azd ai agent --help"
+cwd: "/tmp"
+
+goals:
+  - "Wait for the help output to render (it includes an ASCII-art banner and a 'Usage:' section)."
+  - "Confirm the 'Available Commands' list includes: doctor, endpoint, eval, files, init, invoke, monitor, optimize, run, sample, sessions, show, version."
+  - "Confirm the global flags are listed: --cwd/-C, --debug, --environment/-e, --no-prompt, --output/-o."
+  - "Take a screenshot of the help output."
+  - "Report a finding if any listed command is missing, if the usage text is malformed, or if the command exits non-zero."

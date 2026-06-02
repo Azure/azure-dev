@@ -1,0 +1,30 @@
+# Tier 0 (offline) — exercise the `init` interactive picker UX, then abort.
+#
+# This scenario probes the early interactive prompts only (init mode, language,
+# template list). It intentionally ABORTS with Ctrl-C before reaching any Azure /
+# Foundry project prompts, so it needs no Azure auth and creates no resources.
+name: "init-picker-navigation"
+command: "azd ai agent init"
+cwd: "~/working/azd-agents-picker"
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+# Clean dir so the abort-before-Azure check can't be confused by prior state.
+pre:
+  - run: "rm -rf ~/working/azd-agents-picker"
+    cwd: "~/working"
+    name: "reset working dir"
+
+goals:
+  - "Wait for the first prompt asking how to initialize (e.g. start from a template / use existing code / use a manifest)."
+  - "Select 'Start new from a template', then wait for the language prompt."
+  - "Select a language (Python), then wait for the template list prompt."
+  - "On the template list, type a partial search string to filter the list; confirm the list narrows to matching entries."
+  - "Type a string that matches nothing; confirm the list shows an empty/no-match state and does not crash."
+  - "Clear the filter (backspace) and confirm the full list returns."
+  - "Press Down many times past the end of the list; confirm selection stays bounded and does not error."
+  - "If a prompt mentions a '?' hint, press '?' and confirm a helpful hint is shown."
+  - "Take a screenshot at each interesting state."
+  - "Press Ctrl-C (or Escape at the top-level prompt) to abort. Confirm it exits cleanly without a stack trace and without leaving a half-written azure.yaml."
+  - "Report a finding for any picker glitch: filter not recovering, crash on no-match, unbounded scrolling, unhelpful hints, or a messy/abrupt abort."

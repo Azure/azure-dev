@@ -1,0 +1,20 @@
+# Tier 2 (cloud E2E) — `endpoint update` patches endpoint/card without a new version.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+name: "endpoint-update"
+command: "azd ai agent endpoint update"
+cwd: "~/working/azd-agents-shared"
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Run endpoint update for the default (auto-detected) agent service."
+  - "Confirm it patches the existing deployed agent's endpoint/card configuration and explicitly does NOT create a new agent version."
+  - "After it completes, run 'azd ai agent show' and confirm the agent version is unchanged from before the update."
+  - "Take a screenshot of the update result and the post-update 'show' output."
+  - "Report a finding if endpoint update creates a new version, errors against an already-deployed agent, or gives a confusing result."

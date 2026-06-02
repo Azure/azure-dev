@@ -1,0 +1,21 @@
+# Tier 2 (cloud E2E) — `optimize` submit (no-wait) then check status/list.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+name: "optimize-submit-status"
+command: "bash"
+cwd: "~/working/azd-agents-shared"
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Run: azd ai agent optimize --eval-model gpt-4.1-mini --max-iterations 1 --no-wait (agent auto-detected from the azd project). Provide any other values it prompts for using sensible defaults."
+  - "Confirm a job is submitted and an optimization job ID is printed (the command returns immediately due to --no-wait)."
+  - "Run: azd ai agent optimize status <id> using the printed ID and confirm a status is reported."
+  - "Run: azd ai agent optimize list and confirm the submitted job appears in recent runs."
+  - "Take a screenshot after submit, status, and list."
+  - "Report a finding if submission fails, the job ID is not surfaced, or status/list cannot find the job. (Optional: cancel with 'azd ai agent optimize cancel <id>' to avoid leaving it running.)"

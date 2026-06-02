@@ -1,0 +1,23 @@
+# Tier 2 (cloud E2E) — `sessions` lifecycle: create, list, show, delete.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+# Targets the `sessions` command group end-to-end in one run.
+name: "sessions-lifecycle"
+command: "bash"
+cwd: "~/working/azd-agents-shared"
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Run: azd ai agent sessions create. Confirm a new session is created and note its session ID."
+  - "Run: azd ai agent sessions list --output table. Confirm the newly created session appears in the list."
+  - "Run: azd ai agent sessions show <session-id> using the ID from create. Confirm session details (status, version) are shown."
+  - "Run: azd ai agent sessions delete <session-id>. Confirm the session is deleted (synchronously)."
+  - "Run: azd ai agent sessions list again and confirm the deleted session no longer appears."
+  - "Take a screenshot after each step."
+  - "Report a finding if any subcommand errors, if the created session is missing from list, or if delete does not remove it."

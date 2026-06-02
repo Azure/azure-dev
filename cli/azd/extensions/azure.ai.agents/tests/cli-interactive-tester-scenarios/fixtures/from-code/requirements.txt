@@ -1,0 +1,4 @@
+# Minimal dependency set so `azd ai agent init --from-code` detects a Python
+# project. Keep this lightweight — the Tier 1 from-code scenarios only scaffold
+# and do not install or run the agent.
+azure-ai-projects

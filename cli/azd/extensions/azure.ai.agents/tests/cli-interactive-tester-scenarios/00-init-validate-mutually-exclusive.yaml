@@ -1,0 +1,20 @@
+# Tier 0 (offline) — `init` rejects mutually exclusive --from-code and --manifest.
+name: "init-validate-mutually-exclusive"
+command: "azd ai agent init --from-code -m https://example.com/agent.manifest.yaml"
+cwd: "~/working/azd-agents-validate"
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+# Start from a clean dir so leftover files can't affect the validation result.
+pre:
+  - run: "rm -rf ~/working/azd-agents-validate"
+    cwd: "~/working"
+    name: "reset working dir"
+
+goals:
+  - "Wait for the command to fail fast (it should not start the interactive wizard)."
+  - "Confirm the error message clearly states that --from-code and --manifest/-m are mutually exclusive."
+  - "Confirm the process exits non-zero and does NOT create or modify any project files in the directory."
+  - "Take a screenshot of the error output."
+  - "Report a finding if the flags are silently accepted, if the wizard starts anyway, or if the error message is unclear about the conflict."

@@ -1,0 +1,35 @@
+# Tier 1 (auth, scaffold only) — interactive code-deploy mode (entry point + runtime).
+#
+# Requires `azd auth login`. Does NOT run `azd provision`; no cost incurred.
+# Targets the --deploy-mode code path which prompts for entry-point and runtime
+# (instead of building a container image).
+name: "init-deploy-mode-code"
+command: "azd ai agent init --from-code --deploy-mode code"
+cwd: "~/working/azd-agents-t1-code-deploy"
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+# Seed a committed Python fixture so code-deploy has real source to package.
+# Override the fixture location with AZD_AGENTS_FIXTURES if needed.
+pre:
+  - run: "rm -rf ~/working/azd-agents-t1-code-deploy"
+    cwd: "~/working"
+    name: "reset working dir"
+  - run: "mkdir -p ~/working/azd-agents-t1-code-deploy && cp -r \"${AZD_AGENTS_FIXTURES:-/mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/fixtures}/from-code/.\" ~/working/azd-agents-t1-code-deploy/"
+    cwd: "~/working"
+    name: "seed from-code agent fixture (app.py + requirements.txt)"
+
+goals:
+  - "Wait for the tool to inspect the current directory's code with code-deploy (ZIP upload) mode selected."
+  - "If an existing agent manifest is detected, confirm reuse."
+  - "When prompted for an entry point, provide the main entry file (e.g. 'app.py')."
+  - "When prompted for a runtime, select an appropriate runtime (e.g. 'python_3_13')."
+  - "If asked to select an Azure AI Foundry project, choose to create a new one and follow the prompts."
+  - "If asked to select a subscription, search for and select the 'azd ai agent development' subscription."
+  - "If asked for a location/region, select 'East US 2'."
+  - "If asked to select a model, choose 'gpt-4.1-mini' and accept the remaining model defaults."
+  - "Wait for initialization to complete — look for 'Next:' or a success message."
+  - "Verify the scaffold: confirm azure.yaml/agent.yaml reflect code-deploy mode with the chosen entry point and runtime, and that a .agentignore file controls ZIP packaging."
+  - "Take a screenshot of the completed init output."
+  - "STOP here — do NOT run 'azd provision'. Report a finding if the entry-point or runtime prompts are missing, confusing, or not persisted."

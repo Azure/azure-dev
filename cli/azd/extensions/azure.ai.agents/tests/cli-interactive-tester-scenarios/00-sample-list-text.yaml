@@ -1,0 +1,10 @@
+# Tier 0 (offline) — `sample list` renders the human-readable catalog.
+name: "sample-list-text"
+command: "azd ai agent sample list"
+cwd: "/tmp"
+
+goals:
+  - "Wait for the curated sample catalog to render as human-readable text."
+  - "Confirm at least one sample entry is shown with a name/title and a manifest or repo reference usable with 'azd ai agent init -m' or 'azd init -t'."
+  - "Take a screenshot of the catalog output."
+  - "Report a finding if the list is empty, truncated, or the command errors."

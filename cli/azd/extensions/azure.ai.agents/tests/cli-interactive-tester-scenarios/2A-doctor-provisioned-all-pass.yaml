@@ -1,0 +1,21 @@
+# Tier 2 (cloud E2E) — `doctor` against a fully provisioned project (checks pass).
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+name: "doctor-provisioned-all-pass"
+command: "azd ai agent doctor"
+cwd: "~/working/azd-agents-shared"
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Run doctor against the provisioned project. Wait for the full check suite (local + remote) to render."
+  - "Confirm the local checks pass (project, azure.yaml, agent service config)."
+  - "Confirm the remote checks pass (deployed agent reachable / active)."
+  - "Confirm doctor suggests a sensible next command (e.g. invoke or run) and exits 0 (at least one check passed, none failed)."
+  - "Take a screenshot of the doctor report."
+  - "Report a finding if any check fails or is skipped unexpectedly for a healthy provisioned project, or if the suggested next step is wrong."

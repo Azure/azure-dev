@@ -1,0 +1,20 @@
+# Tier 2 (cloud E2E) — `invoke` a deployed agent remotely on Foundry.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+name: "invoke-remote"
+command: "azd ai agent invoke \"Hello! Tell me a one-sentence fun fact.\""
+cwd: "~/working/azd-agents-shared"
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Wait for the remote invocation to complete (the agent is auto-detected from azure.yaml)."
+  - "Confirm a non-empty model response is returned (not an error)."
+  - "Confirm the command does NOT 404 and the response references no auth/endpoint errors."
+  - "Take a screenshot of the response."
+  - "Report a finding if invoke returns a 404, an auth error, an empty response, or hangs past a reasonable timeout."

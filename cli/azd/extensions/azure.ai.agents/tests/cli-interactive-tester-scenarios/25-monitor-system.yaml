@@ -1,0 +1,21 @@
+# Tier 2 (cloud E2E) — `monitor --type system` container/system events.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully,
+# and at least one invoke has happened so a session exists.
+name: "monitor-system"
+command: "bash"
+cwd: "~/working/azd-agents-shared"
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Run: azd ai agent monitor --type system --tail 50. Confirm system/container event logs are fetched and printed."
+  - "Confirm the output is distinct from console logs (system events such as container lifecycle, not stdout/stderr)."
+  - "Optionally run: azd ai agent monitor --type system --follow for a few seconds to confirm streaming works, then stop it with Ctrl-C and confirm it exits cleanly."
+  - "Take a screenshot of the event output."
+  - "Report a finding if system logs are empty, indistinguishable from console logs, or if --follow does not stream / does not stop cleanly."

@@ -1,0 +1,20 @@
+# Tier 2 (cloud E2E) — `show --output json` returns well-formed JSON.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+name: "show-json"
+command: "azd ai agent show --output json"
+cwd: "~/working/azd-agents-shared"
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Wait for the command to print JSON."
+  - "Confirm the output is valid JSON and includes the agent name, version, status, and endpoint fields."
+  - "Confirm the JSON values match what the table form of 'show' reports."
+  - "Take a screenshot of the JSON output."
+  - "Report a finding if the JSON is malformed, missing expected fields, or inconsistent with the table output."

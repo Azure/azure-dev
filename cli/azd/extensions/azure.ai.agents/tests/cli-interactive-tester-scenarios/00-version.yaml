@@ -1,0 +1,10 @@
+# Tier 0 (offline) — verify `azd ai agent version` prints a version string.
+name: "version"
+command: "azd ai agent version"
+cwd: "/tmp"
+
+goals:
+  - "Wait for the command to print a version string (e.g. a value like '0.1.x-preview' or a commit-based 'vdev' build identifier)."
+  - "Confirm the process exits cleanly without an error or stack trace."
+  - "Take a screenshot of the final output."
+  - "Report a finding if no version is printed, if the output is empty, or if the command errors."

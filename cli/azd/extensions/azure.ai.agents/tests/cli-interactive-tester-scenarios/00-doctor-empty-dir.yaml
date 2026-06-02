@@ -1,0 +1,18 @@
+# Tier 0 (offline) — `doctor` in an empty directory degrades gracefully.
+name: "doctor-empty-dir"
+command: "azd ai agent doctor"
+cwd: "~/working/azd-agents-doctor-empty"
+
+# Guarantee an empty working dir so the "no azd project" path is exercised.
+# start_session recreates the dir, so removing it is enough.
+pre:
+  - run: "rm -rf ~/working/azd-agents-doctor-empty"
+    cwd: "~/working"
+    name: "reset to an empty working dir"
+
+goals:
+  - "Run doctor in a directory that has no azd project. Wait for the check report to render."
+  - "Confirm the command reports checks as skipped (or failed) with readable, non-crashing output — it should NOT panic or print a Go stack trace."
+  - "Note the exit code behavior described in help: 2 when all checks are skipped (preconditions unmet), 1 on failure, 0 when at least one passes."
+  - "Take a screenshot of the doctor report."
+  - "Report a finding if doctor crashes, prints a stack trace, or gives an unhelpful/confusing message for a missing project."

@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- Add support for the `policies.rai_config.rai_policy_name` field in `agent.yaml` to attach a Responsible AI (content safety) guardrail policy to hosted agents. The value is the full ARM resource ID of the RAI policy (for example, `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<account>/raiPolicies/<policyName>`). `azd deploy` forwards it to the Foundry data plane.
+
 ## 0.1.37-preview (2026-06-01)
 
 - [[#8512]](https://github.com/Azure/azure-dev/pull/8512) Normalize connection auth `AgenticIdentity` values to the ARM-required `AgenticIdentityToken`.

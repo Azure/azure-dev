@@ -384,6 +384,11 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 			case AgentKindHosted:
 				var agent ContainerAgent
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
+					if agent.Policies != nil && agent.Policies.RaiConfig != nil &&
+						agent.Policies.RaiConfig.RaiPolicyName == "" {
+						errors = append(errors,
+							"policies.rai_config requires a policy name (rai_policy_name)")
+					}
 					// TODO: Do we need this?
 					// if len(agent.Models) == 0 {
 					// 	errors = append(errors, "template.models is required and must not be empty")

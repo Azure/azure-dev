@@ -191,6 +191,18 @@ type CodeConfiguration struct {
 	DependencyResolution *string `json:"dependencyResolution,omitempty" yaml:"dependency_resolution,omitempty"`
 }
 
+// RaiConfig represents the Responsible AI (content safety) policy applied to a hosted agent.
+// RaiPolicyName is the full ARM resource ID of the RAI policy, for example
+// "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<account>/raiPolicies/<policyName>".
+type RaiConfig struct {
+	RaiPolicyName string `json:"raiPolicyName" yaml:"rai_policy_name"`
+}
+
+// AgentPolicies represents safety and governance policies for a hosted agent.
+type AgentPolicies struct {
+	RaiConfig *RaiConfig `json:"raiConfig,omitempty" yaml:"rai_config,omitempty"`
+}
+
 // ContainerAgent This represents a container based agent hosted by the provider/publisher.
 // The intent is to represent a container application that the user wants to run
 // in a hosted environment that the provider manages.
@@ -210,6 +222,7 @@ type ContainerAgent struct {
 	AgentEndpoint        *AgentEndpoint          `json:"agentEndpoint,omitempty" yaml:"agent_endpoint,omitempty"`
 	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agent_card,omitempty"`
 	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
+	Policies             *AgentPolicies          `json:"policies,omitempty" yaml:"policies,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.

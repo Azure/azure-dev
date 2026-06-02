@@ -714,3 +714,33 @@ func TestErrorSuggestionsYaml_LoadPipelineConfig(t *testing.T) {
 	require.NotNil(t, pipeline)
 	assert.NotEmpty(t, pipeline.rules, "pipeline must load rules from embedded YAML")
 }
+
+func TestErrorSuggestionsYaml_AADSTS700082_SpecificRule(t *testing.T) {
+	t.Parallel()
+	pipeline := NewErrorHandlerPipeline(nil)
+
+	// AADSTS700082 should match the specific rule, not just the generic AADSTS one
+	result := pipeline.Process(
+		t.Context(),
+		errors.New("AADSTS700082: The refresh token has expired due to inactivity"),
+	)
+	require.NotNil(t, result)
+	assert.Equal(t, "The refresh token has expired or been revoked.", result.Message)
+	assert.Contains(t, result.Suggestion, "azd auth login")
+	assert.Contains(t, result.Suggestion, "automatically clears stale cached tokens")
+}
+
+func TestErrorSuggestionsYaml_AADSTS_GenericRule(t *testing.T) {
+	t.Parallel()
+	pipeline := NewErrorHandlerPipeline(nil)
+
+	// A generic AADSTS error should match the broad rule and mention auto-clearing
+	result := pipeline.Process(
+		t.Context(),
+		errors.New("AADSTS530084: some other auth error"),
+	)
+	require.NotNil(t, result)
+	assert.Equal(t, "Authentication with Azure failed.", result.Message)
+	assert.Contains(t, result.Suggestion, "azd auth login")
+	assert.Contains(t, result.Suggestion, "automatically clears cached authentication data")
+}

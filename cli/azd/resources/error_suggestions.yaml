@@ -605,9 +605,20 @@ rules:
   # ============================================================================
 
   - patterns:
+      - "AADSTS700082"
+    message: "The refresh token has expired or been revoked."
+    suggestion: >-
+      Run 'azd auth login' to sign in again.
+      When already logged in, azd automatically clears stale cached tokens before
+      re-authenticating.
+
+  - patterns:
       - "AADSTS"
     message: "Authentication with Azure failed."
-    suggestion: "Run 'azd auth login' to sign in again."
+    suggestion: >-
+      Run 'azd auth login' to sign in again.
+      When already logged in, azd automatically clears cached authentication data before
+      re-authenticating to prevent stale token issues.
     links:
       - url: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
         title: "azd auth login reference"

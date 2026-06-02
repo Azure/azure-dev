@@ -1064,11 +1064,28 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := absolutizeRelativeManifestPaths(flags); err != nil {
 						return err
 					}
-					_, statErr := os.Stat(folderName)
-					newlyCreated := errors.Is(statErr, fs.ErrNotExist)
-					targetDir = folderName
-					if newlyCreated && !existingProject {
-						folderDisplay = filepath.ToSlash(folderName)
+
+					// When the manifest lives in the current directory, the agent
+					// source code is already here — treat it like --from-code and
+					// initialize in-place rather than copying files into a new
+					// subdirectory. The existing isSamePath guard in copyDirectory
+					// will skip the copy when src and dst resolve to the same path.
+					manifestInCwd := false
+					if isLocalFilePath(flags.manifestPointer) {
+						if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+							manifestInCwd = isSamePath(filepath.Dir(flags.manifestPointer), cwd)
+						}
+					}
+
+					if !manifestInCwd {
+						_, statErr := os.Stat(folderName)
+						newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+						targetDir = folderName
+						if newlyCreated && !existingProject {
+							folderDisplay = filepath.ToSlash(folderName)
+						}
+					} else if flags.src == "" {
+						flags.src = "."
 					}
 				}
 
@@ -1969,7 +1986,8 @@ func (a *InitAction) configureModelChoice(
 	return agentManifest, nil
 }
 
-func (a *InitAction) isLocalFilePath(path string) bool {
+// isLocalFilePath reports whether path refers to a local file (not an http/https URL).
+func isLocalFilePath(path string) bool {
 	// Check if it starts with http:// or https://
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 		return false
@@ -2142,7 +2160,7 @@ func (a *InitAction) downloadAgentYaml(
 	useGhCli := false
 
 	// Check if manifestPointer is a local file path or a URI
-	if a.isLocalFilePath(manifestPointer) {
+	if isLocalFilePath(manifestPointer) {
 		// Guard against directories (defense in depth — the caller should
 		// have caught this already, but check here for safety).
 		if err := checkNotDirectory(manifestPointer); err != nil {
@@ -2389,7 +2407,7 @@ func (a *InitAction) downloadAgentYaml(
 	a.serviceNameOverride = serviceName
 
 	// Safety checks for local container-based agents should happen before prompting for model SKU, etc.
-	if a.isLocalFilePath(manifestPointer) {
+	if isLocalFilePath(manifestPointer) {
 		if _, isContainerAgent := agentManifest.Template.(agent_yaml.ContainerAgent); isContainerAgent {
 			if err := a.validateLocalContainerAgentCopy(ctx, manifestPointer, targetDir); err != nil {
 				return nil, "", err
@@ -2403,7 +2421,7 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", fmt.Errorf("creating target directory %s: %w", targetDir, err)
 	}
 
-	if a.isLocalFilePath(manifestPointer) {
+	if isLocalFilePath(manifestPointer) {
 		// Check if the template is a ContainerAgent
 		_, isHostedContainer := agentManifest.Template.(agent_yaml.ContainerAgent)
 

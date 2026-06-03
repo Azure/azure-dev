@@ -3039,3 +3039,136 @@ func TestGenerateResourceTokenSalt_Unique(t *testing.T) {
 		seen[salt] = true
 	}
 }
+
+func TestComposeSaltedResourceGroupName(t *testing.T) {
+	t.Parallel()
+
+	const salt = "deadbeef" // 8 hex chars, matches generateResourceTokenSalt
+	// Build a long env name once for the truncation cases.
+	longEnvName := strings.Repeat("a", 100)
+	// 78 chars is the boundary: 90 - len("rg-") - 1 - len(salt) = 78
+	atBoundary := strings.Repeat("a", 78)
+	// Env name that, once truncated to 78, ends in a "-" we want to trim.
+	trailingDashEnv := strings.Repeat("a", 77) + "-" + strings.Repeat("b", 30)
+	// Env name that, once truncated to 78, ends in a "." we want to trim.
+	trailingDotEnv := strings.Repeat("a", 77) + "." + strings.Repeat("b", 30)
+
+	cases := []struct {
+		name     string
+		envName  string
+		salt     string
+		expected string
+	}{
+		{
+			name:     "short env name",
+			envName:  "myapp-dev",
+			salt:     salt,
+			expected: "rg-myapp-dev-" + salt,
+		},
+		{
+			name:     "env name at boundary",
+			envName:  atBoundary,
+			salt:     salt,
+			expected: "rg-" + atBoundary + "-" + salt,
+		},
+		{
+			name:     "env name over boundary is truncated, salt preserved",
+			envName:  longEnvName,
+			salt:     salt,
+			expected: "rg-" + strings.Repeat("a", 78) + "-" + salt,
+		},
+		{
+			name:     "trailing dash after truncation is trimmed",
+			envName:  trailingDashEnv,
+			salt:     salt,
+			expected: "rg-" + strings.Repeat("a", 77) + "-" + salt,
+		},
+		{
+			name:     "trailing dot after truncation is trimmed",
+			envName:  trailingDotEnv,
+			salt:     salt,
+			expected: "rg-" + strings.Repeat("a", 77) + "-" + salt,
+		},
+		{
+			name:     "empty salt returns name without trailing dash",
+			envName:  "myapp-dev",
+			salt:     "",
+			expected: "rg-myapp-dev",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := composeSaltedResourceGroupName(tc.envName, tc.salt)
+			require.Equal(t, tc.expected, got)
+			require.LessOrEqual(t, len(got), maxResourceGroupNameLen,
+				"composed name must not exceed Azure RG length limit")
+			if tc.salt != "" {
+				require.True(t, strings.HasSuffix(got, "-"+tc.salt),
+					"salt suffix must always be appended last, got %q", got)
+			}
+			require.False(t, strings.HasSuffix(got, "."),
+				"composed name must not end with '.'")
+		})
+	}
+}
+
+func TestEnsureResourceTokenSaltReturnsPersistedSalt(t *testing.T) {
+	envServer := &testEnvironmentServiceServer{}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+	const envName = "myapp-dev"
+
+	first := ensureResourceTokenSalt(t.Context(), azdClient, envName)
+	require.Len(t, first, 8, "newly generated salt should be 8 hex chars")
+	_, err := hex.DecodeString(first)
+	require.NoError(t, err, "salt should be valid hex")
+	require.Equal(t, first, envServer.values[envName][resourceTokenSaltKey],
+		"salt should be persisted to the env under AZD_RESOURCE_TOKEN_SALT")
+
+	// Idempotent: a second call returns the same persisted salt.
+	second := ensureResourceTokenSalt(t.Context(), azdClient, envName)
+	require.Equal(t, first, second, "second call should return the existing salt unchanged")
+}
+
+func TestEnsureResourceGroupNameWritesSaltedName(t *testing.T) {
+	envServer := &testEnvironmentServiceServer{}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+	const envName = "myapp-dev"
+	const salt = "deadbeef"
+
+	ensureResourceGroupName(t.Context(), azdClient, envName, salt)
+
+	got := envServer.values[envName][resourceGroupEnvKey]
+	require.Equal(t, "rg-myapp-dev-"+salt, got,
+		"AZURE_RESOURCE_GROUP should be written with the salt appended last")
+}
+
+func TestEnsureResourceGroupNameSkipsWhenAlreadySet(t *testing.T) {
+	const envName = "myapp-dev"
+	const existing = "rg-pre-existing"
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			envName: {resourceGroupEnvKey: existing},
+		},
+	}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+	ensureResourceGroupName(t.Context(), azdClient, envName, "deadbeef")
+
+	require.Equal(t, existing, envServer.values[envName][resourceGroupEnvKey],
+		"existing AZURE_RESOURCE_GROUP must not be overwritten")
+}
+
+func TestEnsureResourceGroupNameSkipsWhenSaltEmpty(t *testing.T) {
+	envServer := &testEnvironmentServiceServer{}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+	ensureResourceGroupName(t.Context(), azdClient, "myapp-dev", "")
+
+	_, ok := envServer.values["myapp-dev"][resourceGroupEnvKey]
+	require.False(t, ok, "no AZURE_RESOURCE_GROUP should be written when salt is empty")
+}

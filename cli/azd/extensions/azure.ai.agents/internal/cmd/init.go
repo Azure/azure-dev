@@ -1540,7 +1540,13 @@ func ensureProject(
 		// Best-effort: generate a salt so uniqueString()-based resource names
 		// differ across project recreations. If anything fails the Bicep
 		// templates fall back to the original deterministic hash.
-		ensureResourceTokenSalt(ctx, azdClient, envName)
+		salt := ensureResourceTokenSalt(ctx, azdClient, envName)
+
+		// Best-effort: write a salted AZURE_RESOURCE_GROUP so recreated
+		// projects get a fresh RG (avoiding collisions with leftovers from
+		// a prior teardown). Skipped when salt generation failed or when
+		// AZURE_RESOURCE_GROUP is already set.
+		ensureResourceGroupName(ctx, azdClient, envName, salt)
 
 		// Sync the extension process into the new project directory so that
 		// subsequent local file operations see the scaffolded project.
@@ -2701,33 +2707,45 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 //nolint:gosec // env var key name, not a credential
 const resourceTokenSaltKey = "AZD_RESOURCE_TOKEN_SALT"
 
+// resourceGroupEnvKey is the standard azd env var consumed by Bicep's
+// main.parameters.json (`"resourceGroupName": "${AZURE_RESOURCE_GROUP}"`).
+const resourceGroupEnvKey = "AZURE_RESOURCE_GROUP"
+
+// maxResourceGroupNameLen is the Azure resource group name length limit
+// (Microsoft.Resources/resourceGroups: 1-90 chars).
+const maxResourceGroupNameLen = 90
+
 // ensureResourceTokenSalt checks whether the current azd environment already
-// has a resource token salt. If not, it generates and stores one.
-// Failures are silently ignored so the Bicep templates fall back to the
-// original deterministic uniqueString() hash.
-func ensureResourceTokenSalt(ctx context.Context, azdClient *azdext.AzdClient, envName string) {
+// has a resource token salt. If not, it generates and stores one. Returns the
+// persisted salt value (existing or newly-generated), or an empty string if
+// no salt could be persisted (failures are silently ignored so the Bicep
+// templates fall back to the original deterministic uniqueString() hash).
+func ensureResourceTokenSalt(ctx context.Context, azdClient *azdext.AzdClient, envName string) string {
 	// Already have a salt from a previous init — keep it so resource names stay stable.
 	existing, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envName,
 		Key:     resourceTokenSaltKey,
 	})
 	if err == nil && existing.Value != "" {
-		return
+		return existing.Value
 	}
 
 	// Generate a random salt; if entropy fails, fall back to deterministic naming.
 	salt, err := generateResourceTokenSalt()
 	if err != nil {
-		return
+		return ""
 	}
 
 	// Persist the salt into the azd environment; if storage fails, provision
 	// will still work with the original deterministic resource names.
-	_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+	if _, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: envName,
 		Key:     resourceTokenSaltKey,
 		Value:   salt,
-	})
+	}); err != nil {
+		return ""
+	}
+	return salt
 }
 
 // generateResourceTokenSalt returns a random 8-character hex string.
@@ -2737,6 +2755,64 @@ func generateResourceTokenSalt() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// ensureResourceGroupName writes a salted AZURE_RESOURCE_GROUP value to the
+// azd environment when scaffolding a new project, so that recreating a
+// project with the same environment name produces a fresh resource group
+// (avoiding collisions with any leftover resources from a prior teardown).
+//
+// Best-effort: skipped when salt is empty or AZURE_RESOURCE_GROUP is
+// already set (preserving BYO / previously-provisioned values). Storage
+// failures are silently ignored so Bicep's default `rg-${environmentName}`
+// continues to work.
+func ensureResourceGroupName(ctx context.Context, azdClient *azdext.AzdClient, envName, salt string) {
+	if salt == "" {
+		return
+	}
+	existing, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     resourceGroupEnvKey,
+	})
+	if err == nil && existing.Value != "" {
+		return
+	}
+	name := composeSaltedResourceGroupName(envName, salt)
+	_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: envName,
+		Key:     resourceGroupEnvKey,
+		Value:   name,
+	})
+}
+
+// composeSaltedResourceGroupName returns `rg-{envName}-{salt}` with envName
+// truncated first so the salt is always appended and the final name fits
+// inside Azure's 90-char RG limit. Trailing "-" and "." characters are
+// trimmed off the truncated envName so the join doesn't produce "--" /
+// ".-" and the final name doesn't end with "." (which Azure disallows).
+//
+// Caller is expected to pass a non-empty salt; the function still produces
+// a valid name if salt is empty (no trailing dash) but that path is not
+// exercised by ensureResourceGroupName, which short-circuits in that case.
+func composeSaltedResourceGroupName(envName, salt string) string {
+	const prefix = "rg-"
+	suffixLen := 0
+	if salt != "" {
+		suffixLen = 1 + len(salt) // joiner "-" + salt
+	}
+	maxEnvName := maxResourceGroupNameLen - len(prefix) - suffixLen
+	if maxEnvName < 0 {
+		maxEnvName = 0
+	}
+	truncated := envName
+	if len(truncated) > maxEnvName {
+		truncated = truncated[:maxEnvName]
+	}
+	truncated = strings.TrimRight(truncated, "-.")
+	if salt == "" {
+		return prefix + truncated
+	}
+	return prefix + truncated + "-" + salt
 }
 
 // resolveCollisions checks whether the auto-computed target directory or

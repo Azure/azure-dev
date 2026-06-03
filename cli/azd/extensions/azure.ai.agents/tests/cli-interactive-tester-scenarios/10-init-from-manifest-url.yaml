@@ -3,19 +3,19 @@
 # Requires Azure login (see README "Authentication"): `az login --tenant azdaiagent.onmicrosoft.com`. Does NOT run `azd provision`; no cost incurred.
 name: "init-from-manifest-url"
 command: "azd ai agent init -m https://github.com/microsoft/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/01-basic/agent.manifest.yaml"
-cwd: "~/working/azd-agents-t1-manifest"
+cwd: "~/working/azd-agents-t1-manifest-{instance}"
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
 
 # Start from a clean dir so a prior run's scaffold can't trigger overwrite prompts.
 pre:
-  - run: "rm -rf ~/working/azd-agents-t1-manifest"
+  - run: "rm -rf ~/working/azd-agents-t1-manifest-{instance}"
     cwd: "~/working"
     name: "reset working dir"
 
 goals:
-  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with 'trangevi-' (e.g. 'trangevi-basic-responses'). Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected."
+  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with 'trangevi-' and suffixed with this run's instance id '-{instance}' (e.g. 'trangevi-basic-responses-{instance}') so concurrent instances don't collide on resource names. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected."
   - "Wait for the tool to fetch and parse the manifest from the provided URL."
   - "When asked how to deploy, select 'Container' (hosted agent)."
   - "If asked to select an Azure AI Foundry project, choose to create a new one, naming it with the 'trangevi-' prefix, and follow the prompts."

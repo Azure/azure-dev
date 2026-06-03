@@ -1,12 +1,12 @@
 # Tier 0 (offline) — `doctor` in an empty directory degrades gracefully.
 name: "doctor-empty-dir"
 command: "azd ai agent doctor"
-cwd: "~/working/azd-agents-doctor-empty"
+cwd: "~/working/azd-agents-doctor-empty-{instance}"
 
 # Guarantee an empty working dir so the "no azd project" path is exercised.
 # start_session recreates the dir, so removing it is enough.
 pre:
-  - run: "rm -rf ~/working/azd-agents-doctor-empty"
+  - run: "rm -rf ~/working/azd-agents-doctor-empty-{instance}"
     cwd: "~/working"
     name: "reset to an empty working dir"
 

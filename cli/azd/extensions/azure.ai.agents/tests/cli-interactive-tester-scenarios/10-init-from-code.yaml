@@ -7,21 +7,21 @@
 # AZD_AGENTS_FIXTURES if your repo is checked out elsewhere.
 name: "init-from-code"
 command: "azd ai agent init --from-code"
-cwd: "~/working/azd-agents-t1-from-code"
+cwd: "~/working/azd-agents-t1-from-code-{instance}"
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
 
 pre:
-  - run: "rm -rf ~/working/azd-agents-t1-from-code"
+  - run: "rm -rf ~/working/azd-agents-t1-from-code-{instance}"
     cwd: "~/working"
     name: "reset working dir"
-  - run: "mkdir -p ~/working/azd-agents-t1-from-code && cp -r \"${AZD_AGENTS_FIXTURES:-/mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/fixtures}/from-code/.\" ~/working/azd-agents-t1-from-code/"
+  - run: "mkdir -p ~/working/azd-agents-t1-from-code-{instance} && cp -r \"${AZD_AGENTS_FIXTURES:-/mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/fixtures}/from-code/.\" ~/working/azd-agents-t1-from-code-{instance}/"
     cwd: "~/working"
     name: "seed from-code agent fixture (app.py + requirements.txt)"
 
 goals:
-  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with 'trangevi-' (e.g. 'trangevi-basic-responses'). Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected."
+  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with 'trangevi-' and suffixed with this run's instance id '-{instance}' (e.g. 'trangevi-basic-responses-{instance}') so concurrent instances don't collide on resource names. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected."
   - "Wait for the tool to inspect the current directory and treat its code as the agent source."
   - "If an existing agent manifest is detected, confirm that you want to reuse it (answer yes / confirm)."
   - "If asked to select an Azure AI Foundry project, choose to create a new one, naming it with the 'trangevi-' prefix, and follow the prompts."

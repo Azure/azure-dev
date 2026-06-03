@@ -1,14 +1,14 @@
 # Tier 0 (offline) — `init --no-prompt` with no resolvable inputs fails helpfully.
 name: "init-validate-no-prompt-missing"
 command: "azd ai agent init --no-prompt"
-cwd: "~/working/azd-agents-validate-noprompt"
+cwd: "~/working/azd-agents-validate-noprompt-{instance}"
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
 
 # Empty dir is a precondition: no existing code/manifest to resolve from.
 pre:
-  - run: "rm -rf ~/working/azd-agents-validate-noprompt"
+  - run: "rm -rf ~/working/azd-agents-validate-noprompt-{instance}"
     cwd: "~/working"
     name: "reset to an empty working dir"
 

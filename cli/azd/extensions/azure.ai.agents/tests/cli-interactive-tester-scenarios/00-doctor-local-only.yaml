@@ -1,11 +1,11 @@
 # Tier 0 (offline) — `doctor --local-only` skips remote checks.
 name: "doctor-local-only"
 command: "azd ai agent doctor --local-only"
-cwd: "~/working/azd-agents-doctor-empty"
+cwd: "~/working/azd-agents-doctor-empty-{instance}"
 
 # Guarantee an empty working dir for a deterministic local-only run.
 pre:
-  - run: "rm -rf ~/working/azd-agents-doctor-empty"
+  - run: "rm -rf ~/working/azd-agents-doctor-empty-{instance}"
     cwd: "~/working"
     name: "reset to an empty working dir"
 

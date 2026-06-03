@@ -5,7 +5,7 @@
 # (instead of building a container image).
 name: "init-deploy-mode-code"
 command: "azd ai agent init --from-code --deploy-mode code"
-cwd: "~/working/azd-agents-t1-code-deploy"
+cwd: "~/working/azd-agents-t1-code-deploy-{instance}"
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
@@ -13,15 +13,15 @@ env:
 # Seed a committed Python fixture so code-deploy has real source to package.
 # Override the fixture location with AZD_AGENTS_FIXTURES if needed.
 pre:
-  - run: "rm -rf ~/working/azd-agents-t1-code-deploy"
+  - run: "rm -rf ~/working/azd-agents-t1-code-deploy-{instance}"
     cwd: "~/working"
     name: "reset working dir"
-  - run: "mkdir -p ~/working/azd-agents-t1-code-deploy && cp -r \"${AZD_AGENTS_FIXTURES:-/mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/fixtures}/from-code/.\" ~/working/azd-agents-t1-code-deploy/"
+  - run: "mkdir -p ~/working/azd-agents-t1-code-deploy-{instance} && cp -r \"${AZD_AGENTS_FIXTURES:-/mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/fixtures}/from-code/.\" ~/working/azd-agents-t1-code-deploy-{instance}/"
     cwd: "~/working"
     name: "seed from-code agent fixture (app.py + requirements.txt)"
 
 goals:
-  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with 'trangevi-' (e.g. 'trangevi-basic-responses'). Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected."
+  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with 'trangevi-' and suffixed with this run's instance id '-{instance}' (e.g. 'trangevi-basic-responses-{instance}') so concurrent instances don't collide on resource names. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected."
   - "Wait for the tool to inspect the current directory's code with code-deploy (ZIP upload) mode selected."
   - "If an existing agent manifest is detected, confirm reuse."
   - "When prompted for an entry point, provide the main entry file (e.g. 'app.py')."

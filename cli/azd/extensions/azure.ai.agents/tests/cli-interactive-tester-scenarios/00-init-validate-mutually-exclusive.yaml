@@ -1,14 +1,14 @@
 # Tier 0 (offline) — `init` rejects mutually exclusive --from-code and --manifest.
 name: "init-validate-mutually-exclusive"
 command: "azd ai agent init --from-code -m https://example.com/agent.manifest.yaml"
-cwd: "~/working/azd-agents-validate"
+cwd: "~/working/azd-agents-validate-{instance}"
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
 
 # Start from a clean dir so leftover files can't affect the validation result.
 pre:
-  - run: "rm -rf ~/working/azd-agents-validate"
+  - run: "rm -rf ~/working/azd-agents-validate-{instance}"
     cwd: "~/working"
     name: "reset working dir"
 

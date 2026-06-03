@@ -5,14 +5,14 @@
 # Foundry project prompts, so it needs no Azure auth and creates no resources.
 name: "init-picker-navigation"
 command: "azd ai agent init"
-cwd: "~/working/azd-agents-picker"
+cwd: "~/working/azd-agents-picker-{instance}"
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
 
 # Clean dir so the abort-before-Azure check can't be confused by prior state.
 pre:
-  - run: "rm -rf ~/working/azd-agents-picker"
+  - run: "rm -rf ~/working/azd-agents-picker-{instance}"
     cwd: "~/working"
     name: "reset working dir"
 

@@ -41,7 +41,9 @@ Implications:
 - `cwd` directories do not need to pre-exist — the tester creates them if missing.
 - The `cwd` convention is three-way by design: ephemeral `/tmp` for read-only
   scenarios that touch no project (`version`, `--help`, `sample list`); a unique
-  `~/working/azd-agents-*` dir per `init`/`doctor` scenario for isolation; and a
+  `~/working/azd-agents-*-{instance}` dir per `init`/`doctor` scenario for
+  isolation (the `{instance}` suffix keeps concurrent runs of the same scenario
+  apart — see [Parallel-readiness](#parallel-readiness--port-allocation)); and a
   single shared `~/working/azd-agents-shared` dir for all Tier 2 scenarios so they
   operate on the same deployed agent.
 
@@ -73,6 +75,55 @@ This opens the interactive sign-in flow and then:
 Tier 0 (`00-`) scenarios need no auth. Run this `az login` step once per WSL
 session **before** asking the agent to drive any Tier 1/Tier 2 scenario; all of
 them reuse that session credential.
+
+## Parallel-readiness & port allocation
+
+The tester can run **N concurrent instances of the same scenario** and can
+**allocate free TCP ports** per run. Scenarios here are authored to take
+advantage of both where it's safe.
+
+- **`{instance}` substitution.** `start_session(..., instance_id="1")` exposes
+  `{instance}` for substitution into `command`, `cwd`, `env`, hook fields, and
+  `goals`. It **defaults to `"main"`** when `instance_id` is omitted, so a single
+  run is unchanged (dirs/names just end in `-main`).
+- **Which scenarios are parallel-ready:**
+  - **Tier 0 work-dir scenarios** (`doctor`, picker, validate) and **all Tier 1
+    `init` scenarios** suffix their `cwd` (and hook paths) with `-{instance}`, so
+    concurrent instances get isolated working directories.
+  - **Tier 1 resource names** are suffixed with `-{instance}` too (via the
+    RESOURCE NAMING goal and the `--agent-name` flag), so parallel instances
+    don't collide on Azure resource names.
+  - **`27-run-local-and-invoke-local`** declares `allocate_ports: [agent]` and
+    binds `azd ai agent run`/`invoke --local` to `--port {agent}`. A port pool is
+    shared across every `start_session` with the same `scenario_path`, so the
+    `run` and `invoke` sessions find each other; parallel local runs each get a
+    distinct port instead of colliding on the default `8088`.
+- **Single-instance by design:** the **Tier 2 reuse scenarios** (`21-`…`2A-`),
+  plus `20-setup` and `2Z-teardown`, all share the one deployed agent in
+  `~/working/azd-agents-shared`. They are **not** parameterized with `{instance}`
+  (doing so would break the shared-agent assumption) and should be run serially.
+
+To fan out, pass a distinct `instance_id` per `start_session` call (and reuse the
+same `instance_id` for paired `run`/`invoke` sessions of one scenario).
+
+## Driving conventions
+
+These mirror the tester's own `AGENTS.md` ("Driving the MCP") — the driving agent
+should follow them so the runs actually *test* the CLI instead of papering over
+its bugs:
+
+- **Don't verify/retry after a `select`.** These runs exist to catch picker
+  bugs; reading back the echo and "correcting" a pick hides the very defect the
+  test is for. Send the action and let downstream prompts surface any failure.
+- **Treat a select miss as a hard failure.** The tester's `select_by_text` is
+  fail-loud: a missing target raises `LookupError`, surfaced as
+  `ERROR during 'select': …`. **Report a finding and stop** — do not retry with a
+  different `choice_text`/`choice_index` to work around it.
+- **Prefer `choice_text` over `choice_index`** when the label is stable (indices
+  shift between releases).
+- **Pause before the first cloud-creating action.** Provisioning is expensive and
+  irreversible-ish; confirm with the user before entering an `init`/`provision`
+  flow that creates real resources (especially when running in parallel).
 
 
 ## Tiers
@@ -146,10 +197,11 @@ so they operate on the same deployed agent.
 - **Model**: `gpt-4.1-mini` (cheap/fast for testing)
 - **Resource name prefix**: every newly created Azure resource (Foundry
   project/account, azd environment, agent, model deployment, resource group) is
-  named with a `trangevi-` prefix so test resources are easy to identify and
-  clean up. Note that some fields lowercase the value and replace invalid
-  characters with hyphens — that normalization is expected (see
-  `sanitizeAgentName` in the extension).
+  named with a `trangevi-` prefix (and, in parallel-ready Tier 1 scenarios, a
+  `-{instance}` suffix) so test resources are easy to identify, keep distinct
+  across concurrent runs, and clean up. Note that some fields lowercase the value
+  and replace invalid characters with hyphens — that normalization is expected
+  (see `sanitizeAgentName` in the extension).
 - `command:` invokes the installed extension as `azd ai agent …`.
 - Init scenarios set `env: AZD_DISABLE_AGENT_DETECT: "1"` to disable agent
   auto-detection prompts.
@@ -227,4 +279,8 @@ be run back to back in any order within a tier:
   group (rather than one file per subcommand) to avoid cross-scenario ordering
   dependencies — still one command at a time.
 - `azd ai agent run` blocks the terminal; `27-run-local-and-invoke-local.yaml`
-  uses two sessions (one to run, one to invoke `--local`).
+  uses two sessions (one to run, one to invoke `--local`) that share an
+  allocated `{agent}` port (see
+  [Parallel-readiness](#parallel-readiness--port-allocation)).
+- Run artifacts (screenshots, HTML reports) land in `.reports/`, which is
+  git-ignored.

@@ -4,14 +4,20 @@
 # `azd ai agent run` blocks the terminal, so this needs TWO sessions: one runs the
 # agent, a second invokes it with --local.
 name: "run-local-and-invoke-local"
-command: "azd ai agent run --no-inspector"
+command: "azd ai agent run --port {agent} --no-inspector"
 cwd: "~/working/azd-agents-shared"
 
+# Reserve a free port per scenario run so parallel local runs don't collide on
+# the default 8088, and so the run + invoke sessions find each other (a pool is
+# shared across every start_session that passes the same scenario_path).
+allocate_ports: [agent]
+
 notes: |
-  Use two tester sessions:
-    - session_id "run": runs 'azd ai agent run --no-inspector' (this 'command').
-    - session_id "invoke": a bash session for 'azd ai agent invoke --local'.
-  The agent listens on port 8088 by default. Stop the run session with Ctrl-C at the end.
+  Use two tester sessions that share this scenario's port pool — start BOTH with
+  the same scenario_path (and the same instance_id if running in parallel):
+    - session_id "run-{instance}":  runs this 'command' (azd ai agent run --port {agent} --no-inspector).
+    - session_id "invoke-{instance}": a bash session for 'azd ai agent invoke --local --port {agent}'.
+  The agent listens on the allocated port {agent}. Stop the run session with Ctrl-C at the end.
 
 # Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
 pre:
@@ -21,10 +27,10 @@ pre:
     continue_on_error: true
 
 goals:
-  - "In the run session, wait until the local agent reports it is listening (look for a port 8088 / 'listening' message). --no-inspector is used so the Agent Inspector is not launched."
-  - "Start a SECOND session (session_id 'invoke') running bash in the same cwd."
-  - "In the invoke session, run: azd ai agent invoke --local \"Hello from local!\" and wait for a response from the locally running agent."
+  - "In the run session, wait until the local agent reports it is listening (look for a port {agent} / 'listening' message). --no-inspector is used so the Agent Inspector is not launched."
+  - "Start a SECOND session (session_id 'invoke-{instance}', same scenario_path, same instance_id) running bash in the same cwd so it shares this scenario's allocated port {agent}."
+  - "In the invoke session, run: azd ai agent invoke --local --port {agent} \"Hello from local!\" and wait for a response from the locally running agent."
   - "Confirm the response comes from the local process (not Foundry) and is non-empty."
-  - "Take a screenshot of both the run session (showing it listening) and the invoke response."
+  - "Take a screenshot of both the run session (showing it listening on {agent}) and the invoke response."
   - "Stop the run session with Ctrl-C and confirm the local agent shuts down cleanly."
-  - "Report a finding if the local server fails to start, if --local invoke cannot reach it, or if shutdown is messy."
+  - "Report a finding if the local server fails to start, if --local invoke cannot reach it on port {agent}, or if shutdown is messy."

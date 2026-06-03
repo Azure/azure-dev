@@ -2800,10 +2800,7 @@ func composeSaltedResourceGroupName(envName, salt string) string {
 	if salt != "" {
 		suffixLen = 1 + len(salt) // joiner "-" + salt
 	}
-	maxEnvName := maxResourceGroupNameLen - len(prefix) - suffixLen
-	if maxEnvName < 0 {
-		maxEnvName = 0
-	}
+	maxEnvName := max(maxResourceGroupNameLen-len(prefix)-suffixLen, 0)
 	truncated := envName
 	if len(truncated) > maxEnvName {
 		truncated = truncated[:maxEnvName]

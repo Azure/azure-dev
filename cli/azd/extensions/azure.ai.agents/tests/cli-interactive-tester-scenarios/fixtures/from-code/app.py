@@ -1,4 +1,4 @@
-"""Minimal agent source fixture for `azd ai agent init --from-code` scenarios.
+"""Minimal agent source fixture for the `azd ai agent init` existing-code scenarios.
 
 This file exists only so the extension's from-code detection treats the working
 directory as a Python agent project (it looks for requirements.txt or any .py

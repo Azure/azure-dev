@@ -76,6 +76,24 @@ Tier 0 (`00-`) scenarios need no auth. Run this `az login` step once per WSL
 session **before** asking the agent to drive any Tier 1/Tier 2 scenario; all of
 them reuse that session credential.
 
+### GitHub login (manifest scenarios)
+
+The manifest scenarios (`10-init-from-manifest-url`,
+`10-init-flags-agent-name-model`) download an agent manifest — and its sibling
+files — from a public GitHub repo. The CLI first tries the anonymous GitHub API,
+but when that's rate-limited (60 req/hr) it falls back to the `gh` CLI, which
+would otherwise drop into an **interactive GitHub login** mid-run. Like
+`az login`, this is a one-time manual prerequisite the agent can't complete, so a
+human must run it once per WSL session **before** driving those scenarios:
+
+```
+gh auth login
+```
+
+Those scenarios include a `pre` hook that runs `gh auth status` and **fails fast**
+if GitHub CLI isn't authenticated, so a missing login surfaces as a clear setup
+error instead of a hung interactive prompt.
+
 ## Parallel-readiness & port allocation
 
 The tester can run **N concurrent instances of the same scenario** and can
@@ -121,6 +139,10 @@ its bugs:
   different `choice_text`/`choice_index` to work around it.
 - **Prefer `choice_text` over `choice_index`** when the label is stable (indices
   shift between releases).
+- **Clear a pre-filled text field before typing.** Some prompts (e.g. the agent
+  name) come pre-populated with an editable default; typing without clearing
+  *appends* to it. Select-all then delete (or backspace) first so your value
+  replaces the default instead of producing `defaultyourvalue`.
 - **Pause before the first cloud-creating action.** Provisioning is expensive and
   irreversible-ish; confirm with the user before entering an `init`/`provision`
   flow that creates real resources (especially when running in parallel).
@@ -142,7 +164,7 @@ in any order, any time.
 | `00-sample-list-json-filters.yaml` | `sample list` `--output json`, `--language`, `--type`, `--featured-only` |
 | `00-doctor-empty-dir.yaml` | `doctor` in an empty dir (graceful skips) |
 | `00-doctor-local-only.yaml` | `doctor --local-only` |
-| `00-init-validate-mutually-exclusive.yaml` | `init` flag validation (`--from-code` + `-m`) |
+| `00-init-validate-mutually-exclusive.yaml` | `init` arg validation (positional manifest + `-m`) |
 | `00-init-validate-no-prompt-missing.yaml` | `init --no-prompt` missing-input error |
 | `00-init-picker-navigation.yaml` | `init` interactive picker UX (abort before Azure) |
 
@@ -155,9 +177,9 @@ and verifies the generated files, then stops before `azd provision`.
 |------|---------|
 | `10-init-template-python.yaml` | `init` new-from-template, Python |
 | `10-init-template-dotnet.yaml` | `init` new-from-template, C#/.NET |
-| `10-init-from-manifest-url.yaml` | `init -m <manifest url>` |
-| `10-init-from-code.yaml` | `init --from-code` |
-| `10-init-flags-agent-name-model.yaml` | `init -m … --agent-name --model` |
+| `10-init-from-manifest-url.yaml` | `init -m <manifest url>` (needs `gh auth login`) |
+| `10-init-from-code.yaml` | `init` → pick "Use the code in the current directory" |
+| `10-init-flags-agent-name-model.yaml` | `init -m … --agent-name --model` (needs `gh auth login`) |
 | `10-init-deploy-mode-code.yaml` | `init --deploy-mode code` (entry-point/runtime) |
 
 ### Tier 2 — Cloud end-to-end (prefix `2x-`) — ⚠️ incurs Azure cost
@@ -222,10 +244,15 @@ How they're used here:
 - **`pre` reset** — stateful Tier 0/1 scenarios `rm -rf` their own working dir so
   re-runs start clean. (`start_session` recreates the dir, so removing it is
   enough; the doctor/init scenarios just need an empty dir.)
-- **`pre` fixture seed** — the `--from-code` scenarios
+- **`pre` fixture seed** — the existing-code scenarios
   (`10-init-from-code`, `10-init-deploy-mode-code`) also copy a committed Python
-  fixture into the dir so the source exists before `init --from-code` inspects it
-  (see [Fixtures](#fixtures)).
+  fixture into the dir so the source exists before the wizard's "Use the code in
+  the current directory" flow inspects it (see [Fixtures](#fixtures)).
+- **`pre` gh-auth guard** — the manifest scenarios (`10-init-from-manifest-url`,
+  `10-init-flags-agent-name-model`) run `gh auth status` and fail fast if GitHub
+  CLI isn't authenticated, because downloading the manifest can fall back to the
+  `gh` CLI (and an interactive login) when the anonymous GitHub API is
+  rate-limited. Run `gh auth login` first (see [Authentication](#authentication)).
 - **`pre` idempotent setup (Tier 2)** — `20-setup-deploy-shared-agent` first runs
   `azd down --force --purge` if a leftover project exists in the shared dir (so it
   never orphans live Azure resources), then clears the dir. The down hook uses
@@ -238,9 +265,10 @@ How they're used here:
 ## Fixtures
 
 `fixtures/from-code/` holds a minimal Python agent source tree (`app.py` +
-`requirements.txt`) that satisfies the extension's `--from-code` detection
+`requirements.txt`) that satisfies the extension's existing-code detection
 (it looks for `requirements.txt` or any `.py`, and defaults the entry point to
-`app.py`). The from-code scenarios copy it into the working dir via a `pre` hook.
+`app.py`). The existing-code scenarios copy it into the working dir via a `pre`
+hook, then select "Use the code in the current directory" at the init prompt.
 
 The hook references the fixture by absolute path with an overridable env var:
 
@@ -250,7 +278,7 @@ cp -r "${AZD_AGENTS_FIXTURES:-/mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai
 
 If your clone lives somewhere other than `/mnt/c/Repos/azure-dev` (the WSL view
 of `C:\Repos\azure-dev`), export `AZD_AGENTS_FIXTURES` to the WSL path of this
-`fixtures/` directory before running the from-code scenarios.
+`fixtures/` directory before running the existing-code scenarios.
 
 ## Re-running scenarios (idempotency)
 

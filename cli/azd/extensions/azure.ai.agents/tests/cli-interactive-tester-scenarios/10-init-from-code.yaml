@@ -6,7 +6,7 @@
 # guaranteed and the run is idempotent. Override the fixture location with
 # AZD_AGENTS_FIXTURES if your repo is checked out elsewhere.
 name: "init-from-code"
-command: "azd ai agent init --from-code"
+command: "azd ai agent init"
 cwd: "~/working/azd-agents-t1-from-code-{instance}"
 
 env:
@@ -21,7 +21,8 @@ pre:
     name: "seed from-code agent fixture (app.py + requirements.txt)"
 
 goals:
-  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with 'trangevi-' and suffixed with this run's instance id '-{instance}' (e.g. 'trangevi-basic-responses-{instance}') so concurrent instances don't collide on resource names. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected."
+  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with 'trangevi-' and suffixed with this run's instance id '-{instance}' (e.g. 'trangevi-basic-responses-{instance}') so concurrent instances don't collide on resource names. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."
+  - "At the first 'How do you want to initialize your agent?' prompt, select 'Use the code in the current directory' (this is the from-code flow; there is no --from-code flag)."
   - "Wait for the tool to inspect the current directory and treat its code as the agent source."
   - "If an existing agent manifest is detected, confirm that you want to reuse it (answer yes / confirm)."
   - "If asked to select an Azure AI Foundry project, choose to create a new one, naming it with the 'trangevi-' prefix, and follow the prompts."

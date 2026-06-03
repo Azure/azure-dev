@@ -2,9 +2,10 @@
 #
 # Requires Azure login (see README "Authentication"): `az login --tenant azdaiagent.onmicrosoft.com`. Does NOT run `azd provision`; no cost incurred.
 # Targets the --deploy-mode code path which prompts for entry-point and runtime
-# (instead of building a container image).
+# (instead of building a container image). There is no --from-code flag; the
+# from-code flow is selected interactively at the init-method prompt.
 name: "init-deploy-mode-code"
-command: "azd ai agent init --from-code --deploy-mode code"
+command: "azd ai agent init --deploy-mode code"
 cwd: "~/working/azd-agents-t1-code-deploy-{instance}"
 
 env:
@@ -21,7 +22,8 @@ pre:
     name: "seed from-code agent fixture (app.py + requirements.txt)"
 
 goals:
-  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with 'trangevi-' and suffixed with this run's instance id '-{instance}' (e.g. 'trangevi-basic-responses-{instance}') so concurrent instances don't collide on resource names. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected."
+  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with 'trangevi-' and suffixed with this run's instance id '-{instance}' (e.g. 'trangevi-basic-responses-{instance}') so concurrent instances don't collide on resource names. Some fields lowercase the value and replace invalid characters with hyphens;   that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."
+  - "At the first 'How do you want to initialize your agent?' prompt, select 'Use the code in the current directory'."
   - "Wait for the tool to inspect the current directory's code with code-deploy (ZIP upload) mode selected."
   - "If an existing agent manifest is detected, confirm reuse."
   - "When prompted for an entry point, provide the main entry file (e.g. 'app.py')."

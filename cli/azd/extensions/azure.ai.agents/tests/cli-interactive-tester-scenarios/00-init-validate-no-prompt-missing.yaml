@@ -15,6 +15,6 @@ pre:
 goals:
   - "Run init in --no-prompt mode in an empty directory with no flags and no existing code/manifest."
   - "Confirm the command does NOT hang waiting for input (no-prompt must never block on a prompt)."
-  - "Confirm it exits non-zero with a helpful message explaining what required value or decision could not be resolved automatically (e.g. needing --from-code, --manifest, or --project-id)."
+  - "Confirm it exits non-zero with a helpful message explaining what required value or decision could not be resolved automatically (e.g. needing --src, --manifest, or --project-id)."
   - "Take a screenshot of the error output."
   - "Report a finding if it hangs, prompts interactively despite --no-prompt, or gives an unhelpful error."

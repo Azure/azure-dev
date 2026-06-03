@@ -1,6 +1,10 @@
-# Tier 0 (offline) — `init` rejects mutually exclusive --from-code and --manifest.
+# Tier 0 (offline) — `init` rejects a positional argument combined with --manifest.
+#
+# There is no `--from-code` flag. A real, offline-detectable conflict is passing
+# BOTH a positional manifest argument AND -m/--manifest, which the command
+# rejects up front (CodeConflictingArguments) before any wizard or network call.
 name: "init-validate-mutually-exclusive"
-command: "azd ai agent init --from-code -m https://example.com/agent.manifest.yaml"
+command: "azd ai agent init agent.manifest.yaml -m https://example.com/agent.manifest.yaml"
 cwd: "~/working/azd-agents-validate-{instance}"
 
 env:
@@ -14,7 +18,7 @@ pre:
 
 goals:
   - "Wait for the command to fail fast (it should not start the interactive wizard)."
-  - "Confirm the error message clearly states that --from-code and --manifest/-m are mutually exclusive."
+  - "Confirm the error message clearly states that you cannot pass both a positional argument and --manifest."
   - "Confirm the process exits non-zero and does NOT create or modify any project files in the directory."
   - "Take a screenshot of the error output."
-  - "Report a finding if the flags are silently accepted, if the wizard starts anyway, or if the error message is unclear about the conflict."
+  - "Report a finding if the conflicting arguments are silently accepted, if the wizard starts anyway, or if the error message is unclear about the conflict."

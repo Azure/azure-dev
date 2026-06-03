@@ -10,14 +10,20 @@ cwd: "~/working/azd-agents-picker-{instance}"
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
 
-# Clean dir so the abort-before-Azure check can't be confused by prior state.
+# Clean dir, then seed a file so the dir is non-empty. The init-method picker
+# ("Use the code in the current directory" / "Start new from a template") only
+# appears when the working directory is NOT empty; on an empty dir the command
+# auto-selects the template flow and skips the picker.
 pre:
   - run: "rm -rf ~/working/azd-agents-picker-{instance}"
     cwd: "~/working"
     name: "reset working dir"
+  - run: "mkdir -p ~/working/azd-agents-picker-{instance} && touch ~/working/azd-agents-picker-{instance}/placeholder.txt"
+    cwd: "~/working"
+    name: "seed a placeholder file so the init-method picker appears"
 
 goals:
-  - "Wait for the first prompt asking how to initialize (e.g. start from a template / use existing code / use a manifest)."
+  - "Wait for the first prompt asking how to initialize (it should appear because the directory is non-empty): 'Use the code in the current directory' / 'Start new from a template'."
   - "Select 'Start new from a template', then wait for the language prompt."
   - "Select a language (Python), then wait for the template list prompt."
   - "On the template list, type a partial search string to filter the list; confirm the list narrows to matching entries."

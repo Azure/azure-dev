@@ -15,7 +15,7 @@ pre:
     name: "reset working dir"
 
 goals:
-  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with 'trangevi-' and suffixed with this run's instance id '-{instance}' (e.g. 'trangevi-basic-responses-{instance}') so concurrent instances don't collide on resource names. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected."
+  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with 'trangevi-' and suffixed with this run's instance id '-{instance}' (e.g. 'trangevi-basic-responses-{instance}') so concurrent instances don't collide on resource names. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."
   - "When asked how to initialize, select 'Start new from a template'."
   - "Select C# / .NET as the language."
   - "Pick the first starter template in the list."

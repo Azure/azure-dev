@@ -1544,8 +1544,8 @@ func TestCreateHostedAgentAPIRequest_WithRaiConfig(t *testing.T) {
 			Kind: AgentKindHosted,
 			Name: "rai-agent",
 		},
-		Policies: &AgentPolicies{
-			RaiConfig: &RaiConfig{RaiPolicyName: raiPolicyID},
+		Policies: []Policy{
+			{Type: PolicyTypeRai, RaiPolicyName: raiPolicyID},
 		},
 	}
 	buildConfig := &AgentBuildConfig{ImageURL: "img:latest"}
@@ -1580,8 +1580,8 @@ func TestCreateAgentAPIRequest_CodeDeploy_WithRaiConfig(t *testing.T) {
 			Runtime:    "python_3_12",
 			EntryPoint: "agent.py",
 		},
-		Policies: &AgentPolicies{
-			RaiConfig: &RaiConfig{RaiPolicyName: raiPolicyID},
+		Policies: []Policy{
+			{Type: PolicyTypeRai, RaiPolicyName: raiPolicyID},
 		},
 	}
 
@@ -1625,13 +1625,16 @@ func TestMapRaiConfig(t *testing.T) {
 	if got := mapRaiConfig(nil); got != nil {
 		t.Errorf("mapRaiConfig(nil) = %+v, want nil", got)
 	}
-	if got := mapRaiConfig(&AgentPolicies{}); got != nil {
+	if got := mapRaiConfig([]Policy{}); got != nil {
 		t.Errorf("mapRaiConfig(empty policies) = %+v, want nil", got)
 	}
-	if got := mapRaiConfig(&AgentPolicies{RaiConfig: &RaiConfig{}}); got != nil {
+	if got := mapRaiConfig([]Policy{{Type: PolicyTypeRai}}); got != nil {
 		t.Errorf("mapRaiConfig(empty policy name) = %+v, want nil", got)
 	}
-	got := mapRaiConfig(&AgentPolicies{RaiConfig: &RaiConfig{RaiPolicyName: "p1"}})
+	if got := mapRaiConfig([]Policy{{Type: "other", RaiPolicyName: "p1"}}); got != nil {
+		t.Errorf("mapRaiConfig(non-rai type) = %+v, want nil", got)
+	}
+	got := mapRaiConfig([]Policy{{Type: PolicyTypeRai, RaiPolicyName: "p1"}})
 	if got == nil || got.RaiPolicyName != "p1" {
 		t.Errorf("mapRaiConfig(p1) = %+v, want RaiPolicyName=p1", got)
 	}

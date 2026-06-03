@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Add support for the `policies.rai_config.rai_policy_name` field in `agent.yaml` to attach a Responsible AI (content safety) guardrail policy to hosted agents. The value is the full ARM resource ID of the RAI policy (for example, `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<account>/raiPolicies/<policyName>`). `azd deploy` forwards it to the Foundry data plane.
+- Add support for a generic `policies` list in `agent.yaml` to attach governance policies to hosted agents. Each entry has a `type` discriminator; `type: rai_policy` attaches a Responsible AI (content safety) guardrail via `rai_policy_name`, the full ARM resource ID of the RAI policy (for example, `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<account>/raiPolicies/<policyName>`). `azd deploy` forwards it to the Foundry data plane as `rai_config.rai_policy_name`.
 
 ## 0.1.37-preview (2026-06-01)
 

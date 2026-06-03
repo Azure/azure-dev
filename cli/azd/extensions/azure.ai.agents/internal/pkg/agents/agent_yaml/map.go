@@ -84,13 +84,16 @@ func constructBuildConfig(options ...AgentBuildOption) *AgentBuildConfig {
 	return config
 }
 
-// mapRaiConfig flattens the manifest-level policies.rai_config into the data-plane
-// rai_config field. It returns nil when no policy name is configured.
-func mapRaiConfig(policies *AgentPolicies) *agent_api.RaiConfig {
-	if policies == nil || policies.RaiConfig == nil || policies.RaiConfig.RaiPolicyName == "" {
-		return nil
+// mapRaiConfig flattens the manifest-level policies list into the data-plane
+// rai_config field. It returns the RAI config derived from the first policy of
+// type "rai_policy" that has a policy name, or nil when none is configured.
+func mapRaiConfig(policies []Policy) *agent_api.RaiConfig {
+	for _, policy := range policies {
+		if policy.Type == PolicyTypeRai && policy.RaiPolicyName != "" {
+			return &agent_api.RaiConfig{RaiPolicyName: policy.RaiPolicyName}
+		}
 	}
-	return &agent_api.RaiConfig{RaiPolicyName: policies.RaiConfig.RaiPolicyName}
+	return nil
 }
 
 // MapEndpointAndCard maps YAML-layer endpoint and card fields to API model types

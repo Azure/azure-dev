@@ -1109,11 +1109,11 @@ func TestValidateAgentDefinition_RaiConfig(t *testing.T) {
 		wantErrSubst string
 	}{
 		{
-			name: "valid rai_config",
+			name: "valid rai_policy",
 			yaml: `kind: hosted
 name: rai-agent
 policies:
-  rai_config:
+  - type: rai_policy
     rai_policy_name: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/raiPolicies/Microsoft.DefaultV2
 protocols:
   - protocol: responses
@@ -1121,16 +1121,40 @@ protocols:
 `,
 		},
 		{
-			name: "rai_config missing policy name",
+			name: "rai_policy missing policy name",
 			yaml: `kind: hosted
 name: rai-agent
 policies:
-  rai_config: {}
+  - type: rai_policy
 protocols:
   - protocol: responses
     version: "1.0.0"
 `,
-			wantErrSubst: "policies.rai_config requires a policy name",
+			wantErrSubst: "policies[0] of type 'rai_policy' requires a policy name",
+		},
+		{
+			name: "policy missing type",
+			yaml: `kind: hosted
+name: rai-agent
+policies:
+  - rai_policy_name: /subscriptions/x/raiPolicies/p
+protocols:
+  - protocol: responses
+    version: "1.0.0"
+`,
+			wantErrSubst: "policies[0] requires a type",
+		},
+		{
+			name: "unsupported policy type",
+			yaml: `kind: hosted
+name: rai-agent
+policies:
+  - type: network_policy
+protocols:
+  - protocol: responses
+    version: "1.0.0"
+`,
+			wantErrSubst: "policies[0] has an unsupported type 'network_policy'",
 		},
 		{
 			name: "no policies",

@@ -59,7 +59,8 @@ func TestNewSocketTransport_OverlyPermissiveSocket(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.Chmod(dir, 0o700))
 	sock := filepath.Join(dir, "azd.sock")
-	require.NoError(t, os.WriteFile(sock, nil, 0o644))
+	require.NoError(t, os.WriteFile(sock, nil, 0o600))
+	require.NoError(t, os.Chmod(sock, 0o644))
 
 	_, _, err := newSocketTransport("unix:" + sock)
 	require.Error(t, err)

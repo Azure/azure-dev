@@ -112,6 +112,24 @@ func TestNewSocketTransport_HappyPath(t *testing.T) {
 	require.Equal(t, rewrittenAuthEndpoint, endpoint)
 }
 
+// TestNewSocketTransport_RejectsSymlink verifies that a symlinked socket path
+// is rejected outright, even when the link target is properly secured. This
+// prevents a symlink into a less-restricted directory from bypassing the
+// parent-directory permission check.
+func TestNewSocketTransport_RejectsSymlink(t *testing.T) {
+	t.Parallel()
+	sock, _ := listenUnixSocket(t)
+
+	linkDir := t.TempDir()
+	require.NoError(t, os.Chmod(linkDir, 0o700))
+	link := filepath.Join(linkDir, "azd-link.sock")
+	require.NoError(t, os.Symlink(sock, link))
+
+	_, _, err := newSocketTransport("unix:" + link)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "symlinks are not supported")
+}
+
 // TestNewPipeTransport_NotSupportedOnUnix asserts the npipe stub returns a
 // clear error on POSIX.
 func TestNewPipeTransport_NotSupportedOnUnix(t *testing.T) {

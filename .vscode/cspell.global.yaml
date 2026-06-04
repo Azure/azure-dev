@@ -65,12 +65,14 @@ ignoreWords:
     - conjunction
     - containerregistry
     - containerservice
+    - dacl
     - dapr
     - databricks
     - dedb
     - devcenter
     - devcontainer
     - dnsz
+    - euid
     - evgd
     - evgs
     - evgt
@@ -105,6 +107,7 @@ ignoreWords:
     - mockexec
     - mockhttp
     - MYDIR
+    - npipe
     - nsgsr
     - ntfns
     - odata
@@ -169,6 +172,7 @@ ignoreWords:
     - wafrg
     - westus
     - Wans
+    - winio
     - apim
     - Retryable
     - httptrigger

@@ -35,6 +35,13 @@ type Cli struct {
 	containerEngine string // "docker" or "podman", detected during CheckInstalled
 }
 
+// ContainerEngine returns the detected container engine name ("docker" or "podman").
+// CheckInstalled() should be called first to detect and set the container engine.
+// If not set, defaults to "docker" for backward compatibility.
+func (d *Cli) ContainerEngine() string {
+	return d.getContainerEngine()
+}
+
 // getContainerEngine returns the container engine command to use ("docker" or "podman").
 // CheckInstalled() should be called first to detect and set the container engine.
 // If not set, defaults to "docker" for backward compatibility.

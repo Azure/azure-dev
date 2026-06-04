@@ -1,5 +1,9 @@
 # Release History
 
+## 0.11.1 (2026-06-03)
+
+- [[#8498]](https://github.com/Azure/azure-dev/pull/8498) Disable HTML escaping when writing `registry.json` during `azd x publish` and local registry creation.
+
 ## 0.11.0 (2026-05-19)
 
 - [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Treat extension metadata warnings as non-fatal during `azd x build`, while keeping required fields and unusable metadata as validation errors.

@@ -664,7 +664,8 @@ func (at *dotnetContainerAppTarget) prepareDotNetProjectImage(
 			imageName,
 			dockerCreds.LoginServer,
 			dockerCreds.Username,
-			dockerCreds.Password)
+			dockerCreds.Password,
+			at.containerHelper.ContainerEngine())
 		if err != nil {
 			return nil, fmt.Errorf("publishing container: %w", err)
 		}
@@ -700,6 +701,7 @@ func (at *dotnetContainerAppTarget) prepareDotNetMultiStageImage(
 		serviceConfig.Path(),
 		"Release",
 		localImageTag,
+		at.containerHelper.ContainerEngine(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("building local container: %w", err)

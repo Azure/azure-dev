@@ -75,7 +75,12 @@ func verifySocketPermissions(socketPath string) error {
 // has mode bits group/other set to zero. The isDir flag is used only for
 // error messages.
 func checkPathOwnedAndRestricted(path string, isDir bool) error {
-	info, err := os.Stat(path)
+	cleanPath := filepath.Clean(path)
+	if !filepath.IsAbs(cleanPath) {
+		return fmt.Errorf("path must be absolute")
+	}
+
+	info, err := os.Stat(cleanPath)
 	if err != nil {
 		return fmt.Errorf("stat: %w", err)
 	}
@@ -83,8 +88,8 @@ func checkPathOwnedAndRestricted(path string, isDir bool) error {
 	if !ok {
 		return fmt.Errorf("unable to read ownership information")
 	}
-	euid := uint32(os.Geteuid())
-	if sys.Uid != euid {
+	euid := os.Geteuid()
+	if int64(sys.Uid) != int64(euid) {
 		kind := "file"
 		if isDir {
 			kind = "directory"

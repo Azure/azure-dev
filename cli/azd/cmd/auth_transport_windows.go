@@ -37,9 +37,9 @@ func newPipeTransport(rawURL string) (http.RoundTripper, string, error) {
 			if err != nil {
 				return nil, err
 			}
-			if verr := verifyPipeSecurity(pipePath); verr != nil {
+			if vErr := verifyPipeSecurity(pipePath); vErr != nil {
 				_ = conn.Close()
-				return nil, verr
+				return nil, vErr
 			}
 			return conn, nil
 		},

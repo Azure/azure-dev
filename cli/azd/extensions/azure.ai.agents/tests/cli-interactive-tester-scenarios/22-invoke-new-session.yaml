@@ -1,7 +1,12 @@
-# Tier 2 (cloud E2E) — `invoke --new-session` resets conversation state.
+# Tier 2 (cloud E2E) — `invoke` SESSION vs CONVERSATION memory semantics.
+#
+# A SESSION and a CONVERSATION are distinct concepts. For the responses-protocol
+# agent (Basic Responses), multi-turn memory is bound to the CONVERSATION, not the
+# session: `--new-session` starts a fresh session but reuses the saved conversation
+# (memory persists), while `--new-conversation` is what actually resets memory.
 #
 # Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
-name: "invoke-new-session"
+name: "invoke-session-vs-conversation"
 command: "bash"
 cwd: "~/working/azd-agents-shared/trangevi-basic-responses"
 
@@ -14,7 +19,8 @@ pre:
 
 goals:
   - "Run: azd ai agent invoke \"My name is Quinn. Remember it.\" and wait for a response."
-  - "Run: azd ai agent invoke \"What is my name?\" and confirm the agent recalls 'Quinn' (the persisted session reused the same conversation)."
-  - "Run: azd ai agent invoke --new-session \"What is my name?\" and confirm the agent does NOT recall 'Quinn' — the new session discarded prior history."
+  - "Run: azd ai agent invoke \"What is my name?\" and confirm the agent recalls 'Quinn' (the persisted session and conversation were reused, so multi-turn memory works)."
+  - "Run: azd ai agent invoke --new-session \"What is my name?\" and confirm the agent STILL recalls 'Quinn'. This is EXPECTED, not a bug: a SESSION and a CONVERSATION are distinct concepts. For this responses-protocol agent, multi-turn memory is bound to the CONVERSATION, not the session. --new-session starts a fresh session but reuses the saved conversation, so memory persists."
+  - "Run: azd ai agent invoke --new-conversation \"What is my name?\" and confirm the agent does NOT recall 'Quinn'. This is the true memory reset: --new-conversation discards the conversation that holds multi-turn memory."
   - "Take a screenshot after each invoke."
-  - "Report a finding if --new-session still carries over prior conversation context, or if session persistence between the first two invokes does not work."
+  - "Report a finding if: the first two invokes fail to establish/recall memory; OR --new-conversation still recalls 'Quinn' (memory was not reset). Do NOT report a finding merely because --new-session still recalled 'Quinn' — that is the expected session-vs-conversation distinction."

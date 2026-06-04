@@ -52,6 +52,23 @@ Implications:
 
 On macOS/Linux these are simply native paths (no WSL involved).
 
+### This applies to MCP tool arguments too
+
+The same path-resolution rule applies to **every path-shaped argument an
+orchestrator passes to the tester's MCP tools** — most importantly the `path:`
+argument on `load_scenario`, `run_pre_hooks`, and `run_post_hooks`, and the
+`scenario_path:` argument on `start_session`. The server resolves them on the
+WSL side, **not** on the orchestrator side. On Windows hosts, pass a POSIX path:
+
+| Orchestrator OS | Pass to MCP tools | Don't pass |
+| --- | --- | --- |
+| Windows | `/mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/00-version.yaml` | `C:\Repos\azure-dev\...\00-version.yaml` |
+| macOS / Linux | native absolute path | — |
+
+**Failure-mode hint:** if `load_scenario` returns `Scenario file not found`, the
+path style is almost certainly the cause — translate `C:\…` to `/mnt/c/…` and
+retry one call before fanning out.
+
 ## Authentication
 
 Tier 1 and Tier 2 scenarios read from / write to Azure, so a **human must log in
@@ -129,6 +146,47 @@ advantage of both where it's safe.
 To fan out, pass a distinct `instance_id` per `start_session` call (and reuse the
 same `instance_id` for paired `run`/`invoke` sessions of one scenario).
 
+## Orchestrating a fleet run
+
+When a driving agent wants to run **many scenarios concurrently** (e.g. via
+parallel background sub-agents, one scenario per sub-agent), pick the right
+fan-out primitive for the shape of the run:
+
+- **Different scenarios in parallel** (the common case for a full Tier 0/1
+  sweep): give each sub-agent a distinct, descriptive `session_id` — e.g.
+  `fleet-00-version`, `fleet-10-init-from-code` — and call `start_session` with
+  the scenario's own `cwd`. **No `instance_id` is needed**: each scenario's `cwd`
+  already isolates itself via the `{instance}` substitution, which defaults to
+  `"main"` when `instance_id` is omitted.
+- **Same scenario N times in parallel:** use `instance_id="1"`, `"2"`, … per
+  call. See [Parallel-readiness](#parallel-readiness--port-allocation) for which
+  scenarios are authored to support this.
+- **Tier 2 ordering is fixed**, not parallel-friendly. Run `20-setup` first,
+  then the targeted `21-…2A-` scenarios **serially** (they share one deployed
+  agent and mutate shared state — sessions, files, endpoint configuration —
+  so parallel runs interfere), then `2Z-teardown` last. See the
+  [Tier 2](#tier-2--cloud-end-to-end-prefix-2x---%EF%B8%8F-incurs-azure-cost)
+  section.
+
+### Operational guardrails for the orchestrator
+
+A few hard-won lessons that apply regardless of fleet size:
+
+- **Validate the recipe with one sub-agent before fanning out.** Spend 30
+  seconds confirming that `load_scenario`, `start_session`, and one
+  `send_action` round-trip work end-to-end for *one* scenario before launching
+  a wave. This is the cheapest way to catch wiring issues (wrong path style,
+  wrong tool surface, auth not set up) before they multiply across many agents.
+- **Background sub-agents are typically not cancellable mid-run.** Once launched,
+  they will run to completion (or until the runtime times them out). For Tier 1
+  and especially Tier 2 scenarios with Azure side effects, launch
+  conservatively — a stop request can't recall an in-flight `azd provision`.
+- **Keep waves small.** The wall-clock bottleneck on a fleet run is per-agent
+  LLM time and per-account model concurrency, not the MCP server (which is
+  per-`session_id`-parallel by design). Launching 4–6 sub-agents at a time and
+  rolling forward typically finishes a sweep faster than launching everything
+  at once.
+
 ## Driving conventions
 
 These mirror the tester's own `AGENTS.md` ("Driving the MCP") — the driving agent
@@ -151,6 +209,35 @@ its bugs:
 - **Pause before the first cloud-creating action.** Provisioning is expensive and
   irreversible-ish; confirm with the user before entering an `init`/`provision`
   flow that creates real resources (especially when running in parallel).
+- **Pass `run_name=<scenario-stem>` to every `start_session` call.** The
+  scenario stem is the YAML filename without `.yaml` (e.g. `00-version`,
+  `21-show-json`, `27-run-local-and-invoke-local`). Without `run_name` the
+  tester auto-names the run folder `agent_YYYYMMDD_HHMMSS`, which makes
+  archived runs in `.reports/<run>/tester-reports/` hard to cross-reference
+  with the scenario list. For scenarios that start two sessions
+  (e.g. `27-run-local-and-invoke-local`), suffix the run_name with a role tag
+  (`27-run-local-and-invoke-local-run`, `27-run-local-and-invoke-local-invoke`)
+  so each session gets its own clearly named folder.
+- **Pass `output_dir` to every `start_session` call** so the tester writes
+  screenshots and HTML reports directly into this repo's archive layout
+  instead of its own working directory. Use the WSL path of the
+  `.reports/<run-timestamp>/tester-reports/` folder under this scenarios
+  directory, with `<run-timestamp>` of the form `YYYYMMDD-HHMMSS`. Pick **one**
+  `<run-timestamp>` per suite run and reuse it across every session — this
+  groups all scenarios from one run under a single folder. The driving agent
+  should also write the final cross-scenario summary to
+  `.reports/<run-timestamp>/FINAL-REPORT.md` at the end. Example
+  `output_dir` (the WSL view of this scenarios directory in this repo):
+  `/mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/.reports/20260603-171132/tester-reports`.
+  If your clone lives elsewhere, substitute the WSL path of *your*
+  `cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/`.
+- **Record a time-to-complete per scenario.** Capture wall-clock duration for
+  every scenario (from `start_session` to `finish_session`, including pre/post
+  hooks) and include it as a `Duration` column in the per-scenario tables of
+  `FINAL-REPORT.md`. Use `Hh Mm Ss` formatting (e.g. `3m 21s`, `1h 04m 12s`).
+  This makes regression slowdowns easy to spot across runs — Tier 2 in
+  particular has scenarios that legitimately take many minutes (provision,
+  deploy, eval dataset generation) and others that should complete in seconds.
 
 
 ## Tiers
@@ -202,11 +289,11 @@ as their `cwd`.
 
 | File | Targets |
 |------|---------|
-| `20-setup-deploy-shared-agent.yaml` | `init` + `azd provision` (SETUP) |
+| `20-setup-deploy-shared-agent.yaml` | `init` + `azd provision` + `azd deploy` (SETUP) |
 | `21-show.yaml` | `show` (table) |
 | `21-show-json.yaml` | `show --output json` |
 | `22-invoke-remote.yaml` | `invoke` (remote) |
-| `22-invoke-new-session.yaml` | `invoke --new-session` |
+| `22-invoke-new-session.yaml` | `invoke --new-session` / `--new-conversation` (session vs conversation memory) |
 | `22-invoke-input-file.yaml` | `invoke -f <file>` |
 | `23-sessions-lifecycle.yaml` | `sessions create/list/show/delete` |
 | `24-files-lifecycle.yaml` | `files upload/list/stat/mkdir/download/delete` |

@@ -19,7 +19,7 @@ pre:
     continue_on_error: true
 
 goals:
-  - "Run: azd ai agent optimize --dataset optimize-tasks.jsonl --max-iterations 1 --no-wait (agent auto-detected from the azd project; a dataset fixture was staged into the project root during setup). Do NOT pass --eval-model — let the command prompt and select a real, deployed model (accept the pre-filled default deployment, or pick the 'trangevi-'-prefixed deployment created during setup). Provide sensible defaults for anything else it prompts for."
+  - "Run: azd ai agent optimize --dataset \"$HOME/working/azd-agents-shared/trangevi-basic-responses/optimize-tasks.jsonl\" --max-iterations 1 --no-wait (agent auto-detected from the azd project; the dataset fixture was staged into the project root during setup). Use an ABSOLUTE path for --dataset as shown: a bare relative name is resolved relative to the agent SERVICE subdirectory, not the project root, so the absolute path avoids a 'dataset not accessible' error. Do NOT pass --eval-model — let the command prompt and select a real, deployed model (accept the pre-filled default deployment, or pick the 'trangevi-'-prefixed deployment created during setup). Provide sensible defaults for anything else it prompts for."
   - "Confirm a job is submitted and an optimization job ID is printed (the command returns immediately due to --no-wait)."
   - "Run: azd ai agent optimize status <id> using the printed ID and confirm a status is reported."
   - "Run: azd ai agent optimize list and confirm the submitted job appears in recent runs."

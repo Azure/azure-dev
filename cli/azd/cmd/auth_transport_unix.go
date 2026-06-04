@@ -59,8 +59,20 @@ func newSocketTransport(rawURL string) (http.RoundTripper, string, error) {
 
 // verifySocketPermissions checks that the socket file and its parent
 // directory are owned by the current effective uid and have group/other
-// permission bits cleared. It returns a clear error when either check fails.
+// permission bits cleared. The socket path MUST NOT be a symlink: symlinks
+// are rejected outright so a link into a less-restricted directory cannot
+// bypass the parent-directory permission check. It returns a clear error when
+// any check fails.
 func verifySocketPermissions(socketPath string) error {
+	linfo, err := os.Lstat(socketPath)
+	if err != nil {
+		return fmt.Errorf("AZD_AUTH_ENDPOINT socket %q: lstat: %w", socketPath, err)
+	}
+	if linfo.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf(
+			"AZD_AUTH_ENDPOINT socket %q: symlinks are not supported; provide the real socket path", socketPath)
+	}
+
 	parent := filepath.Dir(socketPath)
 	if err := checkPathOwnedAndRestricted(parent, true); err != nil {
 		return fmt.Errorf("AZD_AUTH_ENDPOINT socket parent directory %q: %w", parent, err)

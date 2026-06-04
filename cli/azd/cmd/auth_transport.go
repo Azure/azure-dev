@@ -24,11 +24,14 @@ const rewrittenAuthEndpoint = "http://azd-auth"
 // endpoint URL:
 //
 //   - "" or "https": existing loopback HTTPS behavior. AZD_AUTH_CERT is
-//     required for "https".
+//     required for "https". AZD_AUTH_KEY is required.
 //   - "unix": POSIX-only Unix domain socket transport. Cert MUST NOT be set.
-//     Key is optional but still forwarded for defense in depth.
-//   - "npipe": Windows-only named pipe transport. Cert MUST NOT be set. Key
-//     is optional but still forwarded for defense in depth.
+//     AZD_AUTH_KEY is required.
+//   - "npipe": Windows-only named pipe transport. Cert MUST NOT be set.
+//     AZD_AUTH_KEY is required.
+//
+// The "" and "http" schemes are accepted only to preserve the existing
+// loopback test harness; production hosts use "https", "unix", or "npipe".
 //
 // Any other scheme yields an error that lists the supported schemes.
 func buildExternalAuthConfiguration(endpoint, key, cert string) (auth.ExternalAuthConfiguration, error) {
@@ -52,14 +55,21 @@ func buildExternalAuthConfiguration(endpoint, key, cert string) (auth.ExternalAu
 	default:
 		return auth.ExternalAuthConfiguration{}, fmt.Errorf(
 			"invalid AZD_AUTH_ENDPOINT value '%s': unsupported scheme %q "+
-				"(supported schemes: https, unix, npipe)",
+				"(supported schemes: https, unix, npipe; http and no-scheme are accepted for local testing only)",
 			endpoint, endpointUrl.Scheme)
 	}
 }
 
 // buildHTTPSExternalAuth implements the historical HTTPS / no-scheme path.
-// When a cert is provided, the scheme MUST be "https".
+// The "https" scheme requires AZD_AUTH_CERT; the "" and "http" schemes are
+// retained only for the loopback test harness. When a cert is provided, the
+// scheme MUST be "https".
 func buildHTTPSExternalAuth(endpoint, key, cert, scheme string) (auth.ExternalAuthConfiguration, error) {
+	if scheme == "https" && len(cert) == 0 {
+		return auth.ExternalAuthConfiguration{}, fmt.Errorf(
+			"invalid AZD_AUTH_ENDPOINT value '%s': AZD_AUTH_CERT is required when using the 'https' scheme",
+			endpoint)
+	}
 	client := &http.Client{}
 	if len(cert) > 0 {
 		transport, err := httputil.TlsEnabledTransport(cert)
@@ -84,7 +94,7 @@ func buildHTTPSExternalAuth(endpoint, key, cert, scheme string) (auth.ExternalAu
 }
 
 // buildLocalIPCExternalAuth implements the unix: / npipe: paths. Both share
-// the same shape: cert is forbidden, key is optional, the transport is built
+// the same shape: cert is forbidden, key is required, the transport is built
 // by the platform-specific factory, and the endpoint is rewritten to a
 // canonical placeholder so RemoteCredential can format request URLs.
 func buildLocalIPCExternalAuth(
@@ -95,6 +105,10 @@ func buildLocalIPCExternalAuth(
 		return auth.ExternalAuthConfiguration{}, fmt.Errorf(
 			"AZD_AUTH_CERT must not be set when AZD_AUTH_ENDPOINT uses a local IPC scheme " +
 				"(unix:, npipe:); the OS enforces caller identity")
+	}
+	if len(key) == 0 {
+		return auth.ExternalAuthConfiguration{}, fmt.Errorf(
+			"AZD_AUTH_KEY is required when AZD_AUTH_ENDPOINT is set")
 	}
 	transport, rewritten, err := newTransport(endpoint)
 	if err != nil {

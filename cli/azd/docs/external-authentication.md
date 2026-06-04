@@ -98,8 +98,10 @@ permissions, so no TLS handshake and no shared bearer secret are required.
   path component. Relative paths are an error.
 - `AZD_AUTH_CERT` **MUST NOT** be set. If set, `azd` fails fast with a clear
   error.
-- `AZD_AUTH_KEY` **MAY** be omitted. If set, `azd` still sends it as
-  `Authorization: Bearer <key>` for defense in depth.
+- `AZD_AUTH_KEY` is **required** and is sent as `Authorization: Bearer <key>`.
+- The socket path **MUST NOT** be a symlink. `azd` rejects symlinked socket
+  paths outright so a link into a less-restricted directory cannot bypass the
+  parent-directory permission check.
 - **IDE host requirements:** the socket file MUST be created with mode `0600`
   and the parent directory MUST be mode `0700`, both owned by the current
   uid. `azd` `stat()`s the socket and the parent directory on first connect
@@ -123,7 +125,7 @@ required.
   `npipe:////./pipe/azd-auth-<arbitrary>` (fully qualified). Both forms are
   accepted.
 - `AZD_AUTH_CERT` **MUST NOT** be set. Same handling as `unix:`.
-- `AZD_AUTH_KEY` **MAY** be omitted. Same handling as `unix:`.
+- `AZD_AUTH_KEY` is **required**. Same handling as `unix:`.
 - **IDE host requirements:** the pipe MUST be created with a security
   descriptor that grants access only to the current user SID (and SYSTEM /
   Administrators, as is conventional). `azd` queries the pipe's DACL after

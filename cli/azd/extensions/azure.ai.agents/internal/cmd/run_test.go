@@ -305,7 +305,6 @@ func TestInspectorLaunchFailureOnlyWarns(t *testing.T) {
 		ctx,
 		workflow,
 		ln.Addr().(*net.TCPAddr).Port,
-		time.Second,
 		time.Millisecond,
 		&stderr,
 	)

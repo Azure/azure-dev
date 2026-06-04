@@ -2707,8 +2707,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 //nolint:gosec // env var key name, not a credential
 const resourceTokenSaltKey = "AZD_RESOURCE_TOKEN_SALT"
 
-// resourceGroupEnvKey is the standard azd env var consumed by Bicep's
-// main.parameters.json (`"resourceGroupName": "${AZURE_RESOURCE_GROUP}"`).
+// read by azd's Bicep provider to scope resource-group deployments to a unique name per environment
 const resourceGroupEnvKey = "AZURE_RESOURCE_GROUP"
 
 // maxResourceGroupNameLen is the Azure resource group name length limit
@@ -2792,8 +2791,7 @@ func ensureResourceGroupName(ctx context.Context, azdClient *azdext.AzdClient, e
 // ".-" and the final name doesn't end with "." (which Azure disallows).
 //
 // Caller is expected to pass a non-empty salt; the function still produces
-// a valid name if salt is empty (no trailing dash) but that path is not
-// exercised by ensureResourceGroupName, which short-circuits in that case.
+// a valid name if salt is empty (no trailing dash).
 func composeSaltedResourceGroupName(envName, salt string) string {
 	const prefix = "rg-"
 	suffixLen := 0

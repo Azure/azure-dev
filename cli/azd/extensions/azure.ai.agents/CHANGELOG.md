@@ -1,5 +1,7 @@
 # Release History
 
+- [[#8528]](https://github.com/Azure/azure-dev/issues/8528) .env will now contain a salted RG name after init, where before it was empty (Bicep filled in the default). Anyone scripting against AZURE_RESOURCE_GROUP right after init will see something different.
+
 ## 0.1.37-preview (2026-06-01)
 
 - [[#8512]](https://github.com/Azure/azure-dev/pull/8512) Normalize connection auth `AgenticIdentity` values to the ARM-required `AgenticIdentityToken`.

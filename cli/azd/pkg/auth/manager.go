@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	azcloud "github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
@@ -100,6 +101,13 @@ type Manager struct {
 	externalAuthCfg     ExternalAuthConfiguration
 	azCli               az.AzCli
 	userAgent           string
+
+	// azCliCredentials caches az CLI credentials keyed by tenant ID when auth.useAzCliAuth is set.
+	// Each entry is a cachingCredential wrapping an AzureCLICredential. Sharing a single instance per
+	// tenant lets concurrent callers reuse one in-memory token instead of each spawning its own `az`
+	// subprocess, which avoids exhausting memory and serializing many `az` processes in parallel.
+	azCliCredentials   map[string]azcore.TokenCredential
+	azCliCredentialsMu sync.Mutex
 }
 
 // UserAgent is a typed string for the application user-agent,
@@ -169,6 +177,7 @@ func NewManager(
 		externalAuthCfg:     externalAuthCfg,
 		azCli:               azCli,
 		userAgent:           string(userAgent),
+		azCliCredentials:    map[string]azcore.TokenCredential{},
 	}, nil
 }
 
@@ -258,13 +267,7 @@ func (m *Manager) CredentialForCurrentUser(
 
 	if shouldUseLegacyAuth(userConfig) {
 		log.Printf("delegating auth to az since %s is set to true", useAzCliAuthKey)
-		cred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
-			TenantID: options.TenantID,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create credential: %w: %w", err, ErrNoCurrentUser)
-		}
-		return cred, nil
+		return m.azCliCredentialForTenant(options.TenantID)
 	}
 
 	authConfig, err := m.readAuthConfig()
@@ -395,6 +398,38 @@ func (m *Manager) CredentialForCurrentUser(
 }
 
 type ClaimsForCurrentUserOptions = CredentialForCurrentUserOptions
+
+// azCliCredentialForTenant returns a cached az CLI credential for the given tenant, creating one if needed.
+//
+// The returned credential is a cachingCredential wrapping an AzureCLICredential. A single instance is
+// shared per tenant so that concurrent callers reuse one in-memory token. AzureCLICredential performs no
+// caching of its own and spawns an `az account get-access-token` subprocess on every GetToken call, so
+// without this wrapper a fan-out of concurrent Azure SDK clients (e.g. listing the AI model catalog across
+// every region) would spawn one `az` subprocess per caller, serialized behind the credential's internal
+// mutex. That is both slow and, in constrained environments like Cloud Shell, memory-exhausting.
+func (m *Manager) azCliCredentialForTenant(tenantID string) (azcore.TokenCredential, error) {
+	m.azCliCredentialsMu.Lock()
+	defer m.azCliCredentialsMu.Unlock()
+
+	if cred, ok := m.azCliCredentials[tenantID]; ok {
+		return cred, nil
+	}
+
+	azCred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create credential: %w: %w", err, ErrNoCurrentUser)
+	}
+
+	cred := newCachingCredential(azCred)
+
+	if m.azCliCredentials == nil {
+		m.azCliCredentials = map[string]azcore.TokenCredential{}
+	}
+	m.azCliCredentials[tenantID] = cred
+	return cred, nil
+}
 
 // ClaimsForCurrentUser returns claims for the currently logged in user.
 func (m *Manager) ClaimsForCurrentUser(ctx context.Context, options *ClaimsForCurrentUserOptions) (TokenClaims, error) {

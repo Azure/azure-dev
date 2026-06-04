@@ -238,7 +238,8 @@ func TestCredentialForCurrentUser_LegacyAuth_Error(t *testing.T) {
 	// With default options (nil)
 	cred, err := m.CredentialForCurrentUser(t.Context(), nil)
 	require.NoError(t, err)
-	require.IsType(t, new(azidentity.AzureCLICredential), cred)
+	require.IsType(t, new(cachingCredential), cred)
+	require.IsType(t, new(azidentity.AzureCLICredential), cred.(*cachingCredential).inner)
 }
 
 func TestCredentialForCurrentUser_LegacyAuthWithTenant(t *testing.T) {
@@ -256,7 +257,8 @@ func TestCredentialForCurrentUser_LegacyAuthWithTenant(t *testing.T) {
 		TenantID: "my-tenant",
 	})
 	require.NoError(t, err)
-	require.IsType(t, new(azidentity.AzureCLICredential), cred)
+	require.IsType(t, new(cachingCredential), cred)
+	require.IsType(t, new(azidentity.AzureCLICredential), cred.(*cachingCredential).inner)
 }
 
 func TestCredentialForCurrentUser_ManagedIdentityNoClientID(t *testing.T) {

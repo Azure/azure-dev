@@ -611,6 +611,9 @@ rules:
       Run 'azd auth login' to sign in again.
       When already logged in, azd automatically clears stale cached tokens before
       re-authenticating.
+    links:
+      - url: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
+        title: "azd auth login reference"
 
   - patterns:
       - "AADSTS"

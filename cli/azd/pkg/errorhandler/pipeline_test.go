@@ -728,6 +728,8 @@ func TestErrorSuggestionsYaml_AADSTS700082_SpecificRule(t *testing.T) {
 	assert.Equal(t, "The refresh token has expired or been revoked.", result.Message)
 	assert.Contains(t, result.Suggestion, "azd auth login")
 	assert.Contains(t, result.Suggestion, "automatically clears stale cached tokens")
+	require.Len(t, result.Links, 1)
+	assert.Contains(t, result.Links[0].URL, "azd-auth-login")
 }
 
 func TestErrorSuggestionsYaml_AADSTS_GenericRule(t *testing.T) {

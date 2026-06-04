@@ -6,7 +6,7 @@
 # fast if gh is not authenticated.
 # Verifies that the override flags are honored in the generated files.
 name: "init-flags-agent-name-model"
-command: "azd ai agent init -m https://github.com/microsoft/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/01-basic/agent.manifest.yaml --agent-name trangevi-qa-named-agent-{instance} --model gpt-4.1-mini"
+command: "azd ai agent init -m https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/01-basic/agent.manifest.yaml --agent-name trangevi-qa-named-agent-{instance} --model gpt-4.1-mini"
 cwd: "~/working/azd-agents-t1-flags-{instance}"
 
 env:

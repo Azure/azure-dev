@@ -3,12 +3,12 @@
 # Precondition: 28-eval-init-run-show.yaml has been run so an eval.yaml exists.
 name: "eval-update"
 command: "bash"
-cwd: "~/working/azd-agents-shared"
+cwd: "~/working/azd-agents-shared/trangevi-basic-responses"
 
 # Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
 pre:
-  - run: "test -f ~/working/azd-agents-shared/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
-    cwd: "~/working/azd-agents-shared"
+  - run: "test -f ~/working/azd-agents-shared/trangevi-basic-responses/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/trangevi-basic-responses"
     name: "assert shared agent is deployed"
     continue_on_error: true
 

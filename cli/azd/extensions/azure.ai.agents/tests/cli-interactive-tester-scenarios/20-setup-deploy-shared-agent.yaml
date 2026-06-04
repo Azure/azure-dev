@@ -1,8 +1,11 @@
 # Tier 2 (cloud E2E) — SETUP: deploy the shared agent used by all 21-..2A scenarios.
 #
-# ⚠️ Incurs Azure cost. Run this FIRST. The deployed agent lives in the shared
-# working directory ~/working/azd-agents-shared and is reused by the targeted
-# scenarios. Run 2Z-teardown-down.yaml LAST to clean up.
+# ⚠️ Incurs Azure cost. Run this FIRST. `init` runs in ~/working/azd-agents-shared
+# and scaffolds the project into a subdirectory named after the agent, so the
+# deployed project lives in ~/working/azd-agents-shared/trangevi-basic-responses
+# and is reused by the targeted scenarios. The agent name MUST be exactly
+# 'trangevi-basic-responses' so that subdirectory path is deterministic. Run
+# 2Z-teardown-down.yaml LAST to clean up.
 name: "setup-deploy-shared-agent"
 command: "azd ai agent init"
 cwd: "~/working/azd-agents-shared"
@@ -16,7 +19,7 @@ env:
 # nothing to tear down). Re-using a clean path also avoids the resource-name hash
 # collision in issue #8360.
 pre:
-  - run: "if [ -f ~/working/azd-agents-shared/azure.yaml ]; then (cd ~/working/azd-agents-shared && azd down --force --purge); fi"
+  - run: "if [ -f ~/working/azd-agents-shared/trangevi-basic-responses/azure.yaml ]; then (cd ~/working/azd-agents-shared/trangevi-basic-responses && azd down --force --purge); fi"
     cwd: "~/working/azd-agents-shared"
     name: "tear down any leftover deployed agent"
     continue_on_error: true
@@ -30,6 +33,7 @@ goals:
   - "When asked how to initialize, select 'Start new from a template'."
   - "Select Python as the language."
   - "Select the 'Basic Responses' template from the list."
+  - "When prompted for the AGENT NAME, set it to EXACTLY 'trangevi-basic-responses' (clear any pre-filled default first, then type it). This exact name is REQUIRED: init scaffolds the project into a subdirectory named after the agent, and the targeted reuse scenarios depend on that subdirectory being named 'trangevi-basic-responses'."
   - "When asked how to deploy, select 'Container' (hosted agent)."
   - "If asked to select an Azure AI Foundry project, create a new one, naming it with the 'trangevi-' prefix, and follow the prompts."
   - "If asked to select a subscription, search for and select the 'azd ai agent development' subscription."
@@ -38,7 +42,8 @@ goals:
   - "Accept the defaults for model version, SKU, capacity. If prompted for a model deployment name, use a 'trangevi-'-prefixed name."
   - "If asked for container/resource size, select 'Small'."
   - "Wait for initialization to complete — look for 'Next:' or a success message."
-  - "Run 'azd provision' and wait for it to succeed. This creates the real Azure resources and deploys the agent."
+  - "Change directory into the new 'trangevi-basic-responses' subdirectory (run 'cd trangevi-basic-responses') — init scaffolds the project into a subdirectory named after the agent, so azure.yaml lives there, not in the current directory."
+  - "Run 'azd provision' (from inside the 'trangevi-basic-responses' subdirectory) and wait for it to succeed. This creates the real Azure resources and deploys the agent."
   - "After provision, run 'azd ai agent show' and note the agent name and endpoint URL — record these for the targeted scenarios."
   - "Take a screenshot of the successful provision and 'show' output."
   - "Report a finding if init or provision fails, hangs, or produces a confusing error. Do NOT run 'azd down' here — teardown is a separate scenario."

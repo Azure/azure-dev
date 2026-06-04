@@ -3,17 +3,23 @@
 # Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
 name: "optimize-submit-status"
 command: "bash"
-cwd: "~/working/azd-agents-shared"
+cwd: "~/working/azd-agents-shared/trangevi-basic-responses"
 
 # Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+# Also copy a small dataset fixture into the project so `optimize` has tasks to
+# submit (it requires --dataset, an eval.yaml, or interactive selection).
 pre:
-  - run: "test -f ~/working/azd-agents-shared/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
-    cwd: "~/working/azd-agents-shared"
+  - run: "test -f ~/working/azd-agents-shared/trangevi-basic-responses/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/trangevi-basic-responses"
     name: "assert shared agent is deployed"
+    continue_on_error: true
+  - run: "cp \"${AZD_AGENTS_FIXTURES:-/mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/fixtures}/optimize-tasks.jsonl\" ~/working/azd-agents-shared/trangevi-basic-responses/optimize-tasks.jsonl"
+    cwd: "~/working/azd-agents-shared/trangevi-basic-responses"
+    name: "stage optimize dataset fixture"
     continue_on_error: true
 
 goals:
-  - "Run: azd ai agent optimize --eval-model gpt-4.1-mini --max-iterations 1 --no-wait (agent auto-detected from the azd project). Provide any other values it prompts for using sensible defaults."
+  - "Run: azd ai agent optimize --dataset optimize-tasks.jsonl --max-iterations 1 --no-wait (agent auto-detected from the azd project; a dataset fixture was staged into the project root during setup). Do NOT pass --eval-model — let the command prompt and select a real, deployed model (accept the pre-filled default deployment, or pick the 'trangevi-'-prefixed deployment created during setup). Provide sensible defaults for anything else it prompts for."
   - "Confirm a job is submitted and an optimization job ID is printed (the command returns immediately due to --no-wait)."
   - "Run: azd ai agent optimize status <id> using the printed ID and confirm a status is reported."
   - "Run: azd ai agent optimize list and confirm the submitted job appears in recent runs."

@@ -45,7 +45,10 @@ Implications:
   isolation (the `{instance}` suffix keeps concurrent runs of the same scenario
   apart — see [Parallel-readiness](#parallel-readiness--port-allocation)); and a
   single shared `~/working/azd-agents-shared` dir for all Tier 2 scenarios so they
-  operate on the same deployed agent.
+  operate on the same deployed agent. `20-setup` runs `init` in that shared dir,
+  which scaffolds the project into a subdirectory named after the agent, so the
+  deployed project actually lives in `~/working/azd-agents-shared/trangevi-basic-responses`;
+  the reuse and teardown scenarios run with that subdirectory as their `cwd`.
 
 On macOS/Linux these are simply native paths (no WSL involved).
 
@@ -117,9 +120,11 @@ advantage of both where it's safe.
     `run` and `invoke` sessions find each other; parallel local runs each get a
     distinct port instead of colliding on the default `8088`.
 - **Single-instance by design:** the **Tier 2 reuse scenarios** (`21-`…`2A-`),
-  plus `20-setup` and `2Z-teardown`, all share the one deployed agent in
-  `~/working/azd-agents-shared`. They are **not** parameterized with `{instance}`
-  (doing so would break the shared-agent assumption) and should be run serially.
+  plus `20-setup` and `2Z-teardown`, all share the one deployed agent under
+  `~/working/azd-agents-shared` (the project itself lives in the
+  `trangevi-basic-responses` subdirectory created by `20-setup`). They are
+  **not** parameterized with `{instance}` (doing so would break the shared-agent
+  assumption) and should be run serially.
 
 To fan out, pass a distinct `instance_id` per `start_session` call (and reuse the
 same `instance_id` for paired `run`/`invoke` sessions of one scenario).
@@ -189,8 +194,11 @@ Provisions real resources. **Run order matters:**
 2. Any `21-`…`2A-` targeted scenario (reuse the deployed agent).
 3. `2Z-teardown-down.yaml` **last** — `azd down --force --purge`.
 
-All Tier 2 scenarios share one working directory (`~/working/azd-agents-shared`)
-so they operate on the same deployed agent.
+All Tier 2 scenarios share one working tree under `~/working/azd-agents-shared`
+so they operate on the same deployed agent. `20-setup` runs `init` there, which
+scaffolds the project into the `trangevi-basic-responses` subdirectory; the
+reuse and teardown scenarios run with `~/working/azd-agents-shared/trangevi-basic-responses`
+as their `cwd`.
 
 | File | Targets |
 |------|---------|

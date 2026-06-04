@@ -64,11 +64,11 @@ func newSocketTransport(rawURL string) (http.RoundTripper, string, error) {
 // bypass the parent-directory permission check. It returns a clear error when
 // any check fails.
 func verifySocketPermissions(socketPath string) error {
-	stat, err := os.Lstat(socketPath)
-	if err != nil {
+	var stat syscall.Stat_t
+	if err := syscall.Lstat(socketPath, &stat); err != nil {
 		return fmt.Errorf("AZD_AUTH_ENDPOINT socket %q: lstat: %w", socketPath, err)
 	}
-	if stat.Mode()&os.ModeSymlink != 0 {
+	if stat.Mode&syscall.S_IFMT == syscall.S_IFLNK {
 		return fmt.Errorf(
 			"AZD_AUTH_ENDPOINT socket %q: symlinks are not supported; provide the real socket path", socketPath)
 	}

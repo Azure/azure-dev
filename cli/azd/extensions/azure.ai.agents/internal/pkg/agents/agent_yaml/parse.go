@@ -384,6 +384,23 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 			case AgentKindHosted:
 				var agent ContainerAgent
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
+					for i, policy := range agent.Policies {
+						switch policy.Type {
+						case PolicyTypeRai:
+							if policy.RaiPolicyName == "" {
+								errors = append(errors, fmt.Sprintf(
+									"policies[%d] of type '%s' requires a policy name (rai_policy_name)",
+									i, policy.Type))
+							}
+						case "":
+							errors = append(errors, fmt.Sprintf(
+								"policies[%d] requires a type", i))
+						default:
+							errors = append(errors, fmt.Sprintf(
+								"policies[%d] has an unsupported type '%s' (supported: %s)",
+								i, policy.Type, PolicyTypeRai))
+						}
+					}
 					// TODO: Do we need this?
 					// if len(agent.Models) == 0 {
 					// 	errors = append(errors, "template.models is required and must not be empty")

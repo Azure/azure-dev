@@ -138,7 +138,10 @@ func verifyPipeSecurity(pipePath string) error {
 		// before the SID and are handled separately.
 		switch ace.Header.AceType {
 		case windows.ACCESS_ALLOWED_ACE_TYPE, accessAllowedCallbackAceType:
-			sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+			sid, err := accessAllowedAceSid(ace)
+			if err != nil {
+				return fmt.Errorf("reading SID from ACE %d: %w", i, err)
+			}
 			if !sidInList(sid, allowedSids) {
 				return fmt.Errorf(
 					"permissions too permissive: pipe %q grants access to SID %q "+
@@ -164,6 +167,15 @@ const (
 	accessAllowedCallbackAceType       uint8 = 0x09
 	accessAllowedCallbackObjectAceType uint8 = 0x0B
 )
+
+func accessAllowedAceSid(ace *windows.ACCESS_ALLOWED_ACE) (*windows.SID, error) {
+	//nolint:gosec // Win32 ACCESS_ALLOWED_ACE stores the SID inline at SidStart.
+	sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+	if !sid.IsValid() {
+		return nil, fmt.Errorf("invalid SID in access-allowed ACE type %d", ace.Header.AceType)
+	}
+	return sid, nil
+}
 
 // currentProcessUserSid returns the SID of the user owning the current
 // process token. This is preferred over user.Current() because it avoids a

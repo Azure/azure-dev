@@ -368,18 +368,23 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	// When already logged in (or when login state cannot be determined due to corrupted cache),
-	// clear cached auth data before re-authenticating. This prevents issues with stale MSAL
-	// tokens or corrupted credential cache files that can cause AADSTS700082 errors even after
-	// a successful login. Only skip cleanup when definitively not logged in.
-	if _, err := la.authManager.LogInDetails(ctx); !errors.Is(err, auth.ErrNoCurrentUser) {
-		if err := la.authManager.CleanAllAuthCache(); err != nil {
-			tracing.SetUsageAttributes(attribute.String("auth.cache_clear_failed", "auth"))
-			return nil, fmt.Errorf("clearing auth cache: %w", err)
-		}
-		if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
-			tracing.SetUsageAttributes(attribute.String("auth.cache_clear_failed", "subscriptions"))
-			return nil, fmt.Errorf("clearing subscriptions cache: %w", err)
+	// When already logged in with interactive/device-code auth (or when login state cannot be
+	// determined due to corrupted cache), clear cached auth data before re-authenticating. This
+	// prevents issues with stale MSAL refresh tokens that can cause AADSTS700082 errors even
+	// after a successful login.
+	// Skip cleanup for MI and SP re-logins: they don't use refresh tokens, so the stale-token
+	// issue doesn't apply, and unnecessary cleanup could block an otherwise valid login.
+	isServicePrincipalOrMI := la.flags.managedIdentity || la.flags.clientID != ""
+	if !isServicePrincipalOrMI {
+		if _, err := la.authManager.LogInDetails(ctx); !errors.Is(err, auth.ErrNoCurrentUser) {
+			if err := la.authManager.CleanAllAuthCache(); err != nil {
+				tracing.SetUsageAttributes(attribute.String("auth.cache_clear_failed", "auth"))
+				return nil, fmt.Errorf("clearing auth cache: %w", err)
+			}
+			if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
+				tracing.SetUsageAttributes(attribute.String("auth.cache_clear_failed", "subscriptions"))
+				return nil, fmt.Errorf("clearing subscriptions cache: %w", err)
+			}
 		}
 	}
 

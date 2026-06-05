@@ -837,7 +837,7 @@ func TestMaxModelRemainingQuota_EmptyUsages(t *testing.T) {
 
 	emptyUsages := map[string]AiModelUsage{}
 
-	// Model with SKUs: found=true, remaining=-1 (unknown)
+	// Model with SKUs: found=true, remaining=QuotaRemainingUnknown
 	remaining, found := maxModelRemainingQuota(modelWithSkus, emptyUsages)
 	require.True(t, found)
 	require.Equal(t, QuotaRemainingUnknown, remaining)

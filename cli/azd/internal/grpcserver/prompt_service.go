@@ -1198,7 +1198,7 @@ func (s *promptService) PromptAiModelLocationWithQuota(
 	}
 	for i, loc := range locations {
 		var label string
-		if loc.MaxRemainingQuota < 0 {
+		if loc.MaxRemainingQuota == ai.QuotaRemainingUnknown {
 			label = loc.Location
 		} else {
 			quotaLabel := output.WithGrayFormat(

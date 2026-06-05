@@ -840,7 +840,7 @@ func TestMaxModelRemainingQuota_EmptyUsages(t *testing.T) {
 	// Model with SKUs: found=true, remaining=-1 (unknown)
 	remaining, found := maxModelRemainingQuota(modelWithSkus, emptyUsages)
 	require.True(t, found)
-	require.Equal(t, float64(-1), remaining)
+	require.Equal(t, QuotaRemainingUnknown, remaining)
 
 	// Model with no SKUs: found=false
 	_, found = maxModelRemainingQuota(modelNoSkus, emptyUsages)

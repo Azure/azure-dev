@@ -347,9 +347,9 @@ func (s *AiModelService) ListModelLocationsWithQuota(
 		// Include the location when the model has at least one
 		// deployable SKU and either: (a) usage data confirms
 		// sufficient remaining quota, or (b) usage data is
-		// unavailable (sentinel -1, e.g. free-tier subscriptions).
+		// unavailable (e.g. free-tier subscriptions).
 		if found &&
-			(maxRemainingAtLocation < 0 ||
+			(maxRemainingAtLocation == QuotaRemainingUnknown ||
 				maxRemainingAtLocation >= minRemaining) {
 			results = append(results, ModelLocationQuota{
 				Location:          loc,
@@ -1006,7 +1006,7 @@ func maxModelRemainingQuota(model AiModel, usageMap map[string]AiModelUsage) (fl
 	if len(usageMap) == 0 {
 		for _, version := range model.Versions {
 			if len(version.Skus) > 0 {
-				return -1, true
+				return QuotaRemainingUnknown, true
 			}
 		}
 		return 0, false

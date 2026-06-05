@@ -4602,7 +4602,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--file'],
-									description: 'Path to a SKILL.md file whose values become the next version\'s inline content',
+									description: 'Path to a SKILL.md file, a .zip archive, or a directory whose contents become the next version. Archives and directories must contain a SKILL.md at the root.',
 									args: [
 										{
 											name: 'file',

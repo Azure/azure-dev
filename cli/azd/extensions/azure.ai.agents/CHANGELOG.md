@@ -4,7 +4,7 @@
 
 - [[#8532]](https://github.com/Azure/azure-dev/pull/8532) Fix Agent Inspector auto-launch for slow-starting local agents by waiting for the local agent port instead of timing out after 30 seconds. Thanks @anchenyi for the contribution!
 - [[#8529]](https://github.com/Azure/azure-dev/pull/8529) Update `azd ai agent init` to write a salted `AZURE_RESOURCE_GROUP` value to `.env`, reducing resource group collisions when recreating projects. Thanks @banrahan for the contribution!
-- [[#8521]](https://github.com/Azure/azure-dev/pull/8521) Add support for a generic `policies` list in `agent.yaml` so hosted agents can attach `rai_policy` governance policies. Thanks @amitbhave10 for the contribution!
+- [[#8521]](https://github.com/Azure/azure-dev/pull/8521) Add generic `policies` (`rai_policy`) support to the `agent.yaml` manifest for hosted agents so users can attach governance policies via `rai_policy_name`. Thanks @amitbhave10 for the contribution!
 - [[#8522]](https://github.com/Azure/azure-dev/pull/8522) Fix `azd ai agent init` from a manifest in the current directory when the target project is created in a subdirectory. Thanks @v1212 for the contribution!
 
 ## 0.1.37-preview (2026-06-01)

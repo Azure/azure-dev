@@ -4,7 +4,7 @@
 # shared agent and its Azure resources to stop incurring cost.
 name: "teardown-down"
 command: "azd down --force --purge"
-cwd: "~/working/azd-agents-shared/trangevi-basic-responses"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
 
 goals:
   - "Run 'azd down --force --purge' in the shared project directory."

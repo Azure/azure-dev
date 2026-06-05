@@ -3,12 +3,12 @@
 # Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
 name: "endpoint-update"
 command: "azd ai agent endpoint update"
-cwd: "~/working/azd-agents-shared/trangevi-basic-responses"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
 
 # Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
 pre:
-  - run: "test -f ~/working/azd-agents-shared/trangevi-basic-responses/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
-    cwd: "~/working/azd-agents-shared/trangevi-basic-responses"
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
     name: "assert shared agent is deployed"
     continue_on_error: true
   # `endpoint update` reads agent_endpoint/agent_card from agent.yaml and errors
@@ -16,14 +16,14 @@ pre:
   # defines neither, so inject a minimal agent_card (idempotently) before the run
   # so there is something to patch.
   - run: |
-      f="$(find ~/working/azd-agents-shared/trangevi-basic-responses -name agent.yaml | head -1)"
+      f="$(find ~/working/azd-agents-shared/{shared_agent_name} -name agent.yaml | head -1)"
       if [ -n "$f" ] && ! grep -q '^agent_card:' "$f"; then
-        printf '\nagent_card:\n  description: "trangevi endpoint-update test card"\n  skills:\n    - id: "trangevi-echo"\n      name: "Echo"\n      description: "Echoes input back"\n' >> "$f"
+        printf '\nagent_card:\n  description: "{prefix} endpoint-update test card"\n  skills:\n    - id: "{prefix}-echo"\n      name: "Echo"\n      description: "Echoes input back"\n' >> "$f"
         echo "Injected agent_card into $f"
       else
         echo "agent_card already present or agent.yaml not found"
       fi
-    cwd: "~/working/azd-agents-shared/trangevi-basic-responses"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
     name: "inject agent_card so there is something to patch"
     continue_on_error: true
 

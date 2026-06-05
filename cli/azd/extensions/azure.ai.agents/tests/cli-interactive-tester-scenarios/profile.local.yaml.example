@@ -1,0 +1,27 @@
+# Per-developer / per-CI scenario profile — identifying values.
+#
+# Bootstrap:
+#   cp profile.local.yaml.example profile.local.yaml
+#   # then edit profile.local.yaml
+#
+# profile.local.yaml is gitignored. CI populates it from pipeline secrets.
+# Any key set here overrides the same key in profile.yaml.
+
+# REQUIRED. Prefix applied to every newly created Azure resource (Foundry
+# project/account, azd environment, agent, model deployment, resource group)
+# so test resources are easy to identify and clean up. Use lowercase and
+# hyphens — some fields normalize the value (sanitizeAgentName lowercases
+# and replaces invalid characters), and a clean prefix avoids surprises.
+# Concurrent runs of the same Tier 1 scenario automatically suffix this
+# with -{instance} to keep parallel resource names distinct.
+prefix: "your-alias"
+
+# REQUIRED. Display name of the Azure subscription to select when scenarios
+# prompt for one. Tier 1 and Tier 2 scenarios both read this.
+subscription: "azd ai agent development"
+
+# OPTIONAL. Tenant for `az login --tenant <value>` (and `gh auth login`).
+# When unset, the driving agent omits the --tenant flag entirely and relies
+# on your default tenant. Set this only if you actually need to scope to a
+# specific tenant.
+# tenant: "azdaiagent.onmicrosoft.com"

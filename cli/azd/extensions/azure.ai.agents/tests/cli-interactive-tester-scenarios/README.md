@@ -1,4 +1,4 @@
-<!-- cspell:ignore benhanrahan azdaiagent -->
+<!-- cspell:ignore benhanrahan -->
 # `azd ai agent` — cli-interactive-tester scenarios
 
 Goal-based scenarios for driving the `azure.ai.agents` extension through the
@@ -8,14 +8,37 @@ strict `goals:` list format so the run is repeatable and reviewable.
 
 ## How to run
 
-Register the cli-interactive-tester MCP server (see its README), then ask
-Copilot CLI to load a scenario and accomplish its goals, e.g.:
+Register the cli-interactive-tester MCP server (see its README), then
+**bootstrap your profile** (one-time, per checkout — see [Profile / overrides](#profile--overrides)):
+
+```sh
+cd cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios
+cp profile.local.yaml.example profile.local.yaml
+# edit profile.local.yaml — set `prefix` and `subscription` at minimum
+```
+
+Then ask Copilot CLI to load a scenario and accomplish its goals. The
+orchestrator must **load both profile files, merge them (local overrides
+shared), derive `shared_agent_name = {prefix}-{shared_agent_suffix}`, and pass
+the merged map as `session_vars` on every `load_scenario`, `run_pre_hooks`,
+`start_session`, and `run_post_hooks` call** — the scenario YAMLs reference
+those values via `{prefix}`, `{subscription}`, `{region}`, `{model}`,
+`{tenant}` (optional), and `{shared_agent_name}` placeholders. Example
+prompt:
 
 ```
-Use the cli-interactive-tester to load the scenario at
-tests/cli-interactive-tester-scenarios/00-version.yaml. If it declares pre hooks,
-run them first; then start the session, accomplish the goals, take screenshots at
-each step, and run any post hooks after finishing.
+Use the cli-interactive-tester to drive the scenario at
+tests/cli-interactive-tester-scenarios/00-version.yaml.
+
+First, read tests/cli-interactive-tester-scenarios/profile.yaml and
+profile.local.yaml and merge them (local overrides shared); also derive
+shared_agent_name = "{prefix}-{shared_agent_suffix}". Pass the merged map as
+session_vars on every load_scenario / run_pre_hooks / start_session /
+run_post_hooks call.
+
+If the scenario declares pre hooks, run them first; then start the session,
+accomplish the goals, take screenshots at each step, and run any post hooks
+after finishing.
 ```
 
 Most scenarios here declare **`pre:` hooks** (host-side setup such as resetting
@@ -33,6 +56,12 @@ a set of test scenarios for the cli-interactive-tester. I want you to use the cl
     start the session and accomplish the goals,
     if the scenario declares pre or post hooks, run them before/after the session,
     and take screenshots at each step.
+
+First, read tests/cli-interactive-tester-scenarios/profile.yaml and profile.local.yaml and merge
+them (local overrides shared); also derive shared_agent_name = "{prefix}-{shared_agent_suffix}".
+Pass the merged map as session_vars on every load_scenario / run_pre_hooks / start_session /
+run_post_hooks call — the scenarios reference {prefix}, {subscription}, {region}, {model},
+{tenant} (optional), and {shared_agent_name} placeholders.
 
 I want this run on fleet mode, to parallelize the tests as much as possible. Each of the scenarios
 in tiers 0 and 1 are compleatly indpendent of each other and can be run in parallel. The scenarios
@@ -69,8 +98,10 @@ Implications:
   single shared `~/working/azd-agents-shared` dir for all Tier 2 scenarios so they
   operate on the same deployed agent. `20-setup` runs `init` in that shared dir,
   which scaffolds the project into a subdirectory named after the agent, so the
-  deployed project actually lives in `~/working/azd-agents-shared/trangevi-basic-responses`;
-  the reuse and teardown scenarios run with that subdirectory as their `cwd`.
+  deployed project actually lives in `~/working/azd-agents-shared/{shared_agent_name}`
+  (where `{shared_agent_name} = {prefix}-{shared_agent_suffix}` from your
+  [profile](#profile--overrides), e.g. `alice-basic-responses`); the reuse and
+  teardown scenarios run with that subdirectory as their `cwd`.
 
 On macOS/Linux these are simply native paths (no WSL involved).
 
@@ -100,19 +131,21 @@ opens a **separate browser window** for account selection that requires
 human interaction outside the terminal the agent controls. Treat auth as a
 one-time manual prerequisite, not a scenario step.
 
-Inside WSL, a human runs:
+Inside WSL, a human runs (substituting `{tenant}` and `{subscription}` with
+the values from their [profile](#profile--overrides) — omit `--tenant`
+entirely if `tenant` isn't set in `profile.local.yaml`):
 
 ```
-az login --tenant azdaiagent.onmicrosoft.com
+az login --tenant {tenant}      # or just `az login` if {tenant} is unset
 ```
 
 This opens the interactive sign-in flow and then:
 
 1. **Browser account selection** — a separate browser window opens; the human
-   picks the account in the `azdaiagent.onmicrosoft.com` tenant. (The agent
-   cannot do this.)
+   picks the account in the `{tenant}` tenant (or any tenant, if `{tenant}`
+   isn't set). The agent cannot do this.
 2. **Subscription selection** — back in the terminal, select the
-   `azd ai agent development` subscription.
+   `{subscription}` subscription.
 
 Tier 0 (`00-`) scenarios need no auth. Run this `az login` step once per WSL
 session **before** asking the agent to drive any Tier 1/Tier 2 scenario; all of
@@ -161,7 +194,7 @@ advantage of both where it's safe.
 - **Single-instance by design:** the **Tier 2 reuse scenarios** (`21-`…`2A-`),
   plus `20-setup` and `2Z-teardown`, all share the one deployed agent under
   `~/working/azd-agents-shared` (the project itself lives in the
-  `trangevi-basic-responses` subdirectory created by `20-setup`). They are
+  `{shared_agent_name}` subdirectory created by `20-setup`). They are
   **not** parameterized with `{instance}` (doing so would break the shared-agent
   assumption) and should be run serially.
 
@@ -305,8 +338,8 @@ Provisions real resources. **Run order matters:**
 
 All Tier 2 scenarios share one working tree under `~/working/azd-agents-shared`
 so they operate on the same deployed agent. `20-setup` runs `init` there, which
-scaffolds the project into the `trangevi-basic-responses` subdirectory; the
-reuse and teardown scenarios run with `~/working/azd-agents-shared/trangevi-basic-responses`
+scaffolds the project into the `{shared_agent_name}` subdirectory; the
+reuse and teardown scenarios run with `~/working/azd-agents-shared/{shared_agent_name}`
 as their `cwd`.
 
 | File | Targets |
@@ -326,18 +359,57 @@ as their `cwd`.
 | `2A-doctor-provisioned-all-pass.yaml` | `doctor` (all checks pass) |
 | `2Z-teardown-down.yaml` | `azd down --force --purge` (TEARDOWN) |
 
+## Profile / overrides
+
+Developer- and environment-specific values (subscription, region, model,
+resource-name prefix, optional tenant) are **not** hardcoded in the scenario
+YAMLs. Instead, the scenarios reference them via `{name}` placeholders, and
+the orchestrator supplies the values as `session_vars` on every tester call.
+
+Two files in this directory drive the values:
+
+| File | Tracked? | Contents | Notes |
+|---|---|---|---|
+| `profile.yaml` | ✅ checked in | repo-shared defaults | `region`, `model`, `shared_agent_suffix` |
+| `profile.local.yaml` | ❌ gitignored | per-developer / per-CI overrides | required: `prefix`, `subscription`. optional: `tenant` (no default) |
+| `profile.local.yaml.example` | ✅ checked in | starter template | copy to `profile.local.yaml` and edit |
+
+Variables exposed to scenarios via `session_vars`:
+
+| Placeholder | Source | Default | Notes |
+|---|---|---|---|
+| `{prefix}` | `profile.local.yaml` | **required** | resource-name prefix; should be lowercase + hyphen-friendly so `sanitizeAgentName` doesn't mutate it |
+| `{subscription}` | `profile.local.yaml` | **required** | subscription display name |
+| `{tenant}` | `profile.local.yaml` | optional, no default | only consumed by the `az login` guidance above; when unset, drop `--tenant` and rely on the user's default tenant |
+| `{region}` | `profile.yaml` | `East US 2` | |
+| `{model}` | `profile.yaml` | `gpt-4.1-mini` | cheap/fast for tests |
+| `{shared_agent_suffix}` | `profile.yaml` | `basic-responses` | |
+| `{shared_agent_name}` | derived by orchestrator | `{prefix}-{shared_agent_suffix}` | Tier 2 subdirectory name — orchestrator must compute and pass alongside the others |
+
+**Bootstrap (one-time per checkout):**
+
+```sh
+cp profile.local.yaml.example profile.local.yaml
+# edit profile.local.yaml — set `prefix` (lowercase, hyphen-friendly) and `subscription`
+```
+
+The orchestrator must load both files, merge (local overrides shared), derive
+`shared_agent_name`, and pass the merged map as `session_vars=` on every
+`load_scenario` / `run_pre_hooks` / `start_session` / `run_post_hooks` call.
+Failing to thread `session_vars` leaves `{prefix}` etc. unresolved in goals and
+the run will execute against literal placeholder strings.
+
 ## Conventions
 
-- **Subscription**: `azd ai agent development`
-- **Region**: `East US 2`
-- **Model**: `gpt-4.1-mini` (cheap/fast for testing)
-- **Resource name prefix**: every newly created Azure resource (Foundry
+- **Tunable values** (subscription, region, model, prefix, tenant) come from
+  the profile pair above — see [Profile / overrides](#profile--overrides).
+- **Resource naming**: every newly created Azure resource (Foundry
   project/account, azd environment, agent, model deployment, resource group) is
-  named with a `trangevi-` prefix (and, in parallel-ready Tier 1 scenarios, a
-  `-{instance}` suffix) so test resources are easy to identify, keep distinct
-  across concurrent runs, and clean up. Note that some fields lowercase the value
-  and replace invalid characters with hyphens — that normalization is expected
-  (see `sanitizeAgentName` in the extension).
+  named with the `{prefix}-` value from your profile (and, in parallel-ready
+  Tier 1 scenarios, a `-{instance}` suffix) so test resources are easy to
+  identify, keep distinct across concurrent runs, and clean up. Note that some
+  fields lowercase the value and replace invalid characters with hyphens — that
+  normalization is expected (see `sanitizeAgentName` in the extension).
 - `command:` invokes the installed extension as `azd ai agent …`.
 - Init scenarios set `env: AZD_DISABLE_AGENT_DETECT: "1"` to disable agent
   auto-detection prompts.

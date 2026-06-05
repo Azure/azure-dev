@@ -1,2 +1,6 @@
 # cli-interactive-tester run artifacts (screenshots, HTML reports, scrollback)
 .reports/
+
+# Per-developer / per-CI scenario profile (identifying values). Bootstrap
+# from profile.local.yaml.example. See README "Profile / overrides".
+profile.local.yaml

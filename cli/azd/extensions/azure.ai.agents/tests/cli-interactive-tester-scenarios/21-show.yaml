@@ -3,12 +3,12 @@
 # Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
 name: "show"
 command: "azd ai agent show"
-cwd: "~/working/azd-agents-shared/trangevi-basic-responses"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
 
 # Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
 pre:
-  - run: "test -f ~/working/azd-agents-shared/trangevi-basic-responses/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
-    cwd: "~/working/azd-agents-shared/trangevi-basic-responses"
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
     name: "assert shared agent is deployed"
     continue_on_error: true
 

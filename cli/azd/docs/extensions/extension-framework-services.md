@@ -30,11 +30,19 @@ id: my.custom.extension
 namespace: my.extension
 displayName: My Custom Language Extension
 description: Adds support for Rust programming language
+usage: azd my extension <command> [options]
 version: 1.0.0
 capabilities:
   - framework-service-provider
   - lifecycle-events  # Optional: for additional lifecycle hooks
 ```
+
+> **Note:** The `usage` property is required. If it is omitted, `azd extension`
+> validation reports a "Missing usage information" warning, which is treated as an
+> error when building or publishing the extension. The value is a free-form usage
+> hint shown to users; it does not have to reference an azd command. For a
+> framework-only extension whose sole job is to register a language, a short
+> description such as `usage: Adds Rust language support to azd` is acceptable.
 
 ### 2. Implement the FrameworkServiceProvider Interface
 
@@ -266,12 +274,13 @@ func newListenCommand() *cobra.Command {
             }
             defer azdClient.Close()
 
-            // Create your framework service provider
-            rustFrameworkProvider := NewRustFrameworkServiceProvider(azdClient)
-            
-            // Register it with the extension host
+            // Register your framework service provider with the extension host.
+            // WithFrameworkService takes a factory function that returns a new
+            // provider instance, so the provider is constructed lazily when needed.
             host := azdext.NewExtensionHost(azdClient).
-                WithFrameworkService("rust", rustFrameworkProvider)
+                WithFrameworkService("rust", func() azdext.FrameworkServiceProvider {
+                    return NewRustFrameworkServiceProvider(azdClient)
+                })
             
             // Start listening for events
             return host.Run(ctx)

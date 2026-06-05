@@ -1,5 +1,10 @@
 # Release History
 
+## 0.11.2 (2026-06-05)
+
+- [[#8552]](https://github.com/Azure/azure-dev/pull/8552) Embed language template dotfiles so generated extensions include a `.gitignore` (the Go template excludes `bin/`).
+- [[#8552]](https://github.com/Azure/azure-dev/pull/8552) Warn during `azd x build` when the local extension source registry is missing or does not contain the extension, since the binaries are installed but the extension would not appear in `azd extension list`.
+
 ## 0.11.1 (2026-06-03)
 
 - [[#8498]](https://github.com/Azure/azure-dev/pull/8498) Disable HTML escaping when writing `registry.json` during `azd x publish` and local registry creation.

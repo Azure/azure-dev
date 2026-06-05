@@ -24,6 +24,28 @@ the working dir or seeding a fixture), and a few declare **`post:` hooks**
 `run_post_hooks` MCP tools — `load_scenario` surfaces whether a scenario has any.
 See [Pre/post hooks](#prepost-hooks) below.
 
+Here's also a sample prompt to run all of the scenarios, utilizing fleet mode:
+
+```
+Within the agents extension, there is a tests/cli-interactive-tester-scenarios directory, containing
+a set of test scenarios for the cli-interactive-tester. I want you to use the cli-interactive-tester to;
+    load the scenarios,
+    start the session and accomplish the goals,
+    if the scenario declares pre or post hooks, run them before/after the session,
+    and take screenshots at each step.
+
+I want this run on fleet mode, to parallelize the tests as much as possible. Each of the scenarios
+in tiers 0 and 1 are compleatly indpendent of each other and can be run in parallel. The scenarios
+in tier 2 however rely on a setup scenario, and the teardown scenario should be run last, so make
+sure to take that into account when distributing the work. I want to run all of the tests regardless
+of tier, and I acknowledge that tier 2 has an azure cost implication, that's fine.
+
+After all of these scenarios are run, create a final result report.
+
+Create a plan to accomplish this
+```
+
+
 ## Paths run inside WSL (on Windows)
 
 The cli-interactive-tester drives CLIs through **tmux**, which on Windows runs

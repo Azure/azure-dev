@@ -20,7 +20,7 @@ prefix: "your-alias"
 # prompt for one. Tier 1 and Tier 2 scenarios both read this.
 subscription: "azd ai agent development"
 
-# OPTIONAL. Tenant for `az login --tenant <value>` (and `gh auth login`).
+# OPTIONAL. Tenant for `az login --tenant <value>`.
 # When unset, the driving agent omits the --tenant flag entirely and relies
 # on your default tenant. Set this only if you actually need to scope to a
 # specific tenant.

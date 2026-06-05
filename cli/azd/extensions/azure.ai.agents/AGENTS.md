@@ -50,7 +50,7 @@ files, monitor, endpoint, doctor, down) and are organized by tier:
 - **Tier 1** — local-only with Azure auth (init flows)
 - **Tier 2** — full cloud E2E against a deployed shared agent (incurs Azure cost)
 
-Each scenario caries a set of tags based on what is being tested and how.
+Each scenario carries a set of tags based on what is being tested and how.
 See `tests/cli-interactive-tester-scenarios/README.md` for the tag taxonomy,
 profile setup, and orchestration rules.
 

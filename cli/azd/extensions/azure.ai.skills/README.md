@@ -13,6 +13,8 @@ azd ai skill create <name> --file ./skill.zip
 azd ai skill create <name> --file ./skill-src/
 
 azd ai skill update <name> [--description "..."] [--instructions "..."] [--file ./SKILL.md]
+azd ai skill update <name> --file ./skill.zip
+azd ai skill update <name> --file ./skill-src/
 azd ai skill update <name> --set-default-version <version>
 azd ai skill show <name>
 azd ai skill list [--top N] [--orderby <field>]
@@ -32,9 +34,15 @@ a `SKILL.md`. Directory mode is the round-trip inverse of
 `azd ai skill download`: the CLI packages the directory as a zip in memory
 and uploads it as multipart/form-data, identical to the `.zip` path.
 
-`update` is inline-only: a `.zip` or a directory is rejected with a pointer
-to `azd ai skill create --force` (a destructive delete-then-create), since
-swapping the entire package shape is a `create` concern, not an `update`.
+`update` is non-destructive and accepts the same four input shapes as
+`create` (inline content, `SKILL.md`, `.zip`, or a directory whose root
+contains `SKILL.md`). Every upload creates a new immutable version and
+promotes it to `default_version`; prior versions remain reachable via
+`--set-default-version <ver>` or `azd ai skill download --version <ver>`.
+For directories, the CLI packages the folder as a zip in memory and
+uploads it as multipart/form-data, so the output of
+`azd ai skill download` round-trips back through `update` without a
+manual zip step.
 
 All commands accept the standard cross-cutting flags: `-p` / `--project-endpoint`,
 `--output table|json`, `--no-prompt`, and `--debug`.

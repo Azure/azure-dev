@@ -252,8 +252,9 @@ func (s *AiModelService) ListLocationsWithQuota(
 	sharedResults.Range(func(loc string, usages []*armcognitiveservices.Usage) bool {
 		// When the /usages API returns an empty list (e.g. free-tier subscriptions
 		// that have not yet provisioned Cognitive Services resources), treat the
-		// location as having full quota available.  The SKU endpoint already
-		// confirmed the models are supported in this location.
+		// location as having full quota available.  The AI Services account SKU
+		// (AIServices/S0) was already confirmed available in this region; empty
+		// usages means no consumption data exists, not that quota is zero.
 		if len(usages) == 0 {
 			results = append(results, loc)
 			return true
@@ -336,25 +337,20 @@ func (s *AiModelService) ListModelLocationsWithQuota(
 
 	results := []ModelLocationQuota{}
 	sharedResults.Range(func(loc string, usages []AiModelUsage) bool {
-		// Empty usage data (e.g. free-tier subscriptions) — treat as
-		// having sufficient quota since the model catalog already
-		// confirmed the model is available in this location.
-		// Use -1 to signal that the actual remaining quota is unknown.
-		if len(usages) == 0 {
-			results = append(results, ModelLocationQuota{
-				Location:          loc,
-				MaxRemainingQuota: -1,
-			})
-			return true
-		}
-
 		usageMap := make(map[string]AiModelUsage, len(usages))
 		for _, usage := range usages {
 			usageMap[usage.Name] = usage
 		}
 
-		maxRemainingAtLocation, found := maxModelRemainingQuota(*targetModel, usageMap)
-		if found && maxRemainingAtLocation >= minRemaining {
+		maxRemainingAtLocation, found := maxModelRemainingQuota(
+			*targetModel, usageMap)
+		// Include the location when the model has at least one
+		// deployable SKU and either: (a) usage data confirms
+		// sufficient remaining quota, or (b) usage data is
+		// unavailable (sentinel -1, e.g. free-tier subscriptions).
+		if found &&
+			(maxRemainingAtLocation < 0 ||
+				maxRemainingAtLocation >= minRemaining) {
 			results = append(results, ModelLocationQuota{
 				Location:          loc,
 				MaxRemainingQuota: maxRemainingAtLocation,

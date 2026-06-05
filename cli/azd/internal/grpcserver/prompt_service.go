@@ -1197,8 +1197,15 @@ func (s *promptService) PromptAiModelLocationWithQuota(
 		EnableFiltering: new(true),
 	}
 	for i, loc := range locations {
-		quotaLabel := output.WithGrayFormat("[up to %.0f quota available]", loc.MaxRemainingQuota)
-		label := fmt.Sprintf("%s %s", loc.Location, quotaLabel)
+		var label string
+		if loc.MaxRemainingQuota < 0 {
+			label = loc.Location
+		} else {
+			quotaLabel := output.WithGrayFormat(
+				"[up to %.0f quota available]",
+				loc.MaxRemainingQuota)
+			label = fmt.Sprintf("%s %s", loc.Location, quotaLabel)
+		}
 		selectOpts.Choices[i] = &ux.SelectChoice{
 			Value: loc.Location,
 			Label: label,

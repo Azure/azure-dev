@@ -2911,15 +2911,6 @@ func (p *BicepProvider) checkAiModelQuota(
 			continue
 		}
 
-		// When the /usages API returns an empty list (e.g. free-tier
-		// subscriptions that have not yet provisioned Cognitive Services
-		// resources), skip the quota check for this location.  Empty
-		// usages means no consumption data is available — not that
-		// quota is zero.
-		if len(usages) == 0 {
-			continue
-		}
-
 		// Build a lookup map from usage name → remaining quota.
 		usageMap := map[string]float64{}
 		for _, u := range usages {
@@ -3005,6 +2996,16 @@ func (p *BicepProvider) checkAiModelQuota(
 		}
 
 		// Check aggregated capacity against remaining quota.
+		// Skip when the /usages API returned an empty list (e.g. free-tier
+		// subscriptions that have not yet provisioned Cognitive Services
+		// resources).  Empty usages means no consumption data is
+		// available — not that quota is zero.  The model-catalog
+		// validation above still runs so that ai_model_not_found
+		// warnings are surfaced regardless.
+		if len(usages) == 0 {
+			continue
+		}
+
 		reportedUsage := map[string]bool{}
 		for _, r := range resolved {
 			if reportedUsage[r.usageName] {

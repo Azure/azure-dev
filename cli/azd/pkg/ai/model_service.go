@@ -339,10 +339,11 @@ func (s *AiModelService) ListModelLocationsWithQuota(
 		// Empty usage data (e.g. free-tier subscriptions) — treat as
 		// having sufficient quota since the model catalog already
 		// confirmed the model is available in this location.
+		// Use -1 to signal that the actual remaining quota is unknown.
 		if len(usages) == 0 {
 			results = append(results, ModelLocationQuota{
 				Location:          loc,
-				MaxRemainingQuota: minRemaining,
+				MaxRemainingQuota: -1,
 			})
 			return true
 		}

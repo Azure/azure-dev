@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"azure.ai.connections/internal/exterrors"
 	"azure.ai.connections/internal/foundry/projectctx"
@@ -45,8 +44,6 @@ func resolveConnectionContext(
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("projectctx: resolved endpoint=%s source=%s",
-		resolved.Endpoint, resolved.Source)
 	endpoint := resolved.Endpoint
 
 	account, project, err := parseEndpointComponents(endpoint)

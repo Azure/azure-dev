@@ -104,8 +104,15 @@ type ModelLocationQuota struct {
 	// Location is the Azure location name.
 	Location string
 	// MaxRemainingQuota is the maximum remaining quota across model SKUs with usage entries.
+	// A value of QuotaRemainingUnknown (-1) indicates that usage data was unavailable
+	// (e.g. free-tier subscriptions) and the actual remaining quota is unknown.
 	MaxRemainingQuota float64
 }
+
+// QuotaRemainingUnknown is a sentinel value for MaxRemainingQuota indicating that
+// the /usages API returned no data (e.g. free-tier subscriptions that have not yet
+// provisioned Cognitive Services resources) and the actual remaining quota is unknown.
+const QuotaRemainingUnknown float64 = -1
 
 // QuotaRequirement specifies a single quota check: the usage name to check
 // and the minimum remaining capacity needed.

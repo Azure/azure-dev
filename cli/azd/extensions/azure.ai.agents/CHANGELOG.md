@@ -1,9 +1,11 @@
 # Release History
 
-## Unreleased
+## 0.1.38-preview (2026-06-05)
 
-- Add support for a generic `policies` list in `agent.yaml` to attach governance policies to hosted agents. Each entry has a `type` discriminator; `type: rai_policy` attaches a Responsible AI (content safety) guardrail via `rai_policy_name`, the full ARM resource ID of the RAI policy (for example, `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<account>/raiPolicies/<policyName>`). `azd deploy` forwards it to the Foundry data plane as `rai_config.rai_policy_name`.
-- [[#8528]](https://github.com/Azure/azure-dev/issues/8528) .env will now contain a salted RG name after init, where before it was empty (Bicep filled in the default). Anyone scripting against AZURE_RESOURCE_GROUP right after init will see something different.
+- [[#8532]](https://github.com/Azure/azure-dev/pull/8532) Fix Agent Inspector auto-launch for slow-starting local agents by waiting for the local agent port instead of timing out after 30 seconds. Thanks @anchenyi for the contribution!
+- [[#8529]](https://github.com/Azure/azure-dev/pull/8529) Update `azd ai agent init` to write a salted `AZURE_RESOURCE_GROUP` value to `.env`, reducing resource group collisions when recreating projects. Thanks @banrahan for the contribution!
+- [[#8521]](https://github.com/Azure/azure-dev/pull/8521) Add generic `policies` (`rai_policy`) support to the `agent.yaml` manifest for hosted agents so users can attach governance policies via `rai_policy_name`. Thanks @amitbhave10 for the contribution!
+- [[#8522]](https://github.com/Azure/azure-dev/pull/8522) Fix `azd ai agent init` from a manifest in the current directory when the target project is created in a subdirectory. Thanks @v1212 for the contribution!
 
 ## 0.1.37-preview (2026-06-01)
 

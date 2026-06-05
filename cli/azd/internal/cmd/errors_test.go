@@ -1252,10 +1252,10 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 		"ErrNoResourceSelected": "pkg/prompt: interactive prompt error, caught in command callers",
 
 		// Subscription filter errors surfaced as user-facing messages in sub-filter commands
-		"ErrInteractiveRequired":    "internal: sub-filter requires interactive mode, caught in command action",
-		"ErrNoSubscriptionsFound":   "internal: no subscriptions available, caught in command action",
-		"ErrNoTenantsFound":         "internal: no tenants available, caught in command action",
-		"ErrNoFilterExists":         "internal: no filter to remove, caught in command action",
+		"ErrInteractiveRequired":  "internal: sub-filter requires interactive mode, caught in command action",
+		"ErrNoSubscriptionsFound": "internal: no subscriptions available, caught in command action",
+		"ErrNoTenantsFound":       "internal: no tenants available, caught in command action",
+		"ErrNoFilterExists":       "internal: no filter to remove, caught in command action",
 
 		// Template errors caught in init flow
 		"ErrTemplateNotFound": "pkg/templates: caught in init/template callers before reaching telemetry",

@@ -125,10 +125,10 @@ var (
 
 // Subscription filter errors
 var (
-	ErrInteractiveRequired    = errors.New("interactive mode required")
-	ErrNoSubscriptionsFound   = errors.New("no subscriptions found")
-	ErrNoTenantsFound         = errors.New("no tenants found")
-	ErrNoFilterExists         = errors.New("no saved filter exists")
+	ErrInteractiveRequired  = errors.New("interactive mode required")
+	ErrNoSubscriptionsFound = errors.New("no subscriptions found")
+	ErrNoTenantsFound       = errors.New("no tenants found")
+	ErrNoFilterExists       = errors.New("no saved filter exists")
 )
 
 // ExitCodeError wraps an error with a specific process exit code.

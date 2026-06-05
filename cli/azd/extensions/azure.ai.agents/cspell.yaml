@@ -41,6 +41,7 @@ words:
   - CLIENTSECRET
   - curr
   - dataagent
+  - defaultyourvalue
   - envkey
   - exterrors
   - goyaml

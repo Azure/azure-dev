@@ -48,7 +48,7 @@ run_post_hooks call — the scenarios reference {prefix}, {subscription}, {regio
 {tenant} (optional), and {shared_agent_name} placeholders.
 
 I want this run on fleet mode, to parallelize the tests as much as possible. Each of the scenarios
-in tiers 0 and 1 are compleatly indpendent of each other and can be run in parallel. The scenarios
+in tiers 0 and 1 are completely independent of each other and can be run in parallel. The scenarios
 in tier 2 however rely on a setup scenario, and the teardown scenario should be run last, so make
 sure to take that into account when distributing the work. I want to run all of the tests regardless
 of tier, and I acknowledge that tier 2 has an azure cost implication, that's fine.

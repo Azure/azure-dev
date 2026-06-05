@@ -37,10 +37,10 @@ capabilities:
   - lifecycle-events  # Optional: for additional lifecycle hooks
 ```
 
-> **Note:** The `usage` property is required. If it is omitted, `azd extension`
-> validation reports a "Missing usage information" warning, which is treated as an
-> error when building or publishing the extension. The value is a free-form usage
-> hint shown to users; it does not have to reference an azd command. For a
+> **Note:** Set the `usage` property on every extension. If it is omitted, `azd x build`
+> reports a non-fatal "Missing 'usage' field" warning (older azd versions treated this
+> warning as a fatal error). The value is a free-form usage hint shown to users in
+> `azd <namespace> --help`; it does not have to reference an azd command. For a
 > framework-only extension whose sole job is to register a language, a short
 > description such as `usage: Adds Rust language support to azd` is acceptable.
 

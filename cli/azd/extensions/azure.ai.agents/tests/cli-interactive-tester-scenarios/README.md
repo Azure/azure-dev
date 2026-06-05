@@ -237,7 +237,7 @@ its bugs:
   `FINAL-REPORT.md`. Use `Hh Mm Ss` formatting (e.g. `3m 21s`, `1h 04m 12s`).
   This makes regression slowdowns easy to spot across runs — Tier 2 in
   particular has scenarios that legitimately take many minutes (provision,
-  deploy, eval dataset generation) and others that should complete in seconds.
+  deploy) and others that should complete in seconds.
 
 
 ## Tiers
@@ -301,9 +301,6 @@ as their `cwd`.
 | `25-monitor-system.yaml` | `monitor --type system` |
 | `26-endpoint-update.yaml` | `endpoint update` |
 | `27-run-local-and-invoke-local.yaml` | `run` + `invoke --local` (two sessions) |
-| `28-eval-init-run-show.yaml` | `eval init/run/list/show` |
-| `28-eval-update.yaml` | `eval update` |
-| `29-optimize-submit-status.yaml` | `optimize` + `optimize status/list` |
 | `2A-doctor-provisioned-all-pass.yaml` | `doctor` (all checks pass) |
 | `2Z-teardown-down.yaml` | `azd down --force --purge` (TEARDOWN) |
 

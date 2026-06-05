@@ -4,11 +4,10 @@
 
 ### Features Added
 
-- [[#8475]](https://github.com/Azure/azure-dev/pull/8475) Add `--metadata key=value` flag (repeatable) to `azd ai connection update`, allowing metadata to be set or merged on existing connections without recreating them.
+- [[#8475]](https://github.com/Azure/azure-dev/pull/8475) Add `--metadata key=value` flag (repeatable) to `azd ai connection update`, allowing metadata to be set or merged on existing connections without recreating them. Also fixes the update path for OAuth2 connections: emit the credentials object in the PUT body (resolves HTTP 400 "Credentials Property can't be empty for auth type OAuth2") and preserve existing OAuth2 fields (connectorName, authorizationUrl, tokenUrl, scopes, etc.) on target/metadata-only updates.
 
 ### Bugs Fixed
 
-- [[#8475]](https://github.com/Azure/azure-dev/pull/8475) Fix `connection update` for OAuth2 connections: emit the credentials object in the PUT body (resolves HTTP 400 "Credentials Property can't be empty for auth type OAuth2") and preserve existing OAuth2 fields (connectorName, authorizationUrl, tokenUrl, scopes, etc.) on target/metadata-only updates.
 - [[#8539]](https://github.com/Azure/azure-dev/pull/8539) Remove leaked debug log from `resolveConnectionContext` that surfaced the resolved endpoint and source as user-visible noise on every `azd ai connection` invocation.
 
 ## 0.1.0-preview (2026-05-28)

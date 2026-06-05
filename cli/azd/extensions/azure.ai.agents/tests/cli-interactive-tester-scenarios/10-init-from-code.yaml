@@ -9,6 +9,7 @@
 name: "init-from-code"
 command: "azd ai agent init"
 cwd: "~/working/azd-agents-t1-from-code-{instance}"
+tags: ["tier:1", "cmd:init", "parallel-safe"]
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"

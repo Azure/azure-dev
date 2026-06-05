@@ -2,6 +2,7 @@
 name: "doctor-local-only"
 command: "azd ai agent doctor --local-only"
 cwd: "~/working/azd-agents-doctor-empty-{instance}"
+tags: ["tier:0", "cmd:doctor", "parallel-safe"]
 
 # Guarantee an empty working dir for a deterministic local-only run.
 pre:

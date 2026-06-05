@@ -2,6 +2,7 @@
 name: "doctor-empty-dir"
 command: "azd ai agent doctor"
 cwd: "~/working/azd-agents-doctor-empty-{instance}"
+tags: ["tier:0", "cmd:doctor", "parallel-safe"]
 
 # Guarantee an empty working dir so the "no azd project" path is exercised.
 # start_session recreates the dir, so removing it is enough.

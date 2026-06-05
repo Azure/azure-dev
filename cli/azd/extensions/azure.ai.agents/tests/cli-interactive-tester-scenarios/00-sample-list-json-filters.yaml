@@ -2,6 +2,7 @@
 name: "sample-list-json-filters"
 command: "bash"
 cwd: "/tmp"
+tags: ["tier:0", "cmd:sample", "parallel-safe"]
 
 goals:
   - "Run: azd ai agent sample list --output json. Confirm the output is valid JSON (an array/object of samples)."

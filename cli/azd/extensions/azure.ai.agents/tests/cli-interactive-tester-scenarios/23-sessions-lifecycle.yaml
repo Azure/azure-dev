@@ -5,6 +5,7 @@
 name: "sessions-lifecycle"
 command: "bash"
 cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:sessions", "serial-only"]
 
 # Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
 pre:

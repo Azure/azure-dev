@@ -6,6 +6,7 @@
 name: "init-picker-navigation"
 command: "azd ai agent init"
 cwd: "~/working/azd-agents-picker-{instance}"
+tags: ["tier:0", "cmd:init", "picker", "parallel-safe"]
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"

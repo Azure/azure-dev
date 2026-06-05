@@ -23,23 +23,7 @@ shared), derive `shared_agent_name = {prefix}-{shared_agent_suffix}`, and pass
 the merged map as `session_vars` on every `load_scenario`, `run_pre_hooks`,
 `start_session`, and `run_post_hooks` call** — the scenario YAMLs reference
 those values via `{prefix}`, `{subscription}`, `{region}`, `{model}`,
-`{tenant}` (optional), and `{shared_agent_name}` placeholders. Example
-prompt:
-
-```
-Use the cli-interactive-tester to drive the scenario at
-tests/cli-interactive-tester-scenarios/00-version.yaml.
-
-First, read tests/cli-interactive-tester-scenarios/profile.yaml and
-profile.local.yaml and merge them (local overrides shared); also derive
-shared_agent_name = "{prefix}-{shared_agent_suffix}". Pass the merged map as
-session_vars on every load_scenario / run_pre_hooks / start_session /
-run_post_hooks call.
-
-If the scenario declares pre hooks, run them first; then start the session,
-accomplish the goals, take screenshots at each step, and run any post hooks
-after finishing.
-```
+`{tenant}` (optional), and `{shared_agent_name}` placeholders.
 
 Most scenarios here declare **`pre:` hooks** (host-side setup such as resetting
 the working dir or seeding a fixture), and a few declare **`post:` hooks**
@@ -74,6 +58,9 @@ After all of these scenarios are run, create a final result report.
 Create a plan to accomplish this
 ```
 
+For more selective fan-outs (e.g. "just the `init` scenarios" or "everything
+in Tier 0") the tester's `list_scenarios` MCP tool filters by `tags:`. See
+[Tags](#tags) below for the taxonomy and an example tag-filtered prompt.
 
 ## Paths run inside WSL (on Windows)
 
@@ -297,7 +284,10 @@ its bugs:
 
 ## Tiers
 
-Scenarios are organized into three tiers by cost and prerequisites.
+Scenarios are organized into three tiers by cost and prerequisites. Each
+scenario also carries a `tags:` list that exposes the same axes plus the
+command(s) under test — see [Tags](#tags) for the full taxonomy and how to
+filter via `list_scenarios`.
 
 ### Tier 0 — Offline (prefix `00-`)
 No Azure auth, no network resource creation. Fast and deterministic. Safe to run
@@ -358,6 +348,88 @@ as their `cwd`.
 | `27-run-local-and-invoke-local.yaml` | `run` + `invoke --local` (two sessions) |
 | `2A-doctor-provisioned-all-pass.yaml` | `doctor` (all checks pass) |
 | `2Z-teardown-down.yaml` | `azd down --force --purge` (TEARDOWN) |
+
+## Tags
+
+Every scenario carries a top-level `tags:` list so an orchestrator can pick
+subsets via the tester's `list_scenarios` MCP tool. The tool's filter is **OR
+across the requested tags, case-sensitive, exact match**: a scenario matches
+when its `tags` contains at least one of the requested values.
+
+Three namespaces are used (all lowercase, kebab-case, colon-separated for
+grouping — colons are treated as ordinary characters by the filter):
+
+| Namespace | Values | Meaning |
+|---|---|---|
+| `tier:N` | `tier:0`, `tier:1`, `tier:2` | The tier the scenario belongs to (same axis as the directory's three sections above). Use this to express cost / auth profile in one tag. |
+| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `27-run-local-and-invoke-local` runs both `run` and `invoke --local`; `20-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. |
+| traits | `parallel-safe`, `serial-only`, `negative-path`, `picker` | `parallel-safe` ↔ `serial-only` are mutually exclusive: all Tier 0 / Tier 1 scenarios are `parallel-safe`, all Tier 2 are `serial-only`. `negative-path` flags arg-/CLI-validation scenarios that assert errors or non-zero exit codes rather than happy-path success. `picker` flags scenarios whose primary purpose is exercising interactive picker UX. |
+
+**Examples** (the tool's `tags:` parameter is OR across the list):
+
+| Goal | `list_scenarios(tags=…)` |
+|---|---|
+| All `init` scenarios across every tier | `["cmd:init"]` |
+| Everything offline (no Azure auth, no cost) | `["tier:0"]` |
+| All Tier 2 cloud scenarios | `["tier:2"]` |
+| Invoke + sessions reuse scenarios | `["cmd:invoke", "cmd:sessions"]` |
+| CLI arg-validation scenarios only | `["negative-path"]` |
+| Everything safe to run in parallel | `["parallel-safe"]` |
+
+Sample prompt that uses tag filtering:
+
+```
+Use the cli-interactive-tester to run every `init` scenario across all tiers.
+
+First, call list_scenarios with root="tests/cli-interactive-tester-scenarios"
+and tags=["cmd:init"] to enumerate the matching scenarios.
+
+Then read tests/cli-interactive-tester-scenarios/profile.yaml and
+profile.local.yaml and merge them (local overrides shared); also derive
+shared_agent_name = "{prefix}-{shared_agent_suffix}". Pass the merged map as
+session_vars on every load_scenario / run_pre_hooks / start_session /
+run_post_hooks call.
+
+For each scenario returned by list_scenarios: load it, run any pre hooks,
+start the session and accomplish the goals (take screenshots at each step),
+finish the session, run any post hooks. The Tier 0/1 `init` scenarios are
+parallel-safe (also tagged `parallel-safe`); fan them out via fleet mode.
+The Tier 2 `init` scenario (`20-setup-deploy-shared-agent`) is `serial-only`
+— run it on its own and only if I confirm I want to spend on Azure resources.
+```
+
+You can also get copilot to generate the tags list instead of manually specifying
+it. For example, if you want to run all of the scenarios to test the changes
+in a PR, modify the above prompt to start with something like:
+
+```
+Here's a PR: https://github.com/Azure/azure-dev/pull/8532. In the
+tests\cli-interactive-tester-scenarios directory, there are a set of test scenarios,
+with tags to categorize what they're testing. I want you to come up with a set of
+tags which, when used to select these test scenarios, would properly test the
+changes made by the PR provided.
+
+Next, call list_scenarios with those tags, to enumerate matching scenarios.
+
+Then read tests/cli-interactive-tester-scenarios/profile.yaml and ....
+<remaining prompt from above>
+```
+
+And, if you're running these scenarios as a part of creating or reviewing a PR,
+you can ask copilot to generate a summary report and add it as a comment directly
+on the pull request.
+
+When adding a new scenario, give it a `tags:` list that follows this
+taxonomy: at minimum a `tier:N`, at least one `cmd:*`, and either
+`parallel-safe` or `serial-only`. `list_scenarios` prints `tags: []` for any
+file missing a `tags:` field, so an empty list in its output signals a
+regression to fix.
+
+> `list_scenarios` walks every `*.yaml` under the directory, including
+> `profile.yaml` / `profile.local.yaml` (which surface as `(unnamed)` with
+> `tags: (none)`). Filter by any `tier:*` / `cmd:*` / trait tag to exclude
+> them — they intentionally carry no tags because they are configuration,
+> not scenarios.
 
 ## Profile / overrides
 

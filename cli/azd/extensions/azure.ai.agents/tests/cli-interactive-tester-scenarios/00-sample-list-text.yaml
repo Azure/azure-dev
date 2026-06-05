@@ -2,6 +2,7 @@
 name: "sample-list-text"
 command: "azd ai agent sample list"
 cwd: "/tmp"
+tags: ["tier:0", "cmd:sample", "parallel-safe"]
 
 goals:
   - "Wait for the curated sample catalog to render as human-readable text."

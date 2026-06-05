@@ -2,6 +2,7 @@
 name: "version"
 command: "azd ai agent version"
 cwd: "/tmp"
+tags: ["tier:0", "cmd:version", "parallel-safe"]
 
 goals:
   - "Wait for the command to print a version string (e.g. a value like '0.1.x-preview' or a commit-based 'vdev' build identifier)."

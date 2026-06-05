@@ -6,6 +6,7 @@
 name: "init-validate-mutually-exclusive"
 command: "azd ai agent init agent.manifest.yaml -m https://example.com/agent.manifest.yaml"
 cwd: "~/working/azd-agents-validate-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"

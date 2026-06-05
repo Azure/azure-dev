@@ -8,6 +8,7 @@
 name: "init-deploy-mode-code"
 command: "azd ai agent init --deploy-mode code"
 cwd: "~/working/azd-agents-t1-code-deploy-{instance}"
+tags: ["tier:1", "cmd:init", "parallel-safe"]
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"

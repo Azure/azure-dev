@@ -2,6 +2,7 @@
 name: "init-validate-no-prompt-missing"
 command: "azd ai agent init --no-prompt"
 cwd: "~/working/azd-agents-validate-noprompt-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"

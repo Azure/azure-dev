@@ -6,6 +6,7 @@
 name: "run-local-and-invoke-local"
 command: "azd ai agent run --port {agent} --no-inspector"
 cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:run", "cmd:invoke", "serial-only"]
 
 # Reserve a free port per scenario run so parallel local runs don't collide on
 # the default 8088, and so the run + invoke sessions find each other (a pool is

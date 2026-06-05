@@ -5,6 +5,7 @@
 name: "init-template-dotnet"
 command: "azd ai agent init"
 cwd: "~/working/azd-agents-t1-dotnet-{instance}"
+tags: ["tier:1", "cmd:init", "parallel-safe"]
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"

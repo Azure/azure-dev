@@ -5,6 +5,7 @@
 name: "teardown-down"
 command: "azd down --force --purge"
 cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:down", "serial-only"]
 
 goals:
   - "Run 'azd down --force --purge' in the shared project directory."

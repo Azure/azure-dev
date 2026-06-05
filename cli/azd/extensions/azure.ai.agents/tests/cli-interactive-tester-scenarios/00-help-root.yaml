@@ -2,6 +2,7 @@
 name: "help-root"
 command: "azd ai agent --help"
 cwd: "/tmp"
+tags: ["tier:0", "cmd:help", "parallel-safe"]
 
 goals:
   - "Wait for the help output to render (it includes an ASCII-art banner and a 'Usage:' section)."

@@ -4,6 +4,7 @@
 name: "doctor-provisioned-all-pass"
 command: "azd ai agent doctor"
 cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:doctor", "serial-only"]
 
 # Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
 pre:

@@ -12,6 +12,7 @@
 name: "setup-deploy-shared-agent"
 command: "azd ai agent init"
 cwd: "~/working/azd-agents-shared"
+tags: ["tier:2", "cmd:init", "cmd:provision", "cmd:deploy", "serial-only"]
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"

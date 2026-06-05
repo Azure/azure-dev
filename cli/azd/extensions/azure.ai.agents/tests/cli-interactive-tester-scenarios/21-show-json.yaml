@@ -4,6 +4,7 @@
 name: "show-json"
 command: "azd ai agent show --output json"
 cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:show", "serial-only"]
 
 # Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
 pre:

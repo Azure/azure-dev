@@ -10,6 +10,16 @@
 
 ### Other Changes
 
+## 1.25.5 (2026-06-05)
+
+### Bugs Fixed
+
+- [[#8458]](https://github.com/Azure/azure-dev/pull/8458) Fix memory exhaustion and slow model catalog loads when Azure CLI delegated authentication (`auth.useAzCliAuth = true`) fans out concurrent token requests by caching tokens in-process per tenant.
+- [[#8459]](https://github.com/Azure/azure-dev/pull/8459) Fix `azd auth status` reporting unauthenticated in Cloud Shell and blocking `azd provision` and `azd ai agent init` for sessions relying on the ambient Cloud Shell credential.
+- [[#8493]](https://github.com/Azure/azure-dev/pull/8493) Fix `azd down` failing to purge Azure AI Foundry cognitive accounts due to an SDK type mismatch in the `networkInjections` response.
+- [[#8527]](https://github.com/Azure/azure-dev/pull/8527) Fix `dotnet publish` failing with "empty dotnet configuration output" when Podman is the container engine by forwarding the detected engine to the .NET SDK.
+- [[#8537]](https://github.com/Azure/azure-dev/pull/8537) Fix AI model quota preflight blocking all locations on subscriptions where the Azure Cognitive Services `/usages` API returns an empty list (for example, free-tier subscriptions); empty usage lists are now treated as available quota rather than zero quota.
+
 ## 1.25.4 (2026-05-29)
 
 ### Bugs Fixed

@@ -2226,7 +2226,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['update'],
-							description: 'Update a connection\'s target or credentials.',
+							description: 'Update a connection\'s target, credentials, or metadata.',
 							options: [
 								{
 									name: ['--custom-key'],
@@ -2244,6 +2244,16 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'key',
+										},
+									],
+								},
+								{
+									name: ['--metadata'],
+									description: 'Set metadata key=value (repeatable, merged with existing metadata)',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'metadata',
 										},
 									],
 								},
@@ -7212,7 +7222,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['update'],
-									description: 'Update a connection\'s target or credentials.',
+									description: 'Update a connection\'s target, credentials, or metadata.',
 								},
 								{
 									name: ['version'],

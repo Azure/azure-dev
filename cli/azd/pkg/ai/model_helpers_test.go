@@ -305,10 +305,10 @@ func TestModelHasQuota(t *testing.T) {
 			expected:     true,
 		},
 		{
-			name:         "no usage entries for model",
+			name:         "no usage entries for model assumes available",
 			usageMap:     map[string]AiModelUsage{},
 			minRemaining: 1,
-			expected:     false,
+			expected:     true,
 		},
 		{
 			name: "remaining exactly equals min",

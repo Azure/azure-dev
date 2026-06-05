@@ -250,6 +250,15 @@ func (s *AiModelService) ListLocationsWithQuota(
 
 	var results []string
 	sharedResults.Range(func(loc string, usages []*armcognitiveservices.Usage) bool {
+		// When the /usages API returns an empty list (e.g. free-tier subscriptions
+		// that have not yet provisioned Cognitive Services resources), treat the
+		// location as having full quota available.  The SKU endpoint already
+		// confirmed the models are supported in this location.
+		if len(usages) == 0 {
+			results = append(results, loc)
+			return true
+		}
+
 		for _, req := range requirements {
 			minCap := req.MinCapacity
 			if minCap <= 0 {
@@ -327,6 +336,17 @@ func (s *AiModelService) ListModelLocationsWithQuota(
 
 	results := []ModelLocationQuota{}
 	sharedResults.Range(func(loc string, usages []AiModelUsage) bool {
+		// Empty usage data (e.g. free-tier subscriptions) — treat as
+		// having sufficient quota since the model catalog already
+		// confirmed the model is available in this location.
+		if len(usages) == 0 {
+			results = append(results, ModelLocationQuota{
+				Location:          loc,
+				MaxRemainingQuota: minRemaining,
+			})
+			return true
+		}
+
 		usageMap := make(map[string]AiModelUsage, len(usages))
 		for _, usage := range usages {
 			usageMap[usage.Name] = usage
@@ -469,9 +489,10 @@ func (s *AiModelService) resolveDeployments(
 				continue
 			}
 
-			// Quota check
+			// Quota check — skip when usage data is empty (e.g. free-tier
+			// subscriptions where the /usages API returns no entries).
 			capacity := ResolveCapacity(sku, options.Capacity)
-			if quotaOpts != nil && usageMap != nil {
+			if quotaOpts != nil && usageMap != nil && len(usageMap) > 0 {
 				usage, ok := usageMap[sku.UsageName]
 				if !ok {
 					continue
@@ -953,6 +974,17 @@ func ModelHasDefaultVersion(model AiModel) bool {
 }
 
 func modelHasQuota(model AiModel, usageMap map[string]AiModelUsage, minRemaining float64) bool {
+	// When usage data is empty (e.g. free-tier subscriptions), assume the
+	// model is eligible as long as it has at least one deployable SKU.
+	if len(usageMap) == 0 {
+		for _, version := range model.Versions {
+			if len(version.Skus) > 0 {
+				return true
+			}
+		}
+		return false
+	}
+
 	for _, version := range model.Versions {
 		for _, sku := range version.Skus {
 			usage, ok := usageMap[sku.UsageName]
@@ -971,6 +1003,18 @@ func modelHasQuota(model AiModel, usageMap map[string]AiModelUsage, minRemaining
 }
 
 func maxModelRemainingQuota(model AiModel, usageMap map[string]AiModelUsage) (float64, bool) {
+	// When usage data is empty (e.g. free-tier subscriptions), treat the
+	// model as available if it has at least one SKU.  Return -1 to signal
+	// that the actual remaining quota is unknown.
+	if len(usageMap) == 0 {
+		for _, version := range model.Versions {
+			if len(version.Skus) > 0 {
+				return -1, true
+			}
+		}
+		return 0, false
+	}
+
 	var maxRemaining float64
 	found := false
 	for _, version := range model.Versions {

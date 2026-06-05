@@ -482,10 +482,10 @@ func TestFilterModelsByQuota(t *testing.T) {
 			expected:     []string{"gpt-4o"},
 		},
 		{
-			name:         "empty usages excludes all models",
+			name:         "empty usages includes models with SKUs",
 			usages:       []AiModelUsage{},
 			minRemaining: 1,
-			expected:     []string{},
+			expected:     []string{"gpt-4o", "gpt-4o-mini", "text-embedding-ada-002"},
 		},
 	}
 
@@ -794,4 +794,55 @@ func TestIsFinetuneUsageName(t *testing.T) {
 			require.Equal(t, tt.expected, IsFinetuneUsageName(tt.usageName))
 		})
 	}
+}
+
+func TestModelHasQuota_EmptyUsages(t *testing.T) {
+	modelWithSkus := AiModel{
+		Name: "gpt-4o",
+		Versions: []AiModelVersion{
+			{
+				Version: "2024-05-13",
+				Skus:    []AiModelSku{{Name: "Standard", UsageName: "OpenAI.Standard.gpt-4o"}},
+			},
+		},
+	}
+	modelNoSkus := AiModel{
+		Name:     "empty-model",
+		Versions: []AiModelVersion{{Version: "1.0"}},
+	}
+
+	emptyUsages := map[string]AiModelUsage{}
+
+	// Model with SKUs should be considered eligible when usage data is empty
+	require.True(t, modelHasQuota(modelWithSkus, emptyUsages, 1))
+
+	// Model with no SKUs should not be considered eligible even with empty usage data
+	require.False(t, modelHasQuota(modelNoSkus, emptyUsages, 1))
+}
+
+func TestMaxModelRemainingQuota_EmptyUsages(t *testing.T) {
+	modelWithSkus := AiModel{
+		Name: "gpt-4o",
+		Versions: []AiModelVersion{
+			{
+				Version: "2024-05-13",
+				Skus:    []AiModelSku{{Name: "Standard", UsageName: "OpenAI.Standard.gpt-4o"}},
+			},
+		},
+	}
+	modelNoSkus := AiModel{
+		Name:     "empty-model",
+		Versions: []AiModelVersion{{Version: "1.0"}},
+	}
+
+	emptyUsages := map[string]AiModelUsage{}
+
+	// Model with SKUs: found=true, remaining=-1 (unknown)
+	remaining, found := maxModelRemainingQuota(modelWithSkus, emptyUsages)
+	require.True(t, found)
+	require.Equal(t, float64(-1), remaining)
+
+	// Model with no SKUs: found=false
+	_, found = maxModelRemainingQuota(modelNoSkus, emptyUsages)
+	require.False(t, found)
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -324,6 +325,123 @@ func Test_StdDeployments_DeployToResourceGroup_Coverage3(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "rg-deploy", d.Name)
+}
+
+// shortenDeploymentRetry makes the deployment 404 retry backoff effectively instant for tests
+// and restores the production values when the test completes.
+func shortenDeploymentRetry(t *testing.T) {
+	t.Helper()
+	origDelay, origMaxDelay := deploymentRetryDelay, deploymentRetryMaxDelay
+	deploymentRetryDelay = time.Millisecond
+	deploymentRetryMaxDelay = time.Millisecond
+	t.Cleanup(func() {
+		deploymentRetryDelay = origDelay
+		deploymentRetryMaxDelay = origMaxDelay
+	})
+}
+
+// Test_StdDeployments_DeployToSubscription_Transient404_Coverage3 verifies that a transient
+// HTTP 404 (DeploymentNotFound) returned while polling a just-submitted subscription-scoped
+// deployment is retried rather than surfaced as an error. This reproduces the read-after-write
+// inconsistency reported in issue #8064 (infra.layers, subscription scope).
+func Test_StdDeployments_DeployToSubscription_Transient404_Coverage3(t *testing.T) {
+	shortenDeploymentRetry(t)
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	sd := newStdDeployments(mockCtx)
+
+	// PUT accepts the deployment and reports a non-terminal state so the SDK begins polling.
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/deployments/sub-deploy")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		dep := makeDeploymentExtended("sub-deploy", armresources.ProvisioningStateRunning)
+		return mocks.CreateHttpResponseWithBody(req, http.StatusCreated, dep)
+	})
+
+	// The first poll returns a transient 404; subsequent polls return the succeeded deployment.
+	var polls int32
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/deployments/sub-deploy")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		if atomic.AddInt32(&polls, 1) == 1 {
+			return mocks.CreateEmptyHttpResponse(req, http.StatusNotFound)
+		}
+		dep := makeDeploymentExtended("sub-deploy", armresources.ProvisioningStateSucceeded)
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, dep)
+	})
+
+	template := azure.RawArmTemplate(json.RawMessage(`{"$schema":"test"}`))
+	d, err := sd.DeployToSubscription(
+		*mockCtx.Context, "SUB", "eastus", "sub-deploy", template, azure.ArmParameters{}, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "sub-deploy", d.Name)
+	assert.Equal(t, DeploymentProvisioningStateSucceeded, d.ProvisioningState)
+	assert.GreaterOrEqual(t, atomic.LoadInt32(&polls), int32(2), "expected the transient 404 poll to be retried")
+}
+
+// Test_StdDeployments_DeployToResourceGroup_Transient404_Coverage3 verifies the same transient
+// 404 retry behavior for resource-group-scoped deployments.
+func Test_StdDeployments_DeployToResourceGroup_Transient404_Coverage3(t *testing.T) {
+	shortenDeploymentRetry(t)
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	sd := newStdDeployments(mockCtx)
+
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/deployments/rg-deploy")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		dep := makeDeploymentExtended("rg-deploy", armresources.ProvisioningStateRunning)
+		return mocks.CreateHttpResponseWithBody(req, http.StatusCreated, dep)
+	})
+
+	var polls int32
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/deployments/rg-deploy")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		if atomic.AddInt32(&polls, 1) == 1 {
+			return mocks.CreateEmptyHttpResponse(req, http.StatusNotFound)
+		}
+		dep := makeDeploymentExtended("rg-deploy", armresources.ProvisioningStateSucceeded)
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, dep)
+	})
+
+	template := azure.RawArmTemplate(json.RawMessage(`{"$schema":"test"}`))
+	d, err := sd.DeployToResourceGroup(
+		*mockCtx.Context, "SUB", "RG1", "rg-deploy", template, azure.ArmParameters{}, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "rg-deploy", d.Name)
+	assert.GreaterOrEqual(t, atomic.LoadInt32(&polls), int32(2), "expected the transient 404 poll to be retried")
+}
+
+// Test_StdDeployments_DeployToSubscription_Persistent404_Coverage3 verifies that a deployment
+// whose poll keeps returning 404 still fails after the retries are exhausted, so genuine
+// DeploymentNotFound errors are not masked.
+func Test_StdDeployments_DeployToSubscription_Persistent404_Coverage3(t *testing.T) {
+	shortenDeploymentRetry(t)
+	origRetries := deploymentRetryMaxRetries
+	deploymentRetryMaxRetries = 2
+	t.Cleanup(func() { deploymentRetryMaxRetries = origRetries })
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	sd := newStdDeployments(mockCtx)
+
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/deployments/sub-deploy")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		dep := makeDeploymentExtended("sub-deploy", armresources.ProvisioningStateRunning)
+		return mocks.CreateHttpResponseWithBody(req, http.StatusCreated, dep)
+	})
+
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/deployments/sub-deploy")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(req, http.StatusNotFound)
+	})
+
+	template := azure.RawArmTemplate(json.RawMessage(`{"$schema":"test"}`))
+	_, err := sd.DeployToSubscription(
+		*mockCtx.Context, "SUB", "eastus", "sub-deploy", template, azure.ArmParameters{}, nil, nil)
+	require.Error(t, err)
 }
 
 func Test_StdDeployments_WhatIfDeployToSubscription_Coverage3(t *testing.T) {

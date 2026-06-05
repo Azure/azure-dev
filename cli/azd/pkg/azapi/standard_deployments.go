@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"net/url"
 	"slices"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -47,6 +49,48 @@ const (
 	// risks hitting the ARM read rate limit (1200 reads/5min) during large parallel deployments.
 	slowPollFrequency = 15 * time.Second
 )
+
+// Retry tuning for transient HTTP 404 (DeploymentNotFound) responses returned while
+// creating/polling an ARM deployment. ARM can briefly report DeploymentNotFound for a
+// deployment that was just submitted (read-after-write inconsistency, most often observed on
+// subscription-scoped deployments) even though the deployment was accepted and ultimately
+// succeeds. These are declared as vars (not consts) so tests can shorten the delays.
+var (
+	// deploymentRetryMaxRetries is the number of additional attempts made when ARM returns a
+	// retryable status code (including a transient 404) for a deployment create/poll request.
+	deploymentRetryMaxRetries int32 = 5
+
+	// deploymentRetryDelay is the initial backoff between retries of a deployment create/poll
+	// request. The SDK applies exponential backoff up to deploymentRetryMaxDelay.
+	deploymentRetryDelay = 3 * time.Second
+
+	// deploymentRetryMaxDelay caps the exponential backoff between deployment create/poll retries.
+	deploymentRetryMaxDelay = 15 * time.Second
+)
+
+// withDeploymentRetry returns a context configured to retry transient HTTP 404
+// (DeploymentNotFound) responses in addition to the default ARM-retryable status codes. ARM
+// occasionally returns a transient 404 for a deployment immediately after it is submitted
+// (read-after-write inconsistency, most often on subscription-scoped deployments) even though
+// the deployment was accepted and ultimately succeeds. Retrying the create/poll request lets
+// azd's view converge with ARM instead of failing with DeploymentNotFound. This mirrors the
+// existing handling for transient 404s in pkg/azsdk/zip_deploy_client.go.
+func withDeploymentRetry(ctx context.Context) context.Context {
+	return policy.WithRetryOptions(ctx, policy.RetryOptions{
+		MaxRetries:    deploymentRetryMaxRetries,
+		RetryDelay:    deploymentRetryDelay,
+		MaxRetryDelay: deploymentRetryMaxDelay,
+		StatusCodes: []int{
+			http.StatusRequestTimeout,      // 408
+			http.StatusTooManyRequests,     // 429
+			http.StatusInternalServerError, // 500
+			http.StatusBadGateway,          // 502
+			http.StatusServiceUnavailable,  // 503
+			http.StatusGatewayTimeout,      // 504
+			http.StatusNotFound,            // 404 (transient DeploymentNotFound)
+		},
+	})
+}
 
 type StandardDeployments struct {
 	credentialProvider account.SubscriptionCredentialProvider
@@ -228,6 +272,10 @@ func (ds *StandardDeployments) DeployToSubscription(
 	ctx, span := tracing.Start(ctx, events.ArmDeploySubscriptionEvent)
 	defer func() { span.EndWithStatus(err) }()
 
+	// Retry transient DeploymentNotFound (404) responses that ARM can return immediately after a
+	// subscription-scoped deployment is submitted (read-after-write inconsistency).
+	ctx = withDeploymentRetry(ctx)
+
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -269,6 +317,10 @@ func (ds *StandardDeployments) DeployToResourceGroup(
 ) (_ *ResourceDeployment, err error) {
 	ctx, span := tracing.Start(ctx, events.ArmDeployResourceGroupEvent)
 	defer func() { span.EndWithStatus(err) }()
+
+	// Retry transient DeploymentNotFound (404) responses that ARM can return immediately after a
+	// deployment is submitted (read-after-write inconsistency).
+	ctx = withDeploymentRetry(ctx)
 
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {

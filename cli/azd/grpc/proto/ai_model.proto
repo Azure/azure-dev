@@ -194,7 +194,10 @@ message ListLocationsWithQuotaResponse {
 message ModelLocationQuota {
   // Location where model quota was evaluated.
   Location location = 1;
-  double max_remaining_quota = 2;                // max remaining quota across model SKUs
+  // Maximum remaining quota across model SKUs.
+  // A value of -1 indicates that usage data was unavailable (e.g. free-tier
+  // subscriptions) and the actual remaining quota is unknown.
+  double max_remaining_quota = 2;
 }
 
 message ListModelLocationsWithQuotaRequest {

@@ -1001,8 +1001,9 @@ func modelHasQuota(model AiModel, usageMap map[string]AiModelUsage, minRemaining
 
 func maxModelRemainingQuota(model AiModel, usageMap map[string]AiModelUsage) (float64, bool) {
 	// When usage data is empty (e.g. free-tier subscriptions), treat the
-	// model as available if it has at least one SKU.  Return -1 to signal
-	// that the actual remaining quota is unknown.
+	// model as available if it has at least one SKU.  Return
+	// QuotaRemainingUnknown to signal that the actual remaining quota
+	// is unknown.
 	if len(usageMap) == 0 {
 		for _, version := range model.Versions {
 			if len(version.Skus) > 0 {

@@ -1061,8 +1061,20 @@ func filterModelsByAnyLocationQuota(
 ) []AiModel {
 	eligible := map[string]struct{}{}
 
-	for _, usages := range usagesByLocation {
-		for _, model := range FilterModelsByQuota(models, usages, minRemaining) {
+	for loc, usages := range usagesByLocation {
+		// Only consider models that are actually available in this
+		// location.  Without this filter, empty usages from an
+		// unrelated location could mark a model as eligible even
+		// when its quota is exhausted in its actual location.
+		locModels := make([]AiModel, 0, len(models))
+		for _, m := range models {
+			if slices.Contains(m.Locations, loc) {
+				locModels = append(locModels, m)
+			}
+		}
+
+		for _, model := range FilterModelsByQuota(
+			locModels, usages, minRemaining) {
 			eligible[model.Name] = struct{}{}
 		}
 	}

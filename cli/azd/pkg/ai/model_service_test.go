@@ -775,6 +775,61 @@ func TestFilterModelsByAnyLocationQuota(t *testing.T) {
 	require.Equal(t, []string{"model-a", "model-b"}, filteredNames)
 }
 
+func TestFilterModelsByAnyLocationQuota_EmptyUsagesDoNotLeakAcrossLocations(t *testing.T) {
+	// Regression test: a model available only in location A with exhausted
+	// quota should NOT become eligible because location B returns empty
+	// usages (e.g. free-tier subscription).
+	models := []AiModel{
+		{
+			Name:      "model-a",
+			Locations: []string{"eastus"},
+			Versions: []AiModelVersion{
+				{
+					Version: "1",
+					Skus: []AiModelSku{
+						{Name: "Standard", UsageName: "a_usage"},
+					},
+				},
+			},
+		},
+		{
+			Name:      "model-b",
+			Locations: []string{"eastus", "westus"},
+			Versions: []AiModelVersion{
+				{
+					Version: "1",
+					Skus: []AiModelSku{
+						{Name: "Standard", UsageName: "b_usage"},
+					},
+				},
+			},
+		},
+	}
+
+	usagesByLocation := map[string][]AiModelUsage{
+		// eastus: model-a exhausted, model-b has quota
+		"eastus": {
+			{Name: "a_usage", CurrentValue: 10, Limit: 10},
+			{Name: "b_usage", CurrentValue: 0, Limit: 100},
+		},
+		// westus: empty usages (free-tier). model-a is NOT
+		// available here, so it must not become eligible.
+		"westus": {},
+	}
+
+	filtered := filterModelsByAnyLocationQuota(
+		models, usagesByLocation, 1)
+	names := make([]string, 0, len(filtered))
+	for _, m := range filtered {
+		names = append(names, m.Name)
+	}
+
+	// model-a should be excluded (exhausted in eastus,
+	// not available in westus).
+	// model-b should be included (has quota in eastus).
+	require.Equal(t, []string{"model-b"}, names)
+}
+
 func TestIsFinetuneUsageName(t *testing.T) {
 	tests := []struct {
 		usageName string

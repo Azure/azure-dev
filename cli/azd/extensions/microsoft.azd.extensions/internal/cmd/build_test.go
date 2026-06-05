@@ -20,7 +20,7 @@ func TestLocalRegistryWarning(t *testing.T) {
 
 		warning := localRegistryWarning(dir, extensionId)
 
-		require.Contains(t, warning, "was not found")
+		require.Contains(t, warning, "not found")
 		require.Contains(t, warning, "azd x publish")
 	})
 
@@ -35,7 +35,7 @@ func TestLocalRegistryWarning(t *testing.T) {
 
 		warning := localRegistryWarning(dir, extensionId)
 
-		require.Contains(t, warning, "is not registered")
+		require.Contains(t, warning, "isn't registered")
 		require.Contains(t, warning, extensionId)
 	})
 

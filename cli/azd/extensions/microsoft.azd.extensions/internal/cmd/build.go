@@ -243,10 +243,10 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 				// extensions that are present in the local source registry. When the
 				// registry is missing (for example after a fresh clone or a rebuilt
 				// dev container) or does not yet contain this extension, surface a
-				// warning that points the user at `azd x pack` / `azd x publish`.
+				// warning that points the user at `azd x publish`.
 				if warning := localRegistryWarning(azdConfigDir, schema.Id); warning != "" {
 					buildWarnings = append(buildWarnings, warning)
-					return ux.Warning, fmt.Errorf("extension is not registered in the local source registry; see details below")
+					return ux.Warning, fmt.Errorf("not registered in the local registry; see details below")
 				}
 
 				return ux.Success, nil
@@ -256,20 +256,22 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 	return taskList.Run()
 }
 
-// localRegistryWarning returns a human-friendly warning when the local extension
-// source registry is missing or does not yet contain the given extension id. In
-// those cases `azd x build` installs the binaries but the extension will not show
-// up in `azd extension list`, so the message points the user at the commands that
-// register it. An empty string is returned when the extension is registered.
+// localRegistryWarning returns a short warning when the local extension source
+// registry is missing or does not yet contain the given extension id. In those
+// cases `azd x build` installs the binaries but the extension will not show up in
+// `azd extension list`, so the message points the user at `azd x pack` followed by
+// `azd x publish`, which register it. An empty string is returned when the
+// extension is registered.
 func localRegistryWarning(azdConfigDir, extensionId string) string {
 	registryPath := filepath.Join(azdConfigDir, "registry.json")
+	registryDisplay := output.WithGrayFormat(registryPath)
+	listCmd := output.WithHighLightFormat("azd ext list")
+	registerCmds := output.WithHighLightFormat("azd x pack") + " then " + output.WithHighLightFormat("azd x publish")
 
 	if _, err := os.Stat(registryPath); errors.Is(err, os.ErrNotExist) {
 		return fmt.Sprintf(
-			"The local extension source registry (%s) was not found. The extension binaries were "+
-				"installed but the extension is not registered, so it will not appear in 'azd extension list'. "+
-				"Run 'azd x pack' followed by 'azd x publish' to create the local registry and register the extension.",
-			registryPath,
+			"Local registry not found (%s) — extension won't appear in %s. Run %s to register it.",
+			registryDisplay, listCmd, registerCmds,
 		)
 	}
 
@@ -277,10 +279,8 @@ func localRegistryWarning(azdConfigDir, extensionId string) string {
 	if err != nil {
 		// Surface load/parse failures so the user knows the registry is unusable.
 		return fmt.Sprintf(
-			"Failed to read the local extension source registry (%s): %v. The extension binaries were "+
-				"installed but it may not appear in 'azd extension list'. Run 'azd x pack' followed by "+
-				"'azd x publish' to register the extension.",
-			registryPath, err,
+			"Failed to read the local registry (%s): %v. Run %s to register the extension.",
+			registryDisplay, err, registerCmds,
 		)
 	}
 
@@ -291,10 +291,8 @@ func localRegistryWarning(azdConfigDir, extensionId string) string {
 	}
 
 	return fmt.Sprintf(
-		"Extension '%s' is not registered in the local extension source registry (%s). The extension binaries "+
-			"were installed but it will not appear in 'azd extension list'. Run 'azd x pack' followed by "+
-			"'azd x publish' to register the extension.",
-		extensionId, registryPath,
+		"%s isn't registered in the local registry (%s), so it won't appear in %s. Run %s to register it.",
+		output.WithHighLightFormat(extensionId), registryDisplay, listCmd, registerCmds,
 	)
 }
 

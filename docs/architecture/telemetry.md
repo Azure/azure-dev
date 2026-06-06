@@ -2,6 +2,11 @@
 
 > How azd collects, exports, and transmits telemetry data.
 
+> [!NOTE]
+> This is the **public** telemetry documentation. A Microsoft-internal companion set of docs
+> (data pipeline, Kusto/Power BI reporting, runnable queries) is maintained separately for
+> internal maintainers. 
+
 ## Overview
 
 azd emits OpenTelemetry spans for every command execution. Telemetry flows through a local pipeline:

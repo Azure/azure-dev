@@ -90,6 +90,7 @@ overrides:
     - filename: docs/guides/**/*.md
       words:
           - azdext
+          - Entra
           - errorlint
           - Errorf
           - gofmt
@@ -112,10 +113,12 @@ overrides:
           - Buildpacks
           - containerapp
           - dcount
+          - dependson
           - devdeviceid
           - Entra
           - Errorf
           - exegraph
+          - javac
           - oneauth
           - postprovision
           - preprovision

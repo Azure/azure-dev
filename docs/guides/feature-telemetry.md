@@ -3,6 +3,10 @@
 > End-to-end guide for instrumenting telemetry when building new azd features.
 > Ensures telemetry is designed alongside the feature, not bolted on after.
 
+> [!NOTE]
+> This is the **public** telemetry documentation. A Microsoft-internal companion set of docs
+> (data pipeline, Kusto/Power BI reporting, runnable queries) is maintained separately for
+> internal maintainers.
 
 ## Why This Matters
 

@@ -2,10 +2,14 @@
 
 > What azd telemetry tells us, where to find it, and how to work with it.
 
+> [!NOTE]
+> This is the **public** telemetry documentation. A Microsoft-internal companion set of docs
+> (data pipeline, Kusto/Power BI reporting, runnable queries) is maintained separately for
+> internal maintainers.
 
 ## What azd Telemetry Captures
 
-Azure Developer CLI (azd) collects anonymous usage telemetry to understand how developers use the tool, measure feature adoption, and diagnose issues at scale. Users can opt out at any time.
+Azure Developer CLI (azd) collects pseudonymized usage telemetry to understand how developers use the tool, measure feature adoption, and diagnose issues at scale. Users can opt out at any time.
 
 ### What We Collect
 
@@ -15,14 +19,21 @@ Azure Developer CLI (azd) collects anonymous usage telemetry to understand how d
 | **Features** | Feature-specific properties (template used, packaging format, auth method, target Azure services) |
 | **Errors** | Error codes and categories (ARM errors, auth failures, build failures), **not** user content |
 | **Environment** | OS, azd version, execution environment (GitHub Actions, Azure Pipelines, VS Code, etc.) |
+| **Identity** | Anonymous device proxy (hashed machine ID / device ID); when signed in to Azure, the Entra object ID, tenant ID, and subscription ID (classified as pseudonymized/organizational data) |
 | **Extensions** | Which extensions are installed and invoked, extension errors |
 | **Performance** | Operation duration, time spent waiting for user input vs. executing |
+
+> **Anonymous vs. signed-in users:** azd does not require sign-in to emit telemetry. Anonymous users are
+> counted via a hashed machine/device identifier. When a user is authenticated to Azure, pseudonymized
+> identity fields (Entra object ID, tenant ID, subscription ID) are also attached. See the
+> [Data Reference](../reference/telemetry-data.md#identity--account-fields) for the exact fields.
 
 ### What We Don't Collect
 
 - No source code or project file contents
 - No Azure credentials, tokens, or connection strings
 - No personal names, emails, or IP addresses
+- No raw machine identifiers — the machine/device ID is one-way hashed
 - Project names and template names are **hashed** (one-way) — we can count unique projects but can't see what they're called
 - Users opt out via `AZURE_DEV_COLLECT_TELEMETRY=no`
 

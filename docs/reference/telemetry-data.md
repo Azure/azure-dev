@@ -3,6 +3,10 @@
 > Schema reference for all azd telemetry events, fields, and data shapes.
 > Use this to understand what data azd emits and how to work with it.
 
+> [!NOTE]
+> This is the **public** telemetry documentation. A Microsoft-internal companion set of docs
+> (data pipeline, Kusto/Power BI reporting, runnable queries) is maintained separately for
+> internal maintainers.
 
 ## Data Shape
 
@@ -150,6 +154,7 @@ These are set once at process startup and attached to **every** span.
 | `machine.devdeviceid` | string | SQM device ID | UUID string |
 | `execution.environment` | string | Where azd is running | See [Execution Environments](#execution-environments) |
 | `service.installer` | string | How azd was installed | `msi`, `brew`, `choco`, `rpm`, `deb` |
+| `exp.assignmentContext` | string | Experimentation platform assignment context. Attached to every event when the experimentation flighting service is enabled. | Opaque assignment string |
 
 ### Identity & Account Fields
 
@@ -210,6 +215,7 @@ Valid values for `project.service.languages` and `project.service.language`:
 | Field Key | Type | Hashed? | Description |
 |-----------|------|---------|-------------|
 | `env.name` | string | ✅ SHA-256 | Environment name |
+| `config.features` | string[] | ❌ | Alpha/preview feature flags enabled for the run (e.g., `all`, or individual feature IDs) |
 
 > **Joining with template names:** Template IDs are hashed. To resolve to human-readable names,
 > join with a template lookup table using the hashed `project.template.id`.
@@ -265,11 +271,23 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | `service.errorCode` | measurement | Service-specific error code |
 | `service.correlationId` | string | Azure correlation ID |
 
+### Tool Attributes
+
+Set on spans that invoke external command-line tools.
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `tool.name` | string | Name of the external tool invoked |
+| `tool.exitCode` | string | Exit code returned by the tool |
+
 ### Performance Fields
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
 | `perf.interact_time` | measurement | Time (ms) spent waiting for user input |
+| `perf.provision_duration_ms` | measurement | Wall-clock provisioning-phase duration (ms), emitted on `up`/`provision` |
+| `perf.deploy_duration_ms` | measurement | Wall-clock deploy-phase duration (ms); excludes package/publish |
+| `perf.total_duration_ms` | measurement | Total wall-clock duration for the entire up-graph execution (ms) |
 
 > **Computing execution time:** `ExecutionTimeMs = DurationMs - Measurements['perf.interact_time']`
 > This gives you the actual processing time, excluding user interaction (prompts, confirmations).
@@ -356,6 +374,35 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 </details>
 
 <details>
+<summary><strong>Multi-Layer Provision</strong></summary>
+
+Emitted on `azd provision` / `azd up` to measure adoption and safety of `infra.layers[]` parallel provisioning.
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `provision.layer.count` | measurement | Number of `infra.layers[]` declared (0 or 1 = single-layer legacy path) |
+| `provision.layer.max_parallel` | measurement | Largest number of layers scheduled in one dependency level (max achievable parallelism) |
+| `provision.layer.safe_fallback_count` | measurement | Layers forced to depend on all earlier layers by the safe-by-default detector |
+| `provision.layer.explicit_dependson_count` | measurement | Layers using the explicit `infra.layers[].dependsOn` override |
+</details>
+
+<details>
+<summary><strong>Environment Management</strong></summary>
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `env.count` | measurement | Number of environments that exist for the current project (`env list`) |
+</details>
+
+<details>
+<summary><strong>Container Build</strong></summary>
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `container.remoteBuild.count` | measurement | Number of remote container builds performed |
+</details>
+
+<details>
 <summary><strong>Copilot</strong></summary>
 
 | Field Key | Type | Description |
@@ -386,6 +433,13 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | `extension.id` | string | Extension identifier |
 | `extension.version` | string | Extension version |
 | `extension.installed` | string[] | List of installed extensions (`id@version`) |
+| `extension.version.from` | string | Installed version before an upgrade (`ext.upgrade`) |
+| `extension.version.to` | string | Target version after an upgrade (`ext.upgrade`) |
+| `extension.source` | string | Registry source used for an upgrade (`ext.upgrade`) |
+| `extension.source.from` | string | Registry source before a promotion (`ext.promote`) |
+| `extension.source.to` | string | Registry source after a promotion (`ext.promote`) |
+| `extension.upgrade.duration_ms` | measurement | Duration (ms) of a single upgrade (`ext.upgrade`) |
+| `extension.upgrade.outcome` | string | Upgrade result status (`ext.upgrade`) |
 </details>
 
 <details>
@@ -408,6 +462,7 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | `exegraph.step.name` | string | Step name |
 | `exegraph.step.deps` | string[] | Step dependencies |
 | `exegraph.step.tags` | string[] | Step tags |
+| `exegraph.step.timeout_s` | measurement | Per-step timeout in seconds, if set |
 </details>
 
 <details>
@@ -558,5 +613,5 @@ How to find telemetry for a given feature area. Start here if you know the featu
 
 - [Architecture](../architecture/telemetry.md) — End-to-end telemetry flow
 - [Feature Telemetry Guide](../guides/feature-telemetry.md) — How to add telemetry for new features
-- [Telemetry Schema (canonical)](../../specs/metrics-audit/telemetry-schema.md) — Source-of-truth schema in the codebase
-- [Privacy Review Checklist](../../specs/metrics-audit/privacy-review-checklist.md) — When and how to do privacy reviews
+- [Telemetry Schema (canonical)](../specs/metrics-audit/telemetry-schema.md) — Source-of-truth schema in the codebase
+- [Privacy Review Checklist](../specs/metrics-audit/privacy-review-checklist.md) — When and how to do privacy reviews

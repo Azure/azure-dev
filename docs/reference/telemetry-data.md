@@ -126,7 +126,9 @@ These are emitted by the VS Code extension via the VS Code telemetry framework (
 | `azure-dev.activate` | Extension activated |
 | `azure-dev.deactivate` | Extension deactivated |
 | `azure-dev.tasks.dotenv` | Dotenv task executed |
-| `azure-dev.commands.<cmd>` | CLI command tasks (deploy, provision, up, down, init, login, restore, package) |
+| `azure-dev.commands.cli.<cmd>.task` | CLI command tasks: `deploy`, `provision`, `up`, `down`, `init`, `restore`, `package`, `infra-delete`, `login-cli`, `pipeline-config`, `env-new`, `env-refresh`, `env-list`, `extension-install`, `extension-uninstall`, `extension-upgrade`, `extension-source-add` |
+| `azure-dev.views.*` | Workspace/extensions tree view resolution (`views.workspace.application.resolve`, `views.workspace.environment.resolve`, `views.extensions.resolve`) |
+| `azure-dev.azureYaml.*` | `azure.yaml` language features (`azureYaml.provideDiagnostics`, `azureYaml.provideDocumentDropEdits`, `azureYaml.projectRename.provideWorkspaceEdits`) |
 | `azure-dev.survey-check` | Survey eligibility check |
 | `azure-dev.survey-prompt-response` | Survey prompt user response |
 
@@ -245,10 +247,12 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 |---------|----------|---------|
 | `Success` | No error | — |
 | `user.canceled` | User cancelled the operation | — |
+| `auth.<detail>` | Authentication error | `auth.login_required`, `auth.not_logged_in`, `auth.identity_failed` |
 | `service.arm.<statusCode>` | ARM service error | `service.arm.500`, `service.arm.409` |
 | `service.aad.<detail>` | Entra ID (AAD) error | `service.aad.failed` |
 | `service.<name>.<code>` | Other Azure service error | `service.graph.403` |
-| `tool.<name>.<exitCode>` | External tool error | `tool.docker.1` |
+| `tool.<name>.failed` / `tool.<name>.missing` | External tool error. Failure spans also carry `error.tool.name` (and `error.tool.exitCode` for `failed`); see [Tool Invocation Attributes](#tool-invocation-attributes-external-cli-tools) | `tool.docker.failed`, `tool.git.missing` |
+| `tool.multiple.missing` | Multiple required external tools missing; comma-separated names in `error.tool.name` | — |
 | `ext.service.<svc>.<code>` | Extension service error | `ext.service.arm.500` |
 | `ext.validation.*` | Extension validation error | `ext.validation.config` |
 | `ext.auth.*` | Extension auth error | `ext.auth.expired` |
@@ -271,14 +275,14 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | `service.errorCode` | measurement | Service-specific error code |
 | `service.correlationId` | string | Azure correlation ID |
 
-### Tool Attributes
+### Tool Invocation Attributes (External CLI Tools)
 
-Set on spans that invoke external command-line tools.
+Set **only when an external command-line tool invocation fails**, during error classification. Because they are stamped onto the failed span through the error pipeline (`MapError`), the keys appear with an `error.` prefix. They describe an external process azd shells out to (e.g., `docker`, `git`) — distinct from the `azd tool` management fields (see [Tool Management](#tool-management) below).
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `tool.name` | string | Name of the external tool invoked |
-| `tool.exitCode` | string | Exit code returned by the tool |
+| `error.tool.name` | string | Name of the failed external tool (comma-separated list when multiple required tools are missing) |
+| `error.tool.exitCode` | measurement | Exit code returned by the failed tool |
 
 ### Performance Fields
 
@@ -332,8 +336,8 @@ Set on spans that invoke external command-line tools.
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `pipeline.provider` | string | `github`, `azdo`, `auto` |
-| `pipeline.auth` | string | `federated`, `client-credentials`, `auto` |
+| `pipeline.provider` | string | `github`, `azdo` — the resolved CI provider (after auto-detection) |
+| `pipeline.auth` | string | `federated`, `client-credentials` (only emitted when `--auth-type` is set) |
 </details>
 
 <details>
@@ -433,13 +437,59 @@ Emitted on `azd provision` / `azd up` to measure adoption and safety of `infra.l
 | `extension.id` | string | Extension identifier |
 | `extension.version` | string | Extension version |
 | `extension.installed` | string[] | List of installed extensions (`id@version`) |
-| `extension.version.from` | string | Installed version before an upgrade (`ext.upgrade`) |
-| `extension.version.to` | string | Target version after an upgrade (`ext.upgrade`) |
+| `extension.version.from` | string | Version before an upgrade or promotion (`ext.upgrade`, `ext.promote`) |
+| `extension.version.to` | string | Version after an upgrade or promotion (`ext.upgrade`, `ext.promote`) |
 | `extension.source` | string | Registry source used for an upgrade (`ext.upgrade`) |
 | `extension.source.from` | string | Registry source before a promotion (`ext.promote`) |
 | `extension.source.to` | string | Registry source after a promotion (`ext.promote`) |
 | `extension.upgrade.duration_ms` | measurement | Duration (ms) of a single upgrade (`ext.upgrade`) |
 | `extension.upgrade.outcome` | string | Upgrade result status (`ext.upgrade`) |
+| `extension.dependency_of` | string | Parent extension ID when an extension is upgraded as a dependency (`ext.upgrade`) |
+| `extension.dependency_upgrade_count` | measurement | Number of dependency extensions upgraded recursively (`ext.upgrade`) |
+</details>
+
+<details>
+<summary><strong>Tool Management (<code>azd tool</code>)</strong><a id="tool-management"></a></summary>
+
+Fields for the `azd tool` feature — the first-run experience and `install`/`upgrade`/`check` operations for azd-managed developer tools. These are **distinct** from the [Tool Invocation Attributes](#tool-invocation-attributes-external-cli-tools) above (which describe external processes azd shells out to).
+
+> **Privacy:** only built-in tool IDs (e.g. `az-cli`, `vscode-bicep`) and version strings are captured. No file paths, no user-identifiable data, and no raw per-tool error text — failed tool IDs are recorded, but error detail stays with the global error middleware.
+
+Built-in tool IDs come from azd's curated tool manifest (run `azd tool list` to see the current set), e.g. `az-cli`, `github-copilot-cli`, `vscode-azure-tools`, `vscode-bicep`, `azure-mcp-server`.
+
+**First-run experience:**
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `tool.firstrun.skip_reason` | string | Why first-run was bypassed (`env_var`, `no_prompt`, `ci_cd`, `non_interactive`, `already_completed`, `config_error`). Mutually exclusive with `tool.firstrun.outcome` |
+| `tool.firstrun.outcome` | string | Terminal state when first-run ran (`completed`, `declined`, `cancelled`, `detect_failed`, `install_failed`) |
+| `tool.firstrun.opt_in` | string | Whether the user accepted the first-run prompt |
+| `tool.firstrun.tools_detected` | measurement | Built-in tools already installed when the check ran |
+| `tool.firstrun.tools_offered` | measurement | Recommended tools offered for installation |
+| `tool.firstrun.tools_selected` | measurement | Tools the user selected to install |
+| `tool.firstrun.tools_selected_names` | string | Comma-separated built-in tool IDs selected (e.g. `az-cli,vscode-bicep`) |
+| `tool.firstrun.tools_deselected_names` | string | Comma-separated offered tool IDs the user deselected |
+| `tool.firstrun.install_success_count` | measurement | Tools installed successfully during first-run |
+| `tool.firstrun.install_failure_count` | measurement | Tools that failed to install during first-run |
+| `tool.firstrun.install_failed_ids` | string | Comma-separated tool IDs that failed during first-run |
+| `tool.firstrun.install_duration_ms` | measurement | Total first-run install duration (ms) |
+
+**Install / upgrade / check operations:**
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `tool.id` | string | Built-in tool ID for single-tool operations (e.g. `az-cli`, `vscode-bicep`) |
+| `tool.ids` | string | Comma-separated tool IDs for a batch operation |
+| `tool.dry_run` | string | Whether `--dry-run` was specified |
+| `tool.install.strategy` | string | Install strategy used. Package-manager values come from the tool manifest (`winget`, `brew`, `apt`, `npm`, `code`); the installer may also report `direct-download`, `command`, or `manual` (no available manager) |
+| `tool.install.success` | string | Whether a single-target install/upgrade succeeded |
+| `tool.install.success_count` | measurement | Tools that succeeded in a batch install/upgrade |
+| `tool.install.failure_count` | measurement | Tools that failed in a batch install/upgrade |
+| `tool.install.failed_ids` | string | Comma-separated tool IDs whose install/upgrade failed |
+| `tool.install.duration_ms` | measurement | Total install/upgrade duration (ms) |
+| `tool.upgrade.from_version` | string | Previous version (single-target upgrade) |
+| `tool.upgrade.to_version` | string | New version after a successful upgrade (single-target) |
+| `tool.check.updates_available` | measurement | Installed tools with an available update (`azd tool check`) |
 </details>
 
 <details>
@@ -608,6 +658,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion` | Update adoption |
 | **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type |
 | **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image` | Build method usage, success rates |
+| **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.upgrade`, `cmd.tool.check` | `tool.id`, `tool.install.strategy`, `tool.firstrun.outcome` | First-run adoption, install/upgrade success, update availability |
 
 ## See Also
 

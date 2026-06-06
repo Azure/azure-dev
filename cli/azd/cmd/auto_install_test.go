@@ -388,6 +388,12 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 			expectedNoPrompt: true,
 		},
 		{
+			name:             "GitHub Copilot CLI agent detected via COPILOT_CLI",
+			args:             []string{"deploy"},
+			envVars:          map[string]string{"COPILOT_CLI": "true"},
+			expectedNoPrompt: true,
+		},
+		{
 			name:             "OpenCode agent detected",
 			args:             []string{"provision"},
 			envVars:          map[string]string{"OPENCODE": "1"},

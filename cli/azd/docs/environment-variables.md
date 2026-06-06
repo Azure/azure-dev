@@ -54,9 +54,40 @@ integration.
 | `AZD_DEPLOY_CONCURRENCY` | Maximum number of services to deploy in parallel during `azd deploy`. Only takes effect when at least one service declares `uses:` targeting another service; without `uses:` edges, services deploy sequentially in alphabetical order for backward compatibility (see [concurrency model](concurrency-model.md)). Parsed as a positive integer; clamped to a maximum of `64`. When unset, concurrency is unlimited (bounded only by the number of services). |
 | `AZD_DEPLOY_TIMEOUT` | Timeout for deployment operations, parsed as an integer number of seconds (for example, `1200`). Defaults to `1200` seconds (20 minutes). |
 | `AZD_PROVISION_CONCURRENCY` | Maximum number of infrastructure layers to provision in parallel during `azd provision`. Parsed as a positive integer; clamped to a maximum of `64`. When unset, concurrency is unlimited (bounded only by the dependency graph). |
+| `AZD_DEPLOYMENT_ID_FILE` | Absolute path of a file where `azd` writes ARM deployment IDs in NDJSON format (one JSON line per layer) during `azd provision` or `azd up`. The file is truncated at the start of each provisioning run, and each infrastructure layer appends one line as its ARM deployment starts. Each line has the shape `{"deploymentId":"/subscriptions/.../deployments/<name>","layer":"<layer-name>"}` — the `layer` field is empty for non-layered (single-module) provisioning. Consumers should tail/watch the file and parse each line independently; unknown fields must be ignored for forward compatibility. The path must be absolute (relative paths are ignored); the containing directory must already exist and be writable. Lines are only appended when an ARM deployment is actually started — runs short-circuited by the deployment-state cache or aborted by preflight do not produce output. A process-wide mutex serializes writes so each line is always complete. If the file cannot be written (for example, the parent directory does not exist, the path is not writable, or the path points to a directory rather than a file), provisioning continues and the failure is recorded via the standard log; that output is only visible when `--debug` or `AZD_DEBUG_LOG` is enabled. On Windows, consumers should use a file-watcher pattern that does not keep a read handle open, otherwise new appends may fail. Only Bicep deployments are supported. |
 | `AZD_UP_CONCURRENCY` | Maximum number of steps to run in parallel during `azd up`. Parsed as a positive integer; clamped to a maximum of `64`. Falls back to `AZD_DEPLOY_CONCURRENCY` when unset. When both are unset, concurrency is unlimited. |
 | `AZD_DEPLOY_{SERVICE}_SLOT_NAME` | Sets the App Service deployment slot target for a service. Replace `{SERVICE}` with the uppercase service name (hyphens become underscores). Set to `production` to deploy to the main app, or a slot name (e.g., `staging`). When slots exist and this is not set, `--no-prompt` mode fails with an error listing available targets. |
 | `AZD_DEPLOY_{SERVICE}_SKIP_STATUS_CHECK` | If `true`, skips runtime deployment status tracking for the named Linux App Service after zip deploy. Useful when the target web app is intentionally stopped. Parsed as a boolean (`true`/`false`/`1`/`0`). `{SERVICE}` follows the same naming rules as `AZD_DEPLOY_{SERVICE}_SLOT_NAME`. |
+
+## azd exec
+
+The `azd exec` command runs commands and scripts with the active azd environment loaded into the child
+process. All environment variables from the `.env` file (including provisioning outputs) are injected
+automatically. Key Vault secret references (`akvs://` and `@Microsoft.KeyVault(SecretUri=...)`) are
+resolved transparently before injection.
+
+### Execution Modes
+
+`azd exec` selects an execution mode based on the arguments provided:
+
+| Mode | Trigger | Example |
+| --- | --- | --- |
+| **Script file** | First argument is an existing file | `azd exec ./setup.sh` |
+| **Direct exec** | Multiple arguments, no `--shell` flag | `azd exec python script.py` |
+| **Shell inline** | Single argument, or `--shell` specified | `azd exec 'echo $AZURE_ENV_NAME'` |
+
+**Direct exec** passes the exact argument vector to the child process without shell wrapping, which
+avoids quoting and escaping issues. **Shell inline** wraps the argument with the detected (or
+specified) shell's `-c` flag. **Script file** detects the shell from the file extension (`.sh` →
+bash, `.ps1` → pwsh, `.cmd`/`.bat` → cmd).
+
+### Flags
+
+| Flag | Description |
+| --- | --- |
+| `--shell`, `-s` | Shell to use (`bash`, `sh`, `zsh`, `pwsh`, `powershell`, `cmd`). Auto-detected if not specified. |
+| `--interactive`, `-i` | Run in interactive mode (connects stdin to the child process). |
+| `--environment`, `-e` | The azd environment to load. |
 
 ## Extension Variables
 
@@ -118,7 +149,7 @@ specific version of the tool installed on the machine.
 | Variable | Description |
 | --- | --- |
 | `AZURE_AI_PROJECT_ID` | The Microsoft Foundry project resource ID used by the `azure.ai.agents` extension. |
-| `AZURE_AI_PROJECT_ENDPOINT` | The Microsoft Foundry project endpoint used by the `azure.ai.agents` extension. |
+| `FOUNDRY_PROJECT_ENDPOINT` | The Microsoft Foundry project endpoint used by the `azure.ai.agents` extension. Read first from the active azd environment and, if not present, from the host shell environment as an endpoint-resolution fallback. |
 | `AZURE_AI_PROJECT_PRINCIPAL_ID` | The principal ID associated with the Microsoft Foundry project identity. |
 | `AZURE_AI_ACCOUNT_NAME` | The Microsoft Foundry account name associated with the project. |
 | `AZURE_AI_PROJECT_NAME` | The Microsoft Foundry project name. |
@@ -126,6 +157,7 @@ specific version of the tool installed on the machine.
 | `AZURE_AI_PROJECT_ACR_CONNECTION_NAME` | The Azure Container Registry connection name used by the extension for hosted agents. |
 | `AI_PROJECT_DEPLOYMENTS` | JSON-encoded deployment metadata populated by the extension for agent workflows. |
 | `AI_PROJECT_DEPENDENT_RESOURCES` | JSON-encoded dependent resource metadata populated by the extension for agent workflows. |
+| `AZD_AGENT_SKIP_ACR` | If `true`, signals the Bicep template to skip Azure Container Registry creation during provisioning. Automatically set by `azd agent init` for code-deploy scenarios (where no container image is built). |
 | `ENABLE_HOSTED_AGENTS` | If set, indicates that hosted agents are enabled for the current azd environment. |
 | `ENABLE_CONTAINER_AGENTS` | If set, indicates that container agents are enabled for the current azd environment. |
 | `AGENT_DEFINITION_PATH` | Path to an agent definition file for AI agent workflows. |

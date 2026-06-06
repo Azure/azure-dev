@@ -7,6 +7,7 @@ words:
   - gofmt
   - golangci
   - lightspeed
+  - runewidth
   - toplevel
   - azcloud
   - azdext
@@ -32,6 +33,8 @@ words:
   - errorhandler
   - extendee
   - eiannone
+  - firstrun
+  - CICD
   # CDN host name
   - gfgac2cmf7b8cuay
   - Getenv
@@ -61,6 +64,8 @@ words:
   - protoreflect
   - SNAPPROCESS
   - structpb
+  - subtest
+  - subtests
   - syncmap
   - syscall
   - tsx
@@ -408,6 +413,16 @@ overrides:
     words:
       - covdata
       - GOWORK
+      - textfmt
+      - logissue
+      - runbook
+      - AMRD
+  - filename: magefile.go
+    words:
+      - textfmt
+      - covcounters
+      - covmeta
+      - AMRD
   - filename: test/eval/README.md
     words:
       - Waza
@@ -461,6 +476,17 @@ overrides:
     words:
       - extensionquery
       - bitmask
+  - filename: pkg/infra/provisioning/bicep/bicep_provider.go
+    words:
+      - azurekubernetesservicechaosmesh
+  - filename: AGENTS.md
+    words:
+      - forbidigo
+      - Logf
+  - filename: .golangci.yaml
+    words:
+      - forbidigo
+      - Logf
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

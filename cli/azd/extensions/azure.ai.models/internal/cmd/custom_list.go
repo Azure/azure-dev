@@ -19,7 +19,8 @@ import (
 )
 
 type customListFlags struct {
-	Output string
+	Output      string
+	SourceJobID string
 }
 
 func newCustomListCommand(parentFlags *customFlags) *cobra.Command {
@@ -36,6 +37,7 @@ func newCustomListCommand(parentFlags *customFlags) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&flags.Output, "output", "o", "table", "Output format (table, json)")
+	cmd.Flags().StringVar(&flags.SourceJobID, "source-job-id", "", "Filter models by the training job that created them")
 
 	return cmd
 }
@@ -78,7 +80,12 @@ func runCustomList(ctx context.Context, parentFlags *customFlags, flags *customL
 		return err
 	}
 
-	result, err := foundryClient.ListModels(ctx)
+	var opts []client.ListModelsOption
+	if flags.SourceJobID != "" {
+		opts = append(opts, client.WithSourceJobID(flags.SourceJobID))
+	}
+
+	result, err := foundryClient.ListModels(ctx, opts...)
 	_ = spinner.Stop(ctx)
 	fmt.Print("\n\n")
 

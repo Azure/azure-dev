@@ -1,0 +1,209 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+)
+
+// rawConnectionProperties represents the JSON body for connection PUT requests
+// that use auth types not covered by the ARM Go SDK (e.g., OAuth2 with full fields,
+// UserEntraToken, ProjectManagedIdentity, AgenticIdentityToken).
+type rawConnectionProperties struct {
+	AuthType         string            `json:"authType"`
+	Category         string            `json:"category"`
+	Target           string            `json:"target"`
+	Metadata         map[string]string `json:"metadata,omitempty"`
+	Audience         string            `json:"audience,omitempty"`
+	AuthorizationURL string            `json:"authorizationUrl,omitempty"`
+	TokenURL         string            `json:"tokenUrl,omitempty"`
+	RefreshURL       string            `json:"refreshUrl,omitempty"`
+	Scopes           []string          `json:"scopes,omitempty"`
+	ConnectorName    string            `json:"connectorName,omitempty"`
+	Credentials      *rawCredentials   `json:"credentials,omitempty"`
+}
+
+// rawCredentials represents OAuth2 credentials in the raw REST body.
+type rawCredentials struct {
+	ClientID     string `json:"clientId,omitempty"`
+	ClientSecret string `json:"clientSecret,omitempty"`
+}
+
+func (c *rawCredentials) clientIDOrEmpty() string {
+	if c == nil {
+		return ""
+	}
+	return c.ClientID
+}
+
+func (c *rawCredentials) clientSecretOrEmpty() string {
+	if c == nil {
+		return ""
+	}
+	return c.ClientSecret
+}
+
+// buildOAuth2Credentials returns the credentials object to embed in a connection
+// PUT body, based on the user-supplied auth type and (optional) BYO OAuth2 client
+// id / secret.
+//
+// The ARM connections API requires `properties.credentials` to be present in the
+// request body for `--auth-type oauth2`, even when no client id/secret is supplied
+// (the managed-connector / gateway_connector path uses Microsoft's OAuth app).
+// Omitting the field entirely returns `400 ValidationError: Credentials Property
+// can't be empty for auth type OAuth2`. An empty object `{}` is valid for that
+// path. See issue #8418.
+//
+// Returns nil for non-OAuth2 auth types that do not supply a client id/secret,
+// so callers can rely on `omitempty` to drop the field.
+func buildOAuth2Credentials(authType, clientID, clientSecret string) *rawCredentials {
+	if authType != "oauth2" && clientID == "" && clientSecret == "" {
+		return nil
+	}
+	return &rawCredentials{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+	}
+}
+
+type rawConnectionBody struct {
+	Properties rawConnectionProperties `json:"properties"`
+}
+
+// rawCreateConnection performs a PUT to the ARM connections endpoint using raw REST,
+// bypassing the typed ARM SDK. Used for auth types like UserEntraToken,
+// ProjectManagedIdentity, and AgenticIdentityToken that lack SDK structs.
+func rawCreateConnection(
+	ctx context.Context,
+	connCtx *connectionContext,
+	name string,
+	props rawConnectionProperties,
+) error {
+	apiVersion := "2025-04-01-preview"
+	armURL := fmt.Sprintf(
+		"https://management.azure.com/subscriptions/%s/resourceGroups/%s/"+
+			"providers/Microsoft.CognitiveServices/accounts/%s/projects/%s/"+
+			"connections/%s?api-version=%s",
+		connCtx.sub, connCtx.rg, connCtx.account, connCtx.project,
+		url.PathEscape(name), apiVersion,
+	)
+
+	body := rawConnectionBody{Properties: props}
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("failed to marshal connection body: %w", err)
+	}
+
+	pipeline := runtime.NewPipeline("azd-connection-raw", "1.0.0",
+		runtime.PipelineOptions{
+			PerCall: []policy.Policy{
+				runtime.NewBearerTokenPolicy(connCtx.cred,
+					[]string{"https://management.azure.com/.default"}, nil),
+			},
+		},
+		&policy.ClientOptions{},
+	)
+
+	req, err := runtime.NewRequest(ctx, http.MethodPut, armURL)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Raw().Header.Set("Content-Type", "application/json")
+	req.Raw().Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	req.Raw().ContentLength = int64(len(bodyBytes))
+
+	resp, err := pipeline.Do(req)
+	if err != nil {
+		return fmt.Errorf("ARM request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return runtime.NewResponseError(resp)
+	}
+
+	return nil
+}
+
+// rawGetConnection performs a GET on the ARM connections endpoint using raw REST,
+// returning the full properties including OAuth2-specific fields (connectorName,
+// authorizationUrl, tokenUrl, etc.) that the typed ARM SDK does not expose.
+func rawGetConnection(
+	ctx context.Context,
+	connCtx *connectionContext,
+	name string,
+) (*rawConnectionProperties, error) {
+	apiVersion := "2025-04-01-preview"
+	armURL := fmt.Sprintf(
+		"https://management.azure.com/subscriptions/%s/resourceGroups/%s/"+
+			"providers/Microsoft.CognitiveServices/accounts/%s/projects/%s/"+
+			"connections/%s?api-version=%s",
+		connCtx.sub, connCtx.rg, connCtx.account, connCtx.project,
+		url.PathEscape(name), apiVersion,
+	)
+
+	pipeline := runtime.NewPipeline("azd-connection-raw", "1.0.0",
+		runtime.PipelineOptions{
+			PerCall: []policy.Policy{
+				runtime.NewBearerTokenPolicy(connCtx.cred,
+					[]string{"https://management.azure.com/.default"}, nil),
+			},
+		},
+		&policy.ClientOptions{},
+	)
+
+	req, err := runtime.NewRequest(ctx, http.MethodGet, armURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("ARM request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	var body rawConnectionBody
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &body.Properties, nil
+}
+
+// parseKVMap parses "key=value" pairs into a map[string]string.
+func parseKVMap(pairs []string) map[string]string {
+	if len(pairs) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(pairs))
+	for _, pair := range pairs {
+		found := false
+		for i := range len(pair) {
+			if pair[i] == '=' {
+				result[pair[:i]] = pair[i+1:]
+				found = true
+				break
+			}
+		}
+		if !found {
+			log.Printf("warning: ignoring malformed key=value pair: %q", pair)
+		}
+	}
+	return result
+}

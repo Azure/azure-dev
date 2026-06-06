@@ -8,6 +8,9 @@ parameters:
   - name: SkipTests
     type: boolean
     default: false
+  - name: PublishToDevRegistry
+    type: boolean
+    default: false
 
 stages: 
   - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
@@ -83,4 +86,7 @@ stages:
 
     - template: /eng/pipelines/templates/stages/publish-extension.yml
       parameters:
+        AzdExtensionId: ${{ parameters.AzdExtensionId }}
+        AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
         SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
+        PublishToDevRegistry: ${{ parameters.PublishToDevRegistry }}

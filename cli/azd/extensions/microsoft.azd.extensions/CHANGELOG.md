@@ -1,5 +1,20 @@
 # Release History
 
+## 0.11.1 (2026-06-03)
+
+- [[#8498]](https://github.com/Azure/azure-dev/pull/8498) Disable HTML escaping when writing `registry.json` during `azd x publish` and local registry creation.
+
+## 0.11.0 (2026-05-19)
+
+- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Treat extension metadata warnings as non-fatal during `azd x build`, while keeping required fields and unusable metadata as validation errors.
+- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Improve `azd x init` validation ordering, warning output, namespace/tag handling including `--tags` for `--no-prompt`, and child process error messages.
+- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Improve `azd x init` overwrite prompts and generated Go scaffolding, including command metadata and string-escaped extension descriptions.
+- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Support dependency-only extension packs in `azd x build`, `azd x pack`, and `azd x publish`, including direct dependency-only registry metadata publishing and clear no-artifact messaging.
+- [[#8197]](https://github.com/Azure/azure-dev/pull/8197) Fail `azd x publish` when executable extensions have no matching artifacts instead of publishing an empty artifact map.
+- [[#7956]](https://github.com/Azure/azure-dev/pull/7956) Migrate the extension developer kit to the `azdext` runtime and refresh generated Go extension scaffolding.
+- [[#7982]](https://github.com/Azure/azure-dev/pull/7982) Add `secret` prompt option support to the scaffolded extension gRPC prompt contract.
+- [[#7697]](https://github.com/Azure/azure-dev/pull/7697) Add `.azdxignore` and `.gitignore` support to `azd x watch`.
+
 ## 0.10.0 (2026-03-04)
 
 - [[#6826]](https://github.com/Azure/azure-dev/pull/6826) Handle locked files on Windows during `azd x build` by terminating stale extension processes.

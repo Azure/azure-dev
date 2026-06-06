@@ -100,6 +100,16 @@ func TestSanitizeAgentName(t *testing.T) {
 			input:    "---",
 			expected: "my-agent",
 		},
+		{
+			name:     "non-ASCII characters stripped",
+			input:    "Ünö Ägent",
+			expected: "n-gent",
+		},
+		{
+			name:     "all non-ASCII falls back to default",
+			input:    "日本語エージェント",
+			expected: "my-agent",
+		},
 	}
 
 	for _, tt := range tests {
@@ -107,6 +117,9 @@ func TestSanitizeAgentName(t *testing.T) {
 			result := sanitizeAgentName(tt.input)
 			if result != tt.expected {
 				t.Errorf("sanitizeAgentName(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+			if err := agent_yaml.ValidateAgentName(result); err != nil {
+				t.Errorf("sanitizeAgentName(%q) produced invalid agent name %q: %v", tt.input, result, err)
 			}
 		})
 	}
@@ -441,10 +454,10 @@ func TestWriteDefinitionToSrcDir(t *testing.T) {
 		if !containsAll(contentStr, "name: test-agent", "kind: hosted", "responses", "AZURE_AI_MODEL_DEPLOYMENT_NAME") {
 			t.Errorf("written content missing expected fields:\n%s", contentStr)
 		}
-		// AZURE_OPENAI_ENDPOINT and AZURE_AI_PROJECT_ENDPOINT should NOT be written to agent.yaml.
+		// AZURE_OPENAI_ENDPOINT and FOUNDRY_PROJECT_ENDPOINT should NOT be written to agent.yaml.
 		// Hosted agents receive platform-provided FOUNDRY_* variables such as FOUNDRY_PROJECT_ENDPOINT instead.
-		if strings.Contains(contentStr, "AZURE_OPENAI_ENDPOINT") || strings.Contains(contentStr, "AZURE_AI_PROJECT_ENDPOINT") {
-			t.Errorf("agent.yaml should not contain AZURE_OPENAI_ENDPOINT or AZURE_AI_PROJECT_ENDPOINT:\n%s", contentStr)
+		if strings.Contains(contentStr, "AZURE_OPENAI_ENDPOINT") || strings.Contains(contentStr, "FOUNDRY_PROJECT_ENDPOINT") {
+			t.Errorf("agent.yaml should not contain AZURE_OPENAI_ENDPOINT or FOUNDRY_PROJECT_ENDPOINT:\n%s", contentStr)
 		}
 	})
 
@@ -508,6 +521,63 @@ func TestWriteDefinitionToSrcDir(t *testing.T) {
 			t.Errorf("written content missing expected fields:\n%s", string(content))
 		}
 	})
+}
+
+func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	if err := os.WriteFile(filepath.Join(dir, "main.py"), []byte("print('hello')\n"), 0600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	const envName = "agent-dev"
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{envName: {}},
+	}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+	action := &InitFromCodeAction{
+		azdClient:    azdClient,
+		environment:  &azdext.Environment{Name: envName},
+		azureContext: nil,
+		flags: &initFlags{
+			noPrompt: true,
+			env:      envName,
+			model:    "gpt-4o",
+		},
+	}
+
+	var definition *agent_yaml.ContainerAgent
+	output, err := captureStdout(t, func() error {
+		var runErr error
+		definition, runErr = action.createDefinitionFromLocalAgent(t.Context())
+		return runErr
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if definition == nil {
+		t.Fatal("expected definition")
+	}
+	if envServer.values[envName]["USE_EXISTING_AI_PROJECT"] != "false" {
+		t.Fatalf("USE_EXISTING_AI_PROJECT = %q, want false", envServer.values[envName]["USE_EXISTING_AI_PROJECT"])
+	}
+	if got := envServer.values[envName][pendingProvisionEnvVar]; got != pendingReasonProject {
+		t.Fatalf("%s = %q, want %q", pendingProvisionEnvVar, got, pendingReasonProject)
+	}
+	if len(action.deploymentDetails) != 0 {
+		t.Fatalf("deploymentDetails length = %d, want 0", len(action.deploymentDetails))
+	}
+	if !strings.Contains(output, "Model configuration was deferred") {
+		t.Fatalf("output missing deferred model warning:\n%s", output)
+	}
+	if definition.EnvironmentVariables != nil {
+		for _, envVar := range *definition.EnvironmentVariables {
+			if envVar.Name == "AZURE_AI_MODEL_DEPLOYMENT_NAME" {
+				t.Fatalf("deferred model configuration should not add %s", envVar.Name)
+			}
+		}
+	}
 }
 
 func TestFoundryDeploymentInfo(t *testing.T) {
@@ -813,6 +883,291 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 					t.Errorf("version[%d] = %q, want %q",
 						i, got[i].Version, tt.wantProtocols[i].Version)
 				}
+			}
+		})
+	}
+}
+
+func TestPromptDeployMode_FlagOverride(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                 string
+		noPrompt             bool
+		showCodeDeploy       bool
+		flag                 string
+		userProvidedManifest bool
+		want                 string
+		wantErr              bool
+		wantErrContain       string
+	}{
+		{
+			name:           "flag=container returns container",
+			noPrompt:       true,
+			showCodeDeploy: true,
+			flag:           "container",
+			want:           "container",
+		},
+		{
+			name:           "flag=code returns code",
+			noPrompt:       true,
+			showCodeDeploy: true,
+			flag:           "code",
+			want:           "code",
+		},
+		{
+			name:           "flag=code works even when showCodeDeploy=false",
+			noPrompt:       true,
+			showCodeDeploy: false,
+			flag:           "code",
+			want:           "code",
+		},
+		{
+			name:           "invalid flag value returns error",
+			noPrompt:       true,
+			showCodeDeploy: true,
+			flag:           "invalid",
+			wantErr:        true,
+			wantErrContain: "invalid --deploy-mode value",
+		},
+		{
+			name:           "no flag + noPrompt defaults to container",
+			noPrompt:       true,
+			showCodeDeploy: true,
+			flag:           "",
+			want:           "container",
+		},
+		{
+			name:           "no flag + showCodeDeploy=false defaults to container",
+			noPrompt:       false,
+			showCodeDeploy: false,
+			flag:           "",
+			want:           "container",
+		},
+		{
+			name:                 "userProvidedManifest + showCodeDeploy auto-selects container",
+			noPrompt:             false,
+			showCodeDeploy:       true,
+			flag:                 "",
+			userProvidedManifest: true,
+			want:                 "container",
+		},
+		{
+			name:                 "showCodeDeploy=false returns container regardless of userProvidedManifest",
+			noPrompt:             false,
+			showCodeDeploy:       false,
+			flag:                 "",
+			userProvidedManifest: true,
+			want:                 "container",
+		},
+		{
+			name:                 "explicit flag overrides userProvidedManifest",
+			noPrompt:             false,
+			showCodeDeploy:       true,
+			flag:                 "container",
+			userProvidedManifest: true,
+			want:                 "container",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := promptDeployMode(t.Context(), nil, tt.noPrompt, tt.showCodeDeploy, tt.flag, tt.userProvidedManifest)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tt.wantErrContain != "" && !strings.Contains(err.Error(), tt.wantErrContain) {
+					t.Errorf("error = %q, want containing %q", err.Error(), tt.wantErrContain)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("promptDeployMode() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPromptCodeConfig_FlagOverrides(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                 string
+		files                []string // files to create in temp dir
+		noPrompt             bool
+		userProvidedManifest bool
+		opts                 codeDeployOptions
+		wantRuntime          string
+		wantEntry            string
+		wantDepRes           string
+	}{
+		{
+			name:        "all opts provided",
+			noPrompt:    true,
+			opts:        codeDeployOptions{runtime: "python_3_14", entryPoint: "bot.py", depResolution: "bundled"},
+			wantRuntime: "python_3_14",
+			wantEntry:   "bot.py",
+			wantDepRes:  "bundled",
+		},
+		{
+			name:        "noPrompt defaults for python project",
+			files:       []string{"requirements.txt", "app.py"},
+			noPrompt:    true,
+			opts:        codeDeployOptions{},
+			wantRuntime: "python_3_13",
+			wantEntry:   "app.py",
+			wantDepRes:  "remote_build",
+		},
+		{
+			name:        "noPrompt defaults for dotnet project",
+			files:       []string{"MyBot.csproj", "Program.cs"},
+			noPrompt:    true,
+			opts:        codeDeployOptions{},
+			wantRuntime: "dotnet_10",
+			wantEntry:   "MyBot.dll",
+			wantDepRes:  "remote_build",
+		},
+		{
+			name:        "opts override noPrompt defaults",
+			files:       []string{"requirements.txt", "app.py"},
+			noPrompt:    true,
+			opts:        codeDeployOptions{runtime: "python_3_14", entryPoint: "serve.py", depResolution: "bundled"},
+			wantRuntime: "python_3_14",
+			wantEntry:   "serve.py",
+			wantDepRes:  "bundled",
+		},
+		{
+			name:        "partial opts — runtime from flag, rest from defaults",
+			files:       []string{"app.py"},
+			noPrompt:    true,
+			opts:        codeDeployOptions{runtime: "python_3_14"},
+			wantRuntime: "python_3_14",
+			wantEntry:   "app.py",
+			wantDepRes:  "remote_build",
+		},
+		{
+			name:                 "userProvidedManifest auto-detects python defaults",
+			files:                []string{"requirements.txt", "app.py"},
+			noPrompt:             false,
+			userProvidedManifest: true,
+			opts:                 codeDeployOptions{},
+			wantRuntime:          "python_3_13",
+			wantEntry:            "app.py",
+			wantDepRes:           "remote_build",
+		},
+		{
+			name:                 "userProvidedManifest auto-detects dotnet defaults",
+			files:                []string{"MyAgent.csproj"},
+			noPrompt:             false,
+			userProvidedManifest: true,
+			opts:                 codeDeployOptions{},
+			wantRuntime:          "dotnet_10",
+			wantEntry:            "MyAgent.dll",
+			wantDepRes:           "remote_build",
+		},
+		{
+			name:                 "opts override userProvidedManifest defaults",
+			files:                []string{"requirements.txt", "app.py"},
+			noPrompt:             false,
+			userProvidedManifest: true,
+			opts:                 codeDeployOptions{runtime: "python_3_14", entryPoint: "bot.py", depResolution: "bundled"},
+			wantRuntime:          "python_3_14",
+			wantEntry:            "bot.py",
+			wantDepRes:           "bundled",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			for _, f := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, f), []byte(""), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			got, err := promptCodeConfig(t.Context(), nil, dir, tt.noPrompt, tt.opts, tt.userProvidedManifest)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Runtime != tt.wantRuntime {
+				t.Errorf("Runtime = %q, want %q", got.Runtime, tt.wantRuntime)
+			}
+			if got.EntryPoint != tt.wantEntry {
+				t.Errorf("EntryPoint = %q, want %q", got.EntryPoint, tt.wantEntry)
+			}
+			if got.DependencyResolution == nil {
+				t.Fatal("DependencyResolution is nil")
+			}
+			if *got.DependencyResolution != tt.wantDepRes {
+				t.Errorf("DependencyResolution = %q, want %q", *got.DependencyResolution, tt.wantDepRes)
+			}
+		})
+	}
+}
+
+func TestDetectDefaultEntryPoint(t *testing.T) {
+	tests := []struct {
+		name    string
+		files   []string
+		runtime string
+		want    string
+	}{
+		{
+			name:    "dotnet with csproj",
+			files:   []string{"MyAgent.csproj", "Program.cs"},
+			runtime: "dotnet_9",
+			want:    "MyAgent.dll",
+		},
+		{
+			name:    "dotnet_8 with csproj",
+			files:   []string{"EchoAgent.csproj", "Program.cs", "NuGet.config"},
+			runtime: "dotnet_8",
+			want:    "EchoAgent.dll",
+		},
+		{
+			name:    "dotnet_10 no csproj fallback",
+			files:   []string{"Program.cs"},
+			runtime: "dotnet_10",
+			want:    "App.dll",
+		},
+		{
+			name:    "python with app.py",
+			files:   []string{"app.py", "requirements.txt"},
+			runtime: "python_3_12",
+			want:    "app.py",
+		},
+		{
+			name:    "python without app.py",
+			files:   []string{"requirements.txt"},
+			runtime: "python_3_12",
+			want:    "main.py",
+		},
+		{
+			name:    "python with main.py",
+			files:   []string{"main.py", "requirements.txt"},
+			runtime: "python_3_11",
+			want:    "main.py",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, f := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, f), []byte(""), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := detectDefaultEntryPoint(dir, tt.runtime)
+			if got != tt.want {
+				t.Errorf("detectDefaultEntryPoint() = %q, want %q", got, tt.want)
 			}
 		})
 	}

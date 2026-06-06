@@ -639,39 +639,50 @@ func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, e
 			})
 		}
 
-		columns := []output.Column{
+		columns := []output.PrettyColumn{
 			{
-				Heading:       "Key",
-				ValueTemplate: "{{.Key}}",
+				Column:   output.Column{Heading: "KEY", ValueTemplate: "{{.Key}}"},
+				Priority: 1,
 			},
 			{
-				Heading:       "Description",
-				ValueTemplate: "{{.Description}}",
+				Column:   output.Column{Heading: "DESCRIPTION", ValueTemplate: "{{.Description}}"},
+				Priority: 1,
 			},
 			{
-				Heading:       "Type",
-				ValueTemplate: "{{.Type}}",
+				Column:   output.Column{Heading: "TYPE", ValueTemplate: "{{.Type}}"},
+				Priority: 2,
 			},
 			{
-				Heading:       "Current Value",
-				ValueTemplate: "{{.CurrentValue}}",
+				Column: output.Column{
+					Heading:       "CURRENT VALUE",
+					ValueTemplate: "{{.CurrentValue}}",
+				},
+				Priority: 2,
 			},
 			{
-				Heading:       "Allowed Values",
-				ValueTemplate: "{{.AllowedValues}}",
+				Column: output.Column{
+					Heading:       "ALLOWED VALUES",
+					ValueTemplate: "{{.AllowedValues}}",
+				},
+				Priority: 3,
 			},
 			{
-				Heading:       "Environment Variable",
-				ValueTemplate: "{{.EnvVar}}",
+				Column: output.Column{
+					Heading:       "ENVIRONMENT VARIABLE",
+					ValueTemplate: "{{.EnvVar}}",
+				},
+				Priority: 3,
 			},
 			{
-				Heading:       "Example",
-				ValueTemplate: "{{.Example}}",
+				Column:   output.Column{Heading: "EXAMPLE", ValueTemplate: "{{.Example}}"},
+				Priority: 3,
 			},
 		}
 
-		err = a.formatter.Format(rows, a.writer, output.TableFormatterOptions{
-			Columns: columns,
+		prettyFormatter := &output.PrettyTableFormatter{}
+		err = prettyFormatter.Format(rows, a.writer, output.PrettyTableFormatterOptions{
+			Columns:         columns,
+			CardGroupColumn: "KEY",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed formatting config options: %w", err)

@@ -78,6 +78,7 @@ When writing tests, prefer table-driven tests. Use testify/mock for mocking.
 Additional mage targets:
 
 - `mage record` — re-record functional test cassettes against a live Azure subscription. Accepts an optional `-filter=TestName` flag to re-record specific tests. Typically only core maintainers need to run this; external contributors can rely on playback mode (the default) which requires no Azure access. Requires `azd auth login` and a configured test subscription (see `docs/recording-functional-tests-guide.md`).
+- `mage coverage:pr` — preview the CI PR coverage gate locally before pushing. Resolves PR-touched `.go` files via `git merge-base origin/main HEAD` for the per-package summary, runs the diff against the latest `main` baseline, and fails (exit 2) on **either** breach type: any PR-touched package drops more than 0.5 pp, or overall coverage falls below 69% (defaults match CI; override via `COVERAGE_MAX_PACKAGE_DECREASE`, `COVERAGE_MIN_OVERALL`). See `docs/code-coverage-guide.md` for details.
 
 ```bash
 gofmt -s -w .
@@ -105,6 +106,7 @@ cd cli/azd
 The project uses `golangci-lint` with these key linters enabled (see `.golangci.yaml`):
 - **`lll`** — max line length 125 characters (tab width 4). Break long lines with continuation.
 - **`gofmt`** — standard Go formatting
+- **`forbidigo`** — forbids `fmt.Print*` and `os.Stdout` in test files to prevent phantom CI failures (see [#8385](https://github.com/Azure/azure-dev/issues/8385)). Scoped to `*_test.go` only; allowlisted files that intentionally test stdout are excluded.
 - **`gosec`** — security checks
 - **`errorlint`** — correct `errors.Is`/`errors.As`/`errors.AsType` usage
 - **`unused`** — detect unused code
@@ -314,6 +316,7 @@ This project uses Go 1.26. Use modern standard library features:
 - **Cross-platform paths**: When resolving binary paths in tests, handle `.exe` suffix on Windows (e.g., `azd` vs `azd.exe` via `process.platform === "win32"`)
 - **Test new JSON fields**: When adding fields to JSON command output (e.g., `expiresOn` in `azd auth status --output json`), add a test asserting the field's presence and format
 - **No unused dependencies**: Don't add npm/pip packages that aren't imported anywhere. Remove dead `devDependencies` before submitting
+- **Never write to `os.Stdout` in tests**: Tests that write directly to `os.Stdout` (via `fmt.Print*`, `os.Stdout`, or UX components like `ux.NewSpinner` without a `Writer` option) corrupt the `go test -json` event stream under parallel execution, causing phantom test failures in CI. Use `t.Log`/`t.Logf` for diagnostic output, `io.Discard` or `&bytes.Buffer{}` for UX component writers, and `SkipLoadingSpinner: true` for prompt tests that don't need spinner behavior. Enforced by the `forbidigo` linter in `.golangci.yaml`. See [#8385](https://github.com/Azure/azure-dev/issues/8385) for details.
 
 ## MCP Tools
 

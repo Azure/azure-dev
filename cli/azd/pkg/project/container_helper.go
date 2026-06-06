@@ -84,6 +84,11 @@ func NewContainerHelper(
 	}
 }
 
+// ContainerEngine returns the detected container engine name ("docker" or "podman").
+func (ch *ContainerHelper) ContainerEngine() string {
+	return ch.docker.ContainerEngine()
+}
+
 // DockerfileBuilder returns a new DockerfileBuilder instance for building Dockerfiles programmatically.
 func (ch *ContainerHelper) DockerfileBuilder() *DockerfileBuilder {
 	return NewDockerfileBuilder()
@@ -1017,7 +1022,8 @@ func (ch *ContainerHelper) runDotnetPublish(
 		imageName,
 		dockerCreds.LoginServer,
 		dockerCreds.Username,
-		dockerCreds.Password)
+		dockerCreds.Password,
+		ch.ContainerEngine())
 	if err != nil {
 		return "", fmt.Errorf("publishing container: %w", err)
 	}

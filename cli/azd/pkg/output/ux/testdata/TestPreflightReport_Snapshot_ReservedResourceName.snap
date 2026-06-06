@@ -1,0 +1,3 @@
+  (!) Warning: Resource "login-server" (Microsoft.Web/sites) contains the reserved word "login"
+  Azure does not allow reserved words in resource names. The deployment will fail.
+  • https://learn.microsoft.com/azure/azure-resource-manager/templates/error-reserved-resource-name

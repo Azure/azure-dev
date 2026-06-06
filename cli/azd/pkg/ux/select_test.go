@@ -5,6 +5,7 @@ package ux
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,6 +16,7 @@ import (
 
 func TestNewSelect_with_choices(t *testing.T) {
 	s := NewSelect(&SelectOptions{
+		Writer:  io.Discard,
 		Message: "Pick one",
 		Choices: []*SelectChoice{
 			{Value: "a", Label: "Option A"},
@@ -29,6 +31,7 @@ func TestNewSelect_with_choices(t *testing.T) {
 
 func TestNewSelect_default_hint(t *testing.T) {
 	s := NewSelect(&SelectOptions{
+		Writer:  io.Discard,
 		Message: "Pick one",
 		Choices: []*SelectChoice{
 			{Value: "a", Label: "A"},
@@ -40,6 +43,7 @@ func TestNewSelect_default_hint(t *testing.T) {
 
 func TestNewSelect_hint_no_filter(t *testing.T) {
 	s := NewSelect(&SelectOptions{
+		Writer:          io.Discard,
 		Message:         "Pick one",
 		Choices:         []*SelectChoice{{Value: "a", Label: "A"}},
 		EnableFiltering: new(false),
@@ -50,6 +54,7 @@ func TestNewSelect_hint_no_filter(t *testing.T) {
 
 func TestNewSelect_custom_hint(t *testing.T) {
 	s := NewSelect(&SelectOptions{
+		Writer:  io.Discard,
 		Message: "Pick one",
 		Choices: []*SelectChoice{{Value: "a", Label: "A"}},
 		Hint:    "[my hint]",
@@ -62,6 +67,7 @@ func TestSelect_Render_initial(t *testing.T) {
 	printer := NewPrinter(&buf)
 
 	s := NewSelect(&SelectOptions{
+		Writer:  io.Discard,
 		Message: "Choose",
 		Choices: []*SelectChoice{
 			{Value: "a", Label: "Alpha"},
@@ -85,6 +91,7 @@ func TestSelect_Render_complete(t *testing.T) {
 	printer := NewPrinter(&buf)
 
 	s := NewSelect(&SelectOptions{
+		Writer:  io.Discard,
 		Message: "Choose",
 		Choices: []*SelectChoice{
 			{Value: "a", Label: "Alpha"},
@@ -108,6 +115,7 @@ func TestSelect_Render_cancelled(t *testing.T) {
 	printer := NewPrinter(&buf)
 
 	s := NewSelect(&SelectOptions{
+		Writer:  io.Discard,
 		Message: "Choose",
 		Choices: []*SelectChoice{
 			{Value: "a", Label: "Alpha"},
@@ -124,6 +132,7 @@ func TestSelect_Render_cancelled(t *testing.T) {
 
 func TestSelect_applyFilter_matches(t *testing.T) {
 	s := NewSelect(&SelectOptions{
+		Writer:  io.Discard,
 		Message: "Choose",
 		Choices: []*SelectChoice{
 			{Value: "apple", Label: "Apple"},
@@ -141,6 +150,7 @@ func TestSelect_applyFilter_matches(t *testing.T) {
 
 func TestSelect_applyFilter_no_match(t *testing.T) {
 	s := NewSelect(&SelectOptions{
+		Writer:  io.Discard,
 		Message: "Choose",
 		Choices: []*SelectChoice{
 			{Value: "apple", Label: "Apple"},
@@ -156,6 +166,7 @@ func TestSelect_applyFilter_no_match(t *testing.T) {
 
 func TestSelect_applyFilter_empty_resets(t *testing.T) {
 	s := NewSelect(&SelectOptions{
+		Writer:  io.Discard,
 		Message: "Choose",
 		Choices: []*SelectChoice{
 			{Value: "a", Label: "A"},
@@ -171,6 +182,7 @@ func TestSelect_applyFilter_empty_resets(t *testing.T) {
 
 func TestSelect_applyFilter_by_number(t *testing.T) {
 	s := NewSelect(&SelectOptions{
+		Writer:         io.Discard,
 		Message:        "Choose",
 		DisplayNumbers: new(true),
 		Choices: []*SelectChoice{
@@ -189,6 +201,7 @@ func TestSelect_applyFilter_by_number(t *testing.T) {
 
 func TestSelect_WithCanvas(t *testing.T) {
 	s := NewSelect(&SelectOptions{
+		Writer:  io.Discard,
 		Message: "Choose",
 		Choices: []*SelectChoice{{Value: "a", Label: "A"}},
 	})
@@ -205,6 +218,7 @@ func TestSelect_renderValidation_no_matches(t *testing.T) {
 	printer := NewPrinter(&buf)
 
 	s := NewSelect(&SelectOptions{
+		Writer:  io.Discard,
 		Message: "Choose",
 		Choices: []*SelectChoice{
 			{Value: "a", Label: "A"},
@@ -221,6 +235,7 @@ func TestSelect_renderValidation_no_matches(t *testing.T) {
 
 func TestNewMultiSelect_with_choices(t *testing.T) {
 	ms := NewMultiSelect(&MultiSelectOptions{
+		Writer:  io.Discard,
 		Message: "Pick many",
 		Choices: []*MultiSelectChoice{
 			{Value: "a", Label: "Alpha"},
@@ -234,6 +249,7 @@ func TestNewMultiSelect_with_choices(t *testing.T) {
 
 func TestNewMultiSelect_preselected(t *testing.T) {
 	ms := NewMultiSelect(&MultiSelectOptions{
+		Writer:  io.Discard,
 		Message: "Pick many",
 		Choices: []*MultiSelectChoice{
 			{Value: "a", Label: "Alpha", Selected: true},
@@ -251,6 +267,7 @@ func TestMultiSelect_Render_initial(t *testing.T) {
 	printer := NewPrinter(&buf)
 
 	ms := NewMultiSelect(&MultiSelectOptions{
+		Writer:  io.Discard,
 		Message: "Pick many",
 		Choices: []*MultiSelectChoice{
 			{Value: "a", Label: "Alpha"},
@@ -272,6 +289,7 @@ func TestMultiSelect_Render_complete(t *testing.T) {
 	printer := NewPrinter(&buf)
 
 	ms := NewMultiSelect(&MultiSelectOptions{
+		Writer:  io.Discard,
 		Message: "Pick many",
 		Choices: []*MultiSelectChoice{
 			{Value: "a", Label: "Alpha", Selected: true},
@@ -294,6 +312,7 @@ func TestMultiSelect_Render_cancelled(t *testing.T) {
 	printer := NewPrinter(&buf)
 
 	ms := NewMultiSelect(&MultiSelectOptions{
+		Writer:  io.Discard,
 		Message: "Pick many",
 		Choices: []*MultiSelectChoice{
 			{Value: "a", Label: "Alpha"},
@@ -310,6 +329,7 @@ func TestMultiSelect_Render_cancelled(t *testing.T) {
 
 func TestMultiSelect_validate_no_selection(t *testing.T) {
 	ms := NewMultiSelect(&MultiSelectOptions{
+		Writer:  io.Discard,
 		Message: "Pick many",
 		Choices: []*MultiSelectChoice{
 			{Value: "a", Label: "Alpha"},
@@ -324,8 +344,24 @@ func TestMultiSelect_validate_no_selection(t *testing.T) {
 	)
 }
 
+func TestMultiSelect_validate_no_selection_allowed(t *testing.T) {
+	ms := NewMultiSelect(&MultiSelectOptions{
+		Message: "Pick many",
+		Choices: []*MultiSelectChoice{
+			{Value: "a", Label: "Alpha"},
+		},
+		AllowEmptySelection: new(true),
+	})
+	ms.submitted = true
+	ms.validate()
+
+	assert.False(t, ms.hasValidationError)
+	assert.Empty(t, ms.validationMessage)
+}
+
 func TestMultiSelect_validate_with_selection(t *testing.T) {
 	ms := NewMultiSelect(&MultiSelectOptions{
+		Writer:  io.Discard,
 		Message: "Pick many",
 		Choices: []*MultiSelectChoice{
 			{Value: "a", Label: "Alpha", Selected: true},
@@ -339,6 +375,7 @@ func TestMultiSelect_validate_with_selection(t *testing.T) {
 
 func TestMultiSelect_validate_empty_filter(t *testing.T) {
 	ms := NewMultiSelect(&MultiSelectOptions{
+		Writer:  io.Discard,
 		Message: "Pick many",
 		Choices: []*MultiSelectChoice{
 			{Value: "a", Label: "Alpha"},
@@ -355,6 +392,7 @@ func TestMultiSelect_validate_empty_filter(t *testing.T) {
 
 func TestMultiSelect_sortSelectedChoices(t *testing.T) {
 	ms := NewMultiSelect(&MultiSelectOptions{
+		Writer:  io.Discard,
 		Message: "Pick many",
 		Choices: []*MultiSelectChoice{
 			{Value: "a", Label: "Alpha"},
@@ -374,6 +412,7 @@ func TestMultiSelect_sortSelectedChoices(t *testing.T) {
 
 func TestMultiSelect_applyFilter(t *testing.T) {
 	ms := NewMultiSelect(&MultiSelectOptions{
+		Writer:  io.Discard,
 		Message: "Pick",
 		Choices: []*MultiSelectChoice{
 			{Value: "apple", Label: "Apple"},
@@ -390,6 +429,7 @@ func TestMultiSelect_applyFilter(t *testing.T) {
 
 func TestMultiSelect_WithCanvas(t *testing.T) {
 	ms := NewMultiSelect(&MultiSelectOptions{
+		Writer:  io.Discard,
 		Message: "Pick",
 		Choices: []*MultiSelectChoice{
 			{Value: "a", Label: "A"},

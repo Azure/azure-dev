@@ -223,6 +223,336 @@ const completionSpec: Fig.Spec = {
 					description: 'Ship agents with Microsoft Foundry from your terminal. (Preview)',
 					subcommands: [
 						{
+							name: ['doctor'],
+							description: 'Diagnose problems with an azd ai agent project.',
+							options: [
+								{
+									name: ['--local-only'],
+									description: 'Skip remote (network-dependent) checks. Useful when offline, behind a proxy, or for a fast local triage.',
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--unredacted'],
+									description: 'Show raw principal IDs, scope ARNs, and UPNs in the report.',
+								},
+							],
+						},
+						{
+							name: ['endpoint'],
+							description: 'Manage agent endpoint and card configuration.',
+							subcommands: [
+								{
+									name: ['update'],
+									description: 'Update an agent\'s endpoint and card configuration without deploying a new version.',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['eval'],
+							description: 'Create and run quick evals for an agent.',
+							subcommands: [
+								{
+									name: ['init'],
+									description: 'Generate a local eval suite for a deployed agent.',
+									options: [
+										{
+											name: ['--agent'],
+											description: 'Target agent name',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
+										{
+											name: ['--dataset'],
+											description: 'Existing local file or registered dataset name to use for evaluation (instead of generating a new dataset)',
+											args: [
+												{
+													name: 'dataset',
+												},
+											],
+										},
+										{
+											name: ['--eval-model'],
+											description: 'Model used for evaluation and generation',
+											args: [
+												{
+													name: 'eval-model',
+												},
+											],
+										},
+										{
+											name: ['--evaluator'],
+											description: 'Built-in or custom evaluator name',
+											isRepeatable: true,
+											args: [
+												{
+													name: 'evaluator',
+												},
+											],
+										},
+										{
+											name: ['--gen-instruction', '-g'],
+											description: 'Agent instruction used for dataset and evaluator generation',
+											args: [
+												{
+													name: 'gen-instruction',
+												},
+											],
+										},
+										{
+											name: ['--gen-instruction-file'],
+											description: 'Path to a file containing the agent instruction',
+											args: [
+												{
+													name: 'gen-instruction-file',
+												},
+											],
+										},
+										{
+											name: ['--max-samples'],
+											description: 'Number of samples to generate (15-1000)',
+											args: [
+												{
+													name: 'max-samples',
+												},
+											],
+										},
+										{
+											name: ['--name'],
+											description: 'Name for the eval suite',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--no-wait'],
+											description: 'Submit generation jobs and return immediately',
+										},
+										{
+											name: ['--out-file'],
+											description: 'Eval config path',
+											args: [
+												{
+													name: 'out-file',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Microsoft Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--reset-defaults'],
+											description: 'Overwrite an existing eval config',
+										},
+										{
+											name: ['--trace-days'],
+											description: 'Include agent traces from the last N days for evaluator generation (0 = no traces)',
+											args: [
+												{
+													name: 'trace-days',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['list'],
+									description: 'List evaluations for the current project.',
+									options: [
+										{
+											name: ['--limit'],
+											description: 'Maximum number of evals to return',
+											args: [
+												{
+													name: 'limit',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['run'],
+									description: 'Execute an evaluation run from eval.yaml.',
+									options: [
+										{
+											name: ['--config'],
+											description: 'Local eval config YAML',
+											args: [
+												{
+													name: 'config',
+												},
+											],
+										},
+										{
+											name: ['--name'],
+											description: 'Name for the eval run (defaults to eval config name)',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--no-wait'],
+											description: 'Start the run and return immediately without waiting for results',
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['show'],
+									description: 'Show an eval definition, run history, or run details.',
+									options: [
+										{
+											name: ['--eval-run-id'],
+											description: 'Show details for a specific eval run',
+											args: [
+												{
+													name: 'eval-run-id',
+												},
+											],
+										},
+										{
+											name: ['--limit'],
+											description: 'Maximum number of runs to show',
+											args: [
+												{
+													name: 'limit',
+												},
+											],
+										},
+										{
+											name: ['--out-file', '-O'],
+											description: 'Export full run results to a JSON file',
+											args: [
+												{
+													name: 'out-file',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['update'],
+									description: 'Update evaluators and datasets from local files.',
+									options: [
+										{
+											name: ['--config'],
+											description: 'Local eval config YAML',
+											args: [
+												{
+													name: 'config',
+												},
+											],
+										},
+										{
+											name: ['--dataset-only'],
+											description: 'Only update the dataset',
+										},
+										{
+											name: ['--evaluator-only'],
+											description: 'Only update evaluators',
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['files'],
 							description: 'Manage files in a hosted agent session.',
 							subcommands: [
@@ -236,6 +566,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -270,6 +609,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -282,6 +630,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -321,6 +678,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -333,6 +699,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -355,6 +730,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -367,6 +751,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -397,6 +790,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -409,6 +811,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -431,6 +842,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -443,6 +863,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -482,6 +911,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 							],
@@ -501,6 +939,47 @@ const completionSpec: Fig.Spec = {
 							name: ['init'],
 							description: 'Initialize a new AI agent project. (Preview)',
 							options: [
+								{
+									name: ['--agent-name'],
+									description: 'Foundry agent name to write to agent.yaml. Reusing a name creates a new version of the existing agent.',
+									args: [
+										{
+											name: 'agent-name',
+										},
+									],
+								},
+								{
+									name: ['--dep-resolution'],
+									description: 'Dependency resolution for code deploy: \'remote_build\' or \'bundled\'. Defaults to \'remote_build\'.',
+									args: [
+										{
+											name: 'dep-resolution',
+										},
+									],
+								},
+								{
+									name: ['--deploy-mode'],
+									description: 'Deployment mode: \'container\' (Docker image) or \'code\' (ZIP upload). Defaults to \'container\' in --no-prompt.',
+									args: [
+										{
+											name: 'deploy-mode',
+										},
+									],
+								},
+								{
+									name: ['--entry-point'],
+									description: 'Entry point file for code deploy (e.g., \'app.py\', \'MyAgent.dll\'). Required with --deploy-mode code --no-prompt.',
+									args: [
+										{
+											name: 'entry-point',
+										},
+									],
+								},
+								{
+									name: ['--force'],
+									description: 'Overwrite an input manifest that already lives inside the generated src tree without prompting. Required together with --no-prompt when init would otherwise need confirmation.',
+									isDangerous: true,
+								},
 								{
 									name: ['--manifest', '-m'],
 									description: 'Path or URI to an agent manifest to add to your azd project',
@@ -557,6 +1036,15 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--runtime'],
+									description: 'Runtime for code deploy (e.g., \'python_3_13\', \'python_3_14\', \'dotnet_10\'). Required with --deploy-mode code --no-prompt.',
+									args: [
+										{
+											name: 'runtime',
+										},
+									],
+								},
+								{
 									name: ['--src', '-s'],
 									description: 'Directory to download the agent definition to (defaults to \'src/<agent-id>\')',
 									args: [
@@ -577,6 +1065,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'agent-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--chat-isolation-key'],
+									description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+									args: [
+										{
+											name: 'chat-isolation-key',
 										},
 									],
 								},
@@ -616,6 +1113,7 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'output',
+											suggestions: ['default', 'raw'],
 										},
 									],
 								},
@@ -655,12 +1153,39 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['--user-isolation-key'],
+									description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+									args: [
+										{
+											name: 'user-isolation-key',
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Agent version to invoke (creates or reuses a session backed by that version)',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
 							],
 						},
 						{
 							name: ['monitor'],
 							description: 'Monitor logs from a hosted agent.',
 							options: [
+								{
+									name: ['--chat-isolation-key'],
+									description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+									args: [
+										{
+											name: 'chat-isolation-key',
+										},
+									],
+								},
 								{
 									name: ['--follow', '-f'],
 									description: 'Stream logs in real-time',
@@ -706,8 +1231,351 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--user-isolation-key'],
+									description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+									args: [
+										{
+											name: 'user-isolation-key',
+										},
+									],
+								},
+								{
 									name: ['--utc'],
 									description: 'Display timestamps in UTC instead of local time',
+								},
+							],
+						},
+						{
+							name: ['optimize'],
+							description: 'Evaluate and optimize AI agents.',
+							subcommands: [
+								{
+									name: ['apply'],
+									description: 'Apply optimized candidate configuration locally to your azd project.',
+									options: [
+										{
+											name: ['--agent'],
+											description: 'Agent service name (auto-detected from azure.yaml)',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
+										{
+											name: ['--candidate'],
+											description: 'Candidate ID from optimization results (required)',
+											args: [
+												{
+													name: 'candidate',
+												},
+											],
+										},
+										{
+											name: ['--endpoint'],
+											description: 'Optimization service endpoint (for local dev)',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['cancel'],
+									description: 'Cancel a running optimization job.',
+									options: [
+										{
+											name: ['--endpoint'],
+											description: 'Optimization service endpoint (for local dev)',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['deploy'],
+									description: 'Deploy a winning optimization candidate as a new agent version via the API.',
+									options: [
+										{
+											name: ['--agent'],
+											description: 'Agent name to deploy to (auto-detected from agent.yaml)',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
+										{
+											name: ['--candidate'],
+											description: 'Candidate ID from optimization results (required)',
+											args: [
+												{
+													name: 'candidate',
+												},
+											],
+										},
+										{
+											name: ['--endpoint'],
+											description: 'Optimization service endpoint (for local dev)',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['list'],
+									description: 'List recent optimization runs.',
+									options: [
+										{
+											name: ['--endpoint'],
+											description: 'Optimization service endpoint (for local dev)',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--limit'],
+											description: 'Maximum number of results',
+											args: [
+												{
+													name: 'limit',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--status'],
+											description: 'Filter by status (pending/running/completed/failed/cancelled)',
+											args: [
+												{
+													name: 'status',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['status'],
+									description: 'Check the status of an optimization job.',
+									options: [
+										{
+											name: ['--endpoint'],
+											description: 'Optimization service endpoint (for local dev)',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--poll-interval'],
+											description: 'Polling interval in seconds',
+											args: [
+												{
+													name: 'poll-interval',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--watch'],
+											description: 'Poll until job completes',
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--agent', '-a'],
+									description: 'Agent name (auto-detected from azd project if omitted)',
+									args: [
+										{
+											name: 'agent',
+										},
+									],
+								},
+								{
+									name: ['--config', '-c'],
+									description: 'Path to YAML config file (optional — values are prompted interactively if omitted)',
+									args: [
+										{
+											name: 'config',
+										},
+									],
+								},
+								{
+									name: ['--dataset', '-d'],
+									description: 'Existing local file or registered dataset name',
+									args: [
+										{
+											name: 'dataset',
+										},
+									],
+								},
+								{
+									name: ['--endpoint'],
+									description: 'Optimization service endpoint (for local dev)',
+									args: [
+										{
+											name: 'endpoint',
+										},
+									],
+								},
+								{
+									name: ['--eval-model', '-m'],
+									description: 'Model for evaluation (required)',
+									args: [
+										{
+											name: 'eval-model',
+										},
+									],
+								},
+								{
+									name: ['--max-iterations'],
+									description: 'Maximum number of optimization iterations (must be >= 1; default: 5)',
+									args: [
+										{
+											name: 'max-iterations',
+										},
+									],
+								},
+								{
+									name: ['--no-wait'],
+									description: 'Submit job and return immediately without waiting for completion',
+								},
+								{
+									name: ['--optimize-model'],
+									description: 'Model for optimization reasoning (gpt-5 family recommended; falls back to eval model when not set)',
+									args: [
+										{
+											name: 'optimize-model',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--poll-interval'],
+									description: 'Polling interval in seconds',
+									args: [
+										{
+											name: 'poll-interval',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
 								},
 							],
 						},
@@ -715,6 +1583,10 @@ const completionSpec: Fig.Spec = {
 							name: ['run'],
 							description: 'Run your agent locally for development.',
 							options: [
+								{
+									name: ['--no-inspector'],
+									description: 'Do not open Agent Inspector',
+								},
 								{
 									name: ['--output', '-o'],
 									description: 'The output format',
@@ -745,6 +1617,61 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['sample'],
+							description: 'Browse the curated catalog of agent samples and azd templates.',
+							subcommands: [
+								{
+									name: ['list', 'ls'],
+									description: 'List available agent samples that can be used with `azd ai agent init -m`.',
+									options: [
+										{
+											name: ['--featured-only'],
+											description: 'Only include samples tagged \'featured\' (the curated starter list).',
+										},
+										{
+											name: ['--language'],
+											description: 'Filter by language token. Supported values: python, dotnetCsharp.',
+											args: [
+												{
+													name: 'language',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'text'],
+												},
+											],
+										},
+										{
+											name: ['--type'],
+											description: 'Filter by template type. Supported values: agent, azd.',
+											args: [
+												{
+													name: 'type',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['sessions'],
 							description: 'Manage sessions for a hosted agent endpoint.',
 							subcommands: [
@@ -762,8 +1689,17 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
+												},
+											],
+										},
+										{
 											name: ['--isolation-key'],
-											description: 'Isolation key for session ownership (derived from Entra token by default)',
+											description: 'Session ownership isolation key header value (x-session-isolation-key; derived from Entra token by default)',
 											args: [
 												{
 													name: 'isolation-key',
@@ -786,6 +1722,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'session-id',
+												},
+											],
+										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
 												},
 											],
 										},
@@ -814,8 +1759,17 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
+												},
+											],
+										},
+										{
 											name: ['--isolation-key'],
-											description: 'Isolation key for session ownership (derived from Entra token by default)',
+											description: 'Session ownership isolation key header value (x-session-isolation-key; derived from Entra token by default)',
 											args: [
 												{
 													name: 'isolation-key',
@@ -831,6 +1785,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -843,6 +1806,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
 												},
 											],
 										},
@@ -874,6 +1846,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -890,12 +1871,30 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--chat-isolation-key'],
+											description: 'Foundry chat isolation key header value (x-agent-chat-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'chat-isolation-key',
+												},
+											],
+										},
+										{
 											name: ['--output', '-o'],
 											description: 'The output format',
 											args: [
 												{
 													name: 'output',
 													suggestions: ['json', 'table'],
+												},
+											],
+										},
+										{
+											name: ['--user-isolation-key'],
+											description: 'Foundry user isolation key header value (x-agent-user-isolation-key); independent of --isolation-key (session ownership)',
+											args: [
+												{
+													name: 'user-isolation-key',
 												},
 											],
 										},
@@ -940,6 +1939,372 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'output',
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+				{
+					name: ['connection'],
+					description: 'Manage Microsoft Foundry Connections from your terminal. (Preview)',
+					subcommands: [
+						{
+							name: ['context'],
+							description: 'Get the context of the azd project & environment.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['create'],
+							description: 'Create a new Foundry project connection.',
+							options: [
+								{
+									name: ['--audience'],
+									description: 'Token audience for user-entra-token/agentic-identity/project-managed-identity auth',
+									args: [
+										{
+											name: 'audience',
+										},
+									],
+								},
+								{
+									name: ['--auth-type'],
+									description: 'Auth type: api-key, custom-keys, none, oauth2, user-entra-token, project-managed-identity, agentic-identity',
+									args: [
+										{
+											name: 'auth-type',
+										},
+									],
+								},
+								{
+									name: ['--authorization-url'],
+									description: 'OAuth2 authorization endpoint URL',
+									args: [
+										{
+											name: 'authorization-url',
+										},
+									],
+								},
+								{
+									name: ['--client-id'],
+									description: 'OAuth2 client ID (required for BYO OAuth2)',
+									args: [
+										{
+											name: 'client-id',
+										},
+									],
+								},
+								{
+									name: ['--client-secret'],
+									description: 'OAuth2 client secret (required for BYO OAuth2)',
+									args: [
+										{
+											name: 'client-secret',
+										},
+									],
+								},
+								{
+									name: ['--connector-name'],
+									description: 'Managed connector name (for OAuth2 connectors)',
+									args: [
+										{
+											name: 'connector-name',
+										},
+									],
+								},
+								{
+									name: ['--custom-key'],
+									description: 'Custom key=value (repeatable, for custom-keys auth)',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'custom-key',
+										},
+									],
+								},
+								{
+									name: ['--force'],
+									description: 'Replace existing connection (upsert)',
+									isDangerous: true,
+								},
+								{
+									name: ['--key'],
+									description: 'API key (for api-key auth)',
+									args: [
+										{
+											name: 'key',
+										},
+									],
+								},
+								{
+									name: ['--kind'],
+									description: 'Connection kind (e.g., remote-tool, remote-a2a, cognitive-search)',
+									args: [
+										{
+											name: 'kind',
+										},
+									],
+								},
+								{
+									name: ['--metadata'],
+									description: 'Metadata key=value (repeatable)',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'metadata',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--refresh-url'],
+									description: 'OAuth2 token refresh URL',
+									args: [
+										{
+											name: 'refresh-url',
+										},
+									],
+								},
+								{
+									name: ['--scopes'],
+									description: 'OAuth2 scopes (repeatable or comma-separated, e.g. --scopes read:user,user:email)',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'scopes',
+										},
+									],
+								},
+								{
+									name: ['--target'],
+									description: 'Target URL or ARM resource ID',
+									args: [
+										{
+											name: 'target',
+										},
+									],
+								},
+								{
+									name: ['--token-url'],
+									description: 'OAuth2 token endpoint URL',
+									args: [
+										{
+											name: 'token-url',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['delete'],
+							description: 'Delete a connection.',
+							options: [
+								{
+									name: ['--force'],
+									description: 'Skip confirmation prompt',
+									isDangerous: true,
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['list'],
+							description: 'List connections in the Foundry project.',
+							options: [
+								{
+									name: ['--kind'],
+									description: 'Filter by connection kind (e.g., remote-tool)',
+									args: [
+										{
+											name: 'kind',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['show'],
+							description: 'Show connection details.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--show-credentials'],
+									description: 'Fetch credential values from the data plane',
+								},
+							],
+						},
+						{
+							name: ['update'],
+							description: 'Update a connection\'s target, credentials, or metadata.',
+							options: [
+								{
+									name: ['--custom-key'],
+									description: 'Update custom key=value (repeatable, for custom-keys auth)',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'custom-key',
+										},
+									],
+								},
+								{
+									name: ['--key'],
+									description: 'New API key value (for api-key auth)',
+									args: [
+										{
+											name: 'key',
+										},
+									],
+								},
+								{
+									name: ['--metadata'],
+									description: 'Set metadata key=value (repeatable, merged with existing metadata)',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'metadata',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--target'],
+									description: 'New target URL or ARM resource ID',
+									args: [
+										{
+											name: 'target',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
 										},
 									],
 								},
@@ -1405,9 +2770,226 @@ const completionSpec: Fig.Spec = {
 					],
 				},
 				{
+					name: ['inspector'],
+					description: 'Browser-based inspector UI for locally running Foundry agents. (Preview)',
+					subcommands: [
+						{
+							name: ['launch'],
+							description: 'Launch the Agent Inspector UI in a browser, pointed at a local agent.',
+							options: [
+								{
+									name: ['--conversation-id'],
+									description: 'Optional explicit conversation ID for the SPA. If omitted, the SPA mints a fresh UUID.',
+									args: [
+										{
+											name: 'conversation-id',
+										},
+									],
+								},
+								{
+									name: ['--inspector-port'],
+									description: 'Port the Agent Inspector UI listens on (default: 8087)',
+									args: [
+										{
+											name: 'inspector-port',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--port'],
+									description: 'Localhost port of the agent the inspector targets (default: 8088)',
+									args: [
+										{
+											name: 'port',
+										},
+									],
+								},
+								{
+									name: ['--session-id'],
+									description: 'Optional explicit session ID for the SPA. If omitted, the SPA mints a fresh UUID.',
+									args: [
+										{
+											name: 'session-id',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+				{
 					name: ['models'],
 					description: 'Extension for managing custom models in Azure AI Foundry. (Preview)',
 					subcommands: [
+						{
+							name: ['create'],
+							description: 'Upload and register a custom model',
+							options: [
+								{
+									name: ['--azcopy-path'],
+									description: 'Path to azcopy binary (auto-detected if not provided)',
+									args: [
+										{
+											name: 'azcopy-path',
+										},
+									],
+								},
+								{
+									name: ['--base-model'],
+									description: 'Base model identifier (e.g., FW-GPT-OSS-120B or full azureml:// URI)',
+									args: [
+										{
+											name: 'base-model',
+										},
+									],
+								},
+								{
+									name: ['--description'],
+									description: 'Model description',
+									args: [
+										{
+											name: 'description',
+										},
+									],
+								},
+								{
+									name: ['--lora-alpha'],
+									description: 'LoRA scaling factor (alpha) — required when --weight-type is LoRA',
+									args: [
+										{
+											name: 'lora-alpha',
+										},
+									],
+								},
+								{
+									name: ['--lora-dropout'],
+									description: 'LoRA dropout rate used during training (informational)',
+									args: [
+										{
+											name: 'lora-dropout',
+										},
+									],
+								},
+								{
+									name: ['--lora-rank'],
+									description: 'LoRA rank (r) — required when --weight-type is LoRA',
+									args: [
+										{
+											name: 'lora-rank',
+										},
+									],
+								},
+								{
+									name: ['--lora-target-modules'],
+									description: 'Comma-separated list of target modules (e.g., "q_proj,v_proj,k_proj,o_proj")',
+									args: [
+										{
+											name: 'lora-target-modules',
+										},
+									],
+								},
+								{
+									name: ['--name', '-n'],
+									description: 'Model name (required)',
+									args: [
+										{
+											name: 'name',
+										},
+									],
+								},
+								{
+									name: ['--no-wait'],
+									description: 'Start async registration and return immediately with the operation URL',
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--publisher'],
+									description: 'Model publisher ID for catalog info (e.g., Fireworks)',
+									args: [
+										{
+											name: 'publisher',
+										},
+									],
+								},
+								{
+									name: ['--source'],
+									description: 'Local path or remote URL to model files',
+									args: [
+										{
+											name: 'source',
+										},
+									],
+								},
+								{
+									name: ['--source-file'],
+									description: 'Path to a file containing the source URL (useful for URLs with special characters)',
+									args: [
+										{
+											name: 'source-file',
+										},
+									],
+								},
+								{
+									name: ['--subscription', '-s'],
+									description: 'Azure subscription ID',
+									args: [
+										{
+											name: 'subscription',
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Model version',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+								{
+									name: ['--weight-type'],
+									description: 'Weight type (e.g., FullWeight, LoRA)',
+									args: [
+										{
+											name: 'weight-type',
+										},
+									],
+								},
+							],
+						},
 						{
 							name: ['custom'],
 							description: 'Manage custom models in Azure AI Foundry',
@@ -1444,6 +3026,42 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--lora-alpha'],
+											description: 'LoRA scaling factor (alpha) — required when --weight-type is LoRA',
+											args: [
+												{
+													name: 'lora-alpha',
+												},
+											],
+										},
+										{
+											name: ['--lora-dropout'],
+											description: 'LoRA dropout rate used during training (informational)',
+											args: [
+												{
+													name: 'lora-dropout',
+												},
+											],
+										},
+										{
+											name: ['--lora-rank'],
+											description: 'LoRA rank (r) — required when --weight-type is LoRA',
+											args: [
+												{
+													name: 'lora-rank',
+												},
+											],
+										},
+										{
+											name: ['--lora-target-modules'],
+											description: 'Comma-separated list of target modules (e.g., "q_proj,v_proj,k_proj,o_proj")',
+											args: [
+												{
+													name: 'lora-target-modules',
+												},
+											],
+										},
+										{
 											name: ['--name', '-n'],
 											description: 'Model name (required)',
 											args: [
@@ -1457,7 +3075,7 @@ const completionSpec: Fig.Spec = {
 											description: 'Start async registration and return immediately with the operation URL',
 										},
 										{
-											name: ['--project-endpoint', '-e'],
+											name: ['--project-endpoint'],
 											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
 											args: [
 												{
@@ -1467,7 +3085,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--publisher'],
-											description: 'Model publisher ID for catalog info',
+											description: 'Model publisher ID for catalog info (e.g., Fireworks)',
 											args: [
 												{
 													name: 'publisher',
@@ -1510,6 +3128,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--weight-type'],
+											description: 'Weight type (e.g., FullWeight, LoRA)',
+											args: [
+												{
+													name: 'weight-type',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -1531,7 +3158,7 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--project-endpoint', '-e'],
+											name: ['--project-endpoint'],
 											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
 											args: [
 												{
@@ -1573,11 +3200,20 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--project-endpoint', '-e'],
+											name: ['--project-endpoint'],
 											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
 											args: [
 												{
 													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--source-job-id'],
+											description: 'Filter models by the training job that created them',
+											args: [
+												{
+													name: 'source-job-id',
 												},
 											],
 										},
@@ -1615,7 +3251,7 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--project-endpoint', '-e'],
+											name: ['--project-endpoint'],
 											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
 											args: [
 												{
@@ -1643,10 +3279,90 @@ const completionSpec: Fig.Spec = {
 										},
 									],
 								},
+								{
+									name: ['update'],
+									description: 'Update a custom model',
+									options: [
+										{
+											name: ['--description'],
+											description: 'New model description',
+											args: [
+												{
+													name: 'description',
+												},
+											],
+										},
+										{
+											name: ['--name', '-n'],
+											description: 'Model name (required)',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'Output format (table, json)',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--remove-tag'],
+											description: 'Remove a tag by key; can be specified multiple times',
+											isRepeatable: true,
+											args: [
+												{
+													name: 'remove-tag',
+												},
+											],
+										},
+										{
+											name: ['--set-tag'],
+											description: 'Set a tag (key=value); can be specified multiple times',
+											isRepeatable: true,
+											args: [
+												{
+													name: 'set-tag',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
+										{
+											name: ['--version'],
+											description: 'Model version',
+											args: [
+												{
+													name: 'version',
+												},
+											],
+										},
+									],
+								},
 							],
 							options: [
 								{
-									name: ['--project-endpoint', '-e'],
+									name: ['--project-endpoint'],
 									description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
 									args: [
 										{
@@ -1666,11 +3382,58 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['delete'],
+							description: 'Delete a custom model',
+							options: [
+								{
+									name: ['--force', '-f'],
+									description: 'Skip confirmation prompt',
+									isDangerous: true,
+								},
+								{
+									name: ['--name', '-n'],
+									description: 'Model name (required)',
+									args: [
+										{
+											name: 'name',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--subscription', '-s'],
+									description: 'Azure subscription ID',
+									args: [
+										{
+											name: 'subscription',
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Model version',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['init'],
 							description: 'Initialize a new AI models project. (Preview)',
 							options: [
 								{
-									name: ['--project-endpoint', '-e'],
+									name: ['--project-endpoint'],
 									description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
 									args: [
 										{
@@ -1699,8 +3462,1711 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['list'],
+							description: 'List all custom models',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'Output format (table, json)',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--source-job-id'],
+									description: 'Filter models by the training job that created them',
+									args: [
+										{
+											name: 'source-job-id',
+										},
+									],
+								},
+								{
+									name: ['--subscription', '-s'],
+									description: 'Azure subscription ID',
+									args: [
+										{
+											name: 'subscription',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['show'],
+							description: 'Show details of a custom model',
+							options: [
+								{
+									name: ['--name', '-n'],
+									description: 'Model name (required)',
+									args: [
+										{
+											name: 'name',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'Output format (table, json)',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--subscription', '-s'],
+									description: 'Azure subscription ID',
+									args: [
+										{
+											name: 'subscription',
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Model version (defaults to latest)',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['update'],
+							description: 'Update a custom model',
+							options: [
+								{
+									name: ['--description'],
+									description: 'New model description',
+									args: [
+										{
+											name: 'description',
+										},
+									],
+								},
+								{
+									name: ['--name', '-n'],
+									description: 'Model name (required)',
+									args: [
+										{
+											name: 'name',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'Output format (table, json)',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--remove-tag'],
+									description: 'Remove a tag by key; can be specified multiple times',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'remove-tag',
+										},
+									],
+								},
+								{
+									name: ['--set-tag'],
+									description: 'Set a tag (key=value); can be specified multiple times',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'set-tag',
+										},
+									],
+								},
+								{
+									name: ['--subscription', '-s'],
+									description: 'Azure subscription ID',
+									args: [
+										{
+											name: 'subscription',
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Model version',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['version'],
 							description: 'Prints the version of the application',
+						},
+					],
+				},
+				{
+					name: ['project'],
+					description: 'Manage Microsoft Foundry Project resources from your terminal. (Preview)',
+					subcommands: [
+						{
+							name: ['context'],
+							description: 'Get the context of the azd project & environment.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['set'],
+							description: 'Persist a default Foundry project endpoint.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['show'],
+							description: 'Display the currently resolved Foundry project endpoint.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['unset'],
+							description: 'Clear the persisted Foundry project endpoint.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+				{
+					name: ['routine'],
+					description: 'Manage Microsoft Foundry Routines from your terminal. (Preview)',
+					subcommands: [
+						{
+							name: ['context'],
+							description: 'Get the context of the azd project & environment.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['create'],
+							description: 'Create a new routine.',
+							options: [
+								{
+									name: ['--action'],
+									description: 'Action type: agent-response (default), agent-invoke',
+									args: [
+										{
+											name: 'action',
+										},
+									],
+								},
+								{
+									name: ['--agent-endpoint-id'],
+									description: 'Agent endpoint ID (for agent-response or agent-invoke action)',
+									args: [
+										{
+											name: 'agent-endpoint-id',
+										},
+									],
+								},
+								{
+									name: ['--agent-name'],
+									description: 'Project-scoped agent name (for agent-response or agent-invoke action)',
+									args: [
+										{
+											name: 'agent-name',
+										},
+									],
+								},
+								{
+									name: ['--at'],
+									description: 'ISO 8601 datetime for timer trigger (e.g. \'2026-04-24T15:00:00Z\')',
+									args: [
+										{
+											name: 'at',
+										},
+									],
+								},
+								{
+									name: ['--connection-id'],
+									description: 'Workspace connection ID (for github-issue trigger)',
+									args: [
+										{
+											name: 'connection-id',
+										},
+									],
+								},
+								{
+									name: ['--conversation-id'],
+									description: 'Existing conversation to continue (for agent-response action, preview)',
+									args: [
+										{
+											name: 'conversation-id',
+										},
+									],
+								},
+								{
+									name: ['--cron'],
+									description: '5-field cron expression for recurring trigger (minimum interval 5 minutes)',
+									args: [
+										{
+											name: 'cron',
+										},
+									],
+								},
+								{
+									name: ['--description'],
+									description: 'Description for the routine',
+									args: [
+										{
+											name: 'description',
+										},
+									],
+								},
+								{
+									name: ['--enabled'],
+									description: 'Whether the routine is enabled on creation',
+								},
+								{
+									name: ['--event-name'],
+									description: 'Provider-specific event name (for custom trigger)',
+									args: [
+										{
+											name: 'event-name',
+										},
+									],
+								},
+								{
+									name: ['--file'],
+									description: 'Path to a YAML or JSON routine manifest file',
+									args: [
+										{
+											name: 'file',
+										},
+									],
+								},
+								{
+									name: ['--force'],
+									description: 'Overwrite an existing routine with the same name (upsert)',
+									isDangerous: true,
+								},
+								{
+									name: ['--issue-event'],
+									description: 'GitHub issue event: opened or closed (for github-issue trigger)',
+									args: [
+										{
+											name: 'issue-event',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--owner'],
+									description: 'GitHub owner or organization (for github-issue trigger)',
+									args: [
+										{
+											name: 'owner',
+										},
+									],
+								},
+								{
+									name: ['--parameters'],
+									description: 'Provider-specific trigger parameters as a JSON object (for custom trigger)',
+									args: [
+										{
+											name: 'parameters',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--provider'],
+									description: 'External event provider (for custom trigger)',
+									args: [
+										{
+											name: 'provider',
+										},
+									],
+								},
+								{
+									name: ['--repository'],
+									description: 'GitHub repository name (for github-issue trigger)',
+									args: [
+										{
+											name: 'repository',
+										},
+									],
+								},
+								{
+									name: ['--session-id'],
+									description: 'Existing session to continue (for agent-invoke action)',
+									args: [
+										{
+											name: 'session-id',
+										},
+									],
+								},
+								{
+									name: ['--time-zone'],
+									description: 'Time zone for the recurring trigger (e.g. \'America/New_York\')',
+									args: [
+										{
+											name: 'time-zone',
+										},
+									],
+								},
+								{
+									name: ['--trigger'],
+									description: 'Trigger type: timer, recurring, github-issue, or custom (required unless --file is used)',
+									args: [
+										{
+											name: 'trigger',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['delete'],
+							description: 'Delete a routine.',
+							options: [
+								{
+									name: ['--force'],
+									description: 'Skip confirmation prompt (required in --no-prompt mode)',
+									isDangerous: true,
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['disable'],
+							description: 'Disable a routine.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['dispatch'],
+							description: 'Manually trigger a routine.',
+							options: [
+								{
+									name: ['--async'],
+									description: 'Suppress descriptive output; useful for scripting',
+								},
+								{
+									name: ['--input'],
+									description: 'Payload sent to the routine dispatch. If the value parses as JSON, it is forwarded as that JSON value (object, array, number, boolean, or null); otherwise it is forwarded as a plain string.',
+									args: [
+										{
+											name: 'input',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['enable'],
+							description: 'Enable a routine.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['list'],
+							description: 'List all routines in the Foundry project.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['run'],
+							description: 'Manage routine run history.',
+							subcommands: [
+								{
+									name: ['list'],
+									description: 'List runs for a routine.',
+									options: [
+										{
+											name: ['--filter'],
+											description: 'OData filter expression',
+											args: [
+												{
+													name: 'filter',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL (overrides env var and config)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--top'],
+											description: 'Maximum total number of runs to return (0 = no cap)',
+											args: [
+												{
+													name: 'top',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['show'],
+							description: 'Show details of a routine.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['update'],
+							description: 'Update an existing routine.',
+							options: [
+								{
+									name: ['--agent-endpoint-id'],
+									description: 'New agent endpoint ID',
+									args: [
+										{
+											name: 'agent-endpoint-id',
+										},
+									],
+								},
+								{
+									name: ['--agent-name'],
+									description: 'New project-scoped agent name',
+									args: [
+										{
+											name: 'agent-name',
+										},
+									],
+								},
+								{
+									name: ['--at'],
+									description: 'New ISO 8601 datetime (timer trigger only)',
+									args: [
+										{
+											name: 'at',
+										},
+									],
+								},
+								{
+									name: ['--connection-id'],
+									description: 'New workspace connection ID (github-issue trigger only)',
+									args: [
+										{
+											name: 'connection-id',
+										},
+									],
+								},
+								{
+									name: ['--conversation-id'],
+									description: 'New conversation to continue (preview)',
+									args: [
+										{
+											name: 'conversation-id',
+										},
+									],
+								},
+								{
+									name: ['--cron'],
+									description: 'New cron expression (recurring trigger only)',
+									args: [
+										{
+											name: 'cron',
+										},
+									],
+								},
+								{
+									name: ['--description'],
+									description: 'New description for the routine',
+									args: [
+										{
+											name: 'description',
+										},
+									],
+								},
+								{
+									name: ['--event-name'],
+									description: 'New event name (custom trigger only)',
+									args: [
+										{
+											name: 'event-name',
+										},
+									],
+								},
+								{
+									name: ['--file'],
+									description: 'Path to a YAML/JSON manifest; merged fields win unless overridden by flags',
+									args: [
+										{
+											name: 'file',
+										},
+									],
+								},
+								{
+									name: ['--issue-event'],
+									description: 'New GitHub issue event: opened or closed (github-issue trigger only)',
+									args: [
+										{
+											name: 'issue-event',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--owner'],
+									description: 'New GitHub owner (github-issue trigger only)',
+									args: [
+										{
+											name: 'owner',
+										},
+									],
+								},
+								{
+									name: ['--parameters'],
+									description: 'New parameters JSON object (custom trigger only)',
+									args: [
+										{
+											name: 'parameters',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--provider'],
+									description: 'New external provider (custom trigger only)',
+									args: [
+										{
+											name: 'provider',
+										},
+									],
+								},
+								{
+									name: ['--repository'],
+									description: 'New GitHub repository (github-issue trigger only)',
+									args: [
+										{
+											name: 'repository',
+										},
+									],
+								},
+								{
+									name: ['--session-id'],
+									description: 'New session to continue',
+									args: [
+										{
+											name: 'session-id',
+										},
+									],
+								},
+								{
+									name: ['--time-zone'],
+									description: 'New time zone (recurring trigger only)',
+									args: [
+										{
+											name: 'time-zone',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+				{
+					name: ['skill'],
+					description: 'Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Preview)',
+					subcommands: [
+						{
+							name: ['context'],
+							description: 'Get the context of the azd project & environment.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['create'],
+							description: 'Create a new Foundry skill.',
+							options: [
+								{
+									name: ['--description'],
+									description: 'Inline mode: human-readable summary of the skill',
+									args: [
+										{
+											name: 'description',
+										},
+									],
+								},
+								{
+									name: ['--file'],
+									description: 'Path to SKILL.md (.md), a ZIP package (.zip), or a directory containing SKILL.md at its root',
+									args: [
+										{
+											name: 'file',
+										},
+									],
+								},
+								{
+									name: ['--force'],
+									description: 'Delete an existing skill of the same name before creating',
+									isDangerous: true,
+								},
+								{
+									name: ['--instructions'],
+									description: 'Inline mode: Markdown body defining skill behavior',
+									args: [
+										{
+											name: 'instructions',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['delete'],
+							description: 'Delete a Foundry skill.',
+							options: [
+								{
+									name: ['--force'],
+									description: 'Skip the confirmation prompt',
+									isDangerous: true,
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['download'],
+							description: 'Download a Foundry skill package.',
+							options: [
+								{
+									name: ['--force'],
+									description: 'Overwrite existing files in --output-dir',
+									isDangerous: true,
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--output-dir'],
+									description: 'Directory to write the extracted skill (default: ./.agents/skills/<name>/)',
+									args: [
+										{
+											name: 'output-dir',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--raw'],
+									description: 'Skip extraction; write the zip archive as-is to --output-dir',
+								},
+								{
+									name: ['--version'],
+									description: 'Download a specific version (defaults to the skill\'s default_version)',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['list'],
+							description: 'List Foundry skills in the project.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['show'],
+							description: 'Show metadata for a Foundry skill.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['update'],
+							description: 'Create a new default version for a Foundry skill.',
+							options: [
+								{
+									name: ['--description'],
+									description: 'New human-readable summary for the next version',
+									args: [
+										{
+											name: 'description',
+										},
+									],
+								},
+								{
+									name: ['--file'],
+									description: 'Path to a SKILL.md file, a .zip archive, or a directory whose contents become the next version. Archives and directories must contain a SKILL.md at the root.',
+									args: [
+										{
+											name: 'file',
+										},
+									],
+								},
+								{
+									name: ['--instructions'],
+									description: 'New Markdown instructions body for the next version',
+									args: [
+										{
+											name: 'instructions',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--set-default-version'],
+									description: 'Set the skill\'s default_version to an existing version without uploading new content',
+									args: [
+										{
+											name: 'set-default-version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Print the extension version.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+				{
+					name: ['toolbox'],
+					description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Preview)',
+					subcommands: [
+						{
+							name: ['connection'],
+							description: 'Manage the connection-backed tools attached to a toolbox.',
+							subcommands: [
+								{
+									name: ['add'],
+									description: 'Attach one or more connections to a toolbox.',
+									options: [
+										{
+											name: ['--from-file'],
+											description: 'Path to a JSON/YAML file describing the connections to add (see --help for the file shape).',
+											args: [
+												{
+													name: 'from-file',
+												},
+											],
+										},
+										{
+											name: ['--index'],
+											description: 'Search index name. Only valid for CognitiveSearch (Azure AI Search) connections; required there.',
+											args: [
+												{
+													name: 'index',
+												},
+											],
+										},
+										{
+											name: ['--instance-name'],
+											description: 'Bing custom-search configuration name. Only valid for GroundingWithCustomSearch connections; required there.',
+											args: [
+												{
+													name: 'instance-name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['list'],
+									description: 'List the connection-backed tools attached to a toolbox.',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['remove'],
+									description: 'Detach one or more connections from a toolbox.',
+									options: [
+										{
+											name: ['--force'],
+											description: 'Skip confirmation prompts and apply the removal immediately.',
+											isDangerous: true,
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['create'],
+							description: 'Create a toolbox and its initial version from a file.',
+							options: [
+								{
+									name: ['--from-file'],
+									description: 'Path to a JSON/YAML file describing the initial version (see --help for the file shape).',
+									args: [
+										{
+											name: 'from-file',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['table', 'json'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['delete'],
+							description: 'Delete a toolbox or a single version.',
+							options: [
+								{
+									name: ['--force'],
+									description: 'Skip confirmation prompts and override safety checks where allowed.',
+									isDangerous: true,
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['table', 'json'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Delete a single version instead of the whole toolbox.',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['list'],
+							description: 'List toolboxes on the project.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['table', 'json'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['publish'],
+							description: 'Set the default version for a toolbox.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['table', 'json'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['show'],
+							description: 'Show a toolbox version, including its computed MCP endpoint.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['table', 'json'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Specific version to show. Defaults to the server\'s default version.',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['skill'],
+							description: 'Manage skill references attached to a toolbox.',
+							subcommands: [
+								{
+									name: ['add'],
+									description: 'Attach one or more skill references to a toolbox.',
+									options: [
+										{
+											name: ['--from-file'],
+											description: 'Path to a JSON/YAML file listing skills to attach (skills[] block).',
+											args: [
+												{
+													name: 'from-file',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['list'],
+									description: 'List the skill references attached to a toolbox.',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['remove'],
+									description: 'Detach one or more skill references from a toolbox.',
+									options: [
+										{
+											name: ['--force'],
+											description: 'Skip confirmation prompts and apply the removal immediately.',
+											isDangerous: true,
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['versions'],
+							description: 'Inspect toolbox versions.',
+							subcommands: [
+								{
+									name: ['list'],
+									description: 'List published versions for a toolbox.',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
 						},
 					],
 				},
@@ -2464,6 +5930,38 @@ const completionSpec: Fig.Spec = {
 			],
 		},
 		{
+			name: ['exec'],
+			description: 'Execute commands and scripts with azd environment context.',
+			options: [
+				{
+					name: ['--interactive', '-i'],
+					description: 'Run in interactive mode (connect stdin)',
+				},
+				{
+					name: ['--shell', '-s'],
+					description: 'Shell to use (bash, sh, zsh, pwsh, powershell, cmd). Auto-detected if not specified.',
+					args: [
+						{
+							name: 'shell',
+						},
+					],
+				},
+			],
+			args: [
+				{
+					name: 'command',
+					isOptional: true,
+				},
+				{
+					name: 'args...',
+					isOptional: true,
+				},
+				{
+					name: 'script-args...',
+				},
+			],
+		},
+		{
 			name: ['extension', 'ext'],
 			description: 'Manage azd extensions.',
 			subcommands: [
@@ -2633,6 +6131,10 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['--all'],
 							description: 'Upgrade all installed extensions',
+						},
+						{
+							name: ['--no-dependency-upgrades'],
+							description: 'Do not upgrade dependencies when upgrading an extension that has dependencies',
 						},
 						{
 							name: ['--source', '-s'],
@@ -3242,7 +6744,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--output', '-o'],
-							description: 'Path to the output directory. Defaults to ./bin folder.',
+							description: 'Path to the output directory.',
 							args: [
 								{
 									name: 'output',
@@ -3261,7 +6763,7 @@ const completionSpec: Fig.Spec = {
 					options: [
 						{
 							name: ['--capabilities'],
-							description: 'The list of capabilities for the extension (e.g., custom-commands,lifecycle-events,mcp-server,service-target-provider).',
+							description: 'The list of capabilities for the extension (e.g., custom-commands,lifecycle-events,mcp-server,service-target-provider,framework-service-provider,metadata,provisioning-provider).',
 							isRepeatable: true,
 							args: [
 								{
@@ -3306,8 +6808,27 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['--output', '-o'],
+							description: 'The output format',
+							args: [
+								{
+									name: 'output',
+								},
+							],
+						},
+						{
 							name: ['--registry', '-r'],
 							description: 'When set will create a local extension source registry.',
+						},
+						{
+							name: ['--tags'],
+							description: 'Optional tags for the extension, comma-separated or repeatable (max 10 tags, 64 characters each).',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'tags',
+								},
+							],
 						},
 					],
 				},
@@ -3326,7 +6847,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--output', '-o'],
-							description: 'Path to the artifacts output directory. If not provided, will use local registry artifacts path.',
+							description: 'Path to the artifacts output directory. If omitted, uses the local registry artifacts path.',
 							args: [
 								{
 									name: 'output',
@@ -3350,6 +6871,15 @@ const completionSpec: Fig.Spec = {
 							args: [
 								{
 									name: 'artifacts',
+								},
+							],
+						},
+						{
+							name: ['--output', '-o'],
+							description: 'The output format',
+							args: [
+								{
+									name: 'output',
 								},
 							],
 						},
@@ -3423,6 +6953,15 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['--output', '-o'],
+							description: 'The output format',
+							args: [
+								{
+									name: 'output',
+								},
+							],
+						},
+						{
 							name: ['--prerelease'],
 							description: 'Create a pre-release version',
 						},
@@ -3458,10 +6997,32 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['version'],
 					description: 'Prints the version of the application',
+					options: [
+						{
+							name: ['--output', '-o'],
+							description: 'The output format',
+							args: [
+								{
+									name: 'output',
+								},
+							],
+						},
+					],
 				},
 				{
 					name: ['watch'],
 					description: 'Watches the azd extension project for file changes and rebuilds it.',
+					options: [
+						{
+							name: ['--output', '-o'],
+							description: 'The output format',
+							args: [
+								{
+									name: 'output',
+								},
+							],
+						},
+					],
 				},
 			],
 		},
@@ -3481,6 +7042,46 @@ const completionSpec: Fig.Spec = {
 							name: ['agent'],
 							description: 'Ship agents with Microsoft Foundry from your terminal. (Preview)',
 							subcommands: [
+								{
+									name: ['doctor'],
+									description: 'Diagnose problems with an azd ai agent project.',
+								},
+								{
+									name: ['endpoint'],
+									description: 'Manage agent endpoint and card configuration.',
+									subcommands: [
+										{
+											name: ['update'],
+											description: 'Update an agent\'s endpoint and card configuration without deploying a new version.',
+										},
+									],
+								},
+								{
+									name: ['eval'],
+									description: 'Create and run quick evals for an agent.',
+									subcommands: [
+										{
+											name: ['init'],
+											description: 'Generate a local eval suite for a deployed agent.',
+										},
+										{
+											name: ['list'],
+											description: 'List evaluations for the current project.',
+										},
+										{
+											name: ['run'],
+											description: 'Execute an evaluation run from eval.yaml.',
+										},
+										{
+											name: ['show'],
+											description: 'Show an eval definition, run history, or run details.',
+										},
+										{
+											name: ['update'],
+											description: 'Update evaluators and datasets from local files.',
+										},
+									],
+								},
 								{
 									name: ['files'],
 									description: 'Manage files in a hosted agent session.',
@@ -3524,8 +7125,44 @@ const completionSpec: Fig.Spec = {
 									description: 'Monitor logs from a hosted agent.',
 								},
 								{
+									name: ['optimize'],
+									description: 'Evaluate and optimize AI agents.',
+									subcommands: [
+										{
+											name: ['apply'],
+											description: 'Apply optimized candidate configuration locally to your azd project.',
+										},
+										{
+											name: ['cancel'],
+											description: 'Cancel a running optimization job.',
+										},
+										{
+											name: ['deploy'],
+											description: 'Deploy a winning optimization candidate as a new agent version via the API.',
+										},
+										{
+											name: ['list'],
+											description: 'List recent optimization runs.',
+										},
+										{
+											name: ['status'],
+											description: 'Check the status of an optimization job.',
+										},
+									],
+								},
+								{
 									name: ['run'],
 									description: 'Run your agent locally for development.',
+								},
+								{
+									name: ['sample'],
+									description: 'Browse the curated catalog of agent samples and azd templates.',
+									subcommands: [
+										{
+											name: ['list', 'ls'],
+											description: 'List available agent samples that can be used with `azd ai agent init -m`.',
+										},
+									],
 								},
 								{
 									name: ['sessions'],
@@ -3556,6 +7193,40 @@ const completionSpec: Fig.Spec = {
 								{
 									name: ['version'],
 									description: 'Prints the version of the application',
+								},
+							],
+						},
+						{
+							name: ['connection'],
+							description: 'Manage Microsoft Foundry Connections from your terminal. (Preview)',
+							subcommands: [
+								{
+									name: ['context'],
+									description: 'Get the context of the azd project & environment.',
+								},
+								{
+									name: ['create'],
+									description: 'Create a new Foundry project connection.',
+								},
+								{
+									name: ['delete'],
+									description: 'Delete a connection.',
+								},
+								{
+									name: ['list'],
+									description: 'List connections in the Foundry project.',
+								},
+								{
+									name: ['show'],
+									description: 'Show connection details.',
+								},
+								{
+									name: ['update'],
+									description: 'Update a connection\'s target, credentials, or metadata.',
+								},
+								{
+									name: ['version'],
+									description: 'Display the extension version',
 								},
 							],
 						},
@@ -3608,9 +7279,27 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['inspector'],
+							description: 'Browser-based inspector UI for locally running Foundry agents. (Preview)',
+							subcommands: [
+								{
+									name: ['launch'],
+									description: 'Launch the Agent Inspector UI in a browser, pointed at a local agent.',
+								},
+								{
+									name: ['version'],
+									description: 'Display the extension version',
+								},
+							],
+						},
+						{
 							name: ['models'],
 							description: 'Extension for managing custom models in Azure AI Foundry. (Preview)',
 							subcommands: [
+								{
+									name: ['create'],
+									description: 'Upload and register a custom model',
+								},
 								{
 									name: ['custom'],
 									description: 'Manage custom models in Azure AI Foundry',
@@ -3631,15 +7320,231 @@ const completionSpec: Fig.Spec = {
 											name: ['show'],
 											description: 'Show details of a custom model',
 										},
+										{
+											name: ['update'],
+											description: 'Update a custom model',
+										},
 									],
+								},
+								{
+									name: ['delete'],
+									description: 'Delete a custom model',
 								},
 								{
 									name: ['init'],
 									description: 'Initialize a new AI models project. (Preview)',
 								},
 								{
+									name: ['list'],
+									description: 'List all custom models',
+								},
+								{
+									name: ['show'],
+									description: 'Show details of a custom model',
+								},
+								{
+									name: ['update'],
+									description: 'Update a custom model',
+								},
+								{
 									name: ['version'],
 									description: 'Prints the version of the application',
+								},
+							],
+						},
+						{
+							name: ['project'],
+							description: 'Manage Microsoft Foundry Project resources from your terminal. (Preview)',
+							subcommands: [
+								{
+									name: ['context'],
+									description: 'Get the context of the azd project & environment.',
+								},
+								{
+									name: ['set'],
+									description: 'Persist a default Foundry project endpoint.',
+								},
+								{
+									name: ['show'],
+									description: 'Display the currently resolved Foundry project endpoint.',
+								},
+								{
+									name: ['unset'],
+									description: 'Clear the persisted Foundry project endpoint.',
+								},
+								{
+									name: ['version'],
+									description: 'Display the extension version',
+								},
+							],
+						},
+						{
+							name: ['routine'],
+							description: 'Manage Microsoft Foundry Routines from your terminal. (Preview)',
+							subcommands: [
+								{
+									name: ['context'],
+									description: 'Get the context of the azd project & environment.',
+								},
+								{
+									name: ['create'],
+									description: 'Create a new routine.',
+								},
+								{
+									name: ['delete'],
+									description: 'Delete a routine.',
+								},
+								{
+									name: ['disable'],
+									description: 'Disable a routine.',
+								},
+								{
+									name: ['dispatch'],
+									description: 'Manually trigger a routine.',
+								},
+								{
+									name: ['enable'],
+									description: 'Enable a routine.',
+								},
+								{
+									name: ['list'],
+									description: 'List all routines in the Foundry project.',
+								},
+								{
+									name: ['run'],
+									description: 'Manage routine run history.',
+									subcommands: [
+										{
+											name: ['list'],
+											description: 'List runs for a routine.',
+										},
+									],
+								},
+								{
+									name: ['show'],
+									description: 'Show details of a routine.',
+								},
+								{
+									name: ['update'],
+									description: 'Update an existing routine.',
+								},
+								{
+									name: ['version'],
+									description: 'Display the extension version',
+								},
+							],
+						},
+						{
+							name: ['skill'],
+							description: 'Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Preview)',
+							subcommands: [
+								{
+									name: ['context'],
+									description: 'Get the context of the azd project & environment.',
+								},
+								{
+									name: ['create'],
+									description: 'Create a new Foundry skill.',
+								},
+								{
+									name: ['delete'],
+									description: 'Delete a Foundry skill.',
+								},
+								{
+									name: ['download'],
+									description: 'Download a Foundry skill package.',
+								},
+								{
+									name: ['list'],
+									description: 'List Foundry skills in the project.',
+								},
+								{
+									name: ['show'],
+									description: 'Show metadata for a Foundry skill.',
+								},
+								{
+									name: ['update'],
+									description: 'Create a new default version for a Foundry skill.',
+								},
+								{
+									name: ['version'],
+									description: 'Print the extension version.',
+								},
+							],
+						},
+						{
+							name: ['toolbox'],
+							description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Preview)',
+							subcommands: [
+								{
+									name: ['connection'],
+									description: 'Manage the connection-backed tools attached to a toolbox.',
+									subcommands: [
+										{
+											name: ['add'],
+											description: 'Attach one or more connections to a toolbox.',
+										},
+										{
+											name: ['list'],
+											description: 'List the connection-backed tools attached to a toolbox.',
+										},
+										{
+											name: ['remove'],
+											description: 'Detach one or more connections from a toolbox.',
+										},
+									],
+								},
+								{
+									name: ['create'],
+									description: 'Create a toolbox and its initial version from a file.',
+								},
+								{
+									name: ['delete'],
+									description: 'Delete a toolbox or a single version.',
+								},
+								{
+									name: ['list'],
+									description: 'List toolboxes on the project.',
+								},
+								{
+									name: ['publish'],
+									description: 'Set the default version for a toolbox.',
+								},
+								{
+									name: ['show'],
+									description: 'Show a toolbox version, including its computed MCP endpoint.',
+								},
+								{
+									name: ['skill'],
+									description: 'Manage skill references attached to a toolbox.',
+									subcommands: [
+										{
+											name: ['add'],
+											description: 'Attach one or more skill references to a toolbox.',
+										},
+										{
+											name: ['list'],
+											description: 'List the skill references attached to a toolbox.',
+										},
+										{
+											name: ['remove'],
+											description: 'Detach one or more skill references from a toolbox.',
+										},
+									],
+								},
+								{
+									name: ['version'],
+									description: 'Display the extension version',
+								},
+								{
+									name: ['versions'],
+									description: 'Inspect toolbox versions.',
+									subcommands: [
+										{
+											name: ['list'],
+											description: 'List published versions for a toolbox.',
+										},
+									],
 								},
 							],
 						},
@@ -3918,6 +7823,10 @@ const completionSpec: Fig.Spec = {
 							description: 'Set a name as a reference to a Key Vault secret in the environment.',
 						},
 					],
+				},
+				{
+					name: ['exec'],
+					description: 'Execute commands and scripts with azd environment context.',
 				},
 				{
 					name: ['extension', 'ext'],

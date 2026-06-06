@@ -7,84 +7,49 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/stretchr/testify/require"
 )
 
-func Test_getSubscriptionOptions(t *testing.T) {
+func Test_formatSubscriptionOptions(t *testing.T) {
 	t.Run("no default config set", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(t.Context())
-		env := environment.New("test")
-		resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-		mockAccount := &mockaccount.MockAccountManager{
-			Subscriptions: []account.Subscription{
-				{
-					Id:                 "1",
-					Name:               "sub1",
-					TenantId:           "",
-					UserAccessTenantId: "",
-					IsDefault:          false,
-				},
+		subscriptions := []account.Subscription{
+			{
+				Id:                 "1",
+				Name:               "sub1",
+				TenantId:           "",
+				UserAccessTenantId: "",
+				IsDefault:          false,
 			},
 		}
 
-		prompter := NewDefaultPrompter(
-			env,
-			mockContext.Console,
-			mockAccount,
-			resourceService,
-			cloud.AzurePublic(),
-		).(*DefaultPrompter)
-		subList, subs, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
+		subList, subs, result := formatSubscriptionOptions(subscriptions, "")
 
-		require.Nil(t, err)
 		require.EqualValues(t, 1, len(subList))
 		require.EqualValues(t, 1, len(subs))
 		require.EqualValues(t, nil, result)
 	})
 
 	t.Run("default value set", func(t *testing.T) {
-		// mocked config
 		defaultSubId := "SUBSCRIPTION_DEFAULT"
-		mockContext := mocks.NewMockContext(t.Context())
-		env := environment.New("test")
-		resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-		mockAccount := &mockaccount.MockAccountManager{
-			DefaultLocation:     "location",
-			DefaultSubscription: defaultSubId,
-			Subscriptions: []account.Subscription{
-				{
-					Id:                 defaultSubId,
-					Name:               "DISPLAY DEFAULT",
-					TenantId:           "TENANT",
-					UserAccessTenantId: "USER_TENANT",
-					IsDefault:          true,
-				},
-				{
-					Id:                 "SUBSCRIPTION_OTHER",
-					Name:               "DISPLAY OTHER",
-					TenantId:           "TENANT",
-					UserAccessTenantId: "USER_TENANT",
-					IsDefault:          false,
-				},
+		subscriptions := []account.Subscription{
+			{
+				Id:                 defaultSubId,
+				Name:               "DISPLAY DEFAULT",
+				TenantId:           "TENANT",
+				UserAccessTenantId: "USER_TENANT",
+				IsDefault:          true,
 			},
-			Locations: []account.Location{},
+			{
+				Id:                 "SUBSCRIPTION_OTHER",
+				Name:               "DISPLAY OTHER",
+				TenantId:           "TENANT",
+				UserAccessTenantId: "USER_TENANT",
+				IsDefault:          false,
+			},
 		}
 
-		prompter := NewDefaultPrompter(
-			env,
-			mockContext.Console,
-			mockAccount,
-			resourceService,
-			cloud.AzurePublic(),
-		).(*DefaultPrompter)
-		subList, subs, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
+		subList, subs, result := formatSubscriptionOptions(subscriptions, defaultSubId)
 
-		require.Nil(t, err)
 		require.EqualValues(t, 2, len(subList))
 		require.EqualValues(t, 2, len(subs))
 		require.NotNil(t, result)

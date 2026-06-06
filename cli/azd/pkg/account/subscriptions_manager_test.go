@@ -197,6 +197,42 @@ func (c *staticSubCache) Clear(ctx context.Context) error {
 	return nil
 }
 
+func TestSubscriptionsManager_SyntheticSubscription_SkipsListOnCacheMiss(t *testing.T) {
+	syntheticSubId := "SYNTHETIC-SUB-ID-123"
+	t.Setenv("AZD_DEBUG_SYNTHETIC_SUBSCRIPTION", syntheticSubId)
+
+	listSubscriptionsCalled := false
+	mockHttp := mockhttp.NewMockHttpUtil()
+	// If ListSubscriptions is called, it would hit this handler. We set a flag to detect it.
+	mockHttp.When(func(request *http.Request) bool {
+		return true
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		listSubscriptionsCalled = true
+		return &http.Response{
+			Request:    request,
+			StatusCode: http.StatusInternalServerError,
+			Body:       io.NopCloser(bytes.NewBufferString(`{"error": "should not be called"}`)),
+		}, nil
+	})
+
+	subManager := &SubscriptionsManager{
+		service: NewSubscriptionsService(
+			&mocks.MockMultiTenantCredentialProvider{},
+			armClientOptions(mockHttp),
+		),
+		cache:         &BypassSubscriptionsCache{},
+		principalInfo: &principalInfoProviderMock{},
+		console:       mockinput.NewMockConsole(),
+	}
+
+	result, err := subManager.getSubscriptions(t.Context())
+	require.NoError(t, err)
+	require.False(t, listSubscriptionsCalled, "ListSubscriptions should not be called when synthetic subscription is set")
+	require.Len(t, result.subscriptions, 1)
+	require.Equal(t, syntheticSubId, result.subscriptions[0].Id)
+	require.Equal(t, "AZD Synthetic Test Subscription", result.subscriptions[0].Name)
+}
+
 func TestSubscriptionsManager_GetSubscription_PreservesTenantFields(t *testing.T) {
 	t.Parallel()
 

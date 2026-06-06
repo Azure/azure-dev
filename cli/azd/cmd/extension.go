@@ -102,6 +102,12 @@ Use --source to explicitly override the registry source for the upgrade. Use
 --all to upgrade all installed extensions in a single batch; failures in one
 extension do not prevent the remaining extensions from being upgraded.
 
+When upgrading an extension that has dependencies, any installed
+dependencies are automatically upgraded too, to the highest version
+satisfying the extension's declared constraints. Use
+--no-dependency-upgrades to opt out and upgrade only the named
+extension.
+
 Use --output json for a structured report of all upgrade results.`,
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
@@ -784,6 +790,13 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			Suggestion: "Install one extension at a time when using --version.",
 		}
 	}
+	if err := validateExactVersionFlag(a.flags.version); err != nil {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: err,
+			Suggestion: "Use an exact extension version with --version. " +
+				"Dependency constraints belong in extension manifests.",
+		}
+	}
 
 	azdVersion := currentAzdSemver()
 
@@ -803,6 +816,11 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		}
 
 		installedExtension, alreadyInstalled := allInstalled[extensionId]
+		// Snapshot installed ids before Install mutates the manager cache.
+		preInstalledIds := make(map[string]struct{}, len(allInstalled))
+		for id := range allInstalled {
+			preInstalledIds[id] = struct{}{}
+		}
 
 		// Find the extension metadata first
 		filterOptions := &extensions.FilterOptions{
@@ -853,7 +871,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 
 		// Determine target version
 		targetVersion := a.flags.version
-		if targetVersion == "" || targetVersion == "latest" {
+		if targetVersion == "" || strings.EqualFold(targetVersion, "latest") {
 			targetVersion = extensions.LatestVersion(compatibleExtension.Versions).Version
 		}
 
@@ -869,20 +887,15 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 				continue
 			}
 
-			// Parse versions for semantic comparison
-			installedSemver, err := semver.NewVersion(installedExtension.Version)
-			if err != nil {
-				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, fmt.Errorf("failed to parse installed version '%s': %w", installedExtension.Version, err)
-			}
-
-			targetSemver, err := semver.NewVersion(targetVersion)
-			if err != nil {
-				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, fmt.Errorf("failed to parse target version '%s': %w", targetVersion, err)
-			}
-
-			if targetSemver.LessThan(installedSemver) && !a.flags.force {
+			// Parse versions for semantic comparison. Non-semver tags
+			// (e.g. "nightly", "dev") have no defined ordering, so when
+			// either side fails to parse we skip the downgrade guard and
+			// fall through to the upgrade path. The string equality check
+			// above already short-circuits the no-op case.
+			installedSemver, installedErr := semver.NewVersion(installedExtension.Version)
+			targetSemver, targetErr := semver.NewVersion(targetVersion)
+			if installedErr == nil && targetErr == nil &&
+				targetSemver.LessThan(installedSemver) && !a.flags.force {
 				// Would be a downgrade - require --force
 				stepMessage += output.WithGrayFormat(
 					" (would downgrade from %s to %s, use --force to override)",
@@ -895,7 +908,13 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 
 			// Use upgrade logic for existing installations
 			a.console.ShowSpinner(ctx, stepMessage, input.Step)
-			extensionVersion, err = a.extensionManager.Upgrade(ctx, compatibleExtension, a.flags.version)
+			extensionVersion, _, err = a.extensionManager.Upgrade(
+				ctx, compatibleExtension, extensions.UpgradeOptions{
+					VersionPreference:   a.flags.version,
+					UpgradeDependencies: true,
+					AzdVersion:          azdVersion,
+				},
+			)
 			if err != nil {
 				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, fmt.Errorf("failed to upgrade extension: %w", err)
@@ -907,7 +926,14 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		} else {
 			// Extension not installed - proceed with fresh install
 			a.console.ShowSpinner(ctx, stepMessage, input.Step)
-			extensionVersion, err = a.extensionManager.Install(ctx, compatibleExtension, a.flags.version)
+			extensionVersion, err = a.extensionManager.InstallWithOptions(
+				ctx,
+				compatibleExtension,
+				extensions.InstallOptions{
+					VersionPreference: a.flags.version,
+					AzdVersion:        azdVersion,
+				},
+			)
 			if err != nil {
 				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, fmt.Errorf("failed to install extension: %w", err)
@@ -915,6 +941,17 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 
 			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
 			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
+		}
+
+		if len(extensionVersion.Dependencies) > 0 {
+			// Render dependencies flat with the parent step.
+			displayInstalledDependencies(
+				ctx, a.console, a.extensionManager,
+				extensionVersion.Dependencies,
+				preInstalledIds,
+				"  ",
+				map[string]struct{}{compatibleExtension.Id: {}},
+			)
 		}
 
 		displayExtensionUsageAndExamples(ctx, a.console, extensionVersion)
@@ -1034,10 +1071,11 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 }
 
 type extensionUpgradeFlags struct {
-	version string
-	source  string
-	all     bool
-	global  *internal.GlobalCommandOptions
+	version              string
+	source               string
+	all                  bool
+	noDependencyUpgrades bool
+	global               *internal.GlobalCommandOptions
 }
 
 func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *extensionUpgradeFlags {
@@ -1047,6 +1085,8 @@ func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommand
 	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to upgrade to")
 	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use for upgrades")
 	cmd.Flags().BoolVar(&flags.all, "all", false, "Upgrade all installed extensions")
+	cmd.Flags().BoolVar(&flags.noDependencyUpgrades, "no-dependency-upgrades", false,
+		"Do not upgrade dependencies when upgrading an extension that has dependencies")
 
 	return flags
 }
@@ -1099,6 +1139,13 @@ func (a *extensionUpgradeAction) Run(
 				internal.ErrInvalidFlagCombination),
 			Suggestion: "Upgrade one extension at a time when " +
 				"using --version.",
+		}
+	}
+	if err := validateExactVersionFlag(a.flags.version); err != nil {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: err,
+			Suggestion: "Use an exact extension version with --version. " +
+				"Dependency constraints belong in extension manifests.",
 		}
 	}
 
@@ -1229,6 +1276,9 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			fields.ExtensionUpgradeDurationMs.Int64(elapsed),
 			fields.ExtensionUpgradeOutcome.String(
 				baseResult.Status.String(),
+			),
+			fields.ExtensionDependencyUpgradeCount.Int(
+				extensions.CountDependencyUpgrades(baseResult.DependencyUpgrades),
 			),
 		)
 		if baseResult.Status == extensions.UpgradeStatusFailed {
@@ -1400,26 +1450,17 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		targetVersionStr = latestVer.Version
 	}
 
-	installedSemver, err := semver.NewVersion(installed.Version)
-	if err != nil {
-		return fail(fmt.Errorf(
-			"failed to parse installed version '%s': %w",
-			installed.Version, err,
-		))
-	}
-
-	targetSemver, err := semver.NewVersion(targetVersionStr)
-	if err != nil {
-		return fail(fmt.Errorf(
-			"failed to parse target version '%s': %w",
-			targetVersionStr, err,
-		))
-	}
+	// Parse versions for semantic comparison. Non-semver tags
+	// (e.g. "nightly", "dev") have no defined ordering, so when either
+	// side fails to parse we skip the "installed is newer" guard and
+	// proceed with the upgrade attempt.
+	installedSemver, installedErr := semver.NewVersion(installed.Version)
+	targetSemver, targetErr := semver.NewVersion(targetVersionStr)
 
 	baseResult.ToSource = newSource
 
 	// Compare versions
-	if installedSemver.GreaterThan(targetSemver) {
+	if installedErr == nil && targetErr == nil && installedSemver.GreaterThan(targetSemver) {
 		baseResult.Status = extensions.UpgradeStatusSkipped
 		baseResult.SkipReason = fmt.Sprintf(
 			"installed %s is newer than %s",
@@ -1438,7 +1479,28 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		return baseResult
 	}
 
-	if installedSemver.Equal(targetSemver) && !isPromotion {
+	versionsEqual := installed.Version == targetVersionStr
+	if installedErr == nil && targetErr == nil {
+		versionsEqual = installedSemver.Equal(targetSemver)
+	}
+	if versionsEqual && !isPromotion {
+		reconciledVersion, depUpgrades, err := a.extensionManager.ReconcileDependencies(
+			ctx, compatExt, extensions.UpgradeOptions{
+				VersionPreference:   a.flags.version,
+				UpgradeDependencies: !a.flags.noDependencyUpgrades,
+				AzdVersion:          azdVersion,
+			},
+		)
+		if err != nil {
+			return fail(fmt.Errorf(
+				"failed to reconcile extension dependencies: %w", err,
+			))
+		}
+		baseResult.DependencyUpgrades = depUpgrades
+		if reconciledVersion != nil {
+			baseResult.ToSource = newSource
+		}
+
 		baseResult.Status = extensions.UpgradeStatusSkipped
 		baseResult.SkipReason = "already up to date"
 		if !isJsonOutput {
@@ -1448,13 +1510,18 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			a.console.StopSpinner(
 				ctx, skipMsg, input.StepSkipped,
 			)
+			displayDependencyUpgradeResults(ctx, a.console, baseResult.DependencyUpgrades, "  ")
 		}
 		return baseResult
 	}
 
 	// Perform the upgrade
-	extVersion, err := a.extensionManager.Upgrade(
-		ctx, compatExt, a.flags.version,
+	extVersion, depUpgrades, err := a.extensionManager.Upgrade(
+		ctx, compatExt, extensions.UpgradeOptions{
+			VersionPreference:   a.flags.version,
+			UpgradeDependencies: !a.flags.noDependencyUpgrades,
+			AzdVersion:          azdVersion,
+		},
 	)
 	if err != nil {
 		if isNetworkError(err) {
@@ -1469,6 +1536,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		))
 	}
 	baseResult.ToVersion = extVersion.Version
+	baseResult.DependencyUpgrades = depUpgrades
 
 	// Handle promotion display and distinct telemetry
 	if isPromotion {
@@ -1499,6 +1567,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			),
 		)
 		a.console.StopSpinner(ctx, doneMsg, input.StepDone)
+		displayDependencyUpgradeResults(ctx, a.console, baseResult.DependencyUpgrades, "  ")
 		displayExtensionUsageAndExamples(
 			ctx, a.console, extVersion,
 		)
@@ -1546,6 +1615,79 @@ func (a *extensionUpgradeAction) displayPromotionWarning(
 	))
 }
 
+// displayDependencyUpgradeResults renders dependency upgrades as flat rows.
+func displayDependencyUpgradeResults(
+	ctx context.Context,
+	console input.Console,
+	results []extensions.UpgradeResult,
+	indent string,
+) {
+	for _, child := range results {
+		switch child.Status {
+		case extensions.UpgradeStatusUpgraded:
+			verb := dependencyChangeVerb(child.FromVersion, child.ToVersion)
+			console.Message(ctx, fmt.Sprintf(
+				"%s%s %s %s dependency %s",
+				indent,
+				output.WithSuccessFormat("(\u2713) Done:"),
+				verb,
+				output.WithHighLightFormat(child.ExtensionId),
+				output.WithGrayFormat(
+					"(%s \u2192 %s)",
+					child.FromVersion, child.ToVersion,
+				),
+			))
+		case extensions.UpgradeStatusFailed:
+			console.Message(ctx, fmt.Sprintf(
+				"%s%s Upgrading %s dependency%s",
+				indent,
+				output.WithErrorFormat("(x) Failed:"),
+				output.WithHighLightFormat(child.ExtensionId),
+				func() string {
+					if child.Error == nil {
+						return ""
+					}
+					return ": " + output.WithGrayFormat(
+						"%s", child.Error.Error(),
+					)
+				}(),
+			))
+		case extensions.UpgradeStatusSkipped:
+			line := fmt.Sprintf(
+				"%s%s Upgrading %s dependency",
+				indent,
+				output.WithGrayFormat("(-) Skipped:"),
+				output.WithHighLightFormat(child.ExtensionId),
+			)
+			if child.SkipReason != "" {
+				line += output.WithGrayFormat(" (%s)", child.SkipReason)
+			}
+			console.Message(ctx, line)
+			if child.Suggestion != "" {
+				console.Message(ctx, fmt.Sprintf(
+					"%s%s%s",
+					indent,
+					strings.Repeat(" ", len("(-) Skipped: ")),
+					child.Suggestion,
+				))
+			}
+		}
+		displayDependencyUpgradeResults(ctx, console, child.DependencyUpgrades, indent)
+	}
+}
+
+func dependencyChangeVerb(fromVersion, toVersion string) string {
+	from, fromErr := semver.NewVersion(fromVersion)
+	to, toErr := semver.NewVersion(toVersion)
+	if fromErr != nil || toErr != nil {
+		return "Updated"
+	}
+	if to.LessThan(from) {
+		return "Downgraded"
+	}
+	return "Upgraded"
+}
+
 // displayUpgradeSummary prints the batch summary line after all
 // extensions have been processed.
 func displayUpgradeSummary(
@@ -1556,10 +1698,29 @@ func displayUpgradeSummary(
 	summary := extensions.NewUpgradeSummary(results)
 	console.Message(ctx, "")
 
-	parts := make([]string, 0, 4)
+	parts := make([]string, 0, 5)
+	depUpgraded := summary.DependencyUpgradesByStatus[extensions.UpgradeStatusUpgraded]
 	if summary.Upgraded > 0 {
-		parts = append(parts, output.WithSuccessFormat(
+		upgradedPart := output.WithSuccessFormat(
 			"%d upgraded", summary.Upgraded,
+		)
+		if depUpgraded > 0 {
+			noun := "dependency"
+			if depUpgraded != 1 {
+				noun = "dependencies"
+			}
+			upgradedPart += output.WithGrayFormat(
+				" (%d %s updated)", depUpgraded, noun,
+			)
+		}
+		parts = append(parts, upgradedPart)
+	} else if depUpgraded > 0 {
+		noun := "dependency"
+		if depUpgraded != 1 {
+			noun = "dependencies"
+		}
+		parts = append(parts, output.WithSuccessFormat(
+			"%d %s updated", depUpgraded, noun,
 		))
 	}
 	if summary.Skipped > 0 {
@@ -1705,23 +1866,25 @@ func (a *extensionSourceListAction) Run(ctx context.Context) (*actions.ActionRes
 	}
 
 	if a.formatter.Kind() == output.TableFormat {
-		columns := []output.Column{
+		prettyFormatter := &output.PrettyTableFormatter{}
+		columns := []output.PrettyColumn{
 			{
-				Heading:       "Name",
-				ValueTemplate: "{{.Name}}",
+				Column:   output.Column{Heading: "NAME", ValueTemplate: "{{.Name}}"},
+				Priority: 1,
 			},
 			{
-				Heading:       "Type",
-				ValueTemplate: "{{.Type}}",
+				Column:   output.Column{Heading: "TYPE", ValueTemplate: "{{.Type}}"},
+				Priority: 1,
 			},
 			{
-				Heading:       "Location",
-				ValueTemplate: "{{.Location}}",
+				Column:   output.Column{Heading: "LOCATION", ValueTemplate: "{{.Location}}"},
+				Priority: 2,
 			},
 		}
 
-		err = a.formatter.Format(sourceConfigs, a.writer, output.TableFormatterOptions{
-			Columns: columns,
+		err = prettyFormatter.Format(sourceConfigs, a.writer, output.PrettyTableFormatterOptions{
+			Columns:         columns,
+			CardGroupColumn: "TYPE",
 		})
 	} else {
 		err = a.formatter.Format(sourceConfigs, a.writer, nil)
@@ -1867,16 +2030,86 @@ func (a *extensionSourceRemoveAction) Run(ctx context.Context) (*actions.ActionR
 	}, nil
 }
 
+// displayExtensionUsageAndExamples prints non-empty Usage and Examples sections.
 func displayExtensionUsageAndExamples(
 	ctx context.Context,
 	console input.Console,
 	extensionVersion *extensions.ExtensionVersion,
 ) {
-	console.Message(ctx, fmt.Sprintf("      %s %s", output.WithBold("Usage: "), extensionVersion.Usage))
-	console.Message(ctx, output.WithBold("      Examples:"))
+	if extensionVersion == nil {
+		return
+	}
+	if strings.TrimSpace(extensionVersion.Usage) != "" {
+		console.Message(ctx, fmt.Sprintf(
+			"      %s %s",
+			output.WithBold("Usage:"),
+			extensionVersion.Usage,
+		))
+	}
+	if len(extensionVersion.Examples) > 0 {
+		console.Message(ctx, output.WithBold("      Examples:"))
+		for _, example := range extensionVersion.Examples {
+			console.Message(ctx, "        "+output.WithHighLightFormat(example.Usage))
+		}
+	}
+}
 
-	for _, example := range extensionVersion.Examples {
-		console.Message(ctx, "        "+output.WithHighLightFormat(example.Usage))
+// displayInstalledDependencies renders newly installed and skipped dependencies
+// as flat rows aligned with the parent step.
+func displayInstalledDependencies(
+	ctx context.Context,
+	console input.Console,
+	manager *extensions.Manager,
+	deps []extensions.ExtensionDependency,
+	preInstalledIds map[string]struct{},
+	indent string,
+	visited map[string]struct{},
+) {
+	for _, dep := range deps {
+		if _, seen := visited[dep.Id]; seen {
+			continue
+		}
+		visited[dep.Id] = struct{}{}
+
+		installed, err := manager.GetInstalled(extensions.FilterOptions{Id: dep.Id})
+		if err != nil || installed == nil {
+			continue
+		}
+
+		if _, wasInstalledBefore := preInstalledIds[dep.Id]; wasInstalledBefore {
+			console.Message(ctx, fmt.Sprintf(
+				"%s%s Installing %s dependency %s",
+				indent,
+				output.WithGrayFormat("(-) Skipped:"),
+				output.WithHighLightFormat(installed.Id),
+				output.WithGrayFormat("(%s, already installed)", installed.Version),
+			))
+		} else {
+			console.Message(ctx, fmt.Sprintf(
+				"%s%s Installing %s dependency %s",
+				indent,
+				output.WithSuccessFormat("(\u2713) Done:"),
+				output.WithHighLightFormat(installed.Id),
+				output.WithGrayFormat("(%s)", installed.Version),
+			))
+		}
+
+		matches, findErr := manager.FindExtensions(ctx, &extensions.FilterOptions{
+			Id:     dep.Id,
+			Source: installed.Source,
+		})
+		if findErr != nil || len(matches) == 0 {
+			continue
+		}
+		for _, v := range matches[0].Versions {
+			if v.Version == installed.Version && len(v.Dependencies) > 0 {
+				displayInstalledDependencies(
+					ctx, console, manager, v.Dependencies,
+					preInstalledIds, indent, visited,
+				)
+				break
+			}
+		}
 	}
 }
 
@@ -2102,6 +2335,27 @@ func validateVersionCompatibility(
 			break
 		}
 	}
+	return nil
+}
+
+func validateExactVersionFlag(version string) error {
+	if version == "" || strings.EqualFold(version, "latest") {
+		return nil
+	}
+
+	if _, err := semver.NewVersion(version); err == nil {
+		return nil
+	}
+
+	hasWildcardPart := slices.ContainsFunc(strings.Split(version, "."), func(part string) bool {
+		return part == "x" || part == "X" || part == "*"
+	})
+	if strings.ContainsAny(version, "<>=^~*, ") ||
+		strings.Contains(version, "||") ||
+		hasWildcardPart {
+		return fmt.Errorf("--version requires an exact version, not a version constraint: %s", version)
+	}
+
 	return nil
 }
 

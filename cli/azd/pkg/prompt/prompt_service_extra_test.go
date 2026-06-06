@@ -60,7 +60,7 @@ func TestPromptService_PromptSubscriptionResource_NoPrompt_Errors(t *testing.T) 
 	_, err := ps.PromptSubscriptionResource(t.Context(), newAzCtx(AzureScope{SubscriptionId: "sub-1"}),
 		ResourceOptions{
 			ResourceType:    &rtype,
-			SelectorOptions: &SelectOptions{AllowNewResource: new(false)},
+			SelectorOptions: &SelectOptions{AllowNewResource: new(false), SkipLoadingSpinner: true},
 		})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no resources found with type")
@@ -77,7 +77,7 @@ func TestPromptService_PromptSubscriptionResource_NoPrompt_CustomDisplayName(t *
 	_, err := ps.PromptSubscriptionResource(t.Context(), newAzCtx(AzureScope{SubscriptionId: "sub-1"}),
 		ResourceOptions{
 			ResourceTypeDisplayName: "My Fancy Resource",
-			SelectorOptions:         &SelectOptions{AllowNewResource: new(false)},
+			SelectorOptions:         &SelectOptions{AllowNewResource: new(false), SkipLoadingSpinner: true},
 		})
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrNoResourcesFound)
@@ -94,7 +94,7 @@ func TestPromptService_PromptSubscriptionResource_NoPrompt_FallbackName(t *testi
 
 	_, err := ps.PromptSubscriptionResource(t.Context(), newAzCtx(AzureScope{SubscriptionId: "sub-1"}),
 		ResourceOptions{
-			SelectorOptions: &SelectOptions{AllowNewResource: new(false)},
+			SelectorOptions: &SelectOptions{AllowNewResource: new(false), SkipLoadingSpinner: true},
 		})
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrNoResourcesFound)
@@ -115,7 +115,7 @@ func TestPromptService_PromptResourceGroupResource_NoPrompt_Errors(t *testing.T)
 		newAzCtx(AzureScope{SubscriptionId: "sub-1", ResourceGroup: "rg-1"}),
 		ResourceOptions{
 			ResourceType:    &rtype,
-			SelectorOptions: &SelectOptions{AllowNewResource: new(false)},
+			SelectorOptions: &SelectOptions{AllowNewResource: new(false), SkipLoadingSpinner: true},
 		})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no resources found with type")
@@ -133,7 +133,7 @@ func TestPromptService_PromptResourceGroupResource_NoPrompt_CustomDisplayName(t 
 		newAzCtx(AzureScope{SubscriptionId: "sub-1", ResourceGroup: "rg-1"}),
 		ResourceOptions{
 			ResourceTypeDisplayName: "Widget",
-			SelectorOptions:         &SelectOptions{AllowNewResource: new(false)},
+			SelectorOptions:         &SelectOptions{AllowNewResource: new(false), SkipLoadingSpinner: true},
 		})
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrNoResourcesFound)
@@ -150,7 +150,7 @@ func TestPromptService_PromptResourceGroupResource_NoPrompt_FallbackName(t *test
 	_, err := ps.PromptResourceGroupResource(t.Context(),
 		newAzCtx(AzureScope{SubscriptionId: "sub-1", ResourceGroup: "rg-1"}),
 		ResourceOptions{
-			SelectorOptions: &SelectOptions{AllowNewResource: new(false)},
+			SelectorOptions: &SelectOptions{AllowNewResource: new(false), SkipLoadingSpinner: true},
 		})
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrNoResourcesFound)
@@ -206,7 +206,7 @@ func TestPromptCustomResource_LoadDataError(t *testing.T) {
 	loadErr := errors.New("loading failed")
 
 	result, err := PromptCustomResource(t.Context(), CustomResourceOptions[string]{
-		SelectorOptions: &SelectOptions{Message: "Pick"},
+		SelectorOptions: &SelectOptions{Message: "Pick", SkipLoadingSpinner: true},
 		LoadData: func(ctx context.Context) ([]*string, error) {
 			return nil, loadErr
 		},
@@ -223,8 +223,9 @@ func TestPromptCustomResource_NoResourcesAndNotAllowedNew_ReturnsSentinel(t *tes
 
 	result, err := PromptCustomResource(t.Context(), CustomResourceOptions[string]{
 		SelectorOptions: &SelectOptions{
-			Message:          "Pick",
-			AllowNewResource: &disallowNew,
+			Message:            "Pick",
+			AllowNewResource:   &disallowNew,
+			SkipLoadingSpinner: true,
 		},
 		LoadData: func(ctx context.Context) ([]*string, error) {
 			return []*string{}, nil
@@ -250,6 +251,27 @@ func TestPromptCustomResource_NilSelectorOptions_UsesDefaultsAndForce(t *testing
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 42, *result)
+}
+
+func TestPromptCustomResource_SkipLoadingSpinner(t *testing.T) {
+	t.Parallel()
+
+	loaded := false
+	_, err := PromptCustomResource(t.Context(), CustomResourceOptions[string]{
+		SelectorOptions: &SelectOptions{
+			SkipLoadingSpinner: true,
+			AllowNewResource:   new(false),
+		},
+		LoadData: func(ctx context.Context) ([]*string, error) {
+			loaded = true
+			return nil, nil
+		},
+	})
+
+	// LoadData should have been called directly (without spinner)
+	require.True(t, loaded)
+	// No resources and AllowNewResource=false returns the sentinel error
+	require.ErrorIs(t, err, ErrNoResourcesFound)
 }
 
 // helpers

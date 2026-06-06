@@ -1,5 +1,9 @@
 import: ../../.vscode/cspell.yaml
 words:
+  # Connection commands
+  - tavily
+  - tvly
+  - conncmd
   # Azure region names
   - australiaeast
   - brazilsouth
@@ -24,24 +28,32 @@ words:
   - westeurope
   # Project terms
   - ABAC
+  - acrpush
+  - agentignore
   - ADLS
   - agentserver
   - aiservices
   - Alphanum
   - anonymousconnection
   - aoai
+  - authorizationfailed
   - azdaiagent
   - CLIENTSECRET
   - curr
   - dataagent
+  - envkey
   - exterrors
+  - goyaml
   - helloworld
   - hostedagent
+  - hostedagents
   - kval
+  - listbuildsourceuploadurl
   - logstream
   - mcpservertoolalwaysrequireapprovalmode
   - mcpservertoolneverrequireapprovalmode
   - mcpservertoolspecifyapprovalmode
+  - mypy
   - myregistry
   - normalises
   - openapitool
@@ -49,6 +61,21 @@ words:
   - projectpkg
   - protocolversionrecord
   - Qdrant
+  - schedulerun
   - Toolsets
+  - underscoped
   - Vnext
   - webp
+  # Doctor / next-step terms
+  - nextstep
+  - nextsteps
+  - undeployed
+  - unredacted
+  - UNKN
+  - inlines
+  - Remediations
+  - remediations
+  - uppercases
+  - parseable
+  - azd's
+  - deepseek

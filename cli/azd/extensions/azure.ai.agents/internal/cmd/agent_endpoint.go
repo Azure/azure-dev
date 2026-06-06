@@ -14,8 +14,9 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 )
 
-// agentEndpointHostSuffix is the required Foundry host suffix for endpoint URLs.
-const agentEndpointHostSuffix = ".services.ai.azure.com"
+// agentEndpointHostHint is the example Foundry host suffix shown in validation
+// error messages. Actual host membership is checked via isFoundryHost (project_endpoint.go).
+const agentEndpointHostHint = ".services.ai.azure.com"
 
 // agentEndpointHint is the suggestion appended to most --agent-endpoint validation errors.
 // `azd ai agent show` persistently prints the agent endpoint URL, so it's the right
@@ -27,8 +28,11 @@ const agentEndpointHint = "run `azd ai agent show` to see the agent endpoint URL
 //	[1] project name (URL-escaped),
 //	[2] agent name (URL-escaped),
 //	[3] protocol tail ("invocations" or "openai/responses").
+//
+// The "openai/v1/responses" tail is also accepted and rebuilt to the canonical
+// query-parameter form when invoked.
 var agentEndpointPathRegex = regexp.MustCompile(
-	`^/api/projects/([^/]+)/agents/([^/]+)/endpoint/protocols/(invocations|openai/responses)/?$`,
+	`^/api/projects/([^/]+)/agents/([^/]+)/endpoint/protocols/(invocations|openai/v1/responses|openai/responses)/?$`,
 )
 
 // parsedAgentEndpoint describes a deployed agent invocation endpoint.
@@ -46,7 +50,7 @@ type parsedAgentEndpoint struct {
 // Accepted shapes:
 //
 //	https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/invocations[?api-version=…]
-//	https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/openai/responses[?api-version=…]
+//	https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/openai/responses?api-version=v1
 //
 // The host must be a `*.services.ai.azure.com` Foundry host. The path must include the
 // protocol-specific suffix; the protocol is derived from the URL.
@@ -77,10 +81,10 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 	}
 
 	host := strings.ToLower(u.Hostname())
-	if host == "" || !strings.HasSuffix(host, agentEndpointHostSuffix) {
+	if host == "" || !isFoundryHost(host) {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("--agent-endpoint host %q is not a Foundry host (*%s)", u.Hostname(), agentEndpointHostSuffix),
+			fmt.Sprintf("--agent-endpoint host %q is not a Foundry host (*%s)", u.Hostname(), agentEndpointHostHint),
 			agentEndpointHint,
 		)
 	}
@@ -130,7 +134,7 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 	switch protocolTail {
 	case "invocations":
 		protocol = agent_api.AgentProtocolInvocations
-	case "openai/responses":
+	case "openai/responses", "openai/v1/responses":
 		protocol = agent_api.AgentProtocolResponses
 	}
 
@@ -162,6 +166,9 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 // buildResponsesURL builds the Foundry "openai/responses" protocol URL for an agent.
 // apiVersion is URL-encoded so unusual characters cannot break out of the query value.
 func buildResponsesURL(projectEndpoint, agentName, apiVersion string) string {
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
 	return fmt.Sprintf(
 		"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
 		projectEndpoint, agentName, url.QueryEscape(apiVersion),
@@ -180,7 +187,3 @@ func buildInvocationsURL(projectEndpoint, agentName, apiVersion, sid string) str
 	}
 	return invURL
 }
-
-// (isValidAgentNameSegment was removed — agent name validation now delegates
-// to agent_yaml.ValidateAgentName so --agent-endpoint enforces the same
-// deployable-name format as the rest of the extension.)

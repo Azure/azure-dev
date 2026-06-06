@@ -187,7 +187,43 @@ func TestLegacyAzCliCredentialSupport(t *testing.T) {
 	cred, err := m.CredentialForCurrentUser(t.Context(), nil)
 
 	require.NoError(t, err)
-	require.IsType(t, new(azidentity.AzureCLICredential), cred)
+	// The credential is wrapped in a cachingCredential that reuses tokens across concurrent callers,
+	// backed by an AzureCLICredential.
+	require.IsType(t, new(cachingCredential), cred)
+	require.IsType(t, new(azidentity.AzureCLICredential), cred.(*cachingCredential).inner)
+}
+
+func TestLegacyAzCliCredentialIsCached(t *testing.T) {
+	mgr := newMemoryUserConfigManager()
+
+	cfg, err := mgr.Load()
+	require.NoError(t, err)
+
+	err = cfg.Set(useAzCliAuthKey, "true")
+	require.NoError(t, err)
+
+	err = mgr.Save(cfg)
+	require.NoError(t, err)
+
+	m := Manager{
+		userConfigManager: mgr,
+	}
+
+	// The same credential instance should be returned on subsequent calls for the same tenant so that the
+	// azidentity SDK can collapse concurrent token requests into a single `az` subprocess.
+	first, err := m.CredentialForCurrentUser(t.Context(), nil)
+	require.NoError(t, err)
+
+	second, err := m.CredentialForCurrentUser(t.Context(), nil)
+	require.NoError(t, err)
+
+	require.Same(t, first, second)
+
+	// A different tenant should yield a distinct credential instance.
+	other, err := m.CredentialForCurrentUser(t.Context(), &CredentialForCurrentUserOptions{TenantID: "other-tenant"})
+	require.NoError(t, err)
+
+	require.NotSame(t, first, other)
 }
 
 func TestCloudShellCredentialSupport(t *testing.T) {
@@ -411,6 +447,95 @@ func TestLogInDetails(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, EmailLoginType, details.LoginType)
 		require.Equal(t, "user@contoso.com", details.Account)
+	})
+
+	t.Run("cloud shell - returns user login type from token claims", func(t *testing.T) {
+		t.Setenv(runcontext.AzdInCloudShellEnvVar, "1")
+
+		// Build an access token with a username claim and mock the Cloud Shell
+		// token endpoint to return it.
+		token := buildTestJWT(t, map[string]any{
+			"unique_name": "user@contoso.com",
+			"oid":         "oid-abc",
+			"tid":         "tenant-xyz",
+		})
+
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.URL.String() == "http://localhost:50342/oauth2/token"
+		}).Respond(&http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(bytes.NewBufferString(
+				fmt.Sprintf(`{"access_token":"%s","expires_on":"4070908800"}`, token))),
+		})
+
+		m := Manager{
+			configManager:     newMemoryConfigManager(),
+			userConfigManager: newMemoryUserConfigManager(),
+			httpClient:        mockContext.HttpClient,
+			cloud:             cloud.AzurePublic(),
+		}
+
+		details, err := m.LogInDetails(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, EmailLoginType, details.LoginType)
+		require.Equal(t, "user@contoso.com", details.Account)
+	})
+
+	t.Run("cloud shell - authenticated even when token has no username claim", func(t *testing.T) {
+		t.Setenv(runcontext.AzdInCloudShellEnvVar, "1")
+
+		// A Cloud Shell session is always a valid authenticated user, even if
+		// the token does not expose a username claim.
+		token := buildTestJWT(t, map[string]any{
+			"oid": "oid-abc",
+			"tid": "tenant-xyz",
+		})
+
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.URL.String() == "http://localhost:50342/oauth2/token"
+		}).Respond(&http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(bytes.NewBufferString(
+				fmt.Sprintf(`{"access_token":"%s","expires_on":"4070908800"}`, token))),
+		})
+
+		m := Manager{
+			configManager:     newMemoryConfigManager(),
+			userConfigManager: newMemoryUserConfigManager(),
+			httpClient:        mockContext.HttpClient,
+			cloud:             cloud.AzurePublic(),
+		}
+
+		details, err := m.LogInDetails(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, EmailLoginType, details.LoginType)
+		require.Empty(t, details.Account)
+	})
+
+	t.Run("cloud shell - corrupted user properties surface error instead of fallback", func(t *testing.T) {
+		t.Setenv(runcontext.AzdInCloudShellEnvVar, "1")
+
+		// A stored currentUser value that cannot be unmarshalled into userProperties
+		// represents real config corruption. It must surface as an error rather than
+		// being silently masked by the Cloud Shell fallback.
+		userCfg := config.NewEmptyConfig()
+		require.NoError(t, userCfg.Set(currentUserKey, "not-an-object"))
+
+		userCfgMgr := newMemoryUserConfigManager()
+		require.NoError(t, userCfgMgr.Save(userCfg))
+
+		m := Manager{
+			configManager:     newMemoryConfigManager(),
+			userConfigManager: userCfgMgr,
+			cloud:             cloud.AzurePublic(),
+		}
+
+		_, err := m.LogInDetails(t.Context())
+		require.Error(t, err)
+		require.NotErrorIs(t, err, ErrNoCurrentUser)
+		require.ErrorContains(t, err, "reading current user properties")
 	})
 
 	t.Run("external auth - error when token has no usable account identifier", func(t *testing.T) {

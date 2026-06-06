@@ -1,0 +1,234 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"azure.ai.toolboxes/internal/exterrors"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// writeTempFile writes content to <t.TempDir>/input<ext> and returns the path.
+func writeTempFile(t *testing.T, ext, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "input"+ext)
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	return path
+}
+
+func TestParseToolboxFile_AcceptsCreateShape(t *testing.T) {
+	t.Run("json", func(t *testing.T) {
+		path := writeTempFile(t, ".json", `
+{
+  "description": "Sample toolbox",
+  "connections": [
+    { "name": "my-mcp" },
+    { "name": "my-search", "index": "docs" }
+  ]
+}`)
+		var out toolboxCreateFile
+		require.NoError(t, parseToolboxFile(path, &out))
+		assert.Equal(t, "Sample toolbox", out.Description)
+		require.Len(t, out.Connections, 2)
+		assert.Equal(t, "my-mcp", out.Connections[0].Name)
+		assert.Equal(t, "docs", out.Connections[1].Index)
+	})
+
+	t.Run("yaml", func(t *testing.T) {
+		path := writeTempFile(t, ".yaml", `
+description: Sample toolbox
+connections:
+  - name: my-mcp
+  - name: my-search
+    index: docs
+`)
+		var out toolboxCreateFile
+		require.NoError(t, parseToolboxFile(path, &out))
+		assert.Equal(t, "Sample toolbox", out.Description)
+		require.Len(t, out.Connections, 2)
+	})
+}
+
+func TestParseToolboxFile_AcceptsAddShape(t *testing.T) {
+	path := writeTempFile(t, ".json", `
+{
+  "connections": [
+    { "name": "my-mcp" }
+  ]
+}`)
+	var out toolboxToolsFile
+	require.NoError(t, parseToolboxFile(path, &out))
+	require.Len(t, out.Connections, 1)
+	assert.Equal(t, "my-mcp", out.Connections[0].Name)
+}
+
+// `description` is `create`-only; if a user puts it in a `connection add`
+// file, parsing must reject with a clear suggestion explaining that
+// description is set at create time.
+func TestParseToolboxFile_AddRejectsDescription(t *testing.T) {
+	t.Run("json", func(t *testing.T) {
+		path := writeTempFile(t, ".json", `
+{
+  "description": "should be rejected here",
+  "connections": [{ "name": "my-mcp" }]
+}`)
+		var out toolboxToolsFile
+		err := parseToolboxFile(path, &out)
+		le := requireLocalError(t, err, exterrors.CodeInvalidParameter)
+		assert.Contains(t, le.Message, "description")
+		assert.Contains(t, le.Suggestion, "toolbox create")
+	})
+
+	t.Run("yaml", func(t *testing.T) {
+		path := writeTempFile(t, ".yaml", `
+description: should be rejected here
+connections:
+  - name: my-mcp
+`)
+		var out toolboxToolsFile
+		err := parseToolboxFile(path, &out)
+		le := requireLocalError(t, err, exterrors.CodeInvalidParameter)
+		assert.Contains(t, strings.ToLower(le.Message), "description")
+		assert.Contains(t, le.Suggestion, "toolbox create")
+	})
+}
+
+// Any other unknown key (typo on `connections`, stray `tools`, etc.) is
+// rejected with the generic suggestion pointing at --help.
+func TestParseToolboxFile_RejectsOtherUnknownFields(t *testing.T) {
+	t.Run("typo on connections in create file", func(t *testing.T) {
+		path := writeTempFile(t, ".json", `
+{
+  "description": "x",
+  "conections": [{ "name": "my-mcp" }]
+}`)
+		var out toolboxCreateFile
+		err := parseToolboxFile(path, &out)
+		le := requireLocalError(t, err, exterrors.CodeInvalidParameter)
+		assert.Contains(t, le.Suggestion, "--help")
+	})
+
+	t.Run("stray tools in add file", func(t *testing.T) {
+		path := writeTempFile(t, ".json", `
+{
+  "connections": [{ "name": "my-mcp" }],
+  "tools": [{ "type": "web_search", "name": "web" }]
+}`)
+		var out toolboxToolsFile
+		err := parseToolboxFile(path, &out)
+		le := requireLocalError(t, err, exterrors.CodeInvalidParameter)
+		assert.Contains(t, le.Suggestion, "--help")
+	})
+}
+
+func TestParseToolboxFile_RejectsUnsupportedExtension(t *testing.T) {
+	path := writeTempFile(t, ".toml", `description = "x"`)
+	var out toolboxCreateFile
+	err := parseToolboxFile(path, &out)
+	le := requireLocalError(t, err, exterrors.CodeInvalidParameter)
+	assert.Contains(t, le.Suggestion, ".json")
+}
+
+// `tools` on the create shape is accepted as a raw OpenAI.Tool[] pass-through.
+// YAML must decode nested objects as map[string]any (not map[any]any) so the
+// JSON marshaller in the data-plane client emits valid JSON.
+func TestParseToolboxFile_AcceptsRawToolsOnCreate(t *testing.T) {
+	t.Run("json", func(t *testing.T) {
+		path := writeTempFile(t, ".json", `
+{
+  "tools": [
+    { "type": "web_search",  "name": "web" },
+    { "type": "file_search", "name": "files" }
+  ]
+}`)
+		var out toolboxCreateFile
+		require.NoError(t, parseToolboxFile(path, &out))
+		require.Len(t, out.Tools, 2)
+		assert.Equal(t, "web_search", out.Tools[0]["type"])
+		assert.Equal(t, "files", out.Tools[1]["name"])
+	})
+
+	t.Run("yaml decodes nested maps as map[string]any", func(t *testing.T) {
+		path := writeTempFile(t, ".yaml", `
+tools:
+  - type: web_search
+    name: web
+  - type: code_interpreter
+    name: ci
+    container:
+      type: auto
+`)
+		var out toolboxCreateFile
+		require.NoError(t, parseToolboxFile(path, &out))
+		require.Len(t, out.Tools, 2)
+		nested, ok := out.Tools[1]["container"].(map[string]any)
+		require.True(t, ok, "expected nested map[string]any, got %T", out.Tools[1]["container"])
+		assert.Equal(t, "auto", nested["type"])
+	})
+}
+
+func TestParseToolboxFile_RejectsMissingFile(t *testing.T) {
+	var out toolboxCreateFile
+	err := parseToolboxFile(filepath.Join(t.TempDir(), "nope.json"), &out)
+	requireLocalError(t, err, exterrors.CodeInvalidParameter)
+}
+
+// `policies.rai_config` is accepted by `toolbox create` and the wire-shaped
+// `rai_policy_name` field round-trips through the file struct.
+func TestParseToolboxFile_AcceptsPolicies(t *testing.T) {
+	t.Run("yaml with rai_policy_name", func(t *testing.T) {
+		path := writeTempFile(t, ".yaml", `
+description: with policy
+connections:
+  - name: my-mcp
+policies:
+  rai_config:
+    rai_policy_name: Microsoft.Default
+`)
+		var out toolboxCreateFile
+		require.NoError(t, parseToolboxFile(path, &out))
+		require.NotNil(t, out.Policies)
+		require.NotNil(t, out.Policies.RaiConfig)
+		assert.Equal(t, "Microsoft.Default", out.Policies.RaiConfig.RaiPolicyName)
+		assert.Equal(t, "Microsoft.Default", out.Policies.RaiConfig.resolvedPolicyName())
+	})
+
+	// The friendlier `name` alias also resolves, but is not the wire field.
+	t.Run("yaml with name alias", func(t *testing.T) {
+		path := writeTempFile(t, ".yaml", `
+description: with policy
+connections:
+  - name: my-mcp
+policies:
+  rai_config:
+    name: Microsoft.Default
+`)
+		var out toolboxCreateFile
+		require.NoError(t, parseToolboxFile(path, &out))
+		require.NotNil(t, out.Policies)
+		require.NotNil(t, out.Policies.RaiConfig)
+		assert.Equal(t, "", out.Policies.RaiConfig.RaiPolicyName)
+		assert.Equal(t, "Microsoft.Default", out.Policies.RaiConfig.Name)
+		assert.Equal(t, "Microsoft.Default", out.Policies.RaiConfig.resolvedPolicyName())
+	})
+
+	// rai_policy_name wins over name when both are set.
+	t.Run("rai_policy_name wins over name alias", func(t *testing.T) {
+		spec := &toolboxRaiConfigSpec{RaiPolicyName: "wire", Name: "alias"}
+		assert.Equal(t, "wire", spec.resolvedPolicyName())
+	})
+
+	// Empty/whitespace-only fields return "" so the create flow can reject.
+	t.Run("empty resolves to empty string", func(t *testing.T) {
+		spec := &toolboxRaiConfigSpec{RaiPolicyName: "  "}
+		assert.Equal(t, "", spec.resolvedPolicyName())
+	})
+}

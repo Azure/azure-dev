@@ -37,14 +37,17 @@ type MultiSelectOptions struct {
 	DisplayNumbers *bool
 	// Whether or not to disable filtering (default: true)
 	EnableFiltering *bool
+	// Whether or not to allow submitting with no options selected (default: false)
+	AllowEmptySelection *bool
 }
 
 var DefaultMultiSelectOptions MultiSelectOptions = MultiSelectOptions{
-	Writer:          os.Stdout,
-	Reader:          os.Stdin,
-	DisplayCount:    6,
-	EnableFiltering: new(true),
-	DisplayNumbers:  new(false),
+	Writer:              os.Stdout,
+	Reader:              os.Stdin,
+	DisplayCount:        6,
+	EnableFiltering:     new(true),
+	DisplayNumbers:      new(false),
+	AllowEmptySelection: new(false),
 }
 
 type MultiSelectChoice struct {
@@ -375,10 +378,12 @@ func (p *MultiSelect) validate() {
 	p.hasValidationError = false
 	p.validationMessage = ""
 
+	allowEmptySelection := p.options.AllowEmptySelection != nil && *p.options.AllowEmptySelection
+
 	if len(p.filteredChoices) == 0 {
 		p.hasValidationError = true
 		p.validationMessage = "No options found matching the filter"
-	} else if p.submitted && len(p.selectedChoices) == 0 {
+	} else if p.submitted && len(p.selectedChoices) == 0 && !allowEmptySelection {
 		p.hasValidationError = true
 		p.validationMessage = "At least one option must be selected"
 	}

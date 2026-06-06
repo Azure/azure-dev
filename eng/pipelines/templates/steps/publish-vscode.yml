@@ -6,6 +6,12 @@ parameters:
 
 steps:
   - ${{ if eq('true', parameters.TagRepository) }}:
+
+    - template: /eng/common/pipelines/templates/steps/login-to-github.yml
+      parameters:
+        TokenOwners:
+          - Azure
+
     # Perform tag verification before publishing anything
     - pwsh: |
         $existingTag = gh api /repos/$(Build.Repository.Name)/tags --paginate | ConvertFrom-Json | Where-Object { $_.name -eq $tag }
@@ -22,7 +28,7 @@ steps:
         exit 0
       displayName: Check for existing tag or release
       env:
-        GH_TOKEN: $(azuresdk-github-pat)
+        GH_TOKEN: $(GH_TOKEN)
 
 
   - pwsh: |
@@ -64,7 +70,7 @@ steps:
         gh release upload $(GH_RELEASE_TAG) release/* --repo $(Build.Repository.Name)
       displayName: Create GitHub Release and upload artifacts
       env:
-        GH_TOKEN: $(azuresdk-github-pat)
+        GH_TOKEN: $(GH_TOKEN)
 
   - ${{ if eq('true', parameters.PublishToMarketplace) }}:
     - task: AzureCLI@2

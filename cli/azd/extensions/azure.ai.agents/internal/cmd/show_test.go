@@ -5,8 +5,11 @@ package cmd
 
 import (
 	"encoding/json"
+	"io"
+	"os"
 	"testing"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/stretchr/testify/assert"
@@ -69,7 +72,46 @@ func TestNewAgentContext_PartialFlags(t *testing.T) {
 
 func TestShowCommand_DefaultOutputFormat(t *testing.T) {
 	cmd := newShowCommand(nil)
-	assertOutputFlagOptions(t, cmd, "json", []string{"json", "table"})
+	assertOutputFlagOptions(t, cmd, "table", []string{"json", "table"})
+}
+
+func TestPrintShowResult_DefaultsToTable(t *testing.T) {
+	output, err := captureStdout(t, func() error {
+		return printShowResult(sampleShowResult(), "", nil)
+	})
+	require.NoError(t, err)
+
+	assert.Contains(t, output, "FIELD")
+	assert.Contains(t, output, "VALUE")
+	assert.Contains(t, output, "sample-agent")
+	assert.NotContains(t, output, `"object"`)
+}
+
+func TestPrintShowResult_JSONOptIn(t *testing.T) {
+	output, err := captureStdout(t, func() error {
+		return printShowResult(sampleShowResult(), "json", nil)
+	})
+	require.NoError(t, err)
+
+	assert.Contains(t, output, `"object": "agent.version"`)
+	assert.Contains(t, output, `"name": "sample-agent"`)
+}
+
+func TestPrintShowResult_ExplicitTable(t *testing.T) {
+	output, err := captureStdout(t, func() error {
+		return printShowResult(sampleShowResult(), "table", nil)
+	})
+	require.NoError(t, err)
+
+	assert.Contains(t, output, "FIELD")
+	assert.Contains(t, output, "VALUE")
+	assert.Contains(t, output, "sample-agent")
+	assert.NotContains(t, output, `"object"`)
+}
+
+func TestPrintShowResult_UnsupportedOutput(t *testing.T) {
+	err := printShowResult(sampleShowResult(), "yaml", nil)
+	assert.EqualError(t, err, `unsupported output format "yaml"`)
 }
 
 func TestPrintAgentVersionJSON(t *testing.T) {
@@ -116,7 +158,7 @@ func TestPrintAgentVersionJSON_Format(t *testing.T) {
 		AgentVersionObject: version,
 		PlaygroundURL:      "https://ai.azure.com/nextgen/r/test/build/agents/test-agent/build?version=2",
 		Endpoints: map[string]string{
-			"Responses": "https://acct.services.ai.azure.com/api/projects/proj/agents/test-agent/endpoint/protocols/openai/responses?api-version=2025-11-15-preview",
+			"Responses": "https://acct.services.ai.azure.com/api/projects/proj/agents/test-agent/endpoint/protocols/openai/responses?api-version=v1",
 		},
 	}
 
@@ -175,6 +217,55 @@ func TestPrintAgentVersionJSON_NoLinks(t *testing.T) {
 	assert.False(t, hasPlayground, "playground_url should be omitted when empty")
 	_, hasEndpoints := raw["agent_endpoints"]
 	assert.False(t, hasEndpoints, "agent_endpoints should be omitted when nil")
+	_, hasNextStep := raw["next_step"]
+	assert.False(t, hasNextStep, "next_step should be omitted when nil")
+}
+
+func TestShowResultJSON_NextStepEnvelope(t *testing.T) {
+	version := &agent_api.AgentVersionObject{
+		Object:  "agent.version",
+		ID:      "ver-999",
+		Name:    "my-agent",
+		Version: "1",
+		Status:  "failed",
+	}
+
+	result := &showResult{
+		AgentVersionObject: version,
+		NextStep: toNextStepEnvelope([]nextstep.Suggestion{
+			{
+				Command:     "azd ai agent monitor --follow",
+				Description: "stream agent logs to investigate the failure",
+				Priority:    10,
+			},
+		}),
+	}
+
+	jsonBytes, err := json.MarshalIndent(result, "", "  ")
+	require.NoError(t, err)
+
+	var raw map[string]any
+	err = json.Unmarshal(jsonBytes, &raw)
+	require.NoError(t, err)
+
+	nextStep, ok := raw["next_step"].(map[string]any)
+	require.True(t, ok, "next_step should be present and an object")
+	suggestions, ok := nextStep["suggestions"].([]any)
+	require.True(t, ok, "next_step.suggestions should be an array")
+	require.Len(t, suggestions, 1)
+	first := suggestions[0].(map[string]any)
+	assert.Equal(t, "azd ai agent monitor --follow", first["command"])
+	assert.Equal(t, "stream agent logs to investigate the failure", first["description"])
+	// Internal renderer hints (priority, trailing) must not leak into JSON.
+	_, hasPriority := first["priority"]
+	assert.False(t, hasPriority, "priority must not appear in JSON envelope")
+	_, hasTrailing := first["trailing"]
+	assert.False(t, hasTrailing, "trailing must not appear in JSON envelope")
+}
+
+func TestToNextStepEnvelope_EmptyReturnsNil(t *testing.T) {
+	assert.Nil(t, toNextStepEnvelope(nil))
+	assert.Nil(t, toNextStepEnvelope([]nextstep.Suggestion{}))
 }
 
 func TestPrintAgentVersionTable(t *testing.T) {
@@ -211,7 +302,7 @@ func TestPrintAgentVersionTable(t *testing.T) {
 		},
 	}
 
-	err := printShowResultTable(result)
+	err := printShowResultTable(result, nil)
 	require.NoError(t, err)
 }
 
@@ -224,6 +315,86 @@ func TestPrintAgentVersionTable_MinimalFields(t *testing.T) {
 	}
 
 	result := &showResult{AgentVersionObject: version}
-	err := printShowResultTable(result)
+	err := printShowResultTable(result, nil)
 	require.NoError(t, err)
+}
+
+func sampleShowResult() *showResult {
+	return &showResult{
+		AgentVersionObject: &agent_api.AgentVersionObject{
+			Object:  "agent.version",
+			ID:      "ver-sample",
+			Name:    "sample-agent",
+			Version: "1",
+		},
+	}
+}
+
+func captureStdout(t *testing.T, run func() error) (string, error) {
+	t.Helper()
+
+	oldStdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	require.NoError(t, err)
+	defer func() {
+		os.Stdout = oldStdout
+	}()
+	defer reader.Close()
+
+	os.Stdout = writer
+	runErr := run()
+	require.NoError(t, writer.Close())
+
+	output, err := io.ReadAll(reader)
+	require.NoError(t, err)
+
+	return string(output), runErr
+}
+
+// TestResolveNextStepFromStatus_ActiveBranchNoSuggestion locks the active
+// show contract: active/idle are already healthy, so show remains an
+// inspection command and does not emit next_step guidance.
+func TestResolveNextStepFromStatus_ActiveBranchNoSuggestion(t *testing.T) {
+	t.Parallel()
+
+	out := resolveNextStepFromStatus("echo-svc", "active")
+	require.Empty(t, out)
+}
+
+// TestResolveNextStepFromStatus_UnknownStatusFallsBackToServiceName locks
+// the unknown-status branch: when the resolver can't classify the status,
+// it suggests `azd ai agent show <serviceName>` (not agentName), because
+// show.go's lookup matches by service name.
+func TestResolveNextStepFromStatus_UnknownStatusFallsBackToServiceName(t *testing.T) {
+	t.Parallel()
+
+	out := resolveNextStepFromStatus("echo-svc", "Transitioning")
+	require.Len(t, out, 1)
+	assert.Equal(t, "azd ai agent show echo-svc", out[0].Command)
+}
+
+// TestResolveNextStepFromStatus_NonActiveBranches sanity-checks the
+// remaining status branches don't depend on either service or agent name.
+func TestResolveNextStepFromStatus_NonActiveBranches(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		status string
+		want   string
+	}{
+		{"creating", "azd ai agent monitor --type system --follow"},
+		{"failed", "azd ai agent monitor --follow"},
+		{"", "azd ai agent monitor --follow"},
+		{"deleting", "azd deploy"},
+		{"deleted", "azd deploy"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.status, func(t *testing.T) {
+			t.Parallel()
+			out := resolveNextStepFromStatus("echo-svc", tt.status)
+			require.Len(t, out, 1)
+			assert.Equal(t, tt.want, out[0].Command)
+		})
+	}
 }

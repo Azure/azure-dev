@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	projectpkg "azureaiagent/internal/project"
 
@@ -31,6 +32,9 @@ type ShowAction struct {
 	flags     *showFlags
 	azdClient *azdext.AzdClient
 	envName   string
+	// serviceName is the azure.yaml service name used by the unknown-status
+	// re-check fallback that suggests `azd ai agent show <serviceName>`.
+	serviceName string
 	// serviceKey is the uppercase/underscored form of the service name,
 	// used to look up per-service env vars (e.g. AGENT_{KEY}_RESPONSES_ENDPOINT).
 	serviceKey string
@@ -54,8 +58,8 @@ configuration and the current azd environment. Optionally specify the service na
   # Show status for a specific agent service
   azd ai agent show my-agent
 
-  # Show status in table format
-  azd ai agent show --output table`,
+  # Show status as JSON
+  azd ai agent show --output json`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
@@ -107,6 +111,7 @@ configuration and the current azd environment. Optionally specify the service na
 				flags:        flags,
 				azdClient:    azdClient,
 				envName:      envName,
+				serviceName:  info.ServiceName,
 				serviceKey:   toServiceKey(info.ServiceName),
 			}
 
@@ -117,7 +122,7 @@ configuration and the current azd environment. Optionally specify the service na
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"json", "table"},
-		Default:       "json",
+		Default:       "table",
 	})
 
 	return cmd
@@ -128,6 +133,34 @@ type showResult struct {
 	*agent_api.AgentVersionObject
 	PlaygroundURL string            `json:"playground_url,omitempty"`
 	Endpoints     map[string]string `json:"agent_endpoints,omitempty"`
+	NextStep      *nextStepEnvelope `json:"next_step,omitempty"`
+}
+
+// nextStepEnvelope is the JSON shape for context-aware guidance attached to
+// `azd ai agent show --output json`. Mirrors []nextstep.Suggestion but
+// omits the internal Priority/Trailing renderer hints — JSON consumers
+// only need the command + description.
+type nextStepEnvelope struct {
+	Suggestions []nextStepSuggestion `json:"suggestions"`
+}
+
+type nextStepSuggestion struct {
+	Command     string `json:"command"`
+	Description string `json:"description"`
+}
+
+func toNextStepEnvelope(suggestions []nextstep.Suggestion) *nextStepEnvelope {
+	if len(suggestions) == 0 {
+		return nil
+	}
+	out := &nextStepEnvelope{Suggestions: make([]nextStepSuggestion, 0, len(suggestions))}
+	for _, s := range suggestions {
+		out.Suggestions = append(out.Suggestions, nextStepSuggestion{
+			Command:     s.Command,
+			Description: s.Description,
+		})
+	}
+	return out
 }
 
 // Run executes the show command logic.
@@ -152,12 +185,51 @@ func (a *ShowAction) Run(ctx context.Context) error {
 	// Resolve deployed endpoint URLs from env vars (best-effort)
 	result.Endpoints = a.resolveEndpointURLs(ctx)
 
-	switch a.flags.output {
-	case "table":
-		return printShowResultTable(result)
-	default:
-		return printShowResultJSON(result)
+	// Resolve context-aware next-step guidance only for statuses that need
+	// action. Active agents intentionally omit next_step so `show` stays a
+	// pure inspection command and JSON output remains close to the API shape.
+	var suggestions []nextstep.Suggestion
+	if shouldResolveShowNextStep(version.Status) {
+		suggestions = a.resolveNextStep(version.Status)
 	}
+
+	return printShowResult(result, a.flags.output, suggestions)
+}
+
+func printShowResult(result *showResult, output string, suggestions []nextstep.Suggestion) error {
+	switch output {
+	case "", "table":
+		return printShowResultTable(result, suggestions)
+	case "json":
+		result.NextStep = toNextStepEnvelope(suggestions)
+		return printShowResultJSON(result)
+	default:
+		return fmt.Errorf("unsupported output format %q", output)
+	}
+}
+
+func shouldResolveShowNextStep(status string) bool {
+	switch nextstep.AgentVersionStatus(status) {
+	case nextstep.AgentVersionActive, nextstep.AgentVersionIdle:
+		return false
+	default:
+		return true
+	}
+}
+
+// resolveNextStep asks the resolver for the post-show guidance block.
+func (a *ShowAction) resolveNextStep(status string) []nextstep.Suggestion {
+	return resolveNextStepFromStatus(a.serviceName, status)
+}
+
+// resolveNextStepFromStatus is the testable core of resolveNextStep.
+func resolveNextStepFromStatus(serviceName, status string) []nextstep.Suggestion {
+	if !shouldResolveShowNextStep(status) {
+		return nil
+	}
+
+	state := &nextstep.State{AgentStatus: status}
+	return nextstep.ResolveAfterShow(state, serviceName)
 }
 
 // resolvePlaygroundURL reads AZURE_AI_PROJECT_ID from the azd environment
@@ -239,7 +311,7 @@ func printShowResultJSON(result *showResult) error {
 	return nil
 }
 
-func printShowResultTable(result *showResult) error {
+func printShowResultTable(result *showResult, suggestions []nextstep.Suggestion) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "FIELD\tVALUE")
 	fmt.Fprintln(w, "-----\t-----")
@@ -286,5 +358,17 @@ func printShowResultTable(result *showResult) error {
 		fmt.Fprintf(w, "Endpoint (%s)\t%s\n", label, result.Endpoints[label])
 	}
 
-	return w.Flush()
+	if err := w.Flush(); err != nil {
+		return err
+	}
+
+	// Next: guidance is human-only on the table path; the JSON envelope
+	// carries the same data for machines. Suppress on non-TTY (pipes,
+	// file redirection) so scripted consumers of the table output don't
+	// see surprise trailing lines. PrintNext owns the leading blank-line
+	// separator (see nextstep/format.go renderBlock), so we don't
+	// pre-emit one here.
+	_ = printNextIfTerminal(os.Stdout, suggestions)
+
+	return nil
 }

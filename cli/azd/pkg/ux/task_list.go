@@ -86,11 +86,18 @@ type Task struct {
 type TaskState int
 
 const (
+	// Pending indicates a task has not started yet.
 	Pending TaskState = iota
+	// Running indicates a task is currently executing.
 	Running
+	// Skipped indicates a task was not executed.
 	Skipped
+	// Warning indicates a task completed with a non-fatal issue. If the task
+	// returns an error with this state, it is displayed but not returned by Run.
 	Warning
+	// Error indicates a task failed.
 	Error
+	// Success indicates a task completed successfully.
 	Success
 )
 
@@ -213,6 +220,9 @@ func (t *TaskList) Render(printer Printer) error {
 	renderTasks = append(renderTasks, runningTasks...)
 	renderTasks = append(renderTasks, pendingTasks...)
 
+	// Use terminal width minus 1 to prevent cursor wrap on exact-width lines (Windows)
+	maxWidth := max(printer.Width()-1, 1)
+
 	printer.Fprintln()
 
 	for _, task := range renderTasks {
@@ -227,12 +237,12 @@ func (t *TaskList) Render(printer Printer) error {
 			elapsedText = output.WithGrayFormat("(%s)", durationAsText(elapsed))
 		}
 
-		var errorDescription string
+		var statusDescription string
 		if task.Error != nil {
 			if detailedErr, ok := errors.AsType[*common.DetailedError](task.Error); ok {
-				errorDescription = detailedErr.Description()
+				statusDescription = detailedErr.Description()
 			} else {
-				errorDescription = task.Error.Error()
+				statusDescription = task.Error.Error()
 			}
 		}
 
@@ -241,51 +251,54 @@ func (t *TaskList) Render(printer Printer) error {
 			progressText = fmt.Sprintf(" (%s)", task.progress)
 		}
 
+		var line string
 		switch task.State {
 		case Pending:
-			printer.Fprintf("%s %s\n", output.WithGrayFormat(t.options.PendingStyle), task.Title)
+			line = fmt.Sprintf("%s %s", output.WithGrayFormat(t.options.PendingStyle), task.Title)
 		case Running:
-			printer.Fprintf(
-				"%s %s%s %s\n",
+			line = fmt.Sprintf(
+				"%s %s%s %s",
 				output.WithHighLightFormat(t.options.RunningStyle),
 				task.Title,
 				progressText,
 				elapsedText,
 			)
 		case Warning:
-			printer.Fprintf(
-				"%s %s %s %s\n",
+			line = fmt.Sprintf(
+				"%s %s %s %s",
 				output.WithWarningFormat(t.options.WarningStyle),
 				task.Title,
 				elapsedText,
-				output.WithErrorFormat("(%s)", errorDescription),
+				output.WithWarningFormat("(%s)", statusDescription),
 			)
 		case Error:
-			printer.Fprintf(
-				"%s %s %s %s\n",
+			line = fmt.Sprintf(
+				"%s %s %s %s",
 				output.WithErrorFormat(t.options.ErrorStyle),
 				task.Title,
 				elapsedText,
-				output.WithErrorFormat("(%s)", errorDescription),
+				output.WithErrorFormat("(%s)", statusDescription),
 			)
 		case Success:
-			printer.Fprintf("%s %s  %s\n", output.WithSuccessFormat(t.options.SuccessStyle), task.Title, elapsedText)
+			line = fmt.Sprintf("%s %s  %s", output.WithSuccessFormat(t.options.SuccessStyle), task.Title, elapsedText)
 		case Skipped:
-			if errorDescription == "" {
-				printer.Fprintf(
-					"%s %s\n",
+			if statusDescription == "" {
+				line = fmt.Sprintf(
+					"%s %s",
 					output.WithGrayFormat(t.options.SkippedStyle),
 					task.Title,
 				)
 			} else {
-				printer.Fprintf(
-					"%s %s %s\n",
+				line = fmt.Sprintf(
+					"%s %s %s",
 					output.WithGrayFormat(t.options.SkippedStyle),
 					task.Title,
-					output.WithErrorFormat("(%s)", errorDescription),
+					output.WithErrorFormat("(%s)", statusDescription),
 				)
 			}
 		}
+
+		printer.Fprintf("%s\n", TruncateVisible(line, maxWidth))
 	}
 
 	printer.Fprintln()
@@ -318,7 +331,7 @@ func (t *TaskList) runSyncTasks() {
 		}
 
 		state, err := task.Action(setProgress)
-		if err != nil {
+		if shouldCollectTaskError(err, state) {
 			t.errorMutex.Lock()
 			t.errors = append(t.errors, err)
 			t.errorMutex.Unlock()
@@ -348,7 +361,7 @@ func (t *TaskList) addAsyncTask(task *Task) {
 		}
 
 		state, err := task.Action(setProgress)
-		if err != nil {
+		if shouldCollectTaskError(err, state) {
 			t.errorMutex.Lock()
 			t.errors = append(t.errors, err)
 			t.errorMutex.Unlock()
@@ -368,6 +381,12 @@ func (t *TaskList) addSyncTask(task *Task) {
 	defer t.syncMutex.Unlock()
 
 	t.syncTasks = append(t.syncTasks, task)
+}
+
+// shouldCollectTaskError determines whether a task error should be added to the error collection.
+// Warning-state tasks with errors are excluded to allow following tasks to continue.
+func shouldCollectTaskError(err error, state TaskState) bool {
+	return err != nil && state != Warning
 }
 
 // DurationAsText provides a slightly nicer string representation of a duration

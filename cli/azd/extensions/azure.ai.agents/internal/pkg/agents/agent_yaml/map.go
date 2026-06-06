@@ -14,6 +14,15 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+// RuntimeCmdPrefix returns the command prefix for a given runtime string.
+// For example, "python_3_12" -> "python", "dotnet_9" -> "dotnet".
+func RuntimeCmdPrefix(runtime string) string {
+	if strings.HasPrefix(runtime, "dotnet_") {
+		return "dotnet"
+	}
+	return "python"
+}
+
 // AgentBuildOption represents an option for building agent definitions
 type AgentBuildOption func(*AgentBuildConfig)
 
@@ -73,6 +82,39 @@ func constructBuildConfig(options ...AgentBuildOption) *AgentBuildConfig {
 		option(config)
 	}
 	return config
+}
+
+// mapRaiConfig flattens the manifest-level policies list into the data-plane
+// rai_config field. It returns the RAI config derived from the first policy of
+// type "rai_policy" that has a policy name, or nil when none is configured.
+func mapRaiConfig(policies []Policy) *agent_api.RaiConfig {
+	for _, policy := range policies {
+		if policy.Type == PolicyTypeRai && policy.RaiPolicyName != "" {
+			return &agent_api.RaiConfig{RaiPolicyName: policy.RaiPolicyName}
+		}
+	}
+	return nil
+}
+
+// MapEndpointAndCard maps YAML-layer endpoint and card fields to API model types
+// without requiring or validating the full agent definition. This is used by the
+// endpoint update command where only endpoint/card patching is needed.
+func MapEndpointAndCard(
+	agentEndpoint *AgentEndpoint,
+	agentCard *AgentCard,
+) (*agent_api.AgentEndpoint, *agent_api.AgentCard, error) {
+	// Reuse createAgentAPIRequest with a minimal definition to get
+	// endpoint/card mapping only.
+	req, err := createAgentAPIRequest(
+		AgentDefinition{Name: "placeholder"},
+		nil,
+		agentEndpoint,
+		agentCard,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return req.AgentEndpoint, req.AgentCard, nil
 }
 
 // CreateAgentAPIRequestFromDefinition creates a CreateAgentRequest from AgentDefinition with strong typing
@@ -319,8 +361,7 @@ func convertFloat64ToFloat32(f64 *float64) *float32 {
 
 // CreateHostedAgentAPIRequest creates a CreateAgentRequest for hosted agents
 func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentBuildConfig) (*agent_api.CreateAgentRequest, error) {
-	// Check if we have an image URL set via the build config
-	imageURL := ""
+	imageURL := hostedAgent.Image
 	cpu := "1"      // Default CPU
 	memory := "2Gi" // Default memory
 	envVars := make(map[string]string)
@@ -340,10 +381,6 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		}
 	}
 
-	if imageURL == "" {
-		return nil, fmt.Errorf("image URL is required for hosted agents - use WithImageURL build option or specify in container.image")
-	}
-
 	// Map protocol versions from the hosted agent definition
 	protocolVersions := make([]agent_api.ProtocolVersionRecord, 0)
 	if len(hostedAgent.Protocols) > 0 {
@@ -360,23 +397,53 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		}
 	}
 
-	hostedDef := agent_api.HostedAgentDefinition{
+	// Code deploy path
+	if hostedAgent.CodeConfiguration != nil {
+		cmdPrefix := RuntimeCmdPrefix(hostedAgent.CodeConfiguration.Runtime)
+		entryPoint := []string{cmdPrefix, hostedAgent.CodeConfiguration.EntryPoint}
+		depRes := ""
+		if hostedAgent.CodeConfiguration.DependencyResolution != nil {
+			depRes = *hostedAgent.CodeConfiguration.DependencyResolution
+		}
+
+		codeDef := agent_api.HostedAgentDefinition{
+			AgentDefinition: agent_api.AgentDefinition{
+				Kind:      agent_api.AgentKindHosted,
+				RaiConfig: mapRaiConfig(hostedAgent.Policies),
+			},
+			ProtocolVersions:     protocolVersions,
+			CPU:                  cpu,
+			Memory:               memory,
+			EnvironmentVariables: envVars,
+			CodeConfiguration: &agent_api.CodeConfigurationAPI{
+				Runtime:              hostedAgent.CodeConfiguration.Runtime,
+				EntryPoint:           entryPoint,
+				DependencyResolution: depRes,
+			},
+		}
+
+		return createAgentAPIRequest(hostedAgent.AgentDefinition, codeDef,
+			hostedAgent.AgentEndpoint, hostedAgent.AgentCard)
+	}
+
+	// Container/image deploy path
+	if imageURL == "" {
+		return nil, fmt.Errorf("image URL is required for hosted agents - use WithImageURL build option or specify in container.image")
+	}
+
+	imageDef := agent_api.HostedAgentDefinition{
 		AgentDefinition: agent_api.AgentDefinition{
-			Kind: agent_api.AgentKindHosted,
+			Kind:      agent_api.AgentKindHosted,
+			RaiConfig: mapRaiConfig(hostedAgent.Policies),
 		},
-		ContainerProtocolVersions: protocolVersions,
-		CPU:                       cpu,
-		Memory:                    memory,
-		EnvironmentVariables:      envVars,
+		ProtocolVersions:     protocolVersions,
+		CPU:                  cpu,
+		Memory:               memory,
+		EnvironmentVariables: envVars,
+		Image:                imageURL,
 	}
 
-	// Set the image from build configuration or container definition
-	imageHostedDef := agent_api.ImageBasedHostedAgentDefinition{
-		HostedAgentDefinition: hostedDef,
-		Image:                 imageURL,
-	}
-
-	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageHostedDef,
+	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageDef,
 		hostedAgent.AgentEndpoint, hostedAgent.AgentCard)
 }
 
@@ -438,21 +505,66 @@ func createAgentAPIRequest(
 
 	// Map optional agent endpoint and card fields.
 	if agentEndpoint != nil {
-		protocols := make(
-			[]agent_api.AgentProtocol, 0, len(agentEndpoint.Protocols),
-		)
-		for _, p := range agentEndpoint.Protocols {
-			trimmed := strings.TrimSpace(p)
-			if trimmed == "" {
-				return nil, fmt.Errorf(
-					"agentEndpoint contains an empty protocol value",
-				)
+		apiEndpoint := &agent_api.AgentEndpoint{}
+
+		// Map protocols
+		if len(agentEndpoint.Protocols) > 0 {
+			protocols := make(
+				[]agent_api.AgentEndpointProtocol, 0, len(agentEndpoint.Protocols),
+			)
+			for _, p := range agentEndpoint.Protocols {
+				trimmed := strings.TrimSpace(p)
+				if trimmed == "" {
+					return nil, fmt.Errorf(
+						"agentEndpoint contains an empty protocol value",
+					)
+				}
+				protocols = append(protocols, agent_api.AgentEndpointProtocol(trimmed))
 			}
-			protocols = append(protocols, agent_api.AgentProtocol(trimmed))
+			apiEndpoint.Protocols = protocols
 		}
-		request.AgentEndpoint = &agent_api.AgentEndpoint{
-			Protocols: protocols,
+
+		// Map version selector
+		if agentEndpoint.VersionSelector != nil {
+			rules := make(
+				[]agent_api.VersionSelectionRule, 0,
+				len(agentEndpoint.VersionSelector.VersionSelectionRules),
+			)
+			for _, r := range agentEndpoint.VersionSelector.VersionSelectionRules {
+				rules = append(rules, agent_api.VersionSelectionRule{
+					Type:              agent_api.VersionSelectorType(r.Type),
+					AgentVersion:      r.AgentVersion,
+					TrafficPercentage: r.TrafficPercentage,
+				})
+			}
+			apiEndpoint.VersionSelector = &agent_api.VersionSelector{
+				VersionSelectionRules: rules,
+			}
 		}
+
+		// Map authorization schemes
+		if len(agentEndpoint.AuthorizationSchemes) > 0 {
+			schemes := make(
+				[]agent_api.AgentEndpointAuthorizationScheme, 0,
+				len(agentEndpoint.AuthorizationSchemes),
+			)
+			for _, s := range agentEndpoint.AuthorizationSchemes {
+				scheme := agent_api.AgentEndpointAuthorizationScheme{
+					Type: agent_api.AgentEndpointAuthorizationSchemeType(s.Type),
+				}
+				if s.IsolationKeySource != nil {
+					scheme.IsolationKeySource = &agent_api.IsolationKeySource{
+						Kind: agent_api.IsolationKeySourceKind(
+							s.IsolationKeySource.Kind,
+						),
+					}
+				}
+				schemes = append(schemes, scheme)
+			}
+			apiEndpoint.AuthorizationSchemes = schemes
+		}
+
+		request.AgentEndpoint = apiEndpoint
 	}
 
 	if agentCard != nil {

@@ -6,6 +6,7 @@ package internal
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"testing"
 	"time"
@@ -16,7 +17,7 @@ import (
 
 func TestNewInput(t *testing.T) {
 	t.Parallel()
-	in := NewInput()
+	in := NewInput(io.Discard)
 	require.NotNil(t, in)
 	require.NotNil(t, in.cursor)
 	require.Empty(t, in.value)
@@ -229,7 +230,7 @@ func TestReadInput_SetTermModeErrorOnNonTTY(t *testing.T) {
 	os.Stdin = r
 	t.Cleanup(func() { os.Stdin = oldStdin })
 
-	in := NewInput()
+	in := NewInput(io.Discard)
 	done := make(chan error, 1)
 	go func() {
 		done <- in.ReadInput(t.Context(), nil, func(args *KeyPressEventArgs) (bool, error) {
@@ -262,7 +263,7 @@ func TestReadInput_NonNilConfig(t *testing.T) {
 	os.Stdin = r
 	t.Cleanup(func() { os.Stdin = oldStdin })
 
-	in := NewInput()
+	in := NewInput(io.Discard)
 	done := make(chan error, 1)
 	cfg := &InputConfig{InitialValue: "seed", IgnoreHintKeys: true}
 	go func() {
@@ -298,7 +299,7 @@ func TestReadInput_ContextCancellationReturnsErrCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // pre-cancel
 
-	in := NewInput()
+	in := NewInput(io.Discard)
 	done := make(chan error, 1)
 	handlerCalled := make(chan struct{}, 1)
 	go func() {

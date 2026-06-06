@@ -1,0 +1,4 @@
+  (!) Warning: Model "no-model" (SKU: GlobalStandard) not found in eastus2
+  Model not found in AI model catalog. Provisioning will likely fail.
+  Suggestion: Verify the model name, SKU, and version are correct.
+  • https://learn.microsoft.com/azure/ai-services/openai/concepts/models

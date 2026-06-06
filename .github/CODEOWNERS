@@ -5,29 +5,37 @@
 # everything else not listed below -- no need for a separate /cli/ rule.
 
 # ── Default (core team) ──────────────────────────────────────────────────────
-/**                                         @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @jongio
+/**                                         @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter
 
 # ── CLI installer ─────────────────────────────────────────────────────────────
-/cli/installer/                             @jongio @wbreza @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
+/cli/installer/                             @danieljurek @vhvb1989 @tg-msft @RickWinter
 
 # ── CLI extensions (AI) ──────────────────────────────────────────────────────
-/cli/azd/extensions/azure.ai.agents/        @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @trrwilson @therealjohn
-/cli/azd/extensions/azure.ai.finetune/      @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @rabollin @saanikaguptamicrosoft
-/cli/azd/extensions/azure.ai.models/        @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @rabollin @saanikaguptamicrosoft
+/cli/azd/extensions/azure.ai.agents/        @JeffreyCA @glharper @trangevi @trrwilson @therealjohn
+/cli/azd/extensions/azure.ai.connections/   @JeffreyCA @glharper @trangevi @trrwilson @therealjohn
+/cli/azd/extensions/azure.ai.finetune/      @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
+/cli/azd/extensions/azure.ai.foundry/       @JeffreyCA @glharper @trangevi @trrwilson @therealjohn
+/cli/azd/extensions/azure.ai.inspector/     @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @anchenyi @XiaofuHuang
+/cli/azd/extensions/azure.ai.models/        @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
+/cli/azd/extensions/azure.ai.projects/      @JeffreyCA @glharper @trangevi @trrwilson @therealjohn
+/cli/azd/extensions/azure.ai.routines/      @JeffreyCA @glharper @trangevi @trrwilson @therealjohn
+/cli/azd/extensions/azure.ai.skills/        @JeffreyCA @glharper @trangevi @trrwilson @therealjohn
+/cli/azd/extensions/azure.ai.toolboxes/     @JeffreyCA @glharper @trangevi @trrwilson @therealjohn
+/cli/azd/extensions/azure.ai.training/      @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 
 # ── Extensions ────────────────────────────────────────────────────────────────
-/ext/                                       @jongio @wbreza @karolz-ms @vhvb1989 @tg-msft @rajeshkamal5050
-/ext/azuredevops/                           @jongio @wbreza @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
-/ext/devcontainer/                          @jongio @wbreza @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
-/ext/vscode/                                @jongio @wbreza @bwateratmsft @vhvb1989 @tg-msft @rajeshkamal5050 @karolz-ms
+/ext/                                       @vhvb1989 @tg-msft @RickWinter @karolz-ms
+/ext/azuredevops/                           @vhvb1989 @hemarina @tg-msft @RickWinter
+/ext/devcontainer/                          @vhvb1989 @hemarina @tg-msft @RickWinter
+/ext/vscode/                                @vhvb1989 @tg-msft @RickWinter @karolz-ms @bwateratmsft
 
 # ── Infra / CI / Engineering ─────────────────────────────────────────────────
-/.github/                                   @jongio @wbreza @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
-/eng/                                       @jongio @wbreza @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
-/.config/1espt/                             @jongio @wbreza @Azure/azure-sdk-eng
+/.github/                                   @danieljurek @vhvb1989 @tg-msft @RickWinter
+/eng/                                       @danieljurek @vhvb1989 @tg-msft @RickWinter
+/.config/1espt/                             @Azure/azure-sdk-eng
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
-/schemas/                                   @jongio @wbreza @vhvb1989 @tg-msft @rajeshkamal5050
+/schemas/                                   @vhvb1989 @tg-msft @RickWinter
 
 # ── This file (most specific -- must be last for /.github/) ───────────────────
-/.github/CODEOWNERS                         @rajeshkamal5050 @Azure/azure-sdk-eng
+/.github/CODEOWNERS                         @tg-msft @RickWinter @Azure/azure-sdk-eng

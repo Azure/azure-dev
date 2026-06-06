@@ -32,6 +32,7 @@ const (
 	CodeLocationMismatch          = "location_mismatch"
 	CodeTenantMismatch            = "tenant_mismatch"
 	CodeMissingPublishedContainer = "missing_published_container_artifact"
+	CodeMissingCodeZipArtifact    = "missing_code_zip_artifact"
 	CodeModelDeploymentNotFound   = "model_deployment_not_found"
 	CodeConflictingArguments      = "conflicting_arguments"
 	CodeInvalidPositionalArg      = "invalid_positional_arg"
@@ -52,9 +53,16 @@ const (
 	CodeMissingAiProjectId        = "missing_ai_project_id"
 	CodeMissingAzureSubscription  = "missing_azure_subscription_id"
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
+	CodeMissingProjectEndpoint    = "missing_project_endpoint"
 	CodeGitHubDownloadFailed      = "github_download_failed"
 	CodeScaffoldTemplateFailed    = "scaffold_template_failed"
 	CodePromptFailed              = "prompt_failed"
+)
+
+// Error codes for ACR dependency errors.
+const (
+	CodePrivateACRNetworkAccessFailed = "private_acr_network_access_failed"
+	CodeACRPermissionDenied           = "acr_permission_denied"
 )
 
 // Error codes commonly used for auth errors.
@@ -136,6 +144,7 @@ const (
 	CodeCognitiveServicesClientFailed = "cognitiveservices_client_failed"
 	CodeContainerStartFailed          = "container_start_failed"
 	CodeContainerStartTimeout         = "container_start_timeout"
+	CodeAgentCreateFailed             = "agent_create_failed"
 )
 
 // Operation names for [ServiceFromAzure] errors.
@@ -154,4 +163,16 @@ const (
 	OpListSessions          = "list_sessions"
 	OpCreateToolboxVersion  = "create_toolbox_version"
 	OpGetToolbox            = "get_toolbox"
+)
+
+// Error codes for eval and optimize operations.
+const (
+	CodeEvalRunFailed      = "eval_run_failed"
+	CodeEvalRunCancelled   = "eval_run_cancelled"
+	CodeEvalRunTimeout     = "eval_run_timeout"
+	CodeEvalConfigInvalid  = "eval_config_invalid"
+	CodeOptimizeJobFailed  = "optimize_job_failed"
+	CodeOptimizeJobTimeout = "optimize_job_timeout"
+	CodeInvalidTargetAttr  = "invalid_target_attribute"
+	CodeReservedEnvVar     = "reserved_env_var"
 )

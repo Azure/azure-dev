@@ -878,9 +878,9 @@ func TestCreateHostedAgentAPIRequest_FullConfig(t *testing.T) {
 		t.Errorf("Description mismatch")
 	}
 
-	imgDef, ok := req.Definition.(agent_api.ImageBasedHostedAgentDefinition)
+	imgDef, ok := req.Definition.(agent_api.HostedAgentDefinition)
 	if !ok {
-		t.Fatalf("expected ImageBasedHostedAgentDefinition, got %T", req.Definition)
+		t.Fatalf("expected HostedAgentDefinition, got %T", req.Definition)
 	}
 	if imgDef.Kind != agent_api.AgentKindHosted {
 		t.Errorf("Kind = %q", imgDef.Kind)
@@ -899,14 +899,14 @@ func TestCreateHostedAgentAPIRequest_FullConfig(t *testing.T) {
 	}
 
 	// Verify protocol versions
-	if len(imgDef.ContainerProtocolVersions) != 2 {
-		t.Fatalf("expected 2 protocol versions, got %d", len(imgDef.ContainerProtocolVersions))
+	if len(imgDef.ProtocolVersions) != 2 {
+		t.Fatalf("expected 2 protocol versions, got %d", len(imgDef.ProtocolVersions))
 	}
-	if imgDef.ContainerProtocolVersions[0].Protocol != "responses" {
-		t.Errorf("protocol[0] = %q", imgDef.ContainerProtocolVersions[0].Protocol)
+	if imgDef.ProtocolVersions[0].Protocol != "responses" {
+		t.Errorf("protocol[0] = %q", imgDef.ProtocolVersions[0].Protocol)
 	}
-	if imgDef.ContainerProtocolVersions[0].Version != "2.0.0" {
-		t.Errorf("version[0] = %q", imgDef.ContainerProtocolVersions[0].Version)
+	if imgDef.ProtocolVersions[0].Version != "2.0.0" {
+		t.Errorf("version[0] = %q", imgDef.ProtocolVersions[0].Version)
 	}
 }
 
@@ -925,15 +925,15 @@ func TestCreateHostedAgentAPIRequest_DefaultProtocols(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	imgDef := req.Definition.(agent_api.ImageBasedHostedAgentDefinition)
-	if len(imgDef.ContainerProtocolVersions) != 1 {
-		t.Fatalf("expected 1 default protocol, got %d", len(imgDef.ContainerProtocolVersions))
+	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
+	if len(imgDef.ProtocolVersions) != 1 {
+		t.Fatalf("expected 1 default protocol, got %d", len(imgDef.ProtocolVersions))
 	}
-	if imgDef.ContainerProtocolVersions[0].Protocol != agent_api.AgentProtocolResponses {
-		t.Errorf("default protocol = %q", imgDef.ContainerProtocolVersions[0].Protocol)
+	if imgDef.ProtocolVersions[0].Protocol != agent_api.AgentProtocolResponses {
+		t.Errorf("default protocol = %q", imgDef.ProtocolVersions[0].Protocol)
 	}
-	if imgDef.ContainerProtocolVersions[0].Version != "1.0.0" {
-		t.Errorf("default version = %q", imgDef.ContainerProtocolVersions[0].Version)
+	if imgDef.ProtocolVersions[0].Version != "1.0.0" {
+		t.Errorf("default version = %q", imgDef.ProtocolVersions[0].Version)
 	}
 }
 
@@ -952,12 +952,57 @@ func TestCreateHostedAgentAPIRequest_DefaultCPUAndMemory(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	imgDef := req.Definition.(agent_api.ImageBasedHostedAgentDefinition)
+	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
 	if imgDef.CPU != "1" {
 		t.Errorf("default CPU = %q, want %q", imgDef.CPU, "1")
 	}
 	if imgDef.Memory != "2Gi" {
 		t.Errorf("default Memory = %q, want %q", imgDef.Memory, "2Gi")
+	}
+}
+
+func TestCreateHostedAgentAPIRequest_UsesAgentImage(t *testing.T) {
+	t.Parallel()
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "agent-image",
+		},
+		Image: "myregistry.azurecr.io/agent-image:v1",
+	}
+
+	req, err := CreateHostedAgentAPIRequest(agent, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
+	if imgDef.Image != "myregistry.azurecr.io/agent-image:v1" {
+		t.Errorf("Image = %q", imgDef.Image)
+	}
+}
+
+func TestCreateHostedAgentAPIRequest_BuildConfigImageOverridesAgentImage(t *testing.T) {
+	t.Parallel()
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "agent-image",
+		},
+		Image: "myregistry.azurecr.io/prebuilt:v1",
+	}
+
+	req, err := CreateHostedAgentAPIRequest(
+		agent,
+		&AgentBuildConfig{ImageURL: "myregistry.azurecr.io/published:v2"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
+	if imgDef.Image != "myregistry.azurecr.io/published:v2" {
+		t.Errorf("Image = %q", imgDef.Image)
 	}
 }
 
@@ -1015,9 +1060,9 @@ func TestCreateAgentAPIRequestFromDefinition_HostedAgent(t *testing.T) {
 		t.Errorf("Name = %q", req.Name)
 	}
 
-	_, ok := req.Definition.(agent_api.ImageBasedHostedAgentDefinition)
+	_, ok := req.Definition.(agent_api.HostedAgentDefinition)
 	if !ok {
-		t.Fatalf("expected ImageBasedHostedAgentDefinition, got %T", req.Definition)
+		t.Fatalf("expected HostedAgentDefinition, got %T", req.Definition)
 	}
 }
 
@@ -1059,7 +1104,7 @@ func TestCreateAgentAPIRequestFromDefinition_HostedWithBuildOptions(t *testing.T
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	imgDef := req.Definition.(agent_api.ImageBasedHostedAgentDefinition)
+	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
 	if imgDef.Image != "myimg:v2" {
 		t.Errorf("Image = %q", imgDef.Image)
 	}
@@ -1118,13 +1163,13 @@ func TestCreateHostedAgentAPIRequest_WithAgentEndpointAndCard(t *testing.T) {
 		t.Fatalf("AgentEndpoint.Protocols length = %d, want 2",
 			len(request.AgentEndpoint.Protocols))
 	}
-	if request.AgentEndpoint.Protocols[0] != agent_api.AgentProtocolResponses {
+	if request.AgentEndpoint.Protocols[0] != agent_api.AgentEndpointProtocolResponses {
 		t.Errorf("AgentEndpoint.Protocols[0] = %q, want %q",
-			request.AgentEndpoint.Protocols[0], agent_api.AgentProtocolResponses)
+			request.AgentEndpoint.Protocols[0], agent_api.AgentEndpointProtocolResponses)
 	}
-	if request.AgentEndpoint.Protocols[1] != agent_api.AgentProtocolA2A {
+	if request.AgentEndpoint.Protocols[1] != agent_api.AgentEndpointProtocolA2A {
 		t.Errorf("AgentEndpoint.Protocols[1] = %q, want %q",
-			request.AgentEndpoint.Protocols[1], agent_api.AgentProtocolA2A)
+			request.AgentEndpoint.Protocols[1], agent_api.AgentEndpointProtocolA2A)
 	}
 
 	// Verify agent_card is populated
@@ -1303,5 +1348,294 @@ func TestCreateHostedAgentAPIRequest_NoSkillsRejected(
 	}
 	if !strings.Contains(err.Error(), "at least one skill") {
 		t.Errorf("error = %q, want 'at least one skill'", err)
+	}
+}
+
+func TestCreateAgentAPIRequest_CodeDeploy_DotnetRuntime(t *testing.T) {
+	depRes := "remote_build"
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Name: "dotnet-agent",
+			Kind: AgentKindHosted,
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "responses", Version: "1.0.0"},
+		},
+		CodeConfiguration: &CodeConfiguration{
+			Runtime:              "dotnet_9",
+			EntryPoint:           "MyAgent.dll",
+			DependencyResolution: &depRes,
+		},
+	}
+
+	req, err := CreateAgentAPIRequestFromDefinition(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	codeDef, ok := req.Definition.(agent_api.HostedAgentDefinition)
+	if !ok {
+		t.Fatalf("expected CodeBasedHostedAgentDefinition, got %T", req.Definition)
+	}
+
+	// Verify entry_point is ["dotnet", "MyAgent.dll"]
+	wantEntryPoint := []string{"dotnet", "MyAgent.dll"}
+	if len(codeDef.CodeConfiguration.EntryPoint) != 2 ||
+		codeDef.CodeConfiguration.EntryPoint[0] != wantEntryPoint[0] ||
+		codeDef.CodeConfiguration.EntryPoint[1] != wantEntryPoint[1] {
+		t.Errorf("EntryPoint = %v, want %v", codeDef.CodeConfiguration.EntryPoint, wantEntryPoint)
+	}
+
+	// Verify runtime is passed through
+	if codeDef.CodeConfiguration.Runtime != "dotnet_9" {
+		t.Errorf("Runtime = %q, want %q", codeDef.CodeConfiguration.Runtime, "dotnet_9")
+	}
+
+	// Verify dependency resolution
+	if codeDef.CodeConfiguration.DependencyResolution != "remote_build" {
+		t.Errorf("DependencyResolution = %q, want %q", codeDef.CodeConfiguration.DependencyResolution, "remote_build")
+	}
+}
+
+func TestCreateAgentAPIRequest_CodeDeploy_PythonRuntime(t *testing.T) {
+	depRes := "bundled"
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Name: "python-agent",
+			Kind: AgentKindHosted,
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "invocations", Version: "1.0.0"},
+		},
+		CodeConfiguration: &CodeConfiguration{
+			Runtime:              "python_3_12",
+			EntryPoint:           "main.py",
+			DependencyResolution: &depRes,
+		},
+	}
+
+	req, err := CreateAgentAPIRequestFromDefinition(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	codeDef, ok := req.Definition.(agent_api.HostedAgentDefinition)
+	if !ok {
+		t.Fatalf("expected CodeBasedHostedAgentDefinition, got %T", req.Definition)
+	}
+
+	// Verify entry_point is ["python", "main.py"]
+	wantEntryPoint := []string{"python", "main.py"}
+	if len(codeDef.CodeConfiguration.EntryPoint) != 2 ||
+		codeDef.CodeConfiguration.EntryPoint[0] != wantEntryPoint[0] ||
+		codeDef.CodeConfiguration.EntryPoint[1] != wantEntryPoint[1] {
+		t.Errorf("EntryPoint = %v, want %v", codeDef.CodeConfiguration.EntryPoint, wantEntryPoint)
+	}
+
+	if codeDef.CodeConfiguration.Runtime != "python_3_12" {
+		t.Errorf("Runtime = %q, want %q", codeDef.CodeConfiguration.Runtime, "python_3_12")
+	}
+}
+
+func TestCreateHostedAgentAPIRequest_WithVersionSelectorAndAuthSchemes(t *testing.T) {
+	t.Parallel()
+
+	trafficPct := int32(80)
+	hostedAgent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "selector-agent",
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "responses", Version: "1.0.0"},
+		},
+		AgentEndpoint: &AgentEndpoint{
+			Protocols: []string{"responses"},
+			VersionSelector: &VersionSelector{
+				VersionSelectionRules: []VersionSelectionRule{
+					{
+						Type:              "FixedRatio",
+						AgentVersion:      "v1",
+						TrafficPercentage: &trafficPct,
+					},
+					{
+						Type:         "FixedRatio",
+						AgentVersion: "v2",
+					},
+				},
+			},
+			AuthorizationSchemes: []AuthorizationScheme{
+				{
+					Type: "Entra",
+					IsolationKeySource: &IsolationKeySource{
+						Kind: "Entra",
+					},
+				},
+				{
+					Type: "BotService",
+				},
+			},
+		},
+	}
+
+	buildConfig := &AgentBuildConfig{ImageURL: "myregistry.azurecr.io/agent:latest"}
+	request, err := CreateHostedAgentAPIRequest(hostedAgent, buildConfig)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if request.AgentEndpoint == nil {
+		t.Fatal("AgentEndpoint is nil")
+	}
+
+	// Verify version selector
+	if request.AgentEndpoint.VersionSelector == nil {
+		t.Fatal("VersionSelector is nil")
+	}
+	rules := request.AgentEndpoint.VersionSelector.VersionSelectionRules
+	if len(rules) != 2 {
+		t.Fatalf("VersionSelectionRules length = %d, want 2", len(rules))
+	}
+	if rules[0].Type != agent_api.VersionSelectorTypeFixedRatio {
+		t.Errorf("rules[0].Type = %q, want %q", rules[0].Type, agent_api.VersionSelectorTypeFixedRatio)
+	}
+	if rules[0].AgentVersion != "v1" {
+		t.Errorf("rules[0].AgentVersion = %q, want %q", rules[0].AgentVersion, "v1")
+	}
+	if rules[0].TrafficPercentage == nil || *rules[0].TrafficPercentage != 80 {
+		t.Errorf("rules[0].TrafficPercentage = %v, want 80", rules[0].TrafficPercentage)
+	}
+	if rules[1].AgentVersion != "v2" {
+		t.Errorf("rules[1].AgentVersion = %q, want %q", rules[1].AgentVersion, "v2")
+	}
+	if rules[1].TrafficPercentage != nil {
+		t.Errorf("rules[1].TrafficPercentage = %v, want nil", rules[1].TrafficPercentage)
+	}
+
+	// Verify authorization schemes
+	schemes := request.AgentEndpoint.AuthorizationSchemes
+	if len(schemes) != 2 {
+		t.Fatalf("AuthorizationSchemes length = %d, want 2", len(schemes))
+	}
+	if schemes[0].Type != agent_api.AgentEndpointAuthSchemeEntra {
+		t.Errorf("schemes[0].Type = %q, want %q", schemes[0].Type, agent_api.AgentEndpointAuthSchemeEntra)
+	}
+	if schemes[0].IsolationKeySource == nil {
+		t.Fatal("schemes[0].IsolationKeySource is nil")
+	}
+	if schemes[0].IsolationKeySource.Kind != agent_api.IsolationKeySourceKindEntra {
+		t.Errorf("schemes[0].IsolationKeySource.Kind = %q, want %q",
+			schemes[0].IsolationKeySource.Kind, agent_api.IsolationKeySourceKindEntra)
+	}
+	if schemes[1].Type != agent_api.AgentEndpointAuthSchemeBotService {
+		t.Errorf("schemes[1].Type = %q, want %q", schemes[1].Type, agent_api.AgentEndpointAuthSchemeBotService)
+	}
+	if schemes[1].IsolationKeySource != nil {
+		t.Errorf("schemes[1].IsolationKeySource should be nil, got %v", schemes[1].IsolationKeySource)
+	}
+}
+
+func TestCreateHostedAgentAPIRequest_WithRaiConfig(t *testing.T) {
+	t.Parallel()
+	const raiPolicyID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/" +
+		"my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/raiPolicies/Microsoft.DefaultV2"
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "rai-agent",
+		},
+		Policies: []Policy{
+			{Type: PolicyTypeRai, RaiPolicyName: raiPolicyID},
+		},
+	}
+	buildConfig := &AgentBuildConfig{ImageURL: "img:latest"}
+
+	req, err := CreateHostedAgentAPIRequest(agent, buildConfig)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
+	if imgDef.RaiConfig == nil {
+		t.Fatal("expected RaiConfig to be set, got nil")
+	}
+	if imgDef.RaiConfig.RaiPolicyName != raiPolicyID {
+		t.Errorf("RaiPolicyName = %q, want %q", imgDef.RaiConfig.RaiPolicyName, raiPolicyID)
+	}
+}
+
+func TestCreateAgentAPIRequest_CodeDeploy_WithRaiConfig(t *testing.T) {
+	t.Parallel()
+	const raiPolicyID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/" +
+		"my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/raiPolicies/Microsoft.DefaultV2"
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "rai-code-agent",
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "responses", Version: "1.0.0"},
+		},
+		CodeConfiguration: &CodeConfiguration{
+			Runtime:    "python_3_12",
+			EntryPoint: "agent.py",
+		},
+		Policies: []Policy{
+			{Type: PolicyTypeRai, RaiPolicyName: raiPolicyID},
+		},
+	}
+
+	req, err := CreateAgentAPIRequestFromDefinition(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	codeDef := req.Definition.(agent_api.HostedAgentDefinition)
+	if codeDef.RaiConfig == nil {
+		t.Fatal("expected RaiConfig to be set, got nil")
+	}
+	if codeDef.RaiConfig.RaiPolicyName != raiPolicyID {
+		t.Errorf("RaiPolicyName = %q, want %q", codeDef.RaiConfig.RaiPolicyName, raiPolicyID)
+	}
+}
+
+func TestCreateHostedAgentAPIRequest_NoRaiConfig(t *testing.T) {
+	t.Parallel()
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "no-rai-agent",
+		},
+	}
+	buildConfig := &AgentBuildConfig{ImageURL: "img:latest"}
+
+	req, err := CreateHostedAgentAPIRequest(agent, buildConfig)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
+	if imgDef.RaiConfig != nil {
+		t.Errorf("expected RaiConfig to be nil, got %+v", imgDef.RaiConfig)
+	}
+}
+
+func TestMapRaiConfig(t *testing.T) {
+	t.Parallel()
+	if got := mapRaiConfig(nil); got != nil {
+		t.Errorf("mapRaiConfig(nil) = %+v, want nil", got)
+	}
+	if got := mapRaiConfig([]Policy{}); got != nil {
+		t.Errorf("mapRaiConfig(empty policies) = %+v, want nil", got)
+	}
+	if got := mapRaiConfig([]Policy{{Type: PolicyTypeRai}}); got != nil {
+		t.Errorf("mapRaiConfig(empty policy name) = %+v, want nil", got)
+	}
+	if got := mapRaiConfig([]Policy{{Type: "other", RaiPolicyName: "p1"}}); got != nil {
+		t.Errorf("mapRaiConfig(non-rai type) = %+v, want nil", got)
+	}
+	got := mapRaiConfig([]Policy{{Type: PolicyTypeRai, RaiPolicyName: "p1"}})
+	if got == nil || got.RaiPolicyName != "p1" {
+		t.Errorf("mapRaiConfig(p1) = %+v, want RaiPolicyName=p1", got)
 	}
 }

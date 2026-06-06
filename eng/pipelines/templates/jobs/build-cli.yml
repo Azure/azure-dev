@@ -171,6 +171,12 @@ jobs:
         displayName: Publish test results
         condition: succeededOrFailed()
 
+      - template: /eng/pipelines/templates/steps/cleanup-disk-space.yml
+        parameters:
+          Condition: succeededOrFailed()
+          CleanNuGet: true
+          CleanDotNet: true
+
       - task: PowerShell@2
         inputs:
           pwsh: true
@@ -200,8 +206,20 @@ jobs:
         workingDirectory: cli/azd
         displayName: Copy binary to artifact staging directory
 
+      - template: /eng/pipelines/templates/steps/cleanup-disk-space.yml
+        parameters:
+          CleanGoCache: true
+          CleanDocker: true
+          CleanSystemCaches: true
+          Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+
       - template: /eng/pipelines/templates/steps/build-linux-packages.yml
         parameters:
+          Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+
+      - template: /eng/pipelines/templates/steps/cleanup-disk-space.yml
+        parameters:
+          CleanDocker: true
           Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
 
       - pwsh: New-Item -ItemType Directory -Path $(Build.ArtifactStagingDirectory)/shield -Force

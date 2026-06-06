@@ -1,11 +1,39 @@
 # Release History
 
 
+## 0.0.7-preview (Unreleased)
+
+### Features
+
+- Added LoRA adapter support to `create` command with `--lora-rank`, `--lora-alpha`, `--lora-target-modules`, and `--lora-dropout` flags for registering LoRA adapters (`--weight-type LoRA`)
+- `show` command now displays LoRA Configuration section (rank, alpha, target modules, dropout) for LoRA adapters
+- `list` command now shows Weight Type column to distinguish FullWeight and LoRA models
+- `--base-model` is now optional when `--weight-type` is `DraftModel` (still required for `FullWeight` and `LoRA`); `DraftModel` is also now documented in the `--weight-type` help text
+- `--lora-rank` and `--lora-alpha` are now optional for `--weight-type LoRA`; when omitted, the values are read from the uploaded `adapter_config.json` by the Model Registry Service
+
 ## 0.0.6-preview (Unreleased)
+
+### Features
+
+- Added top-level `azd ai models create`, `list`, `show`, `delete` commands as the preferred surface; the `custom` subgroup is now deprecated
+- Added `--weight-type` flag to `create` command (default: `FullWeight`)
+- Added `--source-job-id` filter to `list` command for querying models by training job lineage
+- Added `azd ai models update` command for updating model description and tags (JSON Merge Patch)
+- `show` command now displays weight type, provisioning state, source lineage, and artifact profile when available
+- `--publisher` flag is now optional (previously defaulted to `Fireworks`); only sent when explicitly provided
 
 ### Breaking Changes
 
 - Removed `-e` shorthand for `--project-endpoint`; use `--project-endpoint` instead. This resolves a collision with the azd global `-e/--environment` flag.
+
+### Improvements
+
+- `startPendingUpload` request now sends `pendingUploadType: "TemporaryBlobReference"` for explicit upload type declaration
+- Model response now supports new fields: `weightType`, `baseModel`, `source`, `artifactProfile`, `provisioningState`
+
+### Deprecations
+
+- `azd ai models custom <command>` is deprecated; use `azd ai models <command>` directly instead
 
 ## 0.0.5-preview (2026-03-24)
 

@@ -82,13 +82,13 @@ You can use the custom model commands by providing `--project-endpoint` and `--s
 ### 5.1 List Custom Models
 
 ```bash
-azd ai models custom list --project-endpoint <project_endpoint> -s <subscription_id>
+azd ai models list --project-endpoint <project_endpoint> -s <subscription_id>
 ```
 
 **Example:**
 
 ```bash
-azd ai models custom list --project-endpoint "https://my-account.services.ai.azure.com/api/projects/my-project" -s "8861a79b-1234-5678-abcd-1234567890ab"
+azd ai models list --project-endpoint "https://my-account.services.ai.azure.com/api/projects/my-project" -s "8861a79b-1234-5678-abcd-1234567890ab"
 ```
 
 ![List Custom Models](images/06.1.jpg)
@@ -96,13 +96,13 @@ azd ai models custom list --project-endpoint "https://my-account.services.ai.azu
 ### 5.2 Create a Custom Model
 
 ```bash
-azd ai models custom create --project-endpoint <project_endpoint> -s <subscription_id> --name <model-name> --source <local_path_or_remote_url>
+azd ai models create --project-endpoint <project_endpoint> -s <subscription_id> --name <model-name> --source <local_path_or_remote_url>
 ```
 
 **Example with local source:**
 
 ```bash
-azd ai models custom create --project-endpoint "https://my-account.services.ai.azure.com/api/projects/my-project" -s "8861a79b-1234-5678-abcd-1234567890ab" --name my-model --source "D:\models\my-weights" --base-model "FW-DeepSeek-v3.1"
+azd ai models create --project-endpoint "https://my-account.services.ai.azure.com/api/projects/my-project" -s "8861a79b-1234-5678-abcd-1234567890ab" --name my-model --source "D:\models\my-weights" --base-model "FW-DeepSeek-v3.1"
 ```
 
 **Example with remote source:**
@@ -112,13 +112,13 @@ azd ai models custom create --project-endpoint "https://my-account.services.ai.a
 >
 > **Option A:** Escape each `&` with `^` in cmd.exe:
 > ```cmd
-> azd ai models custom create --name my-model --source "https://account.blob.core.windows.net/container/path?sv=2026-02-06^&sp=rl^&sig=..."
+> azd ai models create --name my-model --source "https://account.blob.core.windows.net/container/path?sv=2026-02-06^&sp=rl^&sig=..."
 > ```
 >
 > **Option B (Recommended):** Save the URL in a file and use `--source-file`:
 > ```bash
 > echo https://account.blob.core.windows.net/container/path?sv=2026-02-06&sp=rl&sig=... > source_url.txt
-> azd ai models custom create --name my-model --source-file source_url.txt
+> azd ai models create --name my-model --source-file source_url.txt
 > ```
 
 ![Create Custom Model](images/06.2.jpg)
@@ -126,19 +126,19 @@ azd ai models custom create --project-endpoint "https://my-account.services.ai.a
 ### 5.3 Show Custom Model Details
 
 ```bash
-azd ai models custom show --project-endpoint <project_endpoint> -s <subscription_id> --name <model-name>
+azd ai models show --project-endpoint <project_endpoint> -s <subscription_id> --name <model-name>
 ```
 
 ### 5.4 Delete a Custom Model
 
 ```bash
-azd ai models custom delete --project-endpoint <project_endpoint> -s <subscription_id> --name <model-name>
+azd ai models delete --project-endpoint <project_endpoint> -s <subscription_id> --name <model-name>
 ```
 
 Use `--force` to skip the confirmation prompt:
 
 ```bash
-azd ai models custom delete --project-endpoint <project_endpoint> -s <subscription_id> --name <model-name> --force
+azd ai models delete --project-endpoint <project_endpoint> -s <subscription_id> --name <model-name> --force
 ```
 
 ---
@@ -164,10 +164,10 @@ The init command will interactively guide you through:
 After init, you can run commands without `--project-endpoint` and `-s`:
 
 ```bash
-azd ai models custom list
-azd ai models custom create --name my-model --source ./model-weights/
-azd ai models custom show --name my-model
-azd ai models custom delete --name my-model
+azd ai models list
+azd ai models create --name my-model --source ./model-weights/
+azd ai models show --name my-model
+azd ai models delete --name my-model
 ```
 
 You can also provide flags during init to skip interactive prompts:
@@ -185,10 +185,10 @@ azd ai models init --project-endpoint "https://my-account.services.ai.azure.com/
 | Command | Description |
 |---------|-------------|
 | `azd ai models init` | Set up project, environment, and Azure context |
-| `azd ai models custom list` | List all custom models |
-| `azd ai models custom create --name <n> --source <path>` | Upload and register a model |
-| `azd ai models custom show --name <n>` | Show model details |
-| `azd ai models custom delete --name <n>` | Delete a model |
+| `azd ai models list` | List all custom models |
+| `azd ai models create --name <n> --source <path>` | Upload and register a model |
+| `azd ai models show --name <n>` | Show model details |
+| `azd ai models delete --name <n>` | Delete a model |
 
 ### Common Flags
 

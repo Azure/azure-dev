@@ -228,7 +228,7 @@ func (cli *Cli) PublishAppHostManifest(
 // BuildContainerLocal runs `dotnet publish` with `/t:PublishContainer` to build a container image locally
 // without pushing to a registry. Returns the port number and image name.
 func (cli *Cli) BuildContainerLocal(
-	ctx context.Context, project, configuration, imageName string,
+	ctx context.Context, project, configuration, imageName, containerEngine string,
 ) (int, string, error) {
 	if !strings.Contains(imageName, ":") {
 		imageName = fmt.Sprintf("%s:latest", imageName)
@@ -258,6 +258,9 @@ func (cli *Cli) BuildContainerLocal(
 		"--getProperty:GeneratedContainerConfiguration",
 	)
 
+	runArgs = appendContainerEngine(runArgs, containerEngine)
+	runArgs = appendArtifactsPath(ctx, runArgs)
+
 	result, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return 0, "", fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
@@ -272,7 +275,7 @@ func (cli *Cli) BuildContainerLocal(
 }
 
 func (cli *Cli) PublishContainer(
-	ctx context.Context, project, configuration, imageName, server, username, password string,
+	ctx context.Context, project, configuration, imageName, server, username, password, containerEngine string,
 ) (int, error) {
 	if !strings.Contains(imageName, ":") {
 		imageName = fmt.Sprintf("%s:latest", imageName)
@@ -302,6 +305,9 @@ func (cli *Cli) PublishContainer(
 		"--getProperty:GeneratedContainerConfiguration",
 	)
 
+	runArgs = appendContainerEngine(runArgs, containerEngine)
+	runArgs = appendArtifactsPath(ctx, runArgs)
+
 	runArgs = runArgs.WithEnv([]string{
 		fmt.Sprintf("DOTNET_CONTAINER_REGISTRY_UNAME=%s", username),
 		fmt.Sprintf("DOTNET_CONTAINER_REGISTRY_PWORD=%s", password),
@@ -321,6 +327,52 @@ func (cli *Cli) PublishContainer(
 	}
 
 	return port, nil
+}
+
+// appendContainerEngine appends -p:ContainerEngine=<engine> to the dotnet publish command
+// when the container engine is not "docker" (the .NET SDK default). This ensures the
+// .NET SDK uses the correct container runtime (e.g., Podman) for building and pushing images.
+func appendContainerEngine(runArgs exec.RunArgs, containerEngine string) exec.RunArgs {
+	if containerEngine != "" && containerEngine != "docker" {
+		runArgs = runArgs.AppendParams(
+			fmt.Sprintf("-p:ContainerEngine=%s", containerEngine),
+		)
+	}
+	return runArgs
+}
+
+// appendArtifactsPath checks the context for a per-service artifacts path
+// (set by [ContextWithArtifactsPath]) and, if present, appends
+// --artifacts-path to the dotnet publish command. This redirects all
+// intermediate build outputs (obj/, bin/) to a service-specific directory,
+// preventing file races when multiple services that share <ProjectReference>
+// dependencies are published in parallel.
+func appendArtifactsPath(ctx context.Context, runArgs exec.RunArgs) exec.RunArgs {
+	if ap := ArtifactsPathFromContext(ctx); ap != "" {
+		runArgs = runArgs.AppendParams("--artifacts-path", ap)
+	}
+	return runArgs
+}
+
+type artifactsPathContextKey struct{}
+
+// ContextWithArtifactsPath returns a new context carrying a per-service
+// artifacts path. When set, dotnet publish commands append
+// `--artifacts-path <path>` to redirect all intermediate build outputs
+// (obj/, bin/) to a service-specific directory, preventing file races when
+// multiple services sharing <ProjectReference> dependencies are published
+// in parallel.
+func ContextWithArtifactsPath(ctx context.Context, path string) context.Context {
+	return context.WithValue(ctx, artifactsPathContextKey{}, path)
+}
+
+// ArtifactsPathFromContext retrieves the per-service artifacts path from
+// the context, or "" if none was set.
+func ArtifactsPathFromContext(ctx context.Context) string {
+	if p, ok := ctx.Value(artifactsPathContextKey{}).(string); ok {
+		return p
+	}
+	return ""
 }
 
 // getTargetPort parses the output of `dotnet publish` with `/t:PublishContainer` to get the port the container exposes.

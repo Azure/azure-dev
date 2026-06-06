@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDetectStartupCommand(t *testing.T) {
@@ -297,5 +300,61 @@ func TestProtocolFromAgentYaml(t *testing.T) {
 				t.Errorf("protocol = %q, want %q", got, tt.wantProto)
 			}
 		})
+	}
+}
+
+func TestSetACREnvVar(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		isCodeDeploy bool
+		wantValue    string
+	}{
+		{
+			name:         "code deploy sets true",
+			isCodeDeploy: true,
+			wantValue:    "true",
+		},
+		{
+			name:         "container deploy sets false",
+			isCodeDeploy: false,
+			wantValue:    "false",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			envServer := &testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{
+					"test-env": {Name: "test-env"},
+				},
+			}
+			workflowServer := &testWorkflowServiceServer{}
+			azdClient := newTestAzdClient(t, envServer, workflowServer)
+
+			err := setACREnvVar(t.Context(), azdClient, "test-env", tt.isCodeDeploy)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantValue, envServer.values["test-env"]["AZD_AGENT_SKIP_ACR"])
+		})
+	}
+}
+
+func TestIsTerminal_NonTTY(t *testing.T) {
+	t.Parallel()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = r.Close()
+		_ = w.Close()
+	})
+
+	if isTerminal(r.Fd()) {
+		t.Errorf("isTerminal(pipe read end) = true, want false")
 	}
 }

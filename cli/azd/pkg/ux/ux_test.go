@@ -97,9 +97,9 @@ func Test_CountLineBreaks(t *testing.T) {
 		{"Mixed Short and Long Lines", "Short\nThis is a very long line that wraps.\nAnother short one", 30, 3},
 
 		// Unicode & special characters
-		{"Emoji Characters", "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥", 10, 0},             // Should be 1 line
-		{"Emoji Line Wrap", "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥", 10, 1},             // Should wrap to 2 lines
-		{"Mixing Emoji and Text", "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥 Hello!", 10, 1}, // Wraps text correctly
+		{"Emoji Characters", "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥", 10, 1},             // 10 emoji × 2 cols = 20 cols, wraps once
+		{"Emoji Line Wrap", "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥", 10, 2},             // 11 emoji × 2 cols = 22 cols, wraps twice
+		{"Mixing Emoji and Text", "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥 Hello!", 10, 2}, // 20 + 7 = 27 cols, wraps twice
 
 		// Trailing newlines shouldn't overcount
 		{"Two Printf calls (simulated)", "line 1\nline 2\n", 100, 2}, // Should be exactly 2 lines
@@ -135,8 +135,8 @@ func Test_VisibleLength(t *testing.T) {
 		{"Long ANSI Sequence", "\x1b[38;5;82mGreen Text\x1b[0m", 10},
 
 		// Unicode & special characters
-		{"Unicode Characters", "🔥🔥🔥", 3},
-		{"Mix of ANSI and Unicode", "\x1b[31m🔥🔥🔥\x1b[0m", 3},
+		{"Unicode Characters", "🔥🔥🔥", 6},
+		{"Mix of ANSI and Unicode", "\x1b[31m🔥🔥🔥\x1b[0m", 6},
 
 		// Edge Cases
 		{"Edge Case: Leading ANSI Code", "\x1b[31mRed\x1b[0mText", 7},
@@ -149,6 +149,66 @@ func Test_VisibleLength(t *testing.T) {
 			result := VisibleLength(tc.input)
 			if result != tc.expected {
 				t.Errorf("expected %d, got %d", tc.expected, result)
+			}
+		})
+	}
+}
+
+func Test_TruncateVisible(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		maxWidth int
+		expected string
+	}{
+		// No truncation needed
+		{"Short plain text", "Hello", 10, "Hello"},
+		{"Exact fit", "Hello", 5, "Hello"},
+		{"Empty string", "", 10, ""},
+
+		// Basic truncation
+		{"Plain text truncated", "Hello World!", 8, "Hello..."},
+		{"Truncated to minimum", "Hello", 3, "..."},
+
+		// Edge cases
+		{"Width 0", "Hello", 0, ""},
+		{"Width 1", "Hello", 1, "."},
+		{"Width 2", "Hello", 2, ".."},
+		{
+			"ANSI not counted in width",
+			"\x1b[31mHello World\x1b[0m",
+			8,
+			"\x1b[31mHello...\x1b[0m",
+		},
+		{
+			"ANSI fits within width",
+			"\x1b[31mHi\x1b[0m",
+			10,
+			"\x1b[31mHi\x1b[0m",
+		},
+		{
+			"Multiple ANSI sequences truncated",
+			"\x1b[1m\x1b[31mBold Red Text\x1b[0m",
+			10,
+			"\x1b[1m\x1b[31mBold Re...\x1b[0m",
+		},
+
+		// Unicode (CJK characters are 2 columns wide)
+		{"Unicode truncated", "日本語テスト", 7, "日本..."},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := TruncateVisible(tc.input, tc.maxWidth)
+			if result != tc.expected {
+				t.Errorf("expected %q, got %q", tc.expected, result)
+			}
+			// Verify the result doesn't exceed maxWidth visible chars
+			if tc.maxWidth > 0 {
+				visLen := VisibleLength(result)
+				if visLen > tc.maxWidth {
+					t.Errorf("visible length %d exceeds maxWidth %d", visLen, tc.maxWidth)
+				}
 			}
 		})
 	}

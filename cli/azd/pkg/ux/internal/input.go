@@ -6,6 +6,7 @@ package internal
 import (
 	"context"
 	"errors"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -37,9 +38,14 @@ type InputConfig struct {
 }
 
 // NewInput creates a new Input instance.
-func NewInput() *Input {
+func NewInput(writers ...io.Writer) *Input {
+	w := io.Writer(os.Stdout)
+	if len(writers) > 0 && writers[0] != nil {
+		w = writers[0]
+	}
+
 	return &Input{
-		cursor: NewCursor(os.Stdout),
+		cursor: NewCursor(w),
 	}
 }
 

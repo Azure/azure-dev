@@ -43,6 +43,12 @@ func NewDefaultConfig() *cupaloy.Config {
 	isCi := os.Getenv("GITHUB_ACTIONS") == "true" ||
 		os.Getenv("TF_BUILD") == "True"
 
+	// On CI, fail the test if a snapshot was regenerated to guard against
+	// drift being silently accepted. UPDATE_SNAPSHOTS=true is an explicit
+	// opt-in (e.g. an automation job intentionally refreshing snapshots), so
+	// honor it on CI as well.
+	explicitUpdate := os.Getenv("UPDATE_SNAPSHOTS") == "true"
+
 	return cupaloy.NewDefaultConfig().
 		// Always use testdata
 		WithOptions(cupaloy.SnapshotSubdirectory("testdata")).
@@ -50,8 +56,9 @@ func NewDefaultConfig() *cupaloy.Config {
 		WithOptions(cupaloy.SnapshotFileExtension(".snap")).
 		// Use go-spew instead of String() and Error() outputs
 		WithOptions(cupaloy.UseStringerMethods(false)).
-		// Fail update on CI, but allow local to succeed
-		WithOptions(cupaloy.FailOnUpdate(isCi))
+		// Fail update on CI unless the caller explicitly asked to refresh
+		// snapshots; allow local runs to succeed.
+		WithOptions(cupaloy.FailOnUpdate(isCi && !explicitUpdate))
 }
 
 // SnapshotT creates a snapshot with the global config, and the current testing.T.

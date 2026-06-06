@@ -1,16 +1,72 @@
 # Release History
 
-## 1.25.0-beta.1 (Unreleased)
+## 1.26.0-beta.1 (Unreleased)
 
 ### Features Added
-
 
 ### Breaking Changes
 
 ### Bugs Fixed
 
+### Other Changes
+
+## 1.25.5 (2026-06-05)
+
+### Bugs Fixed
+
+- [[#8458]](https://github.com/Azure/azure-dev/pull/8458) Fix memory exhaustion and slow model catalog loads when Azure CLI delegated authentication (`auth.useAzCliAuth = true`) fans out concurrent token requests by caching tokens in-process per tenant.
+- [[#8459]](https://github.com/Azure/azure-dev/pull/8459) Fix `azd auth status` reporting unauthenticated in Cloud Shell and blocking `azd provision` and `azd ai agent init` for sessions relying on the ambient Cloud Shell credential.
+- [[#8493]](https://github.com/Azure/azure-dev/pull/8493) Fix `azd down` failing to purge Azure AI Foundry cognitive accounts due to an SDK type mismatch in the `networkInjections` response.
+- [[#8527]](https://github.com/Azure/azure-dev/pull/8527) Fix `dotnet publish` failing with "empty dotnet configuration output" when Podman is the container engine by forwarding the detected engine to the .NET SDK.
+- [[#8537]](https://github.com/Azure/azure-dev/pull/8537) Fix AI model quota preflight blocking all locations on subscriptions where the Azure Cognitive Services `/usages` API returns an empty list (for example, free-tier subscriptions); empty usage lists are now treated as available quota rather than zero quota.
+
+## 1.25.4 (2026-05-29)
+
+### Bugs Fixed
+
+- [[#8487]](https://github.com/Azure/azure-dev/pull/8487) Fix the `azd tool` first-run prompt blocking users who deselect all recommended tools, and clarify its setup wording.
+- [[#8494]](https://github.com/Azure/azure-dev/pull/8494) Fix `azd config set tool.firstRunCompleted false` not re-enabling the `azd tool` first-run prompt; the value is now parsed (accepting true or RFC3339 timestamp) instead of treated as a presence-only marker.
+
+## 1.25.3 (2026-05-28)
+
+### Bugs Fixed
+
+- [[#8316]](https://github.com/Azure/azure-dev/pull/8316) Fix extension pack support gaps: extension manifests can declare `dependencies` without top-level `capabilities`, semver dependency ranges resolve to the highest compatible published version, and install-time dependency cycles fail with a clear error.
+- [[#8402]](https://github.com/Azure/azure-dev/pull/8402) Fix the progress widget printing stale, overlapping output on narrow terminals by truncating each rendered line to the terminal width.
+- [[#8263]](https://github.com/Azure/azure-dev/pull/8263) Fix lifecycle hook output (`preprovision`, `postprovision`, and `predeploy`) being silently suppressed during `azd up`.
 
 ### Other Changes
+
+- [[#8440]](https://github.com/Azure/azure-dev/pull/8440) Promote the `azd tool` command group out of alpha, making it available by default along with its first-run welcome and update-check experiences.
+- [[#8316]](https://github.com/Azure/azure-dev/pull/8316) Improve `azd extension upgrade` dependency handling by reconciling declared dependencies to the latest compatible versions, adding `--no-dependency-upgrades` to opt out, and reporting dependency updates via `dependencyUpgrades` in `--output json`.
+
+## 1.25.2 (2026-05-22)
+
+### Bugs Fixed
+
+- [[#8230]](https://github.com/Azure/azure-dev/pull/8230) Fix `-C`/`--cwd` relative path being applied twice when invoking extensions, causing "no such file or directory" errors.
+- [[#8240]](https://github.com/Azure/azure-dev/pull/8240) Fix false-positive preflight warning for Azure Chaos Studio target resources (`Microsoft.Chaos/targets`) whose names are service-mandated.
+- [[#8249]](https://github.com/Azure/azure-dev/pull/8249) Fix AI agent detection not recognizing Copilot CLI via the `COPILOT_CLI` environment variable. Thanks @tmeschter for the contribution!
+
+## 1.25.1 (2026-05-15)
+
+### Features Added
+
+- [[#7400]](https://github.com/Azure/azure-dev/pull/7400) Add `azd exec` — a cross-platform command and script execution engine that runs programs with full azd environment context (environment variables, Key Vault secret resolution).
+- [[#8047]](https://github.com/Azure/azure-dev/pull/8047) Expose ARM deployment IDs via `AZD_DEPLOYMENT_ID_FILE` environment variable during provision, written in NDJSON format for programmatic consumption.
+- [[#8059]](https://github.com/Azure/azure-dev/pull/8059) Add actionable suggestions and links to preflight warnings with multi-line formatting for better readability.
+- [[#8083]](https://github.com/Azure/azure-dev/pull/8083) Add tenant picker before subscription prompt for multi-tenant users, scoping the subscription list to the selected tenant.
+- [[#8144]](https://github.com/Azure/azure-dev/pull/8144) Upgrade 7 CLI list commands (`azd ext source list`, `azd tool list`, `azd tool check`, `azd template list`, `azd template source list`, `azd copilot consent list`, `azd config options`) to responsive table output with full, compact, and card layouts based on terminal width.
+
+### Bugs Fixed
+
+- [[#8114]](https://github.com/Azure/azure-dev/pull/8114) Fix `azd init` Copilot Preview silently falling back to an older model by upgrading the bundled Copilot SDK to v0.3.0 and CLI to v1.0.36-0.
+- [[#8136]](https://github.com/Azure/azure-dev/pull/8136) Fix `azd provision` crash when infrastructure layers use Terraform or other non-Bicep providers.
+- [[#8195]](https://github.com/Azure/azure-dev/pull/8195) Fix parallel `dotnet publish` race condition in Aspire deploys by isolating build artifacts per service.
+
+### Other Changes
+
+- [[#8148]](https://github.com/Azure/azure-dev/pull/8148) Update bundled Bicep CLI from v0.42.1 to v0.43.8.
 
 
 ## 1.25.0 (2026-05-08)

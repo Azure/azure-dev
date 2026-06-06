@@ -80,21 +80,34 @@ func NormalizeToolKind(kind ToolKind) ToolKind {
 type AuthType string
 
 const (
-	AuthTypeAAD              AuthType = "AAD"
-	AuthTypeApiKey           AuthType = "ApiKey"
-	AuthTypeCustomKeys       AuthType = "CustomKeys"
-	AuthTypeNone             AuthType = "None"
-	AuthTypeOAuth2           AuthType = "OAuth2"
-	AuthTypePAT              AuthType = "PAT"
-	AuthTypeUserEntraToken   AuthType = "UserEntraToken"
-	AuthTypeAgenticIdentity  AuthType = "AgenticIdentity"
-	AuthTypeManagedIdentity  AuthType = "ProjectManagedIdentity"
-	AuthTypeServicePrincipal AuthType = "ServicePrincipal"
-	AuthTypeUsernamePassword AuthType = "UsernamePassword"
-	AuthTypeAccessKey        AuthType = "AccessKey"
-	AuthTypeAccountKey       AuthType = "AccountKey"
-	AuthTypeSAS              AuthType = "SAS"
+	AuthTypeAAD                  AuthType = "AAD"
+	AuthTypeApiKey               AuthType = "ApiKey"
+	AuthTypeCustomKeys           AuthType = "CustomKeys"
+	AuthTypeNone                 AuthType = "None"
+	AuthTypeOAuth2               AuthType = "OAuth2"
+	AuthTypePAT                  AuthType = "PAT"
+	AuthTypeUserEntraToken       AuthType = "UserEntraToken"
+	AuthTypeAgenticIdentity      AuthType = "AgenticIdentity"
+	AuthTypeAgenticIdentityToken AuthType = "AgenticIdentityToken"
+	AuthTypeManagedIdentity      AuthType = "ProjectManagedIdentity"
+	AuthTypeServicePrincipal     AuthType = "ServicePrincipal"
+	AuthTypeUsernamePassword     AuthType = "UsernamePassword"
+	AuthTypeAccessKey            AuthType = "AccessKey"
+	AuthTypeAccountKey           AuthType = "AccountKey"
+	AuthTypeSAS                  AuthType = "SAS"
 )
+
+// NormalizeConnectionAuthType maps auth types accepted in agent.yaml to
+// the management-plane value required for project connection provisioning.
+// Legacy AgenticIdentity values are normalized to AgenticIdentityToken
+// for API compatibility.
+func NormalizeConnectionAuthType(authType AuthType) AuthType {
+	if authType == AuthTypeAgenticIdentity {
+		return AuthTypeAgenticIdentityToken
+	}
+
+	return authType
+}
 
 // CategoryKind represents the category of a connection resource.
 type CategoryKind string
@@ -169,16 +182,53 @@ type ContainerResources struct {
 	Memory string `json:"memory" yaml:"memory"`
 }
 
+// CodeConfiguration represents the code deploy configuration for a hosted agent.
+// When present in a ContainerAgent, it signals code deploy mode (ZIP upload)
+// instead of container/image-based deploy.
+type CodeConfiguration struct {
+	Runtime              string  `json:"runtime" yaml:"runtime"`
+	EntryPoint           string  `json:"entryPoint" yaml:"entry_point"`
+	DependencyResolution *string `json:"dependencyResolution,omitempty" yaml:"dependency_resolution,omitempty"`
+}
+
+// PolicyType identifies the kind of governance policy attached to a hosted agent.
+type PolicyType string
+
+const (
+	// PolicyTypeRai is a Responsible AI (content safety) policy.
+	PolicyTypeRai PolicyType = "rai_policy"
+)
+
+// Policy represents a single safety or governance policy attached to a hosted agent.
+// Type discriminates the policy kind; the remaining fields are interpreted based on Type.
+//
+// For Type "rai_policy", RaiPolicyName is the full ARM resource ID of the RAI policy, for example
+// "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<account>/raiPolicies/<policyName>".
+type Policy struct {
+	Type          PolicyType `json:"type" yaml:"type"`
+	RaiPolicyName string     `json:"raiPolicyName,omitempty" yaml:"rai_policy_name,omitempty"`
+}
+
 // ContainerAgent This represents a container based agent hosted by the provider/publisher.
 // The intent is to represent a container application that the user wants to run
 // in a hosted environment that the provider manages.
+//
+// When Image is set, deploy can use the pre-built container image instead of
+// building from a Dockerfile:
+//   - Interactive mode: the user is prompted whether to use the configured
+//     image or build from a Dockerfile. The default is to build.
+//   - Non-interactive mode (`--no-prompt`): the default selection (build from
+//     Dockerfile) is used automatically.
 type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
+	Image                string                  `json:"image,omitempty" yaml:"image,omitempty"`
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
 	Resources            *ContainerResources     `json:"resources,omitempty" yaml:"resources,omitempty"`
 	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environment_variables,omitempty"`
-	AgentEndpoint        *AgentEndpoint          `json:"agentEndpoint,omitempty" yaml:"agentEndpoint,omitempty"`
-	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agentCard,omitempty"`
+	AgentEndpoint        *AgentEndpoint          `json:"agentEndpoint,omitempty" yaml:"agent_endpoint,omitempty"`
+	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agent_card,omitempty"`
+	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
+	Policies             []Policy                `json:"policies,omitempty" yaml:"policies,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.
@@ -599,9 +649,34 @@ type ProtocolVersionRecord struct {
 	Version  string `json:"version" yaml:"version"`
 }
 
-// AgentEndpoint describes the endpoint protocols an agent supports in agent.yaml.
+// VersionSelectionRule describes how traffic is routed to an agent version in agent.yaml.
+type VersionSelectionRule struct {
+	Type              string `json:"type" yaml:"type"`
+	AgentVersion      string `json:"agentVersion" yaml:"agent_version"`
+	TrafficPercentage *int32 `json:"trafficPercentage,omitempty" yaml:"traffic_percentage,omitempty"`
+}
+
+// VersionSelector determines how traffic is routed to different versions of an agent.
+type VersionSelector struct {
+	VersionSelectionRules []VersionSelectionRule `json:"versionSelectionRules" yaml:"version_selection_rules"`
+}
+
+// IsolationKeySource describes the source from which a per-user isolation key is derived.
+type IsolationKeySource struct {
+	Kind string `json:"kind" yaml:"kind"`
+}
+
+// AuthorizationScheme describes an authorization scheme for the agent endpoint in agent.yaml.
+type AuthorizationScheme struct {
+	Type               string              `json:"type" yaml:"type"`
+	IsolationKeySource *IsolationKeySource `json:"isolationKeySource,omitempty" yaml:"isolation_key_source,omitempty"`
+}
+
+// AgentEndpoint describes the endpoint configuration for an agent in agent.yaml.
 type AgentEndpoint struct {
-	Protocols []string `json:"protocols" yaml:"protocols"`
+	VersionSelector      *VersionSelector      `json:"versionSelector,omitempty" yaml:"version_selector,omitempty"`
+	Protocols            []string              `json:"protocols,omitempty" yaml:"protocols,omitempty"`
+	AuthorizationSchemes []AuthorizationScheme `json:"authorizationSchemes,omitempty" yaml:"authorization_schemes,omitempty"`
 }
 
 // AgentCardSkill describes a single capability that an agent can perform.

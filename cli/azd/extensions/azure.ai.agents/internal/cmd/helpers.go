@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -20,11 +21,13 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/paths"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/google/uuid"
 	"go.yaml.in/yaml/v3"
+	"golang.org/x/term"
 )
 
 const (
@@ -79,6 +82,32 @@ func resolveProjectPath(ctx context.Context, azdClient *azdext.AzdClient) string
 		return ""
 	}
 	return projectResponse.Project.Path
+}
+
+// readmeExistsForProject returns a closure suitable for passing to the
+// nextstep resolvers (e.g. ResolveAfterInit, ResolveAfterRun,
+// ResolveAfterDeploy). Given a service-relative path it checks for a
+// canonical "README.md" file inside the project root and returns true
+// when present. Only the canonical casing is checked to match the
+// rendered guidance ("see <relPath>/README.md").
+//
+// Behavior is nil-safe: if the project path cannot be resolved (e.g.
+// azdClient is nil or the gRPC call fails) the returned closure always
+// reports false, which causes the resolvers to fall back to the bare
+// placeholder payload — never a false-positive README pointer.
+func readmeExistsForProject(ctx context.Context, azdClient *azdext.AzdClient) func(string) bool {
+	projectRoot := resolveProjectPath(ctx, azdClient)
+	return func(relativePath string) bool {
+		if projectRoot == "" {
+			return false
+		}
+		readmePath, err := paths.JoinAllowRoot(projectRoot, relativePath, "README.md")
+		if err != nil {
+			return false
+		}
+		_, err = os.Stat(readmePath)
+		return err == nil
+	}
 }
 
 // loadLocalContext reads the legacy .foundry-agent.json state file.
@@ -149,16 +178,15 @@ func saveContextValue(
 	setContextValueSafe(ctx, azdClient, storeField, agentKey, value)
 }
 
-// resolveLocalAgentKey builds the storage key for local mode from the azd project config.
-// Returns the new structured key format: localhost:<port>/<projectHash>/agents/<name>/versions/latest/local
-func resolveLocalAgentKey(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) string {
-	return resolveLocalAgentKeyWithPort(ctx, azdClient, name, noPrompt, DefaultPort)
-}
-
-// resolveLocalAgentKeyWithPort builds the local storage key with a specific port.
-func resolveLocalAgentKeyWithPort(
-	ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool, port int,
-) string {
+// resolveLocalAgentName resolves the plain agent name used for local mode,
+// without composing any port/project/version disambiguation into it. Use this
+// when you need just a stable, file-system-safe identifier for the agent —
+// for example, when naming the cached OpenAPI spec file shared with the
+// `nextstep.ReadCachedOpenAPISpec` reader.
+//
+// For the structured config-store key (which DOES need port + project hash
+// to avoid cross-project collisions), use `resolveLocalAgentKey` instead.
+func resolveLocalAgentName(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) string {
 	agentName := name
 
 	if azdClient != nil {
@@ -174,6 +202,20 @@ func resolveLocalAgentKeyWithPort(
 		agentName = "local"
 	}
 
+	return agentName
+}
+
+// resolveLocalAgentKey builds the storage key for local mode from the azd project config.
+// Returns the new structured key format: localhost:<port>/<projectHash>/agents/<name>/versions/latest/local
+func resolveLocalAgentKey(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) string {
+	return resolveLocalAgentKeyWithPort(ctx, azdClient, name, noPrompt, DefaultPort)
+}
+
+// resolveLocalAgentKeyWithPort builds the local storage key with a specific port.
+func resolveLocalAgentKeyWithPort(
+	ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool, port int,
+) string {
+	agentName := resolveLocalAgentName(ctx, azdClient, name, noPrompt)
 	projectPath := resolveProjectPath(ctx, azdClient)
 	return buildLocalAgentKey(port, agentName, "", projectPath)
 }
@@ -284,13 +326,15 @@ func printSessionStatus(label, sid string) {
 	if sid != "" {
 		fmt.Printf("%s%s\n", label, sid)
 	} else {
-		fmt.Printf("%s(new — server will assign)\n", label)
+		fmt.Printf("%s(new -- server will assign)\n", label)
 	}
 }
 
 // captureResponseSession reads the x-agent-session-id header from a response
 // and saves it when the caller had no pre-existing session (sid == "").
-// label is the formatted prefix for printing (e.g. "Session:  ").
+// label is the formatted prefix for printing (e.g. "Session:  "). When label
+// is empty the session is persisted silently (used by --output raw mode so
+// stdout stays pristine).
 func captureResponseSession(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -304,15 +348,25 @@ func captureResponseSession(
 	}
 	if newSid := resp.Header.Get("x-agent-session-id"); newSid != "" {
 		saveContextValue(ctx, azdClient, agentKey, newSid, "sessions")
-		fmt.Printf("%s%s (assigned by server)\n", label, newSid)
+		if label != "" {
+			fmt.Printf("%s%s (assigned by server)\n", label, newSid)
+		}
 	}
 }
 
 // fetchOpenAPISpec fetches the OpenAPI spec from a running agent and caches it on disk.
 // baseURL is the root URL (e.g., "http://localhost:8088" or "{endpoint}/agents/{name}/endpoint/protocols").
 // suffix is "local" or "remote", used in the cached filename.
+// apiVersion, when non-empty, is appended as the "?api-version=<v>" query parameter.
+// Local agents do not require this; remote Foundry endpoints reject requests without it.
 // If forceRefresh is false and the file already exists, the fetch is skipped.
-// Failures are non-fatal and silently ignored.
+//
+// Returns the on-disk path to the cached spec on success (whether freshly
+// written or already cached), plus a fresh flag that is true only when this
+// call actually wrote the file. Callers that want to surface the "OpenAPI
+// spec saved to ..." line gate on the fresh flag; callers that just need the
+// path (or want silence) ignore it. Returns ("", false) on any failure;
+// errors are silently swallowed because the spec is best-effort.
 func fetchOpenAPISpec(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -320,11 +374,12 @@ func fetchOpenAPISpec(
 	agentName string,
 	suffix string,
 	bearerToken string,
+	apiVersion string,
 	forceRefresh bool,
-) {
+) (string, bool) {
 	configPath, err := resolveConfigPath(ctx, azdClient)
 	if err != nil {
-		return
+		return "", false
 	}
 	configDir := filepath.Dir(configPath)
 
@@ -337,14 +392,17 @@ func fetchOpenAPISpec(
 
 	if !forceRefresh {
 		if _, err := os.Stat(specFile); err == nil {
-			return // file exists, skip fetch
+			return specFile, false // already cached; surface the path without re-fetching
 		}
 	}
 
 	specURL := baseURL + "/invocations/docs/openapi.json"
+	if apiVersion != "" {
+		specURL += "?api-version=" + url.QueryEscape(apiVersion)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, specURL, nil)
 	if err != nil {
-		return
+		return "", false
 	}
 	if bearerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+bearerToken)
@@ -353,24 +411,24 @@ func fetchOpenAPISpec(
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req) //nolint:gosec // G704: URL constructed from azd environment or localhost
 	if err != nil {
-		return
+		return "", false
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return
+		return "", false
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return
+		return "", false
 	}
 
 	if err := os.WriteFile(specFile, body, 0600); err != nil {
-		return
+		return "", false
 	}
 
-	fmt.Printf("OpenAPI spec saved to %s\n", specFile)
+	return specFile, true
 }
 
 // resolveConversationID resolves a Foundry conversation ID.
@@ -386,6 +444,8 @@ func resolveConversationID(
 	projectEndpoint string,
 	bearerToken string,
 	agentName string,
+	apiVersion string,
+	options *agent_api.SessionRequestOptions,
 	legacyKeys ...string,
 ) (string, error) {
 	if explicit != "" {
@@ -402,7 +462,7 @@ func resolveConversationID(
 	}
 
 	// Create and persist a new conversation for multi-turn memory.
-	newConvID, err := createConversation(ctx, projectEndpoint, agentName, bearerToken)
+	newConvID, err := createConversation(ctx, projectEndpoint, agentName, bearerToken, apiVersion, options)
 	if err != nil {
 		return "", fmt.Errorf("failed to create conversation: %w", err)
 	}
@@ -410,6 +470,28 @@ func resolveConversationID(
 	saveContextValue(ctx, azdClient, agentKey, newConvID, "conversations")
 
 	return newConvID, nil
+}
+
+// setACREnvVar sets the AZD_AGENT_SKIP_ACR environment variable based on whether the
+// deployment is code-based (no container registry needed) or container-based.
+// This env var is consumed by the Bicep template in Azure-Samples/azd-ai-starter-basic
+// (infra/main.bicep) as `param skipAcr bool` to conditionally skip ACR resource creation.
+//
+// Cross-repo dependency: changes to this variable name must be coordinated with
+// the template parameter mapping in main.parameters.json of the starter template.
+func setACREnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string, isCodeDeploy bool) error {
+	value := "false"
+	if isCodeDeploy {
+		value = "true"
+	}
+
+	if err := setEnvValue(ctx, azdClient, envName, "AZD_AGENT_SKIP_ACR", value); err != nil {
+		if isCodeDeploy {
+			return fmt.Errorf("configuring ACR skip for code deploy: %w", err)
+		}
+		return fmt.Errorf("configuring ACR for container deploy: %w", err)
+	}
+	return nil
 }
 
 // detectProjectType detects the project type and suggests a start command.
@@ -632,7 +714,14 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 		return nil, err
 	}
 
-	projectDir := filepath.Join(project.Path, svc.RelativePath)
+	projectDir, err := paths.JoinAllowRoot(project.Path, svc.RelativePath)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid service path for %s: %s", svc.Name, err),
+			"update azure.yaml so the agent service path stays within the project directory",
+		)
+	}
 
 	var startupCmd string
 	if svc.Config != nil {
@@ -717,9 +806,14 @@ func resolveAgentProtocol(
 		)
 	}
 
-	agentYamlPath := filepath.Join(
-		project.Path, svc.RelativePath, "agent.yaml",
-	)
+	agentYamlPath, err := paths.JoinAllowRoot(project.Path, svc.RelativePath, "agent.yaml")
+	if err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid service path for %s: %s", svc.Name, err),
+			"update azure.yaml so the agent service path stays within the project directory",
+		)
+	}
 	return protocolFromAgentYaml(agentYamlPath)
 }
 
@@ -833,4 +927,11 @@ func multiProtocolError(
 			strings.Join(supported, ", "),
 		),
 	)
+}
+
+// isTerminal reports whether fd refers to an interactive terminal.
+// Used to gate human-only output such as the next-step guidance block.
+func isTerminal(fd uintptr) bool {
+	//nolint:gosec // file descriptors fit in int on all supported platforms
+	return term.IsTerminal(int(fd))
 }

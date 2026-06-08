@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -46,7 +47,7 @@ func TestReconcileConfigAgent(t *testing.T) {
 	t.Run("no change when names match", func(t *testing.T) {
 		t.Parallel()
 		agent := &opt_eval.AgentRef{Name: "my-agent"}
-		changed := reconcileConfigAgent(agent, "my-agent", "", "config.yaml")
+		changed := reconcileConfigAgent(io.Discard, agent, "my-agent", "", "config.yaml")
 		assert.False(t, changed)
 		assert.Equal(t, "my-agent", agent.Name)
 	})
@@ -54,7 +55,7 @@ func TestReconcileConfigAgent(t *testing.T) {
 	t.Run("sets name when agent name is empty", func(t *testing.T) {
 		t.Parallel()
 		agent := &opt_eval.AgentRef{}
-		changed := reconcileConfigAgent(agent, "env-agent", "", "config.yaml")
+		changed := reconcileConfigAgent(io.Discard, agent, "env-agent", "", "config.yaml")
 		assert.False(t, changed)
 		assert.Equal(t, "env-agent", agent.Name)
 	})
@@ -62,7 +63,7 @@ func TestReconcileConfigAgent(t *testing.T) {
 	t.Run("overrides when names differ", func(t *testing.T) {
 		t.Parallel()
 		agent := &opt_eval.AgentRef{Name: "config-agent"}
-		changed := reconcileConfigAgent(agent, "env-agent", "", "config.yaml")
+		changed := reconcileConfigAgent(io.Discard, agent, "env-agent", "", "config.yaml")
 		assert.True(t, changed)
 		assert.Equal(t, "env-agent", agent.Name)
 	})
@@ -70,7 +71,7 @@ func TestReconcileConfigAgent(t *testing.T) {
 	t.Run("no change when envName is empty", func(t *testing.T) {
 		t.Parallel()
 		agent := &opt_eval.AgentRef{Name: "my-agent"}
-		changed := reconcileConfigAgent(agent, "", "", "config.yaml")
+		changed := reconcileConfigAgent(io.Discard, agent, "", "", "config.yaml")
 		assert.False(t, changed)
 		assert.Equal(t, "my-agent", agent.Name)
 	})
@@ -78,7 +79,7 @@ func TestReconcileConfigAgent(t *testing.T) {
 	t.Run("clears stale version when env has none", func(t *testing.T) {
 		t.Parallel()
 		agent := &opt_eval.AgentRef{Name: "a", Version: "old-v"}
-		changed := reconcileConfigAgent(agent, "a", "", "config.yaml")
+		changed := reconcileConfigAgent(io.Discard, agent, "a", "", "config.yaml")
 		assert.True(t, changed)
 		assert.Empty(t, agent.Version)
 	})
@@ -86,7 +87,7 @@ func TestReconcileConfigAgent(t *testing.T) {
 	t.Run("env version overrides config version", func(t *testing.T) {
 		t.Parallel()
 		agent := &opt_eval.AgentRef{Name: "a", Version: "old-v"}
-		changed := reconcileConfigAgent(agent, "a", "new-v", "config.yaml")
+		changed := reconcileConfigAgent(io.Discard, agent, "a", "new-v", "config.yaml")
 		assert.True(t, changed)
 		assert.Equal(t, "new-v", agent.Version)
 	})

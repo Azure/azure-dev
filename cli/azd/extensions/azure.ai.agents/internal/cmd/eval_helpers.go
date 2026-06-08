@@ -94,12 +94,13 @@ func relativeDisplay(absPath, projectDir string) string {
 // with the environment-resolved values. Environment takes precedence for both.
 // Version is always resolved from the azd environment (via AGENT_{SVC}_VERSION);
 // stale values in the config are cleared. Returns true if the config was changed.
-func reconcileConfigAgent(agent *opt_eval.AgentRef, envName, envVersion, configSource string) bool {
+// Warnings are written to w (callers pass os.Stderr; tests pass io.Discard).
+func reconcileConfigAgent(w io.Writer, agent *opt_eval.AgentRef, envName, envVersion, configSource string) bool {
 	changed := false
 
 	// --- Name ---
 	if envName != "" && agent.Name != "" && agent.Name != envName {
-		fmt.Printf("  %s agent name in %s (%q) differs from environment (%q) — using environment value\n",
+		fmt.Fprintf(w, "  %s agent name in %s (%q) differs from environment (%q) \u2014 using environment value\n",
 			color.YellowString("warning:"), configSource, agent.Name, envName)
 		agent.Name = envName
 		changed = true
@@ -114,7 +115,7 @@ func reconcileConfigAgent(agent *opt_eval.AgentRef, envName, envVersion, configS
 		agent.Version = envVersion
 		changed = true
 	} else if envVersion == "" && agent.Version != "" {
-		fmt.Printf("  %s ignoring stale agent.version %q in %s — using latest from environment\n",
+		fmt.Fprintf(w, "  %s ignoring stale agent.version %q in %s \u2014 using latest from environment\n",
 			color.YellowString("warning:"), agent.Version, configSource)
 		agent.Version = ""
 		changed = true

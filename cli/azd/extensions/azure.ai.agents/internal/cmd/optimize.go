@@ -228,7 +228,7 @@ func (a *OptimizeAction) resolveConfig(
 		resolved, resolveErr := resolveOptimizeAgent(ctx, a.flags.agent, a.envName, a.noPrompt)
 		if resolveErr == nil {
 			agentProject = resolved.agentProject
-			reconcileConfigAgent(&cfg.Agent, resolved.agentName, resolved.agentVersion, a.flags.configFile)
+			reconcileConfigAgent(os.Stderr, &cfg.Agent, resolved.agentName, resolved.agentVersion, a.flags.configFile)
 		}
 
 		return cfg, a.flags.configFile, agentProject, nil
@@ -272,7 +272,7 @@ func (a *OptimizeAction) resolveConfig(
 	if cfg == nil {
 		cfg = defaultOptimizeConfig(resolved.agentName)
 	} else {
-		reconcileConfigAgent(&cfg.Agent, resolved.agentName, resolved.agentVersion, configSource)
+		reconcileConfigAgent(os.Stderr, &cfg.Agent, resolved.agentName, resolved.agentVersion, configSource)
 	}
 
 	return cfg, configSource, agentProject, nil

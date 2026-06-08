@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,7 +133,7 @@ func TestLoadOptimizeConfig_ReconcileAgent(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "config-agent", cfg.Agent.Name)
 
-		changed := reconcileConfigAgent(&cfg.Agent, "env-agent", "", cfgPath)
+		changed := reconcileConfigAgent(io.Discard, &cfg.Agent, "env-agent", "", cfgPath)
 		assert.True(t, changed, "should report change when names differ")
 		assert.Equal(t, "env-agent", cfg.Agent.Name, "environment name should take precedence")
 	})
@@ -145,7 +146,7 @@ func TestLoadOptimizeConfig_ReconcileAgent(t *testing.T) {
 		cfg, err := LoadOptimizeConfig(cfgPath)
 		require.NoError(t, err)
 
-		changed := reconcileConfigAgent(&cfg.Agent, "same-agent", "", cfgPath)
+		changed := reconcileConfigAgent(io.Discard, &cfg.Agent, "same-agent", "", cfgPath)
 		assert.False(t, changed)
 		assert.Equal(t, "same-agent", cfg.Agent.Name)
 	})
@@ -161,7 +162,7 @@ func TestLoadOptimizeConfig_ReconcileAgent(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, cfg.Agent.Name)
 
-		changed := reconcileConfigAgent(&cfg.Agent, "env-agent", "", cfgPath)
+		changed := reconcileConfigAgent(io.Discard, &cfg.Agent, "env-agent", "", cfgPath)
 		assert.False(t, changed, "filling empty name is not a 'change' (no conflict)")
 		assert.Equal(t, "env-agent", cfg.Agent.Name)
 	})
@@ -174,7 +175,7 @@ func TestLoadOptimizeConfig_ReconcileAgent(t *testing.T) {
 		cfg, err := LoadOptimizeConfig(cfgPath)
 		require.NoError(t, err)
 
-		changed := reconcileConfigAgent(&cfg.Agent, "", "", cfgPath)
+		changed := reconcileConfigAgent(io.Discard, &cfg.Agent, "", "", cfgPath)
 		assert.False(t, changed)
 		assert.Equal(t, "config-agent", cfg.Agent.Name, "original name preserved when env is empty")
 	})

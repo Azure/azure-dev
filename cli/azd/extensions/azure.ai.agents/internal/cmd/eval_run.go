@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -67,7 +68,7 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 
 	// Reconcile agent name/version between environment and eval.yaml.
 	// Environment values take precedence; warn and update the config if they differ.
-	configChanged := reconcileConfigAgent(&evalCfg.Agent, resolved.agentName, resolved.version, flags.config)
+	configChanged := reconcileConfigAgent(os.Stderr, &evalCfg.Agent, resolved.agentName, resolved.version, flags.config)
 	if resolved.agentName == "" {
 		resolved.agentName = evalCfg.Agent.Name
 	}

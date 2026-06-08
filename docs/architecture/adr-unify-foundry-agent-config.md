@@ -130,4 +130,6 @@ It shows a single `host: azure.ai.project` service that owns the project-scoped
 data-plane resources (model deployments, connections, toolboxes) and a
 `host: azure.ai.agent` service that references it via `uses:`, across all three
 deploy sources: code-deploy (`runtime:`), build-from-Dockerfile (`docker:`), and
-existing pre-built image (`image:`).
+existing pre-built image (`image:`). It also includes brownfield variants for an
+existing Foundry project/model via the `resourceId:` field (introduced by the
+Bicep-less RFC [#8065](https://github.com/Azure/azure-dev/issues/8065), Phase 2).

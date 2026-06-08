@@ -1,5 +1,4 @@
 # Scenario: Code-deploy (zip) — new Foundry project.
-# Tracking issue: https://github.com/Azure/azure-dev/issues/7962
 #
 # A `runtime:` block is present, so azd zips the project directory and Foundry
 # schedules it on the appropriate managed base image. Illustrative end-state,

@@ -1,5 +1,4 @@
 # Scenario: Existing pre-built image (e.g. ACR) — new Foundry project.
-# Tracking issue: https://github.com/Azure/azure-dev/issues/7962
 #
 # An `image:` reference is present (no build, no zip). azd skips package/publish
 # and Foundry pulls the already-published image directly. The top-level `image:`

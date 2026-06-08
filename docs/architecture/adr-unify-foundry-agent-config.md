@@ -4,8 +4,6 @@
 
 **Date:** 2026-06-08
 
-**Tracking issue:** [#7962](https://github.com/Azure/azure-dev/issues/7962)
-
 ### Context
 
 The `azure.ai.agents` extension currently models a hosted Foundry agent across

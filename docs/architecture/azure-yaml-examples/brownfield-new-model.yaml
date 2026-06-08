@@ -1,5 +1,4 @@
 # Scenario: Brownfield — existing Foundry project, create a NEW model on it.
-# Tracking issue: https://github.com/Azure/azure-dev/issues/7962
 #
 # NOTE: the `resourceId:` field is introduced by the Bicep-less provisioning RFC
 # (https://github.com/Azure/azure-dev/issues/8065), i.e. Phase 2. `resourceId:`

@@ -1,5 +1,4 @@
 # Scenario: Container build from Dockerfile — new Foundry project.
-# Tracking issue: https://github.com/Azure/azure-dev/issues/7962
 #
 # A `docker:` block is present, so azd builds and pushes the image via the
 # existing docker.path / docker.remoteBuild fields. Illustrative end-state, not

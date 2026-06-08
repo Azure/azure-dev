@@ -283,8 +283,12 @@ func (c *AgentClient) DeleteAgent(ctx context.Context, agentName, apiVersion str
 	}
 
 	var deleteResponse DeleteAgentResponse
-	if err := json.Unmarshal(body, &deleteResponse); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &deleteResponse); err != nil {
+			return nil, fmt.Errorf("failed to parse response: %w", err)
+		}
+	} else {
+		deleteResponse = DeleteAgentResponse{Deleted: true, Name: agentName}
 	}
 
 	return &deleteResponse, nil
@@ -552,8 +556,8 @@ func (c *AgentClient) GetAgentVersion(ctx context.Context, agentName, agentVersi
 }
 
 // DeleteAgentVersion deletes a specific version of an agent
-func (c *AgentClient) DeleteAgentVersion(ctx context.Context, agentName, agentVersion, apiVersion string) (*DeleteAgentVersionResponse, error) {
-	url := fmt.Sprintf("%s/agents/%s/versions/%s?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
+func (c *AgentClient) DeleteAgentVersion(ctx context.Context, agentName, agentVersion, apiVersion string, force bool) (*DeleteAgentVersionResponse, error) {
+	url := fmt.Sprintf("%s/agents/%s/versions/%s?api-version=%s&force=%t", c.endpoint, agentName, agentVersion, apiVersion, force)
 
 	req, err := runtime.NewRequest(ctx, http.MethodDelete, url)
 	if err != nil {
@@ -576,8 +580,12 @@ func (c *AgentClient) DeleteAgentVersion(ctx context.Context, agentName, agentVe
 	}
 
 	var deleteResponse DeleteAgentVersionResponse
-	if err := json.Unmarshal(body, &deleteResponse); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &deleteResponse); err != nil {
+			return nil, fmt.Errorf("failed to parse response: %w", err)
+		}
+	} else {
+		deleteResponse = DeleteAgentVersionResponse{Deleted: true, Name: agentName, Version: agentVersion}
 	}
 
 	return &deleteResponse, nil

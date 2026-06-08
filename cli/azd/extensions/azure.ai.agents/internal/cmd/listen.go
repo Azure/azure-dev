@@ -335,35 +335,41 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 			continue
 		}
 
-		serviceKey := toServiceKey(svc.Name)
-
-		endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: envName,
-			Key:     fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
-		})
-		if err != nil || endpointResp.Value == "" {
-			continue
-		}
-
-		agentKey := buildRemoteAgentKeyFromEndpoint(endpointResp.Value)
-
-		// Remove stored sessions and conversations for this agent.
-		var failed bool
-		if err := deleteContextValue(ctx, azdClient, "sessions", agentKey); err != nil {
-			log.Printf("postdown: failed to clean sessions for %s: %v", agentKey, err)
-			failed = true
-		}
-		if err := deleteContextValue(ctx, azdClient, "conversations", agentKey); err != nil {
-			log.Printf("postdown: failed to clean conversations for %s: %v", agentKey, err)
-			failed = true
-		}
-
-		if !failed {
+		if cleanupAgentSessionState(ctx, azdClient, envName, svc.Name) {
 			fmt.Printf("Cleaned up saved session and conversation for agent %q\n", svc.Name)
 		}
 	}
 
 	return nil
+}
+
+// cleanupAgentSessionState removes saved session and conversation IDs for a
+// single agent service. Returns true if cleanup succeeded, false otherwise.
+// Shared by postdownHandler and delete command.
+func cleanupAgentSessionState(ctx context.Context, azdClient *azdext.AzdClient, envName, serviceName string) bool {
+	serviceKey := toServiceKey(serviceName)
+
+	endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
+	})
+	if err != nil || endpointResp.Value == "" {
+		return false
+	}
+
+	agentKey := buildRemoteAgentKeyFromEndpoint(endpointResp.Value)
+
+	var failed bool
+	if err := deleteContextValue(ctx, azdClient, "sessions", agentKey); err != nil {
+		log.Printf("cleanupAgentSessionState: failed to clean sessions for %s: %v", agentKey, err)
+		failed = true
+	}
+	if err := deleteContextValue(ctx, azdClient, "conversations", agentKey); err != nil {
+		log.Printf("cleanupAgentSessionState: failed to clean conversations for %s: %v", agentKey, err)
+		failed = true
+	}
+
+	return !failed
 }
 
 func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {

@@ -51,6 +51,17 @@ func TestDeleteCommand_OutputFlagAnnotation(t *testing.T) {
 	require.NotNil(t, cmd.Annotations)
 }
 
+func TestDeleteCommand_VersionFlag(t *testing.T) {
+	cmd := newDeleteCommand(nil)
+	flag := cmd.Flags().Lookup("version")
+	if flag == nil {
+		t.Fatal("expected --version flag to be registered")
+	}
+	if flag.DefValue != "" {
+		t.Fatalf("expected --version default empty, got %q", flag.DefValue)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Error classification tests — calls the real classifyDeleteError from delete.go
 // ---------------------------------------------------------------------------

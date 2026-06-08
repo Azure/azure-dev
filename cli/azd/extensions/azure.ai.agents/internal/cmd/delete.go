@@ -21,6 +21,7 @@ import (
 
 type deleteFlags struct {
 	name     string
+	version  string
 	force    bool
 	output   string
 	noPrompt bool
@@ -35,6 +36,8 @@ func newDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Delete a hosted agent.",
 		Long: `Delete a hosted agent and all of its versions.
 
+If --version is specified, only that version is deleted (the agent itself remains).
+
 If the agent has active sessions, deletion will fail unless --force is passed.
 Use --force to terminate active sessions and delete the agent.
 
@@ -44,6 +47,9 @@ The agent name is resolved from the azd environment when omitted.`,
 
   # Delete a specific agent by name
   azd ai agent delete my-agent
+
+  # Delete a specific version only
+  azd ai agent delete my-agent --version 2
 
   # Force-delete even if active sessions exist
   azd ai agent delete my-agent --force`,
@@ -65,6 +71,11 @@ The agent name is resolved from the azd environment when omitted.`,
 	cmd.Flags().BoolVar(
 		&flags.force, "force", false,
 		"Force deletion even if the agent has active sessions",
+	)
+
+	cmd.Flags().StringVar(
+		&flags.version, "version", "",
+		"Delete a specific version only (the agent itself remains)",
 	)
 
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
@@ -95,25 +106,31 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 
 	agentName := info.AgentName
 	if agentName == "" {
-		agentName = a.flags.name
-	}
-	if agentName == "" {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentName,
 			"agent name is required but could not be resolved",
-			"provide the agent name as a positional argument or "+
-				"deploy the agent with 'azd up' first",
+			"ensure the agent has been deployed with 'azd deploy' first, "+
+				"or provide the service name as a positional argument",
 		)
 	}
 
 	// Confirmation prompt (skip in --no-prompt mode)
 	if !a.flags.noPrompt {
-		message := fmt.Sprintf("Delete agent %q and all its versions?", agentName)
-		if a.flags.force {
+		var message string
+		if a.flags.version != "" && a.flags.force {
+			message = fmt.Sprintf(
+				"Force-delete version %q of agent %q? This will terminate active sessions on this version.",
+				a.flags.version, agentName,
+			)
+		} else if a.flags.version != "" {
+			message = fmt.Sprintf("Delete version %q of agent %q?", a.flags.version, agentName)
+		} else if a.flags.force {
 			message = fmt.Sprintf(
 				"Force-delete agent %q? This will terminate all active sessions.",
 				agentName,
 			)
+		} else {
+			message = fmt.Sprintf("Delete agent %q and all its versions?", agentName)
 		}
 		defaultValue := false
 		resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
@@ -145,12 +162,37 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 
 	client := agent_api.NewAgentClient(endpoint, credential)
 
+	// Branch: delete a specific version vs the entire agent
+	if a.flags.version != "" {
+		result, err := client.DeleteAgentVersion(ctx, agentName, a.flags.version, DefaultAgentAPIVersion, a.flags.force)
+		if err != nil {
+			return classifyDeleteError(err, agentName)
+		}
+		switch a.flags.output {
+		case "json":
+			data, jsonErr := json.MarshalIndent(result, "", "  ")
+			if jsonErr != nil {
+				return fmt.Errorf("failed to marshal response: %w", jsonErr)
+			}
+			fmt.Println(string(data))
+		default:
+			fmt.Printf("Version %q of agent %q deleted.\n", a.flags.version, agentName)
+		}
+		return nil
+	}
+
 	result, err := client.DeleteAgent(ctx, agentName, DefaultAgentAPIVersion, a.flags.force)
 	if err != nil {
 		return classifyDeleteError(err, agentName)
 	}
 
-	// Best-effort: clear AGENT_{KEY}_NAME and AGENT_{KEY}_VERSION env vars
+	// Best-effort: clean up saved session and conversation IDs (same as postdown hook).
+	// Must run before cleanupEnvVars since it reads AGENT_{KEY}_ENDPOINT.
+	if envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
+		cleanupAgentSessionState(ctx, azdClient, envResp.Environment.Name, info.ServiceName)
+	}
+
+	// Best-effort: clear AGENT_{KEY}_NAME, AGENT_{KEY}_VERSION, AGENT_{KEY}_ENDPOINT env vars
 	a.cleanupEnvVars(ctx, azdClient, info.ServiceName)
 
 	switch a.flags.output {

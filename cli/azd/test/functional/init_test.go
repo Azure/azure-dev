@@ -259,6 +259,39 @@ func Test_CLI_Init_WithinExistingProject(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// Test_CLI_Init_Idempotent_Environment verifies that re-running `azd init` in a project
+// that already has an environment is idempotent: re-init with the same environment name
+// reuses it without erroring, while a different name in non-interactive mode still fails
+// rather than silently switching the default.
+func Test_CLI_Init_Idempotent_Environment(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	// Create a minimal project with an environment named TESTENV.
+	_, err := cli.RunCommandWithStdIn(ctx, "\n", "init", "--minimal", "-e", "TESTENV")
+	require.NoError(t, err)
+	require.FileExists(t, getTestEnvPath(dir, "TESTENV"))
+
+	// Re-running init with the same environment name must succeed (idempotent reuse)
+	// rather than failing with "environment already initialized". No prompt is expected
+	// for an exact-name match, so no stdin is provided.
+	_, err = cli.RunCommand(ctx, "init", "-e", "TESTENV")
+	require.NoError(t, err)
+	require.FileExists(t, getTestEnvPath(dir, "TESTENV"))
+
+	// Requesting a different environment name in non-interactive mode must still error
+	// instead of silently switching the project's default environment.
+	_, err = cli.RunCommand(ctx, "init", "-e", "OTHERENV", "--no-prompt")
+	require.Error(t, err)
+	require.NoFileExists(t, getTestEnvPath(dir, "OTHERENV"))
+}
+
 func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()

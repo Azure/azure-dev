@@ -804,10 +804,196 @@ func (i *initAction) initializeEnv(
 		return nil, fmt.Errorf("retrieving default environment name: %w", err)
 	}
 
-	if envName != "" {
-		return nil, environment.NewEnvironmentInitError(envName)
+	// Environment manager requires azd context
+	// Azd context isn't available in init so lazy instantiating
+	// it here after the template is hydrated and the context is available
+	envManager, err := i.lazyEnvManager.GetValue()
+	if err != nil {
+		return nil, err
 	}
 
+	env, reused, err := i.resolveInitEnv(ctx, azdCtx, envManager, envName, i.flags.EnvironmentName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Record the resolved environment as the default. This is a no-op when it already
+	// is, and repairs a missing or stale default when reusing/recovering an existing
+	// environment from a previous (possibly partial) initialization.
+	if err := azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
+		return nil, fmt.Errorf("saving default environment: %w", err)
+	}
+
+	if reused {
+		i.console.Message(
+			ctx,
+			fmt.Sprintf("Reusing existing environment %s.", output.WithHighLightFormat(env.Name())),
+		)
+	}
+
+	// When reusing an environment, only fill in values that are absent so changes the
+	// user made between runs aren't clobbered. On a fresh create, apply unconditionally.
+	existingDotenv := env.Dotenv()
+	setEnvValue := func(key, value string) {
+		if reused {
+			if _, ok := existingDotenv[key]; ok {
+				return
+			}
+		}
+		env.DotenvSet(key, value)
+	}
+
+	// Copy template metadata into environment values
+	for key, value := range templateMetadata.Variables {
+		setEnvValue(key, value)
+	}
+
+	for key, value := range templateMetadata.Config {
+		if reused {
+			if _, ok := env.Config.Get(key); ok {
+				continue
+			}
+		}
+		if err := env.Config.Set(key, value); err != nil {
+			return nil, fmt.Errorf("setting environment config: %w", err)
+		}
+	}
+
+	initialValuesFromEnv, err := repository.InitEnvFileValues()
+	if err != nil {
+		return nil, fmt.Errorf("loading initial env file values: %w", err)
+	}
+	for key, value := range initialValuesFromEnv {
+		setEnvValue(key, value)
+	}
+
+	// Apply subscription/location flags. On create these were already set from the
+	// environment spec; on reuse this repairs a partially initialized environment that
+	// is missing them, without clobbering values the user already set.
+	if i.flags.location != "" {
+		setEnvValue(environment.LocationEnvVarName, i.flags.location)
+	}
+	if i.flags.subscription != "" {
+		setEnvValue(environment.SubscriptionIdEnvVarName, i.flags.subscription)
+	}
+
+	if err := envManager.Save(ctx, env); err != nil {
+		return nil, fmt.Errorf("saving environment: %w", err)
+	}
+
+	return env, nil
+}
+
+// resolveInitEnv determines which environment `azd init` should use, returning the
+// environment and whether it was reused (true) versus newly created (false).
+//
+// When a default environment already exists, init is idempotent rather than failing:
+// re-running with the same environment name reuses it, interactive runs without an
+// exact match are asked whether to reuse it or create a new one (defaulting to reuse),
+// and non-interactive runs reuse it unless a different, still-valid environment name was
+// explicitly requested. Orphaned environment folders and stale default configuration
+// left behind by a previous partial init are recovered instead of dead-ending.
+func (i *initAction) resolveInitEnv(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext,
+	envManager environment.Manager,
+	defaultEnvName string,
+	requested string,
+) (*environment.Environment, bool, error) {
+	// No default environment is recorded for the project yet. Reuse an orphaned
+	// environment folder left by a previous partial init when the requested name matches
+	// one, otherwise create a new environment.
+	if defaultEnvName == "" {
+		return i.getOrCreateEnv(ctx, azdCtx, envManager, requested)
+	}
+
+	// The caller explicitly asked for the environment that already exists. Reuse it
+	// without prompting (covers re-running init with the same -e value).
+	if requested != "" && requested == defaultEnvName {
+		return i.getOrCreateEnv(ctx, azdCtx, envManager, defaultEnvName)
+	}
+
+	// A different (or no) environment was requested while a default exists.
+	if i.console.IsNoPromptMode() {
+		// Non-interactive runs can't prompt. Reuse the default unless a different
+		// environment was explicitly requested and the default is actually usable; a
+		// stale default left by a partial init shouldn't block an explicit request.
+		if requested != "" {
+			if _, err := envManager.Get(ctx, defaultEnvName); err == nil {
+				return nil, false, environment.NewEnvironmentInitError(defaultEnvName)
+			}
+
+			return i.getOrCreateEnv(ctx, azdCtx, envManager, requested)
+		}
+
+		return i.getOrCreateEnv(ctx, azdCtx, envManager, defaultEnvName)
+	}
+
+	// Interactive: let the user choose between reusing the existing environment and
+	// creating a new one, defaulting to (and recommending) reuse.
+	reuseOption := fmt.Sprintf("Reuse the existing environment '%s'", defaultEnvName)
+	createOption := "Create a new environment"
+	choice, err := i.console.Select(ctx, input.ConsoleOptions{
+		Message: fmt.Sprintf(
+			"An environment named '%s' already exists for this project. How do you want to proceed?",
+			defaultEnvName,
+		),
+		Options:      []string{reuseOption, createOption},
+		DefaultValue: reuseOption,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+
+	if choice == 0 {
+		return i.getOrCreateEnv(ctx, azdCtx, envManager, defaultEnvName)
+	}
+
+	// Create a new environment. Honor an explicitly requested name when it differs from
+	// the existing default; otherwise prompt for a fresh name.
+	newName := ""
+	if requested != "" && requested != defaultEnvName {
+		newName = requested
+	}
+	return i.getOrCreateEnv(ctx, azdCtx, envManager, newName)
+}
+
+// getOrCreateEnv returns the environment with the given name, reusing it when it already
+// exists (recovering from a previous partial init) and creating it otherwise. The
+// returned bool reports whether an existing environment was reused (true) versus newly
+// created (false). When name is empty a new environment is always created, prompting for
+// (or deriving) a name.
+func (i *initAction) getOrCreateEnv(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext,
+	envManager environment.Manager,
+	name string,
+) (*environment.Environment, bool, error) {
+	if name != "" {
+		env, err := envManager.Get(ctx, name)
+		switch {
+		case err == nil:
+			return env, true, nil
+		case errors.Is(err, environment.ErrNotFound):
+			// Not found: fall through to create. This also recovers a stale default
+			// whose environment folder is missing.
+		default:
+			return nil, false, fmt.Errorf("loading existing environment '%s': %w", name, err)
+		}
+	}
+
+	env, err := i.createInitEnv(ctx, azdCtx, envManager, name)
+	return env, false, err
+}
+
+// createInitEnv creates a new environment for init. When name is empty the user is
+// prompted for one, using suggestions derived from the project directory name.
+func (i *initAction) createInitEnv(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext,
+	envManager environment.Manager,
+	name string,
+) (*environment.Environment, error) {
 	base := filepath.Base(azdCtx.ProjectDirectory())
 	examples := []string{}
 	for _, c := range []string{"dev", "test", "prod"} {
@@ -819,16 +1005,8 @@ func (i *initAction) initializeEnv(
 		examples = append(examples, suggest)
 	}
 
-	// Environment manager requires azd context
-	// Azd context isn't available in init so lazy instantiating
-	// it here after the template is hydrated and the context is available
-	envManager, err := i.lazyEnvManager.GetValue()
-	if err != nil {
-		return nil, err
-	}
-
 	envSpec := environment.Spec{
-		Name:         i.flags.EnvironmentName,
+		Name:         name,
 		Subscription: i.flags.subscription,
 		Location:     i.flags.location,
 		Examples:     examples,
@@ -837,33 +1015,6 @@ func (i *initAction) initializeEnv(
 	env, err := envManager.Create(ctx, envSpec)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
-	if err := azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
-		return nil, fmt.Errorf("saving default environment: %w", err)
-	}
-
-	// Copy template metadata into environment values
-	for key, value := range templateMetadata.Variables {
-		env.DotenvSet(key, value)
-	}
-
-	for key, value := range templateMetadata.Config {
-		if err := env.Config.Set(key, value); err != nil {
-			return nil, fmt.Errorf("setting environment config: %w", err)
-		}
-	}
-
-	initialValuesFromEnv, err := repository.InitEnvFileValues()
-	if err != nil {
-		return nil, fmt.Errorf("loading initial env file values: %w", err)
-	}
-	for key, value := range initialValuesFromEnv {
-		env.DotenvSet(key, value)
-	}
-
-	if err := envManager.Save(ctx, env); err != nil {
-		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
 	return env, nil

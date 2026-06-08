@@ -122,14 +122,21 @@ questions (raised in the issue's framework review) must be answered before the
 
 ### Proposed `azure.yaml` shape
 
-The proposed end-state of `azure.yaml` after this change is captured as a
-standalone, illustrative example alongside this ADR:
-[`azure-yaml-agent-example.yaml`](./azure-yaml-agent-example.yaml).
+The proposed end-state of `azure.yaml` is captured as standalone, illustrative
+examples alongside this ADR, one self-contained file per scenario, under
+[`azure-yaml-examples/`](./azure-yaml-examples/):
 
-It shows a single `host: azure.ai.project` service that owns the project-scoped
-data-plane resources (model deployments, connections, toolboxes) and a
-`host: azure.ai.agent` service that references it via `uses:`, across all three
-deploy sources: code-deploy (`runtime:`), build-from-Dockerfile (`docker:`), and
-existing pre-built image (`image:`). It also includes brownfield variants for an
-existing Foundry project/model via the `resourceId:` field (introduced by the
-Bicep-less RFC [#8065](https://github.com/Azure/azure-dev/issues/8065), Phase 2).
+| Scenario | File | Deploy source |
+|---|---|---|
+| New project, zip/code-deploy | [`code-deploy.yaml`](./azure-yaml-examples/code-deploy.yaml) | `runtime:` |
+| New project, build from Dockerfile | [`container-build.yaml`](./azure-yaml-examples/container-build.yaml) | `docker:` |
+| New project, existing pre-built image (ACR) | [`existing-image.yaml`](./azure-yaml-examples/existing-image.yaml) | `image:` |
+| Existing project, reuse existing model | [`brownfield-existing-model.yaml`](./azure-yaml-examples/brownfield-existing-model.yaml) | `runtime:` |
+| Existing project, create new model | [`brownfield-new-model.yaml`](./azure-yaml-examples/brownfield-new-model.yaml) | `runtime:` |
+
+Each file pairs a single `host: azure.ai.project` service (project-scoped
+data-plane resources — model deployments, connections, toolboxes) with a
+`host: azure.ai.agent` service that references it via `uses:`. The three deploy
+sources (`runtime:` / `docker:` / `image:`) are mutually exclusive; exactly one
+is required. The brownfield files use the `resourceId:` field introduced by the
+Bicep-less RFC [#8065](https://github.com/Azure/azure-dev/issues/8065) (Phase 2).

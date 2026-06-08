@@ -1,0 +1,49 @@
+# Scenario: Container build from Dockerfile — new Foundry project.
+# Tracking issue: https://github.com/Azure/azure-dev/issues/7962
+#
+# A `docker:` block is present, so azd builds and pushes the image via the
+# existing docker.path / docker.remoteBuild fields. Illustrative end-state, not
+# a runnable template.
+
+name: my-foundry-agents
+
+services:
+  foundry-project:
+    host: azure.ai.project
+    config:
+      deployments:
+        - name: gpt-4.1-mini
+          model:
+            format: OpenAI
+            name: gpt-4.1-mini
+            version: "2025-04-14"
+          sku:
+            name: GlobalBatch
+            capacity: 10
+      toolboxes:
+        agent-toolbox:
+          tools:
+            - { type: web_search }
+            - { type: code_interpreter }
+
+  my-agent:
+    project: src/my-agent
+    host: azure.ai.agent
+    uses: [foundry-project]
+    # Deploy source: docker present -> build the image from a Dockerfile.
+    docker:
+      path: Dockerfile
+      remoteBuild: true
+    config:
+      kind: hosted
+      description: A basic agent hosted by Foundry.
+      protocols:
+        - { protocol: responses, version: 1.0.0 }
+      container:
+        resources: { cpu: "0.25", memory: 0.5Gi }
+      env:
+        AZURE_AI_MODEL_DEPLOYMENT_NAME: gpt-4.1-mini
+
+# No infra: block needed by default. azd provision uses built-in Bicep templates
+# internally (like azd compose). Opt in to Bicep on disk via `azd infra gen` or
+# equivalent (separate RFC: https://github.com/Azure/azure-dev/issues/8065).

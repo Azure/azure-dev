@@ -1,0 +1,22 @@
+name: ext-{{.SanitizedId}}-ci
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/{{.Metadata.Id}}/**"
+      - ".github/workflows/lint-ext-{{.SanitizedId}}.yml"
+    branches: [main]
+
+concurrency:
+  group: ${{"{{"}} github.workflow {{"}}"}}-${{"{{"}} github.event.pull_request.number {{"}}"}}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint-go.yml
+    with:
+      working-directory: cli/azd/extensions/{{.Metadata.Id}}

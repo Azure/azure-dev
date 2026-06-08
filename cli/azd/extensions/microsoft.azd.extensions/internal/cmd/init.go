@@ -57,177 +57,7 @@ const (
 	maxExtensionTagLength = 64
 )
 
-const internalCiBuildTemplate = `param(
-    [string] $Version = (Get-Content "$PSScriptRoot/version.txt"),
-    [string] $SourceVersion = (git rev-parse HEAD),
-    [switch] $CodeCoverageEnabled,
-    [switch] $BuildRecordMode,
-    [string] $MSYS2Shell, # path to msys2_shell.cmd
-    [string] $OutputFileName
-)
-
-$PSNativeCommandArgumentPassing = 'Legacy'
-
-go clean
-if ($LASTEXITCODE) {
-    Write-Host "Error running go clean"
-    exit $LASTEXITCODE
-}
-
-$buildFlags = @(
-    "-trimpath",
-    "-buildmode=pie"
-)
-
-if ($CodeCoverageEnabled) {
-    $buildFlags += "-cover"
-}
-
-$buildFlags += @(
-    "-tags=cfi,cfg,osusergo",
-    "-ldflags=-s -w -X {{.Metadata.Id}}/internal/cmd.Version=$Version -X {{.Metadata.Id}}/internal/cmd.Commit=$SourceVersion -X {{.Metadata.Id}}/internal/cmd.BuildDate=$(Get-Date -Format o) ",
-    "-o=$OutputFileName"
-)
-
-function PrintFlags() {
-    foreach ($buildFlag in $buildFlags) {
-        Write-Host "  $buildFlag"
-    }
-}
-
-$oldGOEXPERIMENT = $env:GOEXPERIMENT
-$env:GOEXPERIMENT = "loopvar"
-
-try {
-    Write-Host "Running: go build"
-    PrintFlags
-    go build @buildFlags
-    if ($LASTEXITCODE) {
-        Write-Host "Error running go build"
-        exit $LASTEXITCODE
-    }
-
-    if ($BuildRecordMode) {
-        $buildFlags += "-tags=record"
-        $recordOutput = "-o=$OutputFileName-record"
-        if ($IsWindows) { $recordOutput += ".exe" }
-        $buildFlags += $recordOutput
-
-        Write-Host "Running: go build (record)"
-        PrintFlags
-        go build @buildFlags
-        if ($LASTEXITCODE) {
-            Write-Host "Error running go build (record)"
-            exit $LASTEXITCODE
-        }
-    }
-
-    Write-Host "go build succeeded"
-}
-finally {
-    $env:GOEXPERIMENT = $oldGOEXPERIMENT
-}
-`
-
-const internalCiTestTemplate = `$gopath = go env GOPATH
-$gotestsumBinary = "gotestsum"
-if ($IsWindows) {
-    $gotestsumBinary += ".exe"
-}
-$gotestsum = Join-Path $gopath "bin" $gotestsumBinary
-
-Write-Host "Running unit tests..."
-
-if (Test-Path $gotestsum) {
-    & $gotestsum --format testname -- ./... -count=1
-} else {
-    Write-Host "gotestsum not found, using go test..." -ForegroundColor Yellow
-    go test ./... -v -count=1
-}
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Host ""
-    Write-Host "Tests failed with exit code: $LASTEXITCODE" -ForegroundColor Red
-    exit $LASTEXITCODE
-}
-
-Write-Host ""
-Write-Host "All tests passed!" -ForegroundColor Green
-exit 0
-`
-
-const internalVersionTemplate = `{{.Metadata.Version}}
-`
-
-const internalCspellTemplate = `import: ../../.vscode/cspell.yaml
-words: []
-`
-
-const internalLintWorkflowTemplate = `name: ext-{{.SanitizedId}}-ci
-
-on:
-  pull_request:
-    paths:
-      - "cli/azd/extensions/{{.Metadata.Id}}/**"
-      - ".github/workflows/lint-ext-{{.SanitizedId}}.yml"
-    branches: [main]
-
-concurrency:
-  group: ${{"{{"}} github.workflow {{"}}"}}-${{"{{"}} github.event.pull_request.number {{"}}"}}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
-  pull-requests: write
-
-jobs:
-  lint:
-    uses: ./.github/workflows/lint-go.yml
-    with:
-      working-directory: cli/azd/extensions/{{.Metadata.Id}}
-`
-
-const internalReleasePipelineTemplate = `# Continuous deployment trigger
-trigger:
-  branches:
-    include:
-      - main
-  paths:
-    include:
-      - go.mod
-      - cli/azd/extensions/{{.Metadata.Id}}
-      - eng/pipelines/release-azd-extension.yml
-      - /eng/pipelines/templates/jobs/build-azd-extension.yml
-      - /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
-      - /eng/pipelines/templates/variables/image.yml
-
-pr:
-  paths:
-    include:
-      - cli/azd/extensions/{{.Metadata.Id}}
-      - eng/pipelines/release-ext-{{.SanitizedId}}.yml
-      - eng/pipelines/release-azd-extension.yml
-      - eng/pipelines/templates/steps/publish-cli.yml
-    exclude:
-      - cli/azd/docs/**
-
-parameters:
-  - name: PublishToDevRegistry
-    displayName: Publish to dev registry
-    type: boolean
-    default: false
-
-extends:
-  template: /eng/pipelines/templates/stages/1es-redirect.yml
-  parameters:
-    stages:
-      - template: /eng/pipelines/templates/stages/release-azd-extension.yml
-        parameters:
-          AzdExtensionId: {{.Metadata.Id}}
-          SanitizedExtensionId: {{.SanitizedId}}
-          AzdExtensionDirectory: cli/azd/extensions/{{.Metadata.Id}}
-          PublishToDevRegistry: ${{"{{"}} parameters.PublishToDevRegistry {{"}}"}}
-`
+const internalScaffoldResourceBase = "internal/go"
 
 var extensionNamespacePattern = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$`)
 
@@ -1165,16 +995,40 @@ func createInternalExtensionScaffold(
 	}
 
 	files := map[string]string{
-		filepath.Join("cli", "azd", "extensions", extensionMetadata.Id, "ci-build.ps1"):    internalCiBuildTemplate,
-		filepath.Join("cli", "azd", "extensions", extensionMetadata.Id, "ci-test.ps1"):     internalCiTestTemplate,
-		filepath.Join("cli", "azd", "extensions", extensionMetadata.Id, "version.txt"):     internalVersionTemplate,
-		filepath.Join("cli", "azd", "extensions", extensionMetadata.Id, "cspell.yaml"):     internalCspellTemplate,
-		filepath.Join(".github", "workflows", fmt.Sprintf("lint-ext-%s.yml", sanitizedId)): internalLintWorkflowTemplate,
-		filepath.Join("eng", "pipelines", fmt.Sprintf("release-ext-%s.yml", sanitizedId)):  internalReleasePipelineTemplate,
+		filepath.Join("cli", "azd", "extensions", extensionMetadata.Id, "ci-build.ps1"): path.Join(
+			internalScaffoldResourceBase,
+			"extension",
+			"ci-build.ps1.tmpl",
+		),
+		filepath.Join("cli", "azd", "extensions", extensionMetadata.Id, "ci-test.ps1"): path.Join(
+			internalScaffoldResourceBase,
+			"extension",
+			"ci-test.ps1",
+		),
+		filepath.Join("cli", "azd", "extensions", extensionMetadata.Id, "version.txt"): path.Join(
+			internalScaffoldResourceBase,
+			"extension",
+			"version.txt.tmpl",
+		),
+		filepath.Join("cli", "azd", "extensions", extensionMetadata.Id, "cspell.yaml"): path.Join(
+			internalScaffoldResourceBase,
+			"extension",
+			"cspell.yaml",
+		),
+		filepath.Join(".github", "workflows", fmt.Sprintf("lint-ext-%s.yml", sanitizedId)): path.Join(
+			internalScaffoldResourceBase,
+			"workflows",
+			"lint-ext.yml.tmpl",
+		),
+		filepath.Join("eng", "pipelines", fmt.Sprintf("release-ext-%s.yml", sanitizedId)): path.Join(
+			internalScaffoldResourceBase,
+			"pipelines",
+			"release-ext.yml.tmpl",
+		),
 	}
 
-	for relPath, tmpl := range files {
-		if err := executeTemplateToFile(filepath.Join(repoRoot, relPath), tmpl, templateData); err != nil {
+	for relPath, templatePath := range files {
+		if err := executeTemplateFileToFile(resources.Internal, templatePath, filepath.Join(repoRoot, relPath), templateData); err != nil {
 			return err
 		}
 	}
@@ -1184,6 +1038,15 @@ func createInternalExtensionScaffold(
 		fmt.Sprintf("/cli/azd/extensions/%s/", extensionMetadata.Id),
 		codeowners,
 	)
+}
+
+func executeTemplateFileToFile(srcFS fs.FS, templatePath, filePath string, data any) error {
+	templateBytes, err := fs.ReadFile(srcFS, templatePath)
+	if err != nil {
+		return fmt.Errorf("failed to read template %s: %w", templatePath, err)
+	}
+
+	return executeTemplateToFile(filePath, string(templateBytes), data)
 }
 
 func executeTemplateToFile(filePath, tmplText string, data any) error {

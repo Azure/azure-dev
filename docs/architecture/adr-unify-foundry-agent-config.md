@@ -57,17 +57,27 @@ scope across two host kinds.
    primitive on `ServiceConfig` — it orders deploys and injects the
    dependency's outputs as env vars. **No `dependsOn`, no core schema change.**
 4. **Container mode reuses the existing `docker:` block** (`docker.path`,
-   `docker.remoteBuild`). No new top-level `dockerfile` field — that would
+   `docker.remoteBuild`) to build the image from a Dockerfile. An
+   already-published image is referenced via the existing top-level `image:`
+   field on `ServiceConfig` (e.g. `myregistry.azurecr.io/my-agent:v1`) — no
+   build, no new field. No new top-level `dockerfile` field — that would
    conflict with the existing `DockerProjectOptions` on `ServiceConfig`.
 5. **Code-deploy mode uses a typed `runtime: { stack, version }` block**,
    following the existing azure.yaml runtime precedent — not a bare string.
-6. **Deploy mode is explicit.** `docker:` present → container mode; `runtime:`
-   present → code-deploy mode; neither → validation error; both → validation
-   error. No silent defaults.
-7. **`${VAR}` env-var expansion** uses the same syntax `azure.yaml` already
+6. **Deploy source is explicit and exactly one of three.** `image:` present →
+   use the existing pre-built image; `docker:` present → build the image from a
+   Dockerfile; `runtime:` present → zip the project for code-deploy. Zero or
+   more than one present → validation error. No silent defaults.
+7. **`container.resources` (`cpu`/`memory`) applies to every deploy mode**, not
+   just container mode. The Foundry create-agent API carries `cpu` and `memory`
+   for both code-deploy and container/image agents; when omitted the extension
+   applies defaults (today `cpu: "1"`, `memory: "2Gi"`). So `container.resources`
+   stays in the agent `config:` regardless of whether `image:`, `docker:`, or
+   `runtime:` is used.
+8. **`${VAR}` env-var expansion** uses the same syntax `azure.yaml` already
    supports. The extension performs the expansion inside `config:` blocks
-   (the core framework does not expand `config:` — see Consequences).
-8. **`init` populates `config:`** the way it currently populates `agent.yaml`,
+   (the core framework does not expand `config:`).
+9. **`init` populates `config:`** the way it currently populates `agent.yaml`,
    and stops emitting `agent.yaml` / `agent.manifest.yaml`. A deprecation window
    keeps reading the old files (with a warning + telemetry) before removal.
 
@@ -118,5 +128,6 @@ standalone, illustrative example alongside this ADR:
 
 It shows a single `host: azure.ai.project` service that owns the project-scoped
 data-plane resources (model deployments, connections, toolboxes) and a
-`host: azure.ai.agent` service that references it via `uses:`, in both
-code-deploy (`runtime:`) and container (`docker:`) modes.
+`host: azure.ai.agent` service that references it via `uses:`, across all three
+deploy sources: code-deploy (`runtime:`), build-from-Dockerfile (`docker:`), and
+existing pre-built image (`image:`).

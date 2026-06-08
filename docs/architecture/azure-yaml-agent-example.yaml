@@ -54,6 +54,12 @@ services:
       description: A basic agent hosted by Foundry.
       protocols:
         - { protocol: responses, version: 1.0.0 }
+      # container.resources (cpu/memory) applies to ALL deploy modes, including
+      # code-deploy — the Foundry create-agent API carries cpu/memory for both
+      # code and container agents. Defaults apply when omitted (cpu: "1",
+      # memory: "2Gi").
+      container:
+        resources: { cpu: "0.5", memory: 1Gi }
       env:
         AZURE_AI_MODEL_DEPLOYMENT_NAME: gpt-4.1-mini
       startupCommand: python main.py
@@ -66,8 +72,9 @@ services:
   # ---------------------------------------------------------------------------
 
   # ---------------------------------------------------------------------------
-  # Container-mode variant: replace the `runtime:` block with a `docker:` block.
-  # `docker:` and `runtime:` are mutually exclusive; exactly one is required.
+  # Container mode variant (build from Dockerfile): replace the `runtime:` block
+  # with a `docker:` block. `image:` / `docker:` / `runtime:` are mutually
+  # exclusive; exactly one is required.
   # ---------------------------------------------------------------------------
   #
   #   my-agent:
@@ -75,6 +82,25 @@ services:
   #     host: azure.ai.agent
   #     uses: [foundry-project]
   #     docker: { path: Dockerfile, remoteBuild: true }
+  #     config:
+  #       kind: hosted
+  #       protocols:
+  #         - { protocol: responses, version: 1.0.0 }
+  #       container:
+  #         resources: { cpu: "0.25", memory: 0.5Gi }
+  #       env:
+  #         AZURE_AI_MODEL_DEPLOYMENT_NAME: gpt-4.1-mini
+
+  # ---------------------------------------------------------------------------
+  # Existing image variant (no build, no zip): point `image:` at an
+  # already-published container image (e.g. in ACR). azd skips package/publish
+  # and Foundry pulls the image directly.
+  # ---------------------------------------------------------------------------
+  #
+  #   my-agent:
+  #     host: azure.ai.agent
+  #     uses: [foundry-project]
+  #     image: myregistry.azurecr.io/my-agent:v1
   #     config:
   #       kind: hosted
   #       protocols:

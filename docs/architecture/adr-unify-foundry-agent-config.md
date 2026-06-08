@@ -1,4 +1,4 @@
-# ADR-001: Unify Foundry agent configuration in `azure.yaml`
+# ADR: Unify Foundry agent configuration in `azure.yaml`
 
 **Status:** Proposed
 
@@ -114,7 +114,7 @@ questions (raised in the issue's framework review) must be answered before the
 
 The proposed end-state of `azure.yaml` after this change is captured as a
 standalone, illustrative example alongside this ADR:
-[`adr-001-azure-yaml-example.yaml`](./adr-001-azure-yaml-example.yaml).
+[`azure-yaml-agent-example.yaml`](./azure-yaml-agent-example.yaml).
 
 It shows a single `host: azure.ai.project` service that owns the project-scoped
 data-plane resources (model deployments, connections, toolboxes) and a

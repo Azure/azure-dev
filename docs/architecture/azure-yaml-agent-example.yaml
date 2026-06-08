@@ -1,4 +1,4 @@
-# Proposed azure.yaml shape for ADR-001 — Unify Foundry agent configuration.
+# Proposed azure.yaml shape — Unify Foundry agent configuration.
 # Tracking issue: https://github.com/Azure/azure-dev/issues/7962
 #
 # Illustrative end-state, not a runnable template. It shows the two host kinds

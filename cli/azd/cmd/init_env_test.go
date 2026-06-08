@@ -5,6 +5,9 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -228,6 +231,48 @@ func TestInitializeEnv(t *testing.T) {
 		defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
 		require.NoError(t, err)
 		require.Equal(t, "real-dev", defaultEnv)
+	})
+
+	t.Run("NonInteractiveInvalidRequestedNameErrors", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.Console.SetNoPromptMode(true)
+		flags := &initFlags{}
+		flags.EnvironmentName = "invalid name with spaces"
+
+		action, azdCtx, envManager := setupInitializeEnvTest(t, mockContext, flags)
+		seedDefaultEnv(t, *mockContext.Context, azdCtx, envManager, "existing-dev", nil)
+
+		_, err := action.initializeEnv(*mockContext.Context, azdCtx, templates.Metadata{})
+		require.Error(t, err)
+		// Must not report "already initialized" — the real problem is the invalid name.
+		var initErr *environment.EnvironmentInitError
+		require.False(t, errors.As(err, &initErr), "expected invalid-name error, not EnvironmentInitError")
+		require.Contains(t, err.Error(), "invalid")
+	})
+
+	t.Run("NonInteractiveCorruptDefaultEnvPropagatesError", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.Console.SetNoPromptMode(true)
+		flags := &initFlags{}
+		flags.EnvironmentName = "real-dev"
+
+		action, azdCtx, envManager := setupInitializeEnvTest(t, mockContext, flags)
+
+		// Create the default env normally so its directory exists.
+		seedDefaultEnv(t, *mockContext.Context, azdCtx, envManager, "corrupt-dev", nil)
+
+		// Overwrite config.json with invalid JSON to simulate a real load error.
+		configPath := filepath.Join(azdCtx.EnvironmentRoot("corrupt-dev"), environment.ConfigFileName)
+		require.NoError(t, os.WriteFile(configPath, []byte("{invalid json"), 0600))
+
+		_, err := action.initializeEnv(*mockContext.Context, azdCtx, templates.Metadata{})
+		require.Error(t, err)
+		// Must not silently fall back to creating "real-dev"; the I/O error must surface.
+		var initErr *environment.EnvironmentInitError
+		require.False(t, errors.As(err, &initErr), "expected load error, not EnvironmentInitError")
+		// Requested env must not have been created.
+		_, getErr := envManager.Get(*mockContext.Context, "real-dev")
+		require.ErrorIs(t, getErr, environment.ErrNotFound)
 	})
 
 	t.Run("OrphanFolderRecovery", func(t *testing.T) {

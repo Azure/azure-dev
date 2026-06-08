@@ -919,11 +919,24 @@ func (i *initAction) resolveInitEnv(
 		// environment was explicitly requested and the default is actually usable; a
 		// stale default left by a partial init shouldn't block an explicit request.
 		if requested != "" {
-			if _, err := envManager.Get(ctx, defaultEnvName); err == nil {
-				return nil, false, environment.NewEnvironmentInitError(defaultEnvName)
+			// Validate the requested name before checking the default env so an
+			// invalid name surfaces a clear error rather than a misleading
+			// "already initialized" one.
+			if !environment.IsValidEnvironmentName(requested) {
+				return nil, false, environment.InvalidEnvironmentNameError(requested)
 			}
-
-			return i.getOrCreateEnv(ctx, azdCtx, envManager, requested)
+			_, err := envManager.Get(ctx, defaultEnvName)
+			switch {
+			case err == nil:
+				// Default env is valid; block creating a different one.
+				return nil, false, environment.NewEnvironmentInitError(defaultEnvName)
+			case errors.Is(err, environment.ErrNotFound):
+				// Default is stale/missing; proceed with the explicitly requested name.
+				return i.getOrCreateEnv(ctx, azdCtx, envManager, requested)
+			default:
+				// Surface real I/O or config errors rather than silently proceeding.
+				return nil, false, fmt.Errorf("checking existing environment '%s': %w", defaultEnvName, err)
+			}
 		}
 
 		return i.getOrCreateEnv(ctx, azdCtx, envManager, defaultEnvName)

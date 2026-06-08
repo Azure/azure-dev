@@ -110,67 +110,13 @@ questions (raised in the issue's framework review) must be answered before the
    first-class service field. Decide whether the typing/validation cost
    justifies a core change.
 
-### Consequences
+### Proposed `azure.yaml` shape
 
-**Easier:**
+The proposed end-state of `azure.yaml` after this change is captured as a
+standalone, illustrative example alongside this ADR:
+[`adr-001-azure-yaml-example.yaml`](./adr-001-azure-yaml-example.yaml).
 
-- One file to read and edit. The agent name, container resources, and model
-  deployment name each live in exactly one place.
-- Clean scope separation: "what the agent IS to Foundry" (`config:`) vs. "how
-  azd packages and orders it" (service-level `docker:` / `runtime:` / `uses:`).
-- Resource sharing across agents is natural — a second agent is just another
-  `host: azure.ai.agent` with `uses: [foundry-project]`, nothing duplicated.
-- Foundry Toolkit for VS Code can read/write `azure.yaml` directly, converging
-  the CLI and Toolkit experiences.
-
-**Harder / requires care:**
-
-- The core framework does **not** expand `${VAR}` inside `config:` blocks
-  (`Config` is serialized straight to `structpb` without `Envsubst`). The
-  extension must own interpolation; a shared recursive config walker should be
-  used by both the agent and project targets.
-- `azure.ai.project` is a service with no source code — Package/Publish are
-  no-ops and the lifecycle (toolbox/connection/deployment creation) must move
-  out of provisioning hooks into the project target's `Deploy`.
-- A deprecation window for `agent.yaml` / `agent.manifest.yaml` means two read
-  paths exist temporarily; telemetry is needed to know when removal is safe.
-- Downstream cleanup: rename/repurpose `exterrors.CodeInvalidAgentManifest`,
-  retire the `agent_yaml` package, migrate reference templates/samples, and
-  update docs (`glossary.md`, `feature-status.md`).
-
-**Core impact:** Phase 1 needs **no mandatory azd core change**. `host` is an
-open `type: string` (not a closed enum), host kinds register over gRPC via
-`WithServiceTarget`, `uses` ordering and source-less services already work, and
-`ServiceConfig.Config` is `map[string]any`. The only optional core changes are:
-(a) adding `azure.ai.project` to the `host` examples in the core schema for
-discoverability, and (b) promoting a service-level `runtime:` field to
-`ServiceConfig` + schema if first-class typing is desired (see Open Question 4).
-
-### Alternatives Considered
-
-- **Make `agent.yaml` the source of truth; introduce `azure.yaml` only on
-  opt-in.** Keeps a single per-agent file for the standalone path. Rejected
-  because `agent.yaml` is per-agent by definition — project-scoped resources
-  (toolboxes today, knowledge indexes tomorrow) have nowhere good to live.
-  Every sub-option (inline in each agent, a new `foundry.yaml`, or AZD-only
-  project scope) reintroduces duplication or a third file.
-- **Hybrid: keep `agent.yaml` for the per-agent definition, `azure.yaml` for
-  orchestration only.** Structurally separates concerns but keeps two parallel
-  deploy code paths alive and requires permanent schema vigilance to keep
-  agent-definition fields out of the service block. The "no `azure.yaml` in the
-  root" win is mostly perceptual — the standalone path here is already
-  `azure.yaml` + agent code, no `.azure/`, no `infra/`.
-- **Project-scoped resources as a sibling service per resource type**
-  (`host: azure.ai.toolbox`, etc., Option A). Rejected — proliferation risk;
-  toolboxes aren't really "services" (no source dir, no build), and it sets a
-  precedent for `host: azure.ai.eval-dataset`, `host: azure.ai.vector-index`,
-  and so on.
-- **Project-scoped resources under the agent extension namespace**
-  (`extensions.azure.ai.agents.toolboxes:`). Rejected — still nests
-  project-level resources under the agent extension's namespace, which doesn't
-  address that models, connections, and toolboxes live at the Foundry **project**
-  scope, not the agent scope.
-- **A new top-level `resources:` section** (Option C). Clean separation but
-  introduces a new top-level concept to the core azure.yaml schema — a bigger
-  cross-cutting change than reusing a single `azure.ai.project` host kind
-  (Option B, chosen).
+It shows a single `host: azure.ai.project` service that owns the project-scoped
+data-plane resources (model deployments, connections, toolboxes) and a
+`host: azure.ai.agent` service that references it via `uses:`, in both
+code-deploy (`runtime:`) and container (`docker:`) modes.

@@ -1,0 +1,89 @@
+# Proposed azure.yaml shape for ADR-001 — Unify Foundry agent configuration.
+# Tracking issue: https://github.com/Azure/azure-dev/issues/7962
+#
+# Illustrative end-state, not a runnable template. It shows the two host kinds
+# and how an agent references the project via `uses`.
+
+name: my-foundry-agents
+
+services:
+  # ---------------------------------------------------------------------------
+  # Project-scoped service: all Foundry data-plane resources in one place.
+  # No source directory, no build artifact — pure declarative state.
+  # `provision` creates the Foundry project (ARM); `deploy` creates/updates the
+  # data-plane resources (deployments, connections, toolboxes) via Foundry APIs.
+  # ---------------------------------------------------------------------------
+  foundry-project:
+    host: azure.ai.project
+    config:
+      deployments:
+        - name: gpt-4.1-mini
+          model:
+            format: OpenAI
+            name: gpt-4.1-mini
+            version: "2025-04-14"
+          sku:
+            name: GlobalBatch
+            capacity: 10
+      connections:
+        - name: github-mcp-conn
+          category: CustomKeys
+          target: https://api.githubcopilot.com/mcp
+          authType: ApiKey
+      toolboxes:
+        agent-toolbox:
+          tools:
+            - { type: web_search }
+            - { type: code_interpreter }
+            - { type: mcp, connection: ${GITHUB_MCP_CONN} }
+
+  # ---------------------------------------------------------------------------
+  # Agent-scoped service: the agent runtime. References the project via `uses`.
+  # Code-deploy mode: a `runtime:` block is present -> azd zips the project
+  # directory and Foundry schedules it on the appropriate managed base image.
+  # ---------------------------------------------------------------------------
+  my-agent:
+    project: src/my-agent
+    host: azure.ai.agent
+    uses: [foundry-project]
+    runtime:
+      stack: python
+      version: "3.13"
+    config:
+      kind: hosted
+      description: A basic agent hosted by Foundry.
+      protocols:
+        - { protocol: responses, version: 1.0.0 }
+      env:
+        AZURE_AI_MODEL_DEPLOYMENT_NAME: gpt-4.1-mini
+      startupCommand: python main.py
+
+  # ---------------------------------------------------------------------------
+  # A second agent that wants the same toolbox is just another
+  # `host: azure.ai.agent` entry with `uses: [foundry-project]` — nothing is
+  # duplicated. The project service is the single source of truth for shared
+  # resources.
+  # ---------------------------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
+  # Container-mode variant: replace the `runtime:` block with a `docker:` block.
+  # `docker:` and `runtime:` are mutually exclusive; exactly one is required.
+  # ---------------------------------------------------------------------------
+  #
+  #   my-agent:
+  #     project: src/my-agent
+  #     host: azure.ai.agent
+  #     uses: [foundry-project]
+  #     docker: { path: Dockerfile, remoteBuild: true }
+  #     config:
+  #       kind: hosted
+  #       protocols:
+  #         - { protocol: responses, version: 1.0.0 }
+  #       container:
+  #         resources: { cpu: "0.25", memory: 0.5Gi }
+  #       env:
+  #         AZURE_AI_MODEL_DEPLOYMENT_NAME: gpt-4.1-mini
+
+# No infra: block needed by default. azd provision uses built-in Bicep templates
+# internally (like azd compose). Opt in to Bicep on disk via `azd infra gen` or
+# equivalent (separate RFC).

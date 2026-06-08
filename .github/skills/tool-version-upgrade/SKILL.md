@@ -1,27 +1,17 @@
 ---
 name: tool-version-upgrade
 description: >-
-  **WORKFLOW SKILL** — Upgrades bundled CLI tool versions (GitHub CLI or Bicep CLI) and pinned tool versions to the latest stable upstream release in azd.
-  Supported targets: GitHub CLI (Go source), Bicep CLI (Go source + lint workflow), and GitHub Actions referenced in `.github/workflows/*.yml` (audit + bulk bump).
-  Fetches the latest release(s) upstream, compares with the current pinned version(s), 
-  confirms with the user, creates a tracking issue, updates the references in source code, GitHub Action workflows, and CI workflows, 
-  and opens a PR.
+  **WORKFLOW SKILL** — Bumps pinned upstream versions in azd for the GitHub CLI, Bicep CLI,
+  and GitHub Actions referenced in `.github/workflows/*.yml`. Fetches the latest release,
+  confirms with the user, opens a tracking issue, updates source and workflow references, and opens a PR.
 
   INVOKES: GitHub MCP tools, gh CLI, git CLI, go build, ask_user.
 
-  USE FOR: upgrade github cli, update gh cli, update github cli version,
-  upgrade gh to latest, bump gh cli, gh cli update, update gh tool version,
-  upgrade bicep cli, update bicep cli, update bicep version,
-  upgrade bicep to latest, bump bicep, bicep cli update, update bicep tool version,
-  upgrade tool version, update tool version,
-  upgrade github actions, update github actions, bump github actions,
-  audit github actions versions, update workflow actions, check actions versions,
-  upgrade actions/checkout, upgrade actions/setup-node, upgrade actions/setup-python,
-  upgrade actions/setup-go, upgrade actions/github-script, upgrade golangci-lint-action,
-  refresh workflow action versions, gh actions version bump.
+  USE FOR: upgrade github cli, bump gh cli, upgrade bicep cli, bump bicep,
+  upgrade github actions, audit workflow action versions, upgrade tool version.
 
-  DO NOT USE FOR: code review (use code-review), changelog generation (use changelog-generation),
-  deploying releases, publishing extensions to registry.
+  DO NOT USE FOR: code review (use code-review), changelog generation
+  (use changelog-generation), deploying releases, publishing extensions to registry.
 ---
 
 # tool-version-upgrade
@@ -32,14 +22,14 @@ INVOKES: GitHub MCP tools, `gh` CLI, `git` CLI, `go build`, `ask_user`.
 
 ## Supported Tools
 
-| Parameter | GitHub CLI | Bicep CLI | GitHub Actions (workflows) |
-|-----------|-----------|-----------|----------------------------|
-| Tool name | GitHub CLI | Bicep CLI | GitHub Actions |
-| Tool slug | `gh-cli` | `bicep-cli` | `gh-actions` |
-| Upstream repo | `cli/cli` | `Azure/bicep` | (per-action; e.g. `actions/checkout`, `actions/setup-node`, `golangci/golangci-lint-action`) |
-| Go version file | `cli/azd/pkg/tools/github/github.go` | `cli/azd/pkg/tools/bicep/bicep.go` | n/a |
-| Version variable | `var Version semver.Version = semver.MustParse("{version}")` | same | n/a — versions are pinned per `uses:` line in YAML |
-| Files to update | 1 file (see below) | 2 files (see below) | every `.github/workflows/*.yml` containing an outdated `uses:` reference (see below) |
+| Parameter        | GitHub CLI                                                   | Bicep CLI                          | GitHub Actions (workflows)                                                                   |
+| ---------------- | ------------------------------------------------------------ | ---------------------------------- | -------------------------------------------------------------------------------------------- |
+| Tool name        | GitHub CLI                                                   | Bicep CLI                          | GitHub Actions                                                                               |
+| Tool slug        | `gh-cli`                                                     | `bicep-cli`                        | `gh-actions`                                                                                 |
+| Upstream repo    | `cli/cli`                                                    | `Azure/bicep`                      | (per-action; e.g. `actions/checkout`, `actions/setup-node`, `golangci/golangci-lint-action`) |
+| Go version file  | `cli/azd/pkg/tools/github/github.go`                         | `cli/azd/pkg/tools/bicep/bicep.go` | n/a                                                                                          |
+| Version variable | `var Version semver.Version = semver.MustParse("{version}")` | same                               | n/a — versions are pinned per `uses:` line in YAML                                           |
+| Files to update  | 1 file (see below)                                           | 2 files (see below)                | every `.github/workflows/*.yml` containing an outdated `uses:` reference (see below)         |
 
 ### GitHub CLI — Files to Update
 
@@ -74,20 +64,20 @@ devcontainer feature definitions.
 
 For each `uses: owner/repo@ref` line, classify and act:
 
-| Bucket | Pattern | Action |
-|--------|---------|--------|
-| Major-tag pin | `uses: owner/repo@vN` (N is an integer) | Bump to latest stable major (`@vM`). |
-| Exact-version pin | `uses: owner/repo@vX.Y.Z` or `@X.Y.Z` | Bump to latest stable major tag (`@vM`). |
-| SHA pin | `uses: owner/repo@<40-hex-sha> # vN` | Resolve the SHA the latest major tag points to, replace **both** the SHA and the trailing `# vN` comment so they stay paired. **Never** demote a SHA pin to a bare tag. |
-| Branch ref | `uses: owner/repo@main` (or any non-version ref) | **Skip**, list as warning. Branch refs are usually intentional. |
-| Local action | `uses: ./...` | **Skip** silently. |
-| Local reusable workflow | `uses: ./.github/workflows/...` | **Skip** silently. |
+| Bucket                  | Pattern                                          | Action                                                                                                                                                                  |
+| ----------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Major-tag pin           | `uses: owner/repo@vN` (N is an integer)          | Bump to latest stable major (`@vM`).                                                                                                                                    |
+| Exact-version pin       | `uses: owner/repo@vX.Y.Z` or `@X.Y.Z`            | Bump to latest stable major tag (`@vM`).                                                                                                                                |
+| SHA pin                 | `uses: owner/repo@<40-hex-sha> # vN`             | Resolve the SHA the latest major tag points to, replace **both** the SHA and the trailing `# vN` comment so they stay paired. **Never** demote a SHA pin to a bare tag. |
+| Branch ref              | `uses: owner/repo@main` (or any non-version ref) | **Skip**, list as warning. Branch refs are usually intentional.                                                                                                         |
+| Local action            | `uses: ./...`                                    | **Skip** silently.                                                                                                                                                      |
+| Local reusable workflow | `uses: ./.github/workflows/...`                  | **Skip** silently.                                                                                                                                                      |
 
 > **⚠️ Important** (GitHub Actions only): one run produces **one tracking issue and one PR**
 > covering every outdated reference, grouped by action. Do not open one PR per action.
 
 > **⚠️ Supply-chain hardening**: SHA-pinned references exist on purpose — typically for workflows
-> that gate releases or extension approvals (e.g., `approval-ext-azure-ai-agents.yml`). 
+> that gate releases or extension approvals (e.g., `approval-ext-azure-ai-agents.yml`).
 
 ## Workflow
 
@@ -98,6 +88,7 @@ If the user's request doesn't specify which tool, ask via `ask_user`:
 > Which tool would you like to upgrade?
 
 Choices:
+
 - **GitHub CLI**
 - **Bicep CLI**
 - **GitHub Actions (workflow files)**
@@ -122,6 +113,7 @@ If the latest release is a pre-release (e.g., `v0.42.0-rc1`), **stop and warn th
 use pre-release versions. Suggest the user wait for the stable release or specify a version manually.
 
 If `gh release view` fails, fall back to:
+
 ```bash
 gh api repos/{upstream_repo}/releases/latest --jq '.tag_name'
 ```
@@ -146,10 +138,12 @@ If the two versions don't match, warn the user before proceeding.
 
 1. If the current version **equals** the latest release, inform the user and **stop** — no issue,
    branch, or PR needed:
+
    > ✅ {tool_name} is already at the latest version (**{version}**). No update needed.
 
 2. If the current version is **newer** than the latest release, **stop and warn** — this likely
    means the latest GitHub release is not yet stable, or the pinned version was set manually:
+
    > ⚠️ The current {tool_name} version (**{current_version}**) is newer than the latest release
    > (**{latest_version}**). This may indicate a pre-release pin or a release rollback. No action taken.
 
@@ -161,7 +155,7 @@ If the two versions don't match, warn the user before proceeding.
    > Proceed with upgrade?
 
    Choices:
-   - **Yes, upgrade to {latest_version}** *(Recommended)*
+   - **Yes, upgrade to {latest_version}** _(Recommended)_
    - **No, cancel**
 
 ### Step 5 — Final Confirmation Gate
@@ -182,6 +176,7 @@ Present a full summary via `ask_user`:
 >   {files_list_with_paths}
 >
 > This will:
+>
 > 1. Create a tracking issue in Azure/azure-dev
 > 2. Create a new branch from `origin/main`
 > 3. Apply the version changes
@@ -190,7 +185,8 @@ Present a full summary via `ask_user`:
 > Confirm to proceed?
 
 Choices:
-- **Yes, apply upgrade** *(Recommended)*
+
+- **Yes, apply upgrade** _(Recommended)_
 - **No, cancel**
 
 If the user cancels, stop immediately — do not create the issue, branch, or PR.
@@ -200,12 +196,14 @@ If the user cancels, stop immediately — do not create the issue, branch, or PR
 Per [references/tool-upgrade-workflow.md](references/tool-upgrade-workflow.md) § Create Clean Branch from origin/main.
 
 1. Verify the working tree is clean (`git status --porcelain`). If dirty, **stop** and warn:
+
    > Your working tree has uncommitted changes. Please commit or stash them before running
    > this skill, so the upgrade PR contains only the version bump.
 
    Do NOT proceed with dirty state — do not use `git stash` automatically.
 
 2. Delete any stale branch from a previous cancelled run, then create the branch from `origin/main`:
+
    ```bash
    git fetch origin main
    git branch -D update/{tool_slug}-{latest_version} 2>/dev/null || true
@@ -213,9 +211,11 @@ Per [references/tool-upgrade-workflow.md](references/tool-upgrade-workflow.md) �
    ```
 
 3. Verify zero commits ahead of origin/main:
+
    ```bash
    git --no-pager log --oneline origin/main..HEAD
    ```
+
    Must produce no output. If it shows any commits, abort.
 
 4. Apply the file edits:
@@ -229,13 +229,16 @@ Per [references/tool-upgrade-workflow.md](references/tool-upgrade-workflow.md) �
    - `.github/workflows/lint-bicep.yml` — replace old version in the curl download URL.
 
 5. Build and verify:
+
    ```bash
    cd cli/azd && go build ./...
    ```
+
    If the build fails, **delete the branch, report the error, and stop**.
    Do NOT create an issue or PR for a broken build.
 
 6. **Bicep only** — verify both files have the new version:
+
    ```bash
    grep 'MustParse' cli/azd/pkg/tools/bicep/bicep.go | head -1
    grep 'bicep/releases/download' .github/workflows/lint-bicep.yml
@@ -244,11 +247,13 @@ Per [references/tool-upgrade-workflow.md](references/tool-upgrade-workflow.md) �
 7. Stage **only** the expected files (do NOT use `git add -A`):
 
    **GitHub CLI**:
+
    ```bash
    git add cli/azd/pkg/tools/github/github.go
    ```
 
    **Bicep CLI**:
+
    ```bash
    git add cli/azd/pkg/tools/bicep/bicep.go .github/workflows/lint-bicep.yml
    ```
@@ -345,6 +350,7 @@ Release: https://github.com/Azure/bicep/releases/tag/v{latest_version}
 Present a summary to the user:
 
 > ✅ Done!
+>
 > - Issue: #{issue_number} — {issue_url}
 > - PR: #{pr_number} — {pr_url}
 > - Version: {current_version} → {latest_version}
@@ -428,11 +434,11 @@ Example summary body:
 
 > **GitHub Actions upgrade — ready to apply**
 >
-> | Action | Current | New | Files |
-> |---|---|---|---|
-> | actions/checkout | v4 | v6 | 14 |
-> | actions/setup-node | v4 | v6 | 7 |
-> | actions/github-script | v7 (SHA-pinned) | v9 (SHA-pinned) | 1 |
+> | Action                | Current         | New             | Files |
+> | --------------------- | --------------- | --------------- | ----- |
+> | actions/checkout      | v4              | v6              | 14    |
+> | actions/setup-node    | v4              | v6              | 7     |
+> | actions/github-script | v7 (SHA-pinned) | v9 (SHA-pinned) | 1     |
 >
 > Skipped (branch refs): `actions/stale@main` in `stale-issues.yml`
 >
@@ -559,6 +565,7 @@ Fixes #{issue_number}
 ### Post-Creation (GitHub Actions)
 
 > ✅ Done!
+>
 > - Issue: #{issue_number} — {issue_url}
 > - PR: #{pr_number} — {pr_url}
 > - Actions bumped: {count}
@@ -570,7 +577,7 @@ Fixes #{issue_number}
   major tags by default; SHAs only where the file already SHA-pins.)
 - Bumping the Go toolchain inside `setup-go` `with: go-version:` — that's a separate
   workflow (`validate-go-version`).
-- Bumping Node / Python / Bicep tool *runtime* versions inside `setup-*` `with:` blocks.
+- Bumping Node / Python / Bicep tool _runtime_ versions inside `setup-*` `with:` blocks.
 - Updating actions used outside `.github/workflows/` (e.g., devcontainer features).
 
 If the user asks for any of the above, tell them this skill does not cover it.

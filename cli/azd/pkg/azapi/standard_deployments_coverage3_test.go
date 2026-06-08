@@ -444,6 +444,30 @@ func Test_StdDeployments_DeployToSubscription_Persistent404_Coverage3(t *testing
 	require.Error(t, err)
 }
 
+// Test_StdDeployments_DeployToResourceGroup_SubmitTime404_Coverage3 verifies that a 404 returned
+// by the initial submit (PUT) is not retried, so a genuine submit-time DeploymentNotFound (e.g. a
+// missing resource group) fails fast instead of being delayed by the poll-only 404 retry.
+func Test_StdDeployments_DeployToResourceGroup_SubmitTime404_Coverage3(t *testing.T) {
+	shortenDeploymentRetry(t)
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	sd := newStdDeployments(mockCtx)
+
+	var puts int32
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/deployments/rg-deploy")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		atomic.AddInt32(&puts, 1)
+		return mocks.CreateEmptyHttpResponse(req, http.StatusNotFound)
+	})
+
+	template := azure.RawArmTemplate(json.RawMessage(`{"$schema":"test"}`))
+	_, err := sd.DeployToResourceGroup(
+		*mockCtx.Context, "SUB", "RG1", "rg-deploy", template, azure.ArmParameters{}, nil, nil)
+	require.Error(t, err)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&puts), "submit-time 404 must not be retried")
+}
+
 func Test_StdDeployments_WhatIfDeployToSubscription_Coverage3(t *testing.T) {
 	mockCtx := mocks.NewMockContext(t.Context())
 	sd := newStdDeployments(mockCtx)

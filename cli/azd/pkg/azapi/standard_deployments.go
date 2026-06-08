@@ -70,11 +70,13 @@ var (
 
 // withDeploymentRetry returns a context configured to retry transient HTTP 404
 // (DeploymentNotFound) responses in addition to the default ARM-retryable status codes. ARM
-// occasionally returns a transient 404 for a deployment immediately after it is submitted
+// occasionally returns a transient 404 while polling a deployment that was just submitted
 // (read-after-write inconsistency, most often on subscription-scoped deployments) even though
-// the deployment was accepted and ultimately succeeds. Retrying the create/poll request lets
-// azd's view converge with ARM instead of failing with DeploymentNotFound. This mirrors the
-// existing handling for transient 404s in pkg/azsdk/zip_deploy_client.go.
+// the deployment was accepted and ultimately succeeds. This context is applied only to the LRO
+// poller (not the initial submit), so a genuine submit-time 404 (e.g. missing resource group)
+// still fails fast while the poller converges with ARM instead of failing with
+// DeploymentNotFound. This mirrors the existing handling for transient 404s in
+// pkg/azsdk/zip_deploy_client.go.
 func withDeploymentRetry(ctx context.Context) context.Context {
 	return policy.WithRetryOptions(ctx, policy.RetryOptions{
 		MaxRetries:    deploymentRetryMaxRetries,
@@ -272,10 +274,6 @@ func (ds *StandardDeployments) DeployToSubscription(
 	ctx, span := tracing.Start(ctx, events.ArmDeploySubscriptionEvent)
 	defer func() { span.EndWithStatus(err) }()
 
-	// Retry transient DeploymentNotFound (404) responses that ARM can return immediately after a
-	// subscription-scoped deployment is submitted (read-after-write inconsistency).
-	ctx = withDeploymentRetry(ctx)
-
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -296,8 +294,13 @@ func (ds *StandardDeployments) DeployToSubscription(
 		return nil, fmt.Errorf("starting deployment to subscription: %w", err)
 	}
 
+	// Retry transient DeploymentNotFound (404) responses that ARM can return while polling a
+	// subscription-scoped deployment that was just submitted (read-after-write inconsistency).
+	// Scoped to the poller only so a genuine submit-time 404 still fails fast.
+	pollCtx := withDeploymentRetry(ctx)
+
 	// wait for deployment creation
-	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+	deployResult, err := createFromTemplateOperation.PollUntilDone(pollCtx, &runtime.PollUntilDoneOptions{
 		Frequency: deployPollFrequency,
 	})
 	if err != nil {
@@ -318,10 +321,6 @@ func (ds *StandardDeployments) DeployToResourceGroup(
 	ctx, span := tracing.Start(ctx, events.ArmDeployResourceGroupEvent)
 	defer func() { span.EndWithStatus(err) }()
 
-	// Retry transient DeploymentNotFound (404) responses that ARM can return immediately after a
-	// deployment is submitted (read-after-write inconsistency).
-	ctx = withDeploymentRetry(ctx)
-
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -341,8 +340,13 @@ func (ds *StandardDeployments) DeployToResourceGroup(
 		return nil, fmt.Errorf("starting deployment to resource group: %w", err)
 	}
 
+	// Retry transient DeploymentNotFound (404) responses that ARM can return while polling a
+	// deployment that was just submitted (read-after-write inconsistency). Scoped to the poller
+	// only so a genuine submit-time 404 (e.g. missing resource group) still fails fast.
+	pollCtx := withDeploymentRetry(ctx)
+
 	// wait for deployment creation
-	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+	deployResult, err := createFromTemplateOperation.PollUntilDone(pollCtx, &runtime.PollUntilDoneOptions{
 		Frequency: deployPollFrequency,
 	})
 	if err != nil {

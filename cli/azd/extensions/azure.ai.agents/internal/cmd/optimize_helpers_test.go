@@ -27,7 +27,7 @@ func TestOptimizeConnectionFlags_Resolve_AllEmpty(t *testing.T) {
 	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "")
 	t.Setenv("AZD_SERVER", "")
 	f := &optimizeConnectionFlags{}
-	_, err := f.resolve(t.Context())
+	_, err := f.resolve(t.Context(), "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "endpoint")
 }
@@ -36,7 +36,7 @@ func TestOptimizeConnectionFlags_Resolve_FlagEndpoint(t *testing.T) {
 	f := &optimizeConnectionFlags{
 		endpoint: "https://from-flag.com",
 	}
-	endpoint, err := f.resolve(context.Background())
+	endpoint, err := f.resolve(context.Background(), "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://from-flag.com", endpoint)
 }
@@ -45,7 +45,7 @@ func TestOptimizeConnectionFlags_Resolve_TrimsTrailingSlash(t *testing.T) {
 	f := &optimizeConnectionFlags{
 		endpoint: "https://example.com/",
 	}
-	endpoint, err := f.resolve(context.Background())
+	endpoint, err := f.resolve(context.Background(), "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://example.com", endpoint)
 }
@@ -54,7 +54,7 @@ func TestOptimizeConnectionFlags_Resolve_ProjectEndpointFlag(t *testing.T) {
 	f := &optimizeConnectionFlags{
 		projectEndpoint: "https://my-project.services.ai.azure.com/",
 	}
-	endpoint, err := f.resolve(context.Background())
+	endpoint, err := f.resolve(context.Background(), "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://my-project.services.ai.azure.com", endpoint)
 }
@@ -352,7 +352,7 @@ func TestOptimizeConnectionFlags_Resolve_FoundryEnvVar(t *testing.T) {
 	t.Setenv("AZD_SERVER", "")
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.example.com/")
 	f := &optimizeConnectionFlags{}
-	endpoint, err := f.resolve(t.Context())
+	endpoint, err := f.resolve(t.Context(), "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://foundry.example.com", endpoint)
 }
@@ -362,7 +362,7 @@ func TestOptimizeConnectionFlags_Resolve_AzureAIEnvVar(t *testing.T) {
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
 	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "https://azure-ai.example.com/")
 	f := &optimizeConnectionFlags{}
-	endpoint, err := f.resolve(t.Context())
+	endpoint, err := f.resolve(t.Context(), "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://azure-ai.example.com", endpoint)
 }
@@ -372,7 +372,7 @@ func TestOptimizeConnectionFlags_Resolve_FoundryTakesPriorityOverAzureAI(t *test
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.example.com")
 	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "https://azure-ai.example.com")
 	f := &optimizeConnectionFlags{}
-	endpoint, err := f.resolve(t.Context())
+	endpoint, err := f.resolve(t.Context(), "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://foundry.example.com", endpoint)
 }
@@ -380,7 +380,7 @@ func TestOptimizeConnectionFlags_Resolve_FoundryTakesPriorityOverAzureAI(t *test
 func TestResolveProjectEndpointForDeploy_FoundryEnvVar(t *testing.T) {
 	t.Setenv("AZD_SERVER", "")
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry-deploy.example.com/")
-	ep, err := resolveProjectEndpointForDeploy(t.Context(), &optimizeConnectionFlags{})
+	ep, err := resolveProjectEndpointForDeploy(t.Context(), &optimizeConnectionFlags{}, "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://foundry-deploy.example.com", ep)
 }
@@ -389,7 +389,7 @@ func TestResolveProjectEndpointForDeploy_AzureAIEnvVar(t *testing.T) {
 	t.Setenv("AZD_SERVER", "")
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
 	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "https://azure-ai-deploy.example.com/")
-	ep, err := resolveProjectEndpointForDeploy(t.Context(), &optimizeConnectionFlags{})
+	ep, err := resolveProjectEndpointForDeploy(t.Context(), &optimizeConnectionFlags{}, "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://azure-ai-deploy.example.com", ep)
 }
@@ -398,7 +398,46 @@ func TestResolveProjectEndpointForDeploy_FoundryTakesPriorityOverAzureAI(t *test
 	t.Setenv("AZD_SERVER", "")
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry-deploy.example.com")
 	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "https://azure-ai-deploy.example.com")
-	ep, err := resolveProjectEndpointForDeploy(t.Context(), &optimizeConnectionFlags{})
+	ep, err := resolveProjectEndpointForDeploy(t.Context(), &optimizeConnectionFlags{}, "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://foundry-deploy.example.com", ep)
+}
+
+// ---------------------------------------------------------------------------
+// getExistingEnvironment
+// ---------------------------------------------------------------------------
+
+func TestGetExistingEnvironment_EmptyName_UsesCurrent(t *testing.T) {
+	t.Parallel()
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+	}
+	azdClient := newOptimizeTestAzdClient(t, envServer)
+	env := getExistingEnvironment(t.Context(), "", azdClient)
+	require.NotNil(t, env)
+	assert.Equal(t, "dev", env.Name)
+}
+
+func TestGetExistingEnvironment_ExplicitName_UsesGet(t *testing.T) {
+	t.Parallel()
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		environments: map[string]*azdext.Environment{
+			"staging": {Name: "staging"},
+		},
+	}
+	azdClient := newOptimizeTestAzdClient(t, envServer)
+	env := getExistingEnvironment(t.Context(), "staging", azdClient)
+	require.NotNil(t, env)
+	assert.Equal(t, "staging", env.Name)
+}
+
+func TestGetExistingEnvironment_NotFound_ReturnsNil(t *testing.T) {
+	t.Parallel()
+	envServer := &testEnvironmentServiceServer{
+		environments: map[string]*azdext.Environment{},
+	}
+	azdClient := newOptimizeTestAzdClient(t, envServer)
+	env := getExistingEnvironment(t.Context(), "nonexistent", azdClient)
+	assert.Nil(t, env)
 }

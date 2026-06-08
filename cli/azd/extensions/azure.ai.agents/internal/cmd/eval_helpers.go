@@ -90,20 +90,37 @@ func relativeDisplay(absPath, projectDir string) string {
 	return absPath
 }
 
-// reconcileConfigAgentName reconciles the agent name in a config with the
-// environment-resolved name. Environment takes precedence. Returns true if
-// the config was changed. Used by both eval run and optimize.
-func reconcileConfigAgentName(agent *opt_eval.AgentRef, envName, configSource string) bool {
-	if envName == "" || agent.Name == "" || agent.Name == envName {
-		if envName != "" && agent.Name == "" {
-			agent.Name = envName
-		}
-		return false
+// reconcileConfigAgent reconciles the agent name and version in a config
+// with the environment-resolved values. Environment takes precedence for both.
+// Version is always resolved from the azd environment (via AGENT_{SVC}_VERSION);
+// stale values in the config are cleared. Returns true if the config was changed.
+func reconcileConfigAgent(agent *opt_eval.AgentRef, envName, envVersion, configSource string) bool {
+	changed := false
+
+	// --- Name ---
+	if envName != "" && agent.Name != "" && agent.Name != envName {
+		fmt.Printf("  %s agent name in %s (%q) differs from environment (%q) — using environment value\n",
+			color.YellowString("warning:"), configSource, agent.Name, envName)
+		agent.Name = envName
+		changed = true
+	} else if envName != "" && agent.Name == "" {
+		agent.Name = envName
 	}
-	fmt.Printf("  %s agent name in %s (%q) differs from environment (%q) — using environment value\n",
-		color.YellowString("warning:"), configSource, agent.Name, envName)
-	agent.Name = envName
-	return true
+
+	// --- Version ---
+	// Environment version always wins. If not set, clear any stale config value
+	// so the backend defaults to "latest".
+	if envVersion != "" && agent.Version != envVersion {
+		agent.Version = envVersion
+		changed = true
+	} else if envVersion == "" && agent.Version != "" {
+		fmt.Printf("  %s ignoring stale agent.version %q in %s — using latest from environment\n",
+			color.YellowString("warning:"), agent.Version, configSource)
+		agent.Version = ""
+		changed = true
+	}
+
+	return changed
 }
 
 // resolveAgentConfig resolves agent configuration from config metadata
@@ -328,6 +345,7 @@ func promptModelSelection(
 	azdClient *azdext.AzdClient,
 	message string,
 	defaultModel string,
+	envName string,
 ) (string, error) {
 	choices := buildModelSelectionChoices(defaultModel)
 	defaultIndex := int32(0)
@@ -347,7 +365,7 @@ func promptModelSelection(
 	selected := choices[int(*resp.Value)].Value
 
 	if selected == selectOtherDeploymentValue {
-		return promptAllDeployments(ctx, azdClient)
+		return promptAllDeployments(ctx, azdClient, envName)
 	}
 
 	return selected, nil
@@ -372,8 +390,8 @@ func buildModelSelectionChoices(defaultModel string) []*azdext.SelectChoice {
 
 // promptAllDeployments fetches all model deployments from the Foundry project
 // and prompts the user to select one.
-func promptAllDeployments(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
-	deployments := listDeploymentsFromEnv(ctx, azdClient)
+func promptAllDeployments(ctx context.Context, azdClient *azdext.AzdClient, envName string) (string, error) {
+	deployments := listDeploymentsFromEnv(ctx, azdClient, envName)
 	if len(deployments) == 0 {
 		return "", fmt.Errorf("no model deployments found in the Foundry project")
 	}
@@ -410,14 +428,14 @@ func promptAllDeployments(ctx context.Context, azdClient *azdext.AzdClient) (str
 }
 
 // getDeployedModelFromEnv reads the AZURE_AI_MODEL_DEPLOYMENT_NAME from
-// the current azd environment. Returns empty string if not available.
-func getDeployedModelFromEnv(ctx context.Context, azdClient *azdext.AzdClient) string {
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || envResp == nil || envResp.Environment == nil {
+// the specified (or current) azd environment. Returns empty string if not available.
+func getDeployedModelFromEnv(ctx context.Context, azdClient *azdext.AzdClient, envName string) string {
+	env := getExistingEnvironment(ctx, envName, azdClient)
+	if env == nil {
 		return ""
 	}
 	v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envResp.Environment.Name,
+		EnvName: env.Name,
 		Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
 	})
 	if err != nil || v.Value == "" {
@@ -456,7 +474,7 @@ func promptDatasetSelection(
 		return "", &opt_eval.DatasetRef{Name: value}, nil
 	}
 
-	resolved, err := resolveLocalDatasetFile(value, agentProject)
+	resolved, err := resolveLocalDatasetFile(resolveCwdRelative(value), agentProject)
 	if err != nil {
 		return "", nil, err
 	}

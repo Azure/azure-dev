@@ -19,12 +19,13 @@ import (
 
 // optimizeStatusFlags holds CLI flags for the optimize status command.
 type optimizeStatusFlags struct {
-	watch        bool // poll until job completes
-	pollInterval int  // polling interval in seconds
+	envName      string // explicit environment name (from -e flag)
+	watch        bool   // poll until job completes
+	pollInterval int    // polling interval in seconds
 	optimizeConnectionFlags
 }
 
-func newOptimizeStatusCommand() *cobra.Command {
+func newOptimizeStatusCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &optimizeStatusFlags{}
 
 	cmd := &cobra.Command{
@@ -45,11 +46,12 @@ Use --watch to poll until the job completes.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
+			flags.envName = extCtx.Environment
 			operationID := ""
 			if len(args) > 0 {
 				operationID = args[0]
 			} else {
-				operationID = loadLastOptimizeJobID(ctx)
+				operationID = loadLastOptimizeJobID(ctx, flags.envName)
 				if operationID == "" {
 					return fmt.Errorf("operation ID is required: provide it as an argument, or run 'azd ai agent optimize' first")
 				}
@@ -67,7 +69,7 @@ Use --watch to poll until the job completes.`,
 }
 
 func runOptimizeStatus(cmd *cobra.Command, flags *optimizeStatusFlags, operationID string) error {
-	endpoint, err := flags.resolve(cmd.Context())
+	endpoint, err := flags.resolve(cmd.Context(), flags.envName)
 	if err != nil {
 		return err
 	}
@@ -94,9 +96,9 @@ func runOptimizeStatus(cmd *cobra.Command, flags *optimizeStatusFlags, operation
 		if err != nil {
 			return err
 		}
-		printOptimizeResults(cmd.Context(), out, finalStatus, hasProject)
+		printOptimizeResults(cmd.Context(), out, finalStatus, hasProject, flags.envName)
 	} else if len(status.Candidates) > 0 {
-		printOptimizeResults(cmd.Context(), out, status, hasProject)
+		printOptimizeResults(cmd.Context(), out, status, hasProject, flags.envName)
 	}
 
 	if status.Error != nil {

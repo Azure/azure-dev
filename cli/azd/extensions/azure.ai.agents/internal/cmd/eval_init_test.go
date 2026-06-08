@@ -139,7 +139,7 @@ func TestNewEvalConfig(t *testing.T) {
 		assert.Equal(t, defaultEvalName, cfg.Name)
 		assert.Equal(t, "booking-agent", cfg.Agent.Name)
 		assert.Equal(t, agent_yaml.AgentKindHosted, cfg.Agent.Kind)
-		assert.Equal(t, "v2", cfg.Agent.Version)
+		assert.Empty(t, cfg.Agent.Version, "version should not be persisted in eval config")
 		assert.Equal(t, "gpt-4.1", cfg.Options.EvalModel)
 		assert.Equal(t, "Test the booking agent", cfg.Agent.Instruction.Value)
 		assert.Equal(t, 50, cfg.MaxSamples)
@@ -477,6 +477,24 @@ func TestResolveLocalDatasetFile_NotFound(t *testing.T) {
 	_, err := resolveLocalDatasetFile("missing.jsonl", t.TempDir())
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not accessible")
+}
+
+// ---------------------------------------------------------------------------
+// resolveCwdRelative
+// ---------------------------------------------------------------------------
+
+func TestResolveCwdRelative_AbsoluteUnchanged(t *testing.T) {
+	t.Parallel()
+	abs := filepath.Join(t.TempDir(), "data.jsonl")
+	result := resolveCwdRelative(abs)
+	assert.Equal(t, abs, result)
+}
+
+func TestResolveCwdRelative_RelativeResolvedToCwd(t *testing.T) {
+	t.Parallel()
+	result := resolveCwdRelative("data.jsonl")
+	assert.True(t, filepath.IsAbs(result), "expected absolute path, got %q", result)
+	assert.Equal(t, "data.jsonl", filepath.Base(result))
 }
 
 // ---------------------------------------------------------------------------

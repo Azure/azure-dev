@@ -32,6 +32,7 @@ import (
 // for an optimization operation.
 type optimizeAgentContext struct {
 	agentName    string // deployed agent name
+	agentVersion string // deployed agent version (empty = latest)
 	agentProject string // agent project directory (empty if not in an azd project)
 }
 
@@ -40,7 +41,7 @@ type optimizeAgentContext struct {
 //  1. Explicit --agent flag
 //  2. azd project context (resolveAgentService + environment variables)
 //  3. Error with guidance
-func resolveOptimizeAgent(ctx context.Context, flagValue string, noPrompt bool) (*optimizeAgentContext, error) {
+func resolveOptimizeAgent(ctx context.Context, flagValue, envName string, noPrompt bool) (*optimizeAgentContext, error) {
 	if flagValue != "" {
 		return &optimizeAgentContext{agentName: flagValue}, nil
 	}
@@ -56,16 +57,24 @@ func resolveOptimizeAgent(ctx context.Context, flagValue string, noPrompt bool) 
 			agentProject := filepath.Join(project.Path, svc.RelativePath)
 			serviceKey := toServiceKey(svc.Name)
 
-			// Read agent name from azd environment
-			envResp, envErr := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-			if envErr == nil && envResp.Environment != nil {
+			// Read agent name and version from azd environment
+			if env := getExistingEnvironment(ctx, envName, azdClient); env != nil {
 				nameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
 				if v, e := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-					EnvName: envResp.Environment.Name,
+					EnvName: env.Name,
 					Key:     nameKey,
 				}); e == nil && v.Value != "" {
+					version := ""
+					versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+					if vv, ve := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+						EnvName: env.Name,
+						Key:     versionKey,
+					}); ve == nil {
+						version = vv.Value
+					}
 					return &optimizeAgentContext{
 						agentName:    v.Value,
+						agentVersion: version,
 						agentProject: agentProject,
 					}, nil
 				}
@@ -92,7 +101,7 @@ type optimizeFlags struct {
 // newOptimizeCommand creates the top-level "optimize" command and registers its subcommands.
 func newOptimizeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &optimizeFlags{}
-	action := &OptimizeAction{flags: flags, noPrompt: extCtx.NoPrompt}
+	action := &OptimizeAction{flags: flags, envName: extCtx.Environment, noPrompt: extCtx.NoPrompt}
 
 	cmd := &cobra.Command{
 		Use:   "optimize [agent-name]",
@@ -140,11 +149,11 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
 	cmd.Flags().IntVar(&flags.pollInterval, "poll-interval", 5, "Polling interval in seconds")
 	flags.optimizeConnectionFlags.register(cmd)
 
-	cmd.AddCommand(newOptimizeStatusCommand())
-	cmd.AddCommand(newOptimizeListCommand())
-	cmd.AddCommand(newOptimizeCancelCommand())
+	cmd.AddCommand(newOptimizeStatusCommand(extCtx))
+	cmd.AddCommand(newOptimizeListCommand(extCtx))
+	cmd.AddCommand(newOptimizeCancelCommand(extCtx))
 	cmd.AddCommand(newOptimizeApplyCommand(extCtx))
-	cmd.AddCommand(newOptimizeDeployCommand())
+	cmd.AddCommand(newOptimizeDeployCommand(extCtx))
 
 	return cmd
 }
@@ -152,6 +161,7 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
 // OptimizeAction implements the optimize (submit job) command.
 type OptimizeAction struct {
 	flags    *optimizeFlags
+	envName  string
 	noPrompt bool
 }
 
@@ -164,7 +174,7 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 		"  Consider pinning to a specific version before starting optimization.\n\n",
 		color.YellowString("Warning:"))
 
-	endpoint, err := a.flags.resolve(ctx)
+	endpoint, err := a.flags.resolve(ctx, a.envName)
 	if err != nil {
 		return err
 	}
@@ -196,7 +206,7 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 		if err != nil {
 			return err
 		}
-		printOptimizeResults(ctx, out, finalStatus, hasProject)
+		printOptimizeResults(ctx, out, finalStatus, hasProject, a.envName)
 	}
 
 	return nil
@@ -214,17 +224,17 @@ func (a *OptimizeAction) resolveConfig(
 			return nil, "", "", fmt.Errorf("%w\n\nCheck that the file path is correct and contains valid YAML", err)
 		}
 
-		// Even with explicit --config, try to reconcile agent name with the environment.
-		resolved, resolveErr := resolveOptimizeAgent(ctx, a.flags.agent, a.noPrompt)
+		// Even with explicit --config, try to reconcile agent name/version with the environment.
+		resolved, resolveErr := resolveOptimizeAgent(ctx, a.flags.agent, a.envName, a.noPrompt)
 		if resolveErr == nil {
 			agentProject = resolved.agentProject
-			reconcileConfigAgentName(&cfg.Agent, resolved.agentName, a.flags.configFile)
+			reconcileConfigAgent(&cfg.Agent, resolved.agentName, resolved.agentVersion, a.flags.configFile)
 		}
 
 		return cfg, a.flags.configFile, agentProject, nil
 	}
 
-	resolved, err := resolveOptimizeAgent(ctx, a.flags.agent, a.noPrompt)
+	resolved, err := resolveOptimizeAgent(ctx, a.flags.agent, a.envName, a.noPrompt)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -262,7 +272,7 @@ func (a *OptimizeAction) resolveConfig(
 	if cfg == nil {
 		cfg = defaultOptimizeConfig(resolved.agentName)
 	} else {
-		reconcileConfigAgentName(&cfg.Agent, resolved.agentName, configSource)
+		reconcileConfigAgent(&cfg.Agent, resolved.agentName, resolved.agentVersion, configSource)
 	}
 
 	return cfg, configSource, agentProject, nil
@@ -281,7 +291,7 @@ func (a *OptimizeAction) applyOverrides(
 			cfg.DatasetReference = &opt_eval.DatasetRef{Name: a.flags.dataset}
 			cfg.DatasetFile = ""
 		} else {
-			resolved, err := resolveLocalDatasetFile(a.flags.dataset, agentProject)
+			resolved, err := resolveLocalDatasetFile(resolveCwdRelative(a.flags.dataset), agentProject)
 			if err != nil {
 				return err
 			}
@@ -322,7 +332,7 @@ func (a *OptimizeAction) applyOverrides(
 
 	// If the model is still unknown, try the azd environment (set during deploy).
 	if cfg.Agent.Model == "" && azdClient != nil {
-		if m := getDeployedModelFromEnv(ctx, azdClient); m != "" {
+		if m := getDeployedModelFromEnv(ctx, azdClient, a.envName); m != "" {
 			cfg.Agent.Model = m
 		}
 	}
@@ -361,7 +371,7 @@ func (a *OptimizeAction) applyOverrides(
 
 	// Resolve eval_model: prompt user if not set.
 	if cfg.Options.EvalModel == "" {
-		if err := resolveOptimizeEvalModel(ctx, azdClient, cfg, a.noPrompt); err != nil {
+		if err := resolveOptimizeEvalModel(ctx, azdClient, cfg, a.noPrompt, a.envName); err != nil {
 			return err
 		}
 	}
@@ -375,14 +385,14 @@ func (a *OptimizeAction) applyOverrides(
 
 	// Resolve optimization_config.model: prompt user if not set.
 	if !hasModelConfig(cfg.Options.OptimizationConfig) && !a.noPrompt {
-		if err := resolveOptimizeTargetModels(ctx, azdClient, cfg); err != nil {
+		if err := resolveOptimizeTargetModels(ctx, azdClient, cfg, a.envName); err != nil {
 			return err
 		}
 	}
 
 	// Resolve optimization_model: prompt user if not set.
 	if cfg.Options.OptimizationModel == "" && !a.noPrompt {
-		if err := resolveOptimizeOptimizationModel(ctx, azdClient, cfg); err != nil {
+		if err := resolveOptimizeOptimizationModel(ctx, azdClient, cfg, a.envName); err != nil {
 			return err
 		}
 	}
@@ -440,6 +450,13 @@ func (a *OptimizeAction) submitJob(
 
 	client := optimize_api.NewOptimizeClient(endpoint, credential)
 
+	// Resolve relative dataset path against the agent project directory so
+	// configs with project-relative dataset_file entries work regardless of
+	// the caller's working directory.
+	if cfg.DatasetFile != "" && !filepath.IsAbs(cfg.DatasetFile) && agentProject != "" {
+		cfg.DatasetFile = filepath.Join(agentProject, cfg.DatasetFile)
+	}
+
 	optimizeReq, warnings, err := cfg.ToRequest()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to build optimization request: %w", err)
@@ -477,10 +494,10 @@ func (a *OptimizeAction) submitJob(
 	fmt.Fprintf(out, "  Job ID: %s\n", color.CyanString(resp.OperationID))
 	fmt.Fprintf(out, "  Status: %s\n", resp.Status)
 
-	printOptimizePortalLink(ctx, out, cfg.Agent.Name, resp.OperationID)
+	printOptimizePortalLink(ctx, out, cfg.Agent.Name, resp.OperationID, a.envName)
 	fmt.Fprintln(out)
 
-	saveLastOptimizeJobID(ctx, resp.OperationID)
+	saveLastOptimizeJobID(ctx, resp.OperationID, a.envName)
 
 	return resp, client, nil
 }
@@ -534,7 +551,7 @@ func pollOptimizeJob(
 }
 
 // printOptimizeResults prints the optimization results table and next-step commands.
-func printOptimizeResults(ctx context.Context, out io.Writer, status *optimize_api.OptimizeJobStatus, hasProject bool) {
+func printOptimizeResults(ctx context.Context, out io.Writer, status *optimize_api.OptimizeJobStatus, hasProject bool, envName string) {
 	if status.Error != nil {
 		fmt.Fprintf(out, "\n  %s %s\n", color.RedString("Error:"), status.Error.Message)
 	}
@@ -548,7 +565,7 @@ func printOptimizeResults(ctx context.Context, out io.Writer, status *optimize_a
 
 	_, _ = bold.Fprintln(out, "\nResults:")
 	// Resolve eval portal prefix once for building hyperlinks in the table.
-	evalURLs := buildCandidateEvalURLs(ctx, status.Candidates)
+	evalURLs := buildCandidateEvalURLs(ctx, status.Candidates, envName)
 	hasEvalLinks := len(evalURLs) > 0
 
 	header := fmt.Sprintf("  %-20s %7s %7s", "Candidate", "Score", "Pass")

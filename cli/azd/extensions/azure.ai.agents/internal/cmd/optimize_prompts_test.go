@@ -137,7 +137,7 @@ func TestResolveOptimizeEvalModel_NilClient(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{Options: &opt_eval.Options{}}
-	err := resolveOptimizeEvalModel(t.Context(), nil, cfg, false)
+	err := resolveOptimizeEvalModel(t.Context(), nil, cfg, false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot prompt")
 }
@@ -159,7 +159,7 @@ func TestResolveOptimizeOptimizationModel_NilClient(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{Options: &opt_eval.Options{}}
-	err := resolveOptimizeOptimizationModel(t.Context(), nil, cfg)
+	err := resolveOptimizeOptimizationModel(t.Context(), nil, cfg, "")
 	assert.NoError(t, err) // silently skips
 	assert.Empty(t, cfg.Options.OptimizationModel)
 }
@@ -170,7 +170,7 @@ func TestResolveOptimizeTargetModels_NilClient(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{Options: &opt_eval.Options{}}
-	err := resolveOptimizeTargetModels(t.Context(), nil, cfg)
+	err := resolveOptimizeTargetModels(t.Context(), nil, cfg, "")
 	assert.NoError(t, err) // silently skips
 	assert.Nil(t, cfg.Options.OptimizationConfig)
 }

@@ -47,9 +47,11 @@ func resolvedInstruction(flags *evalInitFlags) string {
 // newEvalConfig builds an evalConfig from flags and resolved context, applying defaults as needed.
 func newEvalConfig(flags *evalInitFlags, resolved *evalResolvedContext) *evalConfig {
 	agent := evalAgentRef{
-		Name:    resolved.agentName,
-		Kind:    resolved.agentKind,
-		Version: resolved.version,
+		Name: resolved.agentName,
+		Kind: resolved.agentKind,
+		// Version is intentionally omitted — it is resolved at run time
+		// from the azd environment (AGENT_{SVC}_VERSION) so eval.yaml
+		// never contains a stale version that drifts after redeployment.
 	}
 	if flags.configFile != "" {
 		agent.ConfigFile = flags.configFile
@@ -108,6 +110,20 @@ func submitEvaluatorGeneration(
 		resolveEvalName(flags), flags.evalModel, sources,
 	)
 	return resolved.evalClient.CreateEvaluatorGenerationJob(ctx, request, ProjectEndpointAPIVersion)
+}
+
+// resolveCwdRelative converts a relative path to an absolute path based on
+// the current working directory. Already-absolute paths are returned as-is.
+// This should be called on CLI flag values before passing them to
+// resolveLocalDatasetFile, which resolves against the agent project directory.
+func resolveCwdRelative(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
 }
 
 // resolveLocalDatasetFile resolves the dataset flag value to an absolute path

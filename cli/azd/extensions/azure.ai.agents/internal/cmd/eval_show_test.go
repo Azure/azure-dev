@@ -15,13 +15,13 @@ import (
 
 func TestNewEvalShowCommand_UseString(t *testing.T) {
 	t.Parallel()
-	cmd := newEvalShowCommand()
+	cmd := newEvalShowCommand(&azdext.ExtensionContext{})
 	assert.Equal(t, "show [eval-id]", cmd.Use)
 }
 
 func TestNewEvalShowCommand_Flags(t *testing.T) {
 	t.Parallel()
-	cmd := newEvalShowCommand()
+	cmd := newEvalShowCommand(&azdext.ExtensionContext{})
 
 	tests := []struct {
 		name     string
@@ -49,14 +49,14 @@ func TestNewEvalShowCommand_Flags(t *testing.T) {
 
 func TestNewEvalShowCommand_AcceptsOptionalPositionalArg(t *testing.T) {
 	t.Parallel()
-	cmd := newEvalShowCommand()
+	cmd := newEvalShowCommand(&azdext.ExtensionContext{})
 	// MaximumNArgs(1) — should accept 0 args without error from arg validation.
 	assert.NotNil(t, cmd.Args)
 }
 
 func TestNewEvalShowCommand_HasOutFileShorthand(t *testing.T) {
 	t.Parallel()
-	cmd := newEvalShowCommand()
+	cmd := newEvalShowCommand(&azdext.ExtensionContext{})
 	f := cmd.Flags().Lookup("out-file")
 	require.NotNil(t, f)
 	assert.Equal(t, "O", f.Shorthand)

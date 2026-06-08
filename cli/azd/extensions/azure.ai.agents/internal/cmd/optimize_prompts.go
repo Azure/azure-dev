@@ -309,6 +309,7 @@ func resolveOptimizeEvalModel(
 	azdClient *azdext.AzdClient,
 	cfg *OptimizeConfig,
 	noPrompt bool,
+	envName string,
 ) error {
 	if noPrompt {
 		return fmt.Errorf("options.eval_model is required: use --eval-model <model> to specify the evaluation model")
@@ -318,9 +319,9 @@ func resolveOptimizeEvalModel(
 		return fmt.Errorf("eval_model is required but cannot prompt")
 	}
 
-	deployedModel := getDeployedModelFromEnv(ctx, azdClient)
+	deployedModel := getDeployedModelFromEnv(ctx, azdClient, envName)
 
-	selected, err := promptModelSelection(ctx, azdClient, "Select the model for evaluation", deployedModel)
+	selected, err := promptModelSelection(ctx, azdClient, "Select the model for evaluation", deployedModel, envName)
 	if err != nil {
 		return err
 	}
@@ -373,6 +374,7 @@ func resolveOptimizeTargetModels(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	cfg *OptimizeConfig,
+	envName string,
 ) error {
 	if azdClient == nil {
 		return nil
@@ -391,7 +393,7 @@ func resolveOptimizeTargetModels(
 	}
 
 	// Fetch deployed models from the Foundry project.
-	choices := buildOptimizeModelChoices(ctx, azdClient, currentModel)
+	choices := buildOptimizeModelChoices(ctx, azdClient, currentModel, envName)
 
 	message := "Select target models for optimization"
 	if currentModel != "" {
@@ -451,13 +453,13 @@ func isRecommendedOptimizationModel(modelName string) bool {
 // model. Recommended deployments (gpt-5 family, deepseek) are listed first,
 // followed by the remaining deployments. If the user picks a model not in
 // the recommended set, a warning is printed.
-func resolveOptimizeOptimizationModel(ctx context.Context, azdClient *azdext.AzdClient, cfg *OptimizeConfig) error {
+func resolveOptimizeOptimizationModel(ctx context.Context, azdClient *azdext.AzdClient, cfg *OptimizeConfig, envName string) error {
 	if azdClient == nil {
 		return nil
 	}
 
 	// Fetch deployments once and build a single list: recommended first, then others.
-	deployments := listDeploymentsFromEnv(ctx, azdClient)
+	deployments := listDeploymentsFromEnv(ctx, azdClient, envName)
 
 	var recommended, others []*azdext.SelectChoice
 	seen := make(map[string]bool)
@@ -515,8 +517,8 @@ func resolveOptimizeOptimizationModel(ctx context.Context, azdClient *azdext.Azd
 // MultiSelectChoice items. The baseline model (currentModel) is excluded
 // from the list since it is already used as the baseline.
 // Falls back to an empty list if deployments cannot be fetched.
-func buildOptimizeModelChoices(ctx context.Context, azdClient *azdext.AzdClient, currentModel string) []*azdext.MultiSelectChoice {
-	deployments := listDeploymentsFromEnv(ctx, azdClient)
+func buildOptimizeModelChoices(ctx context.Context, azdClient *azdext.AzdClient, currentModel, envName string) []*azdext.MultiSelectChoice {
+	deployments := listDeploymentsFromEnv(ctx, azdClient, envName)
 
 	var choices []*azdext.MultiSelectChoice
 	seen := make(map[string]bool)
@@ -544,16 +546,17 @@ func buildOptimizeModelChoices(ctx context.Context, azdClient *azdext.AzdClient,
 	return choices
 }
 
-// listDeploymentsFromEnv reads AZURE_AI_PROJECT_ID from the azd environment
-// and returns the Foundry project's model deployments. Returns nil on failure.
-func listDeploymentsFromEnv(ctx context.Context, azdClient *azdext.AzdClient) []FoundryDeploymentInfo {
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || envResp == nil || envResp.Environment == nil {
+// listDeploymentsFromEnv reads AZURE_AI_PROJECT_ID from the specified (or
+// current) azd environment and returns the Foundry project's model
+// deployments. Returns nil on failure.
+func listDeploymentsFromEnv(ctx context.Context, azdClient *azdext.AzdClient, envName string) []FoundryDeploymentInfo {
+	env := getExistingEnvironment(ctx, envName, azdClient)
+	if env == nil {
 		return nil
 	}
 
 	v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envResp.Environment.Name,
+		EnvName: env.Name,
 		Key:     "AZURE_AI_PROJECT_ID",
 	})
 	if err != nil || v.Value == "" {

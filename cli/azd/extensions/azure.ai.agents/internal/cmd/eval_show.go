@@ -22,12 +22,13 @@ import (
 
 // evalShowFlags holds CLI flags for the eval show command.
 type evalShowFlags struct {
+	envName   string // explicit environment name (from -e flag)
 	evalRunID string // specific eval run to show
 	limit     int    // maximum number of runs to display
 	output    string // export results to JSON file
 }
 
-func newEvalShowCommand() *cobra.Command {
+func newEvalShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &evalShowFlags{limit: 20}
 	cmd := &cobra.Command{
 		Use:   "show [eval-id]",
@@ -45,6 +46,7 @@ If eval-id is omitted, the most recent eval from the current environment is used
 			if len(args) > 0 {
 				evalID = args[0]
 			}
+			flags.envName = extCtx.Environment
 			return runEvalShow(ctx, evalID, flags)
 		},
 	}
@@ -55,7 +57,7 @@ If eval-id is omitted, the most recent eval from the current environment is used
 }
 
 func runEvalShow(ctx context.Context, evalID string, flags *evalShowFlags) error {
-	resolved, err := resolveEvalContext(ctx, evalContextOptions{})
+	resolved, err := resolveEvalContext(ctx, evalContextOptions{envName: flags.envName})
 	if err != nil {
 		return err
 	}

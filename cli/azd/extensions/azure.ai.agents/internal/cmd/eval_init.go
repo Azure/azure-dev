@@ -30,6 +30,7 @@ const DataGenerationAPIVersion = "v1"
 // evalInitFlags holds CLI flags and interactive prompt state for eval init.
 type evalInitFlags struct {
 	// CLI flags.
+	envName         string   // explicit environment name (from -e flag)
 	name            string   // eval suite name
 	agent           string   // target agent name
 	projectEndpoint string   // Foundry project endpoint
@@ -73,6 +74,7 @@ the agent project root. Use --no-wait to write pending operation IDs and return.
 			defer logCleanup()
 			flags.evalModelSet = cmd.Flags().Changed("eval-model")
 			flags.maxSamplesSet = cmd.Flags().Changed("max-samples")
+			flags.envName = extCtx.Environment
 			return runEvalInit(ctx, flags, extCtx.NoPrompt)
 		},
 	}
@@ -110,6 +112,7 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 	}
 
 	resolved, err := resolveEvalContext(ctx, evalContextOptions{
+		envName:         flags.envName,
 		agent:           flags.agent,
 		projectEndpoint: flags.projectEndpoint,
 		requireAgent:    true,
@@ -306,7 +309,7 @@ func submitEvalJobs(
 		needDatasetGen = flags.dataset == ""
 		needEvalGen = true
 		if !needDatasetGen {
-			datasetPath, err := resolveLocalDatasetFile(flags.dataset, resolved.agentProject)
+			datasetPath, err := resolveLocalDatasetFile(resolveCwdRelative(flags.dataset), resolved.agentProject)
 			if err != nil {
 				return nil, err
 			}

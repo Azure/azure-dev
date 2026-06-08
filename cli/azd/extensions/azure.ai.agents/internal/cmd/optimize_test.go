@@ -110,9 +110,9 @@ func TestDefaultOptimizeConfig(t *testing.T) {
 	assert.Equal(t, "builtin.task_adherence", cfg.Evaluators[0].Name)
 }
 
-// ---- LoadOptimizeConfig + reconcileConfigAgentName (--config path) ----
+// ---- LoadOptimizeConfig + reconcileConfigAgent (--config path) ----
 
-func TestLoadOptimizeConfig_ReconcileAgentName(t *testing.T) {
+func TestLoadOptimizeConfig_ReconcileAgent(t *testing.T) {
 	t.Parallel()
 
 	writeConfigYAML := func(t *testing.T, dir, agentName string) string {
@@ -132,7 +132,7 @@ func TestLoadOptimizeConfig_ReconcileAgentName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "config-agent", cfg.Agent.Name)
 
-		changed := reconcileConfigAgentName(&cfg.Agent, "env-agent", cfgPath)
+		changed := reconcileConfigAgent(&cfg.Agent, "env-agent", "", cfgPath)
 		assert.True(t, changed, "should report change when names differ")
 		assert.Equal(t, "env-agent", cfg.Agent.Name, "environment name should take precedence")
 	})
@@ -145,7 +145,7 @@ func TestLoadOptimizeConfig_ReconcileAgentName(t *testing.T) {
 		cfg, err := LoadOptimizeConfig(cfgPath)
 		require.NoError(t, err)
 
-		changed := reconcileConfigAgentName(&cfg.Agent, "same-agent", cfgPath)
+		changed := reconcileConfigAgent(&cfg.Agent, "same-agent", "", cfgPath)
 		assert.False(t, changed)
 		assert.Equal(t, "same-agent", cfg.Agent.Name)
 	})
@@ -161,7 +161,7 @@ func TestLoadOptimizeConfig_ReconcileAgentName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, cfg.Agent.Name)
 
-		changed := reconcileConfigAgentName(&cfg.Agent, "env-agent", cfgPath)
+		changed := reconcileConfigAgent(&cfg.Agent, "env-agent", "", cfgPath)
 		assert.False(t, changed, "filling empty name is not a 'change' (no conflict)")
 		assert.Equal(t, "env-agent", cfg.Agent.Name)
 	})
@@ -174,7 +174,7 @@ func TestLoadOptimizeConfig_ReconcileAgentName(t *testing.T) {
 		cfg, err := LoadOptimizeConfig(cfgPath)
 		require.NoError(t, err)
 
-		changed := reconcileConfigAgentName(&cfg.Agent, "", cfgPath)
+		changed := reconcileConfigAgent(&cfg.Agent, "", "", cfgPath)
 		assert.False(t, changed)
 		assert.Equal(t, "config-agent", cfg.Agent.Name, "original name preserved when env is empty")
 	})
@@ -386,7 +386,7 @@ func TestPrintOptimizeResults_TableHasCandidateScorePass(t *testing.T) {
 	}
 
 	var buf strings.Builder
-	printOptimizeResults(t.Context(), &buf, status, false)
+	printOptimizeResults(t.Context(), &buf, status, false, "")
 	out := buf.String()
 
 	// Verify header columns.
@@ -419,7 +419,7 @@ func TestPrintOptimizeResults_BestMarkedWithStar(t *testing.T) {
 	}
 
 	var buf strings.Builder
-	printOptimizeResults(t.Context(), &buf, status, false)
+	printOptimizeResults(t.Context(), &buf, status, false, "")
 
 	assert.Contains(t, buf.String(), "candidate_1 ★")
 }
@@ -429,7 +429,7 @@ func TestPrintOptimizeResults_NoCandidates(t *testing.T) {
 
 	status := &optimize_api.OptimizeJobStatus{}
 	var buf strings.Builder
-	printOptimizeResults(t.Context(), &buf, status, false)
+	printOptimizeResults(t.Context(), &buf, status, false, "")
 
 	// Should print nothing for an empty candidates list.
 	assert.Empty(t, buf.String())
@@ -446,7 +446,7 @@ func TestPrintOptimizeResults_ShowsCandidateIDs(t *testing.T) {
 	}
 
 	var buf strings.Builder
-	printOptimizeResults(t.Context(), &buf, status, true)
+	printOptimizeResults(t.Context(), &buf, status, true, "")
 	out := buf.String()
 
 	assert.Contains(t, out, "Candidate IDs")

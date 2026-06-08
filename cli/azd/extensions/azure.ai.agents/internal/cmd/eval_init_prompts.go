@@ -151,7 +151,7 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 			}
 		}
 
-		selected, err := promptModelSelection(ctx, azdClient, "Select the model for evaluation and generation", deployedModel)
+		selected, err := promptModelSelection(ctx, azdClient, "Select the model for evaluation and generation", deployedModel, resolved.envName)
 		if err != nil {
 			return err
 		}

@@ -72,6 +72,7 @@ type evalResolvedContext struct {
 
 // evalContextOptions configures the behavior of resolveEvalContext.
 type evalContextOptions struct {
+	envName         string // explicit environment name (from -e flag)
 	agent           string // explicit agent name (from --agent flag)
 	projectEndpoint string // explicit project endpoint (from --project-endpoint flag)
 	requireAgent    bool   // fail if agent name cannot be resolved
@@ -95,8 +96,8 @@ Subcommands:
 	cmd.AddCommand(newEvalInitCommand(extCtx))
 	cmd.AddCommand(newEvalRunCommand(extCtx))
 	cmd.AddCommand(newEvalUpdateCommand(extCtx))
-	cmd.AddCommand(newEvalListCommand())
-	cmd.AddCommand(newEvalShowCommand())
+	cmd.AddCommand(newEvalListCommand(extCtx))
+	cmd.AddCommand(newEvalShowCommand(extCtx))
 
 	return cmd
 }
@@ -125,9 +126,8 @@ func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalR
 
 	// Read the current azd environment once — used for agent info, endpoint, and env name.
 	var envName string
-	envResp, envErr := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if envErr == nil && envResp.Environment != nil {
-		envName = envResp.Environment.Name
+	if env := getExistingEnvironment(ctx, options.envName, azdClient); env != nil {
+		envName = env.Name
 	}
 
 	getEnvValue := func(key string) string {

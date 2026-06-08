@@ -11,4 +11,4 @@ tags:
     - ai
     - connection
 usage: azd ai connection <command> [options]
-version: 0.1.0-preview
+version: 0.1.1-preview

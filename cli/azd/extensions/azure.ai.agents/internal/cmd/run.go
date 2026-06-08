@@ -36,7 +36,6 @@ import (
 
 const (
 	agentInspectorExtensionID     = "azure.ai.inspector"
-	agentInspectorReadyTimeout    = 30 * time.Second
 	agentInspectorReadyPollPeriod = 250 * time.Millisecond
 )
 
@@ -318,7 +317,6 @@ func handleInspectorAutoLaunch(
 		ctx,
 		workflow,
 		agentPort,
-		agentInspectorReadyTimeout,
 		agentInspectorReadyPollPeriod,
 		stderr,
 	)
@@ -328,15 +326,11 @@ func startInspectorAfterAgentReadyWithOptions(
 	ctx context.Context,
 	workflow azdext.WorkflowServiceClient,
 	agentPort int,
-	readyTimeout time.Duration,
 	pollPeriod time.Duration,
 	stderr io.Writer,
 ) {
 	go func() {
-		waitCtx, cancel := context.WithTimeout(ctx, readyTimeout)
-		defer cancel()
-
-		if err := waitForLocalPort(waitCtx, agentPort, pollPeriod); err != nil {
+		if err := waitForLocalPort(ctx, agentPort, pollPeriod); err != nil {
 			if ctx.Err() == nil {
 				fmt.Fprintf(
 					stderr,

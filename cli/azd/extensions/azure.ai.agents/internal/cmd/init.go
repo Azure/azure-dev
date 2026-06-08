@@ -1064,11 +1064,28 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := absolutizeRelativeManifestPaths(flags); err != nil {
 						return err
 					}
-					_, statErr := os.Stat(folderName)
-					newlyCreated := errors.Is(statErr, fs.ErrNotExist)
-					targetDir = folderName
-					if newlyCreated && !existingProject {
-						folderDisplay = filepath.ToSlash(folderName)
+
+					// When the manifest lives in the current directory, the agent
+					// source code is already here — treat it like --from-code and
+					// initialize in-place rather than copying files into a new
+					// subdirectory. The existing isSamePath guard in copyDirectory
+					// will skip the copy when src and dst resolve to the same path.
+					manifestInCwd := false
+					if isLocalFilePath(flags.manifestPointer) {
+						if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+							manifestInCwd = isSamePath(filepath.Dir(flags.manifestPointer), cwd)
+						}
+					}
+
+					if !manifestInCwd {
+						_, statErr := os.Stat(folderName)
+						newlyCreated := errors.Is(statErr, fs.ErrNotExist)
+						targetDir = folderName
+						if newlyCreated && !existingProject {
+							folderDisplay = filepath.ToSlash(folderName)
+						}
+					} else if flags.src == "" {
+						flags.src = "."
 					}
 				}
 
@@ -1523,7 +1540,13 @@ func ensureProject(
 		// Best-effort: generate a salt so uniqueString()-based resource names
 		// differ across project recreations. If anything fails the Bicep
 		// templates fall back to the original deterministic hash.
-		ensureResourceTokenSalt(ctx, azdClient, envName)
+		salt := ensureResourceTokenSalt(ctx, azdClient, envName)
+
+		// Best-effort: write a salted AZURE_RESOURCE_GROUP so recreated
+		// projects get a fresh RG (avoiding collisions with leftovers from
+		// a prior teardown). Skipped when salt generation failed or when
+		// AZURE_RESOURCE_GROUP is already set.
+		ensureResourceGroupName(ctx, azdClient, envName, salt)
 
 		// Sync the extension process into the new project directory so that
 		// subsequent local file operations see the scaffolded project.
@@ -1969,7 +1992,8 @@ func (a *InitAction) configureModelChoice(
 	return agentManifest, nil
 }
 
-func (a *InitAction) isLocalFilePath(path string) bool {
+// isLocalFilePath reports whether path refers to a local file (not an http/https URL).
+func isLocalFilePath(path string) bool {
 	// Check if it starts with http:// or https://
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 		return false
@@ -2142,7 +2166,7 @@ func (a *InitAction) downloadAgentYaml(
 	useGhCli := false
 
 	// Check if manifestPointer is a local file path or a URI
-	if a.isLocalFilePath(manifestPointer) {
+	if isLocalFilePath(manifestPointer) {
 		// Guard against directories (defense in depth — the caller should
 		// have caught this already, but check here for safety).
 		if err := checkNotDirectory(manifestPointer); err != nil {
@@ -2389,7 +2413,7 @@ func (a *InitAction) downloadAgentYaml(
 	a.serviceNameOverride = serviceName
 
 	// Safety checks for local container-based agents should happen before prompting for model SKU, etc.
-	if a.isLocalFilePath(manifestPointer) {
+	if isLocalFilePath(manifestPointer) {
 		if _, isContainerAgent := agentManifest.Template.(agent_yaml.ContainerAgent); isContainerAgent {
 			if err := a.validateLocalContainerAgentCopy(ctx, manifestPointer, targetDir); err != nil {
 				return nil, "", err
@@ -2403,7 +2427,7 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", fmt.Errorf("creating target directory %s: %w", targetDir, err)
 	}
 
-	if a.isLocalFilePath(manifestPointer) {
+	if isLocalFilePath(manifestPointer) {
 		// Check if the template is a ContainerAgent
 		_, isHostedContainer := agentManifest.Template.(agent_yaml.ContainerAgent)
 
@@ -2683,33 +2707,44 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 //nolint:gosec // env var key name, not a credential
 const resourceTokenSaltKey = "AZD_RESOURCE_TOKEN_SALT"
 
+// read by azd's Bicep provider to scope resource-group deployments to a unique name per environment
+const resourceGroupEnvKey = "AZURE_RESOURCE_GROUP"
+
+// maxResourceGroupNameLen is the Azure resource group name length limit
+// (Microsoft.Resources/resourceGroups: 1-90 chars).
+const maxResourceGroupNameLen = 90
+
 // ensureResourceTokenSalt checks whether the current azd environment already
-// has a resource token salt. If not, it generates and stores one.
-// Failures are silently ignored so the Bicep templates fall back to the
-// original deterministic uniqueString() hash.
-func ensureResourceTokenSalt(ctx context.Context, azdClient *azdext.AzdClient, envName string) {
+// has a resource token salt. If not, it generates and stores one. Returns the
+// persisted salt value (existing or newly-generated), or an empty string if
+// no salt could be persisted (failures are silently ignored so the Bicep
+// templates fall back to the original deterministic uniqueString() hash).
+func ensureResourceTokenSalt(ctx context.Context, azdClient *azdext.AzdClient, envName string) string {
 	// Already have a salt from a previous init — keep it so resource names stay stable.
 	existing, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envName,
 		Key:     resourceTokenSaltKey,
 	})
 	if err == nil && existing.Value != "" {
-		return
+		return existing.Value
 	}
 
 	// Generate a random salt; if entropy fails, fall back to deterministic naming.
 	salt, err := generateResourceTokenSalt()
 	if err != nil {
-		return
+		return ""
 	}
 
 	// Persist the salt into the azd environment; if storage fails, provision
 	// will still work with the original deterministic resource names.
-	_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+	if _, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: envName,
 		Key:     resourceTokenSaltKey,
 		Value:   salt,
-	})
+	}); err != nil {
+		return ""
+	}
+	return salt
 }
 
 // generateResourceTokenSalt returns a random 8-character hex string.
@@ -2719,6 +2754,60 @@ func generateResourceTokenSalt() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// ensureResourceGroupName writes a salted AZURE_RESOURCE_GROUP value to the
+// azd environment when scaffolding a new project, so that recreating a
+// project with the same environment name produces a fresh resource group
+// (avoiding collisions with any leftover resources from a prior teardown).
+//
+// Best-effort: skipped when salt is empty or AZURE_RESOURCE_GROUP is
+// already set (preserving BYO / previously-provisioned values). Storage
+// failures are silently ignored so Bicep's default `rg-${environmentName}`
+// continues to work.
+func ensureResourceGroupName(ctx context.Context, azdClient *azdext.AzdClient, envName, salt string) {
+	if salt == "" {
+		return
+	}
+	existing, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     resourceGroupEnvKey,
+	})
+	if err == nil && existing.Value != "" {
+		return
+	}
+	name := composeSaltedResourceGroupName(envName, salt)
+	_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: envName,
+		Key:     resourceGroupEnvKey,
+		Value:   name,
+	})
+}
+
+// composeSaltedResourceGroupName returns `rg-{envName}-{salt}` with envName
+// truncated first so the salt is always appended and the final name fits
+// inside Azure's 90-char RG limit. Trailing "-" and "." characters are
+// trimmed off the truncated envName so the join doesn't produce "--" /
+// ".-" and the final name doesn't end with "." (which Azure disallows).
+//
+// Caller is expected to pass a non-empty salt; the function still produces
+// a valid name if salt is empty (no trailing dash).
+func composeSaltedResourceGroupName(envName, salt string) string {
+	const prefix = "rg-"
+	suffixLen := 0
+	if salt != "" {
+		suffixLen = 1 + len(salt) // joiner "-" + salt
+	}
+	maxEnvName := max(maxResourceGroupNameLen-len(prefix)-suffixLen, 0)
+	truncated := envName
+	if len(truncated) > maxEnvName {
+		truncated = truncated[:maxEnvName]
+	}
+	truncated = strings.TrimRight(truncated, "-.")
+	if salt == "" {
+		return prefix + truncated
+	}
+	return prefix + truncated + "-" + salt
 }
 
 // resolveCollisions checks whether the auto-computed target directory or

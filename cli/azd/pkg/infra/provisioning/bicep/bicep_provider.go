@@ -25,7 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/drone/envsubst"
 
@@ -2996,6 +2996,16 @@ func (p *BicepProvider) checkAiModelQuota(
 		}
 
 		// Check aggregated capacity against remaining quota.
+		// Skip when the /usages API returned an empty list (e.g. free-tier
+		// subscriptions that have not yet provisioned Cognitive Services
+		// resources).  Empty usages means no consumption data is
+		// available — not that quota is zero.  The model-catalog
+		// validation above still runs so that ai_model_not_found
+		// warnings are surfaced regardless.
+		if len(usages) == 0 {
+			continue
+		}
+
 		reportedUsage := map[string]bool{}
 		for _, r := range resolved {
 			if reportedUsage[r.usageName] {

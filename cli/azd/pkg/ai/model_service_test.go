@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -482,10 +482,10 @@ func TestFilterModelsByQuota(t *testing.T) {
 			expected:     []string{"gpt-4o"},
 		},
 		{
-			name:         "empty usages excludes all models",
+			name:         "empty usages includes models with SKUs",
 			usages:       []AiModelUsage{},
 			minRemaining: 1,
-			expected:     []string{},
+			expected:     []string{"gpt-4o", "gpt-4o-mini", "text-embedding-ada-002"},
 		},
 	}
 
@@ -775,6 +775,61 @@ func TestFilterModelsByAnyLocationQuota(t *testing.T) {
 	require.Equal(t, []string{"model-a", "model-b"}, filteredNames)
 }
 
+func TestFilterModelsByAnyLocationQuota_EmptyUsagesDoNotLeakAcrossLocations(t *testing.T) {
+	// Regression test: a model available only in location A with exhausted
+	// quota should NOT become eligible because location B returns empty
+	// usages (e.g. free-tier subscription).
+	models := []AiModel{
+		{
+			Name:      "model-a",
+			Locations: []string{"eastus"},
+			Versions: []AiModelVersion{
+				{
+					Version: "1",
+					Skus: []AiModelSku{
+						{Name: "Standard", UsageName: "a_usage"},
+					},
+				},
+			},
+		},
+		{
+			Name:      "model-b",
+			Locations: []string{"eastus", "westus"},
+			Versions: []AiModelVersion{
+				{
+					Version: "1",
+					Skus: []AiModelSku{
+						{Name: "Standard", UsageName: "b_usage"},
+					},
+				},
+			},
+		},
+	}
+
+	usagesByLocation := map[string][]AiModelUsage{
+		// eastus: model-a exhausted, model-b has quota
+		"eastus": {
+			{Name: "a_usage", CurrentValue: 10, Limit: 10},
+			{Name: "b_usage", CurrentValue: 0, Limit: 100},
+		},
+		// westus: empty usages (free-tier). model-a is NOT
+		// available here, so it must not become eligible.
+		"westus": {},
+	}
+
+	filtered := filterModelsByAnyLocationQuota(
+		models, usagesByLocation, 1)
+	names := make([]string, 0, len(filtered))
+	for _, m := range filtered {
+		names = append(names, m.Name)
+	}
+
+	// model-a should be excluded (exhausted in eastus,
+	// not available in westus).
+	// model-b should be included (has quota in eastus).
+	require.Equal(t, []string{"model-b"}, names)
+}
+
 func TestIsFinetuneUsageName(t *testing.T) {
 	tests := []struct {
 		usageName string
@@ -794,4 +849,55 @@ func TestIsFinetuneUsageName(t *testing.T) {
 			require.Equal(t, tt.expected, IsFinetuneUsageName(tt.usageName))
 		})
 	}
+}
+
+func TestModelHasQuota_EmptyUsages(t *testing.T) {
+	modelWithSkus := AiModel{
+		Name: "gpt-4o",
+		Versions: []AiModelVersion{
+			{
+				Version: "2024-05-13",
+				Skus:    []AiModelSku{{Name: "Standard", UsageName: "OpenAI.Standard.gpt-4o"}},
+			},
+		},
+	}
+	modelNoSkus := AiModel{
+		Name:     "empty-model",
+		Versions: []AiModelVersion{{Version: "1.0"}},
+	}
+
+	emptyUsages := map[string]AiModelUsage{}
+
+	// Model with SKUs should be considered eligible when usage data is empty
+	require.True(t, modelHasQuota(modelWithSkus, emptyUsages, 1))
+
+	// Model with no SKUs should not be considered eligible even with empty usage data
+	require.False(t, modelHasQuota(modelNoSkus, emptyUsages, 1))
+}
+
+func TestMaxModelRemainingQuota_EmptyUsages(t *testing.T) {
+	modelWithSkus := AiModel{
+		Name: "gpt-4o",
+		Versions: []AiModelVersion{
+			{
+				Version: "2024-05-13",
+				Skus:    []AiModelSku{{Name: "Standard", UsageName: "OpenAI.Standard.gpt-4o"}},
+			},
+		},
+	}
+	modelNoSkus := AiModel{
+		Name:     "empty-model",
+		Versions: []AiModelVersion{{Version: "1.0"}},
+	}
+
+	emptyUsages := map[string]AiModelUsage{}
+
+	// Model with SKUs: found=true, remaining=QuotaRemainingUnknown
+	remaining, found := maxModelRemainingQuota(modelWithSkus, emptyUsages)
+	require.True(t, found)
+	require.Equal(t, QuotaRemainingUnknown, remaining)
+
+	// Model with no SKUs: found=false
+	_, found = maxModelRemainingQuota(modelNoSkus, emptyUsages)
+	require.False(t, found)
 }

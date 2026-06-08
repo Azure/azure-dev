@@ -84,6 +84,18 @@ func constructBuildConfig(options ...AgentBuildOption) *AgentBuildConfig {
 	return config
 }
 
+// mapRaiConfig flattens the manifest-level policies list into the data-plane
+// rai_config field. It returns the RAI config derived from the first policy of
+// type "rai_policy" that has a policy name, or nil when none is configured.
+func mapRaiConfig(policies []Policy) *agent_api.RaiConfig {
+	for _, policy := range policies {
+		if policy.Type == PolicyTypeRai && policy.RaiPolicyName != "" {
+			return &agent_api.RaiConfig{RaiPolicyName: policy.RaiPolicyName}
+		}
+	}
+	return nil
+}
+
 // MapEndpointAndCard maps YAML-layer endpoint and card fields to API model types
 // without requiring or validating the full agent definition. This is used by the
 // endpoint update command where only endpoint/card patching is needed.
@@ -396,7 +408,8 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 
 		codeDef := agent_api.HostedAgentDefinition{
 			AgentDefinition: agent_api.AgentDefinition{
-				Kind: agent_api.AgentKindHosted,
+				Kind:      agent_api.AgentKindHosted,
+				RaiConfig: mapRaiConfig(hostedAgent.Policies),
 			},
 			ProtocolVersions:     protocolVersions,
 			CPU:                  cpu,
@@ -420,7 +433,8 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 
 	imageDef := agent_api.HostedAgentDefinition{
 		AgentDefinition: agent_api.AgentDefinition{
-			Kind: agent_api.AgentKindHosted,
+			Kind:      agent_api.AgentKindHosted,
+			RaiConfig: mapRaiConfig(hostedAgent.Policies),
 		},
 		ProtocolVersions:     protocolVersions,
 		CPU:                  cpu,

@@ -1,5 +1,11 @@
 # Release History
 
+## 0.1.1-preview (2026-06-05)
+
+- [[#8509]](https://github.com/Azure/azure-dev/pull/8509) Accept `.zip` and
+  directory inputs for `azd ai skill update --file`, matching `create` mode
+  support and uploading new immutable skill versions from those inputs.
+
 ## 0.1.0-preview (2026-05-28)
 
 - Initial preview release of the `azure.ai.skills` extension.

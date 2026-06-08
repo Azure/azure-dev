@@ -1534,3 +1534,108 @@ func TestCreateHostedAgentAPIRequest_WithVersionSelectorAndAuthSchemes(t *testin
 		t.Errorf("schemes[1].IsolationKeySource should be nil, got %v", schemes[1].IsolationKeySource)
 	}
 }
+
+func TestCreateHostedAgentAPIRequest_WithRaiConfig(t *testing.T) {
+	t.Parallel()
+	const raiPolicyID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/" +
+		"my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/raiPolicies/Microsoft.DefaultV2"
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "rai-agent",
+		},
+		Policies: []Policy{
+			{Type: PolicyTypeRai, RaiPolicyName: raiPolicyID},
+		},
+	}
+	buildConfig := &AgentBuildConfig{ImageURL: "img:latest"}
+
+	req, err := CreateHostedAgentAPIRequest(agent, buildConfig)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
+	if imgDef.RaiConfig == nil {
+		t.Fatal("expected RaiConfig to be set, got nil")
+	}
+	if imgDef.RaiConfig.RaiPolicyName != raiPolicyID {
+		t.Errorf("RaiPolicyName = %q, want %q", imgDef.RaiConfig.RaiPolicyName, raiPolicyID)
+	}
+}
+
+func TestCreateAgentAPIRequest_CodeDeploy_WithRaiConfig(t *testing.T) {
+	t.Parallel()
+	const raiPolicyID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/" +
+		"my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/raiPolicies/Microsoft.DefaultV2"
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "rai-code-agent",
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "responses", Version: "1.0.0"},
+		},
+		CodeConfiguration: &CodeConfiguration{
+			Runtime:    "python_3_12",
+			EntryPoint: "agent.py",
+		},
+		Policies: []Policy{
+			{Type: PolicyTypeRai, RaiPolicyName: raiPolicyID},
+		},
+	}
+
+	req, err := CreateAgentAPIRequestFromDefinition(agent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	codeDef := req.Definition.(agent_api.HostedAgentDefinition)
+	if codeDef.RaiConfig == nil {
+		t.Fatal("expected RaiConfig to be set, got nil")
+	}
+	if codeDef.RaiConfig.RaiPolicyName != raiPolicyID {
+		t.Errorf("RaiPolicyName = %q, want %q", codeDef.RaiConfig.RaiPolicyName, raiPolicyID)
+	}
+}
+
+func TestCreateHostedAgentAPIRequest_NoRaiConfig(t *testing.T) {
+	t.Parallel()
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "no-rai-agent",
+		},
+	}
+	buildConfig := &AgentBuildConfig{ImageURL: "img:latest"}
+
+	req, err := CreateHostedAgentAPIRequest(agent, buildConfig)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
+	if imgDef.RaiConfig != nil {
+		t.Errorf("expected RaiConfig to be nil, got %+v", imgDef.RaiConfig)
+	}
+}
+
+func TestMapRaiConfig(t *testing.T) {
+	t.Parallel()
+	if got := mapRaiConfig(nil); got != nil {
+		t.Errorf("mapRaiConfig(nil) = %+v, want nil", got)
+	}
+	if got := mapRaiConfig([]Policy{}); got != nil {
+		t.Errorf("mapRaiConfig(empty policies) = %+v, want nil", got)
+	}
+	if got := mapRaiConfig([]Policy{{Type: PolicyTypeRai}}); got != nil {
+		t.Errorf("mapRaiConfig(empty policy name) = %+v, want nil", got)
+	}
+	if got := mapRaiConfig([]Policy{{Type: "other", RaiPolicyName: "p1"}}); got != nil {
+		t.Errorf("mapRaiConfig(non-rai type) = %+v, want nil", got)
+	}
+	got := mapRaiConfig([]Policy{{Type: PolicyTypeRai, RaiPolicyName: "p1"}})
+	if got == nil || got.RaiPolicyName != "p1" {
+		t.Errorf("mapRaiConfig(p1) = %+v, want RaiPolicyName=p1", got)
+	}
+}

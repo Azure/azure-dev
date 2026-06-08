@@ -49,40 +49,106 @@ func TestUpdateAction_ValidInputFailsAtEndpoint(t *testing.T) {
 		"should fail at endpoint resolution with no project configured")
 }
 
-// TestUpdateAction_ZipSuggestionMentionsDestructive verifies that the error
-// message for ZIP files on `update` tells the user the operation is
-// destructive (delete-then-create at the skill level).
-func TestUpdateAction_ZipSuggestionMentionsDestructive(t *testing.T) {
-	a := &updateAction{flags: &updateFlags{file: "skill.zip"}}
-	err := a.validateFlags()
-	require.Error(t, err)
-	var le *azdext.LocalError
-	require.True(t, errors.As(err, &le))
-	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
-	require.Contains(t, le.Suggestion, "deletes",
-		"suggestion must warn that the operation is destructive")
+// --- selectUpdateMode routing (issue #8489) ---
+//
+// Verifies that `update --file` now accepts the same three input shapes
+// as `create --file`: a single SKILL.md, a .zip archive, or a directory
+// whose root contains SKILL.md. Previously update rejected .zip and
+// directories with a pointer to `create --force` (destructive).
+
+func TestSelectUpdateMode_FileMd(t *testing.T) {
+	mode, err := selectUpdateMode(&updateFlags{file: "./SKILL.md"})
+	require.NoError(t, err)
+	require.Equal(t, updateModeFileMd, mode)
 }
 
-// TestUpdateAction_DirectoryRejectedWithDestructivePointer verifies that
-// directory --file (multi-file uploads) is rejected on update with the same
-// `create --force` pointer as .zip — keeping update inline-only by design.
-func TestUpdateAction_DirectoryRejectedWithDestructivePointer(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "SKILL.md"),
-		[]byte("---\nname: my-skill\n---\nbody"),
-		0600,
-	))
-	a := &updateAction{flags: &updateFlags{file: dir}}
-	err := a.validateFlags()
+func TestSelectUpdateMode_FilePackage(t *testing.T) {
+	for _, f := range []string{"./pkg.zip", "./PKG.ZIP"} {
+		mode, err := selectUpdateMode(&updateFlags{file: f})
+		require.NoError(t, err, "file %q", f)
+		require.Equal(t, updateModeFilePackage, mode, "file %q", f)
+	}
+}
+
+func TestSelectUpdateMode_FileDirectory(t *testing.T) {
+	dir := writeSkillDir(t, "my-skill")
+	mode, err := selectUpdateMode(&updateFlags{file: dir})
+	require.NoError(t, err)
+	require.Equal(t, updateModeFileDirectory, mode)
+}
+
+func TestSelectUpdateMode_InlineOnly(t *testing.T) {
+	mode, err := selectUpdateMode(&updateFlags{descriptionSet: true})
+	require.NoError(t, err)
+	require.Equal(t, updateModeInline, mode)
+}
+
+func TestSelectUpdateMode_SetDefaultAlone(t *testing.T) {
+	mode, err := selectUpdateMode(&updateFlags{setDefault: "2"})
+	require.NoError(t, err)
+	require.Equal(t, updateModeSetDefault, mode)
+}
+
+func TestSelectUpdateMode_SetDefaultConflictsWithContent(t *testing.T) {
+	for _, f := range []*updateFlags{
+		{setDefault: "2", descriptionSet: true},
+		{setDefault: "2", instructionsSet: true},
+		{setDefault: "2", file: "./SKILL.md"},
+	} {
+		mode, err := selectUpdateMode(f)
+		require.Error(t, err, "%+v", f)
+		require.Equal(t, updateModeNone, mode)
+		var le *azdext.LocalError
+		require.True(t, errors.As(err, &le))
+		require.Equal(t, exterrors.CodeConflictingArguments, le.Code)
+	}
+}
+
+func TestSelectUpdateMode_InlineAndFileConflict(t *testing.T) {
+	mode, err := selectUpdateMode(&updateFlags{
+		descriptionSet: true,
+		file:           "./SKILL.md",
+	})
 	require.Error(t, err)
+	require.Equal(t, updateModeNone, mode)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeConflictingArguments, le.Code)
+}
+
+func TestSelectUpdateMode_NoInputFails(t *testing.T) {
+	mode, err := selectUpdateMode(&updateFlags{})
+	require.Error(t, err)
+	require.Equal(t, updateModeNone, mode)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeMissingRequiredField, le.Code)
+}
+
+func TestSelectUpdateMode_UnknownExtension(t *testing.T) {
+	mode, err := selectUpdateMode(&updateFlags{file: "./SKILL.txt"})
+	require.Error(t, err)
+	require.Equal(t, updateModeNone, mode)
 	var le *azdext.LocalError
 	require.True(t, errors.As(err, &le))
 	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
-	require.Contains(t, le.Suggestion, "deletes",
-		"directory rejection must warn that the create --force fallback is destructive")
-	require.Contains(t, le.Suggestion, "directory",
-		"suggestion should point at the --file <directory> --force flow")
+}
+
+// TestSelectUpdateMode_MissingNoExtPathSurfacesStatError guards the same
+// regression as the create-side TestSelectCreateMode_MissingNoExtPathSurfacesStatError:
+// a --file value with no extension that does not exist on disk must
+// surface the underlying stat failure rather than a misleading
+// "unsupported --file extension \"\"" error.
+func TestSelectUpdateMode_MissingNoExtPathSurfacesStatError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	mode, err := selectUpdateMode(&updateFlags{file: missing})
+	require.Error(t, err)
+	require.Equal(t, updateModeNone, mode)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
+	require.NotContains(t, le.Message, `unsupported --file extension ""`)
+	require.Contains(t, le.Message, "inspect --file")
 }
 
 func TestUpdateAction_SetDefaultVersion_AcceptsAlone(t *testing.T) {
@@ -97,4 +163,48 @@ func TestUpdateAction_SetDefaultVersion_ConflictsWithContent(t *testing.T) {
 	var le *azdext.LocalError
 	require.True(t, errors.As(err, &le))
 	require.Equal(t, exterrors.CodeConflictingArguments, le.Code)
+}
+
+// --- updateAction run-path preflight (no network) ---
+
+// TestUpdateAction_DirectoryWithoutSkillMdFails proves runFileDirectory
+// rejects a directory missing SKILL.md before any network call, so it can
+// be safely exercised with a nil client. Mirrors
+// TestCreateAction_DirectoryWithoutSkillMdFails.
+func TestUpdateAction_DirectoryWithoutSkillMdFails(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte("hi"), 0600))
+	a := &updateAction{flags: &updateFlags{name: "my-skill", file: dir}}
+	err := a.runFileDirectory(context.Background(), nil)
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
+}
+
+// TestUpdateAction_PackageFileMissingFails proves runFilePackage's stat
+// preflight rejects a non-existent .zip before any network call (safe to
+// exercise with a nil client).
+func TestUpdateAction_PackageFileMissingFails(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "does-not-exist.zip")
+	a := &updateAction{flags: &updateFlags{name: "my-skill", file: missing}}
+	err := a.runFilePackage(context.Background(), nil)
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
+}
+
+// TestUpdateAction_PackageFileIsDirectoryFails proves runFilePackage
+// rejects a directory passed via the .zip-extension-only path (defense in
+// depth — the routing layer would normally send directories through
+// runFileDirectory, but the runFilePackage stat check exists for safety).
+func TestUpdateAction_PackageFileIsDirectoryFails(t *testing.T) {
+	dir := t.TempDir()
+	a := &updateAction{flags: &updateFlags{name: "my-skill", file: dir}}
+	err := a.runFilePackage(context.Background(), nil)
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
 }

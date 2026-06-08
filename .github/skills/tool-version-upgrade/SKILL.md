@@ -12,6 +12,9 @@ description: >-
 
   DO NOT USE FOR: code review (use code-review), changelog generation
   (use changelog-generation), deploying releases, publishing extensions to registry.
+license: MIT
+metadata:
+  version: 1.0.0
 ---
 
 # tool-version-upgrade

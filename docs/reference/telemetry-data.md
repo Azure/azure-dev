@@ -188,7 +188,7 @@ Valid values for `project.service.hosts` and `project.service.targets`:
 |-------|-------------|
 | `appservice` | Azure App Service |
 | `containerapp` | Azure Container Apps |
-| `containerapp-dotnet` | Azure Container Apps (.NET Aspire) |
+| `containerapp-dotnet` | Azure Container Apps (Aspire) |
 | `function` | Azure Functions |
 | `staticwebapp` | Azure Static Web Apps |
 | `springapp` | Azure Spring Apps |

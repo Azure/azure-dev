@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// eval_init_prompts.go implements interactive prompts for the eval init
+// eval_generate_prompts.go implements interactive prompts for the eval generate
 // command, including eval suite name, instruction source, trace inclusion,
 // eval model selection, and regeneration choices for existing configs.
 
@@ -18,10 +18,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// promptEvalInitOptions runs interactive prompts for eval init options that
+// promptEvalGenerateOptions runs interactive prompts for eval generate options that
 // were not provided via flags: name, instruction, trace days, eval model,
 // and max samples.
-func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, flags *evalInitFlags, noPrompt bool) error {
+func promptEvalGenerateOptions(ctx context.Context, resolved *evalResolvedContext, flags *evalGenerateFlags, noPrompt bool) error {
 	azdClient := resolved.azdClient
 	if noPrompt {
 		return nil
@@ -187,7 +187,7 @@ func promptRegenerateChoices(
 	ctx context.Context,
 	resolved *evalResolvedContext,
 	existingCfg *evalConfig,
-	flags *evalInitFlags,
+	flags *evalGenerateFlags,
 ) error {
 	prompt := resolved.azdClient.Prompt()
 
@@ -240,7 +240,7 @@ func promptConfigConfirmation(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	resolved *evalResolvedContext,
-	flags *evalInitFlags,
+	flags *evalGenerateFlags,
 ) error {
 	prompt := azdClient.Prompt()
 	projectDir := resolved.agentProject

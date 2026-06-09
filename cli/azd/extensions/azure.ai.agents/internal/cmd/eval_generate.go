@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// eval_init.go implements the "eval init" command, which generates a local
+// eval_generate.go implements the "eval generate" command, which generates a local
 // eval suite (eval.yaml) for a deployed agent. It resolves context, submits
 // dataset and evaluator generation jobs, polls for completion (unless
 // --no-wait), downloads review artifacts, and writes the eval config.
@@ -27,8 +27,8 @@ import (
 // DataGenerationAPIVersion is the API version used for data generation jobs.
 const DataGenerationAPIVersion = "v1"
 
-// evalInitFlags holds CLI flags and interactive prompt state for eval init.
-type evalInitFlags struct {
+// evalGenerateFlags holds CLI flags and interactive prompt state for eval generate.
+type evalGenerateFlags struct {
 	// CLI flags.
 	envName         string   // explicit environment name (from -e flag)
 	name            string   // eval suite name
@@ -53,20 +53,20 @@ type evalInitFlags struct {
 	regenerateEvaluator bool
 }
 
-func newEvalInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	flags := &evalInitFlags{maxSamples: defaultEvalSamples, output: defaultEvalConfigName}
+func newEvalGenerateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	flags := &evalGenerateFlags{maxSamples: defaultEvalSamples, output: defaultEvalConfigName}
 	cmd := &cobra.Command{
-		Use:   "init",
+		Use:   "generate",
 		Short: "Generate a local eval suite for a deployed agent.",
 		Long: `Generate a local eval suite for a deployed agent.
 
 By default, this command submits dataset and evaluator generation jobs, waits for
 completion, downloads review artifacts, and writes eval.yaml at
 the agent project root. Use --no-wait to write pending operation IDs and return.`,
-		Example: `  azd ai agent eval init
-  azd ai agent eval init --gen-instruction "This agent handles restaurant reservations." --eval-model gpt-4o --max-samples 50
-  azd ai agent eval init --gen-instruction-file ./instructions.md --eval-model gpt-4o
-  azd ai agent eval init --dataset ./tests/golden.jsonl --evaluator builtin.intent_resolution`,
+		Example: `  azd ai agent eval generate
+  azd ai agent eval generate --gen-instruction "This agent handles restaurant reservations." --eval-model gpt-4o --max-samples 50
+  azd ai agent eval generate --gen-instruction-file ./instructions.md --eval-model gpt-4o
+  azd ai agent eval generate --dataset ./tests/golden.jsonl --evaluator builtin.intent_resolution`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -75,7 +75,7 @@ the agent project root. Use --no-wait to write pending operation IDs and return.
 			flags.evalModelSet = cmd.Flags().Changed("eval-model")
 			flags.maxSamplesSet = cmd.Flags().Changed("max-samples")
 			flags.envName = extCtx.Environment
-			return runEvalInit(ctx, flags, extCtx.NoPrompt)
+			return runEvalGenerate(ctx, flags, extCtx.NoPrompt)
 		},
 	}
 
@@ -96,10 +96,10 @@ the agent project root. Use --no-wait to write pending operation IDs and return.
 	return cmd
 }
 
-// runEvalInit executes the eval init command logic. It resolves context,
+// runEvalGenerate executes the eval generate command logic. It resolves context,
 // prompts for missing options, submits generation jobs, polls for completion
 // (unless --no-wait), writes the eval config, and prints next steps.
-func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error {
+func runEvalGenerate(ctx context.Context, flags *evalGenerateFlags, noPrompt bool) error {
 	if flags.instruction != "" && flags.instructionFile != "" {
 		return fmt.Errorf("cannot use both --gen-instruction and --gen-instruction-file; provide one or the other")
 	}
@@ -184,7 +184,7 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		}
 	}
 
-	if err := promptEvalInitOptions(ctx, resolved, flags, noPrompt); err != nil {
+	if err := promptEvalGenerateOptions(ctx, resolved, flags, noPrompt); err != nil {
 		return err
 	}
 
@@ -226,13 +226,13 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		if state.DatasetGenOpID != "" || state.EvalGenOpID != "" {
 			state.InitStatus = opt_eval.InitStatusPending
 		}
-		return writePendingEvalInit(ctx, resolved, configPath, evalCfg, state)
+		return writePendingEvalGenerate(ctx, resolved, configPath, evalCfg, state)
 	}
 
 	pollRes, err := pollAndFinalizeJobs(ctx, resolved, evalCfg, state, extraEvals)
 	if err != nil {
 		if _, ok := errors.AsType[*initTimeoutError](err); ok {
-			return writeTimedOutEvalInit(ctx, resolved, configPath, evalCfg, state)
+			return writeTimedOutEvalGenerate(ctx, resolved, configPath, evalCfg, state)
 		}
 		return err
 	}
@@ -251,7 +251,7 @@ func handleExistingEvalConfig(
 	ctx context.Context,
 	resolved *evalResolvedContext,
 	existingCfg *evalConfig,
-	flags *evalInitFlags,
+	flags *evalGenerateFlags,
 	noPrompt bool,
 ) (keepExisting bool, err error) {
 	if noPrompt {
@@ -287,7 +287,7 @@ func handleExistingEvalConfig(
 func submitEvalJobs(
 	ctx context.Context,
 	resolved *evalResolvedContext,
-	flags *evalInitFlags,
+	flags *evalGenerateFlags,
 	evalCfg *evalConfig,
 	existingCfg *evalConfig,
 	isRegenerate bool,

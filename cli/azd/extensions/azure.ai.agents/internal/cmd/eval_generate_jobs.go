@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 // eval_init_jobs.go handles generation job submission and polling for the
-// eval init command. It submits dataset and evaluator generation requests,
+// eval generate command. It submits dataset and evaluator generation requests,
 // polls for completion in parallel, downloads artifacts on success, and
 // persists state for resume on timeout.
 
@@ -24,7 +24,7 @@ import (
 )
 
 // resolveEvalName returns the eval suite name from flags, falling back to defaultEvalName.
-func resolveEvalName(flags *evalInitFlags) string {
+func resolveEvalName(flags *evalGenerateFlags) string {
 	if flags.name != "" {
 		return flags.name
 	}
@@ -33,7 +33,7 @@ func resolveEvalName(flags *evalInitFlags) string {
 
 // resolvedInstruction returns the instruction content from flags, reading
 // from file if instructionFile is set.
-func resolvedInstruction(flags *evalInitFlags) string {
+func resolvedInstruction(flags *evalGenerateFlags) string {
 	if flags.instructionFile != "" {
 		data, err := os.ReadFile(flags.instructionFile) //nolint:gosec // user-provided path validated earlier
 		if err != nil {
@@ -45,7 +45,7 @@ func resolvedInstruction(flags *evalInitFlags) string {
 }
 
 // newEvalConfig builds an evalConfig from flags and resolved context, applying defaults as needed.
-func newEvalConfig(flags *evalInitFlags, resolved *evalResolvedContext) *evalConfig {
+func newEvalConfig(flags *evalGenerateFlags, resolved *evalResolvedContext) *evalConfig {
 	agent := evalAgentRef{
 		Name: resolved.agentName,
 		Kind: resolved.agentKind,
@@ -79,7 +79,7 @@ func newEvalConfig(flags *evalInitFlags, resolved *evalResolvedContext) *evalCon
 func submitDatasetGeneration(
 	ctx context.Context,
 	resolved *evalResolvedContext,
-	flags *evalInitFlags,
+	flags *evalGenerateFlags,
 ) (*eval_api.GenerationJob, error) {
 	// Traces are only supported for evaluator generation, not dataset generation.
 	prompt := resolvedInstruction(flags)
@@ -96,7 +96,7 @@ func submitDatasetGeneration(
 func submitEvaluatorGeneration(
 	ctx context.Context,
 	resolved *evalResolvedContext,
-	flags *evalInitFlags,
+	flags *evalGenerateFlags,
 ) (*eval_api.GenerationJob, error) {
 	var traces *eval_api.TraceOptions
 	if flags.traceDays > 0 {
@@ -170,8 +170,8 @@ func buildOpenAIEvalRequest(evalCfg *evalConfig) *eval_api.CreateOpenAIEvalReque
 	return evalCfg.ToAgentTargetAdaptableEvalGroupRequest()
 }
 
-// resumeEvalInit handles resuming an eval init when generation jobs are still pending. It polls for job completion, updates state and config on success, and persists state for later resume if polling times out.
-func resumeEvalInit(
+// resumeEvalGenerate handles resuming an eval generate when generation jobs are still pending. It polls for job completion, updates state and config on success, and persists state for later resume if polling times out.
+func resumeEvalGenerate(
 	ctx context.Context,
 	resolved *evalResolvedContext,
 	configPath string,
@@ -180,7 +180,7 @@ func resumeEvalInit(
 ) error {
 	if _, err := pollAndFinalizeJobs(ctx, resolved, evalCfg, state, nil); err != nil {
 		if _, ok := errors.AsType[*initTimeoutError](err); ok {
-			return writeTimedOutEvalInit(ctx, resolved, configPath, evalCfg, state)
+			return writeTimedOutEvalGenerate(ctx, resolved, configPath, evalCfg, state)
 		}
 		return err
 	}
@@ -394,7 +394,7 @@ func (e *initTimeoutError) Error() string {
 	return "generation jobs did not complete within the polling timeout"
 }
 
-func writePendingEvalInit(
+func writePendingEvalGenerate(
 	ctx context.Context,
 	resolved *evalResolvedContext,
 	configPath string,
@@ -407,7 +407,7 @@ func writePendingEvalInit(
 	if err := eval_api.WriteEvalConfig(configPath, evalCfg); err != nil {
 		return err
 	}
-	fmt.Println(color.YellowString("Eval init submitted (async)"))
+	fmt.Println(color.YellowString("Eval generate submitted (async)"))
 	if state.DatasetGenOpID != "" {
 		fmt.Printf("   dataset generation: %s (%s)\n", state.DatasetGenOpID, state.DatasetGenStatus)
 	}
@@ -420,9 +420,9 @@ func writePendingEvalInit(
 	return nil
 }
 
-// writeTimedOutEvalInit persists state and YAML when generation jobs exceed
+// writeTimedOutEvalGenerate persists state and YAML when generation jobs exceed
 // the polling timeout, allowing the user to resume later.
-func writeTimedOutEvalInit(
+func writeTimedOutEvalGenerate(
 	ctx context.Context,
 	resolved *evalResolvedContext,
 	configPath string,
@@ -448,7 +448,7 @@ func writeTimedOutEvalInit(
 	fmt.Println("\n   To resume polling, run:")
 	fmt.Println("     azd ai agent eval run")
 	fmt.Println("\n   To start fresh and clear timed-out state, run:")
-	fmt.Println("     azd ai agent eval init --reset-defaults")
+	fmt.Println("     azd ai agent eval generate --reset-defaults")
 	return nil
 }
 

@@ -342,7 +342,7 @@ func resolveOptimizeDataset(
 	if noPrompt {
 		return fmt.Errorf(
 			"a dataset is required: use --dataset <file-or-name>, or provide dataset_file / dataset_reference " +
-				"in your config, or run 'azd ai agent eval init' to generate one")
+				"in your config, or run 'azd ai agent eval generate' to generate one")
 	}
 
 	if azdClient == nil {

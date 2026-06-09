@@ -194,7 +194,7 @@ func TestDetectEvalAgentKind(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// EvalState — stored in azd environment (integration-tested via eval init/run)
+// EvalState — stored in azd environment (integration-tested via eval generate/run)
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

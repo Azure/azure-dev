@@ -69,7 +69,7 @@ func runEvalShow(ctx context.Context, evalID string, flags *evalShowFlags) error
 		evalID = state.EvalID
 	}
 	if evalID == "" {
-		return fmt.Errorf("no eval-id provided and none found in the current environment; run 'azd ai agent eval init' first or pass an eval-id")
+		return fmt.Errorf("no eval-id provided and none found in the current environment; run 'azd ai agent eval generate' first or pass an eval-id")
 	}
 
 	if flags.evalRunID != "" {

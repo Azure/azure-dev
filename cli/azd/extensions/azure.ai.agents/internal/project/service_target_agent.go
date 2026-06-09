@@ -1840,7 +1840,7 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 			last := artifacts[len(artifacts)-1]
 			last.Metadata["note"] = "For information on invoking the agent, see " + output.WithLinkFormat(
 				"https://aka.ms/azd-agents-invoke") +
-				"\n\nSet up an evaluation suite to measure quality and impact in one step with " + output.WithHighLightFormat("azd ai agent eval init")
+				"\n\nSet up an evaluation suite to measure quality and impact in one step with " + output.WithHighLightFormat("azd ai agent eval generate")
 		}
 	}
 

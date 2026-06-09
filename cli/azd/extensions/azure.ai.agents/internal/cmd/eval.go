@@ -86,20 +86,38 @@ func newEvalCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Create and run quick evals for an agent.
 
 Subcommands:
-  init    Generate an eval config and dataset from a hosted agent
-  run     Execute an evaluation run from eval.yaml
-  update  Update an existing eval configuration
-  list    List evaluations for the current project
-  show    Show details of an evaluation run`,
+  generate  Generate an eval config and dataset from a hosted agent
+  run       Execute an evaluation run from eval.yaml
+  update    Update an existing eval configuration
+  list      List evaluations for the current project
+  show      Show details of an evaluation run`,
 	}
 
-	cmd.AddCommand(newEvalInitCommand(extCtx))
+	cmd.AddCommand(newEvalGenerateCommand(extCtx))
+	cmd.AddCommand(newDeprecatedEvalInitCommand())
 	cmd.AddCommand(newEvalRunCommand(extCtx))
 	cmd.AddCommand(newEvalUpdateCommand(extCtx))
 	cmd.AddCommand(newEvalListCommand(extCtx))
 	cmd.AddCommand(newEvalShowCommand(extCtx))
 
 	return cmd
+}
+
+// newDeprecatedEvalInitCommand returns a hidden "init" command that tells users
+// to use "eval generate" instead. This preserves discoverability during the
+// deprecation period without silently accepting the old name.
+func newDeprecatedEvalInitCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:        "init",
+		Short:      "(deprecated) Use 'eval generate' instead.",
+		Hidden:     true,
+		Deprecated: "use 'azd ai agent eval generate' instead",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return fmt.Errorf(
+				"'eval init' has been renamed to 'eval generate'.\n\n" +
+					"Please run: azd ai agent eval generate")
+		},
+	}
 }
 
 // resolveEvalContext resolves the context for an eval operation by reading azd project state,

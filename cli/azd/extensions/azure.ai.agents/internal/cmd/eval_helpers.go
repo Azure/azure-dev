@@ -134,7 +134,7 @@ func reconcileConfigAgent(w io.Writer, agent *opt_eval.AgentRef, envName, envVer
 //     for an instruction and then call writeBaselineIfNeeded.
 //
 // The returned AgentConfig contains resolved instruction file path, model,
-// skill_dir, and tools_file. Eval init uses only instruction fields;
+// skill_dir, and tools_file. Eval generate uses only instruction fields;
 // optimize also uses skill_dir and tools_file.
 func resolveAgentConfig(
 	existingConfig *opt_eval.Config,
@@ -195,7 +195,7 @@ type baselineParams struct {
 // writeBaselineConfig writes a baseline agent config to .agent_configs/baseline/.
 // It creates metadata.yaml with file pointers and writes instructions.md.
 // When skillDir is empty, it auto-detects a "skills" or "skill" directory.
-// Used by both eval init and optimize.
+// Used by both eval generate and optimize.
 func writeBaselineConfig(agentProject string, p baselineParams) error {
 	baseDir := filepath.Join(agentProject, opt_eval.AgentConfigsDir, opt_eval.BaselineDir)
 	if err := os.MkdirAll(baseDir, 0750); err != nil {
@@ -330,7 +330,7 @@ func padColorizedStatus(status string) string {
 }
 
 // ---------------------------------------------------------------------------
-// Shared prompt helpers (used by eval init and optimize)
+// Shared prompt helpers (used by eval generate and optimize)
 // ---------------------------------------------------------------------------
 
 // selectOtherDeploymentValue is the sentinel value for the "Select another
@@ -468,7 +468,7 @@ func promptDatasetSelection(
 	if value == "" {
 		return "", nil, fmt.Errorf(
 			"a dataset is required: use --dataset <file-or-name>, or provide dataset_file / dataset_reference " +
-				"in your config, or run 'azd ai agent eval init' to generate one")
+				"in your config, or run 'azd ai agent eval generate' to generate one")
 	}
 
 	if eval_api.IsDatasetName(value) {

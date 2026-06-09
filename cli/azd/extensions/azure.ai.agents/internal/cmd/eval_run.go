@@ -86,7 +86,7 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 	state := opt_eval.LoadEvalState(ctx, resolved.azdClient, resolved.envName)
 
 	if state.InitStatus == opt_eval.InitStatusPending {
-		if err := resumeEvalInit(ctx, resolved, configPath, evalCfg, state); err != nil {
+		if err := resumeEvalGenerate(ctx, resolved, configPath, evalCfg, state); err != nil {
 			return err
 		}
 	}
@@ -147,7 +147,7 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 		fileID := buildDatasetFileID(resolved.projectEndpoint, evalCfg.DatasetReference)
 		dataSource.SetFileID(fileID)
 	} else {
-		return fmt.Errorf("no dataset configured; run 'azd ai agent eval init' or specify dataset_file / dataset_reference in the eval config")
+		return fmt.Errorf("no dataset configured; run 'azd ai agent eval generate' or specify dataset_file / dataset_reference in the eval config")
 	}
 
 	runReq.DataSource = dataSource

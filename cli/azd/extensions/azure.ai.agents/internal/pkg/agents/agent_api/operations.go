@@ -949,6 +949,63 @@ func (c *AgentClient) DownloadSessionFile(
 	return resp.Body, nil
 }
 
+// CodeDownloadResult holds the response metadata from a code download operation.
+type CodeDownloadResult struct {
+	// Body is the zip content stream. The caller must close it.
+	Body io.ReadCloser
+	// ContentHash is the SHA-256 hash of the zip content (from x-ms-code-zip-sha256 header).
+	ContentHash string
+	// AgentVersion is the version that was downloaded (from x-ms-agent-version header).
+	AgentVersion string
+}
+
+// DownloadAgentCode downloads the source code of a code-based agent as a zip archive.
+// If agentVersion is empty, the latest version is downloaded.
+func (c *AgentClient) DownloadAgentCode(
+	ctx context.Context,
+	agentName, apiVersion string,
+	agentVersion string,
+) (*CodeDownloadResult, error) {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf("/agents/%s/code:download", agentName)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	if agentVersion != "" {
+		query.Set("agent_version", agentVersion)
+	}
+	u.RawQuery = query.Encode()
+
+	req, err := runtime.NewRequest(ctx, http.MethodGet, u.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	runtime.SkipBodyDownload(req)
+
+	req.Raw().Header.Set("Foundry-Features", "CodeAgents=V1Preview,HostedAgents=V1Preview")
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		defer resp.Body.Close()
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	return &CodeDownloadResult{
+		Body:         resp.Body,
+		ContentHash:  resp.Header.Get("x-ms-code-zip-sha256"),
+		AgentVersion: resp.Header.Get("x-ms-agent-version"),
+	}, nil
+}
+
 // ListSessionFiles lists files in a session's filesystem.
 // remotePath is the directory path to list (empty string for root).
 func (c *AgentClient) ListSessionFiles(

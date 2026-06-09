@@ -303,7 +303,12 @@ in any order, any time.
 | `00-doctor-local-only.yaml` | `doctor --local-only` |
 | `00-init-validate-mutually-exclusive.yaml` | `init` arg validation (positional manifest + `-m`) |
 | `00-init-validate-no-prompt-missing.yaml` | `init --no-prompt` missing-input error |
+| `00-init-validate-deploy-mode.yaml` | `init --deploy-mode` value validation (invalid value; code-mode required flags) |
 | `00-init-picker-navigation.yaml` | `init` interactive picker UX (abort before Azure) |
+| `00-invoke-validate-protocol.yaml` | `invoke --protocol` unsupported-value error |
+| `00-eval-context-required.yaml` | `eval list` outside a project requires a Foundry endpoint |
+| `00-optimize-apply-requires-candidate.yaml` | `optimize apply` missing required `--candidate` |
+| `00-doctor-partial-failure.yaml` | `doctor` mixed PASS+FAIL (exit 1) on a name-only `azure.yaml` |
 
 ### Tier 1 — Auth, scaffold only (prefix `10-`)
 Requires Azure login (reads subscriptions/Foundry projects) but **does not
@@ -318,6 +323,7 @@ and verifies the generated files, then stops before `azd provision`.
 | `10-init-from-code.yaml` | `init` → pick "Use the code in the current directory" |
 | `10-init-flags-agent-name-model.yaml` | `init -m … --agent-name --model` (needs `gh auth login`) |
 | `10-init-deploy-mode-code.yaml` | `init --deploy-mode code` (entry-point/runtime) |
+| `10-init-deploy-mode-container.yaml` | `init --deploy-mode container` (container build config) |
 
 ### Tier 2 — Cloud end-to-end (prefix `2x-`) — ⚠️ incurs Azure cost
 Provisions real resources. **Run order matters:**
@@ -340,12 +346,15 @@ as their `cwd`.
 | `22-invoke-remote.yaml` | `invoke` (remote) |
 | `22-invoke-new-session.yaml` | `invoke --new-session` / `--new-conversation` (session vs conversation memory) |
 | `22-invoke-input-file.yaml` | `invoke -f <file>` |
+| `23-invoke-protocol-invocations.yaml` | `invoke --protocol invocations` (session-bound memory; `--new-session` resets, `--new-conversation` no-op) |
 | `23-sessions-lifecycle.yaml` | `sessions create/list/show/delete` |
 | `24-files-lifecycle.yaml` | `files upload/list/stat/mkdir/download/delete` |
 | `25-monitor-console.yaml` | `monitor` (console) |
 | `25-monitor-system.yaml` | `monitor --type system` |
 | `26-endpoint-update.yaml` | `endpoint update` |
 | `27-run-local-and-invoke-local.yaml` | `run` + `invoke --local` (two sessions) |
+| `28-eval-lifecycle.yaml` | `eval init/run/list/show` against the shared agent (small sample budget, `--no-wait`) |
+| `29-optimize-submit-and-cancel.yaml` | `optimize` submit + `list`/`status`/`cancel` (capped at 1 iteration, `--no-wait`) |
 | `2A-doctor-provisioned-all-pass.yaml` | `doctor` (all checks pass) |
 | `2Z-teardown-down.yaml` | `azd down --force --purge` (TEARDOWN) |
 
@@ -362,7 +371,7 @@ grouping — colons are treated as ordinary characters by the filter):
 | Namespace | Values | Meaning |
 |---|---|---|
 | `tier:N` | `tier:0`, `tier:1`, `tier:2` | The tier the scenario belongs to (same axis as the directory's three sections above). Use this to express cost / auth profile in one tag. |
-| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `27-run-local-and-invoke-local` runs both `run` and `invoke --local`; `20-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. |
+| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `27-run-local-and-invoke-local` runs both `run` and `invoke --local`; `20-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. |
 | traits | `parallel-safe`, `serial-only`, `negative-path`, `picker` | `parallel-safe` ↔ `serial-only` are mutually exclusive: all Tier 0 / Tier 1 scenarios are `parallel-safe`, all Tier 2 are `serial-only`. `negative-path` flags arg-/CLI-validation scenarios that assert errors or non-zero exit codes rather than happy-path success. `picker` flags scenarios whose primary purpose is exercising interactive picker UX. |
 
 **Examples** (the tool's `tags:` parameter is OR across the list):

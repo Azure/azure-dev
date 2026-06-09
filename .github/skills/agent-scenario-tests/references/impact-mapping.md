@@ -21,6 +21,8 @@ Files under `internal/cmd/` map to the command they implement:
 | `internal/cmd/monitor*.go` | `cmd:monitor` | `monitor.go`, `monitor_format.go`. |
 | `internal/cmd/update.go` | `cmd:endpoint` | `update.go` defines `endpoint update`. |
 | `internal/cmd/doctor*.go` | `cmd:doctor` | `doctor.go`, `doctor_format.go`. |
+| `internal/cmd/eval*.go` | `cmd:eval` | `eval.go`, `eval_init.go`, `eval_run.go`, `eval_list.go`, `eval_show.go`, etc. Tier 2 (needs a deployed agent + Foundry endpoint). |
+| `internal/cmd/optimize*.go` | `cmd:optimize` | `optimize.go`, `optimize_apply.go`, `optimize_status.go`, etc. Tier 2 (submits a cloud optimization job). |
 | `internal/cmd/sample*.go` | `cmd:sample` | `sample.go`, `sample_list.go`. |
 | `internal/cmd/version.go` | `cmd:version` | |
 | `internal/cmd/root.go` | `cmd:help` + broad | Touches the whole command tree — treat as broad (see §3). |
@@ -34,8 +36,6 @@ run a regression check — **report the gap** and recommend the author add a sce
 
 | Changed file (glob) | Uncovered command |
 | --- | --- |
-| `internal/cmd/eval*.go` | `eval` (init / run / update / list / show) |
-| `internal/cmd/optimize*.go` | `optimize` (status / list / cancel / apply / deploy) |
 | `internal/cmd/mcp.go` | `mcp start` (hidden/preview) |
 
 ## 3. Shared / cross-cutting code → broaden
@@ -58,8 +58,10 @@ From the impacted `cmd:*` set, decide the **highest tier to offer**:
 - Default to **Tier 0 + Tier 1** for any change to a covered command (free + auth-only).
 - Offer **Tier 2** only when the change can plausibly affect cloud behavior — i.e. it
   touches `cmd:invoke`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`,
-  `cmd:show`, `cmd:run`, `cmd:doctor` provisioned paths, deployment/project code, or the
-  provision/deploy flow. Tier 2 always requires the explicit cost confirmation in
+  `cmd:show`, `cmd:run`, `cmd:eval`, `cmd:optimize`, `cmd:doctor` provisioned paths,
+  deployment/project code, or the provision/deploy flow. `cmd:eval` and `cmd:optimize`
+  are Tier 2-only (no offline happy path beyond their negative-path validation
+  scenarios). Tier 2 always requires the explicit cost confirmation in
   `workflow.md` Step 4.
 - A pure Tier 0 change (e.g. `version.go`, help text, `sample list` formatting) should run
   Tier 0 only.

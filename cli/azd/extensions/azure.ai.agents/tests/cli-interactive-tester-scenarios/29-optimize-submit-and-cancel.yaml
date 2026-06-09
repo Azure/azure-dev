@@ -1,0 +1,33 @@
+# Tier 2 (cloud E2E) — submit an `optimize` job, then list / status / cancel it.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+# Optimization is an expensive iterative process, so this scenario caps it at a
+# single iteration, submits with --no-wait, then immediately cancels to avoid
+# incurring a full optimization run. The agent is auto-detected from azure.yaml.
+name: "optimize-submit-and-cancel"
+command: "azd ai agent optimize --eval-model {model} --max-iterations 1 --no-wait"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:optimize", "serial-only"]
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Run 'optimize --eval-model {model} --max-iterations 1 --no-wait' to submit an optimization job without blocking; the agent is auto-detected from azure.yaml."
+  - "If prompted for a dataset, accept the default or auto-generated dataset."
+  - "Confirm the command reports that an optimization job was submitted and prints a job identifier (because of --no-wait it should return without waiting for completion)."
+  - "Run 'azd ai agent optimize list' and confirm the just-submitted job appears with a status."
+  - "Run 'azd ai agent optimize status <id>' using the job id and confirm it prints status details without crashing (a queued/running status is acceptable)."
+  - "Run 'azd ai agent optimize cancel <id>' using the job id to cancel the job, and confirm it reports the job was cancelled (or already terminal)."
+  - "Take a screenshot of the list / status / cancel output."
+  - "Report a finding if submit hangs despite --no-wait, the job id is not surfaced, list/status error out, or cancel fails to stop a still-running job."
+
+post:
+  - run: "echo 'optimize-submit-and-cancel complete; job was cancelled, no standing local resources'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "note: job cancelled, no local teardown required"
+    continue_on_error: true

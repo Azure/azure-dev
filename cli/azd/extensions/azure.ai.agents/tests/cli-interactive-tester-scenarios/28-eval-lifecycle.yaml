@@ -1,0 +1,32 @@
+# Tier 2 (cloud E2E) — `eval` lifecycle against the deployed shared agent.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+# Exercises eval init -> run -> list -> show. Uses a tiny sample budget to keep
+# the run cheap and fast. The agent and Foundry project endpoint are auto-detected
+# from the shared agent's azure.yaml.
+name: "eval-lifecycle"
+command: "azd ai agent eval init --max-samples 15 --no-wait"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:eval", "serial-only"]
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Run 'eval init --max-samples 15 --no-wait' to kick off an evaluation run without blocking; the agent and project endpoint are auto-detected from azure.yaml."
+  - "If prompted for an evaluation dataset, accept the default or auto-generated dataset; if prompted for an eval model, accept the default."
+  - "Confirm the command reports that an evaluation run was created/submitted and prints an eval run identifier (because of --no-wait it should return without waiting for completion)."
+  - "Run 'azd ai agent eval list' and confirm the run just submitted appears in the list with a status."
+  - "Run 'azd ai agent eval show' (optionally passing the eval id from the list) and confirm it prints details/metrics for the run without crashing; a still-running or queued status is acceptable."
+  - "Take a screenshot of the eval list and eval show output."
+  - "Report a finding if eval init hangs despite --no-wait, the run id is not surfaced, eval list/show error out, or auth/endpoint errors occur."
+
+post:
+  - run: "echo 'eval-lifecycle complete; eval runs are managed in Foundry and incur no standing local resources'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "note: no local teardown required"
+    continue_on_error: true

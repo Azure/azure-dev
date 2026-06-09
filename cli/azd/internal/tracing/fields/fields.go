@@ -461,7 +461,7 @@ var (
 	// ToolFirstRunToolsSelectedNamesKey records the comma-separated list of
 	// built-in tool IDs the user selected for installation during first-run.
 	//
-	// Example: "az-cli,docker,git"
+	// Example: "az-cli,vscode-bicep,github-copilot-cli"
 	ToolFirstRunToolsSelectedNamesKey = AttributeKey{
 		Key:            attribute.Key("tool.firstrun.tools_selected_names"),
 		Classification: SystemMetadata,
@@ -501,7 +501,7 @@ var (
 	// ToolIdKey records the built-in tool ID for single-tool operations
 	// (e.g., `azd tool show`, single-target `azd tool install`).
 	//
-	// Example: "az-cli", "docker", "git", "node"
+	// Example: "az-cli", "vscode-bicep", "github-copilot-cli", "azure-mcp-server"
 	ToolIdKey = AttributeKey{
 		Key:            attribute.Key("tool.id"),
 		Classification: SystemMetadata,
@@ -509,7 +509,7 @@ var (
 	}
 
 	// ToolIdsKey records the comma-separated list of built-in tool IDs
-	// targeted by a batch operation (e.g., `azd tool install az-cli docker`).
+	// targeted by a batch operation (e.g., `azd tool install az-cli vscode-bicep`).
 	ToolIdsKey = AttributeKey{
 		Key:            attribute.Key("tool.ids"),
 		Classification: SystemMetadata,

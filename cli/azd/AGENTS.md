@@ -241,6 +241,15 @@ variable `azd` reads. When adding or modifying an `os.Getenv` / `os.LookupEnv` c
 2. Include a one-line description that explains what it controls and its default if non-obvious.
 3. Place debug/internal variables under **Debug Variables** with the unsupported warning.
 
+#### Telemetry Events and Fields Documentation
+
+The file `docs/reference/telemetry-data.md` is the documentation for every telemetry event and field `azd` emits. When adding or modifying entries in`cli/azd/internal/tracing/events/events.go` or `cli/azd/internal/tracing/fields/` (`fields.go`, `domains.go`, `features.go`):
+
+1. Add the new event/field to the appropriate section in `telemetry-data.md` —
+   **Events Reference** for new events, **Fields Reference** for new fields.
+2. Include a one-line description, the value type (string/bool/number), and which events or commands it applies to.
+3. If the event/field is feature-gated, conditional, or has known data quirks, update **Data Nuances & Gotchas** and/or **Feature → Telemetry Mapping** so consumers know when to expect it.
+
 ### Modern Go
 
 This project uses Go 1.26. Use modern standard library features:

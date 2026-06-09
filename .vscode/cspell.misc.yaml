@@ -80,11 +80,17 @@ overrides:
     - filename: docs/architecture/**/*.md
       words:
           - azapi
+          - appinsights
           - Errorf
           - grpcbroker
+          - Pseudonymized
+          - Thhmmss
+          - unhashed
           - vsrpc
     - filename: docs/guides/**/*.md
       words:
+          - azdext
+          - Entra
           - errorlint
           - Errorf
           - gofmt
@@ -92,14 +98,40 @@ overrides:
           - gosec
           - jaegertracing
           - mycommand
+          - myfeature
           - mypackage
           - pflag
+          - Pseudonymized
           - staticcheck
           - stdlib
+          - unhashed
           - vsrpc
     - filename: docs/reference/**/*.md
       words:
+          - appinit
           - appservice
           - Buildpacks
           - containerapp
+          - dcount
+          - dependson
+          - devdeviceid
+          - Entra
+          - Errorf
+          - exegraph
+          - firstrun
+          - javac
+          - oneauth
+          - postprovision
+          - preprovision
+          - postdeploy
+          - pseudonymized
+          - remotebuild
+          - resourcegroup
+          - springapp
+          - startswith
           - staticwebapp
+          - toreal
+          - tostring
+          - unhashed
+          - vsrpc
+          - whatif

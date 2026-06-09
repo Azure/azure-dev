@@ -55,6 +55,9 @@ const extensionSchemaHeader = "# yaml-language-server: $schema=" +
 const (
 	maxExtensionTags      = 10
 	maxExtensionTagLength = 64
+
+	// defaultExtensionVersion is the initial version for newly scaffolded extensions.
+	defaultExtensionVersion = "0.0.1"
 )
 
 const internalScaffoldResourceBase = "internal/go"
@@ -205,6 +208,7 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 	}
 
 	var extensionMetadata *models.ExtensionSchema
+	var codeowners []string
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current working directory: %w", err)
@@ -224,7 +228,7 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 		}
 
 		if flags.internalScaffold {
-			flags.codeowners, err = promptInternalCodeowners(ctx, azdClient)
+			codeowners, err = promptInternalCodeowners(ctx, azdClient)
 			if err != nil {
 				return fmt.Errorf("failed to prompt for CODEOWNERS: %w", err)
 			}
@@ -250,12 +254,16 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 		}
 	}
 
+	var repoRoot string
 	if flags.internalScaffold {
-		codeowners, err := parseCodeowners(flags.codeowners)
-		if err != nil {
-			return err
+		// Interactive mode collects validated codeowners via prompt; headless mode
+		// parses them from the --codeowners flag here.
+		if codeowners == nil {
+			codeowners, err = parseCodeowners(flags.codeowners)
+			if err != nil {
+				return err
+			}
 		}
-		flags.codeowners = codeowners
 
 		if extensionMetadata.Language != "go" {
 			return fmt.Errorf("--internal currently supports Go extensions only")
@@ -264,7 +272,7 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 			return err
 		}
 
-		repoRoot, err := findAzureDevRepoRoot(cwd)
+		repoRoot, err = findAzureDevRepoRoot(cwd)
 		if err != nil {
 			return err
 		}
@@ -343,8 +351,7 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 		}
 
 		if flags.internalScaffold {
-			repoRoot := filepath.Clean(filepath.Join(cwd, "..", "..", ".."))
-			if err := createInternalExtensionScaffold(extensionMetadata, repoRoot, flags.codeowners); err != nil {
+			if err := createInternalExtensionScaffold(extensionMetadata, repoRoot, codeowners); err != nil {
 				return ux.Error, common.NewDetailedError(
 					"Error creating internal scaffold",
 					fmt.Errorf("failed to create internal extension files: %w", err),
@@ -488,8 +495,9 @@ func runInitAction(ctx context.Context, flags *initFlags) (err error) {
 
 // collectExtensionMetadataFromFlags creates extension metadata from command-line flags
 func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchema, error) {
-	if flags.internalScaffold && flags.language == "" {
-		flags.language = "go"
+	language := flags.language
+	if flags.internalScaffold && language == "" {
+		language = "go"
 	}
 
 	// Validate that the language is supported
@@ -500,14 +508,14 @@ func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchem
 		"python":     true,
 	}
 
-	if flags.internalScaffold && flags.language != "go" {
+	if flags.internalScaffold && language != "go" {
 		return nil, fmt.Errorf("--internal currently supports Go extensions only")
 	}
 
-	if !validLanguages[flags.language] {
+	if !validLanguages[language] {
 		return nil, fmt.Errorf(
 			"invalid language '%s', supported languages are: go, dotnet, javascript, python",
-			flags.language,
+			language,
 		)
 	}
 
@@ -537,10 +545,6 @@ func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchem
 
 	// Set a default description
 	description := "An azd extension"
-	version := "0.0.1"
-	if flags.internalScaffold {
-		version = "0.0.1-preview"
-	}
 
 	// Default namespace to ID if not provided
 	namespace := flags.id
@@ -562,10 +566,10 @@ func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchem
 		Description:  description,
 		Namespace:    namespace,
 		Capabilities: capabilities,
-		Language:     flags.language,
+		Language:     language,
 		Tags:         tags,
 		Usage:        formatUsage(namespace),
-		Version:      version,
+		Version:      defaultExtensionVersion,
 		Path:         absExtensionPath,
 	}, nil
 }
@@ -700,11 +704,6 @@ func collectExtensionMetadata(
 		return nil, err
 	}
 
-	version := "0.0.1"
-	if internalScaffold {
-		version = "0.0.1-preview"
-	}
-
 	absExtensionPath, err := filepath.Abs(idPrompt.Value)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path for extension directory: %w", err)
@@ -719,7 +718,7 @@ func collectExtensionMetadata(
 		Language:     language,
 		Tags:         tags,
 		Usage:        formatUsage(namespace),
-		Version:      version,
+		Version:      defaultExtensionVersion,
 		Path:         absExtensionPath,
 	}, nil
 }
@@ -1015,6 +1014,12 @@ func createInternalExtensionScaffold(
 			"extension",
 			"cspell.yaml",
 		),
+		// Stored without the leading dot because go:embed excludes dotfiles.
+		filepath.Join("cli", "azd", "extensions", extensionMetadata.Id, ".golangci.yaml"): path.Join(
+			internalScaffoldResourceBase,
+			"extension",
+			"golangci.yaml",
+		),
 		filepath.Join(".github", "workflows", fmt.Sprintf("lint-ext-%s.yml", sanitizedId)): path.Join(
 			internalScaffoldResourceBase,
 			"workflows",
@@ -1028,7 +1033,8 @@ func createInternalExtensionScaffold(
 	}
 
 	for relPath, templatePath := range files {
-		if err := executeTemplateFileToFile(resources.Internal, templatePath, filepath.Join(repoRoot, relPath), templateData); err != nil {
+		outputPath := filepath.Join(repoRoot, relPath)
+		if err := executeTemplateFileToFile(resources.Internal, templatePath, outputPath, templateData); err != nil {
 			return err
 		}
 	}
@@ -1070,37 +1076,84 @@ func executeTemplateToFile(filePath, tmplText string, data any) error {
 	return nil
 }
 
+// codeownersExtensionRulePrefix identifies existing extension rules in
+// .github/CODEOWNERS used to anchor where new entries are inserted.
+const codeownersExtensionRulePrefix = "/cli/azd/extensions/"
+
+// addCodeownersEntry inserts a CODEOWNERS rule for extensionPath. Because
+// CODEOWNERS is last-match-wins, ordering matters: the entry is inserted
+// alphabetically within the existing block of /cli/azd/extensions/ rules when
+// one exists, and appended to the end of the file otherwise.
 func addCodeownersEntry(filePath, extensionPath string, codeowners []string) error {
-	entry := fmt.Sprintf("%-44s %s", extensionPath, strings.Join(codeowners, " "))
+	entry := extensionPath + " " + strings.Join(codeowners, " ")
 
 	contents, err := os.ReadFile(filePath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to read CODEOWNERS: %w", err)
 	}
 
-	if strings.Contains(string(contents), extensionPath) {
-		return nil
+	lines := strings.Split(string(contents), "\n")
+
+	// Skip if a rule for this path already exists. Match on the first field of
+	// each line so comments mentioning the path don't suppress the new entry.
+	for _, line := range lines {
+		if fields := strings.Fields(line); len(fields) > 0 && fields[0] == extensionPath {
+			return nil
+		}
 	}
 
-	var updated bytes.Buffer
-	updated.Write(contents)
-	if len(contents) > 0 && !bytes.HasSuffix(contents, []byte("\n")) {
-		updated.WriteByte('\n')
+	insertAt := codeownersInsertIndex(lines, extensionPath)
+
+	var updated []string
+	if insertAt >= 0 {
+		updated = slices.Insert(slices.Clone(lines), insertAt, entry)
+	} else {
+		// No existing extension rules; append at the end of the file.
+		updated = slices.Clone(lines)
+		for len(updated) > 0 && updated[len(updated)-1] == "" {
+			updated = updated[:len(updated)-1]
+		}
+		if len(updated) > 0 {
+			updated = append(updated, "")
+		}
+		updated = append(updated, entry)
 	}
-	if len(contents) > 0 {
-		updated.WriteByte('\n')
+
+	output := strings.Join(updated, "\n")
+	if !strings.HasSuffix(output, "\n") {
+		output += "\n"
 	}
-	updated.WriteString(entry)
-	updated.WriteByte('\n')
 
 	if err := os.MkdirAll(filepath.Dir(filePath), internal.PermissionDirectory); err != nil {
 		return fmt.Errorf("failed to create CODEOWNERS directory: %w", err)
 	}
-	if err := os.WriteFile(filePath, updated.Bytes(), internal.PermissionFile); err != nil {
+	//nolint:gosec // G703: path is repo-root + .github/CODEOWNERS; extension id is validated
+	if err := os.WriteFile(filePath, []byte(output), internal.PermissionFile); err != nil {
 		return fmt.Errorf("failed to update CODEOWNERS: %w", err)
 	}
 
 	return nil
+}
+
+// codeownersInsertIndex returns the line index at which a rule for
+// extensionPath should be inserted to keep the /cli/azd/extensions/ block
+// alphabetically sorted, or -1 when no extension rules exist.
+func codeownersInsertIndex(lines []string, extensionPath string) int {
+	insertAt := -1
+	for i, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || !strings.HasPrefix(fields[0], codeownersExtensionRulePrefix) {
+			continue
+		}
+
+		if fields[0] > extensionPath {
+			return i
+		}
+		// Insert after the last rule that sorts before the new path.
+		insertAt = i + 1
+	}
+
+	return insertAt
 }
 
 func validateInternalExtensionId(id string) error {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"text/template"
@@ -381,7 +382,7 @@ func TestCollectExtensionMetadataFromFlagsTags(t *testing.T) {
 	assert.Equal(t, []string{"alpha", "beta", "gamma"}, metadata.Tags)
 }
 
-func TestCollectExtensionMetadataFromFlagsInternalDefaultsToGoPreview(t *testing.T) {
+func TestCollectExtensionMetadataFromFlagsInternalDefaultsToGo(t *testing.T) {
 	metadata, err := collectExtensionMetadataFromFlags(&initFlags{
 		internalScaffold: true,
 		id:               "test.extension",
@@ -391,7 +392,7 @@ func TestCollectExtensionMetadataFromFlagsInternalDefaultsToGoPreview(t *testing
 
 	require.NoError(t, err)
 	assert.Equal(t, "go", metadata.Language)
-	assert.Equal(t, "0.0.1-preview", metadata.Version)
+	assert.Equal(t, "0.0.1", metadata.Version)
 }
 
 func TestCollectExtensionMetadataFromFlagsInternalRejectsNonGo(t *testing.T) {
@@ -476,6 +477,12 @@ func TestCreateInternalExtensionScaffold(t *testing.T) {
 	)
 	assertFileContains(
 		t,
+		filepath.Join(repoRoot, "cli", "azd", "extensions", "azure.ai.example", ".golangci.yaml"),
+		"version: \"2\"",
+		"line-length: 220",
+	)
+	assertFileContains(
+		t,
 		filepath.Join(repoRoot, ".github", "CODEOWNERS"),
 		"/cli/azd/extensions/azure.ai.example/",
 		"@owner @Azure/team",
@@ -492,6 +499,66 @@ func TestCreateInternalExtensionScaffoldRejectsUnsafeId(t *testing.T) {
 	)
 
 	require.ErrorContains(t, err, "invalid extension id")
+}
+
+func TestAddCodeownersEntry(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	codeownersPath := filepath.Join(dir, "CODEOWNERS")
+	require.NoError(t, os.WriteFile(codeownersPath, []byte(
+		"# see /cli/azd/extensions/azure.ai.example/ for details\n"+
+			"/**    @default\n"+
+			"\n"+
+			"/cli/azd/extensions/azure.ai.agents/        @agents\n"+
+			"/cli/azd/extensions/azure.ai.projects/      @projects\n"+
+			"\n"+
+			"# This file (most specific -- must be last)\n"+
+			"/.github/CODEOWNERS    @admins\n",
+	), 0o600))
+
+	entryPath := "/cli/azd/extensions/azure.ai.example/"
+
+	// A comment mentioning the path must not suppress the new entry.
+	require.NoError(t, addCodeownersEntry(codeownersPath, entryPath, []string{"@owner"}))
+
+	// The entry is inserted alphabetically within the extensions block, not
+	// appended after later rules (CODEOWNERS is last-match-wins).
+	contents, err := os.ReadFile(codeownersPath)
+	require.NoError(t, err)
+	lines := strings.Split(string(contents), "\n")
+	agentsIdx := slices.IndexFunc(lines, func(l string) bool {
+		return strings.HasPrefix(l, "/cli/azd/extensions/azure.ai.agents/")
+	})
+	exampleIdx := slices.IndexFunc(lines, func(l string) bool {
+		return strings.HasPrefix(l, entryPath+" ")
+	})
+	projectsIdx := slices.IndexFunc(lines, func(l string) bool {
+		return strings.HasPrefix(l, "/cli/azd/extensions/azure.ai.projects/")
+	})
+	require.GreaterOrEqual(t, exampleIdx, 0)
+	assert.Less(t, agentsIdx, exampleIdx)
+	assert.Less(t, exampleIdx, projectsIdx)
+	assert.Contains(t, lines[exampleIdx], "@owner")
+	assert.Equal(t, "/.github/CODEOWNERS    @admins", lines[len(lines)-2])
+
+	// Calling again must be idempotent.
+	require.NoError(t, addCodeownersEntry(codeownersPath, entryPath, []string{"@owner"}))
+	after, err := os.ReadFile(codeownersPath)
+	require.NoError(t, err)
+	assert.Equal(t, string(contents), string(after))
+}
+
+func TestAddCodeownersEntryNoExtensionsBlock(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	codeownersPath := filepath.Join(dir, "CODEOWNERS")
+	require.NoError(t, os.WriteFile(codeownersPath, []byte("/**    @default\n"), 0o600))
+
+	entryPath := "/cli/azd/extensions/azure.ai.example/"
+	require.NoError(t, addCodeownersEntry(codeownersPath, entryPath, []string{"@owner"}))
+	assertFileContains(t, codeownersPath, "/**    @default", entryPath+" @owner")
 }
 
 func TestValidateExtensionNamespace(t *testing.T) {

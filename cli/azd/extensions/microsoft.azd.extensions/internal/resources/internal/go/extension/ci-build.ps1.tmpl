@@ -49,7 +49,17 @@ try {
     }
 
     if ($BuildRecordMode) {
-        $buildFlags += "-tags=record"
+        # Modify build tags to include record
+        $recordTagPatched = $false
+        for ($i = 0; $i -lt $buildFlags.Length; $i++) {
+            if ($buildFlags[$i].StartsWith("-tags=")) {
+                $buildFlags[$i] += ",record"
+                $recordTagPatched = $true
+            }
+        }
+        if (-not $recordTagPatched) {
+            $buildFlags += "-tags=record"
+        }
         $recordOutput = "-o=$OutputFileName-record"
         if ($IsWindows) { $recordOutput += ".exe" }
         $buildFlags += $recordOutput

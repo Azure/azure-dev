@@ -160,7 +160,7 @@ func TestManifest_Warnings(t *testing.T) {
 				//nolint:lll
 				"  This mode is limited. You will not be able to manage the host infrastructure from your AppHost. You'll need to use `azd infra gen` " +
 				"to customize the Azure Container Environment and/or Azure Container Apps" +
-				"  See more: https://learn.microsoft.com/dotnet/aspire/azure/configure-aca-environments",
+				"  See more: https://aspire.dev/integrations/cloud/azure/configure-container-apps/",
 		},
 		{
 			name:        "hybrid mode shows deprecation warning",
@@ -169,7 +169,7 @@ func TestManifest_Warnings(t *testing.T) {
 				" to define the Azure Container App, azd defines the Azure Container Environment.\n  This mode is " +
 				"deprecated since Aspire 9.4.  " +
 				//nolint:lll
-				"See more: https://learn.microsoft.com/dotnet/aspire/whats-new/dotnet-aspire-9.4#-azure-container-apps-hybrid-mode-removal",
+				"See more: https://aspire.dev/whats-new/aspire-9-4/#-azure-container-apps-hybrid-mode-removal",
 		},
 		{
 			name:        "full apphost mode shows no warnings",

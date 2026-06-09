@@ -5,13 +5,16 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -162,8 +165,12 @@ func warnIfAuthChange(
 	// Fetch current agent to compare auth config.
 	current, err := client.GetAgent(ctx, agentName, DefaultAgentAPIVersion)
 	if err != nil {
-		// If agent doesn't exist yet, no warning needed.
-		return nil
+		// Only ignore 404 (agent doesn't exist yet). Other errors should propagate.
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
+			return nil
+		}
+		return fmt.Errorf("failed to check current agent state: %w", err)
 	}
 
 	oldIsolation := getIsolationKind(current.AgentEndpoint)
@@ -193,7 +200,9 @@ func warnIfAuthChange(
 
 	fmt.Fprintf(os.Stderr, "\n   Continue? [y/N] ")
 	var answer string
-	fmt.Scanln(&answer)
+	if _, err := fmt.Scanln(&answer); err != nil {
+		return fmt.Errorf("unable to read confirmation (non-interactive terminal?); use --force to skip: %w", err)
+	}
 	if answer != "y" && answer != "Y" {
 		return fmt.Errorf("operation cancelled by user")
 	}

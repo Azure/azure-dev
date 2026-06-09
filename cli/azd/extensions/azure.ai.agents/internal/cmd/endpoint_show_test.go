@@ -153,6 +153,11 @@ func TestGetIsolationKind(t *testing.T) {
 				{Type: "Entra", IsolationKeySource: &agent_api.IsolationKeySource{Kind: "Header"}},
 			},
 		}, "Header"},
+		{"nil isolation source", &agent_api.AgentEndpoint{
+			AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
+				{Type: "BotService"},
+			},
+		}, ""},
 	}
 
 	for _, tt := range tests {

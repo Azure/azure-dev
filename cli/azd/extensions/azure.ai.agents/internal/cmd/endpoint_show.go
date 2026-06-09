@@ -163,7 +163,7 @@ func printEndpointTable(agent *agent_api.AgentObject) error {
 	fmt.Fprintf(w, "\nAuthorization:\n")
 	if agent.AgentEndpoint != nil && len(agent.AgentEndpoint.AuthorizationSchemes) > 0 {
 		for _, scheme := range agent.AgentEndpoint.AuthorizationSchemes {
-			isolation := "Entra"
+			isolation := "(not specified)"
 			if scheme.IsolationKeySource != nil {
 				isolation = string(scheme.IsolationKeySource.Kind)
 			}

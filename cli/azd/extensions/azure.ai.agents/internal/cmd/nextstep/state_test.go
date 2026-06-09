@@ -1179,7 +1179,7 @@ environment_variables:
 func TestAssembleState_PopulatesUnresolvedPlaceholders(t *testing.T) {
 	t.Parallel()
 
-	// Reproduces the toolbox-sample bug: agent.manifest.yaml processing
+	// Reproduces the toolbox-sample bug: init manifest processing
 	// leaves a {{NAME}} placeholder behind in agent.yaml, while a separate
 	// env var ref is also unset. The resolver should see both.
 	projectRoot := t.TempDir()
@@ -1215,7 +1215,7 @@ environment_variables:
 
 // TestAssembleState_PartitionsToolboxEndpointVars locks the partition
 // behavior added for the toolbox-sample post-init UX: when a service
-// has a manifest-declared toolbox AND agent.yaml references the
+// has a config-declared toolbox AND agent.yaml references the
 // canonical TOOLBOX_<NAME>_MCP_ENDPOINT env var, the missing-var
 // classifier must route the entry into MissingToolboxEndpoints
 // (provision-managed) rather than MissingManualVars (operator-supplied).
@@ -1225,19 +1225,10 @@ func TestAssembleState_PartitionsToolboxEndpointVars(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	// agent.manifest.yaml declares the toolbox by name; envkey derives
+	// azure.yaml config declares the toolbox by name; envkey derives
 	// "TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT" from "web-search-tools",
 	// matching the ${...} ref in agent.yaml below.
-	writeManifest(t, projectRoot, "echo", `
-template:
-  kind: containerAgent
-  name: hello
-resources:
-  - name: web-search-tools
-    kind: toolbox
-    tools:
-      - id: tool-1
-`)
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(projectRoot, "echo", "agent.yaml"),
 		[]byte(`kind: hostedAgent
@@ -1250,12 +1241,18 @@ environment_variables:
 		0o600,
 	))
 
+	toolboxConfig := mustStruct(t, map[string]any{
+		"toolboxes": []any{
+			map[string]any{"name": "web-search-tools"},
+		},
+	})
+
 	src := &fakeSource{
 		envName: "dev",
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo", Config: toolboxConfig},
 			},
 		},
 	}
@@ -1272,12 +1269,12 @@ environment_variables:
 	assert.Equal(t, "echo", state.MissingToolboxEndpoints[0].ServiceName)
 }
 
-// TestAssembleState_ToolboxEndpointWithoutManifestStaysManual locks
+// TestAssembleState_ToolboxEndpointWithoutConfigStaysManual locks
 // the partition's guard: a TOOLBOX_*_MCP_ENDPOINT-shaped variable
-// whose name does NOT match a manifest-declared toolbox is treated
+// whose name does NOT match a config-declared toolbox is treated
 // as a generic user variable and stays in MissingManualVars. The
-// partition is a no-op when no manifest toolbox claims the key.
-func TestAssembleState_ToolboxEndpointWithoutManifestStaysManual(t *testing.T) {
+// partition is a no-op when no declared toolbox claims the key.
+func TestAssembleState_ToolboxEndpointWithoutConfigStaysManual(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()

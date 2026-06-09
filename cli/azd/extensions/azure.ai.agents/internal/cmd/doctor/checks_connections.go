@@ -37,11 +37,11 @@ type foundryConnectionsProbeFn func(
 ) ([]string, error)
 
 // newCheckConnections produces Check `remote.connections` (P5.1
-// C15). For each `ConnectionResource` declared in any service's
-// `agent.manifest.yaml` (collected by the C2 manifest walker), the
+// C15). For each connection declared in any service's azure.yaml
+// `config.connections` (collected by nextstep state assembly), the
 // check queries the Foundry project's connection list and verifies a
 // connection with the matching name exists. The check Passes when
-// every manifest-declared connection has a corresponding entry;
+// every declared connection has a corresponding entry;
 // Fails when one or more are missing.
 //
 // # Skip cascade
@@ -56,7 +56,7 @@ type foundryConnectionsProbeFn func(
 //     let the auth check own the diagnosis.
 //   - `remote.foundry-endpoint` failed → same root cause, same
 //     remediation.
-//   - state.HasConnections == false → no manifest connection
+//   - state.HasConnections == false → no config connection
 //     declarations; the check has nothing to verify. Surface as
 //     Skip with a short explanation rather than a vacuous Pass.
 //   - `AZURE_AI_PROJECT_ID` not set / cannot be parsed → can not
@@ -65,17 +65,17 @@ type foundryConnectionsProbeFn func(
 //
 // # Classification
 //
-//   - Every manifest connection matches a Foundry connection name →
+//   - Every declared connection matches a Foundry connection name →
 //     Pass with the matched count.
 //   - One or more missing → Fail with the missing names listed in
 //     the Message and structured under `Details["missingConnections"]`
-//     (each entry carries Name, ServiceName, Detail — the manifest's
-//     "<Category> | <Target>" identifier surfaced by the C2 walker).
+//     (each entry carries Name, ServiceName, Detail — the
+//     "<Category> | <Target>" identifier surfaced by state assembly).
 //   - Probe error → Skip with the underlying error verbatim.
 func newCheckConnections(deps Dependencies) Check {
 	return Check{
 		ID:     "remote.connections",
-		Name:   "Manifest connections exist on Foundry project",
+		Name:   "Connections exist on Foundry project",
 		Remote: true,
 		Fn: func(ctx context.Context, _ Options, prior []Result) Result {
 			if deps.AzdClient == nil {
@@ -135,7 +135,7 @@ func newCheckConnections(deps Dependencies) Check {
 			if !state.HasConnections {
 				return Result{
 					Status:  StatusSkip,
-					Message: "skipped: no connection resources declared in any service's agent.manifest.yaml.",
+					Message: "skipped: no connection resources declared in any service's azure.yaml config.",
 				}
 			}
 
@@ -288,10 +288,10 @@ func classifyConnections(
 	return Result{
 		Status: StatusFail,
 		Message: fmt.Sprintf(
-			"%d connection(s) referenced by agent.manifest.yaml are missing on project %s: %s",
+			"%d connection(s) referenced by azure.yaml are missing on project %s: %s",
 			len(missing), project, sb.String()),
 		Suggestion: "Run `azd provision` to create the missing connection(s), " +
-			"or update the agent.manifest.yaml `resources[].name` entries to " +
+			"or update the azure.yaml `services.<service>.config.connections[].name` entries to " +
 			"match connections that already exist on the Foundry project.",
 		Details: map[string]any{
 			"missingConnections": missing,

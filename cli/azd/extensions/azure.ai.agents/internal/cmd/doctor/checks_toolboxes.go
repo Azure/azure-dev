@@ -26,8 +26,8 @@ import (
 type toolboxEnvLookupFn func(ctx context.Context, key string) (value string, err error)
 
 // newCheckToolboxes produces Check `local.toolboxes` (P5.1 C14).
-// For each `ToolboxResource` declared in any service's
-// `agent.manifest.yaml` (collected by the C2 manifest walker), the
+// For each toolbox declared in any service's azure.yaml
+// `config.toolboxes` (collected by nextstep state assembly), the
 // check verifies that the canonical
 // `TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT` env var is set to a
 // non-empty value in the active azd environment.
@@ -43,8 +43,8 @@ type toolboxEnvLookupFn func(ctx context.Context, key string) (value string, err
 //     to read from. AssembleState's detectMissingVars block also
 //     skips in this state, so the toolbox check would falsely Pass.
 //   - `local.azure-yaml` / `local.agent-service-detected` failed →
-//     no services to walk; walker output is unreliable.
-//   - state.HasToolboxes == false → no manifest toolbox declarations;
+//     no services to read; state output is unreliable.
+//   - state.HasToolboxes == false → no config toolbox declarations;
 //     the check has nothing to verify.
 //
 // # Why this check is not gated on `remote.auth` /
@@ -69,7 +69,7 @@ type toolboxEnvLookupFn func(ctx context.Context, key string) (value string, err
 func newCheckToolboxes(deps Dependencies) Check {
 	return Check{
 		ID:     "local.toolboxes",
-		Name:   "Manifest toolboxes have endpoint env vars set",
+		Name:   "Toolboxes have endpoint env vars set",
 		Remote: false,
 		Fn: func(ctx context.Context, _ Options, prior []Result) Result {
 			if deps.AzdClient == nil {
@@ -119,7 +119,7 @@ func newCheckToolboxes(deps Dependencies) Check {
 			if !state.HasToolboxes {
 				return Result{
 					Status:  StatusSkip,
-					Message: "skipped: no toolbox resources declared in any service's agent.manifest.yaml.",
+					Message: "skipped: no toolbox resources declared in any service's azure.yaml config.",
 				}
 			}
 
@@ -142,8 +142,8 @@ func newCheckToolboxes(deps Dependencies) Check {
 // factory's doc-comment for why) so the user gets one actionable
 // surface instead of a quiet pass-through.
 //
-// Dedup is on the canonical env key, not the toolbox name: the
-// manifest walker deduplicates on (ServiceName, Name) so the same toolbox
+// Dedup is on the canonical env key, not the toolbox name: state
+// assembly deduplicates on (ServiceName, Name) so the same toolbox
 // referenced by two services surfaces twice in state.Toolboxes.
 // Without dedup here the doctor would issue two gRPC reads for the
 // same key and report the same toolbox twice in the missing list.
@@ -217,7 +217,7 @@ func classifyToolboxEndpoints(
 	return Result{
 		Status: StatusFail,
 		Message: fmt.Sprintf(
-			"%d toolbox(es) declared in agent.manifest.yaml have no MCP endpoint set in the azd environment: %s",
+			"%d toolbox(es) declared in azure.yaml have no MCP endpoint set in the azd environment: %s",
 			len(missing), sb.String()),
 		Suggestion: "Run `azd provision` to materialize toolbox infrastructure, or " +
 			"`azd env set <ENV_VAR> <endpoint>` to point at an existing toolbox.",

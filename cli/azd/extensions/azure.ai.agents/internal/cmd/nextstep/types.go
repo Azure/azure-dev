@@ -86,13 +86,13 @@ type State struct {
 	// variables which are not set in the azd environment.
 	//
 	// Toolbox-derived endpoint variables (`TOOLBOX_<NAME>_MCP_ENDPOINT`
-	// keys that correspond to a manifest-declared toolbox) are
+	// keys that correspond to a config-declared toolbox) are
 	// partitioned out into MissingToolboxEndpoints — they are
 	// azd-managed outputs of `azd provision`, not operator-supplied,
 	// and routing them to `azd env set` is misleading.
 	MissingManualVars []string
 
-	// MissingToolboxEndpoints lists manifest-declared toolboxes whose
+	// MissingToolboxEndpoints lists config-declared toolboxes whose
 	// azd-injected TOOLBOX_<NAME>_MCP_ENDPOINT variable is unset in the
 	// active azd environment. AssembleState partitions these out of
 	// MissingManualVars because they are produced by
@@ -101,7 +101,7 @@ type State struct {
 	// the toolbox in the Foundry project on first run and sets the
 	// derived env var), not `azd env set`.
 	//
-	// Each entry carries the manifest's resource Name and the owning
+	// Each entry carries the declared resource Name and the owning
 	// ServiceName so the resolver and doctor checks can render
 	// per-service guidance. The Detail field is unused (toolbox
 	// endpoints have no kind-specific identifier beyond Name) but the
@@ -112,7 +112,7 @@ type State struct {
 	// UnresolvedPlaceholders names {{NAME}} Mustache-style placeholders
 	// still present (literally) inside agent.yaml's environment_variables
 	// values. These are left over from init's manifest processing when
-	// agent.manifest.yaml declares a placeholder without a matching
+	// the source manifest declares a placeholder without a matching
 	// parameter (or the user skipped the prompt). Unlike Missing*Vars,
 	// these cannot be supplied via `azd env set` — the literal `{{X}}`
 	// would still be in agent.yaml at deploy time. The resolver surfaces
@@ -145,24 +145,24 @@ type State struct {
 	CreatedFolderDisplay string
 
 	// HasModels, HasToolboxes, HasConnections are aggregate flags
-	// derived from each azure.ai.agent service's agent.manifest.yaml
-	// (when present). They are true when at least one resource of the
-	// matching kind is declared across all services. Doctor checks that
-	// only make sense in the presence of these resources gate-skip
+	// derived from each azure.ai.agent service's azure.yaml `config:`
+	// block. They are true when at least one resource of the matching
+	// kind is declared across all services. Doctor checks that only
+	// make sense in the presence of these resources gate-skip
 	// themselves on the matching Has* flag; resolvers can use them to
 	// tailor remediation suggestions.
 	//
-	// All three flags are false when the manifest file is missing,
-	// malformed, or declares no resources — the walker is deliberately
-	// silent on those failure modes so a missing/in-flight manifest
-	// never blocks the rest of state assembly.
+	// All three flags are false when a service has no `config:` block,
+	// the config is malformed, or it declares no resources — the parser
+	// is deliberately silent on those failure modes so a missing or
+	// in-flight config never blocks the rest of state assembly.
 	HasModels      bool
 	HasToolboxes   bool
 	HasConnections bool
 
 	// ModelRefs, Toolboxes, Connections list every resource of the
-	// matching kind found across all services' agent.manifest.yaml
-	// files. Entries are sorted by Name (ties broken by ServiceName)
+	// matching kind declared across all services' azure.yaml `config:`
+	// blocks. Entries are sorted by Name (ties broken by ServiceName)
 	// and deduplicated on (ServiceName, Name) so callers can render
 	// them deterministically. The slices are nil when the matching
 	// Has* flag is false.
@@ -171,31 +171,31 @@ type State struct {
 	Connections []ResourceRef
 }
 
-// ResourceRef is a slim summary of a manifest resource that the
-// nextstep package surfaces to doctor checks and resolvers. The
-// shape intentionally elides agent_yaml.ModelResource /
-// ToolboxResource / ConnectionResource details that doctor checks
-// don't consume today — keeping the surface small so future
-// manifest schema changes don't ripple through the resolver / doctor
-// boundary. Add fields here only when a doctor check or resolver
-// branch needs them.
+// ResourceRef is a slim summary of a config-declared resource that the
+// nextstep package surfaces to doctor checks and resolvers. The shape
+// intentionally elides the full azure.yaml config details that doctor
+// checks don't consume today — keeping the surface small so future
+// config schema changes don't ripple through the resolver / doctor
+// boundary. Add fields here only when a doctor check or resolver branch
+// needs them.
 type ResourceRef struct {
-	// Name is the resource's manifest-declared name (the `name:`
-	// field on the manifest's `resources[]` entry). Doctor checks
-	// match by this name when looking up Foundry deployments /
-	// connections / toolboxes.
+	// Name is the resource's declared name (the `name:` field on the
+	// matching `config.deployments[]`, `config.toolboxes[]`, or
+	// `config.connections[]` entry in azure.yaml). Doctor checks match
+	// by this name when looking up Foundry deployments / connections /
+	// toolboxes.
 	Name string
 
 	// ServiceName is the azd service that declared the resource (the
-	// service entry under `services:` in azure.yaml whose
-	// agent.manifest.yaml contains this entry). When the same logical
-	// resource is declared by multiple services they appear as
-	// separate entries — doctor checks key on (ServiceName, Name) so
-	// per-service failures are surfaced individually.
+	// service entry under `services:` in azure.yaml whose `config:`
+	// block contains this entry). When the same logical resource is
+	// declared by multiple services they appear as separate entries —
+	// doctor checks key on (ServiceName, Name) so per-service failures
+	// are surfaced individually.
 	ServiceName string
 
 	// Detail carries a kind-specific identifier:
-	//   - models:      ModelResource.Id (e.g., "azureml://...gpt-4o...")
+	//   - models:      underlying model name + version (e.g. "gpt-4.1 (2025-04-14)")
 	//   - connections: <Category> | <Target>
 	//   - toolboxes:   empty (no identifier beyond Name today)
 	// Doctor remediation messages render Detail verbatim, so changes

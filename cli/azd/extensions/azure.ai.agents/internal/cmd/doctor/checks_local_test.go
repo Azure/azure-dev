@@ -457,7 +457,7 @@ func TestNewLocalChecks_OrderAndIDs(t *testing.T) {
 		{"local.project-endpoint-set", "FOUNDRY_PROJECT_ENDPOINT set", false},
 		{"local.agent-yaml-valid", "agent.yaml valid (per service)", false},
 		{"local.manual-env-vars", "manual env vars set", false},
-		{"local.toolboxes", "Manifest toolboxes have endpoint env vars set", false},
+		{"local.toolboxes", "Toolboxes have endpoint env vars set", false},
 	}
 	for i, w := range want {
 		require.Equal(t, w.id, checks[i].ID, "index %d", i)

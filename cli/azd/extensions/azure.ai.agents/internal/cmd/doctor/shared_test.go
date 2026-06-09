@@ -12,9 +12,9 @@ import (
 )
 
 // fixedAssembler returns an assembleState stub that yields the given
-// State on every call. Used by check tests to inject manifest-walker
+// State on every call. Used by check tests to inject resource-walk
 // outputs (HasModels / HasToolboxes / HasConnections, ModelRefs, etc.)
-// without touching disk or invoking the production walker.
+// without touching the gRPC project snapshot or its config parsing.
 func fixedAssembler(
 	state *nextstep.State,
 ) func(context.Context, *azdext.AzdClient) (*nextstep.State, []error) {

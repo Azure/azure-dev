@@ -37,8 +37,8 @@ func runToolboxesCheck(t *testing.T, deps Dependencies, prior []Result) Result {
 }
 
 // stateWithToolboxes builds a *nextstep.State whose HasToolboxes flag
-// is wired to match the supplied slice (mirrors what the C2 manifest
-// walker would produce).
+// is wired to match the supplied slice (mirrors what nextstep state
+// assembly would produce from azure.yaml config).
 func stateWithToolboxes(refs ...nextstep.ResourceRef) *nextstep.State {
 	return &nextstep.State{
 		HasToolboxes: len(refs) > 0,
@@ -133,7 +133,7 @@ func TestCheckToolboxes_FailsWhenAssemblerReturnsNilState(t *testing.T) {
 
 func TestCheckToolboxes_FailSurfacesAssemblerErrCause(t *testing.T) {
 	t.Parallel()
-	cause := errors.New("manifest.walker: open agent.manifest.yaml: permission denied")
+	cause := errors.New("read service config: permission denied")
 	deps := Dependencies{
 		AzdClient: &azdext.AzdClient{},
 		assembleState: func(_ context.Context, _ *azdext.AzdClient) (*nextstep.State, []error) {

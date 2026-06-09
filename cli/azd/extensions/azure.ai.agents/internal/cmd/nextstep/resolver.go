@@ -152,8 +152,8 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 
 	// Placeholder fix-ups always come first when present: they are broken
 	// state in agent.yaml itself and block both `run` and `deploy`. The
-	// user has to edit agent.yaml (or define a matching parameter in
-	// agent.manifest.yaml) — `azd env set` cannot reach them.
+	// user has to edit agent.yaml directly — `azd env set` cannot reach
+	// them.
 	hasPlaceholders := len(state.UnresolvedPlaceholders) > 0
 	if hasPlaceholders {
 		placeholders := slices.Clone(state.UnresolvedPlaceholders)

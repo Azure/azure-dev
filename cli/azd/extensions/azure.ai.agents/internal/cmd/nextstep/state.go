@@ -289,15 +289,15 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 	}
 
 	if project != nil && len(state.Services) > 0 {
-		populateManifestResources(project.Path, state)
+		populateServiceResources(project, state)
 	}
 
 	// Partition toolbox-derived endpoint vars out of MissingManualVars
 	// into MissingToolboxEndpoints. This must run AFTER
-	// populateManifestResources because it depends on state.Toolboxes
-	// being populated — without the manifest's toolbox list we cannot
+	// populateServiceResources because it depends on state.Toolboxes
+	// being populated — without the azure.yaml toolbox list we cannot
 	// tell a toolbox-derived var ("TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT"
-	// for a manifest-declared `web-search-tools` toolbox) apart from a
+	// for a config-declared `web-search-tools` toolbox) apart from a
 	// generic user-named variable that happens to start with TOOLBOX_.
 	// See MissingToolboxEndpoints docs (types.go) for the rationale.
 	partitionToolboxEndpointVars(state)
@@ -324,9 +324,9 @@ func detectMissingAzureContextVars(ctx context.Context, src Source, envName stri
 
 // partitionToolboxEndpointVars moves any entry in state.MissingManualVars
 // whose name is the canonical TOOLBOX_<NAME>_MCP_ENDPOINT key for a
-// manifest-declared toolbox into state.MissingToolboxEndpoints. The
+// config-declared toolbox into state.MissingToolboxEndpoints. The
 // partition is a no-op when state.Toolboxes is empty: any TOOLBOX_*
-// entry in MissingManualVars without a corresponding manifest toolbox
+// entry in MissingManualVars without a corresponding declared toolbox
 // is a generic user variable and stays where it is.
 //
 // state.MissingManualVars order is preserved (caller-visible sorting
@@ -500,7 +500,7 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 //  2. manual:       unset ${VAR} refs that do NOT name a Bicep output
 //     (user inputs the user must `azd env set`)
 //  3. placeholders: surviving {{NAME}} Mustache placeholders (init failed
-//     to substitute these from agent.manifest.yaml's parameters block)
+//     to substitute these from the source manifest's parameters block)
 //
 // Only bare-form ${VAR} refs participate in (1) and (2): when the
 // agent.yaml author supplies an explicit fallback via `${VAR:-default}`,

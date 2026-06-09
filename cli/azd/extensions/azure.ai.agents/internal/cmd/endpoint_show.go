@@ -63,6 +63,12 @@ and agent card (A2A discovery) as configured on the live agent.`,
 		},
 	}
 
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"json", "table"},
+		Default:       "table",
+	})
+
 	return cmd
 }
 

@@ -21,12 +21,12 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// newEvalInitCommand — command shape
+// newEvalGenerateCommand — command shape
 // ---------------------------------------------------------------------------
 
-func TestNewEvalInitCommand_Flags(t *testing.T) {
+func TestNewEvalGenerateCommand_Flags(t *testing.T) {
 	t.Parallel()
-	cmd := newEvalInitCommand(&azdext.ExtensionContext{})
+	cmd := newEvalGenerateCommand(&azdext.ExtensionContext{})
 
 	expectedFlags := []struct {
 		name         string
@@ -54,16 +54,16 @@ func TestNewEvalInitCommand_Flags(t *testing.T) {
 	}
 }
 
-func TestNewEvalInitCommand_NoArgs(t *testing.T) {
+func TestNewEvalGenerateCommand_NoArgs(t *testing.T) {
 	t.Parallel()
-	cmd := newEvalInitCommand(&azdext.ExtensionContext{})
+	cmd := newEvalGenerateCommand(&azdext.ExtensionContext{})
 	assert.NoError(t, cmd.Args(cmd, nil))
 	assert.Error(t, cmd.Args(cmd, []string{"extra"}))
 }
 
-func TestNewEvalInitCommand_NoShortOutFile(t *testing.T) {
+func TestNewEvalGenerateCommand_NoShortOutFile(t *testing.T) {
 	t.Parallel()
-	cmd := newEvalInitCommand(&azdext.ExtensionContext{})
+	cmd := newEvalGenerateCommand(&azdext.ExtensionContext{})
 	f := cmd.Flags().ShorthandLookup("o")
 	assert.Nil(t, f, "flag -o shorthand must not exist (conflicts with azd global --output)")
 }
@@ -72,44 +72,44 @@ func TestNewEvalInitCommand_NoShortOutFile(t *testing.T) {
 // --agent-instruction / --agent-instruction-file mutual exclusion
 // ---------------------------------------------------------------------------
 
-func TestRunEvalInit_MutualExclusion(t *testing.T) {
+func TestRunEvalGenerate_MutualExclusion(t *testing.T) {
 	t.Parallel()
-	flags := &evalInitFlags{
+	flags := &evalGenerateFlags{
 		instruction:     "inline text",
 		instructionFile: "some-file.txt",
 	}
-	err := runEvalInit(t.Context(), flags, true)
+	err := runEvalGenerate(t.Context(), flags, true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot use both --gen-instruction and --gen-instruction-file")
 }
 
-func TestRunEvalInit_InstructionFile(t *testing.T) {
+func TestRunEvalGenerate_InstructionFile(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	instrFile := filepath.Join(tmpDir, "instruction.md")
 	require.NoError(t, os.WriteFile(instrFile, []byte("  Test booking agent  \n"), 0600))
 
-	flags := &evalInitFlags{
+	flags := &evalGenerateFlags{
 		instructionFile: instrFile,
 		evalModel:       "test-model",
 		maxSamples:      10,
 	}
-	// runEvalInit will fail later (no azd client), but file validation should pass.
-	_ = runEvalInit(t.Context(), flags, true)
+	// runEvalGenerate will fail later (no azd client), but file validation should pass.
+	_ = runEvalGenerate(t.Context(), flags, true)
 	// File path remains on the flag — content is NOT inlined.
 	assert.Equal(t, instrFile, flags.instructionFile)
 	assert.Empty(t, flags.instruction)
 }
 
-func TestRunEvalInit_InstructionFileMissing(t *testing.T) {
+func TestRunEvalGenerate_InstructionFileMissing(t *testing.T) {
 	t.Parallel()
 	// Use filepath.Join with TempDir to get a proper absolute path that doesn't exist.
 	missingFile := filepath.Join(t.TempDir(), "nonexistent", "instruction.txt")
-	flags := &evalInitFlags{
+	flags := &evalGenerateFlags{
 		instructionFile: missingFile,
 		projectEndpoint: "https://example.ai.azure.com/",
 	}
-	err := runEvalInit(t.Context(), flags, true)
+	err := runEvalGenerate(t.Context(), flags, true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not accessible")
 }
@@ -123,7 +123,7 @@ func TestNewEvalConfig(t *testing.T) {
 
 	t.Run("uses default name", func(t *testing.T) {
 		t.Parallel()
-		flags := &evalInitFlags{
+		flags := &evalGenerateFlags{
 			instruction: "Test the booking agent",
 			evalModel:   "gpt-4.1",
 			maxSamples:  50,
@@ -139,7 +139,7 @@ func TestNewEvalConfig(t *testing.T) {
 		assert.Equal(t, defaultEvalName, cfg.Name)
 		assert.Equal(t, "booking-agent", cfg.Agent.Name)
 		assert.Equal(t, agent_yaml.AgentKindHosted, cfg.Agent.Kind)
-		assert.Equal(t, "v2", cfg.Agent.Version)
+		assert.Empty(t, cfg.Agent.Version, "version should not be persisted in eval config")
 		assert.Equal(t, "gpt-4.1", cfg.Options.EvalModel)
 		assert.Equal(t, "Test the booking agent", cfg.Agent.Instruction.Value)
 		assert.Equal(t, 50, cfg.MaxSamples)
@@ -147,7 +147,7 @@ func TestNewEvalConfig(t *testing.T) {
 
 	t.Run("uses custom name from flag", func(t *testing.T) {
 		t.Parallel()
-		flags := &evalInitFlags{
+		flags := &evalGenerateFlags{
 			name:       "my-suite",
 			maxSamples: 10,
 		}
@@ -158,7 +158,7 @@ func TestNewEvalConfig(t *testing.T) {
 
 	t.Run("stores instruction_file when file provided", func(t *testing.T) {
 		t.Parallel()
-		flags := &evalInitFlags{
+		flags := &evalGenerateFlags{
 			instructionFile: "./prompts/system.md",
 			evalModel:       "gpt-4o",
 			maxSamples:      20,
@@ -480,6 +480,24 @@ func TestResolveLocalDatasetFile_NotFound(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// resolveCwdRelative
+// ---------------------------------------------------------------------------
+
+func TestResolveCwdRelative_AbsoluteUnchanged(t *testing.T) {
+	t.Parallel()
+	abs := filepath.Join(t.TempDir(), "data.jsonl")
+	result := resolveCwdRelative(abs)
+	assert.Equal(t, abs, result)
+}
+
+func TestResolveCwdRelative_RelativeResolvedToCwd(t *testing.T) {
+	t.Parallel()
+	result := resolveCwdRelative("data.jsonl")
+	assert.True(t, filepath.IsAbs(result), "expected absolute path, got %q", result)
+	assert.Equal(t, "data.jsonl", filepath.Base(result))
+}
+
+// ---------------------------------------------------------------------------
 // tryLoadExistingEvalConfig
 // ---------------------------------------------------------------------------
 
@@ -598,13 +616,13 @@ func TestResolveEvalName(t *testing.T) {
 	t.Parallel()
 	t.Run("returns flag name when set", func(t *testing.T) {
 		t.Parallel()
-		flags := &evalInitFlags{name: "my-eval"}
+		flags := &evalGenerateFlags{name: "my-eval"}
 		assert.Equal(t, "my-eval", resolveEvalName(flags))
 	})
 
 	t.Run("returns default when flag is empty", func(t *testing.T) {
 		t.Parallel()
-		flags := &evalInitFlags{}
+		flags := &evalGenerateFlags{}
 		assert.Equal(t, defaultEvalName, resolveEvalName(flags))
 	})
 }
@@ -617,7 +635,7 @@ func TestResolvedInstruction(t *testing.T) {
 	t.Parallel()
 	t.Run("returns inline instruction", func(t *testing.T) {
 		t.Parallel()
-		flags := &evalInitFlags{instruction: "Be helpful."}
+		flags := &evalGenerateFlags{instruction: "Be helpful."}
 		assert.Equal(t, "Be helpful.", resolvedInstruction(flags))
 	})
 
@@ -627,13 +645,13 @@ func TestResolvedInstruction(t *testing.T) {
 		filePath := filepath.Join(dir, "prompt.md")
 		require.NoError(t, os.WriteFile(filePath, []byte("File instruction."), 0600))
 
-		flags := &evalInitFlags{instructionFile: filePath}
+		flags := &evalGenerateFlags{instructionFile: filePath}
 		assert.Equal(t, "File instruction.", resolvedInstruction(flags))
 	})
 
 	t.Run("falls back to inline when file missing", func(t *testing.T) {
 		t.Parallel()
-		flags := &evalInitFlags{
+		flags := &evalGenerateFlags{
 			instructionFile: "/nonexistent/path.md",
 			instruction:     "fallback",
 		}
@@ -642,7 +660,7 @@ func TestResolvedInstruction(t *testing.T) {
 
 	t.Run("returns empty when nothing set", func(t *testing.T) {
 		t.Parallel()
-		flags := &evalInitFlags{}
+		flags := &evalGenerateFlags{}
 		assert.Empty(t, resolvedInstruction(flags))
 	})
 }

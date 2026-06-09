@@ -162,7 +162,7 @@ func (el EvaluatorList) SetLocalURI(name, uri string) {
 // under AgentConfigsDir as a self-contained directory with a fixed layout:
 //
 //	.agent_configs/
-//	├── baseline/                  # original agent config captured by eval init or optimize
+//	├── baseline/                  # original agent config captured by eval generate or optimize
 //	│   ├── metadata.yaml          # MetadataFile  — model, file pointers
 //	│   ├── instructions.md        # InstructionFile — system prompt
 //	│   ├── skills/                # SkillsDir — skill definitions (optional)
@@ -174,7 +174,7 @@ func (el EvaluatorList) SetLocalURI(name, uri string) {
 //	    └── tools.json
 //
 // Both eval and optimize commands share these constants and layout conventions.
-// Eval init writes the baseline directory; optimize apply writes candidate
+// Eval generate writes the baseline directory; optimize apply writes candidate
 // directories and reads the baseline for diff display.
 const (
 	// AgentConfigsDir is the top-level folder that holds agent configuration

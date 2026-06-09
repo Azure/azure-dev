@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -26,9 +27,10 @@ import (
 
 // evalRunFlags holds CLI flags for the eval run command.
 type evalRunFlags struct {
-	config string // eval config path
-	name   string // eval run name
-	noWait bool   // start and return immediately
+	envName string // explicit environment name (from -e flag)
+	config  string // eval config path
+	name    string // eval run name
+	noWait  bool   // start and return immediately
 }
 
 func newEvalRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -41,6 +43,7 @@ func newEvalRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			logCleanup := setupDebugLogging(cmd.Flags())
 			defer logCleanup()
+			flags.envName = extCtx.Environment
 			return runEvalRun(ctx, flags, extCtx.NoPrompt)
 		},
 	}
@@ -51,7 +54,7 @@ func newEvalRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 }
 
 func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
-	resolved, err := resolveEvalContext(ctx, evalContextOptions{})
+	resolved, err := resolveEvalContext(ctx, evalContextOptions{envName: flags.envName})
 	if err != nil {
 		return err
 	}
@@ -65,17 +68,12 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 
 	// Reconcile agent name/version between environment and eval.yaml.
 	// Environment values take precedence; warn and update the config if they differ.
-	configChanged := reconcileConfigAgentName(&evalCfg.Agent, resolved.agentName, flags.config)
+	configChanged := reconcileConfigAgent(os.Stderr, &evalCfg.Agent, resolved.agentName, resolved.version, flags.config)
 	if resolved.agentName == "" {
 		resolved.agentName = evalCfg.Agent.Name
 	}
 	if resolved.version == "" {
 		resolved.version = evalCfg.Agent.Version
-	} else if evalCfg.Agent.Version != "" && evalCfg.Agent.Version != resolved.version {
-		fmt.Printf("  %s agent version in %s (%q) differs from environment (%q) — using environment value\n",
-			color.YellowString("warning:"), flags.config, evalCfg.Agent.Version, resolved.version)
-		evalCfg.Agent.Version = resolved.version
-		configChanged = true
 	}
 	if configChanged {
 		if err := eval_api.WriteEvalConfig(configPath, evalCfg); err != nil {
@@ -88,7 +86,7 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 	state := opt_eval.LoadEvalState(ctx, resolved.azdClient, resolved.envName)
 
 	if state.InitStatus == opt_eval.InitStatusPending {
-		if err := resumeEvalInit(ctx, resolved, configPath, evalCfg, state); err != nil {
+		if err := resumeEvalGenerate(ctx, resolved, configPath, evalCfg, state); err != nil {
 			return err
 		}
 	}
@@ -136,7 +134,11 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 
 	// Set source from local dataset file or remote dataset reference.
 	if evalCfg.DatasetFile != "" {
-		items, err := loadJSONLFile[map[string]any](evalCfg.DatasetFile)
+		// Resolve relative paths against the agent project directory so
+		// eval.yaml files with project-relative dataset_file entries work
+		// regardless of the caller's working directory.
+		datasetPath := eval_api.ResolveRelPath(evalCfg.DatasetFile, resolved.agentProject)
+		items, err := loadJSONLFile[map[string]any](datasetPath)
 		if err != nil {
 			return err
 		}
@@ -145,7 +147,7 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 		fileID := buildDatasetFileID(resolved.projectEndpoint, evalCfg.DatasetReference)
 		dataSource.SetFileID(fileID)
 	} else {
-		return fmt.Errorf("no dataset configured; run 'azd ai agent eval init' or specify dataset_file / dataset_reference in the eval config")
+		return fmt.Errorf("no dataset configured; run 'azd ai agent eval generate' or specify dataset_file / dataset_reference in the eval config")
 	}
 
 	runReq.DataSource = dataSource

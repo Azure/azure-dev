@@ -6,12 +6,13 @@ package cmd
 import (
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestOptimizeStatusCommand_AcceptsOptionalPositionalArg(t *testing.T) {
-	cmd := newOptimizeStatusCommand()
+	cmd := newOptimizeStatusCommand(&azdext.ExtensionContext{})
 
 	// Zero args is now OK (uses last job ID)
 	err := cmd.Args(cmd, []string{})
@@ -27,7 +28,7 @@ func TestOptimizeStatusCommand_AcceptsOptionalPositionalArg(t *testing.T) {
 }
 
 func TestOptimizeStatusCommand_HasWatchFlag(t *testing.T) {
-	cmd := newOptimizeStatusCommand()
+	cmd := newOptimizeStatusCommand(&azdext.ExtensionContext{})
 
 	f := cmd.Flags().Lookup("watch")
 	require.NotNil(t, f, "--watch flag should be registered")

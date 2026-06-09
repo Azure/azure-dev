@@ -73,7 +73,7 @@ func TestSubmitDatasetGeneration_APIVersion(t *testing.T) {
 		agentKind:  agent_yaml.AgentKindHosted,
 		version:    "v1",
 	}
-	flags := &evalInitFlags{
+	flags := &evalGenerateFlags{
 		evalModel:  "gpt-4o",
 		maxSamples: 10,
 	}
@@ -108,7 +108,7 @@ func TestSubmitEvaluatorGeneration_APIVersion(t *testing.T) {
 		agentKind:  agent_yaml.AgentKindHosted,
 		version:    "v1",
 	}
-	flags := &evalInitFlags{
+	flags := &evalGenerateFlags{
 		evalModel: "gpt-4o",
 	}
 

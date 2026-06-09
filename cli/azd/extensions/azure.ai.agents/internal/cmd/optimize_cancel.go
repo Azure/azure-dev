@@ -11,16 +11,18 @@ import (
 
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
 // optimizeCancelFlags holds connection settings for the cancel command.
 type optimizeCancelFlags struct {
+	envName string
 	optimizeConnectionFlags
 }
 
-func newOptimizeCancelCommand() *cobra.Command {
+func newOptimizeCancelCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &optimizeCancelFlags{}
 
 	cmd := &cobra.Command{
@@ -33,6 +35,7 @@ Only jobs in a non-terminal state (pending, running) can be cancelled.`,
   azd ai agent optimize cancel opt_abc123`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			flags.envName = extCtx.Environment
 			return runOptimizeCancel(cmd, flags, args[0])
 		},
 	}
@@ -43,7 +46,7 @@ Only jobs in a non-terminal state (pending, running) can be cancelled.`,
 }
 
 func runOptimizeCancel(cmd *cobra.Command, flags *optimizeCancelFlags, operationID string) error {
-	endpoint, err := flags.resolve(cmd.Context())
+	endpoint, err := flags.resolve(cmd.Context(), flags.envName)
 	if err != nil {
 		return err
 	}

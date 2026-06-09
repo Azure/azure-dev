@@ -41,7 +41,7 @@ type optimizeApplyFlags struct {
 
 func newOptimizeApplyCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &optimizeApplyFlags{}
-	action := &OptimizeApplyAction{flags: flags, noPrompt: extCtx.NoPrompt}
+	action := &OptimizeApplyAction{flags: flags}
 
 	cmd := &cobra.Command{
 		Use:   "apply",
@@ -57,6 +57,12 @@ After applying, run 'azd deploy' to deploy the optimized agent version.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
+
+			// Read extCtx fields here (after PersistentPreRunE has populated them
+			// from -e / AZD_ENVIRONMENT), not at command construction time.
+			action.envName = extCtx.Environment
+			action.noPrompt = extCtx.NoPrompt
+
 			return action.Run(ctx, cmd)
 		},
 	}
@@ -72,6 +78,7 @@ After applying, run 'azd deploy' to deploy the optimized agent version.`,
 // OptimizeApplyAction implements the optimize apply command.
 type OptimizeApplyAction struct {
 	flags    *optimizeApplyFlags
+	envName  string
 	noPrompt bool
 }
 
@@ -105,7 +112,7 @@ func (a *OptimizeApplyAction) apply(
 	out io.Writer,
 	bold *color.Color,
 ) error {
-	projectEndpoint, err := resolveProjectEndpointForDeploy(ctx, &a.flags.optimizeConnectionFlags)
+	projectEndpoint, err := resolveProjectEndpointForDeploy(ctx, &a.flags.optimizeConnectionFlags, a.envName)
 	if err != nil {
 		return err
 	}
@@ -159,14 +166,14 @@ func (a *OptimizeApplyAction) apply(
 
 	// Step 4: Store candidate ID in the azd environment for tracking.
 	serviceKey := toServiceKey(svc.Name)
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
+	env := getExistingEnvironment(ctx, a.envName, azdClient)
+	if env == nil {
+		return fmt.Errorf("failed to resolve environment")
 	}
 
 	candidateKey := fmt.Sprintf("AGENT_%s_OPTIMIZATION_CANDIDATE_ID", serviceKey)
 	if _, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: envResp.Environment.Name,
+		EnvName: env.Name,
 		Key:     candidateKey,
 		Value:   a.flags.candidate,
 	}); err != nil {

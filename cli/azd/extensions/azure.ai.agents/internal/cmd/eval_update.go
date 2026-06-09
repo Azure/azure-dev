@@ -24,6 +24,7 @@ import (
 
 // evalUpdateFlags holds CLI flags for the eval update command.
 type evalUpdateFlags struct {
+	envName       string // explicit environment name (from -e flag)
 	config        string // eval config path
 	datasetOnly   bool   // only update the dataset
 	evaluatorOnly bool   // only update evaluators
@@ -46,6 +47,7 @@ local changes. Use --dataset-only or --evaluator-only to skip prompts.`,
 			ctx := azdext.WithAccessToken(cmd.Context())
 			logCleanup := setupDebugLogging(cmd.Flags())
 			defer logCleanup()
+			flags.envName = extCtx.Environment
 			return runEvalUpdate(ctx, flags, extCtx.NoPrompt)
 		},
 	}
@@ -56,7 +58,7 @@ local changes. Use --dataset-only or --evaluator-only to skip prompts.`,
 }
 
 func runEvalUpdate(ctx context.Context, flags *evalUpdateFlags, noPrompt bool) error {
-	resolved, err := resolveEvalContext(ctx, evalContextOptions{})
+	resolved, err := resolveEvalContext(ctx, evalContextOptions{envName: flags.envName})
 	if err != nil {
 		return err
 	}

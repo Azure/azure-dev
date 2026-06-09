@@ -33,7 +33,7 @@ type optimizeDeployFlags struct {
 	optimizeConnectionFlags
 }
 
-func newOptimizeDeployCommand() *cobra.Command {
+func newOptimizeDeployCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &optimizeDeployFlags{}
 	action := &OptimizeDeployAction{flags: flags}
 
@@ -54,6 +54,10 @@ Use 'optimize apply' instead if you want to localize the config into your azd pr
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
 
+			// Read extCtx fields here (after PersistentPreRunE has populated them
+			// from -e / AZD_ENVIRONMENT), not at command construction time.
+			action.envName = extCtx.Environment
+
 			if len(args) > 0 && flags.agent == "" {
 				flags.agent = args[0]
 			}
@@ -72,7 +76,8 @@ Use 'optimize apply' instead if you want to localize the config into your azd pr
 
 // OptimizeDeployAction implements the optimize deploy command.
 type OptimizeDeployAction struct {
-	flags *optimizeDeployFlags
+	flags   *optimizeDeployFlags
+	envName string
 }
 
 func (a *OptimizeDeployAction) Run(ctx context.Context, cmd *cobra.Command) error {
@@ -90,14 +95,14 @@ func (a *OptimizeDeployAction) runDirect(
 	bold *color.Color,
 ) error {
 	// Resolve agent name from flag or agent.yaml in current directory.
-	resolved, err := resolveOptimizeAgent(ctx, a.flags.agent, false)
+	resolved, err := resolveOptimizeAgent(ctx, a.flags.agent, a.envName, false)
 	if err != nil {
 		return err
 	}
 	agentName := resolved.agentName
 
 	// Resolve project endpoint (for Foundry agent API).
-	projectEndpoint, err := resolveProjectEndpointForDeploy(ctx, &a.flags.optimizeConnectionFlags)
+	projectEndpoint, err := resolveProjectEndpointForDeploy(ctx, &a.flags.optimizeConnectionFlags, a.envName)
 	if err != nil {
 		return err
 	}
@@ -241,9 +246,16 @@ func upsertAgentYamlEnvVar(agentYamlPath, key, value string) error {
 
 // resolveProjectEndpointForDeploy resolves the Foundry project endpoint using
 // the same resolution chain as other agent commands.
-func resolveProjectEndpointForDeploy(ctx context.Context, connFlags *optimizeConnectionFlags) (string, error) {
+func resolveProjectEndpointForDeploy(ctx context.Context, connFlags *optimizeConnectionFlags, envName string) (string, error) {
 	if connFlags.projectEndpoint != "" {
 		return strings.TrimRight(connFlags.projectEndpoint, "/"), nil
+	}
+
+	// When an explicit envName is provided, try the named environment first.
+	if envName != "" {
+		if ep := endpointFromNamedEnv(ctx, envName); ep != "" {
+			return strings.TrimRight(ep, "/"), nil
+		}
 	}
 
 	projectEndpoint, err := resolveAgentEndpoint(ctx, "", "")

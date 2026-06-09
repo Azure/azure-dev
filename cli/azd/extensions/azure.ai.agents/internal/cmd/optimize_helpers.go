@@ -49,7 +49,8 @@ func projectEndpointFromEnv() string {
 }
 
 // Priority: --endpoint flag → --project-endpoint → azd environment → FOUNDRY_PROJECT_ENDPOINT env var.
-func (f *optimizeConnectionFlags) resolve(ctx context.Context) (string, error) {
+// envName selects a specific azd environment; empty means "current default".
+func (f *optimizeConnectionFlags) resolve(ctx context.Context, envName string) (string, error) {
 	if f.endpoint != "" {
 		return strings.TrimRight(f.endpoint, "/"), nil
 	}
@@ -59,7 +60,16 @@ func (f *optimizeConnectionFlags) resolve(ctx context.Context) (string, error) {
 		return strings.TrimRight(f.projectEndpoint, "/"), nil
 	}
 
-	// Try azd environment (works when running under azd)
+	// When an explicit envName is provided, read FOUNDRY_PROJECT_ENDPOINT
+	// directly from that environment instead of relying on the default
+	// cascade (which always reads the current/default environment).
+	if envName != "" {
+		if ep := endpointFromNamedEnv(ctx, envName); ep != "" {
+			return strings.TrimRight(ep, "/"), nil
+		}
+	}
+
+	// Try azd environment / global config cascade (works when running under azd)
 	projectEndpoint, err := resolveAgentEndpoint(ctx, "", "")
 	if err != nil {
 		// Fall back to FOUNDRY_PROJECT_ENDPOINT or AZURE_AI_PROJECT_ENDPOINT env var (works standalone)
@@ -74,25 +84,48 @@ func (f *optimizeConnectionFlags) resolve(ctx context.Context) (string, error) {
 	return projectEndpoint, nil
 }
 
+// endpointFromNamedEnv reads FOUNDRY_PROJECT_ENDPOINT from the specified
+// azd environment. Returns empty string on any failure.
+func endpointFromNamedEnv(ctx context.Context, envName string) string {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return ""
+	}
+	defer azdClient.Close()
+
+	env := getExistingEnvironment(ctx, envName, azdClient)
+	if env == nil {
+		return ""
+	}
+	v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: env.Name,
+		Key:     "FOUNDRY_PROJECT_ENDPOINT",
+	})
+	if err != nil || v.Value == "" {
+		return ""
+	}
+	return v.Value
+}
+
 // optimizeLastJobIDKey is the azd environment key for the last optimization job ID.
 const optimizeLastJobIDKey = "OPTIMIZE_LAST_OPERATION_ID"
 
 // saveLastOptimizeJobID stores the operation ID in the azd environment.
 // Best-effort — silently ignores errors (e.g., when running outside azd).
-func saveLastOptimizeJobID(ctx context.Context, operationID string) {
+func saveLastOptimizeJobID(ctx context.Context, operationID, envName string) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return
 	}
 	defer azdClient.Close()
 
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || envResp == nil {
+	env := getExistingEnvironment(ctx, envName, azdClient)
+	if env == nil {
 		return
 	}
 
 	_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: envResp.Environment.Name,
+		EnvName: env.Name,
 		Key:     optimizeLastJobIDKey,
 		Value:   operationID,
 	})
@@ -100,20 +133,20 @@ func saveLastOptimizeJobID(ctx context.Context, operationID string) {
 
 // loadLastOptimizeJobID retrieves the last operation ID from the azd environment.
 // Returns empty string if not available.
-func loadLastOptimizeJobID(ctx context.Context) string {
+func loadLastOptimizeJobID(ctx context.Context, envName string) string {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return ""
 	}
 	defer azdClient.Close()
 
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || envResp == nil {
+	env := getExistingEnvironment(ctx, envName, azdClient)
+	if env == nil {
 		return ""
 	}
 
 	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envResp.Environment.Name,
+		EnvName: env.Name,
 		Key:     optimizeLastJobIDKey,
 	})
 	if err != nil || resp == nil {
@@ -124,19 +157,19 @@ func loadLastOptimizeJobID(ctx context.Context) string {
 
 // printOptimizePortalLink prints the Foundry portal URL for an optimization job.
 // Best-effort — silently skips if the portal prefix cannot be resolved.
-func printOptimizePortalLink(ctx context.Context, out io.Writer, agentName, operationID string) {
+func printOptimizePortalLink(ctx context.Context, out io.Writer, agentName, operationID, envName string) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return
 	}
 	defer azdClient.Close()
 
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || envResp == nil {
+	env := getExistingEnvironment(ctx, envName, azdClient)
+	if env == nil {
 		return
 	}
 
-	printPortalLink(ctx, out, azdClient, envResp.Environment.Name, func(prefix *eval_api.PortalPrefix) string {
+	printPortalLink(ctx, out, azdClient, env.Name, func(prefix *eval_api.PortalPrefix) string {
 		return prefix.OptimizationURL(agentName, operationID)
 	})
 }
@@ -159,6 +192,7 @@ func isInAzdProject(ctx context.Context) bool {
 func buildCandidateEvalURLs(
 	ctx context.Context,
 	candidates []optimize_api.CandidateResult,
+	explicitEnvName string,
 ) (result map[string]string) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -173,11 +207,11 @@ func buildCandidateEvalURLs(
 	}
 	defer azdClient.Close()
 
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || envResp == nil || envResp.Environment == nil {
+	env := getExistingEnvironment(ctx, explicitEnvName, azdClient)
+	if env == nil {
 		return nil
 	}
-	envName := envResp.Environment.Name
+	envName := env.Name
 
 	urls := make(map[string]string)
 	for _, c := range candidates {

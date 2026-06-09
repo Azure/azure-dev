@@ -22,10 +22,11 @@ import (
 
 // evalListFlags holds CLI flags for the eval list command.
 type evalListFlags struct {
-	limit int // maximum number of evals to return
+	envName string // explicit environment name (from -e flag)
+	limit   int    // maximum number of evals to return
 }
 
-func newEvalListCommand() *cobra.Command {
+func newEvalListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &evalListFlags{limit: 10}
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -35,6 +36,7 @@ func newEvalListCommand() *cobra.Command {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			logCleanup := setupDebugLogging(cmd.Flags())
 			defer logCleanup()
+			flags.envName = extCtx.Environment
 			return runEvalList(ctx, flags)
 		},
 	}
@@ -49,7 +51,7 @@ type evalRunSummary struct {
 }
 
 func runEvalList(ctx context.Context, flags *evalListFlags) error {
-	resolved, err := resolveEvalContext(ctx, evalContextOptions{})
+	resolved, err := resolveEvalContext(ctx, evalContextOptions{envName: flags.envName})
 	if err != nil {
 		return err
 	}

@@ -70,7 +70,7 @@ func (c *OptimizeConfig) Validate() error {
 	if !hasFile && !hasRef {
 		return fmt.Errorf(
 			"a dataset is required: provide dataset_file or dataset_reference in your config, " +
-				"or run 'azd ai agent eval init' to generate one")
+				"or run 'azd ai agent eval generate' to generate one")
 	}
 
 	return nil

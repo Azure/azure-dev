@@ -1,5 +1,9 @@
 import: ../../.vscode/cspell.yaml
 overrides:
+  - filename: internal/cmd/init.go
+    words:
+      - codeowner
+      - codeowners
   - filename: internal/resources/languages/**/.gitignore
     words:
       - rsuser

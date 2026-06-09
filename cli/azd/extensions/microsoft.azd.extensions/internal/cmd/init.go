@@ -658,7 +658,11 @@ func collectExtensionMetadata(
 	}
 
 	language := "go"
-	if !internalScaffold {
+	if internalScaffold {
+		fmt.Println(output.WithGrayFormat(
+			"Defaulting to Go - language selection skipped as internal scaffolding only supports Go currently.",
+		))
+	} else {
 		languageChoices := []*azdext.SelectChoice{
 			{
 				Label: "Go",

@@ -62,7 +62,11 @@ func newInitCmd() *cobra.Command {
 
 When used with --template, a new directory is created (named after the template)
 and the project is initialized inside it — similar to git clone.
-Pass "." as the directory to initialize in the current directory instead.`,
+Pass "." as the directory to initialize in the current directory instead.
+
+Re-running init in an initialized project is idempotent: the existing environment is
+reused instead of failing. With --no-prompt and no -e, the recorded default environment
+is reused.`,
 		Args: cobra.MaximumNArgs(1),
 	}
 }
@@ -424,6 +428,9 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 		}
 
 		if _, err := i.initializeEnv(ctx, azdCtx, template.Metadata); err != nil {
+			if errors.Is(err, errInitEnvCancelled) {
+				return initCancelledResult(), nil
+			}
 			return nil, err
 		}
 
@@ -496,12 +503,18 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 			)
 		}
 		if err != nil {
+			if errors.Is(err, errInitEnvCancelled) {
+				return initCancelledResult(), nil
+			}
 			return nil, err
 		}
 	case initEnvironment:
 		tracing.SetUsageAttributes(fields.InitMethod.String("environment"))
 		env, err := i.initializeEnv(ctx, azdCtx, templates.Metadata{})
 		if err != nil {
+			if errors.Is(err, errInitEnvCancelled) {
+				return initCancelledResult(), nil
+			}
 			return nil, err
 		}
 
@@ -812,30 +825,25 @@ func (i *initAction) initializeEnv(
 		return nil, err
 	}
 
-	env, reused, err := i.resolveInitEnv(ctx, azdCtx, envManager, envName, i.flags.EnvironmentName)
+	env, outcome, err := i.resolveInitEnv(ctx, azdCtx, envManager, envName, i.flags.EnvironmentName)
 	if err != nil {
 		return nil, err
 	}
 
 	// Record the resolved environment as the default. This is a no-op when it already
 	// is, and repairs a missing or stale default when reusing/recovering an existing
-	// environment from a previous (possibly partial) initialization.
+	// environment from a previous (possibly partial) initialization. It also promotes an
+	// explicitly requested environment to the default when switching away from a previous
+	// one.
 	if err := azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
-	}
-
-	if reused {
-		i.console.Message(
-			ctx,
-			fmt.Sprintf("Reusing existing environment %s.", output.WithHighLightFormat(env.Name())),
-		)
 	}
 
 	// When reusing an environment, only fill in values that are absent so changes the
 	// user made between runs aren't clobbered. On a fresh create, apply unconditionally.
 	existingDotenv := env.Dotenv()
 	setEnvValue := func(key, value string) {
-		if reused {
+		if outcome.reused {
 			if _, ok := existingDotenv[key]; ok {
 				return
 			}
@@ -849,7 +857,7 @@ func (i *initAction) initializeEnv(
 	}
 
 	for key, value := range templateMetadata.Config {
-		if reused {
+		if outcome.reused {
 			if _, ok := env.Config.Get(key); ok {
 				continue
 			}
@@ -867,79 +875,151 @@ func (i *initAction) initializeEnv(
 		setEnvValue(key, value)
 	}
 
-	// Apply subscription/location flags. On create these were already set from the
-	// environment spec; on reuse this repairs a partially initialized environment that
-	// is missing them, without clobbering values the user already set.
+	// Explicit flags represent direct user intent, so they always win — even on reuse —
+	// overriding any value previously stored in the environment.
 	if i.flags.location != "" {
-		setEnvValue(environment.LocationEnvVarName, i.flags.location)
+		env.DotenvSet(environment.LocationEnvVarName, i.flags.location)
 	}
 	if i.flags.subscription != "" {
-		setEnvValue(environment.SubscriptionIdEnvVarName, i.flags.subscription)
+		env.DotenvSet(environment.SubscriptionIdEnvVarName, i.flags.subscription)
 	}
 
 	if err := envManager.Save(ctx, env); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
+	// Print exactly one message describing the outcome, only after the environment has
+	// been persisted. Switching the default takes precedence; an already-acknowledged
+	// reuse (the user confirmed or selected it) needs no extra line.
+	switch {
+	case outcome.promotedFrom != "":
+		i.console.Message(
+			ctx,
+			fmt.Sprintf("Switching the default environment to %s.", output.WithHighLightFormat(env.Name())),
+		)
+	case outcome.reused && !outcome.acknowledged:
+		i.console.Message(
+			ctx,
+			fmt.Sprintf("Reusing existing environment %s.", output.WithHighLightFormat(env.Name())),
+		)
+	}
+
 	return env, nil
 }
 
+// errInitEnvCancelled signals that the user declined to reuse an existing environment.
+// init treats this as a clean, no-op cancellation rather than a failure: nothing about
+// the environment is mutated (no environment is created and the recorded default is left
+// unchanged).
+var errInitEnvCancelled = errors.New("init cancelled by user")
+
+// initCancelledResult returns the action result used when the user cancels init by
+// declining to reuse an existing environment.
+func initCancelledResult() *actions.ActionResult {
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{Header: "Init cancelled."},
+	}
+}
+
+// initEnvOutcome describes how resolveInitEnv resolved the environment so that
+// initializeEnv can centralize user-facing messaging and the set-if-absent logic.
+type initEnvOutcome struct {
+	// reused is true when an existing environment was reused rather than newly created.
+	reused bool
+	// promotedFrom is the previous default environment name when init switched the
+	// recorded default to a different environment. It is empty when the default was
+	// unchanged.
+	promotedFrom string
+	// acknowledged is true when an interactive prompt (confirm or select) already
+	// surfaced the reuse to the user, so initializeEnv should not print a duplicate
+	// "Reusing existing environment" line.
+	acknowledged bool
+}
+
 // resolveInitEnv determines which environment `azd init` should use, returning the
-// environment and whether it was reused (true) versus newly created (false).
+// environment and an outcome describing how it was resolved.
 //
 // When a default environment already exists, init is idempotent rather than failing:
-// re-running with the same environment name reuses it, interactive runs without an
-// exact match are asked whether to reuse it or create a new one (defaulting to reuse),
-// and non-interactive runs reuse it unless a different, still-valid environment name was
-// explicitly requested. Orphaned environment folders and stale default configuration
-// left behind by a previous partial init are recovered instead of dead-ending.
+//   - An explicitly requested environment (`-e`) that already exists is reused (interactive
+//     runs confirm first, defaulting to reuse); declining cancels init via
+//     errInitEnvCancelled. An explicitly requested environment that does not yet exist is
+//     created and promoted to the project default, without prompting.
+//   - Without `-e`, non-interactive runs reuse the recorded default while interactive runs
+//     are asked whether to reuse it or create a new one (defaulting to reuse).
+//
+// Orphaned environment folders and stale default configuration left behind by a previous
+// partial init are recovered instead of dead-ending.
 func (i *initAction) resolveInitEnv(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
 	envManager environment.Manager,
 	defaultEnvName string,
 	requested string,
-) (*environment.Environment, bool, error) {
-	// No default environment is recorded for the project yet. Reuse an orphaned
+) (*environment.Environment, initEnvOutcome, error) {
+	// Case A: No default environment is recorded for the project yet. Reuse an orphaned
 	// environment folder left by a previous partial init when the requested name matches
-	// one, otherwise create a new environment.
+	// one, otherwise create a new environment (deriving or prompting for a name when the
+	// requested name is empty).
 	if defaultEnvName == "" {
-		return i.getOrCreateEnv(ctx, azdCtx, envManager, requested)
+		env, reused, err := i.getOrCreateEnv(ctx, azdCtx, envManager, requested)
+		return env, initEnvOutcome{reused: reused}, err
 	}
 
-	// The caller explicitly asked for the environment that already exists. Reuse it
-	// without prompting (covers re-running init with the same -e value).
-	if requested != "" && requested == defaultEnvName {
-		return i.getOrCreateEnv(ctx, azdCtx, envManager, defaultEnvName)
-	}
-
-	// A different (or no) environment was requested while a default exists.
-	if i.console.IsNoPromptMode() {
-		// Non-interactive runs can't prompt. Reuse the default unless a different
-		// environment was explicitly requested and the default is actually usable; a
-		// stale default left by a partial init shouldn't block an explicit request.
-		if requested != "" {
-			// Validate the requested name before checking the default env so an
-			// invalid name surfaces a clear error rather than a misleading
-			// "already initialized" one.
-			if !environment.IsValidEnvironmentName(requested) {
-				return nil, false, environment.InvalidEnvironmentNameError(requested)
-			}
-			_, err := envManager.Get(ctx, defaultEnvName)
-			switch {
-			case err == nil:
-				// Default env is valid; block creating a different one.
-				return nil, false, environment.NewEnvironmentInitError(defaultEnvName)
-			case errors.Is(err, environment.ErrNotFound):
-				// Default is stale/missing; proceed with the explicitly requested name.
-				return i.getOrCreateEnv(ctx, azdCtx, envManager, requested)
-			default:
-				// Surface real I/O or config errors rather than silently proceeding.
-				return nil, false, fmt.Errorf("checking existing environment '%s': %w", defaultEnvName, err)
-			}
+	// Case B: An environment name was explicitly requested while a default already exists.
+	if requested != "" {
+		// Validate the requested name up front so an invalid name surfaces a clear error
+		// rather than a misleading "already initialized" one.
+		if !environment.IsValidEnvironmentName(requested) {
+			return nil, initEnvOutcome{}, environment.InvalidEnvironmentNameError(requested)
 		}
 
-		return i.getOrCreateEnv(ctx, azdCtx, envManager, defaultEnvName)
+		// Resolving to a differently-named environment promotes it to the project default.
+		promotedFrom := ""
+		if requested != defaultEnvName {
+			promotedFrom = defaultEnvName
+		}
+
+		_, err := envManager.Get(ctx, requested)
+		switch {
+		case err == nil:
+			// The requested environment already exists: reuse it. Interactive runs confirm
+			// first (defaulting to reuse); declining cancels init. Non-interactive runs
+			// reuse silently, preserving idempotent agent re-runs.
+			if !i.console.IsNoPromptMode() {
+				confirmed, confirmErr := i.console.Confirm(ctx, input.ConsoleOptions{
+					Message:      fmt.Sprintf("Reuse the existing environment '%s'?", requested),
+					DefaultValue: true,
+				})
+				if confirmErr != nil {
+					return nil, initEnvOutcome{}, confirmErr
+				}
+				if !confirmed {
+					return nil, initEnvOutcome{}, errInitEnvCancelled
+				}
+			}
+
+			env, reused, err := i.getOrCreateEnv(ctx, azdCtx, envManager, requested)
+			return env, initEnvOutcome{
+				reused:       reused,
+				promotedFrom: promotedFrom,
+				acknowledged: !i.console.IsNoPromptMode(),
+			}, err
+		case errors.Is(err, environment.ErrNotFound):
+			// The requested environment does not exist yet: create it without prompting in
+			// either mode.
+			env, reused, err := i.getOrCreateEnv(ctx, azdCtx, envManager, requested)
+			return env, initEnvOutcome{reused: reused, promotedFrom: promotedFrom}, err
+		default:
+			// Surface real I/O or config errors rather than silently proceeding.
+			return nil, initEnvOutcome{}, fmt.Errorf("checking existing environment '%s': %w", requested, err)
+		}
+	}
+
+	// Case C: No environment name was requested while a default exists.
+	if i.console.IsNoPromptMode() {
+		// Non-interactive runs reuse the recorded default silently.
+		env, reused, err := i.getOrCreateEnv(ctx, azdCtx, envManager, defaultEnvName)
+		return env, initEnvOutcome{reused: reused}, err
 	}
 
 	// Interactive: let the user choose between reusing the existing environment and
@@ -955,20 +1035,17 @@ func (i *initAction) resolveInitEnv(
 		DefaultValue: reuseOption,
 	})
 	if err != nil {
-		return nil, false, err
+		return nil, initEnvOutcome{}, err
 	}
 
 	if choice == 0 {
-		return i.getOrCreateEnv(ctx, azdCtx, envManager, defaultEnvName)
+		env, reused, err := i.getOrCreateEnv(ctx, azdCtx, envManager, defaultEnvName)
+		return env, initEnvOutcome{reused: reused, acknowledged: true}, err
 	}
 
-	// Create a new environment. Honor an explicitly requested name when it differs from
-	// the existing default; otherwise prompt for a fresh name.
-	newName := ""
-	if requested != "" && requested != defaultEnvName {
-		newName = requested
-	}
-	return i.getOrCreateEnv(ctx, azdCtx, envManager, newName)
+	// Create a new environment, prompting for (or deriving) a fresh name.
+	env, reused, err := i.getOrCreateEnv(ctx, azdCtx, envManager, "")
+	return env, initEnvOutcome{reused: reused, acknowledged: true}, err
 }
 
 // getOrCreateEnv returns the environment with the given name, reusing it when it already
@@ -1123,6 +1200,13 @@ func getCmdInitHelpDescription(*cobra.Command) string {
 			formatHelpNote(
 				"To view all available sample templates, including those submitted by the azd community, visit: " +
 					output.WithLinkFormat("https://azure.github.io/awesome-azd") + "."),
+			formatHelpNote(
+				fmt.Sprintf("Re-running %s in an initialized project reuses the existing environment; "+
+					"with %s and no %s, the recorded default environment is reused.",
+					output.WithHighLightFormat("init"),
+					output.WithHighLightFormat("--no-prompt"),
+					output.WithHighLightFormat("-e"),
+				)),
 		})
 }
 

@@ -261,8 +261,8 @@ func Test_CLI_Init_WithinExistingProject(t *testing.T) {
 
 // Test_CLI_Init_Idempotent_Environment verifies that re-running `azd init` in a project
 // that already has an environment is idempotent: re-init with the same environment name
-// reuses it without erroring, while a different name in non-interactive mode still fails
-// rather than silently switching the default.
+// reuses it without erroring, --no-prompt with no -e reuses the recorded default, and an
+// explicitly requested name that does not yet exist is created and promoted to the default.
 func Test_CLI_Init_Idempotent_Environment(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -278,18 +278,23 @@ func Test_CLI_Init_Idempotent_Environment(t *testing.T) {
 	require.NoError(t, err)
 	require.FileExists(t, getTestEnvPath(dir, "TESTENV"))
 
-	// Re-running init with the same environment name must succeed (idempotent reuse)
-	// rather than failing with "environment already initialized". No prompt is expected
-	// for an exact-name match, so no stdin is provided.
-	_, err = cli.RunCommand(ctx, "init", "-e", "TESTENV")
+	// Re-running init with the same environment name and --no-prompt must succeed
+	// (idempotent reuse) rather than failing with "environment already initialized".
+	_, err = cli.RunCommand(ctx, "init", "-e", "TESTENV", "--no-prompt")
 	require.NoError(t, err)
 	require.FileExists(t, getTestEnvPath(dir, "TESTENV"))
 
-	// Requesting a different environment name in non-interactive mode must still error
-	// instead of silently switching the project's default environment.
+	// Re-running with --no-prompt and no -e reuses the recorded default environment.
+	_, err = cli.RunCommand(ctx, "init", "--no-prompt")
+	require.NoError(t, err)
+	require.FileExists(t, getTestEnvPath(dir, "TESTENV"))
+
+	// Requesting a different, non-existent environment name in --no-prompt mode now
+	// creates it and promotes it to the project default rather than erroring.
 	_, err = cli.RunCommand(ctx, "init", "-e", "OTHERENV", "--no-prompt")
-	require.Error(t, err)
-	require.NoFileExists(t, getTestEnvPath(dir, "OTHERENV"))
+	require.NoError(t, err)
+	require.FileExists(t, getTestEnvPath(dir, "OTHERENV"))
+	require.FileExists(t, getTestEnvPath(dir, "TESTENV"))
 }
 
 func Test_CLI_Init_CanUseTemplate(t *testing.T) {

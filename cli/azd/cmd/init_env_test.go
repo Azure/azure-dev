@@ -63,10 +63,12 @@ func TestInitializeEnv(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "fresh-dev", defaultEnv)
 
-		require.NotContains(t, strings.Join(mockContext.Console.Output(), "\n"), "Reusing existing environment")
+		out := strings.Join(mockContext.Console.Output(), "\n")
+		require.NotContains(t, out, "Reusing existing environment")
+		require.NotContains(t, out, "Switching the default environment")
 	})
 
-	t.Run("InteractiveReusePromptWhenNoNameRequested", func(t *testing.T) {
+	t.Run("InteractiveReuseSelectNoNameRequested", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(t.Context())
 		flags := &initFlags{}
 
@@ -90,14 +92,15 @@ func TestInitializeEnv(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "existing-dev", defaultEnv)
 
-		require.Contains(t, strings.Join(mockContext.Console.Output(), "\n"), "Reusing existing environment")
+		// The select itself is the acknowledgment; no extra "Reusing" line should print.
+		require.NotContains(t, strings.Join(mockContext.Console.Output(), "\n"), "Reusing existing environment")
 
 		envs, err := envManager.List(*mockContext.Context)
 		require.NoError(t, err)
 		require.Len(t, envs, 1)
 	})
 
-	t.Run("InteractiveExactMatchReusesWithoutPrompt", func(t *testing.T) {
+	t.Run("InteractiveExactMatchConfirmsReuse", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(t.Context())
 		flags := &initFlags{}
 		flags.EnvironmentName = "existing-dev"
@@ -105,44 +108,135 @@ func TestInitializeEnv(t *testing.T) {
 		action, azdCtx, envManager := setupInitializeEnvTest(t, mockContext, flags)
 		seedDefaultEnv(t, *mockContext.Context, azdCtx, envManager, "existing-dev", nil)
 
-		// No Select handler is registered: if the reuse/create prompt were shown, the
-		// mock console would panic, failing the test. Re-running init with the same -e
-		// value must reuse idempotently without prompting (the agent extension scenario).
+		var confirmMessage string
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Reuse the existing environment")
+		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+			confirmMessage = options.Message
+			return true, nil
+		})
+
 		env, err := action.initializeEnv(*mockContext.Context, azdCtx, templates.Metadata{})
 		require.NoError(t, err)
 		require.Equal(t, "existing-dev", env.Name())
+		require.Contains(t, confirmMessage, "existing-dev")
 
-		require.NotContains(t, strings.Join(mockContext.Console.Output(), "\n"), "already exists")
-		require.Contains(t, strings.Join(mockContext.Console.Output(), "\n"), "Reusing existing environment")
+		// The confirm is the acknowledgment; reusing the current default prints no extra
+		// "Reusing" or "Switching" line.
+		out := strings.Join(mockContext.Console.Output(), "\n")
+		require.NotContains(t, out, "Reusing existing environment")
+		require.NotContains(t, out, "Switching the default environment")
 
 		envs, err := envManager.List(*mockContext.Context)
 		require.NoError(t, err)
 		require.Len(t, envs, 1)
 	})
 
-	t.Run("InteractiveCreateNew", func(t *testing.T) {
+	t.Run("InteractiveExistingNonDefaultConfirmYesReusesAndPromotes", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(t.Context())
 		flags := &initFlags{}
-		flags.EnvironmentName = "new-dev"
+		flags.EnvironmentName = "other-dev"
 
 		action, azdCtx, envManager := setupInitializeEnvTest(t, mockContext, flags)
 		seedDefaultEnv(t, *mockContext.Context, azdCtx, envManager, "existing-dev", nil)
+		// A second, non-default environment that already exists on disk.
+		_, err := envManager.Create(*mockContext.Context, environment.Spec{Name: "other-dev"})
+		require.NoError(t, err)
 
-		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "already exists")
-		}).Respond(1) // Create new
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Reuse the existing environment")
+		}).Respond(true)
 
 		env, err := action.initializeEnv(*mockContext.Context, azdCtx, templates.Metadata{})
 		require.NoError(t, err)
-		require.Equal(t, "new-dev", env.Name())
+		require.Equal(t, "other-dev", env.Name())
 
 		defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
 		require.NoError(t, err)
-		require.Equal(t, "new-dev", defaultEnv)
+		require.Equal(t, "other-dev", defaultEnv)
 
-		envs, err := envManager.List(*mockContext.Context)
+		// Promoting to a different default surfaces the switch note (and never "Reusing").
+		out := strings.Join(mockContext.Console.Output(), "\n")
+		require.Contains(t, out, "Switching the default environment")
+		require.NotContains(t, out, "Reusing existing environment")
+	})
+
+	t.Run("InteractiveExistingNonDefaultConfirmNoCancels", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		flags := &initFlags{}
+		flags.EnvironmentName = "other-dev"
+
+		action, azdCtx, envManager := setupInitializeEnvTest(t, mockContext, flags)
+		seedDefaultEnv(t, *mockContext.Context, azdCtx, envManager, "existing-dev", nil)
+		_, err := envManager.Create(*mockContext.Context, environment.Spec{Name: "other-dev"})
 		require.NoError(t, err)
-		require.Len(t, envs, 2)
+
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Reuse the existing environment")
+		}).Respond(false)
+
+		_, err = action.initializeEnv(*mockContext.Context, azdCtx, templates.Metadata{})
+		require.ErrorIs(t, err, errInitEnvCancelled)
+
+		// Nothing mutated: the recorded default is unchanged.
+		defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
+		require.NoError(t, err)
+		require.Equal(t, "existing-dev", defaultEnv)
+	})
+
+	t.Run("NonInteractiveExistingNonDefaultReusesAndPromotes", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.Console.SetNoPromptMode(true)
+		flags := &initFlags{}
+		flags.EnvironmentName = "other-dev"
+
+		action, azdCtx, envManager := setupInitializeEnvTest(t, mockContext, flags)
+		seedDefaultEnv(t, *mockContext.Context, azdCtx, envManager, "existing-dev", nil)
+		_, err := envManager.Create(*mockContext.Context, environment.Spec{Name: "other-dev"})
+		require.NoError(t, err)
+
+		env, err := action.initializeEnv(*mockContext.Context, azdCtx, templates.Metadata{})
+		require.NoError(t, err)
+		require.Equal(t, "other-dev", env.Name())
+
+		defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
+		require.NoError(t, err)
+		require.Equal(t, "other-dev", defaultEnv)
+
+		require.Contains(t, strings.Join(mockContext.Console.Output(), "\n"), "Switching the default environment")
+	})
+
+	t.Run("RequestedNewNameCreatesAndPromotesWithoutPrompt", func(t *testing.T) {
+		// A non-existent requested name is created and promoted to the default in both
+		// non-interactive and interactive modes, without any prompt. No Select/Confirm
+		// handler is registered: if a prompt were shown, the mock console would panic.
+		for _, noPrompt := range []bool{true, false} {
+			t.Run(map[bool]string{true: "NoPrompt", false: "Interactive"}[noPrompt], func(t *testing.T) {
+				mockContext := mocks.NewMockContext(t.Context())
+				mockContext.Console.SetNoPromptMode(noPrompt)
+				flags := &initFlags{}
+				flags.EnvironmentName = "new-dev"
+
+				action, azdCtx, envManager := setupInitializeEnvTest(t, mockContext, flags)
+				seedDefaultEnv(t, *mockContext.Context, azdCtx, envManager, "existing-dev", nil)
+
+				env, err := action.initializeEnv(*mockContext.Context, azdCtx, templates.Metadata{})
+				require.NoError(t, err)
+				require.Equal(t, "new-dev", env.Name())
+
+				defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
+				require.NoError(t, err)
+				require.Equal(t, "new-dev", defaultEnv)
+
+				out := strings.Join(mockContext.Console.Output(), "\n")
+				require.Contains(t, out, "Switching the default environment")
+				require.NotContains(t, out, "already exists")
+
+				envs, err := envManager.List(*mockContext.Context)
+				require.NoError(t, err)
+				require.Len(t, envs, 2)
+			})
+		}
 	})
 
 	t.Run("InteractiveCreateNewPromptsForName", func(t *testing.T) {
@@ -166,6 +260,9 @@ func TestInitializeEnv(t *testing.T) {
 		defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
 		require.NoError(t, err)
 		require.Equal(t, "prompted-dev", defaultEnv)
+
+		// Creating a new environment must never print "Reusing".
+		require.NotContains(t, strings.Join(mockContext.Console.Output(), "\n"), "Reusing existing environment")
 	})
 
 	t.Run("NonInteractiveReuseOnMatch", func(t *testing.T) {
@@ -181,7 +278,9 @@ func TestInitializeEnv(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "existing-dev", env.Name())
 
-		require.Contains(t, strings.Join(mockContext.Console.Output(), "\n"), "Reusing existing environment")
+		out := strings.Join(mockContext.Console.Output(), "\n")
+		require.Contains(t, out, "Reusing existing environment")
+		require.NotContains(t, out, "Switching the default environment")
 	})
 
 	t.Run("NonInteractiveReuseOnEmptyRequest", func(t *testing.T) {
@@ -195,21 +294,9 @@ func TestInitializeEnv(t *testing.T) {
 		env, err := action.initializeEnv(*mockContext.Context, azdCtx, templates.Metadata{})
 		require.NoError(t, err)
 		require.Equal(t, "existing-dev", env.Name())
-	})
 
-	t.Run("NonInteractiveDifferentNameErrors", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(t.Context())
-		mockContext.Console.SetNoPromptMode(true)
-		flags := &initFlags{}
-		flags.EnvironmentName = "other-dev"
-
-		action, azdCtx, envManager := setupInitializeEnvTest(t, mockContext, flags)
-		seedDefaultEnv(t, *mockContext.Context, azdCtx, envManager, "existing-dev", nil)
-
-		_, err := action.initializeEnv(*mockContext.Context, azdCtx, templates.Metadata{})
-		require.Error(t, err)
-		var initErr *environment.EnvironmentInitError
-		require.ErrorAs(t, err, &initErr)
+		// Reusing the recorded default in --no-prompt mode tells the user it was reused.
+		require.Contains(t, strings.Join(mockContext.Console.Output(), "\n"), "Reusing existing environment")
 	})
 
 	t.Run("NonInteractiveStaleDefaultDifferentNameCreates", func(t *testing.T) {
@@ -221,7 +308,7 @@ func TestInitializeEnv(t *testing.T) {
 		action, azdCtx, _ := setupInitializeEnvTest(t, mockContext, flags)
 
 		// A stale default points at an environment whose folder is gone. An explicitly
-		// requested, different name should not be blocked by the unusable default.
+		// requested, different name is created and promoted to the default.
 		require.NoError(t, azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: "ghost-dev"}))
 
 		env, err := action.initializeEnv(*mockContext.Context, azdCtx, templates.Metadata{})
@@ -231,6 +318,8 @@ func TestInitializeEnv(t *testing.T) {
 		defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
 		require.NoError(t, err)
 		require.Equal(t, "real-dev", defaultEnv)
+
+		require.Contains(t, strings.Join(mockContext.Console.Output(), "\n"), "Switching the default environment")
 	})
 
 	t.Run("NonInteractiveInvalidRequestedNameErrors", func(t *testing.T) {
@@ -254,7 +343,8 @@ func TestInitializeEnv(t *testing.T) {
 		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 		flags := &initFlags{}
-		flags.EnvironmentName = "real-dev"
+		// Request the corrupt environment by name so its load error surfaces.
+		flags.EnvironmentName = "corrupt-dev"
 
 		action, azdCtx, envManager := setupInitializeEnvTest(t, mockContext, flags)
 
@@ -267,12 +357,10 @@ func TestInitializeEnv(t *testing.T) {
 
 		_, err := action.initializeEnv(*mockContext.Context, azdCtx, templates.Metadata{})
 		require.Error(t, err)
-		// Must not silently fall back to creating "real-dev"; the I/O error must surface.
+		// The I/O error must surface rather than being swallowed.
 		var initErr *environment.EnvironmentInitError
 		require.False(t, errors.As(err, &initErr), "expected load error, not EnvironmentInitError")
-		// Requested env must not have been created.
-		_, getErr := envManager.Get(*mockContext.Context, "real-dev")
-		require.ErrorIs(t, getErr, environment.ErrNotFound)
+		require.Contains(t, err.Error(), "checking existing environment")
 	})
 
 	t.Run("OrphanFolderRecovery", func(t *testing.T) {
@@ -366,7 +454,7 @@ func TestInitializeEnv(t *testing.T) {
 		require.Equal(t, "templateValue", reloaded.Dotenv()["TEMPLATE_KEY"])
 	})
 
-	t.Run("ReuseFillsAbsentLocationButKeepsExistingSubscription", func(t *testing.T) {
+	t.Run("ReuseHonorsExplicitFlagsOverExisting", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 		flags := &initFlags{}
@@ -378,15 +466,28 @@ func TestInitializeEnv(t *testing.T) {
 		seedDefaultEnv(t, *mockContext.Context, azdCtx, envManager, "existing-dev", func(env *environment.Environment) {
 			// Subscription already set; location intentionally absent.
 			env.DotenvSet(environment.SubscriptionIdEnvVarName, "sub-already-set")
+			// User-edited metadata that must not be clobbered on reuse.
+			env.DotenvSet("USER_KEY", "original")
 		})
 
-		env, err := action.initializeEnv(*mockContext.Context, azdCtx, templates.Metadata{})
+		metadata := templates.Metadata{
+			Variables: map[string]string{
+				"USER_KEY":     "fromTemplate",
+				"TEMPLATE_KEY": "templateValue",
+			},
+		}
+
+		env, err := action.initializeEnv(*mockContext.Context, azdCtx, metadata)
 		require.NoError(t, err)
 
 		dotenv := env.Dotenv()
 		require.Equal(t, "eastus2", dotenv[environment.LocationEnvVarName], "absent location should be filled from flag")
-		require.Equal(t, "sub-already-set", dotenv[environment.SubscriptionIdEnvVarName],
-			"existing subscription must not be clobbered by flag")
+		// Explicit flags represent direct user intent and win even over an existing value.
+		require.Equal(t, "sub-from-flag", dotenv[environment.SubscriptionIdEnvVarName],
+			"explicit subscription flag must win over existing value")
+		// Template metadata, by contrast, remains set-if-absent and must not clobber user edits.
+		require.Equal(t, "original", dotenv["USER_KEY"], "user-edited metadata must not be clobbered")
+		require.Equal(t, "templateValue", dotenv["TEMPLATE_KEY"], "absent template metadata should be added")
 	})
 }
 

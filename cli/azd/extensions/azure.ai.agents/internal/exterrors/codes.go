@@ -101,6 +101,12 @@ const (
 	CodeSessionNotFound = "session_not_found"
 )
 
+// Error codes for agent delete errors.
+const (
+	CodeAgentNotFound          = "agent_not_found"
+	CodeAgentHasActiveSessions = "agent_has_active_sessions"
+)
+
 // Error codes for file operation errors.
 const (
 	CodeFileNotFound     = "file_not_found"
@@ -155,6 +161,7 @@ const (
 	OpContainerPackage      = "container_package"
 	OpContainerPublish      = "container_publish"
 	OpCreateAgent           = "create_agent"
+	OpDeleteAgent           = "delete_agent"
 	OpStartContainer        = "start_container"
 	OpGetContainerOperation = "get_container_operation"
 	OpCreateSession         = "create_session"

@@ -560,6 +560,45 @@ func TestGetAgentSessionLogStream_ApplyIsolationHeaders(t *testing.T) {
 	requireIsolationHeaders(t, request, "user-1", "chat-1", "")
 }
 
+func TestDeleteAgent_ForceTrue(t *testing.T) {
+	body := `{"object": "agent", "name": "my-agent", "deleted": true}`
+	client, transport := newCaptureClient(http.StatusOK, body)
+
+	result, err := client.DeleteAgent(t.Context(), "my-agent", "v1", true)
+	require.NoError(t, err)
+	require.True(t, result.Deleted)
+	require.Equal(t, "my-agent", result.Name)
+
+	require.Len(t, transport.requests, 1)
+	req := transport.requests[0]
+	require.Equal(t, http.MethodDelete, req.Method)
+	require.Contains(t, req.URL.String(), "/agents/my-agent")
+	require.Contains(t, req.URL.RawQuery, "force=true")
+}
+
+func TestDeleteAgent_ForceFalse(t *testing.T) {
+	body := `{"object": "agent", "name": "my-agent", "deleted": true}`
+	client, transport := newCaptureClient(http.StatusOK, body)
+
+	result, err := client.DeleteAgent(t.Context(), "my-agent", "v1", false)
+	require.NoError(t, err)
+	require.True(t, result.Deleted)
+
+	require.Len(t, transport.requests, 1)
+	req := transport.requests[0]
+	require.Contains(t, req.URL.RawQuery, "force=false")
+}
+
+func TestDeleteAgent_NotFound(t *testing.T) {
+	client := newTestClient(
+		"https://test.example.com/api/projects/proj",
+		&fakeBodyTransport{statusCode: http.StatusNotFound, body: `{"error": "not found"}`},
+	)
+
+	_, err := client.DeleteAgent(t.Context(), "no-agent", "v1", true)
+	require.Error(t, err)
+}
+
 func TestPatchAgent_Success(t *testing.T) {
 	body := `{
 		"object": "agent",

@@ -41,7 +41,7 @@ type optimizeApplyFlags struct {
 
 func newOptimizeApplyCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &optimizeApplyFlags{}
-	action := &OptimizeApplyAction{flags: flags, envName: extCtx.Environment, noPrompt: extCtx.NoPrompt}
+	action := &OptimizeApplyAction{flags: flags}
 
 	cmd := &cobra.Command{
 		Use:   "apply",
@@ -57,6 +57,12 @@ After applying, run 'azd deploy' to deploy the optimized agent version.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
+
+			// Read extCtx fields here (after PersistentPreRunE has populated them
+			// from -e / AZD_ENVIRONMENT), not at command construction time.
+			action.envName = extCtx.Environment
+			action.noPrompt = extCtx.NoPrompt
+
 			return action.Run(ctx, cmd)
 		},
 	}

@@ -134,6 +134,10 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
 				flags.agent = args[0]
 			}
 
+			// Read extCtx fields here (after PersistentPreRunE has populated them
+			// from -e / AZD_ENVIRONMENT), not at command construction time.
+			action.envName = extCtx.Environment
+			action.noPrompt = extCtx.NoPrompt
 			return action.Run(ctx, cmd)
 		},
 	}

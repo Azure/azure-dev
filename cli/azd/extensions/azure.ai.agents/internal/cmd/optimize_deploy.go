@@ -35,7 +35,7 @@ type optimizeDeployFlags struct {
 
 func newOptimizeDeployCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &optimizeDeployFlags{}
-	action := &OptimizeDeployAction{flags: flags, envName: extCtx.Environment}
+	action := &OptimizeDeployAction{flags: flags}
 
 	cmd := &cobra.Command{
 		Use:   "deploy [agent-name]",
@@ -53,6 +53,10 @@ Use 'optimize apply' instead if you want to localize the config into your azd pr
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
+
+			// Read extCtx fields here (after PersistentPreRunE has populated them
+			// from -e / AZD_ENVIRONMENT), not at command construction time.
+			action.envName = extCtx.Environment
 
 			if len(args) > 0 && flags.agent == "" {
 				flags.agent = args[0]

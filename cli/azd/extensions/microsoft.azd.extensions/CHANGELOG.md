@@ -1,9 +1,10 @@
 # Release History
 
-## 0.11.2 (2026-06-05)
+## 0.12.0 (Unreleased)
 
 - [[#8552]](https://github.com/Azure/azure-dev/pull/8552) Embed language template dotfiles so generated extensions include a `.gitignore` (the Go template excludes `bin/`).
 - [[#8552]](https://github.com/Azure/azure-dev/pull/8552) Warn during `azd x build` when the local extension source registry is missing or does not contain the extension, since the binaries are installed but the extension would not appear in `azd extension list`.
+- [[#8570]](https://github.com/Azure/azure-dev/pull/8570) Add `--internal` to `azd x init` to scaffold first-party Go extensions in the `Azure/azure-dev` repository, including CI workflows, release pipeline, and a suitable `.github/CODEOWNERS` entry.
 
 ## 0.11.1 (2026-06-03)
 

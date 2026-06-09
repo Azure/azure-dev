@@ -133,7 +133,7 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 	initCmd.Flags().BoolVar(
 		&flags.internalScaffold,
 		"internal", false,
-		"Scaffold Azure/azure-dev first-party extension files. Currently supports Go extensions.",
+		"Scaffold Azure/azure-dev first-party extension files. Currently supports Go extensions only.",
 	)
 
 	initCmd.Flags().StringVar(
@@ -659,9 +659,9 @@ func collectExtensionMetadata(
 
 	language := "go"
 	if internalScaffold {
-		fmt.Println(output.WithGrayFormat(
+		fmt.Println(
 			"Defaulting to Go - language selection skipped as internal scaffolding only supports Go currently.",
-		))
+		)
 	} else {
 		languageChoices := []*azdext.SelectChoice{
 			{

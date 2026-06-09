@@ -1099,9 +1099,9 @@
 ### Bugs Fixed
 
 - [[4111]](https://github.com/Azure/azure-dev/pull/4111) Container Apps: Fail when explicit Dockerfile path not found.
-- [[4149]](https://github.com/Azure/azure-dev/pull/4149) Remove Admin Access as default for all .Net Aspire services.
+- [[4149]](https://github.com/Azure/azure-dev/pull/4149) Remove Admin Access as default for all Aspire services.
 - [[4104]](https://github.com/Azure/azure-dev/pull/4104) Remove Azure Dev Ops git remote constraint for dev.azure.com only.
-- [[4160]](https://github.com/Azure/azure-dev/pull/4160) Fix automatic generation of CI/CD files for .Net Aspire projects.
+- [[4160]](https://github.com/Azure/azure-dev/pull/4160) Fix automatic generation of CI/CD files for Aspire projects.
 - [[4182]](https://github.com/Azure/azure-dev/pull/4182) Allow `.yaml` and `.yml` extension for azure-dev pipeline files.
 - [[4187]](https://github.com/Azure/azure-dev/pull/4187) Fix panic during deployment progress rendering.
 
@@ -1129,7 +1129,7 @@
 - [[4003]](https://github.com/Azure/azure-dev/pull/4003) Add support for deploying flex-consumption function apps.
 - [[4008]](https://github.com/Azure/azure-dev/pull/4008) Add support for container.v1 [Aspire].
 - [[4030]](https://github.com/Azure/azure-dev/pull/4030) Prompt to add pipeline definition file during azd pipeline config.
-- [[3790]](https://github.com/Azure/azure-dev/pull/3790) Adding `alpha` feature `azd.operations` to support .Net Aspire bind mounts.
+- [[3790]](https://github.com/Azure/azure-dev/pull/3790) Adding `alpha` feature `azd.operations` to support Aspire bind mounts.
 - [[4049]](https://github.com/Azure/azure-dev/pull/4049) Adding pipeline config `--applicationServiceManagementReference`.
 
 ### Bugs Fixed
@@ -1224,7 +1224,7 @@
 ### Features Added
 
 - [[3569]](https://github.com/Azure/azure-dev/pull/3569) Adds `--from-code ` flag to initialize from existing code when running `azd init`
-- Dotnet Aspire:
+- Aspire:
   - [[3612]](https://github.com/Azure/azure-dev/pull/3612) Supports Aspire apps with multiple exposed ports
   - [[3484]](https://github.com/Azure/azure-dev/pull/3484) Discovers export port from the result of `dotnet publish`
   - [[3556]](https://github.com/Azure/azure-dev/pull/3556) Adds Aspire volumes support
@@ -1240,7 +1240,7 @@
 
 - [[3651]](https://github.com/Azure/azure-dev/pull/3651) Fixes trailing comma for `todo-nodejs-mongo-aks` template's invalid url in GitHub Action
 - [[3638]](https://github.com/Azure/azure-dev/pull/3638) Fixes `InvalidAuthenticationTokenTenant` error
-- Dotnet Aspire: 
+- Aspire:
   - [[3610]](https://github.com/Azure/azure-dev/pull/3610) Fixes too long auto-generated Azure Key Vault name by using Hash
   - [[3650]](https://github.com/Azure/azure-dev/pull/3650) Writes default port to manifest for docker
   - [[3545]](https://github.com/Azure/azure-dev/pull/3545) Updates Aspire generator to use the build args from the dockerfile resources
@@ -1258,7 +1258,7 @@
 
 - [[3450]](https://github.com/Azure/azure-dev/pull/3450) Adds support for pushing container images to external container registries
 - [[3452]](https://github.com/Azure/azure-dev/pull/3452) Adds support for other clouds
-- Dotnet Aspire:
+- Aspire:
   - [[3349]](https://github.com/Azure/azure-dev/pull/3349) Adds support for bicep and prompts for parameters
   - [[3411]](https://github.com/Azure/azure-dev/pull/3411) Adds support for `value.v0`
   - [[3425]](https://github.com/Azure/azure-dev/pull/3425) Sets `DOTNET_ENVIRONMENT` when running AppHost
@@ -1304,7 +1304,7 @@
 - [[3211]](https://github.com/Azure/azure-dev/pull/3211) Adds support for RBAC enabled AKS clusters using `kubelogin`
 - [[3196]](https://github.com/Azure/azure-dev/pull/3196) Adds support for Helm and Kustomize for AKS service targets
 - [[3173]](https://github.com/Azure/azure-dev/pull/3173) Adds support for defining customizable `azd up` workflows
-- Dotnet Aspire additions:
+- Aspire additions:
   - [[3164]](https://github.com/Azure/azure-dev/pull/3164) Azure Cosmos DB.
   - [[3226]](https://github.com/Azure/azure-dev/pull/3226) Azure SQL Database.
   - [[3276]](https://github.com/Azure/azure-dev/pull/3276) Secrets handling improvement.
@@ -1312,7 +1312,7 @@
 
 ### Bugs Fixed
 
-- [[3097]](https://github.com/Azure/azure-dev/pull/3097) For Dotnet Aspire projects, do not fail if folder `infra` is empty.
+- [[3097]](https://github.com/Azure/azure-dev/pull/3097) For Aspire projects, do not fail if folder `infra` is empty.
 
 ## 1.5.1 (2023-12-20)
 

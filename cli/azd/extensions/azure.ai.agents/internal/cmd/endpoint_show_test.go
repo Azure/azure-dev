@@ -52,7 +52,7 @@ func TestPrintEndpointTable_FullConfig(t *testing.T) {
 	err := printEndpointTable(agent)
 	require.NoError(t, err)
 
-	w.Close()
+	_ = w.Close() //nolint:gosec
 	os.Stdout = old
 
 	var buf bytes.Buffer
@@ -84,7 +84,7 @@ func TestPrintEndpointTable_NilEndpoint(t *testing.T) {
 	err := printEndpointTable(agent)
 	require.NoError(t, err)
 
-	w.Close()
+	_ = w.Close() //nolint:gosec
 	os.Stdout = old
 
 	var buf bytes.Buffer
@@ -121,7 +121,7 @@ func TestPrintEndpointJSON(t *testing.T) {
 	err := printEndpointJSON(agent)
 	require.NoError(t, err)
 
-	w.Close()
+	_ = w.Close() //nolint:gosec
 	os.Stdout = old
 
 	var buf bytes.Buffer

@@ -303,7 +303,6 @@ in any order, any time.
 | `00-doctor-local-only.yaml` | `doctor --local-only` |
 | `00-init-validate-mutually-exclusive.yaml` | `init` arg validation (positional manifest + `-m`) |
 | `00-init-validate-no-prompt-missing.yaml` | `init --no-prompt` missing-input error |
-| `00-init-validate-deploy-mode.yaml` | `init --deploy-mode` value validation (invalid value; code-mode required flags) |
 | `00-init-picker-navigation.yaml` | `init` interactive picker UX (abort before Azure) |
 | `00-invoke-validate-protocol.yaml` | `invoke --protocol` unsupported-value error |
 | `00-eval-context-required.yaml` | `eval list` outside a project requires a Foundry endpoint |
@@ -323,6 +322,7 @@ and verifies the generated files, then stops before `azd provision`.
 | `10-init-from-code.yaml` | `init` → pick "Use the code in the current directory" |
 | `10-init-flags-agent-name-model.yaml` | `init -m … --agent-name --model` (needs `gh auth login`) |
 | `10-init-deploy-mode-code.yaml` | `init --deploy-mode code` (entry-point/runtime) |
+| `10-init-validate-deploy-mode.yaml` | `init --deploy-mode` value validation (invalid value; code-mode required flags) — seeds from-code so the deploy-mode check is reached |
 | `10-init-deploy-mode-container.yaml` | `init --deploy-mode container` (container build config) |
 
 ### Tier 2 — Cloud end-to-end (prefix `2x-`) — ⚠️ incurs Azure cost

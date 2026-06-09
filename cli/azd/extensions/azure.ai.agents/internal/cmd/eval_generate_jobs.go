@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// eval_init_jobs.go handles generation job submission and polling for the
+// eval_generate_jobs.go handles generation job submission and polling for the
 // eval generate command. It submits dataset and evaluator generation requests,
 // polls for completion in parallel, downloads artifacts on success, and
 // persists state for resume on timeout.

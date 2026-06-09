@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 // eval.go implements the top-level "eval" command group and shared context
-// resolution logic used by all eval subcommands (init, run, update, list, show).
+// resolution logic used by all eval subcommands (generate, run, update, list, show).
 //
 // The evalResolvedContext struct holds the resolved agent, project, and
 // endpoint information. It is built from azd project state, environment

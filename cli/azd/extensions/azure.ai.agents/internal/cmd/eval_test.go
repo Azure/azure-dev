@@ -48,10 +48,12 @@ func TestNewEvalCommand_HasExpectedSubcommands(t *testing.T) {
 		names = append(names, sub.Name())
 	}
 
-	assert.Contains(t, names, "init")
+	assert.Contains(t, names, "generate")
 	assert.Contains(t, names, "run")
 	assert.Contains(t, names, "list")
 	assert.Contains(t, names, "show")
+	// "init" remains registered as a hidden deprecated alias for "generate".
+	assert.Contains(t, names, "init")
 }
 
 func TestNewEvalCommand_UseString(t *testing.T) {

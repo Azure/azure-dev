@@ -20,6 +20,13 @@ A copy of it exists in this repo under `cli/azd/cmd/testdata/TestFigSpec.ts` for
 azd completion fig > azd.ts
 ```
 
+By default, the generated spec includes the top-level `azd help` command but omits its mirrored subcommand
+tree to keep the spec compact. To include the full `azd help <command>` tree, run:
+
+```bash
+azd completion fig --include-help-subcommands > azd.ts
+```
+
 ### Testing locally
 
 The generated spec is automatically tested via snapshot tests:

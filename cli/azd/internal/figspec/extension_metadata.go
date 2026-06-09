@@ -7,6 +7,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 )
 
+const (
+	defaultExtensionOutputFlagUsage = "The output format"
+	defaultExtensionOutputFlagValue = "default"
+)
+
 // ExtensionMetadataProvider provides extension metadata for generating figspec completions
 type ExtensionMetadataProvider interface {
 	// HasMetadataCapability checks if the extension has the metadata capability
@@ -40,6 +45,9 @@ func convertExtensionCommand(extCmd extensions.Command, includeHidden bool, glob
 			continue
 		}
 		if globalFlagNames[flag.Name] {
+			continue
+		}
+		if shouldSkipExtensionFlag(flag) {
 			continue
 		}
 
@@ -103,6 +111,14 @@ func convertExtensionFlag(flag extensions.Flag) Option {
 	option.IsRepeatable = isRepeatable
 
 	return option
+}
+
+func shouldSkipExtensionFlag(flag extensions.Flag) bool {
+	return flag.Name == "output" &&
+		flag.Shorthand == "o" &&
+		flag.Description == defaultExtensionOutputFlagUsage &&
+		flag.Default == defaultExtensionOutputFlagValue &&
+		len(flag.ValidValues) == 0
 }
 
 // convertExtensionArg converts an extension argument to a Fig arg

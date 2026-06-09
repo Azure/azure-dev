@@ -121,9 +121,12 @@ func TestCompletionFigFlags(t *testing.T) {
 
 	require.NotNil(t, flags)
 	require.False(t, flags.includeHidden)
+	require.False(t, flags.includeHelpSubcommands)
 
 	// Verify flag is registered
 	f := cmd.Flags().Lookup("include-hidden")
+	require.NotNil(t, f)
+	f = cmd.Flags().Lookup("include-help-subcommands")
 	require.NotNil(t, f)
 }
 

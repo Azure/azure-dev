@@ -22,6 +22,7 @@ type SpecBuilder struct {
 	flagArgsProvider          CustomFlagArgsProvider
 	extensionMetadataProvider ExtensionMetadataProvider
 	includeHidden             bool
+	includeHelpSubcommands    bool
 	globalFlagNames           map[string]bool // Flag names that are global (persistent + non-persistent)
 }
 
@@ -42,6 +43,12 @@ func NewSpecBuilder(includeHidden bool) *SpecBuilder {
 // for extensions that have the metadata capability.
 func (sb *SpecBuilder) WithExtensionMetadata(provider ExtensionMetadataProvider) *SpecBuilder {
 	sb.extensionMetadataProvider = provider
+	return sb
+}
+
+// WithHelpSubcommands controls whether the generated help command mirrors the full command tree.
+func (sb *SpecBuilder) WithHelpSubcommands(include bool) *SpecBuilder {
+	sb.includeHelpSubcommands = include
 	return sb
 }
 
@@ -317,11 +324,16 @@ func (sb *SpecBuilder) generateCommandArgs(cmd *cobra.Command, ctx *CommandConte
 }
 
 func (sb *SpecBuilder) generateHelpCommand(root *cobra.Command) Subcommand {
-	return Subcommand{
+	helpCommand := Subcommand{
 		Name:        []string{"help"},
 		Description: "Help about any command",
-		Subcommands: sb.generateHelpSubcommands(root),
 	}
+
+	if sb.includeHelpSubcommands {
+		helpCommand.Subcommands = sb.generateHelpSubcommands(root)
+	}
+
+	return helpCommand
 }
 
 func (sb *SpecBuilder) generateHelpSubcommands(cmd *cobra.Command) []Subcommand {

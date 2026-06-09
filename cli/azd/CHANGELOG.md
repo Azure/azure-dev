@@ -801,7 +801,7 @@
 
 ### Features Added
 
-- [[5249]](https://github.com/Azure/azure-dev/pull/5249) Add support for deploying a single service in .NET Aspire projects via vs-server.
+- [[5249]](https://github.com/Azure/azure-dev/pull/5249) Add support for deploying a single service in Aspire projects via vs-server.
 - [[5157]](https://github.com/Azure/azure-dev/pull/5157) Update `azd add` integration with AI Foundry to use simplified 1RP setup with all models under a single AI Services account.
 - [[5214]](https://github.com/Azure/azure-dev/pull/5214) Add Linux to Homebrew formulae. Thanks @heaths for the contribution!
 - [[5204]](https://github.com/Azure/azure-dev/pull/5204) Add login guard middleware to auto-prompt for user login in key commands if unauthenticated.
@@ -901,7 +901,7 @@
 - [[4931]](https://github.com/Azure/azure-dev/pull/4931) `azd add` support for Azure AI Search.
 - [[4914]](https://github.com/Azure/azure-dev/pull/4914) `azd show` support for all resources supported by `azd add`.
 - [[4874]](https://github.com/Azure/azure-dev/pull/4874) Provide shortcuts for `azd env set-secrets` to directly use Key Vault created with `azd add`.
-- [[4957]](https://github.com/Azure/azure-dev/pull/4957), [[4959]](https://github.com/Azure/azure-dev/pull/4959), [[4979]](https://github.com/Azure/azure-dev/pull/4979), [[4999]](https://github.com/Azure/azure-dev/pull/4999), [[5008]](https://github.com/Azure/azure-dev/pull/5008) Support .NET Aspire 9.1.
+- [[4957]](https://github.com/Azure/azure-dev/pull/4957), [[4959]](https://github.com/Azure/azure-dev/pull/4959), [[4979]](https://github.com/Azure/azure-dev/pull/4979), [[4999]](https://github.com/Azure/azure-dev/pull/4999), [[5008]](https://github.com/Azure/azure-dev/pull/5008) Support Aspire 9.1.
 - [[4953]](https://github.com/Azure/azure-dev/pull/4953) Support array of model usage names for quota validation.
 - [[5010]](https://github.com/Azure/azure-dev/pull/5010) Support model usage name metadata for main `location` Bicep parameter.
 
@@ -995,7 +995,7 @@
 - [[4719]](https://github.com/Azure/azure-dev/pull/4719) Update Redis AVM to use native secrets export.
 - [[4690]](https://github.com/Azure/azure-dev/pull/4690) Use .NET SDK without Aspire workload in auto-generated pipeline definitions.
 - [[4703]](https://github.com/Azure/azure-dev/pull/4703) Use install scripts in "Install azd" Azure DevOps extension.
-- [[4750]](https://github.com/Azure/azure-dev/pull/4750) Support bicep.v1 resource for .NET Aspire.
+- [[4750]](https://github.com/Azure/azure-dev/pull/4750) Support bicep.v1 resource for Aspire.
 
 ## 1.11.1 (2025-01-07)
 
@@ -1020,7 +1020,7 @@
 
 ### Bugs Fixed
 
-- [[4524]](https://github.com/Azure/azure-dev/pull/4524) Fix using parameters for .NET Aspire deployment.
+- [[4524]](https://github.com/Azure/azure-dev/pull/4524) Fix using parameters for Aspire deployment.
 
 ## 1.10.4 (2024-11-06)
 
@@ -1173,7 +1173,7 @@
 
 - [[3718]](https://github.com/Azure/azure-dev/pull/3718) Deploy AI/ML studio online endpoints with host `ml.endpoint`. Starter templates `azd-ai-starter` and `azd-aistudio-starter` are available to get started with ease.
 - [[3840]](https://github.com/Azure/azure-dev/pull/3840) Filter templates when running `azd init` or `azd template list` with `--filter`
-- .NET Aspire:
+- Aspire:
   - [[3267]](https://github.com/Azure/azure-dev/pull/3267) Support services with multiple exposed ports
   - [[3820]](https://github.com/Azure/azure-dev/pull/3820) Container resources now supports reference expressions, and are now modeled the same as project resources
 
@@ -1212,7 +1212,7 @@
 
 ### Features Added
 
-- [[3731]](https://github.com/Azure/azure-dev/pull/3731) Support Data Protection Runtime feature for .NET Aspire in ACA under feature flag `azd config set alpha.aspire.autoConfigureDataProtection on`
+- [[3731]](https://github.com/Azure/azure-dev/pull/3731) Support Data Protection Runtime feature for Aspire in ACA under feature flag `azd config set alpha.aspire.autoConfigureDataProtection on`
 - [[3715]](https://github.com/Azure/azure-dev/pull/3715) Improved security to prevent committing an environment to the repository
 
 ### Bugs Fixed
@@ -1328,10 +1328,10 @@
 
 - [[2969]](https://github.com/Azure/azure-dev/pull/2969) Relax container names truncation logic for Aspire `redis.v0` and `postgres.database.v0`.
   Truncation now happens above 30 characters instead of 12 characters.
-- [[3035]](https://github.com/Azure/azure-dev/pull/3035) .NET Aspire issues after `azd pipeline config`.
+- [[3035]](https://github.com/Azure/azure-dev/pull/3035) Aspire issues after `azd pipeline config`.
 - [[3038]](https://github.com/Azure/azure-dev/pull/3038) Fix init to not consider parent directories.
 - [[3045]](https://github.com/Azure/azure-dev/pull/3045) Handle interrupt to unhide cursor.
-- [[3069]](https://github.com/Azure/azure-dev/pull/3069) .NET Aspire, enable `admin user` for ACR.
+- [[3069]](https://github.com/Azure/azure-dev/pull/3069) Aspire, enable `admin user` for ACR.
 - [[3049]](https://github.com/Azure/azure-dev/pull/3049) Persist location from provisioning manager.
 - [[3056]](https://github.com/Azure/azure-dev/pull/3056) Fix `azd pipeline config` for resource group deployment.
 - [[3106]](https://github.com/Azure/azure-dev/pull/3106) Fix `azd restore` on .NET projects.

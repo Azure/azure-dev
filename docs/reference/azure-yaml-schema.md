@@ -51,12 +51,41 @@ services:
 | `dist` | string | Path to pre-built distribution directory |
 | `resourceName` | string | Override the Azure resource name |
 | `k8s` | object | Kubernetes-specific configuration |
+| `staticwebapp` | object | Azure Static Web App-specific configuration (see below) |
 | `config` | object | Service-specific configuration |
 | `resourceGroup` | string | Override the resource group for this service |
 | `apiVersion` | string | API version for the hosting target |
 | `env` | map | Environment variables passed to the service |
 | `uses` | list | Service dependencies |
 | `remoteBuild` | boolean | Enable remote build (e.g., for Azure Functions) |
+
+## Static Web App Options (`staticwebapp`)
+
+The `staticwebapp` key configures Azure Static Web Apps deployments. These options are only applicable when `host: staticwebapp`.
+
+| Property | Type | Description |
+|---|---|---|
+| `environment` | string | The named SWA preview environment to deploy to. When omitted (the default), azd deploys to the **production** environment by omitting `--env` from the SWA CLI command. Set to a custom name (e.g. `"staging"`) to target a named preview environment. |
+
+### Example: production deployment (default)
+
+```yaml
+services:
+  web:
+    project: ./src/web
+    host: staticwebapp
+```
+
+### Example: named preview environment
+
+```yaml
+services:
+  web:
+    project: ./src/web
+    host: staticwebapp
+    staticwebapp:
+      environment: staging
+```
 
 ## Hooks
 

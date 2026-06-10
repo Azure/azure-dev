@@ -8,6 +8,8 @@
 
 ### Bugs Fixed
 
+- [[#8561]](https://github.com/Azure/azure-dev/pull/8561) Make `azd init` idempotent with respect to the environment: re-running init in an initialized project now reuses the existing environment instead of failing with "environment already initialized". With `--no-prompt` and no `-e`, the recorded default environment is reused, and an explicitly requested environment is created and promoted to the default when it does not already exist.
+
 ### Other Changes
 
 ## 1.25.5 (2026-06-05)

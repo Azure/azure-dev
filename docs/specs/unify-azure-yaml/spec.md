@@ -295,10 +295,9 @@ it into core later if other extensions need includes.
 **Resolution rules.**
 
 - A relative `$ref` path resolves relative to the file that holds it, so nested includes
-  work. Per `FileRef.json`, absolute paths and URLs are also accepted. The security
-  tradeoff of remote and absolute includes (reading arbitrary files, fetching remote
-  content) is raised as an open question rather than restricted here, to stay consistent
-  with the brief.
+  work. Per `FileRef.json`, absolute paths and URLs are also accepted; the brief makes that
+  call, so the design follows it. Treat such includes as trusted input the same way
+  `azure.yaml` itself is, and surface a clear error when a path cannot be read.
 - Sibling keys overlay on the loaded file. Use a shallow overlay at the top level of the
   object. Scalars and arrays from the sibling replace the loaded value. This keeps the
   result easy to predict.
@@ -477,19 +476,12 @@ items sit in the same list as the design items.
    notes that `azure.yaml` only represents the latest state of an agent, even though agents
    are versioned. Deploy posts a new version each run, so the intended meaning of the YAML,
    latest only or pinned, needs a decision.
-4. **`$ref` resolution and overlay rules.** Core loader or extension. Shallow overlay or
-   deep merge. Arrays replaced or merged. 2.4 recommends extension owned with a shallow
-   overlay, but this should be ratified.
-5. **Absolute and remote `$ref` paths.** `FileRef.json` accepts absolute paths and URLs.
-   Confirm whether to keep that, accepting reading arbitrary files and fetching remote
-   content, or restrict to project-local paths behind an opt-in. The design follows the
-   brief and accepts them for now (2.4).
-6. **Split file validation.** The language server can follow a `$ref` to a local file for
+4. **Split file validation.** The language server can follow a `$ref` to a local file for
    editor hints, but runtime validation of a loaded file against the per resource schema
    needs to be confirmed.
-7. **Inline config size over gRPC.** A big project becomes a large protobuf struct. Confirm
+5. **Inline config size over gRPC.** A big project becomes a large protobuf struct. Confirm
    there is no practical size limit, or define how to chunk it.
-8. **Composition surface naming.** Issue #8049 places the `add` commands in an `azd ai
+6. **Composition surface naming.** Issue #8049 places the `add` commands in an `azd ai
    project` surface, but an `azure.ai.projects` extension already exists. Confirm where the
    schema and the `add` commands live so the two do not collide.
 

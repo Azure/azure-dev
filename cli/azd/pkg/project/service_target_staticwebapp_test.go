@@ -73,6 +73,21 @@ func TestStaticWebAppOptions_ApiEnvironmentName(t *testing.T) {
 			opts:     StaticWebAppOptions{Environment: "staging"},
 			expected: "staging",
 		},
+		{
+			name:     "ProductionNormalizesToDefault",
+			opts:     StaticWebAppOptions{Environment: "production"},
+			expected: DefaultStaticWebAppEnvironmentName,
+		},
+		{
+			name:     "ProdNormalizesToDefault",
+			opts:     StaticWebAppOptions{Environment: "prod"},
+			expected: DefaultStaticWebAppEnvironmentName,
+		},
+		{
+			name:     "DefaultExplicitStaysDefault",
+			opts:     StaticWebAppOptions{Environment: "default"},
+			expected: DefaultStaticWebAppEnvironmentName,
+		},
 	}
 
 	for _, tc := range tests {
@@ -93,22 +108,22 @@ func TestStaticWebAppOptions_SwaCliEnvironment(t *testing.T) {
 		{
 			name:     "EmptyDefaultsToProduction",
 			opts:     StaticWebAppOptions{},
-			expected: "production",
+			expected: swaCliProductionEnvironment,
 		},
 		{
 			name:     "ExplicitDefaultMapsToProduction",
 			opts:     StaticWebAppOptions{Environment: "default"},
-			expected: "production",
+			expected: swaCliProductionEnvironment,
 		},
 		{
 			name:     "ExplicitDefaultCaseInsensitive",
 			opts:     StaticWebAppOptions{Environment: "Default"},
-			expected: "production",
+			expected: swaCliProductionEnvironment,
 		},
 		{
 			name:     "WhitespaceOnlyMapsToProduction",
 			opts:     StaticWebAppOptions{Environment: "  "},
-			expected: "production",
+			expected: swaCliProductionEnvironment,
 		},
 		{
 			name:     "NamedPreviewEnvironment",
@@ -118,7 +133,12 @@ func TestStaticWebAppOptions_SwaCliEnvironment(t *testing.T) {
 		{
 			name:     "ProductionExplicit",
 			opts:     StaticWebAppOptions{Environment: "production"},
-			expected: "production",
+			expected: swaCliProductionEnvironment,
+		},
+		{
+			name:     "ProdShorthand",
+			opts:     StaticWebAppOptions{Environment: "prod"},
+			expected: swaCliProductionEnvironment,
 		},
 	}
 
@@ -157,5 +177,5 @@ project: ./src/web
 	require.NoError(t, err)
 	require.Equal(t, "", svc.StaticWebApp.Environment)
 	require.Equal(t, DefaultStaticWebAppEnvironmentName, svc.StaticWebApp.apiEnvironmentName())
-	require.Equal(t, "production", svc.StaticWebApp.swaCliEnvironment())
+	require.Equal(t, swaCliProductionEnvironment, svc.StaticWebApp.swaCliEnvironment())
 }

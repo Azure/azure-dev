@@ -44,11 +44,15 @@ type StaticWebAppOptions struct {
 // apiEnvironmentName returns the environment identifier to use for Azure REST API
 // calls against the Static Web Apps service. The production environment is identified
 // as "default" in the API; named preview environments use their configured name.
+// Values like "production" or "prod" are normalized to "default" since the Azure API
+// does not recognize those as production identifiers.
 func (o *StaticWebAppOptions) apiEnvironmentName() string {
-	if o.Environment != "" {
-		return o.Environment
+	env := strings.TrimSpace(o.Environment)
+	if env == "" || strings.EqualFold(env, "default") ||
+		strings.EqualFold(env, "production") || strings.EqualFold(env, "prod") {
+		return DefaultStaticWebAppEnvironmentName
 	}
-	return DefaultStaticWebAppEnvironmentName
+	return env
 }
 
 // swaCliEnvironment returns the environment value to pass as `--env` to the SWA CLI.
@@ -58,7 +62,8 @@ func (o *StaticWebAppOptions) apiEnvironmentName() string {
 // Azure REST API's "default" identifier is NOT recognized by the SWA CLI.
 func (o *StaticWebAppOptions) swaCliEnvironment() string {
 	env := strings.TrimSpace(o.Environment)
-	if env == "" || strings.EqualFold(env, "default") {
+	if env == "" || strings.EqualFold(env, "default") ||
+		strings.EqualFold(env, "production") || strings.EqualFold(env, "prod") {
 		return swaCliProductionEnvironment
 	}
 	return env

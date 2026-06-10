@@ -21,7 +21,7 @@ for each environment.
 | `AZURE_RESOURCE_GROUP` | The default resource group name. |
 | `AZURE_CONTAINER_REGISTRY_ENDPOINT` | The endpoint of the Azure Container Registry. |
 | `AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN` | The default domain of the Container Apps environment. |
-| `AZURE_APP_SERVICE_DASHBOARD_URI` | The URI for the .NET Aspire dashboard hosted on Azure App Service. |
+| `AZURE_APP_SERVICE_DASHBOARD_URI` | The URI for the Aspire dashboard hosted on Azure App Service. |
 | `AZURE_AKS_CLUSTER_NAME` | The name of the Azure Kubernetes Service cluster. |
 
 ## Dev Center Variables
@@ -257,8 +257,8 @@ These variables are used by the Terraform provider integration to authenticate w
 | `AZD_DEBUG_SYNTHETIC_SUBSCRIPTION` | If set, provides a synthetic subscription for testing. |
 | `AZD_DEBUG_NO_ALPHA_WARNINGS` | If true, suppresses alpha feature warnings. |
 | `AZD_DEBUG_PROVISION_PROGRESS_DISABLE` | If true, disables provision progress display. Read by both the Bicep provider and the Dev Center provisioner. |
-| `AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST` | If true, uses a fixed manifest for .NET Aspire app host. |
-| `AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES` | If true, ignores unsupported resources in .NET Aspire app host. |
+| `AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST` | If true, uses a fixed manifest for Aspire app host. |
+| `AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES` | If true, ignores unsupported resources in Aspire app host. |
 | `AZD_DEBUG_SERVER_DEBUG_ENDPOINTS` | If true, enables debug endpoints in server mode. |
 | `AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT` | Overrides the experimentation TAS endpoint URL. |
 | `AZD_SUBSCRIPTIONS_FETCH_MAX_CONCURRENCY` | Limits the maximum concurrency when fetching subscriptions. |

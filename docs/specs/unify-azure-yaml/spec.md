@@ -116,7 +116,10 @@ No new ordering logic is needed. `uses:` already exists on every service.
 
 When `endpoint:` is set on the Foundry service, azd connects to that project instead of
 creating one. This is the path for teams that provision infrastructure on their own, and
-for reusing a shared or private network bound account.
+for reusing a shared or private network bound account, which is the minimum issue
+[#8165](https://github.com/Azure/azure-dev/issues/8165) asks for. Provisioning a new
+network bound account from scratch is part of the separate built-in Bicep work, not this
+field.
 
 ```yaml
 services:
@@ -425,10 +428,14 @@ upsert is written:
 - Whether a re run after a partial failure can safely repeat the calls that already
   succeeded.
 
-This area overlaps with existing reports [#8349](https://github.com/Azure/azure-dev/issues/8349)
-and [#8350](https://github.com/Azure/azure-dev/issues/8350); the upsert model above and the
-brief's "drop from config stops management, does not destroy" semantics are meant to cover
-them.
+This area overlaps with existing reports [#8349](https://github.com/Azure/azure-dev/issues/8349),
+[#8350](https://github.com/Azure/azure-dev/issues/8350), and
+[#8587](https://github.com/Azure/azure-dev/issues/8587); moving data-plane resources such as
+toolboxes and connections to deploy-time reconciliation, together with the upsert model above
+and the brief's "drop from config stops management, does not destroy" semantics, is meant to
+cover them. #8587 in particular is the multi service provision failure that the single
+service shape removes, because toolboxes are now created at deploy instead of through
+provision layers.
 
 ### 2.9 Telemetry and errors
 
@@ -461,32 +468,23 @@ resolved by `azure.ai.agents`, not by the meta-package.
 
 ## Open questions
 
-A few things this design surfaces that the brief does not already settle. None of them
-block the overall shape, but they are worth talking through together before we lock the
-first version. Provision and scope items sit alongside the design ones.
+A few things this design surfaces that the brief and the related issues do not already
+settle. None of them block the overall shape, but they are worth talking through together
+before we lock the first version.
 
-1. **Provision layers in multi service projects.** Issue
-   [#8587](https://github.com/Azure/azure-dev/issues/8587) reports `azd provision <agent>`
-   failing with "no layers defined in azure.yaml", which left a toolbox unprovisioned. The
-   single service shape and the in memory Bicep both touch how provision layers get built,
-   so it would help to agree on the intended behavior here.
-2. **Reusing an existing project.** The `endpoint:` field and the private network case in
-   issue [#8165](https://github.com/Azure/azure-dev/issues/8165) both ask azd to use an
-   account it did not create. It would be good to confirm whether reuse is in scope for the
-   first version.
-3. **Agent versioning.** Issue [#8066](https://github.com/Azure/azure-dev/issues/8066)
-   notes that `azure.yaml` only represents the latest state of an agent, even though agents
-   are versioned. Deploy posts a new version each run, so let's decide together what the
-   YAML should mean: latest only, or pinned.
-4. **Split file validation.** The language server can follow a `$ref` to a local file for
-   editor hints, but it would be good to confirm how a loaded file gets validated against
-   the per resource schema at runtime.
-5. **Inline config size over gRPC.** A big project becomes a large protobuf struct. This is
+1. **Agent versioning.** Issue [#8066](https://github.com/Azure/azure-dev/issues/8066) notes
+   that `azure.yaml` only represents the latest state of an agent, even though agents are
+   versioned, and Foundry will add traffic splitting across versions. Deploy posts a new
+   version each run, so let's decide together what the YAML should mean: latest only, pinned,
+   or something that can express more than one version.
+2. **Inline config size over gRPC.** A big project becomes a large protobuf struct. This is
    probably fine, but it is worth confirming there is no practical size limit, or deciding
    how we would chunk it if one shows up.
-6. **Composition surface naming.** Issue #8049 places the `add` commands in an `azd ai
-   project` surface, but an `azure.ai.projects` extension already exists. Let's settle where
-   the schema and the `add` commands live so the two do not collide.
+3. **Composition surface naming.** Issue [#8049](https://github.com/Azure/azure-dev/issues/8049)
+   puts the `add` commands in an `azd ai project` surface, written against the earlier two
+   host shape, while this design unifies on `host: microsoft.foundry` and an
+   `azure.ai.projects` extension already exists. Let's settle where the schema and the `add`
+   commands live so they do not collide.
 
 ## Summary of required changes
 

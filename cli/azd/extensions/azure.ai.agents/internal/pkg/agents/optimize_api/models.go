@@ -125,9 +125,12 @@ type OptimizeResponse struct {
 
 // OptimizeJobStatus is the full status of an optimization job.
 type OptimizeJobStatus struct {
-	ID                        string           `json:"id"`
-	Status                    string           `json:"status"`
-	Inputs                    *OptimizeRequest `json:"inputs,omitempty"`
+	ID     string           `json:"id"`
+	Status string           `json:"status"`
+	Inputs *OptimizeRequest `json:"inputs,omitempty"`
+	// Agent is the top-level agent identifier returned by the list endpoint,
+	// where jobs are not wrapped in an "inputs" envelope.
+	Agent                     *AgentIdentifier `json:"agent,omitempty"`
 	Result                    *OptimizeResult  `json:"result,omitempty"`
 	Progress                  *JobProgress     `json:"progress,omitempty"`
 	Error                     *JobError        `json:"error,omitempty"`
@@ -159,12 +162,17 @@ func (r *OptimizeResult) findCandidate(ref string) *CandidateResult {
 	return nil
 }
 
-// AgentName returns the input agent name, or "" when inputs are absent.
+// AgentName returns the agent name from the job inputs, falling back to the
+// top-level agent field used by the list endpoint. Returns "" when neither is
+// present.
 func (s *OptimizeJobStatus) AgentName() string {
-	if s.Inputs == nil {
-		return ""
+	if s.Inputs != nil && s.Inputs.Agent.AgentName != "" {
+		return s.Inputs.Agent.AgentName
 	}
-	return s.Inputs.Agent.AgentName
+	if s.Agent != nil {
+		return s.Agent.AgentName
+	}
+	return ""
 }
 
 // Candidates returns the result candidates (nil-safe).

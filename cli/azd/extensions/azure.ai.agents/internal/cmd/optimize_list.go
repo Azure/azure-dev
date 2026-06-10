@@ -101,17 +101,12 @@ func runOptimizeList(cmd *cobra.Command, flags *optimizeListFlags) error {
 func printOptimizeListTable(out io.Writer, jobs []optimize_api.OptimizeJobStatus) {
 	bold := color.New(color.Bold)
 
-	_, _ = bold.Fprintf(out, "  %-38s %-12s %-14s %7s   %s\n", "ID", "Status", "Agent", "Score", "Created")
-	fmt.Fprintf(out, "  %-38s %-12s %-14s %7s   %s\n",
+	_, _ = bold.Fprintf(out, "  %-38s %-12s %-14s   %s\n", "ID", "Status", "Agent", "Created")
+	fmt.Fprintf(out, "  %-38s %-12s %-14s   %s\n",
 		strings.Repeat("─", 38), strings.Repeat("─", 12),
-		strings.Repeat("─", 14), strings.Repeat("─", 7), strings.Repeat("─", 19))
+		strings.Repeat("─", 14), strings.Repeat("─", 19))
 
 	for _, job := range jobs {
-		scoreStr := "—"
-		if best := job.BestCandidate(); best != nil {
-			scoreStr = fmt.Sprintf("%.2f", best.AvgScore)
-		}
-
 		agentName := "—"
 		if name := job.AgentName(); name != "" {
 			agentName = name
@@ -122,11 +117,10 @@ func printOptimizeListTable(out io.Writer, jobs []optimize_api.OptimizeJobStatus
 			created = eval_api.FormatTimestamp(job.CreatedAt)
 		}
 
-		fmt.Fprintf(out, "  %-38s %-12s %-14s %7s   %s\n",
+		fmt.Fprintf(out, "  %-38s %-12s %-14s   %s\n",
 			job.ID,
 			formatOptimizeStatus(job.Status),
 			truncateString(agentName, 14),
-			scoreStr,
 			truncateString(created, 19),
 		)
 	}

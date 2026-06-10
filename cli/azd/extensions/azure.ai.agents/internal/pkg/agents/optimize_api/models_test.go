@@ -190,6 +190,30 @@ func TestOptimizeListResponse_RoundTrip(t *testing.T) {
 	assert.True(t, got.HasMore)
 }
 
+// TestAgentName_ListShape verifies the list endpoint's top-level "agent" field
+// is parsed (jobs there are not wrapped in an "inputs" envelope).
+func TestAgentName_ListShape(t *testing.T) {
+	t.Parallel()
+
+	body := `{"id":"opt_1","status":"succeeded","agent":{"agent_name":"optimization-demo-v6","agent_version":"56"}}`
+	var got OptimizeJobStatus
+	require.NoError(t, json.Unmarshal([]byte(body), &got))
+
+	assert.Equal(t, "optimization-demo-v6", got.AgentName())
+}
+
+// TestAgentName_InputsTakesPrecedence verifies inputs.agent wins over the
+// top-level agent when both are present.
+func TestAgentName_InputsTakesPrecedence(t *testing.T) {
+	t.Parallel()
+
+	s := OptimizeJobStatus{
+		Inputs: &OptimizeRequest{Agent: AgentIdentifier{AgentName: "from-inputs"}},
+		Agent:  &AgentIdentifier{AgentName: "from-top-level"},
+	}
+	assert.Equal(t, "from-inputs", s.AgentName())
+}
+
 // ---- DeploymentReport serialization ----
 
 func TestDeploymentReport_JSON_ExcludesCandidateID(t *testing.T) {

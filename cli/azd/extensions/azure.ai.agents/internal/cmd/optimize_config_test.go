@@ -78,7 +78,6 @@ func TestLoadOptimizeConfig_WithDataset(t *testing.T) {
 agent:
   name: ref-agent
 dataset:
-  type: reference
   name: my-dataset
   version: "2"
 validation_reference:
@@ -121,7 +120,6 @@ func TestLoadOptimizeConfig_ValidationDataset(t *testing.T) {
 agent:
   name: ref-agent
 dataset:
-  type: reference
   name: my-dataset
   version: "2"
 validation_dataset:

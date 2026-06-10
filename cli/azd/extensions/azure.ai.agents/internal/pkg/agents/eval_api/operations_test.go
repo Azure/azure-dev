@@ -144,7 +144,7 @@ func TestCreateEvaluatorGenerationJob_Success(t *testing.T) {
 
 	client, _ := newTestClient(t, handler)
 	result, err := client.CreateEvaluatorGenerationJob(
-		t.Context(), &EvaluatorGenerationJobRequest{Name: "my-eval"}, "v1",
+		t.Context(), &EvaluatorGenerationJobRequest{Inputs: EvaluatorGenerationInputs{Name: "my-eval"}}, "v1",
 	)
 
 	require.NoError(t, err)

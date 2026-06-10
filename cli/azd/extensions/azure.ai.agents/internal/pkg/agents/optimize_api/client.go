@@ -92,7 +92,11 @@ func (c *OptimizeClient) StartOptimize(
 ) (*OptimizeResponse, error) {
 	url := fmt.Sprintf("%s/%s?api-version=%s", c.endpoint, optimizeJobsPath, APIVersion)
 
-	payload, err := json.Marshal(optimizeReq)
+	// The service expects the request body wrapped in an "inputs" envelope,
+	// mirroring the shape echoed back in the job status response.
+	payload, err := json.Marshal(struct {
+		Inputs *OptimizeRequest `json:"inputs"`
+	}{Inputs: optimizeReq})
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}

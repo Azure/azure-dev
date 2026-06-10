@@ -118,7 +118,7 @@ func (a *OptimizeDeployAction) runDirect(
 	optClient := optimize_api.NewOptimizeClient(projectEndpoint, credential)
 
 	// Resolve the optimization job ID — candidate endpoints are nested under it.
-	jobID := loadOptimizeJobIDForAgent(ctx, agentName, a.envName)
+	jobID := loadOptimizeJobIDForAgent(ctx, optimizeEnvKeyName(resolved.serviceName, agentName), a.envName)
 	if jobID == "" {
 		return fmt.Errorf(
 			"no optimization job found in the environment; run 'azd ai agent optimize' first")

@@ -34,6 +34,7 @@ type optimizeAgentContext struct {
 	agentName    string // deployed agent name
 	agentVersion string // deployed agent version (empty = latest)
 	agentProject string // agent project directory (empty if not in an azd project)
+	serviceName  string // azd service name (env key prefix source); empty for standalone --agent
 }
 
 // resolveOptimizeAgent resolves the agent name and project directory.
@@ -76,6 +77,7 @@ func resolveOptimizeAgent(ctx context.Context, flagValue, envName string, noProm
 						agentName:    v.Value,
 						agentVersion: version,
 						agentProject: agentProject,
+						serviceName:  svc.Name,
 					}, nil
 				}
 			}
@@ -167,9 +169,10 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
 
 // OptimizeAction implements the optimize (submit job) command.
 type OptimizeAction struct {
-	flags    *optimizeFlags
-	envName  string
-	noPrompt bool
+	flags       *optimizeFlags
+	envName     string
+	noPrompt    bool
+	serviceName string // azd service name for per-agent env key derivation
 }
 
 // Run executes the optimize command: resolves the agent, loads/builds the config, applies overrides, submits the job, and optionally polls for results.
@@ -235,6 +238,7 @@ func (a *OptimizeAction) resolveConfig(
 		resolved, resolveErr := resolveOptimizeAgent(ctx, a.flags.agent, a.envName, a.noPrompt)
 		if resolveErr == nil {
 			agentProject = resolved.agentProject
+			a.serviceName = resolved.serviceName
 			reconcileConfigAgent(os.Stderr, &cfg.Agent, resolved.agentName, resolved.agentVersion, a.flags.configFile)
 		}
 
@@ -246,6 +250,7 @@ func (a *OptimizeAction) resolveConfig(
 		return nil, "", "", err
 	}
 	agentProject = resolved.agentProject
+	a.serviceName = resolved.serviceName
 
 	// Check if eval.yaml exists in the agent project and offer to use it.
 	// In --no-prompt mode, use it automatically.
@@ -509,7 +514,7 @@ func (a *OptimizeAction) submitJob(
 	printOptimizePortalLink(ctx, out, cfg.Agent.Name, resp.OperationID, a.envName)
 	fmt.Fprintln(out)
 
-	saveLastOptimizeJobID(ctx, cfg.Agent.Name, resp.OperationID, a.envName)
+	saveLastOptimizeJobID(ctx, optimizeEnvKeyName(a.serviceName, cfg.Agent.Name), resp.OperationID, a.envName)
 
 	return resp, client, nil
 }
@@ -586,7 +591,7 @@ func printOptimizeResults(ctx context.Context, out io.Writer, status *optimize_a
 	// mutated agent attributes. It is placed last so it can grow freely.
 	hasStrategy := false
 	for _, c := range candidates {
-		if len(c.MutationKeys()) > 0 {
+		if len(c.Mutations) > 0 {
 			hasStrategy = true
 			break
 		}
@@ -621,7 +626,9 @@ func printOptimizeResults(ctx context.Context, out io.Writer, status *optimize_a
 			}
 		}
 		if hasStrategy {
-			line += "  " + strings.Join(c.MutationKeys(), ", ")
+			// MutationKeys returns the keys in stable (sorted) order.
+			strategy := strings.Join(c.MutationKeys(), ", ")
+			line += "  " + strategy
 		}
 		if isBest {
 			_, _ = green.Fprintln(out, line)

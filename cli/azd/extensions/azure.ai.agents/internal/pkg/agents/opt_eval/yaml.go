@@ -44,8 +44,9 @@ type Config struct {
 	Name  string   `yaml:"name,omitempty"`
 	Agent AgentRef `yaml:"agent"`
 	// DatasetFile is the deprecated local dataset path. New configs use a
-	// local dataset (type: local with local_uri) instead. It is still read
-	// for backward compatibility and takes precedence when set.
+	// local dataset block instead (a `dataset:` with only `local_uri` set, no
+	// `name`). It is still read for backward compatibility and takes
+	// precedence when set.
 	DatasetFile string      `yaml:"dataset_file,omitempty"`
 	Dataset     *DatasetRef `yaml:"dataset,omitempty"`
 	// LegacyDatasetReference reads the deprecated `dataset_reference` YAML key.
@@ -67,7 +68,7 @@ func (c *Config) NormalizeDataset() {
 
 // LocalDatasetPath returns the local dataset path, if any. It prefers the
 // deprecated dataset_file (backward compatibility), then falls back to a
-// local dataset (type: local with local_uri).
+// local dataset block (a `dataset:` with `local_uri` set and no `name`).
 func (c *Config) LocalDatasetPath() string {
 	if c.DatasetFile != "" {
 		return c.DatasetFile

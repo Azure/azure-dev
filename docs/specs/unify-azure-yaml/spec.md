@@ -426,7 +426,10 @@ upsert is written:
 - Whether a re run after a partial failure can safely repeat the calls that already
   succeeded.
 
-This area overlaps with existing reports, noted in the open questions.
+This area overlaps with existing reports [#8349](https://github.com/Azure/azure-dev/issues/8349)
+and [#8350](https://github.com/Azure/azure-dev/issues/8350); the upsert model above and the
+brief's "drop from config stops management, does not destroy" semantics are meant to cover
+them.
 
 ### 2.9 Telemetry and errors
 
@@ -459,54 +462,46 @@ resolved by `azure.ai.agents`, not by the meta-package.
 
 ## Open questions
 
-Decisions the team needs to make. Provision and scope items sit in the same list as
-design items. Product level questions already settled in the brief (host kind name, the
-Option A versus B ownership choice) are referenced where relevant rather than re-asked.
+Decisions still open after the brief. Where the brief already raises a question **and**
+recommends an option, that call is taken as given and not re-asked here: schema ownership
+(Option A), per-agent build orchestration (3a), idempotency semantics (Bicep-like, "drop
+from config stops management, does not destroy", see 2.8), built-in Bicep (opt-in,
+in-memory), and the per-agent CLI direction that follows from 3a. Host kind naming stays
+with the brief. The items below are what this design adds or leaves unresolved; provision
+and scope items sit in the same list as design items.
 
-1. **Built in Bicep and the provision-less flow.** A Foundry only project should not need
-   an `infra/` folder; the extension would carry templates and generate them in memory at
-   provision time. This has its own RFC, not yet filed, and changes what `azd provision`
-   does for these projects. Confirm whether it belongs in this milestone.
-2. **Provision layers in multi service projects.** Issue
+1. **Provision layers in multi service projects.** Issue
    [#8587](https://github.com/Azure/azure-dev/issues/8587) reports `azd provision <agent>`
    failing with "no layers defined in azure.yaml", which left a toolbox unprovisioned. The
    single service shape and the in memory Bicep both interact with how provision layers are
    built, so confirm the intended behavior.
-3. **Reusing an existing project.** The `endpoint:` field and the private network case in
+2. **Reusing an existing project.** The `endpoint:` field and the private network case in
    issue [#8165](https://github.com/Azure/azure-dev/issues/8165) both ask azd to use an
    account it did not create. Confirm whether reuse is in scope for the first version.
-4. **Idempotency across provision and deploy.** Issues
-   [#8349](https://github.com/Azure/azure-dev/issues/8349) and
-   [#8350](https://github.com/Azure/azure-dev/issues/8350) report that provision does not
-   recreate a deleted resource and that tool connection changes are not applied. The new
-   model moves data plane changes to deploy (2.8), which may sidestep some of this.
-   Confirm, and confirm whether create calls are idempotent or need check-then-create.
-5. **Agent versioning.** Issue [#8066](https://github.com/Azure/azure-dev/issues/8066)
+3. **Agent versioning.** Issue [#8066](https://github.com/Azure/azure-dev/issues/8066)
    notes that `azure.yaml` only represents the latest state of an agent, even though agents
    are versioned. Deploy posts a new version each run, so the intended meaning of the YAML,
    latest only or pinned, needs a decision.
-6. **`$ref` resolution and overlay rules.** Core loader or extension. Shallow overlay or
+4. **`$ref` resolution and overlay rules.** Core loader or extension. Shallow overlay or
    deep merge. Arrays replaced or merged. 2.4 recommends extension owned with a shallow
    overlay, but this should be ratified.
-7. **Absolute and remote `$ref` paths.** `FileRef.json` accepts absolute paths and URLs.
+5. **Absolute and remote `$ref` paths.** `FileRef.json` accepts absolute paths and URLs.
    Confirm whether to keep that, accepting reading arbitrary files and fetching remote
    content, or restrict to project-local paths behind an opt-in. The design follows the
    brief and accepts them for now (2.4).
-8. **Instruction and prompt file format.** Skill and prompt agent `instructions` accept an
-   inline string or a file path (2.4). Confirm both forms are supported and settle the
-   accepted file extensions (`.md`, `.txt`).
-9. **Routines ownership and triggers.** Does the routines schema live in `azure.ai.agents`
-   (Option A) or in `azure.ai.routines`? `Routine.json` allows `schedule`, `webhook`, and
-   `event` triggers; confirm which the first version supports beyond cron schedules.
-10. **Split file validation.** The language server can follow a `$ref` to a local file for
-    editor hints, but runtime validation of a loaded file against the per resource schema
-    needs to be confirmed.
-11. **Inline config size over gRPC.** A big project becomes a large protobuf struct.
-    Confirm there is no practical size limit, or define how to chunk it.
-12. **Per agent CLI addressability.** `azd deploy <service>` targets the whole project. Is
-    `azd ai agent deploy <name>` enough for per agent actions, or does core need real sub
-    service targets (2.6)? The brief raises this too; it is tied to the fan out choice.
-13. **Composition surface naming.** Issue #8049 places the `add` commands in an `azd ai
+6. **Instruction and prompt file format.** Skill and prompt agent `instructions` accept an
+   inline string or a file path (2.4). The brief lists this as open too; confirm both forms
+   are supported and settle the accepted file extensions (`.md`, `.txt`).
+7. **Routines ownership and triggers.** The brief leaves this open: does the routines schema
+   live in `azure.ai.agents` (Option A) or in `azure.ai.routines`? `Routine.json` allows
+   `schedule`, `webhook`, and `event` triggers; confirm which the first version supports
+   beyond cron schedules.
+8. **Split file validation.** The language server can follow a `$ref` to a local file for
+   editor hints, but runtime validation of a loaded file against the per resource schema
+   needs to be confirmed.
+9. **Inline config size over gRPC.** A big project becomes a large protobuf struct. Confirm
+   there is no practical size limit, or define how to chunk it.
+10. **Composition surface naming.** Issue #8049 places the `add` commands in an `azd ai
     project` surface, but an `azure.ai.projects` extension already exists. Confirm where the
     schema and the `add` commands live so the two do not collide.
 

@@ -6727,6 +6727,21 @@ const completionSpec: Fig.Spec = {
 			],
 		},
 		{
+			name: ['validate'],
+			description: 'Validate your project configuration and Azure readiness.',
+			options: [
+				{
+					name: ['--gate'],
+					description: 'Run only the specified validation gate (e.g. "local-preflight").',
+					args: [
+						{
+							name: 'gate',
+						},
+					],
+				},
+			],
+		},
+		{
 			name: ['version'],
 			description: 'Print the version number of Azure Developer CLI.',
 		},
@@ -8009,6 +8024,10 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['update'],
 					description: 'Updates azd to the latest version.',
+				},
+				{
+					name: ['validate'],
+					description: 'Validate your project configuration and Azure readiness.',
 				},
 				{
 					name: ['version'],

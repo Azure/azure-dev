@@ -15,6 +15,7 @@ Commands
     down        	: Delete your project's Azure resources.
     provision   	: Provision Azure resources for your project.
     publish     	: Publish a service to a container registry.
+    validate    	: Validate your project configuration and Azure readiness.
 
   Manage and show settings
     completion  	: Generate shell completion scripts.

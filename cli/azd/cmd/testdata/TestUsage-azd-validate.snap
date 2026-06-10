@@ -1,0 +1,20 @@
+
+Validate your project configuration and Azure readiness.
+
+Usage
+  azd validate [flags]
+
+Flags
+    -e, --environment string 	: The name of the environment to use.
+        --gate string        	: Run only the specified validation gate (e.g. "local-preflight").
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd validate in your web browser.
+    -h, --help       	: Gets help for validate.
+        --no-prompt  	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+
+Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+
+

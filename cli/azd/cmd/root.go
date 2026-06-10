@@ -333,6 +333,20 @@ func newRootCmd(
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
+		Add("validate", &actions.ActionDescriptorOptions{
+			Command:        cmd.NewValidateCmd(),
+			FlagsResolver:  cmd.NewValidateFlags,
+			ActionResolver: cmd.NewValidateAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupAzure,
+			},
+			RequireLogin: true,
+		}).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
+
+	root.
 		Add("package", &actions.ActionDescriptorOptions{
 			Command:        newPackageCmd(),
 			FlagsResolver:  newPackageFlags,

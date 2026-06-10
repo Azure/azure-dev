@@ -1020,6 +1020,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")
+	registerAction[*cmd.ValidateAction](container, "azd-validate-action")
 	registerAction[*downAction](container, "azd-down-action")
 	registerAction[*configShowAction](container, "azd-config-show-action")
 }

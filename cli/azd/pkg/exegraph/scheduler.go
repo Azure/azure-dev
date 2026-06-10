@@ -426,9 +426,14 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 func runStep(ctx context.Context, step *Step, opts RunOptions) (stepErr error) {
 	ctx, span := tracing.Start(ctx, events.ExeGraphStepEvent)
 
-	span.SetAttributes(fields.ExeGraphStepNameKey.String(step.Name))
+	// Step names and DependsOn entries embed user-chosen identifiers from
+	// azure.yaml (service names, layer names). They are hashed before emission
+	// per docs/specs/metrics-audit/privacy-review-checklist.md. Tags are a
+	// fixed internal vocabulary ("provision", "deploy", "cmdhook", ...) and
+	// are emitted raw.
+	span.SetAttributes(fields.StringHashed(fields.ExeGraphStepNameKey, step.Name))
 	if len(step.DependsOn) > 0 {
-		span.SetAttributes(fields.ExeGraphStepDepsKey.StringSlice(step.DependsOn))
+		span.SetAttributes(fields.StringSliceHashed(fields.ExeGraphStepDepsKey, step.DependsOn))
 	}
 	if len(step.Tags) > 0 {
 		span.SetAttributes(fields.ExeGraphStepTagsKey.StringSlice(step.Tags))

@@ -36,10 +36,36 @@ type Cli struct {
 }
 
 // ContainerEngine returns the detected container engine name ("docker" or "podman").
-// CheckInstalled() should be called first to detect and set the container engine.
-// If not set, defaults to "docker" for backward compatibility.
+// If CheckInstalled() has already been called, this returns the cached result.
+// Otherwise, it performs a lightweight detection (env var + PATH check) without
+// validating version or daemon readiness. This ensures callers that need the
+// engine name (e.g., dotnet publish with -p:ContainerEngine) get the correct
+// value even when docker.Cli is not in RequiredExternalTools.
 func (d *Cli) ContainerEngine() string {
-	return d.getContainerEngine()
+	if d.containerEngine == "" {
+		d.detectContainerEngine()
+	}
+	return d.containerEngine
+}
+
+// detectContainerEngine performs a lightweight detection of the container engine
+// by checking AZD_CONTAINER_RUNTIME and PATH. Unlike CheckInstalled(), it does
+// not validate versions or daemon readiness.
+func (d *Cli) detectContainerEngine() {
+	if runtime := os.Getenv("AZD_CONTAINER_RUNTIME"); runtime == "docker" || runtime == "podman" {
+		d.containerEngine = runtime
+		return
+	}
+
+	if d.commandRunner.ToolInPath("docker") == nil {
+		d.containerEngine = "docker"
+	} else if d.commandRunner.ToolInPath("podman") == nil {
+		d.containerEngine = "podman"
+	} else {
+		// Fallback — neither found; default to docker for backward compatibility.
+		// CheckInstalled() will produce a proper error if actually invoked.
+		d.containerEngine = "docker"
+	}
 }
 
 // getContainerEngine returns the container engine command to use ("docker" or "podman").

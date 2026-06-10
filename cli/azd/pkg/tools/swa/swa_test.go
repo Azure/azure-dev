@@ -119,6 +119,7 @@ func Test_SwaDeploy(t *testing.T) {
 				"--subscription-id", "subscriptionID",
 				"--resource-group", "resourceGroupID",
 				"--app-name", "appName",
+				"--env", "production",
 				"--no-use-keychain",
 				"--deployment-token", "deploymentToken",
 			}, args.Args)
@@ -140,7 +141,7 @@ func Test_SwaDeploy(t *testing.T) {
 			"subscriptionID",
 			"resourceGroupID",
 			"appName",
-			"",
+			"production",
 			"deploymentToken",
 			DeployOptions{},
 			nil,
@@ -166,6 +167,7 @@ func Test_SwaDeploy(t *testing.T) {
 				"--subscription-id", "subscriptionID",
 				"--resource-group", "resourceGroupID",
 				"--app-name", "appName",
+				"--env", "production",
 				"--no-use-keychain",
 				"--deployment-token", "deploymentToken",
 				"--app-location", "appFolderPath",
@@ -189,7 +191,7 @@ func Test_SwaDeploy(t *testing.T) {
 			"subscriptionID",
 			"resourceGroupID",
 			"appName",
-			"",
+			"production",
 			"deploymentToken",
 			DeployOptions{
 				AppFolderPath:            "appFolderPath",
@@ -218,6 +220,7 @@ func Test_SwaDeploy(t *testing.T) {
 				"--subscription-id", "subscriptionID",
 				"--resource-group", "resourceGroupID",
 				"--app-name", "appName",
+				"--env", "production",
 				"--no-use-keychain",
 				"--deployment-token", "deploymentToken",
 			}, args.Args)
@@ -236,7 +239,7 @@ func Test_SwaDeploy(t *testing.T) {
 			"subscriptionID",
 			"resourceGroupID",
 			"appName",
-			"",
+			"production",
 			"deploymentToken",
 			DeployOptions{},
 			nil,
@@ -282,8 +285,8 @@ func Test_SwaDeploy_WithEnvironment(t *testing.T) {
 		"--subscription-id", "subscriptionID",
 		"--resource-group", "resourceGroupID",
 		"--app-name", "appName",
+		"--env", "staging",
 		"--no-use-keychain",
 		"--deployment-token", "deploymentToken",
-		"--env", "staging",
 	}, capturedArgs.Args)
 }

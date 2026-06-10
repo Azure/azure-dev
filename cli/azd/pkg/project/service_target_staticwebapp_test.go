@@ -9,8 +9,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 func TestNewStaticWebAppTargetTypeValidation(t *testing.T) {
@@ -82,7 +82,54 @@ func TestStaticWebAppOptions_ApiEnvironmentName(t *testing.T) {
 	}
 }
 
-func TestStaticWebAppOptions_YamlRoundTrip(t *testing.T) {
+func TestStaticWebAppOptions_SwaCliEnvironment(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		opts     StaticWebAppOptions
+		expected string
+	}{
+		{
+			name:     "EmptyDefaultsToProduction",
+			opts:     StaticWebAppOptions{},
+			expected: "production",
+		},
+		{
+			name:     "ExplicitDefaultMapsToProduction",
+			opts:     StaticWebAppOptions{Environment: "default"},
+			expected: "production",
+		},
+		{
+			name:     "ExplicitDefaultCaseInsensitive",
+			opts:     StaticWebAppOptions{Environment: "Default"},
+			expected: "production",
+		},
+		{
+			name:     "WhitespaceOnlyMapsToProduction",
+			opts:     StaticWebAppOptions{Environment: "  "},
+			expected: "production",
+		},
+		{
+			name:     "NamedPreviewEnvironment",
+			opts:     StaticWebAppOptions{Environment: "staging"},
+			expected: "staging",
+		},
+		{
+			name:     "ProductionExplicit",
+			opts:     StaticWebAppOptions{Environment: "production"},
+			expected: "production",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.opts.swaCliEnvironment())
+		})
+	}
+}
+
+func TestStaticWebAppOptions_YamlUnmarshalWithEnvironment(t *testing.T) {
 	t.Parallel()
 
 	yamlInput := `
@@ -97,7 +144,7 @@ staticwebapp:
 	require.Equal(t, "staging", svc.StaticWebApp.Environment)
 }
 
-func TestStaticWebAppOptions_YamlRoundTripNoEnvironment(t *testing.T) {
+func TestStaticWebAppOptions_YamlUnmarshalNoEnvironment(t *testing.T) {
 	t.Parallel()
 
 	// When staticwebapp key is absent, Environment should be empty and production is used.
@@ -110,4 +157,5 @@ project: ./src/web
 	require.NoError(t, err)
 	require.Equal(t, "", svc.StaticWebApp.Environment)
 	require.Equal(t, DefaultStaticWebAppEnvironmentName, svc.StaticWebApp.apiEnvironmentName())
+	require.Equal(t, "production", svc.StaticWebApp.swaCliEnvironment())
 }

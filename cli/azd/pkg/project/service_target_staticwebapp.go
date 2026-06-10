@@ -20,15 +20,20 @@ import (
 
 // DefaultStaticWebAppEnvironmentName is the identifier used by the Azure REST API
 // to refer to the production environment of a Static Web App.
-// This value is distinct from the --env flag accepted by the SWA CLI:
-// the SWA CLI uses an empty/omitted --env for production deploys.
+// This value is distinct from the --env flag accepted by the SWA CLI.
 const DefaultStaticWebAppEnvironmentName = "default"
+
+// swaCliProductionEnvironment is the value the SWA CLI recognizes for production
+// deployments. The SWA CLI treats "production" and "prod" as special values that
+// deploy to the production environment (by not setting DEPLOYMENT_ENVIRONMENT
+// internally). See: https://github.com/Azure/static-web-apps-cli/blob/main/src/cli/commands/deploy/deploy.ts
+const swaCliProductionEnvironment = "production"
 
 // StaticWebAppOptions contains configuration for deploying to an Azure Static Web App.
 // These options can be specified in azure.yaml under the service's staticwebapp key.
 type StaticWebAppOptions struct {
 	// The SWA environment to deploy to. When empty (the default), azd deploys to
-	// the production environment by omitting the --env flag from the SWA CLI command.
+	// the production environment (passing --env production to the SWA CLI).
 	// Set this to a named preview environment (e.g. "staging") to deploy a
 	// non-production environment; the value is passed as --env <environment> to the
 	// SWA CLI and is also used when querying the Azure REST API for deployment status
@@ -44,6 +49,19 @@ func (o *StaticWebAppOptions) apiEnvironmentName() string {
 		return o.Environment
 	}
 	return DefaultStaticWebAppEnvironmentName
+}
+
+// swaCliEnvironment returns the environment value to pass as `--env` to the SWA CLI.
+// The SWA CLI treats "production" (and "prod") as production deployments; any other
+// value targets a named preview environment. When the user has not configured an
+// environment (or explicitly set "default"), we return "production" because the
+// Azure REST API's "default" identifier is NOT recognized by the SWA CLI.
+func (o *StaticWebAppOptions) swaCliEnvironment() string {
+	env := strings.TrimSpace(o.Environment)
+	if env == "" || strings.EqualFold(env, "default") {
+		return swaCliProductionEnvironment
+	}
+	return env
 }
 
 type staticWebAppTarget struct {
@@ -201,16 +219,17 @@ func (at *staticWebAppTarget) Deploy(
 		dOptions.OutputRelativeFolderPath = packagePath
 		cwd = serviceConfig.Project.Path
 	}
-	// Pass the configured environment name to the SWA CLI. When empty (the default)
-	// the SWA CLI omits --env entirely, which targets the production environment.
-	// Providing a non-empty name (e.g. "staging") deploys to a named preview environment.
+	// Pass the SWA CLI environment name. The SWA CLI uses "production" for production
+	// deploys; any other value creates/targets a named preview environment.
+	// Note: the Azure REST API uses "default" for production, but the SWA CLI does NOT
+	// recognize "default" — it requires "production" or "prod".
 	_, err = at.swa.Deploy(ctx,
 		cwd,
 		at.env.GetTenantId(),
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
-		serviceConfig.StaticWebApp.Environment,
+		serviceConfig.StaticWebApp.swaCliEnvironment(),
 		*deploymentToken,
 		dOptions,
 		at.env.Environ())

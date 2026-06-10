@@ -84,12 +84,9 @@ func (cli *Cli) Deploy(
 		"--subscription-id", subscriptionId,
 		"--resource-group", resourceGroup,
 		"--app-name", appName,
+		"--env", environment,
 		"--no-use-keychain",
 		"--deployment-token", deploymentToken}
-
-	if environment != "" {
-		args = append(args, "--env", environment)
-	}
 
 	if options.AppFolderPath != "" {
 		args = append(args, "--app-location", options.AppFolderPath)

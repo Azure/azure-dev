@@ -65,7 +65,11 @@ The `staticwebapp` key configures Azure Static Web Apps deployments. These optio
 
 | Property | Type | Description |
 |---|---|---|
-| `environment` | string | The named SWA preview environment to deploy to. When omitted (the default), azd deploys to the **production** environment by omitting `--env` from the SWA CLI command. Set to a custom name (e.g. `"staging"`) to target a named preview environment. |
+| `environment` | string | The named SWA environment to deploy to. When omitted (the default), azd deploys to the **production** environment (passing `--env production` to the SWA CLI). Set to a custom name (e.g. `"staging"`) to target a named preview environment. |
+
+> **Note**: Do not set `environment: default`. The Azure REST API uses "default" to identify
+> the production environment, but the SWA CLI does NOT recognize this value.
+> To deploy to production, simply omit the `staticwebapp` key or leave `environment` empty.
 
 ### Example: production deployment (default)
 

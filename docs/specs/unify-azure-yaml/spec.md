@@ -1,6 +1,6 @@
 # Technical design: unify Foundry agent config in `azure.yaml`
 
-<!-- cspell:ignore therealjohn upserts unmarshals omitempty grpcserver osutil exterrors unprovisioned -->
+<!-- cspell:ignore upserts unmarshals omitempty grpcserver osutil exterrors unprovisioned -->
 
 ## Overview
 
@@ -12,8 +12,8 @@ gets at the command line.
 It does not restate the product brief. For the problem framing, the chosen file shape,
 the decision table, and the product level open questions, read those sources directly:
 
-- Product brief and sample file shapes: `therealjohn/foundry-azd-config-preview`
-  (the `simple` and `complex` branches, and the proposed schemas under `schemas/`).
+- Product brief and sample file shapes: the `simple` and `complex` branches of the
+  preview repo, and the proposed schemas under `schemas/`.
 - RFC issue [#7962](https://github.com/Azure/azure-dev/issues/7962): Unify Foundry
   agent configuration in `azure.yaml`.
 - RFC issue [#8049](https://github.com/Azure/azure-dev/issues/8049): Composition

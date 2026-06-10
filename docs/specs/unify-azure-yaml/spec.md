@@ -160,7 +160,7 @@ because azd did not create it.
 
 A Foundry service can hold several agents. If three agents build and the fourth fails,
 the run stops with an error that names the failing agent, and the state already written
-to Foundry stays in place. Re running `azd deploy` is safe: the service target upserts,
+to Foundry stays in place. Re-running `azd deploy` is safe: the service target upserts,
 so finished work is detected and skipped or refreshed rather than duplicated. Part 2.8
 covers the reconcile rules.
 
@@ -172,11 +172,11 @@ The new top level keys (`deployments`, `connections`, `toolboxes`, `skills`,
 `routines`, `agents`, and `endpoint`) do not need new fields on `ServiceConfig`. They
 land in the existing inline map and travel to the extension unchanged.
 
-- `pkg/project/service_config.go` declares
+- `cli/azd/pkg/project/service_config.go` declares
   `AdditionalProperties map[string]any` with the `yaml:",inline"` tag. Any key on the
   service entry that is not a known field is captured here. The Foundry keys parse today
   with no core struct change.
-- `pkg/project/mapper_registry.go` converts both `Config` and `AdditionalProperties`
+- `cli/azd/pkg/project/mapper_registry.go` converts both `Config` and `AdditionalProperties`
   into a `google.protobuf.Struct` and sends them to the service target extension over
   gRPC. The extension receives the Foundry keys as structured data.
 
@@ -213,9 +213,9 @@ The extension already registers one service target. It adds a second one next to
   `type: service-target`.
 
 Core dispatch needs no change. When azd reads `host: microsoft.foundry`, the service
-manager in `pkg/project/service_manager.go` resolves the host string against the IoC
-container. Extension hosts are registered through the gRPC path in
-`internal/grpcserver/service_target_service.go`, which wraps the extension in an
+manager in `cli/azd/pkg/project/service_manager.go` resolves the host string against the
+IoC container. Extension hosts are registered through the gRPC path in
+`cli/azd/internal/grpcserver/service_target_service.go`, which wraps the extension in an
 `ExternalServiceTarget`. The same path already serves `azure.ai.agent`.
 
 Optional rollout control: `service_manager.go` checks `alpha.IsFeatureKey(host)` before
@@ -293,8 +293,10 @@ it into core later if other extensions need includes.
 
 **Resolution rules.**
 
-- A `$ref` path resolves relative to the file that holds it, so nested includes work.
-  Absolute paths and URLs are also accepted.
+- A `$ref` path must be a relative path, resolved relative to the file that holds it,
+  so nested includes work. Absolute paths and remote URLs are not accepted by default;
+  restrict to project-local paths to avoid reading arbitrary files or fetching remote
+  content. Broader support can be added behind an explicit opt-in if needed.
 - Sibling keys overlay on the loaded file. Use a shallow overlay at the top level of the
   object. Scalars and arrays from the sibling replace the loaded value. This keeps the
   result easy to predict.

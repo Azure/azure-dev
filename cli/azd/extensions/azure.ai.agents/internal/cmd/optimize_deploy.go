@@ -116,7 +116,15 @@ func (a *OptimizeDeployAction) runDirect(
 		return err
 	}
 	optClient := optimize_api.NewOptimizeClient(projectEndpoint, credential)
-	candidateConfig, err := optClient.GetCandidateConfig(ctx, a.flags.candidate)
+
+	// Resolve the optimization job ID — candidate endpoints are nested under it.
+	jobID := loadOptimizeJobIDForAgent(ctx, agentName, a.envName)
+	if jobID == "" {
+		return fmt.Errorf(
+			"no optimization job found in the environment; run 'azd ai agent optimize' first")
+	}
+
+	candidateConfig, err := optClient.GetCandidateConfig(ctx, jobID, a.flags.candidate)
 	if err != nil {
 		return fmt.Errorf("failed to fetch candidate config: %w", err)
 	}
@@ -178,7 +186,7 @@ func (a *OptimizeDeployAction) runDirect(
 	}
 
 	// Step 5: Report the deployment to the optimization service (best-effort).
-	if err := optClient.ReportDeployment(ctx, &optimize_api.DeploymentReport{
+	if err := optClient.ReportDeployment(ctx, jobID, &optimize_api.DeploymentReport{
 		CandidateID:  a.flags.candidate,
 		AgentName:    agentName,
 		AgentVersion: versionObj.Version,

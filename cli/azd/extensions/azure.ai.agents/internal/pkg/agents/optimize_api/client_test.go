@@ -24,7 +24,9 @@ func newTestClient(serverURL string) *OptimizeClient {
 	pipeline := runtime.NewPipeline(
 		"test",
 		"v0.0.0",
-		runtime.PipelineOptions{},
+		runtime.PipelineOptions{
+			PerCall: []policy.Policy{foundryFeaturesPolicy{}},
+		},
 		&policy.ClientOptions{},
 	)
 	return &OptimizeClient{
@@ -52,7 +54,7 @@ func TestStartOptimize(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.True(t, strings.HasSuffix(r.URL.Path, "/optimize"))
+		assert.True(t, strings.HasSuffix(r.URL.Path, "/agent_optimization_jobs"))
 		assert.Contains(t, r.URL.RawQuery, "api-version="+APIVersion)
 
 		w.WriteHeader(http.StatusAccepted)
@@ -81,22 +83,22 @@ func TestGetOptimizeStatus(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Contains(t, r.URL.Path, "/optimize/op-123")
+		assert.Contains(t, r.URL.Path, "/agent_optimization_jobs/op-123")
 		assert.Contains(t, r.URL.RawQuery, "api-version="+APIVersion)
+		assert.Equal(t, "AgentsOptimization=V2Preview", r.Header.Get("Foundry-Features"))
 
 		_ = json.NewEncoder(w).Encode(OptimizeJobStatus{
-			OperationID: "op-123",
-			Status:      StatusCompleted,
-			CreatedAt:   "2024-01-01T00:00:00Z",
-			UpdatedAt:   "2024-01-01T01:00:00Z",
-			Best: &CandidateResult{
-				Name:     "candidate-1",
-				AvgScore: 0.92,
-				PassRate: 0.95,
-			},
-			Baseline: &CandidateResult{
-				Name:     "baseline",
-				AvgScore: 0.6,
+			ID:        "op-123",
+			Status:    StatusCompleted,
+			CreatedAt: 1781036157,
+			UpdatedAt: 1781037526,
+			Result: &OptimizeResult{
+				Best:     "cand-1",
+				Baseline: "cand-0",
+				Candidates: []CandidateResult{
+					{Name: "candidate-1", CandidateID: "cand-1", AvgScore: 0.92},
+					{Name: "baseline", CandidateID: "cand-0", AvgScore: 0.6},
+				},
 			},
 		})
 	}))
@@ -106,12 +108,12 @@ func TestGetOptimizeStatus(t *testing.T) {
 	status, err := client.GetOptimizeStatus(context.Background(), "op-123")
 
 	require.NoError(t, err)
-	assert.Equal(t, "op-123", status.OperationID)
+	assert.Equal(t, "op-123", status.ID)
 	assert.Equal(t, StatusCompleted, status.Status)
-	require.NotNil(t, status.Best)
-	assert.InDelta(t, 0.92, status.Best.AvgScore, 0.001)
-	require.NotNil(t, status.Baseline)
-	assert.InDelta(t, 0.6, status.Baseline.AvgScore, 0.001)
+	require.NotNil(t, status.BestCandidate())
+	assert.InDelta(t, 0.92, status.BestCandidate().AvgScore, 0.001)
+	require.NotNil(t, status.BaselineCandidate())
+	assert.InDelta(t, 0.6, status.BaselineCandidate().AvgScore, 0.001)
 }
 
 func TestListOptimizeJobs(t *testing.T) {
@@ -125,8 +127,8 @@ func TestListOptimizeJobs(t *testing.T) {
 
 		_ = json.NewEncoder(w).Encode(OptimizeListResponse{
 			Data: []OptimizeJobStatus{
-				{OperationID: "op-1", Status: StatusRunning},
-				{OperationID: "op-2", Status: StatusRunning},
+				{ID: "op-1", Status: StatusRunning},
+				{ID: "op-2", Status: StatusRunning},
 			},
 			FirstID: "op-1",
 			LastID:  "op-2",
@@ -150,7 +152,7 @@ func TestCancelOptimize(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Contains(t, r.URL.Path, "/optimize/op-xyz/cancel")
+		assert.Contains(t, r.URL.Path, "/agent_optimization_jobs/op-xyz:cancel")
 		assert.Contains(t, r.URL.RawQuery, "api-version="+APIVersion)
 
 		_ = json.NewEncoder(w).Encode(OptimizeCancelResponse{
@@ -226,7 +228,7 @@ func TestReportDeployment(t *testing.T) {
 	var capturedBody map[string]string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Contains(t, r.URL.Path, "/optimize/candidates/cand-42:promote")
+		assert.Contains(t, r.URL.Path, "/agent_optimization_jobs/opt-1/candidates/cand-42:promote")
 		assert.Contains(t, r.URL.RawQuery, "api-version="+APIVersion)
 
 		err := json.NewDecoder(r.Body).Decode(&capturedBody)
@@ -237,17 +239,17 @@ func TestReportDeployment(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	err := client.ReportDeployment(t.Context(), &DeploymentReport{
+	err := client.ReportDeployment(t.Context(), "opt-1", &DeploymentReport{
 		CandidateID:  "cand-42",
 		AgentName:    "my-agent",
 		AgentVersion: "3",
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, "my-agent", capturedBody["agentName"])
-	assert.Equal(t, "3", capturedBody["agentVersion"])
+	assert.Equal(t, "my-agent", capturedBody["agent_name"])
+	assert.Equal(t, "3", capturedBody["agent_version"])
 	// CandidateID should not appear in the body (json:"-")
-	assert.Empty(t, capturedBody["candidateId"])
+	assert.Empty(t, capturedBody["candidate_id"])
 }
 
 func TestReportDeployment_HTTPError(t *testing.T) {
@@ -260,7 +262,7 @@ func TestReportDeployment_HTTPError(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	err := client.ReportDeployment(t.Context(), &DeploymentReport{
+	err := client.ReportDeployment(t.Context(), "opt-1", &DeploymentReport{
 		CandidateID:  "bad-id",
 		AgentName:    "agent",
 		AgentVersion: "1",
@@ -268,4 +270,91 @@ func TestReportDeployment_HTTPError(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "400")
+}
+
+// ---------------------------------------------------------------------------
+// Candidate endpoints — nested under agent_optimization_jobs/{jobId}
+// ---------------------------------------------------------------------------
+
+func TestGetCandidateConfig(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Contains(t, r.URL.Path, "/agent_optimization_jobs/opt-1/candidates/cand-9/config")
+		assert.Contains(t, r.URL.RawQuery, "api-version="+APIVersion)
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"system_prompt":"hello","model":"gpt-4o"}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	cfg, err := client.GetCandidateConfig(context.Background(), "opt-1", "cand-9")
+
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"system_prompt":"hello","model":"gpt-4o"}`, string(cfg))
+}
+
+func TestGetCandidateConfig_InvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`not-json`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	_, err := client.GetCandidateConfig(context.Background(), "opt-1", "cand-9")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not valid JSON")
+}
+
+func TestGetCandidate(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Contains(t, r.URL.Path, "/agent_optimization_jobs/opt-1/candidates/cand-9")
+		assert.Contains(t, r.URL.RawQuery, "api-version="+APIVersion)
+
+		_ = json.NewEncoder(w).Encode(CandidateManifest{
+			Files: []CandidateFile{
+				{Path: "skills/foo/SKILL.md", Type: "skill"},
+				{Path: "tools.json", Type: "tools"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	manifest, err := client.GetCandidate(context.Background(), "opt-1", "cand-9")
+
+	require.NoError(t, err)
+	require.Len(t, manifest.Files, 2)
+	assert.Equal(t, "skills/foo/SKILL.md", manifest.Files[0].Path)
+	assert.Equal(t, "skill", manifest.Files[0].Type)
+}
+
+func TestGetCandidateFile(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Contains(t, r.URL.Path, "/agent_optimization_jobs/opt-1/candidates/cand-9/files")
+		assert.Equal(t, "skills/foo/SKILL.md", r.URL.Query().Get("path"))
+		assert.Contains(t, r.URL.RawQuery, "api-version="+APIVersion)
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("# Skill content"))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	content, err := client.GetCandidateFile(context.Background(), "opt-1", "cand-9", "skills/foo/SKILL.md")
+
+	require.NoError(t, err)
+	assert.Equal(t, "# Skill content", content)
 }

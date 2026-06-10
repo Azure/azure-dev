@@ -87,14 +87,15 @@ func resolveOptimizeAgent(ctx context.Context, flagValue, envName string, noProm
 
 // optimizeFlags holds CLI flags for the optimize (submit) command.
 type optimizeFlags struct {
-	configFile        string // path to YAML config file
-	agent             string // agent name override
-	dataset           string // existing dataset file or registered dataset name
-	evalModel         string // model for evaluation
-	optimizationModel string // model for optimization reasoning (gpt-5 family)
-	maxIterations     int    // max optimization iterations per strategy
-	noWait            bool   // return immediately after submission
-	pollInterval      int    // polling interval in seconds
+	configFile        string   // path to YAML config file
+	agent             string   // agent name override
+	dataset           string   // existing dataset file or registered dataset name
+	evalModel         string   // model for evaluation
+	optimizationModel string   // model for optimization reasoning (gpt-5 family)
+	evaluators        []string // built-in or custom evaluator names
+	maxCandidates     int      // max optimization candidates to generate
+	noWait            bool     // return immediately after submission
+	pollInterval      int      // polling interval in seconds
 	optimizeConnectionFlags
 }
 
@@ -147,8 +148,10 @@ Use --config for a custom YAML spec, or just provide the agent name to use sensi
 	cmd.Flags().StringVarP(&flags.dataset, "dataset", "d", "", "Existing local file or registered dataset name")
 	cmd.Flags().StringVarP(&flags.evalModel, "eval-model", "m", "", "Model for evaluation (required)")
 	cmd.Flags().StringVar(&flags.optimizationModel, "optimize-model", "",
-		"Model for optimization reasoning (gpt-5 family recommended; falls back to eval model when not set)")
-	cmd.Flags().IntVar(&flags.maxIterations, "max-iterations", 0, "Maximum number of optimization iterations (must be >= 1; default: 5)")
+		"Model for optimization reasoning (gpt-5 family recommended; required)")
+	cmd.Flags().StringArrayVar(&flags.evaluators, "evaluator", nil,
+		"Built-in or custom evaluator name (repeatable; required when not set in config)")
+	cmd.Flags().IntVar(&flags.maxCandidates, "max-candidates", 0, "Maximum number of optimization candidates to generate (must be >= 1; default: 5)")
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Submit job and return immediately without waiting for completion")
 	cmd.Flags().IntVar(&flags.pollInterval, "poll-interval", 5, "Polling interval in seconds")
 	flags.optimizeConnectionFlags.register(cmd)
@@ -292,7 +295,7 @@ func (a *OptimizeAction) applyOverrides(
 	// Apply --dataset flag before anything else.
 	if a.flags.dataset != "" {
 		if eval_api.IsDatasetName(a.flags.dataset) {
-			cfg.DatasetReference = &opt_eval.DatasetRef{Name: a.flags.dataset}
+			cfg.Dataset = &opt_eval.DatasetRef{Name: a.flags.dataset}
 			cfg.DatasetFile = ""
 		} else {
 			resolved, err := resolveLocalDatasetFile(resolveCwdRelative(a.flags.dataset), agentProject)
@@ -300,7 +303,7 @@ func (a *OptimizeAction) applyOverrides(
 				return err
 			}
 			cfg.DatasetFile = resolved
-			cfg.DatasetReference = nil
+			cfg.Dataset = nil
 		}
 	}
 
@@ -318,8 +321,13 @@ func (a *OptimizeAction) applyOverrides(
 	if a.flags.optimizationModel != "" {
 		cfg.Options.OptimizationModel = a.flags.optimizationModel
 	}
-	if a.flags.maxIterations > 0 {
-		cfg.Options.MaxIterations = &a.flags.maxIterations
+	if len(a.flags.evaluators) > 0 {
+		// Append flag evaluators to any already in the config (deduped by name)
+		// so --evaluator adds to config evaluators instead of replacing them.
+		cfg.Evaluators = mergeEvaluators(cfg.Evaluators, evaluatorsFromFlags(a.flags.evaluators))
+	}
+	if a.flags.maxCandidates > 0 {
+		cfg.Options.MaxCandidates = &a.flags.maxCandidates
 	}
 
 	// Resolve agent config: try existing config pointer, then default baseline.
@@ -381,7 +389,7 @@ func (a *OptimizeAction) applyOverrides(
 	}
 
 	// Resolve dataset: prompt user if neither file nor reference is set.
-	if cfg.DatasetFile == "" && cfg.DatasetReference == nil {
+	if cfg.DatasetFile == "" && cfg.Dataset == nil {
 		if err := resolveOptimizeDataset(ctx, azdClient, cfg, agentProject, a.noPrompt); err != nil {
 			return err
 		}
@@ -501,7 +509,7 @@ func (a *OptimizeAction) submitJob(
 	printOptimizePortalLink(ctx, out, cfg.Agent.Name, resp.OperationID, a.envName)
 	fmt.Fprintln(out)
 
-	saveLastOptimizeJobID(ctx, resp.OperationID, a.envName)
+	saveLastOptimizeJobID(ctx, cfg.Agent.Name, resp.OperationID, a.envName)
 
 	return resp, client, nil
 }
@@ -530,14 +538,9 @@ func pollOptimizeJob(
 			progress := fmt.Sprintf("\r  %s %s", spin, status.Status)
 			if status.Progress != nil {
 				p := status.Progress
-				if p.CurrentTargetAttribute != "" {
-					progress += fmt.Sprintf(" · strategy: %s", p.CurrentTargetAttribute)
-				}
-				if p.CurrentIteration > 0 {
-					progress += fmt.Sprintf(" · iteration %d", p.CurrentIteration)
-				}
+				progress += fmt.Sprintf(" · candidates completed: %d", p.CandidatesCompleted)
 				if p.BestScore > 0 {
-					progress += fmt.Sprintf(" · score: %.2f", p.BestScore)
+					progress += fmt.Sprintf(" · best score: %.2f", p.BestScore)
 				}
 			}
 			progress += fmt.Sprintf(" · %s", elapsed)
@@ -560,7 +563,7 @@ func printOptimizeResults(ctx context.Context, out io.Writer, status *optimize_a
 		fmt.Fprintf(out, "\n  %s %s\n", color.RedString("Error:"), status.Error.Message)
 	}
 
-	if len(status.Candidates) == 0 {
+	if len(status.Candidates()) == 0 {
 		return
 	}
 
@@ -569,37 +572,56 @@ func printOptimizeResults(ctx context.Context, out io.Writer, status *optimize_a
 
 	_, _ = bold.Fprintln(out, "\nResults:")
 	// Resolve eval portal prefix once for building hyperlinks in the table.
-	evalURLs := buildCandidateEvalURLs(ctx, status.Candidates, envName)
+	candidates := status.Candidates()
+	evalURLs := buildCandidateEvalURLs(ctx, candidates, envName)
 	hasEvalLinks := len(evalURLs) > 0
 
-	header := fmt.Sprintf("  %-20s %7s %7s", "Candidate", "Score", "Pass")
-	sep := fmt.Sprintf("  %-20s %7s %7s",
+	best := status.BestCandidate()
+	bestName := ""
+	if best != nil {
+		bestName = best.Name
+	}
+
+	// Show the Strategy column only when at least one candidate reports the
+	// mutated agent attributes. It is placed last so it can grow freely.
+	hasStrategy := false
+	for _, c := range candidates {
+		if len(c.MutationKeys()) > 0 {
+			hasStrategy = true
+			break
+		}
+	}
+
+	header := fmt.Sprintf("  %-20s %7s", "Candidate", "Score")
+	sep := fmt.Sprintf("  %-20s %7s",
 		strings.Repeat("─", 20),
-		strings.Repeat("─", 7), strings.Repeat("─", 7))
+		strings.Repeat("─", 7))
 	if hasEvalLinks {
 		header += "  Eval"
-		sep += "  " + strings.Repeat("─", 6)
+		sep += "  " + strings.Repeat("─", 4)
+	}
+	if hasStrategy {
+		header += "  Strategy"
+		sep += "  " + strings.Repeat("─", 8)
 	}
 	fmt.Fprintln(out, header)
 	fmt.Fprintln(out, sep)
 
-	bestName := ""
-	if status.Best != nil {
-		bestName = status.Best.Name
-	}
-
-	for _, c := range status.Candidates {
+	for _, c := range candidates {
 		isBest := c.Name == bestName
 		name := c.Name
 		if isBest {
 			name += " ★"
 		}
 
-		line := fmt.Sprintf("  %-20s %7.2f %6.0f%%", name, c.AvgScore, c.PassRate*100)
+		line := fmt.Sprintf("  %-20s %7.2f", name, c.AvgScore)
 		if hasEvalLinks {
 			if url, ok := evalURLs[c.Name]; ok {
 				line += "  " + terminalHyperlink(url, "View")
 			}
+		}
+		if hasStrategy {
+			line += "  " + strings.Join(c.MutationKeys(), ", ")
 		}
 		if isBest {
 			_, _ = green.Fprintln(out, line)
@@ -610,7 +632,7 @@ func printOptimizeResults(ctx context.Context, out io.Writer, status *optimize_a
 
 	// Print candidate IDs for deploy
 	hasIDs := false
-	for _, c := range status.Candidates {
+	for _, c := range candidates {
 		if c.CandidateID != "" {
 			if !hasIDs {
 				fmt.Fprintf(out, "\n  Candidate IDs:\n")
@@ -625,19 +647,16 @@ func printOptimizeResults(ctx context.Context, out io.Writer, status *optimize_a
 	}
 
 	// Print next-step commands for best candidate
-	if status.Best != nil && status.Best.CandidateID != "" {
-		agentName := ""
-		if status.Agent != nil {
-			agentName = status.Agent.AgentName
-		}
+	if best != nil && best.CandidateID != "" {
+		agentName := status.AgentName()
 		if hasProject {
 			fmt.Fprintf(out, "\n  Apply the best candidate locally, then deploy:\n")
-			fmt.Fprintf(out, "    azd ai agent optimize apply --candidate %s\n", status.Best.CandidateID)
+			fmt.Fprintf(out, "    azd ai agent optimize apply --candidate %s\n", best.CandidateID)
 			fmt.Fprintf(out, "    azd deploy\n")
 		} else {
 			fmt.Fprintf(out, "\n  Deploy the best candidate:\n")
 			fmt.Fprintf(out, "    azd ai agent optimize deploy --candidate %s --agent %s\n",
-				status.Best.CandidateID, agentName)
+				best.CandidateID, agentName)
 		}
 	}
 	fmt.Fprintln(out)

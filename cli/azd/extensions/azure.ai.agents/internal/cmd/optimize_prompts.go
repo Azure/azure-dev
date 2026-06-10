@@ -341,7 +341,7 @@ func resolveOptimizeDataset(
 ) error {
 	if noPrompt {
 		return fmt.Errorf(
-			"a dataset is required: use --dataset <file-or-name>, or provide dataset_file / dataset_reference " +
+			"a dataset is required: use --dataset <file-or-name>, or provide a dataset " +
 				"in your config, or run 'azd ai agent eval generate' to generate one")
 	}
 
@@ -354,16 +354,17 @@ func resolveOptimizeDataset(
 		return err
 	}
 	cfg.DatasetFile = file
-	cfg.DatasetReference = ref
+	cfg.Dataset = ref
 	return nil
 }
 
-// hasModelConfig reports whether OptimizationConfig contains a "model" entry.
+// hasModelConfig reports whether OptimizationConfig contains a
+// "model_search_space" entry.
 func hasModelConfig(oc opt_eval.OptimizationConfig) bool {
 	if oc == nil {
 		return false
 	}
-	_, ok := oc["model"]
+	_, ok := oc["model_search_space"]
 	return ok
 }
 
@@ -420,7 +421,7 @@ func resolveOptimizeTargetModels(
 		if cfg.Options.OptimizationConfig == nil {
 			cfg.Options.OptimizationConfig = make(opt_eval.OptimizationConfig)
 		}
-		cfg.Options.OptimizationConfig["model"] = modelJSON
+		cfg.Options.OptimizationConfig["model_search_space"] = modelJSON
 	}
 
 	return nil

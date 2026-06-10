@@ -11,6 +11,7 @@ import (
 	"io"
 	"strings"
 
+	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -107,22 +108,22 @@ func printOptimizeListTable(out io.Writer, jobs []optimize_api.OptimizeJobStatus
 
 	for _, job := range jobs {
 		scoreStr := "—"
-		if job.Best != nil {
-			scoreStr = fmt.Sprintf("%.2f", job.Best.AvgScore)
+		if best := job.BestCandidate(); best != nil {
+			scoreStr = fmt.Sprintf("%.2f", best.AvgScore)
 		}
 
 		agentName := "—"
-		if job.Agent != nil && job.Agent.AgentName != "" {
-			agentName = job.Agent.AgentName
+		if name := job.AgentName(); name != "" {
+			agentName = name
 		}
 
-		created := job.CreatedAt
-		if created == "" {
-			created = "—"
+		created := "—"
+		if job.CreatedAt != 0 {
+			created = eval_api.FormatTimestamp(job.CreatedAt)
 		}
 
 		fmt.Fprintf(out, "  %-38s %-12s %-14s %7s   %s\n",
-			job.OperationID,
+			job.ID,
 			formatOptimizeStatus(job.Status),
 			truncateString(agentName, 14),
 			scoreStr,

@@ -71,9 +71,9 @@ func runEvalUpdate(ctx context.Context, flags *evalUpdateFlags, noPrompt bool) e
 	}
 
 	// Detect what has local changes.
-	hasDataset := evalCfg.DatasetReference != nil &&
-		evalCfg.DatasetReference.Name != "" &&
-		evalCfg.DatasetReference.LocalURI != ""
+	hasDataset := evalCfg.Dataset != nil &&
+		evalCfg.Dataset.Name != "" &&
+		evalCfg.Dataset.LocalURI != ""
 	hasEvaluators := len(evalCfg.Evaluators.FindByLocalURI()) > 0
 
 	// Determine what to update based on flags and interactive prompts.
@@ -85,7 +85,7 @@ func runEvalUpdate(ctx context.Context, flags *evalUpdateFlags, noPrompt bool) e
 		if hasDataset {
 			updateDS = confirmUpdate(ctx, resolved, fmt.Sprintf(
 				"Dataset %s has local changes. Upload new version?",
-				evalCfg.DatasetReference.Name,
+				evalCfg.Dataset.Name,
 			))
 		}
 		if hasEvaluators {
@@ -145,7 +145,7 @@ func updateDataset(
 	evalCfg *evalConfig,
 	configPath string,
 ) (int, error) {
-	ref := evalCfg.DatasetReference
+	ref := evalCfg.Dataset
 	if ref == nil || ref.Name == "" || ref.LocalURI == "" {
 		return 0, nil
 	}

@@ -24,9 +24,9 @@ func TestValidate_RequiresName(t *testing.T) {
 
 	cfg := &EvalConfig{
 		Config: opt_eval.Config{
-			Agent:            opt_eval.AgentRef{Name: "agent-1"},
-			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
-			Evaluators:       opt_eval.EvaluatorList{{Name: "coherence"}},
+			Agent:      opt_eval.AgentRef{Name: "agent-1"},
+			Dataset:    &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
+			Evaluators: opt_eval.EvaluatorList{{Name: "coherence"}},
 		},
 	}
 	err := cfg.Validate()
@@ -39,10 +39,10 @@ func TestValidate_RequiresAgentName(t *testing.T) {
 
 	cfg := &EvalConfig{
 		Config: opt_eval.Config{
-			Name:             "my-eval",
-			Agent:            opt_eval.AgentRef{},
-			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
-			Evaluators:       opt_eval.EvaluatorList{{Name: "coherence"}},
+			Name:       "my-eval",
+			Agent:      opt_eval.AgentRef{},
+			Dataset:    &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
+			Evaluators: opt_eval.EvaluatorList{{Name: "coherence"}},
 		},
 	}
 	err := cfg.Validate()
@@ -55,9 +55,9 @@ func TestValidate_RequiresEvaluators(t *testing.T) {
 
 	cfg := &EvalConfig{
 		Config: opt_eval.Config{
-			Name:             "my-eval",
-			Agent:            opt_eval.AgentRef{Name: "agent-1"},
-			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
+			Name:    "my-eval",
+			Agent:   opt_eval.AgentRef{Name: "agent-1"},
+			Dataset: &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
 		},
 	}
 	err := cfg.Validate()
@@ -77,24 +77,25 @@ func TestValidate_RequiresDataset(t *testing.T) {
 	}
 	err := cfg.Validate()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "dataset_file or dataset_reference is required")
+	assert.Contains(t, err.Error(), "a dataset is required")
 }
 
-func TestValidate_MutuallyExclusiveDataset(t *testing.T) {
+func TestValidate_DatasetFileTakesPrecedence(t *testing.T) {
 	t.Parallel()
 
+	// dataset_file (deprecated local form) and a registered dataset may coexist;
+	// the local dataset_file takes precedence and validation passes.
 	cfg := &EvalConfig{
 		Config: opt_eval.Config{
-			Name:             "my-eval",
-			Agent:            opt_eval.AgentRef{Name: "agent-1"},
-			DatasetFile:      "tasks.jsonl",
-			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
-			Evaluators:       opt_eval.EvaluatorList{{Name: "coherence"}},
+			Name:        "my-eval",
+			Agent:       opt_eval.AgentRef{Name: "agent-1"},
+			DatasetFile: "tasks.jsonl",
+			Dataset:     &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "coherence"}},
 		},
 	}
-	err := cfg.Validate()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "mutually exclusive")
+	require.NoError(t, cfg.Validate())
+	assert.Equal(t, "tasks.jsonl", cfg.LocalDatasetPath())
 }
 
 func TestValidate_ValidWithDatasetFile(t *testing.T) {
@@ -116,10 +117,10 @@ func TestValidate_ValidWithDatasetReference(t *testing.T) {
 
 	cfg := &EvalConfig{
 		Config: opt_eval.Config{
-			Name:             "my-eval",
-			Agent:            opt_eval.AgentRef{Name: "agent-1"},
-			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
-			Evaluators:       opt_eval.EvaluatorList{{Name: "coherence"}},
+			Name:       "my-eval",
+			Agent:      opt_eval.AgentRef{Name: "agent-1"},
+			Dataset:    &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
+			Evaluators: opt_eval.EvaluatorList{{Name: "coherence"}},
 		},
 	}
 	assert.NoError(t, cfg.Validate())
@@ -143,8 +144,8 @@ func TestEvalConfig_RoundTrip_FullFields(t *testing.T) {
 				Version: "v3",
 				Model:   "gpt-4.1",
 			},
-			DatasetReference: &opt_eval.DatasetRef{Name: "golden-data", Version: "v2"},
-			Evaluators:       opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}, {Name: "custom-quality"}},
+			Dataset:    &opt_eval.DatasetRef{Name: "golden-data", Version: "v2"},
+			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}, {Name: "custom-quality"}},
 		},
 		Options: &opt_eval.Options{
 			EvalModel: "gpt-4o",
@@ -161,9 +162,9 @@ func TestEvalConfig_RoundTrip_FullFields(t *testing.T) {
 	assert.Equal(t, agent_yaml.AgentKind("hosted"), loaded.Agent.Kind)
 	assert.Equal(t, "v3", loaded.Agent.Version)
 	assert.Equal(t, "gpt-4.1", loaded.Agent.Model)
-	require.NotNil(t, loaded.DatasetReference)
-	assert.Equal(t, "golden-data", loaded.DatasetReference.Name)
-	assert.Equal(t, "v2", loaded.DatasetReference.Version)
+	require.NotNil(t, loaded.Dataset)
+	assert.Equal(t, "golden-data", loaded.Dataset.Name)
+	assert.Equal(t, "v2", loaded.Dataset.Version)
 	require.Len(t, loaded.Evaluators, 2)
 	assert.Equal(t, "builtin.task_adherence", loaded.Evaluators[0].Name)
 	assert.Equal(t, "custom-quality", loaded.Evaluators[1].Name)
@@ -189,7 +190,7 @@ func TestEvalConfig_RoundTrip_MinimalFields(t *testing.T) {
 
 	assert.Equal(t, "simple-agent", loaded.Agent.Name)
 	assert.Equal(t, "data.jsonl", loaded.DatasetFile)
-	assert.Nil(t, loaded.DatasetReference)
+	assert.Nil(t, loaded.Dataset)
 	assert.Empty(t, loaded.Evaluators)
 	assert.True(t, loaded.Agent.Instruction.IsEmpty())
 	assert.Zero(t, loaded.MaxSamples)
@@ -263,9 +264,9 @@ func TestToAgentTargetAdaptableEvalGroupRequest_WithDatasetReference(t *testing.
 
 	cfg := &EvalConfig{
 		Config: opt_eval.Config{
-			Name:             "ref-eval",
-			Agent:            opt_eval.AgentRef{Name: "agent-1"},
-			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
+			Name:    "ref-eval",
+			Agent:   opt_eval.AgentRef{Name: "agent-1"},
+			Dataset: &opt_eval.DatasetRef{Name: "ds", Version: "v1"},
 		},
 	}
 

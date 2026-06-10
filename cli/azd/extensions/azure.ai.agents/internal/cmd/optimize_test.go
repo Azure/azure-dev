@@ -107,8 +107,8 @@ func TestDefaultOptimizeConfig(t *testing.T) {
 	assert.Equal(t, "my-agent", cfg.Agent.Name)
 	require.NotNil(t, cfg.Options)
 	assert.Empty(t, cfg.Options.EvalModel)
-	require.Len(t, cfg.Evaluators, 1)
-	assert.Equal(t, "builtin.task_adherence", cfg.Evaluators[0].Name)
+	// No default evaluator is set; it must come from config or --evaluator.
+	assert.Empty(t, cfg.Evaluators)
 }
 
 // ---- LoadOptimizeConfig + reconcileConfigAgent (--config path) ----
@@ -191,9 +191,10 @@ func TestApplyOverrides_DatasetFlag_LocalFile(t *testing.T) {
 
 	cfg := &OptimizeConfig{
 		Config: opt_eval.Config{
-			Agent: opt_eval.AgentRef{Name: "a", Instruction: opt_eval.InstructionRef{Value: "test"}},
+			Agent:      opt_eval.AgentRef{Name: "a", Instruction: opt_eval.InstructionRef{Value: "test"}},
+			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
-		Options: &opt_eval.Options{EvalModel: "gpt-4o"},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o", OptimizationModel: "gpt-5"},
 	}
 
 	action := &OptimizeAction{
@@ -204,7 +205,7 @@ func TestApplyOverrides_DatasetFlag_LocalFile(t *testing.T) {
 	err := action.applyOverrides(t.Context(), cfg, dir)
 	require.NoError(t, err)
 	assert.Equal(t, dataFile, cfg.DatasetFile)
-	assert.Nil(t, cfg.DatasetReference)
+	assert.Nil(t, cfg.Dataset)
 }
 
 func TestApplyOverrides_DatasetFlag_RegisteredName(t *testing.T) {
@@ -212,9 +213,10 @@ func TestApplyOverrides_DatasetFlag_RegisteredName(t *testing.T) {
 
 	cfg := &OptimizeConfig{
 		Config: opt_eval.Config{
-			Agent: opt_eval.AgentRef{Name: "a", Instruction: opt_eval.InstructionRef{Value: "test"}},
+			Agent:      opt_eval.AgentRef{Name: "a", Instruction: opt_eval.InstructionRef{Value: "test"}},
+			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
-		Options: &opt_eval.Options{EvalModel: "gpt-4o"},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o", OptimizationModel: "gpt-5"},
 	}
 
 	action := &OptimizeAction{
@@ -225,8 +227,8 @@ func TestApplyOverrides_DatasetFlag_RegisteredName(t *testing.T) {
 	err := action.applyOverrides(t.Context(), cfg, "")
 	require.NoError(t, err)
 	assert.Empty(t, cfg.DatasetFile)
-	require.NotNil(t, cfg.DatasetReference)
-	assert.Equal(t, "my-golden-dataset", cfg.DatasetReference.Name)
+	require.NotNil(t, cfg.Dataset)
+	assert.Equal(t, "my-golden-dataset", cfg.Dataset.Name)
 }
 
 func TestApplyOverrides_DatasetFlag_OverridesExisting(t *testing.T) {
@@ -237,10 +239,11 @@ func TestApplyOverrides_DatasetFlag_OverridesExisting(t *testing.T) {
 
 	cfg := &OptimizeConfig{
 		Config: opt_eval.Config{
-			Agent:            opt_eval.AgentRef{Name: "a", Instruction: opt_eval.InstructionRef{Value: "test"}},
-			DatasetReference: &opt_eval.DatasetRef{Name: "old-ref"},
+			Agent:      opt_eval.AgentRef{Name: "a", Instruction: opt_eval.InstructionRef{Value: "test"}},
+			Dataset:    &opt_eval.DatasetRef{Name: "old-ref"},
+			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
-		Options: &opt_eval.Options{EvalModel: "gpt-4o"},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o", OptimizationModel: "gpt-5"},
 	}
 
 	action := &OptimizeAction{
@@ -251,7 +254,7 @@ func TestApplyOverrides_DatasetFlag_OverridesExisting(t *testing.T) {
 	err := action.applyOverrides(t.Context(), cfg, dir)
 	require.NoError(t, err)
 	assert.Equal(t, dataFile, cfg.DatasetFile, "file should replace ref")
-	assert.Nil(t, cfg.DatasetReference, "ref should be cleared")
+	assert.Nil(t, cfg.Dataset, "ref should be cleared")
 }
 
 // ---- eval.yaml auto-use in --no-prompt mode ----
@@ -279,7 +282,7 @@ options:
 	require.NoError(t, err)
 	assert.Equal(t, "travel-agent", cfg.Agent.Name)
 	assert.Equal(t, dataFile, cfg.DatasetFile, "dataset_file from eval.yaml should be loaded")
-	assert.Nil(t, cfg.DatasetReference)
+	assert.Nil(t, cfg.Dataset)
 	assert.Equal(t, "gpt-4o", cfg.Options.EvalModel)
 }
 
@@ -304,9 +307,9 @@ options:
 	require.NoError(t, err)
 	assert.Equal(t, "travel-agent", cfg.Agent.Name)
 	assert.Empty(t, cfg.DatasetFile)
-	require.NotNil(t, cfg.DatasetReference, "dataset_reference from eval.yaml should be loaded")
-	assert.Equal(t, "golden-dataset", cfg.DatasetReference.Name)
-	assert.Equal(t, "2", cfg.DatasetReference.Version)
+	require.NotNil(t, cfg.Dataset, "dataset_reference from eval.yaml should be loaded")
+	assert.Equal(t, "golden-dataset", cfg.Dataset.Name)
+	assert.Equal(t, "2", cfg.Dataset.Version)
 }
 
 func TestApplyOverrides_NoPrompt_EvalYAML_WithDataset_Succeeds(t *testing.T) {
@@ -324,7 +327,7 @@ func TestApplyOverrides_NoPrompt_EvalYAML_WithDataset_Succeeds(t *testing.T) {
 			DatasetFile: dataFile,
 			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
-		Options: &opt_eval.Options{EvalModel: "gpt-4o"},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o", OptimizationModel: "gpt-5"},
 	}
 
 	action := &OptimizeAction{
@@ -379,11 +382,13 @@ func TestPrintOptimizeResults_TableHasCandidateScorePass(t *testing.T) {
 	t.Parallel()
 
 	status := &optimize_api.OptimizeJobStatus{
-		Candidates: []optimize_api.CandidateResult{
-			{Name: "baseline", AvgScore: 0.91, PassRate: 1.0},
-			{Name: "candidate_1", AvgScore: 0.95, PassRate: 1.0},
+		Result: &optimize_api.OptimizeResult{
+			Best: "candidate_1",
+			Candidates: []optimize_api.CandidateResult{
+				{Name: "baseline", AvgScore: 0.91},
+				{Name: "candidate_1", AvgScore: 0.95},
+			},
 		},
-		Best: &optimize_api.CandidateResult{Name: "candidate_1"},
 	}
 
 	var buf strings.Builder
@@ -393,30 +398,31 @@ func TestPrintOptimizeResults_TableHasCandidateScorePass(t *testing.T) {
 	// Verify header columns.
 	assert.Contains(t, out, "Candidate")
 	assert.Contains(t, out, "Score")
-	assert.Contains(t, out, "Pass")
 
 	// Verify no removed columns.
 	assert.NotContains(t, out, "Strategies")
 	assert.NotContains(t, out, "Tokens")
 	assert.NotContains(t, out, "Optimal")
+	assert.NotContains(t, out, "Pass")
 
 	// Verify candidate data.
 	assert.Contains(t, out, "baseline")
 	assert.Contains(t, out, "candidate_1")
 	assert.Contains(t, out, "0.91")
 	assert.Contains(t, out, "0.95")
-	assert.Contains(t, out, "100%")
 }
 
 func TestPrintOptimizeResults_BestMarkedWithStar(t *testing.T) {
 	t.Parallel()
 
 	status := &optimize_api.OptimizeJobStatus{
-		Candidates: []optimize_api.CandidateResult{
-			{Name: "baseline", AvgScore: 0.80, PassRate: 0.7},
-			{Name: "candidate_1", AvgScore: 0.95, PassRate: 1.0},
+		Result: &optimize_api.OptimizeResult{
+			Best: "candidate_1",
+			Candidates: []optimize_api.CandidateResult{
+				{Name: "baseline", AvgScore: 0.80},
+				{Name: "candidate_1", AvgScore: 0.95},
+			},
 		},
-		Best: &optimize_api.CandidateResult{Name: "candidate_1"},
 	}
 
 	var buf strings.Builder
@@ -440,10 +446,12 @@ func TestPrintOptimizeResults_ShowsCandidateIDs(t *testing.T) {
 	t.Parallel()
 
 	status := &optimize_api.OptimizeJobStatus{
-		Candidates: []optimize_api.CandidateResult{
-			{Name: "candidate_1", AvgScore: 0.95, PassRate: 1.0, CandidateID: "abc-123"},
+		Result: &optimize_api.OptimizeResult{
+			Best: "abc-123",
+			Candidates: []optimize_api.CandidateResult{
+				{Name: "candidate_1", AvgScore: 0.95, CandidateID: "abc-123"},
+			},
 		},
-		Best: &optimize_api.CandidateResult{Name: "candidate_1", CandidateID: "abc-123"},
 	}
 
 	var buf strings.Builder
@@ -453,4 +461,51 @@ func TestPrintOptimizeResults_ShowsCandidateIDs(t *testing.T) {
 	assert.Contains(t, out, "Candidate IDs")
 	assert.Contains(t, out, "abc-123")
 	assert.Contains(t, out, "optimize apply")
+}
+
+func TestPrintOptimizeResults_ShowsStrategyColumn(t *testing.T) {
+	t.Parallel()
+
+	status := &optimize_api.OptimizeJobStatus{
+		Result: &optimize_api.OptimizeResult{
+			Best: "candidate_1",
+			Candidates: []optimize_api.CandidateResult{
+				{Name: "baseline", AvgScore: 0.90},
+				{
+					Name:     "candidate_1",
+					AvgScore: 0.95,
+					Mutations: map[string]string{
+						"skill_policy-reviewer": "updated instructions",
+						"system_prompt":         "new prompt",
+					},
+				},
+			},
+		},
+	}
+
+	var buf strings.Builder
+	printOptimizeResults(t.Context(), &buf, status, false, "")
+	out := buf.String()
+
+	// Strategy header and mutation keys (sorted) are shown.
+	assert.Contains(t, out, "Strategy")
+	assert.Contains(t, out, "skill_policy-reviewer")
+}
+
+func TestPrintOptimizeResults_NoStrategyColumnWhenNoMutations(t *testing.T) {
+	t.Parallel()
+
+	status := &optimize_api.OptimizeJobStatus{
+		Result: &optimize_api.OptimizeResult{
+			Best: "candidate_1",
+			Candidates: []optimize_api.CandidateResult{
+				{Name: "candidate_1", AvgScore: 0.95},
+			},
+		},
+	}
+
+	var buf strings.Builder
+	printOptimizeResults(t.Context(), &buf, status, false, "")
+
+	assert.NotContains(t, buf.String(), "Strategy")
 }

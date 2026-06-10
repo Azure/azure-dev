@@ -1,6 +1,6 @@
 # Technical design: unify Foundry agent config in `azure.yaml`
 
-<!-- cspell:ignore upserts unmarshals omitempty grpcserver osutil exterrors unprovisioned -->
+<!-- cspell:ignore upserts unmarshals omitempty grpcserver osutil exterrors unprovisioned rebases rebasing webhook -->
 
 ## Overview
 
@@ -195,9 +195,13 @@ type FoundryProjectConfig struct {
 }
 ```
 
-`Agent` is the union of a hosted agent and a prompt agent. A hosted agent carries
-`project`, plus one of `docker`, `runtime`, or a prebuilt `image`. A prompt agent
-carries none of those and is pure config.
+`Agent` is the union of a hosted agent and a prompt agent. Both kinds may carry
+`toolboxes` (named references into the project `toolboxes`), `tools` (tools attached
+directly to the agent), a single `skill` reference, `env`, and `metadata`. A hosted
+agent additionally carries `project` plus exactly one deploy mode: `docker`, `runtime`,
+or a prebuilt `image`. A prompt agent carries none of those build fields; instead it
+carries `instructions`, an inline string or a path to a prompt file (see 2.4). These
+references are validated in 2.6.
 
 ### 2.2 Wiring the new host to a service target
 
@@ -290,20 +294,35 @@ it into core later if other extensions need includes.
 
 **Resolution rules.**
 
-- A `$ref` path must be a relative path, resolved relative to the file that holds it,
-  so nested includes work. Absolute paths and remote URLs are not accepted by default;
-  restrict to project-local paths to avoid reading arbitrary files or fetching remote
-  content. Broader support can be added behind an explicit opt-in if needed.
+- A relative `$ref` path resolves relative to the file that holds it, so nested includes
+  work. Per `FileRef.json`, absolute paths and URLs are also accepted. The security
+  tradeoff of remote and absolute includes (reading arbitrary files, fetching remote
+  content) is raised as an open question rather than restricted here, to stay consistent
+  with the brief.
 - Sibling keys overlay on the loaded file. Use a shallow overlay at the top level of the
   object. Scalars and arrays from the sibling replace the loaded value. This keeps the
   result easy to predict.
 - A loaded file is validated against the same per resource schema as an inline entry.
 
-**One concrete dependency.** The extension receives its keys as already parsed data, so
-the `$ref` strings arrive as plain values. To open the files it needs the directory that
-holds `azure.yaml`, not the agent source path. The provider must get the project root
-from the azd client or environment. Call this out in the implementation, because the
-gRPC `ServiceConfig` carries the agent `project` path, not the project root.
+**Path resolution and rebasing.** The extension receives its keys as already parsed data,
+so the `$ref` strings arrive as plain values. To open a top level `$ref` it needs the
+directory that holds `azure.yaml`, not the agent source path, so the provider must get the
+project root from the azd client or environment (the gRPC `ServiceConfig` carries the
+agent `project` path, not the project root). Once a split file is loaded, every relative
+path inside it rebases to that file's own directory, not to `azure.yaml`. The `complex`
+sample is explicit: in `agents/support-agent.yaml`, `project: ../src/support-agent` is
+relative to the `agents/` folder, and in `skills/code-review.yaml`,
+`instructions: ../prompts/code-review.md` is relative to the `skills/` folder. The
+resolver must track each loaded file's base directory and apply it to that file's
+`project`, `instructions`, and any nested `$ref`.
+
+**Instruction and prompt files.** Separate from `$ref`, a skill's `instructions` and a
+prompt agent's `instructions` accept either an inline string or a path to a `.md` or
+`.txt` file the extension reads at deploy time; the `complex` sample uses both forms.
+This is a file read, not a structural include: the file's text becomes the field value,
+with no overlay. The path follows the same rebasing rule above, so an `instructions:`
+path inside a split agent or skill file resolves against that file's directory. `${VAR}`
+and `${{...}}` expansion (2.5) applies to the loaded text.
 
 **Interaction with #8049.** The composition commands write into these same arrays. If a
 section is split into a file, the writer has to decide whether to append an inline entry
@@ -350,16 +369,16 @@ agents inside it.
 
 | Method | Behavior |
 |---|---|
-| `Initialize` | Validate the Foundry config. Check agent kinds, that each agent has exactly one of `docker`, `runtime`, or `image`, and that every named toolbox, skill, connection, and model deployment an agent references exists. Resolve the project, provisioned or via `endpoint`. |
+| `Initialize` | Validate the Foundry config. Check agent kinds; for each `kind: hosted` agent require exactly one deploy mode (`docker`, `runtime`, or a prebuilt `image`), while `kind: prompt` agents carry none; and check that every toolbox, `tools` entry, `skill`, connection, and model deployment an agent references resolves. Resolve the project, provisioned or via `endpoint`. |
 | `Package` | For each agent that has `project` plus `docker` or `runtime`, build. `docker` builds an image, local or in ACR when `remoteBuild` is set. `runtime` zips the source. Prompt agents and prebuilt `image` agents skip this. |
 | `Publish` | Push each artifact. Images go to ACR. Zips upload to Foundry storage. |
-| `Deploy` | First reconcile project state: deployments, connections, toolboxes, skills, routines, and prompt agents through Foundry APIs. Then post each agent with `createAgentVersion` and the published artifact reference. |
+| `Deploy` | First reconcile project state: deployments, connections, toolboxes, skills, and prompt agents through Foundry APIs. Then post each hosted agent with `createAgentVersion` and the published artifact reference. Reconcile routines last, since they reference an agent by name. |
 | `Endpoints` | Return the project endpoint, plus per agent endpoints when they are known. |
 | `GetTargetResource` | Resolve the ARM resource for the Foundry project. |
 
 Deploy order inside the project matters, because later items reference earlier ones.
-Apply deployments and connections first, then toolboxes and skills, then agents and
-routines.
+Apply deployments and connections first, then toolboxes and skills, then agents, and
+routines last, since a routine references an agent by name.
 
 Fan out details to define in code:
 
@@ -407,7 +426,7 @@ upsert is written:
 - Whether a re run after a partial failure can safely repeat the calls that already
   succeeded.
 
-This area overlaps with existing reports, noted in Part 3.
+This area overlaps with existing reports, noted in the open questions.
 
 ### 2.9 Telemetry and errors
 
@@ -418,70 +437,102 @@ This area overlaps with existing reports, noted in Part 3.
 - Keep `CodeInvalidAgentManifest` while the manifest path exists, and plan its rename or
   removal with that path.
 
-## Part 3: Provision experience dependencies (PM confirmation)
+### 2.10 Sibling extensions and schema ownership
 
-These items change or touch the provision experience. They are not designed here. Please
-confirm whether each one belongs inside the unification milestone or stays separate.
+Foundry already ships per resource extensions, bundled by the `microsoft.foundry`
+meta-package: `azure.ai.toolboxes`, `azure.ai.connections`, `azure.ai.projects`,
+`azure.ai.skills`, and `azure.ai.routines`. Each owns a data-plane CLI (`azd ai toolbox`,
+`azd ai connection`, and so on) that acts on a live project. None of them participate in
+`azure.yaml` today.
 
-- **Built in Bicep and the provision-less flow.** A Foundry only project should not need
-  an `infra/` folder. The extension would carry templates and generate them in memory at
-  provision time. This has its own RFC and is not yet filed. It clearly changes what
-  `azd provision` does for these projects.
-- **Provision layers in multi service projects.** Issue
-  [#8587](https://github.com/Azure/azure-dev/issues/8587) reports
-  `azd provision <agent>` failing with "no layers defined in azure.yaml", which left a
-  toolbox unprovisioned. The single service shape and the in memory Bicep both interact
-  with how provision layers are built, so confirm the intended behavior.
-- **Reusing an existing project.** The `endpoint:` field and the private network case in
-  issue [#8165](https://github.com/Azure/azure-dev/issues/8165) both ask azd to use an
-  account it did not create. Confirm whether reuse is in scope for the first version.
-- **Idempotency.** Issues [#8349](https://github.com/Azure/azure-dev/issues/8349) and
-  [#8350](https://github.com/Azure/azure-dev/issues/8350) report that provision does not
-  recreate a deleted resource and that tool connection changes are not applied. The new
-  model moves data plane changes to deploy, which may sidestep some of this. Confirm.
-- **Agent versioning.** Issue [#8066](https://github.com/Azure/azure-dev/issues/8066)
-  notes that `azure.yaml` only represents the latest state of an agent, even though
-  agents are versioned. Deploy posts a new version each run, so the intended meaning of
-  the YAML, latest only or pinned, needs a decision.
+That raises who owns the `microsoft.foundry.json` schema slices and their reconciliation.
+Following the brief, v1 takes **Option A**: the `azure.ai.agents` extension owns the full
+schema and reconciles every slice (deployments, connections, toolboxes, skills, routines,
+agents), while the sibling extensions keep their imperative CLIs unchanged. The
+alternative, Option B, has the meta-package own the schema and each sibling register a
+slice contribution, which needs a new "one extension contributes part of another's schema"
+mechanism in core. Recommend A for v1 and re-evaluate B once the shape is in users' hands.
 
-## Part 4: Open questions (new)
+One naming note: `microsoft.foundry` is both the host kind string and the existing
+meta-package extension id. That overlap is intentional in the brief, but the host kind is
+resolved by `azure.ai.agents`, not by the meta-package.
 
-These are specific to this design. The product level questions, such as the host kind
-name and the schema ownership choice, already live in the product brief and are not
-repeated here.
+## Open questions
 
-1. **Who owns `$ref` resolution, and what are the overlay rules?** Core loader or the
-   extension. Shallow overlay or deep merge. Arrays replaced or merged. 2.4 recommends
-   extension owned with a shallow overlay, but this should be ratified.
-2. **How are split files validated?** The language server can follow a `$ref` to a local
-   file for editor hints, but runtime validation of a loaded file against the per
-   resource schema needs to be confirmed.
-3. **How large can the inline config get over gRPC?** A big project becomes a large
-   protobuf struct. Confirm there is no practical size limit, or define how to chunk it.
-4. **How are per agent actions addressed at the CLI?** `azd deploy <service>` targets the
-   whole project. Is `azd ai agent deploy <name>` enough for per agent actions, or does
-   core need real sub service targets. This is tied to the fan out choice in 2.6.
-5. **Naming for the composition surface.** Issue #8049 places the `add` commands in an
-   `azd ai project` surface, but an `azure.ai.projects` extension already exists. Confirm
-   where the schema and the `add` commands live so the two do not collide.
+Decisions the team needs to make. Provision and scope items sit in the same list as
+design items. Product level questions already settled in the brief (host kind name, the
+Option A versus B ownership choice) are referenced where relevant rather than re-asked.
+
+1. **Built in Bicep and the provision-less flow.** A Foundry only project should not need
+   an `infra/` folder; the extension would carry templates and generate them in memory at
+   provision time. This has its own RFC, not yet filed, and changes what `azd provision`
+   does for these projects. Confirm whether it belongs in this milestone.
+2. **Provision layers in multi service projects.** Issue
+   [#8587](https://github.com/Azure/azure-dev/issues/8587) reports `azd provision <agent>`
+   failing with "no layers defined in azure.yaml", which left a toolbox unprovisioned. The
+   single service shape and the in memory Bicep both interact with how provision layers are
+   built, so confirm the intended behavior.
+3. **Reusing an existing project.** The `endpoint:` field and the private network case in
+   issue [#8165](https://github.com/Azure/azure-dev/issues/8165) both ask azd to use an
+   account it did not create. Confirm whether reuse is in scope for the first version.
+4. **Idempotency across provision and deploy.** Issues
+   [#8349](https://github.com/Azure/azure-dev/issues/8349) and
+   [#8350](https://github.com/Azure/azure-dev/issues/8350) report that provision does not
+   recreate a deleted resource and that tool connection changes are not applied. The new
+   model moves data plane changes to deploy (2.8), which may sidestep some of this.
+   Confirm, and confirm whether create calls are idempotent or need check-then-create.
+5. **Agent versioning.** Issue [#8066](https://github.com/Azure/azure-dev/issues/8066)
+   notes that `azure.yaml` only represents the latest state of an agent, even though agents
+   are versioned. Deploy posts a new version each run, so the intended meaning of the YAML,
+   latest only or pinned, needs a decision.
+6. **`$ref` resolution and overlay rules.** Core loader or extension. Shallow overlay or
+   deep merge. Arrays replaced or merged. 2.4 recommends extension owned with a shallow
+   overlay, but this should be ratified.
+7. **Absolute and remote `$ref` paths.** `FileRef.json` accepts absolute paths and URLs.
+   Confirm whether to keep that, accepting reading arbitrary files and fetching remote
+   content, or restrict to project-local paths behind an opt-in. The design follows the
+   brief and accepts them for now (2.4).
+8. **Instruction and prompt file format.** Skill and prompt agent `instructions` accept an
+   inline string or a file path (2.4). Confirm both forms are supported and settle the
+   accepted file extensions (`.md`, `.txt`).
+9. **Routines ownership and triggers.** Does the routines schema live in `azure.ai.agents`
+   (Option A) or in `azure.ai.routines`? `Routine.json` allows `schedule`, `webhook`, and
+   `event` triggers; confirm which the first version supports beyond cron schedules.
+10. **Split file validation.** The language server can follow a `$ref` to a local file for
+    editor hints, but runtime validation of a loaded file against the per resource schema
+    needs to be confirmed.
+11. **Inline config size over gRPC.** A big project becomes a large protobuf struct.
+    Confirm there is no practical size limit, or define how to chunk it.
+12. **Per agent CLI addressability.** `azd deploy <service>` targets the whole project. Is
+    `azd ai agent deploy <name>` enough for per agent actions, or does core need real sub
+    service targets (2.6)? The brief raises this too; it is tied to the fan out choice.
+13. **Composition surface naming.** Issue #8049 places the `add` commands in an `azd ai
+    project` surface, but an `azure.ai.projects` extension already exists. Confirm where the
+    schema and the `add` commands live so the two do not collide.
 
 ## Summary of required changes
+
+The brief's "Missing functionality" table already lists the baseline work. This spec
+keeps that list and adds the deltas below.
 
 azd core:
 
 - Add the `host: microsoft.foundry` conditional to `schemas/v1.0/azure.yaml.json`,
   composing the extension schema at the service level and turning off `project`,
   `runtime`, `docker`, `image`, and `config`.
-- Optional: register `microsoft.foundry` as an alpha feature for a gated preview.
-- Optional: a shared convention or helper for preserving `${{...}}` if core ever expands
-  these fields.
+- Recommend `additionalProperties: true` at the project level in `microsoft.foundry.json`
+  (the preview currently has `false`).
+- Optional: register `microsoft.foundry` as an alpha feature for a gated preview, and a
+  shared helper if core ever expands these fields while preserving `${{...}}`.
 
-`azure.ai.agents` extension:
+`azure.ai.agents` extension (v1 owns the full schema and reconciliation, Option A in 2.10):
 
 - Publish `microsoft.foundry.json` and the per resource schema files.
-- Add the `microsoft.foundry` service target with per agent fan out for package,
-  publish, and deploy.
-- Resolve `$ref` includes and overlay overrides while parsing the Foundry keys.
+- Add the `microsoft.foundry` service target with per agent fan out for package, publish,
+  and deploy; require a deploy mode only for `kind: hosted` agents; reconcile routines
+  after agents.
+- Resolve `$ref` includes with shallow overlay overrides, rebasing each loaded file's
+  paths to its own directory, and load `instructions` prompt files at deploy time.
 - Expand `${VAR}` while preserving `${{...}}` through a shared helper.
 - Rework `init` to write the single Foundry service and stop emitting `agent.yaml` and
   `agent.manifest.yaml`.

@@ -2,13 +2,12 @@
 
 ## Problem
 
-`azd ai agent init` clones `Azure-Samples/azd-ai-starter-basic` into every new
-project, dropping ~300 lines of conditional Bicep (`shouldCreateAcr`,
-`useExistingAiProject ? X : Y`, 30+ outputs) on the developer's disk before they
-write any agent code. The starter Bicep lives in a sample repo on `main`, so
-every shipped extension version reads from the same template — slimming or
-tailoring the template breaks every project initialized by every prior extension
-build. The on-disk template is bloated; there is no in-place fix.
+`azd ai agent init` clones `Azure-Samples/azd-ai-starter-basic` into every
+new project, dropping ~300 lines of conditional Bicep (`shouldCreateAcr`,
+`useExistingAiProject ? X : Y`, 30+ outputs) on the developer's disk before
+they write any agent code. The starter Bicep lives in a sample repo on
+`main`, so slimming it would break every project initialized by every prior
+extension build.
 
 See RFC [#8065](https://github.com/Azure/azure-dev/issues/8065) for the full
 problem statement.
@@ -18,15 +17,12 @@ problem statement.
 Move infrastructure templates from `Azure-Samples/azd-ai-starter-basic` into
 the `azure.ai.agents` extension binary. `azd ai agent init` produces only
 `azure.yaml` and an agent code project — no `infra/` directory. At provision
-time, the extension's own provisioning provider synthesizes Bicep in memory
-from `azure.yaml` and applies it. `azd ai agent init --infra` ejects on demand:
-the same synthesis writes Bicep to `./infra/`, and subsequent provisions read
-from disk.
-
-The mechanism is the **custom provisioning provider** capability merged in
-[PR #7482](https://github.com/Azure/azure-dev/pull/7482). The extension
-registers itself by name; the developer declares it in `azure.yaml` as
-`infra.provider: azure.ai.agents`.
+time, the extension's own provisioning provider (registered via the
+[PR #7482](https://github.com/Azure/azure-dev/pull/7482) framework)
+synthesizes Bicep in memory from `azure.yaml` and applies it.
+`azd ai agent init --infra` ejects on demand: the same synthesis writes Bicep
+to `./infra/`, and subsequent provisions read from disk. The developer opts
+in by declaring `infra.provider: azure.ai.agents` in `azure.yaml`.
 
 ## Scope
 
@@ -74,26 +70,28 @@ cli/azd/extensions/azure.ai.agents/
     parameters.go                  ← parameter resolution (env vars, prompts)
 
 cli/azd/pkg/                       ← Core changes (small)
-  project/mapper_registry.go       ← +Uses, +Runtime on ServiceConfig→proto
-  project/service_config.go        ← +Runtime AppServiceRuntime field
+  project/service_runtime.go       ← NEW: ServiceRuntime type (no Stack enum)
+  project/service_config.go        ← +Runtime *ServiceRuntime (Uses already present)
+  project/mapper_registry.go       ← +Uses, +Runtime in ServiceConfig↔proto mappers
   infra/provisioning/provider.go   ← (no change needed)
 
 cli/azd/grpc/proto/
-  models.proto                     ← +runtime, +uses on ServiceConfig message
+  models.proto                     ← +uses, +runtime (typed) on ServiceConfig message
 
-schemas/v1.0/azure.yaml.json       ← relax infra.provider enum → examples
+schemas/v1.0/azure.yaml.json       ← +runtime under services.<svc> (uses already present);
+                                     relax infra.provider enum → examples
 ```
 
-## Provider Resolution (Verified Against Code)
+## Provider Resolution
 
 The extension's provider plugs into the existing IoC-registered factory.
-Provider selection logic (`cli/azd/pkg/infra/provisioning/manager.go:505-540`)
-is unchanged:
+Provider selection (`cli/azd/pkg/infra/provisioning/manager.go:505-540`) is
+unchanged:
 
 ```go
 providerKey := m.options.Provider                    // from azure.yaml infra.provider
 if providerKey == NotSpecified {
-    defaultProvider, _ := m.defaultProvider()        // returns "bicep"
+    defaultProvider, _ := m.defaultProvider()        // "bicep"
     providerKey = defaultProvider
 }
 err = m.serviceLocator.ResolveNamed(string(providerKey), &provider)
@@ -102,11 +100,9 @@ err = m.serviceLocator.ResolveNamed(string(providerKey), &provider)
 Built-in providers register at `cli/azd/pkg/azd/default.go:79-87`. Extension
 providers register at runtime via `RegisterProvisioningProviderRequest`
 (`cli/azd/internal/grpcserver/provisioning_service.go:138-152`) into the same
-`*ioc.NestedContainer`. From the resolver's perspective `bicep` and
-`azure.ai.agents` are equivalent keys.
-
-`ParseProvider` was relaxed in PR #7482 to accept any string
-(`cli/azd/pkg/infra/provisioning/provisioning.go:53-57`).
+container. `bicep` and `azure.ai.agents` are equivalent keys to the resolver.
+`ParseProvider` (`cli/azd/pkg/infra/provisioning/provisioning.go:53-57`) was
+relaxed in PR #7482 to accept any string.
 
 ## Explicit `infra.provider:` Declaration
 
@@ -114,13 +110,12 @@ The RFC ideal is service-host-driven auto-routing — the extension is picked
 because `host: azure.ai.agent` is present, not because `infra.provider:` is
 declared. Verified gap (`cli/azd/pkg/project/importer.go:288-358`):
 `ProjectInfrastructure` never inspects `service.Host` to pick a provisioning
-provider. The Aspire branch (the only service-driven precedent) hard-codes
-Bicep. The compose branch keys off `len(Resources)>0` and also hard-codes
-Bicep.
+provider. The Aspire branch (the only service-driven precedent) and the
+compose branch both hard-code Bicep.
 
 Adding service-host auto-routing requires a net-new branch in
-`ProjectInfrastructure` plus a registry of which hosts map to which extension
-providers. We defer that work and ship v0.2 with an explicit declaration:
+`ProjectInfrastructure` plus a host→extension registry. We defer that and
+ship an explicit declaration:
 
 ```yaml
 infra:
@@ -137,13 +132,10 @@ services:
     config: { ... }
 ```
 
-**Cost:** developers see an extension name in the `infra.provider:` slot
-historically used for IaC engines (`bicep`, `terraform`). This is a real
-concept leak — `azure.ai.agents` is not an IaC engine, it's a domain extension.
-Documented; tracked for v0.3+.
-
-**What it buys us:** all of PR #7482's plumbing works as-is. No Core changes
-to `ProjectInfrastructure`. No new auto-route signal to design.
+**Trade:** developers see an extension name in the `infra.provider:` slot
+historically used for IaC engines (`bicep`, `terraform`) — a real concept
+leak we accept to reuse PR #7482's plumbing as-is, with no Core changes to
+`ProjectInfrastructure`. Revisit once service-host auto-routing lands.
 
 ## On-Disk Reuse (Post-Eject Behavior)
 
@@ -166,12 +158,12 @@ stays clean.
 
 Verified: all Core sites that read `./infra/` tolerate a missing directory:
 
-| Site                                 | Behavior when `./infra/` is absent              |
-| ------------------------------------ | ----------------------------------------------- |
-| `importer.go:323` (`pathHasModule`)  | Returns false → continues to fallthrough        |
-| `project.go:187` (`hooksFromInfraModule`) | Returns empty → no hooks merged            |
-| `manager.go:121` (`azdFileShareUploadOperations`) | Missing dir → no operations         |
-| `importer.go:304` (`detectProviderFromFiles`) | Only runs when `Provider == NotSpecified`; with our explicit declaration, never executes |
+| Site                                                                  | Behavior when `./infra/` is absent                |
+| --------------------------------------------------------------------- | ------------------------------------------------- |
+| `cli/azd/pkg/project/importer.go:323` (`pathHasModule` call)          | Returns false → continues to fallthrough          |
+| `cli/azd/pkg/project/project.go:187` (`hooksFromInfraModule` call)    | Returns empty → no hooks merged                   |
+| `cli/azd/pkg/infra/provisioning/manager.go:125` (`azdFileShareUploadOperations` call) | Missing dir → no operations               |
+| `cli/azd/pkg/project/importer.go:304` (`detectProviderFromFiles` gate) | Only runs when `Provider == NotSpecified`; with our explicit declaration, never executes |
 
 ## In-Memory Synthesis
 
@@ -199,13 +191,11 @@ deploy.BicepRunner
 ProvisioningDeployResult (back to azd Core via gRPC)
 ```
 
-The extension does **not** delegate deployment to Core's Bicep provider
-(no such delegation API exists today — verified via
-`cli/azd/grpc/proto/deployment.proto`, which only exposes
-`GetDeployment`/`GetDeploymentContext` to extensions, not "deploy this
-template"). The extension reimplements the deploy step using Azure SDK
-`armresources.DeploymentsClient`. This is intentional for v0.2 — future Core
-work could expose a shared Bicep-deploy API to avoid drift.
+The extension does **not** delegate deployment to Core's Bicep provider — no
+such delegation API exists today (`cli/azd/grpc/proto/deployment.proto`
+exposes only `GetDeployment`/`GetDeploymentContext`). The extension
+reimplements the deploy step using `armresources.DeploymentsClient`; a future
+Core API could expose a shared Bicep-deploy path to avoid drift.
 
 ## Validation Pipeline
 
@@ -228,10 +218,9 @@ All five run on every `provision`, `preview`, and `init --infra`.
 
 ## Brownfield: Existing Foundry Projects
 
-Today: `USE_EXISTING_AI_PROJECT` and `AZURE_AI_PROJECT_ID` env vars; starter
-Bicep branches on them.
-
-After: explicit field on the project service.
+Replaces today's `USE_EXISTING_AI_PROJECT` / `AZURE_AI_PROJECT_ID` env vars
+(which the starter Bicep branches on) with an explicit field on the project
+service:
 
 ```yaml
 services:
@@ -242,17 +231,12 @@ services:
       toolboxes: { ... }
 ```
 
-Synthesizer behavior when `resourceId:` is set:
-
-- Omits the Foundry project ARM resource from generated Bicep.
-- Generates references to wire `AZURE_AI_PROJECT_ENDPOINT`,
-  `AZURE_AI_PROJECT_ID`, `AZURE_RESOURCE_GROUP`, tenant/subscription/location.
-- Still synthesizes ARM-backed children (e.g., additional model deployments)
-  declared under `config:`.
-- Routes data-plane resources to the existing project's deploy verb.
-
-The `useExistingAiProject` ternary collapses to a single field-presence check
-at synthesis time.
+When `resourceId:` is set, synthesis omits the Foundry project ARM resource;
+generates references to wire `AZURE_AI_PROJECT_ENDPOINT`,
+`AZURE_AI_PROJECT_ID`, `AZURE_RESOURCE_GROUP`, tenant/subscription/location;
+still synthesizes ARM-backed children (e.g., additional model deployments);
+and routes data-plane resources to the existing project's deploy verb. The
+`useExistingAiProject` ternary collapses to a single field-presence check.
 
 ## Eject Command (`azd ai agent init --infra`)
 
@@ -265,14 +249,10 @@ Infra-only operation. Four contexts:
 | Existing on-disk project (`./infra/` exists) | Refuse to overwrite. Print: *"`./infra/` already exists. To regenerate from `azure.yaml`, delete the `infra/` directory and run the command again."* |
 | Not an azd agent project                  | Refuse: "no `azure.ai.*` services found in `azure.yaml`; nothing to eject."                    |
 
-Eject is **all-or-nothing for the whole project**. No partial mode where some
-agents synthesize and others sit on disk.
-
-Regenerating requires the user to delete `./infra/` themselves and re-run
-`azd ai agent init --infra`. Rationale: no new flag surface, no special
-overwrite logic, no implicit destruction of user-owned files. The user
-explicitly removes the old `./infra/` (which is a git-tracked operation
-they're responsible for), then asks for fresh synthesis.
+Eject is **all-or-nothing for the whole project** — no partial mode where
+some agents synthesize and others sit on disk. To regenerate, the user
+deletes `./infra/` themselves and re-runs the command. No `--force`, no
+implicit destruction of user-owned files.
 
 Example output:
 
@@ -292,7 +272,7 @@ Next steps:
   azd provision    Apply changes
 ```
 
-Example output (refused):
+Refused:
 
 ```
 > azd ai agent init --infra
@@ -301,24 +281,6 @@ Error: ./infra/ already exists.
 
 If you want to regenerate from azure.yaml, delete the infra directory
 and run the command again.
-```
-
-Example output:
-
-```
-> azd ai agent init --infra
-
-Generating infrastructure files from azure.yaml...
-
-  Created infra/main.bicep
-  Created infra/main.parameters.json
-  Created infra/modules/foundry-project.bicep
-  Created infra/modules/acr.bicep
-
-Future provisions will read from ./infra/.
-
-Next steps:
-  azd provision    Apply changes
 ```
 
 ## Post-Eject CLI Behavior
@@ -335,27 +297,46 @@ needing ACR), but on-disk Bicep doesn't have it.
 
 CLI never silently patches user-owned Bicep.
 
+**Accepted trade.** Post-eject, the user-driven `rm -rf ./infra/ && azd ai
+agent init --infra` flow throws away any hand-edits the user made. We pick
+this over auto-diff/merge (which would re-introduce silent rewrites of
+user-owned files) and over refusing `add` post-eject (which would gut the
+CLI for ejected projects). Auto-merge is future work, out of scope here.
+
 ## Core Changes Required
 
 Small, mechanical. All ride alongside `azure.ai.agents` extension work.
 
 ### 1. Surface `uses` and `runtime` to extensions (RFC Core Ask #2)
 
-Today: `cli/azd/pkg/project/mapper_registry.go:148` drops `Uses` when
-mapping `ServiceConfig` to proto. `Runtime` is on `AppServiceProps` only, not
-on `ServiceConfig`.
+`Uses` already exists on the core `ServiceConfig`
+(`cli/azd/pkg/project/service_config.go:58`) and in the v1 schema under
+`services.<svc>` (`schemas/v1.0/azure.yaml.json:234`). The gap is proto-only:
+`models.proto`'s `ServiceConfig` message (`cli/azd/grpc/proto/models.proto:87-100`)
+has no `uses` field, so extensions can't read it from typed proto.
+
+`Runtime` is a bigger gap — it doesn't exist on `ServiceConfig` at all. It
+lives only on `AppServiceProps` (`cli/azd/pkg/project/resources.go:283`,
+compose side). `AppServiceRuntime` hard-restricts `Stack` to `node`/`python`
+(`schemas/v1.0/azure.yaml.json:1490-1493`) — too narrow for Foundry agents,
+so a new neutral `ServiceRuntime` type is added rather than reused.
 
 Changes:
 
-| File                                              | Change                                                              |
-| ------------------------------------------------- | ------------------------------------------------------------------- |
-| `cli/azd/pkg/project/service_config.go`           | Add `Runtime AppServiceRuntime \`yaml:"runtime,omitempty"\``        |
-| `cli/azd/grpc/proto/models.proto`                 | Add `runtime` (typed) and `uses` (repeated string) to `ServiceConfig` |
-| `cli/azd/pkg/project/mapper_registry.go:148-161`  | Populate both fields in forward + reverse mappers                   |
-| `schemas/v1.0/azure.yaml.json`                    | Allow `runtime:` at the service level (reuse existing schema shape at lines 1477-1489) |
+| File                                              | Change                                                                                  |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `cli/azd/pkg/project/service_runtime.go` (new)    | Define `type ServiceRuntime struct { Stack string; Version string }` — no Stack enum    |
+| `cli/azd/pkg/project/service_config.go`           | Add `Runtime *ServiceRuntime \`yaml:"runtime,omitempty"\`` (Uses already present at :58) |
+| `cli/azd/grpc/proto/models.proto`                 | Add `repeated string uses = 13` and `ServiceRuntime runtime = 14` to `ServiceConfig`    |
+| `cli/azd/pkg/project/mapper_registry.go:102-162`  | Populate `Uses` and `Runtime` in forward + reverse `ServiceConfig`↔proto mappers        |
+| `schemas/v1.0/azure.yaml.json` (services branch)  | Add typed `runtime` under `services.<svc>` (uses already at :234). Distinct from `appServiceResource.runtime` at lines 1477-1493, which stays as-is. |
 
 Extension reads `serviceConfig.Uses` and `serviceConfig.Runtime` from typed
-proto fields instead of re-parsing `additional_properties` Struct.
+proto fields instead of `additional_properties`.
+
+> **Note for #7962:** that RFC assumes `services.<svc>.uses` and
+> `services.<svc>.runtime` exist. `uses` already does; this spec adds
+> `runtime`.
 
 ### 2. Relax `infra.provider` enum in schemas
 
@@ -396,12 +377,8 @@ resources (eval datasets, vector indexes).
 `cli/azd/extensions/azure.ai.agents/internal/synthesis/*.tmpl` — Go-embedded
 Bicep templates, versioned with the extension. Templates are tailored: ACR
 only included when at least one agent has a `docker:` block; monitoring only
-when explicitly added via `azd ai agent add monitoring` (per #8049).
-
-Replaces today's `Azure-Samples/azd-ai-starter-basic` Bicep entirely. The
-slimming is safe because the templates ship inside the extension version —
-changing them only affects projects on the new extension, not every project
-from every prior build.
+when explicitly added via `azd ai agent add monitoring` (per #8049). Replaces
+`Azure-Samples/azd-ai-starter-basic` Bicep entirely.
 
 ### Provider implementation
 
@@ -425,8 +402,8 @@ Method behaviors:
 
 ## Stability Contract
 
-Synthesis output is best-effort stable within a minor extension version
-(`0.2.x`). Same `azure.yaml` → semantically identical Bicep. Across minors,
+Synthesis output is best-effort stable within a patch extension version.
+Same `azure.yaml` → semantically identical Bicep. Across minor versions,
 the output may change; documented in the changelog with recommendation to run
 `azd provision --preview` after upgrades.
 
@@ -448,30 +425,33 @@ Lets us measure eject rate and confirm the Bicep-less default sticks.
   them. Only default `azd ai agent init` (no `-t`) goes Bicep-less.
 - **Foundry Toolkit (VS Code)** — reads `azure.yaml`; absence of `./infra/`
   is normal, not corruption. No new files to parse.
-- **Migration** — existing `0.1.x` projects already have `infra/` on disk;
-  they stay on the on-disk path. No action needed.
-- **Documentation** — new doc explaining Bicep-less default, eject command,
-  stability contract. Migration guide for 0.1.x users (no action; everything
-  keeps working).
+- **Migration** — projects created by prior extension versions already have
+  `infra/` on disk; they stay on the on-disk path. No action needed.
+- **Documentation** — new doc covering Bicep-less default, eject command, and
+  stability contract.
 
 ## Risks
 
 | Risk                                                        | Mitigation                                                                                       |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `infra.provider: azure.ai.agents` confuses developers       | Documented in extension README; v0.3+ removes the declaration via service-host auto-routing      |
+| `infra.provider: azure.ai.agents` confuses developers       | Documented in extension README; removed once service-host auto-routing lands                     |
 | Extension's Bicep deployment drifts from Core's             | Pin to specific ARM SDK version; integration tests vs. Core's bicep provider for parity         |
 | Synthesis output changes between minor versions             | Changelog notes; `azd provision --preview` recommended after upgrade                             |
 | Brownfield projects with custom Bicep edits hit eject + drift | Eject is opt-in; first-time eject just writes synthesized Bicep, no merge logic                 |
-| Auto-install gap (#7502) bites a teammate cloning the repo  | README install instruction; v0.3+ delivers auto-install                                          |
+| Auto-install gap (#7502) bites a teammate cloning the repo  | README install instruction until #7502 lands                                                     |
 
 ## Open Questions
 
 1. Should the extension's `Deploy()` warn when both `./infra/` exists and
    `azure.yaml` config has changed since last eject? (Drift detection.)
-2. Do we expose a `--preview-bicep` flag that prints synthesized Bicep
-   without applying, for debugging? Or rely on `--infra` + diff?
-3. Schema branch for typed `host: azure.ai.agent` / `azure.ai.project`
+   **Proposal:** no detection — matches "on-disk Bicep is the source of
+   truth"; CLI `add` commands already warn at the entry point. Revisit when
+   auto-merge lands.
+2. Schema branch for typed `host: azure.ai.agent` / `azure.ai.project`
    validation (per #7962) — does it land in this RFC's PRs or #7962's?
+   **Proposal:** #7962 owns the schema branches, since it defines the field
+   shapes. Extension validates against its own embedded schema at runtime, so
+   IDE schema lag during the gap is cosmetic.
 
 ## Test Plan
 
@@ -486,8 +466,8 @@ Lets us measure eject rate and confirm the Bicep-less default sticks.
 - E2E: `init` → `provision` → `deploy` → `down` on a single-agent project
 - E2E: `init --infra` → manual edit of `infra/main.bicep` → `provision`
   applies the edit
-- Regression: existing `0.1.x` projects with on-disk Bicep continue to work
-  (extension reads `./infra/` like today)
+- Regression: projects created by prior extension versions with on-disk Bicep
+  continue to work (extension reads `./infra/` like today)
 
 ## References
 

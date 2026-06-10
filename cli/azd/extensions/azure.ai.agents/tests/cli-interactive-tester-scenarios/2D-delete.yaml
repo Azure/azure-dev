@@ -1,0 +1,22 @@
+# Tier 2 (cloud E2E) — `delete` removes the shared agent from Foundry.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+# NOTE: This MUST run AFTER all other Tier 2 scenarios that use the shared agent
+# and BEFORE 2Z-teardown-down.yaml. Ordering: 2A → 2B → 2C → 2D → 2Z.
+name: "delete"
+command: "azd ai agent delete --force"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:delete", "serial-only"]
+
+pre:
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Wait for the delete command to complete (auto-resolves agent from azure.yaml, --force skips confirmation and handles active sessions)."
+  - "Confirm the command reports the agent was deleted successfully (exit 0)."
+  - "After deletion, run 'azd ai agent show' in the same directory and confirm it returns an error or indicates the agent no longer exists."
+  - "Take a screenshot of the delete result and the post-delete show output."
+  - "Report a finding if delete fails, hangs, or if 'show' still reports the agent as active after deletion."

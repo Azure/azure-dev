@@ -87,7 +87,7 @@ func NewValidateAction(
 	formatter output.Formatter,
 	writer io.Writer,
 ) actions.Action {
-	return &ValidateAction{
+	action := &ValidateAction{
 		flags:          flags,
 		projectConfig:  projectConfig,
 		projectManager: projectManager,
@@ -96,6 +96,11 @@ func NewValidateAction(
 		formatter:      formatter,
 		writer:         writer,
 	}
+
+	// Register built-in gates
+	action.RegisterGate(validate.NewProjectConfigGate())
+
+	return action
 }
 
 // RegisterGate adds a validation gate to be executed by this action.

@@ -379,17 +379,13 @@ CLI for ejected projects). Auto-merge is future work, out of scope here.
 
 ## Core Changes Required
 
-Small, mechanical. All ride alongside `azure.ai.agents` extension work.
-
-### 1. Relax `infra.provider` enum in schemas
+Relax the `infra.provider` enum in the schemas so `microsoft.foundry` is
+runtime-valid in IDE validation:
 
 | File                                  | Change                                                         |
 | ------------------------------------- | -------------------------------------------------------------- |
 | `schemas/v1.0/azure.yaml.json:44-52`  | Change `enum: ["bicep","terraform"]` → `examples: [...]`       |
 | `schemas/alpha/azure.yaml.json:44-52` | Same                                                           |
-
-Without this, `infra.provider: microsoft.foundry` fails IDE schema
-validation despite being runtime-valid.
 
 > **Note on `uses` / `runtime`:** the original RFC asked Core to surface
 > `services.<svc>.uses` and a typed `services.<svc>.runtime` on the
@@ -398,17 +394,6 @@ validation despite being runtime-valid.
 > (`agents[].runtime`, `agents[].docker`, `agents[].image`), not separate
 > services. The extension reads them through the existing
 > `additional_properties` channel; no proto/struct changes needed for v1.
-
-### 2. (Optional, deferred) Auto-install for `provisioning-provider` extensions
-
-Today: `cli/azd/cmd/auto_install.go:511-578` auto-installs extensions for
-unknown `service-target-provider` host kinds. No equivalent for
-`provisioning-provider`. Tracked as `#7502`.
-
-Acceptable to defer — developers writing `infra.provider: microsoft.foundry`
-have opted in explicitly. `azd ai agent init` force-installs the extension at
-init time anyway. The failure mode is `git clone` + `azd up` on a fresh
-machine where the README is the install instruction.
 
 ## Extension Changes Required
 
@@ -426,9 +411,8 @@ keeps it forward-compatible with future Foundry resource types.
 
 `cli/azd/extensions/azure.ai.agents/internal/synthesis/*.tmpl` — Go-embedded
 Bicep templates, versioned with the extension. Templates are tailored: ACR
-only included when at least one entry in `agents[]` has a `docker:` block;
-monitoring only when explicitly added via `azd ai agent add monitoring` (per
-#8049). Replaces `Azure-Samples/azd-ai-starter-basic` Bicep entirely.
+only included when at least one entry in `agents[]` has a `docker:` block.
+Replaces `Azure-Samples/azd-ai-starter-basic` Bicep entirely.
 
 ### Provider implementation
 
@@ -502,7 +486,6 @@ Lets us measure eject rate and confirm the Bicep-less default sticks.
 | Extension's Bicep deployment drifts from Core's             | Pin to specific ARM SDK version; integration tests vs. Core's bicep provider for parity         |
 | Synthesis output changes between minor versions             | Changelog notes; `azd provision --preview` recommended after upgrade                             |
 | Brownfield projects with custom Bicep edits hit eject + drift | Eject is opt-in; first-time eject just writes synthesized Bicep, no merge logic                 |
-| Auto-install gap (#7502) bites a teammate cloning the repo  | README install instruction until #7502 lands                                                     |
 
 ## Open Questions
 
@@ -511,11 +494,6 @@ Lets us measure eject rate and confirm the Bicep-less default sticks.
    **Proposal:** no detection — matches "on-disk Bicep is the source of
    truth"; CLI `add` commands already warn at the entry point. Revisit when
    auto-merge lands.
-2. Schema branch for typed `host: microsoft.foundry` validation in the v1
-   `azure.yaml.json` (per #7962) — does it land in this RFC's PRs or #7962's?
-   **Proposal:** #7962 owns the schema branch, since it defines the field
-   shapes. Extension validates against its own embedded `azure.ai.agent.json`
-   schema at runtime, so IDE schema lag during the gap is cosmetic.
 
 ## Test Plan
 
@@ -543,12 +521,6 @@ Lets us measure eject rate and confirm the Bicep-less default sticks.
 ## References
 
 - RFC [#8065](https://github.com/Azure/azure-dev/issues/8065) — original
-- Issue [#7962](https://github.com/Azure/azure-dev/issues/7962) — unified
-  schema (dependency)
-- Issue [#8049](https://github.com/Azure/azure-dev/issues/8049) — incremental
-  composition (parallel)
 - PR [#7482](https://github.com/Azure/azure-dev/pull/7482) — custom
   provisioning provider framework (merged)
-- Issue [#7502](https://github.com/Azure/azure-dev/issues/7502) — auto-install
-  for provisioning providers (deferred dependency)
 - Reference: [therealjohn/foundry-azd-config-preview](https://github.com/therealjohn/foundry-azd-config-preview/blob/main/REFERENCE.md) — target `azure.yaml` shape

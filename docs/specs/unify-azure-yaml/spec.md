@@ -4,13 +4,11 @@
 
 ## Overview
 
-This document is the engineering design for the unified `azure.yaml` proposal. It
-covers two things the product brief does not: the **technical design** that azd core
-and the `azure.ai.agents` extension need, and the **end to end experience** a user
-gets at the command line.
+This document is the engineering design for the unified `azure.yaml` proposal. It covers
+the **technical design** that azd core and the `azure.ai.agents` extension need, and the
+**end to end experience** a user gets at the command line.
 
-It does not restate the product brief. For the problem framing, the chosen file shape,
-the decision table, and the product level open questions, read those sources directly:
+Background and product spec can be found in the following sources:
 
 - Product brief and sample file shapes: the `simple` and `complex` branches of the
   preview repo, and the proposed schemas under `schemas/`.
@@ -42,8 +40,7 @@ Out of scope, tracked elsewhere:
 
 ## Part 1: End to end experience
 
-This part describes what a developer sees. The product brief defines the file shape but
-does not walk the command flows, so they are spelled out here.
+This part describes what a developer sees at the command line.
 
 ### 1.1 First run with `azd ai agent init`
 

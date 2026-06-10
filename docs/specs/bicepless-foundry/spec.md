@@ -160,7 +160,7 @@ Verified: all Core sites that read `./infra/` tolerate a missing directory:
 
 | Site                                                                  | Behavior when `./infra/` is absent                |
 | --------------------------------------------------------------------- | ------------------------------------------------- |
-| `cli/azd/pkg/project/importer.go:323` (`pathHasModule` call)          | Returns false → continues to fallthrough          |
+| `cli/azd/pkg/project/importer.go:323` (`pathHasModule` call)          | `os.ReadDir` returns NotExist → caller's `err == nil && moduleExists` guard falls through |
 | `cli/azd/pkg/project/project.go:187` (`hooksFromInfraModule` call)    | Returns empty → no hooks merged                   |
 | `cli/azd/pkg/infra/provisioning/manager.go:125` (`azdFileShareUploadOperations` call) | Missing dir → no operations               |
 | `cli/azd/pkg/project/importer.go:304` (`detectProviderFromFiles` gate) | Only runs when `Provider == NotSpecified`; with our explicit declaration, never executes |
@@ -394,7 +394,7 @@ Method behaviors:
 | `Initialize`      | Validate `azure.yaml` (5-step pipeline above); resolve env vars                |
 | `State`           | Query ARM for last deployment; return outputs                                  |
 | `Deploy`          | If `./infra/` exists, read from disk; else synthesize. Apply via ARM SDK.      |
-| `Preview`         | Same as Deploy with `validationOnly` mode; return diff summary                 |
+| `Preview`         | Synthesize (or read from disk), then call ARM What-If; return diff summary. Mirrors Core's Bicep provider. |
 | `Destroy`         | Delete resource group or use deployment stacks                                 |
 | `EnsureEnv`       | Prompt for required env vars (subscription, location) if missing              |
 | `Parameters`      | Return parameter list from synthesized/on-disk template                        |

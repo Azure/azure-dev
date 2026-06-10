@@ -461,29 +461,32 @@ resolved by `azure.ai.agents`, not by the meta-package.
 
 ## Open questions
 
-Decisions this design surfaces that the brief does not already settle. Provision and scope
-items sit in the same list as the design items.
+A few things this design surfaces that the brief does not already settle. None of them
+block the overall shape, but they are worth talking through together before we lock the
+first version. Provision and scope items sit alongside the design ones.
 
 1. **Provision layers in multi service projects.** Issue
    [#8587](https://github.com/Azure/azure-dev/issues/8587) reports `azd provision <agent>`
    failing with "no layers defined in azure.yaml", which left a toolbox unprovisioned. The
-   single service shape and the in memory Bicep both interact with how provision layers are
-   built, so confirm the intended behavior.
+   single service shape and the in memory Bicep both touch how provision layers get built,
+   so it would help to agree on the intended behavior here.
 2. **Reusing an existing project.** The `endpoint:` field and the private network case in
    issue [#8165](https://github.com/Azure/azure-dev/issues/8165) both ask azd to use an
-   account it did not create. Confirm whether reuse is in scope for the first version.
+   account it did not create. It would be good to confirm whether reuse is in scope for the
+   first version.
 3. **Agent versioning.** Issue [#8066](https://github.com/Azure/azure-dev/issues/8066)
    notes that `azure.yaml` only represents the latest state of an agent, even though agents
-   are versioned. Deploy posts a new version each run, so the intended meaning of the YAML,
-   latest only or pinned, needs a decision.
+   are versioned. Deploy posts a new version each run, so let's decide together what the
+   YAML should mean: latest only, or pinned.
 4. **Split file validation.** The language server can follow a `$ref` to a local file for
-   editor hints, but runtime validation of a loaded file against the per resource schema
-   needs to be confirmed.
-5. **Inline config size over gRPC.** A big project becomes a large protobuf struct. Confirm
-   there is no practical size limit, or define how to chunk it.
+   editor hints, but it would be good to confirm how a loaded file gets validated against
+   the per resource schema at runtime.
+5. **Inline config size over gRPC.** A big project becomes a large protobuf struct. This is
+   probably fine, but it is worth confirming there is no practical size limit, or deciding
+   how we would chunk it if one shows up.
 6. **Composition surface naming.** Issue #8049 places the `add` commands in an `azd ai
-   project` surface, but an `azure.ai.projects` extension already exists. Confirm where the
-   schema and the `add` commands live so the two do not collide.
+   project` surface, but an `azure.ai.projects` extension already exists. Let's settle where
+   the schema and the `add` commands live so the two do not collide.
 
 ## Summary of required changes
 

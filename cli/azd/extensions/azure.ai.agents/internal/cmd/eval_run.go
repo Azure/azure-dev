@@ -133,21 +133,21 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 	)
 
 	// Set source from local dataset file or remote dataset reference.
-	if evalCfg.DatasetFile != "" {
+	if localPath := evalCfg.LocalDatasetPath(); localPath != "" {
 		// Resolve relative paths against the agent project directory so
-		// eval.yaml files with project-relative dataset_file entries work
+		// eval.yaml files with project-relative local dataset entries work
 		// regardless of the caller's working directory.
-		datasetPath := eval_api.ResolveRelPath(evalCfg.DatasetFile, resolved.agentProject)
+		datasetPath := eval_api.ResolveRelPath(localPath, resolved.agentProject)
 		items, err := loadJSONLFile[map[string]any](datasetPath)
 		if err != nil {
 			return err
 		}
 		dataSource.SetFileContent(items)
-	} else if evalCfg.DatasetReference != nil {
-		fileID := buildDatasetFileID(resolved.projectEndpoint, evalCfg.DatasetReference)
+	} else if ref := evalCfg.RemoteDatasetReference(); ref != nil {
+		fileID := buildDatasetFileID(resolved.projectEndpoint, ref)
 		dataSource.SetFileID(fileID)
 	} else {
-		return fmt.Errorf("no dataset configured; run 'azd ai agent eval generate' or specify dataset_file / dataset_reference in the eval config")
+		return fmt.Errorf("no dataset configured; run 'azd ai agent eval generate' or specify a dataset in the eval config")
 	}
 
 	runReq.DataSource = dataSource

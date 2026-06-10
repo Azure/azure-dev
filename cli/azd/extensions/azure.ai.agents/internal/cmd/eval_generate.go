@@ -300,7 +300,7 @@ func submitEvalJobs(
 		needEvalGen = flags.regenerateEvaluator
 		if !needDatasetGen {
 			evalCfg.DatasetFile = existingCfg.DatasetFile
-			evalCfg.Config.DatasetReference = existingCfg.Config.DatasetReference
+			evalCfg.Config.Dataset = existingCfg.Config.Dataset
 		}
 		if !needEvalGen {
 			evalCfg.Evaluators = existingCfg.Evaluators
@@ -313,7 +313,9 @@ func submitEvalJobs(
 			if err != nil {
 				return nil, err
 			}
-			evalCfg.DatasetFile = datasetPath
+			evalCfg.Dataset = &opt_eval.DatasetRef{
+				LocalURI: datasetPath,
+			}
 		}
 	}
 
@@ -363,16 +365,16 @@ func writeAndPrintEvalResult(
 		fmt.Println(color.GreenString("\nEval suite created"))
 	}
 	fmt.Printf("   Config:     %s\n", configPath)
-	if evalCfg.DatasetFile != "" {
-		fmt.Printf("   Dataset:    %s\n", evalCfg.DatasetFile)
-	} else if evalCfg.DatasetReference != nil && evalCfg.DatasetReference.Name != "" {
-		ds := evalCfg.DatasetReference.Name
-		if evalCfg.DatasetReference.Version != "" {
-			ds += " (" + evalCfg.DatasetReference.Version + ")"
+	if localPath := evalCfg.LocalDatasetPath(); localPath != "" {
+		fmt.Printf("   Dataset:    %s\n", localPath)
+	} else if ref := evalCfg.RemoteDatasetReference(); ref != nil {
+		ds := ref.Name
+		if ref.Version != "" {
+			ds += " (" + ref.Version + ")"
 		}
 		fmt.Printf("   Dataset:    %s\n", ds)
 		if resolved.hasProject {
-			fmt.Printf("               %s\n", eval_api.DatasetArtifactPath(resolved.agentProject, evalCfg.DatasetReference))
+			fmt.Printf("               %s\n", eval_api.DatasetArtifactPath(resolved.agentProject, ref))
 		}
 	}
 	for _, evaluator := range evalCfg.Evaluators {
@@ -418,9 +420,9 @@ func printEvalPortalLinks(ctx context.Context, resolved *evalResolvedContext, ev
 		return
 	}
 	hasLink := false
-	if evalCfg.DatasetReference != nil && evalCfg.DatasetReference.Name != "" {
+	if ref := evalCfg.RemoteDatasetReference(); ref != nil {
 		fmt.Printf("\n   "+color.HiBlackString("Portal:")+"\n     Dataset:   %s\n",
-			color.CyanString(prefix.DatasetURL(evalCfg.DatasetReference.Name, evalCfg.DatasetReference.Version)))
+			color.CyanString(prefix.DatasetURL(ref.Name, ref.Version)))
 		hasLink = true
 	}
 	for _, evaluator := range evalCfg.Evaluators {

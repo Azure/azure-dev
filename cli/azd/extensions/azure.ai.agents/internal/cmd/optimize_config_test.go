@@ -45,7 +45,8 @@ evaluators:
 options:
   eval_model: gpt-4o-mini
   budget: 100
-  max_iterations: 5
+  max_candidates: 5
+  optimization_model: gpt-5
 `
 	cfgPath := writeTestFile(t, dir, "optimize.yaml", yamlContent)
 
@@ -58,30 +59,35 @@ options:
 
 	assert.Equal(t, "my-agent", req.Agent.AgentName)
 	assert.Equal(t, "1", req.Agent.AgentVersion)
-	assert.Len(t, req.Dataset, 2)
-	assert.Contains(t, string(req.Dataset[0]), `"What is 2+2?"`)
-	assert.Contains(t, string(req.Dataset[0]), `"groundTruth"`)
-	assert.Nil(t, req.TrainDatasetReference)
+	require.NotNil(t, req.TrainDataset)
+	assert.Equal(t, optimize_api.DatasetTypeInline, req.TrainDataset.Type)
+	assert.Len(t, req.TrainDataset.Items, 2)
+	assert.Contains(t, string(req.TrainDataset.Items[0]), `"What is 2+2?"`)
+	assert.Contains(t, string(req.TrainDataset.Items[0]), `"groundTruth"`)
 	assert.Equal(t, "gpt-4o-mini", req.Options.EvalModel)
-	assert.Equal(t, []string{"coherence", "relevance"}, req.Evaluators)
+	assert.Equal(t, []optimize_api.EvaluatorRef{{Name: "coherence"}, {Name: "relevance"}}, req.Evaluators)
 }
 
-func TestLoadOptimizeConfig_WithDatasetReference(t *testing.T) {
+func TestLoadOptimizeConfig_WithDataset(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 
+	// Uses the deprecated validation_reference key to verify backward compatibility.
 	yamlContent := `
 agent:
   name: ref-agent
-dataset_reference:
+dataset:
   name: my-dataset
   version: "2"
 validation_reference:
   name: val-dataset
   version: "1"
+evaluators:
+  - builtin.task_adherence
 options:
   eval_model: gpt-4o-mini
+  optimization_model: gpt-5
 `
 	cfgPath := writeTestFile(t, dir, "optimize.yaml", yamlContent)
 
@@ -93,12 +99,50 @@ options:
 	require.NoError(t, err)
 
 	assert.Equal(t, "ref-agent", req.Agent.AgentName)
-	assert.Empty(t, req.Dataset)
-	require.NotNil(t, req.TrainDatasetReference)
-	assert.Equal(t, "my-dataset", req.TrainDatasetReference.Name)
-	assert.Equal(t, "2", req.TrainDatasetReference.Version)
-	require.NotNil(t, req.ValidationDatasetReference)
-	assert.Equal(t, "val-dataset", req.ValidationDatasetReference.Name)
+	require.NotNil(t, req.TrainDataset)
+	assert.Equal(t, optimize_api.DatasetTypeReference, req.TrainDataset.Type)
+	assert.Empty(t, req.TrainDataset.Items)
+	assert.Equal(t, "my-dataset", req.TrainDataset.Name)
+	assert.Equal(t, "2", req.TrainDataset.Version)
+	require.NotNil(t, req.ValidationDataset)
+	assert.Equal(t, optimize_api.DatasetTypeReference, req.ValidationDataset.Type)
+	assert.Equal(t, "val-dataset", req.ValidationDataset.Name)
+}
+
+// TestLoadOptimizeConfig_ValidationDataset verifies the new validation_dataset
+// key is honored.
+func TestLoadOptimizeConfig_ValidationDataset(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	yamlContent := `
+agent:
+  name: ref-agent
+dataset:
+  name: my-dataset
+  version: "2"
+validation_dataset:
+  name: val-dataset
+  version: "3"
+evaluators:
+  - builtin.task_adherence
+options:
+  eval_model: gpt-4o-mini
+  optimization_model: gpt-5
+`
+	cfgPath := writeTestFile(t, dir, "optimize.yaml", yamlContent)
+
+	cfg, err := LoadOptimizeConfig(cfgPath)
+	require.NoError(t, err)
+	require.NoError(t, cfg.Validate())
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+
+	require.NotNil(t, req.ValidationDataset)
+	assert.Equal(t, "val-dataset", req.ValidationDataset.Name)
+	assert.Equal(t, "3", req.ValidationDataset.Version)
 }
 
 func TestValidate_MissingAgentName(t *testing.T) {
@@ -106,7 +150,7 @@ func TestValidate_MissingAgentName(t *testing.T) {
 
 	cfg := &OptimizeConfig{
 		Config: opt_eval.Config{
-			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "1"},
+			Dataset: &opt_eval.DatasetRef{Name: "ds", Version: "1"},
 		},
 		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini"},
 	}
@@ -121,8 +165,8 @@ func TestValidate_MissingEvalModel(t *testing.T) {
 
 	cfg := &OptimizeConfig{
 		Config: opt_eval.Config{
-			Agent:            opt_eval.AgentRef{Name: "agent"},
-			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "1"},
+			Agent:   opt_eval.AgentRef{Name: "agent"},
+			Dataset: &opt_eval.DatasetRef{Name: "ds", Version: "1"},
 		},
 	}
 
@@ -131,29 +175,66 @@ func TestValidate_MissingEvalModel(t *testing.T) {
 	assert.Contains(t, err.Error(), "eval_model is required")
 }
 
-func TestValidate_BothDatasetFileAndReference(t *testing.T) {
+func TestValidate_MissingOptimizationModel(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{
 		Config: opt_eval.Config{
-			Agent:            opt_eval.AgentRef{Name: "agent"},
-			DatasetFile:      "tasks.jsonl",
-			DatasetReference: &opt_eval.DatasetRef{Name: "ds", Version: "1"},
+			Agent:   opt_eval.AgentRef{Name: "agent"},
+			Dataset: &opt_eval.DatasetRef{Name: "ds", Version: "1"},
 		},
 		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini"},
 	}
 
 	err := cfg.Validate()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "mutually exclusive")
+	assert.Contains(t, err.Error(), "optimization_model is required")
+}
+
+func TestValidate_MissingEvaluators(t *testing.T) {
+	t.Parallel()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:   opt_eval.AgentRef{Name: "agent"},
+			Dataset: &opt_eval.DatasetRef{Name: "ds", Version: "1"},
+		},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini", OptimizationModel: "gpt-5"},
+	}
+
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one evaluator is required")
+}
+
+func TestValidate_DatasetFileTakesPrecedence(t *testing.T) {
+	t.Parallel()
+
+	// dataset_file is the deprecated local form; it remains valid for backward
+	// compatibility and takes precedence over a registered dataset_reference.
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent:       opt_eval.AgentRef{Name: "agent"},
+			DatasetFile: "tasks.jsonl",
+			Dataset:     &opt_eval.DatasetRef{Name: "ds", Version: "1"},
+			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+		},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini", OptimizationModel: "gpt-5"},
+	}
+
+	require.NoError(t, cfg.Validate())
+	assert.Equal(t, "tasks.jsonl", cfg.LocalDatasetPath())
 }
 
 func TestValidate_NeitherDatasetFileNorReference(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{
-		Config:  opt_eval.Config{Agent: opt_eval.AgentRef{Name: "agent"}},
-		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini"},
+		Config: opt_eval.Config{
+			Agent:      opt_eval.AgentRef{Name: "agent"},
+			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+		},
+		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini", OptimizationModel: "gpt-5"},
 	}
 
 	err := cfg.Validate()
@@ -213,8 +294,8 @@ options:
 	assert.Equal(t, "gpt-4o", cfg.Options.EvalModel)
 	assert.Len(t, cfg.Evaluators, 1)
 	assert.Equal(t, "builtin.task_adherence", cfg.Evaluators[0].Name)
-	require.NotNil(t, cfg.DatasetReference)
-	assert.Equal(t, "eval-dataset", cfg.DatasetReference.Name)
+	require.NotNil(t, cfg.Dataset)
+	assert.Equal(t, "eval-dataset", cfg.Dataset.Name)
 }
 
 func TestLoadOptimizeConfig_ScalarEvaluatorsWithOptions(t *testing.T) {
@@ -248,6 +329,7 @@ evaluators:
 options:
   eval_model: gpt-4o
   budget: 3
+  optimization_model: gpt-5
 `
 	cfgPath := writeTestFile(t, dir, "spec.yaml", yamlContent)
 
@@ -259,7 +341,7 @@ options:
 
 	// Dataset
 	assert.Equal(t, datasetPath, cfg.DatasetFile)
-	assert.Nil(t, cfg.DatasetReference)
+	assert.Nil(t, cfg.Dataset)
 
 	// Evaluator — scalar string without builtin. prefix resolves as custom.
 	require.Len(t, cfg.Evaluators, 1)
@@ -274,8 +356,10 @@ options:
 	req, _, err := cfg.ToRequest()
 	require.NoError(t, err)
 	assert.Equal(t, "my-test-agent", req.Agent.AgentName)
-	assert.Len(t, req.Dataset, 1)
-	assert.Equal(t, []string{"builtin.task_adherence"}, req.Evaluators)
+	require.NotNil(t, req.TrainDataset)
+	assert.Equal(t, optimize_api.DatasetTypeInline, req.TrainDataset.Type)
+	assert.Len(t, req.TrainDataset.Items, 1)
+	assert.Equal(t, []optimize_api.EvaluatorRef{{Name: "builtin.task_adherence"}}, req.Evaluators)
 }
 
 // ---------------------------------------------------------------------------
@@ -465,7 +549,7 @@ func TestToRequest_WithToolsFile(t *testing.T) {
 	assert.Equal(t, "calculator", tools[0].Function.Name)
 }
 
-// ---- ToRequest: BaselineModel in OptimizationConfig ----
+// ---- ToRequest: baseline model in OptimizationConfig ----
 
 func TestToRequest_SetsBaselineModelInOptimizationConfig(t *testing.T) {
 	t.Parallel()
@@ -483,8 +567,8 @@ func TestToRequest_SetsBaselineModelInOptimizationConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, req.Options.OptimizationConfig)
-	raw, ok := req.Options.OptimizationConfig["baselineModel"]
-	require.True(t, ok, "baselineModel should be in optimizationConfig")
+	raw, ok := req.Options.OptimizationConfig["model"]
+	require.True(t, ok, "baseline model should be in optimization_config under the model key")
 	assert.Equal(t, `"gpt-4o"`, string(raw))
 }
 
@@ -504,8 +588,8 @@ func TestToRequest_BaselineModelOmittedWhenEmpty(t *testing.T) {
 	require.NoError(t, err)
 
 	if req.Options.OptimizationConfig != nil {
-		_, hasKey := req.Options.OptimizationConfig["baselineModel"]
-		assert.False(t, hasKey, "baselineModel should not be set when model is empty")
+		_, hasKey := req.Options.OptimizationConfig["model"]
+		assert.False(t, hasKey, "model should not be set when baseline model is empty")
 	}
 }
 
@@ -524,10 +608,75 @@ func TestToRequest_BaselineModelInJSON(t *testing.T) {
 	req, _, err := cfg.ToRequest()
 	require.NoError(t, err)
 
-	// Verify the JSON output contains baselineModel inside optimizationConfig.
+	// Verify the JSON output contains the model key inside optimization_config.
 	data, err := json.Marshal(req)
 	require.NoError(t, err)
-	assert.Contains(t, string(data), `"baselineModel"`)
+	assert.Contains(t, string(data), `"model"`)
+}
+
+// ---------------------------------------------------------------------------
+// evaluatorRefs — preserves name + version
+// ---------------------------------------------------------------------------
+
+func TestEvaluatorRefs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil list returns nil", func(t *testing.T) {
+		t.Parallel()
+		assert.Nil(t, evaluatorRefs(nil))
+	})
+
+	t.Run("empty list returns nil", func(t *testing.T) {
+		t.Parallel()
+		assert.Nil(t, evaluatorRefs(opt_eval.EvaluatorList{}))
+	})
+
+	t.Run("preserves name and version", func(t *testing.T) {
+		t.Parallel()
+		list := opt_eval.EvaluatorList{
+			{Name: "builtin.task_adherence"},
+			{Name: "custom-quality", Version: "2", LocalURI: "evaluators/custom-quality_2.json"},
+		}
+		got := evaluatorRefs(list)
+		require.Len(t, got, 2)
+		assert.Equal(t, optimize_api.EvaluatorRef{Name: "builtin.task_adherence"}, got[0])
+		// local_uri is not part of the wire EvaluatorRef — only name + version.
+		assert.Equal(t, optimize_api.EvaluatorRef{Name: "custom-quality", Version: "2"}, got[1])
+	})
+}
+
+// ---------------------------------------------------------------------------
+// mergeEvaluators
+// ---------------------------------------------------------------------------
+
+func TestMergeEvaluators(t *testing.T) {
+	t.Parallel()
+
+	t.Run("appends new and dedups by name", func(t *testing.T) {
+		t.Parallel()
+		base := opt_eval.EvaluatorList{{Name: "a"}, {Name: "b"}}
+		add := opt_eval.EvaluatorList{{Name: "b"}, {Name: "c"}}
+		got := mergeEvaluators(base, add)
+		require.Len(t, got, 3)
+		assert.Equal(t, "a", got[0].Name)
+		assert.Equal(t, "b", got[1].Name)
+		assert.Equal(t, "c", got[2].Name)
+	})
+
+	t.Run("empty base returns add", func(t *testing.T) {
+		t.Parallel()
+		got := mergeEvaluators(nil, opt_eval.EvaluatorList{{Name: "x"}})
+		require.Len(t, got, 1)
+		assert.Equal(t, "x", got[0].Name)
+	})
+
+	t.Run("empty add returns base", func(t *testing.T) {
+		t.Parallel()
+		base := opt_eval.EvaluatorList{{Name: "x"}}
+		got := mergeEvaluators(base, nil)
+		require.Len(t, got, 1)
+		assert.Equal(t, "x", got[0].Name)
+	})
 }
 
 // ---------------------------------------------------------------------------

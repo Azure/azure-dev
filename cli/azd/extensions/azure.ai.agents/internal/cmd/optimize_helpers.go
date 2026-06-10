@@ -107,12 +107,34 @@ func endpointFromNamedEnv(ctx context.Context, envName string) string {
 	return v.Value
 }
 
-// optimizeLastJobIDKey is the azd environment key for the last optimization job ID.
+// optimizeLastJobIDKey is the global azd environment key for the most recent
+// optimization job ID. It is used by `optimize status` (which has no agent
+// context) and as a fallback when a per-agent job ID is not set.
 const optimizeLastJobIDKey = "OPTIMIZE_LAST_OPERATION_ID"
 
-// saveLastOptimizeJobID stores the operation ID in the azd environment.
-// Best-effort — silently ignores errors (e.g., when running outside azd).
-func saveLastOptimizeJobID(ctx context.Context, operationID, envName string) {
+// optimizeEnvKeyName returns the identifier used to derive per-agent optimize
+// env keys (job ID, candidate ID). It prefers the azd service name so the keys
+// align with AGENT_{KEY}_NAME / AGENT_{KEY}_OPTIMIZATION_CANDIDATE_ID, and
+// falls back to the agent name for standalone --agent usage without a project.
+func optimizeEnvKeyName(serviceName, agentName string) string {
+	if serviceName != "" {
+		return serviceName
+	}
+	return agentName
+}
+
+// optimizeJobIDKeyForAgent returns the per-agent azd environment key that stores
+// the optimization job ID, mirroring AGENT_{KEY}_OPTIMIZATION_CANDIDATE_ID. The
+// name should be the azd service name (see optimizeEnvKeyName).
+func optimizeJobIDKeyForAgent(name string) string {
+	return fmt.Sprintf("AGENT_%s_OPTIMIZATION_JOB_ID", toServiceKey(name))
+}
+
+// saveLastOptimizeJobID stores the operation ID in the azd environment under
+// both the per-agent key (AGENT_{KEY}_OPTIMIZATION_JOB_ID) and the global
+// last-job key. Best-effort — silently ignores errors (e.g., when running
+// outside azd).
+func saveLastOptimizeJobID(ctx context.Context, agentName, operationID, envName string) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return
@@ -124,6 +146,16 @@ func saveLastOptimizeJobID(ctx context.Context, operationID, envName string) {
 		return
 	}
 
+	// Per-agent key — used by apply/deploy/postdeploy to promote the correct job.
+	if agentName != "" {
+		_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: env.Name,
+			Key:     optimizeJobIDKeyForAgent(agentName),
+			Value:   operationID,
+		})
+	}
+
+	// Global key — convenience for `optimize status` and a fallback.
 	_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: env.Name,
 		Key:     optimizeLastJobIDKey,
@@ -131,7 +163,42 @@ func saveLastOptimizeJobID(ctx context.Context, operationID, envName string) {
 	})
 }
 
-// loadLastOptimizeJobID retrieves the last operation ID from the azd environment.
+// loadOptimizeJobIDForAgent retrieves the optimization job ID for a specific
+// agent, preferring the per-agent key and falling back to the global last-job
+// key. Returns empty string if neither is available.
+func loadOptimizeJobIDForAgent(ctx context.Context, agentName, envName string) string {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return ""
+	}
+	defer azdClient.Close()
+
+	env := getExistingEnvironment(ctx, envName, azdClient)
+	if env == nil {
+		return ""
+	}
+
+	if agentName != "" {
+		if resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: env.Name,
+			Key:     optimizeJobIDKeyForAgent(agentName),
+		}); err == nil && resp != nil && resp.Value != "" {
+			return resp.Value
+		}
+	}
+
+	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: env.Name,
+		Key:     optimizeLastJobIDKey,
+	})
+	if err != nil || resp == nil {
+		return ""
+	}
+	return resp.Value
+}
+
+// loadLastOptimizeJobID retrieves the global last optimization job ID from the
+// azd environment. Used by `optimize status`, which has no agent context.
 // Returns empty string if not available.
 func loadLastOptimizeJobID(ctx context.Context, envName string) string {
 	azdClient, err := azdext.NewAzdClient()
@@ -291,8 +358,29 @@ func reportSvcOptimizationDeployment(
 	log.Printf("postdeploy: promoting candidate %s for %s (version %s)",
 		candidateResp.Value, svc.Name, versionResp.Value)
 
+	// Candidate promotion is nested under the optimization job; resolve the
+	// per-agent job ID (AGENT_{KEY}_OPTIMIZATION_JOB_ID), falling back to the
+	// global last-job key.
+	jobIDKey := optimizeJobIDKeyForAgent(svc.Name)
+	jobID := ""
+	if jobResp, jobErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     jobIDKey,
+	}); jobErr == nil && jobResp != nil && jobResp.Value != "" {
+		jobID = jobResp.Value
+	} else if jobResp, jobErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     optimizeLastJobIDKey,
+	}); jobErr == nil && jobResp != nil {
+		jobID = jobResp.Value
+	}
+	if jobID == "" {
+		log.Printf("postdeploy: no optimization job ID for %s, skipping promotion", svc.Name)
+		return
+	}
+
 	optClient := newClient(projectEndpoint)
-	if err := optClient.ReportDeployment(ctx, &optimize_api.DeploymentReport{
+	if err := optClient.ReportDeployment(ctx, jobID, &optimize_api.DeploymentReport{
 		CandidateID:  candidateResp.Value,
 		AgentName:    svc.Name,
 		AgentVersion: versionResp.Value,

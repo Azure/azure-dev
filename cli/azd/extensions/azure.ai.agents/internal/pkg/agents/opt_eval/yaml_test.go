@@ -110,18 +110,152 @@ func TestConfig_RoundTrip_DatasetReference(t *testing.T) {
 	path := filepath.Join(dir, "config.yaml")
 
 	original := &Config{
-		Agent:            AgentRef{Name: "a1"},
-		DatasetReference: &DatasetRef{Name: "golden", Version: "v2"},
+		Agent:   AgentRef{Name: "a1"},
+		Dataset: &DatasetRef{Name: "golden", Version: "v2"},
 	}
 
 	require.NoError(t, Write(path, original))
 	loaded, err := Read(path)
 	require.NoError(t, err)
 
-	require.NotNil(t, loaded.DatasetReference)
-	assert.Equal(t, "golden", loaded.DatasetReference.Name)
-	assert.Equal(t, "v2", loaded.DatasetReference.Version)
+	require.NotNil(t, loaded.Dataset)
+	assert.Equal(t, "golden", loaded.Dataset.Name)
+	assert.Equal(t, "v2", loaded.Dataset.Version)
 	assert.Empty(t, loaded.DatasetFile)
+}
+
+// ---------------------------------------------------------------------------
+// DatasetRef.IsLocal / IsRemote — inferred from populated fields
+// ---------------------------------------------------------------------------
+
+func TestDatasetRef_IsLocal(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		ref  *DatasetRef
+		want bool
+	}{
+		{"nil", nil, false},
+		{"local_uri only", &DatasetRef{LocalURI: "./data.jsonl"}, true},
+		{"name present", &DatasetRef{Name: "ds"}, false},
+		{"name and local_uri", &DatasetRef{Name: "ds", LocalURI: "./cache.jsonl"}, false},
+		{"empty", &DatasetRef{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, tt.ref.IsLocal())
+		})
+	}
+}
+
+func TestDatasetRef_IsRemote(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		ref  *DatasetRef
+		want bool
+	}{
+		{"nil", nil, false},
+		{"name present", &DatasetRef{Name: "ds"}, true},
+		{"name and version", &DatasetRef{Name: "ds", Version: "2"}, true},
+		{"local_uri only", &DatasetRef{LocalURI: "./data.jsonl"}, false},
+		{"empty", &DatasetRef{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, tt.ref.IsRemote())
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Config dataset helpers — NormalizeDataset / LocalDatasetPath / RemoteDatasetReference
+// ---------------------------------------------------------------------------
+
+func TestConfig_NormalizeDataset(t *testing.T) {
+	t.Parallel()
+
+	t.Run("merges legacy dataset_reference into Dataset", func(t *testing.T) {
+		t.Parallel()
+		c := &Config{LegacyDatasetReference: &DatasetRef{Name: "golden", Version: "2"}}
+		c.NormalizeDataset()
+		require.NotNil(t, c.Dataset)
+		assert.Equal(t, "golden", c.Dataset.Name)
+		assert.Nil(t, c.LegacyDatasetReference, "legacy field should be cleared")
+	})
+
+	t.Run("Dataset takes precedence over legacy", func(t *testing.T) {
+		t.Parallel()
+		c := &Config{
+			Dataset:                &DatasetRef{Name: "new"},
+			LegacyDatasetReference: &DatasetRef{Name: "old"},
+		}
+		c.NormalizeDataset()
+		assert.Equal(t, "new", c.Dataset.Name)
+		assert.Nil(t, c.LegacyDatasetReference)
+	})
+
+	t.Run("no-op when neither set", func(t *testing.T) {
+		t.Parallel()
+		c := &Config{}
+		c.NormalizeDataset()
+		assert.Nil(t, c.Dataset)
+	})
+}
+
+func TestConfig_LocalDatasetPath(t *testing.T) {
+	t.Parallel()
+
+	t.Run("dataset_file takes precedence", func(t *testing.T) {
+		t.Parallel()
+		c := &Config{
+			DatasetFile: "tasks.jsonl",
+			Dataset:     &DatasetRef{LocalURI: "./other.jsonl"},
+		}
+		assert.Equal(t, "tasks.jsonl", c.LocalDatasetPath())
+	})
+
+	t.Run("falls back to local dataset", func(t *testing.T) {
+		t.Parallel()
+		c := &Config{Dataset: &DatasetRef{LocalURI: "./golden.jsonl"}}
+		assert.Equal(t, "./golden.jsonl", c.LocalDatasetPath())
+	})
+
+	t.Run("empty for remote dataset", func(t *testing.T) {
+		t.Parallel()
+		c := &Config{Dataset: &DatasetRef{Name: "registered"}}
+		assert.Empty(t, c.LocalDatasetPath())
+	})
+
+	t.Run("empty when nothing set", func(t *testing.T) {
+		t.Parallel()
+		assert.Empty(t, (&Config{}).LocalDatasetPath())
+	})
+}
+
+func TestConfig_RemoteDatasetReference(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns ref for remote dataset", func(t *testing.T) {
+		t.Parallel()
+		c := &Config{Dataset: &DatasetRef{Name: "ds", Version: "3"}}
+		ref := c.RemoteDatasetReference()
+		require.NotNil(t, ref)
+		assert.Equal(t, "ds", ref.Name)
+	})
+
+	t.Run("nil for local dataset", func(t *testing.T) {
+		t.Parallel()
+		c := &Config{Dataset: &DatasetRef{LocalURI: "./data.jsonl"}}
+		assert.Nil(t, c.RemoteDatasetReference())
+	})
+
+	t.Run("nil when unset", func(t *testing.T) {
+		t.Parallel()
+		assert.Nil(t, (&Config{}).RemoteDatasetReference())
+	})
 }
 
 func TestRead_MissingFile(t *testing.T) {
@@ -189,16 +323,32 @@ func TestOptions_YAMLFields(t *testing.T) {
 
 	input := `
 eval_model: gpt-4.1
-max_iterations: 10
+max_candidates: 10
 optimization_model: gpt-4o
 `
 	var opts Options
 	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
 
 	assert.Equal(t, "gpt-4.1", opts.EvalModel)
-	require.NotNil(t, opts.MaxIterations)
-	assert.Equal(t, 10, *opts.MaxIterations)
+	require.NotNil(t, opts.MaxCandidates)
+	assert.Equal(t, 10, *opts.MaxCandidates)
 	assert.Equal(t, "gpt-4o", opts.OptimizationModel)
+}
+
+// TestOptions_MaxCandidates verifies the max_candidates key populates
+// MaxCandidates.
+func TestOptions_MaxCandidates(t *testing.T) {
+	t.Parallel()
+
+	input := `
+eval_model: gpt-4.1
+max_candidates: 7
+`
+	var opts Options
+	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
+
+	require.NotNil(t, opts.MaxCandidates)
+	assert.Equal(t, 7, *opts.MaxCandidates)
 }
 
 func TestOptions_OptimizationConfig_NativeYAML(t *testing.T) {
@@ -208,11 +358,11 @@ func TestOptions_OptimizationConfig_NativeYAML(t *testing.T) {
 eval_model: gpt-4o
 optimization_model: gpt-5.1
 optimization_config:
-  model:
+  model_search_space:
     - gpt-4o
     - gpt-5
     - gpt-5.1
-  baselineModel: gpt-4o
+  model: gpt-4o
 `
 	var opts Options
 	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
@@ -222,11 +372,11 @@ optimization_config:
 
 	require.NotNil(t, opts.OptimizationConfig)
 
-	// model should be a JSON array.
-	assert.JSONEq(t, `["gpt-4o","gpt-5","gpt-5.1"]`, string(opts.OptimizationConfig["model"]))
+	// model_search_space should be a JSON array.
+	assert.JSONEq(t, `["gpt-4o","gpt-5","gpt-5.1"]`, string(opts.OptimizationConfig["model_search_space"]))
 
-	// baselineModel should be a JSON string.
-	assert.JSONEq(t, `"gpt-4o"`, string(opts.OptimizationConfig["baselineModel"]))
+	// model should be a JSON string.
+	assert.JSONEq(t, `"gpt-4o"`, string(opts.OptimizationConfig["model"]))
 }
 
 func TestOptions_OptimizationConfig_QuotedJSON(t *testing.T) {
@@ -236,17 +386,17 @@ func TestOptions_OptimizationConfig_QuotedJSON(t *testing.T) {
 	// These should be stored as-is, not double-encoded.
 	input := `
 optimization_config:
-  model: '["gpt-4o","gpt-5"]'
-  baselineModel: '"gpt-4o"'
+  model_search_space: '["gpt-4o","gpt-5"]'
+  model: '"gpt-4o"'
 `
 	var opts Options
 	require.NoError(t, yaml.Unmarshal([]byte(input), &opts))
 
 	require.NotNil(t, opts.OptimizationConfig)
 
-	// model should be the JSON array, not a JSON-encoded string.
-	assert.JSONEq(t, `["gpt-4o","gpt-5"]`, string(opts.OptimizationConfig["model"]))
+	// model_search_space should be the JSON array, not a JSON-encoded string.
+	assert.JSONEq(t, `["gpt-4o","gpt-5"]`, string(opts.OptimizationConfig["model_search_space"]))
 
-	// baselineModel should be the JSON string, not double-quoted.
-	assert.JSONEq(t, `"gpt-4o"`, string(opts.OptimizationConfig["baselineModel"]))
+	// model should be the JSON string, not double-quoted.
+	assert.JSONEq(t, `"gpt-4o"`, string(opts.OptimizationConfig["model"]))
 }

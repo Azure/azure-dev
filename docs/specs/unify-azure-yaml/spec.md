@@ -484,21 +484,14 @@ items sit in the same list as the design items.
    Confirm whether to keep that, accepting reading arbitrary files and fetching remote
    content, or restrict to project-local paths behind an opt-in. The design follows the
    brief and accepts them for now (2.4).
-6. **Instruction and prompt file format.** Skill and prompt agent `instructions` accept an
-   inline string or a file path (2.4). The brief lists this as open too; confirm both forms
-   are supported and settle the accepted file extensions (`.md`, `.txt`).
-7. **Routines ownership and triggers.** The brief leaves this open: does the routines schema
-   live in `azure.ai.agents` (Option A) or in `azure.ai.routines`? `Routine.json` allows
-   `schedule`, `webhook`, and `event` triggers; confirm which the first version supports
-   beyond cron schedules.
-8. **Split file validation.** The language server can follow a `$ref` to a local file for
+6. **Split file validation.** The language server can follow a `$ref` to a local file for
    editor hints, but runtime validation of a loaded file against the per resource schema
    needs to be confirmed.
-9. **Inline config size over gRPC.** A big project becomes a large protobuf struct. Confirm
+7. **Inline config size over gRPC.** A big project becomes a large protobuf struct. Confirm
    there is no practical size limit, or define how to chunk it.
-10. **Composition surface naming.** Issue #8049 places the `add` commands in an `azd ai
-    project` surface, but an `azure.ai.projects` extension already exists. Confirm where the
-    schema and the `add` commands live so the two do not collide.
+8. **Composition surface naming.** Issue #8049 places the `add` commands in an `azd ai
+   project` surface, but an `azure.ai.projects` extension already exists. Confirm where the
+   schema and the `add` commands live so the two do not collide.
 
 ## Summary of required changes
 

@@ -107,6 +107,15 @@ func (p *TestProvider) Preview(ctx context.Context) (*provisioning.DeployPreview
 	}, nil
 }
 
+// Validate returns an empty result for the test provider.
+func (p *TestProvider) Validate(
+	ctx context.Context,
+) (*provisioning.ValidateResult, error) {
+	return &provisioning.ValidateResult{
+		Results: []provisioning.ValidateCheckResult{},
+	}, nil
+}
+
 func (p *TestProvider) Destroy(
 	ctx context.Context,
 	options provisioning.DestroyOptions,

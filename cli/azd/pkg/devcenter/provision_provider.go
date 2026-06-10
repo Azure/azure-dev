@@ -249,6 +249,16 @@ func (p *ProvisionProvider) Preview(ctx context.Context) (*provisioning.DeployPr
 	return nil, fmt.Errorf("preview is not supported for devcenter")
 }
 
+// Validate is not yet supported for Dev Center.
+func (p *ProvisionProvider) Validate(
+	ctx context.Context,
+) (*provisioning.ValidateResult, error) {
+	return &provisioning.ValidateResult{
+		Skipped:    true,
+		SkipReason: "validation not yet supported for Dev Center provider",
+	}, nil
+}
+
 // Destroy destroys the environment by deleting the ADE environment
 func (p *ProvisionProvider) Destroy(
 	ctx context.Context,

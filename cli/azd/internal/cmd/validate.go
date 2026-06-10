@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -66,14 +67,15 @@ Use --gate to run a specific gate in isolation.`,
 
 // ValidateAction implements the azd validate command.
 type ValidateAction struct {
-	flags          *ValidateFlags
-	projectConfig  *project.ProjectConfig
-	projectManager project.ProjectManager
-	env            *environment.Environment
-	console        input.Console
-	formatter      output.Formatter
-	writer         io.Writer
-	gates          []validate.Gate
+	flags            *ValidateFlags
+	projectConfig    *project.ProjectConfig
+	projectManager   project.ProjectManager
+	provisionManager *provisioning.Manager
+	env              *environment.Environment
+	console          input.Console
+	formatter        output.Formatter
+	writer           io.Writer
+	gates            []validate.Gate
 }
 
 // NewValidateAction creates a new ValidateAction with all dependencies
@@ -82,23 +84,27 @@ func NewValidateAction(
 	flags *ValidateFlags,
 	projectConfig *project.ProjectConfig,
 	projectManager project.ProjectManager,
+	provisionManager *provisioning.Manager,
 	env *environment.Environment,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
 ) actions.Action {
 	action := &ValidateAction{
-		flags:          flags,
-		projectConfig:  projectConfig,
-		projectManager: projectManager,
-		env:            env,
-		console:        console,
-		formatter:      formatter,
-		writer:         writer,
+		flags:            flags,
+		projectConfig:    projectConfig,
+		projectManager:   projectManager,
+		provisionManager: provisionManager,
+		env:              env,
+		console:          console,
+		formatter:        formatter,
+		writer:           writer,
 	}
 
 	// Register built-in gates
 	action.RegisterGate(validate.NewProjectConfigGate())
+	action.RegisterGate(
+		validate.NewLocalPreflightGate(provisionManager))
 
 	return action
 }

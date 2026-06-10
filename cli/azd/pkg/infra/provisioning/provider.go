@@ -222,6 +222,42 @@ const (
 	PreflightAbortedSkipped SkippedReasonType = "preflight aborted"
 )
 
+// ValidateCheckSeverity indicates whether a validation finding is a warning or blocking error.
+type ValidateCheckSeverity int
+
+const (
+	// ValidateWarning indicates a non-blocking issue.
+	ValidateWarning ValidateCheckSeverity = iota
+	// ValidateError indicates a blocking issue.
+	ValidateError
+)
+
+// ValidateCheckResult holds the outcome of a single validation check.
+type ValidateCheckResult struct {
+	Severity     ValidateCheckSeverity
+	DiagnosticID string
+	Message      string
+	Suggestion   string
+	Links        []ValidateLink
+}
+
+// ValidateLink is a reference link attached to a validation finding.
+type ValidateLink struct {
+	URL   string
+	Title string
+}
+
+// ValidateResult holds the outcome of a provider-level validation.
+type ValidateResult struct {
+	// Results contains all findings. An empty non-nil slice means validation
+	// ran but found nothing. A nil slice means validation was skipped.
+	Results []ValidateCheckResult
+	// Skipped is true when validation did not execute.
+	Skipped bool
+	// SkipReason explains why validation was skipped.
+	SkipReason string
+}
+
 type DeployResult struct {
 	Deployment    *Deployment
 	SkippedReason SkippedReasonType
@@ -266,6 +302,7 @@ type Provider interface {
 	Deploy(ctx context.Context) (*DeployResult, error)
 	Preview(ctx context.Context) (*DeployPreviewResult, error)
 	Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error)
+	Validate(ctx context.Context) (*ValidateResult, error)
 	EnsureEnv(ctx context.Context) error
 	Parameters(ctx context.Context) ([]Parameter, error)
 	PlannedOutputs(ctx context.Context) ([]PlannedOutput, error)

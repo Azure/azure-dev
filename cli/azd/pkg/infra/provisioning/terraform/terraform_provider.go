@@ -235,6 +235,17 @@ func (t *TerraformProvider) Preview(ctx context.Context) (*provisioning.DeployPr
 	}, nil
 }
 
+// Validate is not yet implemented for Terraform.
+// Returns a skipped result indicating Terraform validation is pending.
+func (t *TerraformProvider) Validate(
+	ctx context.Context,
+) (*provisioning.ValidateResult, error) {
+	return &provisioning.ValidateResult{
+		Skipped:    true,
+		SkipReason: "validation not yet supported for Terraform provider",
+	}, nil
+}
+
 // Destroys the specified deployment through terraform destroy
 func (t *TerraformProvider) Destroy(
 	ctx context.Context,

@@ -1147,6 +1147,90 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 	}, nil
 }
 
+// Validate runs local preflight validation without deploying.
+// It compiles the Bicep template, builds a deployment object, and
+// executes the same local preflight checks that run during Deploy().
+// The results are returned as [provisioning.ValidateResult] so callers
+// can inspect findings without side effects.
+func (p *BicepProvider) Validate(
+	ctx context.Context,
+) (*provisioning.ValidateResult, error) {
+	planned, err := p.plan(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	deployment, err := p.generateDeploymentObject(planned)
+	if err != nil {
+		return nil, err
+	}
+
+	envLocation := p.resolveResourceGroupLocation(
+		ctx, p.env.GetSubscriptionId())
+	if envLocation == "" {
+		envLocation = strings.ToLower(p.env.GetLocation())
+	}
+
+	localPreflight := newLocalArmPreflight(
+		p.path, p.bicepCli, deployment, envLocation)
+
+	localPreflight.AddCheck(PreflightCheck{
+		RuleID: "role_assignment_permissions",
+		Fn:     p.checkRoleAssignmentPermissions,
+	})
+	localPreflight.AddCheck(PreflightCheck{
+		RuleID: "ai_model_quota",
+		Fn:     p.checkAiModelQuota,
+	})
+	localPreflight.AddCheck(PreflightCheck{
+		RuleID: "reserved_resource_names",
+		Fn:     p.checkReservedResourceNames,
+	})
+
+	results, err := localPreflight.validate(
+		ctx, p.console, planned.RawArmTemplate, planned.Parameters)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"local preflight validation failed: %w", err)
+	}
+
+	if results == nil {
+		return &provisioning.ValidateResult{
+			Skipped:    true,
+			SkipReason: "bicep snapshot unavailable",
+		}, nil
+	}
+
+	validateResults := make(
+		[]provisioning.ValidateCheckResult, len(results))
+	for i, r := range results {
+		severity := provisioning.ValidateWarning
+		if r.Severity == PreflightCheckError {
+			severity = provisioning.ValidateError
+		}
+
+		links := make(
+			[]provisioning.ValidateLink, len(r.Links))
+		for j, l := range r.Links {
+			links[j] = provisioning.ValidateLink{
+				URL: l.URL, Title: l.Title,
+			}
+		}
+
+		validateResults[i] = provisioning.ValidateCheckResult{
+			Severity:     severity,
+			DiagnosticID: r.DiagnosticID,
+			Message:      r.Message,
+			Suggestion:   r.Suggestion,
+			Links:        links,
+		}
+	}
+
+	return &provisioning.ValidateResult{
+		Results: validateResults,
+	}, nil
+}
+
 // convertPropertyChanges converts Azure SDK's WhatIfPropertyChange to our DeploymentPreviewPropertyChange
 func convertPropertyChanges(changes []*armresources.WhatIfPropertyChange) []provisioning.DeploymentPreviewPropertyChange {
 	if changes == nil {

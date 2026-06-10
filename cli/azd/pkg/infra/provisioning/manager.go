@@ -143,6 +143,17 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 	return deployResult, nil
 }
 
+// Validate runs provider-level validation without deploying.
+// It delegates to the provider's Validate method, which compiles
+// the template and runs local preflight checks.
+func (m *Manager) Validate(ctx context.Context) (*ValidateResult, error) {
+	if m.provider == nil {
+		return nil, fmt.Errorf(
+			"provider not initialized; call Initialize() first")
+	}
+	return m.provider.Validate(ctx)
+}
+
 const (
 	fileShareUploadOperation string = "FileShareUpload"
 	azdOperationsFileName    string = "azd.operations.yaml"

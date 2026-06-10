@@ -96,6 +96,10 @@ func (p *mockProvider) Destroy(_ context.Context, _ provisioning.DestroyOptions)
 
 func (p *mockProvider) EnsureEnv(_ context.Context) error { return nil }
 
+func (p *mockProvider) Validate(_ context.Context) (*provisioning.ValidateResult, error) {
+	return &provisioning.ValidateResult{Skipped: true, SkipReason: "mock"}, nil
+}
+
 func (p *mockProvider) Parameters(_ context.Context) ([]provisioning.Parameter, error) {
 	return nil, nil
 }

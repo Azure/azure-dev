@@ -218,6 +218,17 @@ func (p *ExternalProvisioningProvider) Destroy(
 	}, nil
 }
 
+// Validate is not yet supported for extension provisioning providers.
+// Returns a skipped result.
+func (p *ExternalProvisioningProvider) Validate(
+	ctx context.Context,
+) (*provisioning.ValidateResult, error) {
+	return &provisioning.ValidateResult{
+		Skipped:    true,
+		SkipReason: "validation not yet supported for extension providers",
+	}, nil
+}
+
 // EnsureEnv ensures the environment is configured properly.
 func (p *ExternalProvisioningProvider) EnsureEnv(ctx context.Context) error {
 	req := &azdext.ProvisioningMessage{

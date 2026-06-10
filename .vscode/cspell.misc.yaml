@@ -36,6 +36,13 @@ overrides:
           - Entra
           - CODEOWNERS
           - weikanglim
+          - appservice
+          - resourcegroup
+          - whatif
+          - remotebuild
+          - firstrun
+          - dependson
+          - exegraph
     - filename: ./README.md
       words:
           - VSIX

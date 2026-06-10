@@ -177,13 +177,16 @@ func (at *staticWebAppTarget) Deploy(
 		dOptions.OutputRelativeFolderPath = packagePath
 		cwd = serviceConfig.Project.Path
 	}
+	// Pass an empty environment name to the SWA CLI deploy command so that it deploys
+	// to the production environment. The SWA service rejects "default" as an explicit
+	// environment name; production deployments are made by omitting the --env flag.
 	_, err = at.swa.Deploy(ctx,
 		cwd,
 		at.env.GetTenantId(),
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
-		DefaultStaticWebAppEnvironmentName,
+		"",
 		*deploymentToken,
 		dOptions,
 		at.env.Environ())

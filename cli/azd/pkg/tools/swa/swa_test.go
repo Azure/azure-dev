@@ -119,7 +119,6 @@ func Test_SwaDeploy(t *testing.T) {
 				"--subscription-id", "subscriptionID",
 				"--resource-group", "resourceGroupID",
 				"--app-name", "appName",
-				"--env", "default",
 				"--no-use-keychain",
 				"--deployment-token", "deploymentToken",
 			}, args.Args)
@@ -141,7 +140,7 @@ func Test_SwaDeploy(t *testing.T) {
 			"subscriptionID",
 			"resourceGroupID",
 			"appName",
-			"default",
+			"",
 			"deploymentToken",
 			DeployOptions{},
 			nil,
@@ -167,7 +166,6 @@ func Test_SwaDeploy(t *testing.T) {
 				"--subscription-id", "subscriptionID",
 				"--resource-group", "resourceGroupID",
 				"--app-name", "appName",
-				"--env", "default",
 				"--no-use-keychain",
 				"--deployment-token", "deploymentToken",
 				"--app-location", "appFolderPath",
@@ -191,7 +189,7 @@ func Test_SwaDeploy(t *testing.T) {
 			"subscriptionID",
 			"resourceGroupID",
 			"appName",
-			"default",
+			"",
 			"deploymentToken",
 			DeployOptions{
 				AppFolderPath:            "appFolderPath",
@@ -220,7 +218,6 @@ func Test_SwaDeploy(t *testing.T) {
 				"--subscription-id", "subscriptionID",
 				"--resource-group", "resourceGroupID",
 				"--app-name", "appName",
-				"--env", "default",
 				"--no-use-keychain",
 				"--deployment-token", "deploymentToken",
 			}, args.Args)
@@ -239,7 +236,7 @@ func Test_SwaDeploy(t *testing.T) {
 			"subscriptionID",
 			"resourceGroupID",
 			"appName",
-			"default",
+			"",
 			"deploymentToken",
 			DeployOptions{},
 			nil,
@@ -251,4 +248,42 @@ func Test_SwaDeploy(t *testing.T) {
 			"swa deploy: exit code: 1",
 		)
 	})
+}
+
+func Test_SwaDeploy_WithEnvironment(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	swacli := NewCli(mockContext.CommandRunner)
+
+	var capturedArgs exec.RunArgs
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "npx")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		capturedArgs = args
+		return exec.RunResult{}, nil
+	})
+
+	_, err := swacli.Deploy(
+		t.Context(),
+		testPath,
+		"tenantID",
+		"subscriptionID",
+		"resourceGroupID",
+		"appName",
+		"staging",
+		"deploymentToken",
+		DeployOptions{},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"-y", swaCliPackage,
+		"deploy",
+		"--tenant-id", "tenantID",
+		"--subscription-id", "subscriptionID",
+		"--resource-group", "resourceGroupID",
+		"--app-name", "appName",
+		"--no-use-keychain",
+		"--deployment-token", "deploymentToken",
+		"--env", "staging",
+	}, capturedArgs.Args)
 }

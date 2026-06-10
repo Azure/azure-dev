@@ -462,13 +462,8 @@ resolved by `azure.ai.agents`, not by the meta-package.
 
 ## Open questions
 
-Decisions still open after the brief. Where the brief already raises a question **and**
-recommends an option, that call is taken as given and not re-asked here: schema ownership
-(Option A), per-agent build orchestration (3a), idempotency semantics (Bicep-like, "drop
-from config stops management, does not destroy", see 2.8), built-in Bicep (opt-in,
-in-memory), and the per-agent CLI direction that follows from 3a. Host kind naming stays
-with the brief. The items below are what this design adds or leaves unresolved; provision
-and scope items sit in the same list as design items.
+Decisions this design surfaces that the brief does not already settle. Provision and scope
+items sit in the same list as the design items.
 
 1. **Provision layers in multi service projects.** Issue
    [#8587](https://github.com/Azure/azure-dev/issues/8587) reports `azd provision <agent>`

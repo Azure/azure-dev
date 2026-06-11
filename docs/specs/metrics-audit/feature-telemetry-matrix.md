@@ -34,7 +34,7 @@ These commands emit attributes or events beyond the global middleware span.
 | `mcp start` | Per-tool spans via `tracing.Start` with `mcp.client.name`, `mcp.client.version` | MCP event prefix `mcp.*` |
 | `tool install` / `tool upgrade` / `tool check` / `tool list` / `tool show` | `tool.id`, `tool.ids`, `tool.dry_run`, `tool.install.strategy`, `tool.install.success`, `tool.install.success_count`, `tool.install.failure_count`, `tool.install.failed_ids`, `tool.install.duration_ms`, `tool.upgrade.from_version`, `tool.upgrade.to_version`, `tool.check.updates_available` | Comprehensive coverage in `cli/azd/cmd/tool.go`; install/upgrade emit `tools.pack.build` spans for pack-based tools |
 | `copilot` (agent) | `copilot.initialize` event (model + reasoning config), `copilot.session` event (session create/resume) | Emitted from `internal/agent/copilot_agent.go`; covers the experimental copilot agent surface |
-| `provision` | `validation.preflight` event (preflight outcome + 5 fields), 8 `arm.*` events (subscription / resource-group deploy / stack-deploy / what-if / validate), `aks.postprovision.skip`, per-layer `provision.layer.*` measurements when multi-layer infra is used | Telemetry added across `internal/cmd/provision_*.go` and the ARM deployment client |
+| `provision` | `validation.preflight` event (preflight outcome + 5 fields), 8 `arm.*` events (subscription / resource-group deploy / stack-deploy / what-if / validate), `aks.postprovision.skip`, per-layer `provision.layer.*` counts (`count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count`) when multi-layer infra is used | Telemetry added across `internal/cmd/provision_*.go` and the ARM deployment client |
 | `deploy` / `publish` / `package` | `deploy.appservice.zip` event (zip-deploy outcome), `container.credentials` / `container.publish` / `container.remotebuild` events for container-based services | Per-service-target instrumentation; container events emitted from container-app and ACR push paths |
 | `hooks run` (and all hook-running commands) | `hooks.exec` event with `hooks.name` (hashed unless built-in lifecycle name), `hooks.type` (project / service / **layer**), `hooks.kind` (script runtime — `sh` / `pwsh` / `js` / `ts` / `python` / `dotnet`) | `hooks.type=layer` was added with multi-layer provision; pre/post is encoded in `hooks.name` (e.g., `prebuild` / `postbuild`); emitted from the hooks runner on every lifecycle command |
 
@@ -44,7 +44,7 @@ These commands emit attributes or events beyond the global middleware span.
 |---------|-------------|:-----------:|:----------------------:|:--------------:|-------|
 | **Auth** | | | | | |
 | `auth login` | — | ✅ | ✅ | ❌ | `auth.method` (browser, device-code, service-principal-secret, etc.) |
-| `auth logout` | — | ✅ | ✅ | ❌ | `auth.method` (logout) |
+| `auth logout` | — | ✅ | ❌ | ❌ | Global telemetry sufficient — no command-specific attributes emitted |
 | `auth status` | — | ✅ | ❌ | ❌ | Global telemetry sufficient — simple pass/fail check |
 | `auth token` | — | ✅ | ❌ | ❌ | Global telemetry sufficient |
 | **Config** | | | | | |
@@ -59,7 +59,7 @@ These commands emit attributes or events beyond the global middleware span.
 | `template` | `list`, `show` | ✅ | ❌ | ❌ | Redundant — command name in global span captures operation |
 | `template source` | `list`, `add`, `remove` | ✅ | ❌ | ❌ | Redundant — command name in global span captures operation |
 | **Pipeline** | | | | | |
-| `pipeline config` | — | ✅ | ✅ | ❌ | `pipeline.provider` (github/azdo), `pipeline.auth` (federated/client-credentials) |
+| `pipeline config` | — | ✅ | ✅ | ❌ | `pipeline.provider` (`GitHub` / `Azure DevOps` — emitted as the resolved provider display name after auto-detection), `pipeline.auth` (emitted only when `--auth-type` is set: `federated` / `client-credentials`) |
 | **Monitor** | | | | | |
 | `monitor` | — | ✅ | ❌ | ❌ | Redundant — command name in global span is sufficient |
 | **Show** | | | | | |
@@ -72,7 +72,7 @@ These commands emit attributes or events beyond the global middleware span.
 | **Core Lifecycle** | | | | | |
 | `restore` | — | ✅ | ❌ | ❌ | Via hooks middleware |
 | `build` | — | ✅ | ❌ | ❌ | Via hooks middleware |
-| `provision` | — | ✅ | ✅ | ✅ | `infra.provider` via hooks middleware; emits `validation.preflight`, 8 `arm.*` events, `aks.postprovision.skip`, and per-layer `provision.layer.*` measurements (multi-layer infra) |
+| `provision` | — | ✅ | ✅ | ✅ | `infra.provider` via hooks middleware; emits `validation.preflight`, 8 `arm.*` events, `aks.postprovision.skip`, and per-layer `provision.layer.*` counts (`count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count`) for multi-layer infra |
 | `package` | — | ✅ | ✅ | ✅ | Via hooks middleware; container service targets emit `container.credentials`, `container.publish`, `container.remotebuild` events |
 | `deploy` | — | ✅ | ✅ | ✅ | `infra.provider`, service attributes via hooks middleware; App Service zip-deploy emits `deploy.appservice.zip`; container service targets emit `container.*` events |
 | `publish` | — | ✅ | ✅ | ✅ | Same as `deploy` (alias behavior) |
@@ -114,7 +114,7 @@ command-specific telemetry fields provide analytical value beyond the command na
 
 | Field | OTel Key | Commands | Justification |
 |-------|----------|----------|---------------|
-| Auth method | `auth.method` | `auth login`, `auth logout` | Distinguishes authentication flow type (browser, device-code, SP, federated, etc.) |
+| Auth method | `auth.method` | `auth login` | Distinguishes authentication flow type (browser, device-code, SP, federated, etc.) |
 | Env count | `env.count` | `env list` | Measurement — number of environments is a quantitative metric |
 | Hooks name | `hooks.name` | `hooks run` | Identifies which hook script ran (hashed — user-defined name) |
 | Hooks type | `hooks.type` | `hooks run` | Distinguishes project / service / **layer** hooks |
@@ -157,10 +157,10 @@ privacy review covers every emission point.
 | **Hooks execution middleware** | Every lifecycle command (provision/deploy/up/down/restore/build/package/publish) | `hooks.exec` | `hooks.name` (hashed unless built-in lifecycle name), `hooks.type` (project / service / layer), `hooks.kind` (script runtime — `sh` / `pwsh` / `js` / `ts` / `python` / `dotnet`) | Layer-scope hooks added with multi-layer provision; pre/post is encoded in `hooks.name` (e.g., `prebuild` / `postbuild`), not in `hooks.kind` |
 | **Preflight validation** | `provision` (prior to ARM deploy) | `validation.preflight` | `validation.preflight.outcome`, plus 4 peer fields covering warnings/errors counts and abort reason | Local-only validation; outcome captures passed / warnings-accepted / aborted |
 | **ARM deployment client** | `provision` (any Bicep flow) | `arm.deploy.subscription`, `arm.deploy.resourcegroup`, `arm.stack.deploy.subscription`, `arm.stack.deploy.resourcegroup`, `arm.whatif.subscription`, `arm.whatif.resourcegroup`, `arm.validate.subscription`, `arm.validate.resourcegroup` | ARM operation status + duration | Per-call instrumentation in the ARM client; covers regular + stack deployments at both scopes |
-| **Multi-layer provision** | `provision` (when `infra/layers/` directory is present) | (none — enriches the `provision` span) | `provision.layer.count`, `provision.layer.duration_ms`, plus per-layer dimensions | Layer names from `azure.yaml` are hashed before emission |
-| **Execution graph (scheduler)** | `up`, `provision`, `deploy`, `package`, `publish`, `down` | `exegraph.run`, `exegraph.step` | `exegraph.step.name` (hashed), `exegraph.step.deps` (hashed), `exegraph.step.tags` (raw — hardcoded literals only), step status / duration | Step names embed user-defined service/layer names from `azure.yaml`; both `name` and `deps` use `fields.StringHashed` |
-| **Container lifecycle** | `package`, `deploy` (container service targets) | `container.credentials`, `container.publish`, `container.remotebuild` | Registry host, image tag (hashed via `fields.StringHashed`), build duration, push outcome | Image tags can embed user-defined values |
-| **App Service deploy** | `deploy`, `publish` (App Service targets) | `deploy.appservice.zip` | Deploy outcome, duration, package size | Zip-deploy path only |
+| **Multi-layer provision** | `provision` (when `infra.layers[]` is configured in `azure.yaml`) | (none — enriches the `provision` span) | `provision.layer.count`, `provision.layer.max_parallel`, `provision.layer.safe_fallback_count`, `provision.layer.explicit_dependson_count` | All four are integer measurements emitted from `internal/cmd/provision_graph.go`; no per-layer duration or outcome attribute is emitted |
+| **Execution graph (scheduler)** | `up`, `provision`, `deploy`, `package`, `publish`, `down` | `exegraph.run`, `exegraph.step` | `exegraph.step.count`, `exegraph.max_concurrency`, `exegraph.error_policy`, `exegraph.step.name` (hashed), `exegraph.step.deps` (hashed slice), `exegraph.step.tags` (raw — hardcoded literals only), `exegraph.step.timeout_s` | Step names embed user-defined service / layer names from `azure.yaml`; both `name` and `deps` use `fields.StringHashed` / `fields.StringSliceHashed` |
+| **Container lifecycle** | `package`, `deploy` (container service targets) | `container.credentials`, `container.publish`, `container.remotebuild` | `container.publish` sets `container.remotebuild` (bool) only; `container.credentials` and `container.remotebuild` set no attributes (span status carries success/failure and duration) | The hashed `pack.builder.image` / `pack.builder.tag` attributes are emitted on the separate `tools.pack.build` span, not the `container.*` spans |
+| **App Service deploy** | `deploy`, `publish` (App Service targets) | `deploy.appservice.zip` | `deploy.appservice.linux` (bool), `deploy.appservice.attempt` (retry attempt number) | Zip-deploy path only; outcome / duration are carried by the span status and span timing, not by dedicated attributes |
 | **AKS service target** | `provision` (AKS preprovision/postprovision) | `aks.postprovision.skip` | Skip reason | Recorded when cluster is not yet available for context setup |
 | **Agent troubleshoot middleware** | Triggered on command failure when troubleshooting is engaged | `agent.troubleshoot` | Error chain attributes, hashed error fields | Emitted from `cmd/middleware/error.go` |
 | **Performance enrichment** | Every command (perf middleware) | (none — enriches the command span) | `perf.provision_duration_ms`, `perf.deploy_duration_ms`, `perf.total_duration_ms` | Quantitative durations for the global command span |

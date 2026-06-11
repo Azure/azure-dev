@@ -272,8 +272,8 @@ The following fields are being introduced to close telemetry gaps identified in 
 | Hooks name | `hooks.name` | SystemMetadata | FeatureInsight | Built-in hook name (raw) or SHA-256 hash for extension/custom hooks. Known values: `prebuild`, `postbuild`, `predeploy`, `postdeploy`, `predown`, `postdown`, `prepackage`, `postpackage`, `preprovision`, `postprovision`, `prepublish`, `postpublish`, `prerestore`, `postrestore`, `preup`, `postup` |
 | Hooks type | `hooks.type` | SystemMetadata | FeatureInsight | `project`, `service`, `layer` |
 | Hooks kind | `hooks.kind` | SystemMetadata | FeatureInsight | Executor used to run the hook. Values: `sh`, `pwsh`, `python`, `js`, `ts`, `dotnet` |
-| Pipeline provider | `pipeline.provider` | SystemMetadata | FeatureInsight | `github`, `azdo`, `auto` (auto-detected) |
-| Pipeline auth | `pipeline.auth` | SystemMetadata | FeatureInsight | `federated`, `client-credentials`, `auto` (auto-detected) |
+| Pipeline provider | `pipeline.provider` | SystemMetadata | FeatureInsight | Resolved provider display name after auto-detection: `GitHub`, `Azure DevOps` |
+| Pipeline auth | `pipeline.auth` | SystemMetadata | FeatureInsight | Emitted only when `--auth-type` is set on `pipeline config`: `federated`, `client-credentials` |
 | Infra provider | `infra.provider` | SystemMetadata | FeatureInsight | `bicep`, `terraform`, `auto` (auto-detected from files) |
 
 ### App Service Deploy
@@ -346,21 +346,21 @@ The execution graph powers the parallel `up` / `provision` / `deploy` engine.
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
 | Step count | `exegraph.step.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — total number of steps in the graph |
-| Max concurrency | `exegraph.max_concurrency` | SystemMetadata | PerformanceAndHealth | Effective concurrency limit used |
-| Error policy | `exegraph.error_policy` | SystemMetadata | PerformanceAndHealth | `fail_fast`, `continue_on_error` |
-| Step name | `exegraph.step.name` | SystemMetadata | PerformanceAndHealth | **Hashed** — step names embed user-chosen service / layer names from `azure.yaml` (e.g. `deploy-<svc.Name>`). Emit via `fields.StringHashed` |
-| Step deps | `exegraph.step.deps` | SystemMetadata | PerformanceAndHealth | **Hashed** — each entry is another step name and therefore embeds user-chosen identifiers. Emit via `fields.StringSliceHashed` |
-| Step tags | `exegraph.step.tags` | SystemMetadata | PerformanceAndHealth | Fixed internal vocabulary set by azd code (e.g. `provision`, `deploy`, `package`, `publish`, `cmdhook`, `event`). Not user input; emitted raw |
-| Step timeout | `exegraph.step.timeout_s` | SystemMetadata | PerformanceAndHealth | **Measurement** — per-step timeout if set (seconds) |
+| Max concurrency | `exegraph.max_concurrency` | SystemMetadata | PerformanceAndHealth | Effective concurrency limit used for the run |
+| Error policy | `exegraph.error_policy` | SystemMetadata | PerformanceAndHealth | `fail_fast` or `continue_on_error` |
+| Step name | `exegraph.step.name` | SystemMetadata | PerformanceAndHealth | **Hashed** via `fields.StringHashed` — step names embed user-chosen service / layer names from `azure.yaml` (e.g., `deploy-<svc.Name>`, `<layer.Name>`) |
+| Step deps | `exegraph.step.deps` | SystemMetadata | PerformanceAndHealth | **Hashed slice** via `fields.StringSliceHashed` — each entry is another step name that embeds user-chosen identifiers |
+| Step tags | `exegraph.step.tags` | SystemMetadata | PerformanceAndHealth | Fixed internal vocabulary set by azd code (e.g., `provision`, `deploy`, `package`, `cmdhook`, `event`); emitted raw because it does not contain user input |
+| Step timeout | `exegraph.step.timeout_s` | SystemMetadata | PerformanceAndHealth | **Measurement** — per-step timeout in seconds, when set |
 
 ### Multi-Layer Provision
 
-Telemetry for the `infra.layers[]` parallel provisioning feature.
+Telemetry for the `infra.layers[]` parallel provisioning feature, emitted from `internal/cmd/provision_graph.go`.
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
-| Layer count | `provision.layer.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — number of `infra.layers[]` declared. 0 or 1 means single-layer (legacy path) |
-| Max parallel | `provision.layer.max_parallel` | SystemMetadata | PerformanceAndHealth | **Measurement** — largest number of layers scheduled in a single dependency level after static analysis |
+| Layer count | `provision.layer.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — total number of `infra.layers[]` declared in `azure.yaml` for the current run; 0 or 1 means single-layer (the legacy path) |
+| Max parallel | `provision.layer.max_parallel` | SystemMetadata | PerformanceAndHealth | **Measurement** — largest number of layers scheduled in a single dependency level after static analysis (maximum *achievable* parallelism, distinct from the configured `exegraph.max_concurrency` cap) |
 | Safe-fallback count | `provision.layer.safe_fallback_count` | SystemMetadata | PerformanceAndHealth | **Measurement** — layers that triggered the safe-by-default detector fallback (forced to depend on all earlier layers) |
 | Explicit dependsOn count | `provision.layer.explicit_dependson_count` | SystemMetadata | PerformanceAndHealth | **Measurement** — layers that used the explicit `infra.layers[].dependsOn` schema |
 

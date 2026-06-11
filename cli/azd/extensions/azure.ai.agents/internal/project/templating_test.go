@@ -56,6 +56,21 @@ func TestExpandEnv(t *testing.T) {
 			want:  "${{ outer ${FOO} }}",
 		},
 		{
+			name:  "foundry expression as default value, var unset",
+			input: "${MISSING:-${{event.body}}}",
+			want:  "${{event.body}}",
+		},
+		{
+			name:  "foundry expression as default value, var set",
+			input: "${FOO:-${{event.body}}}",
+			want:  "bar",
+		},
+		{
+			name:  "literal dollar before foundry span",
+			input: "$${{event.body}}",
+			want:  "$${{event.body}}",
+		},
+		{
 			name:  "foundry span across newline with var",
 			input: "${{first\nsecond}}\n${FOO}",
 			want:  "${{first\nsecond}}\nbar",

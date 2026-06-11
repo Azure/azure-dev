@@ -4,6 +4,7 @@
 package project
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -16,19 +17,25 @@ import (
 // cross newlines; the lazy quantifier stops at the first closing }}.
 var foundryTemplatePattern = regexp.MustCompile(`(?s)\$\{\{.*?\}\}`)
 
+// foundrySentinelBase is the prefix for placeholders that temporarily replace ${{...}} spans
+// while ${VAR} expansion runs. It contains no '$', '{', or '}', so drone/envsubst (which only
+// expands the braced ${...} form) copies it through untouched, even when a literal '$' precedes
+// it.
+const foundrySentinelBase = "azdFoundryTemplateSpan_"
+
 // ExpandEnv expands ${VAR} references in value against the azd environment (via mapping) while
 // preserving Foundry server-side ${{...}} expressions verbatim. It supports default values
 // (${VAR:-default}) and multiple expressions, matching drone/envsubst semantics for the ${VAR}
 // portion. On expansion error the original value is returned unchanged alongside the error.
 //
-// This is the single shared expander every Foundry field should route through so that ${VAR}
-// and ${{...}} are handled consistently. drone/envsubst cannot parse ${{...}} and fails the
-// whole string, so without this split any ${VAR} that appears alongside a ${{...}} span is
-// silently left unexpanded. The string is split on ${{...}} spans, only the gaps between them
-// are expanded, and the spans are reattached untouched. A ${VAR} that appears inside a ${{...}}
-// span is therefore left as-is, since the whole span is reserved for Foundry's resolver.
+// This is the single shared expander every Foundry field should route through so ${VAR} and
+// ${{...}} are handled consistently. drone/envsubst cannot parse ${{...}}, so each span is
+// masked with a sentinel placeholder, a single Eval expands the ${VAR} references, then the
+// spans are restored. Masking rather than splitting preserves full ${VAR:-default} semantics
+// even when a ${{...}} expression is the default value (e.g. ${MISSING:-${{event.body}}}).
+// A ${VAR} inside a ${{...}} span is left as-is, since the span is reserved for Foundry.
 func ExpandEnv(value string, mapping func(string) string) (string, error) {
-	spans := foundryTemplatePattern.FindAllStringIndex(value, -1)
+	spans := foundryTemplatePattern.FindAllString(value, -1)
 	if len(spans) == 0 {
 		expanded, err := envsubst.Eval(value, mapping)
 		if err != nil {
@@ -37,23 +44,26 @@ func ExpandEnv(value string, mapping func(string) string) (string, error) {
 		return expanded, nil
 	}
 
-	var sb strings.Builder
-	cursor := 0
-	for _, span := range spans {
-		expanded, err := envsubst.Eval(value[cursor:span[0]], mapping)
-		if err != nil {
-			return value, err
-		}
-		sb.WriteString(expanded)
-		sb.WriteString(value[span[0]:span[1]])
-		cursor = span[1]
+	// Choose a sentinel that does not already occur in the input so restoration is exact.
+	sentinel := foundrySentinelBase
+	for strings.Contains(value, sentinel) {
+		sentinel += "_"
 	}
 
-	expanded, err := envsubst.Eval(value[cursor:], mapping)
+	index := 0
+	masked := foundryTemplatePattern.ReplaceAllStringFunc(value, func(string) string {
+		placeholder := fmt.Sprintf("%s%d_", sentinel, index)
+		index++
+		return placeholder
+	})
+
+	expanded, err := envsubst.Eval(masked, mapping)
 	if err != nil {
 		return value, err
 	}
-	sb.WriteString(expanded)
 
-	return sb.String(), nil
+	for i, span := range spans {
+		expanded = strings.Replace(expanded, fmt.Sprintf("%s%d_", sentinel, i), span, 1)
+	}
+	return expanded, nil
 }

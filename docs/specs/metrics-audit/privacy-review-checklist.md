@@ -117,12 +117,39 @@ All hashing functions are in `cli/azd/internal/tracing/fields/key.go`.
 
 ### Fields That Must Be Hashed
 
+These fields are emitted with hashing at **every** call site. Adding a raw emission
+for any of these constitutes a privacy regression and requires a re-review.
+
 | Field | Hash Function | Reason |
 |-------|---------------|--------|
 | `project.template.id` | `StringHashed` | Template IDs may contain repo URLs or user-chosen names |
 | `project.template.version` | `StringHashed` | Version strings may be user-defined |
 | `project.name` | `StringHashed` | Project names are user-chosen |
 | `env.name` | `StringHashed` | Environment names may contain identifying information |
+| `exegraph.step.name` | `StringHashed` | Step names embed user-defined service / layer names from `azure.yaml` (e.g., `deploy-<svc.Name>`, `<layer.Name>`) |
+| `exegraph.step.deps` | `StringSliceHashed` | Dependency edges reference step names, which embed user-defined service / layer names |
+
+> When adding a newly-hashed field to this table, also update the corresponding entry
+> in [`telemetry-schema.md`](telemetry-schema.md) (Hashing section) so the data catalog
+> and this checklist stay in sync.
+
+### Fields With Conditional Hashing
+
+These fields are emitted **raw under some conditions** and **hashed under others**.
+The conditional logic is intentional and documented per field below. If a new emit
+site is added without the documented condition, the field should be hashed by default.
+
+| Field | Condition | Hashed when… | Raw when… | Source |
+|-------|-----------|-------------|----------|--------|
+| `subscription.id` | Value shape | Value does NOT parse as a UUID (e.g., user-defined placeholder in vendored envs) | Value parses as a valid UUID (real Azure subscription GUID) | `pkg/environment/local_file_data_store.go:198-202`, `pkg/environment/storage_blob_data_store.go:185-189` |
+| `hooks.name` | Emission path + allowlist | Emitted from `cmd/hooks.go` (the `azd hooks run` command) AND hook name is NOT in the `knownHookNames` allowlist | Emitted from `cmd/hooks.go` AND hook name IS in the allowlist (lifecycle hooks like `prepackage`, `predeploy`); also emitted RAW unconditionally by `pkg/ext/hooks_runner.go` for the `hooks.exec` event | `cmd/hooks.go:165-169`, `pkg/ext/hooks_runner.go:178` |
+| `pack.builder.image` | Source of the value | Builder image was user-provided (overrides the default) — `userDefinedImage == true` | Builder image is the built-in default | `pkg/project/container_helper.go:1126-1137` |
+| `pack.builder.tag` | Source of the value | Builder tag was user-provided (overrides the default) — `userDefinedImage == true` | Builder tag is the built-in default | `pkg/project/container_helper.go:1126-1137` |
+
+> Conditional-hashing fields require the **most careful review** when adding new emit
+> sites. The default for any new emit site should be `StringHashed`; raw emission is
+> only acceptable when the condition documented above is provably satisfied (e.g.,
+> guaranteed-static values, validated GUIDs).
 
 ### When to Hash New Fields
 
@@ -131,12 +158,19 @@ A new field **must** be hashed if any of the following are true:
 - The value is user-provided (typed by the user or read from a user-authored file).
 - The value could contain a project name, repository URL, or path.
 - The value could be used to correlate across users or organizations.
+- The value embeds a user-defined name anywhere inside it — for example, an
+  execution-graph step name like `deploy-<svc.Name>`, a hook name, or a container
+  image tag composed from a user-provided registry / repository.
 
 A new field should **not** be hashed if:
 
 - The value is from a fixed enum (e.g., `auth.method` = `"browser"`).
 - The value is a count or duration (measurements).
 - The value is system-generated metadata (e.g., OS type).
+- The value is a hardcoded literal in source code (e.g., `exegraph.step.tags`, which
+  is only set to compile-time constants like `"provision"`, `"deploy"`, `"package"`).
+  If a previously-literal field gains a user-controlled code path, it **must** be
+  re-evaluated and likely hashed at that call site.
 
 ## Data Catalog Classification Process
 
@@ -193,7 +227,12 @@ Copy this checklist into your PR description when making telemetry changes.
 - [ ] Dashboard updated (if field powers a new metric)
 
 ### Documentation
-- [ ] Feature-telemetry matrix updated (if gap is being closed)
-- [ ] Telemetry schema updated with new field/event
+- [ ] Feature-telemetry matrix updated (`docs/specs/metrics-audit/feature-telemetry-matrix.md`)
+  if a new command emits telemetry, a gap is being closed, or a new cross-cutting
+  subsystem is added
+- [ ] Telemetry schema updated (`docs/specs/metrics-audit/telemetry-schema.md`) with
+  new field/event, including its Hashing section if the field is hashed
+- [ ] Hashed-field table in this checklist (`privacy-review-checklist.md`) updated if
+  a new field is hashed or a previously-raw field becomes hashed
 - [ ] This checklist is complete
 ```

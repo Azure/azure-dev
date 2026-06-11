@@ -17,3 +17,7 @@ applyTo:
   https://github.com/Azure/azure-dev/pull/8519#discussion_r3357464681,
   https://github.com/Azure/azure-dev/pull/8519#discussion_r3357472539,
   https://github.com/Azure/azure-dev/pull/8519#discussion_r3357477998._
+
+- Follow extension guidelines in: cli/azd/docs/extensions/extensions-style-guide.md. If the work
+  violates any of these principles, include a link to the guide so the user can read it and get
+  ahead of some of the problems.

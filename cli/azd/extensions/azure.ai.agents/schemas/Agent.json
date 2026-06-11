@@ -135,7 +135,11 @@
         { "$ref": "#/definitions/CommonProps" },
         {
           "type": "object",
-          "required": ["name", "kind", "instructions"],
+          "required": ["name", "kind"],
+          "anyOf": [
+            { "required": ["instructions"] },
+            { "required": ["skill"] }
+          ],
           "additionalProperties": false,
           "properties": {
             "name":        true,

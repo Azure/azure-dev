@@ -1,0 +1,168 @@
+name: "ext-azure-ai-agents-e2e"
+
+# E2E tests for the azure.ai.agents CLI extension.
+#
+# Architecture (identical to local testing):
+#   Copilot CLI (LLM brain, reads goals from scenario YAML)
+#     ↕ MCP protocol (stdio)
+#   cli-interactive-tester (MCP server, manages tmux sessions)
+#     ↕ tmux
+#   azd ai agent CLI (under test)
+#
+# Manual trigger only — switch to PR-trigger once pipeline is stable.
+# Scenarios live on branch trangevi/test-scenarios until PR #8524 merges.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "Which tiers to run"
+        type: choice
+        options:
+          - "0"
+          - "0+1"
+          - "0+1+2"
+        default: "0"
+      confirm_tier2_cost:
+        description: "Confirm Tier 2 Azure costs (~$2-5)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  SCENARIOS_DIR: cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios
+  AZD_AGENTS_FIXTURES: cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/fixtures
+  # TODO: change to 'main' after PR #8524 merges
+  TARGET_BRANCH: trangevi/test-scenarios
+
+jobs:
+  e2e-test:
+    name: "E2E scenarios (Tier ${{ inputs.tier }})"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # TODO: remove ref after PR #8524 merges to main
+          ref: ${{ env.TARGET_BRANCH }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: "cli/azd/go.mod"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build azd + install extension
+        working-directory: cli/azd
+        run: |
+          go build -o ./azd .
+          export PATH="$PWD:$PATH"
+          azd extension install azure.ai.agents --source ./extensions/azure.ai.agents
+
+      - name: Install cli-interactive-tester
+        run: |
+          sudo apt-get install -y tmux
+          # TODO: confirm repo visibility. If private, use PAT:
+          #   git clone https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/...
+          git clone https://github.com/coreai-microsoft/cli-interactive-tester.git /tmp/cli-interactive-tester
+          cd /tmp/cli-interactive-tester
+          pip install -e .
+          python -c "from auto_test_tool.mcp_server import main; print('MCP tool ready')"
+
+      - name: Install uv (for Tier 2 run-local scenario)
+        if: contains(inputs.tier, '2')
+        uses: astral-sh/setup-uv@v6
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: GitHub CLI Auth
+        run: echo "${{ secrets.GH_TOKEN }}" | gh auth login --with-token
+
+      - name: Create test profile
+        working-directory: ${{ env.SCENARIOS_DIR }}
+        run: |
+          cat > profile.local.yaml <<EOF
+          prefix: "ci-${{ github.run_number }}"
+          subscription: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          region: "North Central US"
+          foundry_project_endpoint: "${{ secrets.FOUNDRY_PROJECT_ENDPOINT }}"
+          EOF
+
+      - name: Generate MCP config
+        run: |
+          cat > ${{ github.workspace }}/.copilot-mcp.json <<EOF
+          {
+            "mcpServers": {
+              "cli-interactive-tester": {
+                "type": "stdio",
+                "command": "python",
+                "args": ["-m", "auto_test_tool.mcp_server"],
+                "cwd": "/tmp/cli-interactive-tester"
+              }
+            }
+          }
+          EOF
+
+      - name: Run scenarios via Copilot + MCP tool
+        working-directory: ${{ env.SCENARIOS_DIR }}
+        env:
+          AZD_AGENTS_FIXTURES: ${{ github.workspace }}/${{ env.AZD_AGENTS_FIXTURES }}
+          UV_HTTP_TIMEOUT: "300"
+          GITHUB_TOKEN: ${{ secrets.COPILOT_TOKEN }}
+        run: |
+          export PATH="${{ github.workspace }}/cli/azd:$PATH"
+          #
+          # Copilot drives the MCP tool to execute each scenario:
+          #   load_scenario → run_pre_hooks → start_session
+          #   → observe terminal + send keystrokes to accomplish goals
+          #   → finish_session → run_post_hooks
+          #
+          # This is the SAME architecture as local testing — Copilot reads
+          # the scenario YAML goals and autonomously navigates the CLI.
+          #
+          # TODO: confirm how to invoke Copilot CLI headlessly in CI.
+          # Options being evaluated:
+          #   1. `copilot --mcp-config ... --prompt-file ...` (needs COPILOT_TOKEN)
+          #   2. `gh copilot run` with piped prompt
+          #   3. GitHub Copilot Extensions API (programmatic invocation)
+          #
+          copilot \
+            --mcp-config ${{ github.workspace }}/.copilot-mcp.json \
+            --prompt-file prompt-ci-run.md
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-tier-${{ inputs.tier }}
+          path: |
+            ${{ env.SCENARIOS_DIR }}/reports/
+            ${{ env.SCENARIOS_DIR }}/full-pipeline-run-results.md
+          retention-days: 30
+
+      - name: Teardown (Tier 2 always cleanup)
+        if: always() && contains(inputs.tier, '2')
+        working-directory: ${{ env.SCENARIOS_DIR }}
+        env:
+          AZD_AGENTS_FIXTURES: ${{ github.workspace }}/${{ env.AZD_AGENTS_FIXTURES }}
+        run: |
+          export PATH="${{ github.workspace }}/cli/azd:$PATH"
+          # Direct teardown (not Copilot) for reliability on failure
+          cd ~/working/azd-agents-shared/*/ 2>/dev/null && \
+            azd down --force --purge || true
+
+
+

@@ -30,13 +30,13 @@ These commands emit attributes or events beyond the global middleware span.
 |---------|---------------------|-------|
 | `init` | `init.method` (template / app / project / environment / copilot), `appinit.detected.databases`, `appinit.detected.services`, `appinit.confirmed.databases`, `appinit.confirmed.services`, `appinit.modify_add.count`, `appinit.modify_remove.count`, `appinit.lastStep` | Comprehensive coverage via `SetUsageAttributes` and `repository/app_init.go` |
 | `update` | `update.installMethod`, `update.channel`, `update.fromVersion`, `update.toVersion`, `update.result` | Result codes cover success, failure, and skip reasons |
-| Extensions (dynamic) | `extension.id`, `extension.version`, `extension.source.id`, `extension.source.type`, `extension.dependency.*` + trace-context propagation to child process | Covers `ext.run`, `ext.install`, `ext.upgrade`, `ext.promote` events |
+| Extensions (dynamic) | `extension.id`, `extension.version`, `extension.version.from`, `extension.version.to`, `extension.source`, `extension.source.from`, `extension.source.to`, `extension.dependency_of`, `extension.dependency_upgrade_count`, `extension.upgrade.outcome`, `extension.upgrade.duration_ms` + trace-context propagation to child process | Covers `ext.run`, `ext.install`, `ext.upgrade`, `ext.promote` events; upgrade/promote spans set source and dependency attributes |
 | `mcp start` | Per-tool spans via `tracing.Start` with `mcp.client.name`, `mcp.client.version` | MCP event prefix `mcp.*` |
 | `tool install` / `tool upgrade` / `tool check` / `tool list` / `tool show` | `tool.id`, `tool.ids`, `tool.dry_run`, `tool.install.strategy`, `tool.install.success`, `tool.install.success_count`, `tool.install.failure_count`, `tool.install.failed_ids`, `tool.install.duration_ms`, `tool.upgrade.from_version`, `tool.upgrade.to_version`, `tool.check.updates_available` | Comprehensive coverage in `cli/azd/cmd/tool.go`; install/upgrade emit `tools.pack.build` spans for pack-based tools |
 | `copilot` (agent) | `copilot.initialize` event (model + reasoning config), `copilot.session` event (session create/resume) | Emitted from `internal/agent/copilot_agent.go`; covers the experimental copilot agent surface |
 | `provision` | `validation.preflight` event (preflight outcome + 5 fields), 8 `arm.*` events (subscription / resource-group deploy / stack-deploy / what-if / validate), `aks.postprovision.skip`, per-layer `provision.layer.*` measurements when multi-layer infra is used | Telemetry added across `internal/cmd/provision_*.go` and the ARM deployment client |
 | `deploy` / `publish` / `package` | `deploy.appservice.zip` event (zip-deploy outcome), `container.credentials` / `container.publish` / `container.remotebuild` events for container-based services | Per-service-target instrumentation; container events emitted from container-app and ACR push paths |
-| `hooks run` (and all hook-running commands) | `hooks.exec` event with `hooks.name`, `hooks.type` (project / service / **layer**), `hooks.kind` (pre/post) | `hooks.type=layer` was added with multi-layer provision; emitted from the hooks middleware on every lifecycle command |
+| `hooks run` (and all hook-running commands) | `hooks.exec` event with `hooks.name` (hashed unless built-in lifecycle name), `hooks.type` (project / service / **layer**), `hooks.kind` (script runtime — `sh` / `pwsh` / `js` / `ts` / `python` / `dotnet`) | `hooks.type=layer` was added with multi-layer provision; pre/post is encoded in `hooks.name` (e.g., `prebuild` / `postbuild`); emitted from the hooks runner on every lifecycle command |
 
 ## Full Inventory Matrix
 
@@ -54,7 +54,7 @@ These commands emit attributes or events beyond the global middleware span.
 | `env list` | — | ✅ | ✅ | ❌ | `env.count` (measurement — number of environments) |
 | `env config` | `get`, `set`, `unset` | ✅ | ❌ | ❌ | Thin wrappers — global telemetry sufficient |
 | **Hooks** | | | | | |
-| `hooks run` | — | ✅ | ✅ | ✅ | `hooks.name` (hashed), `hooks.type` (project/service/**layer**), `hooks.kind` (pre/post); `hooks.exec` event emitted by the hooks middleware on every lifecycle command |
+| `hooks run` | — | ✅ | ✅ | ✅ | `hooks.name` (hashed unless built-in lifecycle name), `hooks.type` (project/service/**layer**), `hooks.kind` (script runtime — `sh`/`pwsh`/`js`/`ts`/`python`/`dotnet`); `hooks.exec` event emitted by the hooks runner on every lifecycle command |
 | **Templates** | | | | | |
 | `template` | `list`, `show` | ✅ | ❌ | ❌ | Redundant — command name in global span captures operation |
 | `template source` | `list`, `add`, `remove` | ✅ | ❌ | ❌ | Redundant — command name in global span captures operation |
@@ -88,7 +88,7 @@ These commands emit attributes or events beyond the global middleware span.
 | `copilot consent` | `list`, `revoke`, `grant` | ✅ | ❌ | ❌ | Low priority |
 | **Extension Management** | | | | | |
 | `extension` | `list`, `show`, `install`, `uninstall`, `upgrade` | ✅ | ✅ | ✅ | Covered by `extension.*` fields and `ext.install`, `ext.upgrade`, `ext.promote` events |
-| `extension source` | `list`, `add`, `remove`, `validate` | ✅ | ✅ | ❌ | `extension.source.id`, `extension.source.type` recorded on add/remove/validate |
+| `extension source` | `list`, `add`, `remove`, `validate` | ✅ | ❌ | ❌ | Subcommand name in the global span captures the operation; `extension.source*` attributes are recorded by `extension upgrade` / `extension promote`, not by this subcommand |
 | **Init** | | | | | |
 | `init` | — | ✅ | ✅ | ✅ | Comprehensive coverage via `appinit.*` fields |
 | **Update** | | | | | |
@@ -118,7 +118,7 @@ command-specific telemetry fields provide analytical value beyond the command na
 | Env count | `env.count` | `env list` | Measurement — number of environments is a quantitative metric |
 | Hooks name | `hooks.name` | `hooks run` | Identifies which hook script ran (hashed — user-defined name) |
 | Hooks type | `hooks.type` | `hooks run` | Distinguishes project / service / **layer** hooks |
-| Hooks kind | `hooks.kind` | `hooks run` | Distinguishes pre vs post execution |
+| Hooks kind | `hooks.kind` | `hooks run` | Distinguishes the script runtime used to execute the hook (`sh`, `pwsh`, `js`, `ts`, `python`, `dotnet`) |
 | Pipeline provider | `pipeline.provider` | `pipeline config` | Distinguishes GitHub vs Azure DevOps |
 | Pipeline auth | `pipeline.auth` | `pipeline config` | Distinguishes federated vs client-credentials |
 | Infra provider | `infra.provider` | `infra generate`, `infra synth` | Distinguishes Bicep vs Terraform |
@@ -154,7 +154,7 @@ privacy review covers every emission point.
 | Subsystem | Trigger | Events | Key Attributes | Notes |
 |-----------|---------|--------|----------------|-------|
 | **Tool first-run middleware** | Wraps every interactive command | (none — enriches the active span) | `tool.firstrun.outcome`, `tool.firstrun.skip_reason`, `tool.firstrun.opt_in`, `tool.firstrun.tools_detected`, `tool.firstrun.tools_offered`, `tool.firstrun.tools_selected`, `tool.firstrun.tools_selected_names`, `tool.firstrun.tools_deselected_names`, `tool.firstrun.install_success_count`, `tool.firstrun.install_failure_count`, `tool.firstrun.install_failed_ids`, `tool.firstrun.install_duration_ms` | Records the first-run consent + tool-install flow; outcome key replaces deprecated boolean `tool.firstrun.completed` |
-| **Hooks execution middleware** | Every lifecycle command (provision/deploy/up/down/restore/build/package/publish) | `hooks.exec` | `hooks.name` (hashed), `hooks.type` (project / service / layer), `hooks.kind` (pre/post) | Layer-scope hooks added with multi-layer provision |
+| **Hooks execution middleware** | Every lifecycle command (provision/deploy/up/down/restore/build/package/publish) | `hooks.exec` | `hooks.name` (hashed unless built-in lifecycle name), `hooks.type` (project / service / layer), `hooks.kind` (script runtime — `sh` / `pwsh` / `js` / `ts` / `python` / `dotnet`) | Layer-scope hooks added with multi-layer provision; pre/post is encoded in `hooks.name` (e.g., `prebuild` / `postbuild`), not in `hooks.kind` |
 | **Preflight validation** | `provision` (prior to ARM deploy) | `validation.preflight` | `validation.preflight.outcome`, plus 4 peer fields covering warnings/errors counts and abort reason | Local-only validation; outcome captures passed / warnings-accepted / aborted |
 | **ARM deployment client** | `provision` (any Bicep flow) | `arm.deploy.subscription`, `arm.deploy.resourcegroup`, `arm.stack.deploy.subscription`, `arm.stack.deploy.resourcegroup`, `arm.whatif.subscription`, `arm.whatif.resourcegroup`, `arm.validate.subscription`, `arm.validate.resourcegroup` | ARM operation status + duration | Per-call instrumentation in the ARM client; covers regular + stack deployments at both scopes |
 | **Multi-layer provision** | `provision` (when `infra/layers/` directory is present) | (none — enriches the `provision` span) | `provision.layer.count`, `provision.layer.duration_ms`, plus per-layer dimensions | Layer names from `azure.yaml` are hashed before emission |

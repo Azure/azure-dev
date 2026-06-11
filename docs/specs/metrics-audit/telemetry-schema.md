@@ -313,7 +313,7 @@ no file paths, no user-identifiable data, no raw error text.
 | Tool ID | `tool.id` | SystemMetadata | FeatureInsight | Built-in tool ID for single-tool operations. Values drawn from a fixed catalog (e.g. `az-cli`, `vscode-bicep`, `github-copilot-cli`, `azure-mcp-server`) |
 | Tool IDs | `tool.ids` | SystemMetadata | FeatureInsight | Comma-separated built-in tool IDs for batch operations |
 | Dry run | `tool.dry_run` | SystemMetadata | FeatureInsight | Whether `--dry-run` was specified |
-| Install strategy | `tool.install.strategy` | SystemMetadata | FeatureInsight | Install backend. Values: `winget`, `brew`, `apt`, `npm`, `manual` |
+| Install strategy | `tool.install.strategy` | SystemMetadata | FeatureInsight | Install backend. Values come from `strategy.PackageManager` (e.g., `winget`, `brew`, `apt`, `npm`, `code`); `command` for command-based installs with no package manager; `manual` when the named package manager is unavailable on the platform |
 | Install success | `tool.install.success` | SystemMetadata | FeatureInsight | Whether a single-target install/upgrade succeeded |
 | Install success count | `tool.install.success_count` | SystemMetadata | FeatureInsight | **Measurement** — number of tools that succeeded in a batch |
 | Install failure count | `tool.install.failure_count` | SystemMetadata | FeatureInsight | **Measurement** — number of tools that failed in a batch |

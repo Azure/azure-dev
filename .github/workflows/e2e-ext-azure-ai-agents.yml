@@ -32,8 +32,8 @@ on:
         default: false
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.run_id }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -101,28 +101,26 @@ jobs:
       - name: Create test profile
         working-directory: ${{ env.SCENARIOS_DIR }}
         run: |
-          cat > profile.local.yaml <<EOF
-          prefix: "ci-${{ github.run_number }}"
-          subscription: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
-          region: "North Central US"
-          foundry_project_endpoint: "${{ secrets.FOUNDRY_PROJECT_ENDPOINT }}"
-          EOF
+          printf '%s\n' \
+            'prefix: "ci-${{ github.run_number }}"' \
+            'subscription: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"' \
+            'region: "North Central US"' \
+            'foundry_project_endpoint: "${{ secrets.FOUNDRY_PROJECT_ENDPOINT }}"' \
+            > profile.local.yaml
 
       - name: Configure MCP for Copilot
         run: |
           mkdir -p ~/.copilot
-          cat > ~/.copilot/mcp-config.json <<'EOF'
-          {
-            "mcpServers": {
-              "cli-interactive-tester": {
-                "type": "stdio",
-                "command": "python",
-                "args": ["-m", "auto_test_tool.mcp_server"],
-                "cwd": "/tmp/cli-interactive-tester"
-              }
-            }
-          }
-          EOF
+          printf '%s\n' '{' \
+            '  "mcpServers": {' \
+            '    "cli-interactive-tester": {' \
+            '      "type": "stdio",' \
+            '      "command": "python",' \
+            '      "args": ["-m", "auto_test_tool.mcp_server"],' \
+            '      "cwd": "/tmp/cli-interactive-tester"' \
+            '    }' \
+            '  }' \
+            '}' > ~/.copilot/mcp-config.json
 
       - name: Run E2E scenarios via Copilot + MCP tool
         working-directory: ${{ env.SCENARIOS_DIR }}
@@ -132,6 +130,10 @@ jobs:
           UV_HTTP_TIMEOUT: "300"
         run: |
           export PATH="${{ github.workspace }}/cli/azd:$PATH"
+          if [ ! -f prompt-ci-run.md ]; then
+            echo "::error::prompt-ci-run.md not found in $(pwd)"
+            exit 1
+          fi
           # Copilot CLI in programmatic mode:
           #   -p = non-interactive, exit on completion
           #   --no-ask-user = never prompt for user input

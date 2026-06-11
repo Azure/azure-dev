@@ -25,7 +25,8 @@ var foundryTemplatePattern = regexp.MustCompile(`(?s)\$\{\{.*?\}\}`)
 // and ${{...}} are handled consistently. drone/envsubst cannot parse ${{...}} and fails the
 // whole string, so without this split any ${VAR} that appears alongside a ${{...}} span is
 // silently left unexpanded. The string is split on ${{...}} spans, only the gaps between them
-// are expanded, and the spans are reattached untouched.
+// are expanded, and the spans are reattached untouched. A ${VAR} that appears inside a ${{...}}
+// span is therefore left as-is, since the whole span is reserved for Foundry's resolver.
 func ExpandEnv(value string, mapping func(string) string) (string, error) {
 	spans := foundryTemplatePattern.FindAllStringIndex(value, -1)
 	if len(spans) == 0 {

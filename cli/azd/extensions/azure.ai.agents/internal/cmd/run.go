@@ -514,10 +514,8 @@ func resolveAgentDefinitionEnvVars(
 		if _, isConn := connRefEnvNames[ev.Name]; isConn {
 			continue
 		}
-		resolved, evalErr := project.ExpandEnv(ev.Value, lookup)
-		if evalErr != nil {
-			resolved = ev.Value
-		}
+		// ExpandEnv returns the original value on error, so a failed expansion is a no-op.
+		resolved, _ := project.ExpandEnv(ev.Value, lookup)
 		result = append(result, fmt.Sprintf("%s=%s", ev.Name, resolved))
 	}
 

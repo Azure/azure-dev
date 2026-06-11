@@ -51,6 +51,11 @@ func TestExpandEnv(t *testing.T) {
 			want:  "${{a}} and ${{b}}",
 		},
 		{
+			name:  "var inside foundry span not expanded",
+			input: "${{ outer ${FOO} }}",
+			want:  "${{ outer ${FOO} }}",
+		},
+		{
 			name:  "foundry span across newline with var",
 			input: "${{first\nsecond}}\n${FOO}",
 			want:  "${{first\nsecond}}\nbar",

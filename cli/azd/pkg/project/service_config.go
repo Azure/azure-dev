@@ -46,8 +46,6 @@ type ServiceConfig struct {
 	Image osutil.ExpandableString `yaml:"image,omitempty"`
 	// The optional docker options for configuring the output image
 	Docker DockerProjectOptions `yaml:"docker,omitempty"`
-	// The optional static web app options for configuring Azure Static Web App deployments
-	StaticWebApp StaticWebAppOptions `yaml:"staticwebapp,omitempty"`
 	// The optional K8S / AKS options
 	K8s AksOptions `yaml:"k8s,omitempty"`
 	// Infrastructure module path relative to the root infra folder

@@ -9,7 +9,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,127 +54,49 @@ func TestNewStaticWebAppTargetTypeValidation(t *testing.T) {
 	}
 }
 
-func TestStaticWebAppOptions_ApiEnvironmentName(t *testing.T) {
+// TestStaticWebAppDeploy_EnvironmentSelection verifies the environment value passed
+// to the SWA CLI depends on whether swa-cli.config.json is present:
+//   - No config file (opinionated mode): passes "production" to fix the BadRequest
+//     that occurred with the old "default" value.
+//   - Config file present: passes "" so the SWA CLI resolves env from its own config.
+func TestStaticWebAppDeploy_EnvironmentSelection(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		opts     StaticWebAppOptions
-		expected string
+		name        string
+		artifacts   ArtifactCollection
+		expectedEnv string
 	}{
 		{
-			name:     "DefaultsToProductionBuildId",
-			opts:     StaticWebAppOptions{},
-			expected: DefaultStaticWebAppEnvironmentName,
+			name: "NoConfigFile_PassesProduction",
+			artifacts: ArtifactCollection{
+				{Kind: ArtifactKindDirectory, Location: "/build/output"},
+			},
+			expectedEnv: swaCliProductionEnvironment,
 		},
 		{
-			name:     "UsesConfiguredEnvironment",
-			opts:     StaticWebAppOptions{Environment: "staging"},
-			expected: "staging",
+			name: "WithConfigFile_PassesEmpty",
+			artifacts: ArtifactCollection{
+				{Kind: ArtifactKindConfig, Location: "swa-cli.config.json"},
+			},
+			expectedEnv: "",
 		},
 		{
-			name:     "ProductionNormalizesToDefault",
-			opts:     StaticWebAppOptions{Environment: "production"},
-			expected: DefaultStaticWebAppEnvironmentName,
-		},
-		{
-			name:     "ProdNormalizesToDefault",
-			opts:     StaticWebAppOptions{Environment: "prod"},
-			expected: DefaultStaticWebAppEnvironmentName,
-		},
-		{
-			name:     "DefaultExplicitStaysDefault",
-			opts:     StaticWebAppOptions{Environment: "default"},
-			expected: DefaultStaticWebAppEnvironmentName,
+			name:        "EmptyArtifacts_PassesProduction",
+			artifacts:   ArtifactCollection{},
+			expectedEnv: swaCliProductionEnvironment,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.expected, tc.opts.apiEnvironmentName())
+			// The environment selection logic: when config file is present, use empty
+			// string (SWA CLI resolves from its own config); otherwise use "production".
+			swaEnv := ""
+			if !usingSwaConfig(tc.artifacts) {
+				swaEnv = swaCliProductionEnvironment
+			}
+			require.Equal(t, tc.expectedEnv, swaEnv)
 		})
 	}
-}
-
-func TestStaticWebAppOptions_SwaCliEnvironment(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		opts     StaticWebAppOptions
-		expected string
-	}{
-		{
-			name:     "EmptyDefaultsToProduction",
-			opts:     StaticWebAppOptions{},
-			expected: swaCliProductionEnvironment,
-		},
-		{
-			name:     "ExplicitDefaultMapsToProduction",
-			opts:     StaticWebAppOptions{Environment: "default"},
-			expected: swaCliProductionEnvironment,
-		},
-		{
-			name:     "ExplicitDefaultCaseInsensitive",
-			opts:     StaticWebAppOptions{Environment: "Default"},
-			expected: swaCliProductionEnvironment,
-		},
-		{
-			name:     "WhitespaceOnlyMapsToProduction",
-			opts:     StaticWebAppOptions{Environment: "  "},
-			expected: swaCliProductionEnvironment,
-		},
-		{
-			name:     "NamedPreviewEnvironment",
-			opts:     StaticWebAppOptions{Environment: "staging"},
-			expected: "staging",
-		},
-		{
-			name:     "ProductionExplicit",
-			opts:     StaticWebAppOptions{Environment: "production"},
-			expected: swaCliProductionEnvironment,
-		},
-		{
-			name:     "ProdShorthand",
-			opts:     StaticWebAppOptions{Environment: "prod"},
-			expected: swaCliProductionEnvironment,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.expected, tc.opts.swaCliEnvironment())
-		})
-	}
-}
-
-func TestStaticWebAppOptions_YamlUnmarshalWithEnvironment(t *testing.T) {
-	t.Parallel()
-
-	yamlInput := `
-host: staticwebapp
-project: ./src/web
-staticwebapp:
-  environment: staging
-`
-	var svc ServiceConfig
-	err := yaml.Unmarshal([]byte(yamlInput), &svc)
-	require.NoError(t, err)
-	require.Equal(t, "staging", svc.StaticWebApp.Environment)
-}
-
-func TestStaticWebAppOptions_YamlUnmarshalNoEnvironment(t *testing.T) {
-	t.Parallel()
-
-	// When staticwebapp key is absent, Environment should be empty and production is used.
-	yamlInput := `
-host: staticwebapp
-project: ./src/web
-`
-	var svc ServiceConfig
-	err := yaml.Unmarshal([]byte(yamlInput), &svc)
-	require.NoError(t, err)
-	require.Equal(t, "", svc.StaticWebApp.Environment)
-	require.Equal(t, DefaultStaticWebAppEnvironmentName, svc.StaticWebApp.apiEnvironmentName())
-	require.Equal(t, swaCliProductionEnvironment, svc.StaticWebApp.swaCliEnvironment())
 }

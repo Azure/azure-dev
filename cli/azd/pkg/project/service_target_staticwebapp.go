@@ -29,46 +29,6 @@ const DefaultStaticWebAppEnvironmentName = "default"
 // internally). See: https://github.com/Azure/static-web-apps-cli/blob/main/src/cli/commands/deploy/deploy.ts
 const swaCliProductionEnvironment = "production"
 
-// StaticWebAppOptions contains configuration for deploying to an Azure Static Web App.
-// These options can be specified in azure.yaml under the service's staticwebapp key.
-type StaticWebAppOptions struct {
-	// The SWA environment to deploy to. When empty (the default), azd deploys to
-	// the production environment (passing --env production to the SWA CLI).
-	// Set this to a named preview environment (e.g. "staging") to deploy a
-	// non-production environment; the value is passed as --env <environment> to the
-	// SWA CLI and is also used when querying the Azure REST API for deployment status
-	// and endpoints.
-	Environment string `yaml:"environment,omitempty"`
-}
-
-// apiEnvironmentName returns the environment identifier to use for Azure REST API
-// calls against the Static Web Apps service. The production environment is identified
-// as "default" in the API; named preview environments use their configured name.
-// Values like "production" or "prod" are normalized to "default" since the Azure API
-// does not recognize those as production identifiers.
-func (o *StaticWebAppOptions) apiEnvironmentName() string {
-	env := strings.TrimSpace(o.Environment)
-	if env == "" || strings.EqualFold(env, "default") ||
-		strings.EqualFold(env, "production") || strings.EqualFold(env, "prod") {
-		return DefaultStaticWebAppEnvironmentName
-	}
-	return env
-}
-
-// swaCliEnvironment returns the environment value to pass as `--env` to the SWA CLI.
-// The SWA CLI treats "production" (and "prod") as production deployments; any other
-// value targets a named preview environment. When the user has not configured an
-// environment (or explicitly set "default"), we return "production" because the
-// Azure REST API's "default" identifier is NOT recognized by the SWA CLI.
-func (o *StaticWebAppOptions) swaCliEnvironment() string {
-	env := strings.TrimSpace(o.Environment)
-	if env == "" || strings.EqualFold(env, "default") ||
-		strings.EqualFold(env, "production") || strings.EqualFold(env, "prod") {
-		return swaCliProductionEnvironment
-	}
-	return env
-}
-
 type staticWebAppTarget struct {
 	env *environment.Environment
 	cli *azapi.AzureClient
@@ -224,17 +184,23 @@ func (at *staticWebAppTarget) Deploy(
 		dOptions.OutputRelativeFolderPath = packagePath
 		cwd = serviceConfig.Project.Path
 	}
-	// Pass the SWA CLI environment name. The SWA CLI uses "production" for production
-	// deploys; any other value creates/targets a named preview environment.
-	// Note: the Azure REST API uses "default" for production, but the SWA CLI does NOT
-	// recognize "default" — it requires "production" or "prod".
+	// Determine the environment to pass to the SWA CLI.
+	// When swa-cli.config.json is present, omit --env and let the SWA CLI resolve
+	// the environment from its own config (respecting the config file as source of truth).
+	// When no config file is present (opinionated mode), pass --env production to fix
+	// the BadRequest that occurred with the old --env default.
+	swaEnv := ""
+	if !usingSwaConfig(serviceContext.Package) {
+		swaEnv = swaCliProductionEnvironment
+	}
+
 	_, err = at.swa.Deploy(ctx,
 		cwd,
 		at.env.GetTenantId(),
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
-		serviceConfig.StaticWebApp.swaCliEnvironment(),
+		swaEnv,
 		*deploymentToken,
 		dOptions,
 		at.env.Environ())
@@ -244,7 +210,7 @@ func (at *staticWebAppTarget) Deploy(
 	}
 
 	progress.SetProgress(NewServiceProgress("Verifying deployment"))
-	if err := at.verifyDeployment(ctx, serviceConfig, targetResource); err != nil {
+	if err := at.verifyDeployment(ctx, targetResource); err != nil {
 		return nil, err
 	}
 
@@ -286,7 +252,9 @@ func (at *staticWebAppTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
-	apiEnvName := serviceConfig.StaticWebApp.apiEnvironmentName()
+	// TODO: Enhance for multi-environment support
+	// https://github.com/Azure/azure-dev/issues/1152
+	apiEnvName := DefaultStaticWebAppEnvironmentName
 	if envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -316,12 +284,11 @@ func (at *staticWebAppTarget) validateTargetResource(
 
 func (at *staticWebAppTarget) verifyDeployment(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) error {
 	retries := 0
 	const maxRetries = 10
-	apiEnvName := serviceConfig.StaticWebApp.apiEnvironmentName()
+	apiEnvName := DefaultStaticWebAppEnvironmentName
 
 	for {
 		envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(

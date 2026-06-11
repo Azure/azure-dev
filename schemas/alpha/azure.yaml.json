@@ -267,9 +267,6 @@
                     "k8s": {
                         "$ref": "#/definitions/aksOptions"
                     },
-                    "staticwebapp": {
-                        "$ref": "#/definitions/staticwebappOptions"
-                    },
                     "config": {
                         "type": "object",
                         "additionalProperties": true
@@ -460,19 +457,6 @@
                         "then": {
                             "properties": {
                                 "remoteBuild": false
-                            }
-                        }
-                    },
-                    {
-                        "comment": "staticwebapp options are only valid for staticwebapp host",
-                        "if": {
-                            "properties": {
-                                "host": { "not": { "const": "staticwebapp" } }
-                            }
-                        },
-                        "then": {
-                            "properties": {
-                                "staticwebapp": false
                             }
                         }
                     }
@@ -1274,19 +1258,6 @@
                             }
                         }
                     }
-                }
-            }
-        },
-        "staticwebappOptions": {
-            "type": "object",
-            "title": "Optional. Azure Static Web Apps deployment configuration",
-            "description": "Configuration options for deploying to Azure Static Web Apps. Only applicable when host is set to staticwebapp.",
-            "additionalProperties": false,
-            "properties": {
-                "environment": {
-                    "type": "string",
-                    "title": "Optional. The SWA environment to deploy to",
-                    "description": "When omitted, azd deploys to the production environment. Set to a custom name (e.g. 'staging') to target a named preview environment. Do not use 'default' - it is not recognized by the SWA CLI."
                 }
             }
         },

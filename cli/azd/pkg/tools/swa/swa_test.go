@@ -119,7 +119,6 @@ func Test_SwaDeploy(t *testing.T) {
 				"--subscription-id", "subscriptionID",
 				"--resource-group", "resourceGroupID",
 				"--app-name", "appName",
-				"--env", "production",
 				"--no-use-keychain",
 				"--deployment-token", "deploymentToken",
 			}, args.Args)
@@ -141,7 +140,7 @@ func Test_SwaDeploy(t *testing.T) {
 			"subscriptionID",
 			"resourceGroupID",
 			"appName",
-			"production",
+			"",
 			"deploymentToken",
 			DeployOptions{},
 			nil,
@@ -150,7 +149,7 @@ func Test_SwaDeploy(t *testing.T) {
 		require.True(t, ran)
 	})
 
-	t.Run("NoErrorsNoConfig", func(t *testing.T) {
+	t.Run("NoErrorsWithOptions", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(t.Context())
 		swacli := NewCli(mockContext.CommandRunner)
 
@@ -167,19 +166,16 @@ func Test_SwaDeploy(t *testing.T) {
 				"--subscription-id", "subscriptionID",
 				"--resource-group", "resourceGroupID",
 				"--app-name", "appName",
-				"--env", "production",
 				"--no-use-keychain",
 				"--deployment-token", "deploymentToken",
+				"--env", "production",
 				"--app-location", "appFolderPath",
 				"--output-location", "outputRelativeFolderPath",
 			}, args.Args)
 
 			return exec.RunResult{
-				Stdout: "",
-				Stderr: "",
-				// if the returned `error` is nil we don't return an error. The underlying 'exec'
-				// returns an error if the command returns a non-zero exit code so we don't actually
-				// need to check it.
+				Stdout:   "",
+				Stderr:   "",
 				ExitCode: 1,
 			}, nil
 		})
@@ -220,7 +216,6 @@ func Test_SwaDeploy(t *testing.T) {
 				"--subscription-id", "subscriptionID",
 				"--resource-group", "resourceGroupID",
 				"--app-name", "appName",
-				"--env", "production",
 				"--no-use-keychain",
 				"--deployment-token", "deploymentToken",
 			}, args.Args)
@@ -239,7 +234,7 @@ func Test_SwaDeploy(t *testing.T) {
 			"subscriptionID",
 			"resourceGroupID",
 			"appName",
-			"production",
+			"",
 			"deploymentToken",
 			DeployOptions{},
 			nil,
@@ -285,8 +280,8 @@ func Test_SwaDeploy_WithEnvironment(t *testing.T) {
 		"--subscription-id", "subscriptionID",
 		"--resource-group", "resourceGroupID",
 		"--app-name", "appName",
-		"--env", "staging",
 		"--no-use-keychain",
 		"--deployment-token", "deploymentToken",
+		"--env", "staging",
 	}, capturedArgs.Args)
 }

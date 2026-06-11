@@ -40,7 +40,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/braydonk/yaml"
-	"github.com/drone/envsubst"
 	"github.com/fatih/color"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -2272,7 +2271,7 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 // resolveEnvironmentVariables resolves ${ENV_VAR} style references in value using azd environment variables.
 // Supports default values (e.g., "${VAR:-default}") and multiple expressions (e.g., "${VAR1}-${VAR2}").
 func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, azdEnv map[string]string) string {
-	resolved, err := envsubst.Eval(value, func(varName string) string {
+	resolved, err := ExpandEnv(value, func(varName string) string {
 		return azdEnv[varName]
 	})
 	if err != nil {

@@ -3,11 +3,14 @@ name: "ext-azure-ai-agents-e2e"
 # E2E tests for the azure.ai.agents CLI extension.
 #
 # Architecture (identical to local testing):
-#   Copilot CLI (LLM brain, reads goals from scenario YAML)
-#     ↕ MCP protocol (stdio)
+#   Copilot CLI (LLM brain, installed via npm)
+#     ↕ MCP protocol (stdio, config in ~/.copilot/mcp-config.json)
 #   cli-interactive-tester (MCP server, manages tmux sessions)
 #     ↕ tmux
 #   azd ai agent CLI (under test)
+#
+# Copilot CLI runs in programmatic mode (-p), reads scenario goals from YAML,
+# and drives the terminal via MCP tool — same flow as local testing.
 #
 # Manual trigger only — switch to PR-trigger once pipeline is stable.
 # Scenarios live on branch trangevi/test-scenarios until PR #8524 merges.
@@ -38,8 +41,6 @@ permissions:
 env:
   SCENARIOS_DIR: cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios
   AZD_AGENTS_FIXTURES: cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/fixtures
-  # TODO: change to 'main' after PR #8524 merges
-  TARGET_BRANCH: trangevi/test-scenarios
 
 jobs:
   e2e-test:
@@ -49,8 +50,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          # TODO: remove ref after PR #8524 merges to main
-          ref: ${{ env.TARGET_BRANCH }}
+          # TODO: change to 'main' after PR #8524 merges
+          ref: trangevi/test-scenarios
+
+      - uses: actions/setup-node@v4
 
       - uses: actions/setup-go@v6
         with:
@@ -59,6 +62,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Install Copilot CLI
+        run: npm install -g @github/copilot
 
       - name: Build azd + install extension
         working-directory: cli/azd
@@ -70,18 +76,18 @@ jobs:
       - name: Install cli-interactive-tester
         run: |
           sudo apt-get install -y tmux
-          # TODO: confirm repo visibility. If private, use PAT:
-          #   git clone https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/...
+          # TODO: confirm repo visibility. If private, use:
+          #   git clone https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/coreai-microsoft/cli-interactive-tester.git
           git clone https://github.com/coreai-microsoft/cli-interactive-tester.git /tmp/cli-interactive-tester
           cd /tmp/cli-interactive-tester
           pip install -e .
-          python -c "from auto_test_tool.mcp_server import main; print('MCP tool ready')"
 
       - name: Install uv (for Tier 2 run-local scenario)
         if: contains(inputs.tier, '2')
         uses: astral-sh/setup-uv@v6
 
       - name: Azure Login
+        if: contains(inputs.tier, '1') || contains(inputs.tier, '2')
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -89,6 +95,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: GitHub CLI Auth
+        if: contains(inputs.tier, '1') || contains(inputs.tier, '2')
         run: echo "${{ secrets.GH_TOKEN }}" | gh auth login --with-token
 
       - name: Create test profile
@@ -101,9 +108,10 @@ jobs:
           foundry_project_endpoint: "${{ secrets.FOUNDRY_PROJECT_ENDPOINT }}"
           EOF
 
-      - name: Generate MCP config
+      - name: Configure MCP for Copilot
         run: |
-          cat > ${{ github.workspace }}/.copilot-mcp.json <<EOF
+          mkdir -p ~/.copilot
+          cat > ~/.copilot/mcp-config.json <<'EOF'
           {
             "mcpServers": {
               "cli-interactive-tester": {
@@ -116,32 +124,24 @@ jobs:
           }
           EOF
 
-      - name: Run scenarios via Copilot + MCP tool
+      - name: Run E2E scenarios via Copilot + MCP tool
         working-directory: ${{ env.SCENARIOS_DIR }}
         env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
           AZD_AGENTS_FIXTURES: ${{ github.workspace }}/${{ env.AZD_AGENTS_FIXTURES }}
           UV_HTTP_TIMEOUT: "300"
-          GITHUB_TOKEN: ${{ secrets.COPILOT_TOKEN }}
         run: |
           export PATH="${{ github.workspace }}/cli/azd:$PATH"
+          # Copilot CLI in programmatic mode:
+          #   -p = non-interactive, exit on completion
+          #   --no-ask-user = never prompt for user input
+          #   --allow-tool = pre-authorize MCP tool access
           #
-          # Copilot drives the MCP tool to execute each scenario:
-          #   load_scenario → run_pre_hooks → start_session
-          #   → observe terminal + send keystrokes to accomplish goals
-          #   → finish_session → run_post_hooks
-          #
-          # This is the SAME architecture as local testing — Copilot reads
-          # the scenario YAML goals and autonomously navigates the CLI.
-          #
-          # TODO: confirm how to invoke Copilot CLI headlessly in CI.
-          # Options being evaluated:
-          #   1. `copilot --mcp-config ... --prompt-file ...` (needs COPILOT_TOKEN)
-          #   2. `gh copilot run` with piped prompt
-          #   3. GitHub Copilot Extensions API (programmatic invocation)
-          #
-          copilot \
-            --mcp-config ${{ github.workspace }}/.copilot-mcp.json \
-            --prompt-file prompt-ci-run.md
+          # TODO: confirm --allow-tool syntax for MCP-registered tools.
+          # Possible forms: 'cli-interactive-tester(*)', 'cli-interactive-tester'
+          copilot -p "$(cat prompt-ci-run.md)" \
+            --allow-tool='cli-interactive-tester(*)' \
+            --no-ask-user
 
       - name: Upload results
         if: always()
@@ -163,6 +163,8 @@ jobs:
           # Direct teardown (not Copilot) for reliability on failure
           cd ~/working/azd-agents-shared/*/ 2>/dev/null && \
             azd down --force --purge || true
+
+
 
 
 

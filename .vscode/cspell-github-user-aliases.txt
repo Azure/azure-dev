@@ -24,6 +24,7 @@ fatih
 fiscaletti
 gofrs
 haoozhang
+huimiu
 isatty
 joho
 karolz
@@ -61,3 +62,4 @@ tonybaloney
 vivazqu
 weilim
 Yionse
+Zyysurely

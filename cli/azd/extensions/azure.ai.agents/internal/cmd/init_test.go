@@ -17,6 +17,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -51,6 +52,42 @@ func TestInitCommand_ForceFlag(t *testing.T) {
 	}
 	if flag.DefValue != "false" {
 		t.Fatalf("expected --force default false, got %q", flag.DefValue)
+	}
+}
+
+// TestHasFoundryProviderDeclared covers the predicate ensureProject
+// uses to suppress the "missing infra/" warning.
+func TestHasFoundryProviderDeclared(t *testing.T) {
+	cases := []struct {
+		name string
+		proj *azdext.ProjectConfig
+		want bool
+	}{
+		{name: "nil project", proj: nil, want: false},
+		{name: "missing infra block", proj: &azdext.ProjectConfig{}, want: false},
+		{
+			name: "different provider",
+			proj: &azdext.ProjectConfig{Infra: &azdext.InfraOptions{Provider: "bicep"}},
+			want: false,
+		},
+		{
+			name: "empty provider",
+			proj: &azdext.ProjectConfig{Infra: &azdext.InfraOptions{}},
+			want: false,
+		},
+		{
+			name: "matches",
+			proj: &azdext.ProjectConfig{Infra: &azdext.InfraOptions{Provider: project.FoundryProviderName}},
+			want: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hasFoundryProviderDeclared(tc.proj); got != tc.want {
+				t.Fatalf("hasFoundryProviderDeclared = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

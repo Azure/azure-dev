@@ -23,6 +23,7 @@ const (
 	ServiceLanguageTypeScript ServiceLanguageKind = "ts"
 	ServiceLanguagePython     ServiceLanguageKind = "python"
 	ServiceLanguageJava       ServiceLanguageKind = "java"
+	ServiceLanguageGo         ServiceLanguageKind = "go"
 	ServiceLanguageDocker     ServiceLanguageKind = "docker"
 	ServiceLanguageSwa        ServiceLanguageKind = "swa"
 	ServiceLanguageCustom     ServiceLanguageKind = "custom"
@@ -32,6 +33,9 @@ func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error)
 	// aliases
 	if string(kind) == "py" {
 		return ServiceLanguagePython, nil
+	}
+	if string(kind) == "golang" {
+		return ServiceLanguageGo, nil
 	}
 
 	switch kind {
@@ -43,6 +47,7 @@ func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error)
 		ServiceLanguageTypeScript,
 		ServiceLanguagePython,
 		ServiceLanguageJava,
+		ServiceLanguageGo,
 		ServiceLanguageDocker,
 		ServiceLanguageCustom:
 		// Excluding ServiceLanguageSwa since it is implicitly derived currently,

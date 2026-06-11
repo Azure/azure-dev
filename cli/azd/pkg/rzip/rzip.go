@@ -107,6 +107,7 @@ func addFile(
 		Modified: info.ModTime(),
 		Method:   zip.Deflate,
 	}
+	header.SetMode(info.Mode())
 
 	f, err := w.CreateHeader(header)
 	if err != nil {

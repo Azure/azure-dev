@@ -19,6 +19,16 @@
           "type": "object",
           "required": ["type"],
           "additionalProperties": true,
+          "allOf": [
+            {
+              "if": { "properties": { "type": { "const": "schedule" } } },
+              "then": { "required": ["cron"] }
+            },
+            {
+              "if": { "properties": { "type": { "enum": ["webhook", "event"] } } },
+              "then": { "required": ["filter"] }
+            }
+          ],
           "properties": {
             "type":   { "type": "string", "enum": ["schedule", "webhook", "event"] },
             "cron":   { "type": "string", "description": "Cron expression. Required for type: schedule." },

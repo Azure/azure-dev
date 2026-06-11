@@ -174,8 +174,15 @@ func (h *HooksRunner) execHook(
 	}
 
 	// Set name and type on span — known before validation.
+	// Hash the hook name unless it is one of the well-known built-in lifecycle
+	// hooks; user-defined hook names (extension or project-author chosen) are
+	// pseudonymized to avoid leaking identifiers via telemetry.
+	hookNameAttr := fields.StringHashed(fields.HooksNameKey, hookConfig.Name)
+	if KnownHookNames[hookConfig.Name] {
+		hookNameAttr = fields.HooksNameKey.String(hookConfig.Name)
+	}
 	span.SetAttributes(
-		fields.HooksNameKey.String(hookConfig.Name),
+		hookNameAttr,
 		fields.HooksTypeKey.String(hookType),
 	)
 

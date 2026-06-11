@@ -43,6 +43,7 @@ overrides:
           - firstrun
           - dependson
           - exegraph
+          - pseudonymizing
     - filename: ./README.md
       words:
           - VSIX

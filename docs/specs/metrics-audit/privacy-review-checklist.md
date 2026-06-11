@@ -117,8 +117,10 @@ All hashing functions are in `cli/azd/internal/tracing/fields/key.go`.
 
 ### Fields That Must Be Hashed
 
-These fields are emitted with hashing at **every** call site. Adding a raw emission
-for any of these constitutes a privacy regression and requires a re-review.
+These fields are emitted with hashing at **every** call site (with the documented
+allowlist exceptions for built-in enum values). Adding a raw emission for any of
+these — outside the documented allowlist — constitutes a privacy regression and
+requires a re-review.
 
 | Field | Hash Function | Reason |
 |-------|---------------|--------|
@@ -126,6 +128,7 @@ for any of these constitutes a privacy regression and requires a re-review.
 | `project.template.version` | `StringHashed` | Version strings may be user-defined |
 | `project.name` | `StringHashed` | Project names are user-chosen |
 | `env.name` | `StringHashed` | Environment names may contain identifying information |
+| `hooks.name` | `StringHashed` (default); raw only when name ∈ `ext.KnownHookNames` allowlist of built-in lifecycle hooks (e.g., `prebuild`, `predeploy`, `preprovision`) | Hook names are user-defined in `azure.yaml`; the allowlist preserves analytical value for built-in lifecycle hooks while pseudonymizing extension- and project-author-defined names |
 | `exegraph.step.name` | `StringHashed` | Step names embed user-defined service / layer names from `azure.yaml` (e.g., `deploy-<svc.Name>`, `<layer.Name>`) |
 | `exegraph.step.deps` | `StringSliceHashed` | Dependency edges reference step names, which embed user-defined service / layer names |
 
@@ -142,7 +145,6 @@ site is added without the documented condition, the field should be hashed by de
 | Field | Condition | Hashed when… | Raw when… | Source |
 |-------|-----------|-------------|----------|--------|
 | `subscription.id` | Value shape | Value does NOT parse as a UUID (e.g., user-defined placeholder in vendored envs) | Value parses as a valid UUID (real Azure subscription GUID) | `pkg/environment/local_file_data_store.go:198-202`, `pkg/environment/storage_blob_data_store.go:185-189` |
-| `hooks.name` | Emission path + allowlist | Emitted from `cmd/hooks.go` (the `azd hooks run` command) AND hook name is NOT in the `knownHookNames` allowlist | Emitted from `cmd/hooks.go` AND hook name IS in the allowlist (lifecycle hooks like `prepackage`, `predeploy`); also emitted RAW unconditionally by `pkg/ext/hooks_runner.go` for the `hooks.exec` event | `cmd/hooks.go:165-169`, `pkg/ext/hooks_runner.go:178` |
 | `pack.builder.image` | Source of the value | Builder image was user-provided (overrides the default) — `userDefinedImage == true` | Builder image is the built-in default | `pkg/project/container_helper.go:1126-1137` |
 | `pack.builder.tag` | Source of the value | Builder tag was user-provided (overrides the default) — `userDefinedImage == true` | Builder tag is the built-in default | `pkg/project/container_helper.go:1126-1137` |
 

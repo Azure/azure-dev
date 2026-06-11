@@ -8,6 +8,11 @@ steps:
   - ${{ if eq('true', parameters.CreateGitHubRelease) }}:
     # This step must run first because a duplicated tag means we don't need to
     # continue with any of the subsequent steps.
+    - template: /eng/common/pipelines/templates/steps/login-to-github.yml
+      parameters:
+        TokenOwners:
+          - ${{ split(variables['Build.Repository.Name'], '/')[0] }}
+
     - pwsh: |
         $tag = "azure-dev-cli_$(CLI_VERSION)"
         Write-Host "Release tag: $tag"
@@ -32,7 +37,7 @@ steps:
         exit 0
       displayName: Check for existing GitHub release
       env:
-        GH_TOKEN: $(azuresdk-github-pat)
+        GH_TOKEN: $(GH_TOKEN)
 
     - pwsh: |
         Remove-Item -Path release/_manifest -Recurse -Force
@@ -50,7 +55,7 @@ steps:
         gh release upload $(GH_RELEASE_TAG) release/* --repo $(Build.Repository.Name)
       displayName: Create GitHub Release and upload artifacts
       env:
-        GH_TOKEN: $(azuresdk-github-pat)
+        GH_TOKEN: $(GH_TOKEN)
 
     - pwsh: |
         $goModuleTag = "cli/azd/v$(CLI_VERSION)"
@@ -115,7 +120,7 @@ steps:
         Write-Host "Successfully created tag: $goModuleTag"
       displayName: Create Go module version tag
       env:
-        GH_TOKEN: $(azuresdk-github-pat)
+        GH_TOKEN: $(GH_TOKEN)
 
   - ${{ if eq('true', parameters.UploadInstaller) }}:
     - pwsh: |

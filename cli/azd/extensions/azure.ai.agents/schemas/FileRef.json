@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/azure.ai.agents/schemas/FileRef.json",
+  "title": "External file reference",
+  "description": "Replace an inline definition with a reference to an external YAML or JSON file. Sibling properties on the same object act as overlay overrides on top of the loaded file.",
+  "type": "object",
+  "required": ["$ref"],
+  "properties": {
+    "$ref": {
+      "type": "string",
+      "description": "Path to a YAML or JSON file containing the definition. Relative paths resolve from the file containing this $ref. Absolute paths and URLs are also accepted."
+    }
+  },
+  "additionalProperties": true
+}

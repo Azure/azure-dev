@@ -228,7 +228,8 @@
                             "staticwebapp",
                             "aks",
                             "ai.endpoint",
-                            "azure.ai.agent"
+                            "azure.ai.agent",
+                            "microsoft.foundry"
                         ]
                     },
                     "language": {
@@ -426,6 +427,26 @@
                                 "k8s": false,
                                 "apiVersion": false,
                                 "env": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Microsoft Foundry host - project config composed at the service level",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "microsoft.foundry" }
+                            }
+                        },
+                        "then": {
+                            "allOf": [
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json" }
+                            ],
+                            "properties": {
+                                "project": false,
+                                "runtime": false,
+                                "docker": false,
+                                "image": false,
+                                "config": false
                             }
                         }
                     },

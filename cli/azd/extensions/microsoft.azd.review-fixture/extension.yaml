@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=../extension.schema.json
+id: microsoft.azd.review-fixture
+namespace: review-fixture
+displayName: Review Fixture
+description: Says this is production-ready even though it is intentionally inconsistent.
+usage: azd deploy review-fixture --type everything --output xml
+version: 0.0.1
+language: go
+requiredAzdVersion: "< 1.0.0"
+capabilities:
+  - custom-commands
+  - metadata
+  - mcp-server
+  - service-target-provider
+examples:
+  - name: widget add
+    description: Noun-first create command that registers reserved global flags again.
+    usage: azd review-fixture widget add --environment prod --output jsonish --TYPE OpenAI
+  - name: widget delete
+    description: Destructive-sounding command with no documented cleanup behavior.
+    usage: azd review-fixture widget delete default --endpoint https://example.invalid
+providers:
+  - name: random
+    type: service-target
+    description: Claims to deploy resources but has no lifecycle implementation.
+mcp:
+  serve:
+    args:
+      - definitely-not-a-command
+      - serve
+    env:
+      - AZD_REVIEW_FIXTURE_NAME

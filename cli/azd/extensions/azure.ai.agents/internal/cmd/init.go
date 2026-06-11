@@ -1558,6 +1558,21 @@ func ensureProject(
 			}
 		}
 
+		// The starter scaffold provides the project skeleton; this
+		// extension's provisioning provider owns infrastructure and
+		// synthesizes it from azure.yaml at provision time, so drop the
+		// scaffolded infra/.
+		if rmErr := os.RemoveAll("infra"); rmErr != nil {
+			return nil, exterrors.Dependency(
+				exterrors.CodeProjectInitFailed,
+				fmt.Sprintf("removing scaffolded infra/: %s", rmErr),
+				"check that you have write permissions in the project directory",
+			)
+		}
+		if err := writeFoundryProvider(ctx, azdClient); err != nil {
+			return nil, err
+		}
+
 		projectResponse, err = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 		if err != nil {
 			return nil, exterrors.Dependency(
@@ -1569,20 +1584,24 @@ func ensureProject(
 
 		fmt.Println()
 	} else if projectResponse.Project != nil {
-		// An existing azd project was found — tell the user so the skipped template
-		// download isn't a mystery. Also warn if the project lacks an infra/ directory,
-		// since deployment may require infrastructure scaffolding.
 		fmt.Println(output.WithGrayFormat(
 			"Found existing azd project at %q. Adding agent to it.", projectResponse.Project.Path,
 		))
 
-		infraDir := filepath.Join(projectResponse.Project.Path, "infra")
-		if _, statErr := os.Stat(infraDir); os.IsNotExist(statErr) {
-			fmt.Printf("%s", output.WithWarningFormat(
-				"No infra/ directory found in the project. If you need Azure infrastructure "+
-					"for deployment, run 'azd init -t Azure-Samples/azd-ai-starter-basic .' in an empty "+
-					"directory first, then re-run this command from there.\n",
-			))
+		// Skip the warning when the project has already opted into the
+		// extension's provisioning provider (which intentionally omits infra/).
+		if !hasFoundryProviderDeclared(projectResponse.Project) {
+			infraDir := filepath.Join(projectResponse.Project.Path, "infra")
+			if _, statErr := os.Stat(infraDir); os.IsNotExist(statErr) {
+				fmt.Printf("%s", output.WithWarningFormat(
+					"No infra/ directory found in the project, and azure.yaml does not declare "+
+						"'infra.provider: %s'. If you need Azure infrastructure for deployment, "+
+						"set that provider in azure.yaml or run "+
+						"'azd init -t Azure-Samples/azd-ai-starter-basic .' in an empty "+
+						"directory first.\n",
+					project.FoundryProviderName,
+				))
+			}
 		}
 	}
 
@@ -1595,6 +1614,59 @@ func ensureProject(
 	}
 
 	return projectResponse.Project, nil
+}
+
+// writeFoundryProvider stamps `infra.provider: <FoundryProviderName>`
+// onto azure.yaml and removes the starter's `infra.path: ./infra`.
+func writeFoundryProvider(ctx context.Context, azdClient *azdext.AzdClient) error {
+	value, err := structpb.NewValue(project.FoundryProviderName)
+	if err != nil {
+		return exterrors.Internal(
+			exterrors.CodeProjectInitFailed,
+			fmt.Sprintf("failed to encode provider name as protobuf value: %s", err),
+		)
+	}
+
+	_, err = azdClient.Project().SetConfigValue(ctx, &azdext.SetProjectConfigValueRequest{
+		Path:  "infra.provider",
+		Value: value,
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("writing infra.provider was cancelled")
+		}
+		return exterrors.Dependency(
+			exterrors.CodeProjectInitFailed,
+			fmt.Sprintf(
+				"failed to set infra.provider=%s on azure.yaml: %s",
+				project.FoundryProviderName, err,
+			),
+			"check that azure.yaml is writable and re-run the command",
+		)
+	}
+
+	// UnsetConfig is idempotent for missing keys.
+	_, err = azdClient.Project().UnsetConfig(ctx, &azdext.UnsetProjectConfigRequest{
+		Path: "infra.path",
+	})
+	if err != nil && !exterrors.IsCancellation(err) {
+		return exterrors.Dependency(
+			exterrors.CodeProjectInitFailed,
+			fmt.Sprintf("failed to unset infra.path on azure.yaml: %s", err),
+			"check that azure.yaml is writable and re-run the command",
+		)
+	}
+
+	return nil
+}
+
+// hasFoundryProviderDeclared reports whether azure.yaml already
+// declares this extension's provisioning provider.
+func hasFoundryProviderDeclared(proj *azdext.ProjectConfig) bool {
+	if proj == nil || proj.Infra == nil {
+		return false
+	}
+	return proj.Infra.Provider == project.FoundryProviderName
 }
 
 func getExistingEnvironment(ctx context.Context, envName string, azdClient *azdext.AzdClient) *azdext.Environment {
@@ -1702,6 +1774,7 @@ func (a *InitAction) configureModelChoice(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
 				a.isCodeDeploy,
+				true, // bicepless
 			)
 			if err != nil {
 				return nil, err
@@ -1768,6 +1841,7 @@ func (a *InitAction) configureModelChoice(
 					ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 					a.azureContext.Scope.SubscriptionId, "",
 					a.isCodeDeploy,
+					true, // bicepless
 				)
 				if err != nil {
 					return nil, err
@@ -1847,6 +1921,7 @@ func (a *InitAction) configureModelChoice(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
 			a.isCodeDeploy,
+			true, // bicepless
 		)
 		if err != nil {
 			return nil, err
@@ -1924,6 +1999,7 @@ func (a *InitAction) configureModelChoice(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, "",
 				a.isCodeDeploy,
+				true, // bicepless
 			)
 			if err != nil {
 				return nil, err

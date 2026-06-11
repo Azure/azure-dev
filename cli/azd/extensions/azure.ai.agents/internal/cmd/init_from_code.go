@@ -193,6 +193,18 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 			)
 		}
 
+		// See ensureProject in init.go.
+		if rmErr := os.RemoveAll("infra"); rmErr != nil {
+			return nil, exterrors.Dependency(
+				exterrors.CodeProjectInitFailed,
+				fmt.Sprintf("removing scaffolded infra/: %s", rmErr),
+				"check that you have write permissions in the project directory",
+			)
+		}
+		if err := writeFoundryProvider(ctx, a.azdClient); err != nil {
+			return nil, err
+		}
+
 		projectResponse, err = a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 		if err != nil {
 			return nil, exterrors.Dependency(
@@ -657,7 +669,12 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 		a.credential = newCred
 
-		proj, err := selectFoundryProject(ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name, a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId, deployMode == "code")
+		proj, err := selectFoundryProject(
+			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
+			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
+			deployMode == "code",
+			true, // bicepless
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -719,7 +736,12 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			}
 			a.credential = newCred
 
-			proj, err := selectFoundryProject(ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name, a.azureContext.Scope.SubscriptionId, "", deployMode == "code")
+			proj, err := selectFoundryProject(
+				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
+				a.azureContext.Scope.SubscriptionId, "",
+				deployMode == "code",
+				true, // bicepless
+			)
 			if err != nil {
 				return nil, err
 			}

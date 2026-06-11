@@ -13,8 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestRun_SingleStep(t *testing.T) {
@@ -1158,4 +1164,76 @@ func TestRunWithResult_FailFast_DrainClassifiesCorrectly(t *testing.T) {
 	require.NotNil(t, blockerTiming, "blocker should appear in results")
 	assert.Equal(t, StepSkipped, blockerTiming.Status,
 		"in-flight step canceled by FailFast should be skipped, not failed")
+}
+
+// TestRun_HashesStepNameAndDeps guards the privacy behavior that execution-graph
+// step names and dependency lists — which embed user-defined service / layer
+// names from azure.yaml — are hashed before emission, while tags (a fixed
+// internal vocabulary) remain raw.
+func TestRun_HashesStepNameAndDeps(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	tp := tracesdk.NewTracerProvider(tracesdk.WithSyncer(exporter))
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+
+	const stepName = "deploy-myservice"
+	const depName = "build-myservice"
+
+	g := NewGraph()
+	require.NoError(t, g.AddStep(&Step{
+		Name:   depName,
+		Tags:   []string{"package"},
+		Action: func(_ context.Context) error { return nil },
+	}))
+	require.NoError(t, g.AddStep(&Step{
+		Name:      stepName,
+		DependsOn: []string{depName},
+		Tags:      []string{"deploy"},
+		Action:    func(_ context.Context) error { return nil },
+	}))
+
+	require.NoError(t, Run(t.Context(), g, RunOptions{}))
+	require.NoError(t, tp.ForceFlush(t.Context()))
+
+	// Identify the deploy step span via its raw tag (tags are not hashed).
+	attrs := stepSpanAttributes(t, exporter, []string{"deploy"})
+
+	nameVal, ok := attrs[string(fields.ExeGraphStepNameKey.Key)]
+	require.True(t, ok, "step name attribute must be present")
+	assert.Equal(t, fields.CaseInsensitiveHash(stepName), nameVal.AsString())
+	assert.NotEqual(t, stepName, nameVal.AsString(), "raw step name must not be emitted")
+
+	depsVal, ok := attrs[string(fields.ExeGraphStepDepsKey.Key)]
+	require.True(t, ok, "step deps attribute must be present")
+	assert.Equal(t, []string{fields.CaseInsensitiveHash(depName)}, depsVal.AsStringSlice())
+	assert.NotContains(t, depsVal.AsStringSlice(), depName, "raw dependency name must not be emitted")
+
+	// Tags are compile-time literals and must remain raw.
+	tagsVal, ok := attrs[string(fields.ExeGraphStepTagsKey.Key)]
+	require.True(t, ok, "step tags attribute must be present")
+	assert.Equal(t, []string{"deploy"}, tagsVal.AsStringSlice())
+}
+
+// stepSpanAttributes returns the attributes (keyed by attribute key) of the
+// exegraph.step span whose tags match wantTags.
+func stepSpanAttributes(
+	t *testing.T, exporter *tracetest.InMemoryExporter, wantTags []string,
+) map[string]attribute.Value {
+	t.Helper()
+	for _, s := range exporter.GetSpans() {
+		if s.Name != events.ExeGraphStepEvent {
+			continue
+		}
+		attrs := make(map[string]attribute.Value, len(s.Attributes))
+		for _, a := range s.Attributes {
+			attrs[string(a.Key)] = a.Value
+		}
+		if tags, ok := attrs[string(fields.ExeGraphStepTagsKey.Key)]; ok &&
+			assert.ObjectsAreEqual(wantTags, tags.AsStringSlice()) {
+			return attrs
+		}
+	}
+	t.Fatalf("no %q span with tags %v was recorded", events.ExeGraphStepEvent, wantTags)
+	return nil
 }

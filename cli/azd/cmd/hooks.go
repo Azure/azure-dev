@@ -120,10 +120,9 @@ const (
 	hookContextService hookContextType = "service"
 )
 
-// knownHookNames was moved to `pkg/ext/known_hooks.go` (exported as
-// `ext.KnownHookNames`) so the hooks runner and this command share a
-// single source of truth for the allowlist used to decide whether a
-// hook name can be emitted raw in telemetry.
+// The built-in hook-name allowlist lives in `pkg/ext/known_hooks.go`. Both this
+// command and the hooks runner call `ext.HookNameAttribute` so the raw-vs-hashed
+// decision for the telemetry `hooks.name` field stays in a single place.
 
 func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	hookName := hra.args[0]
@@ -146,12 +145,8 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	}
 
 	// Log known hook names raw; hash unknown names to avoid logging arbitrary user input.
-	hookNameAttr := fields.StringHashed(fields.HooksNameKey, hookName)
-	if ext.KnownHookNames[hookName] {
-		hookNameAttr = fields.HooksNameKey.String(hookName)
-	}
 	tracing.SetUsageAttributes(
-		hookNameAttr,
+		ext.HookNameAttribute(hookName),
 		fields.HooksTypeKey.String(hookType),
 	)
 

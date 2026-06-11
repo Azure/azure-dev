@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -20,8 +22,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktools"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 // registerHookExecutors delegates to the shared test helper in test/mocks/mocktools.
@@ -1388,4 +1394,124 @@ func TestHooksRunner_Telemetry(t *testing.T) {
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrRunRequired)
 	})
+}
+
+func TestIsKnownHookName(t *testing.T) {
+	known := []string{
+		"prebuild", "postbuild", "predeploy", "postdeploy", "predown", "postdown",
+		"prepackage", "postpackage", "preprovision", "postprovision", "prepublish",
+		"postpublish", "prerestore", "postrestore", "preup", "postup",
+	}
+	for _, name := range known {
+		assert.True(t, IsKnownHookName(name), "%q should be a known lifecycle hook", name)
+	}
+
+	// Empty, bare commands, non-lifecycle hooks, and differently-cased names are not
+	// on the allowlist and therefore must be hashed before emission.
+	notKnown := []string{"", "build", "deploy", "preinit", "postinit", "contoso-custom", "PreBuild"}
+	for _, name := range notKnown {
+		assert.False(t, IsKnownHookName(name), "%q should not be a known lifecycle hook", name)
+	}
+}
+
+func TestHookNameAttribute(t *testing.T) {
+	// Built-in lifecycle hook names are emitted raw to preserve analytical value.
+	t.Run("known emitted raw", func(t *testing.T) {
+		attr := HookNameAttribute("predeploy")
+		assert.Equal(t, string(fields.HooksNameKey.Key), string(attr.Key))
+		assert.Equal(t, "predeploy", attr.Value.AsString())
+	})
+
+	// User- or extension-defined names are hashed (case-insensitive SHA-256) so they
+	// cannot leak user-chosen identifiers via telemetry.
+	t.Run("unknown hashed", func(t *testing.T) {
+		const custom = "Contoso-Custom-Hook"
+		attr := HookNameAttribute(custom)
+		assert.Equal(t, string(fields.HooksNameKey.Key), string(attr.Key))
+		assert.Equal(t, fields.CaseInsensitiveHash(custom), attr.Value.AsString())
+		assert.NotEqual(t, custom, attr.Value.AsString(), "raw value must not be emitted")
+		assert.Len(t, attr.Value.AsString(), 64, "sha-256 digest is 64 hex chars")
+	})
+}
+
+// TestHooksRunner_HookNameTelemetry verifies end-to-end that execHook emits the
+// hooks.name span attribute raw for built-in lifecycle hooks and hashed for user-
+// or extension-defined hook names, guarding against privacy regressions.
+func TestHooksRunner_HookNameTelemetry(t *testing.T) {
+	// Install one in-memory exporter for the whole test. OpenTelemetry's global
+	// tracer delegates to the first provider set, so we set it once and reset the
+	// exporter between cases rather than swapping providers per sub-test.
+	exporter := tracetest.NewInMemoryExporter()
+	tp := tracesdk.NewTracerProvider(tracesdk.WithSyncer(exporter))
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+
+	t.Run("known hook emitted raw", func(t *testing.T) {
+		exporter.Reset()
+		got := execHookCaptureHookName(t, exporter, tp, "predeploy")
+		assert.Equal(t, "predeploy", got)
+	})
+
+	t.Run("custom hook hashed", func(t *testing.T) {
+		exporter.Reset()
+		const custom = "contoso-custom-hook"
+		got := execHookCaptureHookName(t, exporter, tp, custom)
+		assert.Equal(t, fields.CaseInsensitiveHash(custom), got)
+		assert.NotEqual(t, custom, got, "raw value must not be emitted")
+	})
+}
+
+// execHookCaptureHookName runs a single hook through execHook and returns the
+// value emitted for the hooks.name attribute on the resulting hooks.exec span.
+// The caller owns the exporter/provider lifecycle (see TestHooksRunner_HookNameTelemetry).
+func execHookCaptureHookName(
+	t *testing.T, exporter *tracetest.InMemoryExporter, tp *tracesdk.TracerProvider, hookName string,
+) string {
+	t.Helper()
+
+	cwd := t.TempDir()
+	ostest.Chdir(t, cwd)
+	require.NoError(t, os.MkdirAll(filepath.Join(cwd, "scripts"), osutil.PermissionDirectory))
+	scriptRel := filepath.Join("scripts", hookName+".sh")
+	require.NoError(t, os.WriteFile(filepath.Join(cwd, scriptRel), nil, osutil.PermissionExecutableFile))
+
+	env := environment.NewWithValues("test", map[string]string{})
+	envManager := &mockenv.MockEnvManager{}
+
+	mockContext := mocks.NewMockContext(t.Context())
+	registerHookExecutors(mockContext)
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, ".sh")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
+	runner := NewHooksRunner(
+		hooksManager, mockContext.CommandRunner, envManager,
+		mockContext.Console, cwd, map[string][]*HookConfig{}, env,
+		mockContext.Container,
+	)
+
+	hookConfig := &HookConfig{
+		Name:  hookName,
+		Shell: string(language.HookKindBash),
+		Run:   filepath.ToSlash(scriptRel),
+	}
+	require.NoError(t, runner.execHook(*mockContext.Context, hookConfig, "project", nil))
+	require.NoError(t, tp.ForceFlush(t.Context()))
+
+	for _, s := range exporter.GetSpans() {
+		if s.Name != events.HooksExecEvent {
+			continue
+		}
+		for _, a := range s.Attributes {
+			if string(a.Key) == string(fields.HooksNameKey.Key) {
+				return a.Value.AsString()
+			}
+		}
+	}
+	t.Fatalf("no %q span with a %q attribute was recorded", events.HooksExecEvent, fields.HooksNameKey.Key)
+	return ""
 }

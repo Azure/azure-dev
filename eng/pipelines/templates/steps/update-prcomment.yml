@@ -13,9 +13,14 @@ parameters:
     default:  '<!-- #not-specified -->'
   - name: GitHubToken
     type: string
-    default:  $(azuresdk-github-pat)
+    default:  $(GH_TOKEN)
 
 steps:
+  - template: /eng/common/pipelines/templates/steps/login-to-github.yml
+    parameters:
+      TokenOwners:
+        - ${{ split(parameters.Repo, '/')[0] }}
+
   - pwsh: |
       $Repo = "${{ parameters.Repo }}"
       $PrNumber = "${{ parameters.PrNumber }}"

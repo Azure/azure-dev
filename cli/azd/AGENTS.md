@@ -241,14 +241,58 @@ variable `azd` reads. When adding or modifying an `os.Getenv` / `os.LookupEnv` c
 2. Include a one-line description that explains what it controls and its default if non-obvious.
 3. Place debug/internal variables under **Debug Variables** with the unsupported warning.
 
-#### Telemetry Events and Fields Documentation
+#### Adding or Changing Telemetry (Events & Fields)
 
-The file `docs/reference/telemetry-data.md` is the documentation for every telemetry event and field `azd` emits. When adding or modifying entries in`cli/azd/internal/tracing/events/events.go` or `cli/azd/internal/tracing/fields/` (`fields.go`, `domains.go`, `features.go`):
+`azd` telemetry coverage is tracked by an ongoing metrics audit whose authoritative spec lives in
+`docs/specs/metrics-audit/`. When you add or change a telemetry event or field you MUST update the
+code, **all** telemetry docs, and the coverage test in the same change — otherwise the audit, the
+public reference, and downstream Kusto/LENS consumers drift out of sync. Verify every claim against
+**actual code behavior**, not comments.
 
-1. Add the new event/field to the appropriate section in `telemetry-data.md` —
-   **Events Reference** for new events, **Fields Reference** for new fields.
-2. Include a one-line description, the value type (string/bool/number), and which events or commands it applies to.
-3. If the event/field is feature-gated, conditional, or has known data quirks, update **Data Nuances & Gotchas** and/or **Feature → Telemetry Mapping** so consumers know when to expect it.
+**1. Code**
+
+- **Field** — define an `AttributeKey` in `cli/azd/internal/tracing/fields/fields.go` (this file
+  holds the field/key definitions; within the same package `features.go` holds feature-name
+  attribute values and `domains.go` the Azure host-domain table). Every field MUST set a
+  `Classification` (e.g. `SystemMetadata`, `OrganizationalIdentifiableInformation`,
+  `EndUserPseudonymizedInformation`; never emit `CustomerContent`) and a `Purpose`
+  (`FeatureInsight` / `BusinessInsight` / `PerformanceAndHealth`).
+- **Event** — define a constant in `cli/azd/internal/tracing/events/events.go` following the
+  `prefix.noun.verb` naming convention.
+- **Emit** at the call site via `tracing.Start` (spans/events) plus `tracing.SetUsageAttributes`
+  or `span.SetAttributes` (attributes).
+- **Hash user-derived values** with `fields.StringHashed` / `fields.StringSliceHashed`
+  (`cli/azd/internal/tracing/fields/key.go`). Hash anything that embeds a user-chosen name, path,
+  repo URL, or project / env / service / layer identifier (e.g. `exegraph.step.name`, `hooks.name`).
+  Emit raw only for fixed enums or compile-time literals.
+
+**2. Documentation — keep all of these in sync**
+
+- `docs/reference/telemetry-data.md` — public, user-facing reference for every event/field. Add to
+  **Events Reference** / **Fields Reference** with a one-line description, value type
+  (string/bool/number), and applicable events/commands; note conditional or feature-gated behavior
+  under **Data Nuances & Gotchas** and/or **Feature → Telemetry Mapping**.
+- `docs/specs/metrics-audit/telemetry-schema.md` — authoritative schema: add a row with the OTel
+  key, classification, purpose, whether it is hashed, whether it is a measurement, and the allowed
+  enum values.
+- `docs/specs/metrics-audit/feature-telemetry-matrix.md` — command→telemetry inventory: update the
+  command's row (and/or the Cross-Cutting Subsystems table) and the ✅/⚠️/❌ coverage flags.
+- `docs/specs/metrics-audit/privacy-review-checklist.md` — if the field is hashed (always or
+  conditionally), add it to the matching hashing table, and copy the **PR Checklist Template** into
+  your PR description.
+
+**3. Tests**
+
+- `cli/azd/cmd/telemetry_coverage_test.go` — classify the command in exactly one of
+  `commandsWithSpecificTelemetry` / `commandsWithOnlyGlobalTelemetry` (both lists are kept sorted),
+  and add field-constant assertions where applicable.
+
+**4. Privacy & downstream**
+
+- A privacy review is required for any new field/event, any classification/purpose change, or any
+  removal of hashing — see the triggers in `privacy-review-checklist.md`.
+- If the field is queried downstream, coordinate Kusto-function / cooked-table / dashboard updates
+  per the recurring process in `docs/specs/metrics-audit/audit-process.md`.
 
 ### Modern Go
 

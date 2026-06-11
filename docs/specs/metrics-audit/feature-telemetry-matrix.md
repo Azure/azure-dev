@@ -114,7 +114,7 @@ command-specific telemetry fields provide analytical value beyond the command na
 
 | Field | OTel Key | Commands | Justification |
 |-------|----------|----------|---------------|
-| Auth method | `auth.method` | `auth login` | Distinguishes authentication flow type (browser, device-code, SP, federated, etc.) |
+| Auth method | `auth.method` | `auth login`, `auth logout` | Distinguishes authentication flow type (browser, device-code, SP, federated, etc.) |
 | Env count | `env.count` | `env list` | Measurement — number of environments is a quantitative metric |
 | Hooks name | `hooks.name` | `hooks run` | Identifies which hook script ran (hashed — user-defined name) |
 | Hooks type | `hooks.type` | `hooks run` | Distinguishes project / service / **layer** hooks |

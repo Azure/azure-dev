@@ -145,8 +145,8 @@ site is added without the documented condition, the field should be hashed by de
 | Field | Condition | Hashed when… | Raw when… | Source |
 |-------|-----------|-------------|----------|--------|
 | `subscription.id` | Value shape | Value does NOT parse as a UUID (e.g., user-defined placeholder in vendored envs) | Value parses as a valid UUID (real Azure subscription GUID) | `pkg/environment/local_file_data_store.go`, `pkg/environment/storage_blob_data_store.go` |
-| `pack.builder.image` | Source of the value | Builder image was user-provided (overrides the default) — `userDefinedImage == true` | Builder image is the built-in default | `pkg/project/container_helper.go:1126-1137` |
-| `pack.builder.tag` | Source of the value | Builder tag was user-provided (overrides the default) — `userDefinedImage == true` | Builder tag is the built-in default | `pkg/project/container_helper.go:1126-1137` |
+| `pack.builder.image` | Source of the value | Builder image was user-provided (overrides the default) — `userDefinedImage == true` | Builder image is the built-in default | `pkg/project/container_helper.go` |
+| `pack.builder.tag` | Source of the value | Builder tag was user-provided (overrides the default) — `userDefinedImage == true` | Builder tag is the built-in default | `pkg/project/container_helper.go` |
 
 > Conditional-hashing fields require the **most careful review** when adding new emit
 > sites. The default for any new emit site should be `StringHashed`; raw emission is

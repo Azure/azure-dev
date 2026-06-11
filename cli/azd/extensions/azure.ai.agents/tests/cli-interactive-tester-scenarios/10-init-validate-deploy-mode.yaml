@@ -26,7 +26,7 @@ pre:
   - run: "rm -rf ~/working/azd-agents-validate-deploy-mode-{instance}"
     cwd: "~/working"
     name: "reset working dir"
-  - run: "mkdir -p ~/working/azd-agents-validate-deploy-mode-{instance} && cp -r \"${AZD_AGENTS_FIXTURES:-/mnt/c/Repos/azure-dev/cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/fixtures}/from-code/.\" ~/working/azd-agents-validate-deploy-mode-{instance}/"
+  - run: "mkdir -p ~/working/azd-agents-validate-deploy-mode-{instance} && cp -r \"${AZD_AGENTS_FIXTURES:?Set AZD_AGENTS_FIXTURES to the WSL path of your fixtures directory (e.g. /mnt/d/w1/azure-dev/.../tests/cli-interactive-tester-scenarios/fixtures)}/from-code/.\" ~/working/azd-agents-validate-deploy-mode-{instance}/"
     cwd: "~/working"
     name: "seed from-code agent fixture (app.py + requirements.txt)"
 

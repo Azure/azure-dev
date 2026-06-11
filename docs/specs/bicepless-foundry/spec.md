@@ -58,7 +58,10 @@ only changes how that file is *provisioned*; it does not redesign the YAML.
   `infra.provider:` declaration) — RFC #8065 Core Ask #1
 - Coexistence with non-Foundry services in the same project — users with
   mixed projects use `infra.layers[]` to scope `microsoft.foundry` to their
-  Foundry services; mixed-provider auto-routing is a future spec.
+  Foundry services; mixed-provider auto-routing is a future spec. Verified:
+  each `InfraLayer` carries an `Options.Provider` field
+  (`cli/azd/pkg/infra/provisioning/provider.go:57` → `:40`) and
+  `ParseProvider` accepts any string, so a layer can name `microsoft.foundry`.
 
 ## Activation
 
@@ -95,7 +98,7 @@ cli/azd/extensions/azure.ai.agents/
 cli/azd/pkg/                       ← Core changes (small)
   infra/provisioning/provider.go   ← (no change needed)
 
-schemas/v1.0/azure.yaml.json       ← relax infra.provider enum → examples
+schemas/v1.0/azure.yaml.json       ← infra.provider enum → pattern+examples
 ```
 
 ## Provider Resolution
@@ -176,6 +179,11 @@ internally whether to synthesize or read from disk:
 // FoundryProvisioningProvider.Deploy(ctx)
 if exists("./infra/main.bicep") {
     templates = readFromDisk("./infra/")
+    // Drift detection (Open Question 1): also synthesize in-memory and
+    // warn — don't block — if the ARM-relevant fields disagree.
+    if synth := synthesizeFromYAML(serviceConfig); driftsFrom(synth, templates) {
+        warn("azure.yaml has drifted from ./infra/; on-disk Bicep wins")
+    }
 } else {
     templates = synthesizeFromYAML(serviceConfig)
 }
@@ -232,13 +240,24 @@ exposes only `GetDeployment`/`GetDeploymentContext`). The extension
 reimplements the deploy step using `armresources.DeploymentsClient`; a future
 Core API could expose a shared Bicep-deploy path to avoid drift.
 
-### What the synthesizer ignores (deploy verb's job)
+### What the synthesizer reads vs ignores
 
-The reference YAML carries a lot of data-plane state that has no ARM
-representation. The synthesizer reads these only to skip them; `azd deploy`
-reconciles them via Foundry APIs (out of scope for this spec):
+The reference YAML carries both ARM-backed state and Foundry data-plane state.
+The synthesizer's job is narrow:
 
-| YAML field                          | Why ignored at synthesis                                  |
+**Read, but emit no ARM of their own — used only for validation and
+ARM-graph branching:**
+
+| YAML field             | Why read                                                          |
+| ---------------------- | ----------------------------------------------------------------- |
+| `agents[].docker:`     | Presence triggers ACR inclusion; deploy-mode invariant (step 3)   |
+| `agents[].runtime:`    | Deploy-mode invariant (exactly one of docker/runtime/image)       |
+| `agents[].image:`      | Deploy-mode invariant; presence means no ACR (pre-built)          |
+
+**Not read at all — `azd deploy` reconciles via Foundry APIs (out of scope
+for this spec):**
+
+| YAML field                          | Why ignored                                               |
 | ----------------------------------- | --------------------------------------------------------- |
 | `connections:`                      | Foundry data-plane resource, not ARM                      |
 | `toolboxes:`                        | Foundry data-plane resource                               |
@@ -250,7 +269,6 @@ reconciles them via Foundry APIs (out of scope for this spec):
 | `agents[].env:`                     | Agent runtime env, applied at deploy                      |
 | `agents[].startupCommand:`          | Agent runtime config                                      |
 | `agents[].container.resources:`     | Agent runtime config                                      |
-| `agents[].runtime:`                 | Code-deploy mode marker; deploy verb's job                |
 | `$ref:` (anywhere)                  | Loaded but contents treated as data-plane; not validated  |
 
 ## Validation Pipeline
@@ -301,15 +319,17 @@ services:
 When `endpoint:` is set, synthesis omits the Foundry project ARM resource
 and generates references to wire `FOUNDRY_PROJECT_ENDPOINT`,
 `AZURE_RESOURCE_GROUP`, and tenant/subscription/location from the existing
-project (resolved at deploy time via the endpoint). It still synthesizes
+project (resolved at provision time via the endpoint). It still synthesizes
 ARM-backed children declared inline — additional model `deployments[]`,
 ACR if any nested agent has a `docker:` block. The
 `useExistingAiProject` ternary collapses to a single field-presence check.
 
 The endpoint URL (not the ARM resource ID) is the user-facing identifier in
-the reference doc, matching what `az` CLI and the Portal display. The deploy
-verb resolves the ARM ID from the endpoint when it needs control-plane
-access; synthesis treats `endpoint:` purely as a "skip ARM project creation"
+the reference doc, matching what `az` CLI and the Portal display. **Both
+`Deploy` and `Preview` resolve the ARM ID + target scope (subscription /
+resource group) from the endpoint** before invoking ARM — `Preview` needs
+the scope to pick `WhatIfAtSubscriptionScope` vs `WhatIfAtResourceGroupScope`.
+Synthesis itself treats `endpoint:` purely as a "skip ARM project creation"
 signal.
 
 ## Eject Command (`azd ai agent init --infra`)
@@ -319,14 +339,13 @@ Infra-only operation. Four contexts:
 | Context                                   | Behavior                                                                                       |
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Empty directory                           | Run init normally + write `./infra/` from synthesis.                                           |
-| Existing Bicep-less azd agent project     | Synthesize current `azure.yaml`; write `./infra/`. Do not re-prompt; do not touch agent code. Do not modify `azure.yaml` (`infra.provider:` stays `microsoft.foundry`). |
-| Existing on-disk project (`./infra/` exists) | Refuse to overwrite. Print: *"`./infra/` already exists. To regenerate from `azure.yaml`, delete the `infra/` directory and run the command again."* |
+| Existing Bicep-less azd agent project     | Synthesize current `azure.yaml`; write `./infra/`. Do not re-prompt for agent init; do not touch agent code. Do not modify `azure.yaml` (`infra.provider:` stays `microsoft.foundry`). |
+| Existing on-disk project (`./infra/` exists) | Interactive: prompt *"`./infra/` exists. Overwrite with regenerated files? [y/N]"*. Yes → overwrite. No / `--no-prompt` → refuse with the same error message used today. Matches `azd infra generate` (`cli/azd/cmd/infra_generate.go:204-210`). |
 | Not an azd agent project                  | Refuse: "no `host: microsoft.foundry` service found in `azure.yaml`; nothing to eject." |
 
 Eject is **all-or-nothing for the whole project** — no partial mode where
-some agents synthesize and others sit on disk. To regenerate, the user
-deletes `./infra/` themselves and re-runs the command. No `--force`, no
-implicit destruction of user-owned files.
+some agents synthesize and others sit on disk. CI / non-interactive
+(`--no-prompt`) callers cannot overwrite; they must delete `./infra/` first.
 
 Example output:
 
@@ -346,15 +365,23 @@ Next steps:
   azd provision    Apply changes
 ```
 
-Refused:
+Overwrite prompt:
 
 ```
 > azd ai agent init --infra
 
+? ./infra/ already exists. Overwrite with regenerated files? [y/N]
+```
+
+Refused (under `--no-prompt`, or user answered No):
+
+```
+> azd ai agent init --infra --no-prompt
+
 Error: ./infra/ already exists.
 
-If you want to regenerate from azure.yaml, delete the infra directory
-and run the command again.
+Re-run without --no-prompt to choose interactively, or delete the infra
+directory and re-run.
 ```
 
 ## Post-Eject CLI Behavior
@@ -367,25 +394,31 @@ needing ACR), but on-disk Bicep doesn't have it.
 | ------------------------------------------------------------ | ------------------------- | ------------------------------------------------------------------------------------ |
 | Modifies data-plane only (`add tool`, `add toolbox`)         | Apply normally            | Apply normally — nothing in Bicep changes                                            |
 | Modifies `azure.yaml` requiring new ARM resources            | Apply; next `provision` synthesizes the new resources | Apply to `azure.yaml` and warn: "your project uses on-disk Bicep; delete `./infra/` and run `azd ai agent init --infra` to regenerate, or edit `infra/` manually" |
-| Eject (`init --infra`)                                       | Allowed                   | Refused — user must delete `./infra/` and re-run                                     |
+| Eject (`init --infra`)                                       | Allowed                   | Prompts for overwrite (or refuses under `--no-prompt`); see Eject Command section    |
 
 CLI never silently patches user-owned Bicep.
 
-**Accepted trade.** Post-eject, the user-driven `rm -rf ./infra/ && azd ai
-agent init --infra` flow throws away any hand-edits the user made. We pick
-this over auto-diff/merge (which would re-introduce silent rewrites of
-user-owned files) and over refusing `add` post-eject (which would gut the
-CLI for ejected projects). Auto-merge is future work, out of scope here.
+**Accepted trade.** Whether the user re-ejects via the interactive prompt
+or by deleting `./infra/` themselves, regeneration throws away any
+hand-edits. We pick this over auto-diff/merge (which would re-introduce
+silent rewrites of user-owned files) and over refusing `add` post-eject
+(which would gut the CLI for ejected projects). Auto-merge is future
+work, out of scope here.
 
 ## Core Changes Required
 
-Relax the `infra.provider` enum in the schemas so `microsoft.foundry` is
-runtime-valid in IDE validation:
+Relax the `infra.provider` enum in the schemas so extension-provided
+providers like `microsoft.foundry` are runtime-valid in IDE validation,
+while still catching typos:
 
-| File                                  | Change                                                         |
-| ------------------------------------- | -------------------------------------------------------------- |
-| `schemas/v1.0/azure.yaml.json:44-52`  | Change `enum: ["bicep","terraform"]` → `examples: [...]`       |
-| `schemas/alpha/azure.yaml.json:44-52` | Same                                                           |
+| File                                  | Change                                                                                              |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `schemas/v1.0/azure.yaml.json:44-52`  | Replace `enum: ["bicep","terraform"]` with `pattern: "^[a-z0-9.]+$"` + `examples: ["bicep","terraform","microsoft.foundry"]`. `pattern` keeps typo-catching (e.g. `biceps` still fails); `examples` keeps autocomplete. |
+| `schemas/alpha/azure.yaml.json:44-52` | Same                                                                                                |
+
+Note that `examples` alone is purely advisory in JSON Schema; without the
+`pattern`, dropping the enum would silently accept any string for *all*
+users, not just Foundry users.
 
 > **Note on `uses` / `runtime`:** the original RFC asked Core to surface
 > `services.<svc>.uses` and a typed `services.<svc>.runtime` on the
@@ -441,19 +474,20 @@ Method behaviors:
 | ----------------- | ------------------------------------------------------------------------------ |
 | `Initialize`      | Validate `azure.yaml` (5-step pipeline above); resolve env vars                |
 | `State`           | Query ARM for last deployment; return outputs                                  |
-| `Deploy`          | If `./infra/` exists, read from disk; else synthesize. Apply via ARM SDK.      |
-| `Preview`         | Synthesize (or read from disk), then call ARM What-If; return diff summary. Mirrors Core's Bicep provider. |
-| `Destroy`         | Delete resource group or use deployment stacks                                 |
+| `Deploy`          | If `./infra/` exists, read from disk *and* synthesize in-memory; warn (don't block) when the ARM-relevant fields disagree. Apply via ARM SDK. If `./infra/` missing, synthesize and apply. |
+| `Preview`         | Resolve target scope (from `endpoint:` for brownfield, from azd env otherwise); synthesize (or read from disk); call ARM What-If at the right scope; return diff summary. Mirrors Core's Bicep provider. |
+| `Destroy`         | Delete resource group (or use deployment stacks), **then purge soft-deleted Cognitive Services accounts (Foundry projects)** so the same name can be re-provisioned. Mirrors Core's Bicep provider: `getCognitiveAccountsToPurge` + `purgeItems` (`cli/azd/pkg/infra/provisioning/bicep/bicep_provider.go:1283-1413`). Without purge, `up → down → up` under the same name fails on the second provision. |
 | `EnsureEnv`       | Prompt for required env vars (subscription, location) if missing              |
 | `Parameters`      | Return parameter list from synthesized/on-disk template                        |
 | `PlannedOutputs`  | Return output list from synthesized/on-disk template                           |
 
 ## Stability Contract
 
-Synthesis output is best-effort stable within a patch extension version.
-Same `azure.yaml` → semantically identical Bicep. Across minor versions,
-the output may change; documented in the changelog with recommendation to run
-`azd provision --preview` after upgrades.
+Synthesis output is **byte-stable within a patch extension version** —
+the same `azure.yaml` produces byte-identical Bicep across patch releases,
+matched by the synthesizer-determinism test in Test Plan. Across minor
+versions the output may change; documented in the changelog with a
+recommendation to run `azd provision --preview` after upgrades.
 
 ## Telemetry
 
@@ -463,6 +497,9 @@ the output may change; documented in the changelog with recommendation to run
 | `init.infra_flag`              | `true` \| `false`            | `azd ai agent init` start             |
 
 Lets us measure eject rate and confirm the Bicep-less default sticks.
+
+Implementation PRs must also add both fields to
+`docs/reference/telemetry-data.md` per `cli/azd/AGENTS.md:246-249`.
 
 ## Downstream Impact
 
@@ -489,11 +526,15 @@ Lets us measure eject rate and confirm the Bicep-less default sticks.
 
 ## Open Questions
 
-1. Should the extension's `Deploy()` warn when both `./infra/` exists and
-   `azure.yaml` config has changed since last eject? (Drift detection.)
-   **Proposal:** no detection — matches "on-disk Bicep is the source of
-   truth"; CLI `add` commands already warn at the entry point. Revisit when
-   auto-merge lands.
+1. How aggressive should drift detection be at `Deploy()` when both
+   `./infra/` exists and `azure.yaml` has changed since eject?
+   **Proposal:** warn (don't block) on every on-disk `Deploy()`. The
+   extension owns both branches (`synthesizeFromYAML` and `readFromDisk`),
+   so it can synthesize in-memory, diff the ARM-relevant fields against
+   what `./infra/main.bicep` declares, and print a one-line warning when
+   they disagree. Catches hand-edits to `azure.yaml` that bypass every
+   `add`-command warning. Resolution (block vs warn vs silent) is the
+   open question.
 
 ## Test Plan
 
@@ -504,15 +545,22 @@ Lets us measure eject rate and confirm the Bicep-less default sticks.
   `skills:`, `routines:`, agent-level `tools:`/`skill:`, `$ref:`) without
   error
 - Unit: `${{...}}` passes through synthesis unchanged; `${VAR}` resolves
+- Unit: schema `pattern` rejects typos (`provider: biceps` fails) while
+  accepting `bicep`, `terraform`, and `microsoft.foundry`
 - Integration: `azd ai agent init` produces no `./infra/`
 - Integration: `azd provision` succeeds with synthesized templates against a
   Foundry project with one container agent (ACR included) and one code-deploy
   agent (no ACR)
 - Integration: `azd ai agent init --infra` writes `./infra/`; next
   `azd provision` reads from disk (verified via extension log)
-- Integration: brownfield `endpoint:` skips ARM project creation
-- E2E: `init` → `provision` → `down` on a single-agent project (deploy is
-  out of scope for this spec)
+- Integration: `azd ai agent init --infra` over an existing `./infra/`
+  prompts; `--no-prompt` refuses; "Yes" answer overwrites
+- Integration: brownfield `endpoint:` skips ARM project creation; `Preview`
+  resolves the endpoint to a target scope and calls What-If at that scope
+- Integration: post-eject `Deploy()` warns (does not block) when
+  on-disk Bicep disagrees with synthesized output
+- E2E: `init` → `provision` → `down` → `provision` under the same name
+  succeeds (verifies soft-delete purge of Cognitive Services accounts)
 - E2E: `init --infra` → manual edit of `infra/main.bicep` → `provision`
   applies the edit
 - Regression: projects created by prior extension versions with on-disk Bicep

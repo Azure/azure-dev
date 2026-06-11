@@ -407,6 +407,18 @@ func TestCollectExtensionMetadataFromFlagsInternalRejectsNonGo(t *testing.T) {
 	require.ErrorContains(t, err, "Go extensions only")
 }
 
+func TestCollectExtensionMetadataFromFlagsInternalRejectsUnsafeId(t *testing.T) {
+	_, err := collectExtensionMetadataFromFlags(&initFlags{
+		internalScaffold: true,
+		id:               "../bad",
+		name:             "Test Extension",
+		namespace:        "bad",
+		capabilities:     []string{string(extensions.CustomCommandCapability)},
+	})
+
+	require.ErrorContains(t, err, "invalid extension id")
+}
+
 func TestCollectExtensionMetadataFromFlagsInvalidTags(t *testing.T) {
 	_, err := collectExtensionMetadataFromFlags(&initFlags{
 		id:           "test.extension",

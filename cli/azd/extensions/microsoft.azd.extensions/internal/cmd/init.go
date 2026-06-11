@@ -511,6 +511,11 @@ func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchem
 	if flags.internalScaffold && language != "go" {
 		return nil, fmt.Errorf("--internal currently supports Go extensions only")
 	}
+	if flags.internalScaffold {
+		if err := validateInternalExtensionId(flags.id); err != nil {
+			return nil, err
+		}
+	}
 
 	if !validLanguages[language] {
 		return nil, fmt.Errorf(
@@ -596,6 +601,11 @@ func collectExtensionMetadata(
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to prompt for extension ID: %w", err)
+	}
+	if internalScaffold {
+		if err := validateInternalExtensionId(idPrompt.Value); err != nil {
+			return nil, err
+		}
 	}
 
 	displayNamePrompt, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{

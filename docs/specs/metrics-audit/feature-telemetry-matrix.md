@@ -72,12 +72,12 @@ These commands emit attributes or events beyond the global middleware span.
 | **Core Lifecycle** | | | | | |
 | `restore` | — | ✅ | ❌ | ❌ | Via hooks middleware |
 | `build` | — | ✅ | ❌ | ❌ | Via hooks middleware |
-| `provision` | — | ✅ | ✅ | ✅ | `infra.provider` via hooks middleware; emits `validation.preflight`, 8 `arm.*` events, `aks.postprovision.skip`, and per-layer `provision.layer.*` counts (`count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count`) for multi-layer infra |
+| `provision` | — | ✅ | ✅ | ✅ | Emits `validation.preflight`, 8 `arm.*` events, `aks.postprovision.skip`, and per-layer `provision.layer.*` counts (`count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count`) for multi-layer infra |
 | `package` | — | ✅ | ✅ | ✅ | Via hooks middleware; container service targets emit `container.credentials`, `container.publish`, `container.remotebuild` events |
-| `deploy` | — | ✅ | ✅ | ✅ | `infra.provider`, service attributes via hooks middleware; App Service zip-deploy emits `deploy.appservice.zip`; container service targets emit `container.*` events |
+| `deploy` | — | ✅ | ✅ | ✅ | App Service zip-deploy emits `deploy.appservice.zip` (`deploy.appservice.linux`, `deploy.appservice.attempt`); container service targets emit `container.*` events |
 | `publish` | — | ✅ | ✅ | ✅ | Same as `deploy` (alias behavior) |
-| `up` | — | ✅ | ❌ | ❌ | `infra.provider` via hooks middleware (composes provision+deploy; inherits all events from those phases) |
-| `down` | — | ✅ | ❌ | ❌ | `infra.provider` via hooks middleware |
+| `up` | — | ✅ | ✅ | ✅ | Composes provision+deploy and inherits all their events; the up-graph runner emits `perf.provision_duration_ms`, `perf.deploy_duration_ms`, `perf.total_duration_ms` (`internal/cmd/up_graph.go`) |
+| `down` | — | ✅ | ❌ | ❌ | Teardown flow; pre/postdown lifecycle hooks emit `hooks.exec` via the hooks middleware |
 | **Add** | | | | | |
 | `add` | — | ✅ | ❌ | ❌ | Low priority |
 | **Completion** | | | | | |
@@ -128,8 +128,8 @@ command-specific telemetry fields provide analytical value beyond the command na
 | Preflight outcome | `validation.preflight.outcome` (+ peer fields) | `provision` | Distinguishes passed / warnings-accepted / aborted local validation |
 | ARM deployment events | `arm.deploy.*`, `arm.stack.deploy.*`, `arm.whatif.*`, `arm.validate.*` | `provision` | Distinguishes deployment scope (subscription vs resource-group) and operation kind (deploy / stack / what-if / validate) |
 | Container events | `container.credentials`, `container.publish`, `container.remotebuild` | `package`, `deploy` | Per-stage container lifecycle for container-based services |
-| Multi-layer provision | `provision.layer.*` | `provision` | Per-layer duration and outcome measurements for multi-layer infra |
-| Performance durations | `perf.provision_duration_ms`, `perf.deploy_duration_ms`, `perf.total_duration_ms` | All lifecycle commands | Quantitative durations enriched onto every command span by the perf middleware |
+| Multi-layer provision | `provision.layer.*` | `provision` | Layer-graph shape counts for multi-layer infra: `count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count` (integer measurements; no duration or outcome) |
+| Performance durations | `perf.provision_duration_ms`, `perf.deploy_duration_ms`, `perf.total_duration_ms` | `up` | Per-phase and total wall-clock durations emitted by the up-graph runner (`internal/cmd/up_graph.go`); provision/deploy durations set only when those phases run |
 
 ### Removed Fields (Redundant with Command Name)
 
@@ -163,5 +163,5 @@ privacy review covers every emission point.
 | **App Service deploy** | `deploy`, `publish` (App Service targets) | `deploy.appservice.zip` | `deploy.appservice.linux` (bool), `deploy.appservice.attempt` (retry attempt number) | Zip-deploy path only; outcome / duration are carried by the span status and span timing, not by dedicated attributes |
 | **AKS service target** | `provision` (AKS preprovision/postprovision) | `aks.postprovision.skip` | Skip reason | Recorded when cluster is not yet available for context setup |
 | **Agent troubleshoot middleware** | Triggered on command failure when troubleshooting is engaged | `agent.troubleshoot` | Error chain attributes, hashed error fields | Emitted from `cmd/middleware/error.go` |
-| **Performance enrichment** | Every command (perf middleware) | (none — enriches the command span) | `perf.provision_duration_ms`, `perf.deploy_duration_ms`, `perf.total_duration_ms` | Quantitative durations for the global command span |
+| **Up-graph performance** | `up` (graph execution) | (none — enriches the `up` command span) | `perf.provision_duration_ms`, `perf.deploy_duration_ms`, `perf.total_duration_ms` | Emitted from `internal/cmd/up_graph.go` after the graph completes; provision/deploy durations set only when those phases run |
 | **VS RPC** | `vs-server` long-running session | `vsrpc.*` (event prefix) | Per-RPC attributes documented in `telemetry-schema.md` | Long-running RPC server for VS integration |

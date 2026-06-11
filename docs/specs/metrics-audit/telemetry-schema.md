@@ -260,10 +260,9 @@ not emitted by azd spans.
 | Approved count | `copilot.consent.approvedCount` | SystemMetadata | FeatureInsight | **Measurement** |
 | Denied count | `copilot.consent.deniedCount` | SystemMetadata | FeatureInsight | **Measurement** |
 
-## New Fields (Added by This Audit)
+## Command-Specific Fields
 
-The following fields are being introduced to close telemetry gaps identified in the
-[Feature-Telemetry Matrix](feature-telemetry-matrix.md).
+The following fields are defined in `fields.go`.
 
 | Field | OTel Key | Classification | Purpose | Values |
 |-------|----------|----------------|---------|--------|

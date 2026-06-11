@@ -112,8 +112,8 @@ All hashing functions are in `cli/azd/internal/tracing/fields/key.go`.
 | Function | Signature | Behavior |
 |----------|-----------|----------|
 | `CaseInsensitiveHash` | `func CaseInsensitiveHash(value string) string` | Lowercases the input, then computes SHA-256. Returns hex-encoded digest. |
-| `StringHashed` | `func StringHashed(key, value string) attribute.KeyValue` | Creates an OTel `attribute.KeyValue` with the value replaced by its case-insensitive SHA-256 hash. |
-| `StringSliceHashed` | `func StringSliceHashed(key string, values []string) attribute.KeyValue` | Creates an OTel `attribute.KeyValue` where each element in the slice is independently hashed. |
+| `StringHashed` | `func StringHashed(k AttributeKey, v string) attribute.KeyValue` | Creates an OTel `attribute.KeyValue` with the value replaced by its case-insensitive SHA-256 hash. |
+| `StringSliceHashed` | `func StringSliceHashed(k AttributeKey, v []string) attribute.KeyValue` | Creates an OTel `attribute.KeyValue` where each element in the slice is independently hashed. |
 
 ### Fields That Must Be Hashed
 

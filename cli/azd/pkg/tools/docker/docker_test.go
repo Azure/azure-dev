@@ -865,6 +865,79 @@ func Test_CheckInstalled_NeitherAvailable(t *testing.T) {
 	require.Contains(t, err.Error(), "neither docker nor podman is installed")
 }
 
+func Test_ContainerEngine_LazyDetection(t *testing.T) {
+	t.Run("detects podman when docker not in PATH", func(t *testing.T) {
+		t.Parallel()
+		mockContext := mocks.NewMockContext(t.Context())
+		cli := NewCli(mockContext.CommandRunner)
+
+		// Docker not found, podman found
+		mockContext.CommandRunner.MockToolInPath("docker", errors.New("not found"))
+		mockContext.CommandRunner.MockToolInPath("podman", nil)
+
+		// ContainerEngine() should lazily detect podman without CheckInstalled()
+		engine := cli.ContainerEngine()
+		require.Equal(t, "podman", engine)
+	})
+
+	t.Run("detects docker when both in PATH", func(t *testing.T) {
+		t.Parallel()
+		mockContext := mocks.NewMockContext(t.Context())
+		cli := NewCli(mockContext.CommandRunner)
+
+		mockContext.CommandRunner.MockToolInPath("docker", nil)
+		mockContext.CommandRunner.MockToolInPath("podman", nil)
+
+		engine := cli.ContainerEngine()
+		require.Equal(t, "docker", engine)
+	})
+
+	t.Run("respects AZD_CONTAINER_RUNTIME env var", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		cli := NewCli(mockContext.CommandRunner)
+
+		t.Setenv("AZD_CONTAINER_RUNTIME", "podman")
+
+		engine := cli.ContainerEngine()
+		require.Equal(t, "podman", engine)
+	})
+
+	t.Run("defaults to docker when neither in PATH", func(t *testing.T) {
+		t.Parallel()
+		mockContext := mocks.NewMockContext(t.Context())
+		cli := NewCli(mockContext.CommandRunner)
+
+		mockContext.CommandRunner.MockToolInPath("docker", errors.New("not found"))
+		mockContext.CommandRunner.MockToolInPath("podman", errors.New("not found"))
+
+		engine := cli.ContainerEngine()
+		require.Equal(t, "docker", engine)
+	})
+
+	t.Run("does not override CheckInstalled result", func(t *testing.T) {
+		t.Parallel()
+		mockContext := mocks.NewMockContext(t.Context())
+		cli := NewCli(mockContext.CommandRunner)
+
+		// Simulate CheckInstalled having set podman
+		mockContext.CommandRunner.MockToolInPath("docker", errors.New("not found"))
+		mockContext.CommandRunner.MockToolInPath("podman", nil)
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "podman --version")
+		}).Respond(exec.RunResult{Stdout: "podman version 4.3.1", ExitCode: 0})
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "podman ps")
+		}).Respond(exec.RunResult{Stdout: "", ExitCode: 0})
+
+		err := cli.CheckInstalled(t.Context())
+		require.NoError(t, err)
+
+		// ContainerEngine should use the already-set value, not re-detect
+		engine := cli.ContainerEngine()
+		require.Equal(t, "podman", engine)
+	})
+}
+
 func TestSplitDockerImage(t *testing.T) {
 	tests := []struct {
 		name      string

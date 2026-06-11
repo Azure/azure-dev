@@ -8,8 +8,6 @@
 
 ### Bugs Fixed
 
-- [[#8064]](https://github.com/Azure/azure-dev/issues/8064) Fix intermittent `DeploymentNotFound` failures during `azd provision`/`azd up` and `azd down` for subscription-scoped Bicep deployments (commonly seen with `infra.layers`) by retrying the transient HTTP 404 that ARM can briefly return for a deployment that was just submitted.
-
 ### Other Changes
 
 ## 1.25.4 (2026-05-29)

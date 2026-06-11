@@ -513,6 +513,41 @@ func TestCreateInternalExtensionScaffoldRejectsUnsafeId(t *testing.T) {
 	require.ErrorContains(t, err, "invalid extension id")
 }
 
+func TestFindAzureDevRepoRoot(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, ".git"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, ".github"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "eng", "pipelines"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "cli", "azd", "extensions"), 0o755))
+
+	tests := []struct {
+		name     string
+		startDir string
+		wantErr  string
+	}{
+		{name: "repo root", startDir: repoRoot},
+		{name: "nested directory", startDir: filepath.Join(repoRoot, "cli", "azd", "extensions")},
+		{name: "outside repo", startDir: t.TempDir(), wantErr: "must be run from inside the Azure/azure-dev repository"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			root, err := findAzureDevRepoRoot(tt.startDir)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, repoRoot, root)
+		})
+	}
+}
+
 func TestAddCodeownersEntry(t *testing.T) {
 	t.Parallel()
 

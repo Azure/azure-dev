@@ -21,11 +21,11 @@
           "additionalProperties": true,
           "allOf": [
             {
-              "if": { "properties": { "type": { "const": "schedule" } } },
+              "if": { "properties": { "type": { "const": "schedule" } }, "required": ["type"] },
               "then": { "required": ["cron"] }
             },
             {
-              "if": { "properties": { "type": { "enum": ["webhook", "event"] } } },
+              "if": { "properties": { "type": { "enum": ["webhook", "event"] } }, "required": ["type"] },
               "then": { "required": ["filter"] }
             }
           ],

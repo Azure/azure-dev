@@ -55,10 +55,12 @@
         {
           "type": "object",
           "required": ["name", "kind"],
-          "dependencies": {
-            "docker": ["project"],
-            "runtime": ["project"]
-          },
+          "allOf": [
+            {
+              "if": { "anyOf": [{ "required": ["docker"] }, { "required": ["runtime"] }] },
+              "then": { "required": ["project"] }
+            }
+          ],
           "additionalProperties": false,
           "properties": {
             "name":        true,

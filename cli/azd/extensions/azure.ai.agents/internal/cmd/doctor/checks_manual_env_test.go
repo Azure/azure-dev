@@ -41,7 +41,7 @@ func TestCheckManualEnvVars_NoClient_Skips(t *testing.T) {
 	require.Contains(t, got.Message, "azd extension not reachable")
 }
 
-func TestCheckManualEnvVars_PriorAgentYAMLFailed_Skips(t *testing.T) {
+func TestCheckManualEnvVars_PriorAgentDetectionFailed_Skips(t *testing.T) {
 	t.Parallel()
 
 	client := newTestAzdClient(t, &fakeProjectServer{}, &fakeEnvironmentServer{})
@@ -53,21 +53,21 @@ func TestCheckManualEnvVars_PriorAgentYAMLFailed_Skips(t *testing.T) {
 		// here asserts the cascade short-circuits before the
 		// assembler is reached.
 		assembleState: func(context.Context, *azdext.AzdClient) (*nextstep.State, []error) {
-			t.Fatalf("assembler should not be called when local.agent-yaml-valid failed")
+			t.Fatalf("assembler should not be called when local.agent-service-detected failed")
 			return nil, nil
 		},
 	})
 
-	prior := []Result{{ID: "local.agent-yaml-valid", Status: StatusFail}}
+	prior := []Result{{ID: "local.agent-service-detected", Status: StatusFail}}
 	got := check.Fn(t.Context(), Options{}, prior)
 
 	require.Equal(t, StatusSkip, got.Status)
-	require.Contains(t, got.Message, "agent.yaml check failed")
+	require.Contains(t, got.Message, "no microsoft.foundry service detected")
 }
 
-func TestCheckManualEnvVars_PriorAgentYAMLSkipped_AlsoSkips(t *testing.T) {
+func TestCheckManualEnvVars_PriorAgentDetectionSkipped_AlsoSkips(t *testing.T) {
 	// Covers the cascade: a deeper upstream (e.g. azure-yaml) failed,
-	// agent-yaml-valid was therefore skipped, and this check must
+	// agent-service-detected was therefore skipped, and this check must
 	// inherit the skip rather than running on a half-loaded project.
 	// Without this propagation users would see a misleading
 	// "no manual env vars are missing" Pass underneath the real bug.
@@ -82,7 +82,7 @@ func TestCheckManualEnvVars_PriorAgentYAMLSkipped_AlsoSkips(t *testing.T) {
 		},
 	})
 
-	prior := []Result{{ID: "local.agent-yaml-valid", Status: StatusSkip}}
+	prior := []Result{{ID: "local.agent-service-detected", Status: StatusSkip}}
 	got := check.Fn(t.Context(), Options{}, prior)
 
 	require.Equal(t, StatusSkip, got.Status)
@@ -288,11 +288,9 @@ func TestCheckManualEnvVars_NonFatalErrorsButStateOK_Passes(t *testing.T) {
 }
 
 func TestNewLocalChecks_IncludesManualEnvVarsLast(t *testing.T) {
-	// Pin C9's insertion point: the manual-env-vars check must follow
-	// agent-yaml-valid so its skip-cascade against the upstream chain
-	// is exercised by the runner's prior-results slice. Locks the
-	// ordering invariant that the design's "checks 1-7" table relies
-	// on for failure-cascade coherence.
+	// Pin the manual-env-vars insertion point: it must follow
+	// agent-service-detected so its skip-cascade against the upstream
+	// chain is exercised by the runner's prior-results slice.
 	t.Parallel()
 
 	checks := NewLocalChecks(Dependencies{})
@@ -304,17 +302,17 @@ func TestNewLocalChecks_IncludesManualEnvVarsLast(t *testing.T) {
 	}
 	require.Contains(t, ids, "local.manual-env-vars")
 
-	var yamlIdx, manualIdx int = -1, -1
+	var detectIdx, manualIdx int = -1, -1
 	for i, id := range ids {
 		switch id {
-		case "local.agent-yaml-valid":
-			yamlIdx = i
+		case "local.agent-service-detected":
+			detectIdx = i
 		case "local.manual-env-vars":
 			manualIdx = i
 		}
 	}
-	require.NotEqual(t, -1, yamlIdx, "agent-yaml-valid must be in NewLocalChecks")
+	require.NotEqual(t, -1, detectIdx, "agent-service-detected must be in NewLocalChecks")
 	require.NotEqual(t, -1, manualIdx, "manual-env-vars must be in NewLocalChecks")
-	require.Greater(t, manualIdx, yamlIdx,
-		"manual-env-vars must come after agent-yaml-valid for the skip-cascade")
+	require.Greater(t, manualIdx, detectIdx,
+		"manual-env-vars must come after agent-service-detected for the skip-cascade")
 }

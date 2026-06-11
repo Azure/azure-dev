@@ -8,29 +8,26 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 
-	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
-	"azureaiagent/internal/pkg/paths"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"go.yaml.in/yaml/v3"
 )
 
 const (
-	// agentHost matches the value set in azure.yaml for an azure.ai.agent
-	// service. Duplicated here (rather than imported from the parent cmd
-	// package) so nextstep stays free of upward dependencies; Phase 2 will
-	// wire cmd → nextstep, so the reverse import would close a cycle.
-	agentHost = "azure.ai.agent"
+	// agentHost matches the `host:` value of a Foundry service entry in
+	// azure.yaml under the unified design. Duplicated here (rather than
+	// imported from the parent cmd package) so nextstep stays a leaf
+	// package — cmd and project both import nextstep, so a reverse import
+	// would close a cycle.
+	agentHost = "microsoft.foundry"
 
 	// agentVersionVarFormat is the env-var name that signals a deployed
-	// agent service. Filled with the upper-cased service key.
+	// agent. Filled with the upper-cased agent key.
 	agentVersionVarFormat = "AGENT_%s_VERSION"
 
 	// projectEndpointVar is the env-var that carries the Foundry project
@@ -62,27 +59,21 @@ const (
 	azureLocationVar       = "AZURE_LOCATION"
 )
 
-// envVarRefPattern captures ${VAR} references inside YAML string values.
+// envVarRefPattern captures ${VAR} references inside string values.
 // Group 1 is the variable name. Group 2 captures the optional default
-// tail `:-fallback`; when group 2 is non-empty the agent.yaml author
-// explicitly opted into a fallback and the variable is therefore not
-// required at deploy time (the runtime expander `drone/envsubst` honors
-// `:-` semantics). `extractAgentYamlEnvRefs` skips refs with a non-empty
-// group 2 so they never surface in the missing-vars hints; the variable
-// is reported as missing only when authored as the bare `${VAR}` form.
-// Variable names follow the standard shell convention: leading letter or
-// underscore, then alphanumeric or underscore.
+// tail `:-fallback`; when group 2 is non-empty the author explicitly
+// opted into a fallback and the variable is therefore not required at
+// deploy time (the runtime expander `drone/envsubst` honors `:-`
+// semantics). `extractEnvRefs` skips refs with a non-empty group 2 so
+// they never surface in the missing-vars hints; the variable is reported
+// as missing only when authored as the bare `${VAR}` form. Variable names
+// follow the standard shell convention: leading letter or underscore,
+// then alphanumeric or underscore.
+//
+// Note the leading `\$\{` does not match the `${{...}}` Foundry
+// server-side form (the second `{` is not a valid variable-name start),
+// so those references are intentionally left alone.
 var envVarRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
-
-// placeholderPattern aliases agent_yaml.PlaceholderPattern. nextstep
-// surfaces the same placeholders that agent_yaml's
-// injectParameterValues warns about, so the two MUST stay in lockstep.
-// Keeping a single shared regex (defined in agent_yaml, where the
-// substitution logic lives) makes that constraint explicit and avoids
-// drift if the placeholder syntax is ever broadened again. See
-// agent_yaml/placeholders.go for the full rationale on the regex
-// shape (hyphens, dots, whitespace in capture group).
-var placeholderPattern = agent_yaml.PlaceholderPattern
 
 // Source is the read-only view of azd that AssembleState needs.
 //
@@ -279,27 +270,26 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 		errs = append(errs, fmt.Errorf("load project: %w", err))
 	}
 
-	state.Services = collectServices(ctx, src, envName, project, &errs)
+	// collectFoundry decodes each Foundry service entry once and fills
+	// both state.Services (one entry per agent) and the aggregate
+	// resource refs (ModelRefs / Toolboxes / Connections + Has* flags).
+	collectFoundry(ctx, src, envName, project, state, &errs)
 
 	if project != nil && envName != "" {
-		state.MissingInfraVars, state.MissingManualVars, state.UnresolvedPlaceholders = detectMissingVars(
+		state.MissingInfraVars, state.MissingManualVars = detectMissingVars(
 			ctx, src, envName, project.Path, state.Services, &errs,
 		)
 		populateOpenAPIPayload(ctx, cfg, project.Path, envName, state)
 	}
 
-	if project != nil && len(state.Services) > 0 {
-		populateManifestResources(project.Path, state)
-	}
-
 	// Partition toolbox-derived endpoint vars out of MissingManualVars
-	// into MissingToolboxEndpoints. This must run AFTER
-	// populateManifestResources because it depends on state.Toolboxes
-	// being populated — without the manifest's toolbox list we cannot
-	// tell a toolbox-derived var ("TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT"
-	// for a manifest-declared `web-search-tools` toolbox) apart from a
-	// generic user-named variable that happens to start with TOOLBOX_.
-	// See MissingToolboxEndpoints docs (types.go) for the rationale.
+	// into MissingToolboxEndpoints. This must run AFTER collectFoundry
+	// because it depends on state.Toolboxes being populated — without the
+	// toolbox list we cannot tell a toolbox-derived var
+	// ("TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT" for a declared
+	// `web-search-tools` toolbox) apart from a generic user-named variable
+	// that happens to start with TOOLBOX_. See MissingToolboxEndpoints
+	// docs (types.go) for the rationale.
 	partitionToolboxEndpointVars(state)
 
 	return state, errs
@@ -422,63 +412,114 @@ func populateOpenAPIPayload(
 	state.OpenAPIPayload = payload
 }
 
-func collectServices(
+// collectFoundry decodes each `host: microsoft.foundry` service entry once
+// and populates state with:
+//
+//   - state.Services — one entry PER AGENT (the unit the resolvers show
+//     and invoke), with the owning Foundry service name recorded in
+//     ServiceName.
+//   - state.ModelRefs / Toolboxes / Connections + Has* flags — the
+//     aggregate Foundry resources declared across all Foundry services.
+//   - state.HasProjectEndpoint — also set true when any Foundry service
+//     declares an explicit `endpoint:` (reusing an existing project).
+//
+// The decode source is the service's AdditionalProperties (forwarded by
+// core over gRPC); there is no on-disk re-parse of azure.yaml. Decode
+// errors are surfaced into errs but never abort assembly — a partially
+// populated config still yields useful guidance.
+func collectFoundry(
 	ctx context.Context,
 	src Source,
 	envName string,
 	project *azdext.ProjectConfig,
+	state *State,
 	errs *[]error,
-) []ServiceState {
+) {
 	if project == nil || len(project.Services) == 0 {
-		return nil
+		return
 	}
 
-	services := make([]ServiceState, 0, len(project.Services))
+	models := map[resourceKey]ResourceRef{}
+	toolboxes := map[resourceKey]ResourceRef{}
+	connections := map[resourceKey]ResourceRef{}
+
+	var services []ServiceState
 	for _, svc := range project.Services {
 		if svc == nil || svc.Host != agentHost {
 			continue
 		}
-		services = append(services, ServiceState{
-			Name:         svc.Name,
-			Host:         svc.Host,
-			RelativePath: svc.RelativePath,
-			Protocol:     loadServiceProtocol(project.Path, svc.RelativePath),
-			IsDeployed:   isDeployed(ctx, src, envName, svc.Name, errs),
-		})
+		cfg, err := decodeFoundryService(svc.AdditionalProperties, project.Path)
+		if err != nil {
+			*errs = append(*errs, fmt.Errorf("decode service %q: %w", svc.Name, err))
+		}
+		if cfg.Endpoint != "" {
+			state.HasProjectEndpoint = true
+		}
+
+		for _, agent := range cfg.Agents {
+			if agent.Name == "" {
+				continue
+			}
+			services = append(services, ServiceState{
+				Name:         agent.Name,
+				Kind:         agent.Kind,
+				Host:         svc.Host,
+				ServiceName:  svc.Name,
+				Protocol:     preferredProtocol(agent.Protocols),
+				RelativePath: agent.Project,
+				IsDeployed:   isDeployed(ctx, src, envName, agent.Name, errs),
+				Env:          agent.Env,
+			})
+		}
+
+		for _, d := range cfg.Deployments {
+			addResourceRef(models, svc.Name, d.Name, deploymentDetail(d))
+		}
+		for _, tb := range cfg.Toolboxes {
+			addResourceRef(toolboxes, svc.Name, tb.Name, "")
+		}
+		for _, c := range cfg.Connections {
+			addResourceRef(connections, svc.Name, c.Name, connectionDetail(c))
+		}
 	}
 
 	slices.SortFunc(services, func(a, b ServiceState) int {
-		return strings.Compare(a.Name, b.Name)
+		if c := strings.Compare(a.Name, b.Name); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ServiceName, b.ServiceName)
 	})
-	return services
+	state.Services = services
+
+	state.ModelRefs = sortedResourceRefs(models)
+	state.Toolboxes = sortedResourceRefs(toolboxes)
+	state.Connections = sortedResourceRefs(connections)
+	state.HasModels = len(state.ModelRefs) > 0
+	state.HasToolboxes = len(state.Toolboxes) > 0
+	state.HasConnections = len(state.Connections) > 0
 }
 
-// loadServiceProtocol returns the protocol the service's agent.yaml declares
-// for next-step hint purposes. The lookup is best-effort: missing or
-// malformed manifests, empty protocols sections, or any I/O error all return
-// an empty string, and the resolver falls back to ProtocolResponses. When the
-// manifest declares multiple protocols, ProtocolResponses wins over
-// ProtocolInvocations so the suggested payload works on the broadest set of
-// agents.
-func loadServiceProtocol(projectPath, relativePath string) string {
-	if projectPath == "" {
-		return ""
+// addResourceRef inserts a ResourceRef into m keyed on (service, name),
+// skipping empty names and (service, name) duplicates so the same resource
+// declared twice within one service collapses to one entry.
+func addResourceRef(m map[resourceKey]ResourceRef, serviceName, name, detail string) {
+	if name == "" {
+		return
 	}
-	manifestPath, err := paths.JoinAllowRoot(projectPath, relativePath, "agent.yaml")
-	if err != nil {
-		return ""
+	k := resourceKey{service: serviceName, name: name}
+	if _, dup := m[k]; dup {
+		return
 	}
-	data, err := os.ReadFile(manifestPath) //nolint:gosec // path is validated under the project root
-	if err != nil {
-		return ""
-	}
-	var hosted agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &hosted); err != nil {
-		return ""
-	}
+	m[k] = ResourceRef{Name: name, ServiceName: serviceName, Detail: detail}
+}
 
+// preferredProtocol picks the protocol the next-step hints use for an
+// agent: ProtocolResponses wins over ProtocolInvocations (so the suggested
+// payload works on the broadest set of agents). Empty when neither is
+// declared.
+func preferredProtocol(protocols []foundryProtocol) string {
 	sawInvocations := false
-	for _, p := range hosted.Protocols {
+	for _, p := range protocols {
 		switch strings.TrimSpace(p.Protocol) {
 		case ProtocolResponses:
 			return ProtocolResponses
@@ -492,72 +533,109 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 	return ""
 }
 
-// detectMissingVars walks each service's agent.yaml environment_variables
-// section and partitions the trouble-spots into three lists:
+// deploymentDetail renders the kind-specific ResourceRef.Detail for a model
+// deployment: "<Format>/<Name>" when both are present, else whichever side
+// is populated.
+func deploymentDetail(d foundryDeployment) string {
+	switch {
+	case d.Model.Format != "" && d.Model.Name != "":
+		return d.Model.Format + "/" + d.Model.Name
+	case d.Model.Format != "":
+		return d.Model.Format
+	default:
+		return d.Model.Name
+	}
+}
+
+// connectionDetail renders the kind-specific identifier doctor remediation
+// messages quote for a connection. Empty-category and empty-target entries
+// fall back to whichever side is populated so we never emit a useless
+// " | " separator with both halves blank.
+func connectionDetail(c foundryConnection) string {
+	switch {
+	case c.Category != "" && c.Target != "":
+		return c.Category + " | " + c.Target
+	case c.Category != "":
+		return c.Category
+	default:
+		return c.Target
+	}
+}
+
+// resourceKey is the (service, name) dedup key for the per-kind resource
+// maps populated by collectFoundry.
+type resourceKey struct {
+	service string
+	name    string
+}
+
+// sortedResourceRefs flattens the dedup map into a slice sorted by Name
+// (ties broken by ServiceName). The determinism is load-bearing for doctor
+// output snapshots and downstream display.
+func sortedResourceRefs(m map[resourceKey]ResourceRef) []ResourceRef {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]ResourceRef, 0, len(m))
+	for _, v := range m {
+		out = append(out, v)
+	}
+	slices.SortFunc(out, func(a, b ResourceRef) int {
+		if c := strings.Compare(a.Name, b.Name); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ServiceName, b.ServiceName)
+	})
+	return out
+}
+
+// detectMissingVars scans each agent's `env` map (from azure.yaml) and
+// partitions the unset ${VAR} references into two lists:
 //
-//  1. infra:        unset ${VAR} refs that name a top-level output of
+//  1. infra:  unset ${VAR} refs that name a top-level output of
 //     <projectPath>/infra/main.bicep (provision outputs)
-//  2. manual:       unset ${VAR} refs that do NOT name a Bicep output
-//     (user inputs the user must `azd env set`)
-//  3. placeholders: surviving {{NAME}} Mustache placeholders (init failed
-//     to substitute these from agent.manifest.yaml's parameters block)
+//  2. manual: unset ${VAR} refs that do NOT name a Bicep output (user
+//     inputs the user must `azd env set`)
 //
-// Only bare-form ${VAR} refs participate in (1) and (2): when the
-// agent.yaml author supplies an explicit fallback via `${VAR:-default}`,
-// the deploy-time resolver substitutes the fallback and the variable is
-// not required. `extractAgentYamlEnvRefs` filters defaulted refs out.
+// Only bare-form ${VAR} refs participate: when the author supplies an
+// explicit fallback via `${VAR:-default}`, the deploy-time resolver
+// substitutes the fallback and the variable is not required.
+// `extractEnvRefs` filters defaulted refs out. ${{...}} Foundry
+// server-side references are not matched and never surface here.
 //
-// Classification rule for ${VAR}: a variable is an infra var iff its
-// name is declared as a top-level `output` in `<projectPath>/infra/
-// main.bicep`. azd's Bicep provider writes those output names verbatim
-// into `.azure/<env>/.env` after `azd provision` succeeds (see
-// cli/azd/pkg/infra/provisioning/bicep/bicep_provider.go around the
-// `outputs[key] = ...` write and pkg/infra/provisioning/manager.go's
-// `UpdateEnvironment` → `env.DotenvSet(key, ...)`), so set membership
-// is a precise signal of "this variable is provided by `azd provision`."
-// Everything else is treated as a user-supplied manual variable that
-// the user must set via `azd env set`. This mirrors the spec wording in
-// issue #7975 ("Walk azure.yaml service configs; collect ${...}
-// references that map to known Bicep outputs").
+// Classification rule for ${VAR}: a variable is an infra var iff its name
+// is declared as a top-level `output` in `<projectPath>/infra/main.bicep`.
+// azd's Bicep provider writes those output names verbatim into
+// `.azure/<env>/.env` after `azd provision` succeeds, so set membership is
+// a precise signal of "this variable is provided by `azd provision`."
+// Everything else is treated as a user-supplied manual variable that the
+// user must set via `azd env set`.
 //
 // When `infra/main.bicep` is missing or declares no outputs, the
 // Bicep-output set is empty and every unresolved bare ref lands in the
-// manual bucket. This is the conservative answer: the resolver will
-// emit `azd env set <NAME> <value>` hints, which a user can always
-// follow. If the project is actually backed by a Bicep template whose
-// outputs are not yet declared, the fix is to declare the missing
-// output — not to guess based on the variable name.
+// manual bucket. This is the conservative answer: the resolver emits
+// `azd env set <NAME> <value>` hints, which a user can always follow.
 //
-// {{NAME}} placeholders are reported separately because the user cannot
-// fix them with `azd env set` — the placeholder is literally inside
-// agent.yaml and would land in the container as `{{NAME}}` at deploy
-// time. The resolver surfaces an "edit agent.yaml" suggestion for each.
-//
-// All three result lists are deduplicated and sorted ascending. Read
-// errors on individual agent.yaml files are silent: the resolver should
-// fall back to the default branch rather than emit guidance that
-// mentions variables we cannot prove are needed. Transport errors from
-// src.EnvValue are appended to errs so AssembleState's caller can
-// surface them in --debug logs without aborting the snapshot.
+// Both result lists are deduplicated and sorted ascending. Transport
+// errors from src.EnvValue are appended to errs so AssembleState's caller
+// can surface them in --debug logs without aborting the snapshot.
 func detectMissingVars(
 	ctx context.Context,
 	src Source,
 	envName, projectPath string,
 	services []ServiceState,
 	errs *[]error,
-) (infra, manual, placeholders []string) {
+) (infra, manual []string) {
 	if envName == "" || projectPath == "" || len(services) == 0 {
-		return nil, nil, nil
+		return nil, nil
 	}
 
 	bicepOutputs := bicepOutputSet(projectPath)
 	seenInfra := make(map[string]struct{})
 	seenManual := make(map[string]struct{})
-	seenPlaceholder := make(map[string]struct{})
 
 	for _, svc := range services {
-		refs, phs := extractAgentYamlEnvRefs(projectPath, svc.RelativePath)
-		for _, name := range refs {
+		for _, name := range extractEnvRefs(svc.Env) {
 			if _, ok := seenInfra[name]; ok {
 				continue
 			}
@@ -578,15 +656,11 @@ func detectMissingVars(
 				seenManual[name] = struct{}{}
 			}
 		}
-		for _, name := range phs {
-			seenPlaceholder[name] = struct{}{}
-		}
 	}
 
 	infra = slices.Sorted(maps.Keys(seenInfra))
 	manual = slices.Sorted(maps.Keys(seenManual))
-	placeholders = slices.Sorted(maps.Keys(seenPlaceholder))
-	return infra, manual, placeholders
+	return infra, manual
 }
 
 // bicepOutputSet returns the Bicep-output names declared by
@@ -603,44 +677,19 @@ func bicepOutputSet(projectPath string) map[string]struct{} {
 	return set
 }
 
-// extractAgentYamlEnvRefs returns two lists from the service's
-// agent.yaml environment_variables block:
-//
-//  1. refs: unique bare-form ${VAR} names. Refs that supply a fallback
-//     via `${VAR:-default}` are skipped — the deploy-time expander
-//     honors the default, so the variable is not required and never
-//     warrants a missing-var hint.
-//  2. placeholders: unique {{NAME}} Mustache-style placeholders that
-//     init's manifest processing failed to substitute. These would land
-//     in the container literally as `{{NAME}}` at deploy time.
-//
-// Order matches first appearance in the file. Missing or malformed
-// manifests return nil for both — consistent with loadServiceProtocol's
-// best-effort contract.
-func extractAgentYamlEnvRefs(projectPath, relativePath string) (refs, placeholders []string) {
-	if projectPath == "" {
-		return nil, nil
+// extractEnvRefs returns the unique bare-form ${VAR} names referenced in an
+// agent's env map. Refs that carry a `:-default` fallback are skipped (the
+// deploy-time expander honors the default, so the variable is not
+// required). ${{...}} Foundry server-side references are not matched by the
+// pattern and are therefore ignored.
+func extractEnvRefs(env map[string]string) []string {
+	if len(env) == 0 {
+		return nil
 	}
-	manifestPath, err := paths.JoinAllowRoot(projectPath, relativePath, "agent.yaml")
-	if err != nil {
-		return nil, nil
-	}
-	data, err := os.ReadFile(manifestPath) //nolint:gosec // path is validated under the project root
-	if err != nil {
-		return nil, nil
-	}
-	var hosted agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &hosted); err != nil {
-		return nil, nil
-	}
-	if hosted.EnvironmentVariables == nil {
-		return nil, nil
-	}
-
-	seenRef := make(map[string]struct{})
-	seenPh := make(map[string]struct{})
-	for _, ev := range *hosted.EnvironmentVariables {
-		for _, m := range envVarRefPattern.FindAllStringSubmatch(ev.Value, -1) {
+	seen := make(map[string]struct{})
+	var refs []string
+	for _, value := range env {
+		for _, m := range envVarRefPattern.FindAllStringSubmatch(value, -1) {
 			if m[2] != "" {
 				// Variable carries an explicit `:-fallback` default; the
 				// deploy-time resolver honors it, so the user does not need
@@ -649,34 +698,35 @@ func extractAgentYamlEnvRefs(projectPath, relativePath string) (refs, placeholde
 				continue
 			}
 			name := m[1]
-			if _, ok := seenRef[name]; ok {
+			if _, ok := seen[name]; ok {
 				continue
 			}
-			seenRef[name] = struct{}{}
+			seen[name] = struct{}{}
 			refs = append(refs, name)
 		}
-		for _, m := range placeholderPattern.FindAllStringSubmatch(ev.Value, -1) {
-			name := m[1]
-			if _, ok := seenPh[name]; ok {
-				continue
-			}
-			seenPh[name] = struct{}{}
-			placeholders = append(placeholders, name)
-		}
 	}
-	return refs, placeholders
+	return refs
 }
 
+// isDeployed reports whether the named agent has a recorded deploy version
+// in the active environment (AGENT_<KEY>_VERSION non-empty).
+//
+// TODO(unify true-up): under the unified design the deploy marker is
+// per-agent. The exact env-var convention the new microsoft.foundry service
+// target writes is owned by that rework (PR #8590 §2.6/§2.8) and is not yet
+// pinned. We assume AGENT_<agentKey>_VERSION here, mirroring the legacy
+// per-service writer; verify and adjust against the service target once it
+// lands.
 func isDeployed(
 	ctx context.Context,
 	src Source,
-	envName, serviceName string,
+	envName, agentName string,
 	errs *[]error,
 ) bool {
-	if envName == "" || serviceName == "" {
+	if envName == "" || agentName == "" {
 		return false
 	}
-	key := fmt.Sprintf(agentVersionVarFormat, serviceKey(serviceName))
+	key := fmt.Sprintf(agentVersionVarFormat, serviceKey(agentName))
 	value, err := src.EnvValue(ctx, envName, key)
 	if err != nil {
 		*errs = append(*errs, fmt.Errorf("read %s: %w", key, err))
@@ -685,7 +735,7 @@ func isDeployed(
 	return value != ""
 }
 
-// serviceKey converts a service name into the env-var key fragment used by
+// serviceKey converts an agent name into the env-var key fragment used by
 // the deploy-time env-var writer in service_target_agent.go. It mirrors
 // AgentServiceTargetProvider.getServiceKey verbatim.
 func serviceKey(name string) string {

@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // fakeSource is a hand-rolled Source for table-driven tests.
@@ -40,6 +41,32 @@ func (f *fakeSource) EnvValue(_ context.Context, envName, key string) (string, e
 	return f.values[envName+"/"+key], nil
 }
 
+// foundrySvc builds a `host: microsoft.foundry` ServiceConfig whose
+// AdditionalProperties carry the given top-level Foundry keys (deployments,
+// connections, toolboxes, skills, routines, agents, endpoint). This mirrors
+// how core azd forwards the unified service entry over gRPC.
+func foundrySvc(t *testing.T, name string, props map[string]any) *azdext.ServiceConfig {
+	t.Helper()
+	s, err := structpb.NewStruct(props)
+	require.NoError(t, err)
+	return &azdext.ServiceConfig{Name: name, Host: agentHost, AdditionalProperties: s}
+}
+
+// oneAgentSvc builds a Foundry service named `name` containing a single
+// hosted agent named `agentName`, with the given project dir (omitted when
+// empty) and env map (omitted when nil).
+func oneAgentSvc(t *testing.T, name, agentName, project string, env map[string]any) *azdext.ServiceConfig {
+	t.Helper()
+	agent := map[string]any{"name": agentName, "kind": agentKindHosted}
+	if project != "" {
+		agent["project"] = project
+	}
+	if env != nil {
+		agent["env"] = env
+	}
+	return foundrySvc(t, name, map[string]any{"agents": []any{agent}})
+}
+
 func TestAssembleState(t *testing.T) {
 	t.Parallel()
 
@@ -62,7 +89,7 @@ func TestAssembleState(t *testing.T) {
 			errCount: 2,
 		},
 		{
-			name: "endpoint set, no services: HasProjectEndpoint true",
+			name: "endpoint env var set, no services: HasProjectEndpoint true",
 			src: &fakeSource{
 				envName: "dev",
 				values:  map[string]string{"dev/FOUNDRY_PROJECT_ENDPOINT": "https://x.services.ai.azure.com"},
@@ -75,6 +102,24 @@ func TestAssembleState(t *testing.T) {
 					[]string{"AZURE_SUBSCRIPTION_ID", "AZURE_LOCATION"},
 					state.MissingAzureContextVars,
 				)
+			},
+		},
+		{
+			name: "explicit endpoint field on service marks HasProjectEndpoint",
+			src: &fakeSource{
+				envName: "dev",
+				project: &azdext.ProjectConfig{
+					Services: map[string]*azdext.ServiceConfig{
+						"proj": foundrySvc(t, "proj", map[string]any{
+							"endpoint": "https://acct.services.ai.azure.com/api/projects/p",
+							"agents":   []any{map[string]any{"name": "a1", "kind": "prompt"}},
+						}),
+					},
+				},
+				values: map[string]string{},
+			},
+			assert: func(t *testing.T, state *State, _ []error) {
+				assert.True(t, state.HasProjectEndpoint, "endpoint: field should mark the project as present")
 			},
 		},
 		{
@@ -93,12 +138,12 @@ func TestAssembleState(t *testing.T) {
 			},
 		},
 		{
-			name: "endpoint unset, one undeployed service",
+			name: "endpoint unset, one undeployed agent",
 			src: &fakeSource{
 				envName: "dev",
 				project: &azdext.ProjectConfig{
 					Services: map[string]*azdext.ServiceConfig{
-						"echo": {Name: "echo", Host: agentHost, RelativePath: "./src/echo"},
+						"proj": oneAgentSvc(t, "proj", "echo", "./src/echo", nil),
 					},
 				},
 				values: map[string]string{},
@@ -107,20 +152,26 @@ func TestAssembleState(t *testing.T) {
 				assert.False(t, state.HasProjectEndpoint)
 				require.Len(t, state.Services, 1)
 				assert.Equal(t, "echo", state.Services[0].Name)
+				assert.Equal(t, agentKindHosted, state.Services[0].Kind)
 				assert.Equal(t, agentHost, state.Services[0].Host)
+				assert.Equal(t, "proj", state.Services[0].ServiceName)
 				assert.Equal(t, "./src/echo", state.Services[0].RelativePath)
 				assert.False(t, state.Services[0].IsDeployed)
 			},
 		},
 		{
-			name: "multiple services: deployed flag follows AGENT_<KEY>_VERSION, alphabetical order",
+			name: "multiple agents: deployed flag follows AGENT_<KEY>_VERSION, alphabetical order",
 			src: &fakeSource{
 				envName: "prod",
 				project: &azdext.ProjectConfig{
 					Services: map[string]*azdext.ServiceConfig{
-						"chat-bot":   {Name: "chat-bot", Host: agentHost},
-						"echo":       {Name: "echo", Host: agentHost},
-						"my service": {Name: "my service", Host: agentHost},
+						"proj": foundrySvc(t, "proj", map[string]any{
+							"agents": []any{
+								map[string]any{"name": "chat-bot", "kind": "hosted"},
+								map[string]any{"name": "echo", "kind": "hosted"},
+								map[string]any{"name": "my service", "kind": "hosted"},
+							},
+						}),
 					},
 				},
 				values: map[string]string{
@@ -140,12 +191,12 @@ func TestAssembleState(t *testing.T) {
 			},
 		},
 		{
-			name: "non-agent services are filtered out",
+			name: "non-foundry services are filtered out",
 			src: &fakeSource{
 				envName: "dev",
 				project: &azdext.ProjectConfig{
 					Services: map[string]*azdext.ServiceConfig{
-						"echo":   {Name: "echo", Host: agentHost},
+						"proj":   oneAgentSvc(t, "proj", "echo", "", nil),
 						"web":    {Name: "web", Host: "appservice"},
 						"worker": {Name: "worker", Host: "containerapp"},
 					},
@@ -166,7 +217,9 @@ func TestAssembleState(t *testing.T) {
 			src: &fakeSource{
 				envName: "dev",
 				project: &azdext.ProjectConfig{
-					Services: map[string]*azdext.ServiceConfig{"echo": {Name: "echo", Host: agentHost}},
+					Services: map[string]*azdext.ServiceConfig{
+						"proj": oneAgentSvc(t, "proj", "echo", "", nil),
+					},
 				},
 				valueErr: errors.New("gRPC unavailable"),
 			},
@@ -178,7 +231,7 @@ func TestAssembleState(t *testing.T) {
 			},
 			// One error each for FOUNDRY_PROJECT_ENDPOINT,
 			// AI_AGENT_PENDING_PROVISION, AZURE_SUBSCRIPTION_ID,
-			// AZURE_LOCATION + one per service lookup
+			// AZURE_LOCATION + one per agent lookup
 			// (AGENT_ECHO_VERSION) = 5.
 			errCount: 5,
 		},
@@ -256,7 +309,7 @@ func TestAssembleState_NilServiceEntriesAreIgnored(t *testing.T) {
 		envName: "dev",
 		project: &azdext.ProjectConfig{
 			Services: map[string]*azdext.ServiceConfig{
-				"good": {Name: "good", Host: agentHost},
+				"good": oneAgentSvc(t, "good", "good-agent", "", nil),
 				"nil":  nil,
 			},
 		},
@@ -265,15 +318,15 @@ func TestAssembleState_NilServiceEntriesAreIgnored(t *testing.T) {
 	state, errs := assembleState(context.Background(), src)
 	assert.Empty(t, errs)
 	require.Len(t, state.Services, 1)
-	assert.Equal(t, "good", state.Services[0].Name)
+	assert.Equal(t, "good-agent", state.Services[0].Name)
 }
 
 func TestAgentHostConstant(t *testing.T) {
 	t.Parallel()
-	// agentHost must remain in sync with cmd.AiAgentHost ("azure.ai.agent").
-	// Pinning the literal here guards against accidental drift while the
-	// duplication exists; Phase 2's nextstep wiring should retire it.
-	assert.Equal(t, "azure.ai.agent", agentHost)
+	// agentHost must match the unified-design host kind. Pinning the
+	// literal guards against accidental drift while the duplication with
+	// the doctor package and cmd.AiAgentHost exists.
+	assert.Equal(t, "microsoft.foundry", agentHost)
 }
 
 func TestServiceKey(t *testing.T) {
@@ -441,10 +494,6 @@ func TestAssembleState_WithLiveOpenAPIProbe_PrefersLiveOverCache(t *testing.T) {
 func TestAssembleState_WithLiveOpenAPIProbe_FallsBackToCacheOnError(t *testing.T) {
 	t.Parallel()
 
-	// Live probe returns an error; the cache (when present and
-	// well-formed) must take over silently — the design budget for
-	// the live probe is 3 s and a failed fetch shouldn't deprive
-	// the user of the cached sample.
 	projectRoot := t.TempDir()
 	configDir := filepath.Join(projectRoot, ".azure", "dev")
 	require.NoError(t, os.MkdirAll(configDir, 0o750))
@@ -479,10 +528,6 @@ func TestAssembleState_WithLiveOpenAPIProbe_FallsBackToCacheOnError(t *testing.T
 func TestAssembleState_WithLiveOpenAPIProbe_FallsBackToCacheOnEmptyBody(t *testing.T) {
 	t.Parallel()
 
-	// Live probe returns nil bytes with no error (e.g., agent
-	// exposed /openapi.json but the body was empty after read).
-	// Treat identically to an error — empty body is unusable for
-	// example extraction and the cache must take over.
 	projectRoot := t.TempDir()
 	configDir := filepath.Join(projectRoot, ".azure", "dev")
 	require.NoError(t, os.MkdirAll(configDir, 0o750))
@@ -515,9 +560,6 @@ func TestAssembleState_WithLiveOpenAPIProbe_FallsBackToCacheOnEmptyBody(t *testi
 func TestAssembleState_WithLiveOpenAPIProbe_LiveWorksEvenWithoutCacheProbe(t *testing.T) {
 	t.Parallel()
 
-	// The live probe must not require WithOpenAPIProbe to be set —
-	// `run` may surface a payload from the freshly-started agent
-	// even when no prior `invoke` has populated the on-disk cache.
 	projectRoot := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, ".azure", "dev"), 0o750))
 
@@ -543,8 +585,6 @@ func TestAssembleState_WithLiveOpenAPIProbe_LiveWorksEvenWithoutCacheProbe(t *te
 func TestAssembleState_WithLiveOpenAPIProbe_LiveFailureWithoutCacheLeavesUnset(t *testing.T) {
 	t.Parallel()
 
-	// Live probe errors AND no cache present → resolver must fall
-	// back to the protocol-generic literal (HasOpenAPI=false).
 	projectRoot := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, ".azure", "dev"), 0o750))
 
@@ -569,148 +609,51 @@ func TestAssembleState_WithLiveOpenAPIProbe_LiveFailureWithoutCacheLeavesUnset(t
 	assert.Empty(t, state.OpenAPIPayload)
 }
 
-func TestLoadServiceProtocol(t *testing.T) {
+func TestPreferredProtocol(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		manifest    string // raw agent.yaml content; empty string means "do not write the file"
-		manifestRel string // override relativePath in the call (for missing-dir cases)
-		want        string
+		name      string
+		protocols []foundryProtocol
+		want      string
 	}{
+		{"single responses", []foundryProtocol{{Protocol: "responses"}}, ProtocolResponses},
+		{"single invocations", []foundryProtocol{{Protocol: "invocations"}}, ProtocolInvocations},
 		{
-			name: "single responses protocol",
-			manifest: `kind: hostedAgent
-protocols:
-  - protocol: responses
-    version: "1.0.0"
-`,
-			want: ProtocolResponses,
+			"responses wins when both declared",
+			[]foundryProtocol{{Protocol: "invocations"}, {Protocol: "responses"}},
+			ProtocolResponses,
 		},
-		{
-			name: "single invocations protocol",
-			manifest: `kind: hostedAgent
-protocols:
-  - protocol: invocations
-    version: "1.0.0"
-`,
-			want: ProtocolInvocations,
-		},
-		{
-			name: "responses wins when both declared",
-			manifest: `kind: hostedAgent
-protocols:
-  - protocol: invocations
-    version: "1.0.0"
-  - protocol: responses
-    version: "1.0.0"
-`,
-			want: ProtocolResponses,
-		},
-		{
-			name: "empty protocols section",
-			manifest: `kind: hostedAgent
-protocols: []
-`,
-			want: "",
-		},
-		{
-			name: "unknown protocol value silently ignored",
-			manifest: `kind: hostedAgent
-protocols:
-  - protocol: pigeon-mail
-    version: "1.0.0"
-`,
-			want: "",
-		},
-		{
-			name:     "malformed yaml returns empty",
-			manifest: "this: is: not: valid: yaml: at: all: [",
-			want:     "",
-		},
-		{
-			name:        "missing file returns empty",
-			manifestRel: "does-not-exist",
-			want:        "",
-		},
+		{"empty list", nil, ""},
+		{"unknown value ignored", []foundryProtocol{{Protocol: "pigeon-mail"}}, ""},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			projectRoot := t.TempDir()
-			relPath := "echo"
-			if tt.manifestRel != "" {
-				relPath = tt.manifestRel
-			} else {
-				svcDir := filepath.Join(projectRoot, relPath)
-				require.NoError(t, os.MkdirAll(svcDir, 0o750))
-				require.NoError(t, os.WriteFile(
-					filepath.Join(svcDir, "agent.yaml"),
-					[]byte(tt.manifest),
-					0o600,
-				))
-			}
-			got := loadServiceProtocol(projectRoot, relPath)
-			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.want, preferredProtocol(tt.protocols))
 		})
 	}
 }
 
-func TestLoadServiceProtocol_EmptyArgs(t *testing.T) {
+func TestAssembleState_PopulatesProtocolFromAgents(t *testing.T) {
 	t.Parallel()
-
-	assert.Equal(t, "", loadServiceProtocol("", "echo"))
-}
-
-func TestLoadServiceProtocol_RootRelativePath(t *testing.T) {
-	t.Parallel()
-
-	projectRoot := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "agent.yaml"),
-		[]byte("kind: hostedAgent\nprotocols:\n  - protocol: invocations\n    version: \"1.0.0\"\n"),
-		0o600,
-	))
-
-	assert.Equal(t, ProtocolInvocations, loadServiceProtocol(projectRoot, ""))
-	assert.Equal(t, ProtocolInvocations, loadServiceProtocol(projectRoot, "."))
-}
-
-func TestLoadServiceProtocol_RejectsTraversal(t *testing.T) {
-	t.Parallel()
-
-	parent := t.TempDir()
-	projectRoot := filepath.Join(parent, "project")
-	outside := filepath.Join(parent, "outside")
-	require.NoError(t, os.MkdirAll(projectRoot, 0o750))
-	require.NoError(t, os.MkdirAll(outside, 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(outside, "agent.yaml"),
-		[]byte("kind: hostedAgent\nprotocols:\n  - protocol: invocations\n    version: \"1.0.0\"\n"),
-		0o600,
-	))
-
-	assert.Equal(t, "", loadServiceProtocol(projectRoot, "../outside"))
-}
-
-func TestAssembleState_PopulatesProtocolFromAgentYaml(t *testing.T) {
-	t.Parallel()
-
-	projectRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "echo", "agent.yaml"),
-		[]byte("kind: hostedAgent\nprotocols:\n  - protocol: invocations\n    version: \"1.0.0\"\n"),
-		0o600,
-	))
 
 	src := &fakeSource{
 		envName: "dev",
 		project: &azdext.ProjectConfig{
-			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"proj": foundrySvc(t, "proj", map[string]any{
+					"agents": []any{
+						map[string]any{
+							"name": "echo",
+							"kind": "hosted",
+							"protocols": []any{
+								map[string]any{"protocol": "invocations", "version": "1.0.0"},
+								map[string]any{"protocol": "responses", "version": "1.0.0"},
+							},
+						},
+					},
+				}),
 			},
 		},
 	}
@@ -718,246 +661,32 @@ func TestAssembleState_PopulatesProtocolFromAgentYaml(t *testing.T) {
 	state, errs := assembleState(context.Background(), src)
 	require.Empty(t, errs)
 	require.Len(t, state.Services, 1)
-	assert.Equal(t, ProtocolInvocations, state.Services[0].Protocol)
+	assert.Equal(t, ProtocolResponses, state.Services[0].Protocol)
 }
 
-func TestExtractAgentYamlEnvRefs(t *testing.T) {
+func TestExtractEnvRefs(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name             string
-		manifest         string
-		wantRefs         []string
-		wantPlaceholders []string
+		name string
+		env  map[string]string
+		want []string
 	}{
+		{"nil env", nil, nil},
+		{"no refs", map[string]string{"A": "static"}, nil},
+		{"single bare ref", map[string]string{"A": "${MY_KEY}"}, []string{"MY_KEY"}},
+		{"defaulted ref skipped", map[string]string{"A": "${MY_KEY:-fallback}"}, nil},
 		{
-			name: "single bare reference",
-			manifest: `kind: hostedAgent
-environment_variables:
-  - name: ENDPOINT
-    value: ${FOUNDRY_PROJECT_ENDPOINT}
-`,
-			wantRefs: []string{"FOUNDRY_PROJECT_ENDPOINT"},
-		},
-		{
-			name: "reference with default tail is skipped",
-			manifest: `kind: hostedAgent
-environment_variables:
-  - name: MODEL
-    value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
-`,
-			wantRefs: nil,
-		},
-		{
-			name: "bare ref alongside defaulted ref returns only the bare one",
-			manifest: `kind: hostedAgent
-environment_variables:
-  - name: ENDPOINT
-    value: ${FOUNDRY_PROJECT_ENDPOINT}
-  - name: MODEL
-    value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
-`,
-			wantRefs: []string{"FOUNDRY_PROJECT_ENDPOINT"},
-		},
-		{
-			name: "multiple references in one value",
-			manifest: `kind: hostedAgent
-environment_variables:
-  - name: CONN
-    value: postgresql://${DB_HOST}:5432/${DB_NAME}
-`,
-			wantRefs: []string{"DB_HOST", "DB_NAME"},
-		},
-		{
-			name: "duplicate references deduplicated by first appearance",
-			manifest: `kind: hostedAgent
-environment_variables:
-  - name: A
-    value: ${X}-${X}
-  - name: B
-    value: ${X}
-`,
-			wantRefs: []string{"X"},
-		},
-		{
-			name: "no environment_variables block",
-			manifest: `kind: hostedAgent
-protocols:
-  - protocol: responses
-    version: "1.0.0"
-`,
-			wantRefs: nil,
-		},
-		{
-			name: "literal value with no ${} reference",
-			manifest: `kind: hostedAgent
-environment_variables:
-  - name: STATIC
-    value: hardcoded
-`,
-			wantRefs: nil,
-		},
-		{
-			name:     "malformed yaml returns nil",
-			manifest: "this: is: not: valid: yaml: at: all: [",
-			wantRefs: nil,
-		},
-		{
-			name: "mustache placeholder surfaced separately",
-			manifest: `kind: hostedAgent
-environment_variables:
-  - name: TOOLBOX_ENDPOINT
-    value: '{{TOOLBOX_ENDPOINT}}'
-`,
-			wantPlaceholders: []string{"TOOLBOX_ENDPOINT"},
-		},
-		{
-			name: "mustache placeholder with internal whitespace",
-			manifest: `kind: hostedAgent
-environment_variables:
-  - name: KEY
-    value: '{{ MY_KEY }}'
-`,
-			wantPlaceholders: []string{"MY_KEY"},
-		},
-		{
-			name: "duplicate placeholders deduplicated",
-			manifest: `kind: hostedAgent
-environment_variables:
-  - name: A
-    value: '{{X}}-{{X}}'
-  - name: B
-    value: '{{X}}'
-`,
-			wantPlaceholders: []string{"X"},
-		},
-		{
-			name: "ref and placeholder coexist in same manifest",
-			manifest: `kind: hostedAgent
-environment_variables:
-  - name: TOOLBOX_ENDPOINT
-    value: '{{TOOLBOX_ENDPOINT}}'
-  - name: MCP_ENDPOINT
-    value: ${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}
-`,
-			wantRefs:         []string{"TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT"},
-			wantPlaceholders: []string{"TOOLBOX_ENDPOINT"},
-		},
-		{
-			// Manifest parameter names are not constrained to env-var
-			// identifier shape — parameters.go:injectParameterValues
-			// substitutes the raw YAML key without validating it.
-			// A surviving `{{toolbox-endpoint}}` (hyphen) must therefore
-			// still be flagged or the user gets no Next: hint.
-			name: "mustache placeholder with hyphen in name",
-			manifest: `kind: hostedAgent
-environment_variables:
-  - name: TOOLBOX_ENDPOINT
-    value: '{{toolbox-endpoint}}'
-`,
-			wantPlaceholders: []string{"toolbox-endpoint"},
-		},
-		{
-			name: "mustache placeholder with dot in name",
-			manifest: `kind: hostedAgent
-environment_variables:
-  - name: COMPONENT
-    value: '{{my.component.id}}'
-`,
-			wantPlaceholders: []string{"my.component.id"},
-		},
-		{
-			// Empty placeholder body must not be flagged — it cannot
-			// correspond to a manifest parameter and is more likely
-			// stray literal text.
-			name: "empty mustache braces are ignored",
-			manifest: `kind: hostedAgent
-environment_variables:
-  - name: NOISE
-    value: 'preamble {{}} suffix'
-`,
-			wantPlaceholders: nil,
-		},
-		{
-			// Whitespace-only placeholder body is similarly garbage —
-			// must not be flagged.
-			name: "whitespace-only mustache braces are ignored",
-			manifest: `kind: hostedAgent
-environment_variables:
-  - name: NOISE
-    value: 'preamble {{   }} suffix'
-`,
-			wantPlaceholders: nil,
+			"foundry server-side ref ignored",
+			map[string]string{"A": "${{connections.x.credentials.key}}"},
+			nil,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			projectRoot := t.TempDir()
-			svcDir := filepath.Join(projectRoot, "echo")
-			require.NoError(t, os.MkdirAll(svcDir, 0o750))
-			require.NoError(t, os.WriteFile(
-				filepath.Join(svcDir, "agent.yaml"),
-				[]byte(tt.manifest),
-				0o600,
-			))
-			gotRefs, gotPlaceholders := extractAgentYamlEnvRefs(projectRoot, "echo")
-			assert.Equal(t, tt.wantRefs, gotRefs, "refs")
-			assert.Equal(t, tt.wantPlaceholders, gotPlaceholders, "placeholders")
+			assert.ElementsMatch(t, tt.want, extractEnvRefs(tt.env))
 		})
-	}
-}
-
-func TestExtractAgentYamlEnvRefs_MissingFileOrArgs(t *testing.T) {
-	t.Parallel()
-
-	for _, args := range [][2]string{
-		{"", "echo"},
-		{t.TempDir(), ""},
-		{t.TempDir(), "missing"},
-	} {
-		refs, placeholders := extractAgentYamlEnvRefs(args[0], args[1])
-		assert.Nil(t, refs)
-		assert.Nil(t, placeholders)
-	}
-}
-
-func TestExtractAgentYamlEnvRefs_RejectsTraversal(t *testing.T) {
-	t.Parallel()
-
-	parent := t.TempDir()
-	projectRoot := filepath.Join(parent, "project")
-	outside := filepath.Join(parent, "outside")
-	require.NoError(t, os.MkdirAll(projectRoot, 0o750))
-	require.NoError(t, os.MkdirAll(outside, 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(outside, "agent.yaml"),
-		[]byte("kind: hostedAgent\nenvironment_variables:\n  - name: SECRET\n    value: ${OUTSIDE_SECRET}\n"),
-		0o600,
-	))
-
-	refs, placeholders := extractAgentYamlEnvRefs(projectRoot, "../outside")
-
-	assert.Nil(t, refs)
-	assert.Nil(t, placeholders)
-}
-
-func TestExtractAgentYamlEnvRefs_RootRelativePath(t *testing.T) {
-	t.Parallel()
-
-	projectRoot := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "agent.yaml"),
-		[]byte("kind: hostedAgent\nenvironment_variables:\n  - name: SECRET\n    value: ${ROOT_SECRET}\n"),
-		0o600,
-	))
-
-	for _, rel := range []string{"", "."} {
-		refs, placeholders := extractAgentYamlEnvRefs(projectRoot, rel)
-
-		assert.Equal(t, []string{"ROOT_SECRET"}, refs)
-		assert.Nil(t, placeholders)
 	}
 }
 
@@ -965,22 +694,6 @@ func TestAssembleState_PopulatesMissingVars(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "echo", "agent.yaml"),
-		[]byte(`kind: hostedAgent
-environment_variables:
-  - name: ENDPOINT
-    value: ${FOUNDRY_PROJECT_ENDPOINT}
-  - name: MODEL
-    value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
-  - name: KEY
-    value: ${MY_API_KEY}
-  - name: STATIC
-    value: hardcoded
-`),
-		0o600,
-	))
 	// infra/main.bicep declares both AZURE_* names as outputs, so they
 	// route to MissingInfraVars when unset. MY_API_KEY has no Bicep
 	// output and routes to MissingManualVars.
@@ -998,7 +711,12 @@ output AZURE_AI_MODEL_DEPLOYMENT_NAME string = ''
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"proj": oneAgentSvc(t, "proj", "echo", "", map[string]any{
+					"ENDPOINT": "${FOUNDRY_PROJECT_ENDPOINT}",
+					"MODEL":    "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
+					"KEY":      "${MY_API_KEY}",
+					"STATIC":   "hardcoded",
+				}),
 			},
 		},
 		values: map[string]string{
@@ -1013,40 +731,32 @@ output AZURE_AI_MODEL_DEPLOYMENT_NAME string = ''
 	assert.Equal(t, []string{"MY_API_KEY"}, state.MissingManualVars)
 }
 
-func TestAssembleState_MissingVarsDedupedAcrossServices(t *testing.T) {
+func TestAssembleState_MissingVarsDedupedAcrossAgents(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	manifest := []byte(`kind: hostedAgent
-environment_variables:
-  - name: ENDPOINT
-    value: ${FOUNDRY_PROJECT_ENDPOINT}
-  - name: KEY
-    value: ${MY_API_KEY}
-`)
-	for _, rel := range []string{"echo", "ping"} {
-		require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, rel), 0o750))
-		require.NoError(t, os.WriteFile(
-			filepath.Join(projectRoot, rel, "agent.yaml"),
-			manifest,
-			0o600,
-		))
-	}
 	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(projectRoot, "infra", "main.bicep"),
-		[]byte(`output FOUNDRY_PROJECT_ENDPOINT string = ''
-`),
+		[]byte("output FOUNDRY_PROJECT_ENDPOINT string = ''\n"),
 		0o600,
 	))
 
+	env := map[string]any{
+		"ENDPOINT": "${FOUNDRY_PROJECT_ENDPOINT}",
+		"KEY":      "${MY_API_KEY}",
+	}
 	src := &fakeSource{
 		envName: "dev",
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
-				"ping": {Name: "ping", Host: agentHost, RelativePath: "ping"},
+				"proj": foundrySvc(t, "proj", map[string]any{
+					"agents": []any{
+						map[string]any{"name": "echo", "kind": "hosted", "env": env},
+						map[string]any{"name": "ping", "kind": "hosted", "env": env},
+					},
+				}),
 			},
 		},
 	}
@@ -1061,25 +771,15 @@ func TestAssembleState_AllVarsSetLeavesMissingEmpty(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "echo", "agent.yaml"),
-		[]byte(`kind: hostedAgent
-environment_variables:
-  - name: ENDPOINT
-    value: ${FOUNDRY_PROJECT_ENDPOINT}
-  - name: KEY
-    value: ${MY_API_KEY}
-`),
-		0o600,
-	))
-
 	src := &fakeSource{
 		envName: "dev",
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"proj": oneAgentSvc(t, "proj", "echo", "", map[string]any{
+					"ENDPOINT": "${FOUNDRY_PROJECT_ENDPOINT}",
+					"KEY":      "${MY_API_KEY}",
+				}),
 			},
 		},
 		values: map[string]string{
@@ -1098,28 +798,10 @@ func TestAssembleState_DefaultedRefsAreExcludedFromMissingVars(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
-	// Both refs use POSIX ${VAR:-default} syntax; the deploy-time expander
-	// honors the default so neither variable is required. The bare-form
-	// ENDPOINT ref is unset and IS required, so it still surfaces.
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "echo", "agent.yaml"),
-		[]byte(`kind: hostedAgent
-environment_variables:
-  - name: ENDPOINT
-    value: ${FOUNDRY_PROJECT_ENDPOINT}
-  - name: MODEL
-    value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
-  - name: KEY
-    value: ${MY_API_KEY:-dev-fallback}
-`),
-		0o600,
-	))
 	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(projectRoot, "infra", "main.bicep"),
-		[]byte(`output FOUNDRY_PROJECT_ENDPOINT string = ''
-`),
+		[]byte("output FOUNDRY_PROJECT_ENDPOINT string = ''\n"),
 		0o600,
 	))
 
@@ -1128,11 +810,16 @@ environment_variables:
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				// Both MODEL and KEY use ${VAR:-default}; the deploy-time
+				// expander honors the default, so neither is required. The
+				// bare-form ENDPOINT ref is unset and IS required.
+				"proj": oneAgentSvc(t, "proj", "echo", "", map[string]any{
+					"ENDPOINT": "${FOUNDRY_PROJECT_ENDPOINT}",
+					"MODEL":    "${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}",
+					"KEY":      "${MY_API_KEY:-dev-fallback}",
+				}),
 			},
 		},
-		// Intentionally leave AZURE_AI_MODEL_DEPLOYMENT_NAME and MY_API_KEY
-		// unset; defaulted refs must not surface them as missing.
 		values: map[string]string{},
 	}
 
@@ -1146,23 +833,14 @@ func TestAssembleState_MissingVarTransportErrorSurfaced(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "echo", "agent.yaml"),
-		[]byte(`kind: hostedAgent
-environment_variables:
-  - name: KEY
-    value: ${MY_API_KEY}
-`),
-		0o600,
-	))
-
 	src := &fakeSource{
 		envName: "dev",
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"proj": oneAgentSvc(t, "proj", "echo", "", map[string]any{
+					"KEY": "${MY_API_KEY}",
+				}),
 			},
 		},
 		valueErr: errors.New("gRPC unavailable"),
@@ -1176,86 +854,33 @@ environment_variables:
 	assert.Empty(t, state.MissingManualVars)
 }
 
-func TestAssembleState_PopulatesUnresolvedPlaceholders(t *testing.T) {
-	t.Parallel()
-
-	// Reproduces the toolbox-sample bug: agent.manifest.yaml processing
-	// leaves a {{NAME}} placeholder behind in agent.yaml, while a separate
-	// env var ref is also unset. The resolver should see both.
-	projectRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "echo", "agent.yaml"),
-		[]byte(`kind: hostedAgent
-environment_variables:
-  - name: TOOLBOX_ENDPOINT
-    value: '{{TOOLBOX_ENDPOINT}}'
-  - name: MCP_ENDPOINT
-    value: ${TOOLBOX_MCP_ENDPOINT}
-`),
-		0o600,
-	))
-
-	src := &fakeSource{
-		envName: "dev",
-		project: &azdext.ProjectConfig{
-			Path: projectRoot,
-			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
-			},
-		},
-	}
-
-	state, errs := assembleState(context.Background(), src)
-	require.Empty(t, errs)
-	assert.Empty(t, state.MissingInfraVars)
-	assert.Equal(t, []string{"TOOLBOX_MCP_ENDPOINT"}, state.MissingManualVars)
-	assert.Equal(t, []string{"TOOLBOX_ENDPOINT"}, state.UnresolvedPlaceholders)
-}
-
 // TestAssembleState_PartitionsToolboxEndpointVars locks the partition
-// behavior added for the toolbox-sample post-init UX: when a service
-// has a manifest-declared toolbox AND agent.yaml references the
-// canonical TOOLBOX_<NAME>_MCP_ENDPOINT env var, the missing-var
-// classifier must route the entry into MissingToolboxEndpoints
+// behavior: when a Foundry service declares a toolbox AND an agent's env
+// references the canonical TOOLBOX_<NAME>_MCP_ENDPOINT env var, the
+// missing-var classifier routes the entry into MissingToolboxEndpoints
 // (provision-managed) rather than MissingManualVars (operator-supplied).
-// Non-toolbox manual vars in the same agent.yaml must still appear in
-// MissingManualVars.
+// Non-toolbox manual vars must still appear in MissingManualVars.
 func TestAssembleState_PartitionsToolboxEndpointVars(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	// agent.manifest.yaml declares the toolbox by name; envkey derives
-	// "TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT" from "web-search-tools",
-	// matching the ${...} ref in agent.yaml below.
-	writeManifest(t, projectRoot, "echo", `
-template:
-  kind: containerAgent
-  name: hello
-resources:
-  - name: web-search-tools
-    kind: toolbox
-    tools:
-      - id: tool-1
-`)
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "echo", "agent.yaml"),
-		[]byte(`kind: hostedAgent
-environment_variables:
-  - name: MCP_ENDPOINT
-    value: ${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}
-  - name: API_KEY
-    value: ${MY_API_KEY}
-`),
-		0o600,
-	))
-
+	// The toolbox "web-search-tools" derives the canonical env var
+	// "TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT", matching the ${...} ref in
+	// the agent env below.
 	src := &fakeSource{
 		envName: "dev",
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"proj": foundrySvc(t, "proj", map[string]any{
+					"toolboxes": []any{map[string]any{"name": "web-search-tools"}},
+					"agents": []any{
+						map[string]any{"name": "echo", "kind": "hosted", "env": map[string]any{
+							"MCP_ENDPOINT": "${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}",
+							"API_KEY":      "${MY_API_KEY}",
+						}},
+					},
+				}),
 			},
 		},
 	}
@@ -1263,41 +888,30 @@ environment_variables:
 	state, errs := assembleState(context.Background(), src)
 	require.Empty(t, errs)
 	assert.Empty(t, state.MissingInfraVars)
-	// Toolbox endpoint var moved into the dedicated bucket; the
-	// generic manual-var bucket only carries the truly user-supplied
-	// API key.
+	// Toolbox endpoint var moved into the dedicated bucket; the generic
+	// manual-var bucket only carries the truly user-supplied API key.
 	assert.Equal(t, []string{"MY_API_KEY"}, state.MissingManualVars)
 	require.Len(t, state.MissingToolboxEndpoints, 1)
 	assert.Equal(t, "web-search-tools", state.MissingToolboxEndpoints[0].Name)
-	assert.Equal(t, "echo", state.MissingToolboxEndpoints[0].ServiceName)
+	assert.Equal(t, "proj", state.MissingToolboxEndpoints[0].ServiceName)
 }
 
-// TestAssembleState_ToolboxEndpointWithoutManifestStaysManual locks
-// the partition's guard: a TOOLBOX_*_MCP_ENDPOINT-shaped variable
-// whose name does NOT match a manifest-declared toolbox is treated
-// as a generic user variable and stays in MissingManualVars. The
-// partition is a no-op when no manifest toolbox claims the key.
-func TestAssembleState_ToolboxEndpointWithoutManifestStaysManual(t *testing.T) {
+// TestAssembleState_ToolboxEndpointWithoutDeclarationStaysManual locks the
+// partition's guard: a TOOLBOX_*_MCP_ENDPOINT-shaped variable whose name
+// does NOT match a declared toolbox is treated as a generic user variable
+// and stays in MissingManualVars.
+func TestAssembleState_ToolboxEndpointWithoutDeclarationStaysManual(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "echo", "agent.yaml"),
-		[]byte(`kind: hostedAgent
-environment_variables:
-  - name: MCP_ENDPOINT
-    value: ${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}
-`),
-		0o600,
-	))
-
 	src := &fakeSource{
 		envName: "dev",
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"proj": oneAgentSvc(t, "proj", "echo", "", map[string]any{
+					"MCP_ENDPOINT": "${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}",
+				}),
 			},
 		},
 	}
@@ -1308,64 +922,10 @@ environment_variables:
 	assert.Empty(t, state.MissingToolboxEndpoints)
 }
 
-func TestAssembleState_PlaceholdersDedupedAcrossServices(t *testing.T) {
-	t.Parallel()
-
-	projectRoot := t.TempDir()
-	manifest := []byte(`kind: hostedAgent
-environment_variables:
-  - name: A
-    value: '{{SHARED_PLACEHOLDER}}'
-`)
-	for _, rel := range []string{"echo", "ping"} {
-		require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, rel), 0o750))
-		require.NoError(t, os.WriteFile(
-			filepath.Join(projectRoot, rel, "agent.yaml"),
-			manifest,
-			0o600,
-		))
-	}
-
-	src := &fakeSource{
-		envName: "dev",
-		project: &azdext.ProjectConfig{
-			Path: projectRoot,
-			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
-				"ping": {Name: "ping", Host: agentHost, RelativePath: "ping"},
-			},
-		},
-	}
-
-	state, errs := assembleState(context.Background(), src)
-	require.Empty(t, errs)
-	assert.Equal(t, []string{"SHARED_PLACEHOLDER"}, state.UnresolvedPlaceholders)
-}
-
-// TestAssembleState_NonAzurePrefixBicepOutputIsInfra is the B1 fix proof.
-// It locks issue #7975 State Inputs line 74 ("HasUnresolvedInfraVars =
-// agent.yaml ${VAR} refs that map to known Bicep outputs are unset in
-// azd env"). Pre-C1, the resolver split on the AZURE_ prefix; this
-// test guarantees the new classifier is set-membership based and
-// correctly routes a non-AZURE_ Bicep output to MissingInfraVars.
 func TestAssembleState_NonAzurePrefixBicepOutputIsInfra(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "echo", "agent.yaml"),
-		[]byte(`kind: hostedAgent
-environment_variables:
-  - name: TOOLBOX
-    value: ${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}
-  - name: BING
-    value: ${BING_GROUNDING_CONNECTION_ID}
-  - name: KEY
-    value: ${MY_API_KEY}
-`),
-		0o600,
-	))
 	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(projectRoot, "infra", "main.bicep"),
@@ -1380,7 +940,11 @@ output BING_GROUNDING_CONNECTION_ID string = ''
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"proj": oneAgentSvc(t, "proj", "echo", "", map[string]any{
+					"TOOLBOX": "${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}",
+					"BING":    "${BING_GROUNDING_CONNECTION_ID}",
+					"KEY":     "${MY_API_KEY}",
+				}),
 			},
 		},
 	}
@@ -1395,35 +959,19 @@ output BING_GROUNDING_CONNECTION_ID string = ''
 	assert.Equal(t, []string{"MY_API_KEY"}, state.MissingManualVars)
 }
 
-// TestAssembleState_NoBicepFileEverythingManual locks the conservative
-// fallback: when infra/main.bicep is missing, every unset ref lands in
-// MissingManualVars. Notably this includes AZURE_*-prefixed names —
-// without the prefix shortcut, AZURE_ has no special meaning anymore.
 func TestAssembleState_NoBicepFileEverythingManual(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "echo", "agent.yaml"),
-		[]byte(`kind: hostedAgent
-environment_variables:
-  - name: ENDPOINT
-    value: ${FOUNDRY_PROJECT_ENDPOINT}
-  - name: TOOLBOX
-    value: ${TOOLBOX_MCP_ENDPOINT}
-  - name: KEY
-    value: ${MY_API_KEY}
-`),
-		0o600,
-	))
-
 	src := &fakeSource{
 		envName: "dev",
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"proj": oneAgentSvc(t, "proj", "echo", "", map[string]any{
+					"ENDPOINT": "${FOUNDRY_PROJECT_ENDPOINT}",
+					"KEY":      "${MY_API_KEY}",
+				}),
 			},
 		},
 	}
@@ -1431,96 +979,51 @@ environment_variables:
 	state, errs := assembleState(context.Background(), src)
 	require.Empty(t, errs)
 	assert.Empty(t, state.MissingInfraVars)
-	assert.Equal(
-		t,
-		[]string{"FOUNDRY_PROJECT_ENDPOINT", "MY_API_KEY", "TOOLBOX_MCP_ENDPOINT"},
-		state.MissingManualVars,
-	)
+	assert.Equal(t, []string{"FOUNDRY_PROJECT_ENDPOINT", "MY_API_KEY"}, state.MissingManualVars)
 }
 
-// TestAssembleState_DeclaredAndSetBicepOutputNotSurfaced locks the
-// sanity case: a ref that maps to a Bicep output AND is set in the
-// current env is not missing from either bucket.
-func TestAssembleState_DeclaredAndSetBicepOutputNotSurfaced(t *testing.T) {
+// TestAssembleState_AggregatesResources verifies collectFoundry surfaces
+// model deployments, toolboxes, and connections (with detail strings) and
+// the matching Has* flags from the unified service entry.
+func TestAssembleState_AggregatesResources(t *testing.T) {
 	t.Parallel()
-
-	projectRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "echo", "agent.yaml"),
-		[]byte(`kind: hostedAgent
-environment_variables:
-  - name: TOOLBOX
-    value: ${TOOLBOX_MCP_ENDPOINT}
-`),
-		0o600,
-	))
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "infra", "main.bicep"),
-		[]byte(`output TOOLBOX_MCP_ENDPOINT string = ''
-`),
-		0o600,
-	))
 
 	src := &fakeSource{
 		envName: "dev",
 		project: &azdext.ProjectConfig{
-			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
-			},
-		},
-		values: map[string]string{
-			"dev/TOOLBOX_MCP_ENDPOINT": "https://mcp.example/x",
-		},
-	}
-
-	state, errs := assembleState(context.Background(), src)
-	require.Empty(t, errs)
-	assert.Empty(t, state.MissingInfraVars)
-	assert.Empty(t, state.MissingManualVars)
-}
-
-// TestAssembleState_UndeclaredRefIsManualEvenWithBicepFile locks the
-// other half of set-membership classification: when infra/main.bicep
-// exists but does NOT declare a ref'd var, the var lands in
-// MissingManualVars (not MissingInfraVars).
-func TestAssembleState_UndeclaredRefIsManualEvenWithBicepFile(t *testing.T) {
-	t.Parallel()
-
-	projectRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "echo", "agent.yaml"),
-		[]byte(`kind: hostedAgent
-environment_variables:
-  - name: KEY
-    value: ${MY_API_KEY}
-`),
-		0o600,
-	))
-	// Bicep file exists but doesn't declare MY_API_KEY → manual.
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "infra", "main.bicep"),
-		[]byte(`output FOUNDRY_PROJECT_ENDPOINT string = ''
-`),
-		0o600,
-	))
-
-	src := &fakeSource{
-		envName: "dev",
-		project: &azdext.ProjectConfig{
-			Path: projectRoot,
-			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"proj": foundrySvc(t, "proj", map[string]any{
+					"deployments": []any{
+						map[string]any{
+							"name":  "gpt-4.1-mini",
+							"model": map[string]any{"format": "OpenAI", "name": "gpt-4.1-mini"},
+						},
+					},
+					"toolboxes": []any{map[string]any{"name": "support-toolbox"}},
+					"connections": []any{
+						map[string]any{"name": "search-conn", "category": "CognitiveSearch", "target": "https://x"},
+					},
+					"agents": []any{map[string]any{"name": "a1", "kind": "prompt"}},
+				}),
 			},
 		},
 	}
 
 	state, errs := assembleState(context.Background(), src)
 	require.Empty(t, errs)
-	assert.Empty(t, state.MissingInfraVars)
-	assert.Equal(t, []string{"MY_API_KEY"}, state.MissingManualVars)
+
+	require.True(t, state.HasModels)
+	require.Len(t, state.ModelRefs, 1)
+	assert.Equal(t, "gpt-4.1-mini", state.ModelRefs[0].Name)
+	assert.Equal(t, "OpenAI/gpt-4.1-mini", state.ModelRefs[0].Detail)
+	assert.Equal(t, "proj", state.ModelRefs[0].ServiceName)
+
+	require.True(t, state.HasToolboxes)
+	require.Len(t, state.Toolboxes, 1)
+	assert.Equal(t, "support-toolbox", state.Toolboxes[0].Name)
+
+	require.True(t, state.HasConnections)
+	require.Len(t, state.Connections, 1)
+	assert.Equal(t, "search-conn", state.Connections[0].Name)
+	assert.Equal(t, "CognitiveSearch | https://x", state.Connections[0].Detail)
 }

@@ -209,7 +209,7 @@ func newCheckAgentStatus(deps Dependencies) Check {
 			if priorBlocked(prior, "local.agent-service-detected") {
 				return Result{
 					Status: StatusSkip,
-					Message: "skipped: no `azure.ai.agent` service in " +
+					Message: "skipped: no `microsoft.foundry` service in " +
 						"azure.yaml (see check " +
 						"`local.agent-service-detected`).",
 				}

@@ -109,18 +109,12 @@ type State struct {
 	// state.Toolboxes / state.ModelRefs / state.Connections.
 	MissingToolboxEndpoints []ResourceRef
 
-	// UnresolvedPlaceholders names {{NAME}} Mustache-style placeholders
-	// still present (literally) inside agent.yaml's environment_variables
-	// values. These are left over from init's manifest processing when
-	// agent.manifest.yaml declares a placeholder without a matching
-	// parameter (or the user skipped the prompt). Unlike Missing*Vars,
-	// these cannot be supplied via `azd env set` — the literal `{{X}}`
-	// would still be in agent.yaml at deploy time. The resolver surfaces
-	// a distinct "edit agent.yaml" suggestion for each.
-	UnresolvedPlaceholders []string
-
-	// Services is the per-service snapshot derived from azure.yaml plus
-	// the azd environment (for IsDeployed).
+	// Services is the per-AGENT snapshot derived from azure.yaml plus the
+	// azd environment (for IsDeployed). Under the unified design a single
+	// `host: microsoft.foundry` service entry declares N agents; each
+	// agent becomes one ServiceState entry here (the unit the resolvers
+	// show and invoke). See ServiceState for the per-agent fields and the
+	// owning-service back-reference.
 	Services []ServiceState
 
 	// AgentStatus is the remote agent version status as reported by the
@@ -144,58 +138,57 @@ type State struct {
 	// prepend a `cd <folder>` suggestion to the Next: block.
 	CreatedFolderDisplay string
 
-	// HasModels, HasToolboxes, HasConnections are aggregate flags
-	// derived from each azure.ai.agent service's agent.manifest.yaml
-	// (when present). They are true when at least one resource of the
-	// matching kind is declared across all services. Doctor checks that
-	// only make sense in the presence of these resources gate-skip
-	// themselves on the matching Has* flag; resolvers can use them to
-	// tailor remediation suggestions.
+	// HasModels, HasToolboxes, HasConnections are aggregate flags derived
+	// from each `host: microsoft.foundry` service's top-level
+	// `deployments` / `toolboxes` / `connections` declarations in
+	// azure.yaml. They are true when at least one resource of the
+	// matching kind is declared across all Foundry services. Doctor
+	// checks that only make sense in the presence of these resources
+	// gate-skip themselves on the matching Has* flag; resolvers can use
+	// them to tailor remediation suggestions.
 	//
-	// All three flags are false when the manifest file is missing,
-	// malformed, or declares no resources — the walker is deliberately
-	// silent on those failure modes so a missing/in-flight manifest
-	// never blocks the rest of state assembly.
+	// All three flags are false when no Foundry service declares the
+	// matching resource kind.
 	HasModels      bool
 	HasToolboxes   bool
 	HasConnections bool
 
 	// ModelRefs, Toolboxes, Connections list every resource of the
-	// matching kind found across all services' agent.manifest.yaml
-	// files. Entries are sorted by Name (ties broken by ServiceName)
-	// and deduplicated on (ServiceName, Name) so callers can render
-	// them deterministically. The slices are nil when the matching
-	// Has* flag is false.
+	// matching kind found across all Foundry services' azure.yaml
+	// declarations (`deployments` / `toolboxes` / `connections`).
+	// Entries are sorted by Name (ties broken by ServiceName) and
+	// deduplicated on (ServiceName, Name) so callers can render them
+	// deterministically. The slices are nil when the matching Has* flag
+	// is false.
 	ModelRefs   []ResourceRef
 	Toolboxes   []ResourceRef
 	Connections []ResourceRef
 }
 
-// ResourceRef is a slim summary of a manifest resource that the
-// nextstep package surfaces to doctor checks and resolvers. The
-// shape intentionally elides agent_yaml.ModelResource /
-// ToolboxResource / ConnectionResource details that doctor checks
-// don't consume today — keeping the surface small so future
-// manifest schema changes don't ripple through the resolver / doctor
-// boundary. Add fields here only when a doctor check or resolver
-// branch needs them.
+// ResourceRef is a slim summary of a Foundry resource (model deployment,
+// toolbox, or connection) that the nextstep package surfaces to doctor
+// checks and resolvers. The shape intentionally elides the full
+// deployment/toolbox/connection details that doctor checks don't consume
+// today — keeping the surface small so future schema changes don't ripple
+// through the resolver / doctor boundary. Add fields here only when a
+// doctor check or resolver branch needs them.
 type ResourceRef struct {
-	// Name is the resource's manifest-declared name (the `name:`
-	// field on the manifest's `resources[]` entry). Doctor checks
-	// match by this name when looking up Foundry deployments /
-	// connections / toolboxes.
+	// Name is the resource's declared name (the `name:` field on the
+	// `deployments[]` / `toolboxes[]` / `connections[]` entry in the
+	// Foundry service). Doctor checks match by this name when looking up
+	// Foundry deployments / connections / toolboxes.
 	Name string
 
-	// ServiceName is the azd service that declared the resource (the
-	// service entry under `services:` in azure.yaml whose
-	// agent.manifest.yaml contains this entry). When the same logical
-	// resource is declared by multiple services they appear as
-	// separate entries — doctor checks key on (ServiceName, Name) so
-	// per-service failures are surfaced individually.
+	// ServiceName is the `host: microsoft.foundry` service entry (under
+	// `services:` in azure.yaml) that declared the resource. When the
+	// same logical resource is declared by multiple Foundry services
+	// they appear as separate entries — doctor checks key on
+	// (ServiceName, Name) so per-service failures are surfaced
+	// individually.
 	ServiceName string
 
 	// Detail carries a kind-specific identifier:
-	//   - models:      ModelResource.Id (e.g., "azureml://...gpt-4o...")
+	//   - models:      <Format>/<Name> (e.g., "OpenAI/gpt-4.1-mini")
 	//   - connections: <Category> | <Target>
 	//   - toolboxes:   empty (no identifier beyond Name today)
 	// Doctor remediation messages render Detail verbatim, so changes
@@ -203,16 +196,37 @@ type ResourceRef struct {
 	Detail string
 }
 
-// ServiceState mirrors one entry from the project's services map, plus a
-// deployment marker derived from azd environment variables. IsDeployed is
-// true when AGENT_<KEY>_VERSION is non-empty in the active environment,
-// where <KEY> is the service name upper-cased with hyphens replaced by
-// underscores — the convention used by the deploy-time env-var writer in
-// project/service_target_agent.go.
+// ServiceState is the per-AGENT snapshot the resolvers operate on. Under
+// the unified design each `host: microsoft.foundry` service declares N
+// agents; one ServiceState is produced per agent (the unit the resolvers
+// show and invoke), with ServiceName back-referencing the owning Foundry
+// service entry.
+//
+// IsDeployed is true when AGENT_<KEY>_VERSION is non-empty in the active
+// environment, where <KEY> is the agent name upper-cased with spaces and
+// hyphens replaced by underscores — the convention used by the
+// deploy-time env-var writer in project/service_target_agent.go.
 type ServiceState struct {
-	Name         string
-	Host         string
-	Protocol     string
+	// Name is the agent name (used in `azd ai agent show/invoke <Name>`).
+	Name string
+	// Kind is the agent kind: "hosted" or "prompt".
+	Kind string
+	// Host is the owning Foundry service host ("microsoft.foundry").
+	Host string
+	// ServiceName is the owning `host: microsoft.foundry` service entry
+	// name in azure.yaml.
+	ServiceName string
+	// Protocol is the agent's preferred protocol ("responses" or
+	// "invocations"); best-effort, empty when undeclared.
+	Protocol string
+	// RelativePath is the agent's source/project directory relative to
+	// the project root (the agent's `project:` field), used for README
+	// lookups. Empty for prompt agents (no code).
 	RelativePath string
-	IsDeployed   bool
+	// IsDeployed reports whether AGENT_<KEY>_VERSION is set for this agent.
+	IsDeployed bool
+	// Env is the agent's declared environment map (`agents[].env` in
+	// azure.yaml). Values may contain ${VAR} / ${{...}} references
+	// verbatim; missing-var detection scans these.
+	Env map[string]string
 }

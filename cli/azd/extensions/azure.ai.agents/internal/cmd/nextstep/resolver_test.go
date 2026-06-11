@@ -363,45 +363,23 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 		// payload that may not match the user's chosen service.
 		assert.Equal(t, `azd ai agent invoke --local '<payload>'`, out[1].Command)
 	})
-
-	t.Run("placeholders present → invoke-local secondary suppressed (with run)", func(t *testing.T) {
-		// Placeholders block local run entirely — the spec's default
-		// branch is gated on !hasPlaceholders, so neither `run` nor
-		// the invoke-local follow-up should appear when literal
-		// {{NAME}} values would land in the running container.
-		t.Parallel()
-		state := &State{
-			HasProjectEndpoint:     true,
-			UnresolvedPlaceholders: []string{"FOO"},
-		}
-		out := ResolveAfterInit(state, nil)
-		for _, s := range out {
-			assert.NotContains(t, s.Command, "azd ai agent invoke --local",
-				"invoke --local must not be emitted while placeholders are unresolved")
-			assert.NotEqual(t, "azd ai agent run", s.Command,
-				"azd ai agent run must not be emitted while placeholders are unresolved")
-		}
-	})
 }
 
-// TestResolveAfterInit_ToolboxReproRendersAllCategories locks the full
-// regression for the toolbox-sample bug end-to-end: the state contains
-// BOTH an unresolved manifest placeholder AND a manifest-declared
-// toolbox whose azd-injected endpoint env var is unset. The rendered
-// "Next:" block must surface the placeholder fix-up AND route the
-// missing toolbox endpoint to `azd provision` (NOT to `azd env set`),
-// plus the trailing `azd deploy` reminder.
+// TestResolveAfterInit_ToolboxEndpointRoutesToProvision locks the toolbox
+// regression: a declared toolbox whose azd-injected endpoint env var is
+// unset must route to `azd provision` (NOT `azd env set`), surface
+// `azd ai agent doctor` as an existence-check follow-up, and keep the
+// trailing `azd deploy` reminder.
 //
 // Before #8198's toolbox-endpoint partition this would have rendered
-// "azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>" — see
-// the test body's NotContains assertion below for the historical bug
-// shape we're locking out.
-func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
+// "azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>" — see the
+// NotContains assertion below for the historical bug shape we're locking
+// out.
+func TestResolveAfterInit_ToolboxEndpointRoutesToProvision(t *testing.T) {
 	t.Parallel()
 
 	state := &State{
-		HasProjectEndpoint:     true,
-		UnresolvedPlaceholders: []string{"TOOLBOX_ENDPOINT"},
+		HasProjectEndpoint: true,
 		MissingToolboxEndpoints: []ResourceRef{
 			{Name: "web-search-tools", ServiceName: "agent"},
 		},
@@ -411,9 +389,6 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
 	rendered := buf.String()
 
-	assert.Contains(t, rendered,
-		"edit agent.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value",
-		"placeholder fix-up missing")
 	assert.Contains(t, rendered, "azd provision",
 		"toolbox-endpoint branch should route to azd provision")
 	assert.Contains(t, rendered, "azd ai agent doctor",
@@ -421,8 +396,7 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 	// Historical bug: the resolver used to emit `azd env set` for
 	// toolbox-derived endpoint vars. Those vars are azd-managed
 	// outputs of `azd provision`, not operator-supplied, so the
-	// `azd env set` shape is wrong here regardless of the user's
-	// `<value>` placeholder gripe.
+	// `azd env set` shape is wrong here.
 	assert.NotContains(t, rendered,
 		"azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT",
 		"toolbox endpoint var must not be routed through `azd env set`")
@@ -530,43 +504,6 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexist(t *testing.T) {
 	assert.Contains(t, rendered, "azd deploy", "trailing deploy reminder missing")
 }
 
-// TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders
-// verifies the run/invoke suppression also fires for the coexistence
-// case: when placeholders are also unresolved, the run + invoke-local
-// pair must be suppressed regardless of which sub-branches contributed
-// guidance above them.
-func TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders(t *testing.T) {
-	t.Parallel()
-
-	state := &State{
-		HasProjectEndpoint:     true,
-		UnresolvedPlaceholders: []string{"AGENT_NAME"},
-		MissingToolboxEndpoints: []ResourceRef{
-			{Name: "web-search-tools", ServiceName: "agent"},
-		},
-		MissingManualVars: []string{"MY_API_KEY"},
-	}
-
-	var buf strings.Builder
-	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
-	rendered := buf.String()
-
-	assert.Contains(t, rendered,
-		"edit agent.yaml: replace {{AGENT_NAME}} with the actual value",
-		"placeholder fix-up missing")
-	assert.Contains(t, rendered, "azd provision",
-		"coexistence+placeholders: toolbox sub-branch must still emit provision")
-	assert.Contains(t, rendered, "azd ai agent doctor",
-		"coexistence+placeholders: toolbox sub-branch must still emit doctor follow-up")
-	assert.Contains(t, rendered, "azd env set MY_API_KEY <value>",
-		"coexistence+placeholders: manual sub-branch must still surface env-set")
-	assert.NotContains(t, rendered, "azd ai agent run",
-		"coexistence+placeholders: run must be suppressed while placeholders are unresolved")
-	assert.NotContains(t, rendered, "azd ai agent invoke --local",
-		"coexistence+placeholders: invoke-local must be suppressed while placeholders are unresolved")
-	assert.Contains(t, rendered, "azd deploy", "trailing deploy reminder missing")
-}
-
 // TestRunFollowUpDescription exercises the helper directly so future
 // changes to the description text (or a regression in the conditional
 // branching) get caught even when the higher-level resolver tests
@@ -609,120 +546,6 @@ func TestRunFollowUpDescription(t *testing.T) {
 			t.Parallel()
 			got := runFollowUpDescription(tc.hasToolboxEndpoint, tc.hasManualVars)
 			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
-func TestResolveAfterInit_UnresolvedPlaceholders(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name             string
-		state            *State
-		wantPlaceholders []string // expected `{{NAME}}` names in order
-		wantMiddle       string   // expected non-trailing, non-placeholder primary (e.g., "azd provision", "azd env set FOO", or "" if none)
-		wantHasRun       bool     // expect `azd ai agent run` to appear?
-		wantHasDeploy    bool     // expect `azd deploy` trailing?
-	}{
-		{
-			name: "placeholders alone → edit lines + deploy, no run",
-			state: &State{
-				HasProjectEndpoint:     true,
-				UnresolvedPlaceholders: []string{"TOOLBOX_ENDPOINT"},
-			},
-			wantPlaceholders: []string{"TOOLBOX_ENDPOINT"},
-			wantHasRun:       false,
-			wantHasDeploy:    true,
-		},
-		{
-			name: "placeholders + missing manual vars → both surfaced, no run",
-			state: &State{
-				HasProjectEndpoint:     true,
-				UnresolvedPlaceholders: []string{"TOOLBOX_ENDPOINT"},
-				MissingManualVars:      []string{"TOOLBOX_MCP_ENDPOINT"},
-			},
-			wantPlaceholders: []string{"TOOLBOX_ENDPOINT"},
-			wantMiddle:       "azd env set TOOLBOX_MCP_ENDPOINT",
-			wantHasRun:       false,
-			wantHasDeploy:    true,
-		},
-		{
-			name: "placeholders + project endpoint missing → placeholders + provision",
-			state: &State{
-				HasProjectEndpoint:     false,
-				UnresolvedPlaceholders: []string{"TOOLBOX_ENDPOINT"},
-			},
-			wantPlaceholders: []string{"TOOLBOX_ENDPOINT"},
-			wantMiddle:       "azd provision",
-			wantHasRun:       false,
-			wantHasDeploy:    true,
-		},
-		{
-			name: "multiple placeholders sorted ascending",
-			state: &State{
-				HasProjectEndpoint:     true,
-				UnresolvedPlaceholders: []string{"CHARLIE", "ALPHA", "BRAVO"},
-			},
-			wantPlaceholders: []string{"ALPHA", "BRAVO", "CHARLIE"},
-			wantHasRun:       false,
-			wantHasDeploy:    true,
-		},
-		{
-			name: "more than three placeholders capped at three",
-			state: &State{
-				HasProjectEndpoint:     true,
-				UnresolvedPlaceholders: []string{"P1", "P2", "P3", "P4", "P5"},
-			},
-			wantPlaceholders: []string{"P1", "P2", "P3"},
-			wantHasRun:       false,
-			wantHasDeploy:    true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			out := ResolveAfterInit(tt.state, nil)
-			require.NotEmpty(t, out)
-
-			// Walk the output:
-			//   1. leading run of placeholder fix-ups (one per wantPlaceholders[i])
-			//   2. optional middle command (provision / env set)
-			//   3. optional `azd ai agent run`
-			//   4. trailing `azd deploy`
-			for i, name := range tt.wantPlaceholders {
-				require.Less(t, i, len(out))
-				assert.Equal(t,
-					"edit agent.yaml: replace {{"+name+"}} with the actual value",
-					out[i].Command,
-				)
-			}
-
-			// The middle (if any) sits just past the placeholders.
-			if tt.wantMiddle != "" {
-				idx := len(tt.wantPlaceholders)
-				require.Less(t, idx, len(out))
-				assert.True(t,
-					strings.HasPrefix(out[idx].Command, tt.wantMiddle),
-					"middle suggestion %q does not have prefix %q",
-					out[idx].Command, tt.wantMiddle,
-				)
-			}
-
-			hasRun := false
-			hasDeploy := false
-			for _, s := range out {
-				switch {
-				case s.Command == "azd ai agent run":
-					hasRun = true
-				case s.Command == "azd deploy" && s.Trailing:
-					hasDeploy = true
-				}
-			}
-			assert.Equal(t, tt.wantHasRun, hasRun,
-				"presence of `azd ai agent run` mismatched")
-			assert.Equal(t, tt.wantHasDeploy, hasDeploy,
-				"presence of trailing `azd deploy` mismatched")
 		})
 	}
 }

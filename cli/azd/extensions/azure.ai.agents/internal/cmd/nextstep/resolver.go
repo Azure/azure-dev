@@ -150,25 +150,6 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		})
 	}
 
-	// Placeholder fix-ups always come first when present: they are broken
-	// state in agent.yaml itself and block both `run` and `deploy`. The
-	// user has to edit agent.yaml (or define a matching parameter in
-	// agent.manifest.yaml) — `azd env set` cannot reach them.
-	hasPlaceholders := len(state.UnresolvedPlaceholders) > 0
-	if hasPlaceholders {
-		placeholders := slices.Clone(state.UnresolvedPlaceholders)
-		slices.Sort(placeholders)
-		limit := min(len(placeholders), maxFixupLines)
-		for _, name := range placeholders[:limit] {
-			out = append(out, Suggestion{
-				Command:     fmt.Sprintf("edit agent.yaml: replace {{%s}} with the actual value", name),
-				Description: "agent.yaml has unresolved manifest placeholders",
-				Priority:    priority,
-			})
-			priority++
-		}
-	}
-
 	hasToolboxEndpoints := len(state.MissingToolboxEndpoints) > 0
 	hasManualVars := len(state.MissingManualVars) > 0
 
@@ -248,24 +229,13 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		// Follow-up: once the user finishes the steps above (provision
 		// for toolboxes, env-set for manual vars), the next productive
 		// command is `azd ai agent run` and the invoke-local secondary.
-		// Suppressed when placeholders are also unresolved because
-		// literal `{{NAME}}` values in agent.yaml still break the local
-		// agent — the user must finish the placeholder fix-ups first;
-		// the trailing `azd deploy` reminder still applies.
-		if !hasPlaceholders {
-			out = append(out, Suggestion{
-				Command:     "azd ai agent run",
-				Description: runFollowUpDescription(hasToolboxEndpoints, hasManualVars),
-				Priority:    priority,
-			})
-			priority++
-			out, _ = appendInvokeLocalSecondary(out, state, readmeExists, priority)
-		}
-	case hasPlaceholders:
-		// Only unresolved placeholders remain — do not emit
-		// `azd ai agent run` because running locally with literal
-		// `{{NAME}}` values produces a broken agent. The placeholder
-		// fix-ups above already tell the user what to do.
+		out = append(out, Suggestion{
+			Command:     "azd ai agent run",
+			Description: runFollowUpDescription(hasToolboxEndpoints, hasManualVars),
+			Priority:    priority,
+		})
+		priority++
+		out, _ = appendInvokeLocalSecondary(out, state, readmeExists, priority)
 	default:
 		out = append(out, Suggestion{
 			Command:     "azd ai agent run",

@@ -1,11 +1,13 @@
 parameters:
   - name: GitHubToken
     type: string
-    default: $(azuresdk-github-pat)
+    default: $(GH_TOKEN)
     displayName: GitHub token
 
 steps:
   - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+
+  - template: /eng/common/pipelines/templates/steps/login-to-github.yml
 
   - pwsh: |
       $PSNativeCommandArgumentPassing = 'Legacy'

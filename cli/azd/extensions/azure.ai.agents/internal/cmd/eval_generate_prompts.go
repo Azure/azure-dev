@@ -20,7 +20,7 @@ import (
 
 // promptEvalGenerateOptions runs interactive prompts for eval generate options that
 // were not provided via flags: name, instruction, trace days, eval model,
-// and max samples.
+// and max samples. Max samples is skipped when an existing dataset is supplied.
 func promptEvalGenerateOptions(ctx context.Context, resolved *evalResolvedContext, flags *evalGenerateFlags, noPrompt bool) error {
 	azdClient := resolved.azdClient
 	if noPrompt {
@@ -158,7 +158,9 @@ func promptEvalGenerateOptions(ctx context.Context, resolved *evalResolvedContex
 		flags.evalModel = selected
 	}
 
-	if !flags.maxSamplesSet {
+	// Max samples only applies when generating a dataset. If the user supplied
+	// an existing dataset (--dataset), there is nothing to generate, so skip it.
+	if !flags.maxSamplesSet && flags.dataset == "" {
 		resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:        "Max samples (between 15 and 1000)",
@@ -193,8 +195,8 @@ func promptRegenerateChoices(
 
 	// Ask about dataset.
 	datasetLabel := existingCfg.DatasetFile
-	if datasetLabel == "" && existingCfg.DatasetReference != nil {
-		datasetLabel = existingCfg.DatasetReference.Name
+	if datasetLabel == "" && existingCfg.Dataset != nil {
+		datasetLabel = existingCfg.Dataset.Name
 	}
 	if datasetLabel != "" {
 		resp, err := prompt.Confirm(ctx, &azdext.ConfirmRequest{

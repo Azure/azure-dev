@@ -89,11 +89,12 @@ func NewEvaluatorGenerationJobRequest(
 	sources []GenerationSource,
 ) *EvaluatorGenerationJobRequest {
 	return &EvaluatorGenerationJobRequest{
-		Name:          name,
-		EvaluatorName: name,
-		Category:      "quality",
-		Model:         evalModel,
-		Sources:       sources,
+		Inputs: EvaluatorGenerationInputs{
+			Name:          name,
+			EvaluatorName: name,
+			Model:         evalModel,
+			Sources:       sources,
+		},
 	}
 }
 

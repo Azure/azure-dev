@@ -408,8 +408,8 @@ func TestBuildOpenAIEvalRequest(t *testing.T) {
 				Name:    "agent-1",
 				Version: "v1",
 			},
-			DatasetReference: &evalDatasetRef{Name: "ds", Version: "v1"},
-			Evaluators:       opt_eval.EvaluatorList{{Name: "builtin.quality"}},
+			Dataset:    &evalDatasetRef{Name: "ds", Version: "v1"},
+			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.quality"}},
 		},
 		Options: &opt_eval.Options{EvalModel: "gpt-4o"},
 	}

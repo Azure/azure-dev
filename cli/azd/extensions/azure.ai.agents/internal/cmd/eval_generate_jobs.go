@@ -279,7 +279,7 @@ func pollAndFinalizeJobs(
 			if dsRef == nil {
 				return
 			}
-			evalCfg.DatasetReference = dsRef
+			evalCfg.Dataset = dsRef
 
 			if resolved.hasProject {
 				localURI, err := eval_api.DownloadDatasetArtifact(

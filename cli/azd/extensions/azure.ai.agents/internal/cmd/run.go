@@ -25,9 +25,9 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/drone/envsubst"
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc/codes"
@@ -514,10 +514,8 @@ func resolveAgentDefinitionEnvVars(
 		if _, isConn := connRefEnvNames[ev.Name]; isConn {
 			continue
 		}
-		resolved, evalErr := envsubst.Eval(ev.Value, lookup)
-		if evalErr != nil {
-			resolved = ev.Value
-		}
+		// ExpandEnv returns the original value on error, so a failed expansion is a no-op.
+		resolved, _ := project.ExpandEnv(ev.Value, lookup)
 		result = append(result, fmt.Sprintf("%s=%s", ev.Name, resolved))
 	}
 

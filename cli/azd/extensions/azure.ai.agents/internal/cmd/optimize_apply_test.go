@@ -206,6 +206,19 @@ func TestExtractInstructions(t *testing.T) {
 			"You are a helpful assistant.",
 		},
 		{
+			"system_prompt field (snake_case)",
+			map[string]any{"system_prompt": "Snake-case prompt."},
+			"Snake-case prompt.",
+		},
+		{
+			"system_prompt takes precedence over camelCase",
+			map[string]any{
+				"system_prompt": "From snake_case",
+				"systemPrompt":  "From camelCase",
+			},
+			"From snake_case",
+		},
+		{
 			"instructions field",
 			map[string]any{"instructions": "Follow the rules."},
 			"Follow the rules.",

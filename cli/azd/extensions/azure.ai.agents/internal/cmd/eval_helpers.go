@@ -467,7 +467,7 @@ func promptDatasetSelection(
 	value := strings.TrimSpace(resp.Value)
 	if value == "" {
 		return "", nil, fmt.Errorf(
-			"a dataset is required: use --dataset <file-or-name>, or provide dataset_file / dataset_reference " +
+			"a dataset is required: use --dataset <file-or-name>, or provide a dataset " +
 				"in your config, or run 'azd ai agent eval generate' to generate one")
 	}
 

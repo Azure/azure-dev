@@ -1,5 +1,14 @@
 # Release History
 
+## 0.1.39-preview (2026-06-11)
+
+- [[#8602]](https://github.com/Azure/azure-dev/pull/8602) Support Foundry `${{...}}` server-side expressions during `azd ai agent` environment-variable expansion, so values that mix azd `${VAR}` references with Foundry `${{...}}` expressions (and `${VAR:-default}` forms) resolve correctly instead of being dropped. Thanks @huimiu for the contribution!
+- [[#8589]](https://github.com/Azure/azure-dev/pull/8589) Align `azd ai agent optimize` and `eval` with the V2Preview optimization API, including snake_case payloads, the new `agent_optimization_jobs` endpoints, a required `optimization_model`, and a Strategy column in the results table. Thanks @Zyysurely for the contribution!
+- [[#8576]](https://github.com/Azure/azure-dev/pull/8576) Add `azd ai agent code download` command to download (and optionally extract) the deployed source code of a code-based hosted agent, with SHA-256 verification. Thanks @v1212 for the contribution!
+- [[#8574]](https://github.com/Azure/azure-dev/pull/8574) Add `azd ai agent endpoint show` command to display the live endpoint configuration, and warn before `azd ai agent endpoint update` applies a breaking authorization isolation-key-source change. Thanks @v1212 for the contribution!
+- [[#8566]](https://github.com/Azure/azure-dev/pull/8566) Rename `azd ai agent eval init` to `eval generate` (keeping a hidden, deprecated `init`), honor the `-e`/`--environment` flag in optimize/eval flows, resolve relative `--dataset` paths against the current directory, and reconcile stale agent versions from the environment. Thanks @Zyysurely for the contribution!
+- [[#8519]](https://github.com/Azure/azure-dev/pull/8519) Add `azd ai agent delete` command to delete a hosted agent and all of its versions, with `--force` to terminate active sessions. Thanks @v1212 for the contribution!
+
 ## 0.1.38-preview (2026-06-05)
 
 - [[#8532]](https://github.com/Azure/azure-dev/pull/8532) Fix Agent Inspector auto-launch for slow-starting local agents by waiting for the local agent port instead of timing out after 30 seconds. Thanks @anchenyi for the contribution!

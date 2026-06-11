@@ -208,7 +208,7 @@ func TestWriteEvalReviewArtifacts(t *testing.T) {
 	dir := t.TempDir()
 
 	cfg := &evalConfig{}
-	cfg.DatasetReference = &evalDatasetRef{Name: "test-data", Version: "v1"}
+	cfg.Dataset = &evalDatasetRef{Name: "test-data", Version: "v1"}
 	cfg.Evaluators = opt_eval.EvaluatorList{{Name: "quality"}}
 
 	err := eval_api.WriteEvalReviewArtifacts(dir, cfg)
@@ -420,8 +420,8 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 				Kind:    agent_yaml.AgentKindHosted,
 				Version: "v1",
 			},
-			DatasetReference: &evalDatasetRef{Name: "ds", Version: "v1"},
-			Evaluators:       opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			Dataset:    &evalDatasetRef{Name: "ds", Version: "v1"},
+			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
 		Options: &opt_eval.Options{
 			EvalModel: "gpt-4o",
@@ -441,8 +441,8 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 	assert.Equal(t, original.Agent.Version, loaded.Agent.Version)
 	assert.Equal(t, "gpt-4o", loaded.Options.EvalModel)
 	assert.Equal(t, original.MaxSamples, loaded.MaxSamples)
-	require.NotNil(t, loaded.DatasetReference)
-	assert.Equal(t, "ds", loaded.DatasetReference.Name)
+	require.NotNil(t, loaded.Dataset)
+	assert.Equal(t, "ds", loaded.Dataset.Name)
 	require.Len(t, loaded.Evaluators, 1)
 	assert.Equal(t, "builtin.task_adherence", loaded.Evaluators[0].Name)
 }

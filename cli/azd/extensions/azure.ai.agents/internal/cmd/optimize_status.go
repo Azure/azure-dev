@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 
+	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -97,7 +98,7 @@ func runOptimizeStatus(cmd *cobra.Command, flags *optimizeStatusFlags, operation
 			return err
 		}
 		printOptimizeResults(cmd.Context(), out, finalStatus, hasProject, flags.envName)
-	} else if len(status.Candidates) > 0 {
+	} else if len(status.Candidates()) > 0 {
 		printOptimizeResults(cmd.Context(), out, status, hasProject, flags.envName)
 	}
 
@@ -110,21 +111,22 @@ func runOptimizeStatus(cmd *cobra.Command, flags *optimizeStatusFlags, operation
 
 // printOptimizeJobSummary prints a brief summary of an optimization job's state.
 func printOptimizeJobSummary(out io.Writer, status *optimize_api.OptimizeJobStatus) {
-	fmt.Fprintf(out, "  Job ID:  %s\n", color.CyanString(status.OperationID))
+	fmt.Fprintf(out, "  Job ID:  %s\n", color.CyanString(status.ID))
 	fmt.Fprintf(out, "  Status:  %s\n", formatOptimizeStatus(status.Status))
-	if status.Agent != nil && status.Agent.AgentName != "" {
-		fmt.Fprintf(out, "  Agent:   %s\n", status.Agent.AgentName)
+	if agentName := status.AgentName(); agentName != "" {
+		fmt.Fprintf(out, "  Agent:   %s\n", agentName)
 	}
 	if status.AllTargetAttributesFailed {
 		fmt.Fprintf(out, "  Strategy: %s\n", color.YellowString("failed (baseline only — no candidates generated)"))
-	} else if status.Progress != nil && status.Progress.CurrentTargetAttribute != "" {
-		fmt.Fprintf(out, "  Strategy: %s\n", status.Progress.CurrentTargetAttribute)
 	}
-	if status.Best != nil {
-		fmt.Fprintf(out, "  Best:    %.2f\n", status.Best.AvgScore)
+	if status.Progress != nil {
+		fmt.Fprintf(out, "  Candidates Completed: %d\n", status.Progress.CandidatesCompleted)
 	}
-	if status.CreatedAt != "" {
-		fmt.Fprintf(out, "  Created: %s\n", status.CreatedAt)
+	if best := status.BestCandidate(); best != nil {
+		fmt.Fprintf(out, "  Best:    %.2f\n", best.AvgScore)
+	}
+	if status.CreatedAt != 0 {
+		fmt.Fprintf(out, "  Created: %s\n", eval_api.FormatTimestamp(status.CreatedAt))
 	}
 	if status.Error != nil {
 		fmt.Fprintf(out, "  Error:   %s\n", color.RedString(status.Error.Message))

@@ -170,7 +170,7 @@ func TestUpdateDataset_APIVersion(t *testing.T) {
 	configPath := filepath.Join(dir, "eval.yaml")
 	cfg := &evalConfig{
 		Config: opt_eval.Config{
-			DatasetReference: &evalDatasetRef{
+			Dataset: &evalDatasetRef{
 				Name:     "test-ds",
 				Version:  "v1",
 				LocalURI: dataDir,

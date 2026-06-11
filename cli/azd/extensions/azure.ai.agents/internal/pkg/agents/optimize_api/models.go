@@ -6,10 +6,17 @@
 // dataset tasks, and skill/tool definitions.
 package optimize_api
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"maps"
+	"slices"
+)
 
 // APIVersion is the API version used for all optimization service calls.
 const APIVersion = "v1"
+
+// optimizeJobsPath is the base path segment for optimization job endpoints.
+const optimizeJobsPath = "agent_optimization_jobs"
 
 // Optimization job status constants.
 // The server may return either the old names (pending/running/completed) or
@@ -41,18 +48,39 @@ func IsTerminal(status string) bool {
 
 // OptimizeRequest is the top-level payload sent to POST /optimize.
 type OptimizeRequest struct {
-	Agent                      AgentIdentifier   `json:"agent"`
-	Dataset                    []json.RawMessage `json:"dataset,omitempty"`
-	TrainDatasetReference      *DatasetReference `json:"trainDatasetReference,omitempty"`
-	ValidationDatasetReference *DatasetReference `json:"validationDatasetReference,omitempty"`
-	Evaluators                 []string          `json:"evaluators,omitempty"`
-	Options                    OptimizeOptions   `json:"options"`
+	Agent             AgentIdentifier `json:"agent"`
+	TrainDataset      *Dataset        `json:"train_dataset,omitempty"`
+	ValidationDataset *Dataset        `json:"validation_dataset,omitempty"`
+	Evaluators        []EvaluatorRef  `json:"evaluators,omitempty"`
+	Options           OptimizeOptions `json:"options"`
 }
 
 // AgentIdentifier references the agent to optimize by name and optional version.
 type AgentIdentifier struct {
-	AgentName    string `json:"agentName"`
-	AgentVersion string `json:"agentVersion,omitempty"`
+	AgentName    string `json:"agent_name"`
+	AgentVersion string `json:"agent_version,omitempty"`
+}
+
+// Dataset type discriminator values for Dataset.Type.
+const (
+	DatasetTypeReference = "reference"
+	DatasetTypeInline    = "inline"
+)
+
+// Dataset is the optimization dataset payload. It is either a registered
+// dataset reference (Type "reference", with Name/Version) or an inline set of
+// items (Type "inline", with Items).
+type Dataset struct {
+	Type    string            `json:"type"`
+	Name    string            `json:"name,omitempty"`
+	Version string            `json:"version,omitempty"`
+	Items   []json.RawMessage `json:"items,omitempty"`
+}
+
+// EvaluatorRef references an evaluator by name and optional version.
+type EvaluatorRef struct {
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
 }
 
 // SkillDefinition describes a skill attached to an agent.
@@ -78,68 +106,106 @@ type ToolFunction struct {
 	Strict      *bool          `json:"strict,omitempty"`
 }
 
-// DatasetTask is a single task in an inline dataset.
-type DatasetTask struct {
-	Name        string      `json:"name,omitempty"`
-	Query       string      `json:"query,omitempty"`
-	Prompt      string      `json:"prompt"`
-	GroundTruth string      `json:"groundTruth,omitempty"`
-	Criteria    []Criterion `json:"criteria,omitempty"`
-}
-
-// DatasetReference points to a registered dataset by name and version.
-type DatasetReference struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-}
-
-// Criterion is a named evaluation criterion.
-type Criterion struct {
-	Name        string `json:"name"`
-	Instruction string `json:"instruction"`
-}
-
 // OptimizeOptions controls the optimization run.
 type OptimizeOptions struct {
-	MaxIterations      *int                       `json:"maxIterations,omitempty"`
-	EvalModel          string                     `json:"evalModel,omitempty"`
-	OptimizationConfig map[string]json.RawMessage `json:"optimizationConfig,omitempty"`
-	OptimizationModel  string                     `json:"optimizationModel,omitempty"`
-	EvaluationLevel    string                     `json:"evaluationLevel,omitempty"`
+	MaxCandidates      *int                       `json:"max_candidates,omitempty"`
+	EvalModel          string                     `json:"eval_model,omitempty"`
+	OptimizationModel  string                     `json:"optimization_model"`
+	OptimizationConfig map[string]json.RawMessage `json:"optimization_config,omitempty"`
+	EvaluationLevel    string                     `json:"evaluation_level,omitempty"`
 }
 
 // --- Response models ---
 
 // OptimizeResponse is the immediate response from POST /optimize.
 type OptimizeResponse struct {
-	OperationID string `json:"operationId"`
+	OperationID string `json:"id"`
 	Status      string `json:"status"`
 }
 
 // OptimizeJobStatus is the full status of an optimization job.
 type OptimizeJobStatus struct {
-	OperationID               string            `json:"operationId"`
-	Status                    string            `json:"status"`
-	CreatedAt                 string            `json:"createdAt"`
-	UpdatedAt                 string            `json:"updatedAt"`
-	Agent                     *AgentIdentifier  `json:"agent,omitempty"`
-	Progress                  *JobProgress      `json:"progress,omitempty"`
-	Error                     *JobError         `json:"error,omitempty"`
-	Baseline                  *CandidateResult  `json:"baseline,omitempty"`
-	Best                      *CandidateResult  `json:"best,omitempty"`
-	Candidates                []CandidateResult `json:"candidates,omitempty"`
-	AllTargetAttributesFailed bool              `json:"allTargetAttributesFailed,omitempty"`
-	Warnings                  []string          `json:"warnings,omitempty"`
+	ID     string           `json:"id"`
+	Status string           `json:"status"`
+	Inputs *OptimizeRequest `json:"inputs,omitempty"`
+	// Agent is the top-level agent identifier returned by the list endpoint,
+	// where jobs are not wrapped in an "inputs" envelope.
+	Agent                     *AgentIdentifier `json:"agent,omitempty"`
+	Result                    *OptimizeResult  `json:"result,omitempty"`
+	Progress                  *JobProgress     `json:"progress,omitempty"`
+	Error                     *JobError        `json:"error,omitempty"`
+	Warnings                  []string         `json:"warnings,omitempty"`
+	AllTargetAttributesFailed bool             `json:"all_target_attributes_failed,omitempty"`
+	CreatedAt                 int64            `json:"created_at,omitempty"`
+	UpdatedAt                 int64            `json:"updated_at,omitempty"`
 }
 
-// JobProgress reports iteration-level progress.
+// OptimizeResult holds the optimization outcome. Baseline and Best are
+// candidate IDs that reference entries in Candidates.
+type OptimizeResult struct {
+	Baseline   string            `json:"baseline,omitempty"`
+	Best       string            `json:"best,omitempty"`
+	Candidates []CandidateResult `json:"candidates,omitempty"`
+}
+
+// findCandidate returns the candidate whose CandidateID or Name matches ref,
+// or nil when ref is empty or no candidate matches.
+func (r *OptimizeResult) findCandidate(ref string) *CandidateResult {
+	if ref == "" {
+		return nil
+	}
+	for i := range r.Candidates {
+		if r.Candidates[i].CandidateID == ref || r.Candidates[i].Name == ref {
+			return &r.Candidates[i]
+		}
+	}
+	return nil
+}
+
+// AgentName returns the agent name from the job inputs, falling back to the
+// top-level agent field used by the list endpoint. Returns "" when neither is
+// present.
+func (s *OptimizeJobStatus) AgentName() string {
+	if s.Inputs != nil && s.Inputs.Agent.AgentName != "" {
+		return s.Inputs.Agent.AgentName
+	}
+	if s.Agent != nil {
+		return s.Agent.AgentName
+	}
+	return ""
+}
+
+// Candidates returns the result candidates (nil-safe).
+func (s *OptimizeJobStatus) Candidates() []CandidateResult {
+	if s.Result == nil {
+		return nil
+	}
+	return s.Result.Candidates
+}
+
+// BestCandidate resolves the best candidate by matching Result.Best against
+// the candidate list. Returns nil when there is no result or no match.
+func (s *OptimizeJobStatus) BestCandidate() *CandidateResult {
+	if s.Result == nil {
+		return nil
+	}
+	return s.Result.findCandidate(s.Result.Best)
+}
+
+// BaselineCandidate resolves the baseline candidate by matching
+// Result.Baseline against the candidate list.
+func (s *OptimizeJobStatus) BaselineCandidate() *CandidateResult {
+	if s.Result == nil {
+		return nil
+	}
+	return s.Result.findCandidate(s.Result.Baseline)
+}
+
+// JobProgress reports candidate-level progress for a running optimization job.
 type JobProgress struct {
-	CurrentTargetAttribute string  `json:"currentTargetAttribute"`
-	CurrentIteration       int     `json:"currentIteration"`
-	TasksCompleted         int     `json:"tasksCompleted"`
-	TasksTotal             int     `json:"tasksTotal"`
-	BestScore              float64 `json:"bestScore"`
-	ElapsedSeconds         float64 `json:"elapsedSeconds"`
+	CandidatesCompleted int     `json:"candidates_completed"`
+	BestScore           float64 `json:"best_score"`
+	ElapsedSeconds      float64 `json:"elapsed_seconds"`
 }
 
 // JobError captures an error from a failed job.
@@ -168,15 +234,22 @@ func (e *JobError) UnmarshalJSON(data []byte) error {
 
 // CandidateResult holds the evaluation result for a single candidate.
 type CandidateResult struct {
-	Name            string  `json:"name"`
-	AvgScore        float64 `json:"avgScore"`
-	AvgTokens       float64 `json:"avgTokens"`
-	PassRate        float64 `json:"passRate"`
-	IsParetoOptimal bool    `json:"isParetoOptimal,omitempty"`
-	Rationale       string  `json:"rationale,omitempty"`
-	CandidateID     string  `json:"candidateId,omitempty"`
-	EvalID          string  `json:"evalId,omitempty"`
-	EvalRunID       string  `json:"evalRunId,omitempty"`
+	Name        string            `json:"name"`
+	Mutations   map[string]string `json:"mutations,omitempty"`
+	AvgScore    float64           `json:"avg_score"`
+	AvgTokens   float64           `json:"avg_tokens"`
+	CandidateID string            `json:"candidate_id,omitempty"`
+	EvalID      string            `json:"eval_id,omitempty"`
+	EvalRunID   string            `json:"eval_run_id,omitempty"`
+}
+
+// MutationKeys returns the candidate's mutation keys (the names of the agent
+// attributes that were changed), sorted for stable display.
+func (c *CandidateResult) MutationKeys() []string {
+	if len(c.Mutations) == 0 {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(c.Mutations))
 }
 
 // --- List response ---
@@ -184,16 +257,16 @@ type CandidateResult struct {
 // OptimizeListResponse is the paginated list of optimization jobs.
 type OptimizeListResponse struct {
 	Data    []OptimizeJobStatus `json:"data"`
-	FirstID string              `json:"firstId"`
-	LastID  string              `json:"lastId"`
-	HasMore bool                `json:"hasMore"`
+	FirstID string              `json:"first_id"`
+	LastID  string              `json:"last_id"`
+	HasMore bool                `json:"has_more"`
 }
 
 // --- Cancel response ---
 
 // OptimizeCancelResponse is returned when cancelling an optimization job.
 type OptimizeCancelResponse struct {
-	OperationID string `json:"operationId"`
+	OperationID string `json:"operation_id"`
 	Status      string `json:"status"`
 }
 
@@ -202,9 +275,9 @@ type OptimizeCancelResponse struct {
 // DeploymentReport is sent to the optimization service after a candidate is promoted,
 // creating the candidate→deployment mapping.
 type DeploymentReport struct {
-	CandidateID  string `json:"-"`            // used in URL path, not serialized
-	AgentName    string `json:"agentName"`    // deployed agent name
-	AgentVersion string `json:"agentVersion"` // deployed agent version
+	CandidateID  string `json:"-"`             // used in URL path, not serialized
+	AgentName    string `json:"agent_name"`    // deployed agent name
+	AgentVersion string `json:"agent_version"` // deployed agent version
 }
 
 // --- Candidate models ---

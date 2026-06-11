@@ -24,7 +24,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
-	"github.com/drone/envsubst"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -930,9 +929,10 @@ func resolveTemplateRef(s string) string {
 	return s
 }
 
-// resolveEnvValue resolves ${VAR} references in a string using envsubst.
+// resolveEnvValue resolves ${VAR} references in a string against the azd environment while
+// leaving Foundry server-side ${{...}} expressions untouched. See [project.ExpandEnv].
 func resolveEnvValue(value string, azdEnv map[string]string) string {
-	resolved, err := envsubst.Eval(value, func(varName string) string {
+	resolved, err := project.ExpandEnv(value, func(varName string) string {
 		return azdEnv[varName]
 	})
 	if err != nil {

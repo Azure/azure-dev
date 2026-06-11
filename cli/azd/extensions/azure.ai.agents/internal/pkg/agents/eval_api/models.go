@@ -127,9 +127,14 @@ func (j *GenerationJob) resultStringField(key string) string {
 
 // EvaluatorGenerationJobRequest is the request body for CreateEvaluatorGenerationJob.
 type EvaluatorGenerationJobRequest struct {
+	Inputs EvaluatorGenerationInputs `json:"inputs"`
+}
+
+// EvaluatorGenerationInputs holds the inputs for an evaluator generation job.
+type EvaluatorGenerationInputs struct {
 	Name          string             `json:"name"`
 	EvaluatorName string             `json:"evaluator_name"`
-	Category      string             `json:"category"`
+	Category      string             `json:"category,omitempty"`
 	Model         string             `json:"model"`
 	Sources       []GenerationSource `json:"sources"`
 }

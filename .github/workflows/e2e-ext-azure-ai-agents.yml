@@ -115,9 +115,8 @@ jobs:
             '  "mcpServers": {' \
             '    "cli-interactive-tester": {' \
             '      "type": "stdio",' \
-            '      "command": "python",' \
-            '      "args": ["-m", "auto_test_tool.mcp_server"],' \
-            '      "cwd": "/tmp/cli-interactive-tester"' \
+            '      "command": "bash",' \
+            '      "args": ["-c", "cd /tmp/cli-interactive-tester && python -m auto_test_tool.mcp_server"]' \
             '    }' \
             '  }' \
             '}' > ~/.copilot/mcp-config.json

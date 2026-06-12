@@ -83,7 +83,7 @@ jobs:
 
           echo ""
           if [ "$ERRORS" -gt 0 ]; then
-            echo "::error::$ERRORS Go version mismatch(es) found. Run 'pwsh eng/scripts/Update-GoVersion.ps1 -NewVersion $EXPECTED' to fix."
+            echo "::error::$ERRORS Go version mismatch(es) found. Run 'mage updateGoVersion $EXPECTED' (from cli/azd) to fix."
             exit 1
           fi
           echo "All Go versions are consistent ($EXPECTED)."

@@ -79,6 +79,7 @@ Additional mage targets:
 
 - `mage record` — re-record functional test cassettes against a live Azure subscription. Accepts an optional `-filter=TestName` flag to re-record specific tests. Typically only core maintainers need to run this; external contributors can rely on playback mode (the default) which requires no Azure access. Requires `azd auth login` and a configured test subscription (see `docs/recording-functional-tests-guide.md`).
 - `mage coverage:pr` — preview the CI PR coverage gate locally before pushing. Resolves PR-touched `.go` files via `git merge-base origin/main HEAD` for the per-package summary, runs the diff against the latest `main` baseline, and fails (exit 2) on **either** breach type: any PR-touched package drops more than 0.5 pp, or overall coverage falls below 69% (defaults match CI; override via `COVERAGE_MAX_PACKAGE_DECREASE`, `COVERAGE_MIN_OVERALL`). See `docs/code-coverage-guide.md` for details.
+- `mage updateGoVersion <version>` — bump the pinned Go toolchain version everywhere it is referenced (every `cli/azd` `go.mod`, the ADO `setup-go` template, Dockerfiles, and the devcontainer Go feature). `cli/azd/go.mod` is the source of truth enforced by the `validate-go-version` workflow. This is the single source of truth for the sync logic. Example: `mage updateGoVersion 1.26.4`.
 
 ```bash
 gofmt -s -w .

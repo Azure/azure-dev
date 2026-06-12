@@ -448,6 +448,127 @@ func Record(filter *string) error {
 	})
 }
 
+// UpdateGoVersion updates the pinned Go toolchain version across the repository
+// so that every cli/azd go.mod (core, extensions, and testdata samples), the
+// ADO setup-go pipeline template, Dockerfiles, and the devcontainer Go feature
+// stay in sync. cli/azd/go.mod is the source of truth enforced by the
+// validate-go-version workflow.
+//
+// This is the single source of truth for the version-sync logic.
+//
+// Usage: mage updateGoVersion 1.26.4
+func UpdateGoVersion(version string) error {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return errors.New("a Go version is required, e.g. 'mage updateGoVersion 1.26.4'")
+	}
+
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+	azdDir := filepath.Join(repoRoot, "cli", "azd")
+
+	var updated, skipped []string
+
+	// replaceInFile rewrites a file in place only when the substitution changes
+	// it, preserving the original file mode and tracking updated/skipped state.
+	// Files that don't contain the targeted pattern at all are ignored so the
+	// report only lists relevant files.
+	replaceInFile := func(path string, re *regexp.Regexp, replacement string) error {
+		info, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !re.Match(data) {
+			return nil
+		}
+
+		rel, relErr := filepath.Rel(repoRoot, path)
+		if relErr != nil {
+			rel = path
+		}
+
+		newData := re.ReplaceAll(data, []byte(replacement))
+		if bytes.Equal(newData, data) {
+			skipped = append(skipped, rel)
+			return nil
+		}
+		if err := os.WriteFile(path, newData, info.Mode().Perm()); err != nil {
+			return err
+		}
+		updated = append(updated, rel)
+		return nil
+	}
+
+	// Update go.mod files (including testdata samples) and Dockerfiles.
+	goDirective := regexp.MustCompile(`(?m)^go\s+\S+`)
+	dockerImage := regexp.MustCompile(`golang:\d+[\d.]*`)
+	walkErr := filepath.WalkDir(azdDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		switch d.Name() {
+		case "go.mod":
+			return replaceInFile(path, goDirective, "go "+version)
+		case "Dockerfile":
+			return replaceInFile(path, dockerImage, "golang:"+version)
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return walkErr
+	}
+
+	// Update the ADO pipeline template that pins the Go toolchain version.
+	adoSetupGo := filepath.Join(repoRoot, "eng", "pipelines", "templates", "steps", "setup-go.yml")
+	if _, err := os.Stat(adoSetupGo); err == nil {
+		adoVersion := regexp.MustCompile(`(?m)^(\s+GoVersion:\s+)\S+`)
+		if err := replaceInFile(adoSetupGo, adoVersion, "${1}"+version); err != nil {
+			return err
+		}
+	}
+
+	// Update the devcontainer Go feature version.
+	devcontainer := filepath.Join(repoRoot, ".devcontainer", "devcontainer.json")
+	if _, err := os.Stat(devcontainer); err == nil {
+		dcVersion := regexp.MustCompile(
+			`("ghcr\.io/devcontainers/features/go:\d+":\s*\{\s*"version":\s*")[\d.]+(")`)
+		if err := replaceInFile(devcontainer, dcVersion, "${1}"+version+"${2}"); err != nil {
+			return err
+		}
+	}
+
+	slices.Sort(updated)
+	slices.Sort(skipped)
+
+	fmt.Println()
+	if len(updated) > 0 {
+		fmt.Printf("Updated %d file(s) to Go %s:\n", len(updated), version)
+		for _, f := range updated {
+			fmt.Printf("  %s\n", f)
+		}
+	} else {
+		fmt.Println("No files needed updating.")
+	}
+	if len(skipped) > 0 {
+		fmt.Printf("\nAlready at Go %s (%d file(s)):\n", version, len(skipped))
+		for _, f := range skipped {
+			fmt.Printf("  %s\n", f)
+		}
+	}
+	fmt.Println("\nDone. GitHub Actions workflows read the version from cli/azd/go.mod automatically.")
+	fmt.Println("Run 'git diff' to review changes before committing.")
+	return nil
+}
+
 // mageInit sets up the standard mage environment (GOWORK=off, GOTOOLCHAIN pin)
 // and returns the cli/azd directory path. Callers must defer the returned
 // cleanup function to restore environment variables.

@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/huimiu/foundry-azure-yaml/schemas/v1.0/azure.yaml.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/schemas/v1.0/azure.yaml.json
 
 # Minimal microsoft.foundry service: one model deployment and one prompt agent.
 # Schema-validation fixture for the integration branch (see ../README.md).

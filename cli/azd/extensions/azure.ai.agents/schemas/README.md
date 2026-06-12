@@ -13,8 +13,10 @@ The core `azure.yaml` schema is consumed *live* from `main`:
   `azure.yaml` files.
 
 So merging `microsoft.foundry` into `main` would immediately surface an unfinished feature in every
-editor. To test on the branch instead, the **new Foundry** schema URLs are rewritten from
-`refs/heads/main` to `refs/heads/huimiu/foundry-azure-yaml`:
+editor. To test on the branch instead, the **new Foundry** schema URLs are rewritten from the `main`
+raw URL to the `huimiu/foundry-azure-yaml` branch. All schema URLs use the short
+`raw.githubusercontent.com/Azure/azure-dev/<ref>/…` form (no `refs/heads/` segment), matching the
+core schema's own root `$id` and the SchemaStore retrieval URL:
 
 - the `$id` of every file in this directory (`Agent.json`, `Skill.json`, `Routine.json`,
   `Connection.json`, `Toolbox.json`, `Deployment.json`, `FileRef.json`, `microsoft.foundry.json`);
@@ -28,7 +30,8 @@ the branch automatically.
 **Deliberately left pointing at `main`** (published / shared surfaces, unchanged by this work):
 
 - the core schema's own root `$id`;
-- the pre-existing `azure.ai.agent.json` `$ref` in the core schema;
+- the pre-existing `azure.ai.agent.json` `$ref` in the core schema (still `main`; only its URL form
+  was normalized to the short form for consistency);
 - `schemas/schemastore-catalog-entry.json`;
 - `cli/azd/pkg/project/project.go` and `resources/apphost/templates/azure.yamlt`.
 
@@ -65,7 +68,7 @@ the branch automatically.
    for (const f of [core, ...subs]) {
      const s = JSON.parse(fs.readFileSync(f, 'utf8'));
      const rel = path.relative(repo, f).replace(/\\/g, '/');
-     const id = s.$id || `https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/${rel}`;
+     const id = s.$id || `https://raw.githubusercontent.com/Azure/azure-dev/main/${rel}`;
      ajv.addSchema(s, id);
    }
 
@@ -87,12 +90,11 @@ the branch automatically.
 When the prototype is ready and the integration branch is merged into `main`, rewrite the branch URLs
 back so the published schema is self-consistent on `main`:
 
-- [ ] In all files in this directory, change `$id` `refs/heads/huimiu/foundry-azure-yaml` →
-      `refs/heads/main`.
+- [ ] In all files in this directory, change `$id` `huimiu/foundry-azure-yaml` → `main`.
 - [ ] In `schemas/v1.0/azure.yaml.json` and `schemas/alpha/azure.yaml.json`, change the
-      `microsoft.foundry.json` `$ref` `refs/heads/huimiu/foundry-azure-yaml` → `refs/heads/main`.
+      `microsoft.foundry.json` `$ref` `huimiu/foundry-azure-yaml` → `main`.
 - [ ] In `examples/*.azure.yaml`, change the `$schema` annotation
-      `refs/heads/huimiu/foundry-azure-yaml` → `main`.
+      `huimiu/foundry-azure-yaml` → `main`.
 - [ ] Confirm no `huimiu/foundry-azure-yaml` references remain:
       `git grep -n "huimiu/foundry-azure-yaml"` returns nothing.
 - [ ] Re-validate the samples (steps above) against the `main` URLs.

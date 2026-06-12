@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json",
   "title": "Microsoft Foundry project (services entry with host: microsoft.foundry)",
   "description": "Schema for a Foundry project as a service in azure.yaml. Composes per-resource sub-schemas via $ref, modeled on microsoft/AgentSchema's split-file pattern.",
   "type": "object",

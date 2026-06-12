@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/Deployment.json",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/Deployment.json",
   "title": "Foundry model deployment",
   "description": "A model deployment on the Foundry project. Matches the existing azure.ai.agent.json shape (name, model, sku). Items in a deployments array may be inline or a $ref to an external file.",
   "oneOf": [

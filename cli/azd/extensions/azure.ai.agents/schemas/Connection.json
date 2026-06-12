@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/Connection.json",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/Connection.json",
   "title": "Foundry project connection",
   "description": "A project connection (matches the existing azure.ai.agent.json Connection shape). Items in a connections array may be inline or a $ref to an external file.",
   "oneOf": [

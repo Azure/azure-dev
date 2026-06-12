@@ -128,7 +128,7 @@ requires a re-review.
 | `project.template.version` | `StringHashed` | Version strings may be user-defined |
 | `project.name` | `StringHashed` | Project names are user-chosen |
 | `env.name` | `StringHashed` | Environment names may contain identifying information |
-| `hooks.name` | `StringHashed` (default); raw only when name ∈ `ext.KnownHookNames` allowlist of built-in lifecycle hooks (e.g., `prebuild`, `predeploy`, `preprovision`) | Hook names are user-defined in `azure.yaml`; the allowlist preserves analytical value for built-in lifecycle hooks while pseudonymizing extension- and project-author-defined names |
+ | `hooks.name` | `StringHashed` (default); raw only when `ext.IsKnownHookName(name)` (via `ext.HookNameAttribute`) returns true for built-in lifecycle hooks (e.g., `prebuild`, `predeploy`, `preprovision`) | Hook names are user-defined in `azure.yaml`; the allowlist preserves analytical value for built-in lifecycle hooks while pseudonymizing extension- and project-author-defined names |
 | `exegraph.step.name` | `StringHashed` | Step names embed user-defined service / layer names from `azure.yaml` (e.g., `deploy-<svc.Name>`, `<layer.Name>`) |
 | `exegraph.step.deps` | `StringSliceHashed` | Dependency edges reference step names, which embed user-defined service / layer names |
 

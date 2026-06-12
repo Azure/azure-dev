@@ -393,9 +393,9 @@ Sensitive values are hashed before emission using functions in `cli/azd/internal
 
 | Function | Behavior |
 |----------|----------|
-| `CaseInsensitiveHash(value)` | Lowercases, then SHA-256 hashes |
-| `StringHashed(key, value)` | Creates an OTel attribute with a case-insensitive SHA-256 hash |
-| `StringSliceHashed(key, values)` | Hashes each element in a string slice independently |
+| `CaseInsensitiveHash(value string) string` | Lowercases, then SHA-256 hashes |
+| `StringHashed(k AttributeKey, v string) attribute.KeyValue` | Creates an OTel attribute with a case-insensitive SHA-256 hash |
+| `StringSliceHashed(k AttributeKey, v []string) attribute.KeyValue` | Hashes each element in a string slice independently |
 
 Fields that are hashed:
 

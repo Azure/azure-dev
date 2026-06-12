@@ -114,6 +114,11 @@ const (
 	CodeInvalidFilePath  = "invalid_file_path"
 )
 
+// Error codes for $ref file-include resolution.
+const (
+	CodeInvalidFileRef = "invalid_file_ref"
+)
+
 // Error codes for toolbox operations.
 const (
 	CodeInvalidToolbox             = "invalid_toolbox"

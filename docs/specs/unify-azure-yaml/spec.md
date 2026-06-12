@@ -244,7 +244,7 @@ keys are direct properties of the entry, not nested under `config:`.
   "if": { "properties": { "host": { "const": "microsoft.foundry" } } },
   "then": {
     "allOf": [
-      { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json" }
+      { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/microsoft.foundry/schemas/microsoft.foundry.json" }
     ],
     "properties": {
       "project": false,
@@ -261,9 +261,10 @@ The service level `project`, `runtime`, `docker`, and `image` are turned off bec
 those belong to each agent, not to the project. `config:` is turned off because the
 Foundry schema is composed at the service level instead.
 
-The extension publishes `microsoft.foundry.json` plus the per resource files
-(`Deployment.json`, `Connection.json`, `Toolbox.json`, `Skill.json`, `Routine.json`,
-`Agent.json`, and `FileRef.json`). The composed schema points its arrays at those files.
+The `microsoft.foundry` meta-package publishes the composed `microsoft.foundry.json`, and
+each sibling contributes the per resource slice it owns (`Deployment.json`,
+`Connection.json`, `Toolbox.json`, `Skill.json`, `Routine.json`, `Agent.json`, plus the
+shared `FileRef.json`). The composed schema points its arrays at those files.
 Each array item is `oneOf` an inline object or a file reference, which is what enables
 the split file layout in 2.4.
 
@@ -461,13 +462,18 @@ meta-package: `azure.ai.toolboxes`, `azure.ai.connections`, `azure.ai.projects`,
 `azd ai connection`, and so on) that acts on a live project. None of them participate in
 `azure.yaml` today.
 
-That raises who owns the `microsoft.foundry.json` schema slices and their reconciliation.
-Following the brief, v1 takes **Option A**: the `azure.ai.agents` extension owns the full
-schema and reconciles every slice (deployments, connections, toolboxes, skills, routines,
-agents), while the sibling extensions keep their imperative CLIs unchanged. The
-alternative, Option B, has the meta-package own the schema and each sibling register a
-slice contribution, which needs a new "one extension contributes part of another's schema"
-mechanism in core. Recommend A for v1 and re-evaluate B once the shape is in users' hands.
+That raises who owns the `microsoft.foundry.json` schema slices. v1 takes **Option B**:
+the `microsoft.foundry` meta-package owns and composes `microsoft.foundry.json`, and each
+sibling extension registers the slice for the resource it already owns (deployments,
+connections, toolboxes, skills, routines, agents), while keeping its imperative CLI. This
+keeps each slice with the extension that owns that resource's data-plane CLI, rather than
+concentrating the full schema in `azure.ai.agents`. It needs a new core mechanism so one
+extension can contribute part of another's schema: slice registration, plus merge and
+validation of the composed `microsoft.foundry.json`. Reconciliation stays centralized in
+`azure.ai.agents`, which resolves `host: microsoft.foundry` and runs the service target;
+whether to later delegate per slice reconciliation to each sibling is a consequence to
+confirm. The alternative, Option A, has `azure.ai.agents` own the full schema with no core
+change, and is the fallback if the contribution mechanism cannot land in the v1 window.
 
 One naming note: `microsoft.foundry` is both the host kind string and the existing
 meta-package extension id. That overlap is intentional in the brief, but the host kind is
@@ -490,8 +496,9 @@ before we lock the first version.
 3. **Composition surface naming.** Issue [#8049](https://github.com/Azure/azure-dev/issues/8049)
    puts the `add` commands in an `azd ai project` surface, written against the earlier two
    host shape, while this design unifies on `host: microsoft.foundry` and an
-   `azure.ai.projects` extension already exists. Let's settle where the schema and the `add`
-   commands live so they do not collide.
+   `azure.ai.projects` extension already exists. 2.10 now places the schema in the
+   `microsoft.foundry` meta-package, so the open part is where the `add` commands live so
+   they do not collide.
 
 ## Summary of required changes
 
@@ -507,10 +514,22 @@ azd core:
   (the preview currently has `false`).
 - Optional: register `microsoft.foundry` as an alpha feature for a gated preview, and a
   shared helper if core ever expands these fields while preserving `${{...}}`.
+- Add a schema slice contribution mechanism so the `microsoft.foundry` meta-package can
+  compose `microsoft.foundry.json` from slices that sibling extensions register, with
+  merge and validation of the composed result (Option B in 2.10).
 
-`azure.ai.agents` extension (v1 owns the full schema and reconciliation, Option A in 2.10):
+`microsoft.foundry` meta-package and sibling extensions (Option B in 2.10):
 
-- Publish `microsoft.foundry.json` and the per resource schema files.
+- Meta-package: own, compose, and publish `microsoft.foundry.json`, registering the slices
+  that sibling extensions contribute.
+- Siblings (`azure.ai.connections`, `azure.ai.toolboxes`, `azure.ai.skills`,
+  `azure.ai.routines`, and the deployments owner): each contribute its resource slice file
+  (`Connection.json`, `Toolbox.json`, `Skill.json`, `Routine.json`, `Deployment.json`).
+
+`azure.ai.agents` extension (resolves `host: microsoft.foundry` and owns reconciliation; Option B in 2.10):
+
+- Contribute the agent slice (`Agent.json`) and reconcile every slice at deploy as the
+  host-kind owner.
 - Add the `microsoft.foundry` service target with per agent fan out for package, publish,
   and deploy; require a deploy mode only for `kind: hosted` agents; reconcile routines
   after agents.

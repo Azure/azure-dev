@@ -1,3 +1,14 @@
+# Updates the pinned Go toolchain version across the repository to keep all
+# go.mod files, the ADO pipeline template, Dockerfiles, and the devcontainer
+# Go feature in sync.
+#
+# Usage:
+#   pwsh eng/scripts/Update-GoVersion.ps1 -NewVersion <new-version>
+#   pwsh eng/scripts/Update-GoVersion.ps1 -NewVersion 1.26.4
+#
+# A bash equivalent is available at eng/scripts/Update-GoVersion.sh; keep the
+# two scripts in sync when changing the update logic.
+
 param(
     [Parameter(Mandatory = $true)]
     [string] $NewVersion

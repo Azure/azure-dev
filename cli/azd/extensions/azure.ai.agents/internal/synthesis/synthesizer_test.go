@@ -4,6 +4,7 @@
 package synthesis
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -29,7 +30,7 @@ func TestSynthesize(t *testing.T) {
 name: my-foundry-agent
 services:
   my-project:
-    host: microsoft.foundry
+    host: azure.ai.agent
     deployments:
       - name: gpt-4.1-mini
         model:
@@ -58,7 +59,7 @@ services:
 name: my-foundry-agent
 services:
   my-project:
-    host: microsoft.foundry
+    host: azure.ai.agent
     deployments:
       - name: gpt-4.1-mini
         model:
@@ -85,7 +86,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: microsoft.foundry
+    host: azure.ai.agent
     deployments:
       - name: gpt-4.1-mini
         model:
@@ -109,7 +110,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: microsoft.foundry
+    host: azure.ai.agent
     deployments:
       - name: gpt-4.1
         model:
@@ -138,7 +139,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: microsoft.foundry
+    host: azure.ai.agent
     agents:
       - name: prompt-agent
         kind: prompt
@@ -153,7 +154,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: microsoft.foundry
+    host: azure.ai.agent
     deployments:
       - name: gpt-4.1-mini
         model: {format: OpenAI, name: gpt-4.1-mini, version: "2025-04-14"}
@@ -187,7 +188,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: microsoft.foundry
+    host: azure.ai.agent
     endpoint: https://existing.services.ai.azure.com/api/projects/p1
     deployments:
       - name: gpt-4.1-mini
@@ -202,7 +203,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: microsoft.foundry
+    host: azure.ai.agent
 `,
 			serviceName: "nope",
 			wantErr:     ErrServiceNotFound,
@@ -223,8 +224,9 @@ services:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := Synthesize(Input{
-				RawAzureYAML: []byte(tt.yaml),
-				ServiceName:  tt.serviceName,
+				RawAzureYAML:  []byte(tt.yaml),
+				ServiceName:   tt.serviceName,
+				AcceptedHosts: []string{"azure.ai.agent"},
 			})
 
 			if tt.wantErr != nil {
@@ -264,7 +266,7 @@ func TestSynthesize_InputValidation(t *testing.T) {
 		},
 		{
 			name: "empty service name",
-			in:   Input{RawAzureYAML: []byte("services:\n  x:\n    host: microsoft.foundry\n")},
+			in:   Input{RawAzureYAML: []byte("services:\n  x:\n    host: azure.ai.agent\n")},
 			want: "ServiceName is empty",
 		},
 		{
@@ -290,6 +292,7 @@ func TestTemplatesFS_Embedded(t *testing.T) {
 
 	wantFiles := []string{
 		"templates/main.bicep",
+		"templates/main.arm.json",
 		"templates/abbreviations.json",
 		"templates/modules/acr.bicep",
 	}
@@ -300,4 +303,18 @@ func TestTemplatesFS_Embedded(t *testing.T) {
 			assert.NotEmpty(t, data, "%s should not be empty", p)
 		})
 	}
+}
+
+func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
+	data, err := ARMTemplate()
+	require.NoError(t, err)
+	require.NotEmpty(t, data)
+
+	var arm map[string]any
+	require.NoError(t, json.Unmarshal(data, &arm), "ARM template must be valid JSON")
+
+	// Sanity-check the ARM document is what we expect.
+	assert.Contains(t, arm, "$schema")
+	assert.Contains(t, arm, "resources")
+	assert.Contains(t, arm, "parameters")
 }

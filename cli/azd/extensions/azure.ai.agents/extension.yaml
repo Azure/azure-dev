@@ -16,11 +16,15 @@ capabilities:
   - lifecycle-events
   - mcp-server
   - service-target-provider
+  - provisioning-provider
   - metadata
 providers:
   - name: azure.ai.agent
     type: service-target
     description: Deploys agents to the Foundry Agent Service
+  - name: microsoft.foundry
+    type: provisioning-provider
+    description: Provisions a Microsoft Foundry project from azure.yaml without an on-disk infra/ directory
 examples:
   - name: init
     description: Initialize a new AI agent project.

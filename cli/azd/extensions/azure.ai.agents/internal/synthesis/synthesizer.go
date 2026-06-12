@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// Package synthesis turns the host: microsoft.foundry body of azure.yaml
+// Package synthesis turns the body of a Foundry service in azure.yaml
 // into the inputs needed to compile an ARM template in memory:
 //
 //   - the embedded main.bicep + modules tree, ready to be staged on disk
@@ -15,6 +15,7 @@ package synthesis
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -27,8 +28,8 @@ var (
 	ErrEndpointBrownfield = errors.New("synthesis: service has endpoint: (brownfield)")
 
 	// ErrServiceNotFound indicates the requested service does not exist
-	// in azure.yaml or is not a microsoft.foundry service.
-	ErrServiceNotFound = errors.New("synthesis: service not found or host != microsoft.foundry")
+	// in azure.yaml or its host: value is not in AcceptedHosts.
+	ErrServiceNotFound = errors.New("synthesis: service not found or host not accepted")
 )
 
 // Input is the synthesizer's view of azure.yaml.
@@ -39,6 +40,11 @@ type Input struct {
 	// ServiceName is the key under services: to synthesize for
 	// (e.g. "my-project").
 	ServiceName string
+
+	// AcceptedHosts lists the values of `services.<name>.host` the
+	// caller treats as a Foundry service. If empty, the service's host
+	// value is not checked (only existence and endpoint: are).
+	AcceptedHosts []string
 }
 
 // Result bundles the bicep sources and the parameter values derived
@@ -101,7 +107,7 @@ type projectFile struct {
 }
 
 // Synthesize derives the parameter values needed by main.bicep from one
-// host: microsoft.foundry service.
+// Foundry service in azure.yaml.
 func Synthesize(in Input) (*Result, error) {
 	if len(in.RawAzureYAML) == 0 {
 		return nil, errors.New("synthesis: RawAzureYAML is empty")
@@ -125,7 +131,7 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, fmt.Errorf("decode service %q: %w", in.ServiceName, err)
 	}
 
-	if svc.Host != "microsoft.foundry" {
+	if len(in.AcceptedHosts) > 0 && !slices.Contains(in.AcceptedHosts, svc.Host) {
 		return nil, ErrServiceNotFound
 	}
 	if svc.Endpoint != "" {

@@ -40,6 +40,9 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
 			return project.NewAgentServiceTargetProvider(azdClient)
 		}).
+		WithProvisioningProvider(project.FoundryProviderName, func() azdext.ProvisioningProvider {
+			return project.NewFoundryProvisioningProvider(azdClient)
+		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return preprovisionHandler(ctx, azdClient, args)
 		}).

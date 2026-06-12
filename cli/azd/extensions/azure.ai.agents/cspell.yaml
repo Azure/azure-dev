@@ -30,6 +30,8 @@ words:
   - ABAC
   - abbrs
   - acrpush
+  - alnum
+  - foundryproject
   - agentignore
   - ADLS
   - agentserver

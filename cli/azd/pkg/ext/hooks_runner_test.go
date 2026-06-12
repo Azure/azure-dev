@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -25,7 +26,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
@@ -1438,14 +1438,16 @@ func TestHookNameAttribute(t *testing.T) {
 // hooks.name span attribute raw for built-in lifecycle hooks and hashed for user-
 // or extension-defined hook names, guarding against privacy regressions.
 func TestHooksRunner_HookNameTelemetry(t *testing.T) {
-	// Install one in-memory exporter for the whole test. OpenTelemetry's global
-	// tracer delegates to the first provider set, so we set it once and reset the
-	// exporter between cases rather than swapping providers per sub-test.
+	// Install one in-memory exporter for the whole test via the tracing test seam,
+	// so no process-global OTel state is mutated. The exporter is reset between
+	// sub-cases.
 	exporter := tracetest.NewInMemoryExporter()
 	tp := tracesdk.NewTracerProvider(tracesdk.WithSyncer(exporter))
-	prev := otel.GetTracerProvider()
-	otel.SetTracerProvider(tp)
-	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+	restore := tracing.SetTracerProviderForTest(tp)
+	t.Cleanup(func() {
+		restore()
+		_ = tp.Shutdown(context.Background())
+	})
 
 	t.Run("known hook emitted raw", func(t *testing.T) {
 		exporter.Reset()

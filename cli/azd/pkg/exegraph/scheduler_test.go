@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -1173,9 +1173,11 @@ func TestRunWithResult_FailFast_DrainClassifiesCorrectly(t *testing.T) {
 func TestRun_HashesStepNameAndDeps(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	tp := tracesdk.NewTracerProvider(tracesdk.WithSyncer(exporter))
-	prev := otel.GetTracerProvider()
-	otel.SetTracerProvider(tp)
-	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+	restore := tracing.SetTracerProviderForTest(tp)
+	t.Cleanup(func() {
+		restore()
+		_ = tp.Shutdown(context.Background())
+	})
 
 	const stepName = "deploy-myservice"
 	const depName = "build-myservice"

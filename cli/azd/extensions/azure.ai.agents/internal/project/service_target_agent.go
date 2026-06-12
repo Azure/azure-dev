@@ -1744,6 +1744,8 @@ func validatePythonBundledDeps(srcDir string) error {
 			" --implementation cp --only-binary=:all:",
 	)
 }
+
+// deployHostedCodeAgent deploys a code-based hosted agent via multipart ZIP upload.
 func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,

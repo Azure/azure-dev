@@ -119,7 +119,10 @@ creating one. This is the path for teams that provision infrastructure on their 
 for reusing a shared or private network bound account, which is the minimum issue
 [#8165](https://github.com/Azure/azure-dev/issues/8165) asks for. Provisioning a new
 network bound account from scratch is part of the separate built-in Bicep work, not this
-field.
+field. Network settings such as VNET binding live on the Foundry **Account** resource,
+not on the Foundry **Project**, and azd does not model the Account as a service here, so
+customizing them today means ejecting to Bicep. That built-in Bicep work must provide a
+path to create and customize those network settings.
 
 ```yaml
 services:
@@ -154,7 +157,9 @@ explicit and runs through `azd down` or the per resource `azd ai` commands.
 
 `azd down` removes the Foundry project that azd provisioned. If the service used an
 `endpoint:` to point at an existing project, `azd down` does not delete that project,
-because azd did not create it.
+because azd did not create it. azd's existing teardown logic likely already enforces this
+"don't delete what azd didn't provision" rule, so this may need no custom handling;
+confirm against the current `azd down` behavior during implementation.
 
 ### 1.7 When part of a deploy fails
 
@@ -338,8 +343,9 @@ Two resolvers have to coexist without stepping on each other.
 
 - `${VAR}` is an azd environment value, resolved on the client before anything is sent
   to Foundry. Example: a connection secret read from the azd environment.
-- `${{...}}` is resolved by Foundry on the server, for example
-  `${{connections.x.credentials.key}}`. It must reach Foundry unchanged.
+- `${{...}}` is special Foundry syntax that azd never resolves. azd treats it as an
+  opaque string value and passes it through unchanged; Foundry resolves it on the server,
+  for example `${{connections.x.credentials.key}}`.
 
 Core already leaves this alone. `pkg/osutil/expandable_string.go` runs `${VAR}`
 expansion with `drone/envsubst`, but core only applies it to typed fields such as the

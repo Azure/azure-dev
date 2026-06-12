@@ -1,6 +1,6 @@
 module concurx
 
-go 1.26.1
+go 1.26.4
 
 require (
 	github.com/azure/azure-dev/cli/azd v1.23.13

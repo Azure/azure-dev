@@ -125,6 +125,16 @@ func (h *HooksRunner) RunHooks(
 	return nil
 }
 
+// setHookSpanAttributes records the hook name and scope on span. Built-in
+// lifecycle hook names are emitted raw; user- or extension-defined names are
+// hashed via HookNameAttribute to avoid leaking identifiers in telemetry.
+func setHookSpanAttributes(span tracing.Span, hookName, hookType string) {
+	span.SetAttributes(
+		HookNameAttribute(hookName),
+		fields.HooksTypeKey.String(hookType),
+	)
+}
+
 func (h *HooksRunner) execHook(
 	ctx context.Context, hookConfig *HookConfig, hookType string, options *tools.ExecutionContext,
 ) (hookErr error) {
@@ -173,11 +183,10 @@ func (h *HooksRunner) execHook(
 		}
 	}
 
-	// Set name and type on span — known before validation.
-	span.SetAttributes(
-		fields.HooksNameKey.String(hookConfig.Name),
-		fields.HooksTypeKey.String(hookType),
-	)
+	// Set name and type on span — known before validation. Built-in lifecycle
+	// hook names are emitted raw; user- or extension-defined names are hashed
+	// to avoid leaking identifiers via telemetry (see setHookSpanAttributes).
+	setHookSpanAttributes(span, hookConfig.Name, hookType)
 
 	// validate() resolves the hook's kind, path, shell type,
 	// and computes resolvedDir / resolvedScriptPath.

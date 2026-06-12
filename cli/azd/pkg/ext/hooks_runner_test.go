@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -19,9 +20,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktools"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // registerHookExecutors delegates to the shared test helper in test/mocks/mocktools.
@@ -1388,4 +1392,77 @@ func TestHooksRunner_Telemetry(t *testing.T) {
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrRunRequired)
 	})
+}
+
+func TestIsKnownHookName(t *testing.T) {
+	known := []string{
+		"prebuild", "postbuild", "predeploy", "postdeploy", "predown", "postdown",
+		"prepackage", "postpackage", "preprovision", "postprovision", "prepublish",
+		"postpublish", "prerestore", "postrestore", "preup", "postup",
+	}
+	for _, name := range known {
+		assert.True(t, IsKnownHookName(name), "%q should be a known lifecycle hook", name)
+	}
+
+	// Empty, bare commands, non-lifecycle hooks, and differently-cased names are not
+	// on the allowlist and therefore must be hashed before emission.
+	notKnown := []string{"", "build", "deploy", "preinit", "postinit", "contoso-custom", "PreBuild"}
+	for _, name := range notKnown {
+		assert.False(t, IsKnownHookName(name), "%q should not be a known lifecycle hook", name)
+	}
+}
+
+func TestHookNameAttribute(t *testing.T) {
+	// Built-in lifecycle hook names are emitted raw to preserve analytical value.
+	t.Run("known emitted raw", func(t *testing.T) {
+		attr := HookNameAttribute("predeploy")
+		assert.Equal(t, string(fields.HooksNameKey.Key), string(attr.Key))
+		assert.Equal(t, "predeploy", attr.Value.AsString())
+	})
+
+	// User- or extension-defined names are hashed (case-insensitive SHA-256) so they
+	// cannot leak user-chosen identifiers via telemetry.
+	t.Run("unknown hashed", func(t *testing.T) {
+		const custom = "Contoso-Custom-Hook"
+		attr := HookNameAttribute(custom)
+		assert.Equal(t, string(fields.HooksNameKey.Key), string(attr.Key))
+		assert.Equal(t, fields.CaseInsensitiveHash(custom), attr.Value.AsString())
+		assert.NotEqual(t, custom, attr.Value.AsString(), "raw value must not be emitted")
+		assert.Len(t, attr.Value.AsString(), 64, "sha-256 digest is 64 hex chars")
+	})
+}
+
+// TestSetHookSpanAttributes verifies the hooks.name span attribute is emitted raw
+// for built-in lifecycle hooks and hashed for user- or extension-defined hook
+// names, guarding against privacy regressions.
+func TestSetHookSpanAttributes(t *testing.T) {
+	t.Run("known hook name emitted raw", func(t *testing.T) {
+		span := &mocktracing.Span{}
+		setHookSpanAttributes(span, "predeploy", "project")
+
+		assert.Equal(t, "predeploy", hookSpanAttr(t, span, fields.HooksNameKey.Key).AsString())
+		assert.Equal(t, "project", hookSpanAttr(t, span, fields.HooksTypeKey.Key).AsString())
+	})
+
+	t.Run("custom hook name hashed", func(t *testing.T) {
+		const custom = "contoso-custom-hook"
+		span := &mocktracing.Span{}
+		setHookSpanAttributes(span, custom, "service")
+
+		nameVal := hookSpanAttr(t, span, fields.HooksNameKey.Key)
+		assert.Equal(t, fields.CaseInsensitiveHash(custom), nameVal.AsString())
+		assert.NotEqual(t, custom, nameVal.AsString(), "raw value must not be emitted")
+	})
+}
+
+// hookSpanAttr returns the value of the attribute with the given key set on span.
+func hookSpanAttr(t *testing.T, span *mocktracing.Span, key attribute.Key) attribute.Value {
+	t.Helper()
+	for _, a := range span.Attributes {
+		if a.Key == key {
+			return a.Value
+		}
+	}
+	t.Fatalf("attribute %q was not set", key)
+	return attribute.Value{}
 }

@@ -17,8 +17,27 @@ OpenTelemetry span name or event name.
 | `AgentTroubleshootEvent` | `agent.troubleshoot` | Agent troubleshooting event |
 | `ExtensionRunEvent` | `ext.run` | Extension execution event |
 | `ExtensionInstallEvent` | `ext.install` | Extension install/upgrade event |
+| `ExtensionUpgradeEvent` | `ext.upgrade` | Single extension upgrade attempt |
+| `ExtensionPromoteEvent` | `ext.promote` | Extension registry promotion (e.g., dev → main) |
 | `CopilotInitializeEvent` | `copilot.initialize` | Copilot initialization event |
 | `CopilotSessionEvent` | `copilot.session` | Copilot session lifecycle event |
+| `PreflightValidationEvent` | `validation.preflight` | Local preflight validation outcome |
+| `HooksExecEvent` | `hooks.exec` | Lifecycle hook execution |
+| `AksPostprovisionSkipEvent` | `aks.postprovision.skip` | AKS postprovision hook skipped (cluster not yet available) |
+| `ArmDeploySubscriptionEvent` | `arm.deploy.subscription` | ARM subscription-scope deploy |
+| `ArmDeployResourceGroupEvent` | `arm.deploy.resourcegroup` | ARM resource-group-scope deploy |
+| `ArmStackDeploySubscriptionEvent` | `arm.stack.deploy.subscription` | Deployment stack at subscription scope |
+| `ArmStackDeployResourceGroupEvent` | `arm.stack.deploy.resourcegroup` | Deployment stack at resource-group scope |
+| `ArmWhatIfSubscriptionEvent` | `arm.whatif.subscription` | What-if preview at subscription scope |
+| `ArmWhatIfResourceGroupEvent` | `arm.whatif.resourcegroup` | What-if preview at resource-group scope |
+| `ArmValidateSubscriptionEvent` | `arm.validate.subscription` | Template validation at subscription scope |
+| `ArmValidateResourceGroupEvent` | `arm.validate.resourcegroup` | Template validation at resource-group scope |
+| `DeployAppServiceZipEvent` | `deploy.appservice.zip` | App Service zip-deploy attempt |
+| `ContainerCredentialsEvent` | `container.credentials` | Container registry credential lookup |
+| `ContainerPublishEvent` | `container.publish` | Container image publish (push) |
+| `ContainerRemoteBuildEvent` | `container.remotebuild` | Azure-side remote container build |
+| `ExeGraphRunEvent` | `exegraph.run` | Root span for executing an entire graph |
+| `ExeGraphStepEvent` | `exegraph.step` | Single step execution within the graph |
 
 ## Fields
 
@@ -127,6 +146,9 @@ not emitted by azd spans.
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
 | Interaction time | `perf.interact_time` | SystemMetadata | PerformanceAndHealth | **Measurement** — time to first user prompt |
+| Provision duration | `perf.provision_duration_ms` | SystemMetadata | PerformanceAndHealth | **Measurement** — wall-clock provisioning phase duration (ms) |
+| Deploy duration | `perf.deploy_duration_ms` | SystemMetadata | PerformanceAndHealth | **Measurement** — wall-clock deploy phase duration (ms). Excludes package/publish (run concurrently with provision) |
+| Total duration | `perf.total_duration_ms` | SystemMetadata | PerformanceAndHealth | **Measurement** — total wall-clock for the entire up-graph execution |
 
 ### Pack (Buildpacks)
 
@@ -177,11 +199,20 @@ not emitted by azd spans.
 
 ### Extensions
 
-| Field | OTel Key | Classification | Purpose |
-|-------|----------|----------------|---------|
-| Extension ID | `extension.id` | SystemMetadata | FeatureInsight |
-| Extension version | `extension.version` | SystemMetadata | FeatureInsight |
-| Extension installed | `extension.installed` | SystemMetadata | FeatureInsight |
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Extension ID | `extension.id` | SystemMetadata | FeatureInsight | |
+| Extension version | `extension.version` | SystemMetadata | FeatureInsight | |
+| Extension installed | `extension.installed` | SystemMetadata | FeatureInsight | List of installed extensions, each formatted `id@version` |
+| Extension version from | `extension.version.from` | SystemMetadata | FeatureInsight | Installed version before an upgrade |
+| Extension version to | `extension.version.to` | SystemMetadata | FeatureInsight | Target version after an upgrade |
+| Extension source | `extension.source` | SystemMetadata | FeatureInsight | Registry source used for the upgrade |
+| Extension source from | `extension.source.from` | SystemMetadata | FeatureInsight | Registry source before a promotion |
+| Extension source to | `extension.source.to` | SystemMetadata | FeatureInsight | Registry source after a promotion |
+| Upgrade duration | `extension.upgrade.duration_ms` | SystemMetadata | PerformanceAndHealth | **Measurement** — time in ms for one upgrade |
+| Upgrade outcome | `extension.upgrade.outcome` | SystemMetadata | FeatureInsight | Upgrade result status |
+| Dependency of | `extension.dependency_of` | SystemMetadata | FeatureInsight | Parent extension for a dependency upgrade |
+| Dependency upgrade count | `extension.dependency_upgrade_count` | SystemMetadata | FeatureInsight | Recursive dependency upgrade count |
 
 ### Update
 
@@ -229,20 +260,108 @@ not emitted by azd spans.
 | Approved count | `copilot.consent.approvedCount` | SystemMetadata | FeatureInsight | **Measurement** |
 | Denied count | `copilot.consent.deniedCount` | SystemMetadata | FeatureInsight | **Measurement** |
 
-## New Fields (Added by This Audit)
+## Command-Specific Fields
 
-The following fields are being introduced to close telemetry gaps identified in the
-[Feature-Telemetry Matrix](feature-telemetry-matrix.md).
+The following fields are defined in `fields.go`.
 
 | Field | OTel Key | Classification | Purpose | Values |
 |-------|----------|----------------|---------|--------|
 | Auth method | `auth.method` | SystemMetadata | FeatureInsight | `browser`, `device-code`, `service-principal-secret`, `service-principal-certificate`, `federated-github`, `federated-azure-pipelines`, `federated-oidc`, `managed-identity`, `external`, `oneauth`, `check-status` |
 | Env count | `env.count` | SystemMetadata | FeatureInsight | **Measurement** — number of environments |
 | Hooks name | `hooks.name` | SystemMetadata | FeatureInsight | Built-in hook name (raw) or SHA-256 hash for extension/custom hooks. Known values: `prebuild`, `postbuild`, `predeploy`, `postdeploy`, `predown`, `postdown`, `prepackage`, `postpackage`, `preprovision`, `postprovision`, `prepublish`, `postpublish`, `prerestore`, `postrestore`, `preup`, `postup` |
-| Hooks type | `hooks.type` | SystemMetadata | FeatureInsight | `project`, `service` |
-| Pipeline provider | `pipeline.provider` | SystemMetadata | FeatureInsight | `github`, `azdo`, `auto` (auto-detected) |
-| Pipeline auth | `pipeline.auth` | SystemMetadata | FeatureInsight | `federated`, `client-credentials`, `auto` (auto-detected) |
+| Hooks type | `hooks.type` | SystemMetadata | FeatureInsight | `project`, `service`, `layer` |
+| Hooks kind | `hooks.kind` | SystemMetadata | FeatureInsight | Executor used to run the hook. Values: `sh`, `pwsh`, `python`, `js`, `ts`, `dotnet` |
+| Pipeline provider | `pipeline.provider` | SystemMetadata | FeatureInsight | Resolved provider display name after auto-detection: `GitHub`, `Azure DevOps` |
+| Pipeline auth | `pipeline.auth` | SystemMetadata | FeatureInsight | Emitted only when `--auth-type` is set on `pipeline config`: `federated`, `client-credentials` |
 | Infra provider | `infra.provider` | SystemMetadata | FeatureInsight | `bicep`, `terraform`, `auto` (auto-detected from files) |
+
+### App Service Deploy
+
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Deploy attempt | `deploy.appservice.attempt` | SystemMetadata | PerformanceAndHealth | **Measurement** — retry attempt number for App Service zip deploy |
+| Deploy linux | `deploy.appservice.linux` | SystemMetadata | FeatureInsight | Whether the deploy targets a Linux web app |
+
+### Tool Management
+
+Telemetry for the `azd tool` feature (first-run experience and tool install / upgrade /
+check operations). Only built-in tool IDs (e.g. `az-cli`) and version strings are captured —
+no file paths, no user-identifiable data, no raw error text.
+
+#### Tool first-run
+
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Skip reason | `tool.firstrun.skip_reason` | SystemMetadata | FeatureInsight | Why the first-run flow was bypassed. Values: `env_var`, `no_prompt`, `ci_cd`, `non_interactive`, `already_completed`, `config_error` |
+| Opt-in | `tool.firstrun.opt_in` | SystemMetadata | FeatureInsight | Whether the user accepted the first-run prompt |
+| Tools detected | `tool.firstrun.tools_detected` | SystemMetadata | FeatureInsight | **Measurement** — built-in tools already installed at first-run |
+| Tools offered | `tool.firstrun.tools_offered` | SystemMetadata | FeatureInsight | **Measurement** — number of recommended tools offered |
+| Tools selected | `tool.firstrun.tools_selected` | SystemMetadata | FeatureInsight | **Measurement** — number the user selected to install |
+| Tools selected (names) | `tool.firstrun.tools_selected_names` | SystemMetadata | FeatureInsight | Comma-separated **built-in tool IDs** the user selected (e.g. `az-cli,vscode-bicep,github-copilot-cli`). Not user input — drawn from a fixed catalog |
+| Tools deselected (names) | `tool.firstrun.tools_deselected_names` | SystemMetadata | FeatureInsight | Comma-separated built-in tool IDs the user deselected |
+| Outcome | `tool.firstrun.outcome` | SystemMetadata | FeatureInsight | Terminal state. Values: `completed`, `declined`, `cancelled`, `detect_failed`, `install_failed`. Mutually exclusive with `skip_reason` |
+| Install success count | `tool.firstrun.install_success_count` | SystemMetadata | FeatureInsight | **Measurement** — first-run-scoped counterpart of `tool.install.success_count` |
+| Install failure count | `tool.firstrun.install_failure_count` | SystemMetadata | FeatureInsight | **Measurement** — first-run-scoped counterpart of `tool.install.failure_count` |
+| Install failed IDs | `tool.firstrun.install_failed_ids` | SystemMetadata | FeatureInsight | Comma-separated built-in tool IDs whose first-run install failed |
+| Install duration | `tool.firstrun.install_duration_ms` | SystemMetadata | FeatureInsight | **Measurement** — first-run-scoped install duration in ms |
+
+#### Tool install / upgrade / check
+
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Tool ID | `tool.id` | SystemMetadata | FeatureInsight | Built-in tool ID for single-tool operations. Values drawn from a fixed catalog (e.g. `az-cli`, `vscode-bicep`, `github-copilot-cli`, `azure-mcp-server`) |
+| Tool IDs | `tool.ids` | SystemMetadata | FeatureInsight | Comma-separated built-in tool IDs for batch operations |
+| Dry run | `tool.dry_run` | SystemMetadata | FeatureInsight | Whether `--dry-run` was specified |
+| Install strategy | `tool.install.strategy` | SystemMetadata | FeatureInsight | Install backend. Values come from `strategy.PackageManager` (e.g., `winget`, `brew`, `apt`, `npm`, `code`); `command` for command-based installs with no package manager; `manual` when the named package manager is unavailable on the platform |
+| Install success | `tool.install.success` | SystemMetadata | FeatureInsight | Whether a single-target install/upgrade succeeded |
+| Install success count | `tool.install.success_count` | SystemMetadata | FeatureInsight | **Measurement** — number of tools that succeeded in a batch |
+| Install failure count | `tool.install.failure_count` | SystemMetadata | FeatureInsight | **Measurement** — number of tools that failed in a batch |
+| Install failed IDs | `tool.install.failed_ids` | SystemMetadata | FeatureInsight | Comma-separated built-in tool IDs whose install/upgrade failed. Per-tool error messages are intentionally not captured |
+| Install duration | `tool.install.duration_ms` | SystemMetadata | FeatureInsight | **Measurement** — total install/upgrade duration in ms |
+| Upgrade from version | `tool.upgrade.from_version` | SystemMetadata | FeatureInsight | Prior version (single-target upgrades) |
+| Upgrade to version | `tool.upgrade.to_version` | SystemMetadata | FeatureInsight | New version after a successful upgrade |
+| Updates available | `tool.check.updates_available` | SystemMetadata | FeatureInsight | **Measurement** — number of installed tools with an available update |
+
+### Preflight Validation
+
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Outcome | `validation.preflight.outcome` | SystemMetadata | FeatureInsight | Values: `passed`, `warnings_accepted`, `aborted_by_errors`, `aborted_by_user`, `skipped`, `error` |
+| Diagnostic IDs | `validation.preflight.diagnostics` | SystemMetadata | FeatureInsight | List of diagnostic IDs emitted by preflight checks (fixed code-defined enum, e.g. `role_assignment_missing`, `role_assignment_conditional`) |
+| Rule IDs | `validation.preflight.rules` | SystemMetadata | FeatureInsight | List of rule IDs that were executed (fixed code-defined enum, e.g. `role_assignment_permissions`) |
+| Warning count | `validation.preflight.warning.count` | SystemMetadata | FeatureInsight | **Measurement** |
+| Error count | `validation.preflight.error.count` | SystemMetadata | FeatureInsight | **Measurement** |
+
+### Provision
+
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Cancellation | `provision.cancellation` | SystemMetadata | FeatureInsight | How a Ctrl+C interrupt during `azd provision` / `azd up` was handled. Values: `none`, `leave_running`, `canceled`, `cancel_timed_out`, `cancel_timed_out_nested`, `cancel_raced_succeeded`, `cancel_raced_failed`, `cancel_raced_deleted`, `cancel_too_late`, `cancel_failed` |
+
+### Execution Graph (Scheduler)
+
+The execution graph powers the parallel `up` / `provision` / `deploy` engine.
+
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Step count | `exegraph.step.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — total number of steps in the graph |
+| Max concurrency | `exegraph.max_concurrency` | SystemMetadata | PerformanceAndHealth | Effective concurrency limit used for the run |
+| Error policy | `exegraph.error_policy` | SystemMetadata | PerformanceAndHealth | `fail_fast` or `continue_on_error` |
+| Step name | `exegraph.step.name` | SystemMetadata | PerformanceAndHealth | **Hashed** via `fields.StringHashed` — step names embed user-chosen service / layer names from `azure.yaml` (e.g., `deploy-<svc.Name>`, `<layer.Name>`) |
+| Step deps | `exegraph.step.deps` | SystemMetadata | PerformanceAndHealth | **Hashed slice** via `fields.StringSliceHashed` — each entry is another step name that embeds user-chosen identifiers |
+| Step tags | `exegraph.step.tags` | SystemMetadata | PerformanceAndHealth | Fixed internal vocabulary set by azd code (e.g., `provision`, `deploy`, `package`, `cmdhook`, `event`); emitted raw because it does not contain user input |
+| Step timeout | `exegraph.step.timeout_s` | SystemMetadata | PerformanceAndHealth | **Measurement** — per-step timeout in seconds, when set |
+
+### Multi-Layer Provision
+
+Telemetry for the `infra.layers[]` parallel provisioning feature, emitted from `internal/cmd/provision_graph.go`.
+
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Layer count | `provision.layer.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — total number of `infra.layers[]` declared in `azure.yaml` for the current run; 0 or 1 means single-layer (the legacy path) |
+| Max parallel | `provision.layer.max_parallel` | SystemMetadata | PerformanceAndHealth | **Measurement** — largest number of layers scheduled in a single dependency level after static analysis (maximum *achievable* parallelism, distinct from the configured `exegraph.max_concurrency` cap) |
+| Safe-fallback count | `provision.layer.safe_fallback_count` | SystemMetadata | PerformanceAndHealth | **Measurement** — layers that triggered the safe-by-default detector fallback (forced to depend on all earlier layers) |
+| Explicit dependsOn count | `provision.layer.explicit_dependson_count` | SystemMetadata | PerformanceAndHealth | **Measurement** — layers that used the explicit `infra.layers[].dependsOn` schema |
 
 ## Data Classifications
 
@@ -274,11 +393,20 @@ Sensitive values are hashed before emission using functions in `cli/azd/internal
 
 | Function | Behavior |
 |----------|----------|
-| `CaseInsensitiveHash(value)` | Lowercases, then SHA-256 hashes |
-| `StringHashed(key, value)` | Creates an OTel attribute with a case-insensitive SHA-256 hash |
-| `StringSliceHashed(key, values)` | Hashes each element in a string slice independently |
+| `CaseInsensitiveHash(value string) string` | Lowercases, then SHA-256 hashes |
+| `StringHashed(k AttributeKey, v string) attribute.KeyValue` | Creates an OTel attribute with a case-insensitive SHA-256 hash |
+| `StringSliceHashed(k AttributeKey, v []string) attribute.KeyValue` | Hashes each element in a string slice independently |
 
-Fields that are hashed: `project.template.id`, `project.template.version`, `project.name`, `env.name`.
+Fields that are hashed:
+
+- `project.template.id`
+- `project.template.version`
+- `project.name`
+- `env.name`
+- `exegraph.step.name` (embeds user-chosen service / layer names from `azure.yaml`)
+- `exegraph.step.deps` (each entry is another step name and therefore embeds user-chosen identifiers)
+- `hooks.name` is hashed **only when** the value comes from an extension or custom hook (the built-in hook names are emitted raw)
+- `pack.builder.image`, `pack.builder.tag` are hashed when a user-defined image is used
 
 ## Data Pipeline
 

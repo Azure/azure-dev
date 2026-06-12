@@ -1420,6 +1420,14 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serv
 			if isDotnet && isBundled {
 				return p.packageDotnetBundled(srcDir)
 			}
+
+			// Python bundled: validate that dependencies are installed in srcDir
+			isPython := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "python_")
+			if isPython && isBundled {
+				if err := validatePythonBundledDeps(srcDir); err != nil {
+					return "", "", err
+				}
+			}
 		}
 	}
 
@@ -1669,7 +1677,55 @@ func (p *AgentServiceTargetProvider) packageDotnetBundled(srcDir string) (string
 	return tmpPath, sha256Hex, nil
 }
 
-// deployHostedCodeAgent deploys a code-based hosted agent via multipart ZIP upload.
+// validatePythonBundledDeps checks that a Python project in bundled mode has
+// installed dependencies in the source directory. It looks for .dist-info
+// directories which are always created by pip install --target.
+// Only returns an error if requirements.txt exists AND has content AND no
+// .dist-info directories are found — this avoids false positives.
+func validatePythonBundledDeps(srcDir string) error {
+	// Check if requirements.txt exists and has non-empty content
+	reqPath := filepath.Join(srcDir, "requirements.txt")
+	data, err := os.ReadFile(reqPath) //nolint:gosec // path from internal state
+	if err != nil {
+		// No requirements.txt — nothing to validate
+		return nil
+	}
+
+	// Check if requirements.txt has any non-comment, non-empty lines
+	hasRequirements := false
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			hasRequirements = true
+			break
+		}
+	}
+	if !hasRequirements {
+		return nil
+	}
+
+	// Look for any *.dist-info directory in srcDir (top-level only)
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return nil
+	}
+
+	for _, e := range entries {
+		if e.IsDir() && strings.HasSuffix(e.Name(), ".dist-info") {
+			// Found at least one installed package — pass
+			return nil
+		}
+	}
+
+	return exterrors.Dependency(
+		exterrors.CodeBundledDepsNotFound,
+		"bundled mode is configured but no installed packages were found in the source directory. "+
+			"Dependencies must be installed locally before deploying",
+		"run: pip install -r requirements.txt -t "+srcDir+
+			" --platform manylinux_2_17_x86_64 --platform linux_x86_64 --platform any"+
+			" --implementation cp --only-binary=:all:",
+	)
+}
 func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,

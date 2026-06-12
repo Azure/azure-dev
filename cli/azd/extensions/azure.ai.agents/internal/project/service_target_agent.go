@@ -1704,7 +1704,9 @@ func validatePythonBundledDeps(srcDir string) error {
 		return nil
 	}
 
-	// Look for any *.dist-info directory in srcDir (top-level only)
+	// Look for any *.dist-info directory in srcDir (top-level only, which is
+	// where pip install --target . places them). Also check one level deep
+	// for common patterns like vendor/ or lib/.
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
 		return nil
@@ -1714,6 +1716,22 @@ func validatePythonBundledDeps(srcDir string) error {
 		if e.IsDir() && strings.HasSuffix(e.Name(), ".dist-info") {
 			// Found at least one installed package — pass
 			return nil
+		}
+	}
+
+	// Check one level of subdirectories for .dist-info (e.g., vendor/, lib/)
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		subEntries, err := os.ReadDir(filepath.Join(srcDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		for _, se := range subEntries {
+			if se.IsDir() && strings.HasSuffix(se.Name(), ".dist-info") {
+				return nil
+			}
 		}
 	}
 

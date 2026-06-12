@@ -146,10 +146,13 @@ func validateBundledHint(srcDir string, codeConfig *agent_yaml.CodeConfiguration
 	pythonVersion := strings.TrimPrefix(codeConfig.Runtime, "python_")
 	pythonVersion = strings.Replace(pythonVersion, "_", ".", 1)
 
-	fmt.Printf("\n%s Bundled mode selected. Before deploying, install dependencies targeting the deployment platform:\n",
+	fmt.Printf("\n%s Bundled mode selected. Before deploying, install dependencies into the source directory.\n",
 		color.YellowString("NOTE:"))
-	fmt.Printf("  cd %s\n", srcDir)
-	fmt.Printf("  pip install -r requirements.txt -t . \\\n")
-	fmt.Printf("    --platform manylinux_2_17_x86_64 --platform linux_x86_64 --platform any \\\n")
-	fmt.Printf("    --python-version %s --implementation cp --only-binary=:all: --upgrade\n\n", pythonVersion)
+	fmt.Printf("  The deployment target is Linux x86_64 with Python %s. Example command:\n\n", pythonVersion)
+	fmt.Printf("    cd %s\n", srcDir)
+	fmt.Printf("    pip install -r requirements.txt -t . \\\n")
+	fmt.Printf("      --platform manylinux_2_17_x86_64 --platform linux_x86_64 --platform any \\\n")
+	fmt.Printf("      --python-version %s --implementation cp --only-binary=:all: --upgrade\n\n", pythonVersion)
+	fmt.Printf("  If some packages lack pre-built wheels, you may need to remove --only-binary=:all:\n")
+	fmt.Printf("  and build on a matching Linux environment instead.\n\n")
 }

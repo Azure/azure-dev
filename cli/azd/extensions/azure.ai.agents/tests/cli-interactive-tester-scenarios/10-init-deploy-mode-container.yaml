@@ -1,0 +1,38 @@
+# Tier 1 (auth, scaffold only) — interactive container deploy mode.
+#
+# Requires Azure login (see README "Authentication"). Does NOT run `azd provision`;
+# no cost incurred.
+# Targets the --deploy-mode container path, which builds/packages a container
+# image (instead of prompting for entry-point + runtime as code-deploy does).
+# Complements 10-init-deploy-mode-code.yaml.
+name: "init-deploy-mode-container"
+command: "azd ai agent init --deploy-mode container"
+cwd: "~/working/azd-agents-t1-container-deploy-{instance}"
+tags: ["tier:1", "cmd:init", "parallel-safe"]
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+# Seed a committed Python fixture so container-deploy has real source to package.
+# Override the fixture location with AZD_AGENTS_FIXTURES if needed.
+pre:
+  - run: "rm -rf ~/working/azd-agents-t1-container-deploy-{instance}"
+    cwd: "~/working"
+    name: "reset working dir"
+  - run: "mkdir -p ~/working/azd-agents-t1-container-deploy-{instance} && cp -r \"${AZD_AGENTS_FIXTURES:?Set AZD_AGENTS_FIXTURES to the WSL path of your fixtures directory (e.g. /mnt/d/w1/azure-dev/.../tests/cli-interactive-tester-scenarios/fixtures)}/from-code/.\" ~/working/azd-agents-t1-container-deploy-{instance}/"
+    cwd: "~/working"
+    name: "seed from-code agent fixture (app.py + requirements.txt)"
+
+goals:
+  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name prefixed with '{prefix}-' and suffixed with this run's instance id '-{instance}' (e.g. '{prefix}-container-{instance}') so concurrent instances don't collide on resource names. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."
+  - "At the first 'How do you want to initialize your agent?' prompt, select 'Use the code in the current directory'."
+  - "Wait for the tool to inspect the current directory's code with container-deploy mode selected (it should NOT prompt for an entry-point or runtime — those are code-deploy concerns)."
+  - "If an existing agent manifest is detected, confirm reuse."
+  - "If asked to select an Azure AI Foundry project, choose to create a new one, naming it with the '{prefix}-' prefix, and follow the prompts."
+  - "If asked to select a subscription, search for and select the '{subscription}' subscription."
+  - "If asked for a location/region, select '{region}'."
+  - "If asked to select a model, choose '{model}' and accept the remaining model defaults."
+  - "Wait for initialization to complete — look for 'Next:' or a success message."
+  - "Verify the scaffold: confirm azure.yaml/agent.yaml reflect container-deploy mode (a Dockerfile or container build configuration is present rather than entry-point/runtime fields)."
+  - "Take a screenshot of the completed init output."
+  - "STOP here — do NOT run 'azd provision'. Report a finding if container mode incorrectly prompts for entry-point/runtime, fails to produce container build config, or the deploy mode is not persisted."

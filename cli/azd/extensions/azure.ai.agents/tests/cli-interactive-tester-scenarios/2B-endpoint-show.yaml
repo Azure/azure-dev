@@ -1,0 +1,21 @@
+# Tier 2 (cloud E2E) — `endpoint show` displays the deployed agent's endpoint config.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+name: "endpoint-show"
+command: "azd ai agent endpoint show"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:endpoint", "serial-only"]
+
+pre:
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Wait for the endpoint configuration table to render (auto-resolves agent from azure.yaml)."
+  - "Confirm the output shows protocol(s) configured on the agent (e.g. 'responses')."
+  - "Confirm the endpoint URL or base path is displayed."
+  - "Run the command again with '--output json' and confirm valid JSON is returned with protocol and endpoint fields."
+  - "Take a screenshot of both the table and JSON outputs."
+  - "Report a finding if the command errors, shows no endpoint config, or returns unexpected empty fields for a deployed agent."

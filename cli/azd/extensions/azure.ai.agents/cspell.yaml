@@ -4,6 +4,10 @@ words:
   - tavily
   - tvly
   - conncmd
+  # Eval / optimize async job ID prefixes and terms
+  - datagen
+  - evaluatorgen
+  - signup
   # Azure region names
   - australiaeast
   - brazilsouth
@@ -41,6 +45,7 @@ words:
   - CLIENTSECRET
   - curr
   - dataagent
+  - defaultyourvalue
   - envkey
   - exterrors
   - goyaml

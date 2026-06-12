@@ -1,0 +1,37 @@
+# Tier 2 (cloud E2E) — `invoke --protocol invocations` and its memory semantics.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+#
+# NOTE: the shared agent is deployed with the "responses" protocol. This scenario
+# exercises the invocations protocol path and its DISTINCT memory model:
+#   - memory is bound to the SESSION (reset with --new-session)
+#   - --new-conversation has NO effect under invocations (opposite of responses)
+# If the deployed agent does not support invocations, the command should fail
+# CLEANLY (clear protocol-mismatch error), which is itself a valid result to
+# capture. Frame findings around clarity, not around forcing success.
+name: "invoke-protocol-invocations"
+command: "azd ai agent invoke --protocol invocations \"Remember the word 'banana'.\""
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:invoke", "serial-only"]
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Run the invoke command with '--protocol invocations' against the deployed shared agent."
+  - "If the agent does not support the invocations protocol, confirm the command fails with a CLEAR protocol-mismatch error (not a 500, hang, or stack trace), capture it, and report a finding describing the message; then STOP."
+  - "If the invocations protocol IS supported and the first call succeeds, run a follow-up: 'azd ai agent invoke --protocol invocations \"What word did I ask you to remember?\"' and confirm the agent recalls 'banana' (session memory persists across calls within the same session)."
+  - "Run 'azd ai agent invoke --protocol invocations --new-conversation \"What word did I ask you to remember?\"' and confirm memory is STILL retained (under invocations, --new-conversation has NO effect; memory is bound to the session)."
+  - "Run 'azd ai agent invoke --protocol invocations --new-session \"What word did I ask you to remember?\"' and confirm memory is RESET (the agent no longer recalls 'banana')."
+  - "Take a screenshot of the relevant responses."
+  - "Report a finding if --new-conversation unexpectedly resets memory, if --new-session does NOT reset it, or if an unsupported protocol yields an unclear error."
+
+post:
+  - run: "echo 'invoke-protocol-invocations complete; no local teardown required'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "note: no local teardown required"
+    continue_on_error: true

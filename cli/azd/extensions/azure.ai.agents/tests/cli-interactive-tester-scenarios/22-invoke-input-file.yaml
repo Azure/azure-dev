@@ -1,0 +1,21 @@
+# Tier 2 (cloud E2E) — `invoke -f <file>` sends a file as the request body.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+name: "invoke-input-file"
+command: "bash"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:invoke", "serial-only"]
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Create a small request file, e.g.: printf '%s' 'Summarize the benefits of unit testing in one sentence.' > request.txt"
+  - "Run: azd ai agent invoke -f request.txt and wait for the response."
+  - "Confirm the agent responds to the contents of the file (not to an empty or literal-path message)."
+  - "Take a screenshot of the response."
+  - "Report a finding if the file body is ignored, mis-read, or if -f errors on a valid file."

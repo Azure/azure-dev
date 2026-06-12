@@ -1,0 +1,37 @@
+# Tier 0 (offline) — exercise the `init` interactive picker UX, then abort.
+#
+# This scenario probes the early interactive prompts only (init mode, language,
+# template list). It intentionally ABORTS with Ctrl-C before reaching any Azure /
+# Foundry project prompts, so it needs no Azure auth and creates no resources.
+name: "init-picker-navigation"
+command: "azd ai agent init"
+cwd: "~/working/azd-agents-picker-{instance}"
+tags: ["tier:0", "cmd:init", "picker", "parallel-safe"]
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+# Clean dir, then seed a file so the dir is non-empty. The init-method picker
+# ("Use the code in the current directory" / "Start new from a template") only
+# appears when the working directory is NOT empty; on an empty dir the command
+# auto-selects the template flow and skips the picker.
+pre:
+  - run: "rm -rf ~/working/azd-agents-picker-{instance}"
+    cwd: "~/working"
+    name: "reset working dir"
+  - run: "mkdir -p ~/working/azd-agents-picker-{instance} && touch ~/working/azd-agents-picker-{instance}/placeholder.txt"
+    cwd: "~/working"
+    name: "seed a placeholder file so the init-method picker appears"
+
+goals:
+  - "Wait for the first prompt asking how to initialize (it should appear because the directory is non-empty): 'Use the code in the current directory' / 'Start new from a template'."
+  - "Select 'Start new from a template', then wait for the language prompt."
+  - "Select a language (Python), then wait for the template list prompt."
+  - "On the template list, type a partial search string to filter the list; confirm the list narrows to matching entries."
+  - "Type a string that matches nothing; confirm the list shows an empty/no-match state and does not crash."
+  - "Clear the filter (backspace) and confirm the full list returns."
+  - "Press Down many times past the end of the list; confirm selection stays bounded and does not error."
+  - "If a prompt mentions a '?' hint, press '?' and confirm a helpful hint is shown."
+  - "Take a screenshot at each interesting state."
+  - "Press Ctrl-C (or Escape at the top-level prompt) to abort. Confirm it exits cleanly without a stack trace and without leaving a half-written azure.yaml."
+  - "Report a finding for any picker glitch: filter not recovering, crash on no-match, unbounded scrolling, unhelpful hints, or a messy/abrupt abort."

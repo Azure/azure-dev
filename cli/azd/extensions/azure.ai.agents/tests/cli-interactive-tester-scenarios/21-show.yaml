@@ -1,0 +1,21 @@
+# Tier 2 (cloud E2E) — `show` reports the deployed agent (table output).
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+name: "show"
+command: "azd ai agent show"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:show", "serial-only"]
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Wait for the status table to render."
+  - "Confirm the agent name, version, and a status field (e.g. 'active') are shown, auto-resolved from azure.yaml and the current azd environment."
+  - "Confirm the endpoint URL for the deployed agent is displayed."
+  - "Take a screenshot of the status table."
+  - "Report a finding if the agent cannot be resolved, the status looks wrong, or fields are missing/blank."

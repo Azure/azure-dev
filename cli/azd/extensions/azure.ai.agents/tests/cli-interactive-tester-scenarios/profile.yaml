@@ -1,0 +1,25 @@
+# Repo-shared scenario profile — defaults for non-identifying values.
+#
+# This file is checked in. Identifying values (prefix, subscription, optional
+# tenant) live in profile.local.yaml, which is gitignored and bootstrapped
+# from profile.local.yaml.example.
+#
+# The driving agent loads both files (local overrides this one), validates
+# that the required keys are present, derives `shared_agent_name` =
+# "<prefix>-<shared_agent_suffix>", and then passes the merged map as
+# `session_vars` to EVERY MCP tool call (load_scenario, run_pre_hooks,
+# start_session, run_post_hooks) — see the "Profile / overrides" section
+# of README.md.
+
+# Default Azure region for new resources created by Tier 1/2 scenarios.
+region: "East US 2"
+
+# Default model deployment chosen during init / referenced by --model flags.
+# gpt-4.1-mini is cheap and fast — appropriate for tests.
+model: "gpt-4.1-mini"
+
+# Suffix appended to {prefix} to form the Tier 2 shared agent's name (and
+# therefore the subdir name that `azd ai agent init` scaffolds into under
+# ~/working/azd-agents-shared/). The shared name is exposed to scenarios
+# as {shared_agent_name}.
+shared_agent_suffix: "basic-responses"

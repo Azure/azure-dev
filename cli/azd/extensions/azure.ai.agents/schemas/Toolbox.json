@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/Toolbox.json",
+  "title": "Foundry toolbox",
+  "description": "A named bundle of tools that agents reference by name (matches the existing azure.ai.agent.json Toolbox shape). Items in a toolboxes array may be inline or a $ref to an external file.",
+  "oneOf": [
+    { "$ref": "#/definitions/Inline" },
+    { "$ref": "FileRef.json" }
+  ],
+  "definitions": {
+    "Inline": {
+      "type": "object",
+      "required": ["name", "tools"],
+      "additionalProperties": false,
+      "properties": {
+        "name":        { "type": "string", "description": "Name of the toolbox." },
+        "description": { "type": "string", "description": "Description of the toolbox." },
+        "tools": {
+          "type": "array",
+          "description": "List of tools in the toolbox.",
+          "items": {
+            "type": "object",
+            "required": ["type"],
+            "additionalProperties": true,
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Tool type (e.g., 'web_search', 'code_interpreter', 'file_search', 'mcp', 'azure_ai_search', 'bing_grounding', 'openapi')."
+              },
+              "connection": {
+                "type": "string",
+                "description": "Name of a connection (required for connection-backed tool types like 'mcp', 'azure_ai_search')."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

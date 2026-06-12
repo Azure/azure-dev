@@ -37,6 +37,7 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write  # Required for azure/login OIDC federated credentials
 
 env:
   SCENARIOS_DIR: cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios
@@ -165,8 +166,4 @@ jobs:
           # Direct teardown (not Copilot) for reliability on failure
           cd ~/working/azd-agents-shared/*/ 2>/dev/null && \
             azd down --force --purge || true
-
-
-
-
 

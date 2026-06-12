@@ -71,8 +71,10 @@ jobs:
         run: |
           go build -o ./azd .
           export PATH="$PWD:$PATH"
-          azd extension install azure.ai.agents --source ./extensions/azure.ai.agents
           echo "${{ github.workspace }}/cli/azd" >> "$GITHUB_PATH"
+          # Add local registry source pointing to repo's registry.json, then install extension
+          azd extension source add -n local -t file -l "$PWD/extensions/registry.json"
+          azd extension install azure.ai.agents --source local
 
       - name: Install cli-interactive-tester
         run: |

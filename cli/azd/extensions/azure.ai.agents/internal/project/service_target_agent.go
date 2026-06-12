@@ -1700,9 +1700,9 @@ func validatePythonBundledDeps(srcDir string) error {
 
 	// Check if requirements.txt has any non-comment, non-empty lines
 	hasRequirements := false
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, "#") {
+	for line := range strings.SplitSeq(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
 			hasRequirements = true
 			break
 		}

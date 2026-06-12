@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -134,14 +135,12 @@ func resolveRef(directive map[string]any, baseDir, projectRoot string, chain []s
 		return nil, err
 	}
 
-	for _, visited := range chain {
-		if visited == target {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidFileRef,
-				fmt.Sprintf("cyclic %s include detected at %q", refKey, target),
-				"Remove the circular reference between the included files.",
-			)
-		}
+	if slices.Contains(chain, target) {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidFileRef,
+			fmt.Sprintf("cyclic %s include detected at %q", refKey, target),
+			"Remove the circular reference between the included files.",
+		)
 	}
 	if len(chain) >= maxRefDepth {
 		return nil, exterrors.Validation(
@@ -156,7 +155,7 @@ func resolveRef(directive map[string]any, baseDir, projectRoot string, chain []s
 		return nil, err
 	}
 
-	nextChain := append(append([]string{}, chain...), target)
+	nextChain := append(slices.Clone(chain), target)
 	resolvedLoaded, err := resolveValue(loaded, filepath.Dir(target), projectRoot, nextChain)
 	if err != nil {
 		return nil, err
@@ -191,7 +190,8 @@ func resolveRef(directive map[string]any, baseDir, projectRoot string, chain []s
 // refTargetPath turns a $ref value into an absolute, cleaned local file path. Relative paths
 // resolve against baseDir. URLs are rejected.
 func refTargetPath(ref, baseDir string) (string, error) {
-	if strings.TrimSpace(ref) == "" {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidFileRef,
 			fmt.Sprintf("%s value must not be empty", refKey),

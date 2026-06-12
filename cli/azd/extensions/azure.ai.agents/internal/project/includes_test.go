@@ -110,6 +110,31 @@ agents:
 	assert.Equal(t, want, got)
 }
 
+func TestResolveFileRefs_RefWithSurroundingWhitespaceResolves(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "agents/a.yaml", `
+name: a
+kind: hosted
+project: ../src/a
+`)
+	cfg := parseYAML(t, `
+agents:
+  - $ref: "  ./agents/a.yaml  "
+`)
+
+	got, err := ResolveFileRefs(cfg, root)
+	require.NoError(t, err)
+
+	// Surrounding whitespace in the $ref value is trimmed before the path is resolved.
+	want := parseYAML(t, `
+agents:
+  - name: a
+    kind: hosted
+    project: src/a
+`)
+	assert.Equal(t, want, got)
+}
+
 func TestResolveFileRefs_SiblingOverlayOverrides(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "agents/base.yaml", `

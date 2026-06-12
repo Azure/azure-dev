@@ -1,0 +1,180 @@
+name: "ext-azure-ai-agents-e2e"
+
+# E2E tests for the azure.ai.agents CLI extension.
+#
+# Architecture (identical to local testing):
+#   Copilot CLI (LLM brain, installed via npm)
+#     ↕ MCP protocol (stdio, config in ~/.copilot/mcp-config.json)
+#   cli-interactive-tester (MCP server, manages tmux sessions)
+#     ↕ tmux
+#   azd ai agent CLI (under test)
+#
+# Copilot CLI runs in programmatic mode (-p), reads scenario goals from YAML,
+# and drives the terminal via MCP tool — same flow as local testing.
+#
+# Manual trigger only — switch to PR-trigger once pipeline is stable.
+# Scenarios live on branch trangevi/test-scenarios until PR #8524 merges.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "Which tiers to run"
+        type: choice
+        options:
+          - "0"
+          - "0+1"
+          - "0+1+2"
+        default: "0"
+      confirm_tier2_cost:
+        description: "Confirm Tier 2 Azure costs (~$2-5)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write  # Required for azure/login OIDC federated credentials (Tier 1/2)
+
+env:
+  SCENARIOS_DIR: cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios
+  AZD_AGENTS_FIXTURES: cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/fixtures
+
+jobs:
+  e2e-test:
+    name: "E2E scenarios (Tier ${{ inputs.tier }})"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # TODO: change to 'main' after PR #8524 merges
+          ref: trangevi/test-scenarios
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: "cli/azd/go.mod"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Copilot CLI
+        run: npm install -g @github/copilot
+
+      - name: Build azd + install extension
+        working-directory: cli/azd
+        run: |
+          go build -o ./azd .
+          export PATH="$PWD:$PATH"
+          azd extension install azure.ai.agents --source ./extensions/azure.ai.agents
+          echo "${{ github.workspace }}/cli/azd" >> "$GITHUB_PATH"
+
+      - name: Install cli-interactive-tester
+        run: |
+          sudo apt-get install -y tmux
+          # TODO: confirm repo visibility. If private, use:
+          #   git clone https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/coreai-microsoft/cli-interactive-tester.git
+          git clone https://github.com/coreai-microsoft/cli-interactive-tester.git /tmp/cli-interactive-tester
+          cd /tmp/cli-interactive-tester
+          pip install -e .
+
+      - name: Install uv (for Tier 2 run-local scenario)
+        if: contains(inputs.tier, '2')
+        uses: astral-sh/setup-uv@v6
+
+      - name: Validate Tier 2 cost confirmation
+        if: contains(inputs.tier, '2') && !inputs.confirm_tier2_cost
+        run: |
+          echo "::error::Tier 2 creates Azure resources (~\$2-5). Set confirm_tier2_cost=true to proceed."
+          exit 1
+
+      - name: Azure Login
+        if: contains(inputs.tier, '1') || contains(inputs.tier, '2')
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: GitHub CLI Auth
+        if: contains(inputs.tier, '1') || contains(inputs.tier, '2')
+        run: echo "${{ secrets.GH_TOKEN }}" | gh auth login --with-token
+
+      - name: Create test profile
+        if: contains(inputs.tier, '1') || contains(inputs.tier, '2')
+        working-directory: ${{ env.SCENARIOS_DIR }}
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          FOUNDRY_PROJECT_ENDPOINT: ${{ secrets.FOUNDRY_PROJECT_ENDPOINT }}
+        run: |
+          printf '%s\n' \
+            "prefix: \"ci-${{ github.run_number }}\"" \
+            "subscription: \"${AZURE_SUBSCRIPTION_ID}\"" \
+            "region: \"North Central US\"" \
+            "foundry_project_endpoint: \"${FOUNDRY_PROJECT_ENDPOINT}\"" \
+            > profile.local.yaml
+
+      - name: Configure MCP for Copilot
+        run: |
+          mkdir -p ~/.copilot
+          printf '%s\n' '{' \
+            '  "mcpServers": {' \
+            '    "cli-interactive-tester": {' \
+            '      "type": "stdio",' \
+            '      "command": "bash",' \
+            '      "args": ["-c", "cd /tmp/cli-interactive-tester && python -m auto_test_tool.mcp_server"]' \
+            '    }' \
+            '  }' \
+            '}' > ~/.copilot/mcp-config.json
+
+      - name: Run E2E scenarios via Copilot + MCP tool
+        working-directory: ${{ env.SCENARIOS_DIR }}
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
+          TIER: ${{ inputs.tier }}
+          AZD_AGENTS_FIXTURES: ${{ github.workspace }}/${{ env.AZD_AGENTS_FIXTURES }}
+          UV_HTTP_TIMEOUT: "300"
+        run: |
+          if [ ! -f prompt-ci-run.md ]; then
+            echo "::error::prompt-ci-run.md not found in $(pwd)"
+            exit 1
+          fi
+          # Copilot CLI in programmatic mode:
+          #   -p = non-interactive, exit on completion
+          #   --no-ask-user = never prompt for user input
+          #   --allow-tool = pre-authorize MCP tool access
+          #
+          # TODO: confirm --allow-tool syntax for MCP-registered tools.
+          # Possible forms: 'cli-interactive-tester(*)', 'cli-interactive-tester'
+          copilot -p "$(cat prompt-ci-run.md)" \
+            --allow-tool='cli-interactive-tester(*)' \
+            --no-ask-user
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-tier-${{ inputs.tier }}
+          path: |
+            ${{ env.SCENARIOS_DIR }}/reports/
+            ${{ env.SCENARIOS_DIR }}/full-pipeline-run-results.md
+          retention-days: 30
+
+      - name: Teardown (Tier 2 always cleanup)
+        if: always() && contains(inputs.tier, '2')
+        working-directory: ${{ env.SCENARIOS_DIR }}
+        run: |
+          WORK_DIR=$(ls -d ~/working/azd-agents-shared/*/ 2>/dev/null | head -1)
+          if [ -z "$WORK_DIR" ]; then
+            echo "::warning::No working directory found — teardown skipped, check for leaked resources"
+            exit 0
+          fi
+          cd "$WORK_DIR" && azd down --force --purge

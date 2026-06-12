@@ -420,19 +420,20 @@ is read. Rename or retire it when that path is removed.
 
 ### 2.8 State reconciliation and idempotency
 
-Deploy compares the declared state in `azure.yaml` against the live state in Foundry and
-applies the difference. The model is upsert: create what is missing, update what changed,
-and leave the rest. Removing an entry from `azure.yaml` stops azd from managing it, but
-does not delete it from Foundry. Deletion is the job of `azd down` or the per resource
-`azd ai` commands.
+Deploy issues an idempotent CreateOrUpdate call for each entry declared in `azure.yaml`
+and lets Foundry reconcile server-side. azd does not query Foundry's live state and diff
+it on the client. The effect is still upsert: create what is missing and update what
+changed, with the service owning that logic. Removing an entry from `azure.yaml` stops
+azd from managing it, but does not delete it from Foundry. Deletion is the job of
+`azd down` or the per resource `azd ai` commands.
 
 Two Foundry behaviors to confirm against the API contracts, because they decide how the
-upsert is written:
+CreateOrUpdate is written:
 
-- Whether create calls are idempotent, or whether the provider has to check first and
-  then choose create or update.
+- Whether each resource type exposes an idempotent CreateOrUpdate (PUT style) call, so the
+  provider never has to read first and branch between create and update.
 - Whether a re run after a partial failure can safely repeat the calls that already
-  succeeded.
+  succeeded, which the CreateOrUpdate model should give us.
 
 This area overlaps with existing reports [#8349](https://github.com/Azure/azure-dev/issues/8349),
 [#8350](https://github.com/Azure/azure-dev/issues/8350), and

@@ -223,6 +223,70 @@ const completionSpec: Fig.Spec = {
 					description: 'Ship agents with Microsoft Foundry from your terminal. (Preview)',
 					subcommands: [
 						{
+							name: ['code'],
+							description: 'Manage agent source code. (Preview)',
+							subcommands: [
+								{
+									name: ['download'],
+									description: 'Download agent source code from Foundry. (Preview)',
+									options: [
+										{
+											name: ['--dest', '-d'],
+											description: 'Destination path (default: ./<agent-name>/ or ./<agent-name>.zip)',
+											args: [
+												{
+													name: 'dest',
+												},
+											],
+										},
+										{
+											name: ['--version', '-v'],
+											description: 'Agent version to download (default: latest)',
+											args: [
+												{
+													name: 'version',
+												},
+											],
+										},
+										{
+											name: ['--zip'],
+											description: 'Save as zip file instead of extracting',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['delete'],
+							description: 'Delete a hosted agent.',
+							options: [
+								{
+									name: ['--force'],
+									description: 'Force deletion even if the agent has active sessions',
+									isDangerous: true,
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'none'],
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Delete a specific version only (the agent itself remains)',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['doctor'],
 							description: 'Diagnose problems with an azd ai agent project.',
 							options: [
@@ -241,8 +305,31 @@ const completionSpec: Fig.Spec = {
 							description: 'Manage agent endpoint and card configuration.',
 							subcommands: [
 								{
+									name: ['show'],
+									description: 'Show the current endpoint and card configuration of an agent.',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+									],
+								},
+								{
 									name: ['update'],
 									description: 'Update an agent\'s endpoint and card configuration without deploying a new version.',
+									options: [
+										{
+											name: ['--force'],
+											description: 'Skip confirmation prompts for breaking changes',
+											isDangerous: true,
+										},
+									],
 								},
 							],
 						},
@@ -251,7 +338,7 @@ const completionSpec: Fig.Spec = {
 							description: 'Create and run quick evals for an agent.',
 							subcommands: [
 								{
-									name: ['init'],
+									name: ['generate'],
 									description: 'Generate a local eval suite for a deployed agent.',
 									options: [
 										{
@@ -1332,11 +1419,21 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
-									name: ['--max-iterations'],
-									description: 'Maximum number of optimization iterations (must be >= 1; default: 5)',
+									name: ['--evaluator'],
+									description: 'Built-in or custom evaluator name (repeatable; required when not set in config)',
+									isRepeatable: true,
 									args: [
 										{
-											name: 'max-iterations',
+											name: 'evaluator',
+										},
+									],
+								},
+								{
+									name: ['--max-candidates'],
+									description: 'Maximum number of optimization candidates to generate (must be >= 1; default: 5)',
+									args: [
+										{
+											name: 'max-candidates',
 										},
 									],
 								},
@@ -1346,7 +1443,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--optimize-model'],
-									description: 'Model for optimization reasoning (gpt-5 family recommended; falls back to eval model when not set)',
+									description: 'Model for optimization reasoning (gpt-5 family recommended; required)',
 									args: [
 										{
 											name: 'optimize-model',

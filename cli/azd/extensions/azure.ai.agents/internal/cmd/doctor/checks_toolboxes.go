@@ -26,9 +26,8 @@ import (
 type toolboxEnvLookupFn func(ctx context.Context, key string) (value string, err error)
 
 // newCheckToolboxes produces Check `local.toolboxes` (P5.1 C14).
-// For each `ToolboxResource` declared in any service's
-// `agent.manifest.yaml` (collected by the C2 manifest walker), the
-// check verifies that the canonical
+// For each toolbox declared in any `microsoft.foundry` service's
+// `toolboxes` list in azure.yaml, the check verifies that the canonical
 // `TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT` env var is set to a
 // non-empty value in the active azd environment.
 //
@@ -44,7 +43,7 @@ type toolboxEnvLookupFn func(ctx context.Context, key string) (value string, err
 //     skips in this state, so the toolbox check would falsely Pass.
 //   - `local.azure-yaml` / `local.agent-service-detected` failed →
 //     no services to walk; walker output is unreliable.
-//   - state.HasToolboxes == false → no manifest toolbox declarations;
+//   - state.HasToolboxes == false → no toolbox declarations in azure.yaml;
 //     the check has nothing to verify.
 //
 // # Why this check is not gated on `remote.auth` /
@@ -69,7 +68,7 @@ type toolboxEnvLookupFn func(ctx context.Context, key string) (value string, err
 func newCheckToolboxes(deps Dependencies) Check {
 	return Check{
 		ID:     "local.toolboxes",
-		Name:   "Manifest toolboxes have endpoint env vars set",
+		Name:   "Toolboxes have endpoint env vars set",
 		Remote: false,
 		Fn: func(ctx context.Context, _ Options, prior []Result) Result {
 			if deps.AzdClient == nil {
@@ -119,7 +118,7 @@ func newCheckToolboxes(deps Dependencies) Check {
 			if !state.HasToolboxes {
 				return Result{
 					Status:  StatusSkip,
-					Message: "skipped: no toolbox resources declared in any service's agent.manifest.yaml.",
+					Message: "skipped: no toolbox resources declared in any microsoft.foundry service in azure.yaml.",
 				}
 			}
 
@@ -217,7 +216,7 @@ func classifyToolboxEndpoints(
 	return Result{
 		Status: StatusFail,
 		Message: fmt.Sprintf(
-			"%d toolbox(es) declared in agent.manifest.yaml have no MCP endpoint set in the azd environment: %s",
+			"%d toolbox(es) declared in azure.yaml have no MCP endpoint set in the azd environment: %s",
 			len(missing), sb.String()),
 		Suggestion: "Run `azd provision` to materialize toolbox infrastructure, or " +
 			"`azd env set <ENV_VAR> <endpoint>` to point at an existing toolbox.",

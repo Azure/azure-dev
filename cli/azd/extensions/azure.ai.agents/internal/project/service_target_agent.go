@@ -1687,8 +1687,15 @@ func validatePythonBundledDeps(srcDir string) error {
 	reqPath := filepath.Join(srcDir, "requirements.txt")
 	data, err := os.ReadFile(reqPath) //nolint:gosec // path from internal state
 	if err != nil {
-		// No requirements.txt — nothing to validate
-		return nil
+		if errors.Is(err, os.ErrNotExist) {
+			// No requirements.txt — nothing to validate
+			return nil
+		}
+		return exterrors.Dependency(
+			exterrors.CodeInvalidFilePath,
+			fmt.Sprintf("failed to read requirements.txt: %s", err),
+			"check file permissions for "+reqPath,
+		)
 	}
 
 	// Check if requirements.txt has any non-comment, non-empty lines
@@ -1709,7 +1716,11 @@ func validatePythonBundledDeps(srcDir string) error {
 	// for common patterns like vendor/ or lib/.
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
-		return nil
+		return exterrors.Dependency(
+			exterrors.CodeInvalidFilePath,
+			fmt.Sprintf("failed to read source directory: %s", err),
+			"check that the source directory exists and is readable: "+srcDir,
+		)
 	}
 
 	for _, e := range entries {
@@ -1739,7 +1750,7 @@ func validatePythonBundledDeps(srcDir string) error {
 		exterrors.CodeBundledDepsNotFound,
 		"bundled mode is configured but no installed packages were found in the source directory. "+
 			"Dependencies must be installed locally before deploying",
-		"run: pip install -r requirements.txt -t "+srcDir+
+		"run: pip install -r requirements.txt -t \""+srcDir+"\""+
 			" --platform manylinux_2_17_x86_64 --platform linux_x86_64 --platform any"+
 			" --implementation cp --only-binary=:all:",
 	)

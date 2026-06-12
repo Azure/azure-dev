@@ -149,7 +149,7 @@ func validateBundledHint(srcDir string, codeConfig *agent_yaml.CodeConfiguration
 	fmt.Printf("\n%s Bundled mode selected. Before deploying, install dependencies into the source directory.\n",
 		color.YellowString("NOTE:"))
 	fmt.Printf("  The deployment target is Linux x86_64 with Python %s. Example command:\n\n", pythonVersion)
-	fmt.Printf("    cd %s\n", srcDir)
+	fmt.Printf("    cd \"%s\"\n", srcDir)
 	fmt.Printf("    pip install -r requirements.txt -t . \\\n")
 	fmt.Printf("      --platform manylinux_2_17_x86_64 --platform linux_x86_64 --platform any \\\n")
 	fmt.Printf("      --python-version %s --implementation cp --only-binary=:all: --upgrade\n\n", pythonVersion)

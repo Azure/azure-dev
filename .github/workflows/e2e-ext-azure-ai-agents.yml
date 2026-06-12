@@ -90,6 +90,12 @@ jobs:
         if: contains(inputs.tier, '2')
         uses: astral-sh/setup-uv@v6
 
+      - name: Validate Tier 2 cost confirmation
+        if: contains(inputs.tier, '2') && !inputs.confirm_tier2_cost
+        run: |
+          echo "::error::Tier 2 creates Azure resources (~\$2-5). Set confirm_tier2_cost=true to proceed."
+          exit 1
+
       - name: Azure Login
         if: contains(inputs.tier, '1') || contains(inputs.tier, '2')
         uses: azure/login@v2

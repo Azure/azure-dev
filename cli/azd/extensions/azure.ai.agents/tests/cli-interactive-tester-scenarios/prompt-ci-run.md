@@ -6,8 +6,8 @@ Autonomously run azure.ai.agents CLI test scenarios using the cli-interactive-te
 
 - Runner: Ubuntu 22.04 (GitHub Actions)
 - azd is on PATH (pre-built in earlier step)
-- Azure auth: active (federated identity, earlier step)
-- GitHub CLI auth: active (earlier step)
+- Azure auth: active if TIER includes 1 or 2 (federated identity via earlier step)
+- GitHub CLI auth: active if TIER includes 1 or 2 (earlier step)
 - Scenarios directory: current working directory
 - All paths are POSIX (Linux runner)
 

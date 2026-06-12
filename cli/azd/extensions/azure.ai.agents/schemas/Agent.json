@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/azure.ai.agents/schemas/Agent.json",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/Agent.json",
   "title": "Foundry agent definition",
   "description": "Hosted or prompt agent. Items in an agents array may be inline (hosted or prompt) or a $ref to an external file.",
   "oneOf": [

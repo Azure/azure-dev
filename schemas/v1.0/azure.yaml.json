@@ -399,7 +399,7 @@
                         },
                         "then": {
                             "allOf": [
-                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json" }
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json" }
                             ],
                             "properties": {
                                 "project": false,

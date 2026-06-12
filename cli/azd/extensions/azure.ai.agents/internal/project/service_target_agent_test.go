@@ -1912,7 +1912,7 @@ func TestValidatePythonBundledDeps_NoDepsInstalled(t *testing.T) {
 func TestValidatePythonBundledDeps_TopLevelDistInfo(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("azure-ai-agents>=1.0\n"), 0600))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "azure_ai_agents-1.0.dist-info"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "azure_ai_agents-1.0.dist-info"), 0o750))
 
 	err := validatePythonBundledDeps(dir)
 	require.NoError(t, err)
@@ -1922,7 +1922,7 @@ func TestValidatePythonBundledDeps_SubdirDistInfo(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("azure-ai-agents>=1.0\n"), 0600))
 	// Installed into vendor/ subdir
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "vendor", "azure_ai_agents-1.0.dist-info"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "vendor", "azure_ai_agents-1.0.dist-info"), 0o750))
 
 	err := validatePythonBundledDeps(dir)
 	require.NoError(t, err)

@@ -45,6 +45,7 @@ words:
   - opencode
   - grpcbroker
   - msiexec
+  - manylinux
   - nosec
   - npx
   - oneof

@@ -25,6 +25,7 @@ func validatePostInit(srcDir string, codeConfig *agent_yaml.CodeConfiguration) {
 	}
 
 	validateDotnetRuntimeVsCsproj(srcDir, codeConfig.Runtime)
+	validateBundledHint(srcDir, codeConfig)
 }
 
 // validateDotnetRuntimeVsCsproj checks whether the selected .NET runtime version is compatible
@@ -121,4 +122,37 @@ func extractTargetFrameworkVersion(csprojContent string) int {
 		return 0
 	}
 	return version
+}
+
+// validateBundledHint prints guidance when Python bundled mode is selected,
+// reminding the user to install dependencies before deploying.
+func validateBundledHint(srcDir string, codeConfig *agent_yaml.CodeConfiguration) {
+	if codeConfig.DependencyResolution == nil || *codeConfig.DependencyResolution != "bundled" {
+		return
+	}
+
+	// Only show hint for Python projects
+	if !strings.HasPrefix(codeConfig.Runtime, "python_") {
+		return
+	}
+
+	// Check if requirements.txt exists
+	reqPath := filepath.Join(srcDir, "requirements.txt")
+	if _, err := os.Stat(reqPath); err != nil {
+		return
+	}
+
+	// Extract Python version from runtime (e.g. "python_3_14" -> "3.14")
+	pythonVersion := strings.TrimPrefix(codeConfig.Runtime, "python_")
+	pythonVersion = strings.Replace(pythonVersion, "_", ".", 1)
+
+	fmt.Printf("\n%s Bundled mode selected. Before deploying, install dependencies into the source directory.\n",
+		color.YellowString("NOTE:"))
+	fmt.Printf("  The deployment target is Linux x86_64 with Python %s. Example command:\n\n", pythonVersion)
+	fmt.Printf("    cd \"%s\"\n", srcDir)
+	fmt.Printf("    pip install -r requirements.txt -t . \\\n")
+	fmt.Printf("      --platform manylinux_2_17_x86_64 --platform linux_x86_64 --platform any \\\n")
+	fmt.Printf("      --python-version %s --implementation cp --only-binary=:all: --upgrade\n\n", pythonVersion)
+	fmt.Printf("  If some packages lack pre-built wheels, you may need to remove --only-binary=:all:\n")
+	fmt.Printf("  and build on a matching Linux environment instead.\n\n")
 }

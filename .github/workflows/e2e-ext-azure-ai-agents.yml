@@ -37,7 +37,7 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write  # Required for azure/login OIDC federated credentials
+  # NOTE: If Tier 1/2 re-enabled in GitHub Actions, add: id-token: write (required for azure/login OIDC)
 
 env:
   SCENARIOS_DIR: cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios
@@ -55,6 +55,8 @@ jobs:
           ref: trangevi/test-scenarios
 
       - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - uses: actions/setup-go@v6
         with:
@@ -73,6 +75,7 @@ jobs:
           go build -o ./azd .
           export PATH="$PWD:$PATH"
           azd extension install azure.ai.agents --source ./extensions/azure.ai.agents
+          echo "${{ github.workspace }}/cli/azd" >> "$GITHUB_PATH"
 
       - name: Install cli-interactive-tester
         run: |
@@ -83,31 +86,41 @@ jobs:
           cd /tmp/cli-interactive-tester
           pip install -e .
 
-      - name: Install uv (for Tier 2 run-local scenario)
-        if: contains(inputs.tier, '2')
-        uses: astral-sh/setup-uv@v6
+      # ─────────────────────────────────────────────────────────────────
+      # TODO: Tier 1/2 steps below are commented out pending discussion:
+      #   - Option A: Move Tier 1/2 to ADO pipeline (per cli/azd/AGENTS.md convention)
+      #   - Option B: Keep in GitHub Actions (requires id-token: write, OIDC secrets)
+      # Re-enable once decision is made.
+      # ─────────────────────────────────────────────────────────────────
 
-      - name: Azure Login
-        if: contains(inputs.tier, '1') || contains(inputs.tier, '2')
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      # - name: Install uv (for Tier 2 run-local scenario)
+      #   if: contains(inputs.tier, '2')
+      #   uses: astral-sh/setup-uv@v6
 
-      - name: GitHub CLI Auth
-        if: contains(inputs.tier, '1') || contains(inputs.tier, '2')
-        run: echo "${{ secrets.GH_TOKEN }}" | gh auth login --with-token
+      # - name: Azure Login
+      #   if: contains(inputs.tier, '1') || contains(inputs.tier, '2')
+      #   uses: azure/login@v2
+      #   with:
+      #     client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      #     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      #     subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Create test profile
-        working-directory: ${{ env.SCENARIOS_DIR }}
-        run: |
-          printf '%s\n' \
-            'prefix: "ci-${{ github.run_number }}"' \
-            'subscription: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"' \
-            'region: "North Central US"' \
-            'foundry_project_endpoint: "${{ secrets.FOUNDRY_PROJECT_ENDPOINT }}"' \
-            > profile.local.yaml
+      # - name: GitHub CLI Auth
+      #   if: contains(inputs.tier, '1') || contains(inputs.tier, '2')
+      #   run: echo "${{ secrets.GH_TOKEN }}" | gh auth login --with-token
+
+      # - name: Create test profile
+      #   working-directory: ${{ env.SCENARIOS_DIR }}
+      #   env:
+      #     AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      #     FOUNDRY_PROJECT_ENDPOINT: ${{ secrets.FOUNDRY_PROJECT_ENDPOINT }}
+      #   run: |
+      #     printf '%s\n' \
+      #       "prefix: \"ci-${{ github.run_number }}\"" \
+      #       "subscription: \"${AZURE_SUBSCRIPTION_ID}\"" \
+      #       "region: \"North Central US\"" \
+      #       "foundry_project_endpoint: \"${FOUNDRY_PROJECT_ENDPOINT}\"" \
+      #       > profile.local.yaml
 
       - name: Configure MCP for Copilot
         run: |
@@ -130,7 +143,6 @@ jobs:
           AZD_AGENTS_FIXTURES: ${{ github.workspace }}/${{ env.AZD_AGENTS_FIXTURES }}
           UV_HTTP_TIMEOUT: "300"
         run: |
-          export PATH="${{ github.workspace }}/cli/azd:$PATH"
           if [ ! -f prompt-ci-run.md ]; then
             echo "::error::prompt-ci-run.md not found in $(pwd)"
             exit 1
@@ -156,14 +168,16 @@ jobs:
             ${{ env.SCENARIOS_DIR }}/full-pipeline-run-results.md
           retention-days: 30
 
-      - name: Teardown (Tier 2 always cleanup)
-        if: always() && contains(inputs.tier, '2')
-        working-directory: ${{ env.SCENARIOS_DIR }}
-        env:
-          AZD_AGENTS_FIXTURES: ${{ github.workspace }}/${{ env.AZD_AGENTS_FIXTURES }}
-        run: |
-          export PATH="${{ github.workspace }}/cli/azd:$PATH"
-          # Direct teardown (not Copilot) for reliability on failure
-          cd ~/working/azd-agents-shared/*/ 2>/dev/null && \
-            azd down --force --purge || true
+      # - name: Teardown (Tier 2 always cleanup)
+      #   if: always() && contains(inputs.tier, '2')
+      #   working-directory: ${{ env.SCENARIOS_DIR }}
+      #   env:
+      #     AZD_AGENTS_FIXTURES: ${{ github.workspace }}/${{ env.AZD_AGENTS_FIXTURES }}
+      #   run: |
+      #     WORK_DIR=$(ls -d ~/working/azd-agents-shared/*/ 2>/dev/null | head -1)
+      #     if [ -z "$WORK_DIR" ]; then
+      #       echo "::warning::No working directory found — teardown skipped, check for leaked resources"
+      #       exit 0
+      #     fi
+      #     cd "$WORK_DIR" && azd down --force --purge
 

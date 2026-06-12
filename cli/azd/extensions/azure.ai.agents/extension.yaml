@@ -21,6 +21,9 @@ providers:
   - name: azure.ai.agent
     type: service-target
     description: Deploys agents to the Foundry Agent Service
+  - name: microsoft.foundry
+    type: service-target
+    description: Deploys a Foundry project and its agents from a unified azure.yaml service
 examples:
   - name: init
     description: Initialize a new AI agent project.

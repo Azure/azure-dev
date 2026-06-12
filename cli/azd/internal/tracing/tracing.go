@@ -26,18 +26,3 @@ var tracer = &wrapperTracer{otel.Tracer(fields.ServiceNameAzd)}
 func Start(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, Span) {
 	return tracer.Start(ctx, name, opts...)
 }
-
-// SetTracerProviderForTest replaces the TracerProvider backing Start with tp and
-// returns a function that restores the previously-configured tracer.
-//
-// It lets tests capture emitted spans by supplying an in-memory TracerProvider
-// without mutating OpenTelemetry's process-global TracerProvider — which is
-// shared across the whole process and stays delegated to the first provider set,
-// so swapping it is neither isolated nor cleanly reversible. Callers must invoke
-// the returned restore function when done (e.g. via t.Cleanup) and are
-// responsible for shutting down tp.
-func SetTracerProviderForTest(tp trace.TracerProvider) (restore func()) {
-	previous := tracer
-	tracer = &wrapperTracer{tp.Tracer(fields.ServiceNameAzd)}
-	return func() { tracer = previous }
-}

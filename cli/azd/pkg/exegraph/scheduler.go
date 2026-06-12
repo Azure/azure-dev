@@ -423,14 +423,12 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 }
 
 // runStep executes a single step with panic recovery, tracing, and callbacks.
-func runStep(ctx context.Context, step *Step, opts RunOptions) (stepErr error) {
-	ctx, span := tracing.Start(ctx, events.ExeGraphStepEvent)
-
-	// Step names and DependsOn entries embed user-chosen identifiers from
-	// azure.yaml (service names, layer names). They are hashed before emission
-	// per docs/specs/metrics-audit/privacy-review-checklist.md. Tags are a
-	// fixed internal vocabulary ("provision", "deploy", "cmdhook", ...) and
-	// are emitted raw.
+// setStepSpanAttributes records identifying attributes for step on span. The step
+// name and DependsOn entries embed user-chosen identifiers from azure.yaml (service
+// names, layer names) and are hashed before emission per
+// docs/specs/metrics-audit/privacy-review-checklist.md. Tags are a fixed internal
+// vocabulary ("provision", "deploy", "cmdhook", ...) and are emitted raw.
+func setStepSpanAttributes(span tracing.Span, step *Step) {
 	span.SetAttributes(fields.StringHashed(fields.ExeGraphStepNameKey, step.Name))
 	if len(step.DependsOn) > 0 {
 		span.SetAttributes(fields.StringSliceHashed(fields.ExeGraphStepDepsKey, step.DependsOn))
@@ -438,6 +436,12 @@ func runStep(ctx context.Context, step *Step, opts RunOptions) (stepErr error) {
 	if len(step.Tags) > 0 {
 		span.SetAttributes(fields.ExeGraphStepTagsKey.StringSlice(step.Tags))
 	}
+}
+
+func runStep(ctx context.Context, step *Step, opts RunOptions) (stepErr error) {
+	ctx, span := tracing.Start(ctx, events.ExeGraphStepEvent)
+
+	setStepSpanAttributes(span, step)
 
 	if opts.StepTimeout > 0 {
 		span.SetAttributes(fields.ExeGraphStepTimeoutKey.Int(int(opts.StepTimeout.Seconds())))

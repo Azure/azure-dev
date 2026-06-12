@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -22,12 +20,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktools"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	tracesdk "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // registerHookExecutors delegates to the shared test helper in test/mocks/mocktools.
@@ -1434,86 +1432,37 @@ func TestHookNameAttribute(t *testing.T) {
 	})
 }
 
-// TestHooksRunner_HookNameTelemetry verifies end-to-end that execHook emits the
-// hooks.name span attribute raw for built-in lifecycle hooks and hashed for user-
-// or extension-defined hook names, guarding against privacy regressions.
-func TestHooksRunner_HookNameTelemetry(t *testing.T) {
-	// Install one in-memory exporter for the whole test via the tracing test seam,
-	// so no process-global OTel state is mutated. The exporter is reset between
-	// sub-cases.
-	exporter := tracetest.NewInMemoryExporter()
-	tp := tracesdk.NewTracerProvider(tracesdk.WithSyncer(exporter))
-	restore := tracing.SetTracerProviderForTest(tp)
-	t.Cleanup(func() {
-		restore()
-		_ = tp.Shutdown(context.Background())
+// TestSetHookSpanAttributes verifies the hooks.name span attribute is emitted raw
+// for built-in lifecycle hooks and hashed for user- or extension-defined hook
+// names, guarding against privacy regressions.
+func TestSetHookSpanAttributes(t *testing.T) {
+	t.Run("known hook name emitted raw", func(t *testing.T) {
+		span := &mocktracing.Span{}
+		setHookSpanAttributes(span, "predeploy", "project")
+
+		assert.Equal(t, "predeploy", hookSpanAttr(t, span, fields.HooksNameKey.Key).AsString())
+		assert.Equal(t, "project", hookSpanAttr(t, span, fields.HooksTypeKey.Key).AsString())
 	})
 
-	t.Run("known hook emitted raw", func(t *testing.T) {
-		exporter.Reset()
-		got := execHookCaptureHookName(t, exporter, tp, "predeploy")
-		assert.Equal(t, "predeploy", got)
-	})
-
-	t.Run("custom hook hashed", func(t *testing.T) {
-		exporter.Reset()
+	t.Run("custom hook name hashed", func(t *testing.T) {
 		const custom = "contoso-custom-hook"
-		got := execHookCaptureHookName(t, exporter, tp, custom)
-		assert.Equal(t, fields.CaseInsensitiveHash(custom), got)
-		assert.NotEqual(t, custom, got, "raw value must not be emitted")
+		span := &mocktracing.Span{}
+		setHookSpanAttributes(span, custom, "service")
+
+		nameVal := hookSpanAttr(t, span, fields.HooksNameKey.Key)
+		assert.Equal(t, fields.CaseInsensitiveHash(custom), nameVal.AsString())
+		assert.NotEqual(t, custom, nameVal.AsString(), "raw value must not be emitted")
 	})
 }
 
-// execHookCaptureHookName runs a single hook through execHook and returns the
-// value emitted for the hooks.name attribute on the resulting hooks.exec span.
-// The caller owns the exporter/provider lifecycle (see TestHooksRunner_HookNameTelemetry).
-func execHookCaptureHookName(
-	t *testing.T, exporter *tracetest.InMemoryExporter, tp *tracesdk.TracerProvider, hookName string,
-) string {
+// hookSpanAttr returns the value of the attribute with the given key set on span.
+func hookSpanAttr(t *testing.T, span *mocktracing.Span, key attribute.Key) attribute.Value {
 	t.Helper()
-
-	cwd := t.TempDir()
-	ostest.Chdir(t, cwd)
-	require.NoError(t, os.MkdirAll(filepath.Join(cwd, "scripts"), osutil.PermissionDirectory))
-	scriptRel := filepath.Join("scripts", hookName+".sh")
-	require.NoError(t, os.WriteFile(filepath.Join(cwd, scriptRel), nil, osutil.PermissionExecutableFile))
-
-	env := environment.NewWithValues("test", map[string]string{})
-	envManager := &mockenv.MockEnvManager{}
-
-	mockContext := mocks.NewMockContext(t.Context())
-	registerHookExecutors(mockContext)
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, ".sh")
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.NewRunResult(0, "", ""), nil
-	})
-
-	hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
-	runner := NewHooksRunner(
-		hooksManager, mockContext.CommandRunner, envManager,
-		mockContext.Console, cwd, map[string][]*HookConfig{}, env,
-		mockContext.Container,
-	)
-
-	hookConfig := &HookConfig{
-		Name:  hookName,
-		Shell: string(language.HookKindBash),
-		Run:   filepath.ToSlash(scriptRel),
-	}
-	require.NoError(t, runner.execHook(*mockContext.Context, hookConfig, "project", nil))
-	require.NoError(t, tp.ForceFlush(t.Context()))
-
-	for _, s := range exporter.GetSpans() {
-		if s.Name != events.HooksExecEvent {
-			continue
-		}
-		for _, a := range s.Attributes {
-			if string(a.Key) == string(fields.HooksNameKey.Key) {
-				return a.Value.AsString()
-			}
+	for _, a := range span.Attributes {
+		if a.Key == key {
+			return a.Value
 		}
 	}
-	t.Fatalf("no %q span with a %q attribute was recorded", events.HooksExecEvent, fields.HooksNameKey.Key)
-	return ""
+	t.Fatalf("attribute %q was not set", key)
+	return attribute.Value{}
 }

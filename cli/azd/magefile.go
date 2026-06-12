@@ -463,6 +463,13 @@ func UpdateGoVersion(version string) error {
 		return errors.New("a Go version is required, e.g. 'mage updateGoVersion 1.26.4'")
 	}
 
+	// Require a bare X.Y.Z version to avoid corrupting go.mod, Dockerfiles, and
+	// templates with typos like "1.26" or "go1.26.4".
+	if !regexp.MustCompile(`^\d+\.\d+\.\d+$`).MatchString(version) {
+		return fmt.Errorf(
+			"invalid Go version %q: expected a X.Y.Z version such as 1.26.4 (no 'go' prefix)", version)
+	}
+
 	repoRoot, err := findRepoRoot()
 	if err != nil {
 		return err

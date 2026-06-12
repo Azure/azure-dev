@@ -28,7 +28,10 @@ words:
   - westeurope
   # Project terms
   - ABAC
+  - abbrs
   - acrpush
+  - alnum
+  - foundryproject
   - agentignore
   - ADLS
   - agentserver

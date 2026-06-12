@@ -188,3 +188,23 @@ const (
 	CodeInvalidTargetAttr  = "invalid_target_attribute"
 	CodeReservedEnvVar     = "reserved_env_var"
 )
+
+// Error codes for the microsoft.foundry provisioning provider.
+const (
+	CodeInvalidAzureYaml            = "invalid_azure_yaml"
+	CodeProvisioningServiceNotFound = "provisioning_service_not_found"
+	CodeBrownfieldNotSupported      = "brownfield_not_supported"
+	CodePreviewNotImplemented       = "preview_not_implemented"
+	CodeMissingFoundryProjectName   = "missing_foundry_project_name"
+	CodeMissingResourceGroup        = "missing_resource_group"
+	CodeMissingAzureLocation        = "missing_azure_location"
+)
+
+// Operation names for the microsoft.foundry provisioning provider.
+const (
+	OpArmDeploymentCreate = "arm_deployment_create"
+	OpArmDeploymentGet    = "arm_deployment_get"
+	OpArmDeploymentDelete = "arm_deployment_delete"
+	OpResourceGroupCreate = "resource_group_create"
+	OpResourceGroupDelete = "resource_group_delete"
+)

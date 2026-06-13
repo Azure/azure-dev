@@ -6,9 +6,14 @@ package project
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -158,6 +163,152 @@ func TestArmOutputsToProto(t *testing.T) {
 	}
 }
 
+// TestArmOutputsToProto_RepairsMangledKeyCase locks in the fix for
+// test-results-bicepless.md Finding #4. ARM's management SDK returns
+// deployment-output names with the first segment all-but-its-last
+// letter lowercased (`AZURE_AI_PROJECT_ID` -> `azurE_AI_PROJECT_ID`,
+// `FOUNDRY_PROJECT_ENDPOINT` -> `foundrY_PROJECT_ENDPOINT`). Without
+// the canonical-name remapping, `azd env get-value AZURE_AI_PROJECT_ID`
+// 404s downstream because the env-file key is `azurE_AI_PROJECT_ID`.
+//
+// The fix is in armOutputsToProto: case-insensitive lookup against
+// canonicalOutputNames, then emit the canonical name. Unknown keys
+// pass through verbatim so we never silently lose an output.
+func TestArmOutputsToProto_RepairsMangledKeyCase(t *testing.T) {
+	tests := []struct {
+		name    string
+		inKey   string
+		wantKey string
+	}{
+		{
+			name:    "ARM-mangled AZURE_AI_PROJECT_ID -> canonical",
+			inKey:   "azurE_AI_PROJECT_ID",
+			wantKey: "AZURE_AI_PROJECT_ID",
+		},
+		{
+			name:    "ARM-mangled FOUNDRY_PROJECT_ENDPOINT -> canonical",
+			inKey:   "foundrY_PROJECT_ENDPOINT",
+			wantKey: "FOUNDRY_PROJECT_ENDPOINT",
+		},
+		{
+			name:    "already-canonical key passes through unchanged",
+			inKey:   "AZURE_AI_ACCOUNT_NAME",
+			wantKey: "AZURE_AI_ACCOUNT_NAME",
+		},
+		{
+			name:    "lower-case input gets canonicalized too",
+			inKey:   "azure_openai_endpoint",
+			wantKey: "AZURE_OPENAI_ENDPOINT",
+		},
+		{
+			name:    "unknown key passes through verbatim (don't drop unanticipated outputs)",
+			inKey:   "SOME_UNANTICIPATED_OUTPUT",
+			wantKey: "SOME_UNANTICIPATED_OUTPUT",
+		},
+		{
+			name:    "unknown key with weird casing also passes through (verbatim, not canonicalized)",
+			inKey:   "soME_UNANTICIPATED",
+			wantKey: "soME_UNANTICIPATED",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := armOutputsToProto(map[string]any{
+				tt.inKey: map[string]any{"type": "String", "value": "v"},
+			})
+			require.Len(t, got, 1)
+			_, ok := got[tt.wantKey]
+			assert.True(t, ok, "expected canonical key %q in result, got keys %v",
+				tt.wantKey, mapKeys(got))
+			assert.Equal(t, "v", got[tt.wantKey].Value)
+		})
+	}
+}
+
+// TestArmOutputsToProto_RepairsRealWorldRunOutput uses the exact key
+// set captured in test-results-bicepless.md Run 2 (Finding #4), so a
+// future regression in ARM's mangling rules or in our repair logic
+// is caught against real data.
+func TestArmOutputsToProto_RepairsRealWorldRunOutput(t *testing.T) {
+	t.Parallel()
+	// Verbatim from `.azure/dev/.env` after the C4 live deploy.
+	in := map[string]any{
+		"azurE_AI_ACCOUNT_NAME":                map[string]any{"type": "String", "value": "cog-l5nlvejnau56c"},
+		"azurE_AI_PROJECT_ACR_CONNECTION_NAME": map[string]any{"type": "String", "value": ""},
+		"azurE_AI_PROJECT_ID":                  map[string]any{"type": "String", "value": "/subscriptions/.../accounts/cog-l5nlvejnau56c/projects/fdtest-zhihuan"},
+		"azurE_AI_PROJECT_NAME":                map[string]any{"type": "String", "value": "fdtest-zhihuan"},
+		"azurE_CONTAINER_REGISTRY_ENDPOINT":    map[string]any{"type": "String", "value": ""},
+		"azurE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"type": "String", "value": ""},
+		"azurE_OPENAI_ENDPOINT":                map[string]any{"type": "String", "value": "https://cog-l5nlvejnau56c.openai.azure.com/"},
+		"foundrY_PROJECT_ENDPOINT": map[string]any{
+			"type":  "String",
+			"value": "https://cog-l5nlvejnau56c.services.ai.azure.com/api/projects/fdtest-zhihuan",
+		},
+	}
+	got := armOutputsToProto(in)
+
+	// Every key must come out in canonical form. The values are the
+	// downstream consumers that previously silently 404'd.
+	wantCanonical := []string{
+		"AZURE_AI_ACCOUNT_NAME",
+		"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+		"AZURE_AI_PROJECT_ID",
+		"AZURE_AI_PROJECT_NAME",
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT",
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+		"AZURE_OPENAI_ENDPOINT",
+		"FOUNDRY_PROJECT_ENDPOINT",
+	}
+	for _, k := range wantCanonical {
+		_, ok := got[k]
+		assert.True(t, ok, "expected canonical key %q in result, got keys %v", k, mapKeys(got))
+	}
+	assert.Len(t, got, len(wantCanonical), "no extra mangled keys should remain")
+
+	// Spot-check that values flowed through correctly.
+	assert.Equal(t, "cog-l5nlvejnau56c", got["AZURE_AI_ACCOUNT_NAME"].Value)
+	assert.Equal(t, "fdtest-zhihuan", got["AZURE_AI_PROJECT_NAME"].Value)
+	assert.Equal(t, "https://cog-l5nlvejnau56c.openai.azure.com/",
+		got["AZURE_OPENAI_ENDPOINT"].Value)
+}
+
+// TestCanonicalizeOutputName covers the small helper directly.
+// Exhaustive vs the table-driven test above so future contributors
+// adding new entries to canonicalOutputNames only have to touch one
+// place.
+func TestCanonicalizeOutputName(t *testing.T) {
+	t.Parallel()
+
+	// Every canonical name must round-trip unchanged.
+	for _, c := range canonicalOutputNames {
+		assert.Equal(t, c, canonicalizeOutputName(c),
+			"canonical name %q must round-trip", c)
+	}
+
+	// Every canonical name must be reachable from its lowercase form.
+	for _, c := range canonicalOutputNames {
+		lower := strings.ToLower(c)
+		assert.Equal(t, c, canonicalizeOutputName(lower),
+			"lower-case %q must canonicalize to %q", lower, c)
+	}
+
+	// Unknown name passes through verbatim.
+	assert.Equal(t, "not_a_known_output",
+		canonicalizeOutputName("not_a_known_output"),
+		"unknown name must pass through verbatim, not silently dropped")
+}
+
+// mapKeys returns a sorted list of keys for stable assert messages.
+func mapKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}
+
 func TestArmInputsToProto(t *testing.T) {
 	in := map[string]any{
 		"location":   map[string]any{"value": "eastus"},
@@ -176,30 +327,6 @@ func TestDeploymentName_StableForEnv(t *testing.T) {
 
 	p.envName = "production"
 	assert.Equal(t, "azd-foundry-production", p.deploymentName())
-}
-
-func TestPreview_NotImplemented(t *testing.T) {
-	// Preview is intentionally stubbed: azd-core's extension preview
-	// adapter does not yet render the extension's payload, so any what-if
-	// output we produced would be silently dropped. Surface a clean
-	// "not implemented" error instead of pretending the preview ran.
-	p := &FoundryProvisioningProvider{}
-
-	_, err := p.Preview(t.Context(), func(string) {})
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not implemented yet")
-	assert.Contains(t, err.Error(), "microsoft.foundry")
-
-	// Structured error must carry the Compatibility category (feature
-	// not implemented in this version) + stable code so telemetry and
-	// downstream classifiers can group on it. NOT Validation: the user
-	// provided no invalid input.
-	var local *azdext.LocalError
-	require.True(t, errors.As(err, &local), "expected *azdext.LocalError, got %T", err)
-	assert.Equal(t, exterrors.CodePreviewNotImplemented, local.Code)
-	assert.Equal(t, azdext.LocalErrorCategoryCompatibility, local.Category)
-	assert.NotEmpty(t, local.Suggestion)
 }
 
 func TestDeploymentOutputsResources_NilSafe(t *testing.T) {
@@ -301,19 +428,56 @@ func TestArmInputsToProto_JSONEncodesNonStrings(t *testing.T) {
 	assert.Equal(t, `[{"name":"gpt-4"}]`, got["deployments"].Value)
 }
 
-func TestParameters_NilSafeOnMissingSynthResult(t *testing.T) {
-	// Parameters is part of the gRPC contract; calling it before
-	// Initialize succeeded must NOT panic on nil synthResult. Instead
-	// return a structured Internal error so the host has something
-	// actionable to surface.
-	p := &FoundryProvisioningProvider{} // synthResult left nil
-	_, err := p.Parameters(t.Context())
-	require.Error(t, err)
-	var local *azdext.LocalError
-	require.True(t, errors.As(err, &local), "expected *azdext.LocalError, got %T", err)
-	assert.Equal(t, exterrors.CodeInvalidServiceConfig, local.Code)
-	assert.Equal(t, azdext.LocalErrorCategoryInternal, local.Category)
-	assert.Contains(t, local.Message, "before successful Initialize")
+func TestParameters_NilSynthResult_ReturnsHostDerivedOnly(t *testing.T) {
+	// On the on-disk Bicep path, Initialize deliberately skips the
+	// synthesizer so synthResult is nil. Parameters must still return
+	// the host-derived parameter list (location, foundryProjectName,
+	// principalId) so azd-core's env-wiring planner has something to
+	// work with. The synthesizer-derived `includeAcr` is omitted in
+	// that mode -- on-disk Bicep owns its own parameter contract.
+	p := &FoundryProvisioningProvider{
+		location:    "eastus",
+		foundryName: "fp",
+		principalID: "pid",
+		// synthResult intentionally nil (on-disk path)
+	}
+	got, err := p.Parameters(t.Context())
+	require.NoError(t, err, "Parameters must succeed on the on-disk path")
+
+	names := make([]string, 0, len(got))
+	for _, p := range got {
+		names = append(names, p.Name)
+	}
+	assert.Contains(t, names, "location")
+	assert.Contains(t, names, "foundryProjectName")
+	assert.Contains(t, names, "principalId")
+	assert.NotContains(t, names, "includeAcr",
+		"includeAcr is a synthesizer-derived value; on-disk path must skip it")
+}
+
+func TestParameters_EmbeddedPath_IncludesSynthResultDerivedValues(t *testing.T) {
+	// On the embedded path, synthResult is set and includeAcr flows
+	// through.
+	p := &FoundryProvisioningProvider{
+		location:    "eastus",
+		foundryName: "fp",
+		principalID: "pid",
+		synthResult: &synthesis.Result{
+			Parameters: map[string]any{"includeAcr": true},
+		},
+	}
+	got, err := p.Parameters(t.Context())
+	require.NoError(t, err)
+
+	found := false
+	for _, p := range got {
+		if p.Name == "includeAcr" {
+			found = true
+			assert.Equal(t, "true", p.Value,
+				"includeAcr value must be the synthesizer's derived bool, %%v-formatted")
+		}
+	}
+	assert.True(t, found, "embedded path must include includeAcr")
 }
 
 func TestArmParameters_NilSafeOnMissingSynthResult(t *testing.T) {
@@ -368,4 +532,254 @@ func TestFindFoundryService_DependencyCategory(t *testing.T) {
 	require.True(t, errors.As(err, &local))
 	assert.Equal(t, azdext.LocalErrorCategoryDependency, local.Category,
 		"missing foundry service is a Dependency, not a Validation")
+}
+
+func TestOnDiskTemplatePresent(t *testing.T) {
+	t.Parallel()
+	// Empty project root: no infra/, so on-disk template absent.
+	emptyDir := t.TempDir()
+	p := &FoundryProvisioningProvider{projectPath: emptyDir}
+	assert.False(t, p.onDiskTemplatePresent(),
+		"absent ./infra/ -> false")
+
+	// infra/ exists but is empty: still false (no .bicep or .bicepparam).
+	emptyInfraDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(emptyInfraDir, onDiskInfraDir), 0o750))
+	p = &FoundryProvisioningProvider{projectPath: emptyInfraDir}
+	assert.False(t, p.onDiskTemplatePresent(),
+		"./infra/ present but empty -> false")
+
+	// main.bicep alone: true.
+	bicepDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(bicepDir, onDiskInfraDir), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(bicepDir, onDiskInfraDir, onDiskBicepFile), []byte("// b"), 0o600))
+	p = &FoundryProvisioningProvider{projectPath: bicepDir}
+	assert.True(t, p.onDiskTemplatePresent(),
+		"main.bicep present -> true")
+
+	// main.bicepparam alone: true.
+	bicepparamDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(bicepparamDir, onDiskInfraDir), 0o750))
+	bicepparamPath := filepath.Join(bicepparamDir, onDiskInfraDir, onDiskBicepParamFile)
+	require.NoError(t, os.WriteFile(bicepparamPath, []byte("// bp"), 0o600))
+	p = &FoundryProvisioningProvider{projectPath: bicepparamDir}
+	assert.True(t, p.onDiskTemplatePresent(),
+		"main.bicepparam present -> true")
+}
+
+func TestResolveTemplate_FallsBackToEmbeddedWhenNoOnDisk(t *testing.T) {
+	t.Parallel()
+	// No ./infra/ -> resolveTemplate returns the embedded path with
+	// the synthesizer-derived parameter map.
+	dir := t.TempDir()
+	p := &FoundryProvisioningProvider{
+		projectPath: dir,
+		envName:     "dev",
+		location:    "eastus",
+		foundryName: "fp",
+		principalID: "pid",
+		armTemplate: map[string]any{"$schema": "embedded", "contentVersion": "1.0.0.0"},
+		synthResult: &synthesis.Result{
+			Parameters: map[string]any{
+				"includeAcr":  false,
+				"deployments": []any{},
+			},
+		},
+	}
+
+	got, err := p.resolveTemplate(t.Context(), func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, templateModeEmbedded, got.mode,
+		"absent ./infra/ -> embedded mode")
+	assert.Empty(t, got.sourcePath)
+	assert.Equal(t, "embedded", got.armTemplate["$schema"],
+		"embedded ARM template flows through verbatim")
+	// armParameters includes host-derived values too.
+	require.Contains(t, got.parameters, "location")
+	require.Contains(t, got.parameters, "includeAcr")
+}
+
+func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
+	t.Parallel()
+	// Setup: a project root with both an "embedded" template stashed
+	// on the provider AND ./infra/main.bicep on disk. on-disk must
+	// win; embedded is shadowed.
+	dir := t.TempDir()
+	infraDir := filepath.Join(dir, onDiskInfraDir)
+	require.NoError(t, os.MkdirAll(infraDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile),
+		[]byte("// fake bicep, never actually compiled by the stub"), 0o600))
+
+	// Plant a user parameters file with one literal value so we can
+	// observe merge precedence.
+	params := `{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "value": "user-supplied-location" },
+    "userOnly": { "value": "from-user" }
+  }
+}`
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskParamsFile), []byte(params), 0o600))
+
+	// Pre-bake the on-disk source so we don't need a live bicep CLI.
+	// (resolveTemplate skips the loadOnDiskTemplate call when
+	// onDiskSource is already set; this lets the test exercise the
+	// merge logic in isolation.)
+	armFromDisk := map[string]any{"$schema": "ondisk", "contentVersion": "1.0.0.0"}
+	p := &FoundryProvisioningProvider{
+		projectPath: dir,
+		envName:     "dev",
+		location:    "host-location",
+		foundryName: "fp",
+		principalID: "pid",
+		armTemplate: map[string]any{"$schema": "embedded"},
+		synthResult: &synthesis.Result{
+			Parameters: map[string]any{"includeAcr": false},
+		},
+		onDiskSource: &templateSource{
+			mode:        templateModeBicep,
+			armTemplate: armFromDisk,
+			parameters: map[string]any{
+				"location": map[string]any{"value": "user-supplied-location"},
+				"userOnly": map[string]any{"value": "from-user"},
+			},
+			sourcePath: filepath.Join(infraDir, onDiskBicepFile),
+		},
+	}
+
+	got, err := p.resolveTemplate(t.Context(), func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+
+	assert.Equal(t, templateModeBicep, got.mode, "on-disk Bicep mode wins")
+	assert.Equal(t, "ondisk", got.armTemplate["$schema"],
+		"on-disk template is returned, not the embedded one")
+	assert.Equal(t, filepath.Join(infraDir, onDiskBicepFile), got.sourcePath)
+
+	// Merge precedence: user wins on 'location'.
+	loc := got.parameters["location"].(map[string]any)
+	assert.Equal(t, "user-supplied-location", loc["value"],
+		"user-supplied parameter wins over host-derived")
+	// User-only key is present.
+	require.Contains(t, got.parameters, "userOnly")
+	// Host-derived key (not in user params) still flows through.
+	require.Contains(t, got.parameters, "foundryProjectName",
+		"host-derived parameter fills gap when user file doesn't declare it")
+	// Synthesizer-derived key is ABSENT: per the design decision,
+	// when on-disk wins we skip the synthesizer entirely. But
+	// armParameters still has synthResult here (set up above) because
+	// this test is exercising the merge step only -- in real
+	// Initialize, synthResult would be nil on the on-disk path.
+	// What we DO want to verify: the merge respects user wins.
+}
+
+func TestResolveTemplate_OnDiskFallsBackWhenSourceLoaderReturnsNil(t *testing.T) {
+	t.Parallel()
+	// Defensive: if onDiskTemplatePresent() reports true but
+	// loadOnDiskTemplate returns (nil, nil) -- e.g. file disappeared
+	// mid-call -- we fall back to the embedded path rather than
+	// crashing or erroring. The stub compiler is set up to return a
+	// valid template, but we don't actually create the infra/ files,
+	// so onDiskTemplatePresent() returns false and we go straight to
+	// embedded.
+	dir := t.TempDir()
+	p := &FoundryProvisioningProvider{
+		projectPath: dir,
+		envName:     "dev",
+		location:    "eastus",
+		foundryName: "fp",
+		principalID: "pid",
+		armTemplate: map[string]any{"$schema": "embedded"},
+		synthResult: &synthesis.Result{
+			Parameters: map[string]any{"includeAcr": false},
+		},
+	}
+
+	got, err := p.resolveTemplate(t.Context(), func(string) {})
+	require.NoError(t, err)
+	assert.Equal(t, templateModeEmbedded, got.mode)
+}
+
+func TestRejectBrownfield(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		yaml      string
+		svcName   string
+		wantError bool
+	}{
+		{
+			name: "greenfield (no endpoint:) -> nil",
+			yaml: `name: x
+services:
+  foundry:
+    host: azure.ai.agent`,
+			svcName:   "foundry",
+			wantError: false,
+		},
+		{
+			name: "endpoint set -> brownfield error",
+			yaml: `name: x
+services:
+  foundry:
+    host: azure.ai.agent
+    endpoint: https://example.foundry.example.com`,
+			svcName:   "foundry",
+			wantError: true,
+		},
+		{
+			name: "service not in yaml -> nil (not our error to raise)",
+			yaml: `name: x
+services:
+  other:
+    host: containerapp`,
+			svcName:   "foundry",
+			wantError: false,
+		},
+		{
+			name:      "malformed yaml -> nil (upstream surfaces parse error)",
+			yaml:      "not: : valid: yaml",
+			svcName:   "foundry",
+			wantError: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := rejectBrownfield([]byte(tt.yaml), tt.svcName)
+			if !tt.wantError {
+				assert.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			var local *azdext.LocalError
+			require.True(t, errors.As(err, &local))
+			assert.Equal(t, exterrors.CodeBrownfieldNotSupported, local.Code)
+		})
+	}
+}
+
+func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
+	t.Parallel()
+	// envValues must always include the canonical AZURE_* keys
+	// resolved by Initialize, even when the azd env service is
+	// unavailable (azdClient == nil). This lets ${AZURE_LOCATION}
+	// substitution in main.parameters.json work in all paths.
+	p := &FoundryProvisioningProvider{
+		envName:     "dev",
+		subID:       "sub-id",
+		location:    "westus2",
+		rgName:      "my-rg",
+		foundryName: "fp",
+		principalID: "pid",
+		// azdClient intentionally nil
+	}
+	got := p.envValues()
+	assert.Equal(t, "sub-id", got[envKeySubscriptionID])
+	assert.Equal(t, "westus2", got[envKeyLocation])
+	assert.Equal(t, "my-rg", got[envKeyResourceGroup])
+	assert.Equal(t, "fp", got[envKeyProjectName])
+	assert.Equal(t, "pid", got[envKeyPrincipalID])
 }

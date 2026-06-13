@@ -176,21 +176,18 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 	}
 }
 
-// Initialize stores the service config. It is intentionally cheap: azd
-// core calls Initialize on every service-target for every action
-// (provision, deploy, env refresh, show, ...). Heavy work such as
-// resolving the agent.yaml on disk, looking up the tenant, and
-// constructing an Azure credential lives in ensureDeployContext and
-// runs only when a deploy-time entrypoint actually needs it.
+// Initialize stores the service config. It is intentionally cheap: azd core
+// calls it on every service-target for every action. Heavy work (resolving
+// agent.yaml, tenant lookup, credential) lives in ensureDeployContext and runs
+// only when a deploy-time entrypoint needs it.
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
 	p.serviceConfig = serviceConfig
 	return nil
 }
 
-// ensureDeployContext lazily resolves the agent definition file, the
-// azd environment, the tenant, and the developer credential. Idempotent
-// via the p.agentDefinitionPath short-circuit; safe to call from every
-// deploy-time entrypoint.
+// ensureDeployContext lazily resolves the agent definition file, the azd
+// environment, the tenant, and the credential. Idempotent via the
+// agentDefinitionPath short-circuit.
 func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) error {
 	if p.agentDefinitionPath != "" {
 		return nil
@@ -336,10 +333,8 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	)
 }
 
-// ensureEnv lazily populates p.env from the azd host. Idempotent.
-// Cheap enough to be called from non-deploy entrypoints (Endpoints,
-// registerAgentEnvironmentVariables) without pulling in the heavier
-// ensureDeployContext chain.
+// ensureEnv lazily populates p.env from the azd host. Idempotent and cheap
+// enough for non-deploy entrypoints (Endpoints, registerAgentEnvironmentVariables).
 func (p *AgentServiceTargetProvider) ensureEnv(ctx context.Context) error {
 	if p.env != nil {
 		return nil
@@ -606,7 +601,7 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	// Pre-built image: nothing to package or push; skip the deploy-context
+	// Pre-built image: nothing to package or push. Skip deploy-context
 	// resolution so this path stays cheap and doesn't require agent.yaml.
 	if preBuiltArtifact := findPreBuiltImageArtifact(serviceContext.Package); preBuiltArtifact != nil {
 		progress("Using pre-built container image, skipping publish")

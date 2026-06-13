@@ -91,9 +91,8 @@ type agentBlock struct {
 }
 
 // foundryService is the subset of a services.<name> body the synthesizer
-// reads. Unknown fields (connections, toolboxes, skills, routines, tools,
-// agents[].tools, agents[].toolboxes, agents[].skill, agents[].runtime, etc.)
-// are intentionally ignored: they are reconciled in azd deploy, not provision.
+// reads. Unknown fields (connections, tools, agents[].tools, etc.) are
+// intentionally ignored: they are reconciled in azd deploy, not provision.
 type foundryService struct {
 	Host        string       `yaml:"host"`
 	Endpoint    string       `yaml:"endpoint,omitempty"`

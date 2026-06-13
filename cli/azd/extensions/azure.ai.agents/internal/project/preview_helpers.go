@@ -13,14 +13,12 @@ import (
 )
 
 // maxPreviewResources caps how many "Affected resources" lines
-// summarizeWhatIf renders so the diff stays readable in a terminal.
-// The summary's "Total changes" + per-type counts still reflect the
-// full set; only the per-resource enumeration is truncated.
+// summarizeWhatIf renders. The counts still reflect the full set; only the
+// per-resource enumeration is truncated.
 const maxPreviewResources = 20
 
-// orderedChangeTypes is the stable display order for the per-type
-// count block. Keeping the order independent of map iteration makes
-// the summary deterministic so snapshot/text tests are stable.
+// orderedChangeTypes is the stable display order for the per-type count block,
+// keeping the summary deterministic for tests.
 var orderedChangeTypes = []string{
 	"Create",
 	"Modify",
@@ -31,11 +29,9 @@ var orderedChangeTypes = []string{
 	"Unknown",
 }
 
-// summarizeWhatIf renders a multi-line, deterministic summary of a
-// successful what-if result. Nil-safe on Properties, Status, and on
-// individual Change entries; nil entries are silently skipped.
-//
-// Format (anchor the test snapshots on this layout):
+// summarizeWhatIf renders a deterministic, multi-line summary of a successful
+// what-if result. Nil-safe on Properties, Status, and individual Change
+// entries. Format (test snapshots anchor on this layout):
 //
 //	What-if status: <Status>
 //	Total changes: <N>
@@ -47,12 +43,10 @@ var orderedChangeTypes = []string{
 //	  Ignore: <n>
 //	Affected resources:
 //	  + <change-type> <resource-id>
-//	  + <change-type> <resource-id>
 //	  ... and <K> more
 //
-// `Status` defaults to "Succeeded" when ARM returned an empty string.
-// Per-type counts omit zero rows. The resource list is truncated at
-// maxPreviewResources; the count line still reflects the true total.
+// Status defaults to "Succeeded" when ARM returned empty. Zero-count rows are
+// omitted; the resource list is truncated at maxPreviewResources.
 func summarizeWhatIf(r armresources.WhatIfOperationResult) string {
 	status := "Succeeded"
 	if r.Status != nil && *r.Status != "" {
@@ -112,11 +106,9 @@ func summarizeWhatIf(r armresources.WhatIfOperationResult) string {
 	return b.String()
 }
 
-// shortenResourceID trims the `/subscriptions/.../resourceGroups/...`
-// prefix from an ARM resource id so previews stay readable in a narrow
-// terminal. Falls back to the original id when it doesn't match the
-// expected shape so the user always has SOMETHING to identify the
-// resource by.
+// shortenResourceID trims the subscription/resource-group prefix from an ARM
+// resource id so previews stay readable. Falls back to the original id when it
+// doesn't match the expected shape.
 func shortenResourceID(id string) string {
 	const marker = "/providers/"
 	if _, after, ok := strings.Cut(id, marker); ok {
@@ -125,16 +117,10 @@ func shortenResourceID(id string) string {
 	return id
 }
 
-// whatIfFailure inspects a what-if result and returns a structured
-// error when ARM reports failure inline (HTTP 200 with Error set or
-// Status != "Succeeded"). Returns nil on success.
-//
-// ARM's what-if API has two error paths: the usual non-2xx HTTP
-// response (handled by the SDK's poller), AND an inline failure where
-// the response is HTTP 200 with Properties.Error populated. The latter
-// happens for preflight failures (e.g., quota / template validation).
-// Without this check the caller would see "0 changes" and assume
-// success.
+// whatIfFailure returns a structured error when ARM reports failure inline
+// (HTTP 200 with Error set, or Status != "Succeeded"). Returns nil on success.
+// The inline-error path catches preflight failures (quota, template
+// validation) that would otherwise look like "0 changes".
 func whatIfFailure(r armresources.WhatIfOperationResult) error {
 	if r.Error != nil {
 		return exterrors.Validation(
@@ -153,11 +139,9 @@ func whatIfFailure(r armresources.WhatIfOperationResult) error {
 	return nil
 }
 
-// formatArmErrorResponse flattens an ARM ErrorResponse into a single
-// line. Walks Details recursively so the user sees the actual cause
-// (the outer message is often a generic wrapper like
-// "InvalidTemplateDeployment", with the real reason -- "InsufficientQuota:
-// requires 10 capacity, available 0" -- nested one level down).
+// formatArmErrorResponse flattens an ARM ErrorResponse into a single line,
+// walking Details recursively so the user sees the real nested cause (e.g.
+// "InsufficientQuota") rather than just the generic outer wrapper.
 func formatArmErrorResponse(e *armresources.ErrorResponse) string {
 	if e == nil {
 		return "(no error detail)"

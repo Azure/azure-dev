@@ -16,19 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// stringPtr is a small local helper for tests that build pointer
-// fields of the Azure SDK structs. Local rather than exported so we
-// don't leak a generic "make a pointer" helper into production code.
-//
-//go:fix inline
-func stringPtr(s string) *string { return new(s) }
-
-// changeTypePtr is the equivalent for armresources.ChangeType so the
-// table-driven tests stay terse.
-//
-//go:fix inline
-func changeTypePtr(c armresources.ChangeType) *armresources.ChangeType { return new(c) }
-
 func TestSummarizeWhatIf_NilSafe(t *testing.T) {
 	t.Parallel()
 

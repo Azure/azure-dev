@@ -22,18 +22,16 @@ import (
 
 // ejectArtifact records one file the eject step produced under ./infra/.
 // Paths are forward-slash relative to projectRoot so the success output is
-// stable across operating systems and matches the spec's example.
+// stable across operating systems.
 type ejectArtifact struct {
 	relPath string // e.g. "infra/main.bicep"
 	bytes   int    // size of the file just written
 }
 
-// validateStandaloneEjectArgs refuses init-driving inputs that would be
-// silently dropped by the standalone-eject branch. Per the spec, `--infra`
-// on an existing project runs eject only -- it does not re-prompt, scaffold
-// agent code, or add a service. Honoring a positional path, `-m`, or
-// `--src` here would create the false impression that the input was acted
-// upon; returning a structured error is more honest.
+// validateStandaloneEjectArgs refuses init-driving inputs that the
+// standalone-eject branch would silently drop. `--infra` on an existing
+// project runs eject only; honoring a positional path, -m, or --src would
+// falsely imply the input was acted upon.
 func validateStandaloneEjectArgs(args []string, flags *initFlags) error {
 	if len(args) == 0 && flags.manifestPointer == "" && flags.src == "" {
 		return nil
@@ -48,23 +46,20 @@ func validateStandaloneEjectArgs(args []string, flags *initFlags) error {
 }
 
 // ejectInfra synthesizes the embedded Bicep templates from azure.yaml and
-// writes them into projectRoot/infra/. The function is invoked by `azd ai
-// agent init --infra` in two contexts:
+// writes them into projectRoot/infra/. Invoked by `azd ai agent init --infra`
+// either after a fresh init or as a standalone eject on an existing project.
 //
-//  1. A fresh init that has just produced azure.yaml in projectRoot.
-//  2. A standalone eject on an existing Bicep-less azd agent project.
-//
-// Refuse conditions follow spec/bicepless-foundry/spec.md (§Eject Command):
+// Refuse conditions:
 //
 //   - azure.yaml is missing -> CodeInfraEjectAzureYamlMissing
-//   - no service in azure.yaml has a Foundry host kind -> CodeInfraEjectNoFoundryService
-//   - ./infra/ already exists (even empty) -> CodeInfraEjectExists
+//   - no service has a Foundry host -> CodeInfraEjectNoFoundryService
+//   - ./infra/ already exists -> CodeInfraEjectExists
 //
-// On success the function prints the spec's success block and returns nil.
-// The function does NOT modify azure.yaml (the spec is explicit that
-// infra.provider stays azure.ai.agents).
+// On success it prints the summary block and returns nil. It does NOT modify
+// azure.yaml (infra.provider stays azure.ai.agents).
 func ejectInfra(projectRoot string) error {
 	yamlPath := filepath.Join(projectRoot, "azure.yaml")
+	//nolint:gosec // G304: azure.yaml under the caller-supplied azd project root
 	rawYAML, err := os.ReadFile(yamlPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -100,9 +95,8 @@ func ejectInfra(projectRoot string) error {
 		AcceptedHosts: project.FoundryServiceHosts,
 	})
 	if err != nil {
-		// Surface validation errors that the synthesizer itself produced.
-		// The provider has its own classification at provision time; for
-		// eject we keep the same vocabulary so users see consistent codes.
+		// Reuse the provider's vocabulary so eject and provision report
+		// consistent codes for the same azure.yaml problems.
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
 			fmt.Sprintf("synthesize foundry service %q: %s", svcName, err),
@@ -129,10 +123,8 @@ func ejectInfra(projectRoot string) error {
 }
 
 // findFoundryServiceForEject scans azure.yaml for a service whose host is in
-// project.FoundryServiceHosts and returns its name. Unlike the provider's
-// internal findFoundryService, this version returns eject-specific error
-// codes so telemetry can distinguish init-time eject failures from
-// provision-time provider failures.
+// project.FoundryServiceHosts and returns its name, using eject-specific error
+// codes so telemetry can distinguish init-time eject from provision failures.
 func findFoundryServiceForEject(raw []byte) (string, error) {
 	type svc struct {
 		Host string `yaml:"host"`
@@ -181,19 +173,14 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 }
 
 // writeEmbeddedTemplates copies every file under the synthesizer's embedded
-// templates/ root into infraDir, preserving the relative tree. Returns the
-// list of files actually written (each with its on-disk size) so the caller
-// can render the "Created infra/..." lines.
+// templates/ root into infraDir, preserving the relative tree, and returns the
+// files written (with sizes). On any error it removes the partial infraDir.
 //
-// The function creates infraDir (and any required subdirectories) with 0o755
-// and writes files with 0o644. On any error mid-walk it removes the partial
-// infraDir to avoid leaving the project in a half-ejected state.
-//
-// main.arm.json (the pre-compiled ARM JSON shipped inside the extension for
-// the in-memory provisioning path) is deliberately skipped: the point of
-// eject is to hand the user the human-readable Bicep sources, and the
-// embedded JSON would be stale the moment they edit main.bicep.
+// main.arm.json (the pre-compiled ARM JSON) is skipped: eject hands the user
+// the human-readable Bicep, and the embedded JSON would be stale once they
+// edit main.bicep.
 func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
+	//nolint:gosec // G301: ejected infra/ directory must be readable/traversable by IDEs, Git, and CI
 	if err := os.MkdirAll(infraDir, 0o755); err != nil {
 		return nil, exterrors.Internal(
 			exterrors.CodeInfraEjectWriteFailed,
@@ -226,6 +213,7 @@ func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 		dst := filepath.Join(infraDir, filepath.FromSlash(rel))
 
 		if d.IsDir() {
+			//nolint:gosec // G301: ejected infra/ subdirectories must remain readable/traversable
 			if err := os.MkdirAll(dst, 0o755); err != nil {
 				return err
 			}
@@ -240,6 +228,7 @@ func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 		if err != nil {
 			return err
 		}
+		//nolint:gosec // G306: ejected Bicep sources are intended to be human-readable
 		if err := os.WriteFile(dst, data, 0o644); err != nil {
 			return err
 		}
@@ -260,13 +249,11 @@ func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 }
 
 // writeParametersFile emits infra/main.parameters.json in the standard ARM
-// parameter file shape. The values come from the synthesizer (today: just
-// `deployments` and `includeAcr`); deploy-time parameters such as
-// foundryProjectName, location, principalId, resourceTokenSalt, and tags
-// are intentionally omitted because they are not known at init time and
-// are supplied by the provider at `azd provision`. The file therefore acts
-// as a partial parameters file -- enough for `bicep build` to validate the
-// template but not enough for a standalone `az deployment group create`.
+// parameter file shape. Only synthesizer-known values (`deployments`,
+// `includeAcr`) are written; deploy-time parameters (foundryProjectName,
+// location, principalId, resourceTokenSalt, tags) are supplied by the provider
+// at `azd provision`. The result is a partial parameters file -- enough for
+// `bicep build` to validate, not for a standalone `az deployment group create`.
 func writeParametersFile(infraDir string, params map[string]any) (ejectArtifact, error) {
 	type paramValue struct {
 		Value any `json:"value"`
@@ -290,11 +277,11 @@ func writeParametersFile(infraDir string, params map[string]any) (ejectArtifact,
 			fmt.Sprintf("marshal main.parameters.json: %s", err),
 		)
 	}
-	// json.MarshalIndent omits a trailing newline; add one so the file
-	// plays nicely with text editors and POSIX tools.
+	// json.MarshalIndent omits a trailing newline; add one for editors/POSIX tools.
 	data = append(data, '\n')
 
 	dst := filepath.Join(infraDir, "main.parameters.json")
+	//nolint:gosec // G306: ejected parameters file is intended to be human-readable
 	if err := os.WriteFile(dst, data, 0o644); err != nil {
 		return ejectArtifact{}, exterrors.Internal(
 			exterrors.CodeInfraEjectWriteFailed,
@@ -307,21 +294,7 @@ func writeParametersFile(infraDir string, params map[string]any) (ejectArtifact,
 	}, nil
 }
 
-// printEjectSummary renders the user-facing success block to stdout. Format
-// follows spec/bicepless-foundry/spec.md (§Eject Command, line 280):
-//
-//	Generating infrastructure files from azure.yaml...
-//
-//	  Created infra/<file>
-//	  Created infra/<file>
-//
-//	Future provisions will read from ./infra/.
-//
-//	Next steps:
-//	  azd provision    Apply changes
-//
-// Per cli/azd/extensions/azure.ai.agents/AGENTS.md, fmt.Print* is the
-// user-facing output channel (log is reserved for --debug-only diagnostics).
+// printEjectSummary renders the user-facing success block to stdout.
 func printEjectSummary(written []ejectArtifact) {
 	fmt.Println()
 	fmt.Println("Generating infrastructure files from azure.yaml...")

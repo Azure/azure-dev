@@ -6,7 +6,9 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/url"
 	"os"
@@ -424,6 +426,19 @@ func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azd
 	return nil
 }
 
+// kindEnvUpdate inspects the service's on-disk agent.yaml (when one
+// exists) and stamps env vars that downstream tooling reads to know
+// the agent kind. Today this is just ENABLE_HOSTED_AGENTS=true and
+// ENABLE_CAPABILITY_HOST=false for `kind: hosted` agents; every other
+// kind is a no-op past the parse.
+//
+// Tolerates a MISSING agent.yaml: the bicepless flow lets users
+// declare prompt agents inline in azure.yaml under `services.<n>.agents[]`
+// without writing an on-disk agent.yaml. In that case the function
+// short-circuits cleanly (with a debug log) instead of failing
+// preprovision. Service-targets that need an on-disk agent.yaml
+// (deploy, run, etc.) still surface the missing-file error at the
+// point where they actually need the contents.
 func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig, envName string) error {
 	agentYamlPath, err := paths.JoinAllowRoot(project.Path, svc.RelativePath, "agent.yaml")
 	if err != nil {
@@ -433,6 +448,15 @@ func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *az
 	//nolint:gosec // agentYamlPath is resolved from project/service paths in current workspace
 	data, err := os.ReadFile(agentYamlPath)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			// Bicepless inline-agents path: no on-disk agent.yaml is
+			// required. preprovision's only hosted-specific side
+			// effect (ENABLE_HOSTED_AGENTS=true) doesn't apply to
+			// inline `kind: prompt` agents, so a missing file is
+			// not an error here.
+			log.Printf("[debug] kindEnvUpdate: no agent.yaml at %s; skipping (inline-agents path)", agentYamlPath)
+			return nil
+		}
 		return fmt.Errorf("failed to read YAML file: %w", err)
 	}
 

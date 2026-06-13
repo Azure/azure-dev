@@ -203,63 +203,10 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 		)
 	}
 
-	// Get and store environment
-	azdEnvClient := p.azdClient.Environment()
-	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
-	if err != nil {
-		return exterrors.Dependency(
-			exterrors.CodeEnvironmentNotFound,
-			fmt.Sprintf("failed to get current environment: %s", err),
-			"run 'azd env new' to create an environment",
-		)
+	// Get and store environment, subscription, tenant, and credential.
+	if err := p.setupAuth(ctx); err != nil {
+		return err
 	}
-	p.env = currEnv.Environment
-
-	// Get subscription ID from environment
-	resp, err := azdEnvClient.GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: p.env.Name,
-		Key:     "AZURE_SUBSCRIPTION_ID",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get AZURE_SUBSCRIPTION_ID: %w", err)
-	}
-
-	subscriptionId := resp.Value
-	if subscriptionId == "" {
-		return exterrors.Dependency(
-			exterrors.CodeMissingAzureSubscription,
-			"AZURE_SUBSCRIPTION_ID is required: environment variable was not found in the current azd environment",
-			"run 'azd env get-values' to verify environment values, or initialize/project-bind "+
-				"with 'azd ai agent init --project-id ...'",
-		)
-	}
-
-	// Get the tenant ID
-	tenantResponse, err := p.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
-		SubscriptionId: subscriptionId,
-	})
-	if err != nil {
-		return exterrors.Auth(
-			exterrors.CodeTenantLookupFailed,
-			fmt.Sprintf("failed to get tenant ID for subscription %s: %s", subscriptionId, err),
-			"verify your Azure login with 'azd auth login' and that you have access to this subscription",
-		)
-	}
-	p.tenantId = tenantResponse.TenantId
-
-	// Create Azure credential
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID:                   p.tenantId,
-		AdditionallyAllowedTenants: []string{"*"},
-	})
-	if err != nil {
-		return exterrors.Auth(
-			exterrors.CodeCredentialCreationFailed,
-			fmt.Sprintf("failed to create Azure credential: %s", err),
-			"run 'azd auth login' to authenticate",
-		)
-	}
-	p.credential = cred
 
 	fmt.Fprintf(os.Stderr, "Project path: %s, Service path: %s\n", proj.Project.Path, fullPath)
 
@@ -324,6 +271,71 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 		fmt.Sprintf("agent definition file not found: no agent.yaml or agent.yml found in %s", fullPath),
 		"add an agent.yaml/agent.yml file to the service directory or set AGENT_DEFINITION_PATH",
 	)
+}
+
+// setupAuth resolves the current azd environment, subscription, tenant, and
+// developer credential, storing them on the provider. It is shared by the
+// azure.ai.agent and microsoft.foundry hosts so both resolve auth identically.
+func (p *AgentServiceTargetProvider) setupAuth(ctx context.Context) error {
+	// Get and store environment
+	azdEnvClient := p.azdClient.Environment()
+	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
+	if err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeEnvironmentNotFound,
+			fmt.Sprintf("failed to get current environment: %s", err),
+			"run 'azd env new' to create an environment",
+		)
+	}
+	p.env = currEnv.Environment
+
+	// Get subscription ID from environment
+	resp, err := azdEnvClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: p.env.Name,
+		Key:     "AZURE_SUBSCRIPTION_ID",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get AZURE_SUBSCRIPTION_ID: %w", err)
+	}
+
+	subscriptionId := resp.Value
+	if subscriptionId == "" {
+		return exterrors.Dependency(
+			exterrors.CodeMissingAzureSubscription,
+			"AZURE_SUBSCRIPTION_ID is required: environment variable was not found in the current azd environment",
+			"run 'azd env get-values' to verify environment values, or initialize/project-bind "+
+				"with 'azd ai agent init --project-id ...'",
+		)
+	}
+
+	// Get the tenant ID
+	tenantResponse, err := p.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: subscriptionId,
+	})
+	if err != nil {
+		return exterrors.Auth(
+			exterrors.CodeTenantLookupFailed,
+			fmt.Sprintf("failed to get tenant ID for subscription %s: %s", subscriptionId, err),
+			"verify your Azure login with 'azd auth login' and that you have access to this subscription",
+		)
+	}
+	p.tenantId = tenantResponse.TenantId
+
+	// Create Azure credential
+	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID:                   p.tenantId,
+		AdditionallyAllowedTenants: []string{"*"},
+	})
+	if err != nil {
+		return exterrors.Auth(
+			exterrors.CodeCredentialCreationFailed,
+			fmt.Sprintf("failed to create Azure credential: %s", err),
+			"run 'azd auth login' to authenticate",
+		)
+	}
+	p.credential = cred
+
+	return nil
 }
 
 // getServiceKey converts a service name into a standardized environment variable key format
@@ -1423,6 +1435,13 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serv
 		}
 	}
 
+	return zipSourceDir(ctx, srcDir)
+}
+
+// zipSourceDir creates a ZIP archive of srcDir honoring .agentignore, writes it to a
+// temp file, and computes its SHA-256. It returns the temp file path and SHA-256 hex
+// string. Shared by the azure.ai.agent and microsoft.foundry code-deploy packaging paths.
+func zipSourceDir(ctx context.Context, srcDir string) (string, string, error) {
 	// Load .agentignore (or use defaults if no file exists)
 	ignoreMatcher, err := newAgentIgnoreMatcher(ctx, srcDir)
 	if err != nil {

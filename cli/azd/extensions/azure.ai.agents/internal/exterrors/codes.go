@@ -194,6 +194,9 @@ const (
 	CodeMissingResourceGroup        = "missing_resource_group"
 	CodeMissingAzureLocation        = "missing_azure_location"
 	CodeDestroyRequiresForce        = "destroy_requires_force"
+	CodeOnDiskBicepCompileFailed    = "ondisk_bicep_compile_failed"
+	CodeOnDiskBicepParseFailed      = "ondisk_bicep_parse_failed"
+	CodeOnDiskParametersInvalid     = "ondisk_parameters_invalid"
 )
 
 // Error codes for `azd ai agent init --infra` (infrastructure eject).

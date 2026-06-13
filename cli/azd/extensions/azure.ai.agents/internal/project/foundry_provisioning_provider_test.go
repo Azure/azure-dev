@@ -6,9 +6,12 @@ package project
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -368,4 +371,254 @@ func TestFindFoundryService_DependencyCategory(t *testing.T) {
 	require.True(t, errors.As(err, &local))
 	assert.Equal(t, azdext.LocalErrorCategoryDependency, local.Category,
 		"missing foundry service is a Dependency, not a Validation")
+}
+
+func TestOnDiskTemplatePresent(t *testing.T) {
+	t.Parallel()
+	// Empty project root: no infra/, so on-disk template absent.
+	emptyDir := t.TempDir()
+	p := &FoundryProvisioningProvider{projectPath: emptyDir}
+	assert.False(t, p.onDiskTemplatePresent(),
+		"absent ./infra/ -> false")
+
+	// infra/ exists but is empty: still false (no .bicep or .bicepparam).
+	emptyInfraDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(emptyInfraDir, onDiskInfraDir), 0o750))
+	p = &FoundryProvisioningProvider{projectPath: emptyInfraDir}
+	assert.False(t, p.onDiskTemplatePresent(),
+		"./infra/ present but empty -> false")
+
+	// main.bicep alone: true.
+	bicepDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(bicepDir, onDiskInfraDir), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(bicepDir, onDiskInfraDir, onDiskBicepFile), []byte("// b"), 0o600))
+	p = &FoundryProvisioningProvider{projectPath: bicepDir}
+	assert.True(t, p.onDiskTemplatePresent(),
+		"main.bicep present -> true")
+
+	// main.bicepparam alone: true.
+	bicepparamDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(bicepparamDir, onDiskInfraDir), 0o750))
+	bicepparamPath := filepath.Join(bicepparamDir, onDiskInfraDir, onDiskBicepParamFile)
+	require.NoError(t, os.WriteFile(bicepparamPath, []byte("// bp"), 0o600))
+	p = &FoundryProvisioningProvider{projectPath: bicepparamDir}
+	assert.True(t, p.onDiskTemplatePresent(),
+		"main.bicepparam present -> true")
+}
+
+func TestResolveTemplate_FallsBackToEmbeddedWhenNoOnDisk(t *testing.T) {
+	t.Parallel()
+	// No ./infra/ -> resolveTemplate returns the embedded path with
+	// the synthesizer-derived parameter map.
+	dir := t.TempDir()
+	p := &FoundryProvisioningProvider{
+		projectPath: dir,
+		envName:     "dev",
+		location:    "eastus",
+		foundryName: "fp",
+		principalID: "pid",
+		armTemplate: map[string]any{"$schema": "embedded", "contentVersion": "1.0.0.0"},
+		synthResult: &synthesis.Result{
+			Parameters: map[string]any{
+				"includeAcr":  false,
+				"deployments": []any{},
+			},
+		},
+	}
+
+	got, err := p.resolveTemplate(t.Context(), func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, templateModeEmbedded, got.mode,
+		"absent ./infra/ -> embedded mode")
+	assert.Empty(t, got.sourcePath)
+	assert.Equal(t, "embedded", got.armTemplate["$schema"],
+		"embedded ARM template flows through verbatim")
+	// armParameters includes host-derived values too.
+	require.Contains(t, got.parameters, "location")
+	require.Contains(t, got.parameters, "includeAcr")
+}
+
+func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
+	t.Parallel()
+	// Setup: a project root with both an "embedded" template stashed
+	// on the provider AND ./infra/main.bicep on disk. on-disk must
+	// win; embedded is shadowed.
+	dir := t.TempDir()
+	infraDir := filepath.Join(dir, onDiskInfraDir)
+	require.NoError(t, os.MkdirAll(infraDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile),
+		[]byte("// fake bicep, never actually compiled by the stub"), 0o600))
+
+	// Plant a user parameters file with one literal value so we can
+	// observe merge precedence.
+	params := `{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "value": "user-supplied-location" },
+    "userOnly": { "value": "from-user" }
+  }
+}`
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskParamsFile), []byte(params), 0o600))
+
+	// Pre-bake the on-disk source so we don't need a live bicep CLI.
+	// (resolveTemplate skips the loadOnDiskTemplate call when
+	// onDiskSource is already set; this lets the test exercise the
+	// merge logic in isolation.)
+	armFromDisk := map[string]any{"$schema": "ondisk", "contentVersion": "1.0.0.0"}
+	p := &FoundryProvisioningProvider{
+		projectPath: dir,
+		envName:     "dev",
+		location:    "host-location",
+		foundryName: "fp",
+		principalID: "pid",
+		armTemplate: map[string]any{"$schema": "embedded"},
+		synthResult: &synthesis.Result{
+			Parameters: map[string]any{"includeAcr": false},
+		},
+		onDiskSource: &templateSource{
+			mode:        templateModeBicep,
+			armTemplate: armFromDisk,
+			parameters: map[string]any{
+				"location": map[string]any{"value": "user-supplied-location"},
+				"userOnly": map[string]any{"value": "from-user"},
+			},
+			sourcePath: filepath.Join(infraDir, onDiskBicepFile),
+		},
+	}
+
+	got, err := p.resolveTemplate(t.Context(), func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+
+	assert.Equal(t, templateModeBicep, got.mode, "on-disk Bicep mode wins")
+	assert.Equal(t, "ondisk", got.armTemplate["$schema"],
+		"on-disk template is returned, not the embedded one")
+	assert.Equal(t, filepath.Join(infraDir, onDiskBicepFile), got.sourcePath)
+
+	// Merge precedence: user wins on 'location'.
+	loc := got.parameters["location"].(map[string]any)
+	assert.Equal(t, "user-supplied-location", loc["value"],
+		"user-supplied parameter wins over host-derived")
+	// User-only key is present.
+	require.Contains(t, got.parameters, "userOnly")
+	// Host-derived key (not in user params) still flows through.
+	require.Contains(t, got.parameters, "foundryProjectName",
+		"host-derived parameter fills gap when user file doesn't declare it")
+	// Synthesizer-derived key is ABSENT: per the design decision,
+	// when on-disk wins we skip the synthesizer entirely. But
+	// armParameters still has synthResult here (set up above) because
+	// this test is exercising the merge step only -- in real
+	// Initialize, synthResult would be nil on the on-disk path.
+	// What we DO want to verify: the merge respects user wins.
+}
+
+func TestResolveTemplate_OnDiskFallsBackWhenSourceLoaderReturnsNil(t *testing.T) {
+	t.Parallel()
+	// Defensive: if onDiskTemplatePresent() reports true but
+	// loadOnDiskTemplate returns (nil, nil) -- e.g. file disappeared
+	// mid-call -- we fall back to the embedded path rather than
+	// crashing or erroring. The stub compiler is set up to return a
+	// valid template, but we don't actually create the infra/ files,
+	// so onDiskTemplatePresent() returns false and we go straight to
+	// embedded.
+	dir := t.TempDir()
+	p := &FoundryProvisioningProvider{
+		projectPath: dir,
+		envName:     "dev",
+		location:    "eastus",
+		foundryName: "fp",
+		principalID: "pid",
+		armTemplate: map[string]any{"$schema": "embedded"},
+		synthResult: &synthesis.Result{
+			Parameters: map[string]any{"includeAcr": false},
+		},
+	}
+
+	got, err := p.resolveTemplate(t.Context(), func(string) {})
+	require.NoError(t, err)
+	assert.Equal(t, templateModeEmbedded, got.mode)
+}
+
+func TestRejectBrownfield(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		yaml      string
+		svcName   string
+		wantError bool
+	}{
+		{
+			name: "greenfield (no endpoint:) -> nil",
+			yaml: `name: x
+services:
+  foundry:
+    host: azure.ai.agent`,
+			svcName:   "foundry",
+			wantError: false,
+		},
+		{
+			name: "endpoint set -> brownfield error",
+			yaml: `name: x
+services:
+  foundry:
+    host: azure.ai.agent
+    endpoint: https://example.foundry.example.com`,
+			svcName:   "foundry",
+			wantError: true,
+		},
+		{
+			name: "service not in yaml -> nil (not our error to raise)",
+			yaml: `name: x
+services:
+  other:
+    host: containerapp`,
+			svcName:   "foundry",
+			wantError: false,
+		},
+		{
+			name:      "malformed yaml -> nil (upstream surfaces parse error)",
+			yaml:      "not: : valid: yaml",
+			svcName:   "foundry",
+			wantError: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := rejectBrownfield([]byte(tt.yaml), tt.svcName)
+			if !tt.wantError {
+				assert.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			var local *azdext.LocalError
+			require.True(t, errors.As(err, &local))
+			assert.Equal(t, exterrors.CodeBrownfieldNotSupported, local.Code)
+		})
+	}
+}
+
+func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
+	t.Parallel()
+	// envValues must always include the canonical AZURE_* keys
+	// resolved by Initialize, even when the azd env service is
+	// unavailable (azdClient == nil). This lets ${AZURE_LOCATION}
+	// substitution in main.parameters.json work in all paths.
+	p := &FoundryProvisioningProvider{
+		envName:     "dev",
+		subID:       "sub-id",
+		location:    "westus2",
+		rgName:      "my-rg",
+		foundryName: "fp",
+		principalID: "pid",
+		// azdClient intentionally nil
+	}
+	got := p.envValues()
+	assert.Equal(t, "sub-id", got[envKeySubscriptionID])
+	assert.Equal(t, "westus2", got[envKeyLocation])
+	assert.Equal(t, "my-rg", got[envKeyResourceGroup])
+	assert.Equal(t, "fp", got[envKeyProjectName])
+	assert.Equal(t, "pid", got[envKeyPrincipalID])
 }

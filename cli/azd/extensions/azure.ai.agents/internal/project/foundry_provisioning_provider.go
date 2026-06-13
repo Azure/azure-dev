@@ -23,7 +23,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -49,20 +52,31 @@ const deploymentNamePrefix = "azd-foundry-"
 // services whose host is one of FoundryServiceHosts. It synthesizes an
 // ARM template from azure.yaml at runtime and deploys it via the ARM
 // SDK; the bicep is pre-compiled into the extension binary so no bicep
-// CLI is required on the user's machine.
+// CLI is required on the user's machine for the default path.
+//
+// When the user has run `azd ai agent init --infra` (or otherwise
+// placed `./infra/main.bicep` or `./infra/main.bicepparam` on disk),
+// the provider compiles their Bicep at runtime via azd-core's bicep
+// CLI wrapper instead. The synthesizer is skipped in that mode --
+// the user owns the parameter contract. See ondisk_template.go.
 type FoundryProvisioningProvider struct {
 	azdClient *azdext.AzdClient
 
 	// Populated by Initialize.
-	synthResult *synthesis.Result
-	envName     string
-	subID       string
-	location    string
-	rgName      string
-	foundryName string
-	principalID string
-	credential  azcore.TokenCredential
-	armTemplate map[string]any
+	projectPath  string
+	synthResult  *synthesis.Result // nil when onDiskSource != nil
+	envName      string
+	subID        string
+	location     string
+	rgName       string
+	foundryName  string
+	principalID  string
+	credential   azcore.TokenCredential
+	armTemplate  map[string]any  // embedded ARM JSON; nil when onDiskSource is set
+	onDiskSource *templateSource // non-nil when ./infra/main.{bicep,bicepparam} exists
+
+	// Lazily constructed on first compile. nil until needed.
+	bicepCliInstance bicepCompiler
 }
 
 // NewFoundryProvisioningProvider constructs the provider with a live
@@ -71,17 +85,27 @@ func NewFoundryProvisioningProvider(azdClient *azdext.AzdClient) azdext.Provisio
 	return &FoundryProvisioningProvider{azdClient: azdClient}
 }
 
-// Initialize loads azure.yaml, runs the synthesizer, resolves required
-// env values, and stages the embedded ARM template. It rejects
-// brownfield (endpoint:) and missing services with structured errors.
+// Initialize loads azure.yaml, decides between the embedded synthesizer
+// path and the on-disk Bicep path, and resolves required env values.
+// It rejects brownfield (endpoint:) and missing services with
+// structured errors.
 //
 // Initialize is "cheap" by contract: it MUST NOT do network I/O or
 // build credentials. Tenant lookup and credential construction happen
 // lazily in [FoundryProvisioningProvider.ensureCredential], invoked
-// on-demand by Deploy/State/Destroy. azd-core may call Initialize on
-// providers it then never deploys with (env refresh, multi-provider
-// projects); making Initialize cheap avoids needless RPCs and lets
-// pure metadata calls (Parameters, PlannedOutputs) succeed without auth.
+// on-demand by Deploy/State/Destroy. The bicep CLI is similarly lazy
+// (constructed only when an on-disk template actually needs to be
+// compiled). azd-core may call Initialize on providers it then never
+// deploys with (env refresh, multi-provider projects); making
+// Initialize cheap avoids needless RPCs and lets pure metadata calls
+// (Parameters, PlannedOutputs) succeed without auth.
+//
+// Template-source selection: if `./infra/main.bicepparam` or
+// `./infra/main.bicep` exists under projectPath, the user has
+// ejected (via `azd ai agent init --infra`) or hand-authored their
+// own Bicep. In that mode the synthesizer is skipped entirely --
+// the user owns the parameter contract. Otherwise the synthesizer
+// runs and the embedded ARM JSON is loaded.
 func (p *FoundryProvisioningProvider) Initialize(
 	ctx context.Context,
 	projectPath string,
@@ -95,6 +119,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 				options.GetProvider(), FoundryProviderName),
 		)
 	}
+	p.projectPath = projectPath
 
 	azureYamlPath := filepath.Join(projectPath, "azure.yaml")
 	//nolint:gosec // projectPath is supplied by azd-core over gRPC and is the user's project root
@@ -110,6 +135,21 @@ func (p *FoundryProvisioningProvider) Initialize(
 	svcName, err := findFoundryService(rawYAML)
 	if err != nil {
 		return err
+	}
+
+	// Detect on-disk Bicep before the synthesizer runs. Stat-only;
+	// no compile yet (that happens lazily in resolveTemplate).
+	if p.onDiskTemplatePresent() {
+		log.Printf("[debug] foundry provider: on-disk Bicep detected under %s; "+
+			"skipping synthesizer", filepath.Join(projectPath, onDiskInfraDir))
+		// Still reject brownfield even on the on-disk path: the
+		// `endpoint:` flag means "use an existing Foundry project",
+		// which conflicts with a fresh ARM deployment regardless of
+		// where the template came from.
+		if err := rejectBrownfield(rawYAML, svcName); err != nil {
+			return err
+		}
+		return p.resolveEnv(ctx)
 	}
 
 	res, err := synthesis.Synthesize(synthesis.Input{
@@ -157,6 +197,46 @@ func (p *FoundryProvisioningProvider) Initialize(
 	p.armTemplate = tmpl
 
 	return p.resolveEnv(ctx)
+}
+
+// onDiskTemplatePresent returns true when either `infra/main.bicepparam`
+// or `infra/main.bicep` exists under p.projectPath. Stat-only -- no
+// content read, no compile. Mirrors the precedence in
+// loadOnDiskTemplate: `.bicepparam` checked first, but for the
+// presence check the answer is "yes" either way.
+func (p *FoundryProvisioningProvider) onDiskTemplatePresent() bool {
+	infraDir := filepath.Join(p.projectPath, onDiskInfraDir)
+	return fileExistsAt(filepath.Join(infraDir, onDiskBicepParamFile)) ||
+		fileExistsAt(filepath.Join(infraDir, onDiskBicepFile))
+}
+
+// rejectBrownfield is the on-disk equivalent of the synthesizer's
+// ErrEndpointBrownfield branch. The synthesizer detects `endpoint:`
+// on the foundry service and refuses; on the on-disk path we skip
+// the synthesizer entirely, so we need a separate check to preserve
+// the same refusal contract.
+func rejectBrownfield(rawYAML []byte, svcName string) error {
+	type svc struct {
+		Endpoint string `yaml:"endpoint,omitempty"`
+	}
+	type root struct {
+		Services map[string]svc `yaml:"services"`
+	}
+	var r root
+	if err := yaml.Unmarshal(rawYAML, &r); err != nil {
+		// Malformed yaml is surfaced upstream; skip the brownfield
+		// check in that case rather than masking the parser error.
+		return nil
+	}
+	if r.Services[svcName].Endpoint == "" {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeBrownfieldNotSupported,
+		"endpoint: is set on the foundry service; existing-project (brownfield) "+
+			"provisioning is not supported yet",
+		"remove endpoint: to provision a new Foundry project, or switch infra.provider to bicep",
+	)
 }
 
 // resolveEnv pulls the env values the provider needs from azd-core via
@@ -303,6 +383,10 @@ func (p *FoundryProvisioningProvider) State(
 
 // Deploy runs an ARM deployment of the embedded template with the
 // synthesized parameter values, streaming progress to the caller.
+// Deploy runs an ARM deployment of the resolved template (either the
+// embedded ARM JSON or the user's on-disk Bicep, depending on what
+// Initialize found) with the appropriate parameter values, streaming
+// progress to the caller.
 func (p *FoundryProvisioningProvider) Deploy(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
@@ -313,15 +397,20 @@ func (p *FoundryProvisioningProvider) Deploy(
 		return nil, err
 	}
 
-	armParams := p.armParameters()
+	src, err := p.resolveTemplate(ctx, progress)
+	if err != nil {
+		return nil, err
+	}
+
 	dep := armresources.Deployment{
 		Properties: &armresources.DeploymentProperties{
-			Template:   p.armTemplate,
-			Parameters: armParams,
+			Template:   src.armTemplate,
+			Parameters: src.parameters,
 			Mode:       toPtr(armresources.DeploymentModeIncremental),
 		},
 		Tags: map[string]*string{
-			"azd-env-name": new(p.envName),
+			"azd-env-name":                  new(p.envName),
+			"azd-provision-template-source": new(src.mode.String()),
 		},
 	}
 
@@ -347,10 +436,133 @@ func (p *FoundryProvisioningProvider) Deploy(
 
 	return &azdext.ProvisioningDeployResult{
 		Deployment: &azdext.ProvisioningDeployment{
-			Parameters: armInputsToProto(armParams),
+			Parameters: armInputsToProto(src.parameters),
 			Outputs:    armOutputsToProto(deploymentOutputs(resp.Properties)),
 		},
 	}, nil
+}
+
+// resolveTemplate decides whether to deploy the on-disk Bicep (if
+// present) or fall back to the embedded ARM JSON. Lazy: compiles
+// on-disk Bicep only on first call and caches the result on the
+// provider struct so re-runs within the same process skip the bicep
+// CLI. Surfaces a progress line so users see which source won.
+//
+// On the on-disk path the user's parameters file (with ${VAR}
+// substitution) is layered OVER host-derived parameters (location,
+// principalId, etc.), so azd-provided values still flow through when
+// the user's parameters file doesn't declare them. The user wins on
+// keys present in both.
+func (p *FoundryProvisioningProvider) resolveTemplate(
+	ctx context.Context,
+	progress grpcbroker.ProgressFunc,
+) (*templateSource, error) {
+	// First call: try the on-disk path.
+	if p.onDiskSource == nil && p.onDiskTemplatePresent() {
+		progress("Compiling on-disk Bicep templates...")
+		src, err := loadOnDiskTemplate(ctx, p.projectPath, p.bicepCli(), p.envValues())
+		if err != nil {
+			return nil, err
+		}
+		if src == nil {
+			// onDiskTemplatePresent said yes but the loader returned
+			// nil (race with the user deleting the file mid-call).
+			// Fall through to the embedded path.
+			log.Printf("[debug] on-disk template disappeared between presence check and load; " +
+				"falling back to embedded template")
+		} else {
+			p.onDiskSource = src
+		}
+	}
+
+	if p.onDiskSource != nil {
+		log.Printf("[debug] foundry provider: using on-disk template at %s", p.onDiskSource.sourcePath)
+		// Merge: host-derived values fill gaps for parameters the
+		// user's file didn't supply. User values win on collisions.
+		merged := mergeParameters(p.onDiskSource.parameters, p.armParameters())
+		return &templateSource{
+			mode:        p.onDiskSource.mode,
+			armTemplate: p.onDiskSource.armTemplate,
+			parameters:  merged,
+			sourcePath:  p.onDiskSource.sourcePath,
+		}, nil
+	}
+
+	// Embedded path. armTemplate was loaded in Initialize.
+	return &templateSource{
+		mode:        templateModeEmbedded,
+		armTemplate: p.armTemplate,
+		parameters:  p.armParameters(),
+	}, nil
+}
+
+// bicepCli lazily constructs a *bicep.Cli using azd-core's own
+// download-on-demand wrapper. Calling it for the first time on a
+// machine without bicep in ~/.azd/bin will trigger a download under
+// a spinner; subsequent calls reuse the cached binary. We pass a
+// console that writes to stdout/stderr so the spinner is visible.
+func (p *FoundryProvisioningProvider) bicepCli() bicepCompiler {
+	if p.bicepCliInstance != nil {
+		return p.bicepCliInstance
+	}
+	console := input.NewConsole(
+		false, // noPrompt
+		true,  // isTerminal
+		input.Writers{Output: os.Stdout},
+		input.ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
+		},
+		nil, // formatter
+		nil, // externalPromptCfg
+	)
+	p.bicepCliInstance = bicep.NewCli(console, exec.NewCommandRunner(nil))
+	return p.bicepCliInstance
+}
+
+// envValues returns the resolved name -> value map of the azd
+// environment. Used for ${VAR} substitution in main.parameters.json
+// and as the env passed to `bicep build-params` so its
+// readEnvironmentVariable() calls resolve. Initialize-resolved
+// values are surfaced under their canonical names so a user's
+// ${AZURE_LOCATION} reference works even if their azd env file
+// hasn't persisted them yet.
+func (p *FoundryProvisioningProvider) envValues() map[string]string {
+	out := map[string]string{
+		envKeySubscriptionID: p.subID,
+		envKeyLocation:       p.location,
+		envKeyResourceGroup:  p.rgName,
+		envKeyProjectName:    p.foundryName,
+		envKeyPrincipalID:    p.principalID,
+	}
+	// Also surface the broader azd env so the user can reference
+	// arbitrary AZURE_* values they set up earlier. Best-effort -- if
+	// the env service is unavailable, fall back to just the canonical
+	// values above.
+	if p.azdClient == nil {
+		return out
+	}
+	envClient := p.azdClient.Environment()
+	if envClient == nil {
+		return out
+	}
+	resp, err := envClient.GetValues(context.Background(), &azdext.GetEnvironmentRequest{Name: p.envName})
+	if err != nil {
+		log.Printf("[debug] foundry provider: GetValues failed (%s); ${VAR} substitution will use canonical keys only", err)
+		return out
+	}
+	for _, kv := range resp.GetKeyValues() {
+		if kv == nil {
+			continue
+		}
+		// Don't overwrite the canonical values we just set.
+		if _, taken := out[kv.Key]; taken {
+			continue
+		}
+		out[kv.Key] = kv.Value
+	}
+	return out
 }
 
 // Preview is not implemented for the microsoft.foundry provider.

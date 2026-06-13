@@ -72,8 +72,16 @@ func NewFoundryProvisioningProvider(azdClient *azdext.AzdClient) azdext.Provisio
 }
 
 // Initialize loads azure.yaml, runs the synthesizer, resolves required
-// env values, and prepares an ARM credential. It rejects brownfield
-// (endpoint:) and missing services with structured errors.
+// env values, and stages the embedded ARM template. It rejects
+// brownfield (endpoint:) and missing services with structured errors.
+//
+// Initialize is "cheap" by contract: it MUST NOT do network I/O or
+// build credentials. Tenant lookup and credential construction happen
+// lazily in [FoundryProvisioningProvider.ensureCredential], invoked
+// on-demand by Deploy/State/Destroy. azd-core may call Initialize on
+// providers it then never deploys with (env refresh, multi-provider
+// projects); making Initialize cheap avoids needless RPCs and lets
+// pure metadata calls (Parameters, PlannedOutputs) succeed without auth.
 func (p *FoundryProvisioningProvider) Initialize(
 	ctx context.Context,
 	projectPath string,
@@ -118,7 +126,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 			"remove endpoint: to provision a new Foundry project, or switch infra.provider to bicep",
 		)
 	case errors.Is(err, synthesis.ErrServiceNotFound):
-		return exterrors.Validation(
+		return exterrors.Dependency(
 			exterrors.CodeProvisioningServiceNotFound,
 			fmt.Sprintf("no service in azure.yaml has host in %v", FoundryServiceHosts),
 			fmt.Sprintf("add a service with `host: %s` to azure.yaml", FoundryServiceHosts[0]),
@@ -148,12 +156,14 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 	p.armTemplate = tmpl
 
-	return p.resolveEnvAndCredential(ctx)
+	return p.resolveEnv(ctx)
 }
 
-// resolveEnvAndCredential pulls the env values the provider needs and
-// builds an azidentity credential bound to the right tenant.
-func (p *FoundryProvisioningProvider) resolveEnvAndCredential(ctx context.Context) error {
+// resolveEnv pulls the env values the provider needs from azd-core via
+// the EnvironmentService. It does NOT do any network/Azure work; that
+// is deferred to ensureCredential, which Deploy/State/Destroy call
+// on-demand. This split keeps Initialize cheap per its contract.
+func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 	envClient := p.azdClient.Environment()
 
 	currEnv, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
@@ -213,6 +223,18 @@ func (p *FoundryProvisioningProvider) resolveEnvAndCredential(ctx context.Contex
 		log.Printf("[debug] %s not set; skipping developer role assignment", envKeyPrincipalID)
 	}
 
+	return nil
+}
+
+// ensureCredential lazily looks up the subscription's tenant and
+// constructs the azd-CLI credential. Safe to call repeatedly: subsequent
+// calls return the cached credential. Deploy/State/Destroy invoke this
+// on-demand so Initialize stays free of network I/O.
+func (p *FoundryProvisioningProvider) ensureCredential(ctx context.Context) error {
+	if p.credential != nil {
+		return nil
+	}
+
 	tenantResp, err := p.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
 		SubscriptionId: p.subID,
 	})
@@ -236,7 +258,6 @@ func (p *FoundryProvisioningProvider) resolveEnvAndCredential(ctx context.Contex
 		)
 	}
 	p.credential = cred
-
 	return nil
 }
 
@@ -252,7 +273,7 @@ func (p *FoundryProvisioningProvider) State(
 	ctx context.Context,
 	options *azdext.ProvisioningStateOptions,
 ) (*azdext.ProvisioningStateResult, error) {
-	client, err := p.deploymentsClient()
+	client, err := p.deploymentsClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -300,11 +321,11 @@ func (p *FoundryProvisioningProvider) Deploy(
 			Mode:       toPtr(armresources.DeploymentModeIncremental),
 		},
 		Tags: map[string]*string{
-			"azd-env-name": toPtr(p.envName),
+			"azd-env-name": new(p.envName),
 		},
 	}
 
-	client, err := p.deploymentsClient()
+	client, err := p.deploymentsClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -343,41 +364,83 @@ func (p *FoundryProvisioningProvider) Preview(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
-	return nil, exterrors.Validation(
+	return nil, exterrors.Compatibility(
 		exterrors.CodePreviewNotImplemented,
 		"`azd provision --preview` is not implemented yet for the microsoft.foundry provider",
 		"run `azd provision` to apply the configuration directly",
 	)
 }
 
-// Destroy removes the deployment record and (if --purge is set) the
-// resources it created. Without --purge we keep the resources because
-// they may be shared, mirroring azd-core's bicep provider default.
+// Destroy tears down the Foundry deployment. Behavior depends on the
+// caller-supplied flags:
+//
+//   - options.Force == false (default): refuse with a structured error.
+//     Resource deletion is destructive and must be an explicit user
+//     choice, mirroring `azd down`'s confirmation contract. The error
+//     message names the resource group and points the user at
+//     `azd down --force`.
+//   - options.Force == true: delete the resource group (which contains
+//     the Foundry account, project, and any ACR scaffolded for container
+//     agents). The deployment record is removed as part of the RG
+//     deletion. Re-runs are idempotent: a missing RG is a no-op success.
+//
+// `options.Purge` is honored for soft-deletable resources via the
+// returned InvalidatedEnvKeys list (azd-core clears those env values).
+// Resource-level purge of Cognitive Services soft-delete (the
+// non-RG-bounded leftover) is out of scope for this provider; users who
+// re-create under the same name should pass `--purge` so azd-core's
+// purge pipeline handles it (when extended for extension providers).
 func (p *FoundryProvisioningProvider) Destroy(
 	ctx context.Context,
 	options *azdext.ProvisioningDestroyOptions,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDestroyResult, error) {
-	progress("Removing Foundry deployment record...")
+	if !options.GetForce() {
+		return nil, exterrors.Validation(
+			exterrors.CodeDestroyRequiresForce,
+			fmt.Sprintf("microsoft.foundry destroy will delete resource group %q "+
+				"and all resources inside it; this provider does not prompt for "+
+				"confirmation, so --force is required", p.rgName),
+			"re-run with `azd down --force` (add `--purge` to also clear "+
+				"soft-deleted Cognitive Services accounts)",
+		)
+	}
 
-	client, err := p.deploymentsClient()
-	if err != nil {
+	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
 	}
-
-	name := p.deploymentName()
-	poller, err := client.BeginDelete(ctx, p.rgName, name, nil)
-	if err != nil && !isNotFound(err) {
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentDelete)
+	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	if err != nil {
+		return nil, exterrors.Internal(
+			exterrors.CodeAzdClientFailed,
+			fmt.Sprintf("create armresources client: %s", err),
+		)
 	}
-	if poller != nil {
-		if _, err := pollWithProgress(ctx, poller, progress, "Deleting deployment"); err != nil {
-			return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentDelete)
+	rgClient := factory.NewResourceGroupsClient()
+
+	progress(fmt.Sprintf("Deleting resource group %s...", p.rgName))
+	poller, err := rgClient.BeginDelete(ctx, p.rgName, nil)
+	if err != nil {
+		if isNotFound(err) {
+			// Already gone; treat as success so re-runs are idempotent.
+			return invalidatedEnvKeysResult(), nil
 		}
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupDelete)
+	}
+	if _, err := pollWithProgress(ctx, poller, progress,
+		fmt.Sprintf("Deleting resource group %s (this can take several minutes)", p.rgName),
+	); err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupDelete)
 	}
 
-	// Resource-level destruction is delegated to azd core via the
-	// returned env keys; we only own the deployment record here.
+	return invalidatedEnvKeysResult(), nil
+}
+
+// invalidatedEnvKeysResult returns the env keys this provider populates
+// on Deploy, so azd-core can clear them after a successful Destroy.
+// Kept as a helper because both the "already deleted" and "just deleted"
+// paths return the same list.
+func invalidatedEnvKeysResult() *azdext.ProvisioningDestroyResult {
 	return &azdext.ProvisioningDestroyResult{
 		InvalidatedEnvKeys: []string{
 			"AZURE_AI_PROJECT_ID",
@@ -389,14 +452,21 @@ func (p *FoundryProvisioningProvider) Destroy(
 			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
 			"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
 		},
-	}, nil
+	}
 }
 
 // Parameters reports the parameter values that will be sent to ARM, so
 // azd can show them in `azd provision --preview` and similar tooling.
+// Returns a structured error when Initialize hasn't populated synthResult.
 func (p *FoundryProvisioningProvider) Parameters(
 	ctx context.Context,
 ) ([]*azdext.ProvisioningParameter, error) {
+	if p.synthResult == nil {
+		return nil, exterrors.Internal(
+			exterrors.CodeInvalidServiceConfig,
+			"Parameters called before successful Initialize",
+		)
+	}
 	out := []*azdext.ProvisioningParameter{
 		{Name: "location", Value: p.location, EnvVarMapping: []string{envKeyLocation}},
 		{Name: "foundryProjectName", Value: p.foundryName, EnvVarMapping: []string{envKeyProjectName}},
@@ -426,9 +496,13 @@ func (p *FoundryProvisioningProvider) PlannedOutputs(
 
 // --- helpers ---
 
-// deploymentsClient builds the ARM DeploymentsClient lazily on first
-// use; it relies on p.subID and p.credential set by Initialize.
-func (p *FoundryProvisioningProvider) deploymentsClient() (*armresources.DeploymentsClient, error) {
+// deploymentsClient builds the ARM DeploymentsClient on demand. The
+// credential is lazy-initialized on the first call (see ensureCredential)
+// so Initialize stays free of network I/O.
+func (p *FoundryProvisioningProvider) deploymentsClient(ctx context.Context) (*armresources.DeploymentsClient, error) {
+	if err := p.ensureCredential(ctx); err != nil {
+		return nil, err
+	}
 	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
 	if err != nil {
 		return nil, exterrors.Internal(
@@ -440,11 +514,15 @@ func (p *FoundryProvisioningProvider) deploymentsClient() (*armresources.Deploym
 }
 
 // ensureResourceGroup creates the configured RG if it doesn't exist.
-// Re-runs are idempotent.
+// Re-runs are idempotent. The credential is lazy-initialized via
+// ensureCredential.
 func (p *FoundryProvisioningProvider) ensureResourceGroup(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) error {
+	if err := p.ensureCredential(ctx); err != nil {
+		return err
+	}
 	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
 	if err != nil {
 		return exterrors.Internal(
@@ -462,8 +540,8 @@ func (p *FoundryProvisioningProvider) ensureResourceGroup(
 
 	progress(fmt.Sprintf("Creating resource group %s in %s...", p.rgName, p.location))
 	_, err = rgClient.CreateOrUpdate(ctx, p.rgName, armresources.ResourceGroup{
-		Location: toPtr(p.location),
-		Tags:     map[string]*string{"azd-env-name": toPtr(p.envName)},
+		Location: new(p.location),
+		Tags:     map[string]*string{"azd-env-name": new(p.envName)},
 	}, nil)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupCreate)
@@ -479,6 +557,11 @@ func (p *FoundryProvisioningProvider) deploymentName() string {
 // armParameters wraps the synthesizer-derived values in ARM's
 // {"value": ...} envelope and merges in provider-supplied params
 // (location, principal, project name).
+//
+// Nil-safe on p.synthResult: when Initialize hasn't run (a programming
+// error elsewhere; reachable only via tests that bypass Initialize),
+// only the host-derived parameters are returned. Deploy callers are
+// guaranteed to have a non-nil synthResult by Initialize's contract.
 func (p *FoundryProvisioningProvider) armParameters() map[string]any {
 	out := map[string]any{
 		"location":           map[string]any{"value": p.location},
@@ -486,6 +569,9 @@ func (p *FoundryProvisioningProvider) armParameters() map[string]any {
 		"resourceTokenSalt":  map[string]any{"value": p.envName},
 		"principalId":        map[string]any{"value": p.principalID},
 		"tags":               map[string]any{"value": map[string]string{"azd-env-name": p.envName}},
+	}
+	if p.synthResult == nil {
+		return out
 	}
 	for k, v := range p.synthResult.Parameters {
 		out[k] = map[string]any{"value": v}
@@ -519,7 +605,7 @@ func findFoundryService(raw []byte) (string, error) {
 	}
 	switch len(matches) {
 	case 0:
-		return "", exterrors.Validation(
+		return "", exterrors.Dependency(
 			exterrors.CodeProvisioningServiceNotFound,
 			fmt.Sprintf("no service in azure.yaml has host in %v", FoundryServiceHosts),
 			fmt.Sprintf("add a service with `host: %s` to azure.yaml", FoundryServiceHosts[0]),
@@ -527,7 +613,7 @@ func findFoundryService(raw []byte) (string, error) {
 	case 1:
 		return matches[0], nil
 	default:
-		return "", exterrors.Validation(
+		return "", exterrors.Dependency(
 			exterrors.CodeProvisioningServiceNotFound,
 			fmt.Sprintf("multiple services declare a foundry host %v (%v); only one is supported",
 				FoundryServiceHosts, matches),
@@ -584,7 +670,10 @@ func deploymentResources(p *armresources.DeploymentPropertiesExtended) []*armres
 }
 
 // armOutputsToProto converts an ARM Properties.Outputs (an opaque
-// any-typed map keyed by output name) into azdext outputs.
+// any-typed map keyed by output name) into azdext outputs. ARM returns
+// each value as {type, value} where value may be any JSON-shaped
+// scalar/array/object; we preserve the type marker and encode non-string
+// values as JSON so downstream consumers can parse them back.
 func armOutputsToProto(outputs any) map[string]*azdext.ProvisioningOutputParameter {
 	out := map[string]*azdext.ProvisioningOutputParameter{}
 	m, ok := outputs.(map[string]any)
@@ -597,17 +686,18 @@ func armOutputsToProto(outputs any) map[string]*azdext.ProvisioningOutputParamet
 			continue
 		}
 		typeStr, _ := entry["type"].(string)
-		val := entry["value"]
 		out[k] = &azdext.ProvisioningOutputParameter{
 			Type:  typeStr,
-			Value: fmt.Sprintf("%v", val),
+			Value: encodeParamValue(entry["value"]),
 		}
 	}
 	return out
 }
 
 // armInputsToProto converts the ARM parameters map we sent into the
-// shape azdext expects for the deployment result.
+// shape azdext expects for the deployment result. Like the outputs
+// converter, non-string values are JSON-encoded rather than collapsed
+// via fmt.Sprintf("%v", ...).
 func armInputsToProto(
 	in map[string]any,
 ) map[string]*azdext.ProvisioningInputParameter {
@@ -618,10 +708,31 @@ func armInputsToProto(
 			continue
 		}
 		out[k] = &azdext.ProvisioningInputParameter{
-			Value: fmt.Sprintf("%v", entry["value"]),
+			Value: encodeParamValue(entry["value"]),
 		}
 	}
 	return out
+}
+
+// encodeParamValue renders an ARM parameter/output value as a string
+// suitable for the gRPC wire. Strings pass through unchanged; nil
+// becomes the empty string. Everything else is JSON-encoded so arrays
+// and objects survive the round trip intact (Go's default %v collapses
+// `["a","b"]` to `[a b]`, which is unparseable downstream).
+func encodeParamValue(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	default:
+		if data, err := json.Marshal(x); err == nil {
+			return string(data)
+		}
+		// Fall back to %v only when JSON marshaling fails (unreachable
+		// for ARM-shaped values, which are always JSON-compatible).
+		return fmt.Sprintf("%v", x)
+	}
 }
 
 // armResourcesToProto converts ARM output resources to the azdext shape.
@@ -644,7 +755,9 @@ func isNotFound(err error) bool {
 
 // toPtr returns a pointer to its arg. Go 1.26's new() works for values
 // but not when we need a typed pointer to a non-addressable expression.
-func toPtr[T any](v T) *T { return &v }
+//
+//go:fix inline
+func toPtr[T any](v T) *T { return new(v) }
 
 // sanitizeFoundryName trims a name to the [3,32] alnum/hyphen range
 // Foundry projects accept. Conservative: replaces anything else with '-'.

@@ -565,22 +565,82 @@ func (p *FoundryProvisioningProvider) envValues() map[string]string {
 	return out
 }
 
-// Preview is not implemented for the microsoft.foundry provider.
+// Preview runs an ARM what-if against the resolved template (on-disk
+// Bicep if present, else embedded ARM JSON) -- same template/parameter
+// selection logic as Deploy, but read-only. Returns a structured diff
+// summary in ProvisioningPreviewResult.Summary AND emits the same
+// summary via the progress callback so the user actually sees it
+// today.
 //
-// ARM what-if returns a rich change list, but azd-core's extension
-// preview adapter currently drops the extension's payload (the
-// `repeated changes` field is not yet on the proto), so the user would
-// see an empty preview body. Returning a structured "not implemented"
-// error is more honest than silently reporting "0 changes".
+// The progress emission is a deliberate workaround: azd-core's
+// extension preview adapter currently drops the Summary field (it
+// only renders Preview.Properties.Changes[], which the gRPC contract
+// does not expose). Once the core proto gains a `repeated changes`
+// field the Summary will be redundant; the progress emission becomes
+// a confirmation line and the structured Summary takes over.
+//
+// Inline what-if failures (HTTP 200 with Properties.Error populated)
+// are surfaced as structured CodeArmWhatIfFailed errors. Without this
+// check ARM preflight failures (template validation, insufficient
+// quota, etc.) would silently surface as "0 changes" and the user
+// would think the preview succeeded.
 func (p *FoundryProvisioningProvider) Preview(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
-	return nil, exterrors.Compatibility(
-		exterrors.CodePreviewNotImplemented,
-		"`azd provision --preview` is not implemented yet for the microsoft.foundry provider",
-		"run `azd provision` to apply the configuration directly",
-	)
+	progress("Computing deployment plan...")
+
+	src, err := p.resolveTemplate(ctx, progress)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := p.deploymentsClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	whatIf := armresources.DeploymentWhatIf{
+		Properties: &armresources.DeploymentWhatIfProperties{
+			Template:   src.armTemplate,
+			Parameters: src.parameters,
+			Mode:       toPtr(armresources.DeploymentModeIncremental),
+		},
+	}
+
+	poller, err := client.BeginWhatIf(ctx, p.rgName, p.deploymentName(), whatIf, nil)
+	if err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentWhatIf)
+	}
+
+	resp, err := pollWithProgress(ctx, poller, progress, "What-if analysis in progress")
+	if err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentWhatIf)
+	}
+
+	// Inline what-if failures: ARM returns HTTP 200 but populates
+	// Properties.Error. Surface as a structured error rather than
+	// silently summarizing "0 changes".
+	if err := whatIfFailure(resp.WhatIfOperationResult); err != nil {
+		return nil, err
+	}
+
+	summary := summarizeWhatIf(resp.WhatIfOperationResult)
+
+	// Emit the diff summary line-by-line via the progress callback so
+	// the user sees it today. azd-core's extension preview adapter
+	// drops the structured Summary field; this is the workaround.
+	// Each progress message is a separate line in the terminal, so we
+	// split the multi-line summary first.
+	for line := range strings.SplitSeq(summary, "\n") {
+		progress(line)
+	}
+
+	return &azdext.ProvisioningPreviewResult{
+		Preview: &azdext.ProvisioningDeploymentPreview{
+			Summary: summary,
+		},
+	}, nil
 }
 
 // Destroy tears down the Foundry deployment. Behavior depends on the

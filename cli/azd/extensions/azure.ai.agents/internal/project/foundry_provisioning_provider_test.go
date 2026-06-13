@@ -181,30 +181,6 @@ func TestDeploymentName_StableForEnv(t *testing.T) {
 	assert.Equal(t, "azd-foundry-production", p.deploymentName())
 }
 
-func TestPreview_NotImplemented(t *testing.T) {
-	// Preview is intentionally stubbed: azd-core's extension preview
-	// adapter does not yet render the extension's payload, so any what-if
-	// output we produced would be silently dropped. Surface a clean
-	// "not implemented" error instead of pretending the preview ran.
-	p := &FoundryProvisioningProvider{}
-
-	_, err := p.Preview(t.Context(), func(string) {})
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not implemented yet")
-	assert.Contains(t, err.Error(), "microsoft.foundry")
-
-	// Structured error must carry the Compatibility category (feature
-	// not implemented in this version) + stable code so telemetry and
-	// downstream classifiers can group on it. NOT Validation: the user
-	// provided no invalid input.
-	var local *azdext.LocalError
-	require.True(t, errors.As(err, &local), "expected *azdext.LocalError, got %T", err)
-	assert.Equal(t, exterrors.CodePreviewNotImplemented, local.Code)
-	assert.Equal(t, azdext.LocalErrorCategoryCompatibility, local.Category)
-	assert.NotEmpty(t, local.Suggestion)
-}
-
 func TestDeploymentOutputsResources_NilSafe(t *testing.T) {
 	assert.Nil(t, deploymentOutputs(nil))
 	assert.Nil(t, deploymentResources(nil))

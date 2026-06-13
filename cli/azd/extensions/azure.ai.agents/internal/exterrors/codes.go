@@ -189,7 +189,6 @@ const (
 	CodeInvalidAzureYaml            = "invalid_azure_yaml"
 	CodeProvisioningServiceNotFound = "provisioning_service_not_found"
 	CodeBrownfieldNotSupported      = "brownfield_not_supported"
-	CodePreviewNotImplemented       = "preview_not_implemented"
 	CodeMissingFoundryProjectName   = "missing_foundry_project_name"
 	CodeMissingResourceGroup        = "missing_resource_group"
 	CodeMissingAzureLocation        = "missing_azure_location"
@@ -197,6 +196,7 @@ const (
 	CodeOnDiskBicepCompileFailed    = "ondisk_bicep_compile_failed"
 	CodeOnDiskBicepParseFailed      = "ondisk_bicep_parse_failed"
 	CodeOnDiskParametersInvalid     = "ondisk_parameters_invalid"
+	CodeArmWhatIfFailed             = "arm_what_if_failed"
 )
 
 // Error codes for `azd ai agent init --infra` (infrastructure eject).
@@ -213,6 +213,7 @@ const (
 const (
 	OpArmDeploymentCreate = "arm_deployment_create"
 	OpArmDeploymentGet    = "arm_deployment_get"
+	OpArmDeploymentWhatIf = "arm_deployment_what_if"
 	OpResourceGroupCreate = "resource_group_create"
 	OpResourceGroupDelete = "resource_group_delete"
 )

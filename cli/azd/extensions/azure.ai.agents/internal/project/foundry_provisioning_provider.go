@@ -761,17 +761,39 @@ func (p *FoundryProvisioningProvider) Parameters(
 func (p *FoundryProvisioningProvider) PlannedOutputs(
 	ctx context.Context,
 ) ([]*azdext.ProvisioningPlannedOutput, error) {
-	return []*azdext.ProvisioningPlannedOutput{
-		{Name: "AZURE_AI_PROJECT_ID"},
-		{Name: "AZURE_AI_ACCOUNT_NAME"},
-		{Name: "AZURE_AI_PROJECT_NAME"},
-		{Name: "AZURE_RESOURCE_GROUP"},
-		{Name: "AZURE_OPENAI_ENDPOINT"},
-		{Name: "FOUNDRY_PROJECT_ENDPOINT"},
-		{Name: "AZURE_CONTAINER_REGISTRY_ENDPOINT"},
-		{Name: "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"},
-		{Name: "AZURE_AI_PROJECT_ACR_CONNECTION_NAME"},
-	}, nil
+	out := make([]*azdext.ProvisioningPlannedOutput, 0, len(canonicalOutputNames))
+	for _, name := range canonicalOutputNames {
+		out = append(out, &azdext.ProvisioningPlannedOutput{Name: name})
+	}
+	return out, nil
+}
+
+// canonicalOutputNames is the source of truth for the env-var names
+// the foundry deployment populates. Used by both PlannedOutputs (so
+// azd-core knows what's coming) and armOutputsToProto (to repair
+// ARM's casing). Names must match the `output <NAME>` declarations
+// in `internal/synthesis/templates/main.bicep` exactly, plus the
+// inputs the provider asks azd-core to remember (AZURE_RESOURCE_GROUP
+// is provider-input, not a bicep output; declaring it here lets
+// downstream consumers find it via the same canonical-name lookup).
+//
+// Why this exists: ARM's management SDK returns deployment-output
+// names with mangled casing (`AZURE_AI_PROJECT_ID` comes back as
+// `azurE_AI_PROJECT_ID` -- the first segment loses all-but-its-last
+// letter to lowercase, then subsequent segments are intact). Without
+// this list, armOutputsToProto would emit the mangled keys verbatim
+// and `azd env get-value AZURE_AI_PROJECT_ID` would 404. We restore
+// the canonical name by case-insensitive match.
+var canonicalOutputNames = []string{
+	"AZURE_AI_PROJECT_ID",
+	"AZURE_AI_ACCOUNT_NAME",
+	"AZURE_AI_PROJECT_NAME",
+	"AZURE_RESOURCE_GROUP",
+	"AZURE_OPENAI_ENDPOINT",
+	"FOUNDRY_PROJECT_ENDPOINT",
+	"AZURE_CONTAINER_REGISTRY_ENDPOINT",
+	"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+	"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
 }
 
 // --- helpers ---
@@ -954,6 +976,16 @@ func deploymentResources(p *armresources.DeploymentPropertiesExtended) []*armres
 // each value as {type, value} where value may be any JSON-shaped
 // scalar/array/object; we preserve the type marker and encode non-string
 // values as JSON so downstream consumers can parse them back.
+//
+// Casing repair: ARM's management SDK returns output names with
+// mangled casing (e.g. `AZURE_AI_PROJECT_ID` -> `azurE_AI_PROJECT_ID`).
+// We restore the canonical name via case-insensitive lookup against
+// canonicalOutputNames so `azd env get-value AZURE_AI_PROJECT_ID`
+// (and every other downstream consumer that does a case-sensitive
+// env lookup) finds the value. Outputs whose names don't match any
+// canonical entry pass through verbatim -- we'd rather emit a
+// possibly-mangled key than silently drop an output we didn't
+// anticipate.
 func armOutputsToProto(outputs any) map[string]*azdext.ProvisioningOutputParameter {
 	out := map[string]*azdext.ProvisioningOutputParameter{}
 	m, ok := outputs.(map[string]any)
@@ -966,12 +998,25 @@ func armOutputsToProto(outputs any) map[string]*azdext.ProvisioningOutputParamet
 			continue
 		}
 		typeStr, _ := entry["type"].(string)
-		out[k] = &azdext.ProvisioningOutputParameter{
+		out[canonicalizeOutputName(k)] = &azdext.ProvisioningOutputParameter{
 			Type:  typeStr,
 			Value: encodeParamValue(entry["value"]),
 		}
 	}
 	return out
+}
+
+// canonicalizeOutputName returns the canonical (PlannedOutputs) name
+// that matches `name` case-insensitively, or `name` unchanged when no
+// canonical name matches. Centralized so the State, Deploy, and any
+// future call sites all repair the casing consistently.
+func canonicalizeOutputName(name string) string {
+	for _, canonical := range canonicalOutputNames {
+		if strings.EqualFold(canonical, name) {
+			return canonical
+		}
+	}
+	return name
 }
 
 // armInputsToProto converts the ARM parameters map we sent into the

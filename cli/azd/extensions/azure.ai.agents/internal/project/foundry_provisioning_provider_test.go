@@ -8,6 +8,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
@@ -159,6 +161,152 @@ func TestArmOutputsToProto(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestArmOutputsToProto_RepairsMangledKeyCase locks in the fix for
+// test-results-bicepless.md Finding #4. ARM's management SDK returns
+// deployment-output names with the first segment all-but-its-last
+// letter lowercased (`AZURE_AI_PROJECT_ID` -> `azurE_AI_PROJECT_ID`,
+// `FOUNDRY_PROJECT_ENDPOINT` -> `foundrY_PROJECT_ENDPOINT`). Without
+// the canonical-name remapping, `azd env get-value AZURE_AI_PROJECT_ID`
+// 404s downstream because the env-file key is `azurE_AI_PROJECT_ID`.
+//
+// The fix is in armOutputsToProto: case-insensitive lookup against
+// canonicalOutputNames, then emit the canonical name. Unknown keys
+// pass through verbatim so we never silently lose an output.
+func TestArmOutputsToProto_RepairsMangledKeyCase(t *testing.T) {
+	tests := []struct {
+		name    string
+		inKey   string
+		wantKey string
+	}{
+		{
+			name:    "ARM-mangled AZURE_AI_PROJECT_ID -> canonical",
+			inKey:   "azurE_AI_PROJECT_ID",
+			wantKey: "AZURE_AI_PROJECT_ID",
+		},
+		{
+			name:    "ARM-mangled FOUNDRY_PROJECT_ENDPOINT -> canonical",
+			inKey:   "foundrY_PROJECT_ENDPOINT",
+			wantKey: "FOUNDRY_PROJECT_ENDPOINT",
+		},
+		{
+			name:    "already-canonical key passes through unchanged",
+			inKey:   "AZURE_AI_ACCOUNT_NAME",
+			wantKey: "AZURE_AI_ACCOUNT_NAME",
+		},
+		{
+			name:    "lower-case input gets canonicalized too",
+			inKey:   "azure_openai_endpoint",
+			wantKey: "AZURE_OPENAI_ENDPOINT",
+		},
+		{
+			name:    "unknown key passes through verbatim (don't drop unanticipated outputs)",
+			inKey:   "SOME_UNANTICIPATED_OUTPUT",
+			wantKey: "SOME_UNANTICIPATED_OUTPUT",
+		},
+		{
+			name:    "unknown key with weird casing also passes through (verbatim, not canonicalized)",
+			inKey:   "soME_UNANTICIPATED",
+			wantKey: "soME_UNANTICIPATED",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := armOutputsToProto(map[string]any{
+				tt.inKey: map[string]any{"type": "String", "value": "v"},
+			})
+			require.Len(t, got, 1)
+			_, ok := got[tt.wantKey]
+			assert.True(t, ok, "expected canonical key %q in result, got keys %v",
+				tt.wantKey, mapKeys(got))
+			assert.Equal(t, "v", got[tt.wantKey].Value)
+		})
+	}
+}
+
+// TestArmOutputsToProto_RepairsRealWorldRunOutput uses the exact key
+// set captured in test-results-bicepless.md Run 2 (Finding #4), so a
+// future regression in ARM's mangling rules or in our repair logic
+// is caught against real data.
+func TestArmOutputsToProto_RepairsRealWorldRunOutput(t *testing.T) {
+	t.Parallel()
+	// Verbatim from `.azure/dev/.env` after the C4 live deploy.
+	in := map[string]any{
+		"azurE_AI_ACCOUNT_NAME":                map[string]any{"type": "String", "value": "cog-l5nlvejnau56c"},
+		"azurE_AI_PROJECT_ACR_CONNECTION_NAME": map[string]any{"type": "String", "value": ""},
+		"azurE_AI_PROJECT_ID":                  map[string]any{"type": "String", "value": "/subscriptions/.../accounts/cog-l5nlvejnau56c/projects/fdtest-zhihuan"},
+		"azurE_AI_PROJECT_NAME":                map[string]any{"type": "String", "value": "fdtest-zhihuan"},
+		"azurE_CONTAINER_REGISTRY_ENDPOINT":    map[string]any{"type": "String", "value": ""},
+		"azurE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"type": "String", "value": ""},
+		"azurE_OPENAI_ENDPOINT":                map[string]any{"type": "String", "value": "https://cog-l5nlvejnau56c.openai.azure.com/"},
+		"foundrY_PROJECT_ENDPOINT": map[string]any{
+			"type":  "String",
+			"value": "https://cog-l5nlvejnau56c.services.ai.azure.com/api/projects/fdtest-zhihuan",
+		},
+	}
+	got := armOutputsToProto(in)
+
+	// Every key must come out in canonical form. The values are the
+	// downstream consumers that previously silently 404'd.
+	wantCanonical := []string{
+		"AZURE_AI_ACCOUNT_NAME",
+		"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+		"AZURE_AI_PROJECT_ID",
+		"AZURE_AI_PROJECT_NAME",
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT",
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+		"AZURE_OPENAI_ENDPOINT",
+		"FOUNDRY_PROJECT_ENDPOINT",
+	}
+	for _, k := range wantCanonical {
+		_, ok := got[k]
+		assert.True(t, ok, "expected canonical key %q in result, got keys %v", k, mapKeys(got))
+	}
+	assert.Len(t, got, len(wantCanonical), "no extra mangled keys should remain")
+
+	// Spot-check that values flowed through correctly.
+	assert.Equal(t, "cog-l5nlvejnau56c", got["AZURE_AI_ACCOUNT_NAME"].Value)
+	assert.Equal(t, "fdtest-zhihuan", got["AZURE_AI_PROJECT_NAME"].Value)
+	assert.Equal(t, "https://cog-l5nlvejnau56c.openai.azure.com/",
+		got["AZURE_OPENAI_ENDPOINT"].Value)
+}
+
+// TestCanonicalizeOutputName covers the small helper directly.
+// Exhaustive vs the table-driven test above so future contributors
+// adding new entries to canonicalOutputNames only have to touch one
+// place.
+func TestCanonicalizeOutputName(t *testing.T) {
+	t.Parallel()
+
+	// Every canonical name must round-trip unchanged.
+	for _, c := range canonicalOutputNames {
+		assert.Equal(t, c, canonicalizeOutputName(c),
+			"canonical name %q must round-trip", c)
+	}
+
+	// Every canonical name must be reachable from its lowercase form.
+	for _, c := range canonicalOutputNames {
+		lower := strings.ToLower(c)
+		assert.Equal(t, c, canonicalizeOutputName(lower),
+			"lower-case %q must canonicalize to %q", lower, c)
+	}
+
+	// Unknown name passes through verbatim.
+	assert.Equal(t, "not_a_known_output",
+		canonicalizeOutputName("not_a_known_output"),
+		"unknown name must pass through verbatim, not silently dropped")
+}
+
+// mapKeys returns a sorted list of keys for stable assert messages.
+func mapKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
 }
 
 func TestArmInputsToProto(t *testing.T) {

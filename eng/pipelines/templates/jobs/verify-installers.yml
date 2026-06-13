@@ -74,10 +74,16 @@ jobs:
         condition: and(succeeded(), contains(variables['Agent.OS'], 'Windows'))
         workingDirectory: hosting
 
+      - template: /eng/common/pipelines/templates/steps/create-authenticated-npmrc.yml
+        parameters:
+          npmrcPath: $(Agent.TempDirectory)/verify/.npmrc
+
       - bash: nohup npx -y http-server &
         displayName: Start server in hosting/ (bash)
         condition: and(succeeded(), not(contains(variables['Agent.OS'], 'Windows')))
         workingDirectory: hosting
+        env:
+          npm_config_userconfig: "$(Agent.TempDirectory)/verify/.npmrc"
 
       - pwsh: |
           Start-Process npx.cmd `

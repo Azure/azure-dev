@@ -219,7 +219,7 @@ func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
 	assert.Contains(t, stdout, "azd provision")
 
 	// azure.yaml must not be mutated by eject (spec is explicit on this).
-	got, err := os.ReadFile(filepath.Join(dir, "azure.yaml"))
+	got, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test file path from t.TempDir()
 	require.NoError(t, err)
 	assert.Equal(t, validFoundryAzureYAML, string(got),
 		"azure.yaml must not be mutated by eject")
@@ -234,7 +234,7 @@ func TestEjectInfra_HappyPath_ParametersFileShape(t *testing.T) {
 		require.NoError(t, ejectInfra(dir))
 	})
 
-	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json"))
+	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec // G304: test file path from t.TempDir()
 	require.NoError(t, err)
 
 	var doc struct {
@@ -297,7 +297,7 @@ services:
 	_, err := os.Stat(filepath.Join(dir, "infra", "modules", "acr.bicep"))
 	assert.NoError(t, err, "acr.bicep module is part of the static template set")
 
-	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json"))
+	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec // G304: test file path from t.TempDir()
 	require.NoError(t, err)
 	var doc struct {
 		Parameters map[string]struct {
@@ -328,7 +328,7 @@ func TestEjectInfra_RefusesWhenInfraIsAFile(t *testing.T) {
 			"not silently overwritten")
 
 	// User's file must survive the refusal.
-	got, err := os.ReadFile(filepath.Join(dir, "infra"))
+	got, err := os.ReadFile(filepath.Join(dir, "infra")) //nolint:gosec // G304: test file path from t.TempDir()
 	require.NoError(t, err)
 	assert.Equal(t, "this is a file, not a dir", string(got))
 }

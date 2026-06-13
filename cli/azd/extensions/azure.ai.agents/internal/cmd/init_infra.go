@@ -65,6 +65,7 @@ func validateStandaloneEjectArgs(args []string, flags *initFlags) error {
 // infra.provider stays azure.ai.agents).
 func ejectInfra(projectRoot string) error {
 	yamlPath := filepath.Join(projectRoot, "azure.yaml")
+	//nolint:gosec // G304: azure.yaml under the caller-supplied azd project root
 	rawYAML, err := os.ReadFile(yamlPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -194,6 +195,7 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 // eject is to hand the user the human-readable Bicep sources, and the
 // embedded JSON would be stale the moment they edit main.bicep.
 func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
+	//nolint:gosec // G301: ejected infra/ directory must be readable/traversable by IDEs, Git, and CI
 	if err := os.MkdirAll(infraDir, 0o755); err != nil {
 		return nil, exterrors.Internal(
 			exterrors.CodeInfraEjectWriteFailed,
@@ -226,6 +228,7 @@ func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 		dst := filepath.Join(infraDir, filepath.FromSlash(rel))
 
 		if d.IsDir() {
+			//nolint:gosec // G301: ejected infra/ subdirectories must remain readable/traversable
 			if err := os.MkdirAll(dst, 0o755); err != nil {
 				return err
 			}
@@ -240,6 +243,7 @@ func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 		if err != nil {
 			return err
 		}
+		//nolint:gosec // G306: ejected Bicep sources are intended to be human-readable
 		if err := os.WriteFile(dst, data, 0o644); err != nil {
 			return err
 		}
@@ -295,6 +299,7 @@ func writeParametersFile(infraDir string, params map[string]any) (ejectArtifact,
 	data = append(data, '\n')
 
 	dst := filepath.Join(infraDir, "main.parameters.json")
+	//nolint:gosec // G306: ejected parameters file is intended to be human-readable
 	if err := os.WriteFile(dst, data, 0o644); err != nil {
 		return ejectArtifact{}, exterrors.Internal(
 			exterrors.CodeInfraEjectWriteFailed,

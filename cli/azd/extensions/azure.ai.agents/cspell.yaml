@@ -41,6 +41,7 @@ words:
   - aoai
   - authorizationfailed
   - azdaiagent
+  - bicepless
   - CLIENTSECRET
   - curr
   - dataagent
@@ -59,6 +60,7 @@ words:
   - mypy
   - myregistry
   - normalises
+  - ondisk
   - openapitool
   - posixpath
   - projectpkg
@@ -67,6 +69,7 @@ words:
   - schedulerun
   - Toolsets
   - underscoped
+  - unparseable
   - Vnext
   - webp
   # Doctor / next-step terms

@@ -1314,6 +1314,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if err != nil {
 					return fmt.Errorf("resolve current directory: %w", err)
 				}
+				//nolint:gosec // G304: azure.yaml in the current azd project directory
 				rawYAML, readErr := os.ReadFile(filepath.Join(cwd, "azure.yaml"))
 				switch {
 				case errors.Is(readErr, fs.ErrNotExist):

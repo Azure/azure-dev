@@ -89,6 +89,61 @@ func TestKindEnvUpdateRejectsTraversal(t *testing.T) {
 	}
 }
 
+// TestKindEnvUpdate_NoAgentYaml_IsNoOp covers the bicepless inline-agents
+// path: agents declared inline in azure.yaml under
+// `services.<name>.agents[]` don't require an on-disk agent.yaml.
+// preprovision's kindEnvUpdate must short-circuit cleanly when the
+// file is missing, NOT return "failed to read YAML file" (the bug
+// described in test-results-bicepless.md Finding #3).
+//
+// Verified by passing a nil azdClient: if kindEnvUpdate progressed to
+// the only meaningful side effect (setEnvVar for kind=hosted), it
+// would nil-panic. Returning nil before that point is the contract
+// we're locking in.
+func TestKindEnvUpdate_NoAgentYaml_IsNoOp(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	// RelativePath points into projectRoot but we deliberately do NOT
+	// write an agent.yaml there -- this is the inline-agents shape.
+	svc := &azdext.ServiceConfig{Name: "inline-agent", Host: AiAgentHost, RelativePath: "."}
+	proj := &azdext.ProjectConfig{Path: projectRoot}
+
+	err := kindEnvUpdate(t.Context(), nil, proj, svc, "dev")
+	require.NoError(t, err,
+		"missing agent.yaml on the bicepless inline-agents path must NOT error; "+
+			"see test-results-bicepless.md Finding #3 for the bug this guards against")
+}
+
+// TestKindEnvUpdate_PresentInvalidYaml_StillErrors locks in the
+// behavior that a *present* agent.yaml is still validated. The
+// missing-file tolerance from the previous test must not weaken
+// the validator: a malformed on-disk agent.yaml is still a hard
+// error from preprovision because downstream service-target code
+// will choke on it.
+func TestKindEnvUpdate_PresentInvalidYaml_StillErrors(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	// Write a syntactically-fine but semantically-invalid agent.yaml
+	// (kind not in the allowed set). ValidateAgentDefinition should
+	// reject it.
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "agent.yaml"),
+		[]byte("name: x\nkind: not-a-real-kind\n"),
+		0o600,
+	))
+
+	svc := &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost, RelativePath: "."}
+	proj := &azdext.ProjectConfig{Path: projectRoot}
+
+	err := kindEnvUpdate(t.Context(), nil, proj, svc, "dev")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "agent.yaml is not valid",
+		"a present-but-invalid agent.yaml is still a hard error -- "+
+			"the missing-file tolerance must not bypass validation")
+}
+
 func TestParseConnectionIDs(t *testing.T) {
 	t.Parallel()
 

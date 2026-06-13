@@ -73,10 +73,10 @@ func TestSummarizeWhatIf_DetailedBreakdown(t *testing.T) {
 
 	props := &armresources.WhatIfOperationProperties{
 		Changes: []*armresources.WhatIfChange{
-			{ChangeType: changeTypePtr(armresources.ChangeTypeCreate), ResourceID: &id1},
-			{ChangeType: changeTypePtr(armresources.ChangeTypeCreate), ResourceID: &id2},
-			{ChangeType: changeTypePtr(armresources.ChangeTypeModify), ResourceID: &id3},
-			{ChangeType: changeTypePtr(armresources.ChangeTypeDelete), ResourceID: new("/subs/.../old")},
+			{ChangeType: new(armresources.ChangeTypeCreate), ResourceID: &id1},
+			{ChangeType: new(armresources.ChangeTypeCreate), ResourceID: &id2},
+			{ChangeType: new(armresources.ChangeTypeModify), ResourceID: &id3},
+			{ChangeType: new(armresources.ChangeTypeDelete), ResourceID: new("/subs/.../old")},
 		},
 	}
 	got := summarizeWhatIf(armresources.WhatIfOperationResult{Properties: props})
@@ -154,7 +154,7 @@ func TestSummarizeWhatIf_MissingResourceIDIsPlaceheld(t *testing.T) {
 	// ResourceID nil -> show placeholder rather than crashing.
 	props := &armresources.WhatIfOperationProperties{
 		Changes: []*armresources.WhatIfChange{
-			{ChangeType: changeTypePtr(armresources.ChangeTypeCreate)},
+			{ChangeType: new(armresources.ChangeTypeCreate)},
 		},
 	}
 	got := summarizeWhatIf(armresources.WhatIfOperationResult{Properties: props})

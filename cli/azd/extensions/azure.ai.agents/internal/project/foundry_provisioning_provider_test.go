@@ -280,19 +280,56 @@ func TestArmInputsToProto_JSONEncodesNonStrings(t *testing.T) {
 	assert.Equal(t, `[{"name":"gpt-4"}]`, got["deployments"].Value)
 }
 
-func TestParameters_NilSafeOnMissingSynthResult(t *testing.T) {
-	// Parameters is part of the gRPC contract; calling it before
-	// Initialize succeeded must NOT panic on nil synthResult. Instead
-	// return a structured Internal error so the host has something
-	// actionable to surface.
-	p := &FoundryProvisioningProvider{} // synthResult left nil
-	_, err := p.Parameters(t.Context())
-	require.Error(t, err)
-	var local *azdext.LocalError
-	require.True(t, errors.As(err, &local), "expected *azdext.LocalError, got %T", err)
-	assert.Equal(t, exterrors.CodeInvalidServiceConfig, local.Code)
-	assert.Equal(t, azdext.LocalErrorCategoryInternal, local.Category)
-	assert.Contains(t, local.Message, "before successful Initialize")
+func TestParameters_NilSynthResult_ReturnsHostDerivedOnly(t *testing.T) {
+	// On the on-disk Bicep path, Initialize deliberately skips the
+	// synthesizer so synthResult is nil. Parameters must still return
+	// the host-derived parameter list (location, foundryProjectName,
+	// principalId) so azd-core's env-wiring planner has something to
+	// work with. The synthesizer-derived `includeAcr` is omitted in
+	// that mode -- on-disk Bicep owns its own parameter contract.
+	p := &FoundryProvisioningProvider{
+		location:    "eastus",
+		foundryName: "fp",
+		principalID: "pid",
+		// synthResult intentionally nil (on-disk path)
+	}
+	got, err := p.Parameters(t.Context())
+	require.NoError(t, err, "Parameters must succeed on the on-disk path")
+
+	names := make([]string, 0, len(got))
+	for _, p := range got {
+		names = append(names, p.Name)
+	}
+	assert.Contains(t, names, "location")
+	assert.Contains(t, names, "foundryProjectName")
+	assert.Contains(t, names, "principalId")
+	assert.NotContains(t, names, "includeAcr",
+		"includeAcr is a synthesizer-derived value; on-disk path must skip it")
+}
+
+func TestParameters_EmbeddedPath_IncludesSynthResultDerivedValues(t *testing.T) {
+	// On the embedded path, synthResult is set and includeAcr flows
+	// through.
+	p := &FoundryProvisioningProvider{
+		location:    "eastus",
+		foundryName: "fp",
+		principalID: "pid",
+		synthResult: &synthesis.Result{
+			Parameters: map[string]any{"includeAcr": true},
+		},
+	}
+	got, err := p.Parameters(t.Context())
+	require.NoError(t, err)
+
+	found := false
+	for _, p := range got {
+		if p.Name == "includeAcr" {
+			found = true
+			assert.Equal(t, "true", p.Value,
+				"includeAcr value must be the synthesizer's derived bool, %%v-formatted")
+		}
+	}
+	assert.True(t, found, "embedded path must include includeAcr")
 }
 
 func TestArmParameters_NilSafeOnMissingSynthResult(t *testing.T) {

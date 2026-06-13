@@ -729,21 +729,29 @@ func invalidatedEnvKeysResult() *azdext.ProvisioningDestroyResult {
 
 // Parameters reports the parameter values that will be sent to ARM, so
 // azd can show them in `azd provision --preview` and similar tooling.
-// Returns a structured error when Initialize hasn't populated synthResult.
+//
+// Both template paths (embedded synthesizer vs on-disk Bicep) report
+// the same host-derived parameter list (location, foundryProjectName,
+// principalId). The embedded path also adds `includeAcr` from the
+// synthesizer's derived values; the on-disk path skips it because the
+// user's bicep owns the parameter contract there.
 func (p *FoundryProvisioningProvider) Parameters(
 	ctx context.Context,
 ) ([]*azdext.ProvisioningParameter, error) {
-	if p.synthResult == nil {
-		return nil, exterrors.Internal(
-			exterrors.CodeInvalidServiceConfig,
-			"Parameters called before successful Initialize",
-		)
-	}
 	out := []*azdext.ProvisioningParameter{
 		{Name: "location", Value: p.location, EnvVarMapping: []string{envKeyLocation}},
 		{Name: "foundryProjectName", Value: p.foundryName, EnvVarMapping: []string{envKeyProjectName}},
 		{Name: "principalId", Value: p.principalID, EnvVarMapping: []string{envKeyPrincipalID}},
-		{Name: "includeAcr", Value: fmt.Sprintf("%v", p.synthResult.Parameters["includeAcr"])},
+	}
+	if p.synthResult != nil {
+		// includeAcr is a synthesizer-derived value; only the
+		// embedded path exposes it. On the on-disk path the user
+		// owns the parameter contract and we don't introspect their
+		// bicep here.
+		out = append(out, &azdext.ProvisioningParameter{
+			Name:  "includeAcr",
+			Value: fmt.Sprintf("%v", p.synthResult.Parameters["includeAcr"]),
+		})
 	}
 	return out, nil
 }

@@ -193,13 +193,23 @@ const (
 	CodeMissingFoundryProjectName   = "missing_foundry_project_name"
 	CodeMissingResourceGroup        = "missing_resource_group"
 	CodeMissingAzureLocation        = "missing_azure_location"
+	CodeDestroyRequiresForce        = "destroy_requires_force"
+)
+
+// Error codes for `azd ai agent init --infra` (infrastructure eject).
+const (
+	CodeInfraEjectExists                  = "infra_eject_exists"
+	CodeInfraEjectNoFoundryService        = "infra_eject_no_foundry_service"
+	CodeInfraEjectMultipleFoundryServices = "infra_eject_multiple_foundry_services"
+	CodeInfraEjectAzureYamlMissing        = "infra_eject_azure_yaml_missing"
+	CodeInfraEjectWriteFailed             = "infra_eject_write_failed"
+	CodeInfraEjectConflictingArguments    = "infra_eject_conflicting_arguments"
 )
 
 // Operation names for the microsoft.foundry provisioning provider.
 const (
 	OpArmDeploymentCreate = "arm_deployment_create"
 	OpArmDeploymentGet    = "arm_deployment_get"
-	OpArmDeploymentDelete = "arm_deployment_delete"
 	OpResourceGroupCreate = "resource_group_create"
 	OpResourceGroupDelete = "resource_group_delete"
 )

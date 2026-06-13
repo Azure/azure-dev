@@ -72,6 +72,11 @@ type initFlags struct {
 	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
 	// and is not registered as a CLI flag on the init command itself.
 	noPrompt bool
+	// infra, when true, synthesizes the in-memory Bicep templates from
+	// azure.yaml and writes them to ./infra/. Pairs the existing init flow
+	// with an eject step on a fresh project, or runs as a standalone eject
+	// when azure.yaml already exists. See spec/bicepless-foundry/spec.md.
+	infra bool
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -904,6 +909,26 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// set flags.manifestPointer. This drives the opinionated-defaults path.
 			userProvidedManifest := flags.manifestPointer != ""
 
+			// `--infra` on a directory that already contains an azd agent
+			// project is a standalone eject: synthesize the embedded Bicep
+			// from the existing azure.yaml, write ./infra/, and return.
+			// Spec: do not re-prompt, do not touch agent code, do not modify
+			// azure.yaml. (spec/bicepless-foundry/spec.md §Eject Command)
+			if flags.infra && fileExists("azure.yaml") {
+				// Reject silently-dropped inputs: any positional arg, -m, or
+				// --src would normally drive the init flow, but standalone
+				// eject ignores all of them. Surface this instead of letting
+				// the user think their argument was honored.
+				if err := validateStandaloneEjectArgs(args, flags); err != nil {
+					return err
+				}
+				cwd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("resolve current directory: %w", err)
+				}
+				return ejectInfra(cwd)
+			}
+
 			ctx := azdext.WithAccessToken(cmd.Context())
 
 			azdClient, err := azdext.NewAzdClient()
@@ -1272,6 +1297,42 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}
 
+			// New-project eject: when --infra is set on a fresh init that
+			// just produced azure.yaml in the current working directory,
+			// chain the eject step so the user lands on disk-backed Bicep
+			// immediately. The standalone-eject branch at the top of RunE
+			// short-circuits before we get here when azure.yaml already
+			// existed, so reaching this point means init wrote it now.
+			//
+			// Skip silently when init returned nil without producing a
+			// foundry-bearing azure.yaml (e.g. user-cancelled scaffold,
+			// or a flow that exits early without writing services). The
+			// chained eject would otherwise surface a confusing
+			// "nothing to eject" error after init reported success.
+			if flags.infra {
+				cwd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("resolve current directory: %w", err)
+				}
+				rawYAML, readErr := os.ReadFile(filepath.Join(cwd, "azure.yaml"))
+				switch {
+				case errors.Is(readErr, fs.ErrNotExist):
+					// Init didn't write azure.yaml; nothing to eject.
+				case readErr != nil:
+					return fmt.Errorf("read azure.yaml after init: %w", readErr)
+				default:
+					if _, svcErr := findFoundryServiceForEject(rawYAML); svcErr == nil {
+						if err := ejectInfra(cwd); err != nil {
+							return err
+						}
+					}
+					// Note: silently skip when no foundry service is
+					// present. Init succeeded into a non-foundry shape;
+					// the user opted in to --infra but there is nothing
+					// foundry-shaped to eject. This is not an error.
+				}
+			}
+
 			return nil
 		},
 	}
@@ -1312,6 +1373,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+
 			"Required together with --no-prompt when init would otherwise need confirmation.")
+
+	cmd.Flags().BoolVar(&flags.infra, "infra", false,
+		"Synthesize Bicep templates from azure.yaml and write them to ./infra/. "+
+			"When azure.yaml already exists, runs as a standalone eject and skips the init prompts.")
 
 	return cmd
 }

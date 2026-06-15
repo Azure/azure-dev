@@ -179,14 +179,18 @@ func (gp *goProject) Package(
 		return nil, fmt.Errorf("setting binary permissions: %w", err)
 	}
 
-	// Copy host.json from user project
+	// Copy host.json from user project (required for Azure Functions deployment)
 	hostJSONSrc := filepath.Join(serviceConfig.Path(), "host.json")
-	if _, err := os.Stat(hostJSONSrc); err == nil {
-		if err := copy.Copy(
-			hostJSONSrc, filepath.Join(packageDir, "host.json"),
-		); err != nil {
-			return nil, fmt.Errorf("copying host.json: %w", err)
-		}
+	if _, err := os.Stat(hostJSONSrc); err != nil {
+		return nil, fmt.Errorf(
+			"host.json not found at %q: Azure Functions requires a host.json file in the project directory",
+			hostJSONSrc,
+		)
+	}
+	if err := copy.Copy(
+		hostJSONSrc, filepath.Join(packageDir, "host.json"),
+	); err != nil {
+		return nil, fmt.Errorf("copying host.json: %w", err)
 	}
 
 	return &ServicePackageResult{

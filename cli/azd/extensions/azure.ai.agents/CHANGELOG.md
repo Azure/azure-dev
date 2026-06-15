@@ -1,5 +1,11 @@
 # Release History
 
+## 0.1.40-preview (2026-06-15)
+
+- [[#8641]](https://github.com/Azure/azure-dev/pull/8641) Fix optimize/eval handling for array-valued mutations, resolve `dataset.local_uri` relative to the agent project, and align optimize test schema data with the current API format. Thanks @Zyysurely for the contribution!
+- [[#8625]](https://github.com/Azure/azure-dev/pull/8625) Show server response timing after successful `azd ai agent invoke` calls, including total latency and time to first byte, while keeping failure and `--output raw` flows unchanged. Thanks @VBhadauria for the contribution!
+- [[#8624]](https://github.com/Azure/azure-dev/pull/8624) Add Python bundled-mode guidance after `azd ai agent init` and block `azd deploy` with clear remediation when bundled dependencies were not installed into the source directory. Thanks @v1212 for the contribution!
+
 ## 0.1.39-preview (2026-06-11)
 
 - [[#8602]](https://github.com/Azure/azure-dev/pull/8602) Support Foundry `${{...}}` server-side expressions during `azd ai agent` environment-variable expansion, so values that mix azd `${VAR}` references with Foundry `${{...}}` expressions (and `${VAR:-default}` forms) resolve correctly instead of being dropped. Thanks @huimiu for the contribution!

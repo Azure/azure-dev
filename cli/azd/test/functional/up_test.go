@@ -264,7 +264,10 @@ func Test_CLI_Up_Down_GoFuncApp(t *testing.T) {
 	t.Logf("Starting deploy\n")
 	err = retry.Do(ctx, retry.WithMaxRetries(3, retry.NewConstant(30*time.Second)), func(ctx context.Context) error {
 		deployResult, deployErr := cli.RunCommand(ctx, "deploy", "--cwd", dir)
-		deployOutput := deployResult.Stdout + deployResult.Stderr
+		deployOutput := ""
+		if deployResult != nil {
+			deployOutput = deployResult.Stdout + deployResult.Stderr
+		}
 		if deployErr != nil && strings.Contains(deployOutput, "unable to find a resource tagged") {
 			t.Logf("Resource not yet discoverable, retrying deploy...\n")
 			return retry.RetryableError(deployErr)
@@ -307,8 +310,11 @@ func Test_CLI_Up_Down_GoFuncApp(t *testing.T) {
 			client = session.ProxyClient
 		}
 
-		/* #nosec G107 - Potential HTTP request made with variable url false positive */
-		res, err := client.Get(url)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if reqErr != nil {
+			return retry.RetryableError(reqErr)
+		}
+		res, err := client.Do(req)
 		if err != nil {
 			return retry.RetryableError(err)
 		}

@@ -16,7 +16,15 @@ func NewRootCommand() *cobra.Command {
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,
 		},
+		Annotations: map[string]string{
+			"azd-sdk-root": "true",
+		},
 	}
+
+	// Register reserved azd flags so that `listen --debug` doesn't fail.
+	flags := rootCmd.PersistentFlags()
+	flags.Bool("debug", false, "Enables debug and diagnostics logging")
+	flags.Bool("no-prompt", false, "Runs without prompts")
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 

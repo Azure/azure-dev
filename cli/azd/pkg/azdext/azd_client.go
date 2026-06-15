@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	_ "google.golang.org/grpc/encoding/gzip" // registers gzip compressor for gRPC streams
 	"google.golang.org/grpc/metadata"
 )
 
@@ -35,6 +36,7 @@ type AzdClient struct {
 	aiClient            AiModelServiceClient
 	copilotClient       CopilotServiceClient
 	provisioningClient  ProvisioningServiceClient
+	validationClient    ValidationServiceClient
 }
 
 // WithAddress sets the address of the `azd` gRPC server.
@@ -48,6 +50,12 @@ func WithAddress(address string) AzdClientOption {
 			// For non-localhost connections, require TLS to prevent man-in-the-middle attacks.
 			opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(nil)))
 		}
+
+		// Enable gzip compression by default for all calls.
+		// Context data (ARM templates, etc.) is highly compressible JSON.
+		opts = append(opts, grpc.WithDefaultCallOptions(
+			grpc.UseCompressor("gzip"),
+		))
 
 		connection, err := grpc.NewClient(address, opts...)
 		if err != nil {
@@ -250,4 +258,13 @@ func (c *AzdClient) Provisioning() ProvisioningServiceClient {
 	}
 
 	return c.provisioningClient
+}
+
+// Validation returns the validation service client.
+func (c *AzdClient) Validation() ValidationServiceClient {
+	if c.validationClient == nil {
+		c.validationClient = NewValidationServiceClient(c.connection)
+	}
+
+	return c.validationClient
 }

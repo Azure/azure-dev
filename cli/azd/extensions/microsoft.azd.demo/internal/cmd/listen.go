@@ -14,7 +14,7 @@ import (
 )
 
 func newListenCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "listen",
 		Short: "Starts the extension and listens for events.",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -37,6 +37,13 @@ func newListenCommand() *cobra.Command {
 				}).
 				WithProvisioningProvider("demo", func() azdext.ProvisioningProvider {
 					return project.NewDemoProvisioningProvider(azdClient)
+				}).
+				WithValidationCheck(azdext.ValidationCheckRegistration{
+					CheckType: "local-preflight",
+					RuleID:    "todo_resource_name",
+					Factory: func() azdext.ValidationCheckProvider {
+						return project.NewDemoValidationCheck()
+					},
 				}).
 				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					for i := 1; i <= 20; i++ {
@@ -88,4 +95,6 @@ func newListenCommand() *cobra.Command {
 			return nil
 		},
 	}
+
+	return cmd
 }

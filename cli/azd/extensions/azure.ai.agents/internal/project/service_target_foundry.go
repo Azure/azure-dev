@@ -208,8 +208,13 @@ func (p *FoundryServiceTargetProvider) Deploy(
 
 	// An explicit endpoint: on the service points at an existing project; use it as
 	// the deploy endpoint when provision did not write FOUNDRY_PROJECT_ENDPOINT.
+	// Expand ${VAR} references so values like ${MY_ENDPOINT} resolve correctly.
 	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" && p.config.Endpoint != "" {
-		azdEnv["FOUNDRY_PROJECT_ENDPOINT"] = p.config.Endpoint
+		endpoint := p.config.Endpoint
+		if expanded, err := ExpandEnv(p.config.Endpoint, func(name string) string { return azdEnv[name] }); err == nil && expanded != "" {
+			endpoint = expanded
+		}
+		azdEnv["FOUNDRY_PROJECT_ENDPOINT"] = endpoint
 	}
 	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, exterrors.Dependency(

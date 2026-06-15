@@ -301,8 +301,10 @@ type validationContext struct {
 }
 
 // extensionContext builds the map[string][]byte to send to extension validation checks.
-// All serializable data from the validation context is included. When new data is added
-// to validationContext, add it here so extensions automatically receive it.
+// It includes the deployment artifacts and snapshot data that extensions need to perform
+// validation. Internal-only fields (e.g., Props) used by core checks are not included.
+// When new extension-relevant data is added to validationContext, add it here so
+// extensions automatically receive it.
 func (v *validationContext) extensionContext(
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,

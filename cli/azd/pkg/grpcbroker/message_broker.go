@@ -32,7 +32,8 @@ func wrapResourceExhausted(err error, operation string) error {
 	if st, ok := status.FromError(err); ok && st.Code() == codes.ResourceExhausted {
 		return fmt.Errorf("%w: %s failed: "+
 			"the message is larger than the default 4 MB max. "+
-			"Enable gzip compression on both client and server, or reduce the payload size: %w",
+			"Enable gzip compression (grpc.UseCompressor(\"gzip\") call option) "+
+			"on both client and server, or reduce the payload size: %w",
 			ErrResourceExhausted, operation, err,
 		)
 	}

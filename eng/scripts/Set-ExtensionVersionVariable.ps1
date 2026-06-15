@@ -6,7 +6,7 @@ param(
     [string] $Suffix
 )
 
-$extVersion = (Get-Content "$ExtensionDirectory/version.txt").Trim()
+$extVersion = (Get-Content "$ExtensionDirectory/version.txt" -Raw).Trim()
 
 if ($Suffix) {
     # If the base version already has a pre-release segment (contains '-'),

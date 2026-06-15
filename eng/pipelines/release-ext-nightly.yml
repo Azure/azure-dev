@@ -10,7 +10,7 @@
 # Build.BuildNumber is set to yyyyMMddHHmm via the `name` field below so the
 # version suffix is identical for every job in the run.
 
-name: $(Date:yyyyMMdd)$(Hours)$(Minutes)
+name: $(Date:yyyyMMddHHmm)
 
 # Scheduled and manual only. This pipeline has side effects (GitHub pre-releases
 # and a dev-registry PR), so it must not run on CI/PR. The publishing steps are

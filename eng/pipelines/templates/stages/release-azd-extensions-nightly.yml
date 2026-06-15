@@ -53,17 +53,10 @@ stages:
               # Native command failures should not throw so we can inspect
               # $LASTEXITCODE (git diff --quiet uses exit code 1 to signal diffs).
               $PSNativeCommandUseErrorActionPreference = $false
-              $repo = "$(Build.Repository.Name)"
 
               $extensions = @'
               ${{ convertToJson(parameters.Extensions) }}
               '@ | ConvertFrom-Json
-
-              $releases = @()
-              $releaseJson = gh release list --repo $repo --limit 1000 --json tagName,createdAt 2>$null
-              if ($LASTEXITCODE -eq 0 -and $releaseJson) {
-                $releases = $releaseJson | ConvertFrom-Json
-              }
 
               $anyChanges = $false
               foreach ($ext in $extensions) {
@@ -72,29 +65,30 @@ stages:
                 $shouldBuild = $true
                 $reason = "no previous nightly release found"
 
-                $lastNightly = $releases |
-                  Where-Object { $_.tagName -like "$tagPrefix*" -and $_.tagName -like "*alpha.*" } |
-                  Sort-Object createdAt -Descending |
-                  Select-Object -First 1
+                # Use local git tags (available because fetchTags: true is set above) to
+                # find the latest nightly tag. This avoids the --limit cap of
+                # `gh release list`, which would cause false "no previous nightly" results
+                # for extensions that haven't changed in many months.
+                # Tag format: azd-ext-<sanitized-id>_<base>-alpha.<yyyyMMddHHmm>
+                # Lexicographic sort on the timestamp suffix is correct because the format
+                # is fixed-width (yyyyMMddHHmm).
+                $lastTag = git tag -l "$tagPrefix*" |
+                  Where-Object { $_ -like "*alpha*" } |
+                  Sort-Object |
+                  Select-Object -Last 1
 
-                if ($lastNightly) {
-                  $tag = $lastNightly.tagName
-                  $lastCommit = gh api "repos/$repo/commits/$tag" --jq .sha 2>$null
+                if ($lastTag) {
+                  $lastCommit = git rev-list -n 1 $lastTag 2>$null
                   if ($LASTEXITCODE -eq 0 -and $lastCommit) {
-                    git cat-file -e "$($lastCommit)^{commit}" 2>$null
+                    git diff --quiet $lastCommit HEAD -- $ext.Directory
                     if ($LASTEXITCODE -eq 0) {
-                      git diff --quiet $lastCommit HEAD -- $ext.Directory
-                      if ($LASTEXITCODE -eq 0) {
-                        $shouldBuild = $false
-                        $reason = "no changes in $($ext.Directory) since $tag"
-                      } else {
-                        $reason = "changes detected in $($ext.Directory) since $tag"
-                      }
+                      $shouldBuild = $false
+                      $reason = "no changes in $($ext.Directory) since $lastTag"
                     } else {
-                      $reason = "previous nightly commit $lastCommit not found in checkout; building"
+                      $reason = "changes detected in $($ext.Directory) since $lastTag"
                     }
                   } else {
-                    $reason = "unable to resolve commit for tag $tag; building"
+                    $reason = "unable to resolve commit for tag $lastTag; building"
                   }
                 }
 
@@ -108,8 +102,6 @@ stages:
               Write-Host "##vso[task.setvariable variable=AnyChanges;isOutput=true]$($anyChanges.ToString().ToLower())"
             name: detect
             displayName: Detect changed extensions
-            env:
-              GH_TOKEN: $(azuresdk-github-pat)
 
   # --------------------------------------------------------------------------
   # Per-extension build + GitHub pre-release. Each stage is gated on the
@@ -312,6 +304,12 @@ stages:
                 set -euo pipefail
                 tag="azd-ext-${{ ext.SanitizedId }}_$(EXT_VERSION)"
                 echo "Release tag: $tag"
+                # If a release for this tag already exists (e.g., build retry with the
+                # same BuildNumber), delete it so this step is fully idempotent.
+                if gh release view "$tag" --repo "$(Build.Repository.Name)" > /dev/null 2>&1; then
+                  echo "Release $tag already exists - deleting before recreating."
+                  gh release delete "$tag" --repo "$(Build.Repository.Name)" --yes --cleanup-tag
+                fi
                 # --target pins the tag to the exact built commit so the next
                 # nightly's change detection diffs from what was actually published.
                 gh release create "$tag" \

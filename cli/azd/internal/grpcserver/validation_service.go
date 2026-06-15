@@ -183,7 +183,8 @@ func (s *ValidationService) onRegisterRequest(
 			existing.RuleID == ruleID &&
 			existing.Extension.Id == extension.Id {
 			s.checksMu.Unlock()
-			return nil, fmt.Errorf(
+			return nil, status.Errorf(
+				codes.AlreadyExists,
 				"validation check '%s/%s' already registered by extension %s",
 				checkType, ruleID, extension.Id,
 			)
@@ -294,10 +295,6 @@ func (s *ValidationService) DispatchChecks(
 				}
 
 				resp, err := e.Broker.SendAndWait(ctx, req)
-				mu.Lock()
-				// Record as invoked only after successful dispatch
-				invokedRuleIDs = append(invokedRuleIDs, e.RuleID)
-				mu.Unlock()
 
 				if err != nil {
 					mu.Lock()
@@ -308,6 +305,11 @@ func (s *ValidationService) DispatchChecks(
 					mu.Unlock()
 					return
 				}
+
+				// Record as invoked only after successful dispatch
+				mu.Lock()
+				invokedRuleIDs = append(invokedRuleIDs, e.RuleID)
+				mu.Unlock()
 
 				checkResp := resp.GetValidationCheckResponse()
 				if checkResp != nil && len(checkResp.Results) > 0 {

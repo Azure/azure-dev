@@ -152,6 +152,7 @@ func (m *ValidationManager) Close() error {
 	clear(m.factories)
 	clear(m.instances)
 	clear(m.cachedContexts)
+	clear(m.contextRefCounts)
 	clear(m.assemblers)
 
 	return nil

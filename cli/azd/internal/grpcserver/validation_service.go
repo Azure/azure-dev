@@ -328,9 +328,11 @@ func (s *ValidationService) DispatchChecks(
 	wg.Wait()
 
 	if len(errs) > 0 {
+		slices.Sort(invokedRuleIDs)
 		return allResults, invokedRuleIDs, errors.Join(errs...)
 	}
 
+	slices.Sort(invokedRuleIDs)
 	return allResults, invokedRuleIDs, nil
 }
 

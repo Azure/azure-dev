@@ -435,6 +435,11 @@ func (m *ValidationManager) onValidationCheck(
 		)
 	}
 
+	// Normalize nil response to empty to avoid nil pointer in oneof wrapper
+	if resp == nil {
+		resp = &ValidationCheckResponse{}
+	}
+
 	return &ValidationMessage{
 		MessageType: &ValidationMessage_ValidationCheckResponse{
 			ValidationCheckResponse: resp,

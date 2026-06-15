@@ -5,7 +5,6 @@ package azdext
 
 import (
 	"context"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 )
@@ -91,6 +90,5 @@ func (ops *ValidationEnvelope) GetProgressMessage(
 func (ops *ValidationEnvelope) CreateProgressMessage(
 	requestId string, _ string,
 ) *ValidationMessage {
-	_ = time.Now() // satisfy interface contract
 	return &ValidationMessage{RequestId: requestId}
 }

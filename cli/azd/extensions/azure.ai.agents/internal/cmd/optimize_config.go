@@ -157,7 +157,7 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 	if trainRef != nil {
 		ds, err := datasetRefToAPI(trainRef)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("train dataset: %w", err)
 		}
 		req.TrainDataset = ds
 	}

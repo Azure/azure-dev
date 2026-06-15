@@ -503,9 +503,9 @@ func contentTypeForBody(data []byte) string {
 //
 // Output format:
 //
-//	⏱  Server responded in 6.667s (first byte: 1.111s)
+//	Server responded in 6.667s (first byte: 1.111s)
 func printInvokeTiming(w io.Writer, total, ttfb time.Duration) {
-	_, _ = color.New(color.FgGreen).Fprintf(w, "\n⏱  Server responded in %s (first byte: %s)\n",
+	_, _ = color.New(color.FgGreen).Fprintf(w, "\nServer responded in %s (first byte: %s)\n",
 		formatDuration(total), formatDuration(ttfb))
 }
 

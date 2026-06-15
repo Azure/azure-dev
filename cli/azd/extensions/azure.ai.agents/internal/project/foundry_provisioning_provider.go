@@ -21,6 +21,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -588,10 +589,19 @@ func (p *FoundryProvisioningProvider) Preview(
 //     does not prompt, so deletion must be an explicit --force choice.
 //   - Force == true: delete the resource group (Foundry account, project, and
 //     any ACR). Idempotent: a missing RG is a no-op success.
+//   - Purge == true: in addition to deleting the RG, purge each soft-deleted
+//     Cognitive Services account that was inside it. Without --purge the
+//     account stays soft-deleted and Azure refuses to re-create one with the
+//     same name until the soft-delete retention expires (~48h), causing the
+//     next `azd provision` to fail with FlagMustBeSetForRestore. Mirrors the
+//     built-in bicep provider's purge flow: enumerate live accounts BEFORE
+//     RG delete (capturing name+location), delete the RG (which soft-deletes
+//     them), then purge each via DeletedAccountsClient.
 //
-// Purge is honored for soft-deletable resources via the returned
-// InvalidatedEnvKeys list. Resource-level purge of Cognitive Services
-// soft-delete is out of scope for this provider.
+// Hard-fails on purge errors: if the user asked to purge and we can't, the
+// silent alternative is to leave a leftover that reproduces this same bug
+// on the next provision. If the RG is already gone at Destroy time the
+// enumeration step is skipped (idempotent re-run).
 func (p *FoundryProvisioningProvider) Destroy(
 	ctx context.Context,
 	options *azdext.ProvisioningDestroyOptions,
@@ -603,7 +613,7 @@ func (p *FoundryProvisioningProvider) Destroy(
 			fmt.Sprintf("microsoft.foundry destroy will delete resource group %q "+
 				"and all resources inside it; this provider does not prompt for "+
 				"confirmation, so --force is required", p.rgName),
-			"re-run with `azd down --force` (add `--purge` to also clear "+
+			"re-run with `azd down --force` (add `--purge` to also purge "+
 				"soft-deleted Cognitive Services accounts)",
 		)
 	}
@@ -620,11 +630,28 @@ func (p *FoundryProvisioningProvider) Destroy(
 	}
 	rgClient := factory.NewResourceGroupsClient()
 
+	// Capture purgeable accounts BEFORE RG delete: once the RG is gone, the
+	// live AccountsClient can no longer see them; only DeletedAccountsClient
+	// can. We use the live client here so we get the exact name+location
+	// without needing to scan the whole subscription's soft-delete list.
+	var toPurge []purgeableAccount
+	if options.GetPurge() {
+		toPurge, err = p.collectAccountsToPurge(ctx, progress)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	progress(fmt.Sprintf("Deleting resource group %s...", p.rgName))
 	poller, err := rgClient.BeginDelete(ctx, p.rgName, nil)
 	if err != nil {
 		if isNotFound(err) {
-			// Already gone; treat as success so re-runs are idempotent.
+			// Already gone; treat as success so re-runs are idempotent. If
+			// --purge was requested but the RG never existed there's nothing
+			// to purge (we never enumerated anything). A soft-deleted
+			// account from a prior incomplete cleanup is out of scope --
+			// the user can purge it manually via `az cognitiveservices
+			// account purge`.
 			return invalidatedEnvKeysResult(), nil
 		}
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupDelete)
@@ -635,7 +662,112 @@ func (p *FoundryProvisioningProvider) Destroy(
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupDelete)
 	}
 
+	// After the RG is gone the accounts are in the soft-deleted state.
+	// Purge each one so the next `azd provision` can re-use the same name.
+	if len(toPurge) > 0 {
+		if err := p.purgeCognitiveAccounts(ctx, progress, toPurge); err != nil {
+			return nil, err
+		}
+	}
+
 	return invalidatedEnvKeysResult(), nil
+}
+
+// purgeableAccount captures the minimum state required to purge a
+// soft-deleted Cognitive Services account: its name and the location it
+// was created in (the soft-delete record is keyed by location, not by
+// resource group alone).
+type purgeableAccount struct {
+	name     string
+	location string
+}
+
+// collectPurgeableAccounts filters live Cognitive Services account models
+// down to the {name, location} pairs needed for a post-RG-delete purge.
+// Entries with a nil Name or Location are skipped (defensive against
+// partial SDK responses); duplicates are not de-duplicated since the SDK
+// list-by-RG call doesn't return them.
+//
+// Pure helper for unit testing -- the live pager call lives in Destroy.
+func collectPurgeableAccounts(accounts []*armcognitiveservices.Account) []purgeableAccount {
+	out := make([]purgeableAccount, 0, len(accounts))
+	for _, a := range accounts {
+		if a == nil || a.Name == nil || a.Location == nil {
+			continue
+		}
+		out = append(out, purgeableAccount{name: *a.Name, location: *a.Location})
+	}
+	return out
+}
+
+// collectAccountsToPurge enumerates the live Cognitive Services accounts in
+// the configured resource group via the SDK pager and runs the result
+// through collectPurgeableAccounts. Returns nil with no error if the RG
+// doesn't exist (the not-found path is handled by the caller's later
+// BeginDelete short-circuit).
+func (p *FoundryProvisioningProvider) collectAccountsToPurge(
+	ctx context.Context,
+	progress grpcbroker.ProgressFunc,
+) ([]purgeableAccount, error) {
+	accountsClient, err := armcognitiveservices.NewAccountsClient(p.subID, p.credential, nil)
+	if err != nil {
+		return nil, exterrors.Internal(
+			exterrors.CodeAzdClientFailed,
+			fmt.Sprintf("create armcognitiveservices client: %s", err),
+		)
+	}
+
+	progress(fmt.Sprintf("Listing Cognitive Services accounts in %s to purge after deletion...", p.rgName))
+
+	var accounts []*armcognitiveservices.Account
+	pager := accountsClient.NewListByResourceGroupPager(p.rgName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			if isNotFound(err) {
+				// RG missing: nothing to enumerate; the BeginDelete path
+				// will handle the idempotent no-op success.
+				return nil, nil
+			}
+			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCognitiveAccountList)
+		}
+		accounts = append(accounts, page.Value...)
+	}
+
+	return collectPurgeableAccounts(accounts), nil
+}
+
+// purgeCognitiveAccounts purges each captured soft-deleted account. Called
+// AFTER the RG is deleted so the accounts are in the soft-deleted state
+// when BeginPurge runs. Hard-fails on the first error -- silently skipping
+// a purge would leave a name-reservation leftover that breaks the next
+// `azd provision`.
+func (p *FoundryProvisioningProvider) purgeCognitiveAccounts(
+	ctx context.Context,
+	progress grpcbroker.ProgressFunc,
+	accounts []purgeableAccount,
+) error {
+	deletedClient, err := armcognitiveservices.NewDeletedAccountsClient(p.subID, p.credential, nil)
+	if err != nil {
+		return exterrors.Internal(
+			exterrors.CodeAzdClientFailed,
+			fmt.Sprintf("create armcognitiveservices deleted-accounts client: %s", err),
+		)
+	}
+
+	for _, a := range accounts {
+		progress(fmt.Sprintf("Purging soft-deleted Cognitive Services account %s...", a.name))
+		poller, err := deletedClient.BeginPurge(ctx, a.location, p.rgName, a.name, nil)
+		if err != nil {
+			return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveAccountPurge)
+		}
+		if _, err := pollWithProgress(ctx, poller, progress,
+			fmt.Sprintf("Purging Cognitive Services account %s (this can take a minute)", a.name),
+		); err != nil {
+			return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveAccountPurge)
+		}
+	}
+	return nil
 }
 
 // invalidatedEnvKeysResult returns the env keys this provider populates on

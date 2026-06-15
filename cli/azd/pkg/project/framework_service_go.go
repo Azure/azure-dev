@@ -117,6 +117,7 @@ func (gp *goProject) Build(
 	if err := gp.goCli.Build(
 		ctx, serviceConfig.Path(), outputPath, buildEnv,
 	); err != nil {
+		os.RemoveAll(buildDir)
 		return nil, fmt.Errorf("compiling Go project: %w", err)
 	}
 

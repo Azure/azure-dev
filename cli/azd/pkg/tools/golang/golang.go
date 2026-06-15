@@ -31,7 +31,7 @@ func (cli *Cli) versionInfo() tools.VersionInfo {
 	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 1,
-			Minor: 22,
+			Minor: 24,
 			Patch: 0,
 		},
 		UpdateCommand: "Visit https://go.dev/dl/ to upgrade",

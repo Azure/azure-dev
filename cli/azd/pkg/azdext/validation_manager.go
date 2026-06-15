@@ -396,13 +396,28 @@ func (m *ValidationManager) onValidationCheck(
 		)
 	}
 
-	// Look up cached context and increment ref count on first access
+	// Look up cached context and increment ref count
 	m.mu.Lock()
 	valCtx := m.cachedContexts[req.GetContextId()]
-	if valCtx != nil {
+	hasRef := valCtx != nil
+	if hasRef {
 		m.contextRefCounts[req.GetContextId()]++
 	}
 	m.mu.Unlock()
+
+	// Ensure ref count is decremented on all exit paths (success and error)
+	if hasRef {
+		defer func() {
+			m.mu.Lock()
+			contextID := req.GetContextId()
+			m.contextRefCounts[contextID]--
+			if m.contextRefCounts[contextID] <= 0 {
+				delete(m.cachedContexts, contextID)
+				delete(m.contextRefCounts, contextID)
+			}
+			m.mu.Unlock()
+		}()
+	}
 
 	if valCtx == nil {
 		valCtx = &ValidationContext{
@@ -419,16 +434,6 @@ func (m *ValidationManager) onValidationCheck(
 			key.CheckType, key.RuleID, err,
 		)
 	}
-
-	// Decrement ref count and evict when no more checks reference this context.
-	m.mu.Lock()
-	contextID := req.GetContextId()
-	m.contextRefCounts[contextID]--
-	if m.contextRefCounts[contextID] <= 0 {
-		delete(m.cachedContexts, contextID)
-		delete(m.contextRefCounts, contextID)
-	}
-	m.mu.Unlock()
 
 	return &ValidationMessage{
 		MessageType: &ValidationMessage_ValidationCheckResponse{

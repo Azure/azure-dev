@@ -46,7 +46,7 @@ type ValidationService struct {
 // NewValidationService creates a new ValidationService instance.
 func NewValidationService(
 	extensionManager *extensions.Manager,
-) azdext.ValidationServiceServer {
+) *ValidationService {
 	return &ValidationService{
 		extensionManager: extensionManager,
 	}

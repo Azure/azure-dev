@@ -247,7 +247,7 @@ func validateHostedAgent(agent FoundryAgent) error {
 			)
 		default:
 			return exterrors.Validation(
-				exterrors.CodeUnsupportedAgentKind,
+				exterrors.CodeInvalidServiceConfig,
 				fmt.Sprintf("hosted agent %q uses runtime stack %q, which is not supported yet",
 					agent.Name, agent.Runtime.Stack),
 				"use a 'python' or 'dotnet' runtime stack, or a prebuilt 'image', for now",
@@ -262,7 +262,7 @@ func validateHostedAgent(agent FoundryAgent) error {
 		}
 	case deployModeDocker:
 		return exterrors.Validation(
-			exterrors.CodeUnsupportedAgentKind,
+			exterrors.CodeInvalidServiceConfig,
 			fmt.Sprintf("hosted agent %q uses 'docker' build, which the microsoft.foundry "+
 				"service target does not support yet", agent.Name),
 			"use a prebuilt 'image' or a code-deploy 'runtime' for now; "+

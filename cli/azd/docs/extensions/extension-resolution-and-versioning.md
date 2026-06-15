@@ -99,6 +99,20 @@ azd extension install my.extension --version latest
 azd extension install my.extension
 ```
 
+#### CLI `--channel` flag (pre-release opt-in)
+
+When resolving `latest` (or when `--version` is omitted), **`alpha` pre-release builds are excluded by default** so that `stable`/`preview` users are never moved onto the nightly channel implicitly. Opt in with `--channel`:
+
+```bash
+# Include alpha nightly builds when resolving the latest version
+azd extension install azure.ai.agents --source dev --channel alpha
+
+# Keep alpha installs on the nightly channel during upgrades
+azd extension upgrade --all --channel alpha
+```
+
+`--channel` is available on both `azd extension install` and `azd extension upgrade`. An explicit `--version <x>` always installs that exact version, including a named pre-release. If the only versions available for an extension are `alpha`, they are used as a fallback so the install does not dead-end.
+
 #### `azure.yaml` `requiredVersions.extensions`
 
 The `requiredVersions.extensions` section in `azure.yaml` supports the full semver constraint syntax provided by the [Masterminds semver](https://github.com/Masterminds/semver) library:
@@ -264,7 +278,7 @@ Use pre-release suffixes for testing before a stable release:
 2.0.0-rc.1
 ```
 
-When `latest` is specified (or the version is omitted), `azd` selects the **highest semantic version**, which can be a pre-release if it sorts higher than the latest stable version. For semver range constraints in `azure.yaml`, pre-release versions are generally excluded unless the constraint itself explicitly includes a pre-release identifier.
+When `latest` is specified (or the version is omitted), `azd` selects the **highest semantic version**, which can be a pre-release if it sorts higher than the latest stable version. The one exception is the CLI `azd extension install`/`upgrade` path, which **excludes `alpha` pre-release builds (the nightly channel) by default** unless `--channel alpha` is passed; other pre-release identifiers (`beta`, `rc`, `preview`, …) remain eligible. For semver range constraints in `azure.yaml`, pre-release versions are generally excluded unless the constraint itself explicitly includes a pre-release identifier.
 
 ## Troubleshooting
 
@@ -355,11 +369,13 @@ A scheduled pipeline (`eng/pipelines/release-ext-nightly.yml`) publishes **night
 - **Publishing** — Each changed extension is published as an unsigned GitHub pre-release tagged `azd-ext-<sanitized-id>_<version>`, and a single combined pull request updates `registry.dev.json` for all changed extensions.
 - **Unsigned** — As with all dev registry binaries, nightly artifacts are **not signed**.
 
-To always pick up the latest nightly, install without pinning a version (the dev source resolves to the highest available pre-release):
+Because nightly builds use the `alpha` pre-release channel, they are **excluded from default `latest` resolution**. To pick up the latest nightly, opt in with `--channel alpha`:
 
 ```bash
-azd extension install azure.ai.agents --source dev
+azd extension install azure.ai.agents --source dev --channel alpha
 ```
+
+Once installed from the `alpha` channel, use `azd extension upgrade --channel alpha` to keep moving onto newer nightly builds. The automatic update check is channel-matched: only `alpha` installs are notified about newer `alpha` builds, so `stable`/`preview` installs are never nudged onto the nightly channel.
 
 > [!NOTE]
 > Nightly pre-release versions accumulate in `registry.dev.json` over time. Pruning old nightly entries is handled separately and is not part of the nightly pipeline.

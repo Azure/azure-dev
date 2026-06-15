@@ -44,6 +44,55 @@ func optionLabel(options ConsoleOptions, index int) string {
 	return option
 }
 
+// selectChoices builds the ux select choices and the initially selected index
+// from the console options. The selected index defaults to 0 and is set to the
+// position of the string default value when present.
+func selectChoices(options ConsoleOptions) ([]*uxlib.SelectChoice, int) {
+	choices := make([]*uxlib.SelectChoice, len(options.Options))
+	for i, option := range options.Options {
+		choices[i] = &uxlib.SelectChoice{
+			Value: option,
+			Label: optionLabel(options, i),
+		}
+	}
+
+	selectedIndex := 0
+	if value, ok := options.DefaultValue.(string); ok {
+		if idx := slices.Index(options.Options, value); idx >= 0 {
+			selectedIndex = idx
+		}
+	}
+
+	return choices, selectedIndex
+}
+
+// multiSelectChoices builds the ux multi-select choices from the console options,
+// marking choices that appear in the []string default value as pre-selected.
+func multiSelectChoices(options ConsoleOptions) []*uxlib.MultiSelectChoice {
+	defaultValues, _ := options.DefaultValue.([]string)
+
+	choices := make([]*uxlib.MultiSelectChoice, len(options.Options))
+	for i, option := range options.Options {
+		choices[i] = &uxlib.MultiSelectChoice{
+			Value:    option,
+			Label:    optionLabel(options, i),
+			Selected: slices.Contains(defaultValues, option),
+		}
+	}
+
+	return choices
+}
+
+// multiSelectValues maps the ux multi-select result back to the option values.
+func multiSelectValues(selected []*uxlib.MultiSelectChoice) []string {
+	response := make([]string, len(selected))
+	for i, choice := range selected {
+		response[i] = choice.Value
+	}
+
+	return response
+}
+
 func (c *AskerConsole) promptUx(ctx context.Context, options ConsoleOptions) (string, error) {
 	var defaultValue string
 	if value, ok := options.DefaultValue.(string); ok {
@@ -73,20 +122,7 @@ func (c *AskerConsole) promptUx(ctx context.Context, options ConsoleOptions) (st
 }
 
 func (c *AskerConsole) selectUx(ctx context.Context, options ConsoleOptions) (int, error) {
-	choices := make([]*uxlib.SelectChoice, len(options.Options))
-	for i, option := range options.Options {
-		choices[i] = &uxlib.SelectChoice{
-			Value: option,
-			Label: optionLabel(options, i),
-		}
-	}
-
-	selectedIndex := 0
-	if value, ok := options.DefaultValue.(string); ok {
-		if idx := slices.Index(options.Options, value); idx >= 0 {
-			selectedIndex = idx
-		}
-	}
+	choices, selectedIndex := selectChoices(options)
 
 	component := uxlib.NewSelect(&uxlib.SelectOptions{
 		Writer:        c.writer,
@@ -144,22 +180,11 @@ func (c *AskerConsole) confirmUx(ctx context.Context, options ConsoleOptions) (b
 }
 
 func (c *AskerConsole) multiSelectUx(ctx context.Context, options ConsoleOptions) ([]string, error) {
-	defaultValues, _ := options.DefaultValue.([]string)
-
-	choices := make([]*uxlib.MultiSelectChoice, len(options.Options))
-	for i, option := range options.Options {
-		choices[i] = &uxlib.MultiSelectChoice{
-			Value:    option,
-			Label:    optionLabel(options, i),
-			Selected: slices.Contains(defaultValues, option),
-		}
-	}
-
 	component := uxlib.NewMultiSelect(&uxlib.MultiSelectOptions{
 		Writer:              c.writer,
 		Message:             options.Message,
 		HelpMessage:         options.Help,
-		Choices:             choices,
+		Choices:             multiSelectChoices(options),
 		AllowEmptySelection: new(true),
 	})
 
@@ -173,11 +198,6 @@ func (c *AskerConsole) multiSelectUx(ctx context.Context, options ConsoleOptions
 		return nil, mapUxCancel(err)
 	}
 
-	response := make([]string, len(selected))
-	for i, choice := range selected {
-		response[i] = choice.Value
-	}
-
 	c.updateLastBytes(afterIoSentinel)
-	return response, nil
+	return multiSelectValues(selected), nil
 }

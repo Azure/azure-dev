@@ -21,6 +21,9 @@ parameters:
   - name: SkipTests
     type: boolean
     default: false
+  - name: VersionSuffix
+    type: string
+    default: ''
 
 jobs:
   - job: BuildExtension_${{ parameters.NameSuffix }}
@@ -47,6 +50,7 @@ jobs:
           filePath: eng/scripts/Set-ExtensionVersionVariable.ps1
           arguments: >-
             -ExtensionDirectory ${{ parameters.AzdExtensionDirectory }}
+            -Suffix '${{ parameters.VersionSuffix }}'
       
       - ${{ if not(parameters.SkipTests) }}:
         - task: PowerShell@2

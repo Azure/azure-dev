@@ -1,0 +1,407 @@
+# Nightly (scheduled) release for azd extensions.
+#
+# Builds each listed extension with a timestamped pre-release version
+# (<base>-alpha.<yyyyMMddHHmm>), publishes a GitHub pre-release per extension,
+# and opens a single combined pull request updating the dev extension registry
+# (cli/azd/extensions/registry.dev.json).
+#
+# Only extensions that changed since their last nightly pre-release are built and
+# published. If nothing changed, no pre-releases are created and no PR is opened.
+#
+# This template is intentionally isolated from the manual release templates
+# (release-azd-extension.yml). It reuses only the low-level build jobs
+# (build-azd-extension.yml / cross-build-azd-extension.yml), which produce
+# uniquely named artifacts, and performs packaging + GitHub pre-release inline so
+# that running many extensions in one pipeline run cannot collide on artifact
+# names. Signing is intentionally skipped (dev registry binaries are unsigned).
+
+parameters:
+  - name: Extensions
+    type: object
+    # Each entry: { Id: <dotted id>, SanitizedId: <dashed id>, Directory: <path> }
+  - name: SkipTests
+    type: boolean
+    default: true
+  - name: VersionSuffix
+    type: string
+    # Shared across every job in the run. $(Build.BuildNumber) is set to
+    # yyyyMMddHHmm by the pipeline name so the suffix is constant for the run.
+    default: alpha.$(Build.BuildNumber)
+
+stages:
+  # --------------------------------------------------------------------------
+  # Detect which extensions changed since their last nightly pre-release.
+  # --------------------------------------------------------------------------
+  - stage: Prepare
+    displayName: Prepare (detect changed extensions)
+    variables:
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
+    jobs:
+      - job: DetectChanges
+        displayName: Detect changed extensions
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+        steps:
+          - checkout: self
+            fetchDepth: 0
+            fetchTags: true
+
+          - pwsh: |
+              # Native command failures should not throw so we can inspect
+              # $LASTEXITCODE (git diff --quiet uses exit code 1 to signal diffs).
+              $PSNativeCommandUseErrorActionPreference = $false
+              $repo = "$(Build.Repository.Name)"
+
+              $extensions = @'
+              ${{ convertToJson(parameters.Extensions) }}
+              '@ | ConvertFrom-Json
+
+              $releases = @()
+              $releaseJson = gh release list --repo $repo --limit 1000 --json tagName,createdAt 2>$null
+              if ($LASTEXITCODE -eq 0 -and $releaseJson) {
+                $releases = $releaseJson | ConvertFrom-Json
+              }
+
+              $anyChanges = $false
+              foreach ($ext in $extensions) {
+                $outName = ($ext.SanitizedId -replace '-', '_')
+                $tagPrefix = "azd-ext-$($ext.SanitizedId)_"
+                $shouldBuild = $true
+                $reason = "no previous nightly release found"
+
+                $lastNightly = $releases |
+                  Where-Object { $_.tagName -like "$tagPrefix*" -and $_.tagName -like "*alpha.*" } |
+                  Sort-Object createdAt -Descending |
+                  Select-Object -First 1
+
+                if ($lastNightly) {
+                  $tag = $lastNightly.tagName
+                  $lastCommit = gh api "repos/$repo/commits/$tag" --jq .sha 2>$null
+                  if ($LASTEXITCODE -eq 0 -and $lastCommit) {
+                    git cat-file -e "$($lastCommit)^{commit}" 2>$null
+                    if ($LASTEXITCODE -eq 0) {
+                      git diff --quiet $lastCommit HEAD -- $ext.Directory
+                      if ($LASTEXITCODE -eq 0) {
+                        $shouldBuild = $false
+                        $reason = "no changes in $($ext.Directory) since $tag"
+                      } else {
+                        $reason = "changes detected in $($ext.Directory) since $tag"
+                      }
+                    } else {
+                      $reason = "previous nightly commit $lastCommit not found in checkout; building"
+                    }
+                  } else {
+                    $reason = "unable to resolve commit for tag $tag; building"
+                  }
+                }
+
+                $value = $shouldBuild.ToString().ToLower()
+                Write-Host "$($ext.Id): ShouldBuild=$value ($reason)"
+                Write-Host "##vso[task.setvariable variable=ShouldBuild_$outName;isOutput=true]$value"
+                if ($shouldBuild) { $anyChanges = $true }
+              }
+
+              Write-Host "AnyChanges=$($anyChanges.ToString().ToLower())"
+              Write-Host "##vso[task.setvariable variable=AnyChanges;isOutput=true]$($anyChanges.ToString().ToLower())"
+            name: detect
+            displayName: Detect changed extensions
+            env:
+              GH_TOKEN: $(azuresdk-github-pat)
+
+  # --------------------------------------------------------------------------
+  # Per-extension build + GitHub pre-release. Each stage is gated on the
+  # change-detection result for that extension.
+  # --------------------------------------------------------------------------
+  - ${{ each ext in parameters.Extensions }}:
+    - stage: Build_${{ replace(ext.SanitizedId, '-', '_') }}
+      displayName: Build ${{ ext.Id }}
+      dependsOn: Prepare
+      condition: >-
+        and(
+          succeeded(),
+          eq(dependencies.Prepare.outputs['DetectChanges.detect.ShouldBuild_${{ replace(ext.SanitizedId, '-', '_') }}'], 'true')
+        )
+      variables:
+        - template: /eng/pipelines/templates/variables/globals.yml
+        - template: /eng/pipelines/templates/variables/image.yml
+        - name: SanitizedExtensionId
+          value: ${{ ext.SanitizedId }}
+      jobs:
+        # amd64 builds (tests skipped for nightly)
+        - template: /eng/pipelines/templates/jobs/build-azd-extension.yml
+          parameters:
+            NameSuffix: Windows
+            Pool: $(WINDOWSPOOL)
+            OSVmImage: $(WINDOWSVMIMAGE)
+            OS: windows
+            ImageKey: image
+            UploadArtifact: true
+            AzdExtensionDirectory: ${{ ext.Directory }}
+            SkipTests: ${{ parameters.SkipTests }}
+            VersionSuffix: ${{ parameters.VersionSuffix }}
+            Variables:
+              BuildTarget: ${{ ext.SanitizedId }}-windows-amd64.exe
+              BuildOutputName: ${{ ext.SanitizedId }}-windows-amd64.exe
+              AZURE_DEV_CI_OS: win
+
+        - template: /eng/pipelines/templates/jobs/build-azd-extension.yml
+          parameters:
+            NameSuffix: Linux
+            Pool: $(LINUXPOOL)
+            OSVmImage: $(LINUXVMIMAGE)
+            OS: linux
+            ImageKey: image
+            UploadArtifact: true
+            AzdExtensionDirectory: ${{ ext.Directory }}
+            SkipTests: ${{ parameters.SkipTests }}
+            VersionSuffix: ${{ parameters.VersionSuffix }}
+            Variables:
+              BuildTarget: ${{ ext.SanitizedId }}-linux-amd64
+              BuildOutputName: ${{ ext.SanitizedId }}-linux-amd64
+              SetExecutableBit: true
+              AZURE_DEV_CI_OS: lin
+
+        - template: /eng/pipelines/templates/jobs/build-azd-extension.yml
+          parameters:
+            NameSuffix: Mac
+            Pool: Azure Pipelines
+            OSVmImage: $(MACVMIMAGE)
+            OS: macOS
+            ImageKey: vmImage
+            UploadArtifact: true
+            AzdExtensionDirectory: ${{ ext.Directory }}
+            SkipTests: ${{ parameters.SkipTests }}
+            VersionSuffix: ${{ parameters.VersionSuffix }}
+            Variables:
+              BuildTarget: ${{ ext.SanitizedId }}-darwin-amd64
+              BuildOutputName: ${{ ext.SanitizedId }}-darwin-amd64
+              MacLocalSign: false
+              SetExecutableBit: true
+              AZURE_DEV_CI_OS: mac
+
+        # arm64 cross builds (ARM VM validation disabled for nightly)
+        - template: /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
+          parameters:
+            NameSuffix: LinuxARM64
+            Pool: $(LINUXPOOL)
+            OSVmImage: $(LINUXVMIMAGE)
+            OS: linux
+            ImageKey: image
+            ValidateCrossCompile: false
+            AzdExtensionDirectory: ${{ ext.Directory }}
+            VersionSuffix: ${{ parameters.VersionSuffix }}
+            Variables:
+              BuildTarget: ${{ ext.SanitizedId }}-linux-arm64
+              BuildOutputName: azd
+              SetExecutableBit: true
+              GOOS: linux
+              GOARCH: arm64
+
+        - template: /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
+          parameters:
+            NameSuffix: MacARM64
+            Pool: Azure Pipelines
+            OSVmImage: $(MACVMIMAGE)
+            OS: macOS
+            ImageKey: vmImage
+            ValidateCrossCompile: false
+            AzdExtensionDirectory: ${{ ext.Directory }}
+            VersionSuffix: ${{ parameters.VersionSuffix }}
+            Variables:
+              BuildTarget: ${{ ext.SanitizedId }}-darwin-arm64
+              BuildOutputName: azd
+              SetExecutableBit: true
+              GOOS: darwin
+              GOARCH: arm64
+              # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
+              CGO_ENABLED: 1
+
+        - template: /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
+          parameters:
+            NameSuffix: WindowsARM64
+            Pool: $(WINDOWSPOOL)
+            OSVmImage: $(WINDOWSVMIMAGE)
+            OS: windows
+            ImageKey: image
+            ValidateCrossCompile: false
+            AzdExtensionDirectory: ${{ ext.Directory }}
+            VersionSuffix: ${{ parameters.VersionSuffix }}
+            Variables:
+              BuildTarget: ${{ ext.SanitizedId }}-windows-arm64.exe
+              BuildOutputName: azd.exe
+              GOOS: windows
+              GOARCH: arm64
+
+        # Package the unsigned binaries and publish a GitHub pre-release.
+        - job: Release
+          displayName: Package and publish pre-release
+          dependsOn:
+            - BuildExtension_Windows
+            - BuildExtension_Linux
+            - BuildExtension_Mac
+            - CrossBuildCLI_LinuxARM64
+            - CrossBuildCLI_MacARM64
+            - CrossBuildCLI_WindowsARM64
+          pool:
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
+            os: linux
+          steps:
+            - checkout: self
+
+            - task: PowerShell@2
+              displayName: Set extension version variable
+              inputs:
+                pwsh: true
+                targetType: filePath
+                filePath: eng/scripts/Set-ExtensionVersionVariable.ps1
+                arguments: >-
+                  -ExtensionDirectory ${{ ext.Directory }}
+                  -Suffix '${{ parameters.VersionSuffix }}'
+
+            - ${{ each suffix in split('windows-amd64.exe,linux-amd64,darwin-amd64,linux-arm64,darwin-arm64,windows-arm64.exe', ',') }}:
+              - task: DownloadPipelineArtifact@2
+                displayName: Download ${{ ext.SanitizedId }}-${{ suffix }}
+                inputs:
+                  artifact: ${{ ext.SanitizedId }}-${{ suffix }}
+                  targetPath: bin/${{ ext.SanitizedId }}-${{ suffix }}
+
+            - bash: |
+                set -euo pipefail
+                ext='${{ ext.SanitizedId }}'
+                mkdir -p release stage
+                # Copy only the named binary out of each artifact folder (artifacts
+                # may also contain a 1ES-injected _manifest directory).
+                for suffix in windows-amd64.exe linux-amd64 darwin-amd64 linux-arm64 darwin-arm64 windows-arm64.exe; do
+                  cp "bin/$ext-$suffix/$ext-$suffix" stage/
+                done
+                cp NOTICE.txt stage/
+                cp '${{ ext.Directory }}/extension.yaml' stage/
+                cd stage
+                chmod +x "$ext-linux-amd64" "$ext-linux-arm64" "$ext-darwin-amd64" "$ext-darwin-arm64"
+                # Windows + macOS ship as zip; Linux ships as tar.gz (matches manual release archive names)
+                zip "../release/$ext-darwin-amd64.zip" "$ext-darwin-amd64" NOTICE.txt extension.yaml
+                zip "../release/$ext-darwin-arm64.zip" "$ext-darwin-arm64" NOTICE.txt extension.yaml
+                zip "../release/$ext-windows-amd64.zip" "$ext-windows-amd64.exe" NOTICE.txt extension.yaml
+                zip "../release/$ext-windows-arm64.zip" "$ext-windows-arm64.exe" NOTICE.txt extension.yaml
+                tar -czvf "../release/$ext-linux-amd64.tar.gz" "$ext-linux-amd64" NOTICE.txt extension.yaml
+                tar -czvf "../release/$ext-linux-arm64.tar.gz" "$ext-linux-arm64" NOTICE.txt extension.yaml
+                cd ..
+                ls -la release
+              displayName: Package release archives
+
+            - bash: |
+                set -euo pipefail
+                mkdir -p changelog
+                cat > changelog/CHANGELOG.md <<'EOF'
+                Automated nightly (alpha) build of ${{ ext.Id }}.
+
+                - Version: `$(EXT_VERSION)`
+                - Commit: `$(Build.SourceVersion)`
+
+                Install from the azd **dev** extension registry:
+                `https://aka.ms/azd/extensions/registry/dev`
+                EOF
+                cat changelog/CHANGELOG.md
+              displayName: Create release notes
+
+            - bash: |
+                set -euo pipefail
+                tag="azd-ext-${{ ext.SanitizedId }}_$(EXT_VERSION)"
+                echo "Release tag: $tag"
+                # --target pins the tag to the exact built commit so the next
+                # nightly's change detection diffs from what was actually published.
+                gh release create "$tag" \
+                  --repo "$(Build.Repository.Name)" \
+                  --target "$(Build.SourceVersion)" \
+                  --title "$tag" \
+                  --notes-file changelog/CHANGELOG.md \
+                  --prerelease
+                gh release upload "$tag" release/* --repo "$(Build.Repository.Name)"
+              displayName: Create GitHub pre-release
+              # Defense in depth: only publish on scheduled (nightly) or manual runs.
+              condition: and(succeeded(), in(variables['Build.Reason'], 'Schedule', 'Manual'))
+              env:
+                GH_TOKEN: $(azuresdk-github-pat)
+
+  # --------------------------------------------------------------------------
+  # Update the dev registry for every changed extension in a single PR.
+  # Runs only when at least one extension changed and no build stage failed.
+  # --------------------------------------------------------------------------
+  - stage: UpdateDevRegistry
+    displayName: Update dev registry
+    dependsOn:
+      - Prepare
+      - ${{ each ext in parameters.Extensions }}:
+        - Build_${{ replace(ext.SanitizedId, '-', '_') }}
+    condition: >-
+      and(
+        not(failed()),
+        not(canceled()),
+        in(variables['Build.Reason'], 'Schedule', 'Manual'),
+        eq(dependencies.Prepare.outputs['DetectChanges.detect.AnyChanges'], 'true')
+      )
+    variables:
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
+      - ${{ each ext in parameters.Extensions }}:
+        - name: ShouldBuild_${{ replace(ext.SanitizedId, '-', '_') }}
+          value: $[ stageDependencies.Prepare.DetectChanges.outputs['detect.ShouldBuild_${{ replace(ext.SanitizedId, '-', '_') }}'] ]
+    jobs:
+      - job: UpdateRegistry
+        displayName: Publish changed extensions to dev registry
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+        steps:
+          - checkout: self
+
+          - template: /eng/pipelines/templates/steps/setup-go.yml
+
+          - bash: |
+              set -euo pipefail
+              curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --verbose
+              azd version
+            displayName: Install azd
+
+          - bash: |
+              set -euo pipefail
+              azd ext install microsoft.azd.extensions --source azd
+            displayName: Install microsoft.azd.extensions
+
+          - ${{ each ext in parameters.Extensions }}:
+            - bash: |
+                set -euo pipefail
+                # Recompose the nightly version (mirrors Set-ExtensionVersionVariable.ps1):
+                # append the suffix with a dot when the base already has a pre-release
+                # segment, otherwise with a hyphen.
+                base=$(tr -d '[:space:]' < '${{ ext.Directory }}/version.txt')
+                suffix='${{ parameters.VersionSuffix }}'
+                case "$base" in
+                  *-*) version="$base.$suffix" ;;
+                  *)   version="$base-$suffix" ;;
+                esac
+                echo "Publishing ${{ ext.Id }} version $version to dev registry"
+                cd '${{ ext.Directory }}'
+                azd x publish \
+                  --registry "../registry.dev.json" \
+                  --repo "$(Build.Repository.Name)" \
+                  --version "$version"
+              displayName: Publish ${{ ext.Id }} to dev registry
+              condition: eq(variables['ShouldBuild_${{ replace(ext.SanitizedId, '-', '_') }}'], 'true')
+              env:
+                GH_TOKEN: $(azuresdk-github-pat)
+
+          - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+            parameters:
+              PRBranchName: ext-dev-registry-nightly/$(Build.BuildNumber)
+              CommitMsg: "[nightly] Dev registry update for azd extensions ($(Build.BuildNumber))"
+              PRTitle: "[nightly] Dev registry update for azd extensions"
+              PRBody: >-
+                Automated nightly update of the azd dev extension registry
+                (`cli/azd/extensions/registry.dev.json`) for extensions that
+                changed since their last nightly build (build `$(Build.BuildNumber)`).

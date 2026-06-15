@@ -1,0 +1,70 @@
+# Nightly (scheduled) release pipeline for azd azure.ai.* extensions.
+#
+# Once per day this pipeline builds every listed extension that changed since its
+# last nightly build, publishes a GitHub pre-release per changed extension with a
+# timestamped alpha version (<base>-alpha.<yyyyMMddHHmm>), and opens a single
+# combined pull request updating the dev extension registry
+# (cli/azd/extensions/registry.dev.json, served via
+# https://aka.ms/azd/extensions/registry/dev).
+#
+# Build.BuildNumber is set to yyyyMMddHHmm via the `name` field below so the
+# version suffix is identical for every job in the run.
+
+name: $(Date:yyyyMMdd)$(Hours)$(Minutes)
+
+# Scheduled and manual only. This pipeline has side effects (GitHub pre-releases
+# and a dev-registry PR), so it must not run on CI/PR. The publishing steps are
+# additionally gated on Build.Reason in the stages template as defense in depth.
+trigger: none
+pr: none
+
+schedules:
+  - cron: "0 8 * * *"
+    displayName: Daily nightly extension build (08:00 UTC)
+    branches:
+      include:
+        - main
+    always: true
+
+parameters:
+  - name: Extensions
+    type: object
+    default:
+      - Id: azure.ai.agents
+        SanitizedId: azure-ai-agents
+        Directory: cli/azd/extensions/azure.ai.agents
+      - Id: azure.ai.connections
+        SanitizedId: azure-ai-connections
+        Directory: cli/azd/extensions/azure.ai.connections
+      - Id: azure.ai.finetune
+        SanitizedId: azure-ai-finetune
+        Directory: cli/azd/extensions/azure.ai.finetune
+      - Id: azure.ai.inspector
+        SanitizedId: azure-ai-inspector
+        Directory: cli/azd/extensions/azure.ai.inspector
+      - Id: azure.ai.models
+        SanitizedId: azure-ai-models
+        Directory: cli/azd/extensions/azure.ai.models
+      - Id: azure.ai.projects
+        SanitizedId: azure-ai-projects
+        Directory: cli/azd/extensions/azure.ai.projects
+      - Id: azure.ai.routines
+        SanitizedId: azure-ai-routines
+        Directory: cli/azd/extensions/azure.ai.routines
+      - Id: azure.ai.skills
+        SanitizedId: azure-ai-skills
+        Directory: cli/azd/extensions/azure.ai.skills
+      - Id: azure.ai.toolboxes
+        SanitizedId: azure-ai-toolboxes
+        Directory: cli/azd/extensions/azure.ai.toolboxes
+      - Id: azure.ai.training
+        SanitizedId: azure-ai-training
+        Directory: cli/azd/extensions/azure.ai.training
+
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - template: /eng/pipelines/templates/stages/release-azd-extensions-nightly.yml
+        parameters:
+          Extensions: ${{ parameters.Extensions }}

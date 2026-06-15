@@ -346,6 +346,24 @@ When using experimental extensions, expect:
 
 The dev registry is intended for early adopters, extension authors testing pre-release builds, and internal teams validating extensions before official publication.
 
+### Nightly Builds
+
+A scheduled pipeline (`eng/pipelines/release-ext-nightly.yml`) publishes **nightly pre-release builds** of the first-party `azure.ai.*` extensions to the dev registry once per day.
+
+- **Versioning** — Each nightly build is stamped with a timestamped pre-release version derived from the extension's `version.txt`, in the form `<base>-alpha.<yyyyMMddHHmm>` (for example `0.1.39-preview.alpha.202606150300`). The timestamp is constant for all extensions in a given run, and newer builds always sort higher than older ones under semver.
+- **Change detection** — Only extensions whose source (`cli/azd/extensions/<id>`) changed since their previous nightly are rebuilt and republished. If nothing changed, no pre-release is created and no registry pull request is opened.
+- **Publishing** — Each changed extension is published as an unsigned GitHub pre-release tagged `azd-ext-<sanitized-id>_<version>`, and a single combined pull request updates `registry.dev.json` for all changed extensions.
+- **Unsigned** — As with all dev registry binaries, nightly artifacts are **not signed**.
+
+To always pick up the latest nightly, install without pinning a version (the dev source resolves to the highest available pre-release):
+
+```bash
+azd extension install azure.ai.agents --source dev
+```
+
+> [!NOTE]
+> Nightly pre-release versions accumulate in `registry.dev.json` over time. Pruning old nightly entries is handled separately and is not part of the nightly pipeline.
+
 ### Adding the Dev Registry
 
 The dev registry is **not** configured by default. To opt in:

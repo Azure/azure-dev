@@ -182,7 +182,10 @@ func (gp *goProject) Package(
 		return nil, fmt.Errorf("creating package directory: %w", err)
 	}
 
-	// Copy compiled binary (ensure execute permission is preserved for the zip)
+	// Copy compiled binary and ensure execute permission is set.
+	// On Windows, os.Chmod does not reliably set Unix execute bits, so the
+	// resulting zip entry may lack the execute flag. Azure Functions Go
+	// deployment targets Linux, so packaging on Linux/macOS is recommended.
 	progress.SetProgress(NewServiceProgress("Copying compiled binary"))
 	binaryPath := filepath.Join(buildDir, binaryRelPath)
 	destBinaryPath := filepath.Join(packageDir, filepath.Base(binaryRelPath))

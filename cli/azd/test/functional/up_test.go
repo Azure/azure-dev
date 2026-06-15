@@ -314,6 +314,7 @@ func Test_CLI_Up_Down_GoFuncApp(t *testing.T) {
 		if reqErr != nil {
 			return retry.RetryableError(reqErr)
 		}
+		/* #nosec G107 - Potential HTTP request made with variable url false positive */
 		res, err := client.Do(req)
 		if err != nil {
 			return retry.RetryableError(err)

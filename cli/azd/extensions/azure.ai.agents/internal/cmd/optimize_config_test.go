@@ -29,8 +29,8 @@ func TestLoadOptimizeConfig_WithDatasetFile(t *testing.T) {
 	dir := t.TempDir()
 
 	datasetPath := writeTestFile(t, dir, "tasks.jsonl",
-		`{"prompt":"What is 2+2?","groundTruth":"4"}
-{"prompt":"Capital of France?","groundTruth":"Paris"}
+		`{"query":"What is 2+2?","ground_truth":"4"}
+{"query":"Capital of France?","ground_truth":"Paris"}
 `)
 
 	yamlContent := `
@@ -63,7 +63,7 @@ options:
 	assert.Equal(t, optimize_api.DatasetTypeInline, req.TrainDataset.Type)
 	assert.Len(t, req.TrainDataset.Items, 2)
 	assert.Contains(t, string(req.TrainDataset.Items[0]), `"What is 2+2?"`)
-	assert.Contains(t, string(req.TrainDataset.Items[0]), `"groundTruth"`)
+	assert.Contains(t, string(req.TrainDataset.Items[0]), `"ground_truth"`)
 	assert.Equal(t, "gpt-4o-mini", req.Options.EvalModel)
 	assert.Equal(t, []optimize_api.EvaluatorRef{{Name: "coherence"}, {Name: "relevance"}}, req.Evaluators)
 }
@@ -143,6 +143,108 @@ options:
 	require.NotNil(t, req.ValidationDataset)
 	assert.Equal(t, "val-dataset", req.ValidationDataset.Name)
 	assert.Equal(t, "3", req.ValidationDataset.Version)
+}
+
+// TestLoadOptimizeConfig_ValidationDataset_Inline verifies a local validation
+// dataset (local_uri) is sent inline with its JSONL items.
+func TestLoadOptimizeConfig_ValidationDataset_Inline(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	valPath := writeTestFile(t, dir, "val.jsonl",
+		`{"query":"Capital of Japan?","ground_truth":"Tokyo"}
+`)
+
+	yamlContent := `
+agent:
+  name: ref-agent
+dataset:
+  name: my-dataset
+  version: "2"
+validation_dataset:
+  local_uri: ` + valPath + `
+evaluators:
+  - builtin.task_adherence
+options:
+  eval_model: gpt-4o-mini
+  optimization_model: gpt-5
+`
+	cfgPath := writeTestFile(t, dir, "optimize.yaml", yamlContent)
+
+	cfg, err := LoadOptimizeConfig(cfgPath)
+	require.NoError(t, err)
+	require.NoError(t, cfg.Validate())
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+
+	require.NotNil(t, req.ValidationDataset)
+	assert.Equal(t, optimize_api.DatasetTypeInline, req.ValidationDataset.Type)
+	require.Len(t, req.ValidationDataset.Items, 1)
+	assert.Contains(t, string(req.ValidationDataset.Items[0]), `"Tokyo"`)
+	assert.Empty(t, req.ValidationDataset.Name)
+}
+
+// TestLoadOptimizeConfig_RelativeLocalURI verifies that relative local_uri
+// paths in dataset and validation_dataset are resolved against the agent
+// project directory (simulating what submitJob does before calling ToRequest).
+func TestLoadOptimizeConfig_RelativeLocalURI(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	// Create dataset files in a subdirectory of the project directory.
+	sub := filepath.Join(dir, "data")
+	require.NoError(t, os.MkdirAll(sub, 0750))
+	writeTestFile(t, sub, "train.jsonl",
+		`{"query":"hello","ground_truth":"hi"}
+`)
+	writeTestFile(t, sub, "val.jsonl",
+		`{"query":"bye","ground_truth":"goodbye"}
+`)
+
+	yamlContent := `
+agent:
+  name: rel-agent
+dataset:
+  local_uri: data/train.jsonl
+validation_dataset:
+  local_uri: data/val.jsonl
+evaluators:
+  - builtin.task_adherence
+options:
+  eval_model: gpt-4o-mini
+  optimization_model: gpt-5
+`
+	cfgPath := writeTestFile(t, dir, "optimize.yaml", yamlContent)
+
+	cfg, err := LoadOptimizeConfig(cfgPath)
+	require.NoError(t, err)
+	require.NoError(t, cfg.Validate())
+
+	// Simulate submitJob path resolution: resolve relative paths against
+	// the agent project directory (dir).
+	agentProject := dir
+	if cfg.Dataset.IsLocal() && !filepath.IsAbs(cfg.Dataset.LocalURI) {
+		cfg.Dataset.LocalURI = filepath.Join(agentProject, cfg.Dataset.LocalURI)
+	}
+	if cfg.ValidationDataset.IsLocal() && !filepath.IsAbs(cfg.ValidationDataset.LocalURI) {
+		cfg.ValidationDataset.LocalURI = filepath.Join(agentProject, cfg.ValidationDataset.LocalURI)
+	}
+
+	req, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+
+	require.NotNil(t, req.TrainDataset)
+	assert.Equal(t, optimize_api.DatasetTypeInline, req.TrainDataset.Type)
+	require.Len(t, req.TrainDataset.Items, 1)
+	assert.Contains(t, string(req.TrainDataset.Items[0]), `"hello"`)
+
+	require.NotNil(t, req.ValidationDataset)
+	assert.Equal(t, optimize_api.DatasetTypeInline, req.ValidationDataset.Type)
+	require.Len(t, req.ValidationDataset.Items, 1)
+	assert.Contains(t, string(req.ValidationDataset.Items[0]), `"bye"`)
 }
 
 func TestValidate_MissingAgentName(t *testing.T) {
@@ -317,7 +419,7 @@ options:
   budget: 3
 `
 	datasetPath := writeTestFile(t, dir, "eval.jsonl",
-		`{"prompt":"hello","groundTruth":"hi"}
+		`{"query":"hello","ground_truth":"hi"}
 `)
 	// Rewrite dataset_file to the real temp path so Validate+ToRequest work.
 	yamlContent = `
@@ -531,7 +633,7 @@ func TestToRequest_WithToolsFile(t *testing.T) {
 	cfg := &OptimizeConfig{
 		Config: opt_eval.Config{
 			Agent:       opt_eval.AgentRef{Name: "test-agent"},
-			DatasetFile: writeTestFile(t, dir, "dataset.jsonl", `{"prompt":"test"}`),
+			DatasetFile: writeTestFile(t, dir, "dataset.jsonl", `{"query":"test"}`),
 		},
 		Options: &opt_eval.Options{
 			EvalModel: "gpt-4o",
@@ -558,7 +660,7 @@ func TestToRequest_SetsBaselineModelInOptimizationConfig(t *testing.T) {
 	cfg := &OptimizeConfig{
 		Config: opt_eval.Config{
 			Agent:       opt_eval.AgentRef{Name: "agent", Model: "gpt-4o"},
-			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"prompt":"hi"}`),
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
 		},
 		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini"},
 	}
@@ -579,7 +681,7 @@ func TestToRequest_BaselineModelOmittedWhenEmpty(t *testing.T) {
 	cfg := &OptimizeConfig{
 		Config: opt_eval.Config{
 			Agent:       opt_eval.AgentRef{Name: "agent"},
-			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"prompt":"hi"}`),
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
 		},
 		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini"},
 	}
@@ -600,7 +702,7 @@ func TestToRequest_BaselineModelInJSON(t *testing.T) {
 	cfg := &OptimizeConfig{
 		Config: opt_eval.Config{
 			Agent:       opt_eval.AgentRef{Name: "agent", Model: "gpt-4o"},
-			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"prompt":"hi"}`),
+			DatasetFile: writeTestFile(t, dir, "ds.jsonl", `{"query":"hi"}`),
 		},
 		Options: &opt_eval.Options{EvalModel: "gpt-4o-mini"},
 	}

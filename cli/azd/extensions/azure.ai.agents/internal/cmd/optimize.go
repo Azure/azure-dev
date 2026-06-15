@@ -467,11 +467,19 @@ func (a *OptimizeAction) submitJob(
 
 	client := optimize_api.NewOptimizeClient(endpoint, credential)
 
-	// Resolve relative dataset path against the agent project directory so
-	// configs with project-relative dataset_file entries work regardless of
-	// the caller's working directory.
-	if cfg.DatasetFile != "" && !filepath.IsAbs(cfg.DatasetFile) && agentProject != "" {
-		cfg.DatasetFile = filepath.Join(agentProject, cfg.DatasetFile)
+	// Resolve relative local dataset paths against the agent project directory
+	// so configs with project-relative entries work regardless of the caller's
+	// working directory.
+	if agentProject != "" {
+		if cfg.DatasetFile != "" && !filepath.IsAbs(cfg.DatasetFile) {
+			cfg.DatasetFile = filepath.Join(agentProject, cfg.DatasetFile)
+		}
+		if cfg.Dataset.IsLocal() && !filepath.IsAbs(cfg.Dataset.LocalURI) {
+			cfg.Dataset.LocalURI = filepath.Join(agentProject, cfg.Dataset.LocalURI)
+		}
+		if cfg.ValidationDataset.IsLocal() && !filepath.IsAbs(cfg.ValidationDataset.LocalURI) {
+			cfg.ValidationDataset.LocalURI = filepath.Join(agentProject, cfg.ValidationDataset.LocalURI)
+		}
 	}
 
 	optimizeReq, warnings, err := cfg.ToRequest()

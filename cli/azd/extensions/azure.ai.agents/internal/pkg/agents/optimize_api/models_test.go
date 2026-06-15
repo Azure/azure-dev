@@ -248,3 +248,87 @@ func TestDeploymentReport_JSON_RoundTrip(t *testing.T) {
 	assert.Equal(t, "5", report.AgentVersion)
 	assert.Empty(t, report.CandidateID, "CandidateID should not be populated from JSON")
 }
+
+// ---- CandidateResult.Mutations ----
+
+// TestCandidateResult_MutationsArrayValues verifies that mutations with array
+// values (as returned by newer server versions) unmarshal correctly.
+func TestCandidateResult_MutationsArrayValues(t *testing.T) {
+	t.Parallel()
+
+	body := `{
+		"name": "candidate_1",
+		"avg_score": 0.92,
+		"avg_tokens": 150,
+		"candidate_id": "cand_abc",
+		"mutations": {
+			"skills": [
+				{
+					"name": "handle-return",
+					"description": "Handle product returns and refunds.",
+					"body": "You are a customer support assistant."
+				}
+			],
+			"system_prompt": ["Updated prompt line 1", "Updated prompt line 2"]
+		}
+	}`
+
+	var got CandidateResult
+	require.NoError(t, json.Unmarshal([]byte(body), &got))
+
+	assert.Equal(t, "candidate_1", got.Name)
+	assert.InDelta(t, 0.92, got.AvgScore, 0.001)
+	assert.Equal(t, "cand_abc", got.CandidateID)
+	require.Len(t, got.Mutations, 2)
+
+	// skills is an array of objects
+	skills, ok := got.Mutations["skills"]
+	require.True(t, ok, "skills key should exist")
+	skillSlice, ok := skills.([]any)
+	require.True(t, ok, "skills should be a slice")
+	require.Len(t, skillSlice, 1)
+
+	// system_prompt is an array of strings
+	sp, ok := got.Mutations["system_prompt"]
+	require.True(t, ok, "system_prompt key should exist")
+	spSlice, ok := sp.([]any)
+	require.True(t, ok, "system_prompt should be a slice")
+	assert.Len(t, spSlice, 2)
+
+	// MutationKeys still works
+	assert.Equal(t, []string{"skills", "system_prompt"}, got.MutationKeys())
+}
+
+// TestCandidateResult_MutationsStringValues verifies backward compatibility
+// with the old server format where mutation values are plain strings.
+func TestCandidateResult_MutationsStringValues(t *testing.T) {
+	t.Parallel()
+
+	body := `{
+		"name": "candidate_2",
+		"avg_score": 0.85,
+		"mutations": {
+			"system_prompt": "new prompt text",
+			"skill_policy-reviewer": "updated instructions"
+		}
+	}`
+
+	var got CandidateResult
+	require.NoError(t, json.Unmarshal([]byte(body), &got))
+
+	assert.Equal(t, "new prompt text", got.Mutations["system_prompt"])
+	assert.Equal(t, "updated instructions", got.Mutations["skill_policy-reviewer"])
+	assert.Equal(t, []string{"skill_policy-reviewer", "system_prompt"}, got.MutationKeys())
+}
+
+// TestCandidateResult_MutationsEmpty verifies MutationKeys returns nil for
+// empty or absent mutations.
+func TestCandidateResult_MutationsEmpty(t *testing.T) {
+	t.Parallel()
+
+	var got CandidateResult
+	require.NoError(t, json.Unmarshal([]byte(`{"name":"baseline","avg_score":0.8}`), &got))
+
+	assert.Nil(t, got.Mutations)
+	assert.Nil(t, got.MutationKeys())
+}

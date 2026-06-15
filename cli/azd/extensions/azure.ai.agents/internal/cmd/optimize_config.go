@@ -148,31 +148,28 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 
 	var warnings []string
 
-	if ref := c.RemoteDatasetReference(); ref != nil {
-		req.TrainDataset = &optimize_api.Dataset{
-			Type:    optimize_api.DatasetTypeReference,
-			Name:    ref.Name,
-			Version: ref.Version,
-		}
+	// Train dataset: the deprecated dataset_file is normalized into a
+	// DatasetRef so both forms go through the same conversion path.
+	trainRef := c.Dataset
+	if c.DatasetFile != "" {
+		trainRef = &opt_eval.DatasetRef{LocalURI: c.DatasetFile}
 	}
-
-	if c.ValidationDataset != nil {
-		req.ValidationDataset = &optimize_api.Dataset{
-			Type:    optimize_api.DatasetTypeReference,
-			Name:    c.ValidationDataset.Name,
-			Version: c.ValidationDataset.Version,
-		}
-	}
-
-	if localPath := c.LocalDatasetPath(); localPath != "" {
-		lines, err := loadJSONLRawFile(localPath)
+	if trainRef != nil {
+		ds, err := datasetRefToAPI(trainRef)
 		if err != nil {
 			return nil, nil, err
 		}
-		req.TrainDataset = &optimize_api.Dataset{
-			Type:  optimize_api.DatasetTypeInline,
-			Items: lines,
+		req.TrainDataset = ds
+	}
+
+	// Validation dataset (optional): supports both inline (local_uri) and
+	// registered reference (name/version), mirroring the train dataset.
+	if c.ValidationDataset != nil {
+		ds, err := datasetRefToAPI(c.ValidationDataset)
+		if err != nil {
+			return nil, nil, fmt.Errorf("validation dataset: %w", err)
 		}
+		req.ValidationDataset = ds
 	}
 
 	// Populate optimization_config with system_prompt, skills, tools.
@@ -212,6 +209,27 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 	}
 
 	return req, warnings, nil
+}
+
+// datasetRefToAPI converts a DatasetRef into the API Dataset payload. A local
+// dataset (local_uri, no name) is sent inline with its JSONL items; a
+// registered dataset (name/version) is sent as a reference.
+func datasetRefToAPI(ref *opt_eval.DatasetRef) (*optimize_api.Dataset, error) {
+	if ref.IsLocal() {
+		lines, err := loadJSONLRawFile(ref.LocalURI)
+		if err != nil {
+			return nil, err
+		}
+		return &optimize_api.Dataset{
+			Type:  optimize_api.DatasetTypeInline,
+			Items: lines,
+		}, nil
+	}
+	return &optimize_api.Dataset{
+		Type:    optimize_api.DatasetTypeReference,
+		Name:    ref.Name,
+		Version: ref.Version,
+	}, nil
 }
 
 // evaluatorRefs converts a YAML evaluator list into API evaluator references,

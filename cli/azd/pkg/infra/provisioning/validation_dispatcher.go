@@ -14,10 +14,11 @@ import (
 // the gRPC server implementation.
 type ValidationCheckDispatcher interface {
 	// DispatchChecks invokes all extension-registered checks matching the
-	// given checkType and returns the aggregated results.
+	// given checkType and returns the aggregated results along with the
+	// list of rule IDs that were invoked (for telemetry).
 	DispatchChecks(
 		ctx context.Context,
 		checkType string,
 		contextData map[string][]byte,
-	) ([]*azdext.ValidationCheckResult, error)
+	) (results []*azdext.ValidationCheckResult, invokedRuleIDs []string, err error)
 }

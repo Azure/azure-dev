@@ -177,6 +177,18 @@ func (s *ValidationService) onRegisterRequest(
 	}
 
 	s.checksMu.Lock()
+	// Reject duplicate registrations (same extension + check_type + rule_id)
+	for _, existing := range s.checks {
+		if existing.CheckType == checkType &&
+			existing.RuleID == ruleID &&
+			existing.Extension.Id == extension.Id {
+			s.checksMu.Unlock()
+			return nil, fmt.Errorf(
+				"validation check '%s/%s' already registered by extension %s",
+				checkType, ruleID, extension.Id,
+			)
+		}
+	}
 	s.checks = append(s.checks, entry)
 	s.checksMu.Unlock()
 
@@ -203,7 +215,7 @@ func (s *ValidationService) DispatchChecks(
 	ctx context.Context,
 	checkType string,
 	contextData map[string][]byte,
-) ([]*azdext.ValidationCheckResult, error) {
+) ([]*azdext.ValidationCheckResult, []string, error) {
 	s.checksMu.RLock()
 	matching := make([]validationCheckEntry, 0)
 	for _, entry := range s.checks {
@@ -214,7 +226,13 @@ func (s *ValidationService) DispatchChecks(
 	s.checksMu.RUnlock()
 
 	if len(matching) == 0 {
-		return nil, nil
+		return nil, nil, nil
+	}
+
+	// Collect invoked rule IDs for telemetry
+	invokedRuleIDs := make([]string, 0, len(matching))
+	for _, e := range matching {
+		invokedRuleIDs = append(invokedRuleIDs, e.RuleID)
 	}
 
 	// Group checks by broker (extension). Each extension shares one broker.
@@ -306,10 +324,10 @@ func (s *ValidationService) DispatchChecks(
 	wg.Wait()
 
 	if len(errs) > 0 {
-		return allResults, errors.Join(errs...)
+		return allResults, invokedRuleIDs, errors.Join(errs...)
 	}
 
-	return allResults, nil
+	return allResults, invokedRuleIDs, nil
 }
 
 // sendContextChunks delivers context data to an extension in chunks.

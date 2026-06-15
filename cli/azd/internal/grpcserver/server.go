@@ -43,7 +43,7 @@ type Server struct {
 	aiModelService       azdext.AiModelServiceServer
 	copilotService       azdext.CopilotServiceServer
 	provisioningService  azdext.ProvisioningServiceServer
-	validationService   azdext.ValidationServiceServer
+	validationService    azdext.ValidationServiceServer
 }
 
 func NewServer(

@@ -40,7 +40,7 @@ func newListenCommand() *cobra.Command {
 				}).
 				WithValidationCheck(azdext.ValidationCheckRegistration{
 					CheckType: "local-preflight",
-					RuleID:    "todo_resource_name",
+					RuleID:    "demo_warning",
 					Factory: func() azdext.ValidationCheckProvider {
 						return project.NewDemoValidationCheck()
 					},

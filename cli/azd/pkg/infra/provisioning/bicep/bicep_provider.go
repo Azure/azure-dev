@@ -2622,12 +2622,13 @@ func (p *BicepProvider) validatePreflight(
 		// validationContext.extensionContext() are automatically available to extensions.
 		checkContext := valCtx.extensionContext(armTemplate, armParameters)
 
-		extResults, extErr := dispatcher.DispatchChecks(
+		extResults, invokedRuleIDs, extErr := dispatcher.DispatchChecks(
 			ctx, "local-preflight", checkContext,
 		)
 		if extErr != nil {
 			log.Printf("extension validation checks failed: %v", extErr)
 		}
+		extRuleIDs = append(extRuleIDs, invokedRuleIDs...)
 		for _, extResult := range extResults {
 			severity := PreflightCheckWarning
 			if extResult.Severity ==
@@ -2639,9 +2640,6 @@ func (p *BicepProvider) validatePreflight(
 				links[i] = ux.PreflightReportLink{
 					Title: l.Text, URL: l.Url,
 				}
-			}
-			if extResult.DiagnosticId != "" {
-				extRuleIDs = append(extRuleIDs, extResult.DiagnosticId)
 			}
 			results = append(results, PreflightCheckResult{
 				Severity:     severity,

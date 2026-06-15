@@ -225,15 +225,16 @@ func (m *ValidationManager) Register(
 		CheckType: checkType, RuleID: ruleID,
 	}
 
-	m.mu.RLock()
+	m.mu.Lock()
 	if _, exists := m.factories[key]; exists {
-		m.mu.RUnlock()
+		m.mu.Unlock()
 		return fmt.Errorf(
 			"validation check '%s/%s' already registered",
 			checkType, ruleID,
 		)
 	}
-	m.mu.RUnlock()
+	m.factories[key] = factory
+	m.mu.Unlock()
 
 	registerReq := &ValidationMessage{
 		RequestId: uuid.NewString(),
@@ -244,10 +245,6 @@ func (m *ValidationManager) Register(
 			},
 		},
 	}
-
-	m.mu.Lock()
-	m.factories[key] = factory
-	m.mu.Unlock()
 
 	resp, err := m.broker.SendAndWait(ctx, registerReq)
 	if err != nil {
@@ -414,6 +411,14 @@ func (m *ValidationManager) onValidationCheck(
 			key.CheckType, key.RuleID, err,
 		)
 	}
+
+	// Evict cached context after the check completes to prevent unbounded growth.
+	// The context data has been consumed; if another check for the same context_id
+	// arrives, it will still work (with an empty context) but this shouldn't happen
+	// since core sends a fresh context for each dispatch cycle.
+	m.mu.Lock()
+	delete(m.cachedContexts, req.GetContextId())
+	m.mu.Unlock()
 
 	return &ValidationMessage{
 		MessageType: &ValidationMessage_ValidationCheckResponse{

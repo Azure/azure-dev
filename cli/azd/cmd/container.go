@@ -36,7 +36,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -1017,13 +1016,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
 	container.MustRegisterSingleton(grpcserver.NewProvisioningService)
 	container.MustRegisterSingleton(grpcserver.NewValidationService)
-	// Register the validation dispatcher interface so provisioning
-	// providers can dispatch to extension-provided checks.
+	// Register the validation dispatcher interface from the concrete service
+	// so provisioning providers can dispatch to extension-provided checks.
 	container.MustRegisterSingleton(
-		func(svc azdext.ValidationServiceServer) provisioning.ValidationCheckDispatcher {
-			// The ValidationService implements both the gRPC server and
-			// the dispatcher interfaces.
-			return svc.(*grpcserver.ValidationService)
+		func(svc *grpcserver.ValidationService) provisioning.ValidationCheckDispatcher {
+			return svc
 		},
 	)
 	container.MustRegisterSingleton(grpcserver.NewAiModelService)

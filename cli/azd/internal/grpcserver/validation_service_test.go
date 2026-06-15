@@ -25,11 +25,12 @@ func newTestValidationExtension() *extensions.Extension {
 func TestValidationService_DispatchChecks_NoChecks(t *testing.T) {
 	svc := &ValidationService{}
 
-	results, err := svc.DispatchChecks(
+	results, ruleIDs, err := svc.DispatchChecks(
 		t.Context(), "local-preflight", nil,
 	)
 	require.NoError(t, err)
 	require.Nil(t, results)
+	require.Nil(t, ruleIDs)
 }
 
 func TestValidationService_OnRegisterRequest_Validations(t *testing.T) {

@@ -308,8 +308,11 @@ func (v *validationContext) extensionContext(
 	armParameters azure.ArmParameters,
 ) map[string][]byte {
 	ctx := map[string][]byte{
-		azdext.ValidationContextARMTemplate:   []byte(armTemplate),
-		azdext.ValidationContextARMParameters: armParametersJSON(armParameters),
+		azdext.ValidationContextARMTemplate: []byte(armTemplate),
+	}
+
+	if paramsJSON := armParametersJSON(armParameters); paramsJSON != nil {
+		ctx[azdext.ValidationContextARMParameters] = paramsJSON
 	}
 
 	if v.EnvLocation != "" {

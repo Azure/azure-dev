@@ -267,14 +267,15 @@ type MyNamingCheck struct{}
 
 func (c *MyNamingCheck) Validate(
     ctx context.Context,
+    valCtx *azdext.ValidationContext,
     req *azdext.ValidationCheckRequest,
 ) (*azdext.ValidationCheckResponse, error) {
-    snapshot, ok := req.ResourcesSnapshot()
-    if !ok {
+    resources, err := valCtx.ParsePredictedResources()
+    if err != nil || len(resources) == 0 {
         return &azdext.ValidationCheckResponse{}, nil
     }
 
-    // Inspect snapshot, return results...
+    // Inspect resources, return results...
     return &azdext.ValidationCheckResponse{
         Results: results,
     }, nil

@@ -155,13 +155,21 @@ func (gp *goProject) Package(
 
 	// Resolve build output directory and binary path
 	buildDir := ""
-	binaryName := goBinaryName
+	binaryRelPath := goBinaryName
 	if artifact, found := serviceContext.Build.FindFirst(
 		WithKind(ArtifactKindDirectory),
 	); found {
 		buildDir = artifact.Location
-		if bp, ok := artifact.Metadata["binaryPath"]; ok {
-			binaryName = filepath.Base(bp)
+		if bp, ok := artifact.Metadata["binaryPath"]; ok && bp != "" {
+			// Use the full path from metadata if absolute, otherwise treat as relative to buildDir
+			if filepath.IsAbs(bp) {
+				binaryRelPath = bp[len(buildDir):]
+				if len(binaryRelPath) > 0 && binaryRelPath[0] == filepath.Separator {
+					binaryRelPath = binaryRelPath[1:]
+				}
+			} else {
+				binaryRelPath = bp
+			}
 		}
 	}
 	if buildDir == "" {
@@ -175,8 +183,8 @@ func (gp *goProject) Package(
 
 	// Copy compiled binary (ensure execute permission is preserved for the zip)
 	progress.SetProgress(NewServiceProgress("Copying compiled binary"))
-	binaryPath := filepath.Join(buildDir, binaryName)
-	destBinaryPath := filepath.Join(packageDir, binaryName)
+	binaryPath := filepath.Join(buildDir, binaryRelPath)
+	destBinaryPath := filepath.Join(packageDir, filepath.Base(binaryRelPath))
 	if err := copy.Copy(binaryPath, destBinaryPath); err != nil {
 		return nil, fmt.Errorf("copying Go binary: %w", err)
 	}

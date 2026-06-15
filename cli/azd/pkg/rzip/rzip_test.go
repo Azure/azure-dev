@@ -283,3 +283,47 @@ func TestExtractTarGzToDirectory(t *testing.T) {
 		require.Equal(expectedContent, string(content))
 	}
 }
+
+func TestCreateFromDirectory_PreservesUnixPermissions(t *testing.T) {
+	require := require.New(t)
+
+	srcDir := t.TempDir()
+
+	// Create a file with execute permission (like a compiled binary)
+	executablePath := filepath.Join(srcDir, "app")
+	err := os.WriteFile(executablePath, []byte("binary-content"), 0755)
+	require.NoError(err)
+
+	// Create a regular file without execute permission
+	regularPath := filepath.Join(srcDir, "config.json")
+	err = os.WriteFile(regularPath, []byte("{}"), 0644)
+	require.NoError(err)
+
+	// Create zip
+	zipPath := filepath.Join(t.TempDir(), "test.zip")
+	zipFile, err := os.Create(zipPath)
+	require.NoError(err)
+	err = rzip.CreateFromDirectory(srcDir, zipFile, nil)
+	require.NoError(err)
+	zipFile.Close()
+
+	// Read the zip and verify file modes
+	reader, err := zip.OpenReader(zipPath)
+	require.NoError(err)
+	defer reader.Close()
+
+	modes := make(map[string]os.FileMode)
+	for _, f := range reader.File {
+		modes[f.Name] = f.Mode()
+	}
+
+	// Verify executable has execute bit set
+	appMode, ok := modes["app"]
+	require.True(ok, "app should exist in zip")
+	require.NotZero(appMode&0111, "app should have execute permission bits set, got %o", appMode)
+
+	// Verify regular file does not have execute bit set
+	configMode, ok := modes["config.json"]
+	require.True(ok, "config.json should exist in zip")
+	require.Zero(configMode&0111, "config.json should not have execute permission bits, got %o", configMode)
+}

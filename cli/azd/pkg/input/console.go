@@ -719,7 +719,7 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 		return response, nil
 	}
 
-	if c.isTerminal {
+	if c.isTerminal && !c.noPrompt {
 		return c.promptUx(ctx, options)
 	}
 
@@ -785,7 +785,7 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 		return res, nil
 	}
 
-	if c.isTerminal {
+	if c.isTerminal && !c.noPrompt {
 		return c.selectUx(ctx, options)
 	}
 
@@ -862,7 +862,7 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 		return response, nil
 	}
 
-	if c.isTerminal {
+	if c.isTerminal && !c.noPrompt {
 		return c.multiSelectUx(ctx, options)
 	}
 
@@ -943,7 +943,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 		}
 	}
 
-	if c.isTerminal {
+	if c.isTerminal && !c.noPrompt {
 		return c.confirmUx(ctx, options)
 	}
 

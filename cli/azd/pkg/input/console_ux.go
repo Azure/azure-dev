@@ -93,7 +93,7 @@ func (c *AskerConsole) selectUx(ctx context.Context, options ConsoleOptions) (in
 		Message:       options.Message,
 		HelpMessage:   options.Help,
 		Choices:       choices,
-		SelectedIndex: &selectedIndex,
+		SelectedIndex: new(selectedIndex),
 	})
 
 	var result *int
@@ -123,7 +123,7 @@ func (c *AskerConsole) confirmUx(ctx context.Context, options ConsoleOptions) (b
 		Writer:       c.writer,
 		Message:      options.Message,
 		HelpMessage:  options.Help,
-		DefaultValue: &defaultValue,
+		DefaultValue: new(defaultValue),
 	})
 
 	var result *bool
@@ -156,10 +156,11 @@ func (c *AskerConsole) multiSelectUx(ctx context.Context, options ConsoleOptions
 	}
 
 	component := uxlib.NewMultiSelect(&uxlib.MultiSelectOptions{
-		Writer:      c.writer,
-		Message:     options.Message,
-		HelpMessage: options.Help,
-		Choices:     choices,
+		Writer:              c.writer,
+		Message:             options.Message,
+		HelpMessage:         options.Help,
+		Choices:             choices,
+		AllowEmptySelection: new(true),
 	})
 
 	var selected []*uxlib.MultiSelectChoice

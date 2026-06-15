@@ -12,6 +12,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -285,6 +286,9 @@ func TestExtractTarGzToDirectory(t *testing.T) {
 }
 
 func TestCreateFromDirectory_PreservesUnixPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not reliably preserved on Windows filesystems")
+	}
 	require := require.New(t)
 
 	srcDir := t.TempDir()

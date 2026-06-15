@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -161,12 +162,12 @@ func (gp *goProject) Package(
 	); found {
 		buildDir = artifact.Location
 		if bp, ok := artifact.Metadata["binaryPath"]; ok && bp != "" {
-			// Use the full path from metadata if absolute, otherwise treat as relative to buildDir
 			if filepath.IsAbs(bp) {
-				binaryRelPath = bp[len(buildDir):]
-				if len(binaryRelPath) > 0 && binaryRelPath[0] == filepath.Separator {
-					binaryRelPath = binaryRelPath[1:]
+				rel, err := filepath.Rel(buildDir, bp)
+				if err != nil || strings.HasPrefix(rel, "..") {
+					return nil, fmt.Errorf("binaryPath %q is not under build directory %q", bp, buildDir)
 				}
+				binaryRelPath = rel
 			} else {
 				binaryRelPath = bp
 			}

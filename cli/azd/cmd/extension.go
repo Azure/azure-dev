@@ -730,6 +730,7 @@ type extensionInstallFlags struct {
 	version string
 	source  string
 	force   bool
+	channel string
 	global  *internal.GlobalCommandOptions
 }
 
@@ -742,6 +743,8 @@ func newExtensionInstallFlags(cmd *cobra.Command, global *internal.GlobalCommand
 	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to install")
 	cmd.Flags().
 		BoolVarP(&flags.force, "force", "f", false, "Force installation, including downgrades and reinstalls")
+	cmd.Flags().StringVar(&flags.channel, "channel", "",
+		"Pre-release channel to include when selecting the latest version (e.g. 'alpha')")
 
 	return flags
 }
@@ -845,7 +848,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 
 		// Check azd version compatibility
 		compatibleExtension, compatResult, err := resolveCompatibleExtension(
-			selectedExtension, extensionId, a.flags.version, azdVersion,
+			selectedExtension, extensionId, a.flags.version, azdVersion, a.flags.channel,
 		)
 		if err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
@@ -1075,6 +1078,7 @@ type extensionUpgradeFlags struct {
 	source               string
 	all                  bool
 	noDependencyUpgrades bool
+	channel              string
 	global               *internal.GlobalCommandOptions
 }
 
@@ -1087,6 +1091,8 @@ func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommand
 	cmd.Flags().BoolVar(&flags.all, "all", false, "Upgrade all installed extensions")
 	cmd.Flags().BoolVar(&flags.noDependencyUpgrades, "no-dependency-upgrades", false,
 		"Do not upgrade dependencies when upgrading an extension that has dependencies")
+	cmd.Flags().StringVar(&flags.channel, "channel", "",
+		"Pre-release channel to include when selecting the latest version (e.g. 'alpha')")
 
 	return flags
 }
@@ -1416,7 +1422,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 
 	// Check azd version compatibility
 	compatExt, compatResult, err := resolveCompatibleExtension(
-		selectedExt, extensionId, a.flags.version, azdVersion,
+		selectedExt, extensionId, a.flags.version, azdVersion, a.flags.channel,
 	)
 	if err != nil {
 		return fail(err)
@@ -2256,17 +2262,32 @@ func currentAzdSemver() *semver.Version {
 // resolveCompatibleExtension filters extension versions for azd version compatibility.
 // Returns the (possibly filtered) extension metadata and the compatibility result for displaying warnings.
 // Returns an error if no compatible versions are found or the specific requested version is incompatible.
+// When channel is empty, alpha pre-release versions are excluded before any other filtering.
+// Pass channel="alpha" to include alpha nightly builds.
 func resolveCompatibleExtension(
 	selectedExtension *extensions.ExtensionMetadata,
 	extensionId string,
 	requestedVersion string,
 	azdVersion *semver.Version,
+	channel string,
 ) (*extensions.ExtensionMetadata, *extensions.VersionCompatibilityResult, error) {
 	if azdVersion == nil {
 		return selectedExtension, nil, nil
 	}
 
-	if requestedVersion != "" && requestedVersion != "latest" {
+	// When no specific version is requested and no channel is set, exclude alpha builds.
+	if requestedVersion == "" || strings.EqualFold(requestedVersion, "latest") {
+		if !strings.EqualFold(channel, "alpha") {
+			filtered := extensions.ExcludePreReleaseChannel(selectedExtension.Versions, "alpha")
+			if len(filtered) != len(selectedExtension.Versions) {
+				filteredCopy := *selectedExtension
+				filteredCopy.Versions = filtered
+				selectedExtension = &filteredCopy
+			}
+		}
+	}
+
+	if requestedVersion != "" && !strings.EqualFold(requestedVersion, "latest") {
 		// Validate compatibility for the specific requested version
 		if err := validateVersionCompatibility(
 			selectedExtension.Versions, requestedVersion, extensionId, azdVersion,

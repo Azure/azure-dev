@@ -253,7 +253,7 @@ func TestResolveCompatibleExtension_NilAzdVersion(t *testing.T) {
 		},
 	}
 
-	result, compat, err := resolveCompatibleExtension(metadata, "test-ext", "", nil)
+	result, compat, err := resolveCompatibleExtension(metadata, "test-ext", "", nil, "")
 	require.NoError(t, err)
 	assert.Equal(t, metadata, result)
 	assert.Nil(t, compat)
@@ -272,7 +272,7 @@ func TestResolveCompatibleExtension_SpecificVersion(t *testing.T) {
 		},
 	}
 
-	result, compat, err := resolveCompatibleExtension(metadata, "test-ext", "0.1.0", azdVersion)
+	result, compat, err := resolveCompatibleExtension(metadata, "test-ext", "0.1.0", azdVersion, "")
 	require.NoError(t, err)
 	assert.Equal(t, metadata, result)
 	assert.Nil(t, compat)
@@ -292,7 +292,7 @@ func TestResolveCompatibleExtension_FilterVersions(t *testing.T) {
 		},
 	}
 
-	result, compat, err := resolveCompatibleExtension(metadata, "test-ext", "", azdVersion)
+	result, compat, err := resolveCompatibleExtension(metadata, "test-ext", "", azdVersion, "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, compat)
@@ -314,7 +314,7 @@ func TestResolveCompatibleExtension_NoCompatible(t *testing.T) {
 		},
 	}
 
-	_, compat, err := resolveCompatibleExtension(metadata, "test-ext", "", azdVersion)
+	_, compat, err := resolveCompatibleExtension(metadata, "test-ext", "", azdVersion, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no compatible version")
 	require.NotNil(t, compat)
@@ -334,7 +334,7 @@ func TestResolveCompatibleExtension_AllCompatible(t *testing.T) {
 		},
 	}
 
-	result, compat, err := resolveCompatibleExtension(metadata, "test-ext", "", azdVersion)
+	result, compat, err := resolveCompatibleExtension(metadata, "test-ext", "", azdVersion, "")
 	require.NoError(t, err)
 	assert.Equal(t, metadata, result) // same pointer, no filtering needed
 	require.NotNil(t, compat)
@@ -354,9 +354,55 @@ func TestResolveCompatibleExtension_LatestVersion(t *testing.T) {
 	}
 
 	// "latest" should go through the filter path, not the specific version path
-	result, _, err := resolveCompatibleExtension(metadata, "test-ext", "latest", azdVersion)
+	result, _, err := resolveCompatibleExtension(metadata, "test-ext", "latest", azdVersion, "")
 	require.NoError(t, err)
 	assert.Equal(t, metadata, result)
+}
+
+func TestResolveCompatibleExtension_AlphaChannelFiltering(t *testing.T) {
+	t.Parallel()
+
+	azdVersion, err := semver.NewVersion("1.24.0")
+	require.NoError(t, err)
+
+	metadata := &extensions.ExtensionMetadata{
+		Id: "test-ext",
+		Versions: []extensions.ExtensionVersion{
+			{Version: "0.9.0-preview.1"},
+			{Version: "0.9.0-alpha.202501010000"},
+			{Version: "0.10.0-alpha.202502010000"},
+		},
+	}
+
+	// Without --channel alpha: alpha versions are excluded; highest remaining is preview
+	result, _, err := resolveCompatibleExtension(metadata, "test-ext", "", azdVersion, "")
+	require.NoError(t, err)
+	require.Len(t, result.Versions, 1)
+	assert.Equal(t, "0.9.0-preview.1", result.Versions[0].Version)
+
+	// With --channel alpha: all versions are included
+	resultAlpha, _, err := resolveCompatibleExtension(metadata, "test-ext", "", azdVersion, "alpha")
+	require.NoError(t, err)
+	assert.Len(t, resultAlpha.Versions, 3)
+}
+
+func TestResolveCompatibleExtension_AlphaOnlyFallback(t *testing.T) {
+	t.Parallel()
+
+	azdVersion, err := semver.NewVersion("1.24.0")
+	require.NoError(t, err)
+
+	// When all available versions are alpha, ExcludePreReleaseChannel falls back to original list.
+	metadata := &extensions.ExtensionMetadata{
+		Id: "test-ext",
+		Versions: []extensions.ExtensionVersion{
+			{Version: "0.1.0-alpha.202501010000"},
+		},
+	}
+
+	result, _, err := resolveCompatibleExtension(metadata, "test-ext", "", azdVersion, "")
+	require.NoError(t, err)
+	assert.Len(t, result.Versions, 1)
 }
 
 func TestCurrentAzdSemver(t *testing.T) {

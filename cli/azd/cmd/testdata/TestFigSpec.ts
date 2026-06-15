@@ -5648,6 +5648,15 @@ const completionSpec: Fig.Spec = {
 					description: 'Installs specified extensions.',
 					options: [
 						{
+							name: ['--channel'],
+							description: 'Pre-release channel to include when selecting the latest version (e.g. \'alpha\')',
+							args: [
+								{
+									name: 'channel',
+								},
+							],
+						},
+						{
 							name: ['--force', '-f'],
 							description: 'Force installation, including downgrades and reinstalls',
 							isDangerous: true,
@@ -5809,6 +5818,15 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['--all'],
 							description: 'Upgrade all installed extensions',
+						},
+						{
+							name: ['--channel'],
+							description: 'Pre-release channel to include when selecting the latest version (e.g. \'alpha\')',
+							args: [
+								{
+									name: 'channel',
+								},
+							],
 						},
 						{
 							name: ['--no-dependency-upgrades'],

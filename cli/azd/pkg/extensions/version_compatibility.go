@@ -5,6 +5,7 @@ package extensions
 
 import (
 	"log"
+	"strings"
 
 	"github.com/Masterminds/semver/v3"
 )
@@ -113,5 +114,24 @@ func FilterCompatibleVersions(
 		result.HasNewerIncompatible = true
 	}
 
+	return result
+}
+
+// ExcludePreReleaseChannel returns a copy of versions with all entries whose
+// semver pre-release identifier starts with channel removed.
+// For example, ExcludePreReleaseChannel(versions, "alpha") drops all alpha nightly builds.
+// Versions that cannot be parsed as semver are kept unchanged.
+// Returns the original slice if no versions would remain after filtering.
+func ExcludePreReleaseChannel(versions []ExtensionVersion, channel string) []ExtensionVersion {
+	result := make([]ExtensionVersion, 0, len(versions))
+	for _, v := range versions {
+		sv, err := semver.NewVersion(v.Version)
+		if err != nil || !strings.HasPrefix(sv.Prerelease(), channel) {
+			result = append(result, v)
+		}
+	}
+	if len(result) == 0 {
+		return versions
+	}
 	return result
 }

@@ -31,7 +31,7 @@ func (cli *Cli) versionInfo() tools.VersionInfo {
 	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 1,
-			Minor: 24,
+			Minor: 22,
 			Patch: 0,
 		},
 		UpdateCommand: "Visit https://go.dev/dl/ to upgrade",
@@ -40,6 +40,10 @@ func (cli *Cli) versionInfo() tools.VersionInfo {
 
 // CheckInstalled verifies Go is installed and meets the minimum version.
 func (cli *Cli) CheckInstalled(ctx context.Context) error {
+	if err := cli.commandRunner.ToolInPath("go"); err != nil {
+		return err
+	}
+
 	goVer, err := tools.ExecuteCommand(ctx, cli.commandRunner, "go", "version")
 	if err != nil {
 		return fmt.Errorf("checking %s version: %w", cli.Name(), err)
@@ -93,11 +97,12 @@ func (cli *Cli) Build(
 }
 
 // ModDownload runs 'go mod download' to fetch dependencies.
-func (cli *Cli) ModDownload(ctx context.Context, projectDir string) error {
+func (cli *Cli) ModDownload(ctx context.Context, projectDir string, env []string) error {
 	_, err := cli.commandRunner.Run(ctx, exec.RunArgs{
 		Cmd:  "go",
 		Args: []string{"mod", "download"},
 		Cwd:  projectDir,
+		Env:  env,
 	})
 	if err != nil {
 		return fmt.Errorf("downloading Go modules: %w", err)

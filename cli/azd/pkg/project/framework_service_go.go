@@ -71,7 +71,7 @@ func (gp *goProject) Restore(
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
 	progress.SetProgress(NewServiceProgress("Downloading Go modules"))
-	if err := gp.goCli.ModDownload(ctx, serviceConfig.Path()); err != nil {
+	if err := gp.goCli.ModDownload(ctx, serviceConfig.Path(), gp.env.Environ()); err != nil {
 		return nil, fmt.Errorf("restoring Go dependencies: %w", err)
 	}
 
@@ -152,12 +152,16 @@ func (gp *goProject) Package(
 ) (*ServicePackageResult, error) {
 	progress.SetProgress(NewServiceProgress("Staging Go Functions deployment"))
 
-	// Resolve build output directory
+	// Resolve build output directory and binary path
 	buildDir := ""
+	binaryName := goBinaryName
 	if artifact, found := serviceContext.Build.FindFirst(
 		WithKind(ArtifactKindDirectory),
 	); found {
 		buildDir = artifact.Location
+		if bp, ok := artifact.Metadata["binaryPath"]; ok {
+			binaryName = filepath.Base(bp)
+		}
 	}
 	if buildDir == "" {
 		return nil, fmt.Errorf("no build output found in service context")
@@ -170,8 +174,8 @@ func (gp *goProject) Package(
 
 	// Copy compiled binary (ensure execute permission is preserved for the zip)
 	progress.SetProgress(NewServiceProgress("Copying compiled binary"))
-	binaryPath := filepath.Join(buildDir, goBinaryName)
-	destBinaryPath := filepath.Join(packageDir, goBinaryName)
+	binaryPath := filepath.Join(buildDir, binaryName)
+	destBinaryPath := filepath.Join(packageDir, binaryName)
 	if err := copy.Copy(binaryPath, destBinaryPath); err != nil {
 		return nil, fmt.Errorf("copying Go binary: %w", err)
 	}
@@ -182,10 +186,13 @@ func (gp *goProject) Package(
 	// Copy host.json from user project (required for Azure Functions deployment)
 	hostJSONSrc := filepath.Join(serviceConfig.Path(), "host.json")
 	if _, err := os.Stat(hostJSONSrc); err != nil {
-		return nil, fmt.Errorf(
-			"host.json not found at %q: Azure Functions requires a host.json file in the project directory",
-			hostJSONSrc,
-		)
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf(
+				"host.json not found at %q: Azure Functions requires a host.json file in the project directory",
+				hostJSONSrc,
+			)
+		}
+		return nil, fmt.Errorf("checking host.json at %q: %w", hostJSONSrc, err)
 	}
 	if err := copy.Copy(
 		hostJSONSrc, filepath.Join(packageDir, "host.json"),

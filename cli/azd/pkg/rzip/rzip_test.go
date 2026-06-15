@@ -307,9 +307,11 @@ func TestCreateFromDirectory_PreservesUnixPermissions(t *testing.T) {
 	zipPath := filepath.Join(t.TempDir(), "test.zip")
 	zipFile, err := os.Create(zipPath)
 	require.NoError(err)
+	t.Cleanup(func() {
+		require.NoError(zipFile.Close())
+	})
 	err = rzip.CreateFromDirectory(srcDir, zipFile, nil)
 	require.NoError(err)
-	zipFile.Close()
 
 	// Read the zip and verify file modes
 	reader, err := zip.OpenReader(zipPath)

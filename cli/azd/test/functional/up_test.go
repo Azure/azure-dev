@@ -264,14 +264,15 @@ func Test_CLI_Up_Down_GoFuncApp(t *testing.T) {
 	t.Logf("Starting deploy\n")
 	err = retry.Do(ctx, retry.WithMaxRetries(3, retry.NewConstant(30*time.Second)), func(ctx context.Context) error {
 		deployResult, deployErr := cli.RunCommand(ctx, "deploy", "--cwd", dir)
-		if deployErr != nil && strings.Contains(deployResult.Stdout, "unable to find a resource tagged") {
+		deployOutput := deployResult.Stdout + deployResult.Stderr
+		if deployErr != nil && strings.Contains(deployOutput, "unable to find a resource tagged") {
 			t.Logf("Resource not yet discoverable, retrying deploy...\n")
 			return retry.RetryableError(deployErr)
 		}
 		// "partially successful" means the zip was uploaded but the worker restart
 		// health check returned 503 during cold start. The health probe below will
 		// verify the function is actually working.
-		if deployErr != nil && strings.Contains(deployResult.Stdout, "partially successful") {
+		if deployErr != nil && strings.Contains(deployOutput, "partially successful") {
 			t.Logf("Deploy partially successful (cold-start timing), proceeding to health check\n")
 			return nil
 		}

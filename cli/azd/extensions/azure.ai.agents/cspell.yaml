@@ -57,6 +57,7 @@ words:
   - mcpservertoolalwaysrequireapprovalmode
   - mcpservertoolneverrequireapprovalmode
   - mcpservertoolspecifyapprovalmode
+  - purgeable
   - mypy
   - myregistry
   - normalises

@@ -15,6 +15,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -782,4 +783,81 @@ func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
 	assert.Equal(t, "my-rg", got[envKeyResourceGroup])
 	assert.Equal(t, "fp", got[envKeyProjectName])
 	assert.Equal(t, "pid", got[envKeyPrincipalID])
+}
+
+// strPtr returns a pointer to its argument; small helper to keep the
+// armcognitiveservices.Account literals below readable.
+func strPtr(s string) *string { return &s }
+
+func TestCollectPurgeableAccounts(t *testing.T) {
+	// Pure helper -- maps the SDK's pointer-heavy Account model down to the
+	// {name, location} pairs the purge step needs, skipping anything with a
+	// nil Name or Location (defensive against partial SDK responses).
+
+	tests := []struct {
+		name string
+		in   []*armcognitiveservices.Account
+		want []purgeableAccount
+	}{
+		{
+			name: "nil slice yields empty result",
+			in:   nil,
+			want: []purgeableAccount{},
+		},
+		{
+			name: "empty slice yields empty result",
+			in:   []*armcognitiveservices.Account{},
+			want: []purgeableAccount{},
+		},
+		{
+			name: "complete account is captured",
+			in: []*armcognitiveservices.Account{
+				{Name: strPtr("cog-abc"), Location: strPtr("eastus")},
+			},
+			want: []purgeableAccount{{name: "cog-abc", location: "eastus"}},
+		},
+		{
+			name: "nil entry is skipped",
+			in: []*armcognitiveservices.Account{
+				nil,
+				{Name: strPtr("cog-abc"), Location: strPtr("eastus")},
+			},
+			want: []purgeableAccount{{name: "cog-abc", location: "eastus"}},
+		},
+		{
+			name: "entry with nil Name is skipped",
+			in: []*armcognitiveservices.Account{
+				{Location: strPtr("eastus")},
+				{Name: strPtr("cog-ok"), Location: strPtr("westus2")},
+			},
+			want: []purgeableAccount{{name: "cog-ok", location: "westus2"}},
+		},
+		{
+			name: "entry with nil Location is skipped",
+			in: []*armcognitiveservices.Account{
+				{Name: strPtr("cog-bad")},
+				{Name: strPtr("cog-ok"), Location: strPtr("westus2")},
+			},
+			want: []purgeableAccount{{name: "cog-ok", location: "westus2"}},
+		},
+		{
+			name: "mixed list preserves order and skips invalid entries",
+			in: []*armcognitiveservices.Account{
+				{Name: strPtr("cog-a"), Location: strPtr("eastus")},
+				{Name: strPtr("cog-b")}, // dropped: no location
+				{Name: strPtr("cog-c"), Location: strPtr("westus2")},
+			},
+			want: []purgeableAccount{
+				{name: "cog-a", location: "eastus"},
+				{name: "cog-c", location: "westus2"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := collectPurgeableAccounts(tt.in)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 
 	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
@@ -93,111 +94,135 @@ func multiSelectValues(selected []*uxlib.MultiSelectChoice) []string {
 	return response
 }
 
-func (c *AskerConsole) promptUx(ctx context.Context, options ConsoleOptions) (string, error) {
+// newPromptOptions builds the ux prompt options from the console options.
+func newPromptOptions(writer io.Writer, options ConsoleOptions) *uxlib.PromptOptions {
 	var defaultValue string
 	if value, ok := options.DefaultValue.(string); ok {
 		defaultValue = value
 	}
 
-	prompt := uxlib.NewPrompt(&uxlib.PromptOptions{
-		Writer:       c.writer,
+	return &uxlib.PromptOptions{
+		Writer:       writer,
 		Message:      options.Message,
 		HelpMessage:  options.Help,
 		DefaultValue: defaultValue,
 		Secret:       options.IsPassword,
-	})
-
-	var response string
-	err := c.doInteraction(func(c *AskerConsole) error {
-		var askErr error
-		response, askErr = prompt.Ask(ctx)
-		return askErr
-	})
-	if err != nil {
-		return "", mapUxCancel(err)
 	}
-
-	c.updateLastBytes(afterIoSentinel)
-	return response, nil
 }
 
-func (c *AskerConsole) selectUx(ctx context.Context, options ConsoleOptions) (int, error) {
+// newSelectOptions builds the ux select options from the console options.
+func newSelectOptions(writer io.Writer, options ConsoleOptions) *uxlib.SelectOptions {
 	choices, selectedIndex := selectChoices(options)
 
-	component := uxlib.NewSelect(&uxlib.SelectOptions{
-		Writer:        c.writer,
+	return &uxlib.SelectOptions{
+		Writer:        writer,
 		Message:       options.Message,
 		HelpMessage:   options.Help,
 		Choices:       choices,
 		SelectedIndex: new(selectedIndex),
-	})
-
-	var result *int
-	err := c.doInteraction(func(c *AskerConsole) error {
-		var askErr error
-		result, askErr = component.Ask(ctx)
-		return askErr
-	})
-	if err != nil {
-		return -1, mapUxCancel(err)
 	}
-	if result == nil {
-		return -1, surveyterm.InterruptErr
-	}
-
-	c.updateLastBytes(afterIoSentinel)
-	return *result, nil
 }
 
-func (c *AskerConsole) confirmUx(ctx context.Context, options ConsoleOptions) (bool, error) {
+// newConfirmOptions builds the ux confirm options from the console options.
+func newConfirmOptions(writer io.Writer, options ConsoleOptions) *uxlib.ConfirmOptions {
 	defaultValue := false
 	if value, ok := options.DefaultValue.(bool); ok {
 		defaultValue = value
 	}
 
-	component := uxlib.NewConfirm(&uxlib.ConfirmOptions{
-		Writer:       c.writer,
+	return &uxlib.ConfirmOptions{
+		Writer:       writer,
 		Message:      options.Message,
 		HelpMessage:  options.Help,
 		DefaultValue: new(defaultValue),
-	})
+	}
+}
 
-	var result *bool
+// newMultiSelectOptions builds the ux multi-select options from the console options.
+// Empty selection is allowed to preserve the behavior of the survey-based
+// implementation that callers depend on.
+func newMultiSelectOptions(writer io.Writer, options ConsoleOptions) *uxlib.MultiSelectOptions {
+	return &uxlib.MultiSelectOptions{
+		Writer:              writer,
+		Message:             options.Message,
+		HelpMessage:         options.Help,
+		Choices:             multiSelectChoices(options),
+		AllowEmptySelection: new(true),
+	}
+}
+
+// selectResult converts the ux select result into the (index, error) pair the
+// console contract expects. A nil result indicates an interrupted prompt.
+func selectResult(result *int, err error) (int, error) {
+	if err != nil {
+		return -1, err
+	}
+	if result == nil {
+		return -1, surveyterm.InterruptErr
+	}
+
+	return *result, nil
+}
+
+// confirmResult converts the ux confirm result into the (bool, error) pair the
+// console contract expects. A nil result indicates an interrupted prompt.
+func confirmResult(result *bool, err error) (bool, error) {
+	if err != nil {
+		return false, err
+	}
+	if result == nil {
+		return false, surveyterm.InterruptErr
+	}
+
+	return *result, nil
+}
+
+// multiSelectResult converts the ux multi-select result into the ([]string, error)
+// pair the console contract expects.
+func multiSelectResult(selected []*uxlib.MultiSelectChoice, err error) ([]string, error) {
+	if err != nil {
+		return nil, err
+	}
+
+	return multiSelectValues(selected), nil
+}
+
+// uxComponent is the subset of the ux prompt components used by runComponent.
+type uxComponent[T any] interface {
+	Ask(ctx context.Context) (T, error)
+}
+
+// runComponent executes an interactive ux component, pausing any active spinner,
+// mapping cancellation to the survey interrupt error, and recording the
+// post-interaction console state on success.
+func runComponent[T any](ctx context.Context, c *AskerConsole, component uxComponent[T]) (T, error) {
+	var result T
 	err := c.doInteraction(func(c *AskerConsole) error {
 		var askErr error
 		result, askErr = component.Ask(ctx)
 		return askErr
 	})
 	if err != nil {
-		return false, mapUxCancel(err)
-	}
-	if result == nil {
-		return false, surveyterm.InterruptErr
+		var zero T
+		return zero, mapUxCancel(err)
 	}
 
 	c.updateLastBytes(afterIoSentinel)
-	return *result, nil
+	return result, nil
+}
+
+func (c *AskerConsole) promptUx(ctx context.Context, options ConsoleOptions) (string, error) {
+	return runComponent(ctx, c, uxlib.NewPrompt(newPromptOptions(c.writer, options)))
+}
+
+func (c *AskerConsole) selectUx(ctx context.Context, options ConsoleOptions) (int, error) {
+	return selectResult(runComponent(ctx, c, uxlib.NewSelect(newSelectOptions(c.writer, options))))
+}
+
+func (c *AskerConsole) confirmUx(ctx context.Context, options ConsoleOptions) (bool, error) {
+	return confirmResult(runComponent(ctx, c, uxlib.NewConfirm(newConfirmOptions(c.writer, options))))
 }
 
 func (c *AskerConsole) multiSelectUx(ctx context.Context, options ConsoleOptions) ([]string, error) {
-	component := uxlib.NewMultiSelect(&uxlib.MultiSelectOptions{
-		Writer:              c.writer,
-		Message:             options.Message,
-		HelpMessage:         options.Help,
-		Choices:             multiSelectChoices(options),
-		AllowEmptySelection: new(true),
-	})
-
-	var selected []*uxlib.MultiSelectChoice
-	err := c.doInteraction(func(c *AskerConsole) error {
-		var askErr error
-		selected, askErr = component.Ask(ctx)
-		return askErr
-	})
-	if err != nil {
-		return nil, mapUxCancel(err)
-	}
-
-	c.updateLastBytes(afterIoSentinel)
-	return multiSelectValues(selected), nil
+	return multiSelectResult(runComponent(ctx, c, uxlib.NewMultiSelect(newMultiSelectOptions(c.writer, options))))
 }

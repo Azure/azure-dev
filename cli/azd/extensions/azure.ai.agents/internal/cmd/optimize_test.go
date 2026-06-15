@@ -474,9 +474,15 @@ func TestPrintOptimizeResults_ShowsStrategyColumn(t *testing.T) {
 				{
 					Name:     "candidate_1",
 					AvgScore: 0.95,
-					Mutations: map[string]string{
-						"skill_policy-reviewer": "updated instructions",
-						"system_prompt":         "new prompt",
+					Mutations: map[string]any{
+						"skills": []any{
+							map[string]any{
+								"name":        "policy-reviewer",
+								"description": "Reviews travel requests",
+								"body":        "updated instructions",
+							},
+						},
+						"system_prompt": "new prompt",
 					},
 				},
 			},
@@ -489,7 +495,7 @@ func TestPrintOptimizeResults_ShowsStrategyColumn(t *testing.T) {
 
 	// Strategy header and mutation keys (sorted) are shown.
 	assert.Contains(t, out, "Strategy")
-	assert.Contains(t, out, "skill_policy-reviewer")
+	assert.Contains(t, out, "skills")
 }
 
 func TestPrintOptimizeResults_NoStrategyColumnWhenNoMutations(t *testing.T) {

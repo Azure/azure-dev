@@ -1,5 +1,10 @@
 # Release History
 
+## 0.1.40-preview (2026-06-15)
+
+- [[#8624]](https://github.com/Azure/azure-dev/pull/8624) Add a pre-deploy check and post-init hint for Python bundled mode that fail fast with `pip install` remediation guidance when dependencies have not been installed into the source directory, preventing runtime `ModuleNotFoundError` crashes. Thanks @v1212 for the contribution!
+- [[#8641]](https://github.com/Azure/azure-dev/pull/8641) Fix `azd ai agent optimize` failures by handling array-valued mutations returned by the optimization API and resolving relative `dataset.local_uri` paths against the agent project directory. Thanks @Zyysurely for the contribution!
+
 ## 0.1.39-preview (2026-06-11)
 
 - [[#8602]](https://github.com/Azure/azure-dev/pull/8602) Support Foundry `${{...}}` server-side expressions during `azd ai agent` environment-variable expansion, so values that mix azd `${VAR}` references with Foundry `${{...}}` expressions (and `${VAR:-default}` forms) resolve correctly instead of being dropped. Thanks @huimiu for the contribution!

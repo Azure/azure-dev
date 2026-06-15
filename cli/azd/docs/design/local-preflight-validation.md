@@ -243,6 +243,7 @@ warnings or errors that are merged into the preflight report.
    it dispatches to all extension-registered checks matching `check_type: "local-preflight"`.
 4. Each extension check receives a context map with:
    - `resources_snapshot` — Bicep snapshot JSON (`predictedResources`)
+   - `predicted_resources` — Parsed resource array from the snapshot
    - `arm_template` — Compiled ARM template JSON
    - `arm_parameters` — Resolved ARM parameters JSON
    - `env_location` — Azure location string

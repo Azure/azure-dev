@@ -128,9 +128,13 @@ func (s *ValidationService) Stream(
 	}
 
 	// Clean up registered checks when stream closes
+	registeredMu.Lock()
+	keysToRemove := slices.Clone(registeredKeys)
+	registeredMu.Unlock()
+
 	s.checksMu.Lock()
 	s.checks = slices.DeleteFunc(s.checks, func(e validationCheckEntry) bool {
-		for _, registered := range registeredKeys {
+		for _, registered := range keysToRemove {
 			if e.CheckType == registered.CheckType &&
 				e.RuleID == registered.RuleID &&
 				e.Extension.Id == registered.Extension.Id {
@@ -177,16 +181,14 @@ func (s *ValidationService) onRegisterRequest(
 	}
 
 	s.checksMu.Lock()
-	// Reject duplicate registrations (same extension + check_type + rule_id)
+	// Reject duplicate registrations (same check_type + rule_id across all extensions)
 	for _, existing := range s.checks {
-		if existing.CheckType == checkType &&
-			existing.RuleID == ruleID &&
-			existing.Extension.Id == extension.Id {
+		if existing.CheckType == checkType && existing.RuleID == ruleID {
 			s.checksMu.Unlock()
 			return nil, status.Errorf(
 				codes.AlreadyExists,
 				"validation check '%s/%s' already registered by extension %s",
-				checkType, ruleID, extension.Id,
+				checkType, ruleID, existing.Extension.Id,
 			)
 		}
 	}

@@ -51,12 +51,6 @@ func WithAddress(address string) AzdClientOption {
 			opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(nil)))
 		}
 
-		// Enable gzip compression by default for all calls.
-		// Context data (ARM templates, etc.) is highly compressible JSON.
-		opts = append(opts, grpc.WithDefaultCallOptions(
-			grpc.UseCompressor("gzip"),
-		))
-
 		connection, err := grpc.NewClient(address, opts...)
 		if err != nil {
 			return err

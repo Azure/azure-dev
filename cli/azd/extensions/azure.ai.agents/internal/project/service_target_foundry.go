@@ -102,6 +102,12 @@ func (p *FoundryServiceTargetProvider) Initialize(ctx context.Context, serviceCo
 		return err
 	}
 
+	// Connect to an existing project via `endpoint:` when no project was
+	// provisioned, so deploy can run without `azd provision` (spec §1.4).
+	if err := p.resolveProjectFromEndpoint(ctx); err != nil {
+		return err
+	}
+
 	p.initialized = true
 	return nil
 }

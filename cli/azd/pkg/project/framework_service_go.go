@@ -42,7 +42,7 @@ func NewGoProject(
 func (gp *goProject) Requirements() FrameworkRequirements {
 	return FrameworkRequirements{
 		Package: FrameworkPackageRequirements{
-			RequireRestore: false,
+			RequireRestore: true,
 			RequireBuild:   true,
 		},
 	}

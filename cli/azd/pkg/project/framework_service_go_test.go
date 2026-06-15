@@ -27,7 +27,7 @@ func Test_GoProject(t *testing.T) {
 		goProject := NewGoProject(env, goCli)
 		reqs := goProject.Requirements()
 
-		require.False(t, reqs.Package.RequireRestore)
+		require.True(t, reqs.Package.RequireRestore)
 		require.True(t, reqs.Package.RequireBuild)
 	})
 

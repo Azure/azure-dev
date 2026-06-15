@@ -46,7 +46,7 @@ func TestPrintInvokeTiming(t *testing.T) {
 	printInvokeTiming(&buf, 19734*time.Millisecond, 13697*time.Millisecond)
 	got := buf.String()
 
-	for _, want := range []string{"⏱", "19.734s", "first byte: 13.697s"} {
+	for _, want := range []string{"Server responded in", "19.734s", "first byte: 13.697s"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output %q missing %q", got, want)
 		}
@@ -91,10 +91,10 @@ func TestResponsesLocal_Timing(t *testing.T) {
 
 			output := withCapturedStdout(t, func() { _ = action.responsesLocal(t.Context()) })
 
-			if tc.wantTimer && !strings.Contains(output, "⏱") {
+			if tc.wantTimer && !strings.Contains(output, "Server responded in") {
 				t.Errorf("expected timing, got:\n%s", output)
 			}
-			if !tc.wantTimer && strings.Contains(output, "⏱") {
+			if !tc.wantTimer && strings.Contains(output, "Server responded in") {
 				t.Errorf("unexpected timing in output:\n%s", output)
 			}
 		})
@@ -141,10 +141,10 @@ func TestInvocationsLocal_Timing(t *testing.T) {
 
 			output := withCapturedStdout(t, func() { _ = action.invocationsLocal(t.Context()) })
 
-			if tc.wantTimer && !strings.Contains(output, "⏱") {
+			if tc.wantTimer && !strings.Contains(output, "Server responded in") {
 				t.Errorf("expected timing, got:\n%s", output)
 			}
-			if !tc.wantTimer && strings.Contains(output, "⏱") {
+			if !tc.wantTimer && strings.Contains(output, "Server responded in") {
 				t.Errorf("unexpected timing in output:\n%s", output)
 			}
 		})

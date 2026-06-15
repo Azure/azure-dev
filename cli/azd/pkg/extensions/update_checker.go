@@ -63,13 +63,22 @@ func (c *UpdateChecker) CheckForUpdate(
 	}
 
 	// Get latest version from cache
-	latestVersion, err := c.cacheManager.GetExtensionLatestVersion(ctx, extension.Source, extension.Id)
+	versions, err := c.cacheManager.GetExtensionVersions(ctx, extension.Source, extension.Id)
 	if err != nil {
 		// Cache miss or extension not found - not an error, just no update info
-		log.Printf("could not get latest version for %s: %v", extension.Id, err)
+		log.Printf("could not get versions for %s: %v", extension.Id, err)
 		return result, nil
 	}
 
+	// Channel matching: only surface alpha pre-release builds when the installed
+	// version is itself an alpha build. Stable/preview installs ignore alpha so the
+	// auto-update prompt stays consistent with what 'azd extension upgrade' selects
+	// by default (without --channel alpha).
+	if !IsPreReleaseChannel(extension.Version, "alpha") {
+		versions = ExcludePreReleaseChannel(versions, "alpha")
+	}
+
+	latestVersion := LatestVersion(versions).Version
 	result.LatestVersion = latestVersion
 
 	// Compare versions using semver

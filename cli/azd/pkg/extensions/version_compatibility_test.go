@@ -402,3 +402,58 @@ func Test_LatestVersion(t *testing.T) {
 		require.Equal(t, "0.1.1", LatestVersion(versions).Version)
 	})
 }
+
+func Test_IsPreReleaseChannel(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		channel string
+		expect  bool
+	}{
+		{"alpha match", "0.1.0-alpha.202501010000", "alpha", true},
+		{"preview is not alpha", "0.1.0-preview.1", "alpha", false},
+		{"stable is not alpha", "1.0.0", "alpha", false},
+		{"beta is not alpha", "1.0.0-beta.1", "alpha", false},
+		{"empty channel", "0.1.0-alpha.1", "", false},
+		{"unparseable version", "not-a-version", "alpha", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expect, IsPreReleaseChannel(tt.version, tt.channel))
+		})
+	}
+}
+
+func Test_ExcludePreReleaseChannel(t *testing.T) {
+	t.Run("drops alpha versions", func(t *testing.T) {
+		versions := []ExtensionVersion{
+			{Version: "0.9.0-preview.1"},
+			{Version: "0.10.0-alpha.202502010000"},
+			{Version: "1.0.0"},
+		}
+		result := ExcludePreReleaseChannel(versions, "alpha")
+		require.Len(t, result, 2)
+		require.Equal(t, "0.9.0-preview.1", result[0].Version)
+		require.Equal(t, "1.0.0", result[1].Version)
+	})
+
+	t.Run("falls back to original when all excluded", func(t *testing.T) {
+		versions := []ExtensionVersion{
+			{Version: "0.1.0-alpha.202501010000"},
+			{Version: "0.2.0-alpha.202502010000"},
+		}
+		result := ExcludePreReleaseChannel(versions, "alpha")
+		require.Len(t, result, 2)
+	})
+
+	t.Run("keeps unparseable versions", func(t *testing.T) {
+		versions := []ExtensionVersion{
+			{Version: "nightly"},
+			{Version: "0.1.0-alpha.1"},
+		}
+		result := ExcludePreReleaseChannel(versions, "alpha")
+		require.Len(t, result, 1)
+		require.Equal(t, "nightly", result[0].Version)
+	})
+}

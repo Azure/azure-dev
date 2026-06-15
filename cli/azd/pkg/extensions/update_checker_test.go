@@ -212,6 +212,55 @@ func Test_UpdateChecker_PrereleaseVersions(t *testing.T) {
 	require.True(t, result.HasUpdate)
 }
 
+func Test_UpdateChecker_AlphaChannelMatching(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", tempDir)
+
+	cacheManager, err := NewRegistryCacheManager()
+	require.NoError(t, err)
+
+	ctx := t.Context()
+	sourceName := "test-source"
+
+	extensions := []*ExtensionMetadata{
+		{
+			Id:          "test.extension",
+			DisplayName: "Test Extension",
+			Versions: []ExtensionVersion{
+				{Version: "0.9.0-preview.1"},
+				{Version: "0.10.0-alpha.202502010000"},
+			},
+		},
+	}
+	err = cacheManager.Set(ctx, sourceName, extensions)
+	require.NoError(t, err)
+
+	updateChecker := NewUpdateChecker(cacheManager)
+
+	// A preview install must NOT be nudged toward an alpha build; the alpha is
+	// filtered out so the only candidate is the already-installed preview.
+	previewExt := &Extension{
+		Id:      "test.extension",
+		Version: "0.9.0-preview.1",
+		Source:  sourceName,
+	}
+	result, err := updateChecker.CheckForUpdate(ctx, previewExt)
+	require.NoError(t, err)
+	require.False(t, result.HasUpdate)
+	require.Equal(t, "0.9.0-preview.1", result.LatestVersion)
+
+	// An alpha install stays on the alpha channel and is offered the newer alpha.
+	alphaExt := &Extension{
+		Id:      "test.extension",
+		Version: "0.9.0-alpha.202501010000",
+		Source:  sourceName,
+	}
+	result, err = updateChecker.CheckForUpdate(ctx, alphaExt)
+	require.NoError(t, err)
+	require.True(t, result.HasUpdate)
+	require.Equal(t, "0.10.0-alpha.202502010000", result.LatestVersion)
+}
+
 func Test_UpdateChecker_InvalidVersions(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", tempDir)

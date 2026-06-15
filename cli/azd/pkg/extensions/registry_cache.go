@@ -167,28 +167,41 @@ func (m *RegistryCacheManager) Set(
 	return nil
 }
 
+// GetExtensionVersions finds an extension in the cache and returns all of its known versions.
+func (m *RegistryCacheManager) GetExtensionVersions(
+	ctx context.Context,
+	sourceName string,
+	extensionId string,
+) ([]ExtensionVersion, error) {
+	cache, err := m.Get(ctx, sourceName)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, ext := range cache.Extensions {
+		if strings.EqualFold(ext.Id, extensionId) {
+			if len(ext.Versions) == 0 {
+				return nil, fmt.Errorf("extension %s has no versions", extensionId)
+			}
+			return ext.Versions, nil
+		}
+	}
+
+	return nil, fmt.Errorf("extension %s not found in cache", extensionId)
+}
+
 // GetExtensionLatestVersion finds an extension in the cache and returns its latest version
 func (m *RegistryCacheManager) GetExtensionLatestVersion(
 	ctx context.Context,
 	sourceName string,
 	extensionId string,
 ) (string, error) {
-	cache, err := m.Get(ctx, sourceName)
+	versions, err := m.GetExtensionVersions(ctx, sourceName, extensionId)
 	if err != nil {
 		return "", err
 	}
 
-	for _, ext := range cache.Extensions {
-		if strings.EqualFold(ext.Id, extensionId) {
-			if len(ext.Versions) == 0 {
-				return "", fmt.Errorf("extension %s has no versions", extensionId)
-			}
-			latest := LatestVersion(ext.Versions)
-			return latest.Version, nil
-		}
-	}
-
-	return "", fmt.Errorf("extension %s not found in cache", extensionId)
+	return LatestVersion(versions).Version, nil
 }
 
 // IsExpiredOrMissing checks if cache for a source needs refresh

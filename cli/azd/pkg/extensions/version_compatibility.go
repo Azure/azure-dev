@@ -117,6 +117,20 @@ func FilterCompatibleVersions(
 	return result
 }
 
+// IsPreReleaseChannel reports whether version's semver pre-release identifier
+// starts with channel. For example, IsPreReleaseChannel("0.1.0-alpha.1", "alpha")
+// returns true. Returns false when version cannot be parsed as semver or channel is empty.
+func IsPreReleaseChannel(version, channel string) bool {
+	if channel == "" {
+		return false
+	}
+	sv, err := semver.NewVersion(version)
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(sv.Prerelease(), channel)
+}
+
 // ExcludePreReleaseChannel returns a copy of versions with all entries whose
 // semver pre-release identifier starts with channel removed.
 // For example, ExcludePreReleaseChannel(versions, "alpha") drops all alpha nightly builds.
@@ -125,8 +139,7 @@ func FilterCompatibleVersions(
 func ExcludePreReleaseChannel(versions []ExtensionVersion, channel string) []ExtensionVersion {
 	result := make([]ExtensionVersion, 0, len(versions))
 	for _, v := range versions {
-		sv, err := semver.NewVersion(v.Version)
-		if err != nil || !strings.HasPrefix(sv.Prerelease(), channel) {
+		if !IsPreReleaseChannel(v.Version, channel) {
 			result = append(result, v)
 		}
 	}

@@ -24,6 +24,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -496,6 +497,24 @@ func contentTypeForBody(data []byte) string {
 	return "text/plain"
 }
 
+// printInvokeTiming prints a green timing line to stdout showing the total
+// response time and time-to-first-byte (TTFB). Only call on success paths;
+// failures should not display timing to avoid confusion.
+//
+// Output format:
+//
+//	Server responded in 6.667s (first byte: 1.111s)
+func printInvokeTiming(w io.Writer, total, ttfb time.Duration) {
+	_, _ = color.New(color.FgGreen).Fprintf(w, "\nServer responded in %s (first byte: %s)\n",
+		formatDuration(total), formatDuration(ttfb))
+}
+
+// formatDuration formats a duration for display in timing output.
+// Always uses seconds with 3 decimal places for consistency.
+func formatDuration(d time.Duration) string {
+	return fmt.Sprintf("%.3fs", d.Seconds())
+}
+
 func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	port := a.flags.port
 
@@ -568,6 +587,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	}
 
 	client := &http.Client{Timeout: a.httpTimeout()}
+	invokeStart := time.Now()
 	resp, err := client.Do(req) //nolint:gosec // G704: URL targets localhost with user-configured port
 	if err != nil {
 		return fmt.Errorf(
@@ -575,6 +595,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 			port,
 		)
 	}
+	ttfb := time.Since(invokeStart)
 	defer resp.Body.Close()
 
 	if raw {
@@ -595,6 +616,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
 	}
+	totalDuration := time.Since(invokeStart)
 
 	if resp.StatusCode >= 400 {
 		if traceID := responseTraceID(resp); traceID != "" {
@@ -611,6 +633,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		// Not JSON -- just print raw response
 		fmt.Println(string(respBody))
+		printInvokeTiming(os.Stdout, totalDuration, ttfb)
 		a.emitInvokeSuccessNextStep(nextstep.InvokeLocal, "")
 		return nil
 	}
@@ -618,6 +641,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	if err := printAgentResponse(result, "local"); err != nil {
 		return err
 	}
+	printInvokeTiming(os.Stdout, totalDuration, ttfb)
 	a.emitInvokeSuccessNextStep(nextstep.InvokeLocal, "")
 	return nil
 }
@@ -963,11 +987,13 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	client := &http.Client{Timeout: a.httpTimeout()}
+	invokeStart := time.Now()
 	//nolint:gosec // G704: URL is built from a validated Foundry endpoint (env or --agent-endpoint)
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("POST %s failed: %w", respURL, err)
 	}
+	ttfb := time.Since(invokeStart)
 	defer resp.Body.Close()
 
 	// Always capture session state from response headers (needed even in raw mode
@@ -1005,6 +1031,8 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	if err := readSSEStream(resp.Body, rc.name); err != nil {
 		return err
 	}
+	totalDuration := time.Since(invokeStart)
+	printInvokeTiming(os.Stdout, totalDuration, ttfb)
 	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
 	return nil
 }
@@ -1084,6 +1112,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	}
 
 	client := &http.Client{Timeout: a.httpTimeout()}
+	invokeStart := time.Now()
 	resp, err := client.Do(req) //nolint:gosec // G704: URL targets localhost with user-configured port
 	if err != nil {
 		return fmt.Errorf(
@@ -1091,6 +1120,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 			port,
 		)
 	}
+	ttfb := time.Since(invokeStart)
 	defer resp.Body.Close()
 
 	// Print the invocation ID if the agent returned one.
@@ -1107,7 +1137,9 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		}
 		return err
 	}
+	totalDuration := time.Since(invokeStart)
 	if !raw {
+		printInvokeTiming(os.Stdout, totalDuration, ttfb)
 		a.emitInvokeSuccessNextStep(nextstep.InvokeLocal, agentName)
 	}
 	return nil
@@ -1191,11 +1223,13 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 
 	client := &http.Client{Timeout: a.httpTimeout()}
+	invokeStart := time.Now()
 	//nolint:gosec // G704: URL is built from a validated Foundry endpoint (env or --agent-endpoint)
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("POST %s failed: %w", invURL, err)
 	}
+	ttfb := time.Since(invokeStart)
 	defer resp.Body.Close()
 
 	// Print the invocation ID if the agent returned one. We do not persist it
@@ -1241,7 +1275,9 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		}
 		return err
 	}
+	totalDuration := time.Since(invokeStart)
 	if !raw {
+		printInvokeTiming(os.Stdout, totalDuration, ttfb)
 		a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
 	}
 	return nil

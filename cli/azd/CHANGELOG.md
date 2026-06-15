@@ -8,7 +8,7 @@
 
 ### Bugs Fixed
 
-- [[#8648]](https://github.com/Azure/azure-dev/pull/8648) Fix interactive prompts (for example the `azd init` environment-name prompt) rendering twice on Windows terminals by rendering prompts with azd's own UX components instead of the archived survey library.
+- [[#8649]](https://github.com/Azure/azure-dev/pull/8649) Fix interactive prompts (for example the `azd init` environment-name prompt) rendering twice on Windows terminals by rendering prompts with azd's own UX components instead of the archived survey library.
 
 ### Other Changes
 

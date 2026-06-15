@@ -112,6 +112,9 @@ type ValidationManager struct {
 	instances map[validationCheckKey]ValidationCheckProvider
 	// cachedContexts maps context_id to assembled context data.
 	cachedContexts map[string]*ValidationContext
+	// contextRefCounts tracks the number of pending checks for each context_id.
+	// When the count reaches zero, the context is evicted.
+	contextRefCounts map[string]int
 	// assemblers maps context_id to in-progress chunk assemblers.
 	assemblers map[string]*contextAssembler
 
@@ -125,13 +128,14 @@ func NewValidationManager(
 	brokerLogger *log.Logger,
 ) *ValidationManager {
 	return &ValidationManager{
-		extensionId:    extensionId,
-		client:         client,
-		brokerLogger:   brokerLogger,
-		factories:      make(map[validationCheckKey]ValidationCheckProviderFactory),
-		instances:      make(map[validationCheckKey]ValidationCheckProvider),
-		cachedContexts: make(map[string]*ValidationContext),
-		assemblers:     make(map[string]*contextAssembler),
+		extensionId:      extensionId,
+		client:           client,
+		brokerLogger:     brokerLogger,
+		factories:        make(map[validationCheckKey]ValidationCheckProviderFactory),
+		instances:        make(map[validationCheckKey]ValidationCheckProvider),
+		cachedContexts:   make(map[string]*ValidationContext),
+		contextRefCounts: make(map[string]int),
+		assemblers:       make(map[string]*contextAssembler),
 	}
 }
 
@@ -391,10 +395,13 @@ func (m *ValidationManager) onValidationCheck(
 		)
 	}
 
-	// Look up cached context
-	m.mu.RLock()
+	// Look up cached context and increment ref count on first access
+	m.mu.Lock()
 	valCtx := m.cachedContexts[req.GetContextId()]
-	m.mu.RUnlock()
+	if valCtx != nil {
+		m.contextRefCounts[req.GetContextId()]++
+	}
+	m.mu.Unlock()
 
 	if valCtx == nil {
 		valCtx = &ValidationContext{
@@ -412,12 +419,14 @@ func (m *ValidationManager) onValidationCheck(
 		)
 	}
 
-	// Evict cached context after the check completes to prevent unbounded growth.
-	// The context data has been consumed; if another check for the same context_id
-	// arrives, it will still work (with an empty context) but this shouldn't happen
-	// since core sends a fresh context for each dispatch cycle.
+	// Decrement ref count and evict when no more checks reference this context.
 	m.mu.Lock()
-	delete(m.cachedContexts, req.GetContextId())
+	contextID := req.GetContextId()
+	m.contextRefCounts[contextID]--
+	if m.contextRefCounts[contextID] <= 0 {
+		delete(m.cachedContexts, contextID)
+		delete(m.contextRefCounts, contextID)
+	}
 	m.mu.Unlock()
 
 	return &ValidationMessage{

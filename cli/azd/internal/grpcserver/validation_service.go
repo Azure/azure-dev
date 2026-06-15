@@ -229,12 +229,6 @@ func (s *ValidationService) DispatchChecks(
 		return nil, nil, nil
 	}
 
-	// Collect invoked rule IDs for telemetry
-	invokedRuleIDs := make([]string, 0, len(matching))
-	for _, e := range matching {
-		invokedRuleIDs = append(invokedRuleIDs, e.RuleID)
-	}
-
 	// Group checks by broker (extension). Each extension shares one broker.
 	type brokerGroup struct {
 		broker  *grpcbroker.MessageBroker[azdext.ValidationMessage]
@@ -252,10 +246,11 @@ func (s *ValidationService) DispatchChecks(
 	}
 
 	var (
-		allResults []*azdext.ValidationCheckResult
-		mu         sync.Mutex
-		wg         sync.WaitGroup
-		errs       []error
+		allResults     []*azdext.ValidationCheckResult
+		invokedRuleIDs []string
+		mu             sync.Mutex
+		wg             sync.WaitGroup
+		errs           []error
 	)
 
 	for _, group := range groups {
@@ -299,6 +294,11 @@ func (s *ValidationService) DispatchChecks(
 				}
 
 				resp, err := e.Broker.SendAndWait(ctx, req)
+				mu.Lock()
+				// Record as invoked only after successful dispatch
+				invokedRuleIDs = append(invokedRuleIDs, e.RuleID)
+				mu.Unlock()
+
 				if err != nil {
 					mu.Lock()
 					errs = append(errs, fmt.Errorf(

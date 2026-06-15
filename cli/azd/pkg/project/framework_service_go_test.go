@@ -268,3 +268,54 @@ func Test_GoProject_Package_NoBuildOutput(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no build output found")
 }
+
+func Test_GoProject_Package_MissingHostJSON(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	env := environment.New("test")
+	goCli := golang.NewCli(mockContext.CommandRunner)
+
+	// Use a project dir WITHOUT host.json
+	projectDir := t.TempDir()
+	serviceConfig := createTestServiceConfig(
+		projectDir, AzureFunctionTarget, ServiceLanguageGo,
+	)
+
+	// Create a fake build output directory with app binary
+	buildDir := t.TempDir()
+	err := os.WriteFile(
+		filepath.Join(buildDir, goBinaryName),
+		[]byte("fake-binary"),
+		osutil.PermissionExecutableFile,
+	)
+	require.NoError(t, err)
+
+	goProject := NewGoProject(env, goCli)
+
+	serviceContext := NewServiceContext()
+	serviceContext.Build = ArtifactCollection{
+		{
+			Kind:     ArtifactKindDirectory,
+			Location: buildDir,
+			Metadata: map[string]string{
+				"binaryPath": filepath.Join(buildDir, goBinaryName),
+			},
+		},
+	}
+
+	_, err = logProgress(
+		t,
+		func(p *async.Progress[ServiceProgress]) (
+			*ServicePackageResult, error,
+		) {
+			return goProject.Package(
+				*mockContext.Context,
+				serviceConfig,
+				serviceContext,
+				p,
+			)
+		},
+	)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "host.json not found")
+}

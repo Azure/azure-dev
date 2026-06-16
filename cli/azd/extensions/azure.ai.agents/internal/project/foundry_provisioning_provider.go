@@ -419,7 +419,7 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 ) (*templateSource, error) {
 	if p.onDiskSource == nil && p.onDiskTemplatePresent() {
 		progress("Compiling on-disk Bicep templates...")
-		src, err := loadOnDiskTemplate(ctx, p.projectPath, p.bicepCli(), p.envValues())
+		src, err := loadOnDiskTemplate(ctx, p.projectPath, p.bicepCli(), p.envValues(ctx))
 		if err != nil {
 			return nil, err
 		}
@@ -478,7 +478,7 @@ func (p *FoundryProvisioningProvider) bicepCli() bicepCompiler {
 // to `bicep build-params`. Initialize-resolved values are surfaced under their
 // canonical names so a user's ${AZURE_LOCATION} reference works even before
 // their azd env file persists them.
-func (p *FoundryProvisioningProvider) envValues() map[string]string {
+func (p *FoundryProvisioningProvider) envValues(ctx context.Context) map[string]string {
 	out := map[string]string{
 		envKeySubscriptionID: p.subID,
 		envKeyLocation:       p.location,
@@ -495,7 +495,7 @@ func (p *FoundryProvisioningProvider) envValues() map[string]string {
 	if envClient == nil {
 		return out
 	}
-	resp, err := envClient.GetValues(context.Background(), &azdext.GetEnvironmentRequest{Name: p.envName})
+	resp, err := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: p.envName})
 	if err != nil {
 		log.Printf("[debug] foundry provider: GetValues failed (%s); ${VAR} substitution will use canonical keys only", err)
 		return out

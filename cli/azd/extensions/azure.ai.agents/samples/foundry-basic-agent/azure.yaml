@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/schemas/v1.0/azure.yaml.json
+
+# POC: a single hosted agent on a microsoft.foundry project, deployable end to end
+# with `azd up`. This is the unified shape `azd ai agent init` now produces after the
+# azure.yaml rework: one file, no agent.yaml / agent.manifest.yaml. The agent is declared
+# inline under the service `agents:` array, with model deployments at the project level.
+name: foundry-basic-agent
+
+services:
+  ai:
+    host: microsoft.foundry
+    deployments:
+      - name: gpt-4o-mini
+        model:
+          format: OpenAI
+          name: gpt-4o-mini
+          version: "2024-07-18"
+        sku:
+          name: GlobalStandard
+          capacity: 10
+    agents:
+      - name: basic-agent
+        kind: hosted
+        description: A minimal hosted agent built from Python source.
+        project: src/basic-agent
+        runtime:
+          stack: python
+          version: "3.12"
+        startupCommand: python main.py
+        protocols:
+          - protocol: responses
+            version: "1.0.0"
+        env:
+          FOUNDRY_MODEL_DEPLOYMENT_NAME: gpt-4o-mini
+        container:
+          resources:
+            cpu: "0.5"
+            memory: 1Gi

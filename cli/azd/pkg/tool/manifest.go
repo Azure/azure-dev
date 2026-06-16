@@ -71,9 +71,6 @@ type SkillHost struct {
 	// PluginName is the plugin's short name as reported by the host's
 	// plugin listing (e.g. "azure"). Used by the detector.
 	PluginName string
-	// PluginDirs are user-home-relative directories the detector scans as a
-	// fallback when the host's plugin listing is unavailable or empty.
-	PluginDirs []string
 }
 
 // InstallStrategy describes how to install a tool on a specific platform.
@@ -103,10 +100,6 @@ type InstallStrategy struct {
 	// via git clone when no host CLI is available (e.g.
 	// "https://github.com/microsoft/GitHub-Copilot-for-Azure").
 	GitRepo string
-	// GitSubdir is the subdirectory within the cloned repo that contains the
-	// plugin artifacts (e.g. "plugin"). Only this subtree is relevant at
-	// the install target location.
-	GitSubdir string
 }
 
 // ToolDefinition is the complete metadata for a single tool in the registry.
@@ -364,7 +357,7 @@ func azureMCPServer() *ToolDefinition {
 		Description:   "Model Context Protocol server for Azure resource interaction.",
 		Category:      ToolCategoryServer,
 		Priority:      ToolPriorityOptional,
-		Website:       "https://github.com/Azure/azure-mcp",
+		Website:       "https://github.com/microsoft/mcp",
 		DetectCommand: "npm",
 		VersionArgs:   []string{"list", "-g", "@azure/mcp", "--json"},
 		VersionRegex:  `"@azure/mcp":\s*\{\s*"version":\s*"(\d+\.\d+\.\d+(?:-[^"]*)?)"`,
@@ -397,33 +390,45 @@ func azureSkills() *ToolDefinition {
 		Id:   "azure-skills",
 		Name: "Azure Skills",
 		Description: "Azure skills for AI coding assistants. " +
-			"Skill that streamlines the process of developing for Azure for Copilot CLI, Claude Code, " +
-			"VS Code, and other clients.",
+			"Provides skills and MCP server configurations for Azure scenarios.",
 		Category: ToolCategorySkill,
 		Priority: ToolPriorityRecommended,
-		Website:  "https://github.com/microsoft/GitHub-Copilot-for-Azure",
+		Website:  "https://github.com/microsoft/azure-skills",
 		InstallStrategies: allPlatforms(InstallStrategy{
 			SkillHosts: []SkillHost{
 				{
 					Host:                   "copilot",
-					MarketplaceAddCommand:  []string{"/plugin", "marketplace", "add", "microsoft/azure-skills"},
-					PluginInstallCommand:   []string{"/plugin", "install", "azure@azure-skills"},
-					PluginUpdateCommand:    []string{"/plugin", "update", "azure@azure-skills"},
-					PluginUninstallCommand: []string{"/plugin", "uninstall", "azure@azure-skills"},
+					MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
+					PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
+					PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
+					PluginUninstallCommand: []string{"plugin", "uninstall", "azure"},
 					PluginName:             "azure",
-					PluginDirs:             []string{".copilot/installed-plugins"},
 				},
 				{
 					Host:                   "claude",
-					PluginInstallCommand:   []string{"/plugin", "install", "azure@claude-plugins-official"},
-					PluginUpdateCommand:    []string{"/plugin", "update", "azure@claude-plugins-official"},
-					PluginUninstallCommand: []string{"/plugin", "uninstall", "azure@claude-plugins-official"},
+					MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "https://github.com/microsoft/azure-skills"},
+					PluginInstallCommand:   []string{"plugin", "install", "azure"},
+					PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
+					PluginUninstallCommand: []string{"plugin", "uninstall", "azure"},
 					PluginName:             "azure",
-					PluginDirs:             []string{".claude/plugins"},
+				},
+				{
+					Host:                   "gemini",
+					PluginInstallCommand:   []string{"extensions", "install", "https://github.com/microsoft/azure-skills"},
+					PluginUpdateCommand:    []string{"extensions", "update", "azure"},
+					PluginUninstallCommand: []string{"extensions", "uninstall", "azure"},
+					PluginName:             "azure",
+				},
+				{
+					Host:                   "codex",
+					MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
+					PluginInstallCommand:   []string{"plugin", "add", "azure@azure-skills"},
+					PluginUpdateCommand:    []string{"plugin", "marketplace", "upgrade", "azure-skills"}, // need to run PluginInstallCommand again
+					PluginUninstallCommand: []string{"plugin", "remove", "azure@azure-skills"},
+					PluginName:             "azure@azure-skills",
 				},
 			},
-			GitRepo:   "https://github.com/microsoft/GitHub-Copilot-for-Azure",
-			GitSubdir: "plugin",
+			GitRepo: "https://github.com/microsoft/azure-skills",
 		}),
 		Dependencies: []string{"git", "nodejs"},
 	}

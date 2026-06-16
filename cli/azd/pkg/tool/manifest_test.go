@@ -17,7 +17,7 @@ func TestBuiltInTools(t *testing.T) {
 		t.Parallel()
 
 		tools := BuiltInTools()
-		require.Len(t, tools, 7, "expected 7 built-in tools")
+		require.Len(t, tools, 10, "expected 10 built-in tools")
 	})
 
 	t.Run("ContainsAllExpectedToolIDs", func(t *testing.T) {
@@ -26,11 +26,14 @@ func TestBuiltInTools(t *testing.T) {
 		expectedIDs := []string{
 			"az-cli",
 			"github-copilot-cli",
+			"git",
+			"nodejs",
 			"vscode-azure-tools",
 			"vscode-bicep",
 			"GitHub.copilot-chat",
 			"azure-mcp-server",
 			"azure.ai.agents",
+			"azure-skills",
 		}
 
 		tools := BuiltInTools()
@@ -70,8 +73,10 @@ func TestBuiltInTools(t *testing.T) {
 				"tool %q must have a Description", tool.Id)
 			assert.NotEmpty(t, tool.Category,
 				"tool %q must have a Category", tool.Id)
-			assert.NotEmpty(t, tool.DetectCommand,
-				"tool %q must have a DetectCommand", tool.Id)
+			if tool.Category != ToolCategorySkill {
+				assert.NotEmpty(t, tool.DetectCommand,
+					"tool %q must have a DetectCommand", tool.Id)
+			}
 		}
 	})
 
@@ -83,6 +88,8 @@ func TestBuiltInTools(t *testing.T) {
 			ToolCategoryVSCodeExtension: true,
 			ToolCategoryServer:          true,
 			ToolCategoryAzdExtension:    true,
+			ToolCategoryRuntime:         true,
+			ToolCategorySkill:           true,
 		}
 
 		tools := BuiltInTools()
@@ -266,8 +273,10 @@ func TestFindToolsByCategory(t *testing.T) {
 		ext := FindToolsByCategory(ToolCategoryVSCodeExtension)
 		srv := FindToolsByCategory(ToolCategoryServer)
 		lib := FindToolsByCategory(ToolCategoryAzdExtension)
+		rt := FindToolsByCategory(ToolCategoryRuntime)
+		skills := FindToolsByCategory(ToolCategorySkill)
 
-		total := len(cli) + len(ext) + len(srv) + len(lib)
+		total := len(cli) + len(ext) + len(srv) + len(lib) + len(rt) + len(skills)
 		assert.Equal(t, len(allTools), total,
 			"sum of categorised tools must equal total")
 	})

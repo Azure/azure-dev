@@ -25,6 +25,11 @@ const (
 	ToolCategoryServer ToolCategory = "server"
 	// ToolCategoryAzdExtension is an azd extension installed via `azd extension install`.
 	ToolCategoryAzdExtension ToolCategory = "azd-extension"
+	// ToolCategoryRuntime is a language runtime or execution environment (e.g. Node.js).
+	ToolCategoryRuntime ToolCategory = "runtime"
+	// ToolCategorySkill is a skill hosted by an agent CLI (e.g. Copilot CLI,
+	// Claude Code) or installed directly via git clone from a skills repo.
+	ToolCategorySkill ToolCategory = "skill"
 )
 
 // ToolPriority indicates how strongly a tool is recommended.
@@ -43,6 +48,32 @@ type Checksum struct {
 	Algorithm string
 	// Value is the hex-encoded checksum to compare against.
 	Value string
+}
+
+// SkillHost describes how a single agent CLI host (e.g. GitHub Copilot CLI,
+// Claude Code) installs, updates, and uninstalls a skill. Skill
+// tools carry one or more SkillHost entries; the installer picks the first
+// host whose binary is on PATH.
+type SkillHost struct {
+	// Host is the binary name of the agent CLI (e.g. "copilot", "claude").
+	Host string
+	// MarketplaceAddCommand is the optional one-time command that registers
+	// the plugin marketplace with the host (e.g. ["/plugin", "marketplace",
+	// "add", "microsoft/azure-skills"]). Empty when not required.
+	MarketplaceAddCommand []string
+	// PluginInstallCommand installs the plugin via the host
+	// (e.g. ["/plugin", "install", "azure@azure-skills"]).
+	PluginInstallCommand []string
+	// PluginUpdateCommand updates the plugin to its latest version.
+	PluginUpdateCommand []string
+	// PluginUninstallCommand removes the plugin from the host.
+	PluginUninstallCommand []string
+	// PluginName is the plugin's short name as reported by the host's
+	// plugin listing (e.g. "azure"). Used by the detector.
+	PluginName string
+	// PluginDirs are user-home-relative directories the detector scans as a
+	// fallback when the host's plugin listing is unavailable or empty.
+	PluginDirs []string
 }
 
 // InstallStrategy describes how to install a tool on a specific platform.
@@ -64,6 +95,18 @@ type InstallStrategy struct {
 	Checksum Checksum
 	// FallbackUrl points to manual installation instructions.
 	FallbackUrl string
+	// SkillHosts describes the agent CLI hosts that can install this tool
+	// when Category == ToolCategorySkill. Hosts are evaluated in order;
+	// the first one whose binary is on PATH is used. Ignored for other categories.
+	SkillHosts []SkillHost
+	// GitRepo is the repository URL used to install a skill directly
+	// via git clone when no host CLI is available (e.g.
+	// "https://github.com/microsoft/GitHub-Copilot-for-Azure").
+	GitRepo string
+	// GitSubdir is the subdirectory within the cloned repo that contains the
+	// plugin artifacts (e.g. "plugin"). Only this subtree is relevant at
+	// the install target location.
+	GitSubdir string
 }
 
 // ToolDefinition is the complete metadata for a single tool in the registry.
@@ -125,6 +168,8 @@ func FindToolsByCategory(category ToolCategory) []*ToolDefinition {
 // builtInTools is the canonical, read-only manifest of tools known to azd.
 // Use [BuiltInTools] to obtain a safe copy.
 var builtInTools = []*ToolDefinition{
+	git(),
+	nodejs(),
 	azCLI(),
 	githubCopilotCLI(),
 	vscodeAzureTools(),
@@ -132,12 +177,70 @@ var builtInTools = []*ToolDefinition{
 	vscodeGitHubCopilot(),
 	azureMCPServer(),
 	azdAIExtensions(),
+	azureSkills(),
 }
 
 // ---------------------------------------------------------------------------
 // Individual tool constructors – one function per tool keeps the manifest
 // readable without one huge composite literal.
 // ---------------------------------------------------------------------------
+
+func git() *ToolDefinition {
+	return &ToolDefinition{
+		Id:            "git",
+		Name:          "Git",
+		Description:   "Distributed version control system. Required for skill installation.",
+		Category:      ToolCategoryCLI,
+		Priority:      ToolPriorityRecommended,
+		Website:       "https://git-scm.com/",
+		DetectCommand: "git",
+		VersionArgs:   []string{"--version"},
+		VersionRegex:  `git version (\d+\.\d+\.\d+)`,
+		InstallStrategies: map[string]InstallStrategy{
+			"windows": {
+				PackageManager: "winget",
+				PackageId:      "Git.Git",
+			},
+			"darwin": {
+				PackageManager: "brew",
+				PackageId:      "git",
+			},
+			"linux": {
+				PackageManager: "apt",
+				PackageId:      "git",
+			},
+		},
+	}
+}
+
+func nodejs() *ToolDefinition {
+	return &ToolDefinition{
+		Id:            "nodejs",
+		Name:          "Node.js",
+		Description:   "JavaScript runtime environment. Required for the Azure MCP server (npx).",
+		Category:      ToolCategoryRuntime,
+		Priority:      ToolPriorityRecommended,
+		Website:       "https://nodejs.org/",
+		DetectCommand: "node",
+		VersionArgs:   []string{"--version"},
+		VersionRegex:  `v(\d+\.\d+\.\d+)`,
+		InstallStrategies: map[string]InstallStrategy{
+			"windows": {
+				PackageManager: "winget",
+				PackageId:      "OpenJS.NodeJS",
+			},
+			"darwin": {
+				PackageManager: "brew",
+				PackageId:      "node",
+			},
+			"linux": {
+				PackageManager: "apt",
+				PackageId:      "nodejs",
+				FallbackUrl:    "https://nodejs.org/download/",
+			},
+		},
+	}
+}
 
 func azCLI() *ToolDefinition {
 	return &ToolDefinition{
@@ -286,6 +389,43 @@ func azdAIExtensions() *ToolDefinition {
 		InstallStrategies: allPlatforms(InstallStrategy{
 			InstallCommand: "azd extension install azure.ai.agents --source azd",
 		}),
+	}
+}
+
+func azureSkills() *ToolDefinition {
+	return &ToolDefinition{
+		Id:   "azure-skills",
+		Name: "Azure Skills",
+		Description: "Azure skills for AI coding assistants. " +
+			"Skill that streamlines the process of developing for Azure for Copilot CLI, Claude Code, " +
+			"VS Code, and other clients.",
+		Category: ToolCategorySkill,
+		Priority: ToolPriorityRecommended,
+		Website:  "https://github.com/microsoft/GitHub-Copilot-for-Azure",
+		InstallStrategies: allPlatforms(InstallStrategy{
+			SkillHosts: []SkillHost{
+				{
+					Host:                   "copilot",
+					MarketplaceAddCommand:  []string{"/plugin", "marketplace", "add", "microsoft/azure-skills"},
+					PluginInstallCommand:   []string{"/plugin", "install", "azure@azure-skills"},
+					PluginUpdateCommand:    []string{"/plugin", "update", "azure@azure-skills"},
+					PluginUninstallCommand: []string{"/plugin", "uninstall", "azure@azure-skills"},
+					PluginName:             "azure",
+					PluginDirs:             []string{".copilot/installed-plugins"},
+				},
+				{
+					Host:                   "claude",
+					PluginInstallCommand:   []string{"/plugin", "install", "azure@claude-plugins-official"},
+					PluginUpdateCommand:    []string{"/plugin", "update", "azure@claude-plugins-official"},
+					PluginUninstallCommand: []string{"/plugin", "uninstall", "azure@claude-plugins-official"},
+					PluginName:             "azure",
+					PluginDirs:             []string{".claude/plugins"},
+				},
+			},
+			GitRepo:   "https://github.com/microsoft/GitHub-Copilot-for-Azure",
+			GitSubdir: "plugin",
+		}),
+		Dependencies: []string{"git", "nodejs"},
 	}
 }
 

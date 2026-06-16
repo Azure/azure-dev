@@ -224,6 +224,18 @@ func (p *FoundryServiceTargetProvider) Deploy(
 		)
 	}
 
+	// Reject an insecure or non-Foundry endpoint (http, foreign host, explicit
+	// port, or a partially expanded ${VAR}) before using it to construct an
+	// authenticated AgentClient.
+	if _, err := validateFoundryEndpoint(azdEnv["FOUNDRY_PROJECT_ENDPOINT"]); err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("FOUNDRY_PROJECT_ENDPOINT is not a valid Foundry project endpoint: %v", err),
+			"set 'endpoint:' (or FOUNDRY_PROJECT_ENDPOINT) to an https Foundry project URL, "+
+				"e.g. https://<account>.services.ai.azure.com/api/projects/<project>",
+		)
+	}
+
 	request, protocols, err := p.buildAgentRequest(azdEnv)
 	if err != nil {
 		return nil, err

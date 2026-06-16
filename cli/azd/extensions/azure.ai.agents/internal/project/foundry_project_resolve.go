@@ -24,24 +24,47 @@ const foundryProjectResourceType = "Microsoft.CognitiveServices/accounts/project
 // foundryEndpointHostSuffix is the host suffix of a Foundry project endpoint.
 const foundryEndpointHostSuffix = ".services.ai.azure.com"
 
-// parseFoundryEndpoint extracts the account and project names from a Foundry
-// project endpoint of the form
-// https://<account>.services.ai.azure.com/api/projects/<project>.
-func parseFoundryEndpoint(endpoint string) (account string, project string, err error) {
+// validateFoundryEndpoint enforces the transport rules every Foundry data-plane
+// caller relies on: a non-empty https URL on a recognized Foundry host with no
+// explicit port. Rejecting http, foreign hosts, and ports up front avoids
+// sending credentials to an unexpected endpoint and catches a partially
+// expanded ${VAR} that would otherwise leave an invalid host. It returns the
+// parsed URL so callers can extract additional structure without re-parsing.
+func validateFoundryEndpoint(endpoint string) (*url.URL, error) {
 	trimmed := strings.TrimSpace(endpoint)
 	if trimmed == "" {
-		return "", "", fmt.Errorf("endpoint is empty")
+		return nil, fmt.Errorf("endpoint is empty")
 	}
 
 	parsed, err := url.Parse(trimmed)
 	if err != nil {
-		return "", "", fmt.Errorf("invalid endpoint %q: %w", endpoint, err)
+		return nil, fmt.Errorf("invalid endpoint %q: %w", endpoint, err)
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return nil, fmt.Errorf("endpoint %q must use https", endpoint)
 	}
 
 	host := parsed.Hostname()
 	if !strings.HasSuffix(strings.ToLower(host), foundryEndpointHostSuffix) {
-		return "", "", fmt.Errorf("endpoint host %q is not a Foundry project endpoint", host)
+		return nil, fmt.Errorf("endpoint host %q is not a Foundry project endpoint", host)
 	}
+	if parsed.Port() != "" {
+		return nil, fmt.Errorf("endpoint %q must not include a port", endpoint)
+	}
+
+	return parsed, nil
+}
+
+// parseFoundryEndpoint extracts the account and project names from a Foundry
+// project endpoint of the form
+// https://<account>.services.ai.azure.com/api/projects/<project>.
+func parseFoundryEndpoint(endpoint string) (account string, project string, err error) {
+	parsed, err := validateFoundryEndpoint(endpoint)
+	if err != nil {
+		return "", "", err
+	}
+
+	host := parsed.Hostname()
 	account = host[:len(host)-len(foundryEndpointHostSuffix)]
 	if account == "" {
 		return "", "", fmt.Errorf("endpoint %q is missing the account name", endpoint)

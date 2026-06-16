@@ -338,7 +338,7 @@ func (s *ValidationService) DispatchChecks(
 
 // sendContextChunks delivers context data to an extension in chunks.
 // Each key's data is split into chunks of validationContextChunkSize.
-// The extension acks with PrepareValidationContextResponse after the
+// The extension acknowledges with PrepareValidationContextResponse after the
 // final chunk (is_last_key=true).
 func sendContextChunks(
 	ctx context.Context,
@@ -348,7 +348,7 @@ func sendContextChunks(
 	contextData map[string][]byte,
 ) error {
 	keys := slices.Sorted(maps.Keys(contextData))
-	totalKeys := len(keys)
+	totalKeys := int32(len(keys)) //nolint:gosec // map length is always small
 
 	totalSize := 0
 	for _, v := range contextData {
@@ -361,7 +361,7 @@ func sendContextChunks(
 
 	for keyIdx, key := range keys {
 		data := contextData[key]
-		isLastKey := keyIdx == totalKeys-1
+		isLastKey := int32(keyIdx) == totalKeys-1 //nolint:gosec // keyIdx bounded by map length
 
 		// Handle empty data as a single zero-length chunk
 		if len(data) == 0 {
@@ -376,7 +376,7 @@ func sendContextChunks(
 						ChunkIndex:  0,
 						IsLastChunk: true,
 						IsLastKey:   isLastKey,
-						TotalKeys:   int32(totalKeys),
+						TotalKeys:   totalKeys,
 					},
 				},
 			}
@@ -409,7 +409,7 @@ func sendContextChunks(
 						ChunkIndex:  chunkIndex,
 						IsLastChunk: isLastChunk,
 						IsLastKey:   isLastKey && isLastChunk,
-						TotalKeys:   int32(totalKeys),
+						TotalKeys:   totalKeys,
 					},
 				},
 			}

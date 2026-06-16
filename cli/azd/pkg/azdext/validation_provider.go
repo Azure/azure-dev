@@ -94,7 +94,7 @@ func (c *ValidationContext) EnvLocation() (string, bool) {
 }
 
 // ValidationCheckProvider is the extension-side interface for a validation check.
-// Extensions implement this to provide custom checks that run during azd's
+// Extensions implement this to provide custom checks that run during the azd
 // validation pipeline (e.g. local-preflight during provisioning).
 type ValidationCheckProvider interface {
 	// Validate runs the check against the provided context and returns results.

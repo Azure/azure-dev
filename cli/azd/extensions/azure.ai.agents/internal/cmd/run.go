@@ -584,7 +584,7 @@ func installPythonDeps(projectDir string) error {
 	venvDir := filepath.Join(projectDir, ".venv")
 	if _, err := os.Stat(venvDir); os.IsNotExist(err) {
 		fmt.Println("Setting up Python environment...")
-		cmd := exec.Command("uv", "venv", venvDir, "--python", ">=3.12") //nolint:gosec // G204: venvDir is derived from the project directory path
+		cmd := exec.Command("uv", "venv", venvDir, "--python", ">=3.13") //nolint:gosec // G204: venvDir is derived from the project directory path
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

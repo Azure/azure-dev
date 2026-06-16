@@ -2128,7 +2128,7 @@ func selectDistinctExtension(
 		return matches[0], nil
 	}
 
-	if global.NoPrompt {
+	if global != nil && global.NoPrompt {
 		return nil, &internal.ErrorWithSuggestion{
 			Err:        fmt.Errorf("the %s extension was found in multiple sources.", extensionId),
 			Suggestion: "Specify the extension source using the --source flag.",
@@ -2150,7 +2150,8 @@ func selectDistinctExtension(
 			"The %s extension was found in multiple sources.\nSelect the source to continue",
 			output.WithHighLightFormat(extensionId),
 		),
-		Choices: sourceChoices,
+		Choices:       sourceChoices,
+		SelectedIndex: defaultExtensionSourceIndex(matches),
 	})
 
 	sourceResponseIndex, err := selectSource.Ask(ctx)
@@ -2161,6 +2162,16 @@ func selectDistinctExtension(
 	console.Message(ctx, "")
 
 	return matches[*sourceResponseIndex], nil
+}
+
+func defaultExtensionSourceIndex(matches []*extensions.ExtensionMetadata) *int {
+	for i, ext := range matches {
+		if strings.EqualFold(ext.Source, "azd") {
+			return new(i)
+		}
+	}
+
+	return new(0)
 }
 
 // checkNamespaceConflict checks if the given namespace conflicts with any installed extension.

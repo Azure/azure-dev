@@ -25,5 +25,5 @@ func hello(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "Azure"
 	}
-	fmt.Fprintf(w, "Hello, %s! Welcome to Go on Azure Functions.", name)
+	fmt.Fprintf(w, "[%s] Hello, %s! Welcome to Go on Azure Functions.", r.Method, name)
 }

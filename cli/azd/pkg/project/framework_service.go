@@ -30,7 +30,10 @@ const (
 )
 
 func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error) {
-	// aliases
+	// Resolve common shorthand aliases that users may write in azure.yaml.
+	// The canonical constants (e.g. "javascript", "typescript") already match what
+	// users typically write, so only languages where a shorter/alternate name is
+	// commonly used need explicit aliases here.
 	if string(kind) == "py" {
 		return ServiceLanguagePython, nil
 	}

@@ -295,12 +295,13 @@ func TestCreateFromDirectory_PreservesUnixPermissions(t *testing.T) {
 
 	// Create a file with execute permission (like a compiled binary)
 	executablePath := filepath.Join(srcDir, "app")
-	err := os.WriteFile(executablePath, []byte("binary-content"), 0755)
+	err := os.WriteFile(executablePath, []byte("binary-content"), 0600) //#nosec G306
 	require.NoError(err)
+	require.NoError(os.Chmod(executablePath, 0755))
 
 	// Create a regular file without execute permission
 	regularPath := filepath.Join(srcDir, "config.json")
-	err = os.WriteFile(regularPath, []byte("{}"), 0644)
+	err = os.WriteFile(regularPath, []byte("{}"), 0600)
 	require.NoError(err)
 
 	// Create zip

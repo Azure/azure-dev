@@ -169,7 +169,12 @@ func (gp *goProject) Package(
 				}
 				binaryRelPath = rel
 			} else {
-				binaryRelPath = bp
+				// Validate relative path doesn't escape the build directory
+				cleaned := filepath.Clean(bp)
+				if strings.HasPrefix(cleaned, "..") {
+					return nil, fmt.Errorf("binaryPath %q escapes the build directory", bp)
+				}
+				binaryRelPath = cleaned
 			}
 		}
 	}

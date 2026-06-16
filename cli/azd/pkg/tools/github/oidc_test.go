@@ -105,6 +105,85 @@ func TestBuildOIDCSubject(t *testing.T) {
 			wantErr: "no claim keys specified",
 		},
 		{
+			name:     "context claim key with IDs for branch",
+			repoSlug: repoSlug,
+			repoInfo: repoInfo,
+			oidcConfig: &OIDCSubjectConfig{
+				UseDefault: false,
+				IncludeClaimKeys: []string{
+					"repository_owner_id",
+					"repository_id",
+					"context",
+				},
+			},
+			suffix: "ref:refs/heads/main",
+			want: "repository_owner_id:1844662:" +
+				"repository_id:599293758:" +
+				"ref:refs/heads/main",
+		},
+		{
+			name:     "context claim key with IDs for pull_request",
+			repoSlug: repoSlug,
+			repoInfo: repoInfo,
+			oidcConfig: &OIDCSubjectConfig{
+				UseDefault: false,
+				IncludeClaimKeys: []string{
+					"repository_owner_id",
+					"repository_id",
+					"context",
+				},
+			},
+			suffix: "pull_request",
+			want: "repository_owner_id:1844662:" +
+				"repository_id:599293758:" +
+				"pull_request",
+		},
+		{
+			name:     "context claim key with environment suffix",
+			repoSlug: repoSlug,
+			repoInfo: repoInfo,
+			oidcConfig: &OIDCSubjectConfig{
+				UseDefault: false,
+				IncludeClaimKeys: []string{
+					"repository_owner_id",
+					"repository_id",
+					"context",
+				},
+			},
+			suffix: "environment:production",
+			want: "repository_owner_id:1844662:" +
+				"repository_id:599293758:" +
+				"environment:production",
+		},
+		{
+			name:     "repo and context produces default format",
+			repoSlug: repoSlug,
+			repoInfo: repoInfo,
+			oidcConfig: &OIDCSubjectConfig{
+				UseDefault: false,
+				IncludeClaimKeys: []string{
+					"repo",
+					"context",
+				},
+			},
+			suffix: "ref:refs/heads/main",
+			want:   "repo:Azure-Samples/my-repo:ref:refs/heads/main",
+		},
+		{
+			name:     "repo claim key without context",
+			repoSlug: repoSlug,
+			repoInfo: repoInfo,
+			oidcConfig: &OIDCSubjectConfig{
+				UseDefault: false,
+				IncludeClaimKeys: []string{
+					"repo",
+				},
+			},
+			suffix: "ref:refs/heads/main",
+			want: "repo:Azure-Samples/my-repo:" +
+				"ref:refs/heads/main",
+		},
+		{
 			name:     "unknown claim key errors",
 			repoSlug: repoSlug,
 			repoInfo: repoInfo,

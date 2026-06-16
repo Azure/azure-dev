@@ -56,7 +56,7 @@ func validateStandaloneEjectArgs(args []string, flags *initFlags) error {
 //   - ./infra/ already exists -> CodeInfraEjectExists
 //
 // On success it prints the summary block and returns nil. It does NOT modify
-// azure.yaml (infra.provider stays azure.ai.agents).
+// azure.yaml; the declared infra.provider is left unchanged.
 func ejectInfra(projectRoot string) error {
 	yamlPath := filepath.Join(projectRoot, "azure.yaml")
 	//nolint:gosec // G304: azure.yaml under the caller-supplied azd project root

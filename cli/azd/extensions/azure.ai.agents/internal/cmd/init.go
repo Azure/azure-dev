@@ -1654,8 +1654,8 @@ func ensureProject(
 				fmt.Printf("%s", output.WithWarningFormat(
 					"No infra/ directory found in the project, and azure.yaml does not declare "+
 						"'infra.provider: %s'. If you need Azure infrastructure for deployment, "+
-						"set that provider in azure.yaml or run "+
-						"'azd ai agent init' in an empty directory first.\n",
+						"set that provider in azure.yaml, or run "+
+						"'azd ai agent init --infra' to generate an infra/ directory.\n",
 					project.FoundryProviderName,
 				))
 			}

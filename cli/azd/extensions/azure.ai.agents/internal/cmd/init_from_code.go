@@ -29,7 +29,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	gitignore "github.com/denormal/go-gitignore"
 	"github.com/fatih/color"
-	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1116,73 +1115,51 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 		}
 	}
 
-	var agentConfig = project.ServiceTargetAgentConfig{}
-
-	// Both code and container modes need container resources for local run
-	agentConfig.Container = &project.ContainerSettings{
-		Resources: &project.ResourceSettings{
-			Memory: project.DefaultMemory,
-			Cpu:    project.DefaultCpu,
-		},
+	in := foundryAgentInput{
+		serviceName:     agentName,
+		agentName:       agentName,
+		kind:            foundryKindHosted,
+		projectPath:     targetDir,
+		isCodeDeploy:    isCodeDeploy,
+		containerCPU:    project.DefaultCpu,
+		containerMemory: project.DefaultMemory,
 	}
 
-	agentConfig.Deployments = a.deploymentDetails
-
-	// Detect startup command (container deploy only; code deploy does not use startupCommand)
-	if !isCodeDeploy {
+	if isCodeDeploy {
+		// Read the runtime + entry point from the on-disk agent definition so the
+		// inline agent carries the right runtime stack and startup command. Skip
+		// manifest filenames: their fields are nested under template:.
+		for _, name := range []string{"agent.yaml", "agent.yml"} {
+			defPath := filepath.Join(a.projectConfig.Path, targetDir, name)
+			data, readErr := os.ReadFile(defPath) //nolint:gosec // path from project config
+			if readErr != nil {
+				continue
+			}
+			var def agent_yaml.ContainerAgent
+			if err := yaml.Unmarshal(data, &def); err == nil && def.CodeConfiguration != nil {
+				in.runtime = def.CodeConfiguration.Runtime
+				in.entryPoint = def.CodeConfiguration.EntryPoint
+			}
+			break
+		}
+	} else {
+		// Detect startup command (container deploy only; code deploy derives the
+		// entry point from the definition's codeConfiguration).
 		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
 		if err != nil {
 			return err
 		}
-		agentConfig.StartupCommand = startupCmd
-	}
-
-	var agentConfigStruct *structpb.Struct
-	var err error
-	if agentConfigStruct, err = project.MarshalStruct(&agentConfig); err != nil {
-		return fmt.Errorf("failed to marshal agent config: %w", err)
-	}
-
-	language := "python"
-	if !isCodeDeploy {
-		language = "docker"
-	} else {
-		// Detect language from the on-disk definition. Skip manifest filenames:
-		// their fields are nested under template: and would not match here.
-		for _, name := range []string{"agent.yaml", "agent.yml"} {
-			langDetectPath := filepath.Join(a.projectConfig.Path, targetDir, name)
-			data, err := os.ReadFile(langDetectPath) //nolint:gosec // path from project config
-			if err != nil {
-				continue
-			}
-			var langDef agent_yaml.ContainerAgent
-			if err := yaml.Unmarshal(data, &langDef); err == nil &&
-				langDef.CodeConfiguration != nil &&
-				strings.HasPrefix(langDef.CodeConfiguration.Runtime, "dotnet_") {
-				language = "csharp"
-			}
-			break
-		}
-	}
-
-	serviceConfig := &azdext.ServiceConfig{
-		Name:         strings.ReplaceAll(agentName, " ", ""),
-		RelativePath: targetDir,
-		Host:         AiAgentHost,
-		Language:     language,
-		Config:       agentConfigStruct,
-	}
-
-	// For hosted container-based agents, set remoteBuild to true by default
-	if !isCodeDeploy {
-		serviceConfig.Docker = &azdext.DockerProjectOptions{
-			RemoteBuild: true,
-		}
+		in.startupCommand = startupCmd
 	}
 
 	// Set AZD_AGENT_SKIP_ACR so Bicep knows whether to create a container registry.
 	// Set before AddService so env state is consistent even if AddService fails.
 	if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, isCodeDeploy); err != nil {
+		return err
+	}
+
+	serviceConfig, err := buildFoundryServiceConfig(in, a.deploymentDetails)
+	if err != nil {
 		return err
 	}
 

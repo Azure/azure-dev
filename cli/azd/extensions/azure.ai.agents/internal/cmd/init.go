@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -38,7 +37,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
@@ -46,7 +44,6 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1459,9 +1456,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return err
 		}
 
-		// Write the final agent.yaml to disk (after deployment names have been injected)
-		if err := writeAgentDefinitionFile(targetDir, agentManifest); err != nil {
-			return fmt.Errorf("writing agent definition: %w", err)
+		// The unified microsoft.foundry shape declares the agent inline in
+		// azure.yaml; no separate agent.yaml is written. Still emit .agentignore
+		// so code-deploy packaging excludes the right files.
+		if err := ensureAgentIgnore(targetDir); err != nil {
+			return fmt.Errorf("writing .agentignore: %w", err)
 		}
 
 		// Add the agent to the azd project (azure.yaml) services
@@ -2488,39 +2487,6 @@ func (a *InitAction) downloadAgentYaml(
 	return agentManifest, targetDir, nil
 }
 
-// writeAgentDefinitionFile writes the agent definition to disk as agent.yaml in targetDir.
-// This should be called after all parameter/deployment injection is complete so the on-disk
-// file has fully resolved values (no `{{...}}` placeholders).
-func writeAgentDefinitionFile(targetDir string, agentManifest *agent_yaml.AgentManifest) error {
-	content, err := yaml.Marshal(agentManifest.Template)
-	if err != nil {
-		return fmt.Errorf("marshaling agent manifest to YAML: %w", err)
-	}
-
-	annotation := "# yaml-language-server: $schema=https://raw.githubusercontent.com/microsoft/AgentSchema/refs/heads/main/schemas/v1.0/ContainerAgent.yaml"
-	agentFileContents := bytes.NewBufferString(annotation + "\n\n")
-	if _, err = agentFileContents.Write(content); err != nil {
-		return fmt.Errorf("preparing agent.yaml file contents: %w", err)
-	}
-
-	filePath := filepath.Join(targetDir, "agent.yaml")
-	if err := os.WriteFile(filePath, agentFileContents.Bytes(), osutil.PermissionFile); err != nil {
-		return fmt.Errorf("saving file to %s: %w", filePath, err)
-	}
-
-	log.Printf("Processed agent.yaml at %s", filePath)
-
-	// Generate .agentignore if it doesn't already exist
-	agentIgnorePath := filepath.Join(targetDir, ".agentignore")
-	if _, err := os.Stat(agentIgnorePath); os.IsNotExist(err) {
-		if err := os.WriteFile(agentIgnorePath, []byte(project.DefaultAgentIgnoreContent()), osutil.PermissionFile); err != nil {
-			return fmt.Errorf("writing .agentignore: %w", err)
-		}
-	}
-
-	return nil
-}
-
 func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest) error {
 	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
 	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.
@@ -2645,34 +2611,45 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		agentConfig.StartupCommand = startupCmd
 	}
 
-	var agentConfigStruct *structpb.Struct
-	if agentConfigStruct, err = project.MarshalStruct(&agentConfig); err != nil {
-		return fmt.Errorf("failed to marshal agent config: %w", err)
+	// Build the unified microsoft.foundry service entry. The agent is declared
+	// inline under the service 'agents:' array and the Foundry keys travel on
+	// AdditionalProperties (not config:), per design spec #8590 §2.1/§2.7.
+	in := foundryAgentInput{
+		serviceName: a.serviceNameOverride,
+		agentName:   agentDef.Name,
+		kind:        foundryKindHosted,
+		projectPath: targetDir,
 	}
-
-	serviceConfig := &azdext.ServiceConfig{
-		Name:         a.serviceNameOverride,
-		RelativePath: targetDir,
-		Host:         AiAgentHost,
-		Language:     "docker",
-		Config:       agentConfigStruct,
+	if agentDef.Kind != agent_yaml.AgentKindHosted {
+		in.kind = foundryKindPrompt
 	}
-
-	// For hosted agents, configure Docker or code deploy settings
-	if agentDef.Kind == agent_yaml.AgentKindHosted {
-		if a.isCodeDeploy {
-			serviceConfig.Language = "python"
-			// If the agent uses a dotnet runtime, set language to csharp
-			if ca, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok &&
-				ca.CodeConfiguration != nil &&
-				strings.HasPrefix(ca.CodeConfiguration.Runtime, "dotnet_") {
-				serviceConfig.Language = "csharp"
-			}
-		} else {
-			serviceConfig.Docker = &azdext.DockerProjectOptions{
-				RemoteBuild: true,
-			}
+	if agentDef.Description != nil {
+		in.description = *agentDef.Description
+	}
+	if ca, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
+		in.env = envVarsToMap(ca.EnvironmentVariables)
+		in.protocols = protocolsToFoundry(ca.Protocols)
+		in.image = ca.Image
+		if ca.CodeConfiguration != nil {
+			in.isCodeDeploy = true
+			in.runtime = ca.CodeConfiguration.Runtime
+			in.entryPoint = ca.CodeConfiguration.EntryPoint
 		}
+	}
+	if a.isCodeDeploy {
+		in.isCodeDeploy = true
+	}
+	if a.containerSettings != nil && a.containerSettings.Resources != nil {
+		in.containerCPU = a.containerSettings.Resources.Cpu
+		in.containerMemory = a.containerSettings.Resources.Memory
+	}
+	if !in.isCodeDeploy {
+		in.startupCommand = agentConfig.StartupCommand
+	}
+
+	serviceConfig, err := buildFoundryServiceConfig(in, a.deploymentDetails)
+	if err != nil {
+		return err
 	}
 
 	req := &azdext.AddServiceRequest{Service: serviceConfig}

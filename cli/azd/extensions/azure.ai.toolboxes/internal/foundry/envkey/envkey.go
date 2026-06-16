@@ -3,7 +3,7 @@
 
 // Package envkey builds the TOOLBOX_<NAME>_MCP_ENDPOINT key.
 //
-// Byte-for-byte copy of azure.ai.agents/internal/pkg/envkey: separate Go
+// The key logic mirrors azure.ai.agents/internal/pkg/envkey: separate Go
 // modules can't share it, yet both must agree on the key or the agent won't
 // find the value the toolbox wrote. Keep in sync (the test mirrors the agents
 // cases); intended to be lifted into a shared module later.

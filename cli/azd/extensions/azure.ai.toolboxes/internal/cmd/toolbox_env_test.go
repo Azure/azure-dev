@@ -13,6 +13,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Blank value rather than a key delete: there is no delete-key RPC.
@@ -90,4 +92,24 @@ func TestRunDeleteToolbox_EnvSyncErrorPropagates(t *testing.T) {
 	)
 	require.ErrorIs(t, err, sentinel)
 	require.Len(t, client.deleteCalls, 1, "toolbox is deleted before the env clear")
+}
+
+func TestIsNoAzdEnvironment(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"unavailable", status.Error(codes.Unavailable, "connection refused"), true},
+		// The host returns a status-less sentinel that grpc maps to Unknown.
+		{"no default env", status.Error(codes.Unknown, "default environment not found"), true},
+		{"other unknown", status.Error(codes.Unknown, "something else broke"), false},
+		{"plain error", errors.New("not a grpc status"), false},
+		{"nil", nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isNoAzdEnvironment(tt.err))
+		})
+	}
 }

@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- [[#8672]](https://github.com/Azure/azure-dev/issues/8672) `azd ai toolbox create` now writes the new toolbox's versioned MCP endpoint to the active azd environment under the `TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT` variable (the same key agents consume), and `azd ai toolbox delete` clears it when the whole toolbox is removed.
+
 ## 0.1.0-preview (2026-05-28)
 
 Initial release of the `azure.ai.toolboxes` extension for managing Microsoft Foundry Toolboxes from the terminal.

@@ -41,6 +41,19 @@ type FoundryProjectConfig struct {
 	Agents      []FoundryAgent   `json:"agents,omitempty"`
 }
 
+// FoundryServiceProperties is the typed shape `init` writes for a
+// `host: microsoft.foundry` service entry: project-scoped deployments plus the
+// inline agents array. These land on ServiceConfig.AdditionalProperties (the
+// inline map captured by yaml:",inline" in azd core), not under `config:`
+// (design spec #8590 §2.1, §2.7). It is the write-side counterpart to
+// FoundryProjectConfig: deployments are typed here so `init` emits the full
+// model/sku shape, while the reader keeps them as raw maps it does not yet
+// reconcile.
+type FoundryServiceProperties struct {
+	Deployments []Deployment   `json:"deployments,omitempty"`
+	Agents      []FoundryAgent `json:"agents,omitempty"`
+}
+
 // FoundryAgent is the union of a hosted agent and a prompt agent, matching
 // Agent.json. A hosted agent carries exactly one deploy mode (`docker`,
 // `runtime`, or a prebuilt `image`); a prompt agent carries `instructions`.

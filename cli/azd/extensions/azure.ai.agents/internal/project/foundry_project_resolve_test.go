@@ -51,6 +51,16 @@ func TestParseFoundryEndpoint(t *testing.T) {
 			endpoint: "https://acct.services.ai.azure.com/",
 			wantErr:  true,
 		},
+		{
+			name:     "http scheme rejected",
+			endpoint: "http://acct.services.ai.azure.com/api/projects/proj",
+			wantErr:  true,
+		},
+		{
+			name:     "explicit port rejected",
+			endpoint: "https://acct.services.ai.azure.com:443/api/projects/proj",
+			wantErr:  true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -70,6 +80,34 @@ func TestParseFoundryEndpoint(t *testing.T) {
 			}
 			if project != tt.wantProject {
 				t.Errorf("project = %q, want %q", project, tt.wantProject)
+			}
+		})
+	}
+}
+
+func TestValidateFoundryEndpoint(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		wantErr  bool
+	}{
+		{name: "valid project endpoint", endpoint: "https://acct.services.ai.azure.com/api/projects/proj"},
+		{name: "valid without path", endpoint: "https://acct.services.ai.azure.com"},
+		{name: "empty", endpoint: "", wantErr: true},
+		{name: "http scheme", endpoint: "http://acct.services.ai.azure.com", wantErr: true},
+		{name: "foreign host", endpoint: "https://evil.example.com", wantErr: true},
+		{name: "explicit port", endpoint: "https://acct.services.ai.azure.com:8443", wantErr: true},
+		{name: "partially expanded var", endpoint: "https://${ACCOUNT}/api/projects/proj", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := validateFoundryEndpoint(tt.endpoint)
+			if tt.wantErr && err == nil {
+				t.Fatalf("validateFoundryEndpoint(%q) expected error, got none", tt.endpoint)
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("validateFoundryEndpoint(%q) unexpected error: %v", tt.endpoint, err)
 			}
 		})
 	}

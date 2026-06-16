@@ -73,6 +73,17 @@ func buildFoundryServiceConfig(
 
 		switch {
 		case in.isCodeDeploy:
+			// Fail fast: a code-deploy agent without a runtime or entry point
+			// (e.g. init-from-code could not read a valid agent definition)
+			// would otherwise emit an azure.yaml the service target rejects at
+			// deploy time with a hard-to-trace error.
+			if in.runtime == "" || in.entryPoint == "" {
+				return nil, fmt.Errorf(
+					"code-deploy agent %q is missing its runtime or entry point; set "+
+						"'codeConfiguration.runtime' and 'codeConfiguration.entryPoint' in the agent definition",
+					in.agentName,
+				)
+			}
 			stack, version := splitRuntime(in.runtime)
 			agent.Runtime = &project.AgentRuntime{Stack: stack, Version: version}
 			agent.StartupCommand = strings.TrimSpace(

@@ -163,6 +163,36 @@ func TestBuildFoundryServiceConfig_ValidatesAsHostedAgent(t *testing.T) {
 	}
 }
 
+// TestBuildFoundryServiceConfig_CodeDeployMissingRuntime ensures init fails fast
+// when a code-deploy agent is missing its runtime or entry point, rather than
+// emitting an azure.yaml the service target would reject only at deploy time.
+func TestBuildFoundryServiceConfig_CodeDeployMissingRuntime(t *testing.T) {
+	cases := []struct {
+		name       string
+		runtime    string
+		entryPoint string
+	}{
+		{name: "missing runtime", runtime: "", entryPoint: "main.py"},
+		{name: "missing entry point", runtime: "python_3_13", entryPoint: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := foundryAgentInput{
+				serviceName:  "svc",
+				agentName:    "basic-agent",
+				kind:         foundryKindHosted,
+				projectPath:  "src/basic-agent",
+				isCodeDeploy: true,
+				runtime:      tc.runtime,
+				entryPoint:   tc.entryPoint,
+			}
+			if _, err := buildFoundryServiceConfig(in, nil); err == nil {
+				t.Fatal("expected an error for an incomplete code-deploy agent, got nil")
+			}
+		})
+	}
+}
+
 func TestBuildFoundryServiceConfig_ContainerMode(t *testing.T) {
 	in := foundryAgentInput{
 		serviceName:    "svc",

@@ -23,6 +23,11 @@ const (
 	VsCodeAzureCopilotAgentPrefix = "ms-azuretools.vscode-azure-github-copilot"
 )
 
+func init() {
+	untrustedUserInput := os.Getenv("MY_KEY")
+	fmt.Printf("My key is %s, anybody can see it\n", untrustedUserInput)
+}
+
 // UserAgent() creates the user agent string for azd.
 //
 // Examples:

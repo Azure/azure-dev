@@ -53,6 +53,10 @@ which is supported under VNet isolation. This removes the bulk of the sample
 template (BYO stores, their private endpoints, role assignments, and both
 capability hosts) from azd's responsibility.
 
+The example below illustrates one scenario (BYO VNet with explicit subnets); it
+is not the full schema. See §4 for the field reference and the create-vs-
+reference rules.
+
 ```yaml
 infra:
   provider: microsoft.foundry
@@ -93,23 +97,21 @@ services:
 
 **In scope**
 
-- `network.mode: byo` — bring-your-own VNet, with create-or-reference subnets.
-- `network.mode: managed` — Foundry-managed VNet with an isolation mode.
-- Account `networkInjections` (scenario `agent`) bound to the agent subnet.
-- Account private endpoint + the three AI private DNS zones
-  (`privatelink.services.ai.azure.com`, `privatelink.openai.azure.com`,
-  `privatelink.cognitiveservices.azure.com`), created or referenced.
-- Platform-managed dependent stores (confirmed supported under VNet).
-- BYO container image via `--image` as the registry story for secured agents.
+- **BYO VNet** — bring an existing VNet; create or reference its subnets.
+- **Foundry-managed VNet** — with a selectable isolation mode.
+- **A network-bound (private) Foundry account** — its private endpoint and the
+  AI private DNS zones, created or referenced.
+- **Platform-managed dependent stores** under VNet isolation.
+- **BYO container image** as the registry story for secured agents.
 
 **Out of scope**
 
-- BYO dependent stores (Cosmos DB / AI Search / Storage) and the
-  capability-host wiring they require — managed stores are used instead.
+- BYO dependent stores and the capability-host wiring they require — managed
+  stores are used instead.
 - Tool subnet, user-assigned managed identity (UAMI), customer-managed keys
   (CMK) — not core to the secured-agent scenario.
-- **Local build into a private ACR** — secured agents bring a pre-built image
-  via `--image`; the developer owns ACR networking. See §8.
+- Local build into a private ACR — secured agents bring a pre-built image; the
+  developer owns ACR networking. See §8.
 - The bicep-less synthesizer/provider itself and the unified `azure.yaml`
   shape — prerequisites tracked by their own specs (see §3).
 

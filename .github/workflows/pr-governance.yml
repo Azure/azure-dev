@@ -30,14 +30,3 @@ jobs:
           script: |
             const script = require('./.github/scripts/pr-governance-issue-check.js');
             await script({ github, context, core });
-
-      - name: Check issue priority
-        if: steps.issue-check.outputs.skipped != 'true' && steps.issue-check.outcome == 'success'
-        uses: actions/github-script@v9
-        env:
-          PROJECT_TOKEN: ${{ secrets.PROJECT_READ_TOKEN }}
-          ISSUE_NUMBERS: ${{ steps.issue-check.outputs.issue_numbers }}
-        with:
-          script: |
-            const script = require('./.github/scripts/pr-governance-priority-check.js');
-            await script({ github, context, core });

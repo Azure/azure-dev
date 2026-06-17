@@ -108,6 +108,6 @@ func NoEndpointError() error {
 		"persist a workspace default with `azd ai project set <endpoint>`, "+
 			"or set FOUNDRY_PROJECT_ENDPOINT (or AZURE_AI_PROJECT_ENDPOINT) "+
 			"in the active azd environment, "+
-			"or export FOUNDRY_PROJECT_ENDPOINT in your shell",
+			"or export FOUNDRY_PROJECT_ENDPOINT (or AZURE_AI_PROJECT_ENDPOINT) in your shell",
 	)
 }

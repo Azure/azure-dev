@@ -10,7 +10,7 @@ This spec adds a declarative `network:` block to the `host: microsoft.foundry` s
 
 ### Why the block sits on the service
 
-VNet binds at the Account level, yet `network:` sits on a service entry that reads as a project. This is intentional and unambiguous in the greenfield flow: the synthesizer provisions **one Account plus one Project per Foundry service** (1:1), so "network on the service" is exactly "network on that service's account." azd does not model multiple projects sharing a single network-bound account — multiple Foundry services produce multiple accounts, each with its own `network:`. Brownfield (`endpoint:`) ignores `network:` because the account is already bound by whoever created it (see §7), so the service-level declaration never reconciles against an account azd did not create. If Foundry later needs N projects under one network-bound account, the block would promote to an account-scoped surface (see §9, open questions).
+VNet binds at the Account level, yet `network:` sits on a service entry that reads as a project. This is intentional and unambiguous in the greenfield flow: the synthesizer provisions **one Account plus one Project per Foundry service** (1:1), so "network on the service" is exactly "network on that service's account." azd does not model multiple projects sharing a single network-bound account — multiple Foundry services produce multiple accounts, each with its own `network:`. Brownfield (`endpoint:`) ignores `network:` because the account is already bound by whoever created it (see the Brownfield interaction section), so the service-level declaration never reconciles against an account azd did not create. If Foundry later needs N projects under one network-bound account, the block would promote to an account-scoped surface.
 
 ## Solution
 
@@ -20,7 +20,7 @@ The block is purely additive. When `network:` is absent the synthesizer behaves 
 
 Dependent stores (Cosmos DB, AI Search, Storage) stay **platform-managed**, which is supported under VNet isolation. This removes the bulk of the sample template (BYO stores, their private endpoints, role assignments, and both capability hosts) from azd's responsibility.
 
-The example below illustrates one scenario (BYO VNet with explicit subnets); it is not the full schema. See §4 for the field reference and the create-vs-reference rules.
+The example below illustrates one scenario (BYO VNet with explicit subnets); it is not the full schema. See the `azure.yaml` surface section for the field reference and the create-vs-reference rules.
 
 ```yaml
 infra:
@@ -72,10 +72,10 @@ services:
 
 - BYO dependent stores and the capability-host wiring they require — managed stores are used instead.
 - Tool subnet, user-assigned managed identity (UAMI), customer-managed keys (CMK) — not core to the secured-agent scenario.
-- Local build into a private ACR — secured agents bring a pre-built image; the developer owns ACR networking. See §8.
-- The bicep-less synthesizer/provider itself and the unified `azure.yaml` shape — prerequisites tracked by their own specs (see §3).
+- Local build into a private ACR — secured agents bring a pre-built image; the developer owns ACR networking. See the ACR private networking section.
+- The bicep-less synthesizer/provider itself and the unified `azure.yaml` shape — prerequisites tracked by their own specs (see the Relationship to in-flight work section).
 
-## §3 Relationship to in-flight work
+## Relationship to in-flight work
 
 Private networking is the last layer on a stack already in flight on the `huimiu/foundry-azure-yaml` feature branch. It does not start from `main`; it lands as a follow-on into that branch after the synthesizer merges.
 
@@ -88,10 +88,10 @@ unified azure.yaml (huimiu)            #8590 docs → branch huimiu/foundry-azur
 
 Two consequences matter here:
 
-- **No core change.** Unknown service keys ride `ServiceConfig.AdditionalProperties` to the extension (unify §2.1), and the synthesizer reads the raw `azure.yaml` bytes directly, so the only required core edit is the JSON schema slice (§4).
-- **ACR is off the critical path.** `--image` (#8689) and the merged #8645 (skip remote build for VNET-injected accounts) keep registry work out of v1 (see §8).
+- **No core change.** Unknown service keys ride `ServiceConfig.AdditionalProperties` to the extension (unify §2.1), and the synthesizer reads the raw `azure.yaml` bytes directly, so the only required core edit is the JSON schema slice (see the `azure.yaml` surface section).
+- **ACR is off the critical path.** `--image` (#8689) and the merged #8645 (skip remote build for VNET-injected accounts) keep registry work out of v1 (see the ACR private networking section).
 
-## §4 `azure.yaml` surface
+## `azure.yaml` surface
 
 `network:` is a sibling of `deployments:` / `agents:` on the service body.
 
@@ -130,7 +130,7 @@ network:
 
 `${VAR}` resolves client-side from the azd environment for `byo.vnet.id` and `dns.subscription`. `${{...}}` Foundry expressions are not expected in network fields and are passed through verbatim if present, consistent with the shared expander.
 
-## §5 Synthesizer and template changes (high level)
+## Synthesizer and template changes (high level)
 
 The bicep-less work landed `internal/synthesis/synthesizer.go` plus an embedded `templates/` tree (`main.bicep`, `modules/acr.bicep`, `abbreviations.json`, and a precompiled `main.arm.json` fallback). The account today is hardcoded to public. The changes are additive and local to this package.
 
@@ -142,7 +142,7 @@ The bicep-less work landed `internal/synthesis/synthesizer.go` plus an embedded 
 
 The provisioning provider, on-disk/eject behavior, and parameter wiring need no structural change — they consume whatever `Result.Parameters` carries.
 
-## §6 Validation pipeline additions
+## Validation pipeline additions
 
 Network validation slots into the synthesizer's existing pre-synthesis checks and runs on every `provision`, `preview`, and eject:
 
@@ -154,13 +154,13 @@ Network validation slots into the synthesizer's existing pre-synthesis checks an
 
 Failures surface with the service-scoped field path, e.g. `services.my-project.network.byo.agentSubnet: prefix set without name`.
 
-## §7 Brownfield interaction
+## Brownfield interaction
 
 `endpoint:` on the service already short-circuits synthesis — the synthesizer returns `ErrEndpointBrownfield` and the provider connects to the existing project without provisioning. A network-secured account reached this way is **already** network-bound by whoever created it.
 
 Therefore, when `endpoint:` is present, `network:` is **ignored** (the account's network posture is fixed and not azd's to change). This is documented as explicit precedence: `endpoint:` wins, and a project that wants azd to manage its network posture must be greenfield (no `endpoint:`). If both are present, azd warns that `network:` has no effect in brownfield mode.
 
-## §8 ACR private networking — decision and RoI
+## ACR private networking — decision and RoI
 
 A secured agent still needs its image to come from somewhere reachable inside the VNet. Two paths:
 
@@ -171,7 +171,7 @@ A secured agent still needs its image to come from somewhere reachable inside th
 
 The hard part of the local-build path is not creating the registry — it is making the build actually reach a network-isolated registry, which drags in build-agent network placement azd does not control. v1 therefore standardizes on BYO image for secured agents; #8645 (merged) already skips remote build for network-injected accounts, so the flow is coherent end to end. Revisit local-build-into-private-ACR after telemetry shows `--image` adoption and real demand.
 
-## §9 Telemetry, docs, and open questions
+## Telemetry and docs
 
 **Telemetry**
 
@@ -181,14 +181,6 @@ The hard part of the local-build path is not creating the registry — it is mak
 
 - New env vars consumed for network fields (`AZURE_VNET_ID`, `AZURE_DNS_SUBSCRIPTION_ID`, or whatever the synthesizer reads) are documented in `cli/azd/docs/environment-variables.md` with format and default.
 - Extension README documents the `network:` block and the BYO-image requirement for secured agents.
-
-**Open questions**
-
-1. **Agent-subnet delegation target.** Confirm the exact delegation the agent subnet requires for `networkInjections` scenario `agent`, and whether the reference path must validate it or may assume the platform team set it.
-2. **`managed` reference template.** Template 15 is BYO-only. The Foundry-managed VNet (`mode: managed`, `isolationMode`) needs a service-team reference for the account-level managed-network ARM shape before that branch can be authored.
-3. **DNS collision on create.** When azd creates the AI DNS zones but a zone of the same name already exists in the target RG (created out of band), define whether azd references it, fails, or warns.
-4. **Subnet reference validation depth.** For name-only subnets, decide how much azd validates at synthesis time (existence, delegation, PE policies) versus deferring to ARM, given synthesis runs before any ARM call.
-5. **Account-scoped surface.** If Foundry adds multiple projects under one network-bound account, decide whether `network:` promotes from the service entry to an account-scoped surface (see "Why the block sits on the service").
 
 ## References
 

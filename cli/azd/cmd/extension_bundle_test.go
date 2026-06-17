@@ -26,7 +26,7 @@ func TestIsBundleArg(t *testing.T) {
 	require.NoError(t, os.WriteFile(zipPath, []byte("zip"), 0600))
 
 	require.True(t, isBundleArg([]string{zipPath}))
-	require.True(t, isBundleArg([]string{filepath.Join(dir, "BUNDLE.ZIP")}) == false) // does not exist
+	require.False(t, isBundleArg([]string{filepath.Join(dir, "missing.zip")})) // does not exist
 	require.False(t, isBundleArg([]string{"some.extension.id"}))
 	require.False(t, isBundleArg([]string{zipPath, "other"}))
 	require.False(t, isBundleArg([]string{dir})) // directory, not a file

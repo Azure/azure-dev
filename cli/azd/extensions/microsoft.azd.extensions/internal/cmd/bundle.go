@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"archive/zip"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -54,7 +55,11 @@ func resolveBundleOutputPath(outputPath string, extensionMetadata *models.Extens
 // bundle contains a registry.json at its root (with artifact URLs relative to
 // the bundle) alongside the per-platform artifact archives under artifacts/.
 // Extension packs (which have no artifacts) produce a registry-only bundle.
-func packSelfContainedBundle(extensionMetadata *models.ExtensionSchema, bundleOutputPath string) error {
+func packSelfContainedBundle(
+	ctx context.Context,
+	extensionMetadata *models.ExtensionSchema,
+	bundleOutputPath string,
+) error {
 	stagingDir, err := os.MkdirTemp("", "azd-ext-bundle-")
 	if err != nil {
 		return fmt.Errorf("failed to create staging directory: %w", err)
@@ -125,7 +130,7 @@ func packSelfContainedBundle(extensionMetadata *models.ExtensionSchema, bundleOu
 		return fmt.Errorf("failed to create bundle output directory: %w", err)
 	}
 
-	if err := zipDirectory(stagingDir, bundleOutputPath); err != nil {
+	if err := zipDirectory(ctx, stagingDir, bundleOutputPath); err != nil {
 		return fmt.Errorf("failed to create bundle archive: %w", err)
 	}
 
@@ -137,7 +142,7 @@ func packSelfContainedBundle(extensionMetadata *models.ExtensionSchema, bundleOu
 // writes to a temporary file and renames it onto target only after a fully
 // successful close, so a failed (re)pack never leaves a corrupt archive or
 // clobbers a previously good bundle.
-func zipDirectory(sourceDir string, target string) (err error) {
+func zipDirectory(ctx context.Context, sourceDir string, target string) (err error) {
 	tempFile, err := os.CreateTemp(filepath.Dir(target), ".bundle-*.zip.tmp")
 	if err != nil {
 		return err
@@ -203,7 +208,7 @@ func zipDirectory(sourceDir string, target string) (err error) {
 	if err := os.Chmod(tempPath, osutil.PermissionFile); err != nil {
 		return err
 	}
-	if err := os.Rename(tempPath, target); err != nil {
+	if err := osutil.Rename(ctx, tempPath, target); err != nil {
 		return err
 	}
 

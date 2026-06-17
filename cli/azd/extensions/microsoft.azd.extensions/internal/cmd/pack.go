@@ -225,7 +225,7 @@ func runPackageAction(ctx context.Context, flags *packageFlags) (bool, error) {
 			Title: "Packaging extension",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 				if flags.bundle {
-					if err := packSelfContainedBundle(extensionMetadata, bundleOutputPath); err != nil {
+					if err := packSelfContainedBundle(ctx, extensionMetadata, bundleOutputPath); err != nil {
 						return ux.Error, common.NewDetailedError(
 							"Packaging failed",
 							fmt.Errorf("failed to create self-contained bundle: %w", err),

@@ -52,7 +52,7 @@ func TestZipDirectory_PreservesStructure(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "artifacts", "ext.zip"), []byte("bin"), 0600))
 
 	target := filepath.Join(t.TempDir(), "bundle.zip")
-	require.NoError(t, zipDirectory(sourceDir, target))
+	require.NoError(t, zipDirectory(t.Context(), sourceDir, target))
 
 	reader, err := zip.OpenReader(target)
 	require.NoError(t, err)
@@ -79,10 +79,10 @@ func TestZipDirectory_OverwriteIsAtomic(t *testing.T) {
 
 	// A pre-existing file at the target is replaced cleanly.
 	require.NoError(t, os.WriteFile(target, []byte("stale"), 0600))
-	require.NoError(t, zipDirectory(sourceDir, target))
+	require.NoError(t, zipDirectory(t.Context(), sourceDir, target))
 
 	// Re-packing over the existing bundle succeeds.
-	require.NoError(t, zipDirectory(sourceDir, target))
+	require.NoError(t, zipDirectory(t.Context(), sourceDir, target))
 
 	// The result is a valid, readable zip.
 	reader, err := zip.OpenReader(target)

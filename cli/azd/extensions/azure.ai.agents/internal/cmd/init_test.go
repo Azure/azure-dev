@@ -91,8 +91,51 @@ func TestValidateImageFlag(t *testing.T) {
 			image: "myacr.azurecr.io/agent",
 		},
 		{
+			name: "valid image with digest",
+			image: "myacr.azurecr.io/agent@sha256:" +
+				"76a9463463acf11d4068e8468fb232a3de0709177b6b35de95de6a34b33fa686",
+		},
+		{
+			name:  "valid local registry with port",
+			image: "localhost:5000/myorg/agent:v1",
+		},
+		{
+			name:  "valid registry host with port",
+			image: "registry:5000/myorg/agent:v1",
+		},
+		{
 			name:       "image without registry fails",
 			image:      "agent:v1",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "namespace image without registry fails",
+			image:      "myorg/agent:v1",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "image with URL scheme fails",
+			image:      "https://myacr.azurecr.io/agent:v1",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "image missing repository fails",
+			image:      "myacr.azurecr.io/",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "image with short digest fails",
+			image:      "myacr.azurecr.io/agent@sha256:abc123",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "uppercase repository fails",
+			image:      "myacr.azurecr.io/MyAgent:v1",
 			wantErr:    true,
 			errContain: "must be in format",
 		},

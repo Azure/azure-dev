@@ -3749,10 +3749,18 @@ func (a *InitAction) validateCodeDeployFlags() error {
 		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution)
 }
 
+var initImageRefRe = regexp.MustCompile(
+	`^(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?::[0-9]+)?|` +
+		`localhost(?::[0-9]+)?|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?:[0-9]+)/` +
+		`[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*` +
+		`(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*` +
+		`(?::[\w][\w.-]{0,127}|@sha256:[0-9a-fA-F]{64})?$`,
+)
+
 // validateImageFlag checks that --image is valid when provided.
 // Returns an error if:
 // - --image is used with --deploy-mode code (incompatible)
-// - --image URL format is invalid (must contain registry/image pattern)
+// - --image URL format is invalid (must contain a fully qualified registry/image reference)
 func validateImageFlag(image, deployMode string) error {
 	if image == "" {
 		return nil
@@ -3767,9 +3775,10 @@ func validateImageFlag(image, deployMode string) error {
 		)
 	}
 
-	// Basic image URL validation: must contain registry/image pattern
-	// e.g., "myacr.azurecr.io/agent" or "docker.io/myorg/agent:v1"
-	if !strings.Contains(image, "/") {
+	// Require a fully-qualified image reference with an explicit registry host,
+	// e.g. "myacr.azurecr.io/agent", "docker.io/myorg/agent:v1", or
+	// "localhost:5000/agent@sha256:<digest>".
+	if !initImageRefRe.MatchString(image) {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("invalid image URL %q: must be in format registry/image[:tag]", image),

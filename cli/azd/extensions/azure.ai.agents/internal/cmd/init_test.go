@@ -241,6 +241,39 @@ func TestSkipACR(t *testing.T) {
 	}
 }
 
+func TestSynthesizeImageManifestFile(t *testing.T) {
+	t.Parallel()
+
+	const agentName = "my-agent"
+	const image = "myacr.azurecr.io/agents/my-agent@sha256:" +
+		"76a9463463acf11d4068e8468fb232a3de0709177b6b35de95de6a34b33fa686"
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image)
+	require.NoError(t, err)
+	require.NotNil(t, cleanup)
+	require.FileExists(t, manifestPath)
+	require.Equal(t, "agent.yaml", filepath.Base(manifestPath))
+
+	content, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+
+	// The synthesized file must parse through the same path the manifest flow uses.
+	template, err := agent_yaml.ExtractAgentDefinition(content)
+	require.NoError(t, err)
+
+	containerAgent, ok := template.(agent_yaml.ContainerAgent)
+	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
+	require.Equal(t, agent_yaml.AgentKindHosted, containerAgent.Kind)
+	require.Equal(t, agentName, containerAgent.Name)
+	require.Equal(t, image, containerAgent.Image)
+	require.Len(t, containerAgent.Protocols, 1)
+	require.Equal(t, "responses", containerAgent.Protocols[0].Protocol)
+
+	// cleanup removes the temp directory.
+	cleanup()
+	require.NoFileExists(t, manifestPath)
+}
+
 func TestValidateInitAgentName(t *testing.T) {
 	t.Parallel()
 

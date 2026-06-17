@@ -65,8 +65,11 @@ type initFlags struct {
 	entryPoint    string // e.g. "app.py", "MyAgent.dll"
 	depResolution string // "remote_build" or "bundled"; defaults to "remote_build"
 	// image specifies a pre-built container image URL (e.g., "myacr.azurecr.io/agent:v1").
-	// When set, init writes the image field to agent.yaml and skips Dockerfile generation
-	// and ACR connection prompts. Incompatible with --deploy-mode code.
+	// When set without --manifest, init synthesizes a minimal hosted container manifest and
+	// routes through the manifest flow, skipping template/language selection and code
+	// scaffolding (there is no source to scaffold). It also writes the image field to
+	// agent.yaml, skips Dockerfile generation, and skips ACR connection prompts. Requires
+	// --agent-name when no --manifest is given. Incompatible with --deploy-mode code.
 	image string
 	// force, when true, lets headless callers (--no-prompt) pre-consent to
 	// overwrite prompts that would otherwise return a structured error. It
@@ -618,6 +621,49 @@ func setImageOnTemplate(agentManifest *agent_yaml.AgentManifest, image string) e
 	return nil
 }
 
+// synthesizeImageManifestFile writes a minimal hosted container agent manifest to a
+// temporary file for the bring-your-own-image flow (--image without --manifest).
+// Routing through the manifest path lets init skip template/language selection and code
+// scaffolding, since a pre-built image needs none of those. The returned cleanup removes
+// the temp directory; callers should defer it. The image is also persisted by
+// setImageOnTemplate during Run, but is included here so the manifest is self-describing.
+func synthesizeImageManifestFile(agentName, image string) (string, func(), error) {
+	noop := func() {}
+
+	tmpDir, err := os.MkdirTemp("", "azd-agent-image-")
+	if err != nil {
+		return "", noop, fmt.Errorf("creating temp directory for synthesized manifest: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(tmpDir) }
+
+	doc := map[string]any{
+		"name": agentName,
+		"template": map[string]any{
+			"kind":        string(agent_yaml.AgentKindHosted),
+			"name":        agentName,
+			"description": fmt.Sprintf("Hosted container agent using pre-built image %s", image),
+			"image":       image,
+			"protocols": []map[string]any{
+				{"protocol": "responses", "version": "v1"},
+			},
+		},
+	}
+
+	content, err := yaml.Marshal(doc)
+	if err != nil {
+		cleanup()
+		return "", noop, fmt.Errorf("marshaling synthesized manifest: %w", err)
+	}
+
+	manifestPath := filepath.Join(tmpDir, "agent.yaml")
+	if err := os.WriteFile(manifestPath, content, osutil.PermissionFile); err != nil {
+		cleanup()
+		return "", noop, fmt.Errorf("writing synthesized manifest: %w", err)
+	}
+
+	return manifestPath, cleanup, nil
+}
+
 func nextAgentNameSuggestion(agentName string) string {
 	const maxAgentNameLength = 63
 	const defaultAgentName = "agent"
@@ -917,7 +963,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
   azd ai agent init --no-prompt --project-id "<resource-id>" \
     --deploy-mode code --runtime python_3_13 --entry-point app.py
 
-  # Initialize with a pre-built container image (no Dockerfile or ACR setup)
+  # Bring your own pre-built image (no template/language selection, Dockerfile, or ACR setup)
   azd ai agent init --no-prompt --agent-name my-agent \
     --image myacr.azurecr.io/agents/my-agent:v1`,
 		Args: cobra.MaximumNArgs(1),
@@ -973,6 +1019,35 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// only shown for brand-new top-level project folders, not
 			// when a template adds a subfolder to an existing project.
 			existingProject := fileExists("azure.yaml")
+
+			// Bring-your-own-image fast path: when --image is set without a manifest,
+			// there is no source to scaffold and no template/language to choose.
+			// Synthesize a minimal hosted container manifest and route it through the
+			// manifest flow, which skips the init-mode / template / language prompts
+			// and code scaffolding. The image is wired into agent.yaml and ACR is
+			// skipped by the existing --image handling in InitAction.Run.
+			if flags.image != "" && flags.manifestPointer == "" {
+				// Validate early so we fail before initializing a project/template.
+				if err := validateImageFlag(flags.image, flags.deployMode); err != nil {
+					return err
+				}
+				if flags.agentName == "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--image requires --agent-name when no --manifest is provided",
+						"pass --agent-name <name> (or provide --manifest with the agent definition)",
+					)
+				}
+				manifestPath, cleanup, err := synthesizeImageManifestFile(flags.agentName, flags.image)
+				if err != nil {
+					return err
+				}
+				defer cleanup()
+				flags.manifestPointer = manifestPath
+				// Treat the synthesized manifest as user-provided so deploy-mode
+				// resolution auto-selects container without prompting.
+				userProvidedManifest = true
+			}
 
 			// Auto-detect an existing agent manifest in the target directory
 			// when no --manifest flag was provided.
@@ -1348,7 +1423,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 	cmd.Flags().StringVar(&flags.image, "image", "",
 		"Pre-built container image URL (e.g., 'myacr.azurecr.io/agent:v1'). "+
-			"When set, skips Dockerfile generation and ACR setup. Incompatible with --deploy-mode code.")
+			"When set without --manifest, skips template/language selection, code scaffolding, "+
+			"Dockerfile generation, and ACR setup, and requires --agent-name. "+
+			"Incompatible with --deploy-mode code.")
 
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+

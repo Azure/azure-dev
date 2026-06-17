@@ -96,25 +96,52 @@ Two consequences matter here:
 `network:` is a sibling of `deployments:` / `agents:` on the service body.
 
 ```yaml
-network:
-  mode: byo | managed              # required when network is present
+services:
+  my-project:
+    host: microsoft.foundry
 
-  byo:                             # used only when mode: byo
-    vnet:
-      id: <existing VNet ARM id>   # required for byo in v1
-    agentSubnet:                   # optional; see tri-state below
-      name: <subnet name>
-      prefix: <CIDR>
-    peSubnet:                      # optional; same tri-state
-      name: <subnet name>
-      prefix: <CIDR>
+    # New: private networking configuration for standard/networked agents.
+    #
+    # If omitted, the project uses public networking.
+    # If present, azd provisions or configures private networking and uses
+    # customer-owned dependent stores for agent data.
+    network:
+      # Required when network is present.
+      # byo     = customer-managed / BYO VNet
+      # managed = Foundry-managed VNet
+      mode: byo
 
-  managed:                         # used only when mode: managed
-    isolationMode: AllowInternetOutbound | AllowOnlyApprovedOutbound
+      # Used only when mode: byo.
+      byo:
+        # Existing customer VNet. v1 requires this id.
+        vnet:
+          id: ${AZURE_VNET_ID}
 
-  dns:                             # optional
-    resourceGroup: <rg name>       # when set, zones are referenced, not created
-    subscription: <sub id>
+        # Agent subnet.
+        # omitted => azd creates default agent subnet
+        # name only => azd references existing subnet and validates it
+        # name + prefix => azd creates subnet with that name/prefix
+        agentSubnet:
+          name: agent-subnet
+          prefix: 192.168.0.0/24
+
+        # Private endpoint subnet.
+        # Same rules with Agent subnet.
+        peSubnet:
+          name: pe-subnet
+          prefix: 192.168.1.0/24
+
+      # Used only when mode: managed.
+      # Values: AllowInternetOutbound | AllowOnlyApprovedOutbound
+      managed:
+        isolationMode: AllowOnlyApprovedOutbound
+
+      # Optional.
+      # If omitted, or resourceGroup is omitted, azd creates required private DNS zones.
+      # If resourceGroup is set, azd references existing private DNS zones in that resource group.
+      dns:
+        resourceGroup: rg-private-dns
+        subscription: ${AZURE_DNS_SUBSCRIPTION_ID}
 ```
 
 ### Field semantics

@@ -1,27 +1,36 @@
-<!-- cspell:ignore networkinjections caphost privatelink documentdb azurecr Vnet vnet subnet subnets myprivacr cognitiveservices UAMI hund -->
+<!-- cspell:ignore privatelink azurecr vnet subnet subnets myprivacr cognitiveservices UAMI hund -->
 
 # Private networking for `host: microsoft.foundry`
 
 ## Problem
 
-Foundry network isolation is unreachable from `azure.yaml` today. The
-[unified `azure.yaml` design](../unify-azure-yaml/spec.md) (§1.4) is explicit:
-VNet binding lives on the Foundry **Account** resource, the unified shape only
-models the **Project**, and so "customizing them today means ejecting to Bicep.
-That built-in Bicep work must provide a path to create and customize those
-network settings."
-
-A developer who needs a network-secured agent must therefore abandon the
-declarative flow, hand-author the service team's
-[standard network-secured template](https://github.com/microsoft-foundry/foundry-samples/tree/main/infrastructure/infrastructure-setup-bicep/15-private-network-standard-agent-setup)
-(7+ modules, dependent stores, capability-host wiring, DNS), and maintain it by
-hand. There is no `network:` surface, and the in-memory synthesizer that
+Foundry network isolation is unreachable from `azure.yaml` today. Per the
+[unified `azure.yaml` design](../unify-azure-yaml/spec.md) (§1.4), VNet binding
+is an **Account** setting while the unified shape models the **Project**, so
+customizing it requires ejecting to Bicep. A developer who needs a
+network-secured agent must hand-author the service team's standard
+network-secured template and maintain it by hand. There is no `network:`
+surface, and the in-memory synthesizer that
 [bicep-less provisioning](../bicepless-foundry/spec.md) introduced always emits
 a public account (`publicNetworkAccess: 'Enabled'`).
 
 This spec adds a declarative `network:` block to the `host: microsoft.foundry`
 service and teaches the existing synthesizer to provision a network-bound
 account from it.
+
+### Why the block sits on the service
+
+VNet binds at the Account level, yet `network:` sits on a service entry that
+reads as a project. This is intentional and unambiguous in the greenfield flow:
+the synthesizer provisions **one Account plus one Project per Foundry service**
+(1:1), so "network on the service" is exactly "network on that service's
+account." azd does not model multiple projects sharing a single network-bound
+account — multiple Foundry services produce multiple accounts, each with its own
+`network:`. Brownfield (`endpoint:`) ignores `network:` because the account is
+already bound by whoever created it (see §7), so the service-level declaration
+never reconciles against an account azd did not create. If Foundry later needs
+N projects under one network-bound account, the block would promote to an
+account-scoped surface (see §9, open questions).
 
 ## Solution
 
@@ -100,40 +109,32 @@ services:
 - Tool subnet, user-assigned managed identity (UAMI), customer-managed keys
   (CMK) — not core to the secured-agent scenario.
 - **Local build into a private ACR** — secured agents bring a pre-built image
-  via `--image`; the developer owns ACR networking. See §9.
+  via `--image`; the developer owns ACR networking. See §8.
 - The bicep-less synthesizer/provider itself and the unified `azure.yaml`
   shape — prerequisites tracked by their own specs (see §3).
 
 ## §3 Relationship to in-flight work
 
-Private networking is the last layer on top of a stack already in flight on the
+Private networking is the last layer on a stack already in flight on the
 `huimiu/foundry-azure-yaml` feature branch. It does not start from `main`; it
-lands as a follow-on PR into that branch after the synthesizer merges.
+lands as a follow-on into that branch after the synthesizer merges.
 
-| PR | Author | Target | State | Why it matters here |
-| --- | --- | --- | --- | --- |
-| #8590 unify `azure.yaml` (docs) | huimiu | main | open | Establishes the single `host: microsoft.foundry` shape and defers VNet to this work (§1.4). |
-| #8577 bicep-less provisioning (docs) | hund030 | main | open | Establishes the extension-owned synthesizer/provider this spec extends. |
-| #8603 schema scaffold | huimiu | feature branch | merged | Home of `microsoft.foundry.json` and its slice files. |
-| #8627 `$ref` includes | huimiu | feature branch | merged | Config-binding plumbing. |
-| #8629 foundry service target | huimiu | feature branch | open | Deploy-side per-agent fan-out. |
-| #8675 unified `init` | huimiu | service-target | open | Writes the single service entry that carries `network:`. |
-| **#8643 bicep-less init** | **hund030** | **feature branch** | **open** | **The integration point — owns `internal/synthesis` and `main.bicep`.** |
-| #8689 `--image` flag | (this author) | feature branch | open | Removes ACR from the secured-agent path. |
-| #8645 skip remote build for VNET-injected accounts | (this author) | main | merged | Build step already detects network-bound accounts. |
+```
+unified azure.yaml (huimiu)            #8590 docs → branch huimiu/foundry-azure-yaml
+├─ bicep-less provisioning (hund030)   #8577 docs / #8643 impl  ← integration point
+├─ foundry service target + init       #8629 / #8675
+└─ BYO image                           #8689  (+ #8645 remote-build skip, merged)
+```
 
-Two consequences:
+Two consequences matter here:
 
-- **`network:` needs no core change.** Per the unify design §2.1, unknown
-  service keys land in `ServiceConfig.AdditionalProperties` and travel to the
-  extension over gRPC unchanged. The only required core edit is the JSON
-  schema slice (§4). The synthesizer reads the raw `azure.yaml` bytes directly
-  (it already does, via `synthesis.Input.RawAzureYAML`), so the block is in
-  reach without any struct plumbing in azd core.
-- **ACR is off the critical path.** `--image` (#8689) lets a secured agent
-  reference a pre-built image, and the merged #8645 already skips remote build
-  for network-injected accounts. Together they mean v1 never has to provision
-  or reach a registry from inside the VNet (§9).
+- **No core change.** Unknown service keys ride
+  `ServiceConfig.AdditionalProperties` to the extension (unify §2.1), and the
+  synthesizer reads the raw `azure.yaml` bytes directly, so the only required
+  core edit is the JSON schema slice (§4).
+- **ACR is off the critical path.** `--image` (#8689) and the merged #8645
+  (skip remote build for VNET-injected accounts) keep registry work out of v1
+  (see §8).
 
 ## §4 `azure.yaml` surface
 
@@ -177,30 +178,7 @@ network:
 fields and are passed through verbatim if present, consistent with the shared
 expander.
 
-## §5 Primitives captured from sample template 15
-
-The service team's
-[`15-private-network-standard-agent-setup`](https://github.com/microsoft-foundry/foundry-samples/tree/main/infrastructure/infrastructure-setup-bicep/15-private-network-standard-agent-setup)
-is the source of truth for the ARM shape. azd captures the irreducible network
-primitives and drops everything that managed stores make unnecessary.
-
-| Sample module / param | azd treatment | Notes |
-| --- | --- | --- |
-| `network-agent-vnet.bicep` → `vnet.bicep` / `existing-vnet.bicep` | **Kept** as `modules/network.bicep` | Create-vs-reference VNet; agent subnet (with delegation) + PE subnet; `reuseExistingSubnets` for the reference path. |
-| `ai-account-identity.bicep` `agentSubnetId` + `networkInjections` | **Kept**, folded into `main.bicep` account resource | Flips `publicNetworkAccess` to `Disabled`, sets `networkAcls.defaultAction: 'Deny'`, adds `networkInjections` scenario `agent`. |
-| `private-endpoint-and-dns.bicep` (account portion) | **Kept** as `modules/private-endpoint-dns.bicep` | Only the account PE + the 3 AI DNS zones (`services.ai.azure.com`, `openai.azure.com`, `cognitiveservices.azure.com`) and their VNet links. |
-| `existingDnsZones` object map + `dnsZonesSubscriptionId` | **Kept** (subset) | Create-vs-reference per zone; cross-subscription/RG reference. |
-| `standard-dependent-resources.bicep` (Cosmos / Search / Storage) | **Dropped** | Managed stores. |
-| Dependent-store PEs, DNS zones (`documents`, `search`, `blob`), role assignments | **Dropped** | Consequence of managed stores. |
-| `add-account-capability-host.bicep` / `add-project-capability-host.bicep` | **Dropped** | Platform auto-provisions the capability host for a network-injected account; no BYO-store wiring to configure. |
-| `container-registry.bicep` (ACR + PE) | **Deferred** | BYO image in v1; see §9. |
-| Tool subnet, UAMI, CMK | **Dropped** | Out of scope. |
-
-Net result: from ~10 modules in the sample, azd v1 needs three artifacts — the
-existing `main.bicep` (extended), a new `modules/network.bicep`, and a new
-`modules/private-endpoint-dns.bicep`.
-
-## §6 Synthesizer and template changes (high level)
+## §5 Synthesizer and template changes (high level)
 
 The bicep-less work landed `internal/synthesis/synthesizer.go` plus an embedded
 `templates/` tree (`main.bicep`, `modules/acr.bicep`, `abbreviations.json`,
@@ -217,12 +195,15 @@ public. The changes are additive and local to this package.
   mode, DNS zone map + subscription).
 - **`main.bicep`** — guard the network path on a single `enableNetworkIsolation`
   condition. When on: include `modules/network.bicep`, set the account's
-  `publicNetworkAccess`/`networkAcls`/`networkInjections` from the agent subnet,
-  and include `modules/private-endpoint-dns.bicep`. When off: the account block
-  is exactly today's.
+  `publicNetworkAccess: 'Disabled'`, `networkAcls.defaultAction: 'Deny'`, and
+  `networkInjections` (scenario `agent`) from the agent subnet, and include
+  `modules/private-endpoint-dns.bicep`. When off: the account block is exactly
+  today's.
 - **New modules** — `modules/network.bicep` (VNet + two subnets, create or
   reference, agent-subnet delegation) and `modules/private-endpoint-dns.bicep`
-  (account PE + 3 AI DNS zones + links, create or reference).
+  (account private endpoint + the three AI DNS zones
+  `privatelink.services.ai.azure.com`, `privatelink.openai.azure.com`,
+  `privatelink.cognitiveservices.azure.com` + VNet links, create or reference).
 - **Regenerate `main.arm.json`** — the precompiled ARM fallback must be rebuilt
   from the extended `main.bicep` and committed alongside it. The byte-stability
   contract from the bicep-less spec applies: same `azure.yaml` → byte-identical
@@ -231,7 +212,7 @@ public. The changes are additive and local to this package.
 The provisioning provider, on-disk/eject behavior, and parameter wiring need no
 structural change — they consume whatever `Result.Parameters` carries.
 
-## §7 Validation pipeline additions
+## §6 Validation pipeline additions
 
 Network validation slots into the synthesizer's existing pre-synthesis checks
 and runs on every `provision`, `preview`, and eject:
@@ -252,7 +233,7 @@ and runs on every `provision`, `preview`, and eject:
 Failures surface with the service-scoped field path, e.g.
 `services.my-project.network.byo.agentSubnet: prefix set without name`.
 
-## §8 Brownfield interaction
+## §7 Brownfield interaction
 
 `endpoint:` on the service already short-circuits synthesis — the synthesizer
 returns `ErrEndpointBrownfield` and the provider connects to the existing
@@ -265,7 +246,7 @@ explicit precedence: `endpoint:` wins, and a project that wants azd to manage
 its network posture must be greenfield (no `endpoint:`). If both are present,
 azd warns that `network:` has no effect in brownfield mode.
 
-## §9 ACR private networking — decision and RoI
+## §8 ACR private networking — decision and RoI
 
 A secured agent still needs its image to come from somewhere reachable inside
 the VNet. Two paths:
@@ -283,7 +264,7 @@ network-injected accounts, so the flow is coherent end to end. Revisit
 local-build-into-private-ACR after telemetry shows `--image` adoption and real
 demand.
 
-## §10 Telemetry, docs, and open questions
+## §9 Telemetry, docs, and open questions
 
 **Telemetry**
 
@@ -314,3 +295,16 @@ demand.
 4. **Subnet reference validation depth.** For name-only subnets, decide how much
    azd validates at synthesis time (existence, delegation, PE policies) versus
    deferring to ARM, given synthesis runs before any ARM call.
+5. **Account-scoped surface.** If Foundry adds multiple projects under one
+   network-bound account, decide whether `network:` promotes from the service
+   entry to an account-scoped surface (see "Why the block sits on the service").
+
+## References
+
+- Service team's standard network-secured agent template (source of truth for
+  the ARM shape, primitives, and the keep/drop decisions in this spec):
+  [`15-private-network-standard-agent-setup`](https://github.com/microsoft-foundry/foundry-samples/tree/main/infrastructure/infrastructure-setup-bicep/15-private-network-standard-agent-setup).
+- [Unified `azure.yaml` design](../unify-azure-yaml/spec.md) — establishes the
+  `host: microsoft.foundry` shape and defers VNet to this work (§1.4).
+- [Bicep-less provisioning](../bicepless-foundry/spec.md) — the synthesizer and
+  provider this spec extends.

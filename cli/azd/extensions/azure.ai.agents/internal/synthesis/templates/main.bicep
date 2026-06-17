@@ -3,8 +3,13 @@
 // Inputs are derived from the host: microsoft.foundry service body in
 // azure.yaml by internal/synthesis. Greenfield only (no endpoint:); a
 // brownfield path is a future addition.
+//
+// Subscription-scoped so the resource group is part of the deployment. This
+// keeps `azd provision --preview` side-effect free: the resource group shows
+// up as a previewed Create instead of being created up front to satisfy a
+// resource-group-scoped what-if.
 
-targetScope = 'resourceGroup'
+targetScope = 'subscription'
 
 // User-defined types
 
@@ -28,7 +33,12 @@ type deploymentType = {
 // Parameters
 
 @description('Azure region for all resources.')
-param location string = resourceGroup().location
+param location string
+
+@description('Name of the resource group to create and deploy resources into.')
+@minLength(1)
+@maxLength(90)
+param resourceGroupName string
 
 @description('Tags applied to all resources.')
 param tags object = {}
@@ -53,110 +63,37 @@ param principalId string = ''
 @description('Principal type used in the developer role assignment.')
 param principalType string = 'User'
 
-// Variables
-
-var resourceToken = empty(resourceTokenSalt)
-  ? uniqueString(subscription().id, resourceGroup().id, location)
-  : uniqueString(subscription().id, resourceGroup().id, location, resourceTokenSalt)
-
-var abbrs = loadJsonContent('abbreviations.json')
-
-var foundryAccountName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'
-
-// Built-in role definition ids. See: https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
-var cognitiveServicesUserRoleId = subscriptionResourceId(
-  'Microsoft.Authorization/roleDefinitions',
-  'a97b65f3-24c7-4388-baec-2e87135dc908'
-)
-
 // Resources
 
-resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
-  name: foundryAccountName
+resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
+  name: resourceGroupName
   location: location
   tags: tags
-  sku: {
-    name: 'S0'
-  }
-  kind: 'AIServices'
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    allowProjectManagement: true
-    customSubDomainName: foundryAccountName
-    publicNetworkAccess: 'Enabled'
-    disableLocalAuth: true
-    networkAcls: {
-      defaultAction: 'Allow'
-      virtualNetworkRules: []
-      ipRules: []
-    }
-  }
-
-  // Sequential model deployment creation; ARM throttles concurrent
-  // deployments on the same account.
-  @batchSize(1)
-  resource modelDeployments 'deployments' = [
-    for d in deployments: {
-      name: d.name
-      properties: {
-        model: d.model
-      }
-      sku: d.sku
-    }
-  ]
-
-  resource project 'projects' = {
-    name: foundryProjectName
-    location: location
-    identity: {
-      type: 'SystemAssigned'
-    }
-    properties: {
-      description: '${foundryProjectName} Project'
-      displayName: foundryProjectName
-    }
-    // Explicit dependsOn ensures all model deployments complete before
-    // the project is created; the project does not reference them so
-    // there is no implicit dependency Bicep can infer.
-    dependsOn: [
-      modelDeployments
-    ]
-  }
 }
 
-module acr 'modules/acr.bicep' = if (includeAcr) {
-  name: 'acr'
+module resources 'modules/resources.bicep' = {
+  name: 'foundry-resources'
+  scope: resourceGroup
   params: {
     location: location
     tags: tags
-    name: '${abbrs.containerRegistryRegistries}${resourceToken}'
-    foundryAccountName: foundryAccount.name
-    foundryProjectName: foundryAccount::project.name
-    foundryAccountPrincipalId: foundryAccount.identity.principalId
-  }
-}
-
-// Grant the developer Cognitive Services User on the project so they can call
-// the Foundry data-plane (chat/completions, agents API) from their machine.
-resource developerCognitiveServicesUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
-  name: guid(foundryAccount::project.id, principalId, cognitiveServicesUserRoleId)
-  scope: foundryAccount::project
-  properties: {
+    resourceTokenSalt: resourceTokenSalt
+    foundryProjectName: foundryProjectName
+    deployments: deployments
+    includeAcr: includeAcr
     principalId: principalId
     principalType: principalType
-    roleDefinitionId: cognitiveServicesUserRoleId
   }
 }
 
 // Outputs
 
-output AZURE_AI_PROJECT_ID string = foundryAccount::project.id
-output AZURE_AI_ACCOUNT_NAME string = foundryAccount.name
-output AZURE_AI_PROJECT_NAME string = foundryAccount::project.name
-output AZURE_OPENAI_ENDPOINT string = 'https://${foundryAccount.name}.openai.azure.com/'
-output FOUNDRY_PROJECT_ENDPOINT string = 'https://${foundryAccount.name}.services.ai.azure.com/api/projects/${foundryAccount::project.name}'
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = includeAcr ? acr!.outputs.loginServer : ''
-output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = includeAcr ? acr!.outputs.resourceId : ''
-output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = includeAcr ? acr!.outputs.connectionName : ''
+output AZURE_RESOURCE_GROUP string = resourceGroup.name
+output AZURE_AI_PROJECT_ID string = resources.outputs.AZURE_AI_PROJECT_ID
+output AZURE_AI_ACCOUNT_NAME string = resources.outputs.AZURE_AI_ACCOUNT_NAME
+output AZURE_AI_PROJECT_NAME string = resources.outputs.AZURE_AI_PROJECT_NAME
+output AZURE_OPENAI_ENDPOINT string = resources.outputs.AZURE_OPENAI_ENDPOINT
+output FOUNDRY_PROJECT_ENDPOINT string = resources.outputs.FOUNDRY_PROJECT_ENDPOINT
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
+output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_RESOURCE_ID
+output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = resources.outputs.AZURE_AI_PROJECT_ACR_CONNECTION_NAME

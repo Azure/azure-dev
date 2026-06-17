@@ -218,7 +218,6 @@ const (
 	OpArmDeploymentCreate   = "arm_deployment_create"
 	OpArmDeploymentGet      = "arm_deployment_get"
 	OpArmDeploymentWhatIf   = "arm_deployment_what_if"
-	OpResourceGroupCreate   = "resource_group_create"
 	OpResourceGroupDelete   = "resource_group_delete"
 	OpCognitiveAccountList  = "cognitive_account_list"
 	OpCognitiveAccountPurge = "cognitive_account_purge"

@@ -25,10 +25,8 @@ const (
 	ToolCategoryServer ToolCategory = "server"
 	// ToolCategoryAzdExtension is an azd extension installed via `azd extension install`.
 	ToolCategoryAzdExtension ToolCategory = "azd-extension"
-	// ToolCategoryRuntime is a language runtime or execution environment (e.g. Node.js).
-	ToolCategoryRuntime ToolCategory = "runtime"
-	// ToolCategorySkill is a skill hosted by an agent CLI (e.g. Copilot CLI,
-	// Claude Code) or installed directly via git clone from a skills repo.
+	// ToolCategorySkill is a skill hosted by an agent CLI that azd installs through the
+	// host's native plugin commands.
 	ToolCategorySkill ToolCategory = "skill"
 )
 
@@ -162,8 +160,6 @@ func FindToolsByCategory(category ToolCategory) []*ToolDefinition {
 // builtInTools is the canonical, read-only manifest of tools known to azd.
 // Use [BuiltInTools] to obtain a safe copy.
 var builtInTools = []*ToolDefinition{
-	git(),
-	nodejs(),
 	azCLI(),
 	githubCopilotCLI(),
 	vscodeAzureTools(),
@@ -178,63 +174,6 @@ var builtInTools = []*ToolDefinition{
 // Individual tool constructors – one function per tool keeps the manifest
 // readable without one huge composite literal.
 // ---------------------------------------------------------------------------
-
-func git() *ToolDefinition {
-	return &ToolDefinition{
-		Id:            "git",
-		Name:          "Git",
-		Description:   "Distributed version control system. Required for skill installation.",
-		Category:      ToolCategoryCLI,
-		Priority:      ToolPriorityRecommended,
-		Website:       "https://git-scm.com/",
-		DetectCommand: "git",
-		VersionArgs:   []string{"--version"},
-		VersionRegex:  `git version (\d+\.\d+\.\d+)`,
-		InstallStrategies: map[string]InstallStrategy{
-			"windows": {
-				PackageManager: "winget",
-				PackageId:      "Git.Git",
-			},
-			"darwin": {
-				PackageManager: "brew",
-				PackageId:      "git",
-			},
-			"linux": {
-				PackageManager: "apt",
-				PackageId:      "git",
-			},
-		},
-	}
-}
-
-func nodejs() *ToolDefinition {
-	return &ToolDefinition{
-		Id:            "nodejs",
-		Name:          "Node.js",
-		Description:   "JavaScript runtime environment. Required for the Azure MCP server (npx).",
-		Category:      ToolCategoryRuntime,
-		Priority:      ToolPriorityRecommended,
-		Website:       "https://nodejs.org/",
-		DetectCommand: "node",
-		VersionArgs:   []string{"--version"},
-		VersionRegex:  `v(\d+\.\d+\.\d+)`,
-		InstallStrategies: map[string]InstallStrategy{
-			"windows": {
-				PackageManager: "winget",
-				PackageId:      "OpenJS.NodeJS",
-			},
-			"darwin": {
-				PackageManager: "brew",
-				PackageId:      "node",
-			},
-			"linux": {
-				PackageManager: "apt",
-				PackageId:      "nodejs",
-				FallbackUrl:    "https://nodejs.org/download/",
-			},
-		},
-	}
-}
 
 func azCLI() *ToolDefinition {
 	return &ToolDefinition{

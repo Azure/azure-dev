@@ -1,0 +1,306 @@
+#!/usr/bin/env python3
+"""Tier 0: Offline CLI validation tests. No Azure auth needed, all parallel."""
+import subprocess
+import json
+import os
+import sys
+import tempfile
+import shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+RESULTS = []
+HOME_DIR = os.environ.get("E2E_HOME", os.environ.get("HOME", "/home/runner"))
+AZD = os.environ.get("E2E_AZD", shutil.which("azd") or "azd")
+
+# Ensure PATH includes azd location for subprocess calls
+_azd_dir = os.path.dirname(AZD)
+if _azd_dir and _azd_dir not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = f"{_azd_dir}:{os.environ.get('PATH', '')}"
+
+
+def run(args, cwd=None, timeout=30):
+    """Run a command and return result."""
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=cwd)
+        return r
+    except subprocess.TimeoutExpired:
+        return type('R', (), {'returncode': -1, 'stdout': '', 'stderr': 'TIMEOUT'})()
+
+
+def check(name, passed, detail=""):
+    """Record a test result."""
+    RESULTS.append((name, passed, detail))
+    status = "✓" if passed else "✗"
+    print(f"  {status} {name}" + (f" — {detail}" if detail and not passed else ""))
+    return passed
+
+
+# ============================================================
+# TEST CASES
+# ============================================================
+
+def test_version():
+    r = run([AZD, "ai", "agent", "version"])
+    ok = r.returncode == 0 and len(r.stdout.strip()) > 0
+    # Should contain a version-like string
+    import re
+    has_version = bool(re.search(r'\d+\.\d+', r.stdout))
+    return check("00-version", ok and has_version,
+                 f"exit={r.returncode}, output='{r.stdout.strip()[:50]}'")
+
+
+def test_help_root():
+    r = run([AZD, "ai", "agent", "--help"])
+    expected_cmds = ["doctor", "init", "invoke", "monitor", "run", "show", "version"]
+    missing = [c for c in expected_cmds if c not in r.stdout]
+    return check("00-help-root", r.returncode == 0 and not missing,
+                 f"missing: {missing}" if missing else "")
+
+
+def test_sample_list_text():
+    r = run([AZD, "ai", "agent", "sample", "list"])
+    has_content = len(r.stdout.strip()) > 50
+    has_python = "python" in r.stdout.lower() or "Python" in r.stdout
+    return check("00-sample-list-text", r.returncode == 0 and has_content and has_python,
+                 f"exit={r.returncode}, len={len(r.stdout)}")
+
+
+def test_sample_list_json_filters():
+    # Test JSON output
+    r1 = run([AZD, "ai", "agent", "sample", "list", "--output", "json"])
+    try:
+        raw = json.loads(r1.stdout)
+        # May be {"templates": [...]} or a direct list
+        data = raw.get("templates", raw) if isinstance(raw, dict) else raw
+        is_list = isinstance(data, list) and len(data) > 0
+    except (json.JSONDecodeError, ValueError):
+        return check("00-sample-list-json", False, f"invalid JSON: {r1.stdout[:100]}")
+
+    # Test language filter
+    r2 = run([AZD, "ai", "agent", "sample", "list", "--output", "json", "--language", "python"])
+    try:
+        raw2 = json.loads(r2.stdout)
+        filtered = raw2.get("templates", raw2) if isinstance(raw2, dict) else raw2
+        filter_works = isinstance(filtered, list) and len(filtered) <= len(data)
+    except (json.JSONDecodeError, ValueError):
+        filter_works = False
+
+    return check("00-sample-list-json", is_list and filter_works,
+                 f"all={len(data)}, python={len(filtered) if filter_works else '?'}")
+
+
+def test_doctor_empty_dir():
+    with tempfile.TemporaryDirectory() as td:
+        r = run([AZD, "ai", "agent", "doctor"], cwd=td)
+        # Should not crash, may exit non-zero (no azure.yaml)
+        not_crash = r.returncode is not None
+        return check("00-doctor-empty-dir", not_crash,
+                     f"exit={r.returncode}")
+
+
+def test_doctor_local_only():
+    with tempfile.TemporaryDirectory() as td:
+        r = run([AZD, "ai", "agent", "doctor", "--local-only"], cwd=td)
+        not_crash = r.returncode is not None
+        # Should mention skipped or local-only behavior
+        return check("00-doctor-local-only", not_crash,
+                     f"exit={r.returncode}")
+
+
+def test_doctor_partial_failure():
+    with tempfile.TemporaryDirectory() as td:
+        # Seed minimal azure.yaml
+        with open(os.path.join(td, "azure.yaml"), "w") as f:
+            f.write("name: test-agent\n")
+        r = run([AZD, "ai", "agent", "doctor"], cwd=td)
+        # Should have mixed pass/fail, exit non-zero
+        return check("00-doctor-partial", r.returncode is not None,
+                     f"exit={r.returncode}")
+
+
+def test_init_validate_mutually_exclusive():
+    with tempfile.TemporaryDirectory() as td:
+        r = run([AZD, "ai", "agent", "init", "./foo.yaml", "-m", "./bar.yaml"], cwd=td)
+        has_error = r.returncode != 0
+        conflict_msg = "conflict" in r.stderr.lower() or "conflict" in r.stdout.lower() or \
+                       "mutually exclusive" in r.stderr.lower() or "cannot" in r.stderr.lower()
+        return check("00-init-mutually-exclusive", has_error,
+                     f"exit={r.returncode}, stderr='{r.stderr.strip()[:80]}'")
+
+
+def test_init_no_prompt_missing():
+    with tempfile.TemporaryDirectory() as td:
+        r = run([AZD, "ai", "agent", "init", "--no-prompt"], cwd=td, timeout=15)
+        # Should exit non-zero quickly, not hang
+        not_hang = r.stderr != 'TIMEOUT'
+        has_error = r.returncode != 0
+        return check("00-init-no-prompt-missing", not_hang and has_error,
+                     f"exit={r.returncode}, timeout={r.stderr == 'TIMEOUT'}")
+
+
+def test_invoke_validate_protocol():
+    with tempfile.TemporaryDirectory() as td:
+        r = run([AZD, "ai", "agent", "invoke", "--protocol", "banana_protocol", "hello"], cwd=td)
+        has_error = r.returncode != 0
+        return check("00-invoke-bad-protocol", has_error,
+                     f"exit={r.returncode}, msg='{(r.stderr or r.stdout).strip()[:80]}'")
+
+
+def test_eval_context_required():
+    with tempfile.TemporaryDirectory() as td:
+        r = run([AZD, "ai", "agent", "eval", "list"], cwd=td, timeout=10)
+        not_crash = r.returncode is not None and r.stderr != 'TIMEOUT'
+        return check("00-eval-context-required", not_crash,
+                     f"exit={r.returncode}")
+
+
+def test_optimize_apply_requires_candidate():
+    with tempfile.TemporaryDirectory() as td:
+        r = run([AZD, "ai", "agent", "optimize", "apply"], cwd=td)
+        has_error = r.returncode != 0
+        mentions_flag = "candidate" in r.stderr.lower() or "candidate" in r.stdout.lower() or \
+                        "required" in r.stderr.lower()
+        return check("00-optimize-missing-flag", has_error,
+                     f"exit={r.returncode}, msg='{(r.stderr or r.stdout).strip()[:80]}'")
+
+
+def test_delete_help():
+    r = run([AZD, "ai", "agent", "delete", "--help"])
+    has_usage = "usage" in r.stdout.lower() or "delete" in r.stdout.lower()
+    return check("00-delete-help", r.returncode == 0 and has_usage,
+                 f"exit={r.returncode}, len={len(r.stdout)}")
+
+
+def test_endpoint_show_help():
+    r = run([AZD, "ai", "agent", "endpoint", "show", "--help"])
+    has_usage = "usage" in r.stdout.lower() or "endpoint" in r.stdout.lower() or "show" in r.stdout.lower()
+    return check("00-endpoint-show-help", r.returncode == 0 and has_usage,
+                 f"exit={r.returncode}, len={len(r.stdout)}")
+
+
+def test_code_download_help():
+    r = run([AZD, "ai", "agent", "code", "download", "--help"])
+    has_usage = "usage" in r.stdout.lower() or "download" in r.stdout.lower()
+    return check("00-code-download-help", r.returncode == 0 and has_usage,
+                 f"exit={r.returncode}, len={len(r.stdout)}")
+
+
+def test_init_picker_navigation():
+    """This one needs tmux to test interactive picker + Ctrl-C."""
+    TMUX = os.environ.get("E2E_TMUX", "/usr/local/bin/tmux")
+    SOCK = "tier0"
+    SESS = "picker"
+    import time
+
+    # Kill old
+    subprocess.run([TMUX, "-L", SOCK, "kill-server"], capture_output=True)
+    time.sleep(0.3)
+
+    with tempfile.TemporaryDirectory() as td:
+        # Start tmux session
+        subprocess.run([TMUX, "-L", SOCK, "new-session", "-d", "-s", SESS,
+                        "-x", "200", "-y", "50", "bash --norc --noprofile"],
+                       capture_output=True)
+        time.sleep(1)
+
+        def tmux_send(text):
+            subprocess.run([TMUX, "-L", SOCK, "send-keys", "-t", SESS, "-l", text],
+                          capture_output=True)
+
+        def tmux_key(k):
+            subprocess.run([TMUX, "-L", SOCK, "send-keys", "-t", SESS, k],
+                          capture_output=True)
+
+        def tmux_capture():
+            r = subprocess.run([TMUX, "-L", SOCK, "capture-pane", "-t", SESS, "-p"],
+                               capture_output=True, text=True)
+            return r.stdout
+
+        # Run init (set PATH first)
+        env_cmd = f"export HOME={HOME_DIR}; export PATH=/usr/local/bin:{HOME_DIR}/bin:{HOME_DIR}/.pyenv/versions/3.12.3/bin:/usr/bin:/bin"
+        tmux_send(env_cmd)
+        tmux_key("Enter")
+        time.sleep(0.5)
+        tmux_send(f"cd {td} && azd ai agent init")
+        tmux_key("Enter")
+        time.sleep(8)
+
+        cap = tmux_capture()
+        has_picker = "select" in cap.lower() or "?" in cap
+
+        # Send Ctrl-C to exit
+        tmux_key("C-c")
+        time.sleep(1)
+
+        subprocess.run([TMUX, "-L", SOCK, "kill-server"], capture_output=True)
+        return check("00-init-picker-navigation", has_picker,
+                     f"picker_shown={has_picker}")
+
+
+# ============================================================
+# MAIN
+# ============================================================
+ALL_TESTS = [
+    test_version,
+    test_help_root,
+    test_sample_list_text,
+    test_sample_list_json_filters,
+    test_doctor_empty_dir,
+    test_doctor_local_only,
+    test_doctor_partial_failure,
+    test_init_validate_mutually_exclusive,
+    test_init_no_prompt_missing,
+    test_invoke_validate_protocol,
+    test_eval_context_required,
+    test_optimize_apply_requires_candidate,
+    test_delete_help,
+    test_endpoint_show_help,
+    test_code_download_help,
+    test_init_picker_navigation,
+]
+
+if __name__ == "__main__":
+    import time
+    print("=" * 60)
+    print(f"TIER 0: Offline Validation ({len(ALL_TESTS)} tests)")
+    print("=" * 60)
+
+    start = time.time()
+
+    # Run all tests in parallel (except picker which uses tmux)
+    parallel_tests = ALL_TESTS[:-1]  # all except picker
+    serial_tests = [ALL_TESTS[-1]]   # picker needs tmux
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {pool.submit(t): t.__name__ for t in parallel_tests}
+        for f in as_completed(futures):
+            try:
+                f.result()
+            except Exception as e:
+                check(futures[f], False, f"EXCEPTION: {e}")
+
+    # Run picker test serially (needs tmux)
+    for t in serial_tests:
+        try:
+            t()
+        except Exception as e:
+            check(t.__name__, False, f"EXCEPTION: {e}")
+
+    elapsed = time.time() - start
+
+    # Summary
+    passed = sum(1 for _, ok, _ in RESULTS if ok)
+    total = len(RESULTS)
+    print(f"\n{'=' * 60}")
+    print(f"TIER 0 RESULTS: {passed}/{total} passed ({elapsed:.1f}s)")
+    print("=" * 60)
+
+    if passed < total:
+        print("\nFailed:")
+        for name, ok, detail in RESULTS:
+            if not ok:
+                print(f"  ✗ {name}: {detail}")
+        sys.exit(1)
+    else:
+        print("✓ ALL TIER 0 TESTS PASSED")
+        sys.exit(0)

@@ -1,0 +1,191 @@
+name: "ext-azure-ai-agents-e2e-static"
+
+# Static (deterministic) E2E tests for the azure.ai.agents CLI extension.
+#
+# Architecture:
+#   Python test scripts → tmux → azd ai agent CLI (under test)
+#
+# No LLM / Copilot needed — all interactions are deterministic.
+# Tiers:
+#   0: Offline validation (no auth, ~15s)
+#   1: Init variants (auth needed, no deploy, ~3min)
+#   2: Full golden path (provision + deploy + invoke, ~15min)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "Which tiers to run"
+        type: choice
+        options:
+          - "0"
+          - "0+1"
+          - "0+1+2"
+        default: "0+1"
+      deploy_modes:
+        description: "Tier 2 deploy modes"
+        type: choice
+        options:
+          - "both"
+          - "code"
+          - "container"
+        default: "both"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write  # For OIDC federated credentials (Tier 1/2)
+
+env:
+  TESTS_DIR: cli/azd/extensions/azure.ai.agents/tests/e2e-static
+
+jobs:
+  tier0:
+    name: "Tier 0 — Offline Validation"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "cli/azd/go.mod"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build azd + install extension
+        working-directory: cli/azd
+        run: |
+          go build -o ./azd .
+          echo "$PWD" >> "$GITHUB_PATH"
+          export PATH="$PWD:$PATH"
+          azd extension source add -n local -t file -l "$PWD/extensions/registry.json"
+          azd extension install azure.ai.agents --source local
+
+      - name: Run Tier 0 tests
+        working-directory: ${{ env.TESTS_DIR }}
+        run: python3 test_tier0.py
+
+  tier1:
+    name: "Tier 1 — Init Variants"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    if: contains(inputs.tier, '1')
+    needs: tier0
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "cli/azd/go.mod"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tmux
+        run: sudo apt-get install -y tmux
+
+      - name: Build azd + install extension
+        working-directory: cli/azd
+        run: |
+          go build -o ./azd .
+          echo "$PWD" >> "$GITHUB_PATH"
+          export PATH="$PWD:$PATH"
+          azd extension source add -n local -t file -l "$PWD/extensions/registry.json"
+          azd extension install azure.ai.agents --source local
+
+      # TODO: Replace with actual auth method (OIDC, service principal, etc.)
+      # Azure auth is needed for Tier 1 (init queries subscriptions/projects)
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          # Placeholder — configure federated credential or service principal
+          # Option 1: OIDC (recommended)
+          #   client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          #   tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          #   subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          # Option 2: Service principal secret
+          #   client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          #   tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          #   subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          #   client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run Tier 1 tests
+        working-directory: ${{ env.TESTS_DIR }}
+        env:
+          E2E_SUBSCRIPTION: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          E2E_PROJECT: ${{ secrets.FOUNDRY_PROJECT_NAME }}
+          E2E_TENANT: ${{ secrets.AZURE_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 test_tier1.py
+
+  tier2:
+    name: "Tier 2 — Golden Path (${{ inputs.deploy_modes || 'both' }})"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    if: contains(inputs.tier, '2')
+    needs: tier1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "cli/azd/go.mod"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tmux
+        run: sudo apt-get install -y tmux
+
+      - name: Build azd + install extension
+        working-directory: cli/azd
+        run: |
+          go build -o ./azd .
+          echo "$PWD" >> "$GITHUB_PATH"
+          export PATH="$PWD:$PATH"
+          azd extension source add -n local -t file -l "$PWD/extensions/registry.json"
+          azd extension install azure.ai.agents --source local
+
+      # TODO: Replace with actual auth method
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run Tier 2 tests
+        working-directory: ${{ env.TESTS_DIR }}
+        env:
+          E2E_SUBSCRIPTION: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          E2E_PROJECT: ${{ secrets.FOUNDRY_PROJECT_NAME }}
+          E2E_TENANT: ${{ secrets.AZURE_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 test_tier2.py --mode ${{ inputs.deploy_modes || 'both' }}
+
+      - name: Teardown on failure
+        if: failure()
+        working-directory: ${{ env.TESTS_DIR }}
+        run: |
+          echo "Attempting cleanup of any leaked resources..."
+          # test_full_e2e.py includes teardown, but if it crashed mid-way:
+          for dir in /tmp/e2e-tests/tier2-*/; do
+            if [ -d "$dir" ]; then
+              cd "$dir"
+              PROJ_DIR=$(find . -name "azure.yaml" -maxdepth 2 -exec dirname {} \; | head -1)
+              if [ -n "$PROJ_DIR" ]; then
+                cd "$PROJ_DIR" && azd down --force --purge --no-prompt 2>/dev/null || true
+              fi
+            fi
+          done

@@ -308,13 +308,16 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		return fmt.Errorf("marshalling project yaml: %w", err)
 	}
 
+	// Insert a blank line before the top-level "infra:" section for readability.
+	projectBytes = []byte(strings.Replace(string(projectBytes), "\ninfra:", "\n\ninfra:", 1))
+
 	version := "v1.0"
 	if projectConfig.MetaSchemaVersion != "" {
 		version = projectConfig.MetaSchemaVersion
 	}
 
 	annotation := fmt.Sprintf(
-		"# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/%s/azure.yaml.json",
+		"# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-unified-demo/schemas/%s/azure.yaml.json",
 		version)
 	projectFileContents := bytes.NewBufferString(annotation + "\n\n")
 	_, err = projectFileContents.Write(projectBytes)

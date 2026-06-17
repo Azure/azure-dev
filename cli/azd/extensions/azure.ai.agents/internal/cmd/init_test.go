@@ -54,6 +54,193 @@ func TestInitCommand_ForceFlag(t *testing.T) {
 	}
 }
 
+func TestInitCommand_ImageFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInitCommand(nil)
+
+	flag := cmd.Flags().Lookup("image")
+	require.NotNil(t, flag, "--image flag should be registered")
+	require.Empty(t, flag.DefValue, "expected --image to have empty default")
+}
+
+func TestValidateImageFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		image      string
+		deployMode string
+		wantErr    bool
+		errContain string
+	}{
+		{
+			name:  "empty image is valid",
+			image: "",
+		},
+		{
+			name:  "valid ACR image",
+			image: "myacr.azurecr.io/agent:v1",
+		},
+		{
+			name:  "valid Docker Hub image",
+			image: "docker.io/myorg/agent:latest",
+		},
+		{
+			name:  "valid image without tag",
+			image: "myacr.azurecr.io/agent",
+		},
+		{
+			name:       "image without registry fails",
+			image:      "agent:v1",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "simple name fails",
+			image:      "agent",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "image with code deploy fails",
+			image:      "myacr.azurecr.io/agent:v1",
+			deployMode: "code",
+			wantErr:    true,
+			errContain: "cannot be used with --deploy-mode code",
+		},
+		{
+			name:       "container deploy mode with image is valid",
+			image:      "myacr.azurecr.io/agent:v1",
+			deployMode: "container",
+		},
+		{
+			name:       "empty deploy mode with image is valid",
+			image:      "myacr.azurecr.io/agent:v1",
+			deployMode: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateImageFlag(tt.image, tt.deployMode)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errContain)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSetImageOnTemplate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		manifest  *agent_yaml.AgentManifest
+		image     string
+		wantImage string
+		wantErr   bool
+	}{
+		{
+			name:      "empty image is noop",
+			manifest:  &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{}},
+			image:     "",
+			wantImage: "",
+		},
+		{
+			name:      "sets image on container agent",
+			manifest:  &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{}},
+			image:     "myacr.azurecr.io/agent:v1",
+			wantImage: "myacr.azurecr.io/agent:v1",
+		},
+		{
+			name:     "nil manifest returns error",
+			manifest: nil,
+			image:    "myacr.azurecr.io/agent:v1",
+			wantErr:  true,
+		},
+		{
+			name:     "non-container agent returns error",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.Workflow{}},
+			image:    "myacr.azurecr.io/agent:v1",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := setImageOnTemplate(tt.manifest, tt.image)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			if tt.image != "" {
+				hostedAgent, ok := tt.manifest.Template.(agent_yaml.ContainerAgent)
+				require.True(t, ok)
+				require.Equal(t, tt.wantImage, hostedAgent.Image)
+			}
+		})
+	}
+}
+
+func TestSkipACR(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		isCodeDeploy bool
+		image        string
+		want         bool
+	}{
+		{
+			name:         "code deploy skips ACR",
+			isCodeDeploy: true,
+			image:        "",
+			want:         true,
+		},
+		{
+			name:         "image flag skips ACR",
+			isCodeDeploy: false,
+			image:        "myacr.azurecr.io/agent:v1",
+			want:         true,
+		},
+		{
+			name:         "both set skips ACR",
+			isCodeDeploy: true,
+			image:        "myacr.azurecr.io/agent:v1",
+			want:         true,
+		},
+		{
+			name:         "neither set does not skip ACR",
+			isCodeDeploy: false,
+			image:        "",
+			want:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			action := &InitAction{
+				isCodeDeploy: tt.isCodeDeploy,
+				flags:        &initFlags{image: tt.image},
+			}
+
+			require.Equal(t, tt.want, action.skipACR())
+		})
+	}
+}
+
 func TestValidateInitAgentName(t *testing.T) {
 	t.Parallel()
 

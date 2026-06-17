@@ -64,6 +64,10 @@ type initFlags struct {
 	runtime       string // e.g. "python_3_13", "python_3_14", "dotnet_10"
 	entryPoint    string // e.g. "app.py", "MyAgent.dll"
 	depResolution string // "remote_build" or "bundled"; defaults to "remote_build"
+	// image specifies a pre-built container image URL (e.g., "myacr.azurecr.io/agent:v1").
+	// When set, init writes the image field to agent.yaml and skips Dockerfile generation
+	// and ACR connection prompts. Incompatible with --deploy-mode code.
+	image string
 	// force, when true, lets headless callers (--no-prompt) pre-consent to
 	// overwrite prompts that would otherwise return a structured error. It
 	// mirrors the `--force` convention used by `azd down`, `azd env remove`,
@@ -103,6 +107,14 @@ type InitAction struct {
 	// interactively selects a template that resolves to a manifest. When true,
 	// the init flow applies opinionated defaults to minimize interactive prompts.
 	userProvidedManifest bool
+}
+
+// skipACR returns true when ACR provisioning and configuration should be skipped.
+// This happens when:
+// - Code deploy mode is selected (ZIP upload, no container build)
+// - Pre-built image is provided via --image flag (user manages their own registry)
+func (a *InitAction) skipACR() bool {
+	return a.isCodeDeploy || a.flags.image != ""
 }
 
 // modelSelector encapsulates the dependencies needed for model selection and
@@ -585,6 +597,27 @@ func updateAgentDefinition(
 	}
 }
 
+// setImageOnTemplate sets the Image field on a ContainerAgent template.
+// When --image is provided, this function updates the manifest so the image URL
+// is persisted in agent.yaml and used during deployment instead of building from Dockerfile.
+func setImageOnTemplate(agentManifest *agent_yaml.AgentManifest, image string) error {
+	if image == "" {
+		return nil
+	}
+	if agentManifest == nil {
+		return fmt.Errorf("agent manifest is nil")
+	}
+
+	hostedAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent)
+	if !ok {
+		return fmt.Errorf("--image is only supported for hosted container agents, got %T", agentManifest.Template)
+	}
+
+	hostedAgent.Image = image
+	agentManifest.Template = hostedAgent
+	return nil
+}
+
 func nextAgentNameSuggestion(agentName string) string {
 	const maxAgentNameLength = 63
 	const defaultAgentName = "agent"
@@ -882,7 +915,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
   # Non-interactive code deploy (CI/CD)
   azd ai agent init --no-prompt --project-id "<resource-id>" \
-    --deploy-mode code --runtime python_3_13 --entry-point app.py`,
+    --deploy-mode code --runtime python_3_13 --entry-point app.py
+
+  # Initialize with a pre-built container image (no Dockerfile or ACR setup)
+  azd ai agent init --no-prompt --agent-name my-agent \
+    --image myacr.azurecr.io/agents/my-agent:v1`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.noPrompt = extCtx.NoPrompt
@@ -1309,6 +1346,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVar(&flags.depResolution, "dep-resolution", "",
 		"Dependency resolution for code deploy: 'remote_build' or 'bundled'. Defaults to 'remote_build'.")
 
+	cmd.Flags().StringVar(&flags.image, "image", "",
+		"Pre-built container image URL (e.g., 'myacr.azurecr.io/agent:v1'). "+
+			"When set, skips Dockerfile generation and ACR setup. Incompatible with --deploy-mode code.")
+
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+
 			"Required together with --no-prompt when init would otherwise need confirmation.")
@@ -1456,6 +1497,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return err
 		}
 		if err := setAgentNameOnTemplate(agentManifest, agentName); err != nil {
+			return err
+		}
+
+		// Set pre-built image if --image was provided
+		if err := setImageOnTemplate(agentManifest, a.flags.image); err != nil {
 			return err
 		}
 
@@ -1678,7 +1724,7 @@ func (a *InitAction) configureModelChoice(
 		); err != nil {
 			return nil, err
 		}
-		if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, a.isCodeDeploy); err != nil {
+		if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, a.skipACR()); err != nil {
 			return nil, err
 		}
 		return agentManifest, nil
@@ -1985,7 +2031,7 @@ func (a *InitAction) configureModelChoice(
 	a.deploymentDetails = deploymentDetails
 
 	// Set AZD_AGENT_SKIP_ACR so Bicep knows whether to create a container registry.
-	if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, a.isCodeDeploy); err != nil {
+	if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, a.skipACR()); err != nil {
 		return nil, err
 	}
 
@@ -3595,8 +3641,43 @@ func extractConnectionConfigs(
 // validateCodeDeployFlags checks that required flags are present when using
 // --deploy-mode code in --no-prompt mode.
 func (a *InitAction) validateCodeDeployFlags() error {
+	// First validate image flag (it has incompatibilities with other flags)
+	if err := validateImageFlag(a.flags.image, a.flags.deployMode); err != nil {
+		return err
+	}
 	return validateCodeDeployInput(
 		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution)
+}
+
+// validateImageFlag checks that --image is valid when provided.
+// Returns an error if:
+// - --image is used with --deploy-mode code (incompatible)
+// - --image URL format is invalid (must contain registry/image pattern)
+func validateImageFlag(image, deployMode string) error {
+	if image == "" {
+		return nil
+	}
+
+	// --image is incompatible with --deploy-mode code
+	if deployMode == "code" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--image cannot be used with --deploy-mode code",
+			"Use --image with --deploy-mode container (default) or omit --deploy-mode",
+		)
+	}
+
+	// Basic image URL validation: must contain registry/image pattern
+	// e.g., "myacr.azurecr.io/agent" or "docker.io/myorg/agent:v1"
+	if !strings.Contains(image, "/") {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("invalid image URL %q: must be in format registry/image[:tag]", image),
+			"Provide a fully qualified image URL like 'myacr.azurecr.io/agent:v1'",
+		)
+	}
+
+	return nil
 }
 
 // validateCodeDeployInput is the shared validation logic for code deploy flags.

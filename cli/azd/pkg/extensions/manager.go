@@ -14,6 +14,7 @@ import (
 	"hash"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -46,6 +47,59 @@ var (
 	ErrRegistryExtensionNotFound  = errors.New("extension not found in registry")
 	ErrExtensionInstalled         = errors.New("extension already installed")
 )
+
+// DependencyNotFoundError indicates that a required dependency of an extension
+// could not be located in the same source as its parent. azd does not perform
+// cross-source dependency resolution during install, so the dependency must be
+// available in the parent's source or already installed.
+type DependencyNotFoundError struct {
+	// DependencyId is the id of the dependency that could not be resolved.
+	DependencyId string
+	// ParentId is the id of the extension that declares the dependency.
+	ParentId string
+}
+
+func (e *DependencyNotFoundError) Error() string {
+	return fmt.Sprintf("dependency %s required by %s was not found", e.DependencyId, e.ParentId)
+}
+
+// DependencyAmbiguousSourceError indicates that a required dependency of an
+// extension was found in more than one configured source, so azd cannot decide
+// which one to use. The caller must disambiguate by specifying an exact source.
+type DependencyAmbiguousSourceError struct {
+	// DependencyId is the id of the dependency that matched multiple sources.
+	DependencyId string
+	// ParentId is the id of the extension that declares the dependency.
+	ParentId string
+	// Sources lists the source names the dependency was found in.
+	Sources []string
+}
+
+func (e *DependencyAmbiguousSourceError) Error() string {
+	if len(e.Sources) > 0 {
+		return fmt.Sprintf(
+			"dependency %s required by %s was found in multiple sources (%s); specify an exact source",
+			e.DependencyId, e.ParentId, strings.Join(e.Sources, ", "),
+		)
+	}
+	return fmt.Sprintf(
+		"dependency %s required by %s was found in multiple sources; specify an exact source",
+		e.DependencyId, e.ParentId,
+	)
+}
+
+// dependencySources returns the de-duplicated, sorted source names present in a
+// set of extension matches. It is used to report which sources a dependency was
+// found in when the match is ambiguous.
+func dependencySources(matches []*ExtensionMetadata) []string {
+	seen := map[string]struct{}{}
+	for _, m := range matches {
+		if m.Source != "" {
+			seen[m.Source] = struct{}{}
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
+}
 
 // FilterOptions is used to filter, lookup, and list extensions with various criteria
 type FilterOptions struct {
@@ -537,11 +591,15 @@ func (m *Manager) installInternal(
 			}
 
 			if len(dependencyMatches) == 0 {
-				return nil, fmt.Errorf("dependency %s not found", dependency.Id)
+				return nil, &DependencyNotFoundError{DependencyId: dependency.Id, ParentId: extension.Id}
 			}
 
 			if len(dependencyMatches) > 1 {
-				return nil, fmt.Errorf("dependency %s found in multiple sources, specify exact source", dependency.Id)
+				return nil, &DependencyAmbiguousSourceError{
+					DependencyId: dependency.Id,
+					ParentId:     extension.Id,
+					Sources:      dependencySources(dependencyMatches),
+				}
 			}
 
 			dependencyMetadata := dependencyMatches[0]
@@ -1026,7 +1084,11 @@ func (m *Manager) findDependencyChild(
 		return nil, fmt.Errorf("dependency %s not found in any registry", childId)
 	}
 	if len(matches) > 1 {
-		return nil, fmt.Errorf("dependency %s found in multiple sources, specify exact source", childId)
+		return nil, &DependencyAmbiguousSourceError{
+			DependencyId: childId,
+			ParentId:     parent.Id,
+			Sources:      dependencySources(matches),
+		}
 	}
 	return matches[0], nil
 }
@@ -1133,11 +1195,34 @@ func (m *Manager) copyFromLocalPath(artifactPath string) (string, error) {
 	return tempFilePath, nil
 }
 
+// InvalidateSourceCache clears the in-memory extension source cache so that
+// subsequent source lookups re-read the configured sources. This is required
+// when a source is added within the same process (e.g. registering a bundle
+// source during install) after the source list may already have been cached.
+func (tm *Manager) InvalidateSourceCache() {
+	tm.sources = nil
+}
+
+// ReloadUserConfig re-reads the user configuration from disk into the manager's
+// cached copy. This is required when the configuration is mutated out-of-band
+// within the same process (e.g. registering a bundle source during install);
+// without it, a subsequent install save would persist the manager's stale
+// snapshot and clobber the externally added changes.
+func (tm *Manager) ReloadUserConfig() error {
+	userConfig, err := tm.configManager.Load()
+	if err != nil {
+		return fmt.Errorf("reloading user configuration: %w", err)
+	}
+
+	tm.userConfig = userConfig
+	tm.installed = nil
+	return nil
+}
+
 func (tm *Manager) getSources(ctx context.Context, filter sourceFilterPredicate) ([]Source, error) {
 	if tm.sources != nil {
 		return tm.sources, nil
 	}
-
 	configs, err := tm.sourceManager.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing extension sources: %w", err)

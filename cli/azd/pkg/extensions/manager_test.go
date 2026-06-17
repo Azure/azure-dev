@@ -9,6 +9,8 @@ import (
 	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -193,6 +195,33 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, installed)
 	require.Equal(t, 0, len(installed))
+}
+
+func Test_ReloadUserConfig_PicksUpOutOfBandChanges(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	// Mutate the user configuration out-of-band, after the manager has cached its snapshot.
+	err = sourceManager.Add(*mockContext.Context, "my-bundle", &SourceConfig{
+		Type:     SourceKindBundle,
+		Location: "/tmp/bundle",
+	})
+	require.NoError(t, err)
+
+	sourcePath := fmt.Sprintf("%s.%s", baseConfigKey, "my-bundle")
+
+	// After reloading, the cached snapshot reflects the out-of-band change, so a
+	// subsequent install save will not clobber the newly added source.
+	require.NoError(t, manager.ReloadUserConfig())
+	_, ok := manager.userConfig.Get(sourcePath)
+	require.True(t, ok)
 }
 
 func Test_Install_With_SemverConstraints(t *testing.T) {
@@ -2738,4 +2767,58 @@ func Test_Upgrade_DependencyUpgrade_NoOpStillPinsForSiblings(t *testing.T) {
 	cFinal, err := manager.GetInstalled(FilterOptions{Id: "leaf.c"})
 	require.NoError(t, err)
 	require.Equal(t, "1.0.0", cFinal.Version)
+}
+
+func Test_DependencyNotFoundError(t *testing.T) {
+	t.Parallel()
+
+	err := &DependencyNotFoundError{DependencyId: "azure.ai.inspector", ParentId: "azure.ai.agents"}
+	require.Contains(t, err.Error(), "azure.ai.inspector")
+	require.Contains(t, err.Error(), "azure.ai.agents")
+
+	// Unwraps correctly through fmt.Errorf chains.
+	wrapped := fmt.Errorf("install failed: %w", err)
+	typed, ok := errorsAsDependencyNotFound(wrapped)
+	require.True(t, ok)
+	require.Equal(t, "azure.ai.inspector", typed.DependencyId)
+}
+
+func errorsAsDependencyNotFound(err error) (*DependencyNotFoundError, bool) {
+	return errors.AsType[*DependencyNotFoundError](err)
+}
+
+func Test_DependencyAmbiguousSourceError(t *testing.T) {
+	t.Parallel()
+
+	err := &DependencyAmbiguousSourceError{
+		DependencyId: "azure.ai.inspector",
+		ParentId:     "azure.ai.agents",
+		Sources:      []string{"azd", "dev"},
+	}
+	msg := err.Error()
+	require.Contains(t, msg, "azure.ai.inspector")
+	require.Contains(t, msg, "azure.ai.agents")
+	require.Contains(t, msg, "azd, dev")
+
+	// Degrades gracefully when no sources are captured.
+	noSources := &DependencyAmbiguousSourceError{DependencyId: "x", ParentId: "y"}
+	require.Contains(t, noSources.Error(), "multiple sources")
+
+	// Unwraps correctly through fmt.Errorf chains.
+	wrapped := fmt.Errorf("install failed: %w", err)
+	typed, ok := errors.AsType[*DependencyAmbiguousSourceError](wrapped)
+	require.True(t, ok)
+	require.Equal(t, []string{"azd", "dev"}, typed.Sources)
+}
+
+func Test_dependencySources(t *testing.T) {
+	t.Parallel()
+
+	matches := []*ExtensionMetadata{
+		{Id: "x", Source: "dev"},
+		{Id: "x", Source: "azd"},
+		{Id: "x", Source: "dev"}, // duplicate
+		{Id: "x", Source: ""},    // empty ignored
+	}
+	require.Equal(t, []string{"azd", "dev"}, dependencySources(matches))
 }

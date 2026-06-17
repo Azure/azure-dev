@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.39.26.7824",
-      "templateHash": "6041567870326555484"
+      "templateHash": "10248453623902523275"
     }
   },
   "definitions": {
@@ -174,7 +174,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.39.26.7824",
-              "templateHash": "5844773064995479524"
+              "templateHash": "2049009886480371322"
             }
           },
           "definitions": {
@@ -395,8 +395,8 @@
                   "foundryProjectName": {
                     "value": "[parameters('foundryProjectName')]"
                   },
-                  "foundryAccountPrincipalId": {
-                    "value": "[reference('foundryAccount', '2025-06-01', 'full').identity.principalId]"
+                  "foundryProjectPrincipalId": {
+                    "value": "[reference('foundryAccount::project', '2025-06-01', 'full').identity.principalId]"
                   }
                 },
                 "template": {
@@ -406,7 +406,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.39.26.7824",
-                      "templateHash": "9734321568810554915"
+                      "templateHash": "1861506930511297752"
                     }
                   },
                   "parameters": {
@@ -443,10 +443,10 @@
                         "description": "Name of the existing Foundry project receiving the ACR connection."
                       }
                     },
-                    "foundryAccountPrincipalId": {
+                    "foundryProjectPrincipalId": {
                       "type": "string",
                       "metadata": {
-                        "description": "Principal id of the Foundry account managed identity; receives AcrPull."
+                        "description": "Principal id of the Foundry project managed identity; receives AcrPull and is the connection credential identity."
                       }
                     }
                   },
@@ -456,21 +456,23 @@
                   "resources": [
                     {
                       "type": "Microsoft.CognitiveServices/accounts/projects/connections",
-                      "apiVersion": "2025-06-01",
+                      "apiVersion": "2025-04-01-preview",
                       "name": "[format('{0}/{1}/{2}', parameters('foundryAccountName'), parameters('foundryProjectName'), format('{0}-conn', parameters('name')))]",
                       "properties": {
                         "category": "ContainerRegistry",
                         "target": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), '2023-07-01').loginServer]",
                         "authType": "ManagedIdentity",
+                        "credentials": {
+                          "clientId": "[parameters('foundryProjectPrincipalId')]",
+                          "resourceId": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]"
+                        },
                         "isSharedToAll": true,
-                        "useWorkspaceManagedIdentity": false,
                         "metadata": {
-                          "ApiType": "Azure",
                           "ResourceId": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]"
                         }
                       },
                       "dependsOn": [
-                        "[extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), parameters('foundryAccountPrincipalId'), variables('acrPullRoleId')))]",
+                        "[extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), parameters('foundryProjectPrincipalId'), variables('acrPullRoleId')))]",
                         "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]"
                       ]
                     },
@@ -496,9 +498,9 @@
                       "type": "Microsoft.Authorization/roleAssignments",
                       "apiVersion": "2022-04-01",
                       "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', parameters('name'))]",
-                      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), parameters('foundryAccountPrincipalId'), variables('acrPullRoleId'))]",
+                      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), parameters('foundryProjectPrincipalId'), variables('acrPullRoleId'))]",
                       "properties": {
-                        "principalId": "[parameters('foundryAccountPrincipalId')]",
+                        "principalId": "[parameters('foundryProjectPrincipalId')]",
                         "principalType": "ServicePrincipal",
                         "roleDefinitionId": "[variables('acrPullRoleId')]"
                       },

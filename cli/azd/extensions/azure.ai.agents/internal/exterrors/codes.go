@@ -215,10 +215,12 @@ const (
 
 // Operation names for the microsoft.foundry provisioning provider.
 const (
-	OpArmDeploymentCreate   = "arm_deployment_create"
-	OpArmDeploymentGet      = "arm_deployment_get"
-	OpArmDeploymentWhatIf   = "arm_deployment_what_if"
-	OpResourceGroupDelete   = "resource_group_delete"
-	OpCognitiveAccountList  = "cognitive_account_list"
-	OpCognitiveAccountPurge = "cognitive_account_purge"
+	OpArmDeploymentCreate       = "arm_deployment_create"
+	OpArmDeploymentGet          = "arm_deployment_get"
+	OpArmDeploymentWhatIf       = "arm_deployment_what_if"
+	OpResourceGroupDelete       = "resource_group_delete"
+	OpCognitiveAccountList      = "cognitive_account_list"
+	OpCognitiveAccountPurge     = "cognitive_account_purge"
+	OpCognitiveDeploymentList   = "cognitive_deployment_list"
+	OpCognitiveDeploymentDelete = "cognitive_deployment_delete"
 )

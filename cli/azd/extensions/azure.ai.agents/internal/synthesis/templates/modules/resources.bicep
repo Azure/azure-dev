@@ -136,7 +136,7 @@ module acr 'acr.bicep' = if (includeAcr) {
     name: '${abbrs.containerRegistryRegistries}${resourceToken}'
     foundryAccountName: foundryAccount.name
     foundryProjectName: foundryAccount::project.name
-    foundryAccountPrincipalId: foundryAccount.identity.principalId
+    foundryProjectPrincipalId: foundryAccount::project.identity.principalId
   }
 }
 

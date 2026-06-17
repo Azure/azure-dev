@@ -293,3 +293,78 @@ func TestFormatArmErrorResponse(t *testing.T) {
 		assert.Equal(t, "SomeCode:", got)
 	})
 }
+
+func TestWhatIfChanges(t *testing.T) {
+	t.Parallel()
+
+	ctCreate := armresources.ChangeTypeCreate
+	ctDelete := armresources.ChangeTypeDelete
+
+	t.Run("nil Properties yields nil", func(t *testing.T) {
+		t.Parallel()
+		assert.Nil(t, whatIfChanges(armresources.WhatIfOperationResult{}))
+	})
+
+	t.Run("nil entries skipped", func(t *testing.T) {
+		t.Parallel()
+		got := whatIfChanges(armresources.WhatIfOperationResult{
+			Properties: &armresources.WhatIfOperationProperties{
+				Changes: []*armresources.WhatIfChange{nil, nil},
+			},
+		})
+		assert.Empty(t, got)
+	})
+
+	t.Run("create pulls type+name from After state", func(t *testing.T) {
+		t.Parallel()
+		id := "/subscriptions/s/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/cog"
+		got := whatIfChanges(armresources.WhatIfOperationResult{
+			Properties: &armresources.WhatIfOperationProperties{
+				Changes: []*armresources.WhatIfChange{{
+					ChangeType: &ctCreate,
+					ResourceID: &id,
+					After: map[string]any{
+						"type": "Microsoft.CognitiveServices/accounts",
+						"name": "cog",
+					},
+				}},
+			},
+		})
+		require.Len(t, got, 1)
+		assert.Equal(t, "Create", got[0].ChangeType)
+		assert.Equal(t, "Microsoft.CognitiveServices/accounts", got[0].ResourceType)
+		assert.Equal(t, "cog", got[0].Name)
+		assert.Equal(t, id, got[0].ResourceId)
+	})
+
+	t.Run("delete falls back to Before state", func(t *testing.T) {
+		t.Parallel()
+		id := "/subscriptions/s/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/cr"
+		got := whatIfChanges(armresources.WhatIfOperationResult{
+			Properties: &armresources.WhatIfOperationProperties{
+				Changes: []*armresources.WhatIfChange{{
+					ChangeType: &ctDelete,
+					ResourceID: &id,
+					Before:     map[string]any{"type": "Microsoft.ContainerRegistry/registries", "name": "cr"},
+				}},
+			},
+		})
+		require.Len(t, got, 1)
+		assert.Equal(t, "Delete", got[0].ChangeType)
+		assert.Equal(t, "cr", got[0].Name)
+	})
+
+	t.Run("name falls back to shortened id when state lacks name", func(t *testing.T) {
+		t.Parallel()
+		id := "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Resources/x/y"
+		got := whatIfChanges(armresources.WhatIfOperationResult{
+			Properties: &armresources.WhatIfOperationProperties{
+				Changes: []*armresources.WhatIfChange{{ChangeType: &ctCreate, ResourceID: &id}},
+			},
+		})
+		require.Len(t, got, 1)
+		assert.Equal(t, "Microsoft.Resources/x/y", got[0].Name,
+			"missing state name must fall back to the shortened resource id")
+		assert.Empty(t, got[0].ResourceType)
+	})
+}

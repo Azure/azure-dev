@@ -10,6 +10,7 @@ import (
 	"azureaiagent/internal/exterrors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // maxPreviewResources caps how many "Affected resources" lines
@@ -104,6 +105,44 @@ func summarizeWhatIf(r armresources.WhatIfOperationResult) string {
 	}
 
 	return b.String()
+}
+
+// whatIfChanges projects a what-if result into the proto changes the core
+// preview UX renders (colored per change type). Resource type and name come
+// from the After state (Before for deletes), mirroring the built-in bicep
+// provider; entries with no usable state still surface via the resource id.
+// Nil-safe on Properties and individual entries.
+func whatIfChanges(r armresources.WhatIfOperationResult) []*azdext.ProvisioningDeploymentPreviewChange {
+	if r.Properties == nil {
+		return nil
+	}
+
+	out := make([]*azdext.ProvisioningDeploymentPreviewChange, 0, len(r.Properties.Changes))
+	for _, c := range r.Properties.Changes {
+		if c == nil {
+			continue
+		}
+
+		state, _ := c.After.(map[string]any)
+		if state == nil {
+			state, _ = c.Before.(map[string]any)
+		}
+		resourceType, _ := state["type"].(string)
+		name, _ := state["name"].(string)
+
+		change := &azdext.ProvisioningDeploymentPreviewChange{ResourceType: resourceType, Name: name}
+		if c.ChangeType != nil {
+			change.ChangeType = string(*c.ChangeType)
+		}
+		if c.ResourceID != nil {
+			change.ResourceId = *c.ResourceID
+			if name == "" {
+				change.Name = shortenResourceID(*c.ResourceID)
+			}
+		}
+		out = append(out, change)
+	}
+	return out
 }
 
 // shortenResourceID trims the subscription/resource-group prefix from an ARM

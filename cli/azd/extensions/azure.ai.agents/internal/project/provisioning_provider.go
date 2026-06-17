@@ -10,6 +10,8 @@ const FoundryProviderName = "microsoft.foundry"
 
 // FoundryServiceHosts lists the values of `services.<name>.host` that
 // this extension's provisioning provider treats as Foundry services.
-// Must stay in sync with cmd.AiAgentHost ("azure.ai.agent") — kept here
-// to avoid a cmd -> project import cycle.
-var FoundryServiceHosts = []string{"azure.ai.agent"}
+// FoundryHost ("microsoft.foundry") is the unified host emitted by
+// `azd ai agent init`; "azure.ai.agent" is the legacy host kept for
+// backward compatibility. The literal mirrors cmd.AiAgentHost — kept
+// here to avoid a cmd -> project import cycle.
+var FoundryServiceHosts = []string{FoundryHost, "azure.ai.agent"}

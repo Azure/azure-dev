@@ -17,12 +17,14 @@ docs/
 ## When to Update Documentation
 
 - **New command or flag:** Update `docs/guides/adding-a-new-command.md` if the pattern changes; update `docs/reference/feature-status.md` with the new feature's stage.
-- **New environment variable:** Add it to `docs/reference/environment-variables.md`.
+- **User-visible behavior change:** Add or update a `CHANGELOG.md` entry when release-note-worthy, and update relevant command docs/help when behavior affects workflows, especially `--no-prompt` or CI/script semantics.
+ - **New environment variable:** Add it to `cli/azd/docs/environment-variables.md` (canonical), and keep `docs/reference/environment-variables.md` in sync when appropriate.
 - **New extension capability:** Update `docs/architecture/extension-framework.md` and `docs/guides/creating-an-extension.md`.
 - **Feature stage change:** Update `docs/reference/feature-status.md` when a feature graduates (alpha → beta → stable).
 - **New concept or term:** Add it to `docs/concepts/glossary.md`.
 - **Architecture decision:** Create a new ADR using the template at `docs/architecture/adr-template.md`.
 - **New hosting target or language:** Update `docs/reference/feature-status.md` and `docs/concepts/glossary.md`.
+- **Product rebrand or compatibility name:** Use the current product name in user-facing prose, while preserving legacy/internal identifiers only where required by code, telemetry, APIs, or compatibility.
 
 ## Documentation Placement Guide
 
@@ -42,3 +44,4 @@ docs/
 - Link to detailed implementation docs in `cli/azd/docs/` rather than duplicating content
 - Keep tables and lists scannable
 - Include code examples where they aid understanding
+- Verify environment-variable docs against source behavior and generated config shapes. Distinguish values that `azd` reads directly from template substitutions, and document Bicep parameter files using the nested `parameters.<name>.value` shape rather than flattened JSON.

@@ -177,6 +177,17 @@ func (p *FoundryServiceTargetProvider) resolveProjectFromEndpoint(ctx context.Co
 		return fmt.Errorf("failed to persist AZURE_AI_PROJECT_ID: %w", err)
 	}
 
+	// Persist the resolved endpoint so that Endpoints() and azd show work after a
+	// deploy without provision. Without this, FOUNDRY_PROJECT_ENDPOINT is only set
+	// in-memory during Deploy and is absent from the env on the next command.
+	if _, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: p.agent.env.Name,
+		Key:     "FOUNDRY_PROJECT_ENDPOINT",
+		Value:   endpoint,
+	}); err != nil {
+		return fmt.Errorf("failed to persist FOUNDRY_PROJECT_ENDPOINT: %w", err)
+	}
+
 	return nil
 }
 

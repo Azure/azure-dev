@@ -28,8 +28,8 @@ AGENT_NAME = os.environ.get("E2E_AGENT_NAME", "")  # Optional: unique name for p
 # Track results
 results = {}
 DEPLOY_MODE = os.environ.get("E2E_DEPLOY_MODE", "code")  # "code" or "container"
-SENTINEL = "__DONE_{}_".format(os.getpid())
-_SENTINEL_RE = re.compile(re.escape(SENTINEL) + r"(\d+)")
+_SENTINEL_BASE = "__DONE_{}_".format(os.getpid())
+_sentinel_counter = 0
 
 
 def get_gh_token():
@@ -116,18 +116,22 @@ def show(label="", lines_count=15):
 
 
 def run_cmd(cmd, timeout=600):
-    """Send command with sentinel and wait for completion. Returns (capture_text, exit_code).
+    """Send command with unique sentinel and wait for completion. Returns (capture_text, exit_code).
     
-    The sentinel pattern is: echo __DONE_<pid>_$?
-    Input echo shows literal $? (not a digit), real output shows the numeric exit code.
-    We match only lines where the sentinel is followed by a digit (the expanded $?).
+    Each call uses a unique sentinel (base + counter) so that leftover output from
+    previous commands cannot cause a false match.
     """
-    send(f"{cmd} ; echo {SENTINEL}$?")
+    global _sentinel_counter
+    _sentinel_counter += 1
+    sentinel = f"{_SENTINEL_BASE}{_sentinel_counter}_"
+    sentinel_re = re.compile(re.escape(sentinel) + r"(\d+)")
+
+    send(f"{cmd} ; echo {sentinel}$?")
     key("Enter")
     deadline = time.time() + timeout
     while time.time() < deadline:
         cap = capture()
-        m = _SENTINEL_RE.search(cap)
+        m = sentinel_re.search(cap)
         if m:
             rc = int(m.group(1))
             return cap, rc

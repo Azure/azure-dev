@@ -123,13 +123,13 @@ services:
         # name + prefix => azd creates subnet with that name/prefix
         agentSubnet:
           name: agent-subnet
-          prefix: 192.168.0.0/24
+          prefix: <CIDR>
 
         # Private endpoint subnet.
         # Same rules with Agent subnet.
         peSubnet:
           name: pe-subnet
-          prefix: 192.168.1.0/24
+          prefix: <CIDR>
 
       # Used only when mode: managed.
       # Values: AllowInternetOutbound | AllowOnlyApprovedOutbound

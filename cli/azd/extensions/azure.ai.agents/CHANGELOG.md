@@ -1,5 +1,9 @@
 # Release History
 
+## 0.1.41-preview (2026-06-17)
+
+- [[#8643]](https://github.com/Azure/azure-dev/pull/8643) Add bicep-less `azd ai agent init` and a `microsoft.foundry` provisioning provider that provisions a Foundry project directly from `azure.yaml` without an on-disk `infra/` directory, with an `--infra` eject flag, ARM what-if preview, and cleanup of model deployments and soft-deleted Cognitive Services accounts on `azd down`.
+
 ## 0.1.39-preview (2026-06-11)
 
 - [[#8602]](https://github.com/Azure/azure-dev/pull/8602) Support Foundry `${{...}}` server-side expressions during `azd ai agent` environment-variable expansion, so values that mix azd `${VAR}` references with Foundry `${{...}}` expressions (and `${VAR:-default}` forms) resolve correctly instead of being dropped. Thanks @huimiu for the contribution!

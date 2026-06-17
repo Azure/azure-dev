@@ -45,5 +45,3 @@ docs/
 - Keep tables and lists scannable
 - Include code examples where they aid understanding
 - Verify environment-variable docs against source behavior and generated config shapes. Distinguish values that `azd` reads directly from template substitutions, and document Bicep parameter files using the nested `parameters.<name>.value` shape rather than flattened JSON.
-
-_Sources: PR #8494 https://github.com/Azure/azure-dev/pull/8494#discussion_r3327398519; PR #8561 https://github.com/Azure/azure-dev/pull/8561#pullrequestreview-4451043828; PR #8579 https://github.com/Azure/azure-dev/pull/8579#discussion_r3381280690; PR #8529 https://github.com/Azure/azure-dev/issues/8529#issuecomment-4616281158._

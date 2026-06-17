@@ -31,5 +31,3 @@ all existing imports or declarations.
 
 - When reviewing command input resolution, explicit CLI args and flags should win over defaults. Do not prompt the user toward a different default when they provided a valid new value; reserve prompts for ambiguous choices and preserve deterministic `--no-prompt` behavior for CI/scripts.
 - When filtering AI models or quota data by location, keep location-specific usage data associated with only the models available in that location. Empty or unknown usage data from an unrelated location must not make a model eligible elsewhere; add regression coverage for cross-location quota cases.
-
-_Sources: PR #8561 https://github.com/Azure/azure-dev/pull/8561#discussion_r3374961004; PR #8537 https://github.com/Azure/azure-dev/pull/8537#discussion_r3364235532._

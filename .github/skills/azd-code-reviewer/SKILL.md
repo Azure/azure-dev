@@ -1,6 +1,9 @@
 ---
 name: azd-code-reviewer
 description: "Reviews GitHub pull requests by applying multiple specialist lenses (security, Go expert, architect, testing, UX, docs, PM, Azure, novice customer), triaging findings for signal-to-noise, and returning structured inline comments. Use for: review PR, look at this PR, give feedback on PR, check this PR, code review, PR feedback."
+license: MIT
+metadata:
+  version: "1.0"
 ---
 
 # Code Review

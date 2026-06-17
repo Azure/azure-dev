@@ -58,16 +58,21 @@ type SkillHost struct {
 	// Host is the binary name of the agent CLI (e.g. "copilot", "claude").
 	Host string
 	// MarketplaceAddCommand is the optional one-time command that registers
-	// the plugin marketplace with the host (e.g. ["/plugin", "marketplace",
+	// the plugin marketplace with the host (e.g. ["plugin", "marketplace",
 	// "add", "microsoft/azure-skills"]). Empty when not required.
 	MarketplaceAddCommand []string
 	// PluginInstallCommand installs the plugin via the host
-	// (e.g. ["/plugin", "install", "azure@azure-skills"]).
+	// (e.g. ["plugin", "install", "azure@azure-skills"]).
 	PluginInstallCommand []string
 	// PluginUpdateCommand updates the plugin to its latest version.
 	PluginUpdateCommand []string
 	// PluginUninstallCommand removes the plugin from the host.
 	PluginUninstallCommand []string
+	// PluginListCommand lists installed plugins on the host
+	// (e.g. ["plugin", "list"]). The detector runs this command and
+	// searches the output for PluginName to decide whether the skill
+	// is installed.
+	PluginListCommand []string
 	// PluginName is the plugin's short name as reported by the host's
 	// plugin listing (e.g. "azure"). Used by the detector.
 	PluginName string
@@ -96,10 +101,6 @@ type InstallStrategy struct {
 	// when Category == ToolCategorySkill. Hosts are evaluated in order;
 	// the first one whose binary is on PATH is used. Ignored for other categories.
 	SkillHosts []SkillHost
-	// GitRepo is the repository URL used to install a skill directly
-	// via git clone when no host CLI is available (e.g.
-	// "https://github.com/microsoft/GitHub-Copilot-for-Azure").
-	GitRepo string
 }
 
 // ToolDefinition is the complete metadata for a single tool in the registry.
@@ -402,7 +403,8 @@ func azureSkills() *ToolDefinition {
 					PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
 					PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
 					PluginUninstallCommand: []string{"plugin", "uninstall", "azure"},
-					PluginName:             "azure",
+					PluginListCommand:      []string{"plugin", "list"},
+					PluginName:             "azure@azure-skills",
 				},
 				{
 					Host:                   "claude",
@@ -410,13 +412,15 @@ func azureSkills() *ToolDefinition {
 					PluginInstallCommand:   []string{"plugin", "install", "azure"},
 					PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
 					PluginUninstallCommand: []string{"plugin", "uninstall", "azure"},
-					PluginName:             "azure",
+					PluginListCommand:      []string{"plugin", "list", "azure@azure-skills"},
+					PluginName:             "azure@azure-skills",
 				},
 				{
 					Host:                   "gemini",
 					PluginInstallCommand:   []string{"extensions", "install", "https://github.com/microsoft/azure-skills"},
 					PluginUpdateCommand:    []string{"extensions", "update", "azure"},
 					PluginUninstallCommand: []string{"extensions", "uninstall", "azure"},
+					PluginListCommand:      []string{"extensions", "list"},
 					PluginName:             "azure",
 				},
 				{
@@ -425,12 +429,11 @@ func azureSkills() *ToolDefinition {
 					PluginInstallCommand:   []string{"plugin", "add", "azure@azure-skills"},
 					PluginUpdateCommand:    []string{"plugin", "marketplace", "upgrade", "azure-skills"}, // need to run PluginInstallCommand again
 					PluginUninstallCommand: []string{"plugin", "remove", "azure@azure-skills"},
+					PluginListCommand:      []string{"plugin", "list"},
 					PluginName:             "azure@azure-skills",
 				},
 			},
-			GitRepo: "https://github.com/microsoft/azure-skills",
 		}),
-		Dependencies: []string{"git", "nodejs"},
 	}
 }
 

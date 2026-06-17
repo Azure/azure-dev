@@ -100,31 +100,19 @@ jobs:
           azd extension source add -n local -t file -l "$PWD/extensions/registry.json"
           azd extension install azure.ai.agents --source local
 
-      # TODO: Replace with actual auth method (OIDC, service principal, etc.)
-      # Azure auth is needed for Tier 1 (init queries subscriptions/projects)
       - name: Azure Login
         uses: azure/login@v2
         with:
-          # Placeholder — configure federated credential or service principal
-          # Option 1: OIDC (recommended)
-          #   client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          #   tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          #   subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          # Option 2: Service principal secret
-          #   client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          #   tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          #   subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          #   client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.DEVOPS_CLIENT_ID }}
+          tenant-id: ${{ secrets.DEVOPS_TENANT_ID }}
+          subscription-id: ${{ secrets.DEVOPS_SUB_ID }}
 
       - name: Run Tier 1 tests
         working-directory: ${{ env.TESTS_DIR }}
         env:
-          E2E_SUBSCRIPTION: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          E2E_SUBSCRIPTION: ${{ secrets.DEVOPS_SUB_ID }}
           E2E_PROJECT: ${{ secrets.FOUNDRY_PROJECT_NAME }}
-          E2E_TENANT: ${{ secrets.AZURE_TENANT_ID }}
+          E2E_TENANT: ${{ secrets.DEVOPS_TENANT_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 test_tier1.py
 
@@ -157,20 +145,19 @@ jobs:
           azd extension source add -n local -t file -l "$PWD/extensions/registry.json"
           azd extension install azure.ai.agents --source local
 
-      # TODO: Replace with actual auth method
       - name: Azure Login
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.DEVOPS_CLIENT_ID }}
+          tenant-id: ${{ secrets.DEVOPS_TENANT_ID }}
+          subscription-id: ${{ secrets.DEVOPS_SUB_ID }}
 
       - name: Run Tier 2 tests
         working-directory: ${{ env.TESTS_DIR }}
         env:
-          E2E_SUBSCRIPTION: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          E2E_SUBSCRIPTION: ${{ secrets.DEVOPS_SUB_ID }}
           E2E_PROJECT: ${{ secrets.FOUNDRY_PROJECT_NAME }}
-          E2E_TENANT: ${{ secrets.AZURE_TENANT_ID }}
+          E2E_TENANT: ${{ secrets.DEVOPS_TENANT_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 test_tier2.py --mode ${{ inputs.deploy_modes || 'both' }}
 

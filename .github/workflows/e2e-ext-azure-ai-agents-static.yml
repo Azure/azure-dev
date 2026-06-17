@@ -33,7 +33,9 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Do NOT cancel in-progress: Tier 2 creates cloud resources that need teardown.
+  # A cancelled run would skip cleanup → resource leak + billing.
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -110,6 +112,9 @@ jobs:
           tenant-id: ${{ secrets.DEVOPS_TENANT_ID }}
           subscription-id: ${{ secrets.DEVOPS_SUB_ID }}
 
+      - name: Configure azd to use az CLI auth
+        run: azd config set auth.useAzCliAuth true
+
       - name: Run Tier 1 tests
         working-directory: ${{ env.TESTS_DIR }}
         env:
@@ -154,6 +159,9 @@ jobs:
           client-id: ${{ secrets.DEVOPS_CLIENT_ID }}
           tenant-id: ${{ secrets.DEVOPS_TENANT_ID }}
           subscription-id: ${{ secrets.DEVOPS_SUB_ID }}
+
+      - name: Configure azd to use az CLI auth
+        run: azd config set auth.useAzCliAuth true
 
       - name: Run Tier 2 tests
         working-directory: ${{ env.TESTS_DIR }}

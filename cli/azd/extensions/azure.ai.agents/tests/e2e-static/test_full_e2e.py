@@ -12,6 +12,8 @@ import time
 import sys
 import os
 
+import re
+
 TMUX = os.environ.get("E2E_TMUX", "tmux")
 SOCK = os.environ.get("E2E_SOCK", "e2e")
 SESS = os.environ.get("E2E_SESS", "e2e")
@@ -27,6 +29,7 @@ AGENT_NAME = os.environ.get("E2E_AGENT_NAME", "")  # Optional: unique name for p
 results = {}
 DEPLOY_MODE = os.environ.get("E2E_DEPLOY_MODE", "code")  # "code" or "container"
 SENTINEL = "__DONE_{}_".format(os.getpid())
+_SENTINEL_RE = re.compile(re.escape(SENTINEL) + r"(\d+)")
 
 
 def get_gh_token():
@@ -113,21 +116,21 @@ def show(label="", lines_count=15):
 
 
 def run_cmd(cmd, timeout=600):
-    """Send command with sentinel and wait for completion. Returns (capture_text, exit_code)."""
+    """Send command with sentinel and wait for completion. Returns (capture_text, exit_code).
+    
+    The sentinel pattern is: echo __DONE_<pid>_$?
+    Input echo shows literal $? (not a digit), real output shows the numeric exit code.
+    We match only lines where the sentinel is followed by a digit (the expanded $?).
+    """
     send(f"{cmd} ; echo {SENTINEL}$?")
     key("Enter")
     deadline = time.time() + timeout
     while time.time() < deadline:
         cap = capture()
-        if SENTINEL in cap:
-            for line in cap.split("\n"):
-                if SENTINEL in line:
-                    try:
-                        rc = int(line.split(SENTINEL)[1].strip())
-                    except (ValueError, IndexError):
-                        rc = -1
-                    return cap, rc
-            return cap, -1
+        m = _SENTINEL_RE.search(cap)
+        if m:
+            rc = int(m.group(1))
+            return cap, rc
         time.sleep(3)
     return None, -1
 
@@ -227,6 +230,11 @@ def setup():
         print("ERROR: Environment setup failed")
         sys.exit(1)
     print("Environment OK")
+
+    # Tell azd to use az CLI credentials (needed when az login provides OIDC token)
+    send("azd config set auth.useAzCliAuth true")
+    key("Enter")
+    time.sleep(1)
 
     send(f"cd {TESTDIR}")
     key("Enter")

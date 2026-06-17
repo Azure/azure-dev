@@ -418,6 +418,9 @@ def phase_init():
             else:
                 print("  -> Source Code")
                 select_by_text("Source")
+        elif "what would you like to do" in prompt:
+            print("  -> Continue")
+            select_by_text("Continue")
         else:
             print("  -> Enter (default)")
             key("Enter")
@@ -576,9 +579,36 @@ def phase_invoke():
             results["invoke"] = f"FAIL ({error_msg[:80]})"
             return False
         else:
-            # Success! Check for response content
-            print("  Invoke succeeded!")
-            results["invoke"] = "PASS"
+            # Success — verify response content
+            # Extract lines between the command and the sentinel
+            resp_lines = []
+            in_response = False
+            for line in cap.split("\n"):
+                if "invoke" in line.lower() and service_name in line:
+                    in_response = True
+                    continue
+                if _SENTINEL_BASE in line:
+                    break
+                if in_response and line.strip():
+                    resp_lines.append(line.strip())
+
+            response_text = "\n".join(resp_lines)
+            if not response_text.strip():
+                print("  WARNING: invoke returned empty response")
+                if attempt < max_retries:
+                    print("  Retrying...")
+                    time.sleep(15)
+                    continue
+                results["invoke"] = "FAIL (empty response)"
+                return False
+
+            # Payload asks "what is 2+2?" — response should contain "4"
+            has_expected = "4" in response_text
+            print(f"  Response ({len(response_text)} chars): {response_text[:120]}")
+            if not has_expected:
+                print("  WARNING: response does not contain expected '4'")
+
+            results["invoke"] = "PASS" if has_expected else "PASS (response present, no '4')"
             return True
 
     results["invoke"] = "FAIL (all retries exhausted)"

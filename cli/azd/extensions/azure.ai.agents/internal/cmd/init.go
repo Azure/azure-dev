@@ -1825,7 +1825,7 @@ func (a *InitAction) configureModelChoice(
 			selectedProject, err := selectFoundryProject(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
-				a.isCodeDeploy,
+				a.skipACR(),
 			)
 			if err != nil {
 				return nil, err
@@ -1891,7 +1891,7 @@ func (a *InitAction) configureModelChoice(
 				selectedProject, err := selectFoundryProject(
 					ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 					a.azureContext.Scope.SubscriptionId, "",
-					a.isCodeDeploy,
+					a.skipACR(),
 				)
 				if err != nil {
 					return nil, err
@@ -1970,7 +1970,7 @@ func (a *InitAction) configureModelChoice(
 		selectedProject, err := selectFoundryProject(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
-			a.isCodeDeploy,
+			a.skipACR(),
 		)
 		if err != nil {
 			return nil, err
@@ -2047,7 +2047,7 @@ func (a *InitAction) configureModelChoice(
 			selectedProject, err := selectFoundryProject(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, "",
-				a.isCodeDeploy,
+				a.skipACR(),
 			)
 			if err != nil {
 				return nil, err

@@ -1,10 +1,10 @@
-<!-- cspell:ignore privatelink azurecr vnet subnet subnets myprivacr cognitiveservices UAMI hund -->
+<!-- cspell:ignore privatelink azurecr vnet subnet subnets myprivacr cognitiveservices UAMI hund hund030 huimiu -->
 
 # Private networking for `host: microsoft.foundry`
 
 ## Problem
 
-Foundry network isolation is unreachable from `azure.yaml` today. Per the [unified `azure.yaml` design](../unify-azure-yaml/spec.md) (§1.4), VNet binding is an **Account** setting while the unified shape models the **Project**, so customizing it requires ejecting to Bicep. A developer who needs a network-secured agent must hand-author the service team's standard network-secured template and maintain it by hand. There is no `network:` surface, and the in-memory synthesizer that [bicep-less provisioning](../bicepless-foundry/spec.md) introduced always emits a public account (`publicNetworkAccess: 'Enabled'`).
+Foundry network isolation is unreachable from `azure.yaml` today. Per the [unified `azure.yaml` design](https://github.com/Azure/azure-dev/pull/8590) (§1.4), VNet binding is an **Account** setting while the unified shape models the **Project**, so customizing it requires ejecting to Bicep. A developer who needs a network-secured agent must hand-author the service team's standard network-secured template and maintain it by hand. There is no `network:` surface, and the in-memory synthesizer that [bicep-less provisioning](https://github.com/Azure/azure-dev/pull/8577) introduced always emits a public account (`publicNetworkAccess: 'Enabled'`).
 
 This spec adds a declarative `network:` block to the `host: microsoft.foundry` service and teaches the existing synthesizer to provision a network-bound account from it.
 
@@ -193,5 +193,5 @@ The hard part of the local-build path is not creating the registry — it is mak
 ## References
 
 - Service team's standard network-secured agent template (source of truth for the ARM shape, primitives, and the keep/drop decisions in this spec): [`15-private-network-standard-agent-setup`](https://github.com/microsoft-foundry/foundry-samples/tree/main/infrastructure/infrastructure-setup-bicep/15-private-network-standard-agent-setup).
-- [Unified `azure.yaml` design](../unify-azure-yaml/spec.md) — establishes the `host: microsoft.foundry` shape and defers VNet to this work (§1.4).
-- [Bicep-less provisioning](../bicepless-foundry/spec.md) — the synthesizer and provider this spec extends.
+- [Unified `azure.yaml` design](https://github.com/Azure/azure-dev/pull/8590) — establishes the `host: microsoft.foundry` shape and defers VNet to this work (§1.4).
+- [Bicep-less provisioning](https://github.com/Azure/azure-dev/pull/8577) — the synthesizer and provider this spec extends.

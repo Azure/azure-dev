@@ -48,7 +48,7 @@ All review text — the review body AND inline comments — follows these rules:
 - "I think we need..." for suggestions you feel strongly about.
 - No "Great PR!" or "Thanks for the contribution!" openers.
 - No emoji, no exclamation marks for enthusiasm.
-- When uncertain, say "I might be wrong, but..." rather than hedging with "perhaps consider...".
+- When uncertain, say "I might be wrong, but..." or "I'm curious about..." rather than hedging with "perhaps consider...".
 
 ## Build the Review Body
 

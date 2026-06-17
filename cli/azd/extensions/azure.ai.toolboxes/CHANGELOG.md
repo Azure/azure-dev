@@ -1,5 +1,11 @@
 # Release History
 
+## Unreleased
+
+### Bugs Fixed
+
+- [[#8688]](https://github.com/Azure/azure-dev/issues/8688) Resolve the project endpoint that `azd ai agent init` stores. `azd ai toolbox` commands now fall back to `AZURE_AI_PROJECT_ENDPOINT` (after `FOUNDRY_PROJECT_ENDPOINT`) in both the active azd environment and the host environment, so the hosted-agent + toolbox workflow no longer fails with "no Foundry project endpoint resolved" after init.
+
 ## 0.1.0-preview (2026-05-28)
 
 Initial release of the `azure.ai.toolboxes` extension for managing Microsoft Foundry Toolboxes from the terminal.

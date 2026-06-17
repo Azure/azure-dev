@@ -5,7 +5,9 @@ Runs two instances of test_full_e2e.py simultaneously with different:
   - deploy modes (code vs container)
   - tmux session/socket names
   - working directories
-  - agent names (via different init directories)
+
+Note: Agent names are derived from template defaults in separate directories.
+Each instance uses its own isolated tmux socket and test directory.
 
 Prerequisites:
   - Same as test_full_e2e.py (WSL, tmux, azd, az CLI, tokens)
@@ -18,8 +20,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-HOME_DIR = os.environ.get("E2E_HOME", os.environ.get("HOME", "/home/runner"))
-TMUX = os.environ.get("E2E_TMUX", "tmux")
 
 
 def run_e2e(deploy_mode, label):
@@ -39,6 +39,10 @@ def run_e2e(deploy_mode, label):
     env["E2E_SOCK"] = sock
     env["E2E_SESS"] = sess
     env["E2E_TESTDIR"] = testdir
+    # Unique agent name to avoid Azure resource collisions in parallel runs
+    import hashlib
+    unique_suffix = hashlib.md5(f"{deploy_mode}-{os.getpid()}".encode()).hexdigest()[:6]
+    env["E2E_AGENT_NAME"] = f"e2e-{deploy_mode}-{unique_suffix}"
 
     print(f"\n{'='*60}")
     print(f"[{label}] Starting: deploy_mode={deploy_mode}, sock={sock}")

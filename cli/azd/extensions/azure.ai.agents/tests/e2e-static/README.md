@@ -95,5 +95,6 @@ Builds azd from source, installs extension from local registry, runs tests.
 - **Code deploy golden path**: init → provision → deploy → invoke → teardown
 - **Container deploy golden path**: init → provision → deploy → invoke → teardown
 
-Both use the same Python Basic template with different deploy modes.
-Agent names differ to avoid collisions when running in parallel.
+Both use the same Python Basic (Invocations) template with different deploy modes.
+Each test runs in an isolated tmux socket and working directory.
+Service names for invoke are read dynamically from `azure.yaml` artifacts.

@@ -92,40 +92,48 @@ def test_sample_list_json_filters():
 def test_doctor_empty_dir():
     with tempfile.TemporaryDirectory() as td:
         r = run([AZD, "ai", "agent", "doctor"], cwd=td)
-        # Should not crash, may exit non-zero (no azure.yaml)
-        not_crash = r.returncode is not None
-        return check("00-doctor-empty-dir", not_crash,
-                     f"exit={r.returncode}")
+        # Should exit non-zero (no azure.yaml found)
+        has_error = r.returncode != 0
+        output = (r.stdout + r.stderr).lower()
+        mentions_missing = "azure.yaml" in output or "not found" in output or "no agent" in output
+        return check("00-doctor-empty-dir", has_error and mentions_missing,
+                     f"exit={r.returncode}, mentions_missing={mentions_missing}")
 
 
 def test_doctor_local_only():
     with tempfile.TemporaryDirectory() as td:
         r = run([AZD, "ai", "agent", "doctor", "--local-only"], cwd=td)
-        not_crash = r.returncode is not None
-        # Should mention skipped or local-only behavior
-        return check("00-doctor-local-only", not_crash,
-                     f"exit={r.returncode}")
+        # Should exit non-zero in empty dir (no azure.yaml)
+        has_error = r.returncode != 0
+        output = (r.stdout + r.stderr).lower()
+        mentions_local = "local" in output or "azure.yaml" in output or "not found" in output
+        return check("00-doctor-local-only", has_error and mentions_local,
+                     f"exit={r.returncode}, output_hint='{(r.stdout + r.stderr).strip()[:80]}'")
 
 
 def test_doctor_partial_failure():
     with tempfile.TemporaryDirectory() as td:
-        # Seed minimal azure.yaml
+        # Seed minimal azure.yaml (incomplete — no agent.yaml, no services)
         with open(os.path.join(td, "azure.yaml"), "w") as f:
             f.write("name: test-agent\n")
         r = run([AZD, "ai", "agent", "doctor"], cwd=td)
-        # Should have mixed pass/fail, exit non-zero
-        return check("00-doctor-partial", r.returncode is not None,
-                     f"exit={r.returncode}")
+        # Should exit non-zero (partial config means checks fail)
+        has_error = r.returncode != 0
+        output = (r.stdout + r.stderr).lower()
+        # Doctor should report specific failures (missing agent.yaml, missing host, etc.)
+        has_diagnostic = any(k in output for k in ["fail", "error", "missing", "not found", "agent.yaml"])
+        return check("00-doctor-partial", has_error and has_diagnostic,
+                     f"exit={r.returncode}, diag={has_diagnostic}")
 
 
 def test_init_validate_mutually_exclusive():
     with tempfile.TemporaryDirectory() as td:
         r = run([AZD, "ai", "agent", "init", "./foo.yaml", "-m", "./bar.yaml"], cwd=td)
         has_error = r.returncode != 0
-        conflict_msg = "conflict" in r.stderr.lower() or "conflict" in r.stdout.lower() or \
-                       "mutually exclusive" in r.stderr.lower() or "cannot" in r.stderr.lower()
-        return check("00-init-mutually-exclusive", has_error,
-                     f"exit={r.returncode}, stderr='{r.stderr.strip()[:80]}'")
+        output = (r.stdout + r.stderr).lower()
+        conflict_msg = "conflict" in output or "mutually exclusive" in output or "cannot" in output
+        return check("00-init-mutually-exclusive", has_error and conflict_msg,
+                     f"exit={r.returncode}, conflict_msg={conflict_msg}")
 
 
 def test_init_no_prompt_missing():
@@ -149,19 +157,22 @@ def test_invoke_validate_protocol():
 def test_eval_context_required():
     with tempfile.TemporaryDirectory() as td:
         r = run([AZD, "ai", "agent", "eval", "list"], cwd=td, timeout=10)
-        not_crash = r.returncode is not None and r.stderr != 'TIMEOUT'
-        return check("00-eval-context-required", not_crash,
-                     f"exit={r.returncode}")
+        # Should exit non-zero (no azure.yaml / no agent context)
+        has_error = r.returncode != 0 and r.stderr != 'TIMEOUT'
+        output = (r.stdout + r.stderr).lower()
+        mentions_context = any(k in output for k in ["azure.yaml", "not found", "error", "no agent", "context"])
+        return check("00-eval-context-required", has_error and mentions_context,
+                     f"exit={r.returncode}, context_msg={mentions_context}")
 
 
 def test_optimize_apply_requires_candidate():
     with tempfile.TemporaryDirectory() as td:
         r = run([AZD, "ai", "agent", "optimize", "apply"], cwd=td)
         has_error = r.returncode != 0
-        mentions_flag = "candidate" in r.stderr.lower() or "candidate" in r.stdout.lower() or \
-                        "required" in r.stderr.lower()
-        return check("00-optimize-missing-flag", has_error,
-                     f"exit={r.returncode}, msg='{(r.stderr or r.stdout).strip()[:80]}'")
+        output = (r.stdout + r.stderr).lower()
+        mentions_requirement = "candidate" in output or "required" in output or "missing" in output
+        return check("00-optimize-missing-flag", has_error and mentions_requirement,
+                     f"exit={r.returncode}, mentions_req={mentions_requirement}")
 
 
 def test_delete_help():

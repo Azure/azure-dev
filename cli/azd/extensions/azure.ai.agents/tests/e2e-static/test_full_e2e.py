@@ -11,7 +11,6 @@ import subprocess
 import time
 import sys
 import os
-import glob as globmod
 
 TMUX = os.environ.get("E2E_TMUX", "tmux")
 SOCK = os.environ.get("E2E_SOCK", "e2e")
@@ -22,10 +21,12 @@ ENV_SETUP = f"export HOME={HOME_DIR}; export PATH={HOME_DIR}/bin:/usr/local/bin:
 SUBSCRIPTION = os.environ.get("E2E_SUBSCRIPTION", "")
 PROJECT = os.environ.get("E2E_PROJECT", "")
 TENANT = os.environ.get("E2E_TENANT", "")
+AGENT_NAME = os.environ.get("E2E_AGENT_NAME", "")  # Optional: unique name for parallel isolation
 
 # Track results
 results = {}
 DEPLOY_MODE = os.environ.get("E2E_DEPLOY_MODE", "code")  # "code" or "container"
+SENTINEL = "__DONE_{}_".format(os.getpid())
 
 
 def get_gh_token():
@@ -111,7 +112,28 @@ def show(label="", lines_count=15):
         print(f"  {l}")
 
 
-def wait_for_shell_prompt(timeout=600):
+def run_cmd(cmd, timeout=600):
+    """Send command with sentinel and wait for completion. Returns (capture_text, exit_code)."""
+    send(f"{cmd} ; echo {SENTINEL}$?")
+    key("Enter")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        cap = capture()
+        if SENTINEL in cap:
+            for line in cap.split("\n"):
+                if SENTINEL in line:
+                    try:
+                        rc = int(line.split(SENTINEL)[1].strip())
+                    except (ValueError, IndexError):
+                        rc = -1
+                    return cap, rc
+            return cap, -1
+        time.sleep(3)
+    return None, -1
+
+
+# Legacy: kept for reference, prefer run_cmd()
+def _wait_for_shell_prompt_legacy(timeout=600):
     """Wait for bash prompt (command finished)."""
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -122,6 +144,42 @@ def wait_for_shell_prompt(timeout=600):
             if last.endswith("$") or last.startswith("bash"):
                 return cap
         time.sleep(3)
+    return None
+
+
+def validate_init_output(testdir):
+    """Validate init produced correct artifacts on disk."""
+    for d in os.listdir(testdir):
+        subdir = os.path.join(testdir, d)
+        if os.path.isdir(subdir):
+            azure_yaml = os.path.join(subdir, "azure.yaml")
+            agent_yaml = os.path.join(subdir, "agent.yaml")
+            if os.path.exists(azure_yaml):
+                with open(azure_yaml) as f:
+                    content = f.read()
+                if "host:" in content and "azure.ai.agent" in content:
+                    if os.path.exists(agent_yaml):
+                        return True
+    return False
+
+
+def find_service_name(testdir):
+    """Read the first service name from azure.yaml under the generated project."""
+    for d in os.listdir(testdir):
+        subdir = os.path.join(testdir, d)
+        azure_yaml_path = os.path.join(subdir, "azure.yaml")
+        if os.path.isdir(subdir) and os.path.exists(azure_yaml_path):
+            with open(azure_yaml_path) as f:
+                content = f.read()
+            in_services = False
+            for line in content.split("\n"):
+                if line.strip() == "services:":
+                    in_services = True
+                    continue
+                if in_services and line.startswith("  ") and line.strip().endswith(":"):
+                    return line.strip().rstrip(":")
+                if in_services and not line.startswith(" ") and line.strip():
+                    break
     return None
 
 
@@ -183,7 +241,10 @@ def phase_init():
     print("PHASE 1: azd ai agent init")
     print("=" * 60)
 
-    send("azd ai agent init")
+    init_cmd = "azd ai agent init"
+    if AGENT_NAME:
+        init_cmd += f" --agent-name {AGENT_NAME}"
+    send(init_cmd)
     key("Enter")
     time.sleep(8)
 
@@ -197,16 +258,24 @@ def phase_init():
     # Step 2: Template
     if not wait_for_or_fail("Select a starter template", 30, "init"):
         return False
-    print("[2] Template: Basic")
-    select_by_text("Basic")
+    print("[2] Template: Basic agent (Invocations)")
+    select_by_text("Basic agent (Invocations")
     time.sleep(8)
 
-    # Step 3: Name
-    if not wait_for_or_fail("Enter a name", 30, "init"):
-        return False
-    print("[3] Name: default")
-    key("Enter")
-    time.sleep(8)
+    # Step 3: Name (may be skipped if --agent-name was used)
+    if AGENT_NAME:
+        print(f"[3] Name: {AGENT_NAME} (via --agent-name, prompt may be skipped)")
+        # Wait briefly for name prompt — if it doesn't appear, flag worked
+        cap = wait_for("Enter a name", 15)
+        if cap:
+            key("Enter")
+            time.sleep(5)
+    else:
+        if not wait_for_or_fail("Enter a name", 30, "init"):
+            return False
+        print("[3] Name: default")
+        key("Enter")
+        time.sleep(8)
 
     # Step 4: Foundry project type
     if not wait_for_or_fail("Select a Foundry project", 30, "init"):
@@ -239,6 +308,13 @@ def phase_init():
 
         if "added to your azd project" in cap_lower or "agent definition added" in cap_lower:
             print(f"[{step_num}] === INIT COMPLETE ===")
+            if not validate_init_output(TESTDIR):
+                print("  WARNING: marker found but disk validation failed, checking...")
+                time.sleep(5)
+                if not validate_init_output(TESTDIR):
+                    print("  FAIL: artifacts not on disk despite completion marker")
+                    results["init"] = "FAIL (no artifacts)"
+                    return False
             results["init"] = "PASS"
             return True
 
@@ -272,8 +348,8 @@ def phase_init():
         if not prompt:
             if lines and (lines[-1].strip().startswith("bash") or lines[-1].strip().endswith("$")):
                 # Check if init completed without marker
-                if "services:" in cap_lower or "azure.yaml" in cap_lower:
-                    print(f"[{step_num}] Init likely complete")
+                if validate_init_output(TESTDIR):
+                    print(f"[{step_num}] Init complete (disk validation)")
                     results["init"] = "PASS"
                     return True
                 print(f"[{step_num}] Shell prompt, no completion marker")
@@ -348,8 +424,6 @@ def phase_provision():
     print("=" * 60)
 
     # Find the project subdirectory created by init
-    cap = capture()
-    # Extract project dir from init output
     project_dir = None
     for d in os.listdir(TESTDIR):
         subdir = os.path.join(TESTDIR, d)
@@ -367,13 +441,9 @@ def phase_provision():
     key("Enter")
     time.sleep(1)
 
-    send("azd provision --no-prompt")
-    key("Enter")
-    time.sleep(5)
-
     # Provision can take several minutes
     print("Waiting for provision to complete (up to 10 min)...")
-    cap = wait_for_shell_prompt(timeout=600)
+    cap, rc = run_cmd("azd provision --no-prompt", timeout=600)
     if cap is None:
         print("TIMEOUT: provision did not complete in 10 min")
         show("Current state", 20)
@@ -381,10 +451,9 @@ def phase_provision():
         return False
 
     show("Provision result", 20)
-    cap_lower = cap.lower()
-    if "error" in cap_lower and "success" not in cap_lower:
-        print("Provision FAILED")
-        results["provision"] = "FAIL"
+    if rc != 0:
+        print(f"Provision FAILED (exit code {rc})")
+        results["provision"] = f"FAIL (exit code {rc})"
         return False
 
     print("Provision appears complete")
@@ -400,13 +469,9 @@ def phase_deploy():
     print("PHASE 3: azd deploy")
     print("=" * 60)
 
-    send("azd deploy --no-prompt")
-    key("Enter")
-    time.sleep(5)
-
     # Deploy can take several minutes
     print("Waiting for deploy to complete (up to 10 min)...")
-    cap = wait_for_shell_prompt(timeout=600)
+    cap, rc = run_cmd("azd deploy --no-prompt", timeout=600)
     if cap is None:
         print("TIMEOUT: deploy did not complete in 10 min")
         show("Current state", 20)
@@ -414,10 +479,9 @@ def phase_deploy():
         return False
 
     show("Deploy result", 20)
-    cap_lower = cap.lower()
-    if "error" in cap_lower and "success" not in cap_lower:
-        print("Deploy FAILED")
-        results["deploy"] = "FAIL"
+    if rc != 0:
+        print(f"Deploy FAILED (exit code {rc})")
+        results["deploy"] = f"FAIL (exit code {rc})"
         return False
 
     print("Deploy appears complete")
@@ -439,18 +503,18 @@ def phase_invoke():
     time.sleep(wait_secs)
 
     # The invocations protocol requires JSON payload: {"message": "..."}
-    # Also need service name from init
-    service_name = "agent-framework-agent-basic-invocations"
+    service_name = find_service_name(TESTDIR)
+    if not service_name:
+        print("ERROR: Could not determine service name from azure.yaml")
+        results["invoke"] = "FAIL (no service name)"
+        return False
+    print(f"  Service name: {service_name}")
     payload = '{"message": "Hello, what is 2+2?"}'
 
     max_retries = 3
     for attempt in range(1, max_retries + 1):
         print(f"\nInvoke attempt {attempt}/{max_retries}...")
-        send(f"azd ai agent invoke {service_name} '{payload}'")
-        key("Enter")
-        time.sleep(5)
-
-        cap = wait_for_shell_prompt(timeout=180)
+        cap, rc = run_cmd(f"azd ai agent invoke {service_name} '{payload}'", timeout=180)
         if cap is None:
             print("TIMEOUT: invoke did not complete in 3 min")
             show("Current state", 20)
@@ -466,13 +530,16 @@ def phase_invoke():
         lines = [l for l in cap.split("\n") if l.strip()]
         has_error = False
         error_msg = ""
-        for l in lines:
-            if "ERROR:" in l or ("error" in l.lower() and "500" in l):
-                has_error = True
-                error_msg = l.strip()
-                break
+        if rc != 0:
+            for l in lines:
+                if "ERROR:" in l or ("error" in l.lower() and "500" in l):
+                    has_error = True
+                    error_msg = l.strip()
+                    break
+            if not error_msg:
+                error_msg = f"exit code {rc}"
 
-        if has_error and ("500" in error_msg or "Internal Server Error" in error_msg):
+        if rc != 0 and has_error and ("500" in error_msg or "Internal Server Error" in error_msg):
             print(f"  Server error: {error_msg[:100]}")
             if attempt < max_retries:
                 print(f"  Retrying in 30s (container may still be starting)...")
@@ -484,12 +551,12 @@ def phase_invoke():
                 send(f"azd ai agent monitor {service_name} --tail 50")
                 key("Enter")
                 time.sleep(10)
-                log_cap = wait_for_shell_prompt(timeout=60)
+                log_cap = _wait_for_shell_prompt_legacy(timeout=60)
                 if log_cap:
                     show("Agent logs", 30)
                 results["invoke"] = f"FAIL (HTTP 500: {error_msg[:80]})"
                 return False
-        elif has_error:
+        elif rc != 0:
             print(f"  Error: {error_msg[:100]}")
             if attempt < max_retries:
                 time.sleep(15)
@@ -514,12 +581,8 @@ def phase_teardown():
     print("PHASE 5: azd down (teardown)")
     print("=" * 60)
 
-    send("azd down --force --purge --no-prompt")
-    key("Enter")
-    time.sleep(5)
-
     print("Waiting for teardown (up to 10 min)...")
-    cap = wait_for_shell_prompt(timeout=600)
+    cap, rc = run_cmd("azd down --force --purge --no-prompt", timeout=600)
     if cap is None:
         print("TIMEOUT: teardown did not complete")
         show("Current state", 20)
@@ -527,6 +590,10 @@ def phase_teardown():
         return False
 
     show("Teardown result", 20)
+    if rc != 0:
+        print(f"Teardown FAILED (exit code {rc})")
+        results["teardown"] = f"FAIL (exit code {rc})"
+        return False
     print("Teardown complete")
     results["teardown"] = "PASS"
     return True

@@ -7,7 +7,6 @@ import subprocess
 import time
 import sys
 import os
-import json
 import shutil
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -116,9 +115,34 @@ class TmuxSession:
                        capture_output=True)
 
 
-def handle_dynamic_prompts(sess, max_steps=20, deploy_mode="code", project_path="existing", verbose=False):
+def _validate_init_disk(workdir):
+    """Check if init produced azure.yaml with host: azure.ai.agent and agent.yaml."""
+    for d in os.listdir(workdir):
+        subdir = os.path.join(workdir, d)
+        if os.path.isdir(subdir):
+            azure_yaml = os.path.join(subdir, "azure.yaml")
+            agent_yaml = os.path.join(subdir, "agent.yaml")
+            if os.path.exists(azure_yaml):
+                with open(azure_yaml) as f:
+                    content = f.read()
+                if "host:" in content and "azure.ai.agent" in content:
+                    if os.path.exists(agent_yaml):
+                        return True
+    # Also check workdir itself (if init was run inside workdir directly)
+    azure_yaml = os.path.join(workdir, "azure.yaml")
+    agent_yaml = os.path.join(workdir, "agent.yaml")
+    if os.path.exists(azure_yaml):
+        with open(azure_yaml) as f:
+            content = f.read()
+        if "host:" in content and "azure.ai.agent" in content and os.path.exists(agent_yaml):
+            return True
+    return False
+
+
+def handle_dynamic_prompts(sess, max_steps=20, deploy_mode="code", project_path="existing", verbose=False, workdir=None):
     """Handle dynamic prompts after template download until init completes.
-    project_path: "existing" uses existing project, "create" creates new."""
+    project_path: "existing" uses existing project, "create" creates new.
+    workdir: if provided, uses disk validation for completion check."""
     for step_num in range(max_steps):
         time.sleep(3)
         cap = sess.capture()
@@ -139,10 +163,12 @@ def handle_dynamic_prompts(sess, max_steps=20, deploy_mode="code", project_path=
                     if verbose:
                         print(f"    [dyn-{step_num}] ERROR exit: {last}")
                     return False
-                if "services:" in cap_lower or "azure.yaml" in cap_lower:
-                    if verbose:
-                        print(f"    [dyn-{step_num}] COMPLETE (yaml found)")
-                    return True
+                # Disk-based validation if workdir provided
+                if workdir:
+                    if _validate_init_disk(workdir):
+                        if verbose:
+                            print(f"    [dyn-{step_num}] COMPLETE (disk validation)")
+                        return True
                 if verbose:
                     print(f"    [dyn-{step_num}] Shell prompt, no completion: {last}")
                 return False
@@ -171,7 +197,7 @@ def handle_dynamic_prompts(sess, max_steps=20, deploy_mode="code", project_path=
             else:
                 sess.send("y")
                 sess.key("Enter")
-        elif "existing deployment" in prompt or "found" in prompt and "deployment" in prompt:
+        elif "existing deployment" in prompt or ("found" in prompt and "deployment" in prompt):
             # "Found N existing deployment(s) for model X in the selected foundry..."
             sess.key("Enter")
         elif "is specified in the agent manifest" in prompt:
@@ -256,7 +282,7 @@ def test_init_python_basic_code(workdir):
         # Template
         if not sess.wait_for("Select a starter template", 30):
             return check("01-init-python-code", False, "timeout at template")
-        sess.select_by_text("Basic")
+        sess.select_by_text("Responses")
         time.sleep(3)
 
         # Name (may take time for template list to resolve)
@@ -287,18 +313,13 @@ def test_init_python_basic_code(workdir):
         time.sleep(5)
 
         # Handle remaining prompts
-        ok = handle_dynamic_prompts(sess, deploy_mode="code", project_path="existing")
+        ok = handle_dynamic_prompts(sess, deploy_mode="code", project_path="existing", workdir=workdir)
 
-        # Verify azure.yaml
-        verify_cmd = f"cat {workdir}/*/azure.yaml 2>/dev/null || cat {workdir}/azure.yaml 2>/dev/null"
-        sess.send(verify_cmd)
-        sess.key("Enter")
-        time.sleep(2)
-        cap = sess.capture()
-        has_yaml = "services:" in cap.lower() or "name:" in cap.lower()
+        # Verify artifacts on disk
+        has_artifacts = _validate_init_disk(workdir)
 
-        return check("01-init-python-code", ok and has_yaml,
-                     "" if ok else "init did not complete")
+        return check("01-init-python-code", ok and has_artifacts,
+                     "" if (ok and has_artifacts) else f"ok={ok}, artifacts={has_artifacts}")
     finally:
         sess.kill()
 
@@ -321,7 +342,7 @@ def test_init_python_basic_container(workdir):
 
         if not sess.wait_for("Select a starter template", 30):
             return check("01-init-python-container", False, "timeout at template")
-        sess.select_by_text("Basic")
+        sess.select_by_text("Responses")
         time.sleep(3)
 
         if not sess.wait_for("Enter a name", 45):
@@ -343,7 +364,7 @@ def test_init_python_basic_container(workdir):
         sess.select_by_text(PROJECT)
         time.sleep(5)
 
-        ok = handle_dynamic_prompts(sess, deploy_mode="container", project_path="existing")
+        ok = handle_dynamic_prompts(sess, deploy_mode="container", project_path="existing", workdir=workdir)
         return check("01-init-python-container", ok, "" if ok else "init did not complete")
     finally:
         sess.kill()
@@ -390,7 +411,7 @@ def test_init_csharp_basic(workdir):
         sess.select_by_text(PROJECT)
         time.sleep(5)
 
-        ok = handle_dynamic_prompts(sess, deploy_mode="code", project_path="existing")
+        ok = handle_dynamic_prompts(sess, deploy_mode="code", project_path="existing", workdir=workdir)
         return check("01-init-csharp", ok, "" if ok else "init did not complete")
     finally:
         sess.kill()
@@ -414,7 +435,7 @@ def test_init_create_new_project(workdir):
 
         if not sess.wait_for("Select a starter template", 30):
             return check("01-init-create-project", False, "timeout at template")
-        sess.select_by_text("Basic")
+        sess.select_by_text("Responses")
         time.sleep(3)
 
         if not sess.wait_for("Enter a name", 45):
@@ -450,7 +471,7 @@ def test_init_from_manifest_url(workdir):
         sess.start()
         sess.setup_env(workdir)
 
-        manifest_url = "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/04-foundry-toolbox/agent.manifest.yaml"
+        manifest_url = "https://raw.githubusercontent.com/microsoft-foundry/foundry-samples/main/samples/python/hosted-agents/agent-framework/responses/04-foundry-toolbox/agent.manifest.yaml"
         sess.send(f'azd ai agent init -m "{manifest_url}"')
         sess.key("Enter")
         time.sleep(5)
@@ -482,14 +503,14 @@ def test_init_from_manifest_url(workdir):
         sess.select_by_text(PROJECT)
         time.sleep(5)
 
-        ok = handle_dynamic_prompts(sess, deploy_mode="code", project_path="existing")
+        ok = handle_dynamic_prompts(sess, deploy_mode="code", project_path="existing", workdir=workdir)
         return check("01-init-manifest-url", ok, "" if ok else "init did not complete")
     finally:
         sess.kill()
 
 
 def test_init_with_agent_name_flag(workdir):
-    """Init with --agent-name flag to skip name prompt."""
+    """Init with --agent-name flag to skip name prompt and verify name in artifacts."""
     sess = TmuxSession("t1-agentname")
     try:
         sess.start()
@@ -506,37 +527,57 @@ def test_init_with_agent_name_flag(workdir):
 
         if not sess.wait_for("Select a starter template", 30):
             return check("01-init-agent-name-flag", False, "timeout at template")
-        sess.select_by_text("Basic")
+        sess.select_by_text("Responses")
         time.sleep(3)
 
-        # May or may not get "Enter a name" prompt since we used --agent-name
+        # --agent-name should skip the "Enter a name" prompt
         cap = sess.wait_for("Enter a name", 20)
         if cap:
-            # Flag didn't skip name — still ok, just answer it
-            sess.key("Enter")
-            time.sleep(3)
+            # Flag didn't skip the name prompt — this is a failure of the flag
+            return check("01-init-agent-name-flag", False,
+                         "--agent-name flag did not skip name prompt")
 
         # Should go to Foundry project (with download time)
         cap = sess.wait_for("Foundry project", 60)
         if cap is None:
             cap = sess.capture()
             if "added to your azd project" in cap.lower():
-                return check("01-init-agent-name-flag", True, "completed early")
-            return check("01-init-agent-name-flag", False, "timeout at foundry")
+                pass  # completed early, validate below
+            else:
+                return check("01-init-agent-name-flag", False, "timeout at foundry")
+        else:
+            sess.key("Enter")  # Use existing
+            time.sleep(5)
+            cap = sess.capture()
+            if "select subscription" in cap.lower():
+                sess.select_by_text("1756")
+                time.sleep(8)
+                sess.wait_for("Foundry project", 30)
 
-        sess.key("Enter")  # Use existing
-        time.sleep(5)
-        cap = sess.capture()
-        if "select subscription" in cap.lower():
-            sess.select_by_text("1756")
-            time.sleep(8)
-            sess.wait_for("Foundry project", 30)
+            sess.select_by_text(PROJECT)
+            time.sleep(5)
 
-        sess.select_by_text(PROJECT)
-        time.sleep(5)
+            handle_dynamic_prompts(sess, deploy_mode="code", project_path="existing", workdir=workdir)
 
-        ok = handle_dynamic_prompts(sess, deploy_mode="code", project_path="existing")
-        return check("01-init-agent-name-flag", ok, "" if ok else "init did not complete")
+        # Validate: agent name must appear in produced artifacts
+        time.sleep(3)
+        found_name = False
+        for d in os.listdir(workdir):
+            subdir = os.path.join(workdir, d)
+            if os.path.isdir(subdir):
+                agent_yaml = os.path.join(subdir, "agent.yaml")
+                azure_yaml = os.path.join(subdir, "azure.yaml")
+                for fpath in [agent_yaml, azure_yaml]:
+                    if os.path.exists(fpath):
+                        with open(fpath) as f:
+                            if "my-custom-agent" in f.read():
+                                found_name = True
+                                break
+            if found_name:
+                break
+
+        return check("01-init-agent-name-flag", found_name,
+                     "my-custom-agent found in artifacts" if found_name else "name not in artifacts")
     finally:
         sess.kill()
 
@@ -553,21 +594,24 @@ def test_init_bad_deploy_mode(workdir):
 
 
 def test_init_no_prompt_with_manifest(workdir):
-    """Init with --no-prompt and manifest should either complete or error gracefully."""
-    manifest_url = "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/04-foundry-toolbox/agent.manifest.yaml"
+    """Init with --no-prompt and manifest should complete and produce artifacts."""
+    manifest_url = "https://raw.githubusercontent.com/microsoft-foundry/foundry-samples/main/samples/python/hosted-agents/agent-framework/responses/04-foundry-toolbox/agent.manifest.yaml"
     try:
         r = subprocess.run(
             ["bash", "-c", f"{ENV_SETUP}; cd {workdir} && azd ai agent init -m '{manifest_url}' --no-prompt 2>&1"],
             capture_output=True, text=True, timeout=90
         )
-        # Completed within timeout — pass regardless of exit code (validates no crash/hang)
-        return check("01-init-no-prompt-manifest", True,
-                     f"exit={r.returncode}, len={len(r.stdout)}")
+        # Must exit 0 and produce agent.yaml on disk
+        if r.returncode != 0:
+            return check("01-init-no-prompt-manifest", False,
+                         f"exit={r.returncode}, out='{r.stdout.strip()[:120]}'")
+        has_artifacts = _validate_init_disk(workdir)
+        return check("01-init-no-prompt-manifest", has_artifacts,
+                     f"exit={r.returncode}, artifacts={has_artifacts}")
     except subprocess.TimeoutExpired:
-        # Timeout means it's still running (likely waiting for auth or network)
-        # This is acceptable behavior for --no-prompt — it didn't crash
-        return check("01-init-no-prompt-manifest", True,
-                     "timeout (expected for non-interactive with auth required)")
+        # Timeout means it hung — FAIL (--no-prompt should not hang)
+        return check("01-init-no-prompt-manifest", False,
+                     "timeout: --no-prompt should not hang")
 
 
 # ============================================================

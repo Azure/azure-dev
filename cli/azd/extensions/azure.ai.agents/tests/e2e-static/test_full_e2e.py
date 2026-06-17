@@ -40,16 +40,17 @@ def get_gh_token():
             return r.stdout.strip()
     except Exception:
         pass
-    # Try Windows gh.exe (WSL environment)
-    try:
-        r = subprocess.run(
-            ["/mnt/c/Program Files/GitHub CLI/gh.exe", "auth", "token"],
-            capture_output=True, text=True, timeout=10
-        )
-        if r.returncode == 0 and r.stdout.strip():
-            return r.stdout.strip()
-    except Exception:
-        pass
+    # Try Windows gh.exe (WSL local-dev only)
+    if os.path.exists("/mnt/c"):
+        try:
+            r = subprocess.run(
+                ["/mnt/c/Program Files/GitHub CLI/gh.exe", "auth", "token"],
+                capture_output=True, text=True, timeout=10
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                return r.stdout.strip()
+        except Exception:
+            pass
     return ""
 
 
@@ -155,6 +156,10 @@ def setup():
     send(env_cmd)
     key("Enter")
     time.sleep(1)
+    # Clear scrollback to avoid token leaking into capture output
+    send("clear")
+    key("Enter")
+    time.sleep(0.5)
 
     send("echo ENV_OK")
     key("Enter")
@@ -462,7 +467,7 @@ def phase_invoke():
         has_error = False
         error_msg = ""
         for l in lines:
-            if "ERROR:" in l or "error" in l.lower() and "500" in l:
+            if "ERROR:" in l or ("error" in l.lower() and "500" in l):
                 has_error = True
                 error_msg = l.strip()
                 break

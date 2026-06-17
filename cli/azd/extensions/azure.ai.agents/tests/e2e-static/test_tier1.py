@@ -32,15 +32,17 @@ def get_gh_token():
             return r.stdout.strip()
     except Exception:
         pass
-    try:
-        r = subprocess.run(
-            ["/mnt/c/Program Files/GitHub CLI/gh.exe", "auth", "token"],
-            capture_output=True, text=True, timeout=10
-        )
-        if r.returncode == 0 and r.stdout.strip():
-            return r.stdout.strip()
-    except Exception:
-        pass
+    # WSL local-dev fallback
+    if os.path.exists("/mnt/c"):
+        try:
+            r = subprocess.run(
+                ["/mnt/c/Program Files/GitHub CLI/gh.exe", "auth", "token"],
+                capture_output=True, text=True, timeout=10
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                return r.stdout.strip()
+        except Exception:
+            pass
     return ""
 
 
@@ -101,6 +103,10 @@ class TmuxSession:
         self.send(env_cmd)
         self.key("Enter")
         time.sleep(0.5)
+        # Clear scrollback to avoid token in capture output
+        self.send("clear")
+        self.key("Enter")
+        time.sleep(0.3)
         self.send(f"mkdir -p {workdir} && cd {workdir}")
         self.key("Enter")
         time.sleep(0.5)

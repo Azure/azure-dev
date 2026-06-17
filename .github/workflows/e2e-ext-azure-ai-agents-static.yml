@@ -58,6 +58,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install tmux
+        run: sudo apt-get install -y tmux
+
       - name: Build azd + install extension
         working-directory: cli/azd
         run: |

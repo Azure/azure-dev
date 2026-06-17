@@ -123,15 +123,17 @@ func (p *FoundryServiceTargetProvider) Endpoints(
 	return p.agent.Endpoints(ctx, serviceConfig, targetResource)
 }
 
-// GetTargetResource resolves the ARM resource for the Foundry project. Delegates to
-// the shared implementation, which resolves the project from AZURE_AI_PROJECT_ID.
+// GetTargetResource resolves the ARM resource for the Foundry project. The
+// microsoft.foundry host declares its agent inline in azure.yaml, so it resolves
+// the target directly from the Foundry project (AZURE_AI_PROJECT_ID or endpoint:)
+// without requiring an agent.yaml definition file.
 func (p *FoundryServiceTargetProvider) GetTargetResource(
 	ctx context.Context,
 	subscriptionId string,
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
-	return p.agent.GetTargetResource(ctx, subscriptionId, serviceConfig, defaultResolver)
+	return p.agent.resolveFoundryTargetResource(ctx)
 }
 
 // Package builds the deploy artifact for the single hosted agent. Code-deploy

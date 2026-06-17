@@ -494,6 +494,16 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	if err := p.ensureDeployContext(ctx); err != nil {
 		return nil, err
 	}
+	return p.resolveFoundryTargetResource(ctx)
+}
+
+// resolveFoundryTargetResource builds the target resource from the resolved
+// Foundry project. It does not require an agent definition file (agent.yaml),
+// so it is shared with the microsoft.foundry host, which declares the agent
+// inline in azure.yaml.
+func (p *AgentServiceTargetProvider) resolveFoundryTargetResource(
+	ctx context.Context,
+) (*azdext.TargetResource, error) {
 	// Ensure Foundry project is loaded
 	if err := p.ensureFoundryProject(ctx); err != nil {
 		return nil, err

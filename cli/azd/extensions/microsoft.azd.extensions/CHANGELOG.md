@@ -2,6 +2,7 @@
 
 ## 0.12.0 (Unreleased)
 
+- [[#8619]](https://github.com/Azure/azure-dev/issues/8619) Add `azd x pack --bundle` (alias `--zip`) to emit a portable bundle `.zip` containing a `registry.json` with relative artifact URLs plus the platform artifacts, installable via `azd extension install <bundle.zip>` without hosting a registry.
 - [[#8552]](https://github.com/Azure/azure-dev/pull/8552) Embed language template dotfiles so generated extensions include a `.gitignore` (the Go template excludes `bin/`).
 - [[#8552]](https://github.com/Azure/azure-dev/pull/8552) Warn during `azd x build` when the local extension source registry is missing or does not contain the extension, since the binaries are installed but the extension would not appear in `azd extension list`.
 - [[#8570]](https://github.com/Azure/azure-dev/pull/8570) Add `--internal` to `azd x init` to scaffold first-party Go extensions in the `Azure/azure-dev` repository, including CI workflows, release pipeline, and a suitable `.github/CODEOWNERS` entry.

@@ -1965,6 +1965,14 @@ func (a *InitAction) configureModelChoice(
 			}
 		}
 
+		// Persist the ACR-skip signal for the no-model-resources path too.
+		// The deferred-headless and main model-config paths set this, but a
+		// completing no-model flow (e.g. a pre-built --image agent) otherwise
+		// would not, leaving Bicep to provision an ACR the user doesn't need.
+		if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, a.skipACR()); err != nil {
+			return nil, err
+		}
+
 		return agentManifest, nil
 	}
 

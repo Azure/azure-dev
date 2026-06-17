@@ -41,6 +41,7 @@ type foundryAgentInput struct {
 	isCodeDeploy   bool
 	runtime        string // raw runtime identifier, e.g. "python_3_13"
 	entryPoint     string // e.g. "main.py"
+	depResolution  string // "remote_build" or "bundled"; empty defaults to remote_build
 	image          string // prebuilt image reference
 	startupCommand string // container/docker entry command
 
@@ -85,7 +86,11 @@ func buildFoundryServiceConfig(
 				)
 			}
 			stack, version := splitRuntime(in.runtime)
-			agent.Runtime = &project.AgentRuntime{Stack: stack, Version: version}
+			agent.Runtime = &project.AgentRuntime{
+				Stack:                stack,
+				Version:              version,
+				DependencyResolution: in.depResolution,
+			}
 			agent.StartupCommand = strings.TrimSpace(
 				agent_yaml.RuntimeCmdPrefix(in.runtime) + " " + in.entryPoint,
 			)

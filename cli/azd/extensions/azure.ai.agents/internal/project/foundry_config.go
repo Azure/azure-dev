@@ -101,6 +101,10 @@ type AgentRuntime struct {
 	Stack       string `json:"stack,omitempty"`
 	Version     string `json:"version,omitempty"`
 	RemoteBuild bool   `json:"remoteBuild,omitempty"`
+	// DependencyResolution selects how code-deploy dependencies are resolved
+	// ("remote_build" or "bundled"). The Foundry API requires it; when unset,
+	// toContainerAgent defaults to "remote_build".
+	DependencyResolution string `json:"dependencyResolution,omitempty"`
 }
 
 // AgentContainer holds container runtime settings (CPU/memory) for a hosted agent.
@@ -319,13 +323,26 @@ func (a FoundryAgent) toContainerAgent() (agent_yaml.ContainerAgent, error) {
 		if err != nil {
 			return agent_yaml.ContainerAgent{}, err
 		}
+		depRes := dependencyResolution(a.Runtime)
 		ca.CodeConfiguration = &agent_yaml.CodeConfiguration{
-			Runtime:    runtimeString(a.Runtime),
-			EntryPoint: entryPoint,
+			Runtime:              runtimeString(a.Runtime),
+			EntryPoint:           entryPoint,
+			DependencyResolution: &depRes,
 		}
 	}
 
 	return ca, nil
+}
+
+// dependencyResolution returns the code-deploy dependency resolution mode the
+// Foundry API requires on code_configuration. It honors an explicit
+// runtime.dependencyResolution and otherwise defaults to "remote_build", which
+// matches the default chosen by `azd ai agent init`.
+func dependencyResolution(rt *AgentRuntime) string {
+	if rt != nil && rt.DependencyResolution != "" {
+		return rt.DependencyResolution
+	}
+	return "remote_build"
 }
 
 // runtimeString maps the typed runtime block to the runtime identifier the

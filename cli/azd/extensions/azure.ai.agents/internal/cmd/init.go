@@ -2767,6 +2767,9 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 			in.isCodeDeploy = true
 			in.runtime = ca.CodeConfiguration.Runtime
 			in.entryPoint = ca.CodeConfiguration.EntryPoint
+			if ca.CodeConfiguration.DependencyResolution != nil {
+				in.depResolution = *ca.CodeConfiguration.DependencyResolution
+			}
 		}
 	}
 	if a.isCodeDeploy {

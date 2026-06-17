@@ -386,3 +386,37 @@ func Test_convertFromProtoParameters(t *testing.T) {
 		})
 	}
 }
+
+func Test_convertFromProtoPreviewResultWithChanges(t *testing.T) {
+	result := convertFromProtoPreviewResult(&azdext.ProvisioningPreviewResult{
+		Preview: &azdext.ProvisioningDeploymentPreview{
+			Summary: "2 changes",
+			Changes: []*azdext.ProvisioningDeploymentPreviewChange{
+				{
+					ChangeType:   "Create",
+					ResourceId:   "/subscriptions/s/resourceGroups/rg",
+					ResourceType: "Microsoft.Resources/resourceGroups",
+					Name:         "rg",
+				},
+				nil, // nil entries are skipped
+				{
+					ChangeType:   "Delete",
+					ResourceType: "Microsoft.ContainerRegistry/registries",
+					Name:         "cr",
+				},
+			},
+		},
+	})
+
+	require.NotNil(t, result.Preview)
+	assert.Equal(t, "2 changes", result.Preview.Status)
+	require.Len(t, result.Preview.Properties.Changes, 2, "nil change entries must be skipped")
+
+	first := result.Preview.Properties.Changes[0]
+	assert.Equal(t, provisioning.ChangeTypeCreate, first.ChangeType)
+	assert.Equal(t, "Microsoft.Resources/resourceGroups", first.ResourceType)
+	assert.Equal(t, "rg", first.Name)
+	assert.Equal(t, "/subscriptions/s/resourceGroups/rg", first.ResourceId.Id)
+
+	assert.Equal(t, provisioning.ChangeTypeDelete, result.Preview.Properties.Changes[1].ChangeType)
+}

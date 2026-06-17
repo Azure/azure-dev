@@ -563,17 +563,12 @@ func (p *FoundryProvisioningProvider) Preview(
 		return nil, err
 	}
 
-	summary := summarizeWhatIf(resp.WhatIfOperationResult)
-
-	// Emit the summary line-by-line so the user sees it today (azd-core
-	// drops the structured Summary field). Each progress call is one line.
-	for line := range strings.SplitSeq(summary, "\n") {
-		progress(line)
-	}
-
+	// Summary is kept for diagnostics/telemetry; the core preview UX renders
+	// the structured Changes (colored per change type).
 	return &azdext.ProvisioningPreviewResult{
 		Preview: &azdext.ProvisioningDeploymentPreview{
-			Summary: summary,
+			Summary: summarizeWhatIf(resp.WhatIfOperationResult),
+			Changes: whatIfChanges(resp.WhatIfOperationResult),
 		},
 	}, nil
 }
@@ -582,8 +577,11 @@ func (p *FoundryProvisioningProvider) Preview(
 //
 //   - Force == false (default): refuse with a structured error. This provider
 //     does not prompt, so deletion must be an explicit --force choice.
-//   - Force == true: delete the resource group (Foundry account, project, and
-//     any ACR). Idempotent: a missing RG is a no-op success.
+//   - Force == true: delete every model deployment under the resource group's
+//     Cognitive Services accounts, then delete the resource group (Foundry
+//     account, project, and any ACR). Deployments must go first: Azure refuses
+//     to delete an account that still has them, which would roll the RG delete
+//     back. Idempotent: a missing RG is a no-op success.
 //   - Purge == true: in addition to deleting the RG, purge each soft-deleted
 //     Cognitive Services account that was inside it. Without --purge the
 //     account stays soft-deleted and Azure refuses to re-create one with the
@@ -625,16 +623,27 @@ func (p *FoundryProvisioningProvider) Destroy(
 	}
 	rgClient := factory.NewResourceGroupsClient()
 
-	// Capture purgeable accounts BEFORE RG delete: once the RG is gone, the
-	// live AccountsClient can no longer see them; only DeletedAccountsClient
-	// can. We use the live client here so we get the exact name+location
-	// without needing to scan the whole subscription's soft-delete list.
+	// Enumerate the live Cognitive Services accounts in the RG up front. We
+	// need them for two reasons: (1) Azure refuses to delete an account that
+	// still has model deployments, so those must be removed before the RG
+	// delete; (2) once the RG is gone only DeletedAccountsClient can see the
+	// accounts, so --purge must capture name+location now. Returns nil if the
+	// RG is already gone (the BeginDelete below handles the idempotent no-op).
+	accounts, err := p.listAccountsInRG(ctx, progress)
+	if err != nil {
+		return nil, err
+	}
+
+	// Delete model deployments before the RG delete; otherwise the account
+	// delete fails with CannotDeleteAccountWithDeployments and rolls the
+	// whole RG deletion back.
+	if err := p.deleteModelDeployments(ctx, progress, accounts); err != nil {
+		return nil, err
+	}
+
 	var toPurge []purgeableAccount
 	if options.GetPurge() {
-		toPurge, err = p.collectAccountsToPurge(ctx, progress)
-		if err != nil {
-			return nil, err
-		}
+		toPurge = collectPurgeableAccounts(accounts)
 	}
 
 	progress(fmt.Sprintf("Deleting resource group %s...", p.rgName))
@@ -695,15 +704,15 @@ func collectPurgeableAccounts(accounts []*armcognitiveservices.Account) []purgea
 	return out
 }
 
-// collectAccountsToPurge enumerates the live Cognitive Services accounts in
-// the configured resource group via the SDK pager and runs the result
-// through collectPurgeableAccounts. Returns nil with no error if the RG
-// doesn't exist (the not-found path is handled by the caller's later
-// BeginDelete short-circuit).
-func (p *FoundryProvisioningProvider) collectAccountsToPurge(
+// listAccountsInRG enumerates the live Cognitive Services accounts in the
+// configured resource group via the SDK pager. Returns nil with no error if
+// the RG doesn't exist (the not-found path is handled by the caller's later
+// BeginDelete short-circuit). The result feeds both deployment deletion and,
+// when --purge is set, the post-delete purge.
+func (p *FoundryProvisioningProvider) listAccountsInRG(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
-) ([]purgeableAccount, error) {
+) ([]*armcognitiveservices.Account, error) {
 	accountsClient, err := armcognitiveservices.NewAccountsClient(p.subID, p.credential, nil)
 	if err != nil {
 		return nil, exterrors.Internal(
@@ -712,7 +721,7 @@ func (p *FoundryProvisioningProvider) collectAccountsToPurge(
 		)
 	}
 
-	progress(fmt.Sprintf("Listing Cognitive Services accounts in %s to purge after deletion...", p.rgName))
+	progress(fmt.Sprintf("Listing Cognitive Services accounts in %s...", p.rgName))
 
 	var accounts []*armcognitiveservices.Account
 	pager := accountsClient.NewListByResourceGroupPager(p.rgName, nil)
@@ -729,7 +738,64 @@ func (p *FoundryProvisioningProvider) collectAccountsToPurge(
 		accounts = append(accounts, page.Value...)
 	}
 
-	return collectPurgeableAccounts(accounts), nil
+	return accounts, nil
+}
+
+// deleteModelDeployments removes every model deployment under each account so
+// the subsequent resource-group delete can delete the accounts. Azure rejects
+// deleting a Cognitive Services account that still has deployments
+// (CannotDeleteAccountWithDeployments), which otherwise rolls back the entire
+// RG deletion. No-op when there are no accounts/deployments; hard-fails on the
+// first error so a stuck deployment surfaces instead of a confusing RG-delete
+// rollback later.
+func (p *FoundryProvisioningProvider) deleteModelDeployments(
+	ctx context.Context,
+	progress grpcbroker.ProgressFunc,
+	accounts []*armcognitiveservices.Account,
+) error {
+	if len(accounts) == 0 {
+		return nil
+	}
+
+	deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(p.subID, p.credential, nil)
+	if err != nil {
+		return exterrors.Internal(
+			exterrors.CodeAzdClientFailed,
+			fmt.Sprintf("create armcognitiveservices deployments client: %s", err),
+		)
+	}
+
+	for _, account := range accounts {
+		if account == nil || account.Name == nil {
+			continue
+		}
+		accountName := *account.Name
+
+		pager := deploymentsClient.NewListPager(p.rgName, accountName, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveDeploymentList)
+			}
+			for _, deployment := range page.Value {
+				if deployment == nil || deployment.Name == nil {
+					continue
+				}
+				name := *deployment.Name
+				progress(fmt.Sprintf("Deleting model deployment %s on %s...", name, accountName))
+				poller, err := deploymentsClient.BeginDelete(ctx, p.rgName, accountName, name, nil)
+				if err != nil {
+					return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveDeploymentDelete)
+				}
+				if _, err := pollWithProgress(ctx, poller, progress,
+					fmt.Sprintf("Deleting model deployment %s (this can take a minute)", name),
+				); err != nil {
+					return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveDeploymentDelete)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // purgeCognitiveAccounts purges each captured soft-deleted account. Called

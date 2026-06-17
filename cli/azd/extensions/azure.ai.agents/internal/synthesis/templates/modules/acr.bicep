@@ -25,8 +25,8 @@ param foundryAccountName string
 @description('Name of the existing Foundry project receiving the ACR connection.')
 param foundryProjectName string
 
-@description('Principal id of the Foundry account managed identity; receives AcrPull.')
-param foundryAccountPrincipalId string
+@description('Principal id of the Foundry project managed identity; receives AcrPull and is the connection credential identity.')
+param foundryProjectPrincipalId string
 
 // Variables
 
@@ -55,20 +55,22 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   }
 }
 
-// Grant the Foundry account's managed identity AcrPull on this registry.
+// Grant the Foundry project's managed identity AcrPull on this registry so the
+// hosted agent can pull images using the project identity.
 resource foundryAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(registry.id, foundryAccountPrincipalId, acrPullRoleId)
+  name: guid(registry.id, foundryProjectPrincipalId, acrPullRoleId)
   scope: registry
   properties: {
-    principalId: foundryAccountPrincipalId
+    principalId: foundryProjectPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: acrPullRoleId
   }
 }
 
 // Existing parent references so the connection can be nested under the
-// project without constructing parent/child/grandchild name strings.
-resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = {
+// project. Pinned to 2025-04-01-preview: GA 2025-06-01 fails to resolve the
+// projects/connections ContainerRegistry sub-resource (MissingApiVersionParameter).
+resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' existing = {
   name: foundryAccountName
 
   resource project 'projects' existing = {
@@ -81,10 +83,14 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' existi
         category: 'ContainerRegistry'
         target: registry.properties.loginServer
         authType: 'ManagedIdentity'
+        // RegistryIdentity auth requires both the identity client id (the
+        // project principal) and the registry resource id.
+        credentials: {
+          clientId: foundryProjectPrincipalId
+          resourceId: registry.id
+        }
         isSharedToAll: true
-        useWorkspaceManagedIdentity: false
         metadata: {
-          ApiType: 'Azure'
           ResourceId: registry.id
         }
       }

@@ -489,6 +489,7 @@ func TestArmParameters_NilSafeOnMissingSynthResult(t *testing.T) {
 	p := &FoundryProvisioningProvider{
 		location:    "eastus",
 		envName:     "dev",
+		rgName:      "rg-dev",
 		foundryName: "fp",
 		principalID: "pid",
 		// synthResult intentionally nil
@@ -496,6 +497,11 @@ func TestArmParameters_NilSafeOnMissingSynthResult(t *testing.T) {
 	out := p.armParameters() // must not panic
 	require.Contains(t, out, "location")
 	require.Contains(t, out, "foundryProjectName")
+	// resourceGroupName drives the resource group the subscription-scoped
+	// template creates; it must always be present.
+	require.Contains(t, out, "resourceGroupName")
+	rg, _ := out["resourceGroupName"].(map[string]any)
+	assert.Equal(t, "rg-dev", rg["value"])
 	require.NotContains(t, out, "includeAcr",
 		"synthesizer-derived parameters should be absent when synthResult is nil")
 }

@@ -317,4 +317,16 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	assert.Contains(t, arm, "$schema")
 	assert.Contains(t, arm, "resources")
 	assert.Contains(t, arm, "parameters")
+
+	// The template is subscription-scoped so `azd provision --preview` can run
+	// what-if without creating the resource group first.
+	schema, _ := arm["$schema"].(string)
+	assert.Contains(t, schema, "subscriptionDeploymentTemplate",
+		"main.bicep must target subscription scope")
+
+	// resourceGroupName is the parameter that drives the resource group the
+	// template creates; the provider supplies it at provision time.
+	params, ok := arm["parameters"].(map[string]any)
+	require.True(t, ok, "parameters must be an object")
+	assert.Contains(t, params, "resourceGroupName")
 }

@@ -325,7 +325,7 @@ func (p *FoundryProvisioningProvider) State(
 	}
 
 	name := p.deploymentName()
-	resp, err := client.Get(ctx, p.rgName, name, nil)
+	resp, err := client.GetAtSubscriptionScope(ctx, name, nil)
 	if err != nil {
 		if isNotFound(err) {
 			// No deployment yet - empty state is the right answer.
@@ -356,16 +356,13 @@ func (p *FoundryProvisioningProvider) Deploy(
 ) (*azdext.ProvisioningDeployResult, error) {
 	progress("Preparing Foundry provisioning template...")
 
-	if err := p.ensureResourceGroup(ctx, progress); err != nil {
-		return nil, err
-	}
-
 	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {
 		return nil, err
 	}
 
 	dep := armresources.Deployment{
+		Location: new(p.location),
 		Properties: &armresources.DeploymentProperties{
 			Template:   src.armTemplate,
 			Parameters: src.parameters,
@@ -383,9 +380,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 	}
 
 	name := p.deploymentName()
-	progress(fmt.Sprintf("Starting ARM deployment %q in %s...", name, p.rgName))
+	progress(fmt.Sprintf("Starting ARM deployment %q...", name))
 
-	poller, err := client.BeginCreateOrUpdate(ctx, p.rgName, name, dep, nil)
+	poller, err := client.BeginCreateOrUpdateAtSubscriptionScope(ctx, name, dep, nil)
 	if err != nil {
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
 	}
@@ -520,6 +517,9 @@ func (p *FoundryProvisioningProvider) envValues(ctx context.Context) map[string]
 // drops the Summary field. The progress emission becomes redundant once the
 // core proto exposes the change set.
 //
+// What-if runs at subscription scope so it works without creating the resource
+// group first; the group appears in the change set as a Create.
+//
 // Inline what-if failures (HTTP 200 with Properties.Error populated) are
 // surfaced as CodeArmWhatIfFailed; without that check ARM preflight failures
 // would silently look like "0 changes".
@@ -528,12 +528,6 @@ func (p *FoundryProvisioningProvider) Preview(
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
 	progress("Computing deployment plan...")
-
-	// what-if requires the resource group to exist (else 404). ensureResourceGroup
-	// is idempotent, so this is safe on re-runs. Matches the built-in bicep provider.
-	if err := p.ensureResourceGroup(ctx, progress); err != nil {
-		return nil, err
-	}
 
 	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {
@@ -546,6 +540,7 @@ func (p *FoundryProvisioningProvider) Preview(
 	}
 
 	whatIf := armresources.DeploymentWhatIf{
+		Location: new(p.location),
 		Properties: &armresources.DeploymentWhatIfProperties{
 			Template:   src.armTemplate,
 			Parameters: src.parameters,
@@ -553,7 +548,7 @@ func (p *FoundryProvisioningProvider) Preview(
 		},
 	}
 
-	poller, err := client.BeginWhatIf(ctx, p.rgName, p.deploymentName(), whatIf, nil)
+	poller, err := client.BeginWhatIfAtSubscriptionScope(ctx, p.deploymentName(), whatIf, nil)
 	if err != nil {
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentWhatIf)
 	}
@@ -822,9 +817,9 @@ func (p *FoundryProvisioningProvider) PlannedOutputs(
 
 // canonicalOutputNames is the source of truth for the env-var names the
 // foundry deployment populates. Names must match the `output <NAME>`
-// declarations in internal/synthesis/templates/main.bicep, plus
-// AZURE_RESOURCE_GROUP (a provider input, declared here so downstream
-// consumers find it via the same lookup).
+// declarations in internal/synthesis/templates/main.bicep (including
+// AZURE_RESOURCE_GROUP, which the subscription-scoped template emits as the
+// name of the resource group it creates).
 //
 // ARM's management SDK mangles output-name casing (e.g. AZURE_AI_PROJECT_ID
 // comes back as azurE_AI_PROJECT_ID). armOutputsToProto restores the
@@ -859,40 +854,6 @@ func (p *FoundryProvisioningProvider) deploymentsClient(ctx context.Context) (*a
 	return factory.NewDeploymentsClient(), nil
 }
 
-// ensureResourceGroup creates the configured RG if it doesn't exist. Idempotent.
-func (p *FoundryProvisioningProvider) ensureResourceGroup(
-	ctx context.Context,
-	progress grpcbroker.ProgressFunc,
-) error {
-	if err := p.ensureCredential(ctx); err != nil {
-		return err
-	}
-	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
-	if err != nil {
-		return exterrors.Internal(
-			exterrors.CodeAzdClientFailed,
-			fmt.Sprintf("create armresources client: %s", err),
-		)
-	}
-	rgClient := factory.NewResourceGroupsClient()
-
-	if _, err := rgClient.Get(ctx, p.rgName, nil); err == nil {
-		return nil
-	} else if !isNotFound(err) {
-		return exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupCreate)
-	}
-
-	progress(fmt.Sprintf("Creating resource group %s in %s...", p.rgName, p.location))
-	_, err = rgClient.CreateOrUpdate(ctx, p.rgName, armresources.ResourceGroup{
-		Location: new(p.location),
-		Tags:     map[string]*string{"azd-env-name": new(p.envName)},
-	}, nil)
-	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupCreate)
-	}
-	return nil
-}
-
 // deploymentName is stable per azd env so re-runs update one record.
 func (p *FoundryProvisioningProvider) deploymentName() string {
 	return deploymentNamePrefix + p.envName
@@ -905,6 +866,7 @@ func (p *FoundryProvisioningProvider) deploymentName() string {
 func (p *FoundryProvisioningProvider) armParameters() map[string]any {
 	out := map[string]any{
 		"location":           map[string]any{"value": p.location},
+		"resourceGroupName":  map[string]any{"value": p.rgName},
 		"foundryProjectName": map[string]any{"value": p.foundryName},
 		"resourceTokenSalt":  map[string]any{"value": p.envName},
 		"principalId":        map[string]any{"value": p.principalID},

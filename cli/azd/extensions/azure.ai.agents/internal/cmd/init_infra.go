@@ -251,9 +251,10 @@ func writeEmbeddedTemplates(infraDir string) (_ []ejectArtifact, retErr error) {
 // writeParametersFile emits infra/main.parameters.json in the standard ARM
 // parameter file shape. Only synthesizer-known values (`deployments`,
 // `includeAcr`) are written; deploy-time parameters (foundryProjectName,
-// location, principalId, resourceTokenSalt, tags) are supplied by the provider
-// at `azd provision`. The result is a partial parameters file -- enough for
-// `bicep build` to validate, not for a standalone `az deployment group create`.
+// location, resourceGroupName, principalId, resourceTokenSalt, tags) are
+// supplied by the provider at `azd provision`. The result is a partial
+// parameters file -- enough for `bicep build` to validate, not for a
+// standalone `az deployment sub create`.
 func writeParametersFile(infraDir string, params map[string]any) (ejectArtifact, error) {
 	type paramValue struct {
 		Value any `json:"value"`

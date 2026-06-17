@@ -12,6 +12,19 @@
 // the one-way import contract that keeps the eventual lift mechanical.
 package projectctx
 
+const (
+	// foundryEnvKey is the canonical project-endpoint key. It is read both from
+	// the active azd environment (level 2) and as a host environment variable
+	// (level 4).
+	foundryEnvKey = "FOUNDRY_PROJECT_ENDPOINT"
+	// azureAiEnvKey is the legacy/sibling project-endpoint key written by
+	// `azd ai agent init` and `azd add` (Bicep output). It is read as a fallback
+	// after foundryEnvKey at both the active-azd-env and host-env levels so the
+	// hosted-agent + toolbox workflow resolves without an extra manual step.
+	// See https://github.com/Azure/azure-dev/issues/8688.
+	azureAiEnvKey = "AZURE_AI_PROJECT_ENDPOINT"
+)
+
 // EndpointSource identifies where a resolved project endpoint came from.
 type EndpointSource string
 
@@ -19,14 +32,14 @@ const (
 	// SourceFlag means the endpoint came from the --project-endpoint flag.
 	SourceFlag EndpointSource = "flag"
 	// SourceAzdEnv means the endpoint came from the active azd environment's
-	// FOUNDRY_PROJECT_ENDPOINT value.
+	// FOUNDRY_PROJECT_ENDPOINT (or, as a fallback, AZURE_AI_PROJECT_ENDPOINT) value.
 	SourceAzdEnv EndpointSource = "azdEnv"
 	// SourceGlobalConfig means the endpoint came from ~/.azd/config.json
 	// (extensions.ai-agents.project.context.endpoint — owned by azure.ai.agents
 	// and shared read-only with sibling extensions).
 	SourceGlobalConfig EndpointSource = "globalConfig"
 	// SourceFoundryEnv means the endpoint came from the FOUNDRY_PROJECT_ENDPOINT
-	// host environment variable.
+	// (or, as a fallback, AZURE_AI_PROJECT_ENDPOINT) host environment variable.
 	SourceFoundryEnv EndpointSource = "foundryEnv"
 )
 
@@ -49,8 +62,9 @@ type Resolved struct {
 // sources (active env + ~/.azd/config.json). Returned as a single struct so
 // tests can stub the whole lookup via ReadAzdHostedSourcesFunc.
 type AzdHostedSources struct {
-	// EnvValue is the FOUNDRY_PROJECT_ENDPOINT value from the active azd env,
-	// or "" if not set / no active env / no azd client available.
+	// EnvValue is the active-azd-env project endpoint: FOUNDRY_PROJECT_ENDPOINT
+	// if set, otherwise AZURE_AI_PROJECT_ENDPOINT, otherwise "" (not set / no
+	// active env / no azd client available).
 	EnvValue string
 	// EnvName is the active azd env name. Only meaningful when EnvValue != "".
 	EnvName string

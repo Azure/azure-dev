@@ -213,9 +213,10 @@ from the **Run parameters** section above; when one is empty, default to **2**,
 
 ## 5. Inventory existing customizations
 
-Look at the source repository's .github folder, on the main branch, when trying to figure out
-where and how to update the github instructions. The main branch, for that repo, will be the 
-target for your subsequent pull request.
+Look at the `.github/` folder on the main branch of the **repository this
+workflow runs in** (the target repo, not the source repo you mined PRs from) to
+figure out where and how to update the Copilot/agent instructions. That target
+repo's main branch is the base for your subsequent pull request.
 
 ## 6. Propose and apply edits
 

@@ -370,4 +370,4 @@ When creating or modifying GitHub Actions workflows:
 
 ## Copilot Code Review
 
-When reviewing code in Copilot Code Review, also use the azd-code-reviewer skill to look for azd specific criteria.
+When reviewing code in Copilot Code Review, also use the azd-code-reviewer skill to look for azd-specific criteria.

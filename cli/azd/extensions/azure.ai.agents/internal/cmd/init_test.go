@@ -274,6 +274,45 @@ func TestSynthesizeImageManifestFile(t *testing.T) {
 	require.NoFileExists(t, manifestPath)
 }
 
+func TestAgentUsesPreBuiltImage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		manifest *agent_yaml.AgentManifest
+		want     bool
+	}{
+		{name: "nil manifest", manifest: nil, want: false},
+		{
+			name:     "container agent with image",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{Image: "myacr.azurecr.io/a:v1"}},
+			want:     true,
+		},
+		{
+			name:     "container agent without image",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{}},
+			want:     false,
+		},
+		{
+			name:     "container agent with whitespace-only image",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{Image: "   "}},
+			want:     false,
+		},
+		{
+			name:     "non-container agent",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.Workflow{}},
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, agentUsesPreBuiltImage(tt.manifest))
+		})
+	}
+}
+
 func TestValidateInitAgentName(t *testing.T) {
 	t.Parallel()
 

@@ -621,6 +621,19 @@ func setImageOnTemplate(agentManifest *agent_yaml.AgentManifest, image string) e
 	return nil
 }
 
+// agentUsesPreBuiltImage reports whether the manifest's template is a hosted
+// container agent that references a pre-built image. For such agents azd does
+// not build from source, so build-time concerns like the startup command and
+// ACR setup do not apply. Covers both the --image flag (synthesized manifest)
+// and a user-provided -m manifest that already specifies an image.
+func agentUsesPreBuiltImage(agentManifest *agent_yaml.AgentManifest) bool {
+	if agentManifest == nil {
+		return false
+	}
+	ca, ok := agentManifest.Template.(agent_yaml.ContainerAgent)
+	return ok && strings.TrimSpace(ca.Image) != ""
+}
+
 // synthesizeImageManifestFile writes a minimal hosted container agent manifest to a
 // temporary file for the bring-your-own-image flow (--image without --manifest).
 // Routing through the manifest path lets init skip template/language selection and code
@@ -2759,8 +2772,10 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		}
 	}
 
-	// Detect startup command (container deploy only; code deploy does not use startupCommand)
-	if !a.isCodeDeploy {
+	// Detect startup command. Skipped for code deploy (uses ZIP packaging) and
+	// when the agent uses a pre-built container image, since the image's own
+	// entrypoint runs and no startup command applies.
+	if !a.isCodeDeploy && !agentUsesPreBuiltImage(agentManifest) {
 		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
 		if err != nil {
 			return err

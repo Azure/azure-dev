@@ -367,3 +367,7 @@ When creating or modifying GitHub Actions workflows:
 - **Cross-workflow artifacts**: `actions/download-artifact@v4` without `run-id` only downloads artifacts from the *current* workflow run. Cross-workflow artifact sharing requires `run-id` and `repository` parameters
 - **Prefer Azure DevOps pipelines** for jobs that need secrets or Azure credentials — the team uses internal ADO pipelines for authenticated workloads in this public repo
 - **No placeholder steps**: Don't add workflow steps that echo "TODO" or list directories without producing output. If downstream steps depend on generated files, implement the generation or remove the dependency
+
+## Copilot Code Review
+
+When reviewing code in Copilot Code Review, also use the azd-code-reviewer skill to look for azd specific criteria.

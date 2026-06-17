@@ -264,7 +264,7 @@ bulleted sections — no big tables, no per-file summaries. Structure it as:
   - Signal ratio: kept-vs-dropped comments.
   - Resolved PRs: the number of merged PRs examined.
 - **PR comment themes** — one short bullet per promoted theme, each citing its
-  source PRs (e.g. `Wrap errors with context — _#7012, #7034_`), with li nks to each PR.
+  source PRs (e.g. `Wrap errors with context — _#7012, #7034_`), with links to each PR.
 - **Troubleshooting** — only when relevant (the issue-fallback case below), a
   short bullet list pointing the maintainer at how to enable real PRs:
   - https://github.github.com/gh-aw/reference/faq/#why-is-my-create-pull-request-workflow-failing-with-github-actions-is-not-permitted-to-create-or-approve-pull-requests

@@ -268,6 +268,7 @@ func TestSynthesizeImageManifestFile(t *testing.T) {
 	require.Equal(t, image, containerAgent.Image)
 	require.Len(t, containerAgent.Protocols, 1)
 	require.Equal(t, "responses", containerAgent.Protocols[0].Protocol)
+	require.Equal(t, "1.0.0", containerAgent.Protocols[0].Version)
 
 	// cleanup removes the temp directory.
 	cleanup()

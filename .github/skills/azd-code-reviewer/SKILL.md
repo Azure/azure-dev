@@ -35,8 +35,6 @@ Load [reviewers.md](reviewers.md) and apply each of the 9 fixed lenses to the di
 
 **The reviewing agent is the same LLM** — these lenses are _perspectives to apply sequentially or in parallel_, not separate subagents. The host may parallelize lens application if supported, but a single-pass application of all lenses to the same diff is equally valid.
 
-When reviewing `Azure/azure-dev` or `Azure/azure-dev-pr` code, also load [azd-conventions.md](azd-conventions.md) and use it as additional context for the Go Expert, Architect, Testing, and Azure Expert lenses.
-
 ### Step 3: Triage findings
 
 Load [findings.md](findings.md). Apply the self-reflection pass: drop low-signal findings according to the dismissal triggers, merge duplicates across lenses, group by file, and sort by line.
@@ -58,4 +56,3 @@ Still in `findings.md`. Apply the voice rules to every finding's text. Build the
 | -------------------- | ---------------------------------------------------------------------------------------------- |
 | `reviewers.md`       | 9 fixed lens definitions, dynamic domain detection rules, shared ground rules, findings format |
 | `findings.md`        | Self-reflection triage, dismissal triggers, merge/dedup, voice rules, review body guidance     |
-| `azd-conventions.md` | azd project structure, Go patterns, test infra, CLI conventions (loaded when reviewing azd)    |

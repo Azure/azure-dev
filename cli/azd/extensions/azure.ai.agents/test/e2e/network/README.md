@@ -71,11 +71,13 @@ template/parameter fails in seconds, not after a 15-minute provision.
 - The caller that queues the ACR Task must receive **`Container Registry
   Repository Writer`** on the ABAC ACR so the build can push the image. The
   harness grants this before running `az acr build --source-acr-auth-id [caller]`.
-- The project MI must receive the ABAC-aware **`Container Registry Repository
-  Reader`** role (exact Azure role name; not the legacy `AcrPull`). The harness
-  grants this role in `grant_acr_pull` and sets `AZD_AGENT_SKIP_ACR=true` (the
-  BYO-image deploy signal). If the registry requires a narrower ABAC condition,
-  complete the grant manually and re-run phase 5.
+- The Foundry **project MI** must receive the ABAC-aware **`Container Registry
+  Repository Reader`** role (exact Azure role name; not the legacy `AcrPull`).
+  The account MI is not sufficient for hosted-agent image pull. The harness
+  grants this role in `grant_acr_pull`, sets `AZD_AGENT_SKIP_ACR=true` (the
+  BYO-image deploy signal), and writes `AZURE_TENANT_ID` for postdeploy. If the
+  registry requires a narrower ABAC condition, complete the grant manually and
+  re-run phase 5.
 - Because the account is intentionally private (`publicNetworkAccess: Disabled`),
   phase 5 deploy/invoke must run from a host that can resolve and reach the
   private endpoint. Running from the public internet fails with `403 Public

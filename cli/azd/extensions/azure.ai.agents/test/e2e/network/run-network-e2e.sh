@@ -164,6 +164,7 @@ YAML
     # The foundry provider requires the target RG name (the subscription-scoped
     # template creates it). Unique per project so cells don't collide.
     azd env set AZURE_RESOURCE_GROUP "${TARGET_RG:-${PREFIX}-${name}-rg}" >/dev/null
+    azd env set AZURE_TENANT_ID "$(az account show --query tenantId -o tsv)" >/dev/null
     azd env set AZURE_VNET_ID "$VNET_ID" >/dev/null
     azd env set AZURE_DNS_SUBSCRIPTION_ID "$SUBSCRIPTION_ID" >/dev/null
     # BYO pre-built image: skip ACR build at provision AND deploy. Without this
@@ -347,7 +348,7 @@ phase3_real_provision() {
 # "Container Registry Repository Reader" (not the legacy AcrPull). Only needed
 # for the gated deploy phase (image pull).
 grant_acr_pull() {
-  local acr_login acr_name acr_id pid
+  local acr_login acr_name acr_id project_id pid
   acr_login="${IMAGE%%/*}"
   acr_name="${acr_login%%.*}"
   acr_id="$(az acr show -n "$acr_name" --query id -o tsv 2>/dev/null || echo '')"
@@ -355,9 +356,20 @@ grant_acr_pull() {
     warn "could not resolve ACR '$acr_name' id; grant the project MI 'Container Registry Repository Reader' manually"
     return 0
   fi
-  pid="$(az cognitiveservices account show -g "$RG" -n "$ACCOUNT_NAME" \
-    --query identity.principalId -o tsv 2>/dev/null || echo '')"
-  if [[ -z "$pid" || "$pid" == "null" ]]; then
+
+  project_id="$(cd "$REAL_DIR" && azd env get-value AZURE_AI_PROJECT_ID 2>/dev/null || echo '')"
+  if [[ -n "$project_id" ]]; then
+    pid="$(az rest --method get \
+      --url "https://management.azure.com${project_id}?api-version=2025-04-01-preview" \
+      --query identity.principalId -o tsv 2>/dev/null || echo '')"
+  fi
+  # Fallback for older RP/API shapes, but the hosted-agent image pull uses the
+  # project MI when a project-scoped identity exists.
+  if [[ -z "${pid:-}" || "$pid" == "null" ]]; then
+    pid="$(az cognitiveservices account show -g "$RG" -n "$ACCOUNT_NAME" \
+      --query identity.principalId -o tsv 2>/dev/null || echo '')"
+  fi
+  if [[ -z "${pid:-}" || "$pid" == "null" ]]; then
     warn "could not resolve project MI principalId; grant repository read manually"
     return 0
   fi

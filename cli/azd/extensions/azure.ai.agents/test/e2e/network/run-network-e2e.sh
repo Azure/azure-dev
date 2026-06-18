@@ -3,20 +3,25 @@
 # `host: microsoft.foundry`, optimized for minimal Azure resource-operation time.
 #
 # Strategy (see README.md for the cost rationale):
-#   - ONE real network account is provisioned (the create+own matrix cell),
-#     then deploy + invoke prove the agent works under the VNet (Scenario 3).
+#   - ONE real network account is provisioned (the create+own matrix cell).
 #   - The other matrix cells and the bicep-less vs eject code paths are verified
 #     with `azd provision --preview` (ARM what-if) which creates nothing.
 #   - A shared BYO VNet (+ optional pre-created subnets / DNS zones) is created
 #     once and reused across cells.
 #
+# Phases 0-4 validate all the *networking* code and do NOT require the BYO-image
+# init UX (`azd ai agent init --image`, PR 8689). The project is hand-authored
+# (azure.yaml fixture), so it runs against the current branch today. Phase 5
+# (deploy + invoke the BYO image under the VNet) needs the deploy-time pre-built
+# short-circuit from PR 8689 and is gated behind RUN_DEPLOY=true.
+#
 # Phases:
 #   0  local gates        (no Azure)
 #   1  shared infra        create RG(s) + VNet (+ reference subnets/zones)
 #   2  what-if matrix      bicep-less shape for all cells (no creation)
-#   3  real provision      create+own cell, BYO --image  (Scenario 1 + 3 core)
+#   3  real provision      create+own cell  (Scenario 1 + network topology)
 #   4  eject idempotency    eject -> what-if "no changes" + edit delta (Scenario 2)
-#   5  deploy + invoke      agent under the VNet (Scenario 3 completion)
+#   5  deploy + invoke      agent under the VNet (Scenario 3) -- RUN_DEPLOY=true
 #   6  teardown            azd down --purge + delete shared RG(s)
 #
 # Copyright (c) Microsoft Corporation. All rights reserved.
@@ -34,9 +39,14 @@ source "$SCRIPT_DIR/lib.sh"
 # a region hits capacity.
 ACCOUNT_LOCATION="${ACCOUNT_LOCATION:-westus}"
 
-# BYO image (digest-pinned). The Foundry project's managed identity must be able
-# to pull it; this ACR uses RBAC+ABAC, so we grant AcrPull post-provision.
+# BYO image (digest-pinned), written into the agent entry of the hand-authored
+# azure.yaml. Only pulled during the gated deploy phase (RUN_DEPLOY=true); the
+# Foundry project MI is granted repository read on this RBAC+ABAC registry then.
 IMAGE="${IMAGE:-1756abcawemengncus3a16acr.azurecr.io/echodual@sha256:76a9463463acf11d4068e8468fb232a3de0709177b6b35de95de6a34b33fa686}"
+
+# Phase 5 (deploy + invoke) needs the BYO-image deploy short-circuit from PR
+# 8689. Off by default so phases 0-4 run against the current branch today.
+RUN_DEPLOY="${RUN_DEPLOY:-false}"
 
 RUN_ID="${RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 PREFIX="${PREFIX:-azdnet${RUN_ID//-/}}"
@@ -97,20 +107,36 @@ write_network_block() {
   } | inject_network_block "$file"
 }
 
-# init a fresh project for a cell into $WORK_DIR/<name> and cd into it.
-# Target subscription/region for greenfield resource creation are supplied via
-# AZURE_SUBSCRIPTION_ID / AZURE_LOCATION (the documented mechanism for
-# `azd ai agent init`), not init flags. BYO image via --image.
-init_project() { # <name> <extra azd init args...>
-  local name="$1"; shift
-  rm -rf "${WORK_DIR:?}/$name"
-  mkdir -p "$WORK_DIR/$name"
-  ( cd "$WORK_DIR/$name"
-    AZURE_SUBSCRIPTION_ID="$SUBSCRIPTION_ID" AZURE_LOCATION="$ACCOUNT_LOCATION" \
-      run_capture "init-$name" azd ai agent init --no-prompt \
-        --agent-name "$AGENT_NAME" --image "$IMAGE" "$@"
+# write a hand-authored azure.yaml fixture for a matrix cell into a fresh
+# project dir and create its azd environment. No `azd ai agent init --image`:
+# phases 0-4 do not need the BYO-image init UX (PR 8689). The agent entry uses
+# `image:` (so the synthesizer sets includeAcr=false, matching BYO image).
+# args: <name> <subnet_mode create|reference> <dns_mode own|reference>
+setup_project() {
+  local name="$1" subnet_mode="$2" dns_mode="$3"
+  PROJECT_DIR="$WORK_DIR/$name"
+  rm -rf "${PROJECT_DIR:?}"; mkdir -p "$PROJECT_DIR"
+  cat >"$PROJECT_DIR/azure.yaml" <<YAML
+name: $AGENT_NAME
+metadata:
+  template: azure.ai.agents
+infra:
+  provider: microsoft.foundry
+services:
+  $AGENT_NAME:
+    host: azure.ai.agent
+    deployments: []
+    agents:
+      - name: $AGENT_NAME
+        image: $IMAGE
+YAML
+  write_network_block "$PROJECT_DIR/azure.yaml" "$subnet_mode" "$dns_mode"
+  ( cd "$PROJECT_DIR"
+    run_capture "env-$name" azd env new "$name" \
+      --subscription "$SUBSCRIPTION_ID" --location "$ACCOUNT_LOCATION"
+    azd env set AZURE_VNET_ID "$VNET_ID" >/dev/null
+    azd env set AZURE_DNS_SUBSCRIPTION_ID "$SUBSCRIPTION_ID" >/dev/null
   )
-  PROJECT_DIR="$WORK_DIR/$name/$AGENT_NAME"
 }
 
 # --- phase 0: local gates ----------------------------------------------------
@@ -165,11 +191,8 @@ phase2_whatif_matrix() {
   for cell in "${MATRIX[@]}"; do
     read -r sm dm <<<"$cell"
     tag="${sm}-${dm}"
-    init_project "wi-$tag"
+    setup_project "wi-$tag" "$sm" "$dm"
     ( cd "$PROJECT_DIR"
-      write_network_block azure.yaml "$sm" "$dm"
-      azd env set AZURE_VNET_ID "$VNET_ID" >/dev/null
-      azd env set AZURE_DNS_SUBSCRIPTION_ID "$SUBSCRIPTION_ID" >/dev/null
       preview_capture "20-whatif-$tag"
       # Assert the what-if plan contains the network-defining resources.
       local f="$OUT_DIR/20-whatif-$tag.log"
@@ -182,20 +205,17 @@ phase2_whatif_matrix() {
 # --- phase 3: real provision (create/own) ------------------------------------
 
 phase3_real_provision() {
-  info "### phase 3: real provision (create+own, BYO image)"
-  init_project "real"
+  info "### phase 3: real provision (create+own)"
+  setup_project "real" create own
   REAL_DIR="$PROJECT_DIR"
   ( cd "$REAL_DIR"
-    write_network_block azure.yaml create own
-    azd env set AZURE_VNET_ID "$VNET_ID" >/dev/null
     run_capture "30-provision" azd provision --no-prompt
     azd env get-values >"$OUT_DIR/30-env-after-provision.txt" 2>&1 || true
   )
 
-  # resolve account + grant AcrPull to the project MI on the BYO (ABAC) ACR.
+  # resolve account for the live-topology assertions.
   RG="$(cd "$REAL_DIR" && azd env get-value AZURE_RESOURCE_GROUP)"
   ACCOUNT_NAME="$(cd "$REAL_DIR" && azd env get-value AZURE_AI_ACCOUNT_NAME)"
-  grant_acr_pull
 
   # live topology assertions
   ( cd "$REAL_DIR"
@@ -206,25 +226,29 @@ phase3_real_provision() {
   ) 2>&1 | tee "$OUT_DIR/31-assert-resources.log"
 }
 
-# grant the Foundry project managed identity AcrPull on the BYO registry.
+# grant the Foundry project managed identity repository read on the BYO
+# registry. This ACR uses RBAC+ABAC, so the correct role is the ABAC-aware
+# "Container Registry Repository Reader" (not the legacy AcrPull). Only needed
+# for the gated deploy phase (image pull).
 grant_acr_pull() {
   local acr_login acr_name acr_id pid
   acr_login="${IMAGE%%/*}"
   acr_name="${acr_login%%.*}"
   acr_id="$(az acr show -n "$acr_name" --query id -o tsv 2>/dev/null || echo '')"
   if [[ -z "$acr_id" ]]; then
-    warn "could not resolve ACR '$acr_name' id; grant AcrPull to the project MI manually"
+    warn "could not resolve ACR '$acr_name' id; grant the project MI 'Container Registry Repository Reader' manually"
     return 0
   fi
   pid="$(az cognitiveservices account show -g "$RG" -n "$ACCOUNT_NAME" \
     --query identity.principalId -o tsv 2>/dev/null || echo '')"
   if [[ -z "$pid" || "$pid" == "null" ]]; then
-    warn "could not resolve project MI principalId; grant AcrPull manually"
+    warn "could not resolve project MI principalId; grant repository read manually"
     return 0
   fi
   run_capture "30-acr-pull" az role assignment create --assignee-object-id "$pid" \
-    --assignee-principal-type ServicePrincipal --role AcrPull --scope "$acr_id" || \
-    warn "AcrPull grant failed (may already exist or need ABAC condition)"
+    --assignee-principal-type ServicePrincipal --role "Container Registry Repository Reader" \
+    --scope "$acr_id" || \
+    warn "repository-read grant failed (may already exist or need an ABAC condition)"
 }
 
 # --- phase 4: eject idempotency (Scenario 2) ---------------------------------
@@ -244,15 +268,18 @@ phase4_eject() {
     else
       warn "eject what-if shows changes; inspect $OUT_DIR/41-eject-whatif.log"
     fi
-    # a small manual edit must surface as the only delta.
-    sed -i 's/"enableNetworkIsolation": { "value": true }/&/' infra/main.parameters.json || true
   )
 }
 
-# --- phase 5: deploy + invoke ------------------------------------------------
+# --- phase 5: deploy + invoke (gated: needs PR 8689) -------------------------
 
 phase5_deploy_invoke() {
+  if [[ "$RUN_DEPLOY" != "true" ]]; then
+    warn "RUN_DEPLOY!=true: skipping deploy+invoke (needs the BYO-image deploy short-circuit from PR 8689)"
+    return 0
+  fi
   info "### phase 5: deploy + invoke under the VNet"
+  grant_acr_pull   # repository read for the BYO image pull
   ( cd "$REAL_DIR"
     run_capture "50-deploy" azd deploy --no-prompt
     azd ai agent show --output json >"$OUT_DIR/51-show.json" 2>&1 || true
@@ -283,6 +310,7 @@ main() {
     echo "subscription=$SUBSCRIPTION_ID"
     echo "account_location=$ACCOUNT_LOCATION"
     echo "image=$IMAGE"
+    echo "run_deploy=$RUN_DEPLOY"
     echo "work_dir=$WORK_DIR"
     echo "out_dir=$OUT_DIR"
     echo "vnet_rg=$VNET_RG dns_rg=$DNS_RG vnet=$VNET_NAME"

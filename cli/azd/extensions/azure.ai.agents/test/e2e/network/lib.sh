@@ -51,11 +51,9 @@ require_tools() {
   for t in az azd jq; do command -v "$t" >/dev/null || die "missing required tool: $t"; done
   az account show >/dev/null 2>&1 || die "run 'az login' first"
   azd auth login --check-status >/dev/null 2>&1 || die "run 'azd auth login' first"
-  # The 'ai agent' command group must be available (extension installed/dev).
+  # The 'ai agent' command group must be available (the eject step uses
+  # `azd ai agent init --infra`).
   azd ai agent --help >/dev/null 2>&1 || die "azd 'ai agent' extension not available"
-  # BYO image path: this harness requires the --image flag on init.
-  azd ai agent init --help 2>&1 | grep -q -- '--image' || \
-    die "this azd build's 'ai agent init' lacks --image (BYO image). Update azd/extension."
 }
 
 # --- azure.yaml mutation -----------------------------------------------------

@@ -14,11 +14,26 @@ reference private DNS), plus the BYO-image agent lifecycle under a VNet.
 |---|---|---|---|
 | 1. Declarative `network:` | bicep-less (in-memory synth) | `azd provision --preview` what-if shape gate **+** the real provision in phase 3 (same code path) | none extra (what-if) |
 | 2. Eject + edit | on-disk template + provision-time `${VAR}` | eject → what-if "no changes" against the live account → manual `infra/` edit delta | none extra (reuses phase 3 account) |
-| 3. BYO image under VNet | full `init → provision → deploy → invoke` | one real network account, then `az` resource assertions + `agent invoke` | **one** account |
+| 3. BYO image under VNet | `deploy → invoke` on the provisioned account | `agent invoke` (gated `RUN_DEPLOY=true`) | none extra (reuses phase 3 account) |
 
 The whole matrix (subnet `create`/`reference` × DNS `own`/`reference`) is covered:
 the `create+own` cell is the single real provision; the other three cells are
 checked with what-if only.
+
+### `--image` is not required for phases 0–4
+
+The project is **hand-authored** (an `azure.yaml` fixture with the foundry
+service, `network:` block, and an agent entry using `image:`), so phases 0–4
+run against the current branch **without** the BYO-image init UX
+(`azd ai agent init --image`, PR 8689). `image:` makes the synthesizer set
+`includeAcr=false`, matching BYO image, so no ACR is created at provision.
+
+**Phase 5 (deploy + invoke) is gated behind `RUN_DEPLOY=true`** because it needs
+the deploy-time pre-built-image short-circuit from PR 8689 (`AZD_AGENT_SKIP_ACR`
+consumption in `service_target_agent.go`). Without it, a headless `azd deploy`
+defaults to "build" and fails for a BYO image. Run phases 0–4 today; enable
+phase 5 once PR 8689 (via PR 8643 landing on `huimiu/foundry-azure-yaml`) is in
+your build.
 
 ## Why it's cheap
 
@@ -34,19 +49,17 @@ template/parameter fails in seconds, not after a 15-minute provision.
 
 ## Prerequisites
 
-- `az` (logged in), `azd` with the `ai agent` extension available, `jq`.
-- The `azd ai agent init` build under test must support `--image` (BYO image);
-  the harness preflight fails fast otherwise. Target subscription/region for the
-  greenfield provision are passed via `AZURE_SUBSCRIPTION_ID` / `AZURE_LOCATION`
-  (set by the harness from `SUBSCRIPTION_ID` / `ACCOUNT_LOCATION`), not init flags.
+- `az` (logged in), `azd` with the `ai agent` extension available (for the eject
+  step `azd ai agent init --infra`), `jq`.
 - A subscription with quota for a **westus** network-enabled Foundry account
   (hard requirement). Other regions may be used if westus hits capacity for a
   given resource — override `ACCOUNT_LOCATION`.
-- The BYO image `…/echodual@sha256:…` must be pullable by the Foundry project's
-  managed identity. The registry uses RBAC + ABAC; the harness grants `AcrPull`
-  to the project MI post-provision (`grant_acr_pull`). If the grant needs an
-  ABAC condition or the registry restricts network access, complete it manually
-  and re-run phase 5.
+- For the gated deploy phase only (`RUN_DEPLOY=true`): the BYO image
+  `…/echodual@sha256:…` must be pullable by the Foundry project's managed
+  identity. The registry uses RBAC + ABAC, so the harness grants the ABAC-aware
+  **`Container Registry Repository Reader`** role to the project MI
+  (`grant_acr_pull`). If the grant needs an ABAC condition or the registry
+  restricts network access, complete it manually and re-run phase 5.
 
 ## Usage
 
@@ -58,12 +71,20 @@ export ACCOUNT_LOCATION=westus        # hard requirement for the network account
 cli/azd/extensions/azure.ai.agents/test/e2e/network/run-network-e2e.sh
 ```
 
+Phases 0–4 run by default (no deploy). To also run phase 5 once PR 8689 is in
+your build:
+
+```bash
+RUN_DEPLOY=true cli/azd/extensions/azure.ai.agents/test/e2e/network/run-network-e2e.sh
+```
+
 Useful overrides:
 
 | Var | Default | Purpose |
 |---|---|---|
 | `ACCOUNT_LOCATION` | `westus` | region of the network-enabled Foundry account |
-| `IMAGE` | the echodual digest | BYO `--image` reference |
+| `RUN_DEPLOY` | `false` | `true` runs phase 5 (deploy + invoke); needs PR 8689 |
+| `IMAGE` | the echodual digest | BYO image written into the fixture; pulled only in phase 5 |
 | `KEEP` | `false` | `true` skips teardown (inspect resources, then `azd down --purge` yourself) |
 | `OUT_DIR` | `./azd-network-e2e-<ts>` | log directory |
 | `RUN_ID` / `PREFIX` | timestamp | name uniqueness |

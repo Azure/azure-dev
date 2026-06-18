@@ -490,11 +490,25 @@ func (d *detector) detectSkill(
 
 		// Match only against stdout: stderr is usually diagnostics, not
 		// the canonical listing.
-		if strings.Contains(result.Stdout, host.PluginName) {
+		//
+		// Use a two-stage gate to avoid false positives on hosts whose
+		// list command echoes the queried name in "not found" output
+		// (e.g. claude's `plugin list azure@azure-skills` prints the
+		// query name regardless of whether the plugin is installed):
+		//   1. PluginName must appear in stdout (fast pre-filter), and
+		//   2. VersionRegex must capture a version (authoritative —
+		//      every host's regex anchors on a token that is present
+		//      only in installed-plugin output, e.g. claude's
+		//      "Version:" line or gemini's "Release tag:" line).
+		if host.PluginName != "" &&
+			!strings.Contains(result.Stdout, host.PluginName) {
+			continue
+		}
+		if version := matchVersion(
+			result.Stdout, host.VersionRegex,
+		); version != "" {
 			status.Installed = true
-			status.InstalledVersion = matchVersion(
-				result.Stdout+result.Stderr, host.VersionRegex,
-			)
+			status.InstalledVersion = version
 			return status
 		}
 	}

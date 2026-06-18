@@ -1129,13 +1129,12 @@ func newSkillTool() *ToolDefinition {
 				PluginName:           "azure",
 			},
 			{
-				Host:                   "codex",
-				MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
-				PluginInstallCommand:   []string{"plugin", "add", "azure@azure-skills"},
-				PluginUpdateCommand:    []string{"plugin", "marketplace", "upgrade", "azure-skills"},
-				PluginUninstallCommand: []string{"plugin", "remove", "azure@azure-skills"},
-				PluginListCommand:      []string{"plugin", "list"},
-				PluginName:             "azure@azure-skills",
+				Host:                  "codex",
+				MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
+				PluginInstallCommand:  []string{"plugin", "add", "azure@azure-skills"},
+				PluginUpdateCommand:   []string{"plugin", "marketplace", "upgrade", "azure-skills"},
+				PluginListCommand:     []string{"plugin", "list"},
+				PluginName:            "azure@azure-skills",
 			},
 		},
 	}
@@ -1287,7 +1286,7 @@ func TestRunSkill_PicksFirstAvailableHost(t *testing.T) {
 	}
 }
 
-func TestRunSkill_NoHost_FailsWithGuidance(t *testing.T) {
+func TestRunSkill_NoHost_FailsWithSuggestion(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
@@ -1303,15 +1302,25 @@ func TestRunSkill_NoHost_FailsWithGuidance(t *testing.T) {
 	require.False(t, result.Success)
 	require.NotNil(t, result.Error)
 
-	// The error message must point users at the easiest fix:
-	// `azd tool install github-copilot-cli` and the re-run command.
-	msg := result.Error.Error()
-	assert.Contains(t, msg, "github-copilot-cli",
-		"error must point users at github-copilot-cli; got: %s", msg,
+	ews, ok := errors.AsType[*errorhandler.ErrorWithSuggestion](result.Error)
+	require.True(t, ok,
+		"expected *errorhandler.ErrorWithSuggestion, got %T: %v",
+		result.Error, result.Error,
 	)
-	assert.Contains(t, msg, "azd tool install",
-		"error must include the install command; got: %s", msg,
-	)
+
+	// All four fields must be populated so the YAML error pipeline
+	// does not strip user guidance (AGENTS.md completeness rule).
+	assert.NotEmpty(t, ews.Err)
+	assert.NotEmpty(t, ews.Message)
+	assert.NotEmpty(t, ews.Suggestion)
+	assert.NotEmpty(t, ews.Links)
+
+	// Suggestion must point users at the single recommended fix.
+	assert.Contains(t, ews.Suggestion, "azd tool install github-copilot-cli")
+
+	// One link — GitHub Copilot CLI install docs.
+	require.Len(t, ews.Links, 1)
+	assert.Contains(t, ews.Links[0].Title, "GitHub Copilot CLI")
 }
 
 // ---------------------------------------------------------------------------

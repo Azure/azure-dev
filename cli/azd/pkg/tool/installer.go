@@ -349,9 +349,9 @@ func (i *installer) run(
 //     itself and surfaces its own diagnostic when git is missing.
 //
 // The first supported host found on PATH wins. For fresh installs the
-// host's MarketplaceAddCommand (if any) runs first as a best-effort
-// idempotent step — failures there are ignored because re-adding an
-// already-registered marketplace is not a real error.
+// host's MarketplaceAddCommand (if any) runs first; an "already
+// registered/added/on disk" response is tolerated as idempotent
+// success, but other failures are propagated to the caller.
 func (i *installer) runSkill(
 	ctx context.Context,
 	tool *ToolDefinition,
@@ -396,14 +396,52 @@ func (i *installer) runSkill(
 	}
 
 	// 4. Verify by detecting the skill via the host's plugin list.
-	status, err := i.detector.DetectTool(ctx, tool)
-	if err != nil {
-		result.Error = fmt.Errorf(
-			"verifying installation of %s: %w", tool.Name, err,
+	//    Plugin-list output sometimes lags the install action (the
+	//    pre-existing copilot CLI integration documents the same race —
+	//    see internal/agent/copilot/cli.go), so retry a few times with
+	//    exponential backoff to match the package-manager install path.
+	const maxAttempts = 3 // 1 initial + 2 retries
+	var status *ToolStatus
+	backoff := 1 * time.Second
+
+	for attempt := range maxAttempts {
+		var err error
+		status, err = i.detector.DetectTool(ctx, tool)
+		if err != nil {
+			result.Error = fmt.Errorf(
+				"verifying installation of %s: %w", tool.Name, err,
+			)
+			result.Duration = time.Since(start)
+			return result, nil
+		}
+
+		if status.Installed {
+			break
+		}
+
+		if attempt >= maxAttempts-1 {
+			break
+		}
+
+		log.Printf(
+			"installer: %s not yet detected, retrying in %s (attempt %d/%d)",
+			tool.Name, backoff, attempt+1, maxAttempts-1,
 		)
-		result.Duration = time.Since(start)
-		return result, nil
+
+		select {
+		case <-ctx.Done():
+			result.Error = fmt.Errorf(
+				"verifying installation of %s: %w",
+				tool.Name, ctx.Err(),
+			)
+			result.Duration = time.Since(start)
+			return result, nil
+		case <-time.After(backoff):
+		}
+
+		backoff *= 2
 	}
+
 	if !status.Installed {
 		result.Error = fmt.Errorf(
 			"%s was installed via %s but verification failed",
@@ -420,8 +458,11 @@ func (i *installer) runSkill(
 }
 
 // pickSkillHost returns the first SkillHost whose binary is on PATH.
-// When none of the configured hosts is available it returns a error that recommends
-// installing GitHub Copilot CLI via `azd tool install github-copilot-cli`
+// When none of the configured hosts is available it returns an
+// [errorhandler.ErrorWithSuggestion] (all four fields populated per the
+// AGENTS.md completeness rule) that recommends installing GitHub
+// Copilot CLI via `azd tool install github-copilot-cli` — a single
+// command the user can copy-paste without leaving azd.
 func (i *installer) pickSkillHost(
 	tool *ToolDefinition,
 ) (SkillHost, error) {
@@ -432,14 +473,30 @@ func (i *installer) pickSkillHost(
 		}
 		checked = append(checked, host.Host)
 	}
-	log.Printf("Checked (none found on PATH): %s.", strings.Join(checked, ", "))
 
-	return SkillHost{}, fmt.Errorf(
-		"no supported agentic CLI host found on PATH for %s: "+
-			"Please install GitHub Copilot CLI via `azd tool install "+
-			"github-copilot-cli`. Then re-run `azd tool install %s`.",
-		tool.Name, tool.Id,
+	suggestion := fmt.Sprintf(
+		"%s installs through your existing agentic CLI. Install GitHub "+
+			"Copilot CLI:\n\n"+
+			"    azd tool install github-copilot-cli\n\n"+
+			"Then re-run `azd tool install %s`.\n"+
+			"Checked (none found on PATH): %s",
+		tool.Name, tool.Id, strings.Join(checked, ", "),
 	)
+
+	return SkillHost{}, &errorhandler.ErrorWithSuggestion{
+		Err: fmt.Errorf(
+			"no supported agentic CLI host found on PATH for %s",
+			tool.Name,
+		),
+		Message:    "Cannot install " + tool.Name,
+		Suggestion: suggestion,
+		Links: []errorhandler.ErrorLink{
+			{
+				URL:   "https://docs.github.com/copilot/how-tos/set-up/install-copilot-cli",
+				Title: "Install GitHub Copilot CLI",
+			},
+		},
+	}
 }
 
 // runSkillHostCommand executes the host's install (or update) command

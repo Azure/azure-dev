@@ -64,8 +64,6 @@ type SkillHost struct {
 	PluginInstallCommand []string
 	// PluginUpdateCommand updates the plugin to its latest version.
 	PluginUpdateCommand []string
-	// PluginUninstallCommand removes the plugin from the host.
-	PluginUninstallCommand []string
 	// PluginListCommand lists installed plugins on the host
 	// (e.g. ["plugin", "list"]). The detector runs this command and
 	// searches the output for PluginName to decide whether the skill
@@ -343,24 +341,22 @@ func azureSkills() *ToolDefinition {
 		Website:  "https://github.com/microsoft/azure-skills",
 		SkillHosts: []SkillHost{
 			{
-				Host:                   "copilot",
-				MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
-				PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
-				PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
-				PluginUninstallCommand: []string{"plugin", "uninstall", "azure"},
-				PluginListCommand:      []string{"plugin", "list"},
-				PluginName:             "azure@azure-skills",
+				Host:                  "copilot",
+				MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
+				PluginInstallCommand:  []string{"plugin", "install", "azure@azure-skills"},
+				PluginUpdateCommand:   []string{"plugin", "update", "azure@azure-skills"},
+				PluginListCommand:     []string{"plugin", "list"},
+				PluginName:            "azure@azure-skills",
 				// Sample: "  • azure@azure-skills (v1.1.70)"
 				VersionRegex: `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
 			},
 			{
-				Host:                   "claude",
-				MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "https://github.com/microsoft/azure-skills"},
-				PluginInstallCommand:   []string{"plugin", "install", "azure"},
-				PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
-				PluginUninstallCommand: []string{"plugin", "uninstall", "azure"},
-				PluginListCommand:      []string{"plugin", "list", "azure@azure-skills"},
-				PluginName:             "azure@azure-skills",
+				Host:                  "claude",
+				MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "https://github.com/microsoft/azure-skills"},
+				PluginInstallCommand:  []string{"plugin", "install", "azure"},
+				PluginUpdateCommand:   []string{"plugin", "update", "azure@azure-skills"},
+				PluginListCommand:     []string{"plugin", "list", "azure@azure-skills"},
+				PluginName:            "azure@azure-skills",
 				// Sample (target-filtered output):
 				//   ❯ azure@azure-skills
 				//     Version: 1.1.70
@@ -370,12 +366,11 @@ func azureSkills() *ToolDefinition {
 				VersionRegex: `Version:\s*v?(\d+\.\d+\.\d+)`,
 			},
 			{
-				Host:                   "gemini",
-				PluginInstallCommand:   []string{"extensions", "install", "https://github.com/microsoft/azure-skills"},
-				PluginUpdateCommand:    []string{"extensions", "update", "azure"},
-				PluginUninstallCommand: []string{"extensions", "uninstall", "azure"},
-				PluginListCommand:      []string{"extensions", "list"},
-				PluginName:             "azure",
+				Host:                 "gemini",
+				PluginInstallCommand: []string{"extensions", "install", "https://github.com/microsoft/azure-skills"},
+				PluginUpdateCommand:  []string{"extensions", "update", "azure"},
+				PluginListCommand:    []string{"extensions", "list"},
+				PluginName:           "azure",
 				// `gemini extensions list` may include many extensions,
 				// each with its own "Release tag:" line. Anchor on the
 				// azure-skills Source URL (unique to this extension) and
@@ -384,13 +379,12 @@ func azureSkills() *ToolDefinition {
 				VersionRegex: `(?s)Source:\s*https://github\.com/microsoft/azure-skills.*?Release tag:\s*v?(\d+\.\d+\.\d+)`,
 			},
 			{
-				Host:                   "codex",
-				MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
-				PluginInstallCommand:   []string{"plugin", "add", "azure@azure-skills"},
-				PluginUpdateCommand:    []string{"plugin", "marketplace", "upgrade", "azure-skills"},
-				PluginUninstallCommand: []string{"plugin", "remove", "azure@azure-skills"},
-				PluginListCommand:      []string{"plugin", "list"},
-				PluginName:             "azure@azure-skills",
+				Host:                  "codex",
+				MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
+				PluginInstallCommand:  []string{"plugin", "add", "azure@azure-skills"},
+				PluginUpdateCommand:   []string{"plugin", "marketplace", "upgrade", "azure-skills"},
+				PluginListCommand:     []string{"plugin", "list"},
+				PluginName:            "azure@azure-skills",
 				// `codex plugin list` is tabular with multiple plugins.
 				// Anchor at line start so we only match the row whose
 				// PLUGIN column is azure@azure-skills — not another row

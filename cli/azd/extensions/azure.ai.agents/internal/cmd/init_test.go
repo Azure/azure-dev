@@ -2407,12 +2407,12 @@ func TestCodeDeployFlagValidation(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "code deploy without runtime passes (auto-detected)",
+			name:    "code deploy without runtime (entry-point only) passes (auto-detected)",
 			flags:   initFlags{noPrompt: true, deployMode: "code", entryPoint: "app.py"},
 			wantErr: false,
 		},
 		{
-			name:    "code deploy without entry-point passes (auto-detected)",
+			name:    "code deploy without entry-point (runtime only) passes (auto-detected)",
 			flags:   initFlags{noPrompt: true, deployMode: "code", runtime: "python_3_13"},
 			wantErr: false,
 		},

@@ -30,6 +30,14 @@ on:
           - "code"
           - "container"
         default: "both"
+  # On pushes to the dev branch, run Tier 0 + Tier 1 automatically when extension
+  # or workflow files change. Tier 2 is intentionally excluded (creates billable
+  # cloud resources) — use workflow_dispatch to run it on-demand.
+  push:
+    branches: ['wujia/e2e-static-tests']
+    paths:
+      - "cli/azd/extensions/azure.ai.agents/**"
+      - ".github/workflows/e2e-ext-azure-ai-agents-static.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -82,7 +90,7 @@ jobs:
     name: "Tier 1 — Init Variants"
     runs-on: ubuntu-22.04
     timeout-minutes: 10
-    if: contains(inputs.tier, '1')
+    if: github.event_name == 'push' || contains(inputs.tier, '1')
     # No needs: — runs in parallel with tier0
     steps:
       - uses: actions/checkout@v4
@@ -132,7 +140,7 @@ jobs:
     name: "Tier 2 — Golden Path (${{ inputs.deploy_modes || 'both' }})"
     runs-on: ubuntu-22.04
     timeout-minutes: 30  # Each deploy mode takes ~13min; both modes run in parallel within test_tier2.py
-    if: contains(inputs.tier, '2')
+    if: github.event_name == 'workflow_dispatch' && contains(inputs.tier, '2')
     needs: [tier0, tier1]  # Only run after both fast tiers pass
     steps:
       - uses: actions/checkout@v4

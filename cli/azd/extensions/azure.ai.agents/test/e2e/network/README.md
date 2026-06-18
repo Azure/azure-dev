@@ -54,12 +54,21 @@ template/parameter fails in seconds, not after a 15-minute provision.
 - A subscription with quota for a **westus** network-enabled Foundry account
   (hard requirement). Other regions may be used if westus hits capacity for a
   given resource — override `ACCOUNT_LOCATION`.
+- A current `azd x` developer tool. Phase 0 refreshes the dev extension from the
+  **current source** (`azd x build` → `pack` → `publish` → `extension install`)
+  so the run tests your code, not a stale installed build. This registers the
+  `provisioning-provider` capability + the `microsoft.foundry` provider. If your
+  installed `azd x` is old (it silently drops the capability), rebuild it first;
+  otherwise `azd provision` fails with `extension does not support
+  provisioning-provider capability`. Set `SKIP_EXT_REFRESH=true` to reuse the
+  already-installed extension.
 - For the gated deploy phase only (`RUN_DEPLOY=true`): the BYO image
-  `…/echodual@sha256:…` must be pullable by the Foundry project's managed
-  identity. The registry uses RBAC + ABAC, so the harness grants the ABAC-aware
-  **`Container Registry Repository Reader`** role to the project MI
-  (`grant_acr_pull`). If the grant needs an ABAC condition or the registry
-  restricts network access, complete it manually and re-run phase 5.
+  `…/echodual@sha256:…` must exist and be pullable by the Foundry project's
+  managed identity. The registry uses RBAC + ABAC, so the harness grants the
+  ABAC-aware **`Container Registry Repository Reader`** role to the project MI
+  (`grant_acr_pull`) and sets `AZD_AGENT_SKIP_ACR=true` (the BYO-image deploy
+  signal). If the image's registry is unavailable, or the grant needs an ABAC
+  condition, supply a reachable `IMAGE=` and complete the grant manually.
 
 ## Usage
 
@@ -84,7 +93,9 @@ Useful overrides:
 |---|---|---|
 | `ACCOUNT_LOCATION` | `westus` | region of the network-enabled Foundry account |
 | `RUN_DEPLOY` | `false` | `true` runs phase 5 (deploy + invoke); needs PR 8689 |
-| `IMAGE` | the echodual digest | BYO image written into the fixture; pulled only in phase 5 |
+| `MAX_PHASE` | `6` | stop after phase N (e.g. `2` for the cheap VNet + what-if gates) |
+| `SKIP_EXT_REFRESH` | `false` | `true` skips the phase-0 dev-extension rebuild/reinstall |
+| `IMAGE` | the echodual digest | BYO image (in `agent.yaml`); pulled only in phase 5 |
 | `KEEP` | `false` | `true` skips teardown (inspect resources, then `azd down --purge` yourself) |
 | `OUT_DIR` | `./azd-network-e2e-<ts>` | log directory |
 | `RUN_ID` / `PREFIX` | timestamp | name uniqueness |

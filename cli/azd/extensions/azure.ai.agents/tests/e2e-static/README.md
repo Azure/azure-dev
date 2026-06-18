@@ -1,100 +1,86 @@
-# E2E Static Tests for `azd ai agent`
+# E2E Static Tests v2 — Record/Replay Approach
 
-Deterministic (no-LLM) end-to-end tests for the `azure.ai.agents` CLI extension.
-Uses Python + tmux to drive the interactive CLI with hardcoded responses.
+## Concept
 
-## Architecture
+Based on Ben Hanrahan's `cli-interactive-tester` tool (`D:\w1\cli-interactive-tester`):
+- Ben's tool records agent-driven sessions and can replay them without Copilot
+- We use the same pattern: **YAML scripts** define a sequence of wait→action steps
+- A **runner** drives tmux identically to Ben's `agent.py` primitives
+- No LLM — pure deterministic replay of a recorded interaction
+
+## How It Works
 
 ```
-Python test scripts → tmux send-keys/capture-pane → azd ai agent CLI
+YAML script (recorded steps)
+  → runner.py reads steps sequentially
+  → For each step: wait for expected text in pane → execute action → next step
+  → After all steps: run assertions
 ```
 
-No Copilot/LLM needed — all interactions are deterministic and reproducible.
+## Script Format
 
-## Tiers
+```yaml
+name: "init-python-basic"
+command: "azd ai agent init"
+cwd: "~/e2e-test/{name}"
+timeout: 300
 
-| Tier | What | Auth Required | Time |
-|------|------|---------------|------|
-| 0 | Offline CLI validation (version, help, flags, doctor) | No | ~15s |
-| 1 | Interactive init variants (Python/C#, code/container, existing/create) | Yes (read-only) | ~3.5min |
-| 2 | Full golden path: init → provision → deploy → invoke → teardown | Yes (read-write) | ~12min |
+steps:
+  - wait_for: "Select a language"
+    action: select
+    text: "Python"
 
-## Running Locally
+  - wait_for: "Select a starter template"
+    action: select
+    text: "Basic"
 
-### Prerequisites
-- `azd` built and on PATH with `azure.ai.agents` extension installed
-- `tmux` installed
-- Python 3.10+
-- Azure CLI logged in (`az login`)
-- GitHub token available (via `gh auth login` or `$GITHUB_TOKEN`)
+  - wait_for: "Enter a name"
+    action: input
+    text: ""              # empty = accept default (Enter)
 
-### Environment Variables
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `E2E_SUBSCRIPTION` | Tier 1/2 | Azure subscription ID |
-| `E2E_PROJECT` | Tier 1/2 | Foundry project name |
-| `E2E_TENANT` | Tier 1/2 | Azure tenant ID |
-| `GITHUB_TOKEN` | Tier 1/2 | GitHub PAT (for template downloads) |
-| `E2E_TMUX` | No | Path to tmux binary |
-| `E2E_HOME` | No | Override HOME directory |
+assertions:
+  - file_exists: "azure.yaml"
+  - file_contains: { path: "azure.yaml", pattern: "services:" }
+```
 
-### Run
+## Actions (same semantics as Ben's agent.py)
+
+| Action    | Params     | Behavior                                    |
+|-----------|-----------|---------------------------------------------|
+| `select`  | `text`    | Type filter → wait → Enter (select_by_text) |
+| `input`   | `text`    | Type text → Enter                           |
+| `enter`   | —         | Press Enter (accept default/highlighted)    |
+| `confirm` | `value`   | Send y/n → Enter                            |
+| `key`     | `key`,`count` | Send raw tmux keys                      |
+| `wait`    | `seconds` | Just wait                                   |
+
+## Running
+
 ```bash
-# Tier 0 only (no auth needed)
-python3 test_tier0.py
+# Single test
+python run.py scripts/init_python_basic.yaml
 
-# Tier 1 (needs auth)
-export E2E_SUBSCRIPTION="your-sub-id"
-export E2E_PROJECT="your-foundry-project"
-python3 test_tier1.py
+# All tests
+python run.py --all
 
-# Tier 2 — both golden paths in parallel
-python3 test_tier2.py --mode both
-
-# Tier 2 — single mode
-python3 test_tier2.py --mode code
-python3 test_tier2.py --mode container
-
-# All tiers
-bash run_all.sh
-
-# Skip Tier 2
-bash run_all.sh --skip-tier2
+# Verbose (show each step)
+python run.py scripts/init_python_basic.yaml -v
 ```
 
-## CI Pipeline
+## References
 
-See `.github/workflows/e2e-ext-azure-ai-agents-static.yml`.
+- **Ben's tool**: `D:\w1\cli-interactive-tester\` — full MCP server + scenario runner
+  - `auto_test_tool/agent.py` — tmux primitives, select_by_text, action dispatch
+  - `auto_test_tool/runner.py` — scenario execution, tmux session management
+  - `scenarios/azd_ai_agent/` — example scenarios in YAML
+- **Test cases source**: `D:\jwshare\adc-hosted-agent\zipupload\_archive\guides\bugbash-wiki-20260519.md`
+- **azd extension source**: `D:\w1\azure-dev\cli\azd\extensions\azure.ai.agents\internal\cmd\`
 
-Triggered via `workflow_dispatch` with tier selection.
-Builds azd from source, installs extension from local registry, runs tests.
+## Known Issue: WSL Token Timeout
 
-## Test Details
+In WSL, `azd auth token` takes >10s (token refresh network call), exceeding the
+Go Azure SDK's 10s process timeout for `AzureDeveloperCLICredential`. This causes
+init to fail after Foundry project selection with `signal: killed`.
 
-### Tier 0 (16 tests)
-- `azd ai agent version` / `--help`
-- `azd ai agent sample list` (text + JSON output, language filter)
-- `azd ai agent doctor` (empty dir, local-only, partial failure)
-- Input validation (mutually exclusive flags, `--no-prompt` without config)
-- `invoke --protocol banana_protocol` (invalid protocol rejection)
-- `eval list` / `optimize apply` (missing context/flags)
-- `delete --help` / `endpoint show --help` / `code download --help`
-- Interactive picker Ctrl-C behavior
-
-### Tier 1 (8 tests)
-- Python Basic template + code deploy (existing project)
-- Python Basic template + container deploy (existing project)
-- C# Hello World template + code deploy
-- "Create new" Foundry project path (Ctrl-C before creation)
-- Init from manifest URL (`-m`)
-- Init with `--agent-name` flag
-- Invalid `--deploy-mode` flag (error case)
-- `--no-prompt` with manifest URL
-
-### Tier 2 (2 tests, parallel)
-- **Code deploy golden path**: init → provision → deploy → invoke → teardown
-- **Container deploy golden path**: init → provision → deploy → invoke → teardown
-
-Both use the same Python Basic (Invocations) template with different deploy modes.
-Each test runs in an isolated tmux socket and working directory.
-Service names for invoke are read dynamically from `azure.yaml` artifacts.
+This is a WSL-specific problem. On native Linux or in CI with service principal
+auth, this should not occur. The test framework itself is correct.

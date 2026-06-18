@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """Full E2E test: init -> provision -> deploy -> invoke -> down.
 
+See LOCAL-TEST-GUIDE.md for complete setup & run instructions.
+
 Prerequisites:
-  - WSL with tmux, azd (with azure.ai.agents extension), az CLI
-  - Caching az wrapper installed (write_az_wrapper.py)
-  - Token cache pre-warmed (prewarm_tokens.py)
-  - GitHub token available via gh.exe
+  - WSL with tmux (>=3.4), Python 3.12+
+  - azd (>=1.25.5) with azure.ai.agents extension, logged in via `azd auth login`
+  - auth.useAzCliAuth must NOT be true (use `azd config unset auth.useAzCliAuth`)
+  - GitHub token available via gh.exe or $GITHUB_TOKEN
+
+Recommended env vars:
+  E2E_CREATE_PROJECT=true   — always create new Foundry project (avoid stale resources)
+  E2E_LOCATION=eastus2      — region with sufficient model quota
+  E2E_HOME=$HOME            — home directory for azd config
 """
 import subprocess
 import time
@@ -24,6 +31,8 @@ SUBSCRIPTION = os.environ.get("E2E_SUBSCRIPTION", "")
 PROJECT = os.environ.get("E2E_PROJECT", "")
 TENANT = os.environ.get("E2E_TENANT", "")
 AGENT_NAME = os.environ.get("E2E_AGENT_NAME", "")  # Optional: unique name for parallel isolation
+CREATE_PROJECT = os.environ.get("E2E_CREATE_PROJECT", "").lower() in ("1", "true", "yes")
+LOCATION = os.environ.get("E2E_LOCATION", "eastus2")  # Region for new projects
 
 # Track results
 results = {}
@@ -100,9 +109,9 @@ def wait_for_or_fail(pattern, timeout=60, phase=""):
     return cap
 
 
-def select_by_text(target):
+def select_by_text(target, delay=1.5):
     send(target)
-    time.sleep(0.5)
+    time.sleep(delay)
     key("Enter")
 
 
@@ -156,16 +165,18 @@ def _wait_for_shell_prompt_legacy(timeout=600):
 
 def validate_init_output(testdir):
     """Validate init produced correct artifacts on disk."""
+    import glob as _glob
     for d in os.listdir(testdir):
         subdir = os.path.join(testdir, d)
         if os.path.isdir(subdir):
             azure_yaml = os.path.join(subdir, "azure.yaml")
-            agent_yaml = os.path.join(subdir, "agent.yaml")
             if os.path.exists(azure_yaml):
                 with open(azure_yaml) as f:
                     content = f.read()
                 if "host:" in content and "azure.ai.agent" in content:
-                    if os.path.exists(agent_yaml):
+                    # agent.yaml may be nested under src/<service>/
+                    agent_yamls = _glob.glob(os.path.join(subdir, "**", "agent.yaml"), recursive=True)
+                    if agent_yamls or os.path.exists(os.path.join(subdir, "agent.yaml")):
                         return True
     return False
 
@@ -235,8 +246,8 @@ def setup():
         sys.exit(1)
     print("Environment OK")
 
-    # Tell azd to use az CLI credentials (needed when az login provides OIDC token)
-    send("azd config set auth.useAzCliAuth true")
+    # Ensure azd uses built-in auth (not az CLI which is slow in WSL)
+    send("azd config unset auth.useAzCliAuth 2>/dev/null")
     key("Enter")
     time.sleep(1)
 
@@ -274,6 +285,14 @@ def phase_init():
     select_by_text("Basic agent (Invocations")
     time.sleep(8)
 
+    # Step 2.5: Git protocol (may appear between template download and name prompt)
+    time.sleep(3)
+    cap = capture()
+    if "protocol" in cap.lower() or "git operations" in cap.lower():
+        print("[2.5] Git protocol: HTTPS (default)")
+        key("Enter")
+        time.sleep(3)
+
     # Step 3: Name (may be skipped if --agent-name was used)
     if AGENT_NAME:
         print(f"[3] Name: {AGENT_NAME} (via --agent-name, prompt may be skipped)")
@@ -292,28 +311,87 @@ def phase_init():
     # Step 4: Foundry project type
     if not wait_for_or_fail("Select a Foundry project", 30, "init"):
         return False
-    print("[4] Use existing Foundry project")
-    key("Enter")
-    time.sleep(8)
 
-    # Step 5: Subscription (may be skipped)
-    cap = capture()
-    if "select subscription" in cap.lower():
-        print("[5] Subscription: 1756")
-        select_by_text("1756")
-        time.sleep(8)
-        if not wait_for_or_fail("Select a Foundry project", 30, "init"):
-            return False
+    if CREATE_PROJECT:
+        # Create a new Foundry project — azd manages all resources
+        print("[4] Create a new Foundry project")
+        select_by_text("Create")
+        time.sleep(5)
+        # Remaining prompts (subscription, location, names) handled by dynamic loop
     else:
-        print("[5] Subscription: skipped")
+        # Use existing Foundry project
+        print("[4] Use existing Foundry project")
+        key("Enter")
 
-    # Step 6: Project
-    print(f"[6] Project: {PROJECT}")
-    select_by_text(PROJECT)
-    time.sleep(10)
+        # Step 5: Wait for subscription or project picker
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            time.sleep(3)
+            cap = capture()
+            lines = [l for l in cap.split("\n") if l.strip()]
+            active_prompt = ""
+            for l in reversed(lines):
+                if l.strip().startswith("?"):
+                    active_prompt = l.strip().lower()
+                    break
+            if "subscription" in active_prompt:
+                print("[5] Subscription: accept default")
+                key("Enter")
+                time.sleep(10)
+                if not wait_for_or_fail("Select a Foundry project", 30, "init"):
+                    return False
+                break
+            elif "select a foundry project" in active_prompt and "use an existing" not in active_prompt:
+                print("[5] Subscription: skipped (already on project picker)")
+                break
+            if lines and (lines[-1].strip().endswith("$") or lines[-1].strip().startswith("bash")):
+                if any("error" in l.lower() for l in lines[-5:]):
+                    print("[5] ERROR: CLI exited")
+                    show("Error")
+                    results["init"] = "FAIL (error)"
+                    return False
+        else:
+            print("[5] Timeout waiting for subscription/project picker")
+            show("Timeout")
+            results["init"] = "FAIL (timeout step 5)"
+            return False
+
+        # Step 6: Project — verify we're on the project picker before typing
+        cap = capture()
+        cap_lines = [l for l in cap.split("\n") if l.strip()]
+        last_prompt = ""
+        for l in reversed(cap_lines):
+            if l.strip().startswith("?"):
+                last_prompt = l.strip().lower()
+                break
+
+        if "foundry project" in last_prompt or "project" in last_prompt:
+            print(f"[6] Project: {PROJECT}")
+            if PROJECT:
+                select_by_text(PROJECT, delay=3)
+            else:
+                key("Enter")
+            time.sleep(10)
+
+            # Verify we're past the project picker (not stuck)
+            time.sleep(3)
+            cap = capture()
+            prompt_line = ""
+            for l in reversed(cap.split("\n")):
+                if l.strip().startswith("?"):
+                    prompt_line = l.strip().lower()
+                    break
+            if "select a foundry project" in prompt_line:
+                print("[6b] Project filter may have failed, accepting highlighted")
+                key("Enter")
+                time.sleep(5)
+        else:
+            print(f"[6] Not on project picker, moving to dynamic")
 
     # Step 7+: Dynamic prompts
-    for step_num in range(7, 25):
+    _last_prompt = ""
+    _same_prompt_count = 0
+    for step_num in range(7, 45):
         time.sleep(3)
         cap = capture()
         cap_lower = cap.lower()
@@ -373,6 +451,29 @@ def phase_init():
 
         print(f"[{step_num}] {prompt[:80]}")
 
+        # Detect prompt loops — same prompt repeating 3+ times
+        prompt_key = prompt[:60]  # normalize for comparison
+        if prompt_key == _last_prompt:
+            _same_prompt_count += 1
+        else:
+            _same_prompt_count = 1
+            _last_prompt = prompt_key
+
+        if _same_prompt_count >= 3:
+            print(f"  !! Loop detected ({_same_prompt_count}x same prompt)")
+            if "model" in prompt or "is specified" in prompt:
+                # Model prompt looping — probably no quota. Try Down to pick alt option.
+                print("  -> navigating to alternative option")
+                key("Down")
+                time.sleep(0.3)
+                key("Enter")
+                time.sleep(3)
+                continue
+            elif _same_prompt_count >= 5:
+                print("  FAIL: stuck in prompt loop")
+                results["init"] = "FAIL (prompt loop)"
+                return False
+
         # Handle prompts
         if "[y/n]" in prompt or "(y/n)" in prompt:
             # Confirm prompts — answer yes unless it's asking to reuse a conflicting name
@@ -384,6 +485,10 @@ def phase_init():
                 print("  -> yes")
                 send("y")
                 key("Enter")
+        elif "protocol" in prompt or "git operations" in prompt:
+            # "What is your preferred protocol for Git operations?" → HTTPS (default)
+            print("  -> HTTPS (default)")
+            key("Enter")
         elif "enter a different name" in prompt:
             print("  -> default name")
             key("Enter")
@@ -397,7 +502,8 @@ def phase_init():
             print("  -> use existing/specified")
             key("Enter")
         elif "capacity" in prompt:
-            print("  -> default capacity")
+            # Capacity field is usually pre-filled; accept default
+            print("  -> accept capacity (default)")
             key("Enter")
         elif "sku" in prompt:
             print("  -> default SKU")
@@ -406,12 +512,28 @@ def phase_init():
             print("  -> default version")
             key("Enter")
         elif "select" in prompt and "model" in prompt:
-            print("  -> select gpt")
-            select_by_text("gpt")
-        elif "model" in prompt:
+            print("  -> select gpt-4o-mini")
+            select_by_text("gpt-4o-mini")
+        elif "subscription" in prompt:
+            print("  -> subscription: accept default")
+            key("Enter")
+        elif "location" in prompt or "region" in prompt:
+            print(f"  -> location: {LOCATION}")
+            select_by_text(LOCATION, delay=2)
+        elif "foundry project" in prompt or ("select" in prompt and "project" in prompt):
+            if PROJECT:
+                print(f"  -> project: {PROJECT}")
+                select_by_text(PROJECT, delay=3)
+            else:
+                print("  -> default project")
+                key("Enter")
+        elif "account name" in prompt or "resource name" in prompt or "hub name" in prompt:
+            print("  -> accept default name")
+            key("Enter")
+        elif "model" in prompt and "capacity" not in prompt:
             print("  -> default model")
             key("Enter")
-        elif "deploy" in prompt and ("mode" in prompt or "how" in prompt):
+        elif "deploy" in prompt and ("mode" in prompt or "how" in prompt) and "capacity" not in prompt:
             if DEPLOY_MODE == "container":
                 print("  -> Container")
                 select_by_text("Container")
@@ -419,8 +541,23 @@ def phase_init():
                 print("  -> Source Code")
                 select_by_text("Source")
         elif "what would you like to do" in prompt:
-            print("  -> Continue")
-            select_by_text("Continue")
+            if "quota" in cap_lower or "not enough" in cap_lower or "unavailable" in cap_lower:
+                # Quota issue — "Exit setup" is at bottom (default), navigate Up 3x
+                # to "Choose a different model in canadacentral" (first option)
+                print("  -> Choose a different model (quota issue)")
+                key("Up")
+                time.sleep(0.3)
+                key("Up")
+                time.sleep(0.3)
+                key("Up")
+                time.sleep(0.3)
+                key("Enter")
+            else:
+                # Normal flow — "Exit setup" is default, navigate Up to skip it
+                print("  -> Up+Enter (skip exit setup)")
+                key("Up")
+                time.sleep(0.5)
+                key("Enter")
         else:
             print("  -> Enter (default)")
             key("Enter")
@@ -517,19 +654,27 @@ def phase_invoke():
     print(f"Waiting {wait_secs}s for agent startup ({DEPLOY_MODE} mode)...")
     time.sleep(wait_secs)
 
-    # The invocations protocol requires JSON payload: {"message": "..."}
+    # The invocations protocol requires JSON payload via --input-file.
+    # Positional message sends empty body to invocations agents (azd bug/limitation).
     service_name = find_service_name(TESTDIR)
     if not service_name:
         print("ERROR: Could not determine service name from azure.yaml")
         results["invoke"] = "FAIL (no service name)"
         return False
     print(f"  Service name: {service_name}")
-    payload = '{"message": "Hello, what is 2+2?"}'
+
+    # Write payload to temp file for --input-file
+    payload_file = os.path.join(TESTDIR, ".invoke-payload.json")
+    with open(payload_file, "w") as f:
+        f.write('{"message": "Hello, what is 2+2?"}')
 
     max_retries = 3
     for attempt in range(1, max_retries + 1):
         print(f"\nInvoke attempt {attempt}/{max_retries}...")
-        cap, rc = run_cmd(f"azd ai agent invoke {service_name} '{payload}'", timeout=180)
+        cap, rc = run_cmd(
+            f"azd ai agent invoke {service_name} --new-session -f {payload_file}",
+            timeout=180,
+        )
         if cap is None:
             print("TIMEOUT: invoke did not complete in 3 min")
             show("Current state", 20)
@@ -580,16 +725,25 @@ def phase_invoke():
             return False
         else:
             # Success — verify response content
-            # Extract lines between the command and the sentinel
-            resp_lines = []
-            in_response = False
-            for line in cap.split("\n"):
-                if "invoke" in line.lower() and service_name in line:
-                    in_response = True
-                    continue
-                if _SENTINEL_BASE in line:
+            # Extract lines between the LAST invoke command and its sentinel.
+            # The capture may contain output from previous phases, so we must
+            # find the last occurrence of the invoke command to avoid matching
+            # stale sentinels from earlier phases (deploy, provision, etc.).
+            all_lines = cap.split("\n")
+            # Find the last line that contains the invoke command
+            invoke_start = -1
+            for i in range(len(all_lines) - 1, -1, -1):
+                if "invoke" in all_lines[i].lower() and service_name in all_lines[i]:
+                    invoke_start = i
                     break
-                if in_response and line.strip():
+
+            resp_lines = []
+            if invoke_start >= 0:
+                for line in all_lines[invoke_start + 1:]:
+                    if _SENTINEL_BASE in line:
+                        break
+                    if line.strip():
+                        resp_lines.append(line.strip())
                     resp_lines.append(line.strip())
 
             response_text = "\n".join(resp_lines)

@@ -558,7 +558,7 @@ def test_init_bad_deploy_mode(workdir):
     """Init with invalid --deploy-mode flag should error."""
     r = subprocess.run(
         ["bash", "-c", f"{ENV_SETUP}; cd {workdir} && azd ai agent init --deploy-mode banana 2>&1"],
-        capture_output=True, text=True, timeout=15
+        capture_output=True, text=True, timeout=30
     )
     has_error = r.returncode != 0 or "error" in r.stdout.lower() or "invalid" in r.stdout.lower()
     return check("01-init-bad-deploy-mode", has_error,

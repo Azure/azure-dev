@@ -16,7 +16,13 @@ TMUX = os.environ.get("E2E_TMUX", shutil.which("tmux") or "/usr/bin/tmux")
 SUBSCRIPTION = os.environ.get("E2E_SUBSCRIPTION", "")
 PROJECT = os.environ.get("E2E_PROJECT", "")
 TENANT = os.environ.get("E2E_TENANT", "")
-ENV_SETUP = f"export HOME={HOME_DIR}; export PATH={HOME_DIR}/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+GH_TOKEN = os.environ.get("GH_TOKEN", os.environ.get("GITHUB_TOKEN", ""))
+# Inherit full parent PATH so tmux sessions get az-wrapper, azd, etc.
+PARENT_PATH = os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
+# Set AZURE_TENANT_ID to skip multi-tenant picker in azd
+_tenant_env = f"; export AZURE_TENANT_ID={TENANT}" if TENANT else ""
+_gh_env = f"; export GH_TOKEN={GH_TOKEN}; export GITHUB_TOKEN={GH_TOKEN}" if GH_TOKEN else ""
+ENV_SETUP = f"export HOME={HOME_DIR}; export PATH={PARENT_PATH}{_tenant_env}{_gh_env}"
 
 RESULTS = []
 
@@ -145,10 +151,17 @@ def _validate_init_disk(workdir):
     return False
 
 
+def _prompt_key(prompt):
+    """Extract the question part before ':' for de-dup comparison."""
+    colon_idx = prompt.find(":")
+    return prompt[:colon_idx].strip() if colon_idx > 0 else prompt.strip()
+
+
 def handle_dynamic_prompts(sess, max_steps=40, deploy_mode="code", project_path="existing", verbose=False, workdir=None):
     """Handle dynamic prompts after template selection until init completes.
     project_path: "existing" uses existing project, "create" creates new.
     workdir: if provided, uses disk validation for completion check."""
+    last_handled_key = ""
     for step_num in range(max_steps):
         time.sleep(3)
         cap = sess.capture()
@@ -179,21 +192,45 @@ def handle_dynamic_prompts(sess, max_steps=40, deploy_mode="code", project_path=
                     print(f"    [dyn-{step_num}] Shell prompt, no completion: {last}")
                 return False
 
-        # Find ? prompt
+        # Find the active prompt — scan bottom of pane for the LOWEST (most recent)
+        # matching ? prompt. Also detect non-? visual selectors like "Select a tenant"
+        # which render choices via ANSI escape codes (invisible to tmux capture).
         prompt = ""
-        for l in reversed(lines):
-            if l.strip().startswith("?"):
-                prompt = l.strip().lower()
-                break
+        recent_lines = lines[-15:] if len(lines) > 15 else lines
+        for l in recent_lines:
+            l_stripped = l.strip()
+            l_lower = l_stripped.lower()
+            if l_stripped.startswith("?"):
+                prompt = l_lower
+            elif "select a tenant" in l_lower:
+                prompt = "select_tenant"  # special marker for visual selector
 
         if not prompt:
             if verbose:
-                print(f"    [dyn-{step_num}] no ? prompt, waiting...")
+                print(f"    [dyn-{step_num}] no prompt, waiting...")
+            time.sleep(3)
+            continue
+
+        # Skip prompts already handled by test setup (before handle_dynamic_prompts)
+        if "select a language" in prompt or "select a starter template" in prompt:
+            if verbose:
+                print(f"    [dyn-{step_num}] skipping pre-handled: {prompt[:50]}")
+            time.sleep(2)
+            continue
+
+        # Skip if same prompt question as last handled (avoid double-fire)
+        # Compare only the question part before ':', ignoring typed filter text
+        current_key = _prompt_key(prompt)
+        if current_key == last_handled_key:
+            if verbose:
+                print(f"    [dyn-{step_num}] same prompt, waiting for change...")
             time.sleep(3)
             continue
 
         if verbose:
             print(f"    [dyn-{step_num}] prompt: {prompt[:80]}")
+
+        last_handled_key = current_key
 
         # Handle prompts
         if "[y/n]" in prompt or "(y/n)" in prompt:
@@ -221,18 +258,25 @@ def handle_dynamic_prompts(sess, max_steps=40, deploy_mode="code", project_path=
                 time.sleep(3)
             else:
                 sess.select_by_text("Create")
-                time.sleep(3)
+                time.sleep(10)  # Wait for loading subscriptions/tenants
+        elif prompt == "select_tenant" or ("tenant" in prompt and "select" in prompt):
+            # Visual/TUI tenant selector — navigate with arrow keys.
+            # Choices: 1.HMGAdmin, 2.jianwaad2022, 3.jwaadtest1, 4.Microsoft, ...
+            # Cursor starts at 1. Press Down 3 times → Microsoft (4th).
+            if verbose:
+                print(f"    [dyn-{step_num}] selecting Microsoft tenant via Down×3+Enter")
+            for _ in range(3):
+                sess.key("Down")
+                time.sleep(0.3)
+            time.sleep(1)
+            sess.key("Enter")
+            time.sleep(8)
         elif "select subscription" in prompt:
-            # Accept the default/first subscription. In CI the correct one is logged in.
-            # If multiple are available and SUBSCRIPTION is set, try to filter.
+            # Filter to select the correct subscription by ID prefix
             if SUBSCRIPTION:
-                # Check if there's already filter text corrupting the picker
-                cap_now = sess.capture()
-                if "no options found" in cap_now.lower():
-                    # Clear filter and accept default
-                    sess.key("Escape")
-                    time.sleep(1)
-                sess.key("Enter")
+                # Type first 8 chars of subscription ID to filter
+                sub_prefix = SUBSCRIPTION[:8]
+                sess.select_by_text(sub_prefix, delay=2)
             else:
                 sess.key("Enter")
             time.sleep(5)
@@ -293,9 +337,8 @@ def handle_dynamic_prompts(sess, max_steps=40, deploy_mode="code", project_path=
         elif "account name" in prompt or "resource name" in prompt:
             sess.key("Enter")  # accept default
         elif "what would you like to do" in prompt:
-            # Move off "exit setup" default and select alternative (Continue/Skip)
-            sess.key("Down")
-            time.sleep(0.5)
+            # Accept "Exit setup" (the default) to finish init.
+            # Down+Enter would select "Add another model" causing an infinite loop.
             sess.key("Enter")
             time.sleep(2)
         else:
@@ -337,11 +380,14 @@ def test_init_python_basic_code(workdir):
         # After template selection, CLI flow varies (git protocol, name, foundry, etc.)
         # Let dynamic handler manage all remaining prompts.
         ok = handle_dynamic_prompts(sess, max_steps=40, deploy_mode="code",
-                                    project_path="existing", workdir=workdir)
+                                    project_path="create", verbose=True, workdir=workdir)
 
         # Verify artifacts on disk
         has_artifacts = _validate_init_disk(workdir)
 
+        if not (ok and has_artifacts):
+            print(f"    [DUMP] {sess.name} final pane:")
+            print(sess.capture())
         return check("01-init-python-code", ok and has_artifacts,
                      "" if (ok and has_artifacts) else f"ok={ok}, artifacts={has_artifacts}")
     finally:
@@ -371,7 +417,10 @@ def test_init_python_basic_container(workdir):
 
         # After template selection, let dynamic handler manage everything
         ok = handle_dynamic_prompts(sess, max_steps=40, deploy_mode="container",
-                                    project_path="existing", workdir=workdir)
+                                    project_path="create", verbose=True, workdir=workdir)
+        if not ok:
+            print(f"    [DUMP] {sess.name} final pane:")
+            print(sess.capture())
         return check("01-init-python-container", ok, "" if ok else "init did not complete")
     finally:
         sess.kill()
@@ -401,14 +450,17 @@ def test_init_csharp_basic(workdir):
 
         # After template selection, let dynamic handler manage everything
         ok = handle_dynamic_prompts(sess, max_steps=40, deploy_mode="code",
-                                    project_path="existing", workdir=workdir)
+                                    project_path="create", verbose=True, workdir=workdir)
+        if not ok:
+            print(f"    [DUMP] {sess.name} final pane:")
+            print(sess.capture())
         return check("01-init-csharp", ok, "" if ok else "init did not complete")
     finally:
         sess.kill()
 
 
 def test_init_create_new_project(workdir):
-    """Init with 'Create new' Foundry project path (validates prompts, Ctrl-C before real creation)."""
+    """Init with 'Create new' Foundry project path — validates full flow completes."""
     sess = TmuxSession("t1-new-proj")
     try:
         sess.start()
@@ -428,56 +480,16 @@ def test_init_create_new_project(workdir):
         sess.select_by_text("Basic agent (Responses")
         time.sleep(3)
 
-        # Wait for Foundry project prompt (handles intermediate prompts like git protocol, name)
-        # Use dynamic handler in "create" mode but with a special twist:
-        # We just need to get to the "Create" path and verify it shows follow-up prompts.
-        # First, handle any intermediate prompts until we see "foundry project"
-        deadline = time.time() + 90
-        found_foundry = False
-        while time.time() < deadline:
-            time.sleep(3)
-            cap = sess.capture()
-            cap_lower = cap.lower()
-            if "foundry project" in cap_lower and "host" in cap_lower:
-                found_foundry = True
-                break
-            # Handle intermediate prompts
-            lines = [l for l in cap.split("\n") if l.strip()]
-            prompt = ""
-            for l in reversed(lines):
-                if l.strip().startswith("?"):
-                    prompt = l.strip().lower()
-                    break
-            if prompt:
-                if "protocol" in prompt or "git operations" in prompt:
-                    sess.key("Enter")
-                elif "enter a name" in prompt:
-                    sess.key("Enter")
-                elif "what would you like to do" in prompt:
-                    sess.select_by_text("Continue")
-                else:
-                    sess.key("Enter")
-            time.sleep(2)
-
-        if not found_foundry:
-            return check("01-init-create-project", False, "timeout at foundry")
-
-        # Select "Create a new" project
-        sess.select_by_text("Create")
-        time.sleep(5)
-
-        # Should get subscription prompt or region prompt
-        cap = sess.wait_for("select", 30)
-        if cap is None:
-            return check("01-init-create-project", False, "no follow-up prompt after Create")
-
-        # We've confirmed the Create path works (shows further prompts).
-        # Ctrl-C to exit without actually creating resources.
-        sess.key("C-c")
-        time.sleep(2)
-
-        return check("01-init-create-project", True, "create path prompts verified")
+        # Use handle_dynamic_prompts in "create" mode — handles all prompts including
+        # name, foundry project (Create), subscription, location, model, etc.
+        ok = handle_dynamic_prompts(sess, max_steps=50, deploy_mode="code",
+                                    project_path="create", verbose=True, workdir=workdir)
+        if not ok:
+            print(f"    [DUMP] {sess.name} final pane:")
+            print(sess.capture())
+        return check("01-init-create-project", ok, "" if ok else "init did not complete")
     finally:
+        sess.kill()
         sess.kill()
 
 
@@ -496,9 +508,12 @@ def test_init_from_manifest_url(workdir):
         # With -m flag, may skip language/template and go directly to other prompts.
         # Use dynamic handler for everything after the command is sent.
         ok = handle_dynamic_prompts(sess, max_steps=40, deploy_mode="code",
-                                    project_path="existing", workdir=workdir)
+                                    project_path="create", verbose=True, workdir=workdir)
 
         has_artifacts = _validate_init_disk(workdir)
+        if not (ok or has_artifacts):
+            print(f"    [DUMP] {sess.name} final pane:")
+            print(sess.capture())
         return check("01-init-manifest-url", ok or has_artifacts,
                      "" if (ok or has_artifacts) else "init did not complete")
     finally:
@@ -529,7 +544,7 @@ def test_init_with_agent_name_flag(workdir):
         # --agent-name should skip the "Enter a name" prompt.
         # Use dynamic handler for all remaining prompts.
         ok = handle_dynamic_prompts(sess, max_steps=40, deploy_mode="code",
-                                    project_path="existing", workdir=workdir)
+                                    project_path="create", verbose=True, workdir=workdir)
 
         # Validate: agent name must appear in produced artifacts
         time.sleep(3)
@@ -548,6 +563,15 @@ def test_init_with_agent_name_flag(workdir):
             if found_name:
                 break
 
+        if not found_name:
+            print(f"    [DUMP] {sess.name} final pane:")
+            print(sess.capture())
+            # List workdir contents for debugging
+            print(f"    [DUMP] workdir contents: {os.listdir(workdir)}")
+            for d in os.listdir(workdir):
+                subdir = os.path.join(workdir, d)
+                if os.path.isdir(subdir):
+                    print(f"    [DUMP]   {d}/: {os.listdir(subdir)[:10]}")
         return check("01-init-agent-name-flag", found_name,
                      "my-custom-agent found in artifacts" if found_name else "name not in artifacts")
     finally:

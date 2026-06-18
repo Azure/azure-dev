@@ -26,13 +26,18 @@ SOCK = os.environ.get("E2E_SOCK", "e2e")
 SESS = os.environ.get("E2E_SESS", "e2e")
 TESTDIR = os.environ.get("E2E_TESTDIR", "/tmp/e2e-tests/full-e2e")
 HOME_DIR = os.environ.get("E2E_HOME", os.environ.get("HOME", "/home/runner"))
-ENV_SETUP = f"export HOME={HOME_DIR}; export PATH={HOME_DIR}/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 SUBSCRIPTION = os.environ.get("E2E_SUBSCRIPTION", "")
 PROJECT = os.environ.get("E2E_PROJECT", "")
 TENANT = os.environ.get("E2E_TENANT", "")
+GH_TOKEN = os.environ.get("GH_TOKEN", os.environ.get("GITHUB_TOKEN", ""))
 AGENT_NAME = os.environ.get("E2E_AGENT_NAME", "")  # Optional: unique name for parallel isolation
 CREATE_PROJECT = os.environ.get("E2E_CREATE_PROJECT", "").lower() in ("1", "true", "yes")
 LOCATION = os.environ.get("E2E_LOCATION", "eastus2")  # Region for new projects
+# Inherit full parent PATH so tmux sessions get az-wrapper, azd, etc.
+PARENT_PATH = os.environ.get("PATH", f"{HOME_DIR}/bin:/usr/local/bin:/usr/bin:/bin")
+_tenant_env = f"; export AZURE_TENANT_ID={TENANT}" if TENANT else ""
+_gh_env = f"; export GH_TOKEN={GH_TOKEN}; export GITHUB_TOKEN={GH_TOKEN}" if GH_TOKEN else ""
+ENV_SETUP = f"export HOME={HOME_DIR}; export PATH={PARENT_PATH}{_tenant_env}{_gh_env}"
 
 # Track results
 results = {}
@@ -456,8 +461,10 @@ def phase_init():
 
         print(f"[{step_num}] {prompt[:80]}")
 
-        # Detect prompt loops — same prompt repeating 3+ times
-        prompt_key = prompt[:60]  # normalize for comparison
+        # Detect prompt loops — same prompt question repeating 3+ times
+        # Compare by question part before ':' to handle varying filter text
+        colon_idx = prompt.find(":")
+        prompt_key = prompt[:colon_idx].strip() if colon_idx > 0 else prompt.strip()
         if prompt_key == _last_prompt:
             _same_prompt_count += 1
         else:
@@ -520,8 +527,12 @@ def phase_init():
             print("  -> select gpt-4o-mini")
             select_by_text("gpt-4o-mini")
         elif "subscription" in prompt:
-            print("  -> subscription: accept default")
-            key("Enter")
+            if SUBSCRIPTION:
+                print(f"  -> subscription: filter by {SUBSCRIPTION[:8]}")
+                select_by_text(SUBSCRIPTION[:8], delay=2)
+            else:
+                print("  -> subscription: accept default")
+                key("Enter")
         elif "location" in prompt or "region" in prompt:
             print(f"  -> location: {LOCATION}")
             select_by_text(LOCATION, delay=2)
@@ -546,23 +557,11 @@ def phase_init():
                 print("  -> Source Code")
                 select_by_text("Source")
         elif "what would you like to do" in prompt:
-            if "quota" in cap_lower or "not enough" in cap_lower or "unavailable" in cap_lower:
-                # Quota issue — "Exit setup" is at bottom (default), navigate Up 3x
-                # to "Choose a different model in <region>" (first option)
-                print("  -> Choose a different model (quota issue)")
-                key("Up")
-                time.sleep(0.3)
-                key("Up")
-                time.sleep(0.3)
-                key("Up")
-                time.sleep(0.3)
-                key("Enter")
-            else:
-                # Normal flow — "Exit setup" is default, navigate Up to skip it
-                print("  -> Up+Enter (skip exit setup)")
-                key("Up")
-                time.sleep(0.5)
-                key("Enter")
+            # Accept "Exit setup" (default) to finish init.
+            # Do NOT navigate up/down — that causes infinite loops by selecting
+            # "Add another model" or similar options.
+            print("  -> Exit setup (default)")
+            key("Enter")
         else:
             print("  -> Enter (default)")
             key("Enter")

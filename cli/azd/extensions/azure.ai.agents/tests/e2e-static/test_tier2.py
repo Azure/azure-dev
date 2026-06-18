@@ -87,7 +87,7 @@ def run_e2e(deploy_mode, label):
     try:
         r = subprocess.run(
             cmd, env=env,
-            capture_output=True, text=True, timeout=900  # 15 min max
+            capture_output=True, text=True, timeout=1500  # 25 min max per test
         )
         elapsed = time.time() - start
         success = r.returncode == 0

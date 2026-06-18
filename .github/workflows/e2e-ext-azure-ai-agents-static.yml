@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       tier:
-        description: "Which tiers to run"
+        description: "Which tiers to run (0=offline ~15s, 1=init variants ~3min, 2=full golden path ~15min each)"
         type: choice
         options:
           - "0"
@@ -23,7 +23,7 @@ on:
           - "0+1+2"
         default: "0+1"
       deploy_modes:
-        description: "Tier 2 deploy modes"
+        description: "Tier 2 deploy modes (code=source zip, container=ACR build, both=parallel)"
         type: choice
         options:
           - "both"
@@ -45,6 +45,8 @@ env:
   TESTS_DIR: cli/azd/extensions/azure.ai.agents/tests/e2e-static
 
 jobs:
+  # Jobs run sequentially: tier0 → tier1 → tier2 (via `needs:` dependency).
+  # Tier 2 creates Azure resources that cost money, so it only runs after Tier 0+1 pass.
   tier0:
     name: "Tier 0 — Offline Validation"
     runs-on: ubuntu-22.04
@@ -113,6 +115,8 @@ jobs:
           subscription-id: ${{ secrets.DEVOPS_SUB_ID }}
 
       - name: Configure azd to use az CLI auth
+        # On GitHub runners, az CLI runs natively (fast). useAzCliAuth is safe here.
+        # In WSL local-dev, this causes timeouts — see LOCAL-TEST-GUIDE.md.
         run: azd config set auth.useAzCliAuth true
 
       - name: Run Tier 1 tests
@@ -127,7 +131,7 @@ jobs:
   tier2:
     name: "Tier 2 — Golden Path (${{ inputs.deploy_modes || 'both' }})"
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 30  # Each deploy mode takes ~13min; both modes run in parallel within test_tier2.py
     if: contains(inputs.tier, '2')
     needs: tier1
     steps:
@@ -161,19 +165,26 @@ jobs:
           subscription-id: ${{ secrets.DEVOPS_SUB_ID }}
 
       - name: Configure azd to use az CLI auth
+        # On GitHub runners, az CLI runs natively (fast). useAzCliAuth is safe here.
         run: azd config set auth.useAzCliAuth true
 
       - name: Run Tier 2 tests
         working-directory: ${{ env.TESTS_DIR }}
         env:
+          # These secrets must be configured in the repository's Actions settings:
+          # DEVOPS_SUB_ID: Azure subscription ID for test resources
+          # FOUNDRY_PROJECT_NAME: Existing Foundry project (or set E2E_CREATE_PROJECT=true to skip)
+          # DEVOPS_TENANT_ID: AAD tenant ID for OIDC auth
           E2E_SUBSCRIPTION: ${{ secrets.DEVOPS_SUB_ID }}
           E2E_PROJECT: ${{ secrets.FOUNDRY_PROJECT_NAME }}
           E2E_TENANT: ${{ secrets.DEVOPS_TENANT_ID }}
+          E2E_CREATE_PROJECT: "true"
+          E2E_LOCATION: "eastus2"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 test_tier2.py --mode ${{ inputs.deploy_modes || 'both' }}
 
       - name: Teardown on failure
-        if: failure()
+        if: failure() || cancelled()
         working-directory: ${{ env.TESTS_DIR }}
         run: |
           echo "Attempting cleanup of any leaked resources..."
@@ -181,7 +192,7 @@ jobs:
           for dir in /tmp/e2e-tests/tier2-*/; do
             if [ -d "$dir" ]; then
               cd "$dir"
-              PROJ_DIR=$(find . -name "azure.yaml" -maxdepth 2 -exec dirname {} \; | head -1)
+              PROJ_DIR=$(find . -maxdepth 2 -name "azure.yaml" -exec dirname {} \; | head -1)
               if [ -n "$PROJ_DIR" ]; then
                 cd "$PROJ_DIR" && azd down --force --purge --no-prompt 2>/dev/null || true
               fi

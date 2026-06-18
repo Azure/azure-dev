@@ -1339,8 +1339,8 @@ func knownProtocolNames() string {
 // promptDeployMode asks the user to choose between code deploy and container deploy.
 // When deployModeFlag is set, it is used directly (for --no-prompt with explicit flag).
 // When noPrompt is true and no flag is provided, defaults to "code" for Python/.NET projects.
-// When showCodeDeploy is false, only container deploy is available (code deploy supports
-// Python/.NET only).
+// When showCodeDeploy is false and no explicit --deploy-mode flag is set, only container
+// deploy is available (code deploy supports Python/.NET only).
 func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool, showCodeDeploy bool, deployModeFlag string, userProvidedManifest bool) (string, error) {
 	// Resolution precedence:
 	//   1. Explicit flag (--deploy-mode) — always wins

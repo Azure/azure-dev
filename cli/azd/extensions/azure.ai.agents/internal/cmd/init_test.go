@@ -2407,16 +2407,19 @@ func TestCodeDeployFlagValidation(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:           "code deploy without runtime fails",
-			flags:          initFlags{noPrompt: true, deployMode: "code", entryPoint: "app.py"},
-			wantErr:        true,
-			wantErrContain: "--runtime is required",
+			name:    "code deploy without runtime passes (auto-detected)",
+			flags:   initFlags{noPrompt: true, deployMode: "code", entryPoint: "app.py"},
+			wantErr: false,
 		},
 		{
-			name:           "code deploy without entry-point fails",
-			flags:          initFlags{noPrompt: true, deployMode: "code", runtime: "python_3_13"},
-			wantErr:        true,
-			wantErrContain: "--entry-point is required",
+			name:    "code deploy without entry-point passes (auto-detected)",
+			flags:   initFlags{noPrompt: true, deployMode: "code", runtime: "python_3_13"},
+			wantErr: false,
+		},
+		{
+			name:    "code deploy with no runtime or entry-point passes (auto-detected)",
+			flags:   initFlags{noPrompt: true, deployMode: "code"},
+			wantErr: false,
 		},
 		{
 			name:    "container deploy without runtime/entry-point passes",

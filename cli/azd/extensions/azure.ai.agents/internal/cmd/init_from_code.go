@@ -86,7 +86,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 
 	// Validate code deploy flags
 	if err := validateCodeDeployInput(
-		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution,
+		a.flags.deployMode, a.flags.runtime, a.flags.depResolution,
 	); err != nil {
 		return err
 	}
@@ -1338,16 +1338,17 @@ func knownProtocolNames() string {
 
 // promptDeployMode asks the user to choose between code deploy and container deploy.
 // When deployModeFlag is set, it is used directly (for --no-prompt with explicit flag).
-// When noPrompt is true and no flag is provided, defaults to "container" for backward compatibility.
-// When showCodeDeploy is false and no explicit flag overrides, code deploy is not offered.
+// When noPrompt is true and no flag is provided, defaults to "code" for Python/.NET projects.
+// When showCodeDeploy is false, only container deploy is available (code deploy supports
+// Python/.NET only).
 func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool, showCodeDeploy bool, deployModeFlag string, userProvidedManifest bool) (string, error) {
 	// Resolution precedence:
 	//   1. Explicit flag (--deploy-mode) — always wins
 	//   2. !showCodeDeploy — container is the only option (not Python/.NET)
-	//   3. userProvidedManifest — auto-select "container" (opinionated default;
+	//   3. userProvidedManifest — auto-select "code" (opinionated default;
 	//      triggered by -m flag OR interactive template selection)
-	//   4. noPrompt — "container" for backward compatibility (no signal)
-	//   5. Interactive prompt
+	//   4. noPrompt — "code" for Python/.NET projects (no signal)
+	//   5. Interactive prompt (code is the default selection)
 
 	// Explicit flag takes precedence
 	if deployModeFlag != "" {
@@ -1368,23 +1369,23 @@ func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt
 	}
 
 	// When the user provided a manifest explicitly (-m), auto-select the
-	// opinionated default (container) without prompting. Users who want
-	// code deploy with -m can pass --deploy-mode code explicitly.
+	// opinionated default (code) without prompting. Users who want
+	// container deploy with -m can pass --deploy-mode container explicitly.
 	if userProvidedManifest {
-		log.Printf("Auto-selected deploy mode: container (use --deploy-mode code for code deploy)")
-		return "container", nil
+		log.Printf("Auto-selected deploy mode: code (use --deploy-mode container for container deploy)")
+		return "code", nil
 	}
 
 	if noPrompt {
-		return "container", nil
+		return "code", nil
 	}
 
 	deployModeChoices := []*azdext.SelectChoice{
-		{Label: "Container Image (Docker)", Value: "container"},
 		{Label: "Source Code (ZIP upload)", Value: "code"},
+		{Label: "Container Image (Docker)", Value: "container"},
 	}
 
-	defaultIdx := int32(0) // Container is the default for backward compatibility
+	defaultIdx := int32(0) // Code deploy is the default
 	deployModeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:       "How would you like to deploy your agent?",

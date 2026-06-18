@@ -2,6 +2,7 @@
 
 ## 0.1.41-preview (2026-06-19)
 
+- [[#8706]](https://github.com/Azure/azure-dev/pull/8706) `azd ai agent init` now defaults to **code deploy** (source ZIP upload) for Python and .NET hosted agents instead of container (Docker image) deploy. This applies to the interactive prompt, `--no-prompt`, and `-m` manifest flows. Projects that are not Python/.NET continue to use container deploy. To keep using a Docker image, pass `--deploy-mode container` (or select "Container Image (Docker)" in the prompt). With code deploy in `--no-prompt`, `--runtime` and `--entry-point` are now auto-detected from the project when omitted.
 - [[#8731]](https://github.com/Azure/azure-dev/pull/8731) Improve the post-deploy `Next:` guidance with a stacked layout that puts each command on its own line above its description, adds a blank line between suggestions, and highlights `azd` commands. The new layout applies across deploy, `azd ai agent show`, `init`, and `doctor`. Thanks @therealjohn for the contribution!
 - [[#8645]](https://github.com/Azure/azure-dev/pull/8645) Detect VNET-injected Foundry accounts during `azd ai agent init` and skip remote builds up front so hosted container agents use local builds without a failing remote-build attempt first. Thanks @m5i-work for the contribution!
 - [[#8714]](https://github.com/Azure/azure-dev/pull/8714) Show a tracing disclaimer when `azd ai agent init` connects or adds an Application Insights connection. Thanks @therealjohn for the contribution!

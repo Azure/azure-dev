@@ -553,6 +553,22 @@ func configureAcrConnection(
 	return nil
 }
 
+// disableTracingURL points to guidance on disabling agent tracing/telemetry.
+const disableTracingURL = "https://aka.ms/disable-tracing"
+
+// tracingDisclaimer returns the telemetry/tracing disclaimer shown during init
+// wherever Application Insights is connected or added. The body is rendered in a
+// muted (gray) style. The "Learn more:" label lives in the gray text (so it is
+// always shown) and is followed by disableTracingURL, which renders as a
+// clickable hyperlink in a terminal and as the plain URL in non-terminal output.
+func tracingDisclaimer() string {
+	return output.WithGrayFormat(
+		"Use Hosted Agents with appropriate safeguards. "+
+			"If you connect to third-party systems, you are responsible for their use and data handling. "+
+			"Telemetry may be visible to others and include sensitive data. Learn more: ") +
+		output.WithHyperlink(disableTracingURL, disableTracingURL)
+}
+
 // configureAppInsightsConnection handles AppInsights connection selection and env var setting.
 func configureAppInsightsConnection(
 	ctx context.Context,
@@ -560,14 +576,19 @@ func configureAppInsightsConnection(
 	envName string,
 	appInsightsConnections []azure.Connection,
 ) error {
+	// Show the tracing/telemetry disclaimer once, before any branch, since each
+	// path below connects or adds an Application Insights resource.
+	fmt.Println(tracingDisclaimer())
+	fmt.Println()
+
 	if len(appInsightsConnections) == 0 {
-		fmt.Println("\n" +
+		fmt.Println(
 			"Application Insights (optional)\n\n" +
-			"Enable telemetry to collect logs, traces, and diagnostics for this agent.\n\n" +
-			"You can:\n" +
-			"  • Use an existing Application Insights resource\n" +
-			"  • Or create a new one during 'azd up'\n\n" +
-			"Docs: " + output.WithLinkFormat("https://aka.ms/azdaiagent/docs"))
+				"Enable telemetry to collect logs, traces, and diagnostics for this agent.\n\n" +
+				"You can:\n" +
+				"  • Use an existing Application Insights resource\n" +
+				"  • Or create a new one during 'azd up'\n\n" +
+				"Docs: " + output.WithLinkFormat("https://aka.ms/azdaiagent/docs"))
 
 		resourceIdResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{

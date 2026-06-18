@@ -114,6 +114,11 @@ func TestSourceDisplayLabel(t *testing.T) {
 	noBundle := &extensionInstallAction{}
 	require.Equal(t, "bundle", noBundle.sourceDisplayLabel(extensions.BundleSourceName))
 	require.Equal(t, `source "local"`, noBundle.sourceDisplayLabel("local"))
+
+	// The installed-from variant phrases the bundle case with an article.
+	require.Equal(t, "a bundle", noBundle.sourceDisplayLabelForInstalled(extensions.BundleSourceName))
+	require.Equal(t, "a bundle", withBundle.sourceDisplayLabelForInstalled("demo-abc123"))
+	require.Equal(t, `source "azd"`, noBundle.sourceDisplayLabelForInstalled("azd"))
 }
 
 func TestWrapDependencyError(t *testing.T) {
@@ -165,7 +170,7 @@ func TestConfirmSourceChange(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, proceed)
 		require.Contains(t, lastConfirmMessage(console),
-			`azure.ai.agents 1.0.0 is installed from source "azd". Reinstall from bundle?`)
+			`azure.ai.agents 1.0.0 is already installed from source "azd". Reinstall from bundle?`)
 	})
 
 	t.Run("UpgradeShowsTargetVersion", func(t *testing.T) {
@@ -179,7 +184,7 @@ func TestConfirmSourceChange(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, proceed)
 		require.Contains(t, lastConfirmMessage(console),
-			`azure.ai.agents 1.0.0 is installed from source "azd". Upgrade to 2.0.0 from bundle?`)
+			`azure.ai.agents 1.0.0 is already installed from source "azd". Upgrade to 2.0.0 from bundle?`)
 	})
 
 	t.Run("DowngradeDeclined", func(t *testing.T) {
@@ -193,7 +198,28 @@ func TestConfirmSourceChange(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, proceed)
 		require.Contains(t, lastConfirmMessage(console),
-			`azure.ai.agents 1.0.0 is installed from source "azd". Downgrade to 0.9.0 from bundle?`)
+			`azure.ai.agents 1.0.0 is already installed from source "azd". Downgrade to 0.9.0 from bundle?`)
+	})
+
+	t.Run("InstalledFromBundleReadsWithArticle", func(t *testing.T) {
+		// Reverse direction: a bundle-installed extension being replaced from a
+		// registry source. The installed-from clause reads "a bundle".
+		bundleInstalled := &extensions.Extension{
+			Id:      "azure.ai.agents",
+			Version: "1.0.0",
+			Source:  extensions.BundleSourceName,
+		}
+		console := mockinput.NewMockConsole()
+		console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
+		action := newConfirmTestAction(console, false)
+
+		proceed, err := action.confirmSourceChange(
+			context.Background(), "Installing", bundleInstalled.Id, bundleInstalled, "azd", "1.0.0",
+		)
+		require.NoError(t, err)
+		require.True(t, proceed)
+		require.Contains(t, lastConfirmMessage(console),
+			`azure.ai.agents 1.0.0 is already installed from a bundle. Reinstall from source "azd"?`)
 	})
 
 	t.Run("NoPromptSkipsWithoutAsking", func(t *testing.T) {

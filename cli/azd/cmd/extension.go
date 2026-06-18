@@ -1081,6 +1081,17 @@ func (a *extensionInstallAction) sourceDisplayLabel(source string) string {
 	return fmt.Sprintf("source %q", source)
 }
 
+// sourceDisplayLabelForInstalled is like sourceDisplayLabel but phrases the
+// bundle case with an article ("a bundle") so it reads naturally after
+// "installed from".
+func (a *extensionInstallAction) sourceDisplayLabelForInstalled(source string) string {
+	label := a.sourceDisplayLabel(source)
+	if label == "bundle" {
+		return "a bundle"
+	}
+	return label
+}
+
 // versionTransitionVerb returns a capitalized verb phrase describing the move
 // from the installed version to the target version: "Reinstall" when they match,
 // "Upgrade to <target>" / "Downgrade to <target>" when both parse as semver, and
@@ -1114,11 +1125,11 @@ func (a *extensionInstallAction) confirmSourceChange(
 	newSource string,
 	targetVersion string,
 ) (bool, error) {
-	oldLabel := a.sourceDisplayLabel(installed.Source)
+	oldLabel := a.sourceDisplayLabelForInstalled(installed.Source)
 	newLabel := a.sourceDisplayLabel(newSource)
 
 	question := fmt.Sprintf(
-		"%s %s is installed from %s. %s from %s?",
+		"%s %s is already installed from %s. %s from %s?",
 		output.WithHighLightFormat(extensionId), installed.Version, oldLabel,
 		versionTransitionVerb(installed.Version, targetVersion), newLabel,
 	)

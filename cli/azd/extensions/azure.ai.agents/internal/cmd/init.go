@@ -3614,10 +3614,8 @@ func (a *InitAction) validateCodeDeployFlags() error {
 		a.flags.deployMode, a.flags.runtime, a.flags.depResolution)
 }
 
-// validateCodeDeployInput is the shared validation logic for code deploy flags.
-// Used by both InitAction and InitFromCodeAction. Validates --deploy-mode, --runtime,
-// and --dep-resolution values when provided. --entry-point is not validated here;
-// it is optional and auto-detected from the project at deploy time when omitted.
+// validateCodeDeployInput validates --deploy-mode, --runtime, and --dep-resolution flag values.
+// --entry-point is not validated here; it is auto-detected from the project when omitted.
 func validateCodeDeployInput(deployMode, runtime, depResolution string) error {
 	if deployMode != "" && deployMode != "container" && deployMode != "code" {
 		return exterrors.Validation(

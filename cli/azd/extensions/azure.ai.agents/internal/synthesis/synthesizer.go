@@ -55,6 +55,13 @@ type Input struct {
 	// When a referenced variable is absent here, the synthesizer falls back
 	// to the process environment before failing. May be nil.
 	Env map[string]string
+
+	// PreserveVarRefs keeps ${VAR} references verbatim instead of resolving
+	// them. Used by the eject path, where the synthesized main.parameters.json
+	// must stay environment-portable: the on-disk provision flow resolves
+	// ${VAR} from the azd environment at provision time. When false (the
+	// provision path), ${VAR} is resolved here and a missing variable fails.
+	PreserveVarRefs bool
 }
 
 // Result bundles the bicep sources and the parameter values derived
@@ -202,7 +209,7 @@ func Synthesize(in Input) (*Result, error) {
 		deployments = []Deployment{}
 	}
 
-	netParams, netMode, err := synthesizeNetwork(svc.Network, in.ServiceName, in.Env)
+	netParams, netMode, err := synthesizeNetwork(svc.Network, in.ServiceName, in.Env, !in.PreserveVarRefs)
 	if err != nil {
 		return nil, err
 	}
@@ -254,10 +261,17 @@ var varRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 // parameter set plus the telemetry mode. When net is nil the returned
 // params disable network isolation and the output is byte-identical to the
 // pre-network behavior.
+//
+// When resolve is true, ${VAR} references in byo.vnet.id / dns.subscription
+// are expanded from env (provision path) and an unresolved variable fails.
+// When resolve is false (eject path), ${VAR} references are kept verbatim so
+// the synthesized parameters file stays environment-portable; the format
+// checks that cannot run against an unexpanded placeholder are skipped.
 func synthesizeNetwork(
 	net *networkBlock,
 	svcName string,
 	env map[string]string,
+	resolve bool,
 ) (map[string]any, string, error) {
 	// Public account: every network param defaults off.
 	params := map[string]any{
@@ -311,11 +325,17 @@ func synthesizeNetwork(
 		if net.Byo.VNet == nil || strings.TrimSpace(net.Byo.VNet.ID) == "" {
 			return nil, "", fmt.Errorf("%s.byo.vnet.id: required in v1", fp(""))
 		}
-		vnetID, err := resolveVars(net.Byo.VNet.ID, env)
-		if err != nil {
-			return nil, "", fmt.Errorf("%s.byo.vnet.id: %w", fp(""), err)
+		vnetID := strings.TrimSpace(net.Byo.VNet.ID)
+		if resolve {
+			resolved, err := resolveVars(vnetID, env)
+			if err != nil {
+				return nil, "", fmt.Errorf("%s.byo.vnet.id: %w", fp(""), err)
+			}
+			vnetID = resolved
 		}
-		if !vnetIDPattern.MatchString(vnetID) {
+		// Validate the ARM id shape only when the value is fully concrete; an
+		// unexpanded ${VAR} (eject path) is validated at provision time.
+		if !containsVarRef(vnetID) && !vnetIDPattern.MatchString(vnetID) {
 			return nil, "", fmt.Errorf(
 				"%s.byo.vnet.id: %q is not a well-formed Microsoft.Network/virtualNetworks id",
 				fp(""), vnetID)
@@ -361,15 +381,24 @@ func synthesizeNetwork(
 			params["dnsZonesResourceGroup"] = rg
 		}
 		if sub := strings.TrimSpace(net.DNS.Subscription); sub != "" {
-			resolved, err := resolveVars(sub, env)
-			if err != nil {
-				return nil, "", fmt.Errorf("%s.dns.subscription: %w", fp(""), err)
+			if resolve {
+				resolved, err := resolveVars(sub, env)
+				if err != nil {
+					return nil, "", fmt.Errorf("%s.dns.subscription: %w", fp(""), err)
+				}
+				sub = resolved
 			}
-			guid, err := normalizeSubscription(resolved)
-			if err != nil {
-				return nil, "", fmt.Errorf("%s.dns.subscription: %w", fp(""), err)
+			// Normalize to a bare GUID only when concrete; an unexpanded ${VAR}
+			// (eject path) is normalized at provision time.
+			if containsVarRef(sub) {
+				params["dnsZonesSubscription"] = sub
+			} else {
+				guid, err := normalizeSubscription(sub)
+				if err != nil {
+					return nil, "", fmt.Errorf("%s.dns.subscription: %w", fp(""), err)
+				}
+				params["dnsZonesSubscription"] = guid
 			}
-			params["dnsZonesSubscription"] = guid
 		}
 	}
 
@@ -405,6 +434,11 @@ func resolveSubnet(s *subnetSpec, defaultName, fieldPath string) (string, string
 	}
 	// Empty descriptor: treat like omitted.
 	return defaultName, "", true, nil
+}
+
+// containsVarRef reports whether s still contains a ${VAR} reference.
+func containsVarRef(s string) bool {
+	return varRefPattern.MatchString(s)
 }
 
 // resolveVars expands ${VAR} references in s using env first, then the

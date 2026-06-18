@@ -253,6 +253,57 @@ services:
 	}
 }
 
+func TestSynthesize_NetworkPreserveVarRefs(t *testing.T) {
+	// Eject path: ${VAR} references must pass through verbatim (and skip the
+	// format checks that cannot run on an unexpanded placeholder), so the
+	// ejected main.parameters.json stays environment-portable.
+	yaml := `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: byo
+      byo:
+        vnet: {id: "${AZURE_VNET_ID}"}
+      dns:
+        resourceGroup: rg-dns
+        subscription: "${AZURE_DNS_SUBSCRIPTION_ID}"
+`
+	res, err := Synthesize(Input{
+		RawAzureYAML:    []byte(yaml),
+		ServiceName:     "my-project",
+		AcceptedHosts:   []string{"azure.ai.agent"},
+		PreserveVarRefs: true,
+	})
+	require.NoError(t, err, "unset ${VAR} must not fail on the eject path")
+	require.NotNil(t, res)
+	assert.Equal(t, "${AZURE_VNET_ID}", res.Parameters["vnetId"])
+	assert.Equal(t, "${AZURE_DNS_SUBSCRIPTION_ID}", res.Parameters["dnsZonesSubscription"])
+	assert.Equal(t, "rg-dns", res.Parameters["dnsZonesResourceGroup"])
+}
+
+func TestSynthesize_NetworkPreserveVarRefs_StillValidatesConcrete(t *testing.T) {
+	// PreserveVarRefs only skips checks for unexpanded placeholders; a
+	// concrete-but-malformed value still fails on the eject path.
+	yaml := `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: byo
+      byo:
+        vnet: {id: not-an-arm-id}
+`
+	_, err := Synthesize(Input{
+		RawAzureYAML:    []byte(yaml),
+		ServiceName:     "my-project",
+		AcceptedHosts:   []string{"azure.ai.agent"},
+		PreserveVarRefs: true,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a well-formed")
+}
+
 func TestSynthesize_InputValidation(t *testing.T) {
 	tests := []struct {
 		name string

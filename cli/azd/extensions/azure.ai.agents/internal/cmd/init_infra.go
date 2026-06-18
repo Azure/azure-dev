@@ -93,6 +93,10 @@ func ejectInfra(projectRoot string) error {
 		RawAzureYAML:  rawYAML,
 		ServiceName:   svcName,
 		AcceptedHosts: project.FoundryServiceHosts,
+		// Eject writes a static infra/ tree. Keep ${VAR} references verbatim so
+		// the ejected main.parameters.json stays environment-portable; the
+		// on-disk provision flow resolves them from the azd environment.
+		PreserveVarRefs: true,
 	})
 	if err != nil {
 		// Reuse the provider's vocabulary so eject and provision report

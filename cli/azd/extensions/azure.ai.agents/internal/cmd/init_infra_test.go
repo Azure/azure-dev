@@ -311,6 +311,49 @@ services:
 	assert.Equal(t, false, doc.Parameters["includeAcr"].Value)
 }
 
+func TestEjectInfra_PreservesNetworkVarRefs(t *testing.T) {
+	// See TestEjectInfra_HappyPath_WritesExpectedFiles for why this is not parallel.
+	// Eject must keep ${VAR} references verbatim in main.parameters.json so the
+	// ejected tree stays environment-portable; the on-disk provision flow
+	// resolves them from the azd environment at provision time.
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+services:
+  my-foundry:
+    host: azure.ai.agent
+    network:
+      mode: byo
+      byo:
+        vnet: {id: "${AZURE_VNET_ID}"}
+      dns:
+        resourceGroup: rg-dns
+        subscription: "${AZURE_DNS_SUBSCRIPTION_ID}"
+    deployments: []
+    agents:
+      - name: my-agent
+        image: registry.io/myorg/myagent:latest
+`)
+
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfra(dir))
+	})
+
+	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec // G304: test file path from t.TempDir()
+	require.NoError(t, err)
+	var doc struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &doc))
+
+	assert.Equal(t, "${AZURE_VNET_ID}", doc.Parameters["vnetId"].Value,
+		"vnet id ${VAR} must be preserved for provision-time resolution")
+	assert.Equal(t, "${AZURE_DNS_SUBSCRIPTION_ID}", doc.Parameters["dnsZonesSubscription"].Value,
+		"dns subscription ${VAR} must be preserved for provision-time resolution")
+	assert.Equal(t, true, doc.Parameters["enableNetworkIsolation"].Value)
+}
+
 func TestEjectInfra_RefusesWhenInfraIsAFile(t *testing.T) {
 	t.Parallel()
 	// Pre-existing `infra` as a regular file (not a directory) hits the

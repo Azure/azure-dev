@@ -60,7 +60,7 @@ func TestBuildOIDCSubject(t *testing.T) {
 			},
 			suffix: "ref:refs/heads/main",
 			want: "repository_owner_id:1844662:" +
-				"repository_id:599293758:ref:refs/heads/main",
+				"repository_id:599293758",
 		},
 		{
 			name:     "custom owner_id and repo_id for pull_request",
@@ -75,7 +75,7 @@ func TestBuildOIDCSubject(t *testing.T) {
 			},
 			suffix: "pull_request",
 			want: "repository_owner_id:1844662:" +
-				"repository_id:599293758:pull_request",
+				"repository_id:599293758",
 		},
 		{
 			name:     "custom with repository_owner and repository",
@@ -90,8 +90,7 @@ func TestBuildOIDCSubject(t *testing.T) {
 			},
 			suffix: "ref:refs/heads/main",
 			want: "repository_owner:Azure-Samples:" +
-				"repository:Azure-Samples/my-repo:" +
-				"ref:refs/heads/main",
+				"repository:Azure-Samples/my-repo",
 		},
 		{
 			name:     "empty claim keys with use_default false errors",
@@ -180,8 +179,7 @@ func TestBuildOIDCSubject(t *testing.T) {
 				},
 			},
 			suffix: "ref:refs/heads/main",
-			want: "repo:Azure-Samples/my-repo:" +
-				"ref:refs/heads/main",
+			want:   "repo:Azure-Samples/my-repo",
 		},
 		{
 			name:     "unknown claim key errors",

@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 )
 
@@ -192,11 +191,6 @@ func BuildOIDCSubject(
 				key, repoSlug,
 			)
 		}
-	}
-	// Append the suffix only when "context" is not an explicit claim key,
-	// since "context" already consumed it above.
-	if !slices.Contains(oidcConfig.IncludeClaimKeys, "context") {
-		parts = append(parts, suffix)
 	}
 	return strings.Join(parts, ":"), nil
 }

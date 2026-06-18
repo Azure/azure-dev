@@ -246,8 +246,13 @@ def setup():
         sys.exit(1)
     print("Environment OK")
 
-    # Ensure azd uses built-in auth (not az CLI which is slow in WSL)
-    send("azd config unset auth.useAzCliAuth 2>/dev/null")
+    # Auth config: CI uses az CLI (OIDC token), local WSL uses azd built-in auth.
+    # In CI, azure/login puts token in az CLI → azd needs useAzCliAuth=true.
+    # In WSL, az CLI is slow (cross-process) → must use azd built-in auth.
+    if os.environ.get("GITHUB_ACTIONS"):
+        send("azd config set auth.useAzCliAuth true")
+    else:
+        send("azd config unset auth.useAzCliAuth 2>/dev/null")
     key("Enter")
     time.sleep(1)
 
@@ -744,7 +749,6 @@ def phase_invoke():
                         break
                     if line.strip():
                         resp_lines.append(line.strip())
-                    resp_lines.append(line.strip())
 
             response_text = "\n".join(resp_lines)
             if not response_text.strip():
@@ -760,9 +764,11 @@ def phase_invoke():
             has_expected = "4" in response_text
             print(f"  Response ({len(response_text)} chars): {response_text[:120]}")
             if not has_expected:
-                print("  WARNING: response does not contain expected '4'")
+                print("  FAIL: response does not contain expected '4'")
+                results["invoke"] = "FAIL (response missing '4')"
+                return False
 
-            results["invoke"] = "PASS" if has_expected else "PASS (response present, no '4')"
+            results["invoke"] = "PASS"
             return True
 
     results["invoke"] = "FAIL (all retries exhausted)"
@@ -813,7 +819,8 @@ if __name__ == "__main__":
     setup()
 
     # Run phases sequentially
-    if phase_init():
+    init_ok = phase_init()
+    if init_ok:
         if phase_provision():
             if phase_deploy():
                 phase_invoke()
@@ -825,6 +832,22 @@ if __name__ == "__main__":
         else:
             if not args.keep:
                 phase_teardown()
+    else:
+        # Init failed — but may have already created Azure resources (RG, project).
+        # Attempt cleanup if there's a .azure directory indicating provisioned state.
+        project_dir = None
+        if os.path.isdir(TESTDIR):
+            for d in os.listdir(TESTDIR):
+                azure_dir = os.path.join(TESTDIR, d, ".azure")
+                if os.path.isdir(azure_dir):
+                    project_dir = os.path.join(TESTDIR, d)
+                    break
+        if project_dir and not args.keep:
+            print(f"\nInit failed but found .azure in {project_dir} — attempting cleanup...")
+            send(f"cd {project_dir}")
+            key("Enter")
+            time.sleep(1)
+            phase_teardown()
 
     # Cleanup tmux
     tmux("kill-session", "-t", SESS)

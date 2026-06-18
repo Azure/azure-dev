@@ -182,7 +182,7 @@ func (i *installer) run(
 	upgrade bool,
 ) (*InstallResult, error) {
 	// Skills follow a different flow: they install through the host
-	// agentic CLI's native plugin command rather than the platform's
+	// agentic CLI native plugin command rather than the platform's
 	// package manager, so we short-circuit before platform detection.
 	if tool.Category == ToolCategorySkill {
 		return i.runSkill(ctx, tool, upgrade)
@@ -368,7 +368,7 @@ func (i *installer) runSkill(
 		return result, nil
 	}
 
-	// 1. HARD prereq: at least one supported host must be on PATH.
+	// 1. HARD prerequisite: at least one supported host must be on PATH.
 	host, hostErr := i.pickSkillHost(tool)
 	if hostErr != nil {
 		result.Error = hostErr
@@ -377,7 +377,7 @@ func (i *installer) runSkill(
 	}
 	result.Strategy = host.Host
 
-	// 2. SOFT prereq: warn if Node.js is missing.
+	// 2. SOFT prerequisite: warn if Node.js is missing.
 	if err := i.commandRunner.ToolInPath("node"); err != nil {
 		log.Printf("node not found on PATH: %v", err)
 		fmt.Println(output.WithWarningFormat(
@@ -559,7 +559,7 @@ func (i *installer) runSkillHostCommand(
 
 // runMarketplaceAdd registers the skill marketplace with the host CLI.
 // Some hosts (e.g. copilot) return a non-zero exit when the marketplace
-// is already registered; we recognise that case from the captured
+// is already registered; we recognize that case from the captured
 // output and treat it as success so the install can proceed. Hosts that
 // already exit 0 in the "already added" case (e.g. codex, claude) flow
 // through naturally. Any other failure is returned to the caller.

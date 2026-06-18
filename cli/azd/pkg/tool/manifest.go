@@ -375,7 +375,7 @@ func azureSkills() *ToolDefinition {
 				// each with its own "Release tag:" line. Anchor on the
 				// azure-skills Source URL (unique to this extension) and
 				// then capture the FIRST Release tag that follows in the
-				// same block. (?s) enables dotall so .*? spans lines.
+				// same block. (?s) makes . match newlines so .*? spans lines.
 				VersionRegex: `(?s)Source:\s*https://github\.com/microsoft/azure-skills.*?Release tag:\s*v?(\d+\.\d+\.\d+)`,
 			},
 			{

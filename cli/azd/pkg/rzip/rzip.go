@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -107,7 +108,15 @@ func addFile(
 		Modified: info.ModTime(),
 		Method:   zip.Deflate,
 	}
-	header.SetMode(info.Mode())
+	// On Windows, file mode bits don't include Unix execute permission, so files
+	// that need to be executable on Linux (e.g., compiled binaries) would lose their
+	// execute bit in the zip. Default to 0755 on Windows to ensure cross-platform
+	// deployments work correctly.
+	if runtime.GOOS == "windows" {
+		header.SetMode(0755)
+	} else {
+		header.SetMode(info.Mode())
+	}
 
 	f, err := w.CreateHeader(header)
 	if err != nil {

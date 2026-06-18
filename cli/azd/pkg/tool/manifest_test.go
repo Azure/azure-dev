@@ -118,6 +118,13 @@ func TestBuiltInTools(t *testing.T) {
 
 		tools := BuiltInTools()
 		for _, tool := range tools {
+			if tool.Category == ToolCategorySkill {
+				// Skill tools install via SkillHosts, not InstallStrategies.
+				assert.NotEmpty(t, tool.SkillHosts,
+					"skill tool %q must have SkillHosts",
+					tool.Id)
+				continue
+			}
 			assert.NotEmpty(t, tool.InstallStrategies,
 				"tool %q must have InstallStrategies",
 				tool.Id)

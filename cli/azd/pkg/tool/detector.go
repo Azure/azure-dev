@@ -10,6 +10,7 @@ import (
 	"fmt"
 	osexec "os/exec"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -79,6 +80,8 @@ func (d *detector) DetectTool(
 		return d.detectServer(ctx, tool), nil
 	case ToolCategoryAzdExtension:
 		return d.detectAzdExtension(ctx, tool), nil
+	case ToolCategorySkill:
+		return d.detectSkill(ctx, tool), nil
 	default:
 		return &ToolStatus{Tool: tool}, nil
 	}
@@ -428,6 +431,70 @@ func (d *detector) detectAzdExtension(
 		if ext.ID == tool.Id {
 			status.Installed = true
 			status.InstalledVersion = ext.InstalledVersion
+			return status
+		}
+	}
+
+	return status
+}
+
+// ---------------------------------------------------------------------------
+// Skill detection
+// ---------------------------------------------------------------------------
+
+// detectSkill checks whether a skill is installed by running each
+// SkillHost's PluginListCommand and searching the output for PluginName.
+// Hosts whose binary is not on PATH are skipped silently — a missing
+// host is not an error, it just means the skill cannot be installed
+// through that host. The skill is reported as installed (with a best-
+// effort InstalledVersion extracted via the host's VersionRegex) as
+// soon as any available host's listing contains the PluginName.
+func (d *detector) detectSkill(
+	ctx context.Context,
+	tool *ToolDefinition,
+) *ToolStatus {
+	status := &ToolStatus{Tool: tool}
+
+	if len(tool.SkillHosts) == 0 {
+		return status
+	}
+
+	for _, host := range tool.SkillHosts {
+		if len(host.PluginListCommand) == 0 || host.PluginName == "" {
+			continue
+		}
+
+		// A host that is not on PATH cannot have the skill installed
+		// through it; skip silently.
+		if err := d.commandRunner.ToolInPath(host.Host); err != nil {
+			continue
+		}
+
+		// Run the list command. If it fails for any reason we cannot
+		// reliably tell whether the skill is installed via this host —
+		// fail closed and try the next one rather than guessing from
+		// the error output (which often echoes the queried name).
+		result, err := d.commandRunner.Run(ctx, exec.RunArgs{
+			Cmd:  host.Host,
+			Args: host.PluginListCommand,
+		})
+		if err != nil {
+			if isContextErr(err) {
+				status.Error = fmt.Errorf(
+					"listing %s plugins: %w", host.Host, err,
+				)
+				return status
+			}
+			continue
+		}
+
+		// Match only against stdout: stderr is usually diagnostics, not
+		// the canonical listing.
+		if strings.Contains(result.Stdout, host.PluginName) {
+			status.Installed = true
+			status.InstalledVersion = matchVersion(
+				result.Stdout+result.Stderr, host.VersionRegex,
+			)
 			return status
 		}
 	}

@@ -79,6 +79,10 @@ type initFlags struct {
 	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
 	// and is not registered as a CLI flag on the init command itself.
 	noPrompt bool
+	// infra, when true, synthesizes the Bicep templates from azure.yaml and
+	// writes them to ./infra/ -- as an eject step after a fresh init, or
+	// standalone when azure.yaml already exists.
+	infra bool
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -1000,6 +1004,23 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// set flags.manifestPointer. This drives the opinionated-defaults path.
 			userProvidedManifest := flags.manifestPointer != ""
 
+			// `--infra` on a directory that already has an azd agent project
+			// is a standalone eject: synthesize Bicep from the existing
+			// azure.yaml, write ./infra/, and return without prompting.
+			if flags.infra && fileExists("azure.yaml") {
+				// Reject inputs the eject path would silently ignore (a
+				// positional arg, -m, or --src) instead of pretending they
+				// were honored.
+				if err := validateStandaloneEjectArgs(args, flags); err != nil {
+					return err
+				}
+				cwd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("resolve current directory: %w", err)
+				}
+				return ejectInfra(cwd)
+			}
+
 			ctx := azdext.WithAccessToken(cmd.Context())
 
 			azdClient, err := azdext.NewAzdClient()
@@ -1397,6 +1418,32 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}
 
+			// New-project eject: when --infra is set on a fresh init that just
+			// wrote azure.yaml, chain the eject step. Skip silently when init
+			// didn't produce a foundry-bearing azure.yaml (cancelled or
+			// non-foundry flow) to avoid a confusing "nothing to eject" error.
+			if flags.infra {
+				cwd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("resolve current directory: %w", err)
+				}
+				//nolint:gosec // G304: azure.yaml in the current azd project directory
+				rawYAML, readErr := os.ReadFile(filepath.Join(cwd, "azure.yaml"))
+				switch {
+				case errors.Is(readErr, fs.ErrNotExist):
+					// Init didn't write azure.yaml; nothing to eject.
+				case readErr != nil:
+					return fmt.Errorf("read azure.yaml after init: %w", readErr)
+				default:
+					// Skip silently when no foundry service is present.
+					if _, svcErr := findFoundryServiceForEject(rawYAML); svcErr == nil {
+						if err := ejectInfra(cwd); err != nil {
+							return err
+						}
+					}
+				}
+			}
+
 			return nil
 		},
 	}
@@ -1443,6 +1490,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+
 			"Required together with --no-prompt when init would otherwise need confirmation.")
+
+	cmd.Flags().BoolVar(&flags.infra, "infra", false,
+		"Synthesize Bicep templates from azure.yaml and write them to ./infra/. "+
+			"When azure.yaml already exists, runs as a standalone eject and skips the init prompts.")
 
 	return cmd
 }
@@ -1644,8 +1695,25 @@ func ensureProject(
 			envName = base + "-dev"
 		}
 
+		// Scaffold a minimal project via `azd init -t <empty dir> <targetDir>`.
+		// We use an empty template dir rather than `--minimal` (which can't
+		// take a positional target) or `-C` (a no-op on workflow re-entry,
+		// since azd-core parses global flags once at startup). The empty
+		// template skips the network call and produces just azure.yaml +
+		// .azure/<env>/ + git init; writeFoundryProvider then stamps the
+		// provider name onto azure.yaml.
+		emptyTemplateDir, err := os.MkdirTemp("", "azd-foundry-empty-*")
+		if err != nil {
+			return nil, exterrors.Dependency(
+				exterrors.CodeProjectInitFailed,
+				fmt.Sprintf("creating empty template staging dir: %s", err),
+				"check write permissions on the system temp directory",
+			)
+		}
+		defer os.RemoveAll(emptyTemplateDir)
+
 		initArgs := []string{
-			"init", "-t", "Azure-Samples/azd-ai-starter-basic", targetDir,
+			"init", "-t", emptyTemplateDir, targetDir,
 			"--environment", envName,
 		}
 
@@ -1658,7 +1726,7 @@ func ensureProject(
 			},
 		}
 
-		_, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+		_, err = azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
 			Workflow: workflow,
 		})
 
@@ -1695,6 +1763,10 @@ func ensureProject(
 			}
 		}
 
+		if err := writeFoundryProvider(ctx, azdClient); err != nil {
+			return nil, err
+		}
+
 		projectResponse, err = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 		if err != nil {
 			return nil, exterrors.Dependency(
@@ -1706,20 +1778,23 @@ func ensureProject(
 
 		fmt.Println()
 	} else if projectResponse.Project != nil {
-		// An existing azd project was found — tell the user so the skipped template
-		// download isn't a mystery. Also warn if the project lacks an infra/ directory,
-		// since deployment may require infrastructure scaffolding.
 		fmt.Println(output.WithGrayFormat(
 			"Found existing azd project at %q. Adding agent to it.", projectResponse.Project.Path,
 		))
 
-		infraDir := filepath.Join(projectResponse.Project.Path, "infra")
-		if _, statErr := os.Stat(infraDir); os.IsNotExist(statErr) {
-			fmt.Printf("%s", output.WithWarningFormat(
-				"No infra/ directory found in the project. If you need Azure infrastructure "+
-					"for deployment, run 'azd init -t Azure-Samples/azd-ai-starter-basic .' in an empty "+
-					"directory first, then re-run this command from there.\n",
-			))
+		// Skip the warning when the project has already opted into the
+		// extension's provisioning provider (which intentionally omits infra/).
+		if !hasFoundryProviderDeclared(projectResponse.Project) {
+			infraDir := filepath.Join(projectResponse.Project.Path, "infra")
+			if _, statErr := os.Stat(infraDir); os.IsNotExist(statErr) {
+				fmt.Printf("%s", output.WithWarningFormat(
+					"No infra/ directory found in the project, and azure.yaml does not declare "+
+						"'infra.provider: %s'. If you need Azure infrastructure for deployment, "+
+						"set that provider in azure.yaml, or run "+
+						"'azd ai agent init --infra' to generate an infra/ directory.\n",
+					project.FoundryProviderName,
+				))
+			}
 		}
 	}
 
@@ -1732,6 +1807,59 @@ func ensureProject(
 	}
 
 	return projectResponse.Project, nil
+}
+
+// writeFoundryProvider stamps `infra.provider: <FoundryProviderName>`
+// onto azure.yaml and removes the starter's `infra.path: ./infra`.
+func writeFoundryProvider(ctx context.Context, azdClient *azdext.AzdClient) error {
+	value, err := structpb.NewValue(project.FoundryProviderName)
+	if err != nil {
+		return exterrors.Internal(
+			exterrors.CodeProjectInitFailed,
+			fmt.Sprintf("failed to encode provider name as protobuf value: %s", err),
+		)
+	}
+
+	_, err = azdClient.Project().SetConfigValue(ctx, &azdext.SetProjectConfigValueRequest{
+		Path:  "infra.provider",
+		Value: value,
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("writing infra.provider was cancelled")
+		}
+		return exterrors.Dependency(
+			exterrors.CodeProjectInitFailed,
+			fmt.Sprintf(
+				"failed to set infra.provider=%s on azure.yaml: %s",
+				project.FoundryProviderName, err,
+			),
+			"check that azure.yaml is writable and re-run the command",
+		)
+	}
+
+	// UnsetConfig is idempotent for missing keys.
+	_, err = azdClient.Project().UnsetConfig(ctx, &azdext.UnsetProjectConfigRequest{
+		Path: "infra.path",
+	})
+	if err != nil && !exterrors.IsCancellation(err) {
+		return exterrors.Dependency(
+			exterrors.CodeProjectInitFailed,
+			fmt.Sprintf("failed to unset infra.path on azure.yaml: %s", err),
+			"check that azure.yaml is writable and re-run the command",
+		)
+	}
+
+	return nil
+}
+
+// hasFoundryProviderDeclared reports whether azure.yaml already
+// declares this extension's provisioning provider.
+func hasFoundryProviderDeclared(proj *azdext.ProjectConfig) bool {
+	if proj == nil || proj.Infra == nil {
+		return false
+	}
+	return proj.Infra.Provider == project.FoundryProviderName
 }
 
 func getExistingEnvironment(ctx context.Context, envName string, azdClient *azdext.AzdClient) *azdext.Environment {
@@ -1839,6 +1967,7 @@ func (a *InitAction) configureModelChoice(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
 				a.skipACR(),
+				true, // bicepless
 			)
 			if err != nil {
 				return nil, err
@@ -1905,6 +2034,7 @@ func (a *InitAction) configureModelChoice(
 					ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 					a.azureContext.Scope.SubscriptionId, "",
 					a.skipACR(),
+					true, // bicepless
 				)
 				if err != nil {
 					return nil, err
@@ -1992,6 +2122,7 @@ func (a *InitAction) configureModelChoice(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
 			a.skipACR(),
+			true, // bicepless
 		)
 		if err != nil {
 			return nil, err
@@ -2069,6 +2200,7 @@ func (a *InitAction) configureModelChoice(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, "",
 				a.skipACR(),
+				true, // bicepless
 			)
 			if err != nil {
 				return nil, err

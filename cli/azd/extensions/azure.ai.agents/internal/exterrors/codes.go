@@ -55,7 +55,6 @@ const (
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
 	CodeMissingProjectEndpoint    = "missing_project_endpoint"
 	CodeGitHubDownloadFailed      = "github_download_failed"
-	CodeScaffoldTemplateFailed    = "scaffold_template_failed"
 	CodePromptFailed              = "prompt_failed"
 )
 
@@ -187,4 +186,41 @@ const (
 	CodeOptimizeJobTimeout = "optimize_job_timeout"
 	CodeInvalidTargetAttr  = "invalid_target_attribute"
 	CodeReservedEnvVar     = "reserved_env_var"
+)
+
+// Error codes for the microsoft.foundry provisioning provider.
+const (
+	CodeInvalidAzureYaml            = "invalid_azure_yaml"
+	CodeProvisioningServiceNotFound = "provisioning_service_not_found"
+	CodeBrownfieldNotSupported      = "brownfield_not_supported"
+	CodeMissingFoundryProjectName   = "missing_foundry_project_name"
+	CodeMissingResourceGroup        = "missing_resource_group"
+	CodeMissingAzureLocation        = "missing_azure_location"
+	CodeDestroyRequiresForce        = "destroy_requires_force"
+	CodeOnDiskBicepCompileFailed    = "ondisk_bicep_compile_failed"
+	CodeOnDiskBicepParseFailed      = "ondisk_bicep_parse_failed"
+	CodeOnDiskParametersInvalid     = "ondisk_parameters_invalid"
+	CodeArmWhatIfFailed             = "arm_what_if_failed"
+)
+
+// Error codes for `azd ai agent init --infra` (infrastructure eject).
+const (
+	CodeInfraEjectExists                  = "infra_eject_exists"
+	CodeInfraEjectNoFoundryService        = "infra_eject_no_foundry_service"
+	CodeInfraEjectMultipleFoundryServices = "infra_eject_multiple_foundry_services"
+	CodeInfraEjectAzureYamlMissing        = "infra_eject_azure_yaml_missing"
+	CodeInfraEjectWriteFailed             = "infra_eject_write_failed"
+	CodeInfraEjectConflictingArguments    = "infra_eject_conflicting_arguments"
+)
+
+// Operation names for the microsoft.foundry provisioning provider.
+const (
+	OpArmDeploymentCreate       = "arm_deployment_create"
+	OpArmDeploymentGet          = "arm_deployment_get"
+	OpArmDeploymentWhatIf       = "arm_deployment_what_if"
+	OpResourceGroupDelete       = "resource_group_delete"
+	OpCognitiveAccountList      = "cognitive_account_list"
+	OpCognitiveAccountPurge     = "cognitive_account_purge"
+	OpCognitiveDeploymentList   = "cognitive_deployment_list"
+	OpCognitiveDeploymentDelete = "cognitive_deployment_delete"
 )

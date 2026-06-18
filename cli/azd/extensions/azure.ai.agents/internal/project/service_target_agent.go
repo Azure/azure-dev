@@ -176,14 +176,28 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 	}
 }
 
-// Initialize initializes the service target by looking for the agent definition file
+// Initialize stores the service config. It is intentionally cheap: azd core
+// calls it on every service-target for every action. Heavy work (resolving
+// agent.yaml, tenant lookup, credential) lives in ensureDeployContext and runs
+// only when a deploy-time entrypoint needs it.
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
+	p.serviceConfig = serviceConfig
+	return nil
+}
+
+// ensureDeployContext lazily resolves the agent definition file, the azd
+// environment, the tenant, and the credential. Idempotent via the
+// agentDefinitionPath short-circuit.
+func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) error {
 	if p.agentDefinitionPath != "" {
-		// Already initialized
 		return nil
 	}
-
-	p.serviceConfig = serviceConfig
+	if p.serviceConfig == nil {
+		return exterrors.Internal(
+			exterrors.CodeInvalidServiceConfig,
+			"service-target Initialize was not called before ensureDeployContext",
+		)
+	}
 
 	proj, err := p.azdClient.Project().Get(ctx, nil)
 	if err != nil {
@@ -193,29 +207,22 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 			"run 'azd init' to initialize your project",
 		)
 	}
-	servicePath := serviceConfig.RelativePath
+	servicePath := p.serviceConfig.RelativePath
 	fullPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("invalid service path for %s: %s", serviceConfig.Name, err),
+			fmt.Sprintf("invalid service path for %s: %s", p.serviceConfig.Name, err),
 			"update azure.yaml so the agent service path stays within the project directory",
 		)
 	}
 
-	// Get and store environment
-	azdEnvClient := p.azdClient.Environment()
-	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
-	if err != nil {
-		return exterrors.Dependency(
-			exterrors.CodeEnvironmentNotFound,
-			fmt.Sprintf("failed to get current environment: %s", err),
-			"run 'azd env new' to create an environment",
-		)
+	if err := p.ensureEnv(ctx); err != nil {
+		return err
 	}
-	p.env = currEnv.Environment
 
 	// Get subscription ID from environment
+	azdEnvClient := p.azdClient.Environment()
 	resp, err := azdEnvClient.GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: p.env.Name,
 		Key:     "AZURE_SUBSCRIPTION_ID",
@@ -294,7 +301,7 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("invalid agent definition path for %s: %s", serviceConfig.Name, err),
+			fmt.Sprintf("invalid agent definition path for %s: %s", p.serviceConfig.Name, err),
 			"update azure.yaml so the agent definition stays within the project directory",
 		)
 	}
@@ -302,7 +309,7 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("invalid agent definition path for %s: %s", serviceConfig.Name, err),
+			fmt.Sprintf("invalid agent definition path for %s: %s", p.serviceConfig.Name, err),
 			"update azure.yaml so the agent definition stays within the project directory",
 		)
 	}
@@ -326,6 +333,24 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	)
 }
 
+// ensureEnv lazily populates p.env from the azd host. Idempotent and cheap
+// enough for non-deploy entrypoints (Endpoints, registerAgentEnvironmentVariables).
+func (p *AgentServiceTargetProvider) ensureEnv(ctx context.Context) error {
+	if p.env != nil {
+		return nil
+	}
+	currEnv, err := p.azdClient.Environment().GetCurrent(ctx, nil)
+	if err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeEnvironmentNotFound,
+			fmt.Sprintf("failed to get current environment: %s", err),
+			"run 'azd env new' to create an environment",
+		)
+	}
+	p.env = currEnv.Environment
+	return nil
+}
+
 // getServiceKey converts a service name into a standardized environment variable key format
 func (p *AgentServiceTargetProvider) getServiceKey(serviceName string) string {
 	serviceKey := strings.ReplaceAll(serviceName, " ", "_")
@@ -339,6 +364,10 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	serviceConfig *azdext.ServiceConfig,
 	targetResource *azdext.TargetResource,
 ) ([]string, error) {
+	if err := p.ensureEnv(ctx); err != nil {
+		return nil, err
+	}
+
 	// Get all environment values
 	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
 		Name: p.env.Name,
@@ -404,6 +433,9 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
+	if err := p.ensureDeployContext(ctx); err != nil {
+		return nil, err
+	}
 	// Ensure Foundry project is loaded
 	if err := p.ensureFoundryProject(ctx); err != nil {
 		return nil, err
@@ -463,6 +495,9 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
+	if err := p.ensureDeployContext(ctx); err != nil {
+		return nil, err
+	}
 	// Code deploy: ZIP the source directory
 	if p.isCodeDeployAgent() {
 		progress("Packaging code")
@@ -566,16 +601,21 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	// Code deploy skips Publish (no ACR needed)
-	if p.isCodeDeployAgent() {
-		return &azdext.ServicePublishResult{}, nil
-	}
-
+	// Pre-built image: nothing to package or push. Skip deploy-context
+	// resolution so this path stays cheap and doesn't require agent.yaml.
 	if preBuiltArtifact := findPreBuiltImageArtifact(serviceContext.Package); preBuiltArtifact != nil {
 		progress("Using pre-built container image, skipping publish")
 		return &azdext.ServicePublishResult{
 			Artifacts: []*azdext.Artifact{preBuiltArtifact},
 		}, nil
+	}
+
+	if err := p.ensureDeployContext(ctx); err != nil {
+		return nil, err
+	}
+	// Code deploy skips Publish (no ACR needed)
+	if p.isCodeDeployAgent() {
+		return &azdext.ServicePublishResult{}, nil
 	}
 
 	_, isContainerAgent, err := p.loadContainerAgentDefinition()
@@ -971,6 +1011,9 @@ func (p *AgentServiceTargetProvider) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
+	if err := p.ensureDeployContext(ctx); err != nil {
+		return nil, err
+	}
 	// Ensure Foundry project is loaded
 	if err := p.ensureFoundryProject(ctx); err != nil {
 		return nil, err
@@ -2308,6 +2351,9 @@ func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, a
 func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) error {
 	if p.foundryProject != nil {
 		return nil
+	}
+	if err := p.ensureEnv(ctx); err != nil {
+		return err
 	}
 
 	// Get all environment values

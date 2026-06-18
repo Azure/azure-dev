@@ -327,6 +327,9 @@ func lookupAcrResourceId(
 // configureFoundryProjectEnv sets all Foundry project environment variables and discovers
 // ACR and AppInsights connections. This is the shared implementation used by both init flows.
 // When skipACR is true, ACR connection discovery and configuration is skipped (used for code deploy).
+// When bicepless is true, both ACR and AppInsights connection discovery
+// and prompting are skipped after the basic project identity env vars
+// are seeded; the extension's provisioning provider owns those resources.
 func configureFoundryProjectEnv(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -335,6 +338,7 @@ func configureFoundryProjectEnv(
 	project FoundryProjectInfo,
 	subscriptionId string,
 	skipACR bool,
+	bicepless bool,
 ) error {
 	resourceId := project.ResourceId
 	if resourceId == "" {
@@ -367,6 +371,10 @@ func configureFoundryProjectEnv(
 	aoaiEndpoint := fmt.Sprintf("https://%s.openai.azure.com/", project.AccountName)
 	if err := setEnvValue(ctx, azdClient, envName, "AZURE_OPENAI_ENDPOINT", aoaiEndpoint); err != nil {
 		return err
+	}
+
+	if bicepless {
+		return nil
 	}
 
 	// Discover and configure connections (ACR, AppInsights)
@@ -1187,6 +1195,9 @@ func sortModelDeploymentCandidates(candidates []*azdext.AiModelDeployment, defau
 // finds the matching project without prompting. Returns nil if user chose
 // "Create a new Foundry project" or no projects exist.
 // When a project is selected, configures all project-related environment variables.
+// skipACR skips ACR connection discovery (used for code deploy);
+// bicepless skips both ACR and AppInsights prompts (see
+// configureFoundryProjectEnv).
 func selectFoundryProject(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -1196,6 +1207,7 @@ func selectFoundryProject(
 	subscriptionId string,
 	projectResourceId string,
 	skipACR bool,
+	bicepless bool,
 ) (*FoundryProjectInfo, error) {
 	spinnerText := "Searching for Foundry projects in your subscription..."
 	if projectResourceId != "" {
@@ -1323,7 +1335,9 @@ func selectFoundryProject(
 	}
 
 	// Configure all Foundry project environment variables
-	if err := configureFoundryProjectEnv(ctx, azdClient, credential, envName, selectedProject, subscriptionId, skipACR); err != nil {
+	if err := configureFoundryProjectEnv(
+		ctx, azdClient, credential, envName, selectedProject, subscriptionId, skipACR, bicepless,
+	); err != nil {
 		return nil, fmt.Errorf("failed to configure Foundry project environment: %w", err)
 	}
 

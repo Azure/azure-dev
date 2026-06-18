@@ -44,10 +44,12 @@
                 "provider": {
                     "type": "string",
                     "title": "Type of infrastructure provisioning provider",
-                    "description": "Optional. The infrastructure provisioning provider used to provision the Azure resources for the application. (Default: bicep)",
-                    "enum": [
+                    "description": "Optional. The infrastructure provisioning provider used to provision the Azure resources for the application. Built-in values are 'bicep' and 'terraform'. Extensions may register additional named providers (for example, 'microsoft.foundry'). (Default: bicep)",
+                    "pattern": "^[a-z0-9.]+$",
+                    "examples": [
                         "bicep",
-                        "terraform"
+                        "terraform",
+                        "microsoft.foundry"
                     ]
                 },
                 "path": {

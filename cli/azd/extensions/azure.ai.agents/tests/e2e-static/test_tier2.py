@@ -145,16 +145,11 @@ if __name__ == "__main__":
     start_all = time.time()
     results = []
 
-    if args.serial or len(tests) == 1:
+    if args.serial or len(tests) == 1 or len(tests) > 1:
+        # Always run sequentially — parallel causes resource conflicts in same subscription
         for mode, label in tests:
             result = run_e2e(mode, label)
             results.append(result)
-    else:
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            futures = {pool.submit(run_e2e, mode, label): label
-                       for mode, label in tests}
-            for f in as_completed(futures):
-                results.append(f.result())
 
     total_elapsed = time.time() - start_all
 

@@ -237,8 +237,11 @@ def test_init_picker_navigation():
                                capture_output=True, text=True)
             return r.stdout
 
-        # Run init (set PATH first)
-        env_cmd = f"export HOME={HOME_DIR}; export PATH=/usr/local/bin:{HOME_DIR}/bin:{HOME_DIR}/.pyenv/versions/3.12.3/bin:/usr/bin:/bin"
+        # Run init (ensure azd is in PATH — on CI it's added via GITHUB_PATH)
+        azd_path = shutil.which("azd")
+        azd_dir = os.path.dirname(azd_path) if azd_path else ""
+        extra_paths = f"{azd_dir}:" if azd_dir else ""
+        env_cmd = f"export HOME={HOME_DIR}; export PATH={extra_paths}/usr/local/bin:{HOME_DIR}/bin:/usr/bin:/bin"
         tmux_send(env_cmd)
         tmux_key("Enter")
         time.sleep(0.5)

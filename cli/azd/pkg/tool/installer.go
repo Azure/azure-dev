@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // InstallResult captures the outcome of an install or upgrade operation.
@@ -180,6 +181,13 @@ func (i *installer) run(
 	tool *ToolDefinition,
 	upgrade bool,
 ) (*InstallResult, error) {
+	// Skills follow a different flow: they install through the host
+	// agentic CLI's native plugin command rather than the platform's
+	// package manager, so we short-circuit before platform detection.
+	if tool.Category == ToolCategorySkill {
+		return i.runSkill(ctx, tool, upgrade)
+	}
+
 	start := time.Now()
 	result := &InstallResult{Tool: tool}
 
@@ -319,6 +327,213 @@ func (i *installer) run(
 	result.Duration = time.Since(start)
 
 	return result, nil
+}
+
+// ---------------------------------------------------------------------------
+// Skill install / upgrade
+// ---------------------------------------------------------------------------
+
+// runSkill implements the install/upgrade flow for [ToolCategorySkill].
+//
+// Prerequisite rules:
+//  1. HARD — at least one supported agentic CLI host (e.g. copilot,
+//     claude, gemini, codex) must be on PATH. We do NOT offer to
+//     install one ourselves; if none is present we fail with an
+//     [errorhandler.ErrorWithSuggestion] that points the user at the
+//     install docs for each supported host.
+//  2. SOFT — Node.js (`node`) on PATH. The Azure MCP server is started
+//     via `npx`, so its absence breaks MCP-backed scenarios but does
+//     NOT prevent installing the skill files. Emit a one-line warning
+//     via [log.Printf] and continue.
+//  3. Git is NOT pre-checked. The host CLI fetches the skill repo
+//     itself and surfaces its own diagnostic when git is missing.
+//
+// The first supported host found on PATH wins. For fresh installs the
+// host's MarketplaceAddCommand (if any) runs first as a best-effort
+// idempotent step — failures there are ignored because re-adding an
+// already-registered marketplace is not a real error.
+func (i *installer) runSkill(
+	ctx context.Context,
+	tool *ToolDefinition,
+	upgrade bool,
+) (*InstallResult, error) {
+	start := time.Now()
+	result := &InstallResult{Tool: tool}
+
+	if len(tool.SkillHosts) == 0 {
+		result.Error = fmt.Errorf(
+			"%s has no SkillHosts configured", tool.Name,
+		)
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+
+	// 1. HARD prereq: at least one supported host must be on PATH.
+	host, hostErr := i.pickSkillHost(tool)
+	if hostErr != nil {
+		result.Error = hostErr
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+	result.Strategy = host.Host
+
+	// 2. SOFT prereq: warn if Node.js is missing.
+	if err := i.commandRunner.ToolInPath("node"); err != nil {
+		log.Printf("node not found on PATH: %v", err)
+		fmt.Println(output.WithWarningFormat(
+			"WARNING: node not found on PATH; %s "+
+				"requires Node.js to run fully to start the MCP servers. "+
+				"Please install Node.js: ",
+			tool.Name,
+		) + output.WithLinkFormat("https://nodejs.org/"))
+	}
+
+	// 3. Run the install / upgrade via the host's native commands.
+	if err := i.runSkillHostCommand(ctx, host, upgrade); err != nil {
+		result.Error = err
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+
+	// 4. Verify by detecting the skill via the host's plugin list.
+	status, err := i.detector.DetectTool(ctx, tool)
+	if err != nil {
+		result.Error = fmt.Errorf(
+			"verifying installation of %s: %w", tool.Name, err,
+		)
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+	if !status.Installed {
+		result.Error = fmt.Errorf(
+			"%s was installed via %s but verification failed",
+			tool.Name, host.Host,
+		)
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+
+	result.Success = true
+	result.InstalledVersion = status.InstalledVersion
+	result.Duration = time.Since(start)
+	return result, nil
+}
+
+// pickSkillHost returns the first SkillHost whose binary is on PATH.
+// When none of the configured hosts is available it returns a error that recommends
+// installing GitHub Copilot CLI via `azd tool install github-copilot-cli`
+func (i *installer) pickSkillHost(
+	tool *ToolDefinition,
+) (SkillHost, error) {
+	var checked []string
+	for _, host := range tool.SkillHosts {
+		if err := i.commandRunner.ToolInPath(host.Host); err == nil {
+			return host, nil
+		}
+		checked = append(checked, host.Host)
+	}
+	log.Printf("Checked (none found on PATH): %s.", strings.Join(checked, ", "))
+
+	return SkillHost{}, fmt.Errorf(
+		"no supported agentic CLI host found on PATH for %s: "+
+			"Please install GitHub Copilot CLI via `azd tool install "+
+			"github-copilot-cli`. Then re-run `azd tool install %s`.",
+		tool.Name, tool.Id,
+	)
+}
+
+// runSkillHostCommand executes the host's install (or update) command
+// with stdin/stdout/stderr connected to the user (WithInteractive=true)
+// so any prompts the host CLI surfaces — e.g. gemini's "Do you want to
+// continue? [Y/n]" — are answered by the user directly. azd never pipes
+// canned answers on the user's behalf.
+//
+// For fresh installs it first runs MarketplaceAddCommand when the host
+// declares one. Hosts that have no marketplace concept (e.g. gemini)
+// leave MarketplaceAddCommand empty and that step is skipped entirely.
+//
+// A non-zero exit is returned to the caller as an error; the caller is
+// expected to verify via the detector and decide whether to treat the
+// error as fatal (some hosts return non-zero on idempotent re-install).
+func (i *installer) runSkillHostCommand(
+	ctx context.Context,
+	host SkillHost,
+	upgrade bool,
+) error {
+	cmd := host.PluginInstallCommand
+	verb := "install"
+	if upgrade {
+		cmd = host.PluginUpdateCommand
+		verb = "update"
+	}
+	if len(cmd) == 0 {
+		return fmt.Errorf(
+			"host %q has no %s command configured", host.Host, verb,
+		)
+	}
+
+	if !upgrade && len(host.MarketplaceAddCommand) > 0 {
+		if err := i.runMarketplaceAdd(ctx, host); err != nil {
+			return err
+		}
+	}
+
+	runArgs := exec.NewRunArgs(host.Host, cmd...).WithInteractive(true)
+	if _, err := i.commandRunner.Run(ctx, runArgs); err != nil {
+		return fmt.Errorf(
+			"running `%s %s`: %w",
+			host.Host, strings.Join(cmd, " "), err,
+		)
+	}
+
+	// For codex, need to install after marketplace is updated
+	if upgrade && host.Host == "codex" {
+		runArgs = exec.NewRunArgs(host.Host, host.PluginInstallCommand...)
+		if _, err := i.commandRunner.Run(ctx, runArgs); err != nil {
+			return fmt.Errorf(
+				"running `%s %s`: %w",
+				host.Host, strings.Join(host.PluginInstallCommand, " "), err,
+			)
+		}
+	}
+
+	return nil
+}
+
+// runMarketplaceAdd registers the skill marketplace with the host CLI.
+// Some hosts (e.g. copilot) return a non-zero exit when the marketplace
+// is already registered; we recognise that case from the captured
+// output and treat it as success so the install can proceed. Hosts that
+// already exit 0 in the "already added" case (e.g. codex, claude) flow
+// through naturally. Any other failure is returned to the caller.
+func (i *installer) runMarketplaceAdd(
+	ctx context.Context,
+	host SkillHost,
+) error {
+	args := exec.NewRunArgs(host.Host, host.MarketplaceAddCommand...)
+	result, err := i.commandRunner.Run(ctx, args)
+	if err == nil {
+		return nil
+	}
+	if isMarketplaceAlreadyAdded(result.Stdout + result.Stderr) {
+		return nil
+	}
+	return fmt.Errorf(
+		"running `%s %s`: %w",
+		host.Host, strings.Join(host.MarketplaceAddCommand, " "), err,
+	)
+}
+
+// isMarketplaceAlreadyAdded reports whether the host CLI output indicates
+// the marketplace is already registered. Observed wording per host:
+//   - copilot: "Failed to add marketplace: ... already registered"
+//   - codex:   "Marketplace ... is already added from ..."
+//   - claude:  "Marketplace ... already on disk"
+func isMarketplaceAlreadyAdded(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "already registered") ||
+		strings.Contains(lower, "already added") ||
+		strings.Contains(lower, "already on disk")
 }
 
 // ensurePlatform lazily detects the current platform using a mutex

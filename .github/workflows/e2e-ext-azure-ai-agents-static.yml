@@ -45,8 +45,8 @@ env:
   TESTS_DIR: cli/azd/extensions/azure.ai.agents/tests/e2e-static
 
 jobs:
-  # Jobs run sequentially: tier0 → tier1 → tier2 (via `needs:` dependency).
-  # Tier 2 creates Azure resources that cost money, so it only runs after Tier 0+1 pass.
+  # Tier 0 and Tier 1 run in parallel (fast, no resources created).
+  # Tier 2 runs only after both pass (creates Azure resources that cost money).
   tier0:
     name: "Tier 0 — Offline Validation"
     runs-on: ubuntu-22.04
@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     if: contains(inputs.tier, '1')
-    needs: tier0
+    # No needs: — runs in parallel with tier0
     steps:
       - uses: actions/checkout@v4
 
@@ -133,7 +133,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 30  # Each deploy mode takes ~13min; both modes run in parallel within test_tier2.py
     if: contains(inputs.tier, '2')
-    needs: tier1
+    needs: [tier0, tier1]  # Only run after both fast tiers pass
     steps:
       - uses: actions/checkout@v4
 

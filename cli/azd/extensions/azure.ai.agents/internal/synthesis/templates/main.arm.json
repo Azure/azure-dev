@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "16165546914029477634"
+      "templateHash": "13000031317057140577"
     }
   },
   "definitions": {
@@ -1369,6 +1369,10 @@
     "AZURE_FOUNDRY_NETWORK_MODE": {
       "type": "string",
       "value": "[reference('resources').outputs.AZURE_FOUNDRY_NETWORK_MODE.value]"
+    },
+    "AZURE_FOUNDRY_MANAGED_ISOLATION_MODE": {
+      "type": "string",
+      "value": "[reference('resources').outputs.AZURE_FOUNDRY_MANAGED_ISOLATION_MODE.value]"
     }
   }
 }

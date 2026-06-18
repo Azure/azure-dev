@@ -64,6 +64,39 @@ user-chosen; the example above uses:
   account's network posture is fixed by whoever created it; azd warns and does
   not reconcile `network:`.
 
+### Cheatsheet: managed VNet account
+
+Use `managed` mode when Foundry should use a Microsoft-managed network for the
+hosted-agent runtime instead of injecting into your VNet.
+
+```yaml
+name: my-agent
+infra:
+  provider: microsoft.foundry
+
+services:
+  my-agent:
+    host: azure.ai.agent
+    deployments: []
+    network:
+      mode: managed
+      managed:
+        isolationMode: AllowInternetOutbound
+```
+
+```bash
+azd env new my-env --subscription "<sub>" --location westus
+azd env set AZURE_RESOURCE_GROUP "<rg>"
+azd provision --no-prompt
+```
+
+Expected outputs:
+
+```text
+AZURE_FOUNDRY_NETWORK_MODE=managed
+AZURE_FOUNDRY_MANAGED_ISOLATION_MODE=AllowInternetOutbound
+```
+
 ### Cheatsheet: BYO image + VNet hosted agent
 
 ```bash

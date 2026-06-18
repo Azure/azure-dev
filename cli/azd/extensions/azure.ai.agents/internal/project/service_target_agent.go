@@ -1119,9 +1119,15 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 		return false, nil
 	}
 
+	if p.shouldSkipACRForEnvironment(ctx) {
+		log.Printf("AZD_AGENT_SKIP_ACR=true: using pre-built image from agent.yaml")
+		return true, nil
+	}
+
 	// Default to build so the pre-built path requires an explicit choice.
 	// In non-interactive mode (--no-prompt), the framework returns the default
-	// selection (index 0 = build) automatically.
+	// selection (index 0 = build) automatically unless AZD_AGENT_SKIP_ACR=true
+	// was set by init --image.
 	choices := []*azdext.SelectChoice{
 		{Value: "build", Label: "Build a new image for me"},
 		{Value: "prebuilt", Label: fmt.Sprintf("Create hosted agent from %s", imageURL)},
@@ -1139,6 +1145,22 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 	}
 
 	return resp.Value != nil && choices[*resp.Value].Value == "prebuilt", nil
+}
+
+func (p *AgentServiceTargetProvider) shouldSkipACRForEnvironment(ctx context.Context) bool {
+	if p.env == nil || p.env.Name == "" {
+		return false
+	}
+
+	resp, err := p.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: p.env.Name,
+		Key:     "AZD_AGENT_SKIP_ACR",
+	})
+	if err != nil || resp == nil {
+		return false
+	}
+
+	return strings.EqualFold(strings.TrimSpace(resp.Value), "true")
 }
 
 // isCodeDeployAgent returns true if the agent.yaml has code_configuration (code deploy mode)

@@ -307,19 +307,19 @@ func TestSetACREnvVar(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		isCodeDeploy bool
-		wantValue    string
+		name      string
+		skipACR   bool
+		wantValue string
 	}{
 		{
-			name:         "code deploy sets true",
-			isCodeDeploy: true,
-			wantValue:    "true",
+			name:      "skip ACR sets true",
+			skipACR:   true,
+			wantValue: "true",
 		},
 		{
-			name:         "container deploy sets false",
-			isCodeDeploy: false,
-			wantValue:    "false",
+			name:      "container deploy sets false",
+			skipACR:   false,
+			wantValue: "false",
 		},
 	}
 
@@ -335,7 +335,7 @@ func TestSetACREnvVar(t *testing.T) {
 			workflowServer := &testWorkflowServiceServer{}
 			azdClient := newTestAzdClient(t, envServer, workflowServer)
 
-			err := setACREnvVar(t.Context(), azdClient, "test-env", tt.isCodeDeploy)
+			err := setACREnvVar(t.Context(), azdClient, "test-env", tt.skipACR)
 			require.NoError(t, err)
 			require.Equal(t, tt.wantValue, envServer.values["test-env"]["AZD_AGENT_SKIP_ACR"])
 		})

@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "7579368590236542031"
+      "templateHash": "16165546914029477634"
     }
   },
   "definitions": {
@@ -294,7 +294,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "12592401880215229691"
+              "templateHash": "14385550429783497386"
             }
           },
           "definitions": {
@@ -497,7 +497,9 @@
             "foundryAccountName": "[format('{0}{1}', variables('abbrs').cognitiveServicesAccounts, variables('resourceToken'))]",
             "useByoNetwork": "[and(parameters('enableNetworkIsolation'), equals(parameters('networkMode'), 'byo'))]",
             "useManagedNetwork": "[and(parameters('enableNetworkIsolation'), equals(parameters('networkMode'), 'managed'))]",
-            "cognitiveServicesUserRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908')]"
+            "cognitiveServicesUserRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908')]",
+            "agentSubnetArmId": "[format('{0}/subnets/{1}', parameters('vnetId'), parameters('agentSubnetName'))]",
+            "agentNetworkInjections": "[if(variables('useByoNetwork'), createArray(createObject('scenario', 'agent', 'subnetArmId', variables('agentSubnetArmId'), 'useMicrosoftManagedNetwork', false())), if(variables('useManagedNetwork'), createArray(createObject('scenario', 'agent', 'useMicrosoftManagedNetwork', true())), null()))]"
           },
           "resources": {
             "foundryAccount::modelDeployments": {
@@ -559,7 +561,7 @@
                   "virtualNetworkRules": [],
                   "ipRules": []
                 },
-                "networkInjections": "[if(variables('useByoNetwork'), createArray(createObject('scenario', 'agent', 'subnetArmId', reference('network').outputs.agentSubnetId.value, 'useMicrosoftManagedNetwork', false())), if(variables('useManagedNetwork'), createArray(createObject('scenario', 'agent', 'useMicrosoftManagedNetwork', true())), null()))]"
+                "networkInjections": "[variables('agentNetworkInjections')]"
               },
               "dependsOn": [
                 "network"

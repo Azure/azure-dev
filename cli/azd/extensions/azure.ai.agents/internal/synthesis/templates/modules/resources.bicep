@@ -132,11 +132,20 @@ module network 'network.bicep' = if (useByoNetwork) {
 
 // networkInjections wires the account into the agent subnet (byo) or the
 // Microsoft-managed network (managed). Null when isolation is off.
+//
+// subnetArmId is built as a concrete string from the (concrete) vnetId param
+// rather than network!.outputs.agentSubnetId. The account and the network
+// module deploy in the same template, so an inter-module reference() here is
+// unresolved at the CognitiveServices RP preflight, which then fails to convert
+// networkInjections to its typed contract (ARM what-if does not catch this).
+// The deterministic id avoids the unresolved reference; an explicit dependsOn
+// on the network module preserves ordering (the subnet must exist first).
+var agentSubnetArmId = '${vnetId}/subnets/${agentSubnetName}'
 var agentNetworkInjections = useByoNetwork
   ? [
       {
         scenario: 'agent'
-        subnetArmId: network!.outputs.agentSubnetId
+        subnetArmId: agentSubnetArmId
         useMicrosoftManagedNetwork: false
       }
     ]
@@ -173,6 +182,11 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
     }
     networkInjections: agentNetworkInjections
   }
+
+  // The account injects into the agent subnet via a deterministic id (above),
+  // so Bicep cannot infer the dependency on the network module that creates
+  // that subnet. Declare it explicitly so the subnet exists before injection.
+  dependsOn: useByoNetwork ? [network] : []
 
   // Sequential model deployment creation; ARM throttles concurrent
   // deployments on the same account.

@@ -279,6 +279,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 		env,
 		mockContext.Console,
 		accountManager,
+		nil,
 		p.resourceService,
 		cloud.AzurePublic(),
 	)

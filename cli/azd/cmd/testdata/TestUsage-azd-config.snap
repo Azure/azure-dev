@@ -15,6 +15,7 @@ Available Commands
   reset     	: Resets configuration to default.
   set       	: Sets a configuration.
   show      	: Show all the configuration values.
+  sub-filter	: Manage subscription filters for tenant-scoped subscription prompts.
   unset     	: Unsets a configuration.
 
 Global Flags

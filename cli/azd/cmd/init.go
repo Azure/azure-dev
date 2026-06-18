@@ -1160,12 +1160,20 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 				return fmt.Errorf("extension %s not found", extensionId)
 			}
 
-			if len(extensionMatches) > 1 {
+			extensionMetadata, err := selectDistinctExtension(
+				ctx,
+				i.console,
+				extensionId,
+				extensionMatches,
+				i.flags.global,
+			)
+			if err != nil {
 				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return fmt.Errorf("extension %s found in multiple sources, specify exact source", extensionId)
+				return err
 			}
-
-			extensionMetadata := extensionMatches[0]
+			if len(extensionMatches) > 1 {
+				i.console.ShowSpinner(ctx, stepMessage, input.Step)
+			}
 
 			extensionVersion, err := i.extensionsManager.Install(ctx, extensionMetadata, installConstraint)
 			if err != nil {

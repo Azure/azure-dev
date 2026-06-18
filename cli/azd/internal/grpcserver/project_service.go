@@ -188,6 +188,14 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 		return nil, err
 	}
 
+	// Reload the project config from disk before mutating so we never clobber
+	// properties (e.g. hooks, or any other top-level keys) that were written to
+	// azure.yaml after the lazy cache was first resolved. Other mutating handlers
+	// (SetConfig*, SetServiceConfig*, UnsetConfig*) reload for the same reason.
+	if err := s.reloadAndCacheProjectConfig(ctx, azdContext.ProjectPath()); err != nil {
+		return nil, err
+	}
+
 	projectConfig, err := s.lazyProjectConfig.GetValue()
 	if err != nil {
 		return nil, err

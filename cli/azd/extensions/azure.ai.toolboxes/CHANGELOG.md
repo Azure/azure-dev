@@ -2,7 +2,13 @@
 
 ## Unreleased
 
+### Features
+
 - [[#8672]](https://github.com/Azure/azure-dev/issues/8672) `azd ai toolbox create` now writes the new toolbox's versioned MCP endpoint to the active azd environment under the `TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT` variable (the same key agents consume), and `azd ai toolbox delete` clears it when the whole toolbox is removed.
+
+### Bugs Fixed
+
+- [[#8688]](https://github.com/Azure/azure-dev/issues/8688) Resolve the project endpoint that `azd ai agent init` stores. `azd ai toolbox` commands now fall back to `AZURE_AI_PROJECT_ENDPOINT` (after `FOUNDRY_PROJECT_ENDPOINT`) in both the active azd environment and the host environment, so the hosted-agent + toolbox workflow no longer fails with "no Foundry project endpoint resolved" after init.
 
 ## 0.1.0-preview (2026-05-28)
 

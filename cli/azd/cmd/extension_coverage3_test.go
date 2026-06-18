@@ -92,6 +92,49 @@ func Test_SelectDistinctExtension_MultipleNoPrompt(t *testing.T) {
 	assert.Contains(t, err.Error(), "multiple sources")
 }
 
+func Test_DefaultExtensionSourceIndex(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		matches []*extensions.ExtensionMetadata
+		want    int
+	}{
+		{
+			name: "DefaultsToAzdSourceWhenPresent",
+			matches: []*extensions.ExtensionMetadata{
+				{Source: "contoso"},
+				{Source: "azd"},
+			},
+			want: 1,
+		},
+		{
+			name: "DefaultsToFirstSourceWhenAzdMissing",
+			matches: []*extensions.ExtensionMetadata{
+				{Source: "contoso"},
+				{Source: "fabrikam"},
+			},
+			want: 0,
+		},
+		{
+			name: "MatchesAzdSourceCaseInsensitively",
+			matches: []*extensions.ExtensionMetadata{
+				{Source: "contoso"},
+				{Source: "AZD"},
+			},
+			want: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tt.want, *defaultExtensionSourceIndex(tt.matches))
+		})
+	}
+}
+
 // --- namespacesConflict Tests (additional paths) ---
 
 func Test_NamespacesConflict_SameNamespace(t *testing.T) {

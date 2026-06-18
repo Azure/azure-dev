@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"azure.ai.connections/internal/exterrors"
+	"azure.ai.toolboxes/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -30,7 +30,7 @@ func withHostedSources(t *testing.T, sources AzdHostedSources, err error) {
 // isolateFromAzdDaemon installs an empty hosted-sources stub and clears
 // AZD_SERVER so any code path that bypasses the seam cannot reach a real
 // daemon. After calling this, the resolver only sees the flag and the
-// FOUNDRY_PROJECT_ENDPOINT host env var.
+// FOUNDRY_PROJECT_ENDPOINT / AZURE_AI_PROJECT_ENDPOINT host env vars.
 func isolateFromAzdDaemon(t *testing.T) {
 	t.Helper()
 	t.Setenv("AZD_SERVER", "")
@@ -54,6 +54,9 @@ func TestResolve_FlagWins(t *testing.T) {
 }
 
 func TestResolve_AzdEnvWinsOverConfigAndFoundryEnv(t *testing.T) {
+	// EnvValue here stands in for whichever active-env key readAzdHostedSources
+	// resolved (FOUNDRY_PROJECT_ENDPOINT, or the AZURE_AI_PROJECT_ENDPOINT
+	// fallback); either way level 2 wins over global config and the host env.
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.services.ai.azure.com/api/projects/p")
 	withHostedSources(t, AzdHostedSources{
 		EnvValue: "  HTTPS://Azdenv.Services.AI.Azure.com/api/projects/p/  ",
@@ -170,21 +173,6 @@ func TestResolve_FoundryHostEnvWinsOverAzureAi(t *testing.T) {
 	assert.Equal(t, SourceFoundryEnv, result.Source)
 }
 
-func TestResolve_InvalidAzureAiHostEnvRejected(t *testing.T) {
-	// An invalid AZURE_AI_PROJECT_ENDPOINT fallback is a hard error, not a
-	// silent skip to level 5.
-	isolateFromAzdDaemon(t)
-	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
-	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "http://not-https.services.ai.azure.com/api/projects/p")
-
-	_, err := Resolve(t.Context(), ResolveOpts{})
-	require.Error(t, err)
-
-	var localErr *azdext.LocalError
-	require.ErrorAs(t, err, &localErr)
-	assert.Contains(t, localErr.Message, "https")
-}
-
 func TestResolve_FoundryEnvNormalized(t *testing.T) {
 	isolateFromAzdDaemon(t)
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "  https://X.SERVICES.AI.AZURE.COM/api/projects/p/  ")
@@ -211,6 +199,21 @@ func TestResolve_InvalidFlagRejected(t *testing.T) {
 func TestResolve_InvalidFoundryEnvRejected(t *testing.T) {
 	isolateFromAzdDaemon(t)
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "http://bad.services.ai.azure.com/api/projects/p")
+
+	_, err := Resolve(t.Context(), ResolveOpts{})
+	require.Error(t, err)
+
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Contains(t, localErr.Message, "https")
+}
+
+func TestResolve_InvalidAzureAiHostEnvRejected(t *testing.T) {
+	// An invalid AZURE_AI_PROJECT_ENDPOINT fallback is a hard error, not a
+	// silent skip to level 5.
+	isolateFromAzdDaemon(t)
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
+	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "http://not-https.services.ai.azure.com/api/projects/p")
 
 	_, err := Resolve(t.Context(), ResolveOpts{})
 	require.Error(t, err)

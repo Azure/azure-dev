@@ -1233,8 +1233,8 @@ func selectFoundryProject(
 		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
 	}
 
-	// When code deploy is selected, restrict to regions that support hosted agents.
-	// Code deploy is available in all hosted-agent regions (no separate allowlist).
+	// When ACR is skipped (code deploy, or a pre-built --image), the agent runs as a
+	// hosted agent, so restrict to regions that support hosted agents.
 	if skipACR {
 		supportedRegions, regErr := supportedRegionsForInit(ctx)
 		if regErr != nil {

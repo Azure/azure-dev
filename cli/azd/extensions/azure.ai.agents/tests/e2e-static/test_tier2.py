@@ -17,6 +17,7 @@ import subprocess
 import sys
 import os
 import time
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -60,9 +61,11 @@ def run_e2e(deploy_mode, label):
     env["E2E_SESS"] = sess
     env["E2E_TESTDIR"] = testdir
     # Isolate azd config per process to prevent parallel race on ~/.azd/config.json
-    azd_config_dir = os.path.join(testdir, ".azd-config")
+    # Use AZD_CONFIG_DIR (not AZURE_CONFIG_DIR which is for az CLI).
+    # Place outside testdir because child process rm -rf's testdir on startup.
+    azd_config_dir = os.path.join(tempfile.gettempdir(), f"e2e-azd-config-{deploy_mode}")
     os.makedirs(azd_config_dir, exist_ok=True)
-    env["AZURE_CONFIG_DIR"] = azd_config_dir
+    env["AZD_CONFIG_DIR"] = azd_config_dir
     # Unique agent name to avoid Azure resource collisions in parallel runs
     import hashlib
     unique_suffix = hashlib.md5(f"{deploy_mode}-{os.getpid()}".encode()).hexdigest()[:6]

@@ -26,3 +26,8 @@ create a pointer to the given value. This replaces helper functions like
 Before flagging missing imports or undefined references, verify the symbol isn't
 already defined in unchanged portions of the file. The diff context may not show
 all existing imports or declarations.
+
+## CLI behavior and domain filtering
+
+- When reviewing command input resolution, explicit CLI args and flags should win over defaults. Do not prompt the user toward a different default when they provided a valid new value; reserve prompts for ambiguous choices and preserve deterministic `--no-prompt` behavior for CI/scripts.
+- When filtering AI models or quota data by location, keep location-specific usage data associated with only the models available in that location. Empty or unknown usage data from an unrelated location must not make a model eligible elsewhere; add regression coverage for cross-location quota cases.

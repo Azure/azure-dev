@@ -69,7 +69,7 @@ func Test_PromptService_PromptSubscription(t *testing.T) {
 }
 
 func TestFormatSubscriptionDisplayName_DemoModeHidesId(t *testing.T) {
-	displayName := formatSubscriptionDisplayName(&account.Subscription{
+	displayName := FormatSubscriptionDisplay(&account.Subscription{
 		Id:   "/subscriptions/sub-1",
 		Name: "Subscription 1",
 	}, true)

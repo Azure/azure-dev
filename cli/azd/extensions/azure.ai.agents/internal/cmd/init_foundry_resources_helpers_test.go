@@ -657,3 +657,18 @@ func TestConfigureDeferredInitAzureContext_PersistsProjectSignalOnly(t *testing.
 	require.Contains(t, output, "deployments:")
 	require.Contains(t, output, "format: OpenAI")
 }
+
+func TestTracingDisclaimer(t *testing.T) {
+	t.Parallel()
+
+	got := tracingDisclaimer()
+
+	// String-contains assertions are safe against any surrounding ANSI color or
+	// OSC-8 hyperlink escape sequences, since the phrases/URL appear contiguously.
+	require.Contains(t, got, "Use Hosted Agents with appropriate safeguards")
+	require.Contains(t, got, "you are responsible for their use and data handling")
+	require.Contains(t, got, "Telemetry may be visible to others and include sensitive data")
+	require.Contains(t, got, "Learn more:")
+	require.Contains(t, got, disableTracingURL)
+	require.Equal(t, "https://aka.ms/disable-tracing", disableTracingURL)
+}

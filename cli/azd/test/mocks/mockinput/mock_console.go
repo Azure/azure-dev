@@ -251,6 +251,18 @@ func (c *MockConsole) WhenSelect(predicate WhenPredicate) *MockConsoleExpression
 	return &expr
 }
 
+// Registers a multi-select expression for mocking in unit tests
+func (c *MockConsole) WhenMultiSelect(predicate WhenPredicate) *MockConsoleExpression {
+	expr := MockConsoleExpression{
+		command:     "MultiSelect",
+		console:     c,
+		predicateFn: predicate,
+	}
+
+	c.expressions = append(c.expressions, &expr)
+	return &expr
+}
+
 // MockConsoleExpression is an expression with options response or error
 type MockConsoleExpression struct {
 	command     string

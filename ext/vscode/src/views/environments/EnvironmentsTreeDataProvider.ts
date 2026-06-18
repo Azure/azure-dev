@@ -143,7 +143,7 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
                     isDefault: env.IsDefault,
                     dotEnvPath: env.DotEnvPath,
                     configurationFile: app.configurationPath
-                } as EnvironmentItem
+                }
             );
             item.contextValue = 'ms-azuretools.azure-dev.views.environments.environment';
 
@@ -189,7 +189,7 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
                 'Variable',
                 label,
                 vscode.TreeItemCollapsibleState.None,
-                { ...env, key, value } as EnvironmentVariableItem
+                { ...env, key, value }
             );
 
             item.tooltip = isVisible ? `${key}=${value}` : vscode.l10n.t('Click to view value');

@@ -4,7 +4,7 @@
 import * as vscode from 'vscode';
 import { HelpAndFeedbackTreeDataProvider } from './helpAndFeedback/HelpAndFeedbackTreeDataProvider';
 import { MyProjectTreeDataProvider } from './myProject/MyProjectTreeDataProvider';
-import { EnvironmentsTreeDataProvider, EnvironmentTreeItem, EnvironmentItem } from './environments/EnvironmentsTreeDataProvider';
+import { EnvironmentsTreeDataProvider, EnvironmentTreeItem } from './environments/EnvironmentsTreeDataProvider';
 import { AzureDevCliEnvironmentVariable } from './workspace/AzureDevCliEnvironmentVariables';
 import { ExtensionsTreeDataProvider } from './extensions/ExtensionsTreeDataProvider';
 import { TemplateToolsTreeDataProvider } from './templateTools/TemplateToolsTreeDataProvider';
@@ -61,8 +61,8 @@ export function registerViews(context: vscode.ExtensionContext): void {
 
     context.subscriptions.push(
         vscode.commands.registerCommand('azure-dev.views.environments.viewDotEnv', async (item: EnvironmentTreeItem) => {
-            if (item.data && (item.data as EnvironmentItem).dotEnvPath) {
-                const envItem = item.data as EnvironmentItem;
+            if (item.data?.dotEnvPath) {
+                const envItem = item.data;
                 if (envItem.dotEnvPath) {
                     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(envItem.dotEnvPath));
                     await vscode.window.showTextDocument(document);

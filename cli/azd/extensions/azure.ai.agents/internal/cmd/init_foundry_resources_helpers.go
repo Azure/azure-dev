@@ -34,6 +34,9 @@ type FoundryProjectInfo struct {
 	ProjectName       string
 	Location          string // may be empty when parsed from resource ID alone
 	ResourceId        string // full ARM resource ID
+	// NetworkInjected is true when the owning Foundry account has VNET network
+	// injection (agent scenario); used to disable remote build.
+	NetworkInjected bool
 }
 
 // FoundryDeploymentInfo holds information about an existing model deployment in a Foundry project.
@@ -213,12 +216,14 @@ func getFoundryProject(
 		return nil, fmt.Errorf("provided project resource ID does not match the selected subscription")
 	}
 
-	projectsClient, err := armcognitiveservices.NewProjectsClient(project.SubscriptionId, credential, azure.NewArmClientOptions())
+	projectsClient, err := armcognitiveservices.NewProjectsClient(
+		project.SubscriptionId, credential, azure.NewArmClientOptions())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create projects client: %w", err)
 	}
 
-	response, err := projectsClient.Get(ctx, project.ResourceGroupName, project.AccountName, project.ProjectName, nil)
+	response, err := projectsClient.Get(
+		ctx, project.ResourceGroupName, project.AccountName, project.ProjectName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Foundry project: %w", err)
 	}
@@ -226,6 +231,45 @@ func getFoundryProject(
 	updateFoundryProjectInfo(project, &response.Project)
 
 	return project, nil
+}
+
+// foundryAccountNetworkInjected reports whether the Foundry account that owns the
+// project has VNET network injection (agent scenario), used to disable remote
+// build. Best-effort: any failure returns false with a logged warning so init is
+// never blocked.
+func foundryAccountNetworkInjected(
+	ctx context.Context,
+	credential azcore.TokenCredential,
+	project *FoundryProjectInfo,
+) bool {
+	accountsClient, err := armcognitiveservices.NewAccountsClient(
+		project.SubscriptionId, credential, azure.NewArmClientOptions())
+	if err != nil {
+		log.Printf("warning: could not create Cognitive Services accounts client for "+
+			"network-injection check, assuming no injection: %v", err)
+		return false
+	}
+
+	response, err := accountsClient.Get(ctx, project.ResourceGroupName, project.AccountName, nil)
+	if err != nil {
+		log.Printf("warning: could not read Foundry account '%s' for network-injection "+
+			"check, assuming no injection: %v", project.AccountName, err)
+		return false
+	}
+
+	props := response.Account.Properties
+	if props == nil {
+		return false
+	}
+
+	for _, injection := range props.NetworkInjections {
+		if injection != nil && injection.Scenario != nil &&
+			*injection.Scenario == armcognitiveservices.ScenarioTypeAgent {
+			return true
+		}
+	}
+
+	return false
 }
 
 // listProjectDeployments lists all model deployments in a Foundry account.
@@ -509,6 +553,22 @@ func configureAcrConnection(
 	return nil
 }
 
+// disableTracingURL points to guidance on disabling agent tracing/telemetry.
+const disableTracingURL = "https://aka.ms/disable-tracing"
+
+// tracingDisclaimer returns the telemetry/tracing disclaimer shown during init
+// wherever Application Insights is connected or added. The body is rendered in a
+// muted (gray) style. The "Learn more:" label lives in the gray text (so it is
+// always shown) and is followed by disableTracingURL, which renders as a
+// clickable hyperlink in a terminal and as the plain URL in non-terminal output.
+func tracingDisclaimer() string {
+	return output.WithGrayFormat(
+		"Use Hosted Agents with appropriate safeguards. "+
+			"If you connect to third-party systems, you are responsible for their use and data handling. "+
+			"Telemetry may be visible to others and include sensitive data. Learn more: ") +
+		output.WithHyperlink(disableTracingURL, disableTracingURL)
+}
+
 // configureAppInsightsConnection handles AppInsights connection selection and env var setting.
 func configureAppInsightsConnection(
 	ctx context.Context,
@@ -516,14 +576,19 @@ func configureAppInsightsConnection(
 	envName string,
 	appInsightsConnections []azure.Connection,
 ) error {
+	// Show the tracing/telemetry disclaimer once, before any branch, since each
+	// path below connects or adds an Application Insights resource.
+	fmt.Println(tracingDisclaimer())
+	fmt.Println()
+
 	if len(appInsightsConnections) == 0 {
-		fmt.Println("\n" +
+		fmt.Println(
 			"Application Insights (optional)\n\n" +
-			"Enable telemetry to collect logs, traces, and diagnostics for this agent.\n\n" +
-			"You can:\n" +
-			"  • Use an existing Application Insights resource\n" +
-			"  • Or create a new one during 'azd up'\n\n" +
-			"Docs: " + output.WithLinkFormat("https://aka.ms/azdaiagent/docs"))
+				"Enable telemetry to collect logs, traces, and diagnostics for this agent.\n\n" +
+				"You can:\n" +
+				"  • Use an existing Application Insights resource\n" +
+				"  • Or create a new one during 'azd up'\n\n" +
+				"Docs: " + output.WithLinkFormat("https://aka.ms/azdaiagent/docs"))
 
 		resourceIdResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
@@ -1306,6 +1371,11 @@ func selectFoundryProject(
 	}
 
 	selectedProject := projects[selectedIdx]
+
+	// Resolve the account's VNET network-injection status for the chosen project
+	// (best-effort) so remote build is disabled when injection is present. Done here
+	// so both the provided-id and interactive-picker paths are covered from one place.
+	selectedProject.NetworkInjected = foundryAccountNetworkInjected(ctx, credential, &selectedProject)
 
 	// Set location from the selected project
 	azureContext.Scope.Location = selectedProject.Location

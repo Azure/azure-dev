@@ -247,11 +247,22 @@ def test_init_picker_navigation():
         time.sleep(0.5)
         tmux_send(f"cd {td} && azd ai agent init")
         tmux_key("Enter")
-        time.sleep(8)
 
-        cap = tmux_capture()
-        # Verify the interactive picker appeared (should show "? Select a language" prompt)
-        has_picker = "select a language" in cap.lower()
+        # Wait for picker to appear (CI runners are slower — poll up to 20s)
+        has_picker = False
+        for _ in range(10):
+            time.sleep(2)
+            cap = tmux_capture()
+            if "select a language" in cap.lower():
+                has_picker = True
+                break
+
+        if not has_picker:
+            cap = tmux_capture()
+            # Debug: print what's on screen
+            print(f"    [DEBUG] tmux capture (no picker after 20s):")
+            for line in cap.strip().split("\n")[-10:]:
+                print(f"      | {line}")
 
         # Send Ctrl-C to exit
         tmux_key("C-c")

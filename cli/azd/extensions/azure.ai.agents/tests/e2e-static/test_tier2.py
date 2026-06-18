@@ -22,6 +22,26 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def _cleanup_leaked_resources(testdir, env, label):
+    """Best-effort azd down for any project dirs left behind after timeout/crash."""
+    if not os.path.isdir(testdir):
+        return
+    for d in os.listdir(testdir):
+        project_dir = os.path.join(testdir, d)
+        azure_yaml = os.path.join(project_dir, "azure.yaml")
+        if os.path.isdir(project_dir) and os.path.isfile(azure_yaml):
+            print(f"  [{label}] Cleaning up leaked resources in {project_dir}...")
+            try:
+                subprocess.run(
+                    ["azd", "down", "--force", "--purge", "--no-prompt"],
+                    cwd=project_dir, env=env,
+                    capture_output=True, text=True, timeout=300,
+                )
+                print(f"  [{label}] Cleanup complete")
+            except Exception as e:
+                print(f"  [{label}] Cleanup failed: {e}")
+
+
 def run_e2e(deploy_mode, label):
     """Run a full E2E test with the given deploy mode."""
     sock = f"e2e-{deploy_mode}"
@@ -39,6 +59,10 @@ def run_e2e(deploy_mode, label):
     env["E2E_SOCK"] = sock
     env["E2E_SESS"] = sess
     env["E2E_TESTDIR"] = testdir
+    # Isolate azd config per process to prevent parallel race on ~/.azd/config.json
+    azd_config_dir = os.path.join(testdir, ".azd-config")
+    os.makedirs(azd_config_dir, exist_ok=True)
+    env["AZURE_CONFIG_DIR"] = azd_config_dir
     # Unique agent name to avoid Azure resource collisions in parallel runs
     import hashlib
     unique_suffix = hashlib.md5(f"{deploy_mode}-{os.getpid()}".encode()).hexdigest()[:6]
@@ -75,6 +99,8 @@ def run_e2e(deploy_mode, label):
     except subprocess.TimeoutExpired:
         elapsed = time.time() - start
         print(f"\n--- [{label}] TIMEOUT after {elapsed:.0f}s ---")
+        # Attempt cleanup: find any azure.yaml and run azd down to prevent resource leak.
+        _cleanup_leaked_resources(testdir, env, label)
         return {
             "label": label,
             "deploy_mode": deploy_mode,

@@ -3,9 +3,10 @@
 A Foundry service can be provisioned as a **network-secured (VNet-bound)**
 account by adding a `network:` block to the service body in `azure.yaml`. When
 `network:` is omitted the account uses public networking (unchanged behavior).
-When present, azd provisions or references a private account, its private
-endpoint, and the AI private DNS zones; dependent stores (Cosmos DB, AI Search,
-Storage) stay platform-managed.
+When present, azd configures the Foundry account for either customer BYO VNet
+mode or Microsoft-managed VNet mode. BYO mode provisions or references the
+customer VNet, private endpoint, and AI private DNS zones; dependent stores
+(Cosmos DB, AI Search, Storage) stay platform-managed.
 
 ```yaml
 services:
@@ -67,7 +68,9 @@ user-chosen; the example above uses:
 ### Cheatsheet: managed VNet account
 
 Use `managed` mode when Foundry should use a Microsoft-managed network for the
-hosted-agent runtime instead of injecting into your VNet.
+hosted-agent runtime instead of injecting into your VNet. Managed mode does not
+create a customer private endpoint, so the Foundry data plane remains public for
+`azd deploy` and `azd ai agent invoke`.
 
 ```yaml
 name: my-agent
@@ -88,6 +91,13 @@ services:
 azd env new my-env --subscription "<sub>" --location westus
 azd env set AZURE_RESOURCE_GROUP "<rg>"
 azd provision --no-prompt
+```
+
+If using a BYO image, grant the Foundry project MI ACR pull permission, then:
+
+```bash
+azd deploy --no-prompt
+azd ai agent invoke --new-session "hello"
 ```
 
 Expected outputs:
@@ -173,5 +183,5 @@ azd ai agent invoke --new-session "hello"
 
 Common failures:
 
-- `403 Public access is disabled`: run deploy/invoke from inside the VNet, a peered VNet, or VPN.
+- `403 Public access is disabled`: for BYO VNet mode, run deploy/invoke from inside the VNet, a peered VNet, or VPN.
 - `ImageError: registry authentication failed`: grant ACR pull permission to the Foundry project MI.

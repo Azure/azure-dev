@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "13000031317057140577"
+      "templateHash": "7882591531077682939"
     }
   },
   "definitions": {
@@ -294,7 +294,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "14385550429783497386"
+              "templateHash": "7775684901946506823"
             }
           },
           "definitions": {
@@ -497,6 +497,7 @@
             "foundryAccountName": "[format('{0}{1}', variables('abbrs').cognitiveServicesAccounts, variables('resourceToken'))]",
             "useByoNetwork": "[and(parameters('enableNetworkIsolation'), equals(parameters('networkMode'), 'byo'))]",
             "useManagedNetwork": "[and(parameters('enableNetworkIsolation'), equals(parameters('networkMode'), 'managed'))]",
+            "disablePublicDataPlaneAccess": "[variables('useByoNetwork')]",
             "cognitiveServicesUserRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908')]",
             "agentSubnetArmId": "[format('{0}/subnets/{1}', parameters('vnetId'), parameters('agentSubnetName'))]",
             "agentNetworkInjections": "[if(variables('useByoNetwork'), createArray(createObject('scenario', 'agent', 'subnetArmId', variables('agentSubnetArmId'), 'useMicrosoftManagedNetwork', false())), if(variables('useManagedNetwork'), createArray(createObject('scenario', 'agent', 'useMicrosoftManagedNetwork', true())), null()))]"
@@ -553,11 +554,11 @@
               "properties": {
                 "allowProjectManagement": true,
                 "customSubDomainName": "[variables('foundryAccountName')]",
-                "publicNetworkAccess": "[if(parameters('enableNetworkIsolation'), 'Disabled', 'Enabled')]",
+                "publicNetworkAccess": "[if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled')]",
                 "disableLocalAuth": true,
                 "networkAcls": {
-                  "defaultAction": "[if(parameters('enableNetworkIsolation'), 'Deny', 'Allow')]",
-                  "bypass": "[if(parameters('enableNetworkIsolation'), 'AzureServices', null())]",
+                  "defaultAction": "[if(variables('disablePublicDataPlaneAccess'), 'Deny', 'Allow')]",
+                  "bypass": "[if(variables('disablePublicDataPlaneAccess'), 'AzureServices', null())]",
                   "virtualNetworkRules": [],
                   "ipRules": []
                 },

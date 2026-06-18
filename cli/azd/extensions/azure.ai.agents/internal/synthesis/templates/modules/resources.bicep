@@ -106,6 +106,11 @@ var foundryAccountName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'
 
 var useByoNetwork = enableNetworkIsolation && networkMode == 'byo'
 var useManagedNetwork = enableNetworkIsolation && networkMode == 'managed'
+// BYO mode creates a customer private endpoint for data-plane access, so public
+// access can be disabled. Managed mode only uses a Microsoft-managed network for
+// the hosted-agent runtime; the customer still needs public data-plane access to
+// deploy and invoke from azd.
+var disablePublicDataPlaneAccess = useByoNetwork
 
 // Built-in role definition ids. See: https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
 var cognitiveServicesUserRoleId = subscriptionResourceId(
@@ -172,11 +177,11 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   properties: {
     allowProjectManagement: true
     customSubDomainName: foundryAccountName
-    publicNetworkAccess: enableNetworkIsolation ? 'Disabled' : 'Enabled'
+    publicNetworkAccess: disablePublicDataPlaneAccess ? 'Disabled' : 'Enabled'
     disableLocalAuth: true
     networkAcls: {
-      defaultAction: enableNetworkIsolation ? 'Deny' : 'Allow'
-      bypass: enableNetworkIsolation ? 'AzureServices' : null
+      defaultAction: disablePublicDataPlaneAccess ? 'Deny' : 'Allow'
+      bypass: disablePublicDataPlaneAccess ? 'AzureServices' : null
       virtualNetworkRules: []
       ipRules: []
     }

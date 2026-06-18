@@ -558,13 +558,15 @@ const disableTracingURL = "https://aka.ms/disable-tracing"
 
 // tracingDisclaimer returns the telemetry/tracing disclaimer shown during init
 // wherever Application Insights is connected or added. The body is rendered in a
-// muted (gray) style with a clickable "Learn more" hyperlink to disableTracingURL.
+// muted (gray) style. The "Learn more:" label lives in the gray text (so it is
+// always shown) and is followed by disableTracingURL, which renders as a
+// clickable hyperlink in a terminal and as the plain URL in non-terminal output.
 func tracingDisclaimer() string {
 	return output.WithGrayFormat(
 		"Use Hosted Agents with appropriate safeguards. "+
 			"If you connect to third-party systems, you are responsible for their use and data handling. "+
-			"Telemetry may be visible to others and include sensitive data. ") +
-		output.WithHyperlink(disableTracingURL, "Learn more")
+			"Telemetry may be visible to others and include sensitive data. Learn more: ") +
+		output.WithHyperlink(disableTracingURL, disableTracingURL)
 }
 
 // configureAppInsightsConnection handles AppInsights connection selection and env var setting.

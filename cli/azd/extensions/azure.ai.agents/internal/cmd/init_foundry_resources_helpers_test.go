@@ -668,6 +668,7 @@ func TestTracingDisclaimer(t *testing.T) {
 	require.Contains(t, got, "Use Hosted Agents with appropriate safeguards")
 	require.Contains(t, got, "you are responsible for their use and data handling")
 	require.Contains(t, got, "Telemetry may be visible to others and include sensitive data")
+	require.Contains(t, got, "Learn more:")
 	require.Contains(t, got, disableTracingURL)
 	require.Equal(t, "https://aka.ms/disable-tracing", disableTracingURL)
 }

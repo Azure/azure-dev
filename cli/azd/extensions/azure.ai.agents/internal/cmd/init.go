@@ -64,6 +64,13 @@ type initFlags struct {
 	runtime       string // e.g. "python_3_13", "python_3_14", "dotnet_10"
 	entryPoint    string // e.g. "app.py", "MyAgent.dll"
 	depResolution string // "remote_build" or "bundled"; defaults to "remote_build"
+	// image specifies a pre-built container image URL (e.g., "myacr.azurecr.io/agent:v1").
+	// When set without --manifest, init synthesizes a minimal hosted container manifest and
+	// routes through the manifest flow, skipping template/language selection and code
+	// scaffolding (there is no source to scaffold). It also writes the image field to
+	// agent.yaml, skips Dockerfile generation, and skips ACR connection prompts. Requires
+	// --agent-name when no --manifest is given. Incompatible with --deploy-mode code.
+	image string
 	// force, when true, lets headless callers (--no-prompt) pre-consent to
 	// overwrite prompts that would otherwise return a structured error. It
 	// mirrors the `--force` convention used by `azd down`, `azd env remove`,
@@ -72,6 +79,10 @@ type initFlags struct {
 	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
 	// and is not registered as a CLI flag on the init command itself.
 	noPrompt bool
+	// infra, when true, synthesizes the Bicep templates from azure.yaml and
+	// writes them to ./infra/ -- as an eject step after a fresh init, or
+	// standalone when azure.yaml already exists.
+	infra bool
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -103,6 +114,14 @@ type InitAction struct {
 	// interactively selects a template that resolves to a manifest. When true,
 	// the init flow applies opinionated defaults to minimize interactive prompts.
 	userProvidedManifest bool
+}
+
+// skipACR returns true when ACR provisioning and configuration should be skipped.
+// This happens when:
+// - Code deploy mode is selected (ZIP upload, no container build)
+// - Pre-built image is provided via --image flag (user manages their own registry)
+func (a *InitAction) skipACR() bool {
+	return a.isCodeDeploy || a.flags.image != ""
 }
 
 // modelSelector encapsulates the dependencies needed for model selection and
@@ -585,6 +604,83 @@ func updateAgentDefinition(
 	}
 }
 
+// setImageOnTemplate sets the Image field on a ContainerAgent template.
+// When --image is provided, this function updates the manifest so the image URL
+// is persisted in agent.yaml and used during deployment instead of building from Dockerfile.
+func setImageOnTemplate(agentManifest *agent_yaml.AgentManifest, image string) error {
+	if image == "" {
+		return nil
+	}
+	if agentManifest == nil {
+		return fmt.Errorf("agent manifest is nil")
+	}
+
+	hostedAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent)
+	if !ok {
+		return fmt.Errorf("--image is only supported for hosted container agents, got %T", agentManifest.Template)
+	}
+
+	hostedAgent.Image = image
+	agentManifest.Template = hostedAgent
+	return nil
+}
+
+// agentUsesPreBuiltImage reports whether the manifest's template is a hosted
+// container agent that references a pre-built image. For such agents azd does
+// not build from source, so build-time concerns like the startup command and
+// ACR setup do not apply. Covers both the --image flag (synthesized manifest)
+// and a user-provided -m manifest that already specifies an image.
+func agentUsesPreBuiltImage(agentManifest *agent_yaml.AgentManifest) bool {
+	if agentManifest == nil {
+		return false
+	}
+	ca, ok := agentManifest.Template.(agent_yaml.ContainerAgent)
+	return ok && strings.TrimSpace(ca.Image) != ""
+}
+
+// synthesizeImageManifestFile writes a minimal hosted container agent manifest to a
+// temporary file for the bring-your-own-image flow (--image without --manifest).
+// Routing through the manifest path lets init skip template/language selection and code
+// scaffolding, since a pre-built image needs none of those. The returned cleanup removes
+// the temp directory; callers should defer it. The image is also persisted by
+// setImageOnTemplate during Run, but is included here so the manifest is self-describing.
+func synthesizeImageManifestFile(agentName, image string) (string, func(), error) {
+	noop := func() {}
+
+	tmpDir, err := os.MkdirTemp("", "azd-agent-image-")
+	if err != nil {
+		return "", noop, fmt.Errorf("creating temp directory for synthesized manifest: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(tmpDir) }
+
+	doc := map[string]any{
+		"name": agentName,
+		"template": map[string]any{
+			"kind":        string(agent_yaml.AgentKindHosted),
+			"name":        agentName,
+			"description": fmt.Sprintf("Hosted container agent using pre-built image %s", image),
+			"image":       image,
+			"protocols": []map[string]any{
+				{"protocol": "responses", "version": "1.0.0"},
+			},
+		},
+	}
+
+	content, err := yaml.Marshal(doc)
+	if err != nil {
+		cleanup()
+		return "", noop, fmt.Errorf("marshaling synthesized manifest: %w", err)
+	}
+
+	manifestPath := filepath.Join(tmpDir, "agent.yaml")
+	if err := os.WriteFile(manifestPath, content, osutil.PermissionFile); err != nil {
+		cleanup()
+		return "", noop, fmt.Errorf("writing synthesized manifest: %w", err)
+	}
+
+	return manifestPath, cleanup, nil
+}
+
 func nextAgentNameSuggestion(agentName string) string {
 	const maxAgentNameLength = 63
 	const defaultAgentName = "agent"
@@ -882,7 +978,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
   # Non-interactive code deploy (CI/CD)
   azd ai agent init --no-prompt --project-id "<resource-id>" \
-    --deploy-mode code --runtime python_3_13 --entry-point app.py`,
+    --deploy-mode code --runtime python_3_13 --entry-point app.py
+
+  # Bring your own pre-built image (no template/language selection, Dockerfile, or ACR setup)
+  azd ai agent init --no-prompt --agent-name my-agent \
+    --image myacr.azurecr.io/agents/my-agent:v1`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.noPrompt = extCtx.NoPrompt
@@ -903,6 +1003,23 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// or positional argument) BEFORE the auto-detection logic below may also
 			// set flags.manifestPointer. This drives the opinionated-defaults path.
 			userProvidedManifest := flags.manifestPointer != ""
+
+			// `--infra` on a directory that already has an azd agent project
+			// is a standalone eject: synthesize Bicep from the existing
+			// azure.yaml, write ./infra/, and return without prompting.
+			if flags.infra && fileExists("azure.yaml") {
+				// Reject inputs the eject path would silently ignore (a
+				// positional arg, -m, or --src) instead of pretending they
+				// were honored.
+				if err := validateStandaloneEjectArgs(args, flags); err != nil {
+					return err
+				}
+				cwd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("resolve current directory: %w", err)
+				}
+				return ejectInfra(cwd)
+			}
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 
@@ -936,6 +1053,35 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// only shown for brand-new top-level project folders, not
 			// when a template adds a subfolder to an existing project.
 			existingProject := fileExists("azure.yaml")
+
+			// Bring-your-own-image fast path: when --image is set without a manifest,
+			// there is no source to scaffold and no template/language to choose.
+			// Synthesize a minimal hosted container manifest and route it through the
+			// manifest flow, which skips the init-mode / template / language prompts
+			// and code scaffolding. The image is wired into agent.yaml and ACR is
+			// skipped by the existing --image handling in InitAction.Run.
+			if flags.image != "" && flags.manifestPointer == "" {
+				// Validate early so we fail before initializing a project/template.
+				if err := validateImageFlag(flags.image, flags.deployMode); err != nil {
+					return err
+				}
+				if flags.agentName == "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--image requires --agent-name when no --manifest is provided",
+						"pass --agent-name <name> (or provide --manifest with the agent definition)",
+					)
+				}
+				manifestPath, cleanup, err := synthesizeImageManifestFile(flags.agentName, flags.image)
+				if err != nil {
+					return err
+				}
+				defer cleanup()
+				flags.manifestPointer = manifestPath
+				// Treat the synthesized manifest as user-provided so deploy-mode
+				// resolution auto-selects container without prompting.
+				userProvidedManifest = true
+			}
 
 			// Auto-detect an existing agent manifest in the target directory
 			// when no --manifest flag was provided.
@@ -1272,6 +1418,32 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}
 
+			// New-project eject: when --infra is set on a fresh init that just
+			// wrote azure.yaml, chain the eject step. Skip silently when init
+			// didn't produce a foundry-bearing azure.yaml (cancelled or
+			// non-foundry flow) to avoid a confusing "nothing to eject" error.
+			if flags.infra {
+				cwd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("resolve current directory: %w", err)
+				}
+				//nolint:gosec // G304: azure.yaml in the current azd project directory
+				rawYAML, readErr := os.ReadFile(filepath.Join(cwd, "azure.yaml"))
+				switch {
+				case errors.Is(readErr, fs.ErrNotExist):
+					// Init didn't write azure.yaml; nothing to eject.
+				case readErr != nil:
+					return fmt.Errorf("read azure.yaml after init: %w", readErr)
+				default:
+					// Skip silently when no foundry service is present.
+					if _, svcErr := findFoundryServiceForEject(rawYAML); svcErr == nil {
+						if err := ejectInfra(cwd); err != nil {
+							return err
+						}
+					}
+				}
+			}
+
 			return nil
 		},
 	}
@@ -1309,9 +1481,19 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVar(&flags.depResolution, "dep-resolution", "",
 		"Dependency resolution for code deploy: 'remote_build' or 'bundled'. Defaults to 'remote_build'.")
 
+	cmd.Flags().StringVar(&flags.image, "image", "",
+		"Pre-built container image URL (e.g., 'myacr.azurecr.io/agent:v1'). "+
+			"When set without --manifest, skips template/language selection, code scaffolding, "+
+			"Dockerfile generation, and ACR setup, and requires --agent-name. "+
+			"Incompatible with --deploy-mode code.")
+
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+
 			"Required together with --no-prompt when init would otherwise need confirmation.")
+
+	cmd.Flags().BoolVar(&flags.infra, "infra", false,
+		"Synthesize Bicep templates from azure.yaml and write them to ./infra/. "+
+			"When azure.yaml already exists, runs as a standalone eject and skips the init prompts.")
 
 	return cmd
 }
@@ -1459,6 +1641,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return err
 		}
 
+		// Set pre-built image if --image was provided
+		if err := setImageOnTemplate(agentManifest, a.flags.image); err != nil {
+			return err
+		}
+
 		// Write the final agent.yaml to disk (after deployment names have been injected)
 		if err := writeAgentDefinitionFile(targetDir, agentManifest); err != nil {
 			return fmt.Errorf("writing agent definition: %w", err)
@@ -1508,8 +1695,25 @@ func ensureProject(
 			envName = base + "-dev"
 		}
 
+		// Scaffold a minimal project via `azd init -t <empty dir> <targetDir>`.
+		// We use an empty template dir rather than `--minimal` (which can't
+		// take a positional target) or `-C` (a no-op on workflow re-entry,
+		// since azd-core parses global flags once at startup). The empty
+		// template skips the network call and produces just azure.yaml +
+		// .azure/<env>/ + git init; writeFoundryProvider then stamps the
+		// provider name onto azure.yaml.
+		emptyTemplateDir, err := os.MkdirTemp("", "azd-foundry-empty-*")
+		if err != nil {
+			return nil, exterrors.Dependency(
+				exterrors.CodeProjectInitFailed,
+				fmt.Sprintf("creating empty template staging dir: %s", err),
+				"check write permissions on the system temp directory",
+			)
+		}
+		defer os.RemoveAll(emptyTemplateDir)
+
 		initArgs := []string{
-			"init", "-t", "Azure-Samples/azd-ai-starter-basic", targetDir,
+			"init", "-t", emptyTemplateDir, targetDir,
 			"--environment", envName,
 		}
 
@@ -1522,7 +1726,7 @@ func ensureProject(
 			},
 		}
 
-		_, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+		_, err = azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
 			Workflow: workflow,
 		})
 
@@ -1559,6 +1763,10 @@ func ensureProject(
 			}
 		}
 
+		if err := writeFoundryProvider(ctx, azdClient); err != nil {
+			return nil, err
+		}
+
 		projectResponse, err = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 		if err != nil {
 			return nil, exterrors.Dependency(
@@ -1570,20 +1778,23 @@ func ensureProject(
 
 		fmt.Println()
 	} else if projectResponse.Project != nil {
-		// An existing azd project was found — tell the user so the skipped template
-		// download isn't a mystery. Also warn if the project lacks an infra/ directory,
-		// since deployment may require infrastructure scaffolding.
 		fmt.Println(output.WithGrayFormat(
 			"Found existing azd project at %q. Adding agent to it.", projectResponse.Project.Path,
 		))
 
-		infraDir := filepath.Join(projectResponse.Project.Path, "infra")
-		if _, statErr := os.Stat(infraDir); os.IsNotExist(statErr) {
-			fmt.Printf("%s", output.WithWarningFormat(
-				"No infra/ directory found in the project. If you need Azure infrastructure "+
-					"for deployment, run 'azd init -t Azure-Samples/azd-ai-starter-basic .' in an empty "+
-					"directory first, then re-run this command from there.\n",
-			))
+		// Skip the warning when the project has already opted into the
+		// extension's provisioning provider (which intentionally omits infra/).
+		if !hasFoundryProviderDeclared(projectResponse.Project) {
+			infraDir := filepath.Join(projectResponse.Project.Path, "infra")
+			if _, statErr := os.Stat(infraDir); os.IsNotExist(statErr) {
+				fmt.Printf("%s", output.WithWarningFormat(
+					"No infra/ directory found in the project, and azure.yaml does not declare "+
+						"'infra.provider: %s'. If you need Azure infrastructure for deployment, "+
+						"set that provider in azure.yaml, or run "+
+						"'azd ai agent init --infra' to generate an infra/ directory.\n",
+					project.FoundryProviderName,
+				))
+			}
 		}
 	}
 
@@ -1596,6 +1807,59 @@ func ensureProject(
 	}
 
 	return projectResponse.Project, nil
+}
+
+// writeFoundryProvider stamps `infra.provider: <FoundryProviderName>`
+// onto azure.yaml and removes the starter's `infra.path: ./infra`.
+func writeFoundryProvider(ctx context.Context, azdClient *azdext.AzdClient) error {
+	value, err := structpb.NewValue(project.FoundryProviderName)
+	if err != nil {
+		return exterrors.Internal(
+			exterrors.CodeProjectInitFailed,
+			fmt.Sprintf("failed to encode provider name as protobuf value: %s", err),
+		)
+	}
+
+	_, err = azdClient.Project().SetConfigValue(ctx, &azdext.SetProjectConfigValueRequest{
+		Path:  "infra.provider",
+		Value: value,
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("writing infra.provider was cancelled")
+		}
+		return exterrors.Dependency(
+			exterrors.CodeProjectInitFailed,
+			fmt.Sprintf(
+				"failed to set infra.provider=%s on azure.yaml: %s",
+				project.FoundryProviderName, err,
+			),
+			"check that azure.yaml is writable and re-run the command",
+		)
+	}
+
+	// UnsetConfig is idempotent for missing keys.
+	_, err = azdClient.Project().UnsetConfig(ctx, &azdext.UnsetProjectConfigRequest{
+		Path: "infra.path",
+	})
+	if err != nil && !exterrors.IsCancellation(err) {
+		return exterrors.Dependency(
+			exterrors.CodeProjectInitFailed,
+			fmt.Sprintf("failed to unset infra.path on azure.yaml: %s", err),
+			"check that azure.yaml is writable and re-run the command",
+		)
+	}
+
+	return nil
+}
+
+// hasFoundryProviderDeclared reports whether azure.yaml already
+// declares this extension's provisioning provider.
+func hasFoundryProviderDeclared(proj *azdext.ProjectConfig) bool {
+	if proj == nil || proj.Infra == nil {
+		return false
+	}
+	return proj.Infra.Provider == project.FoundryProviderName
 }
 
 func getExistingEnvironment(ctx context.Context, envName string, azdClient *azdext.AzdClient) *azdext.Environment {
@@ -1678,7 +1942,7 @@ func (a *InitAction) configureModelChoice(
 		); err != nil {
 			return nil, err
 		}
-		if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, a.isCodeDeploy); err != nil {
+		if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, a.skipACR()); err != nil {
 			return nil, err
 		}
 		return agentManifest, nil
@@ -1702,7 +1966,8 @@ func (a *InitAction) configureModelChoice(
 			selectedProject, err := selectFoundryProject(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
-				a.isCodeDeploy,
+				a.skipACR(),
+				true, // bicepless
 			)
 			if err != nil {
 				return nil, err
@@ -1768,7 +2033,8 @@ func (a *InitAction) configureModelChoice(
 				selectedProject, err := selectFoundryProject(
 					ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 					a.azureContext.Scope.SubscriptionId, "",
-					a.isCodeDeploy,
+					a.skipACR(),
+					true, // bicepless
 				)
 				if err != nil {
 					return nil, err
@@ -1829,6 +2095,14 @@ func (a *InitAction) configureModelChoice(
 			}
 		}
 
+		// Persist the ACR-skip signal for the no-model-resources path too.
+		// The deferred-headless and main model-config paths set this, but a
+		// completing no-model flow (e.g. a pre-built --image agent) otherwise
+		// would not, leaving Bicep to provision an ACR the user doesn't need.
+		if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, a.skipACR()); err != nil {
+			return nil, err
+		}
+
 		return agentManifest, nil
 	}
 
@@ -1847,7 +2121,8 @@ func (a *InitAction) configureModelChoice(
 		selectedProject, err := selectFoundryProject(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
-			a.isCodeDeploy,
+			a.skipACR(),
+			true, // bicepless
 		)
 		if err != nil {
 			return nil, err
@@ -1924,7 +2199,8 @@ func (a *InitAction) configureModelChoice(
 			selectedProject, err := selectFoundryProject(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, "",
-				a.isCodeDeploy,
+				a.skipACR(),
+				true, // bicepless
 			)
 			if err != nil {
 				return nil, err
@@ -1985,7 +2261,7 @@ func (a *InitAction) configureModelChoice(
 	a.deploymentDetails = deploymentDetails
 
 	// Set AZD_AGENT_SKIP_ACR so Bicep knows whether to create a container registry.
-	if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, a.isCodeDeploy); err != nil {
+	if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, a.skipACR()); err != nil {
 		return nil, err
 	}
 
@@ -2636,8 +2912,10 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		}
 	}
 
-	// Detect startup command (container deploy only; code deploy does not use startupCommand)
-	if !a.isCodeDeploy {
+	// Detect startup command. Skipped for code deploy (uses ZIP packaging) and
+	// when the agent uses a pre-built container image, since the image's own
+	// entrypoint runs and no startup command applies.
+	if !a.isCodeDeploy && !agentUsesPreBuiltImage(agentManifest) {
 		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
 		if err != nil {
 			return err
@@ -3595,8 +3873,52 @@ func extractConnectionConfigs(
 // validateCodeDeployFlags checks that required flags are present when using
 // --deploy-mode code in --no-prompt mode.
 func (a *InitAction) validateCodeDeployFlags() error {
+	// First validate image flag (it has incompatibilities with other flags)
+	if err := validateImageFlag(a.flags.image, a.flags.deployMode); err != nil {
+		return err
+	}
 	return validateCodeDeployInput(
 		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution)
+}
+
+var initImageRefRe = regexp.MustCompile(
+	`^(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?::[0-9]+)?|` +
+		`localhost(?::[0-9]+)?|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?:[0-9]+)/` +
+		`[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*` +
+		`(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*` +
+		`(?::[\w][\w.-]{0,127}|@sha256:[0-9a-fA-F]{64})?$`,
+)
+
+// validateImageFlag checks that --image is valid when provided.
+// Returns an error if:
+// - --image is used with --deploy-mode code (incompatible)
+// - --image URL format is invalid (must contain a fully qualified registry/image reference)
+func validateImageFlag(image, deployMode string) error {
+	if image == "" {
+		return nil
+	}
+
+	// --image is incompatible with --deploy-mode code
+	if deployMode == "code" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--image cannot be used with --deploy-mode code",
+			"Use --image with --deploy-mode container (default) or omit --deploy-mode",
+		)
+	}
+
+	// Require a fully-qualified image reference with an explicit registry host,
+	// e.g. "myacr.azurecr.io/agent", "docker.io/myorg/agent:v1", or
+	// "localhost:5000/agent@sha256:<digest>".
+	if !initImageRefRe.MatchString(image) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("invalid image URL %q: must be in format registry/image[:tag]", image),
+			"Provide a fully qualified image URL like 'myacr.azurecr.io/agent:v1'",
+		)
+	}
+
+	return nil
 }
 
 // validateCodeDeployInput is the shared validation logic for code deploy flags.

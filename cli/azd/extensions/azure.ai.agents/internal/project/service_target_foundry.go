@@ -16,6 +16,7 @@ import (
 	"azureaiagent/internal/pkg/paths"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
@@ -96,11 +97,50 @@ func (p *FoundryServiceTargetProvider) Initialize(ctx context.Context, serviceCo
 	}
 	p.projectRoot = proj.Project.Path
 
-	// Resolve environment, subscription, tenant, and credential (shared with the
-	// azure.ai.agent host).
-	if err := p.agent.setupAuth(ctx); err != nil {
+	// Resolve environment, subscription, tenant, and credential.
+	if err := p.agent.ensureEnv(ctx); err != nil {
 		return err
 	}
+	azdEnvClient := p.azdClient.Environment()
+	subResp, err := azdEnvClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: p.agent.env.Name,
+		Key:     "AZURE_SUBSCRIPTION_ID",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get AZURE_SUBSCRIPTION_ID: %w", err)
+	}
+	subscriptionId := subResp.Value
+	if subscriptionId == "" {
+		return exterrors.Dependency(
+			exterrors.CodeMissingAzureSubscription,
+			"AZURE_SUBSCRIPTION_ID is required: environment variable was not found in the current azd environment",
+			"run 'azd env get-values' to verify environment values, or initialize/project-bind "+
+				"with 'azd ai agent init --project-id ...'",
+		)
+	}
+	tenantResp, err := p.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: subscriptionId,
+	})
+	if err != nil {
+		return exterrors.Auth(
+			exterrors.CodeTenantLookupFailed,
+			fmt.Sprintf("failed to get tenant ID for subscription %s: %s", subscriptionId, err),
+			"verify your Azure login with 'azd auth login' and that you have access to this subscription",
+		)
+	}
+	p.agent.tenantId = tenantResp.TenantId
+	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID:                   p.agent.tenantId,
+		AdditionallyAllowedTenants: []string{"*"},
+	})
+	if err != nil {
+		return exterrors.Auth(
+			exterrors.CodeCredentialCreationFailed,
+			fmt.Sprintf("failed to create Azure credential: %s", err),
+			"run 'azd auth login' to authenticate",
+		)
+	}
+	p.agent.credential = cred
 
 	// Connect to an existing project via `endpoint:` when no project was
 	// provisioned, so deploy can run without `azd provision` (spec §1.4).

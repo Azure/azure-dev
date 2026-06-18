@@ -44,10 +44,12 @@
                 "provider": {
                     "type": "string",
                     "title": "Type of infrastructure provisioning provider",
-                    "description": "Optional. The infrastructure provisioning provider used to provision the Azure resources for the application. (Default: bicep)",
-                    "enum": [
+                    "description": "Optional. The infrastructure provisioning provider used to provision the Azure resources for the application. Built-in values are 'bicep' and 'terraform'. Extensions may register additional named providers (for example, 'microsoft.foundry'). (Default: bicep)",
+                    "pattern": "^[a-z0-9.]+$",
+                    "examples": [
                         "bicep",
-                        "terraform"
+                        "terraform",
+                        "microsoft.foundry"
                     ]
                 },
                 "path": {
@@ -228,7 +230,8 @@
                             "staticwebapp",
                             "aks",
                             "ai.endpoint",
-                            "azure.ai.agent"
+                            "azure.ai.agent",
+                            "microsoft.foundry"
                         ]
                     },
                     "language": {
@@ -418,7 +421,7 @@
                             "required": ["project"],
                             "properties": {
                                 "config": {
-                                    "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json",
+                                    "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json",
                                     "title": "The Azure AI Agent configuration.",
                                     "description": "Optional. Provides additional configuration for Azure AI Agent deployment."
                                 },
@@ -426,6 +429,26 @@
                                 "k8s": false,
                                 "apiVersion": false,
                                 "env": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Microsoft Foundry host - project config composed at the service level",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "microsoft.foundry" }
+                            }
+                        },
+                        "then": {
+                            "allOf": [
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json" }
+                            ],
+                            "properties": {
+                                "project": false,
+                                "runtime": false,
+                                "docker": false,
+                                "image": false,
+                                "config": false
                             }
                         }
                     },

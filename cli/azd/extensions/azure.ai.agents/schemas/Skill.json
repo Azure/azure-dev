@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/Skill.json",
+  "title": "Foundry skill",
+  "description": "A reusable capability bundle (instructions + tools). Items in a skills array may be inline or a $ref to an external file.",
+  "oneOf": [
+    { "$ref": "#/definitions/Inline" },
+    { "$ref": "FileRef.json" }
+  ],
+  "definitions": {
+    "Inline": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name":        { "type": "string", "description": "Name of the skill." },
+        "description": { "type": "string", "description": "Description of the skill." },
+        "instructions": {
+          "type": "string",
+          "description": "Inline instruction text, or a file path (.md, .txt) the extension reads at deploy time."
+        },
+        "tools": {
+          "type": "array",
+          "description": "Tool type names the skill uses (must be declared on a toolbox the agent references, or attached directly to the agent's tools list).",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

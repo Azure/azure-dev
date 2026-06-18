@@ -2,6 +2,11 @@ module azureaiagent
 
 go 1.26.1
 
+// TEMPORARY: local validation against the in-tree azd core (proto change for
+// provisioning preview changes). Remove before merging — the core change must
+// land first, then bump the azd dependency.
+replace github.com/azure/azure-dev/cli/azd => ../../
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.0-beta.3
@@ -111,6 +116,7 @@ require (
 	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	golang.org/x/time v0.14.0 // indirect

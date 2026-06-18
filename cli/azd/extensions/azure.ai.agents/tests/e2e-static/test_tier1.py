@@ -80,9 +80,10 @@ class TmuxSession:
                            capture_output=True, text=True, timeout=5)
         return r.stdout
 
-    def select_by_text(self, target):
+    def select_by_text(self, target, delay=1.5):
+        """Type filter text and press Enter to select matching item."""
         self.send(target)
-        time.sleep(0.5)
+        time.sleep(delay)
         self.key("Enter")
 
     def wait_for(self, pattern, timeout=60):
@@ -117,30 +118,34 @@ class TmuxSession:
 
 
 def _validate_init_disk(workdir):
-    """Check if init produced azure.yaml with host: azure.ai.agent and agent.yaml."""
+    """Check if init produced azure.yaml with host: azure.ai.agent and agent.yaml somewhere."""
+    import glob as _glob
+    # Search in subdirectories of workdir (template creates a folder like basic-agent/)
     for d in os.listdir(workdir):
         subdir = os.path.join(workdir, d)
         if os.path.isdir(subdir):
             azure_yaml = os.path.join(subdir, "azure.yaml")
-            agent_yaml = os.path.join(subdir, "agent.yaml")
             if os.path.exists(azure_yaml):
                 with open(azure_yaml) as f:
                     content = f.read()
                 if "host:" in content and "azure.ai.agent" in content:
-                    if os.path.exists(agent_yaml):
+                    # agent.yaml may be nested under src/<service>/
+                    agent_files = _glob.glob(os.path.join(subdir, "**/agent.yaml"), recursive=True)
+                    if agent_files:
                         return True
-    # Also check workdir itself (if init was run inside workdir directly)
+    # Also check workdir itself
     azure_yaml = os.path.join(workdir, "azure.yaml")
-    agent_yaml = os.path.join(workdir, "agent.yaml")
     if os.path.exists(azure_yaml):
         with open(azure_yaml) as f:
             content = f.read()
-        if "host:" in content and "azure.ai.agent" in content and os.path.exists(agent_yaml):
-            return True
+        if "host:" in content and "azure.ai.agent" in content:
+            agent_files = _glob.glob(os.path.join(workdir, "**/agent.yaml"), recursive=True)
+            if agent_files:
+                return True
     return False
 
 
-def handle_dynamic_prompts(sess, max_steps=30, deploy_mode="code", project_path="existing", verbose=False, workdir=None):
+def handle_dynamic_prompts(sess, max_steps=40, deploy_mode="code", project_path="existing", verbose=False, workdir=None):
     """Handle dynamic prompts after template selection until init completes.
     project_path: "existing" uses existing project, "create" creates new.
     workdir: if provided, uses disk validation for completion check."""
@@ -234,7 +239,7 @@ def handle_dynamic_prompts(sess, max_steps=30, deploy_mode="code", project_path=
         elif "foundry project" in prompt or ("select" in prompt and "project" in prompt):
             # Actual project selection picker after choosing "Use existing"
             if PROJECT:
-                sess.select_by_text(PROJECT)
+                sess.select_by_text(PROJECT, delay=3)  # Extra delay for filter
                 time.sleep(3)
                 # Check if filter matched
                 cap_now = sess.capture()
@@ -249,8 +254,13 @@ def handle_dynamic_prompts(sess, max_steps=30, deploy_mode="code", project_path=
         elif "enter a different name" in prompt:
             sess.key("Enter")
         elif "capacity" in prompt:
-            # Capacity requires a numeric value; type a reasonable default
-            sess.send("25")
+            # Capacity text input — clear existing text and type value.
+            # ProvisionedManaged SKU often requires minimum 25-50 units.
+            # Use Backspace to clear any pre-filled text, then type value.
+            for _ in range(10):
+                sess.key("BSpace")
+            time.sleep(0.3)
+            sess.send("50")
             time.sleep(0.5)
             sess.key("Enter")
         elif "enter model deployment name" in prompt or ("enter" in prompt and "deployment" in prompt and "name" in prompt):
@@ -326,7 +336,7 @@ def test_init_python_basic_code(workdir):
 
         # After template selection, CLI flow varies (git protocol, name, foundry, etc.)
         # Let dynamic handler manage all remaining prompts.
-        ok = handle_dynamic_prompts(sess, max_steps=30, deploy_mode="code",
+        ok = handle_dynamic_prompts(sess, max_steps=40, deploy_mode="code",
                                     project_path="existing", workdir=workdir)
 
         # Verify artifacts on disk
@@ -360,7 +370,7 @@ def test_init_python_basic_container(workdir):
         time.sleep(3)
 
         # After template selection, let dynamic handler manage everything
-        ok = handle_dynamic_prompts(sess, max_steps=30, deploy_mode="container",
+        ok = handle_dynamic_prompts(sess, max_steps=40, deploy_mode="container",
                                     project_path="existing", workdir=workdir)
         return check("01-init-python-container", ok, "" if ok else "init did not complete")
     finally:
@@ -390,7 +400,7 @@ def test_init_csharp_basic(workdir):
         time.sleep(3)
 
         # After template selection, let dynamic handler manage everything
-        ok = handle_dynamic_prompts(sess, max_steps=30, deploy_mode="code",
+        ok = handle_dynamic_prompts(sess, max_steps=40, deploy_mode="code",
                                     project_path="existing", workdir=workdir)
         return check("01-init-csharp", ok, "" if ok else "init did not complete")
     finally:
@@ -485,7 +495,7 @@ def test_init_from_manifest_url(workdir):
 
         # With -m flag, may skip language/template and go directly to other prompts.
         # Use dynamic handler for everything after the command is sent.
-        ok = handle_dynamic_prompts(sess, max_steps=30, deploy_mode="code",
+        ok = handle_dynamic_prompts(sess, max_steps=40, deploy_mode="code",
                                     project_path="existing", workdir=workdir)
 
         has_artifacts = _validate_init_disk(workdir)
@@ -518,7 +528,7 @@ def test_init_with_agent_name_flag(workdir):
 
         # --agent-name should skip the "Enter a name" prompt.
         # Use dynamic handler for all remaining prompts.
-        ok = handle_dynamic_prompts(sess, max_steps=30, deploy_mode="code",
+        ok = handle_dynamic_prompts(sess, max_steps=40, deploy_mode="code",
                                     project_path="existing", workdir=workdir)
 
         # Validate: agent name must appear in produced artifacts
@@ -642,8 +652,9 @@ if __name__ == "__main__":
             except Exception as e:
                 check(futures[f], False, f"EXCEPTION: {e}")
 
-    # Run interactive tests in parallel (each uses its own tmux session)
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    # Run interactive tests with limited parallelism (each uses its own tmux session)
+    # Limit to 2 workers to avoid Azure API throttling when all hit same subscription
+    with ThreadPoolExecutor(max_workers=2) as pool:
         futures = {}
         for name, fn in interactive_tests:
             workdir = os.path.join(base_dir, name)

@@ -63,6 +63,45 @@ param principalId string = ''
 @description('Principal type used in the developer role assignment.')
 param principalType string = 'User'
 
+// Network isolation parameters (see modules/resources.bicep for semantics).
+// All default off so an absent network: block yields a public account.
+
+@description('Master switch: when true the account is VNet-bound (private).')
+param enableNetworkIsolation bool = false
+
+@description('Network mode: "byo" or "managed". Empty when isolation is off.')
+param networkMode string = ''
+
+@description('ARM id of the existing customer VNet (byo mode).')
+param vnetId string = ''
+
+@description('Agent (delegated) subnet name.')
+param agentSubnetName string = 'agent-subnet'
+
+@description('Agent subnet CIDR. Empty derives a /24 from the VNet space.')
+param agentSubnetPrefix string = ''
+
+@description('When true, create the agent subnet; when false, reference it.')
+param createAgentSubnet bool = false
+
+@description('Private-endpoint subnet name.')
+param peSubnetName string = 'pe-subnet'
+
+@description('Private-endpoint subnet CIDR. Empty derives a /24 from the VNet space.')
+param peSubnetPrefix string = ''
+
+@description('When true, create the PE subnet; when false, reference it.')
+param createPESubnet bool = false
+
+@description('Managed-network isolation mode (managed mode).')
+param managedIsolationMode string = ''
+
+@description('Resource group holding existing private DNS zones. Empty creates new zones.')
+param dnsZonesResourceGroup string = ''
+
+@description('Subscription holding existing private DNS zones. Empty defaults to this subscription.')
+param dnsZonesSubscription string = ''
+
 // Resources
 
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -83,6 +122,18 @@ module resources 'modules/resources.bicep' = {
     includeAcr: includeAcr
     principalId: principalId
     principalType: principalType
+    enableNetworkIsolation: enableNetworkIsolation
+    networkMode: networkMode
+    vnetId: vnetId
+    agentSubnetName: agentSubnetName
+    agentSubnetPrefix: agentSubnetPrefix
+    createAgentSubnet: createAgentSubnet
+    peSubnetName: peSubnetName
+    peSubnetPrefix: peSubnetPrefix
+    createPESubnet: createPESubnet
+    managedIsolationMode: managedIsolationMode
+    dnsZonesResourceGroup: dnsZonesResourceGroup
+    dnsZonesSubscription: dnsZonesSubscription
   }
 }
 
@@ -97,3 +148,4 @@ output FOUNDRY_PROJECT_ENDPOINT string = resources.outputs.FOUNDRY_PROJECT_ENDPO
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_RESOURCE_ID
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = resources.outputs.AZURE_AI_PROJECT_ACR_CONNECTION_NAME
+output AZURE_FOUNDRY_NETWORK_MODE string = resources.outputs.AZURE_FOUNDRY_NETWORK_MODE

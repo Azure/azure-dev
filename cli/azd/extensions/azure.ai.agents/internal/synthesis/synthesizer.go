@@ -15,7 +15,11 @@ package synthesis
 import (
 	"errors"
 	"fmt"
+	"net"
+	"os"
+	"regexp"
 	"slices"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -45,6 +49,12 @@ type Input struct {
 	// caller treats as a Foundry service. If empty, the service's host
 	// value is not checked (only existence and endpoint: are).
 	AcceptedHosts []string
+
+	// Env maps azd environment variable names to values. Used to resolve
+	// ${VAR} references in network fields (byo.vnet.id, dns.subscription).
+	// When a referenced variable is absent here, the synthesizer falls back
+	// to the process environment before failing. May be nil.
+	Env map[string]string
 }
 
 // Result bundles the bicep sources and the parameter values derived
@@ -55,6 +65,10 @@ type Result struct {
 	// Parameters maps bicep param names to plain Go values. Callers wrap
 	// these in ARM's {"value": ...} envelope when serializing.
 	Parameters map[string]any
+
+	// NetworkMode is "none", "byo", or "managed" — derived from the
+	// network: block (or its absence). Exposed for telemetry.
+	NetworkMode string
 }
 
 // Deployment mirrors the deploymentType in main.bicep.
@@ -94,10 +108,48 @@ type agentBlock struct {
 // reads. Unknown fields (connections, tools, agents[].tools, etc.) are
 // intentionally ignored: they are reconciled in azd deploy, not provision.
 type foundryService struct {
-	Host        string       `yaml:"host"`
-	Endpoint    string       `yaml:"endpoint,omitempty"`
-	Deployments []Deployment `yaml:"deployments,omitempty"`
-	Agents      []agentBlock `yaml:"agents,omitempty"`
+	Host        string        `yaml:"host"`
+	Endpoint    string        `yaml:"endpoint,omitempty"`
+	Deployments []Deployment  `yaml:"deployments,omitempty"`
+	Agents      []agentBlock  `yaml:"agents,omitempty"`
+	Network     *networkBlock `yaml:"network,omitempty"`
+}
+
+// networkBlock mirrors the network: sub-tree on the service body.
+type networkBlock struct {
+	Mode    string        `yaml:"mode"`
+	Byo     *byoBlock     `yaml:"byo,omitempty"`
+	Managed *managedBlock `yaml:"managed,omitempty"`
+	DNS     *dnsBlock     `yaml:"dns,omitempty"`
+}
+
+// byoBlock mirrors network.byo (bring-your-own VNet).
+type byoBlock struct {
+	VNet        *vnetRef    `yaml:"vnet,omitempty"`
+	AgentSubnet *subnetSpec `yaml:"agentSubnet,omitempty"`
+	PESubnet    *subnetSpec `yaml:"peSubnet,omitempty"`
+}
+
+// vnetRef mirrors network.byo.vnet.
+type vnetRef struct {
+	ID string `yaml:"id"`
+}
+
+// subnetSpec mirrors a tri-state subnet descriptor.
+type subnetSpec struct {
+	Name   string `yaml:"name,omitempty"`
+	Prefix string `yaml:"prefix,omitempty"`
+}
+
+// managedBlock mirrors network.managed (Foundry-managed VNet).
+type managedBlock struct {
+	IsolationMode string `yaml:"isolationMode,omitempty"`
+}
+
+// dnsBlock mirrors network.dns (private DNS zone references).
+type dnsBlock struct {
+	ResourceGroup string `yaml:"resourceGroup,omitempty"`
+	Subscription  string `yaml:"subscription,omitempty"`
 }
 
 // projectFile is the root of azure.yaml as we care about it: only services.
@@ -150,10 +202,247 @@ func Synthesize(in Input) (*Result, error) {
 		deployments = []Deployment{}
 	}
 
+	netParams, netMode, err := synthesizeNetwork(svc.Network, in.ServiceName, in.Env)
+	if err != nil {
+		return nil, err
+	}
+
+	params := map[string]any{
+		"deployments": deployments,
+		"includeAcr":  includeAcr,
+	}
+	for k, v := range netParams {
+		params[k] = v
+	}
+
 	return &Result{
-		Parameters: map[string]any{
-			"deployments": deployments,
-			"includeAcr":  includeAcr,
-		},
+		Parameters:  params,
+		NetworkMode: netMode,
 	}, nil
+}
+
+// Network mode values surfaced for telemetry and emitted as bicep params.
+const (
+	NetworkModeNone    = "none"
+	NetworkModeByo     = "byo"
+	NetworkModeManaged = "managed"
+)
+
+// Default subnet names used when a subnet descriptor is omitted.
+const (
+	defaultAgentSubnetName = "agent-subnet"
+	defaultPESubnetName    = "pe-subnet"
+)
+
+// vnetIDPattern matches a Microsoft.Network/virtualNetworks ARM resource id.
+var vnetIDPattern = regexp.MustCompile(
+	`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Network/virtualNetworks/[^/]+$`,
+)
+
+// guidPattern matches a bare GUID.
+var guidPattern = regexp.MustCompile(
+	`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`,
+)
+
+// rgNamePattern matches a valid Azure resource group name.
+var rgNamePattern = regexp.MustCompile(`^[-\w._()]{1,90}$`)
+
+// varRefPattern matches a ${VAR} reference.
+var varRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+// synthesizeNetwork validates the network: block and returns the bicep
+// parameter set plus the telemetry mode. When net is nil the returned
+// params disable network isolation and the output is byte-identical to the
+// pre-network behavior.
+func synthesizeNetwork(
+	net *networkBlock,
+	svcName string,
+	env map[string]string,
+) (map[string]any, string, error) {
+	// Public account: every network param defaults off.
+	params := map[string]any{
+		"enableNetworkIsolation": false,
+		"networkMode":            "",
+		"vnetId":                 "",
+		"agentSubnetName":        defaultAgentSubnetName,
+		"agentSubnetPrefix":      "",
+		"createAgentSubnet":      false,
+		"peSubnetName":           defaultPESubnetName,
+		"peSubnetPrefix":         "",
+		"createPESubnet":         false,
+		"managedIsolationMode":   "",
+		"dnsZonesResourceGroup":  "",
+		"dnsZonesSubscription":   "",
+	}
+	if net == nil {
+		return params, NetworkModeNone, nil
+	}
+
+	fp := func(suffix string) string {
+		return fmt.Sprintf("services.%s.network%s", svcName, suffix)
+	}
+
+	// Mode coherence.
+	switch net.Mode {
+	case NetworkModeByo:
+		if net.Byo == nil {
+			return nil, "", fmt.Errorf("%s: mode is byo but byo: block is missing", fp(""))
+		}
+		if net.Managed != nil {
+			return nil, "", fmt.Errorf("%s: mode is byo but managed: block is also set", fp(""))
+		}
+	case NetworkModeManaged:
+		if net.Managed == nil {
+			return nil, "", fmt.Errorf("%s: mode is managed but managed: block is missing", fp(""))
+		}
+		if net.Byo != nil {
+			return nil, "", fmt.Errorf("%s: mode is managed but byo: block is also set", fp(""))
+		}
+	case "":
+		return nil, "", fmt.Errorf("%s: mode is required when network: is present", fp(""))
+	default:
+		return nil, "", fmt.Errorf("%s.mode: %q is not one of byo, managed", fp(""), net.Mode)
+	}
+
+	params["enableNetworkIsolation"] = true
+	params["networkMode"] = net.Mode
+
+	if net.Mode == NetworkModeByo {
+		if net.Byo.VNet == nil || strings.TrimSpace(net.Byo.VNet.ID) == "" {
+			return nil, "", fmt.Errorf("%s.byo.vnet.id: required in v1", fp(""))
+		}
+		vnetID, err := resolveVars(net.Byo.VNet.ID, env)
+		if err != nil {
+			return nil, "", fmt.Errorf("%s.byo.vnet.id: %w", fp(""), err)
+		}
+		if !vnetIDPattern.MatchString(vnetID) {
+			return nil, "", fmt.Errorf(
+				"%s.byo.vnet.id: %q is not a well-formed Microsoft.Network/virtualNetworks id",
+				fp(""), vnetID)
+		}
+		params["vnetId"] = vnetID
+
+		agentName, agentPrefix, createAgent, err := resolveSubnet(
+			net.Byo.AgentSubnet, defaultAgentSubnetName, fp(".byo.agentSubnet"))
+		if err != nil {
+			return nil, "", err
+		}
+		params["agentSubnetName"] = agentName
+		params["agentSubnetPrefix"] = agentPrefix
+		params["createAgentSubnet"] = createAgent
+
+		peName, pePrefix, createPE, err := resolveSubnet(
+			net.Byo.PESubnet, defaultPESubnetName, fp(".byo.peSubnet"))
+		if err != nil {
+			return nil, "", err
+		}
+		params["peSubnetName"] = peName
+		params["peSubnetPrefix"] = pePrefix
+		params["createPESubnet"] = createPE
+	}
+
+	if net.Mode == NetworkModeManaged {
+		mode := net.Managed.IsolationMode
+		if mode != "" &&
+			mode != "AllowInternetOutbound" &&
+			mode != "AllowOnlyApprovedOutbound" {
+			return nil, "", fmt.Errorf(
+				"%s.managed.isolationMode: %q is not one of AllowInternetOutbound, AllowOnlyApprovedOutbound",
+				fp(""), mode)
+		}
+		params["managedIsolationMode"] = mode
+	}
+
+	if net.DNS != nil {
+		if rg := strings.TrimSpace(net.DNS.ResourceGroup); rg != "" {
+			if !rgNamePattern.MatchString(rg) {
+				return nil, "", fmt.Errorf("%s.dns.resourceGroup: %q is not a valid resource group name", fp(""), rg)
+			}
+			params["dnsZonesResourceGroup"] = rg
+		}
+		if sub := strings.TrimSpace(net.DNS.Subscription); sub != "" {
+			resolved, err := resolveVars(sub, env)
+			if err != nil {
+				return nil, "", fmt.Errorf("%s.dns.subscription: %w", fp(""), err)
+			}
+			guid, err := normalizeSubscription(resolved)
+			if err != nil {
+				return nil, "", fmt.Errorf("%s.dns.subscription: %w", fp(""), err)
+			}
+			params["dnsZonesSubscription"] = guid
+		}
+	}
+
+	return params, net.Mode, nil
+}
+
+// resolveSubnet applies the subnet tri-state rules and returns the resolved
+// name, prefix, and whether azd should create the subnet.
+//
+//	nil          -> create default subnet (defaultName, default prefix, create=true)
+//	name only    -> reference existing subnet (name, "", create=false)
+//	name+prefix  -> create subnet (name, prefix, create=true)
+//	prefix only  -> error
+func resolveSubnet(s *subnetSpec, defaultName, fieldPath string) (string, string, bool, error) {
+	if s == nil {
+		return defaultName, "", true, nil
+	}
+	name := strings.TrimSpace(s.Name)
+	prefix := strings.TrimSpace(s.Prefix)
+
+	if prefix != "" && name == "" {
+		return "", "", false, fmt.Errorf("%s: prefix set without name", fieldPath)
+	}
+	if prefix != "" {
+		if _, _, err := net.ParseCIDR(prefix); err != nil {
+			return "", "", false, fmt.Errorf("%s: %q is not a valid CIDR", fieldPath, prefix)
+		}
+		return name, prefix, true, nil
+	}
+	if name != "" {
+		// Reference an existing subnet.
+		return name, "", false, nil
+	}
+	// Empty descriptor: treat like omitted.
+	return defaultName, "", true, nil
+}
+
+// resolveVars expands ${VAR} references in s using env first, then the
+// process environment. An unresolved reference is an error naming the
+// variable.
+func resolveVars(s string, env map[string]string) (string, error) {
+	var unresolved string
+	out := varRefPattern.ReplaceAllStringFunc(s, func(match string) string {
+		name := varRefPattern.FindStringSubmatch(match)[1]
+		if v, ok := env[name]; ok {
+			return v
+		}
+		if v, ok := os.LookupEnv(name); ok {
+			return v
+		}
+		if unresolved == "" {
+			unresolved = name
+		}
+		return match
+	})
+	if unresolved != "" {
+		return "", fmt.Errorf("unresolved environment variable ${%s}", unresolved)
+	}
+	return out, nil
+}
+
+// normalizeSubscription accepts a bare GUID or a /subscriptions/<guid>[/...]
+// path and returns the bare GUID.
+func normalizeSubscription(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if guidPattern.MatchString(s) {
+		return s, nil
+	}
+	if strings.HasPrefix(strings.ToLower(s), "/subscriptions/") {
+		parts := strings.Split(strings.Trim(s, "/"), "/")
+		if len(parts) >= 2 && guidPattern.MatchString(parts[1]) {
+			return parts[1], nil
+		}
+	}
+	return "", fmt.Errorf("%q is not a subscription GUID or /subscriptions/<guid> id", s)
 }

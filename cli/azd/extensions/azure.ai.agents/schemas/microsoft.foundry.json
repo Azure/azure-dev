@@ -39,6 +39,85 @@
       "type": "array",
       "description": "All agent definitions (hosted and prompt).",
       "items": { "$ref": "Agent.json" }
+    },
+    "network": {
+      "type": "object",
+      "description": "Private networking for the Foundry account. When omitted, the account uses public networking. When present, azd provisions or references a VNet-bound (private) account and uses platform-managed dependent stores. Ignored when 'endpoint' is set (brownfield).",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "description": "Network provisioning mode. 'byo' brings an existing customer VNet; 'managed' uses a Foundry-managed VNet. The matching sub-block ('byo' or 'managed') is required and the other must be absent.",
+          "enum": ["byo", "managed"]
+        },
+        "byo": {
+          "type": "object",
+          "description": "Bring-your-own VNet configuration. Used only when mode is 'byo'.",
+          "additionalProperties": false,
+          "required": ["vnet"],
+          "properties": {
+            "vnet": {
+              "type": "object",
+              "description": "The existing customer virtual network to bind the account to.",
+              "additionalProperties": false,
+              "required": ["id"],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "ARM resource id of the existing VNet. Required in v1. Supports ${VAR} resolved from the azd environment."
+                }
+              }
+            },
+            "agentSubnet": { "$ref": "#/definitions/subnet" },
+            "peSubnet": { "$ref": "#/definitions/subnet" }
+          }
+        },
+        "managed": {
+          "type": "object",
+          "description": "Foundry-managed VNet configuration. Used only when mode is 'managed'.",
+          "additionalProperties": false,
+          "properties": {
+            "isolationMode": {
+              "type": "string",
+              "description": "Managed-network isolation mode applied to the account.",
+              "enum": ["AllowInternetOutbound", "AllowOnlyApprovedOutbound"]
+            }
+          }
+        },
+        "dns": {
+          "type": "object",
+          "description": "Private DNS zone configuration. When omitted (or resourceGroup omitted), azd creates and links the required AI private DNS zones. When resourceGroup is set, azd references existing zones in that resource group.",
+          "additionalProperties": false,
+          "properties": {
+            "resourceGroup": {
+              "type": "string",
+              "description": "Resource group that holds existing private DNS zones to reference."
+            },
+            "subscription": {
+              "type": "string",
+              "description": "Subscription that holds the existing private DNS zones. Defaults to the deployment subscription. Accepts a bare GUID or ${VAR}."
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "subnet": {
+      "type": "object",
+      "description": "Subnet descriptor (tri-state). Omitted: azd creates a default subnet. Name only: azd references and validates an existing subnet. Name and prefix: azd creates the subnet with that name and prefix.",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Subnet name."
+        },
+        "prefix": {
+          "type": "string",
+          "description": "Subnet CIDR. When set, name is required and azd creates the subnet."
+        }
+      }
     }
   }
 }

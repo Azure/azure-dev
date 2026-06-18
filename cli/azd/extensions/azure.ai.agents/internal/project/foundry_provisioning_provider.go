@@ -28,6 +28,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -135,9 +137,12 @@ func (p *FoundryProvisioningProvider) Initialize(
 		RawAzureYAML:  rawYAML,
 		ServiceName:   svcName,
 		AcceptedHosts: FoundryServiceHosts,
+		Env:           p.networkEnvMap(ctx),
 	})
 	switch {
 	case errors.Is(err, synthesis.ErrEndpointBrownfield):
+		// network: has no effect in brownfield mode; warn if both are present.
+		warnNetworkIgnoredInBrownfield(rawYAML, svcName)
 		return exterrors.Validation(
 			exterrors.CodeBrownfieldNotSupported,
 			"endpoint: is set on the foundry service; existing-project (brownfield) "+
@@ -158,6 +163,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 		)
 	}
 	p.synthResult = res
+	log.Printf("[debug] foundry provider: network mode = %q", res.NetworkMode)
 
 	tmplBytes, err := synthesis.ARMTemplate()
 	if err != nil {
@@ -178,7 +184,58 @@ func (p *FoundryProvisioningProvider) Initialize(
 	return p.resolveEnv(ctx)
 }
 
-// onDiskTemplatePresent returns true when either infra/main.bicepparam
+// networkEnvMap returns a best-effort name -> value map of the azd environment
+// for ${VAR} substitution in network fields during synthesis. It does not
+// require resolveEnv to have run; on any failure it returns nil and the
+// synthesizer falls back to the process environment.
+func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[string]string {
+	if p.azdClient == nil {
+		return nil
+	}
+	envClient := p.azdClient.Environment()
+	if envClient == nil {
+		return nil
+	}
+	curr, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil || curr.GetEnvironment() == nil {
+		return nil
+	}
+	resp, err := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: curr.GetEnvironment().GetName()})
+	if err != nil {
+		log.Printf("[debug] foundry provider: GetValues failed (%s); network ${VAR} uses process env only", err)
+		return nil
+	}
+	out := make(map[string]string, len(resp.GetKeyValues()))
+	for _, kv := range resp.GetKeyValues() {
+		if kv != nil {
+			out[kv.Key] = kv.Value
+		}
+	}
+	return out
+}
+
+// warnNetworkIgnoredInBrownfield logs a warning when a service declares both
+// endpoint: (brownfield) and network:. The account's network posture is fixed
+// by whoever created it, so the network: block has no effect.
+func warnNetworkIgnoredInBrownfield(rawYAML []byte, svcName string) {
+	type svc struct {
+		Endpoint string    `yaml:"endpoint,omitempty"`
+		Network  yaml.Node `yaml:"network,omitempty"`
+	}
+	type root struct {
+		Services map[string]svc `yaml:"services"`
+	}
+	var r root
+	if err := yaml.Unmarshal(rawYAML, &r); err != nil {
+		return
+	}
+	s := r.Services[svcName]
+	if s.Endpoint != "" && !s.Network.IsZero() {
+		log.Printf("[warn] foundry provider: service %q sets both endpoint: and network:; "+
+			"network: is ignored in brownfield mode (the account's network posture is fixed)", svcName)
+	}
+}
+
 // or infra/main.bicep exists under p.projectPath. Stat-only.
 func (p *FoundryProvisioningProvider) onDiskTemplatePresent() bool {
 	infraDir := filepath.Join(p.projectPath, onDiskInfraDir)
@@ -355,6 +412,15 @@ func (p *FoundryProvisioningProvider) Deploy(
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDeployResult, error) {
 	progress("Preparing Foundry provisioning template...")
+
+	// provision.network_mode telemetry: none | byo | managed. Lets us measure
+	// secured-agent adoption and the BYO-vs-managed split.
+	networkMode := synthesis.NetworkModeNone
+	if p.synthResult != nil && p.synthResult.NetworkMode != "" {
+		networkMode = p.synthResult.NetworkMode
+	}
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.String("provision.network_mode", networkMode))
 
 	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {

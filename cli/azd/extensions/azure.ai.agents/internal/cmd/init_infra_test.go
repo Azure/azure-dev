@@ -194,6 +194,9 @@ func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
 		filepath.Join("infra", "main.bicep"),
 		filepath.Join("infra", "abbreviations.json"),
 		filepath.Join("infra", "modules", "acr.bicep"),
+		filepath.Join("infra", "modules", "network.bicep"),
+		filepath.Join("infra", "modules", "subnet.bicep"),
+		filepath.Join("infra", "modules", "private-endpoint-dns.bicep"),
 		filepath.Join("infra", "main.parameters.json"),
 	}
 	for _, rel := range expected {

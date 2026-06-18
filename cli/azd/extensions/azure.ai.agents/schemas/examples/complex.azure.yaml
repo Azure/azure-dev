@@ -12,6 +12,22 @@ metadata:
 services:
   ai:
     host: microsoft.foundry
+    # Private networking: provision a VNet-bound (network-secured) account.
+    # Omit this block for a public account.
+    network:
+      mode: byo
+      byo:
+        vnet:
+          id: ${AZURE_VNET_ID}
+        agentSubnet:
+          name: agent-subnet
+          prefix: 192.168.0.0/24
+        peSubnet:
+          name: pe-subnet
+          prefix: 192.168.1.0/24
+      dns:
+        resourceGroup: rg-private-dns
+        subscription: ${AZURE_DNS_SUBSCRIPTION_ID}
     deployments:
       - name: gpt-4o
         model:

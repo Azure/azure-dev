@@ -295,6 +295,9 @@ func TestTemplatesFS_Embedded(t *testing.T) {
 		"templates/main.arm.json",
 		"templates/abbreviations.json",
 		"templates/modules/acr.bicep",
+		"templates/modules/network.bicep",
+		"templates/modules/subnet.bicep",
+		"templates/modules/private-endpoint-dns.bicep",
 	}
 	for _, p := range wantFiles {
 		t.Run(p, func(t *testing.T) {
@@ -329,4 +332,323 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	params, ok := arm["parameters"].(map[string]any)
 	require.True(t, ok, "parameters must be an object")
 	assert.Contains(t, params, "resourceGroupName")
+
+	// Network isolation parameters must exist so the synthesizer's network
+	// param set is accepted by ARM (extra params would fail the deployment).
+	for _, p := range []string{
+		"enableNetworkIsolation", "networkMode", "vnetId",
+		"agentSubnetName", "agentSubnetPrefix", "createAgentSubnet",
+		"peSubnetName", "peSubnetPrefix", "createPESubnet",
+		"managedIsolationMode", "dnsZonesResourceGroup", "dnsZonesSubscription",
+	} {
+		assert.Contains(t, params, p, "network param %q must be declared in the ARM template", p)
+	}
+}
+
+func TestSynthesize_Network(t *testing.T) {
+	t.Setenv("AZURE_VNET_ID",
+		"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/"+
+			"providers/Microsoft.Network/virtualNetworks/my-vnet")
+
+	const validVNet = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/" +
+		"providers/Microsoft.Network/virtualNetworks/my-vnet"
+
+	tests := []struct {
+		name     string
+		yaml     string
+		wantMode string
+		check    func(t *testing.T, p map[string]any)
+	}{
+		{
+			name: "no network block => public account, isolation off",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    deployments:
+      - name: gpt-4.1-mini
+        model: {format: OpenAI, name: gpt-4.1-mini, version: "2025-04-14"}
+        sku: {capacity: 10, name: GlobalStandard}
+`,
+			wantMode: NetworkModeNone,
+			check: func(t *testing.T, p map[string]any) {
+				assert.Equal(t, false, p["enableNetworkIsolation"])
+				assert.Equal(t, "", p["networkMode"])
+			},
+		},
+		{
+			name: "byo with explicit subnets => create both",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: byo
+      byo:
+        vnet: {id: ` + validVNet + `}
+        agentSubnet: {name: agent-subnet, prefix: 192.168.0.0/24}
+        peSubnet: {name: pe-subnet, prefix: 192.168.1.0/24}
+      dns:
+        resourceGroup: rg-private-dns
+        subscription: 22222222-2222-2222-2222-222222222222
+`,
+			wantMode: NetworkModeByo,
+			check: func(t *testing.T, p map[string]any) {
+				assert.Equal(t, true, p["enableNetworkIsolation"])
+				assert.Equal(t, "byo", p["networkMode"])
+				assert.Equal(t, validVNet, p["vnetId"])
+				assert.Equal(t, "agent-subnet", p["agentSubnetName"])
+				assert.Equal(t, "192.168.0.0/24", p["agentSubnetPrefix"])
+				assert.Equal(t, true, p["createAgentSubnet"])
+				assert.Equal(t, true, p["createPESubnet"])
+				assert.Equal(t, "rg-private-dns", p["dnsZonesResourceGroup"])
+				assert.Equal(t, "22222222-2222-2222-2222-222222222222", p["dnsZonesSubscription"])
+			},
+		},
+		{
+			name: "byo subnet name only => reference (create=false)",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: byo
+      byo:
+        vnet: {id: ` + validVNet + `}
+        agentSubnet: {name: existing-agent}
+`,
+			wantMode: NetworkModeByo,
+			check: func(t *testing.T, p map[string]any) {
+				assert.Equal(t, "existing-agent", p["agentSubnetName"])
+				assert.Equal(t, false, p["createAgentSubnet"])
+				// pe subnet omitted => default + create
+				assert.Equal(t, "pe-subnet", p["peSubnetName"])
+				assert.Equal(t, true, p["createPESubnet"])
+			},
+		},
+		{
+			name: "byo vnet id from ${VAR}",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: byo
+      byo:
+        vnet: {id: "${AZURE_VNET_ID}"}
+`,
+			wantMode: NetworkModeByo,
+			check: func(t *testing.T, p map[string]any) {
+				assert.Contains(t, p["vnetId"], "/virtualNetworks/my-vnet")
+			},
+		},
+		{
+			name: "managed mode with isolation",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: managed
+      managed:
+        isolationMode: AllowOnlyApprovedOutbound
+`,
+			wantMode: NetworkModeManaged,
+			check: func(t *testing.T, p map[string]any) {
+				assert.Equal(t, true, p["enableNetworkIsolation"])
+				assert.Equal(t, "managed", p["networkMode"])
+				assert.Equal(t, "AllowOnlyApprovedOutbound", p["managedIsolationMode"])
+			},
+		},
+		{
+			name: "dns subscription normalized from /subscriptions/<guid>",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: byo
+      byo:
+        vnet: {id: ` + validVNet + `}
+      dns:
+        resourceGroup: rg-dns
+        subscription: /subscriptions/33333333-3333-3333-3333-333333333333
+`,
+			wantMode: NetworkModeByo,
+			check: func(t *testing.T, p map[string]any) {
+				assert.Equal(t, "33333333-3333-3333-3333-333333333333", p["dnsZonesSubscription"])
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := Synthesize(Input{
+				RawAzureYAML:  []byte(tt.yaml),
+				ServiceName:   "my-project",
+				AcceptedHosts: []string{"azure.ai.agent"},
+			})
+			require.NoError(t, err)
+			require.NotNil(t, res)
+			assert.Equal(t, tt.wantMode, res.NetworkMode)
+			if tt.check != nil {
+				tt.check(t, res.Parameters)
+			}
+		})
+	}
+}
+
+func TestSynthesize_NetworkValidationErrors(t *testing.T) {
+	const validVNet = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/" +
+		"providers/Microsoft.Network/virtualNetworks/my-vnet"
+
+	tests := []struct {
+		name    string
+		yaml    string
+		wantSub string
+	}{
+		{
+			name: "missing mode",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      byo:
+        vnet: {id: ` + validVNet + `}
+`,
+			wantSub: "mode is required",
+		},
+		{
+			name: "invalid mode",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: hybrid
+`,
+			wantSub: "not one of byo, managed",
+		},
+		{
+			name: "byo mode but managed block set",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: byo
+      byo:
+        vnet: {id: ` + validVNet + `}
+      managed:
+        isolationMode: AllowInternetOutbound
+`,
+			wantSub: "managed: block is also set",
+		},
+		{
+			name: "managed mode missing managed block",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: managed
+`,
+			wantSub: "managed: block is missing",
+		},
+		{
+			name: "byo missing vnet id",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: byo
+      byo:
+        agentSubnet: {name: a}
+`,
+			wantSub: "byo.vnet.id: required",
+		},
+		{
+			name: "malformed vnet id",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: byo
+      byo:
+        vnet: {id: not-an-arm-id}
+`,
+			wantSub: "not a well-formed",
+		},
+		{
+			name: "subnet prefix without name",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: byo
+      byo:
+        vnet: {id: ` + validVNet + `}
+        agentSubnet: {prefix: 192.168.0.0/24}
+`,
+			wantSub: "prefix set without name",
+		},
+		{
+			name: "subnet invalid cidr",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: byo
+      byo:
+        vnet: {id: ` + validVNet + `}
+        agentSubnet: {name: a, prefix: not-a-cidr}
+`,
+			wantSub: "not a valid CIDR",
+		},
+		{
+			name: "unresolved var",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: byo
+      byo:
+        vnet: {id: "${DEFINITELY_NOT_SET_VAR_XYZ}"}
+`,
+			wantSub: "unresolved environment variable",
+		},
+		{
+			name: "bad managed isolation mode",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      mode: managed
+      managed:
+        isolationMode: Wide
+`,
+			wantSub: "isolationMode",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Synthesize(Input{
+				RawAzureYAML:  []byte(tt.yaml),
+				ServiceName:   "my-project",
+				AcceptedHosts: []string{"azure.ai.agent"},
+			})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantSub)
+			// Errors carry the service-scoped field path.
+			assert.Contains(t, err.Error(), "services.my-project.network")
+		})
+	}
 }

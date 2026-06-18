@@ -13,6 +13,72 @@ Use `--no-inspector` to run only the local agent process:
 azd ai agent run --no-inspector
 ```
 
+## Private networking for `host: microsoft.foundry`
+
+A Foundry service can be provisioned as a **network-secured (VNet-bound)**
+account by adding a `network:` block to the service body in `azure.yaml`. When
+`network:` is omitted the account uses public networking (unchanged behavior).
+When present, azd provisions or references a private account, its private
+endpoint, and the AI private DNS zones; dependent stores (Cosmos DB, AI Search,
+Storage) stay platform-managed.
+
+```yaml
+services:
+  my-project:
+    host: microsoft.foundry
+    network:
+      mode: byo                  # byo | managed
+      byo:
+        vnet:
+          id: ${AZURE_VNET_ID}   # required for byo (v1); must already exist
+        agentSubnet:
+          name: agent-subnet
+          prefix: 192.168.0.0/24
+        peSubnet:
+          name: pe-subnet
+          prefix: 192.168.1.0/24
+      dns:
+        resourceGroup: rg-private-dns
+        subscription: ${AZURE_DNS_SUBSCRIPTION_ID}
+    agents:
+      - name: my-agent
+        kind: hosted
+        project: src/my-agent
+        image: myprivacr.azurecr.io/agents/my-agent:v1   # BYO image required
+```
+
+### Field reference
+
+| Field | Rule |
+| --- | --- |
+| `mode` | Required. `byo` (customer VNet) or `managed` (Foundry-managed VNet). The matching sub-block is required; the other must be absent. |
+| `byo.vnet.id` | Required in v1. ARM id of an existing VNet. Supports `${VAR}` resolved from the azd environment. |
+| `byo.agentSubnet` / `byo.peSubnet` | Tri-state. Omitted: azd creates a default subnet. Name only: azd references an existing subnet. Name **and** prefix: azd creates the subnet with that name/CIDR. |
+| `managed.isolationMode` | `AllowInternetOutbound` or `AllowOnlyApprovedOutbound`. |
+| `dns.resourceGroup` | Omitted: azd creates and links the AI private DNS zones. Set: azd references existing zones in that resource group. |
+| `dns.subscription` | Optional. Defaults to the deployment subscription. Accepts a bare GUID or `${VAR}`. |
+
+### Environment variables
+
+Network fields support `${VAR}` references resolved client-side from the azd
+environment (run `azd env set <KEY> <value>`). The variable names are
+user-chosen; the example above uses:
+
+| Variable | Format | Used by |
+| --- | --- | --- |
+| `AZURE_VNET_ID` | ARM resource id of an existing `Microsoft.Network/virtualNetworks` | `network.byo.vnet.id` |
+| `AZURE_DNS_SUBSCRIPTION_ID` | bare GUID or `/subscriptions/<guid>` | `network.dns.subscription` |
+
+### Requirements and limits
+
+- **BYO container image required.** Secured agents must reference a pre-built
+  image via `agents[].image` (`registry/image:tag`); the developer owns the
+  registry's SKU, private endpoint, DNS, and firewall. Local build into a
+  private ACR is not supported in v1.
+- **Brownfield (`endpoint:`) ignores `network:`.** When `endpoint:` is set the
+  account's network posture is fixed by whoever created it; azd warns and does
+  not reconcile `network:`.
+
 ## Local Development
 
 ### Prerequisites

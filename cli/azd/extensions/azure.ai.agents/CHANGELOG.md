@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- `azd ai agent init` now defaults to **code deploy** (source ZIP upload) for Python and .NET hosted agents instead of container (Docker image) deploy. This applies to the interactive prompt, `--no-prompt`, and `-m` manifest flows. Projects that are not Python/.NET continue to use container deploy. To keep using a Docker image, pass `--deploy-mode container` (or select "Container Image (Docker)" in the prompt). With code deploy in `--no-prompt`, `--runtime` and `--entry-point` are now auto-detected from the project when omitted.
+
 ## 0.1.40-preview (2026-06-15)
 
 - [[#8641]](https://github.com/Azure/azure-dev/pull/8641) Fix optimize/eval handling for array-valued mutations, resolve `dataset.local_uri` relative to the agent project, and align optimize test schema data with the current API format. Thanks @Zyysurely for the contribution!

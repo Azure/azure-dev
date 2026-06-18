@@ -886,9 +886,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
   # Initialize from local agent code
   azd ai agent init --src ./src/my-agent --agent-name my-unique-agent
 
-  # Non-interactive code deploy (CI/CD)
-  azd ai agent init --no-prompt --project-id "<resource-id>" \
-    --deploy-mode code --runtime python_3_13 --entry-point app.py`,
+  # Non-interactive code deploy (CI/CD) — code is the default for Python/.NET
+  azd ai agent init --no-prompt --project-id "<resource-id>"
+
+  # Non-interactive container deploy
+  azd ai agent init --no-prompt --project-id "<resource-id>" --deploy-mode container`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.noPrompt = extCtx.NoPrompt
@@ -1304,13 +1306,16 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
 
 	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "",
-		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'container' in --no-prompt.")
+		"Deployment mode: 'code' (ZIP upload) or 'container' (Docker image). "+
+			"Defaults to 'code' for Python/.NET projects, 'container' otherwise.")
 
 	cmd.Flags().StringVar(&flags.runtime, "runtime", "",
-		"Runtime for code deploy (e.g., 'python_3_13', 'python_3_14', 'dotnet_10'). Required with --deploy-mode code --no-prompt.")
+		"Runtime for code deploy (e.g., 'python_3_13', 'python_3_14', 'dotnet_10'). "+
+			"Auto-detected from the project when omitted.")
 
 	cmd.Flags().StringVar(&flags.entryPoint, "entry-point", "",
-		"Entry point file for code deploy (e.g., 'app.py', 'MyAgent.dll'). Required with --deploy-mode code --no-prompt.")
+		"Entry point file for code deploy (e.g., 'app.py', 'MyAgent.dll'). "+
+			"Auto-detected from the project when omitted.")
 
 	cmd.Flags().StringVar(&flags.depResolution, "dep-resolution", "",
 		"Dependency resolution for code deploy: 'remote_build' or 'bundled'. Defaults to 'remote_build'.")
@@ -3603,16 +3608,17 @@ func extractConnectionConfigs(
 	return connections, credentialEnvVars, nil
 }
 
-// validateCodeDeployFlags checks that required flags are present when using
-// --deploy-mode code in --no-prompt mode.
+// validateCodeDeployFlags checks that code deploy flag values are valid.
 func (a *InitAction) validateCodeDeployFlags() error {
 	return validateCodeDeployInput(
-		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution)
+		a.flags.deployMode, a.flags.runtime, a.flags.depResolution)
 }
 
 // validateCodeDeployInput is the shared validation logic for code deploy flags.
-// Used by both InitAction and InitFromCodeAction.
-func validateCodeDeployInput(noPrompt bool, deployMode, runtime, entryPoint, depResolution string) error {
+// Used by both InitAction and InitFromCodeAction. It validates flag values only;
+// --runtime and --entry-point are optional and auto-detected from the project when
+// omitted, even with --deploy-mode code --no-prompt.
+func validateCodeDeployInput(deployMode, runtime, depResolution string) error {
 	if deployMode != "" && deployMode != "container" && deployMode != "code" {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
@@ -3640,22 +3646,6 @@ func validateCodeDeployInput(noPrompt bool, deployMode, runtime, entryPoint, dep
 			"--dep-resolution must be 'remote_build' or 'bundled'",
 			"Specify --dep-resolution remote_build or --dep-resolution bundled",
 		)
-	}
-	if noPrompt && deployMode == "code" {
-		if runtime == "" {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"--runtime is required when using --deploy-mode code with --no-prompt",
-				"Specify --runtime (e.g., python_3_13, python_3_14, dotnet_10)",
-			)
-		}
-		if entryPoint == "" {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"--entry-point is required when using --deploy-mode code with --no-prompt",
-				"Specify --entry-point (e.g., app.py, main.py, MyAgent.dll)",
-			)
-		}
 	}
 	return nil
 }

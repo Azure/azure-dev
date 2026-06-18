@@ -931,11 +931,11 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 			wantErrContain: "invalid --deploy-mode value",
 		},
 		{
-			name:           "no flag + noPrompt defaults to container",
+			name:           "no flag + noPrompt defaults to code for Python/.NET",
 			noPrompt:       true,
 			showCodeDeploy: true,
 			flag:           "",
-			want:           "container",
+			want:           "code",
 		},
 		{
 			name:           "no flag + showCodeDeploy=false defaults to container",
@@ -945,12 +945,12 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 			want:           "container",
 		},
 		{
-			name:                 "userProvidedManifest + showCodeDeploy auto-selects container",
+			name:                 "userProvidedManifest + showCodeDeploy auto-selects code",
 			noPrompt:             false,
 			showCodeDeploy:       true,
 			flag:                 "",
 			userProvidedManifest: true,
-			want:                 "container",
+			want:                 "code",
 		},
 		{
 			name:                 "showCodeDeploy=false returns container regardless of userProvidedManifest",

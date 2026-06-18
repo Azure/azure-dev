@@ -39,23 +39,38 @@ source "$SCRIPT_DIR/lib.sh"
 # a region hits capacity.
 ACCOUNT_LOCATION="${ACCOUNT_LOCATION:-westus}"
 
-# BYO image (digest-pinned), written into the agent entry of the hand-authored
-# azure.yaml. Only pulled during the gated deploy phase (RUN_DEPLOY=true); the
-# Foundry project MI is granted repository read on this RBAC+ABAC registry then.
+RUN_ID="${RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
+PREFIX="${PREFIX:-azdnet${RUN_ID//-/}}"
+PREFIX="${PREFIX:0:18}"  # keep within name limits
+
+# BYO image, written into agent.yaml. Only pulled during the gated deploy phase
+# (RUN_DEPLOY=true); the Foundry project MI is granted repository read on this
+# RBAC+ABAC registry then.
 IMAGE="${IMAGE:-1756abcawemengncus3a16acr.azurecr.io/echodual@sha256:76a9463463acf11d4068e8468fb232a3de0709177b6b35de95de6a34b33fa686}"
+
+# BUILD_IMAGE=true builds ~/agents/echo-dual into an ABAC-enabled ACR before any
+# project fixture is generated, then rewrites IMAGE to the pushed tag.
+BUILD_IMAGE="${BUILD_IMAGE:-false}"
+ECHO_DUAL_DIR="${ECHO_DUAL_DIR:-$HOME/agents/echo-dual}"
+IMAGE_REPO="${IMAGE_REPO:-network-e2e/echo-dual}"
+IMAGE_TAG="${IMAGE_TAG:-$RUN_ID}"
+ACR_SKU="${ACR_SKU:-Basic}"
 
 # Phase 5 (deploy + invoke) needs the BYO-image deploy short-circuit from PR
 # 8689. Off by default so phases 0-4 run against the current branch today.
 RUN_DEPLOY="${RUN_DEPLOY:-false}"
 
-RUN_ID="${RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
-PREFIX="${PREFIX:-azdnet${RUN_ID//-/}}"
-PREFIX="${PREFIX:0:18}"  # keep within name limits
-
-VNET_RG="${VNET_RG:-${PREFIX}-vnet-rg}"
-DNS_RG="${DNS_RG:-${PREFIX}-dns-rg}"        # external zones for the reference cells
+# TARGET_RG lets investigation runs keep all test resources in a single RG.
+# By default, keep the matrix-style split RGs for isolation/readability.
+TARGET_RG="${TARGET_RG:-}"
+VNET_RG="${VNET_RG:-${TARGET_RG:-${PREFIX}-vnet-rg}}"
+DNS_RG="${DNS_RG:-${TARGET_RG:-${PREFIX}-dns-rg}}"        # external zones for the reference cells
 VNET_NAME="${VNET_NAME:-${PREFIX}-vnet}"
 VNET_CIDR="${VNET_CIDR:-192.168.0.0/16}"
+DEFAULT_ACR_NAME="$(printf '%sacr' "$PREFIX" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
+DEFAULT_ACR_NAME="${DEFAULT_ACR_NAME:0:50}"
+ACR_RG="${ACR_RG:-${TARGET_RG:-$VNET_RG}}"
+ACR_NAME="${ACR_NAME:-$DEFAULT_ACR_NAME}"
 
 # create-mode subnets are created by the template (must NOT pre-exist);
 # reference-mode subnets are pre-created here.
@@ -148,7 +163,7 @@ YAML
       --subscription "$SUBSCRIPTION_ID" --location "$ACCOUNT_LOCATION"
     # The foundry provider requires the target RG name (the subscription-scoped
     # template creates it). Unique per project so cells don't collide.
-    azd env set AZURE_RESOURCE_GROUP "${PREFIX}-${name}-rg" >/dev/null
+    azd env set AZURE_RESOURCE_GROUP "${TARGET_RG:-${PREFIX}-${name}-rg}" >/dev/null
     azd env set AZURE_VNET_ID "$VNET_ID" >/dev/null
     azd env set AZURE_DNS_SUBSCRIPTION_ID "$SUBSCRIPTION_ID" >/dev/null
     # BYO pre-built image: skip ACR build at provision AND deploy. Without this
@@ -210,6 +225,67 @@ phase1_shared_infra() {
       run_capture "12-zone-${z//./_}" az network private-dns zone create -g "$DNS_RG" -n "$z"
     fi
   done
+}
+
+# --- optional image build ----------------------------------------------------
+
+build_byo_image() {
+  if [[ "$BUILD_IMAGE" != "true" ]]; then
+    return 0
+  fi
+
+  info "### image build: ABAC-enabled ACR + echo-dual"
+  if [[ ! -f "$ECHO_DUAL_DIR/Dockerfile" ]]; then
+    fatal "ECHO_DUAL_DIR does not contain a Dockerfile: $ECHO_DUAL_DIR"
+  fi
+
+  run_capture "13-rg-acr" az group create -n "$ACR_RG" -l "$ACCOUNT_LOCATION"
+  if az acr show -n "$ACR_NAME" >/dev/null 2>&1; then
+    local mode
+    mode="$(az acr show -n "$ACR_NAME" --query roleAssignmentMode -o tsv 2>/dev/null || echo '')"
+    if [[ "$mode" != *Abac* && "$mode" != *abac* ]]; then
+      fatal "ACR $ACR_NAME exists but is not ABAC-enabled (roleAssignmentMode=$mode); choose a new ACR_NAME"
+    fi
+    info "ABAC-enabled ACR $ACR_NAME already exists; reusing"
+  else
+    run_capture "13-acr-create" az acr create -g "$ACR_RG" -n "$ACR_NAME" \
+      --sku "$ACR_SKU" --location "$ACCOUNT_LOCATION" --role-assignment-mode rbac-abac
+  fi
+
+  local acr_id caller_id principal_type
+  acr_id="$(az acr show -n "$ACR_NAME" --query id -o tsv)"
+  # Avoid Microsoft Graph here: some tenants block `az ad signed-in-user show`
+  # via Conditional Access. The ARM token contains the caller object id (`oid`).
+  caller_id="$(az account get-access-token --resource https://management.azure.com/ \
+    --query accessToken -o tsv | python3 -c 'import base64,json,sys; p=sys.stdin.read().strip().split(".")[1]; print(json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4))).get("oid", ""))')"
+  principal_type="$(az account show --query user.type -o tsv)"
+  if [[ "$principal_type" == "servicePrincipal" ]]; then
+    principal_type="ServicePrincipal"
+  else
+    principal_type="User"
+  fi
+
+  if [[ -n "$caller_id" ]]; then
+    # ABAC-enabled registries require repository-scoped data-plane roles. The
+    # caller queues the ACR Task and needs repository write to push the built
+    # image. The project MI receives Repository Reader later for image pull.
+    run_capture "13-acr-caller-writer" az role assignment create \
+      --assignee-object-id "$caller_id" --assignee-principal-type "$principal_type" \
+      --role "Container Registry Repository Writer" --scope "$acr_id" || \
+      warn "caller repository-writer grant failed (may already exist)"
+    sleep 30 # role propagation before the ACR Task push
+  else
+    warn "could not resolve caller object id; ensure caller has Container Registry Repository Writer"
+  fi
+
+  # ABAC-enabled repository permissions require the caller identity when ACR
+  # Tasks authenticates to a source registry. Keep the literal [caller] quoted
+  # so the shell does not interpret it as a glob.
+  run_capture "13-acr-build" az acr build -r "$ACR_NAME" \
+    -t "$IMAGE_REPO:$IMAGE_TAG" --source-acr-auth-id "[caller]" "$ECHO_DUAL_DIR"
+  IMAGE="$ACR_NAME.azurecr.io/$IMAGE_REPO:$IMAGE_TAG"
+  printf 'IMAGE=%s\nACR_NAME=%s\nACR_RG=%s\n' "$IMAGE" "$ACR_NAME" "$ACR_RG" >"$OUT_DIR/13-image.txt"
+  info "IMAGE=$IMAGE"
 }
 
 # --- phase 2: what-if matrix -------------------------------------------------
@@ -350,6 +426,10 @@ main() {
     echo "subscription=$SUBSCRIPTION_ID"
     echo "account_location=$ACCOUNT_LOCATION"
     echo "image=$IMAGE"
+    echo "build_image=$BUILD_IMAGE"
+    echo "echo_dual_dir=$ECHO_DUAL_DIR"
+    echo "acr_name=$ACR_NAME acr_rg=$ACR_RG"
+    echo "target_rg=$TARGET_RG"
     echo "run_deploy=$RUN_DEPLOY"
     echo "work_dir=$WORK_DIR"
     echo "out_dir=$OUT_DIR"
@@ -363,6 +443,7 @@ main() {
   local max="${MAX_PHASE:-6}"
   phase0_local_gates
   if (( max >= 1 )); then phase1_shared_infra; fi
+  build_byo_image
   if (( max >= 2 )); then phase2_whatif_matrix; fi
   if (( max >= 3 )); then phase3_real_provision; fi
   if (( max >= 4 )); then phase4_eject; fi

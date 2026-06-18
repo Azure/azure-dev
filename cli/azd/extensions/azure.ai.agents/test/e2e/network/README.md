@@ -62,13 +62,24 @@ template/parameter fails in seconds, not after a 15-minute provision.
   otherwise `azd provision` fails with `extension does not support
   provisioning-provider capability`. Set `SKIP_EXT_REFRESH=true` to reuse the
   already-installed extension.
-- For the gated deploy phase only (`RUN_DEPLOY=true`): the BYO image
-  `…/echodual@sha256:…` must exist and be pullable by the Foundry project's
-  managed identity. The registry uses RBAC + ABAC, so the harness grants the
-  ABAC-aware **`Container Registry Repository Reader`** role to the project MI
-  (`grant_acr_pull`) and sets `AZD_AGENT_SKIP_ACR=true` (the BYO-image deploy
-  signal). If the image's registry is unavailable, or the grant needs an ABAC
-  condition, supply a reachable `IMAGE=` and complete the grant manually.
+- For the gated deploy phase only (`RUN_DEPLOY=true`): use an ABAC-enabled ACR
+  image that is pullable by the Foundry project's managed identity. The harness
+  can build `~/agents/echo-dual` into an ABAC-enabled ACR with `BUILD_IMAGE=true`.
+  The build command intentionally uses caller authentication for source registry
+  access:
+  `az acr build ... --source-acr-auth-id [caller]`.
+- The caller that queues the ACR Task must receive **`Container Registry
+  Repository Writer`** on the ABAC ACR so the build can push the image. The
+  harness grants this before running `az acr build --source-acr-auth-id [caller]`.
+- The project MI must receive the ABAC-aware **`Container Registry Repository
+  Reader`** role (exact Azure role name; not the legacy `AcrPull`). The harness
+  grants this role in `grant_acr_pull` and sets `AZD_AGENT_SKIP_ACR=true` (the
+  BYO-image deploy signal). If the registry requires a narrower ABAC condition,
+  complete the grant manually and re-run phase 5.
+- Because the account is intentionally private (`publicNetworkAccess: Disabled`),
+  phase 5 deploy/invoke must run from a host that can resolve and reach the
+  private endpoint. Running from the public internet fails with `403 Public
+  access is disabled. Please configure private endpoint.`
 
 ## Usage
 
@@ -80,11 +91,20 @@ export ACCOUNT_LOCATION=westus        # hard requirement for the network account
 cli/azd/extensions/azure.ai.agents/test/e2e/network/run-network-e2e.sh
 ```
 
-Phases 0–4 run by default (no deploy). To also run phase 5 once PR 8689 is in
-your build:
+Phases 0–4 run by default (no deploy). To also run phase 5 and build the
+`~/agents/echo-dual` image into an ABAC-enabled ACR:
 
 ```bash
-RUN_DEPLOY=true cli/azd/extensions/azure.ai.agents/test/e2e/network/run-network-e2e.sh
+RUN_DEPLOY=true BUILD_IMAGE=true \
+  cli/azd/extensions/azure.ai.agents/test/e2e/network/run-network-e2e.sh
+```
+
+For manual investigation, keep all created test resources in one RG and skip
+teardown:
+
+```bash
+RUN_DEPLOY=true BUILD_IMAGE=true KEEP=true TARGET_RG=<single-test-rg> \
+  cli/azd/extensions/azure.ai.agents/test/e2e/network/run-network-e2e.sh
 ```
 
 Useful overrides:
@@ -95,7 +115,11 @@ Useful overrides:
 | `RUN_DEPLOY` | `false` | `true` runs phase 5 (deploy + invoke); needs PR 8689 |
 | `MAX_PHASE` | `6` | stop after phase N (e.g. `2` for the cheap VNet + what-if gates) |
 | `SKIP_EXT_REFRESH` | `false` | `true` skips the phase-0 dev-extension rebuild/reinstall |
-| `IMAGE` | the echodual digest | BYO image (in `agent.yaml`); pulled only in phase 5 |
+| `BUILD_IMAGE` | `false` | `true` builds `ECHO_DUAL_DIR` into an ABAC-enabled ACR before fixtures are generated |
+| `ECHO_DUAL_DIR` | `~/agents/echo-dual` | source directory for the phase-5 agent image |
+| `ACR_NAME` / `ACR_RG` | derived from `PREFIX` / VNet RG | target ACR used by `BUILD_IMAGE=true` |
+| `IMAGE` | the echodual digest or built tag | BYO image (in `agent.yaml`); pulled only in phase 5 |
+| `TARGET_RG` | unset | optional single RG for VNet, DNS, ACR, and the real Foundry env |
 | `KEEP` | `false` | `true` skips teardown (inspect resources, then `azd down --purge` yourself) |
 | `OUT_DIR` | `./azd-network-e2e-<ts>` | log directory |
 | `RUN_ID` / `PREFIX` | timestamp | name uniqueness |

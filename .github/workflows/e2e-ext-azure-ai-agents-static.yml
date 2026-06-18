@@ -110,9 +110,9 @@ jobs:
       - name: Azure Login
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.DEVOPS_CLIENT_ID }}
-          tenant-id: ${{ secrets.DEVOPS_TENANT_ID }}
-          subscription-id: ${{ secrets.DEVOPS_SUB_ID }}
+          client-id: ${{ secrets.FOUNDRY_EXT_DEVOPS_CLIENT_ID }}
+          tenant-id: ${{ secrets.FOUNDRY_EXT_DEVOPS_TENANT_ID }}
+          subscription-id: ${{ secrets.FOUNDRY_EXT_DEVOPS_SUB_ID }}
 
       - name: Configure azd to use az CLI auth
         # On GitHub runners, az CLI runs natively (fast). useAzCliAuth is safe here.
@@ -122,9 +122,9 @@ jobs:
       - name: Run Tier 1 tests
         working-directory: ${{ env.TESTS_DIR }}
         env:
-          E2E_SUBSCRIPTION: ${{ secrets.DEVOPS_SUB_ID }}
+          E2E_SUBSCRIPTION: ${{ secrets.FOUNDRY_EXT_DEVOPS_SUB_ID }}
           E2E_PROJECT: ${{ secrets.FOUNDRY_PROJECT_NAME }}
-          E2E_TENANT: ${{ secrets.DEVOPS_TENANT_ID }}
+          E2E_TENANT: ${{ secrets.FOUNDRY_EXT_DEVOPS_TENANT_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 test_tier1.py
 
@@ -160,9 +160,9 @@ jobs:
       - name: Azure Login
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.DEVOPS_CLIENT_ID }}
-          tenant-id: ${{ secrets.DEVOPS_TENANT_ID }}
-          subscription-id: ${{ secrets.DEVOPS_SUB_ID }}
+          client-id: ${{ secrets.FOUNDRY_EXT_DEVOPS_CLIENT_ID }}
+          tenant-id: ${{ secrets.FOUNDRY_EXT_DEVOPS_TENANT_ID }}
+          subscription-id: ${{ secrets.FOUNDRY_EXT_DEVOPS_SUB_ID }}
 
       - name: Configure azd to use az CLI auth
         # On GitHub runners, az CLI runs natively (fast). useAzCliAuth is safe here.
@@ -172,12 +172,12 @@ jobs:
         working-directory: ${{ env.TESTS_DIR }}
         env:
           # These secrets must be configured in the repository's Actions settings:
-          # DEVOPS_SUB_ID: Azure subscription ID for test resources
+          # FOUNDRY_EXT_DEVOPS_SUB_ID: Azure subscription ID for test resources
           # FOUNDRY_PROJECT_NAME: Existing Foundry project (or set E2E_CREATE_PROJECT=true to skip)
-          # DEVOPS_TENANT_ID: AAD tenant ID for OIDC auth
-          E2E_SUBSCRIPTION: ${{ secrets.DEVOPS_SUB_ID }}
+          # FOUNDRY_EXT_DEVOPS_TENANT_ID: AAD tenant ID for OIDC auth
+          E2E_SUBSCRIPTION: ${{ secrets.FOUNDRY_EXT_DEVOPS_SUB_ID }}
           E2E_PROJECT: ${{ secrets.FOUNDRY_PROJECT_NAME }}
-          E2E_TENANT: ${{ secrets.DEVOPS_TENANT_ID }}
+          E2E_TENANT: ${{ secrets.FOUNDRY_EXT_DEVOPS_TENANT_ID }}
           E2E_CREATE_PROJECT: "true"
           E2E_LOCATION: "eastus2"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

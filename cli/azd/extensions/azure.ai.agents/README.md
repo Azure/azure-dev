@@ -79,6 +79,85 @@ user-chosen; the example above uses:
   account's network posture is fixed by whoever created it; azd warns and does
   not reconcile `network:`.
 
+### Cheatsheet: BYO image + VNet hosted agent
+
+```bash
+export SUBSCRIPTION_ID="<sub>"
+export LOCATION="westus"
+export RESOURCE_GROUP="<rg>"
+export VNET_ID="<vnet-resource-id>"
+export IMAGE="<acr>.azurecr.io/<repo>:<tag>"
+```
+
+ACR requirements:
+
+- The BYO image must be pullable by the Foundry **project managed identity**.
+- For ABAC-enabled ACR, grant the project MI `Container Registry Repository Reader`.
+- For private-only ACR, use Premium SKU, an ACR private endpoint, and a
+  `privatelink.azurecr.io` DNS zone linked to the VNet. Disable public access
+  only after the image is pushed.
+
+Create `azure.yaml`:
+
+```yaml
+name: my-agent
+infra:
+  provider: microsoft.foundry
+
+services:
+  my-agent:
+    host: azure.ai.agent
+    deployments: []
+    network:
+      mode: byo
+      byo:
+        vnet:
+          id: ${AZURE_VNET_ID}
+        agentSubnet:
+          name: agent-subnet
+          prefix: 192.168.10.0/24
+        peSubnet:
+          name: pe-subnet
+          prefix: 192.168.11.0/24
+```
+
+Create `agent.yaml`:
+
+```yaml
+kind: hosted
+name: my-agent
+image: ${IMAGE}
+protocols:
+  - protocol: responses
+    version: 1.0.0
+resources:
+  cpu: "0.5"
+  memory: 1Gi
+```
+
+Configure and provision:
+
+```bash
+azd env new my-env --subscription "$SUBSCRIPTION_ID" --location "$LOCATION"
+azd env set AZURE_RESOURCE_GROUP "$RESOURCE_GROUP"
+azd env set AZURE_VNET_ID "$VNET_ID"
+azd env set IMAGE "$IMAGE"
+azd env set AZD_AGENT_SKIP_ACR true
+azd provision --no-prompt
+```
+
+Deploy and invoke from a host that can reach the Foundry private endpoint:
+
+```bash
+azd deploy --no-prompt
+azd ai agent invoke --new-session "hello"
+```
+
+Common failures:
+
+- `403 Public access is disabled`: run deploy/invoke from inside the VNet, a peered VNet, or VPN.
+- `ImageError: registry authentication failed`: grant ACR pull permission to the Foundry project MI.
+
 ## Local Development
 
 ### Prerequisites

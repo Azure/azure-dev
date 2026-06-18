@@ -472,6 +472,41 @@ func TestToolInstallAction_AllFailureBatch_EmitsCorrectAggregates(t *testing.T) 
 		"failed_ids must be a sorted, comma-joined list matching the failed tools")
 }
 
+// TestToolInstallAction_Failure_ReturnsErrorNotSuccess is a regression test
+// for a bug where a failed install still returned a success ActionResult,
+// causing the UX middleware to print "SUCCESS: Tool installation complete"
+// after the per-tool failures. On failure the action must return a non-nil
+// error and no success message so the command exits non-zero.
+func TestToolInstallAction_Failure_ReturnsErrorNotSuccess(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+
+	installer := &cmdMockInstaller{
+		install: func(_ context.Context, td *tool.ToolDefinition) (*tool.InstallResult, error) {
+			return &tool.InstallResult{
+				Tool:    td,
+				Success: false,
+				Error:   errors.New("install failed for " + td.Id),
+			}, errors.New("install failed for " + td.Id)
+		},
+	}
+	manager := tool.NewManager(&cmdMockDetector{}, installer, nil)
+
+	action := newToolInstallAction(
+		[]string{"az-cli"},
+		&toolInstallFlags{},
+		manager,
+		mockinput.NewMockConsole(),
+		&output.NoneFormatter{},
+		io.Discard,
+	)
+
+	result, err := action.Run(t.Context())
+
+	require.Error(t, err, "a failed install must return a non-nil error")
+	assert.Nil(t, result,
+		"a failed install must not return a success ActionResult (would print SUCCESS)")
+}
+
 // TestToolUpgradeAction_SuccessEmitsFromAndToVersion exercises the upgrade
 // path end-to-end and verifies:
 //   - tool.upgrade.from_version is emitted from DetectTool (H2: no UX change,

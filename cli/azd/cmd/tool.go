@@ -557,6 +557,14 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, a.formatter.Format(installResults, a.writer, nil)
 	}
 
+	// When one or more tools failed, surface the error so the command
+	// exits non-zero and the success header is NOT printed. The per-tool
+	// failures and a summary warning were already shown by
+	// runToolOperation.
+	if opErr != nil {
+		return nil, opErr
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: "Tool installation complete",
@@ -875,6 +883,14 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	if a.formatter.Kind() == output.JsonFormat {
 		return nil, a.formatter.Format(upgradeResults, a.writer, nil)
+	}
+
+	// When one or more tools failed, surface the error so the command
+	// exits non-zero and the success header is NOT printed. The per-tool
+	// failures and a summary warning were already shown by
+	// runToolOperation.
+	if opErr != nil {
+		return nil, opErr
 	}
 
 	return &actions.ActionResult{
@@ -1497,8 +1513,15 @@ func runToolOperation(
 
 	taskErr := taskList.Run()
 	if taskErr != nil {
+		// Build the past participle: "install" -> "installed",
+		// "upgrade" -> "upgraded". A naive "%sd" yields "installd",
+		// so append "ed" unless the verb already ends in "e".
+		participle := action + "ed"
+		if strings.HasSuffix(action, "e") {
+			participle = action + "d"
+		}
 		console.Message(ctx, output.WithWarningFormat(
-			"\nSome tools could not be %sd. Run 'azd tool list' for details.", action,
+			"\nSome tools could not be %s. Run 'azd tool list' for details.", participle,
 		))
 	}
 

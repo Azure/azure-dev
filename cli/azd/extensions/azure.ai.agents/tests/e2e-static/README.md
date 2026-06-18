@@ -73,7 +73,7 @@ python run.py scripts/init_python_basic.yaml -v
   - `auto_test_tool/agent.py` — tmux primitives, select_by_text, action dispatch
   - `auto_test_tool/runner.py` — scenario execution, tmux session management
   - `scenarios/azd_ai_agent/` — example scenarios in YAML
-- **Test cases source**: Based on internal bugbash wiki and manual test steps
+- **Test cases source**: Based on internal bug-bash wiki and manual test steps
 - **azd extension source**: `D:\w1\azure-dev\cli\azd\extensions\azure.ai.agents\internal\cmd\`
 
 ## Known Issue: WSL Token Timeout

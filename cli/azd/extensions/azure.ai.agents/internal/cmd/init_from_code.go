@@ -1336,19 +1336,15 @@ func knownProtocolNames() string {
 	return strings.Join(names, ", ")
 }
 
-// promptDeployMode asks the user to choose between code deploy and container deploy.
-// When deployModeFlag is set, it is used directly (for --no-prompt with explicit flag).
-// When noPrompt is true and no flag is provided, defaults to "code" for Python/.NET projects.
-// When showCodeDeploy is false and no explicit --deploy-mode flag is set, only container
-// deploy is available (code deploy supports Python/.NET only).
+// promptDeployMode resolves the deploy mode (code or container).
+// Explicit --deploy-mode always wins; falls back to "code" for Python/.NET or "container" otherwise.
 func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool, showCodeDeploy bool, deployModeFlag string, userProvidedManifest bool) (string, error) {
 	// Resolution precedence:
-	//   1. Explicit flag (--deploy-mode) — always wins
-	//   2. !showCodeDeploy — container is the only option (not Python/.NET)
-	//   3. userProvidedManifest — auto-select "code" (opinionated default;
-	//      triggered by -m flag OR interactive template selection)
-	//   4. noPrompt — "code" for Python/.NET projects (no signal)
-	//   5. Interactive prompt (code is the default selection)
+	//   1. Explicit --deploy-mode flag
+	//   2. !showCodeDeploy (non-Python/.NET) → container
+	//   3. userProvidedManifest (-m or interactive template) → code
+	//   4. noPrompt → code
+	//   5. Interactive prompt (code is default)
 
 	// Explicit flag takes precedence
 	if deployModeFlag != "" {
@@ -1368,9 +1364,8 @@ func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt
 		return "container", nil
 	}
 
-	// When the user provided a manifest explicitly (-m), auto-select the
-	// opinionated default (code) without prompting. Users who want
-	// container deploy with -m can pass --deploy-mode container explicitly.
+	// Auto-select code when the user provided a manifest (-m or interactive template).
+	// Use --deploy-mode container to override.
 	if userProvidedManifest {
 		log.Printf("Auto-selected deploy mode: code (use --deploy-mode container for container deploy)")
 		return "code", nil

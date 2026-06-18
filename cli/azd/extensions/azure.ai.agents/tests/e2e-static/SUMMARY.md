@@ -185,8 +185,7 @@ azd ai agent invoke <service> "what is 2+2?"
 **症状：** deploy、invoke 或 teardown 输出 `signal: killed`，或 `AzureCLICredential` 相关错误。
 
 **根因：** `azd config` 中 `auth.useAzCliAuth=true` 导致 azd 每次鉴权都调
-`az account get-access-token`。在 WSL 中 az CLI wrapper 需要调 Windows az CLI
-（`/mnt/c/Program Files (x86)/Microsoft SDKs/Azure/CLI2/wbin/az`），
+`az account get-access-token`。在 WSL 中 az CLI wrapper 需要跨边界调 Windows az CLI，
 每次需 ~10s，超过 Go SDK 的 10s timeout。
 
 **解决：**

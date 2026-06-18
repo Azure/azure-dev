@@ -548,7 +548,7 @@ def phase_init():
         elif "what would you like to do" in prompt:
             if "quota" in cap_lower or "not enough" in cap_lower or "unavailable" in cap_lower:
                 # Quota issue — "Exit setup" is at bottom (default), navigate Up 3x
-                # to "Choose a different model in canadacentral" (first option)
+                # to "Choose a different model in <region>" (first option)
                 print("  -> Choose a different model (quota issue)")
                 key("Up")
                 time.sleep(0.3)

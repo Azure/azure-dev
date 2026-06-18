@@ -8,6 +8,9 @@
 
 ## 第一步：检查前置条件
 
+> **注意：** 以下 PATH 示例中 `$HOME/.pyenv/versions/3.12.3/bin` 需替换为你实际的
+> Python 3 路径。如果 `python3` 已在默认 PATH 中，可省略此段。
+
 在 **PowerShell** 中执行：
 
 ```powershell

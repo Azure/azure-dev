@@ -8,7 +8,7 @@
 #   - GitHub token available via gh.exe or $GITHUB_TOKEN
 
 set -e
-export PATH=/usr/local/bin:$HOME/bin:$HOME/.pyenv/versions/3.12.3/bin:/usr/bin:/bin
+export PATH=/usr/local/bin:$HOME/bin:$(command -v python3 >/dev/null && dirname "$(command -v python3)" || echo "$HOME/.pyenv/shims"):/usr/bin:/bin
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"

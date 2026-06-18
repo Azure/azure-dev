@@ -28,10 +28,11 @@ def run(args, cwd=None, timeout=30):
 
 
 def check(name, passed, detail=""):
-    """Record a test result."""
+    """Record a test result. passed=True/False/None (None=SKIP)."""
     RESULTS.append((name, passed, detail))
-    status = "✓" if passed else "✗"
-    print(f"  {status} {name}" + (f" — {detail}" if detail and not passed else ""))
+    status = "✓" if passed else ("⊘" if passed is None else "✗")
+    suffix = f" — {detail}" if detail and not passed else ""
+    print(f"  {status} {name}{suffix}")
     return passed
 
 
@@ -210,7 +211,7 @@ def test_init_picker_navigation():
 
     # Skip if tmux is not available
     if not os.path.exists(TMUX):
-        return check("00-init-picker-navigation", True, "skipped (tmux not found)")
+        return check("00-init-picker-navigation", None, "tmux not found")
 
     # Kill old
     subprocess.run([TMUX, "-L", SOCK, "kill-server"], capture_output=True)
@@ -315,18 +316,25 @@ if __name__ == "__main__":
     elapsed = time.time() - start
 
     # Summary
-    passed = sum(1 for _, ok, _ in RESULTS if ok)
+    passed = sum(1 for _, ok, _ in RESULTS if ok is True)
+    skipped = sum(1 for _, ok, _ in RESULTS if ok is None)
+    failed = sum(1 for _, ok, _ in RESULTS if ok is False)
     total = len(RESULTS)
     print(f"\n{'=' * 60}")
-    print(f"TIER 0 RESULTS: {passed}/{total} passed ({elapsed:.1f}s)")
+    parts = [f"{passed} passed"]
+    if skipped:
+        parts.append(f"{skipped} skipped")
+    if failed:
+        parts.append(f"{failed} failed")
+    print(f"TIER 0 RESULTS: {', '.join(parts)} (of {total}, {elapsed:.1f}s)")
     print("=" * 60)
 
-    if passed < total:
+    if failed > 0:
         print("\nFailed:")
         for name, ok, detail in RESULTS:
-            if not ok:
+            if ok is False:
                 print(f"  ✗ {name}: {detail}")
         sys.exit(1)
     else:
-        print("✓ ALL TIER 0 TESTS PASSED")
+        print("✓ ALL TIER 0 TESTS PASSED" + (f" ({skipped} skipped)" if skipped else ""))
         sys.exit(0)

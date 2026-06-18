@@ -23,7 +23,7 @@ suite('RevealStep', () => {
                 revealAzureResource: revealStub,
             } as unknown as AzureResourcesExtensionApi['resources']
         };
-        const mockGetApi = sandbox.stub().resolves(mockApi as AzureResourcesExtensionApi);
+        const mockGetApi = sandbox.stub().resolves(mockApi);
         step = new RevealStep(mockGetApi);
 
         executeCommandStub = sandbox.stub(vscode.commands, 'executeCommand').resolves();

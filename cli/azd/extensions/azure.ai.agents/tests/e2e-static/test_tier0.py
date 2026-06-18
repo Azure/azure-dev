@@ -203,7 +203,10 @@ def test_code_download_help():
 
 
 def test_init_picker_navigation():
-    """This one needs tmux to test interactive picker + Ctrl-C."""
+    """This one needs tmux to test interactive picker + Ctrl-C.
+    Note: azd ai agent init requires auth (even just to show the picker).
+    On CI tier0 (no auth), this test is skipped. It runs in tier1 which has auth.
+    """
     TMUX = os.environ.get("E2E_TMUX", shutil.which("tmux") or "/usr/bin/tmux")
     SOCK = "tier0"
     SESS = "picker"
@@ -212,6 +215,15 @@ def test_init_picker_navigation():
     # Skip if tmux is not available
     if not os.path.exists(TMUX):
         return check("00-init-picker-navigation", None, "tmux not found")
+
+    # Skip if no auth available (azd ai agent init requires login since v0.1.40)
+    # Check if azd auth is available by running 'azd auth token' silently
+    auth_check = subprocess.run(
+        [shutil.which("azd") or "azd", "auth", "token", "--output", "json"],
+        capture_output=True, text=True, timeout=10
+    )
+    if auth_check.returncode != 0:
+        return check("00-init-picker-navigation", None, "no auth (requires login)")
 
     # Kill old
     subprocess.run([TMUX, "-L", SOCK, "kill-server"], capture_output=True)

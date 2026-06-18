@@ -68,14 +68,14 @@ azd config show | grep useAzCliAuth               # 验证: "false"
 # Tier 0 (离线，~15s)
 wsl -e bash --norc --noprofile -c '
 export PATH="$HOME/bin:/usr/local/bin:/usr/bin:/bin"
-cd /mnt/d/jwshare/adc-hosted-agent/azdcli-e2e-testgates/e2e-static-tests2
+cd /path/to/azure-dev/cli/azd/extensions/azure.ai.agents/tests/e2e-static
 python3 test_tier0.py
 '
 
 # Tier 1 (init 变体，~3min)
 wsl -e bash --norc --noprofile -c '
 export PATH="$HOME/bin:/usr/local/bin:/usr/bin:/bin"
-cd /mnt/d/jwshare/adc-hosted-agent/azdcli-e2e-testgates/e2e-static-tests2
+cd /path/to/azure-dev/cli/azd/extensions/azure.ai.agents/tests/e2e-static
 python3 test_tier1.py
 '
 
@@ -86,7 +86,7 @@ export E2E_HOME="$HOME"
 export E2E_CREATE_PROJECT=true
 export E2E_LOCATION=eastus2
 export E2E_DEPLOY_MODE=code
-cd /mnt/d/jwshare/adc-hosted-agent/azdcli-e2e-testgates/e2e-static-tests2
+cd /path/to/azure-dev/cli/azd/extensions/azure.ai.agents/tests/e2e-static
 python3 test_full_e2e.py
 '
 ```
@@ -99,7 +99,7 @@ export E2E_HOME="$HOME"
 export E2E_CREATE_PROJECT=true
 export E2E_LOCATION=eastus2
 export E2E_DEPLOY_MODE=code
-cd /mnt/d/jwshare/adc-hosted-agent/azdcli-e2e-testgates/e2e-static-tests2
+cd /path/to/azure-dev/cli/azd/extensions/azure.ai.agents/tests/e2e-static
 
 # 全部 tier
 python3 test_tier0.py && python3 test_tier1.py && python3 test_full_e2e.py

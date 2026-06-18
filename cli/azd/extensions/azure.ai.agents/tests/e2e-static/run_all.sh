@@ -8,7 +8,6 @@
 #   - GitHub token available via gh.exe or $GITHUB_TOKEN
 
 set -e
-export HOME=${HOME:-/home/wsladmin}
 export PATH=/usr/local/bin:$HOME/bin:$HOME/.pyenv/versions/3.12.3/bin:/usr/bin:/bin
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

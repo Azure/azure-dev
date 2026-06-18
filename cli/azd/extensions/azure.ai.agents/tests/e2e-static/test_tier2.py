@@ -18,6 +18,7 @@ import sys
 import os
 import time
 import tempfile
+import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -63,8 +64,15 @@ def run_e2e(deploy_mode, label):
     # Isolate azd config per process to prevent parallel race on ~/.azd/config.json
     # Use AZD_CONFIG_DIR (not AZURE_CONFIG_DIR which is for az CLI).
     # Place outside testdir because child process rm -rf's testdir on startup.
+    # Copy from default ~/.azd so extensions (installed there) are available.
     azd_config_dir = os.path.join(tempfile.gettempdir(), f"e2e-azd-config-{deploy_mode}")
-    os.makedirs(azd_config_dir, exist_ok=True)
+    default_azd = os.path.expanduser("~/.azd")
+    if os.path.isdir(default_azd):
+        if os.path.isdir(azd_config_dir):
+            shutil.rmtree(azd_config_dir)
+        shutil.copytree(default_azd, azd_config_dir)
+    else:
+        os.makedirs(azd_config_dir, exist_ok=True)
     env["AZD_CONFIG_DIR"] = azd_config_dir
     # Unique agent name to avoid Azure resource collisions in parallel runs
     import hashlib

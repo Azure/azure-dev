@@ -7,30 +7,34 @@ import (
 	"io"
 	"slices"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 const (
-	// primaryPrefix is the leading label of the first suggestion line.
-	primaryPrefix = "Next:  "
-	// continuationPrefix indents subsequent lines so commands align under
-	// the first command. Width == len(primaryPrefix).
-	continuationPrefix = "       "
-	// commandSeparator separates the (possibly padded) command from its
-	// description. Two-space gap + "-- " per the design spec.
-	commandSeparator = "  -- "
-	// maxRendered caps the block at one primary + one optional secondary
-	// line ("more than two lines drowns out command output").
+	// header labels the guidance block. It sits on its own line; the
+	// suggestions are stacked beneath it, indented by bodyIndent.
+	header = "Next:"
+	// bodyIndent indents each command and description line under the
+	// header, creating a clear visual hierarchy ("Next:" at the margin,
+	// the actionable lines stepped in beneath it).
+	bodyIndent = "  "
+	// maxRendered caps PrintNext at this many suggestions (one primary
+	// plus one optional Trailing footer). PrintAllNext and
+	// FormatNextForNote are uncapped.
 	maxRendered = 2
 )
 
 // PrintNext writes a "Next:" guidance block to w. Suggestions are sorted
 // ascending by Priority (stable; ties preserve input order) and then
-// truncated to a primary + optional secondary line. Empty input produces
-// no output and no write.
+// truncated to a primary plus an optional Trailing suggestion. Empty
+// input produces no output and no write.
 //
 // PrintNext does not inspect TTY state or output-format flags — those
 // decisions live at the call site so the same renderer can serve both
 // interactive stdout writes and string capture for tests / JSON envelopes.
+// Command highlighting is applied by the renderer via output.WithHighLightFormat,
+// which self-gates on color settings (NO_COLOR / non-TTY yield plain text).
 //
 // Use PrintAllNext when the resolver produces multiple REQUIRED follow-up
 // actions (init / doctor fix-ups) where silently dropping any of them
@@ -69,16 +73,17 @@ func PrintAllNext(w io.Writer, suggestions []Suggestion) error {
 // FormatNextForNote renders a "Next:" block as a string suitable for
 // embedding in an artifact's Metadata["note"]. Unlike PrintNext it does
 // not truncate the block (the artifact note is a contained region, not
-// interleaved with command output) and does not include a leading or
-// trailing newline (the artifact renderer adds its own line break).
+// interleaved with command output).
 //
-// Lines 2+ are pre-indented by 4 spaces so the command column stays
-// aligned with line 1 when core azd's artifact renderer (which only
-// indents the first line of the note) is called with the typical caller
-// indent of two spaces — see cli/azd/pkg/project/artifact.go, which
-// writes "\n%s  %s" with the caller's indent on line 1 only. Under
-// deeper or shallower caller indents the lines drift slightly but the
-// note remains readable in both cases.
+// The returned string begins with a newline and has no trailing newline.
+// Core azd's artifact renderer appends the note via "\n%s  %s" with the
+// caller indent applied to the first line only (see
+// cli/azd/pkg/project/artifact.go). The leading newline turns that first,
+// indent-only line into a blank separator, after which the "Next:" header
+// and its stacked, bodyIndent-indented suggestions render beneath the
+// endpoint. The deploy path renders artifacts at the zero indent, so the
+// header lands in the same column as the endpoint bullet and each
+// suggestion steps in by bodyIndent.
 //
 // Empty input returns an empty string.
 func FormatNextForNote(suggestions []Suggestion) string {
@@ -86,7 +91,7 @@ func FormatNextForNote(suggestions []Suggestion) string {
 	if body == "" {
 		return ""
 	}
-	return strings.ReplaceAll(strings.TrimSuffix(body, "\n"), "\n", "\n    ")
+	return "\n" + strings.TrimSuffix(body, "\n")
 }
 
 // renderBlock returns the formatted "Next:" block (with a leading blank
@@ -103,8 +108,10 @@ func renderBlock(suggestions []Suggestion, limit int) string {
 	return "\n" + body
 }
 
-// renderRows returns the formatted suggestion lines (one per line,
-// terminated with "\n") with no leading blank line. limit caps the
+// renderRows returns the formatted "Next:" body: a header line followed
+// by each suggestion rendered as an indented command line, its indented
+// description line, and a blank line separating consecutive suggestions.
+// The body has no leading blank line and ends with "\n". limit caps the
 // number of visible suggestions; limit <= 0 means render every
 // suggestion.
 //
@@ -162,27 +169,37 @@ func renderRows(suggestions []Suggestion, limit int) string {
 		return ""
 	}
 
-	cmdWidth := 0
-	for _, s := range rendered {
-		if n := len(s.Command); n > cmdWidth {
-			cmdWidth = n
-		}
-	}
-
 	var b strings.Builder
+	b.WriteString(header)
+	b.WriteByte('\n')
 	for i, s := range rendered {
-		if i == 0 {
-			b.WriteString(primaryPrefix)
-		} else {
-			b.WriteString(continuationPrefix)
+		if i > 0 {
+			// Blank line between suggestions so each command/description
+			// pair reads as a distinct step.
+			b.WriteByte('\n')
 		}
-		b.WriteString(s.Command)
-		if pad := cmdWidth - len(s.Command); pad > 0 {
-			b.WriteString(strings.Repeat(" ", pad))
-		}
-		b.WriteString(commandSeparator)
-		b.WriteString(s.Description)
+		b.WriteString(bodyIndent)
+		b.WriteString(highlightCommand(s.Command))
 		b.WriteByte('\n')
+		if s.Description != "" {
+			b.WriteString(bodyIndent)
+			b.WriteString(s.Description)
+			b.WriteByte('\n')
+		}
 	}
 	return b.String()
+}
+
+// highlightCommand returns cmd wrapped in the highlight (blue) color when
+// it is a runnable azd command (prefix "azd "), and cmd unchanged
+// otherwise. Non-command suggestions — "see <path>/README.md" pointers and
+// "edit agent.yaml: ..." instructions — stay plain. output.WithHighLightFormat
+// self-gates on color settings (NO_COLOR, non-TTY, and JSON output all yield
+// plain text), so this stays consistent with the call-site TTY/output-mode
+// gating without duplicating it.
+func highlightCommand(cmd string) string {
+	if strings.HasPrefix(cmd, "azd ") {
+		return output.WithHighLightFormat("%s", cmd)
+	}
+	return cmd
 }

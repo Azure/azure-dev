@@ -1092,7 +1092,7 @@ func TestAggregateInstallResults_EmptyInputs(t *testing.T) {
 // allSkillHostNames lists the host binary names checked by the prereq
 // logic; tests must explicitly mock every entry so ToolInPath does not
 // fall back to the real PATH on the developer's machine.
-var allSkillHostNames = []string{"copilot", "claude", "gemini", "codex"}
+var allSkillHostNames = []string{"apm", "copilot", "claude", "gemini", "codex"}
 
 // newSkillTool returns a minimal ToolDefinition exercising the
 // codepaths covered by these tests. The host commands are simplified
@@ -1105,6 +1105,13 @@ func newSkillTool() *ToolDefinition {
 		Category: ToolCategorySkill,
 		Priority: ToolPriorityRecommended,
 		SkillHosts: []SkillHost{
+			{
+				Host:                 "apm",
+				PluginInstallCommand: []string{"install", "microsoft/azure-skills", "-g"},
+				PluginUpdateCommand:  []string{"update", "microsoft/azure-skills", "-y", "-g"},
+				PluginListCommand:    []string{"deps", "list", "-g"},
+				PluginName:           "microsoft/azure-skills",
+			},
 			{
 				Host:                  "copilot",
 				MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
@@ -1199,6 +1206,13 @@ func TestRunSkill_PicksFirstAvailableHost(t *testing.T) {
 		wantCmd    string
 		wantPlugin string
 	}{
+		{
+			name:       "ApmOnly",
+			present:    []string{"apm"},
+			wantHost:   "apm",
+			wantCmd:    "apm",
+			wantPlugin: "microsoft/azure-skills",
+		},
 		{
 			name:       "CopilotOnly",
 			present:    []string{"copilot"},

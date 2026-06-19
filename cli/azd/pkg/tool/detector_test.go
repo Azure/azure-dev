@@ -530,6 +530,76 @@ func TestDetectTool_Skill_Gemini(t *testing.T) {
 	}
 }
 
+// TestDetectTool_Skill_Apm verifies detection of azure-skills installed
+// via APM. `apm deps list -g` renders a box-drawing table; detection must
+// anchor on the package name and capture the version from that row.
+func TestDetectTool_Skill_Apm(t *testing.T) {
+	t.Parallel()
+
+	apmSkill := func() *ToolDefinition {
+		return &ToolDefinition{
+			Id:       "azure-skills",
+			Name:     "Azure Skills",
+			Category: ToolCategorySkill,
+			SkillHosts: []SkillHost{
+				{
+					Host:              "apm",
+					PluginListCommand: []string{"deps", "list", "-g"},
+					PluginName:        "microsoft/azure-skills",
+					VersionRegex:      `microsoft/azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name            string
+		stdout          string
+		expectInstalled bool
+		expectVersion   string
+	}{
+		{
+			name: "Installed",
+			stdout: "                  APM Dependencies (Global)\n" +
+				"┌────────────────────────┬─────────┬────────┬────────┐\n" +
+				"│ Package                │ Version │ Source │ Skills │\n" +
+				"├────────────────────────┼─────────┼────────┼────────┤\n" +
+				"│ microsoft/azure-skills │ 1.1.71  │ github │   28   │\n" +
+				"└────────────────────────┴─────────┴────────┴────────┘\n",
+			expectInstalled: true,
+			expectVersion:   "1.1.71",
+		},
+		{
+			name:            "NotInstalled",
+			stdout:          "No APM dependencies declared in apm.yml.\n",
+			expectInstalled: false,
+			expectVersion:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			runner := mockexec.NewMockCommandRunner()
+			runner.MockToolInPath("apm", nil)
+			runner.When(func(args exec.RunArgs, _ string) bool {
+				return args.Cmd == "apm" &&
+					slices.Contains(args.Args, "deps") &&
+					slices.Contains(args.Args, "list")
+			}).Respond(exec.RunResult{ExitCode: 0, Stdout: tt.stdout})
+
+			d := NewDetector(runner)
+			status, err := d.DetectTool(t.Context(), apmSkill())
+
+			require.NoError(t, err)
+			require.NotNil(t, status)
+			assert.Equal(t, tt.expectInstalled, status.Installed)
+			assert.Equal(t, tt.expectVersion, status.InstalledVersion)
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // DetectTool — Server / Library (commandBased)
 // ---------------------------------------------------------------------------

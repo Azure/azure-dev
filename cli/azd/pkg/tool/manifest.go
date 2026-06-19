@@ -343,6 +343,23 @@ func azureSkills() *ToolDefinition {
 		Website:  "https://github.com/microsoft/azure-skills",
 		SkillHosts: []SkillHost{
 			{
+				// APM (Agent Package Manager) is a cross-runtime package
+				// manager. It installs azure-skills to the user scope
+				// (~/.apm/) and deploys it to every detected agent. Listed
+				// last so a host-specific agent CLI is preferred when both
+				// are present; APM acts as the universal fallback.
+				Host:                 "apm",
+				PluginInstallCommand: []string{"install", "microsoft/azure-skills", "-g"},
+				PluginUpdateCommand:  []string{"update", "microsoft/azure-skills", "-g"},
+				PluginListCommand:    []string{"deps", "list", "-g"},
+				PluginName:           "microsoft/azure-skills",
+				// `apm deps list -g` renders a table whose azure-skills row
+				// is "│ microsoft/azure-skills │ 1.1.71 │ github │ ...".
+				// Anchor on the package name and capture the first version
+				// that follows on the same row.
+				VersionRegex: `microsoft/azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
+			},
+			{
 				Host:                  "copilot",
 				MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
 				PluginInstallCommand:  []string{"plugin", "install", "azure@azure-skills"},

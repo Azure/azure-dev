@@ -665,10 +665,14 @@ func TestTracingDisclaimer(t *testing.T) {
 
 	// String-contains assertions are safe against any surrounding ANSI color or
 	// OSC-8 hyperlink escape sequences, since the phrases/URL appear contiguously.
-	require.Contains(t, got, "Use Hosted Agents with appropriate safeguards")
-	require.Contains(t, got, "you are responsible for their use and data handling")
-	require.Contains(t, got, "Telemetry may be visible to others and include sensitive data")
-	require.Contains(t, got, "Learn more:")
+	require.Contains(t, got, "When using Hosted Agents apply appropriate safeguards")
+	require.Contains(t, got, "You are responsible for managing all data that may flow outside")
+	require.Contains(t, got, "your organization's compliance and geographic boundaries")
+	require.Contains(t, got, "Use third-party systems at your own risk")
+	require.Contains(t, got, "When AppInsights is enabled, this project logs traces")
+	require.Contains(t, got, "Certain project members may be able to view user data")
+	require.Contains(t, got, tracingOverviewURL)
 	require.Contains(t, got, disableTracingURL)
+	require.Equal(t, "https://aka.ms/tracing-overview", tracingOverviewURL)
 	require.Equal(t, "https://aka.ms/disable-tracing", disableTracingURL)
 }

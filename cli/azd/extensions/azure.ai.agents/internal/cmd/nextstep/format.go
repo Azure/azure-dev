@@ -33,14 +33,17 @@ const (
 // PrintNext does not inspect TTY state or output-format flags — those
 // decisions live at the call site so the same renderer can serve both
 // interactive stdout writes and string capture for tests / JSON envelopes.
-// Command highlighting is applied by the renderer via output.WithHighLightFormat,
-// which self-gates on color settings (NO_COLOR / non-TTY yield plain text).
+// The caller passes colorize to opt into highlighting of `azd` commands;
+// pass true only when w is an interactive terminal (highlighting still
+// self-gates on NO_COLOR via the output package). Pass false for non-TTY
+// writers and any path whose bytes may be captured into machine-readable
+// output.
 //
 // Use PrintAllNext when the resolver produces multiple REQUIRED follow-up
 // actions (init / doctor fix-ups) where silently dropping any of them
 // would mislead the user.
-func PrintNext(w io.Writer, suggestions []Suggestion) error {
-	block := renderBlock(suggestions, maxRendered)
+func PrintNext(w io.Writer, suggestions []Suggestion, colorize bool) error {
+	block := renderBlock(suggestions, maxRendered, colorize)
 	if block == "" {
 		return nil
 	}
@@ -59,10 +62,10 @@ func PrintNext(w io.Writer, suggestions []Suggestion) error {
 //
 // Suggestions are still stable-sorted by Priority (ties preserve input
 // order), the Trailing entry is still rendered last, and framing
-// (leading blank line + trailing newline) matches PrintNext. Empty
-// input is a no-op.
-func PrintAllNext(w io.Writer, suggestions []Suggestion) error {
-	block := renderBlock(suggestions, 0)
+// (leading blank line + trailing newline) matches PrintNext. colorize
+// behaves as documented on PrintNext. Empty input is a no-op.
+func PrintAllNext(w io.Writer, suggestions []Suggestion, colorize bool) error {
+	block := renderBlock(suggestions, 0, colorize)
 	if block == "" {
 		return nil
 	}
@@ -74,6 +77,15 @@ func PrintAllNext(w io.Writer, suggestions []Suggestion) error {
 // embedding in an artifact's Metadata["note"]. Unlike PrintNext it does
 // not truncate the block (the artifact note is a contained region, not
 // interleaved with command output).
+//
+// The output is always plain (uncolored). The note is data returned to
+// the azd host over gRPC, which both renders it to the terminal AND
+// serializes it into `azd deploy --output json`. The service-target
+// Deploy path has no output-format signal, so embedding ANSI escape
+// codes here would leak them into JSON output on color-enabled
+// terminals. Highlighting of `azd` commands is therefore reserved for
+// the direct-to-terminal PrintNext / PrintAllNext paths, which receive
+// an explicit colorize signal from their call sites.
 //
 // The returned string begins with a newline and has no trailing newline.
 // Core azd's artifact renderer appends the note via "\n%s  %s" with the
@@ -87,7 +99,7 @@ func PrintAllNext(w io.Writer, suggestions []Suggestion) error {
 //
 // Empty input returns an empty string.
 func FormatNextForNote(suggestions []Suggestion) string {
-	body := renderRows(suggestions, 0)
+	body := renderRows(suggestions, 0, false)
 	if body == "" {
 		return ""
 	}
@@ -98,9 +110,10 @@ func FormatNextForNote(suggestions []Suggestion) string {
 // line and trailing newline) or an empty string when there is nothing to
 // render. limit is forwarded to renderRows: a positive value caps the
 // block at that many visible lines (PrintNext default), while limit <= 0
-// renders every suggestion (PrintAllNext).
-func renderBlock(suggestions []Suggestion, limit int) string {
-	body := renderRows(suggestions, limit)
+// renders every suggestion (PrintAllNext). colorize is forwarded to the
+// command renderer.
+func renderBlock(suggestions []Suggestion, limit int, colorize bool) string {
+	body := renderRows(suggestions, limit, colorize)
 	if body == "" {
 		return ""
 	}
@@ -113,7 +126,7 @@ func renderBlock(suggestions []Suggestion, limit int) string {
 // description line, and a blank line separating consecutive suggestions.
 // The body has no leading blank line and ends with "\n". limit caps the
 // number of visible suggestions; limit <= 0 means render every
-// suggestion.
+// suggestion. colorize is forwarded to highlightCommand.
 //
 // Truncation is partitioned: at most one Suggestion.Trailing entry is
 // reserved for the final visible slot, with remaining slots filled by
@@ -121,7 +134,7 @@ func renderBlock(suggestions []Suggestion, limit int) string {
 // trailing reservation lets resolvers emit follow-up nudges (e.g., the
 // post-action `azd deploy` line) without having those nudges silently
 // dropped when primary suggestions outnumber the cap.
-func renderRows(suggestions []Suggestion, limit int) string {
+func renderRows(suggestions []Suggestion, limit int, colorize bool) string {
 	if len(suggestions) == 0 {
 		return ""
 	}
@@ -179,7 +192,7 @@ func renderRows(suggestions []Suggestion, limit int) string {
 			b.WriteByte('\n')
 		}
 		b.WriteString(bodyIndent)
-		b.WriteString(highlightCommand(s.Command))
+		b.WriteString(highlightCommand(s.Command, colorize))
 		b.WriteByte('\n')
 		if s.Description != "" {
 			b.WriteString(bodyIndent)
@@ -191,14 +204,18 @@ func renderRows(suggestions []Suggestion, limit int) string {
 }
 
 // highlightCommand returns cmd wrapped in the highlight (blue) color when
-// it is a runnable azd command (prefix "azd "), and cmd unchanged
-// otherwise. Non-command suggestions — "see <path>/README.md" pointers and
-// "edit agent.yaml: ..." instructions — stay plain. output.WithHighLightFormat
-// self-gates on color settings (NO_COLOR, non-TTY, and JSON output all yield
-// plain text), so this stays consistent with the call-site TTY/output-mode
-// gating without duplicating it.
-func highlightCommand(cmd string) string {
-	if strings.HasPrefix(cmd, "azd ") {
+// colorize is true and cmd is a runnable azd command (prefix "azd "). When
+// colorize is false, or cmd is a non-command pointer ("see <path>/README.md"
+// or "edit agent.yaml: ..."), cmd is returned unchanged.
+//
+// colorize is supplied by the caller because output.WithHighLightFormat
+// only self-gates on color settings (NO_COLOR / non-TTY) — it does NOT
+// know about azd's --output json mode. Callers whose bytes may be captured
+// into machine-readable output (e.g. FormatNextForNote, whose result is
+// embedded in an artifact note that azd may serialize to JSON) must pass
+// false so ANSI escape codes never leak into that output.
+func highlightCommand(cmd string, colorize bool) string {
+	if colorize && strings.HasPrefix(cmd, "azd ") {
 		return output.WithHighLightFormat("%s", cmd)
 	}
 	return cmd

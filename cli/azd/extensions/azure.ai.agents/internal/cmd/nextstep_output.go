@@ -24,7 +24,9 @@ func printNextIfTerminal(w io.Writer, suggestions []nextstep.Suggestion) error {
 		return nil
 	}
 
-	return nextstep.PrintNext(w, suggestions)
+	// w is an interactive terminal here, so opt into command highlighting;
+	// it still self-gates on NO_COLOR inside the output package.
+	return nextstep.PrintNext(w, suggestions, true)
 }
 
 func printAllNextIfTerminal(w io.Writer, suggestions []nextstep.Suggestion) error {
@@ -32,5 +34,5 @@ func printAllNextIfTerminal(w io.Writer, suggestions []nextstep.Suggestion) erro
 		return nil
 	}
 
-	return nextstep.PrintAllNext(w, suggestions)
+	return nextstep.PrintAllNext(w, suggestions, true)
 }

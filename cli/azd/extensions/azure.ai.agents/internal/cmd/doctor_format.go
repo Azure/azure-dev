@@ -91,7 +91,9 @@ func (r *doctorRenderState) writeFooter(
 		return writeToFixBlock(r.w, report)
 	}
 	if showNext {
-		return nextstep.PrintAllNext(r.w, trailing)
+		// showNext already encodes writerIsTerminal(w) (see doctor.go),
+		// so it doubles as the colorize signal for the highlighted block.
+		return nextstep.PrintAllNext(r.w, trailing, showNext)
 	}
 	return nil
 }

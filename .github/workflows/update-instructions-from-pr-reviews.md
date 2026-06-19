@@ -22,7 +22,7 @@ on:
       repository:
         description: >-
           Repo to mine PRs from, as `owner/repo`. Default: this repo. A private
-          source repo needs additional GitHub tool authentication.
+          source repo needs `GH_AW_GITHUB_MCP_SERVER_TOKEN` with read access.
         required: false
         type: string
       min_pr_count:

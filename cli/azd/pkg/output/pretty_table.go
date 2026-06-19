@@ -356,8 +356,8 @@ func (f *PrettyTableFormatter) formatGroupedCards(
 
 		for gi, group := range groupOrder {
 			// Group header: "── {label}: {value} ────────"
-			// Strip ANSI codes from group value — it comes from template execution.
-			strippedGroup := ansiRegex.ReplaceAllString(group, "")
+			// Strip terminal escapes from group value — it comes from template execution.
+			strippedGroup := stripTerminalEscapes(group)
 			headerText := "── " + parsed[groupColIdx].col.Heading + ": " + strippedGroup + " "
 			remaining := max(termWidth-displayWidth(headerText), 1)
 			buf.WriteString(WithGrayFormat(headerText + strings.Repeat("─", remaining)))
@@ -469,9 +469,12 @@ var osc8Regex = regexp.MustCompile(`\x1b\]8;[^;]*;[^\x1b\a]*(?:\x1b\\|\a)`)
 // displayWidth returns the visible column width of s, ignoring ANSI escape
 // codes, OSC-8 hyperlink sequences, and accounting for wide Unicode characters (e.g. CJK).
 func displayWidth(s string) int {
+	return runewidth.StringWidth(stripTerminalEscapes(s))
+}
+
+func stripTerminalEscapes(s string) string {
 	stripped := osc8Regex.ReplaceAllString(s, "")
-	stripped = ansiRegex.ReplaceAllString(stripped, "")
-	return runewidth.StringWidth(stripped)
+	return ansiRegex.ReplaceAllString(stripped, "")
 }
 
 var _ Formatter = (*PrettyTableFormatter)(nil)

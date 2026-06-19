@@ -5,6 +5,7 @@ package output
 
 import (
 	"bytes"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -19,6 +20,10 @@ type prettyInput struct {
 	StatusSymbol string
 	Source       string
 	Id           string
+}
+
+func sgrPrefixPattern(text string) *regexp.Regexp {
+	return regexp.MustCompile(`\x1b\[[0-9;]*m` + regexp.QuoteMeta(text))
 }
 
 func TestPrettyTableFormatterBasic(t *testing.T) {
@@ -210,7 +215,7 @@ func TestPrettyHeaderUnderline(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	lines := strings.Split(buf.String(), "\n")
+	lines := strings.Split(stripTerminalEscapes(buf.String()), "\n")
 	require.GreaterOrEqual(t, len(lines), 2)
 	// Second line should be all ─ characters
 	underline := strings.TrimSpace(lines[1])
@@ -300,7 +305,7 @@ func TestPrettyCardBreakpoint(t *testing.T) {
 	require.NoError(t, err)
 	output := buf.String()
 
-	stripped := ansiRegex.ReplaceAllString(output, "")
+	stripped := stripTerminalEscapes(output)
 
 	// Cards grouped by labeled source
 	require.Contains(t, stripped, "── SOURCE: azd ")
@@ -338,7 +343,7 @@ func TestPrettyCardGroupingOrder(t *testing.T) {
 	output := buf.String()
 
 	// azd appears first (first row's source)
-	stripped := ansiRegex.ReplaceAllString(output, "")
+	stripped := stripTerminalEscapes(output)
 	azdIdx := strings.Index(stripped, "── SOURCE: azd ")
 	localIdx := strings.Index(stripped, "── SOURCE: local ")
 	require.Greater(t, localIdx, azdIdx, "azd group should appear before local group")
@@ -479,7 +484,7 @@ func TestPrettyBreakpointTransitions(t *testing.T) {
 			output := buf.String()
 
 			if tt.wantCard {
-				stripped := ansiRegex.ReplaceAllString(output, "")
+				stripped := stripTerminalEscapes(output)
 				require.Contains(t, stripped, "── SOURCE: azd ", "expected card layout for width %d", tt.width)
 			} else {
 				require.Contains(t, output, "─", "expected header underline for width %d", tt.width)
@@ -602,7 +607,7 @@ func TestPrettySingleGroupCards(t *testing.T) {
 	require.NoError(t, err)
 	output := buf.String()
 
-	stripped := ansiRegex.ReplaceAllString(output, "")
+	stripped := stripTerminalEscapes(output)
 
 	// Only one group header should appear
 	require.Equal(t, 1, strings.Count(stripped, "── SOURCE: azd "), "expected exactly one group header")
@@ -650,8 +655,40 @@ func TestPrettyCardGroupHeaderIncludesLabelAndUsesGrayDivider(t *testing.T) {
 	require.NoError(t, err)
 	output := buf.String()
 
-	require.Contains(t, ansiRegex.ReplaceAllString(output, ""), "── SOURCE: azd ")
-	require.Contains(t, output, "\x1b[90m── SOURCE: azd ")
+	require.Contains(t, stripTerminalEscapes(output), "── SOURCE: azd ")
+	require.Regexp(t, sgrPrefixPattern("── SOURCE: azd "), output)
+}
+
+func TestPrettyCardGroupHeaderStripsHyperlinkEscapes(t *testing.T) {
+	rows := []prettyInput{
+		{Id: "ext-a", Name: "Extension A", Source: "azd"},
+	}
+
+	formatter := &PrettyTableFormatter{
+		ConsoleWidthFn: func() int { return 40 },
+	}
+
+	buf := &bytes.Buffer{}
+	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
+		Columns: []PrettyColumn{
+			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
+			{Column: Column{Heading: "NAME", ValueTemplate: "{{.Name}}"}, Priority: 1},
+			{Column: Column{
+				Heading:       "SOURCE",
+				ValueTemplate: "{{.Source}}",
+				Transformer: func(s string) string {
+					return "\033]8;;https://example.com\007" + s + "\033]8;;\007"
+				},
+			}, Priority: 4},
+		},
+		CardGroupColumn: "SOURCE",
+	})
+
+	require.NoError(t, err)
+	output := buf.String()
+
+	require.NotContains(t, output, "\033]8;;")
+	require.Contains(t, stripTerminalEscapes(output), "── SOURCE: azd ")
 }
 
 func TestPrettyColumnTransformerCanUseLinkFormat(t *testing.T) {
@@ -688,7 +725,7 @@ func TestPrettyColumnTransformerCanUseLinkFormat(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Contains(t, buf.String(), "\x1b[96mhttps://example.com")
+	require.Regexp(t, sgrPrefixPattern("https://example.com"), buf.String())
 }
 
 func TestPrettyTableANSIAlignment(t *testing.T) {
@@ -733,7 +770,7 @@ func TestPrettyTableANSIAlignment(t *testing.T) {
 
 	// Strip ANSI codes to find the visual position of SOURCE column
 	strip := func(s string) string {
-		return ansiRegex.ReplaceAllString(s, "")
+		return stripTerminalEscapes(s)
 	}
 
 	// displayIndex returns the display-column position of substr within s,

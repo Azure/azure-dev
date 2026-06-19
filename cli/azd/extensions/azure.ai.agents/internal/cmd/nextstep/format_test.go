@@ -6,11 +6,25 @@ package nextstep
 import (
 	"bytes"
 	"io"
+	"os"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestMain suppresses ANSI color so the rendered-block golden assertions
+// below compare plain text. highlightCommand routes azd commands through
+// output.WithHighLightFormat, which only emits escape sequences when color
+// is enabled; forcing NoColor keeps the goldens deterministic regardless of
+// the host TTY / NO_COLOR state. TestFormatNext_HighlightsOnlyAzdCommands
+// re-enables color locally to exercise the highlight path.
+func TestMain(m *testing.M) {
+	color.NoColor = true
+	os.Exit(m.Run())
+}
 
 func TestPrintNext(t *testing.T) {
 	t.Parallel()
@@ -26,26 +40,25 @@ func TestPrintNext(t *testing.T) {
 			want:        "",
 		},
 		{
-			name: "single suggestion renders one line with two-space gap",
+			name: "single suggestion stacks command over description",
 			suggestions: []Suggestion{
 				{Command: "azd provision", Description: "set up Foundry"},
 			},
-			want: "\nNext:  azd provision  -- set up Foundry\n",
+			want: "\nNext:\n  azd provision\n  set up Foundry\n",
 		},
 		{
-			name: "two suggestions align on longest command",
-			// Longest command "azd ai agent invoke 'hi'" is 24 chars.
-			// "azd ai agent show echo" (22) pads with 2 trailing spaces, then the
-			// two-space separator + "-- " (commandSeparator = "  -- ") so the gap
-			// between "echo" and "--" totals 4 spaces; the second line has no pad
-			// so its gap is exactly the 2-space separator.
+			name: "two suggestions are separated by a blank line",
 			suggestions: []Suggestion{
 				{Command: "azd ai agent show echo", Description: "verify status"},
 				{Command: "azd ai agent invoke 'hi'", Description: "test it"},
 			},
 			want: "\n" +
-				"Next:  azd ai agent show echo    -- verify status\n" +
-				"       azd ai agent invoke 'hi'  -- test it\n",
+				"Next:\n" +
+				"  azd ai agent show echo\n" +
+				"  verify status\n" +
+				"\n" +
+				"  azd ai agent invoke 'hi'\n" +
+				"  test it\n",
 		},
 		{
 			name: "more than two suggestions are truncated by priority",
@@ -55,8 +68,12 @@ func TestPrintNext(t *testing.T) {
 				{Command: "b", Description: "second", Priority: 20},
 			},
 			want: "\n" +
-				"Next:  a  -- first\n" +
-				"       b  -- second\n",
+				"Next:\n" +
+				"  a\n" +
+				"  first\n" +
+				"\n" +
+				"  b\n" +
+				"  second\n",
 		},
 		{
 			name: "trailing suggestion survives truncation when primaries fill the block",
@@ -72,15 +89,19 @@ func TestPrintNext(t *testing.T) {
 				{Command: "azd deploy", Description: "when ready", Priority: 90, Trailing: true},
 			},
 			want: "\n" +
-				"Next:  azd env set BAR <value>  -- supply BAR\n" +
-				"       azd deploy               -- when ready\n",
+				"Next:\n" +
+				"  azd env set BAR <value>\n" +
+				"  supply BAR\n" +
+				"\n" +
+				"  azd deploy\n" +
+				"  when ready\n",
 		},
 		{
-			name: "trailing-only block renders as the single line",
+			name: "trailing-only block renders as a single suggestion",
 			suggestions: []Suggestion{
 				{Command: "azd deploy", Description: "when ready", Priority: 90, Trailing: true},
 			},
-			want: "\nNext:  azd deploy  -- when ready\n",
+			want: "\nNext:\n  azd deploy\n  when ready\n",
 		},
 		{
 			name: "multiple Trailing entries collapse to the highest-priority one",
@@ -95,8 +116,12 @@ func TestPrintNext(t *testing.T) {
 				{Command: "tail-b", Description: "tail b", Priority: 90, Trailing: true},
 			},
 			want: "\n" +
-				"Next:  primary  -- primary\n" +
-				"       tail-b   -- tail b\n",
+				"Next:\n" +
+				"  primary\n" +
+				"  primary\n" +
+				"\n" +
+				"  tail-b\n" +
+				"  tail b\n",
 		},
 		{
 			name: "stable sort preserves input order on equal priorities",
@@ -105,8 +130,12 @@ func TestPrintNext(t *testing.T) {
 				{Command: "second", Description: "s"},
 			},
 			want: "\n" +
-				"Next:  first   -- f\n" +
-				"       second  -- s\n",
+				"Next:\n" +
+				"  first\n" +
+				"  f\n" +
+				"\n" +
+				"  second\n" +
+				"  s\n",
 		},
 	}
 
@@ -162,7 +191,7 @@ func TestPrintAllNext(t *testing.T) {
 			suggestions: []Suggestion{
 				{Command: "azd provision", Description: "set up Foundry"},
 			},
-			want: "\nNext:  azd provision  -- set up Foundry\n",
+			want: "\nNext:\n  azd provision\n  set up Foundry\n",
 		},
 		{
 			name: "G1 regression repro: placeholder + manual var + trailing deploy all render (no cap)",
@@ -190,12 +219,18 @@ func TestPrintAllNext(t *testing.T) {
 				},
 			},
 			want: "\n" +
-				"Next:  edit agent.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value  -- agent.yaml has unresolved manifest placeholders\n" +
-				"       azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>            -- supply the agent.yaml variable\n" +
-				"       azd deploy                                                           -- when ready to deploy to Azure\n",
+				"Next:\n" +
+				"  edit agent.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value\n" +
+				"  agent.yaml has unresolved manifest placeholders\n" +
+				"\n" +
+				"  azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>\n" +
+				"  supply the agent.yaml variable\n" +
+				"\n" +
+				"  azd deploy\n" +
+				"  when ready to deploy to Azure\n",
 		},
 		{
-			name: "renders well beyond maxRendered (3 placeholders + 3 manual vars + trailing = 7 lines)",
+			name: "renders well beyond maxRendered (3 placeholders + 3 manual vars + trailing)",
 			// Worst-case shape from ResolveAfterInit when both
 			// maxFixupLines caps are saturated.
 			suggestions: []Suggestion{
@@ -208,13 +243,27 @@ func TestPrintAllNext(t *testing.T) {
 				{Command: "azd deploy", Description: "p3", Priority: 90, Trailing: true},
 			},
 			want: "\n" +
-				"Next:  edit agent.yaml: replace {{A}} with the actual value  -- p1\n" +
-				"       edit agent.yaml: replace {{B}} with the actual value  -- p1\n" +
-				"       edit agent.yaml: replace {{C}} with the actual value  -- p1\n" +
-				"       azd env set FOO <value>                               -- p2\n" +
-				"       azd env set BAR <value>                               -- p2\n" +
-				"       azd env set BAZ <value>                               -- p2\n" +
-				"       azd deploy                                            -- p3\n",
+				"Next:\n" +
+				"  edit agent.yaml: replace {{A}} with the actual value\n" +
+				"  p1\n" +
+				"\n" +
+				"  edit agent.yaml: replace {{B}} with the actual value\n" +
+				"  p1\n" +
+				"\n" +
+				"  edit agent.yaml: replace {{C}} with the actual value\n" +
+				"  p1\n" +
+				"\n" +
+				"  azd env set FOO <value>\n" +
+				"  p2\n" +
+				"\n" +
+				"  azd env set BAR <value>\n" +
+				"  p2\n" +
+				"\n" +
+				"  azd env set BAZ <value>\n" +
+				"  p2\n" +
+				"\n" +
+				"  azd deploy\n" +
+				"  p3\n",
 		},
 		{
 			name: "trailing entry still rendered last regardless of input order",
@@ -224,9 +273,15 @@ func TestPrintAllNext(t *testing.T) {
 				{Command: "second", Description: "s", Priority: 6},
 			},
 			want: "\n" +
-				"Next:  first       -- f\n" +
-				"       second      -- s\n" +
-				"       azd deploy  -- when ready\n",
+				"Next:\n" +
+				"  first\n" +
+				"  f\n" +
+				"\n" +
+				"  second\n" +
+				"  s\n" +
+				"\n" +
+				"  azd deploy\n" +
+				"  when ready\n",
 		},
 	}
 
@@ -268,20 +323,25 @@ func TestFormatNextForNote(t *testing.T) {
 			want:        "",
 		},
 		{
-			name: "single suggestion has no leading newline and no trailing newline",
+			name: "single suggestion has a leading newline and no trailing newline",
 			suggestions: []Suggestion{
 				{Command: "azd ai agent invoke 'hello'", Description: "send a test request", Priority: 10},
 			},
-			want: "Next:  azd ai agent invoke 'hello'  -- send a test request",
+			want: "\nNext:\n  azd ai agent invoke 'hello'\n  send a test request",
 		},
 		{
-			name: "multi-line block pre-indents lines 2+ with 4 spaces",
+			name: "multi-line block stacks each suggestion with a blank separator",
 			suggestions: []Suggestion{
 				{Command: "azd ai agent show", Description: "verify deployment", Priority: 10},
 				{Command: "azd ai agent invoke 'hi'", Description: "send a request", Priority: 11},
 			},
-			want: "Next:  azd ai agent show         -- verify deployment\n" +
-				"           azd ai agent invoke 'hi'  -- send a request",
+			want: "\n" +
+				"Next:\n" +
+				"  azd ai agent show\n" +
+				"  verify deployment\n" +
+				"\n" +
+				"  azd ai agent invoke 'hi'\n" +
+				"  send a request",
 		},
 		{
 			name: "uncapped — third suggestion is preserved (unlike PrintNext)",
@@ -290,9 +350,16 @@ func TestFormatNextForNote(t *testing.T) {
 				{Command: "azd ai agent invoke 'hi'", Description: "send a request", Priority: 11},
 				{Command: "see ./agent/README.md", Description: "more sample requests", Priority: 12},
 			},
-			want: "Next:  azd ai agent show         -- verify deployment\n" +
-				"           azd ai agent invoke 'hi'  -- send a request\n" +
-				"           see ./agent/README.md     -- more sample requests",
+			want: "\n" +
+				"Next:\n" +
+				"  azd ai agent show\n" +
+				"  verify deployment\n" +
+				"\n" +
+				"  azd ai agent invoke 'hi'\n" +
+				"  send a request\n" +
+				"\n" +
+				"  see ./agent/README.md\n" +
+				"  more sample requests",
 		},
 		{
 			name: "trailing entry surfaces even when not the lowest priority",
@@ -301,9 +368,16 @@ func TestFormatNextForNote(t *testing.T) {
 				{Command: "azd deploy", Description: "redeploy after changes", Priority: 90, Trailing: true},
 				{Command: "azd ai agent invoke 'hi'", Description: "send a request", Priority: 11},
 			},
-			want: "Next:  azd ai agent show         -- verify deployment\n" +
-				"           azd ai agent invoke 'hi'  -- send a request\n" +
-				"           azd deploy                -- redeploy after changes",
+			want: "\n" +
+				"Next:\n" +
+				"  azd ai agent show\n" +
+				"  verify deployment\n" +
+				"\n" +
+				"  azd ai agent invoke 'hi'\n" +
+				"  send a request\n" +
+				"\n" +
+				"  azd deploy\n" +
+				"  redeploy after changes",
 		},
 	}
 
@@ -316,19 +390,14 @@ func TestFormatNextForNote(t *testing.T) {
 	}
 }
 
-// TestFormatNextForNote_HostArtifactAlignment verifies the 4-space
-// pre-indent matches the alignment core azd's artifact renderer produces
-// when called with the typical caller indent (currentIndentation == "  ").
-// Core azd's artifact.go writes the note as:
-//
-//	{indent}- {label}: ...
-//	{indent}  {note}             <- only line 1 of the note gets the
-//	                                indent+"  " prefix; lines 2+ are
-//	                                flush-left in the output stream.
-//
-// FormatNextForNote pre-indents lines 2+ by 4 spaces, which equals
-// indent("  ") + "  " — i.e. the columns align so the rendered "Next:"
-// header on line 1 sits directly above the continuation indent on line 2.
+// TestFormatNextForNote_HostArtifactAlignment verifies the block renders
+// correctly when embedded as an artifact note by core azd. The renderer
+// (cli/azd/pkg/project/artifact.go) appends the note via "\n%s  %s" with the
+// caller indent applied to the first line only; the deploy path renders
+// artifacts at the zero indent. FormatNextForNote's leading newline turns
+// that first, indent-only line into a blank separator, after which the
+// "Next:" header sits in the same column as the endpoint bullet and each
+// suggestion steps in by bodyIndent.
 func TestFormatNextForNote_HostArtifactAlignment(t *testing.T) {
 	t.Parallel()
 
@@ -337,13 +406,48 @@ func TestFormatNextForNote_HostArtifactAlignment(t *testing.T) {
 		{Command: "azd ai agent invoke 'hi'", Description: "send a request", Priority: 11},
 	})
 
-	// Simulate core azd's render: "  - label: location\n  " + note + "\n".
-	const callerIndent = "  "
+	// Simulate core azd's render at the deploy (zero) indent:
+	// "{indent}- label: location\n{indent}  {note}\n".
+	const callerIndent = ""
 	rendered := callerIndent + "- endpoint: https://example/agents/foo/endpoint\n" +
 		callerIndent + "  " + note + "\n"
 
-	want := "  - endpoint: https://example/agents/foo/endpoint\n" +
-		"    Next:  azd ai agent show         -- verify deployment\n" +
-		"           azd ai agent invoke 'hi'  -- send a request\n"
+	want := "- endpoint: https://example/agents/foo/endpoint\n" +
+		"  \n" +
+		"Next:\n" +
+		"  azd ai agent show\n" +
+		"  verify deployment\n" +
+		"\n" +
+		"  azd ai agent invoke 'hi'\n" +
+		"  send a request\n"
 	assert.Equal(t, want, rendered)
+}
+
+// TestFormatNext_HighlightsOnlyAzdCommands verifies that runnable azd
+// commands are rendered in the highlight color while non-command pointers
+// ("see ..." / "edit agent.yaml: ...") and descriptions stay plain.
+func TestFormatNext_HighlightsOnlyAzdCommands(t *testing.T) {
+	// Not parallel: toggles the process-global color.NoColor. Go runs
+	// non-parallel tests to completion before parallel tests resume, so
+	// restoring NoColor here keeps the plain-text goldens deterministic.
+	prev := color.NoColor
+	color.NoColor = false
+	defer func() { color.NoColor = prev }()
+
+	suggestions := []Suggestion{
+		{Command: "azd ai agent show echo", Description: "verify it's running", Priority: 10},
+		{Command: "see src/echo/README.md", Description: "find the sample-specific payload", Priority: 11},
+		{Command: "azd ai agent invoke echo '<payload>'", Description: "test the deployment", Priority: 12},
+	}
+
+	got := FormatNextForNote(suggestions)
+
+	// azd commands are wrapped in the highlight color.
+	assert.Contains(t, got, bodyIndent+output.WithHighLightFormat("%s", "azd ai agent show echo")+"\n")
+	assert.Contains(t, got, bodyIndent+output.WithHighLightFormat("%s", "azd ai agent invoke echo '<payload>'")+"\n")
+	// Non-command pointers stay plain (no escape sequences).
+	assert.Contains(t, got, bodyIndent+"see src/echo/README.md\n")
+	assert.NotContains(t, got, output.WithHighLightFormat("%s", "see src/echo/README.md"))
+	// Descriptions are never highlighted.
+	assert.Contains(t, got, bodyIndent+"verify it's running")
 }

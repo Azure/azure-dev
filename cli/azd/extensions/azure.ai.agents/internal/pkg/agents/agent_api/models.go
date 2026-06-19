@@ -243,9 +243,10 @@ func (d *HostedAgentDefinition) UnmarshalJSON(data []byte) error {
 
 // CreateAgentVersionRequest represents a request to create an agent version
 type CreateAgentVersionRequest struct {
-	Description *string           `json:"description,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	Definition  any               `json:"definition"` // Can be any of the agent definition types
+	Description        *string             `json:"description,omitempty"`
+	Metadata           map[string]string   `json:"metadata,omitempty"`
+	Definition         any                 `json:"definition"` // Can be any of the agent definition types
+	BlueprintReference *BlueprintReference `json:"blueprint_reference,omitempty"`
 }
 
 // CreateAgentRequest represents a request to create an agent

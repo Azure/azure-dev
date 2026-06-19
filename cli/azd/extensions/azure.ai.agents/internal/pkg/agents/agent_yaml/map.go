@@ -110,6 +110,7 @@ func MapEndpointAndCard(
 		nil,
 		agentEndpoint,
 		agentCard,
+		nil,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -381,12 +382,18 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		}
 	}
 
-	// Map protocol versions from the hosted agent definition
+	// Map protocol versions from the hosted agent definition.
+	// "activity" in agent.yaml is the endpoint-level name; the definition-level
+	// field (container_protocol_versions) requires the canonical name "activity_protocol".
 	protocolVersions := make([]agent_api.ProtocolVersionRecord, 0)
 	if len(hostedAgent.Protocols) > 0 {
 		for _, protocol := range hostedAgent.Protocols {
+			apiProtocol := agent_api.AgentProtocol(protocol.Protocol)
+			if apiProtocol == "activity" {
+				apiProtocol = agent_api.AgentProtocolActivityProtocol
+			}
 			protocolVersions = append(protocolVersions, agent_api.ProtocolVersionRecord{
-				Protocol: agent_api.AgentProtocol(protocol.Protocol),
+				Protocol: apiProtocol,
 				Version:  protocol.Version,
 			})
 		}
@@ -422,8 +429,16 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 			},
 		}
 
+		// Map blueprint reference if present in agent.yaml
+		var blueprintRef *agent_api.BlueprintReference
+		if hostedAgent.BlueprintReference != nil {
+			blueprintRef = &agent_api.BlueprintReference{
+				Type:        hostedAgent.BlueprintReference.Type,
+				BlueprintID: hostedAgent.BlueprintReference.BlueprintID,
+			}
+		}
 		return createAgentAPIRequest(hostedAgent.AgentDefinition, codeDef,
-			hostedAgent.AgentEndpoint, hostedAgent.AgentCard)
+			hostedAgent.AgentEndpoint, hostedAgent.AgentCard, blueprintRef)
 	}
 
 	// Container/image deploy path
@@ -443,18 +458,27 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		Image:                imageURL,
 	}
 
+	// Map blueprint reference if present in agent.yaml
+	var blueprintRef *agent_api.BlueprintReference
+	if hostedAgent.BlueprintReference != nil {
+		blueprintRef = &agent_api.BlueprintReference{
+			Type:        hostedAgent.BlueprintReference.Type,
+			BlueprintID: hostedAgent.BlueprintReference.BlueprintID,
+		}
+	}
 	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageDef,
-		hostedAgent.AgentEndpoint, hostedAgent.AgentCard)
+		hostedAgent.AgentEndpoint, hostedAgent.AgentCard, blueprintRef)
 }
 
 // createAgentAPIRequest is a helper function to create the final request with common fields.
-// The optional agentEndpoint and agentCard parameters are mapped to the corresponding
-// request-level fields when non-nil.
+// The optional agentEndpoint, agentCard, and blueprintRef parameters are mapped to the
+// corresponding request-level fields when non-nil.
 func createAgentAPIRequest(
 	agentDefinition AgentDefinition,
 	agentDef any,
 	agentEndpoint *AgentEndpoint,
 	agentCard *AgentCard,
+	blueprintRef *agent_api.BlueprintReference,
 ) (*agent_api.CreateAgentRequest, error) {
 	// Prepare metadata
 	metadata := make(map[string]string)
@@ -491,7 +515,8 @@ func createAgentAPIRequest(
 	request := &agent_api.CreateAgentRequest{
 		Name: agentName,
 		CreateAgentVersionRequest: agent_api.CreateAgentVersionRequest{
-			Definition: agentDef,
+			Definition:         agentDef,
+			BlueprintReference: blueprintRef,
 		},
 	}
 

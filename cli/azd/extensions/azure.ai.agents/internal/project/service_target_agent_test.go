@@ -590,7 +590,14 @@ func TestDisplayableProtocolFor(t *testing.T) {
 			wantURLScheme:    "wss",
 			wantURLOmitAgent: true,
 		},
-		{name: "activity_protocol excluded", protocol: "activity_protocol", wantNil: true},
+		{
+			name:            "activity_protocol",
+			protocol:        "activity_protocol",
+			wantProtocol:    agent_api.AgentProtocolActivityProtocol,
+			wantEnvSuffix:   "ACTIVITY",
+			wantURLContains: "/agents/my-agent/endpoint/protocols/activity",
+			wantURLScheme:   "https",
+		},
 		{name: "unknown excluded", protocol: "unknown_proto", wantNil: true},
 	}
 
@@ -680,7 +687,7 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			},
 		},
 		{
-			name: "multiple protocols with activity_protocol excluded",
+			name: "multiple protocols with all types",
 			protocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "responses", Version: "1.0.0"},
 				{Protocol: "activity_protocol", Version: "1.0.0"},
@@ -693,6 +700,10 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 					URL:      baseURL + "openai/responses?api-version=v1",
 				},
 				{
+					Protocol: "activity_protocol",
+					URL:      baseURL + "activity?api-version=v1",
+				},
+				{
 					Protocol: "invocations",
 					URL:      baseURL + "invocations?api-version=v1",
 				},
@@ -703,11 +714,16 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			},
 		},
 		{
-			name: "only activity_protocol yields empty",
+			name: "only activity_protocol yields single endpoint",
 			protocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "activity_protocol", Version: "1.0.0"},
 			},
-			expected: nil,
+			expected: []protocolEndpointInfo{
+				{
+					Protocol: "activity_protocol",
+					URL:      baseURL + "activity?api-version=v1",
+				},
+			},
 		},
 		{
 			name:      "nil protocols yields empty",
@@ -849,6 +865,30 @@ func TestDeployArtifacts_EmptyProtocols_NoEndpoints(t *testing.T) {
 	require.Empty(t, artifacts)
 }
 
+// TestDeployArtifacts_ActivityProtocol_SingleEndpoint verifies that an activity-protocol
+// agent produces a single activity endpoint artifact.
+func TestDeployArtifacts_ActivityProtocol_SingleEndpoint(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+	const ep = "https://myproject.services.ai.azure.com/api/projects/proj"
+
+	protocols := []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "activity_protocol", Version: "1.0.0"},
+	}
+
+	artifacts := p.deployArtifacts(
+		"echo-agent", "1.0.0",
+		"", ep,
+		protocols,
+	)
+
+	require.Len(t, artifacts, 1)
+	wantURL := ep + "/agents/echo-agent/endpoint/protocols/activity?api-version=v1"
+	require.Equal(t, wantURL, artifacts[0].Location)
+	require.Equal(t, "Agent endpoint (activity_protocol)", artifacts[0].Metadata["label"])
+}
+
 // TestPackage_NoEarlyFailureWithoutACR is a regression test ensuring that
 // Package for a hosted agent does not fail early when
 // AZURE_CONTAINER_REGISTRY_ENDPOINT is unset. The ACR endpoint is resolved
@@ -952,6 +992,113 @@ func TestLoadContainerAgentDefinition_MalformedYAMLReturnsError(t *testing.T) {
 	_, _, err := provider.loadContainerAgentDefinition()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent.yaml is not valid")
+}
+
+func TestAgentDefDeclaresActivity(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		protocols []agent_yaml.ProtocolVersionRecord
+		want      bool
+	}{
+		{
+			name:      "endpoint-level activity name",
+			protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "1.0.0"}},
+			want:      true,
+		},
+		{
+			name:      "definition-level activity_protocol name",
+			protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: "activity_protocol", Version: "1.0.0"}},
+			want:      true,
+		},
+		{
+			name:      "case-insensitive and whitespace tolerant",
+			protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: "  Activity_Protocol ", Version: "1.0.0"}},
+			want:      true,
+		},
+		{
+			name:      "non-activity protocol",
+			protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "1.0.0"}},
+			want:      false,
+		},
+		{
+			name:      "no protocols",
+			protocols: nil,
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := agentDefDeclaresActivity(agent_yaml.ContainerAgent{Protocols: tt.protocols})
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestEnsureActivityEndpointDefaults(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil endpoint gets activity protocol and BotServiceRbac", func(t *testing.T) {
+		req := &agent_api.CreateAgentRequest{}
+		ensureActivityEndpointDefaults(req)
+
+		require.NotNil(t, req.AgentEndpoint)
+		require.Equal(t,
+			[]agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+			req.AgentEndpoint.Protocols,
+		)
+		require.Len(t, req.AgentEndpoint.AuthorizationSchemes, 1)
+		require.Equal(t,
+			agent_api.AgentEndpointAuthSchemeBotServiceRbac,
+			req.AgentEndpoint.AuthorizationSchemes[0].Type,
+		)
+	})
+
+	t.Run("preserves existing activity and BotServiceRbac without duplicates", func(t *testing.T) {
+		req := &agent_api.CreateAgentRequest{
+			AgentEndpoint: &agent_api.AgentEndpoint{
+				Protocols: []agent_api.AgentEndpointProtocol{
+					agent_api.AgentEndpointProtocolActivity,
+				},
+				AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
+					{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
+				},
+			},
+		}
+		ensureActivityEndpointDefaults(req)
+
+		require.Equal(t,
+			[]agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+			req.AgentEndpoint.Protocols,
+		)
+		require.Len(t, req.AgentEndpoint.AuthorizationSchemes, 1)
+	})
+
+	t.Run("adds activity and BotServiceRbac alongside existing values", func(t *testing.T) {
+		req := &agent_api.CreateAgentRequest{
+			AgentEndpoint: &agent_api.AgentEndpoint{
+				Protocols: []agent_api.AgentEndpointProtocol{
+					agent_api.AgentEndpointProtocolResponses,
+				},
+				AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
+					{Type: agent_api.AgentEndpointAuthSchemeEntra},
+				},
+			},
+		}
+		ensureActivityEndpointDefaults(req)
+
+		require.Contains(t, req.AgentEndpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
+		require.Contains(t, req.AgentEndpoint.Protocols, agent_api.AgentEndpointProtocolResponses)
+
+		var schemeTypes []agent_api.AgentEndpointAuthorizationSchemeType
+		for _, s := range req.AgentEndpoint.AuthorizationSchemes {
+			schemeTypes = append(schemeTypes, s.Type)
+		}
+		require.Contains(t, schemeTypes, agent_api.AgentEndpointAuthSchemeBotServiceRbac)
+		require.Contains(t, schemeTypes, agent_api.AgentEndpointAuthSchemeEntra)
+	})
 }
 
 func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {

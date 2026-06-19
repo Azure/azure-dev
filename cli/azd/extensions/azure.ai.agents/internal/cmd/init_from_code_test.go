@@ -768,6 +768,73 @@ func TestKnownProtocolNames(t *testing.T) {
 	if !strings.Contains(result, "invocations") {
 		t.Errorf("knownProtocolNames() = %q, want to contain 'invocations'", result)
 	}
+	if !strings.Contains(result, "activity_protocol") {
+		t.Errorf("knownProtocolNames() = %q, want to contain 'activity_protocol'", result)
+	}
+}
+
+// TestPromptProtocols_ActivityProtocol verifies that activity_protocol can be
+// selected via flag and is returned with its canonical version.
+func TestPromptProtocols_ActivityProtocol(t *testing.T) {
+	t.Parallel()
+
+	got, err := promptProtocols(t.Context(), nil, false, []string{"activity_protocol"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d protocols, want 1", len(got))
+	}
+	if got[0].Protocol != "activity_protocol" {
+		t.Errorf("protocol = %q, want %q", got[0].Protocol, "activity_protocol")
+	}
+	if got[0].Version != "1.0.0" {
+		t.Errorf("version = %q, want %q", got[0].Version, "1.0.0")
+	}
+}
+
+// TestIsActivityOnlyProtocols verifies the helper that gates model-prompt skipping.
+func TestIsActivityOnlyProtocols(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		protocols []agent_yaml.ProtocolVersionRecord
+		want      bool
+	}{
+		{
+			name:      "activity only",
+			protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: "activity_protocol", Version: "1.0.0"}},
+			want:      true,
+		},
+		{
+			name: "activity + invocations",
+			protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "activity_protocol", Version: "1.0.0"},
+				{Protocol: "invocations", Version: "1.0.0"},
+			},
+			want: false,
+		},
+		{
+			name:      "responses only",
+			protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "1.0.0"}},
+			want:      false,
+		},
+		{
+			name:      "nil",
+			protocols: nil,
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isActivityOnlyProtocols(tt.protocols); got != tt.want {
+				t.Errorf("isActivityOnlyProtocols() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
 
 // fakePromptClient is a lightweight test double for azdext.PromptServiceClient.
@@ -834,6 +901,21 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 			},
 			wantErr:        true,
 			wantErrContain: "cancelled",
+		},
+		{
+			name: "activity_protocol selected interactively",
+			multiSelectFn: func(_ context.Context, _ *azdext.MultiSelectRequest, _ ...grpc.CallOption) (*azdext.MultiSelectResponse, error) {
+				return &azdext.MultiSelectResponse{
+					Values: []*azdext.MultiSelectChoice{
+						{Value: "responses", Label: "responses", Selected: false},
+						{Value: "invocations", Label: "invocations", Selected: false},
+						{Value: "activity_protocol", Label: "activity_protocol", Selected: true},
+					},
+				}, nil
+			},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "activity_protocol", Version: "1.0.0"},
+			},
 		},
 		{
 			name: "empty selection returns validation error",

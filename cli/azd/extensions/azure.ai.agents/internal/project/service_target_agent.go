@@ -60,7 +60,8 @@ type displayableProtocolEntry struct {
 }
 
 // displayableProtocols is the single source of truth for protocols that produce
-// user-facing invocation endpoints and env vars.
+// user-facing endpoint configuration and env vars.
+// Note: activity_protocol is push-based (not invocable) but is displayable for endpoint configuration.
 var displayableProtocols = []displayableProtocolEntry{
 	{
 		Protocol:  agent_api.AgentProtocolResponses,
@@ -76,6 +77,11 @@ var displayableProtocols = []displayableProtocolEntry{
 		Protocol:  agent_api.AgentProtocolInvocationsWS,
 		EnvSuffix: "INVOCATIONS_WS",
 		BuildURL:  buildInvocationsWSProtocolURL,
+	},
+	{
+		Protocol:  agent_api.AgentProtocolActivityProtocol,
+		EnvSuffix: "ACTIVITY",
+		BuildURL:  buildActivityProtocolURL,
 	},
 }
 
@@ -120,6 +126,17 @@ func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
 	return fmt.Sprintf(
 		"wss://%s/api/projects/agents/endpoint/protocols/invocations_ws?%s",
 		u.Host, q.Encode(),
+	)
+}
+
+// buildActivityProtocolURL builds the per-agent URL reference for the "activity_protocol".
+// Activity is push-based (Foundry pushes activities to the agent), not pull-based like
+// responses/invocations. This returns a declarative reference URL used in endpoint
+// configuration, not an HTTP invocation endpoint.
+func buildActivityProtocolURL(projectEndpoint, agentName string) string {
+	return fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/activity?api-version=%s",
+		projectEndpoint, agentName, agent_api.AgentEndpointAPIVersion,
 	)
 }
 
@@ -1224,6 +1241,26 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 
 	applyAgentMetadata(request)
 
+	// For activity-protocol agents, inject BlueprintReference from MAIB_NAME env var
+	// when not already specified in agent.yaml. MAIB_NAME is a Bicep output that
+	// identifies the Managed Agent Identity Blueprint backing this agent.
+	if request.BlueprintReference == nil && azdEnv["MAIB_NAME"] != "" {
+		request.BlueprintReference = &agent_api.BlueprintReference{
+			Type:        "ManagedAgentIdentityBlueprint",
+			BlueprintID: azdEnv["MAIB_NAME"],
+		}
+	}
+
+	// For activity-protocol agents, ensure the agent endpoint advertises the
+	// "activity" protocol and registers a BotServiceRbac authorization scheme so
+	// the Bot Service channel can authenticate to the push-based agent endpoint.
+	// This mirrors the unconditional endpoint patch the legacy activity scripts
+	// perform, making activity agents work out of the box without sample authors
+	// hand-writing agent_endpoint. Existing user-specified values are preserved.
+	if agentDefDeclaresActivity(agentDef) {
+		ensureActivityEndpointDefaults(request)
+	}
+
 	// Default to "responses" protocol when none specified in agent.yaml.
 	protocols := agentDef.Protocols
 	if len(protocols) == 0 {
@@ -1237,6 +1274,60 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		request:         request,
 		protocols:       protocols,
 	}, nil
+}
+
+// agentDefDeclaresActivity reports whether the agent definition declares the
+// activity protocol. agent.yaml may use either the endpoint-level name
+// "activity" or the canonical definition-level name "activity_protocol".
+func agentDefDeclaresActivity(agentDef agent_yaml.ContainerAgent) bool {
+	for _, p := range agentDef.Protocols {
+		switch strings.ToLower(strings.TrimSpace(p.Protocol)) {
+		case string(agent_api.AgentEndpointProtocolActivity),
+			string(agent_api.AgentProtocolActivityProtocol):
+			return true
+		}
+	}
+	return false
+}
+
+// ensureActivityEndpointDefaults makes sure an activity agent's endpoint is
+// configured for push-based delivery: the "activity" endpoint protocol must be
+// present and a BotServiceRbac authorization scheme must be registered so the
+// Bot Service channel can authenticate. Existing values are preserved; this only
+// adds what is missing.
+func ensureActivityEndpointDefaults(request *agent_api.CreateAgentRequest) {
+	if request.AgentEndpoint == nil {
+		request.AgentEndpoint = &agent_api.AgentEndpoint{}
+	}
+
+	hasActivity := false
+	for _, p := range request.AgentEndpoint.Protocols {
+		if p == agent_api.AgentEndpointProtocolActivity {
+			hasActivity = true
+			break
+		}
+	}
+	if !hasActivity {
+		request.AgentEndpoint.Protocols = append(
+			request.AgentEndpoint.Protocols, agent_api.AgentEndpointProtocolActivity,
+		)
+	}
+
+	hasBotServiceRbac := false
+	for _, s := range request.AgentEndpoint.AuthorizationSchemes {
+		if s.Type == agent_api.AgentEndpointAuthSchemeBotServiceRbac {
+			hasBotServiceRbac = true
+			break
+		}
+	}
+	if !hasBotServiceRbac {
+		request.AgentEndpoint.AuthorizationSchemes = append(
+			request.AgentEndpoint.AuthorizationSchemes,
+			agent_api.AgentEndpointAuthorizationScheme{
+				Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac,
+			},
+		)
+	}
 }
 
 // deployResult holds the intermediate results from a deploy method (code or container)
@@ -2256,9 +2347,10 @@ func (p *AgentServiceTargetProvider) createAgent(
 
 	// Extract CreateAgentVersionRequest from CreateAgentRequest
 	versionRequest := &agent_api.CreateAgentVersionRequest{
-		Description: request.Description,
-		Metadata:    request.Metadata,
-		Definition:  request.Definition,
+		Description:        request.Description,
+		Metadata:           request.Metadata,
+		Definition:         request.Definition,
+		BlueprintReference: request.BlueprintReference,
 	}
 
 	// Create agent version

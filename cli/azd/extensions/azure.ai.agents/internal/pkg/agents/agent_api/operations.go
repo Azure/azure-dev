@@ -146,6 +146,10 @@ func (c *AgentClient) CreateAgent(ctx context.Context, request *CreateAgentReque
 		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
 
+	// AgentEndpoints feature must be enabled for agent_endpoint (protocols,
+	// authorization_schemes) in the request body to be honored by the service.
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview,AgentEndpoints=V1Preview")
+
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
@@ -233,6 +237,10 @@ func (c *AgentClient) PatchAgent(
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
+
+	// AgentEndpoints feature must be enabled for agent_endpoint (protocols,
+	// authorization_schemes) patches to be honored by the service.
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview,AgentEndpoints=V1Preview")
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {

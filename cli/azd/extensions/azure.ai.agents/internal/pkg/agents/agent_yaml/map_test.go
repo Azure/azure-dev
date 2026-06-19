@@ -1599,6 +1599,126 @@ func TestCreateAgentAPIRequest_CodeDeploy_WithRaiConfig(t *testing.T) {
 	}
 }
 
+// TestCreateAgentAPIRequest_ActivityProtocol_NameNormalized verifies that the
+// endpoint-level "activity" protocol name in agent.yaml is normalized to the
+// definition-level "activity_protocol" name required by container_protocol_versions.
+func TestCreateAgentAPIRequest_ActivityProtocol_NameNormalized(t *testing.T) {
+	t.Parallel()
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "echo-agent",
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "activity", Version: "1.0.0"},
+		},
+		Image: "acr.azurecr.io/echo-agent:latest",
+	}
+
+	req, err := CreateAgentAPIRequestFromDefinition(agent, WithImageURL("acr.azurecr.io/echo-agent:latest"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	def, ok := req.Definition.(agent_api.HostedAgentDefinition)
+	if !ok {
+		t.Fatalf("expected HostedAgentDefinition, got %T", req.Definition)
+	}
+
+	if len(def.ProtocolVersions) != 1 {
+		t.Fatalf("expected 1 protocol version, got %d", len(def.ProtocolVersions))
+	}
+	if def.ProtocolVersions[0].Protocol != agent_api.AgentProtocolActivityProtocol {
+		t.Errorf("Protocol = %q, want %q", def.ProtocolVersions[0].Protocol, agent_api.AgentProtocolActivityProtocol)
+	}
+}
+
+// TestCreateAgentAPIRequest_ActivityProtocol_CanonicalNamePassedThrough verifies that
+// "activity_protocol" (already canonical) is preserved unchanged.
+func TestCreateAgentAPIRequest_ActivityProtocol_CanonicalNamePassedThrough(t *testing.T) {
+	t.Parallel()
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "echo-agent",
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "activity_protocol", Version: "1.0.0"},
+		},
+		Image: "acr.azurecr.io/echo-agent:latest",
+	}
+
+	req, err := CreateAgentAPIRequestFromDefinition(agent, WithImageURL("acr.azurecr.io/echo-agent:latest"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	def := req.Definition.(agent_api.HostedAgentDefinition)
+	if def.ProtocolVersions[0].Protocol != agent_api.AgentProtocolActivityProtocol {
+		t.Errorf("Protocol = %q, want %q", def.ProtocolVersions[0].Protocol, agent_api.AgentProtocolActivityProtocol)
+	}
+}
+
+// TestCreateAgentAPIRequest_BlueprintReference_FromAgentYaml verifies that a
+// blueprint_reference declared in agent.yaml is mapped into the API request.
+func TestCreateAgentAPIRequest_BlueprintReference_FromAgentYaml(t *testing.T) {
+	t.Parallel()
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "echo-agent",
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "activity_protocol", Version: "1.0.0"},
+		},
+		Image: "acr.azurecr.io/echo-agent:latest",
+		BlueprintReference: &BlueprintReference{
+			Type:        "ManagedAgentIdentityBlueprint",
+			BlueprintID: "echo-agent-maib",
+		},
+	}
+
+	req, err := CreateAgentAPIRequestFromDefinition(agent, WithImageURL("acr.azurecr.io/echo-agent:latest"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if req.BlueprintReference == nil {
+		t.Fatal("expected BlueprintReference to be set, got nil")
+	}
+	if req.BlueprintReference.Type != "ManagedAgentIdentityBlueprint" {
+		t.Errorf("BlueprintReference.Type = %q, want %q", req.BlueprintReference.Type, "ManagedAgentIdentityBlueprint")
+	}
+	if req.BlueprintReference.BlueprintID != "echo-agent-maib" {
+		t.Errorf("BlueprintReference.BlueprintID = %q, want %q", req.BlueprintReference.BlueprintID, "echo-agent-maib")
+	}
+}
+
+// TestCreateAgentAPIRequest_BlueprintReference_NilWhenNotSet verifies that the
+// blueprint_reference field is nil when not declared in agent.yaml (non-MAIB agents).
+func TestCreateAgentAPIRequest_BlueprintReference_NilWhenNotSet(t *testing.T) {
+	t.Parallel()
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "invocations-agent",
+		},
+		Protocols: []ProtocolVersionRecord{
+			{Protocol: "invocations", Version: "1.0.0"},
+		},
+		Image: "acr.azurecr.io/invocations-agent:latest",
+	}
+
+	req, err := CreateAgentAPIRequestFromDefinition(agent, WithImageURL("acr.azurecr.io/invocations-agent:latest"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if req.BlueprintReference != nil {
+		t.Errorf("expected BlueprintReference to be nil for non-MAIB agent, got %+v", req.BlueprintReference)
+	}
+}
+
 func TestCreateHostedAgentAPIRequest_NoRaiConfig(t *testing.T) {
 	t.Parallel()
 	agent := ContainerAgent{

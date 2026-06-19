@@ -648,6 +648,31 @@ func TestPatchAgent_Success(t *testing.T) {
 	require.Equal(t, "my-agent", result.Name)
 }
 
+// TestPatchAgent_SetsAgentEndpointsFeatureHeader verifies the agent_endpoint
+// patch is sent with the AgentEndpoints feature enabled. Without this header the
+// service ignores agent_endpoint protocols/authorization_schemes (e.g. the
+// BotServiceRbac scheme required by activity-protocol agents).
+func TestPatchAgent_SetsAgentEndpointsFeatureHeader(t *testing.T) {
+	client, transport := newCaptureClient(http.StatusOK, "{}")
+
+	req := &PatchAgentRequest{
+		AgentEndpoint: &AgentEndpoint{
+			Protocols: []AgentEndpointProtocol{AgentEndpointProtocolActivity},
+			AuthorizationSchemes: []AgentEndpointAuthorizationScheme{
+				{Type: AgentEndpointAuthSchemeBotServiceRbac},
+			},
+		},
+	}
+
+	_, err := client.PatchAgent(t.Context(), "my-agent", req, "v1")
+	require.NoError(t, err)
+	require.Len(t, transport.requests, 1)
+	require.Equal(t,
+		"HostedAgents=V1Preview,AgentEndpoints=V1Preview",
+		transport.requests[0].Header.Get("Foundry-Features"),
+	)
+}
+
 func TestPatchAgent_400ReturnsError(t *testing.T) {
 	client := newTestClient(
 		"https://test.example.com/api/projects/proj",

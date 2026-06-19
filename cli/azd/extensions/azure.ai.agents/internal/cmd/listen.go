@@ -21,6 +21,7 @@ import (
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
@@ -128,11 +129,65 @@ func postprovisionHandler(
 					pendingProvisionEnvVar, clearErr,
 				)
 			}
+
+			// For activity-protocol agents, register the blueprint into M365
+			// (delegated OAuth2 grants + blueprint owner). Gated on the presence
+			// of AGENT_IDENTITY_BLUEPRINT_ID, which only activity agents emit.
+			// Best-effort: a failure is logged and does not fail provision.
+			if err := runBlueprintM365Provisioning(ctx, azdClient, envName); err != nil {
+				log.Printf("warning: blueprint M365 provisioning failed: %v", err)
+			}
 		}
 	}
 
 	return nil
 }
+
+// runBlueprintM365Provisioning performs the post-provision M365 registration for
+// an activity-protocol agent's blueprint (delegated OAuth2 grants + blueprint
+// owner). It is a no-op when AGENT_IDENTITY_BLUEPRINT_ID is not present in the
+// environment (non-activity agents). All underlying steps are best-effort.
+func runBlueprintM365Provisioning(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+) error {
+	blueprintAppID := getEnvValueOrEmpty(ctx, azdClient, envName, "AGENT_IDENTITY_BLUEPRINT_ID")
+	if blueprintAppID == "" {
+		return nil
+	}
+
+	tenantID := getEnvValueOrEmpty(ctx, azdClient, envName, "AZURE_TENANT_ID")
+	cred, err := azidentity.NewAzureDeveloperCLICredential(
+		&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID:                   tenantID,
+			AdditionallyAllowedTenants: []string{"*"},
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create credential for blueprint M365 provisioning: %w", err)
+	}
+
+	return project.EnsureBlueprintM365Provisioning(ctx, cred, blueprintAppID)
+}
+
+// getEnvValueOrEmpty reads a single azd environment value, returning "" on any
+// error or when the key is unset.
+func getEnvValueOrEmpty(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName, key string,
+) string {
+	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     key,
+	})
+	if err != nil || resp == nil {
+		return ""
+	}
+	return resp.Value
+}
+
 
 // currentEnvName returns the name of the currently selected azd
 // environment, or empty string + error when no environment is
@@ -261,6 +316,8 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 
 	// Build name→principalID map by fetching the agent version for each hosted service.
 	agentIdentities := make(map[string]string)
+	// Track agent GUIDs per service for activity-protocol M365 publish (post-deploy).
+	agentGUIDs := make(map[string]string)
 	for _, svc := range hostedAgents {
 		serviceKey := toServiceKey(svc.Name)
 
@@ -278,14 +335,24 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 			continue
 		}
 
+		// Resolve the agent's actual name. The agent name comes from agent.yaml's
+		// `name` field (registered as AGENT_{serviceKey}_NAME during deploy) and may
+		// differ from the azure.yaml service name (svc.Name). Using svc.Name here
+		// would 404 whenever they differ, so prefer the registered agent name and
+		// fall back to the service name only when it is unavailable.
+		agentName := getEnvValueOrEmpty(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
+		if agentName == "" {
+			agentName = svc.Name
+		}
+
 		// Fetch the agent version to get the instance identity principal ID.
 		versionObj, err := agentClient.GetAgentVersion(
-			ctx, svc.Name, versionResp.Value, DefaultAgentAPIVersion,
+			ctx, agentName, versionResp.Value, DefaultAgentAPIVersion,
 		)
 		if err != nil {
 			return fmt.Errorf(
 				"failed to fetch agent version for %s/%s: %w",
-				svc.Name, versionResp.Value, err,
+				agentName, versionResp.Value, err,
 			)
 		}
 
@@ -294,7 +361,10 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 			principalID = versionObj.InstanceIdentity.PrincipalID
 		}
 
-		agentIdentities[svc.Name] = principalID
+		agentIdentities[agentName] = principalID
+		if versionObj.AgentGUID != "" {
+			agentGUIDs[agentName] = versionObj.AgentGUID
+		}
 	}
 
 	if len(agentIdentities) == 0 {
@@ -303,6 +373,14 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 
 	if err := project.EnsureAgentIdentityRBAC(ctx, azdClient, agentIdentities); err != nil {
 		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
+	}
+
+	// For activity-protocol agents, publish the deployed agent as an M365 digital
+	// worker and configure its Teams backend. Gated on AGENT_IDENTITY_BLUEPRINT_ID
+	// (emitted only by activity agents). Best-effort: failures are logged and do
+	// not fail the deploy.
+	if err := runDigitalWorkerPublish(ctx, azdClient, cred, envName, agentGUIDs); err != nil {
+		log.Printf("warning: digital worker publish failed: %v", err)
 	}
 
 	// Report optimization candidate deployments to the optimization service.
@@ -314,6 +392,54 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 			return optimize_api.NewOptimizeClient(endpoint, cred)
 		},
 	)
+
+	return nil
+}
+
+// runDigitalWorkerPublish publishes each deployed activity-protocol agent as an
+// M365 digital worker and configures its Teams backend. It is a no-op when
+// AGENT_IDENTITY_BLUEPRINT_ID is not present (non-activity agents) or when no agent
+// GUID was captured. All underlying steps are best-effort.
+func runDigitalWorkerPublish(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	cred azcore.TokenCredential,
+	envName string,
+	agentGUIDs map[string]string,
+) error {
+	blueprintAppID := getEnvValueOrEmpty(ctx, azdClient, envName, "AGENT_IDENTITY_BLUEPRINT_ID")
+	if blueprintAppID == "" || len(agentGUIDs) == 0 {
+		return nil
+	}
+
+	first := func(keys ...string) string {
+		for _, k := range keys {
+			if v := getEnvValueOrEmpty(ctx, azdClient, envName, k); v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+
+	base := project.PublishDigitalWorkerParams{
+		BlueprintAppID: blueprintAppID,
+		SubscriptionID: first("SUBSCRIPTION_ID", "AZURE_SUBSCRIPTION_ID"),
+		ResourceGroup:  first("RESOURCE_GROUP", "AZURE_RESOURCE_GROUP"),
+		Location:       first("LOCATION", "AZURE_LOCATION"),
+		AccountName:    first("ACCOUNT_NAME", "AZURE_AI_ACCOUNT_NAME"),
+		ProjectName:    first("PROJECT_NAME", "AZURE_AI_PROJECT_NAME"),
+	}
+
+	// agentGUIDs is keyed by the resolved agent name (from AGENT_{serviceKey}_NAME),
+	// so the map key is the agent name to publish.
+	for agentName, guid := range agentGUIDs {
+		p := base
+		p.AgentGUID = guid
+		p.AgentName = agentName
+		if err := project.PublishDigitalWorker(ctx, cred, p); err != nil {
+			log.Printf("warning: digital worker publish for %q failed: %v", agentName, err)
+		}
+	}
 
 	return nil
 }

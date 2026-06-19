@@ -757,7 +757,28 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 	}
 
-	// Step 2: Model configuration
+	// Step 2: Model configuration — skipped for activity-only agents which use M365 SDK, not AI models.
+	if isActivityOnlyProtocols(protocols) {
+		fmt.Println(output.WithGrayFormat(
+			"Skipping model configuration: activity_protocol agents use the M365 Agents SDK and do not require a model deployment.",
+		))
+		// Build the definition directly without model prompts.
+		agentKind := agent_yaml.AgentKindHosted
+		definition := &agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Name: agentName,
+				Kind: agentKind,
+			},
+			Protocols:         protocols,
+			CodeConfiguration: codeConfig,
+			// activity_protocol requires agent_endpoint.protocols=["activity"] for the Foundry PATCH call.
+			AgentEndpoint: &agent_yaml.AgentEndpoint{
+				Protocols: []string{"activity"},
+			},
+		}
+		return definition, nil
+	}
+
 	var modelConfigChoices []*azdext.SelectChoice
 	if selectedProject != nil {
 		modelConfigChoices = []*azdext.SelectChoice{
@@ -855,6 +876,17 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		},
 		Protocols:         protocols,
 		CodeConfiguration: codeConfig,
+	}
+
+	// When activity_protocol is among the selected protocols, set agent_endpoint.protocols
+	// so the Foundry PATCH call registers the activity endpoint correctly.
+	for _, p := range protocols {
+		if p.Protocol == "activity_protocol" {
+			definition.AgentEndpoint = &agent_yaml.AgentEndpoint{
+				Protocols: []string{"activity"},
+			}
+			break
+		}
 	}
 
 	// Add model resource if a model was selected
@@ -1215,6 +1247,21 @@ type protocolInfo struct {
 var knownProtocols = []protocolInfo{
 	{Name: "responses", Version: "1.0.0"},
 	{Name: "invocations", Version: "1.0.0"},
+	{Name: "activity_protocol", Version: "1.0.0"},
+}
+
+// isActivityOnlyProtocols reports whether protocols contains only activity_protocol.
+// Activity-protocol agents use the M365 Agents SDK and don't require a model deployment.
+func isActivityOnlyProtocols(protocols []agent_yaml.ProtocolVersionRecord) bool {
+	if len(protocols) == 0 {
+		return false
+	}
+	for _, p := range protocols {
+		if p.Protocol != "activity_protocol" {
+			return false
+		}
+	}
+	return true
 }
 
 // promptProtocols asks the user which protocols their agent supports.

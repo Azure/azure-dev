@@ -97,6 +97,9 @@ azd creates or reuses a hosted agent session backed by that version.
 For agents configured with header-based isolation, pass --user-isolation-key
 and --chat-isolation-key on each remote invoke.
 
+Activity protocol is not supported for invocation (it is push-based, not pull-based).
+Use 'azd ai agent endpoint show' to view activity protocol configuration.
+
 Use --output raw (or -o raw) to dump the unmodified server response (status
 line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
@@ -219,7 +222,7 @@ suppressed in raw mode.`,
 
 	cmd.Flags().BoolVarP(&flags.local, "local", "l", false, "Invoke on localhost instead of Foundry")
 	cmd.Flags().StringVarP(&flags.inputFile, "input-file", "f", "", "Path to a file whose contents are sent as the request body")
-	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "", "Protocol to use: responses (default) or invocations")
+	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "", "Protocol to use for invocation: responses (default) or invocations")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(
 		&flags.timeout,

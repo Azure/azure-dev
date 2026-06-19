@@ -229,6 +229,7 @@ type ContainerAgent struct {
 	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agent_card,omitempty"`
 	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
 	Policies             []Policy                `json:"policies,omitempty" yaml:"policies,omitempty"`
+	BlueprintReference   *BlueprintReference     `json:"blueprintReference,omitempty" yaml:"blueprint_reference,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.
@@ -647,6 +648,16 @@ func (ps PropertySchema) MarshalYAML() (any, error) {
 type ProtocolVersionRecord struct {
 	Protocol string `json:"protocol" yaml:"protocol"`
 	Version  string `json:"version" yaml:"version"`
+}
+
+// BlueprintReference identifies the Managed Agent Identity Blueprint (MAIB)
+// backing an agent version. When set in agent.yaml, it is forwarded verbatim
+// to the Foundry CreateAgentVersion API as the blueprint_reference field.
+// For activity-protocol agents, the MAIB_NAME azd environment variable is used
+// as a fallback when this field is omitted.
+type BlueprintReference struct {
+	Type        string `json:"type" yaml:"type"`
+	BlueprintID string `json:"blueprint_id" yaml:"blueprint_id"`
 }
 
 // VersionSelectionRule describes how traffic is routed to an agent version in agent.yaml.

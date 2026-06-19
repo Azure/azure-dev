@@ -22,7 +22,7 @@ on:
       repository:
         description: >-
           Repo to mine PRs from, as `owner/repo`. Default: this repo. A private
-          source repo needs read access via COPILOT_GITHUB_TOKEN.
+          source repo needs additional GitHub tool authentication.
         required: false
         type: string
       min_pr_count:
@@ -51,6 +51,7 @@ on:
 # through the create-pull-request safe output in a separate, permission-scoped job.
 permissions:
   contents: read
+  copilot-requests: write
   pull-requests: read
   issues: read
 

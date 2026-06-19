@@ -5,6 +5,7 @@
 - [[#8645]](https://github.com/Azure/azure-dev/pull/8645) Detect VNET-injected Foundry accounts during `azd ai agent init` and skip remote builds up front so hosted container agents use local builds without a failing remote-build attempt first. Thanks @m5i-work for the contribution!
 - [[#8714]](https://github.com/Azure/azure-dev/pull/8714) Show a tracing disclaimer when `azd ai agent init` connects or adds an Application Insights connection. Thanks @therealjohn for the contribution!
 - [[#8685]](https://github.com/Azure/azure-dev/pull/8685) Default `azd ai agent run` local Python virtual environments to Python >= 3.13 so local runs match the minimum supported Foundry runtime. Thanks @therealjohn for the contribution!
+- [[#8732]](https://github.com/Azure/azure-dev/pull/8732) Update the Application Insights tracing disclaimer shown during `azd ai agent init` with revised wording and a `Learn more` link. Thanks @therealjohn for the contribution!
 
 ## 0.1.40-preview (2026-06-15)
 

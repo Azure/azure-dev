@@ -74,8 +74,10 @@ type SkillHost struct {
 	PluginName string
 	// VersionRegex is a Go regular expression with a capture group for
 	// the semver portion of the version output of PluginListCommand.
-	// Optional — when empty, InstalledVersion is left empty even when
-	// the skill is detected as installed.
+	// Required: the detector treats a VersionRegex match as the
+	// authoritative signal that the skill is installed (and uses the
+	// captured group as InstalledVersion). A host with an empty
+	// VersionRegex is never reported as installed.
 	VersionRegex string
 }
 

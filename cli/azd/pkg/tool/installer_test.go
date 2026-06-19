@@ -1328,7 +1328,9 @@ func TestRunSkill_NoHost_FailsWithSuggestion(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunSkill_NodeMissing_WarnsButProceeds(t *testing.T) {
-	t.Parallel()
+	// NOT parallel: captureLog mutates the global logger via
+	// log.SetOutput, which would race/interfere with other t.Parallel()
+	// tests in this package.
 
 	runner := mockexec.NewMockCommandRunner()
 	mockHostPresence(runner, "copilot")

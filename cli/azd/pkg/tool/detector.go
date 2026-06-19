@@ -443,12 +443,14 @@ func (d *detector) detectAzdExtension(
 // ---------------------------------------------------------------------------
 
 // detectSkill checks whether a skill is installed by running each
-// SkillHost's PluginListCommand and searching the output for PluginName.
-// Hosts whose binary is not on PATH are skipped silently — a missing
-// host is not an error, it just means the skill cannot be installed
-// through that host. The skill is reported as installed (with a best-
-// effort InstalledVersion extracted via the host's VersionRegex) as
-// soon as any available host's listing contains the PluginName.
+// SkillHost's PluginListCommand. A host is reported as having the skill
+// installed only when its PluginName appears in the listing AND its
+// (required) VersionRegex captures a version — the regex match is the
+// authoritative existence signal, since some hosts echo the queried
+// name even when the plugin is not installed. The captured group
+// becomes InstalledVersion. Hosts whose binary is not on PATH are
+// skipped silently — a missing host is not an error, it just means the
+// skill cannot be installed through that host.
 func (d *detector) detectSkill(
 	ctx context.Context,
 	tool *ToolDefinition,

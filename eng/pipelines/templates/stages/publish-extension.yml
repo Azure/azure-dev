@@ -52,7 +52,22 @@ stages:
           value: Registry update
 
     jobs:
+      - job: Generate_GH_Token
+
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+
+        steps:
+          - checkout: self
+
+          - template: /eng/common/pipelines/templates/steps/login-to-github.yml
+            parameters:
+              ExportAsOutputVariable: true
+
       - deployment: Publish_Release
+        dependsOn: Generate_GH_Token
         condition: >-
           and(
             succeeded(),
@@ -65,6 +80,9 @@ stages:
           environment: none
         ${{ else }}:
           environment: package-publish
+
+        variables:
+          GH_TOKEN: $[ dependencies.Generate_GH_Token.outputs['LoginToGitHub.GH_TOKEN'] ]
 
         pool:
           name: azsdk-pool
@@ -130,6 +148,9 @@ stages:
             succeeded(),
             ne('true', variables['Skip.RegistryUpdate'])
           )
+
+        variables:
+          GH_TOKEN: $[ dependencies.Generate_GH_Token.outputs['LoginToGitHub.GH_TOKEN'] ]
 
         pool:
           name: $(LINUXPOOL)
@@ -243,7 +264,7 @@ stages:
                   --version "$(EXT_VERSION)"
               displayName: Update $(ExtensionRegistryFile) (azd x publish)
               env:
-                GH_TOKEN: $(azuresdk-github-pat)
+                GH_TOKEN: $(GH_TOKEN)
 
             - ${{ if ne(parameters.PublishToDevRegistry, true) }}:
               - bash: |

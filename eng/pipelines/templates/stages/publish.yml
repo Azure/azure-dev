@@ -396,7 +396,22 @@ stages:
 
           - template: /eng/pipelines/templates/steps/publish-cli-brew.yml
 
+      - job: Generate_GH_Token
+
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+
+        steps:
+          - checkout: self
+
+          - template: /eng/common/pipelines/templates/steps/login-to-github.yml
+            parameters:
+              ExportAsOutputVariable: true
+
       - deployment: Publish_For_PR
+        dependsOn: Generate_GH_Token
         environment: none
         condition: >-
           and(
@@ -410,6 +425,9 @@ stages:
               )
             )
           )
+
+        variables:
+          GH_TOKEN: $[ dependencies.Generate_GH_Token.outputs['LoginToGitHub.GH_TOKEN'] ]
 
         pool:
           name: azsdk-pool
@@ -549,6 +567,7 @@ stages:
                     PrNumber: $(PRNumber)
                     BodyFile: $(CommentBodyFile)
                     Tag: '<!-- #comment-cli-pr -->'
+                    GitHubToken: $(GH_TOKEN)
 
   - stage: PublishInstallers
     dependsOn: Sign

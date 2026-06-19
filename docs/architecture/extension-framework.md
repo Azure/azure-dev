@@ -25,6 +25,7 @@ Extensions are discovered from registries — JSON manifests that list available
 
 - **Official registry:** `https://aka.ms/azd/extensions/registry` — Stable, signed, production-ready extensions vetted by the azd team.
 - **Dev registry:** `https://aka.ms/azd/extensions/registry/dev` — Experimental and pre-release extensions (unsigned builds, backed by `cli/azd/extensions/registry.dev.json`). Not configured by default; users opt in with `azd extension source add`.
+- **Nightly registry:** `https://raw.githubusercontent.com/Azure/azure-dev/nightly-registry/cli/azd/extensions/registry.nightly.json` — Automated daily pre-release builds of first-party extensions, published from the latest `main` and backed by `registry.nightly.json` on the `nightly-registry` branch. Not configured by default; users opt in with `azd extension source add -n nightly`. See [Choosing Stable vs. Nightly](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#choosing-stable-vs-nightly).
 - **Local sources:** File-based manifests for development
 
 The dev registry serves as a staging area for extensions before they graduate to the main registry. Extensions installed from the dev registry are automatically promoted to the main registry when a newer stable version becomes available there. See the [Extension Resolution and Versioning](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#devexperimental-extension-registry) guide for detailed criteria, stability expectations, and submission guidelines.

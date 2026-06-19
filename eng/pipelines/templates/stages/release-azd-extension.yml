@@ -11,10 +11,21 @@ parameters:
   - name: PublishToDevRegistry
     type: boolean
     default: false
+  # When true the release publishes to the nightly registry and is allowed to run on a schedule.
+  - name: IsNightly
+    type: boolean
+    default: false
+  # StageSuffix is forwarded to every child stage template so this whole build/sign/publish chain can
+  # be instantiated once per extension via an ${{ each }} loop in a single pipeline (e.g. the nightly
+  # bundle). Defaults to '' so existing single-extension pipelines are unaffected.
+  - name: StageSuffix
+    type: string
+    default: ''
 
 stages: 
   - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
     parameters:
+      StageSuffix: ${{ parameters.StageSuffix }}
       AzdExtensionId: ${{ parameters.AzdExtensionId }}
       AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
       SkipTests: ${{ parameters.SkipTests }}
@@ -78,11 +89,12 @@ stages:
               SetExecutableBit: true
               AZURE_DEV_CI_OS: mac-arm64
 
-  # Only sign and release on manual builds from internal
-  - ${{ if and(eq(variables['System.TeamProject'], 'internal'), eq(variables['Build.Reason'], 'Manual')) }}:
+  # Only sign and release on manual builds from internal, or scheduled nightly builds from internal.
+  - ${{ if and(eq(variables['System.TeamProject'], 'internal'), or(eq(variables['Build.Reason'], 'Manual'), and(eq(parameters.IsNightly, true), eq(variables['Build.Reason'], 'Schedule')))) }}:
     - template: /eng/pipelines/templates/stages/sign-extension.yml
       parameters:
         SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
+        StageSuffix: ${{ parameters.StageSuffix }}
 
     - template: /eng/pipelines/templates/stages/publish-extension.yml
       parameters:
@@ -90,3 +102,5 @@ stages:
         AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
         SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
         PublishToDevRegistry: ${{ parameters.PublishToDevRegistry }}
+        IsNightly: ${{ parameters.IsNightly }}
+        StageSuffix: ${{ parameters.StageSuffix }}

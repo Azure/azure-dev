@@ -84,6 +84,26 @@ azd extension source add -n dev -t url -l "https://aka.ms/azd/extensions/registr
 
 Extensions installed from the dev registry are automatically promoted to the main registry when a newer version becomes available there. See the [Dev/Experimental Extension Registry](./extension-resolution-and-versioning.md#devexperimental-extension-registry) section for full details on stability expectations, submission guidelines, promotion behavior, and troubleshooting.
 
+#### Nightly Registry
+
+> [!CAUTION]
+> The nightly registry contains automated pre-release builds. They come with **no stability guarantees** and are **not covered by Azure support**. Expect breaking changes between nights.
+
+The nightly registry is an opt-in source containing daily pre-release builds of first-party extensions, published every night from the latest `main`. It lives on the `nightly-registry` branch of the [`azd` GitHub repo](https://github.com/Azure/azure-dev/blob/nightly-registry/cli/azd/extensions/registry.nightly.json) and is **not** configured by default.
+
+To opt-in for the nightly registry run the following command:
+
+```bash
+# Add a new extension source named 'nightly' to your `azd` configuration.
+azd extension source add -n nightly -t url \
+  -l "https://raw.githubusercontent.com/Azure/azure-dev/nightly-registry/cli/azd/extensions/registry.nightly.json"
+
+# Install the nightly build of an extension.
+azd extension install <extension-id> --source nightly
+```
+
+Nightly builds use a `<base>-nightly.<yyyyMMdd>.<buildId>` version format, so the matching stable release always supersedes them — running `azd extension upgrade` moves you back to the `azd` source automatically once that stable version ships. See [Choosing Stable vs. Nightly](./extension-resolution-and-versioning.md#choosing-stable-vs-nightly) for the full workflow, including how to switch channels and opt back out.
+
 #### `azd extension source list`
 
 Displays a list of installed extension sources.

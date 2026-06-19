@@ -8,27 +8,64 @@ parameters:
   - name: PublishToDevRegistry
     type: boolean
     default: false
+  # When true the build publishes to the nightly registry (registry.nightly.json) which lives on a
+  # dedicated, bot-owned branch and is updated by auto-commit instead of a pull request.
+  - name: IsNightly
+    type: boolean
+    default: false
+  # StageSuffix is appended to this stage's id (and its dependsOn) AND to the shared pipeline artifact
+  # names it consumes (release, changelog, release-metadata) so the template can be instantiated
+  # multiple times in a single pipeline via an ${{ each }} loop (e.g. the nightly bundle pipeline that
+  # builds many extensions in parallel). Azure DevOps requires stage ids and artifact names to be
+  # unique within a pipeline; without a suffix, looping would collide and fail to compile. Defaults to
+  # '' so existing single-extension pipelines are byte-identical and unaffected.
+  - name: StageSuffix
+    type: string
+    default: ''
 
 stages:
-  - stage: PublishExtension
-    dependsOn: Sign
-    condition: >-
-      and(
-        succeeded(),
-        ne(variables['Skip.Release'], 'true'),
-        or(
-          eq('Manual', variables['BuildReasonOverride']),
-          and(
-            eq('', variables['BuildReasonOverride']),
-            eq('Manual', variables['Build.Reason'])
+  - stage: PublishExtension${{ parameters.StageSuffix }}
+    dependsOn: Sign${{ parameters.StageSuffix }}
+    ${{ if eq(parameters.IsNightly, true) }}:
+      # Nightly publishes run on a schedule (or when queued manually).
+      condition: >-
+        and(
+          succeeded(),
+          ne(variables['Skip.Release'], 'true'),
+          or(
+            eq('Manual', variables['BuildReasonOverride']),
+            and(
+              eq('', variables['BuildReasonOverride']),
+              or(
+                eq('Manual', variables['Build.Reason']),
+                eq('Schedule', variables['Build.Reason'])
+              )
+            )
           )
         )
-      )
+    ${{ else }}:
+      condition: >-
+        and(
+          succeeded(),
+          ne(variables['Skip.Release'], 'true'),
+          or(
+            eq('Manual', variables['BuildReasonOverride']),
+            and(
+              eq('', variables['BuildReasonOverride']),
+              eq('Manual', variables['Build.Reason'])
+            )
+          )
+        )
 
     variables:
       - template: /eng/pipelines/templates/variables/image.yml
       - template: /eng/pipelines/templates/variables/globals.yml
-      - ${{ if eq(parameters.PublishToDevRegistry, true) }}:
+      - ${{ if eq(parameters.IsNightly, true) }}:
+        - name: ExtensionRegistryFile
+          value: registry.nightly.json
+        - name: NightlyRegistryBranch
+          value: nightly-registry
+      - ${{ elseif eq(parameters.PublishToDevRegistry, true) }}:
         - name: ExtensionRegistryFile
           value: registry.dev.json
         - name: ExtensionRegistryPullRequestPrefix
@@ -62,11 +99,11 @@ stages:
           isProduction: true
           inputs:
             - input: pipelineArtifact
-              artifactName: release
+              artifactName: release${{ parameters.StageSuffix }}
               targetPath: release
 
             - input: pipelineArtifact
-              artifactName: changelog
+              artifactName: changelog${{ parameters.StageSuffix }}
               targetPath: changelog
 
         strategy:
@@ -76,6 +113,7 @@ stages:
                 - template: /eng/pipelines/templates/steps/extension-set-metadata-variables.yml
                   parameters:
                     Use1ESArtifactTask: true
+                    ArtifactSuffix: ${{ parameters.StageSuffix }}
 
                 - pwsh: |
                     # Initial upload locations
@@ -111,6 +149,8 @@ stages:
           - checkout: self
 
           - template: /eng/pipelines/templates/steps/extension-set-metadata-variables.yml
+            parameters:
+              ArtifactSuffix: ${{ parameters.StageSuffix }}
 
           - template: /eng/pipelines/templates/steps/setup-go.yml
 
@@ -125,33 +165,100 @@ stages:
               azd ext install microsoft.azd.extensions --source azd
             displayName: Install microsoft.azd.extensions
 
-          - bash: |
-              set -euo pipefail
-              cd "${{ parameters.AzdExtensionDirectory }}"
-              azd x publish \
-                --registry "../$(ExtensionRegistryFile)" \
-                --repo "$(Build.Repository.Name)" \
-                --version "$(EXT_VERSION)"
-            displayName: Update $(ExtensionRegistryFile) (azd x publish)
-            env:
-              GH_TOKEN: $(azuresdk-github-pat)
-
-          - ${{ if ne(parameters.PublishToDevRegistry, true) }}:
+          - ${{ if eq(parameters.IsNightly, true) }}:
+            # Nightly registry lives on a dedicated, bot-owned branch and is updated by auto-commit
+            # (no pull request). A publish -> commit -> push retry loop keeps concurrent extension
+            # nightly runs from clobbering each other's entries on the shared branch.
             - bash: |
                 set -euo pipefail
-                cd cli/azd
-                go build .
-                go test ./cmd -run 'TestFigSpec|TestUsage'
-              displayName: Refresh Fig/Usage snapshots
-              env:
-                UPDATE_SNAPSHOTS: "true"
 
-          - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-            parameters:
-              PRBranchName: $(ExtensionRegistryPullRequestPrefix)/${{ parameters.SanitizedExtensionId }}/$(EXT_VERSION)-$(Build.BuildId)
-              CommitMsg: "[${{ parameters.AzdExtensionId }}] $(ExtensionRegistryPullRequestTitle) for $(EXT_VERSION)"
-              PRTitle: "[${{ parameters.AzdExtensionId }}] $(ExtensionRegistryPullRequestTitle) for $(EXT_VERSION)"
-              PRBody: >-
-                $(ExtensionRegistryPullRequestTitle) for the
-                [azd-ext-${{ parameters.SanitizedExtensionId }}_$(EXT_VERSION)](https://github.com/$(Build.Repository.Name)/releases/tag/azd-ext-${{ parameters.SanitizedExtensionId }}_$(EXT_VERSION))
-                release.
+                branch="$(NightlyRegistryBranch)"
+                registry_rel="$(ExtensionRegistryFile)"
+                registry_path="cli/azd/extensions/${registry_rel}"
+                ext_dir="${{ parameters.AzdExtensionDirectory }}"
+
+                git config user.name "azure-sdk"
+                git config user.email "azuresdk@microsoft.com"
+
+                # checkout: self does not persist push credentials, so authenticate the remote with
+                # the bot PAT for the fetch/push of the nightly registry branch.
+                git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/$(Build.Repository.Name).git"
+
+                publish_registry() {
+                  # azd x publish loads an existing registry; seed an empty one on first nightly.
+                  if [ ! -f "$registry_path" ]; then
+                    echo '{ "extensions": [] }' > "$registry_path"
+                  fi
+                  ( cd "$ext_dir" && azd x publish \
+                      --registry "../${registry_rel}" \
+                      --repo "$(Build.Repository.Name)" \
+                      --version "$(EXT_VERSION)" )
+                }
+
+                # Check out (or create) the nightly registry branch.
+                git fetch origin "$branch" || true
+                if git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
+                  git checkout -B "$branch" "origin/${branch}"
+                else
+                  git checkout -B "$branch"
+                fi
+
+                for attempt in 1 2 3 4 5; do
+                  publish_registry
+                  git add "$registry_path"
+                  if git diff --cached --quiet; then
+                    echo "No registry changes to commit."
+                    break
+                  fi
+
+                  git commit -m "[${{ parameters.AzdExtensionId }}] Nightly registry update for $(EXT_VERSION)"
+                  if git push origin "$branch"; then
+                    echo "Nightly registry updated on ${branch}."
+                    break
+                  fi
+
+                  if [ "$attempt" -eq 5 ]; then
+                    echo "Failed to update nightly registry after 5 attempts." >&2
+                    exit 1
+                  fi
+
+                  echo "Push rejected (branch advanced). Rebasing onto latest and retrying (${attempt})..."
+                  git reset --hard HEAD~1
+                  git fetch origin "$branch"
+                  git reset --hard "origin/${branch}"
+                done
+              displayName: Update $(ExtensionRegistryFile) (azd x publish + auto-commit)
+              env:
+                GH_TOKEN: $(azuresdk-github-pat)
+
+          - ${{ else }}:
+            - bash: |
+                set -euo pipefail
+                cd "${{ parameters.AzdExtensionDirectory }}"
+                azd x publish \
+                  --registry "../$(ExtensionRegistryFile)" \
+                  --repo "$(Build.Repository.Name)" \
+                  --version "$(EXT_VERSION)"
+              displayName: Update $(ExtensionRegistryFile) (azd x publish)
+              env:
+                GH_TOKEN: $(azuresdk-github-pat)
+
+            - ${{ if ne(parameters.PublishToDevRegistry, true) }}:
+              - bash: |
+                  set -euo pipefail
+                  cd cli/azd
+                  go build .
+                  go test ./cmd -run 'TestFigSpec|TestUsage'
+                displayName: Refresh Fig/Usage snapshots
+                env:
+                  UPDATE_SNAPSHOTS: "true"
+
+            - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+              parameters:
+                PRBranchName: $(ExtensionRegistryPullRequestPrefix)/${{ parameters.SanitizedExtensionId }}/$(EXT_VERSION)-$(Build.BuildId)
+                CommitMsg: "[${{ parameters.AzdExtensionId }}] $(ExtensionRegistryPullRequestTitle) for $(EXT_VERSION)"
+                PRTitle: "[${{ parameters.AzdExtensionId }}] $(ExtensionRegistryPullRequestTitle) for $(EXT_VERSION)"
+                PRBody: >-
+                  $(ExtensionRegistryPullRequestTitle) for the
+                  [azd-ext-${{ parameters.SanitizedExtensionId }}_$(EXT_VERSION)](https://github.com/$(Build.Repository.Name)/releases/tag/azd-ext-${{ parameters.SanitizedExtensionId }}_$(EXT_VERSION))
+                  release.

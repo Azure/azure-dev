@@ -249,3 +249,139 @@ func Test_UpdateChecker_InvalidVersions(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, result.HasUpdate) // Should gracefully handle invalid version
 }
+
+// Test_UpdateChecker_NightlyVersions verifies that the update checker correctly
+// orders the nightly prerelease versions produced by Set-ExtensionVersionVariable.ps1.
+//
+// Nightly versions built from a base without an existing prerelease take the shape:
+//
+//	<base>-nightly.<yyyyMMdd>.<buildId>   e.g. 0.1.0-nightly.20260618.1234
+//
+// Several transitions must hold for the upgrade experience to work:
+//   - nightly -> stable: once the stable <base> ships it must supersede any nightly
+//     built from that base (semver: a release outranks its prereleases).
+//   - nightly -> next nightly: a later nightly (newer date, or same date with a
+//     higher build id) must supersede an earlier one, and an earlier nightly must
+//     never be offered as an update over a newer one.
+//   - nightly vs. milestone prereleases: for a clean base, semver orders
+//     alpha < beta < nightly < rc < stable, so a nightly supersedes alpha/beta of the
+//     same base but is itself superseded by rc and the final release. When the base
+//     already carries a prerelease label (e.g. 0.1.0-beta), the appended ".nightly"
+//     segment outranks every numbered beta of that base, so only the final release
+//     (or a higher base) supersedes it.
+func Test_UpdateChecker_NightlyVersions(t *testing.T) {
+	tests := []struct {
+		name       string
+		installed  string
+		available  []string
+		wantUpdate bool
+	}{
+		{
+			name:       "nightly to stable",
+			installed:  "0.1.0-nightly.20260618.1234",
+			available:  []string{"0.1.0-nightly.20260618.1234", "0.1.0"},
+			wantUpdate: true,
+		},
+		{
+			name:       "nightly to next nightly newer date",
+			installed:  "0.1.0-nightly.20260618.1234",
+			available:  []string{"0.1.0-nightly.20260618.1234", "0.1.0-nightly.20260619.1234"},
+			wantUpdate: true,
+		},
+		{
+			name:       "nightly to next nightly same date higher build",
+			installed:  "0.1.0-nightly.20260618.1234",
+			available:  []string{"0.1.0-nightly.20260618.1234", "0.1.0-nightly.20260618.5678"},
+			wantUpdate: true,
+		},
+		{
+			name:       "same nightly is not an update",
+			installed:  "0.1.0-nightly.20260618.1234",
+			available:  []string{"0.1.0-nightly.20260618.1234"},
+			wantUpdate: false,
+		},
+		{
+			name:       "older nightly is not offered over newer installed",
+			installed:  "0.1.0-nightly.20260619.1234",
+			available:  []string{"0.1.0-nightly.20260618.1234"},
+			wantUpdate: false,
+		},
+		{
+			// Clean base: nightly outranks beta of the same base (b < n).
+			name:       "nightly supersedes beta of same base",
+			installed:  "0.1.0-beta.1",
+			available:  []string{"0.1.0-beta.1", "0.1.0-nightly.20260618.1234"},
+			wantUpdate: true,
+		},
+		{
+			// Clean base: an older beta must never be offered over an installed nightly.
+			name:       "beta is not offered over installed nightly",
+			installed:  "0.1.0-nightly.20260618.1234",
+			available:  []string{"0.1.0-beta.5", "0.1.0-nightly.20260618.1234"},
+			wantUpdate: false,
+		},
+		{
+			// Clean base: rc outranks nightly of the same base (n < r).
+			name:       "rc supersedes nightly of same base",
+			installed:  "0.1.0-nightly.20260618.1234",
+			available:  []string{"0.1.0-nightly.20260618.1234", "0.1.0-rc.1"},
+			wantUpdate: true,
+		},
+		{
+			// Prerelease base gotcha: "0.1.0-beta.nightly..." outranks every numbered
+			// beta of that base because numeric identifiers lose to alphanumeric ones,
+			// so a later beta.N is NOT offered as an update.
+			name:       "numbered beta does not supersede beta-base nightly",
+			installed:  "0.1.0-beta.nightly.20260618.1234",
+			available:  []string{"0.1.0-beta.2", "0.1.0-beta.nightly.20260618.1234"},
+			wantUpdate: false,
+		},
+		{
+			// Prerelease base: only the final stable release supersedes the beta-base nightly.
+			name:       "stable supersedes beta-base nightly",
+			installed:  "0.1.0-beta.nightly.20260618.1234",
+			available:  []string{"0.1.0-beta.nightly.20260618.1234", "0.1.0"},
+			wantUpdate: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			t.Setenv("AZD_CONFIG_DIR", tempDir)
+
+			cacheManager, err := NewRegistryCacheManager()
+			require.NoError(t, err)
+
+			ctx := t.Context()
+			sourceName := "test-source"
+
+			versions := make([]ExtensionVersion, 0, len(tt.available))
+			for _, v := range tt.available {
+				versions = append(versions, ExtensionVersion{Version: v})
+			}
+
+			err = cacheManager.Set(ctx, sourceName, []*ExtensionMetadata{
+				{
+					Id:          "test.extension",
+					DisplayName: "Test Extension",
+					Versions:    versions,
+				},
+			})
+			require.NoError(t, err)
+
+			updateChecker := NewUpdateChecker(cacheManager)
+
+			extension := &Extension{
+				Id:          "test.extension",
+				DisplayName: "Test Extension",
+				Version:     tt.installed,
+				Source:      sourceName,
+			}
+
+			result, err := updateChecker.CheckForUpdate(ctx, extension)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantUpdate, result.HasUpdate)
+		})
+	}
+}

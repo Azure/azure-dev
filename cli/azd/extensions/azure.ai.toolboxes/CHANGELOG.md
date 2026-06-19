@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.1-preview (2026-06-19)
+
 ### Features
 
 - [[#8672]](https://github.com/Azure/azure-dev/issues/8672) `azd ai toolbox create` now writes the new toolbox's versioned MCP endpoint to the active azd environment under the `TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT` variable (the same key agents consume), and `azd ai toolbox delete` clears it when the whole toolbox is removed.

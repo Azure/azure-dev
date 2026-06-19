@@ -635,7 +635,7 @@ func TestPrettyCardGroupHeaderIncludesLabelAndUsesGrayDivider(t *testing.T) {
 	})
 
 	rows := []prettyInput{
-		{Id: "ext-a", Name: "Extension A", Source: "azd"},
+		{Id: "ext-a", Name: "Extension A", Source: "azd%20local"},
 	}
 
 	formatter := &PrettyTableFormatter{
@@ -655,8 +655,9 @@ func TestPrettyCardGroupHeaderIncludesLabelAndUsesGrayDivider(t *testing.T) {
 	require.NoError(t, err)
 	output := buf.String()
 
-	require.Contains(t, stripTerminalEscapes(output), "── SOURCE: azd ")
-	require.Regexp(t, sgrPrefixPattern("── SOURCE: azd "), output)
+	require.NotContains(t, output, "%!")
+	require.Contains(t, stripTerminalEscapes(output), "── SOURCE: azd%20local ")
+	require.Regexp(t, sgrPrefixPattern("── SOURCE: azd%20local "), output)
 }
 
 func TestPrettyCardGroupHeaderStripsHyperlinkEscapes(t *testing.T) {
@@ -701,7 +702,7 @@ func TestPrettyColumnTransformerCanUseLinkFormat(t *testing.T) {
 	rows := []struct {
 		Location string
 	}{
-		{Location: "https://example.com"},
+		{Location: "https://example.com/path%20with%20spaces"},
 	}
 
 	formatter := &PrettyTableFormatter{
@@ -716,7 +717,7 @@ func TestPrettyColumnTransformerCanUseLinkFormat(t *testing.T) {
 					Heading:       "LOCATION",
 					ValueTemplate: "{{.Location}}",
 					Transformer: func(s string) string {
-						return WithLinkFormat(s)
+						return WithLinkFormat("%s", s)
 					},
 				},
 				Priority: 1,
@@ -725,7 +726,8 @@ func TestPrettyColumnTransformerCanUseLinkFormat(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Regexp(t, sgrPrefixPattern("https://example.com"), buf.String())
+	require.NotContains(t, buf.String(), "%!")
+	require.Regexp(t, sgrPrefixPattern("https://example.com/path%20with%20spaces"), buf.String())
 }
 
 func TestPrettyTableANSIAlignment(t *testing.T) {

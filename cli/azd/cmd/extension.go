@@ -2326,7 +2326,7 @@ func (a *extensionSourceListAction) Run(ctx context.Context) (*actions.ActionRes
 						if s == "" {
 							return s
 						}
-						return output.WithLinkFormat(s)
+						return output.WithLinkFormat("%s", s)
 					},
 				},
 				Priority: 2,

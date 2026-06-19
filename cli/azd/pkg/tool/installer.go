@@ -380,12 +380,12 @@ func (i *installer) runSkill(
 	// 2. SOFT prerequisite: warn if Node.js is missing.
 	if err := i.commandRunner.ToolInPath("node"); err != nil {
 		log.Printf("node not found on PATH: %v", err)
-		fmt.Println(output.WithWarningFormat(
+		fmt.Fprintln(os.Stderr, output.WithWarningFormat(
 			"WARNING: node not found on PATH; %s "+
 				"requires Node.js to run fully to start the MCP servers. "+
 				"Please install Node.js: ",
 			tool.Name,
-		) + output.WithLinkFormat("https://nodejs.org/"))
+		)+output.WithLinkFormat("https://nodejs.org/"))
 	}
 
 	// 3. Run the install / upgrade via the host's native commands.
@@ -416,7 +416,7 @@ func (i *installer) runSkill(
 	//    pre-existing copilot CLI integration documents the same race —
 	//    see internal/agent/copilot/cli.go), so retry a few times with
 	//    exponential backoff to match the package-manager install path.
-	const maxAttempts = 3 // 1 initial + 2 retries
+	const maxAttempts = 4 // 1 initial + 3 retries
 	var status *ToolStatus
 	backoff := 1 * time.Second
 

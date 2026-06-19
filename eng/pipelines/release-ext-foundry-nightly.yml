@@ -1,0 +1,217 @@
+# Single nightly publishing pipeline for the Microsoft Foundry bundle.
+#
+# One pipeline builds every Foundry extension from the latest commit on main each night, in parallel,
+# and then updates the nightly extension registry ONCE for the whole bundle. This avoids the
+# concurrent-writer problem you get when each extension publishes to the shared nightly-registry
+# branch from its own pipeline.
+#
+# How the reuse works:
+#   * The per-extension build -> sign -> publish-release chain is the standard
+#     stages/release-azd-extension.yml template, instantiated once per extension via an ${{ each }}
+#     loop. StageSuffix (= _<sanitized id>) makes each instance's stage ids and shared artifact names
+#     unique so they can coexist in one pipeline.
+#   * Skip.RegistryUpdate = true turns off the per-extension registry update job; the single
+#     Update_Nightly_Registry stage below owns the registry write instead.
+#   * AZD_NIGHTLY = true makes eng/scripts/Set-ExtensionVersionVariable.ps1 emit nightly semvers.
+#
+# The microsoft.foundry meta-package has no binaries, so it is NOT part of the build/sign fan-out. It
+# is published last, in the join stage, after its dependencies are already in the nightly registry.
+
+trigger: none
+pr: none
+
+schedules:
+  - cron: "0 7 * * *"
+    displayName: Daily Foundry nightly build (07:00 UTC)
+    branches:
+      include:
+        - main
+    # Build even when there were no commits since the last successful scheduled run.
+    always: true
+
+parameters:
+  # The Foundry dependency extensions that are built, signed, and released as nightly artifacts.
+  - name: Extensions
+    type: object
+    default:
+      - { id: azure.ai.agents, sanitized: azure-ai-agents, dir: cli/azd/extensions/azure.ai.agents, skipTests: false }
+      - { id: azure.ai.connections, sanitized: azure-ai-connections, dir: cli/azd/extensions/azure.ai.connections, skipTests: false }
+      - { id: azure.ai.inspector, sanitized: azure-ai-inspector, dir: cli/azd/extensions/azure.ai.inspector, skipTests: false }
+      - { id: azure.ai.projects, sanitized: azure-ai-projects, dir: cli/azd/extensions/azure.ai.projects, skipTests: false }
+      - { id: azure.ai.routines, sanitized: azure-ai-routines, dir: cli/azd/extensions/azure.ai.routines, skipTests: false }
+      - { id: azure.ai.skills, sanitized: azure-ai-skills, dir: cli/azd/extensions/azure.ai.skills, skipTests: false }
+      - { id: azure.ai.toolboxes, sanitized: azure-ai-toolboxes, dir: cli/azd/extensions/azure.ai.toolboxes, skipTests: false }
+  # The Foundry meta-package (extension pack). Published last, registry-only (no build/sign/release).
+  - name: PackId
+    type: string
+    default: microsoft.foundry
+  - name: PackDirectory
+    type: string
+    default: cli/azd/extensions/microsoft.foundry
+
+variables:
+  # Makes the shared version script emit <base>-nightly.<yyyyMMdd>.<buildId> for every build job.
+  - name: AZD_NIGHTLY
+    value: "true"
+  # The per-extension registry update job is skipped; the single join stage owns the registry write.
+  - name: Skip.RegistryUpdate
+    value: "true"
+  - name: NightlyRegistryBranch
+    value: nightly-registry
+  - name: ExtensionRegistryFile
+    value: registry.nightly.json
+
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      # Fan out: build + sign + publish-release for every dependency extension, all in parallel.
+      - ${{ each ext in parameters.Extensions }}:
+        - template: /eng/pipelines/templates/stages/release-azd-extension.yml
+          parameters:
+            StageSuffix: _${{ ext.sanitized }}
+            IsNightly: true
+            SkipTests: ${{ ext.skipTests }}
+            AzdExtensionId: ${{ ext.id }}
+            SanitizedExtensionId: ${{ ext.sanitized }}
+            AzdExtensionDirectory: ${{ ext.dir }}
+
+      # Join: update the nightly registry once for the whole bundle. Gated identically to the
+      # per-extension publish stages so its dependsOn never references stages that were not emitted.
+      - ${{ if and(eq(variables['System.TeamProject'], 'internal'), or(eq(variables['Build.Reason'], 'Manual'), eq(variables['Build.Reason'], 'Schedule'))) }}:
+        - stage: Update_Nightly_Registry
+          dependsOn:
+            - ${{ each ext in parameters.Extensions }}:
+              - PublishExtension_${{ ext.sanitized }}
+
+          variables:
+            - template: /eng/pipelines/templates/variables/image.yml
+            - template: /eng/pipelines/templates/variables/globals.yml
+
+          jobs:
+            - job: Update
+              condition: >-
+                and(
+                  succeeded(),
+                  ne('true', variables['Skip.RegistryUpdate.Bundle'])
+                )
+
+              pool:
+                name: $(LINUXPOOL)
+                image: $(LINUXVMIMAGE)
+                os: linux
+
+              steps:
+                - checkout: self
+
+                - bash: |
+                    set -euo pipefail
+                    curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --verbose
+                    azd version
+                  displayName: Install azd
+
+                - bash: |
+                    set -euo pipefail
+                    azd ext install microsoft.azd.extensions --source azd
+                  displayName: Install microsoft.azd.extensions
+
+                # Check out (or create) the nightly registry branch and seed an empty registry the
+                # first time. All per-extension publishes below mutate this single file in place.
+                - bash: |
+                    set -euo pipefail
+
+                    branch="$(NightlyRegistryBranch)"
+                    registry_path="cli/azd/extensions/$(ExtensionRegistryFile)"
+
+                    git config user.name "azure-sdk"
+                    git config user.email "azuresdk@microsoft.com"
+                    # checkout: self does not persist push credentials.
+                    git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/$(Build.Repository.Name).git"
+
+                    git fetch origin "$branch" || true
+                    if git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
+                      git checkout -B "$branch" "origin/${branch}"
+                    else
+                      git checkout -B "$branch"
+                    fi
+
+                    if [ ! -f "$registry_path" ]; then
+                      echo '{ "extensions": [] }' > "$registry_path"
+                    fi
+                  displayName: Prepare nightly registry branch
+                  env:
+                    GH_TOKEN: $(azuresdk-github-pat)
+
+                # Publish each dependency extension into the single registry file (no commit yet).
+                # The exact nightly version comes from each extension's release metadata artifact.
+                - ${{ each ext in parameters.Extensions }}:
+                  - task: DownloadPipelineArtifact@2
+                    displayName: Download ${{ ext.sanitized }} metadata
+                    inputs:
+                      artifactName: release-metadata_${{ ext.sanitized }}
+                      targetPath: $(Pipeline.Workspace)/meta-${{ ext.sanitized }}
+
+                  - bash: |
+                      set -euo pipefail
+                      version=$(jq -r '.extVersion' "$(Pipeline.Workspace)/meta-${{ ext.sanitized }}/metadata.json")
+                      echo "Publishing ${{ ext.id }} ${version} to nightly registry"
+                      ( cd "${{ ext.dir }}" && azd x publish \
+                          --registry "../$(ExtensionRegistryFile)" \
+                          --repo "$(Build.Repository.Name)" \
+                          --version "$version" )
+                    displayName: Publish ${{ ext.sanitized }} to nightly registry
+                    env:
+                      GH_TOKEN: $(azuresdk-github-pat)
+
+                # Publish the Foundry pack last, after its dependencies exist in the registry. The pack
+                # is registry-only (no GitHub release) so --repo is omitted. Its nightly version is
+                # computed from its own version.txt by the shared version script (AZD_NIGHTLY=true).
+                - task: PowerShell@2
+                  displayName: Compute Foundry pack nightly version
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Set-ExtensionVersionVariable.ps1
+                    arguments: >-
+                      -ExtensionDirectory ${{ parameters.PackDirectory }}
+
+                - bash: |
+                    set -euo pipefail
+                    echo "Publishing ${{ parameters.PackId }} ${EXT_VERSION} to nightly registry"
+                    ( cd "${{ parameters.PackDirectory }}" && azd x publish \
+                        --registry "../$(ExtensionRegistryFile)" \
+                        --version "$EXT_VERSION" )
+                  displayName: Publish Foundry pack to nightly registry
+                  env:
+                    GH_TOKEN: $(azuresdk-github-pat)
+
+                # Commit the whole bundle's registry changes once and push (single fetch+rebase retry).
+                - bash: |
+                    set -euo pipefail
+
+                    branch="$(NightlyRegistryBranch)"
+                    registry_path="cli/azd/extensions/$(ExtensionRegistryFile)"
+
+                    git add "$registry_path"
+                    if git diff --cached --quiet; then
+                      echo "No registry changes to commit."
+                      exit 0
+                    fi
+
+                    for attempt in 1 2 3; do
+                      git commit -m "[foundry-nightly] Nightly registry update ($(Build.BuildNumber))" || true
+                      if git push origin "$branch"; then
+                        echo "Nightly registry updated on ${branch}."
+                        exit 0
+                      fi
+                      if [ "$attempt" -eq 3 ]; then
+                        echo "Failed to update nightly registry after 3 attempts." >&2
+                        exit 1
+                      fi
+                      echo "Push rejected; rebasing onto latest and retrying (${attempt})..."
+                      git fetch origin "$branch"
+                      git reset --soft "origin/${branch}"
+                    done
+                  displayName: Commit and push nightly registry
+                  env:
+                    GH_TOKEN: $(azuresdk-github-pat)

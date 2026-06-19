@@ -618,6 +618,91 @@ If the dev registry URL is unreachable (network issue, DNS failure), operations 
 azd extension source remove dev
 ```
 
+## Nightly Extension Registry
+
+The nightly registry is a separate, opt-in extension source that contains automated daily
+pre-release builds of first-party extensions. A scheduled pipeline builds each extension from
+the latest `main` and publishes a new prerelease version to the registry every night, so the
+nightly source always tracks the most recent in-development code.
+
+Like `dev`, the nightly source is **not** configured by default and is **not** a replacement for
+the stable `azd` registry. It is a parallel pre-release channel for early adopters who want to
+validate upcoming changes before they ship.
+
+| Property | Main Registry | Nightly Registry |
+|----------|---------------|------------------|
+| Source file | `cli/azd/extensions/registry.json` | `cli/azd/extensions/registry.nightly.json` |
+| Location | `https://aka.ms/azd/extensions/registry` | `https://raw.githubusercontent.com/Azure/azure-dev/nightly-registry/cli/azd/extensions/registry.nightly.json` |
+| Source name | `azd` (built-in default) | `nightly` (opt-in) |
+| Cadence | On stable release | Every night from `main` |
+| Stability | Stable releases | **Pre-release; may change or break nightly** |
+| Support | Covered by Azure support | **Not covered** |
+
+### Nightly Version Format
+
+Nightly builds are stamped by [`eng/scripts/Set-ExtensionVersionVariable.ps1`](../../../../eng/scripts/Set-ExtensionVersionVariable.ps1)
+into a semver-valid prerelease derived from the extension's `version.txt`:
+
+```text
+<base>-nightly.<yyyyMMdd>.<buildId>     e.g. 0.1.0-nightly.20260618.1234
+<base>.nightly.<yyyyMMdd>.<buildId>     (when <base> already has a prerelease label)
+```
+
+Because these are valid prereleases, semver precedence orders them the way you would expect:
+
+- A stable release always outranks any nightly built from the same base
+  (`0.1.0-nightly.20260618.1234` < `0.1.0`), so the stable version supersedes the nightly once it ships.
+- A later nightly outranks an earlier one, comparing the date and then the build id numerically
+  (`...20260618.1234` < `...20260618.5678` and `...20260618.9999` < `...20260619.1000`).
+
+### Choosing Stable vs. Nightly
+
+The two channels coexist; you decide per extension which one to install from.
+
+**Stay on stable (default):** Do nothing. Without the `nightly` source configured, every
+`azd extension install` and `azd extension upgrade` resolves against the official `azd` registry only.
+
+**Opt in to nightly:** Add the source, then install with `--source nightly`:
+
+```bash
+# Add the nightly source once.
+azd extension source add -n nightly -t url \
+  -l "https://raw.githubusercontent.com/Azure/azure-dev/nightly-registry/cli/azd/extensions/registry.nightly.json"
+
+# Install the nightly build of an extension.
+azd extension install <extension-id> --source nightly
+
+# Confirm both sources are configured.
+azd extension source list
+```
+
+When an extension exists in both `azd` and `nightly` and you omit `--source`, `azd` prompts you to
+choose (interactive) or errors with `"found in multiple sources"` (non-interactive). See
+[Troubleshooting Multi-Registry Scenarios](#troubleshooting-multi-registry-scenarios).
+
+**Switch back to stable:** The nightly source uses the same one-way promotion logic as the dev
+registry — see [Upgrade and Dev→Main Promotion](#upgrade-and-devmain-promotion). Because a stable
+release always outranks the nightly built from the same base, running `azd extension upgrade` moves
+you from `nightly` back to the `azd` source automatically once the corresponding stable version is
+published. The extension's stored source flips from `nightly` to `azd`, and it stays on stable
+from then on. To force the switch immediately (for example, to leave a nightly that is ahead of the
+current stable), reinstall explicitly:
+
+```bash
+# --force is required only when the stable version is lower than the installed nightly.
+azd extension install <extension-id> --source azd --force
+```
+
+**Leave nightly entirely:** Remove the source to stop pulling nightly builds:
+
+```bash
+azd extension source remove nightly
+```
+
+> [!CAUTION]
+> Nightly builds come with **no stability guarantees** and are **not covered by Azure support**.
+> Expect breaking changes between nights. Use a stable source for production workflows.
+
 ## Related Documentation
 
 | Document | Description |

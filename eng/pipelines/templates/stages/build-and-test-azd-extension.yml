@@ -8,6 +8,15 @@ parameters:
   - name: SkipTests
     type: boolean
     default: false
+  # StageSuffix is appended to this template's stage id AND to the shared pipeline artifact names it
+  # produces (release-metadata, changelog) so the template can be instantiated multiple times in a
+  # single pipeline via an ${{ each }} loop (e.g. the nightly bundle pipeline that builds many
+  # extensions in parallel). Azure DevOps requires stage ids and artifact names to be unique within a
+  # pipeline; without a suffix, looping would collide on "BuildAndTest"/"release-metadata"/"changelog"
+  # and fail. Defaults to '' so existing single-extension pipelines are byte-identical and unaffected.
+  - name: StageSuffix
+    type: string
+    default: ''
   - name: CrossBuildMatrix
     type: object
     default:
@@ -66,7 +75,7 @@ parameters:
           GOOS: windows
           GOARCH: arm64
 stages:
-  - stage: BuildAndTest
+  - stage: BuildAndTest${{ parameters.StageSuffix }}
     variables:
       - template: /eng/pipelines/templates/variables/globals.yml
       - template: /eng/pipelines/templates/variables/image.yml
@@ -162,10 +171,10 @@ stages:
             - output: pipelineArtifact
               path: release-metadata
               condition: succeeded()
-              artifact: release-metadata
+              artifact: release-metadata${{ parameters.StageSuffix }}
               displayName: Upload release metadata
 
             - output: pipelineArtifact
               path: changelog
-              artifact: changelog
+              artifact: changelog${{ parameters.StageSuffix }}
               displayName: Upload changelog

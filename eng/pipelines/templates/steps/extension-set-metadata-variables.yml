@@ -2,6 +2,11 @@ parameters:
   - name: Use1ESArtifactTask
     type: boolean
     default: false
+  # Suffix appended to the release-metadata artifact name so this step can consume the per-extension
+  # artifact produced by a looped build stage in a single multi-extension pipeline. Defaults to ''.
+  - name: ArtifactSuffix
+    type: string
+    default: ''
 
 steps:
   - pwsh: |
@@ -19,14 +24,14 @@ steps:
       condition: eq(variables['DownloadMetadataArtifact'], 'true')
       displayName: Download release metadata artifact
       inputs:
-        artifactName: release-metadata
+        artifactName: release-metadata${{ parameters.ArtifactSuffix }}
         targetPath: release-metadata
   - ${{ else }}: 
     - task: DownloadPipelineArtifact@2
       condition: eq(variables['DownloadMetadataArtifact'], 'true')
       displayName: Download release metadata artifact
       inputs:
-        artifactName: release-metadata
+        artifactName: release-metadata${{ parameters.ArtifactSuffix }}
         targetPath: release-metadata
 
   - pwsh: |

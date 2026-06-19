@@ -1,10 +1,19 @@
 parameters: 
   - name: SanitizedExtensionId
     type: string
+  # StageSuffix is appended to this stage's id (and its dependsOn) AND to the shared pipeline artifact
+  # names it produces/consumes (signed-mac, signed-win, release, release-metadata) so the template can
+  # be instantiated multiple times in a single pipeline via an ${{ each }} loop (e.g. the nightly
+  # bundle pipeline that builds many extensions in parallel). Azure DevOps requires stage ids and
+  # artifact names to be unique within a pipeline; without a suffix, looping would collide and fail to
+  # compile. Defaults to '' so existing single-extension pipelines are byte-identical and unaffected.
+  - name: StageSuffix
+    type: string
+    default: ''
 
 stages: 
-  - stage: Sign
-    dependsOn: BuildAndTest
+  - stage: Sign${{ parameters.StageSuffix }}
+    dependsOn: BuildAndTest${{ parameters.StageSuffix }}
 
     variables:
       - template: /eng/pipelines/templates/variables/globals.yml
@@ -73,14 +82,14 @@ stages:
             condition: succeeded()
             displayName: Publish Signed Artifacts
             inputs:
-              artifactName: signed-mac
+              artifactName: signed-mac${{ parameters.StageSuffix }}
               path: signed-mac/
 
           - task: 1ES.PublishPipelineArtifact@1
             condition: failed()
             displayName: Publish failed Signed Artifacts
             inputs:
-              artifactName: signed-mac-FailedAttempt$(System.JobAttempt)
+              artifactName: signed-mac${{ parameters.StageSuffix }}-FailedAttempt$(System.JobAttempt)
               path: signed-mac/
 
       - job: SignWindows
@@ -140,14 +149,14 @@ stages:
             condition: succeeded()
             displayName: Publish Signed Artifacts
             inputs:
-              artifactName: signed-win
+              artifactName: signed-win${{ parameters.StageSuffix }}
               path: signed-win/
 
           - task: 1ES.PublishPipelineArtifact@1
             condition: failed()
             displayName: Publish failed Signed Artifacts
             inputs:
-              artifactName: signed-win-FailedAttempt$(System.JobAttempt)
+              artifactName: signed-win${{ parameters.StageSuffix }}-FailedAttempt$(System.JobAttempt)
               path: signed-win/
 
       - job: CreateRelease
@@ -164,24 +173,24 @@ stages:
           outputs:
             - output: pipelineArtifact
               path: release
-              artifact: release
+              artifact: release${{ parameters.StageSuffix }}
               condition: succeeded()
               displayName: Upload azd release artifact
 
         steps:
           - task: DownloadPipelineArtifact@2
             inputs:
-              artifactName: release-metadata
+              artifactName: release-metadata${{ parameters.StageSuffix }}
               targetPath: release-metadata
 
           - task: DownloadPipelineArtifact@2
             inputs:
-              artifactName: signed-win
+              artifactName: signed-win${{ parameters.StageSuffix }}
               targetPath: signed/win
 
           - task: DownloadPipelineArtifact@2
             inputs:
-              artifactName: signed-mac
+              artifactName: signed-mac${{ parameters.StageSuffix }}
               targetPath: signed/mac
 
           # Linux binaries are not signed today so download from build outputs

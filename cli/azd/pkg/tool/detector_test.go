@@ -435,6 +435,102 @@ func TestDetectTool_Extension(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// DetectTool — Skills (host plugin listing)
+// ---------------------------------------------------------------------------
+
+// TestDetectTool_Skill_Gemini exercises the gemini-specific detection
+// quirks in detectSkill:
+//   - gemini writes its `extensions list` output to STDERR (not stdout),
+//     so detection must inspect stderr.
+//   - the version line label differs by install method: a github-release
+//     install prints "Release tag: vX.Y.Z" while a git `--ref` install
+//     prints "Ref: vX.Y.Z"; both must be recognized.
+func TestDetectTool_Skill_Gemini(t *testing.T) {
+	t.Parallel()
+
+	// geminiSkill builds a minimal skill tool with a single gemini
+	// SkillHost mirroring the azure-skills manifest entry.
+	geminiSkill := func() *ToolDefinition {
+		return &ToolDefinition{
+			Id:       "azure-skills",
+			Name:     "Azure Skills",
+			Category: ToolCategorySkill,
+			SkillHosts: []SkillHost{
+				{
+					Host:              "gemini",
+					PluginListCommand: []string{"extensions", "list"},
+					PluginName:        "azure",
+					VersionRegex: `(?s)Source:\s*https://github\.com/microsoft/` +
+						`azure-skills.*?(?:Release tag|Ref):\s*v?(\d+\.\d+\.\d+)`,
+				},
+			},
+		}
+	}
+
+	// geminiList renders a representative `gemini extensions list` block
+	// for the azure-skills extension using the given version label/value.
+	geminiList := func(label, version string) string {
+		return "✓ azure (1.0.1)\n" +
+			" Source: https://github.com/microsoft/azure-skills (Type: git)\n" +
+			" " + label + ": " + version + "\n" +
+			" Enabled (User): true\n"
+	}
+
+	tests := []struct {
+		name            string
+		stdout          string
+		stderr          string
+		expectInstalled bool
+		expectVersion   string
+	}{
+		{
+			name:            "InstalledViaStderr_ReleaseTag",
+			stderr:          geminiList("Release tag", "v1.1.71"),
+			expectInstalled: true,
+			expectVersion:   "1.1.71",
+		},
+		{
+			name:            "InstalledViaStderr_Ref",
+			stderr:          geminiList("Ref", "v1.1.70"),
+			expectInstalled: true,
+			expectVersion:   "1.1.70",
+		},
+		{
+			name:            "NotInstalled",
+			stderr:          "No extensions installed.\n",
+			expectInstalled: false,
+			expectVersion:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			runner := mockexec.NewMockCommandRunner()
+			runner.MockToolInPath("gemini", nil)
+			runner.When(func(args exec.RunArgs, _ string) bool {
+				return args.Cmd == "gemini" &&
+					slices.Contains(args.Args, "extensions") &&
+					slices.Contains(args.Args, "list")
+			}).Respond(exec.RunResult{
+				ExitCode: 0,
+				Stdout:   tt.stdout,
+				Stderr:   tt.stderr,
+			})
+
+			d := NewDetector(runner)
+			status, err := d.DetectTool(t.Context(), geminiSkill())
+
+			require.NoError(t, err)
+			require.NotNil(t, status)
+			assert.Equal(t, tt.expectInstalled, status.Installed)
+			assert.Equal(t, tt.expectVersion, status.InstalledVersion)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // DetectTool — Server / Library (commandBased)
 // ---------------------------------------------------------------------------
 

@@ -1265,9 +1265,30 @@ func TestRunSkill_PicksFirstAvailableHost(t *testing.T) {
 				return slices.Contains(args.Args, "marketplace")
 			}).Respond(exec.RunResult{ExitCode: 0})
 
+			// Detector reflects reality: the skill becomes "installed"
+			// only after the host's install command runs. This matters
+			// for gemini, which pre-detects before installing (and skips
+			// a redundant install when already present) — on a fresh
+			// install the pre-detect must report not-installed so the
+			// install command still runs.
+			det := &mockDetector{
+				detectToolFn: func(
+					_ context.Context, tool *ToolDefinition,
+				) (*ToolStatus, error) {
+					version := ""
+					if ranInstall {
+						version = "1.1.70"
+					}
+					return &ToolStatus{
+						Tool:             tool,
+						Installed:        ranInstall,
+						InstalledVersion: version,
+					}, nil
+				},
+			}
+
 			inst := NewInstaller(
-				runner, NewPlatformDetector(runner),
-				installedDetector("1.1.70"),
+				runner, NewPlatformDetector(runner), det,
 			)
 
 			result, err := inst.Install(t.Context(), newSkillTool())
@@ -1567,10 +1588,17 @@ func TestRunSkill_InstallCommandFails_SurfacesError(t *testing.T) {
 		return exec.RunResult{ExitCode: 2, Stderr: "Network unreachable"}, wantErr
 	})
 
-	// Even if the detector would later see the plugin, a non-zero
-	// install exit is treated as failure in the current flow.
+	// Detector reports NOT installed so gemini's pre-detect proceeds to
+	// the install attempt; the non-zero install exit must then surface
+	// as the operation's error rather than being swallowed.
+	det := &mockDetector{
+		detectToolFn: func(_ context.Context, tool *ToolDefinition) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+
 	inst := NewInstaller(
-		runner, NewPlatformDetector(runner), installedDetector("1.1.70"),
+		runner, NewPlatformDetector(runner), det,
 	)
 
 	result, err := inst.Install(t.Context(), newSkillTool())

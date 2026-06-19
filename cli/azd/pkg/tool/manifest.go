@@ -372,11 +372,15 @@ func azureSkills() *ToolDefinition {
 				PluginListCommand:    []string{"extensions", "list"},
 				PluginName:           "azure",
 				// `gemini extensions list` may include many extensions,
-				// each with its own "Release tag:" line. Anchor on the
+				// each with its own version line. Anchor on the
 				// azure-skills Source URL (unique to this extension) and
-				// then capture the FIRST Release tag that follows in the
-				// same block. (?s) makes . match newlines so .*? spans lines.
-				VersionRegex: `(?s)Source:\s*https://github\.com/microsoft/azure-skills.*?Release tag:\s*v?(\d+\.\d+\.\d+)`,
+				// then capture the FIRST version that follows in the same
+				// block. The version line differs by install method:
+				//   - github-release install: "Release tag: v1.1.71"
+				//   - git ref install:        "Ref: v1.1.70"
+				// so we match either label. (?s) makes . match newlines
+				// so .*? spans lines.
+				VersionRegex: `(?s)Source:\s*https://github\.com/microsoft/azure-skills.*?(?:Release tag|Ref):\s*v?(\d+\.\d+\.\d+)`,
 			},
 			{
 				Host:                  "codex",

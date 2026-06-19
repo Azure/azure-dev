@@ -389,6 +389,22 @@ func (i *installer) runSkill(
 	}
 
 	// 3. Run the install / upgrade via the host's native commands.
+	//
+	// Gemini exits non-zero with "already installed. Please uninstall it
+	// first." when asked to install an extension that is already present.
+	// Unlike the other hosts it has no idempotent re-install, so for a
+	// fresh install we detect first and treat an already-present skill as
+	// a successful no-op. (Upgrades still run their update command.)
+	if !upgrade && host.Host == "gemini" {
+		if status, err := i.detector.DetectTool(ctx, tool); err == nil && status.Installed {
+			log.Printf("gemini: %s already installed; skipping install", tool.Name)
+			result.Success = true
+			result.InstalledVersion = status.InstalledVersion
+			result.Duration = time.Since(start)
+			return result, nil
+		}
+	}
+
 	if err := i.runSkillHostCommand(ctx, host, upgrade); err != nil {
 		result.Error = err
 		result.Duration = time.Since(start)

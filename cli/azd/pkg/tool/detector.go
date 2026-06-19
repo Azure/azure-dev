@@ -488,24 +488,29 @@ func (d *detector) detectSkill(
 			continue
 		}
 
-		// Match only against stdout: stderr is usually diagnostics, not
-		// the canonical listing.
+		// Match against stdout for most hosts. Gemini writes its
+		// extensions list output to stderr, so for gemini we check
+		// both streams.
 		//
 		// Use a two-stage gate to avoid false positives on hosts whose
 		// list command echoes the queried name in "not found" output
 		// (e.g. claude's `plugin list azure@azure-skills` prints the
 		// query name regardless of whether the plugin is installed):
-		//   1. PluginName must appear in stdout (fast pre-filter), and
+		//   1. PluginName must appear in the output (fast pre-filter), and
 		//   2. VersionRegex must capture a version (authoritative —
 		//      every host's regex anchors on a token that is present
 		//      only in installed-plugin output, e.g. claude's
 		//      "Version:" line or gemini's "Release tag:" line).
+		output := result.Stdout
+		if host.Host == "gemini" {
+			output = result.Stdout + "\n" + result.Stderr
+		}
 		if host.PluginName != "" &&
-			!strings.Contains(result.Stdout, host.PluginName) {
+			!strings.Contains(output, host.PluginName) {
 			continue
 		}
 		if version := matchVersion(
-			result.Stdout, host.VersionRegex,
+			output, host.VersionRegex,
 		); version != "" {
 			status.Installed = true
 			status.InstalledVersion = version

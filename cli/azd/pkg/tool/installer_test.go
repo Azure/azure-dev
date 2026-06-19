@@ -1242,11 +1242,11 @@ func TestRunSkill_PicksFirstAvailableHost(t *testing.T) {
 			wantPlugin: "azure@azure-skills",
 		},
 		{
-			name:       "AllPresent_PrefersCopilot",
+			name:       "AllPresent_PrefersApm",
 			present:    allSkillHostNames,
-			wantHost:   "copilot",
-			wantCmd:    "copilot",
-			wantPlugin: "azure@azure-skills",
+			wantHost:   "apm",
+			wantCmd:    "apm",
+			wantPlugin: "microsoft/azure-skills",
 		},
 	}
 

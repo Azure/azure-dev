@@ -1514,7 +1514,7 @@ func runToolOperation(
 	taskErr := taskList.Run()
 	if taskErr != nil {
 		// Build the past participle: "install" -> "installed",
-		// "upgrade" -> "upgraded". A naive "%sd" yields "installd",
+		// "upgrade" -> "upgraded". Appending only "d" would be wrong,
 		// so append "ed" unless the verb already ends in "e".
 		participle := action + "ed"
 		if strings.HasSuffix(action, "e") {

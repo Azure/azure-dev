@@ -346,8 +346,9 @@ func azureSkills() *ToolDefinition {
 				// APM (Agent Package Manager) is a cross-runtime package
 				// manager. It installs azure-skills to the user scope
 				// (~/.apm/) and deploys it to every detected agent. Listed
-				// last so a host-specific agent CLI is preferred when both
-				// are present; APM acts as the universal fallback.
+				// first so the universal cross-agent installer is preferred
+				// when available; the host-specific agent CLIs below are
+				// fallbacks.
 				Host:                 "apm",
 				PluginInstallCommand: []string{"install", "microsoft/azure-skills", "-g"},
 				PluginUpdateCommand:  []string{"update", "microsoft/azure-skills", "-g"},
@@ -399,7 +400,8 @@ func azureSkills() *ToolDefinition {
 				//   - git ref install:        "Ref: v1.1.70"
 				// so we match either label. (?s) makes . match newlines
 				// so .*? spans lines.
-				VersionRegex: `(?s)Source:\s*https://github\.com/microsoft/azure-skills.*?(?:Release tag|Ref):\s*v?(\d+\.\d+\.\d+)`,
+				VersionRegex: `(?s)Source:\s*https://github\.com/microsoft/azure-skills` +
+					`.*?(?:Release tag|Ref):\s*v?(\d+\.\d+\.\d+)`,
 			},
 			{
 				Host:                  "codex",

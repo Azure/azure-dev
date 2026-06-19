@@ -144,7 +144,7 @@ func TestPrintNext(t *testing.T) {
 			t.Parallel()
 
 			var buf bytes.Buffer
-			require.NoError(t, PrintNext(&buf, tt.suggestions, false))
+			require.NoError(t, PrintNext(&buf, tt.suggestions))
 			assert.Equal(t, tt.want, buf.String())
 		})
 	}
@@ -161,7 +161,7 @@ func (failingWriter) Write(_ []byte) (int, error) {
 func TestPrintNext_PropagatesWriteError(t *testing.T) {
 	t.Parallel()
 
-	err := PrintNext(failingWriter{}, []Suggestion{{Command: "x", Description: "y"}}, false)
+	err := PrintNext(failingWriter{}, []Suggestion{{Command: "x", Description: "y"}})
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 }
 
@@ -170,7 +170,7 @@ func TestPrintNext_EmptyInputSkipsWrite(t *testing.T) {
 
 	// failingWriter would error if Write were called; nil suggestions
 	// must short-circuit before any write.
-	require.NoError(t, PrintNext(failingWriter{}, nil, false))
+	require.NoError(t, PrintNext(failingWriter{}, nil))
 }
 
 func TestPrintAllNext(t *testing.T) {
@@ -290,7 +290,7 @@ func TestPrintAllNext(t *testing.T) {
 			t.Parallel()
 
 			var buf bytes.Buffer
-			require.NoError(t, PrintAllNext(&buf, tt.suggestions, false))
+			require.NoError(t, PrintAllNext(&buf, tt.suggestions))
 			assert.Equal(t, tt.want, buf.String())
 		})
 	}
@@ -299,14 +299,14 @@ func TestPrintAllNext(t *testing.T) {
 func TestPrintAllNext_PropagatesWriteError(t *testing.T) {
 	t.Parallel()
 
-	err := PrintAllNext(failingWriter{}, []Suggestion{{Command: "x", Description: "y"}}, false)
+	err := PrintAllNext(failingWriter{}, []Suggestion{{Command: "x", Description: "y"}})
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 }
 
 func TestPrintAllNext_EmptyInputSkipsWrite(t *testing.T) {
 	t.Parallel()
 
-	require.NoError(t, PrintAllNext(failingWriter{}, nil, false))
+	require.NoError(t, PrintAllNext(failingWriter{}, nil))
 }
 
 func TestFormatNextForNote(t *testing.T) {
@@ -423,11 +423,10 @@ func TestFormatNextForNote_HostArtifactAlignment(t *testing.T) {
 	assert.Equal(t, want, rendered)
 }
 
-// TestPrintAllNext_HighlightsOnlyAzdCommands verifies that, on the
-// direct-to-terminal path with colorize=true, runnable azd commands are
-// rendered in the highlight color while non-command pointers ("see ..." /
-// "edit agent.yaml: ...") and descriptions stay plain.
-func TestPrintAllNext_HighlightsOnlyAzdCommands(t *testing.T) {
+// TestFormatNext_HighlightsOnlyAzdCommands verifies that runnable azd
+// commands are rendered in the highlight color while non-command pointers
+// ("see ..." / "edit agent.yaml: ...") and descriptions stay plain.
+func TestFormatNext_HighlightsOnlyAzdCommands(t *testing.T) {
 	// Not parallel: toggles the process-global color.NoColor. Go runs
 	// non-parallel tests to completion before parallel tests resume, so
 	// restoring NoColor here keeps the plain-text goldens deterministic.
@@ -441,9 +440,7 @@ func TestPrintAllNext_HighlightsOnlyAzdCommands(t *testing.T) {
 		{Command: "azd ai agent invoke echo '<payload>'", Description: "test the deployment", Priority: 12},
 	}
 
-	var buf bytes.Buffer
-	require.NoError(t, PrintAllNext(&buf, suggestions, true))
-	got := buf.String()
+	got := FormatNextForNote(suggestions)
 
 	// azd commands are wrapped in the highlight color.
 	assert.Contains(t, got, bodyIndent+output.WithHighLightFormat("%s", "azd ai agent show echo")+"\n")
@@ -453,45 +450,4 @@ func TestPrintAllNext_HighlightsOnlyAzdCommands(t *testing.T) {
 	assert.NotContains(t, got, output.WithHighLightFormat("%s", "see src/echo/README.md"))
 	// Descriptions are never highlighted.
 	assert.Contains(t, got, bodyIndent+"verify it's running")
-}
-
-// TestPrintAllNext_PlainWhenNotColorized verifies that colorize=false
-// suppresses highlighting even when color is otherwise enabled — the
-// non-TTY / machine-readable path.
-func TestPrintAllNext_PlainWhenNotColorized(t *testing.T) {
-	prev := color.NoColor
-	color.NoColor = false
-	defer func() { color.NoColor = prev }()
-
-	suggestions := []Suggestion{
-		{Command: "azd ai agent show echo", Description: "verify it's running", Priority: 10},
-	}
-
-	var buf bytes.Buffer
-	require.NoError(t, PrintAllNext(&buf, suggestions, false))
-	got := buf.String()
-
-	assert.Contains(t, got, bodyIndent+"azd ai agent show echo\n")
-	assert.NotContains(t, got, "\x1b[", "colorize=false must not emit ANSI escape codes")
-}
-
-// TestFormatNextForNote_NeverColorized guards the JSON-safety contract:
-// FormatNextForNote feeds an artifact note that azd may serialize into
-// `azd deploy --output json`, so it must never emit ANSI escape codes —
-// even on a color-enabled terminal where output.WithHighLightFormat would
-// otherwise colorize. This is a regression test for color leaking into
-// machine-readable output.
-func TestFormatNextForNote_NeverColorized(t *testing.T) {
-	prev := color.NoColor
-	color.NoColor = false
-	defer func() { color.NoColor = prev }()
-
-	got := FormatNextForNote([]Suggestion{
-		{Command: "azd ai agent show echo", Description: "verify it's running", Priority: 10},
-		{Command: "azd ai agent invoke echo '<payload>'", Description: "test the deployment", Priority: 11},
-	})
-
-	assert.NotContains(t, got, "\x1b[", "note must stay plain to keep --output json clean")
-	assert.Contains(t, got, bodyIndent+"azd ai agent show echo\n")
-	assert.Contains(t, got, bodyIndent+"azd ai agent invoke echo '<payload>'\n")
 }

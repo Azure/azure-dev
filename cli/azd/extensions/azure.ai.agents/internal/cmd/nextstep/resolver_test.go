@@ -408,7 +408,7 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 	}
 
 	var buf strings.Builder
-	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil), false))
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,
@@ -459,7 +459,7 @@ func TestResolveAfterInit_ToolboxEndpointsEmitsRunAndInvokeLocal(t *testing.T) {
 	}
 
 	var buf strings.Builder
-	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil), false))
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
 	rendered := buf.String()
 
 	assert.Contains(t, rendered, "azd provision",
@@ -509,7 +509,7 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexist(t *testing.T) {
 	}
 
 	var buf strings.Builder
-	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil), false))
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
 	rendered := buf.String()
 
 	assert.Contains(t, rendered, "azd provision",
@@ -548,7 +548,7 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders(t *testing
 	}
 
 	var buf strings.Builder
-	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil), false))
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,

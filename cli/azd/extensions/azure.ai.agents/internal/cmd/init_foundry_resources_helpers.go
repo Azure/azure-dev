@@ -553,20 +553,31 @@ func configureAcrConnection(
 	return nil
 }
 
+// tracingOverviewURL points to an overview of agent tracing/telemetry behavior.
+const tracingOverviewURL = "https://aka.ms/tracing-overview"
+
 // disableTracingURL points to guidance on disabling agent tracing/telemetry.
 const disableTracingURL = "https://aka.ms/disable-tracing"
 
 // tracingDisclaimer returns the telemetry/tracing disclaimer shown during init
 // wherever Application Insights is connected or added. The body is rendered in a
-// muted (gray) style. The "Learn more:" label lives in the gray text (so it is
-// always shown) and is followed by disableTracingURL, which renders as a
-// clickable hyperlink in a terminal and as the plain URL in non-terminal output.
+// muted (gray) style. The "Learn more" label renders as a clickable hyperlink to
+// tracingOverviewURL (and as the plain URL in non-terminal output), and
+// disableTracingURL renders as a clickable hyperlink in a terminal and as the
+// plain URL in non-terminal output.
 func tracingDisclaimer() string {
 	return output.WithGrayFormat(
-		"Use Hosted Agents with appropriate safeguards. "+
-			"If you connect to third-party systems, you are responsible for their use and data handling. "+
-			"Telemetry may be visible to others and include sensitive data. Learn more: ") +
-		output.WithHyperlink(disableTracingURL, disableTracingURL)
+		"When using Hosted Agents apply appropriate safeguards. "+
+			"You are responsible for managing all data that may flow outside "+
+			"your organization's compliance and geographic boundaries. "+
+			"Use third-party systems at your own risk. ") +
+		output.WithHyperlink(tracingOverviewURL, "Learn more") +
+		output.WithGrayFormat(
+			". When AppInsights is enabled, this project logs traces to help "+
+				"you monitor your agents. Certain project members may be able to "+
+				"view user data. See ") +
+		output.WithHyperlink(disableTracingURL, disableTracingURL) +
+		output.WithGrayFormat(".")
 }
 
 // configureAppInsightsConnection handles AppInsights connection selection and env var setting.

@@ -1623,3 +1623,183 @@ func TestRunSkill_InstallCommandFails_SurfacesError(t *testing.T) {
 	require.NotNil(t, result.Error)
 	assert.ErrorIs(t, result.Error, wantErr)
 }
+
+// ---------------------------------------------------------------------------
+// runSkill — gemini idempotent pre-detect (already installed)
+// ---------------------------------------------------------------------------
+
+func TestRunSkill_GeminiAlreadyInstalled_SkipsInstall(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "gemini")
+	runner.MockToolInPath("node", nil)
+
+	var installRan bool
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "gemini"
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		installRan = true
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// Gemini has no idempotent re-install, so a fresh install pre-detects
+	// and treats an already-present skill as a successful no-op without
+	// running the install command.
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{
+				Tool:             tool,
+				Installed:        true,
+				InstalledVersion: "1.1.70",
+			}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Install(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.True(t, result.Success, "result.Error=%v", result.Error)
+	assert.Equal(t, "gemini", result.Strategy)
+	assert.Equal(t, "1.1.70", result.InstalledVersion)
+	assert.False(t, installRan,
+		"gemini install must be skipped when the skill is already present",
+	)
+}
+
+// ---------------------------------------------------------------------------
+// runSkill — no SkillHosts configured
+// ---------------------------------------------------------------------------
+
+func TestRunSkill_NoSkillHosts_Errors(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+
+	tool := &ToolDefinition{
+		Id:       "empty-skill",
+		Name:     "Empty Skill",
+		Category: ToolCategorySkill,
+		// No SkillHosts configured.
+	}
+
+	result, err := inst.Install(t.Context(), tool)
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "no SkillHosts configured")
+}
+
+// ---------------------------------------------------------------------------
+// runSkill — verification detector error is surfaced
+// ---------------------------------------------------------------------------
+
+func TestRunSkill_VerifyDetectorError_Surfaces(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot"
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	wantErr := errors.New("plugin list failed")
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) (*ToolStatus, error) {
+			return nil, wantErr
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Install(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+	assert.ErrorIs(t, result.Error, wantErr)
+	assert.Contains(t, result.Error.Error(), "verifying installation")
+}
+
+// ---------------------------------------------------------------------------
+// runSkill — install succeeds but verification never confirms
+// ---------------------------------------------------------------------------
+
+func TestRunSkill_VerificationFails_AfterRetries(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot"
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	// Detection never reports the skill installed, so verification
+	// exhausts all attempts (1 initial + 3 retries) and fails.
+	var callCount atomic.Int32
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			callCount.Add(1)
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Install(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "verification failed")
+	assert.Equal(t, int32(4), callCount.Load(),
+		"expected 4 detect calls (1 initial + 3 retries)",
+	)
+}
+
+// ---------------------------------------------------------------------------
+// runSkill — context cancellation during verification backoff
+// ---------------------------------------------------------------------------
+
+func TestRunSkill_ContextCanceledDuringVerify(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot"
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	var callCount atomic.Int32
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			callCount.Add(1)
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // cancel before the first retry sleep
+
+	result, err := inst.Install(ctx, newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+	assert.Equal(t, int32(1), callCount.Load(),
+		"expected only 1 detect call before context cancellation",
+	)
+	assert.Contains(t, result.Error.Error(), "context canceled")
+}

@@ -13,7 +13,6 @@ permissions:
   pull-requests: read
   issues: read
 strict: true
-checkout: false
 network:
   allowed: [defaults, github]
 tools:

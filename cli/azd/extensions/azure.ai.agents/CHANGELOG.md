@@ -1,5 +1,11 @@
 # Release History
 
+## 0.1.41-preview (2026-06-19)
+
+- [[#8645]](https://github.com/Azure/azure-dev/pull/8645) Detect VNET-injected Foundry accounts during `azd ai agent init` and skip remote builds up front so hosted container agents use local builds without a failing remote-build attempt first. Thanks @m5i-work for the contribution!
+- [[#8714]](https://github.com/Azure/azure-dev/pull/8714) Show a tracing disclaimer when `azd ai agent init` connects or adds an Application Insights connection. Thanks @therealjohn for the contribution!
+- [[#8685]](https://github.com/Azure/azure-dev/pull/8685) Default `azd ai agent run` local Python virtual environments to Python >= 3.13 so local runs match the minimum supported Foundry runtime. Thanks @therealjohn for the contribution!
+
 ## 0.1.40-preview (2026-06-15)
 
 - [[#8641]](https://github.com/Azure/azure-dev/pull/8641) Fix optimize/eval handling for array-valued mutations, resolve `dataset.local_uri` relative to the agent project, and align optimize test schema data with the current API format. Thanks @Zyysurely for the contribution!

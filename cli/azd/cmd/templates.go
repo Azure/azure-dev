@@ -386,7 +386,16 @@ func (a *templateSourceListAction) Run(ctx context.Context) (*actions.ActionResu
 				Priority: 2,
 			},
 			{
-				Column:   output.Column{Heading: "LOCATION", ValueTemplate: "{{.Location}}"},
+				Column: output.Column{
+					Heading:       "LOCATION",
+					ValueTemplate: "{{.Location}}",
+					Transformer: func(s string) string {
+						if s == "" {
+							return s
+						}
+						return output.WithLinkFormat(s)
+					},
+				},
 				Priority: 3,
 			},
 		}

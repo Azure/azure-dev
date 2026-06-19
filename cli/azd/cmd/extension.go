@@ -2319,7 +2319,16 @@ func (a *extensionSourceListAction) Run(ctx context.Context) (*actions.ActionRes
 				Priority: 1,
 			},
 			{
-				Column:   output.Column{Heading: "LOCATION", ValueTemplate: "{{.Location}}"},
+				Column: output.Column{
+					Heading:       "LOCATION",
+					ValueTemplate: "{{.Location}}",
+					Transformer: func(s string) string {
+						if s == "" {
+							return s
+						}
+						return output.WithLinkFormat(s)
+					},
+				},
 				Priority: 2,
 			},
 		}

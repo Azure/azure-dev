@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/require"
 )
 
@@ -299,16 +300,18 @@ func TestPrettyCardBreakpoint(t *testing.T) {
 	require.NoError(t, err)
 	output := buf.String()
 
-	// Cards grouped by source
-	require.Contains(t, output, "── azd ")
-	require.Contains(t, output, "── local ")
+	stripped := ansiRegex.ReplaceAllString(output, "")
+
+	// Cards grouped by labeled source
+	require.Contains(t, stripped, "── SOURCE: azd ")
+	require.Contains(t, stripped, "── SOURCE: local ")
 	// Card body has key-value pairs (using column headings as keys)
 	require.Contains(t, output, "NAME:")
 	require.Contains(t, output, "ID:")
 	require.Contains(t, output, "VERSION:")
 	require.Contains(t, output, "STATUS:")
 	// SOURCE should NOT appear in card body (it's the group header)
-	require.NotContains(t, output, "SOURCE:")
+	require.NotContains(t, stripped, "\nSOURCE:")
 }
 
 func TestPrettyCardGroupingOrder(t *testing.T) {
@@ -335,8 +338,9 @@ func TestPrettyCardGroupingOrder(t *testing.T) {
 	output := buf.String()
 
 	// azd appears first (first row's source)
-	azdIdx := strings.Index(output, "── azd ")
-	localIdx := strings.Index(output, "── local ")
+	stripped := ansiRegex.ReplaceAllString(output, "")
+	azdIdx := strings.Index(stripped, "── SOURCE: azd ")
+	localIdx := strings.Index(stripped, "── SOURCE: local ")
 	require.Greater(t, localIdx, azdIdx, "azd group should appear before local group")
 
 	// Both extensions with source=azd should be in the azd group
@@ -475,7 +479,8 @@ func TestPrettyBreakpointTransitions(t *testing.T) {
 			output := buf.String()
 
 			if tt.wantCard {
-				require.Contains(t, output, "── azd ", "expected card layout for width %d", tt.width)
+				stripped := ansiRegex.ReplaceAllString(output, "")
+				require.Contains(t, stripped, "── SOURCE: azd ", "expected card layout for width %d", tt.width)
 			} else {
 				require.Contains(t, output, "─", "expected header underline for width %d", tt.width)
 			}
@@ -597,8 +602,10 @@ func TestPrettySingleGroupCards(t *testing.T) {
 	require.NoError(t, err)
 	output := buf.String()
 
+	stripped := ansiRegex.ReplaceAllString(output, "")
+
 	// Only one group header should appear
-	require.Equal(t, 1, strings.Count(output, "── azd "), "expected exactly one group header")
+	require.Equal(t, 1, strings.Count(stripped, "── SOURCE: azd "), "expected exactly one group header")
 
 	// All items should be present
 	require.Contains(t, output, "First")
@@ -607,12 +614,81 @@ func TestPrettySingleGroupCards(t *testing.T) {
 
 	// No extra group separators (only one "──" line at the top)
 	headerLines := 0
-	for line := range strings.SplitSeq(output, "\n") {
+	for line := range strings.SplitSeq(stripped, "\n") {
 		if strings.HasPrefix(line, "── ") {
 			headerLines++
 		}
 	}
 	require.Equal(t, 1, headerLines, "expected exactly one group header line")
+}
+
+func TestPrettyCardGroupHeaderIncludesLabelAndUsesGrayDivider(t *testing.T) {
+	previousNoColor := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() {
+		color.NoColor = previousNoColor
+	})
+
+	rows := []prettyInput{
+		{Id: "ext-a", Name: "Extension A", Source: "azd"},
+	}
+
+	formatter := &PrettyTableFormatter{
+		ConsoleWidthFn: func() int { return 40 },
+	}
+
+	buf := &bytes.Buffer{}
+	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
+		Columns: []PrettyColumn{
+			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
+			{Column: Column{Heading: "NAME", ValueTemplate: "{{.Name}}"}, Priority: 1},
+			{Column: Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"}, Priority: 4},
+		},
+		CardGroupColumn: "SOURCE",
+	})
+
+	require.NoError(t, err)
+	output := buf.String()
+
+	require.Contains(t, ansiRegex.ReplaceAllString(output, ""), "── SOURCE: azd ")
+	require.Contains(t, output, "\x1b[90m── SOURCE: azd ")
+}
+
+func TestPrettyColumnTransformerCanUseLinkFormat(t *testing.T) {
+	previousNoColor := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() {
+		color.NoColor = previousNoColor
+	})
+
+	rows := []struct {
+		Location string
+	}{
+		{Location: "https://example.com"},
+	}
+
+	formatter := &PrettyTableFormatter{
+		ConsoleWidthFn: func() int { return 120 },
+	}
+
+	buf := &bytes.Buffer{}
+	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
+		Columns: []PrettyColumn{
+			{
+				Column: Column{
+					Heading:       "LOCATION",
+					ValueTemplate: "{{.Location}}",
+					Transformer: func(s string) string {
+						return WithLinkFormat(s)
+					},
+				},
+				Priority: 1,
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Contains(t, buf.String(), "\x1b[96mhttps://example.com")
 }
 
 func TestPrettyTableANSIAlignment(t *testing.T) {

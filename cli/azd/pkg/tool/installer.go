@@ -146,6 +146,10 @@ type installer struct {
 	httpClient       httpDoer
 	platformMu       sync.Mutex
 	platform         *Platform // lazily populated by ensurePlatform
+	// retryBackoff is the initial wait between post-install detection
+	// retries (doubled each attempt). Defaults to 1s; tests may shorten
+	// it to keep the suite fast.
+	retryBackoff time.Duration
 }
 
 // httpDoer is an interface satisfied by [*http.Client] for testing.
@@ -166,6 +170,7 @@ func NewInstaller(
 		platformDetector: platformDetector,
 		detector:         detector,
 		httpClient:       http.DefaultClient,
+		retryBackoff:     time.Second,
 	}
 }
 
@@ -182,6 +187,7 @@ func NewInstallerWithHTTPClient(
 		platformDetector: platformDetector,
 		detector:         detector,
 		httpClient:       httpClient,
+		retryBackoff:     time.Second,
 	}
 }
 
@@ -326,7 +332,7 @@ func (i *installer) run(
 	}
 
 	var status *ToolStatus
-	backoff := 1 * time.Second
+	backoff := i.retryBackoff
 
 	for attempt := range maxAttempts {
 		status, err = i.detector.DetectTool(ctx, tool)
@@ -421,7 +427,7 @@ func (i *installer) runSkill(
 	}
 
 	// 1. HARD prerequisite: resolve the target host(s).
-	targets, err := i.resolveSkillTargets(tool, hosts)
+	targets, err := i.resolveSkillTargets(ctx, tool, hosts, upgrade)
 	if err != nil {
 		result.Error = err
 		result.Duration = time.Since(start)
@@ -487,15 +493,33 @@ func (i *installer) runSkill(
 }
 
 // resolveSkillTargets resolves the host(s) a skill should be installed
-// to. With no explicit selection it returns the single preferred host
+// to. With no explicit selection it returns a single host: for an
+// upgrade, the host the detector reports the skill is installed through
+// (falling back to the preferred host); otherwise the preferred host
 // (via pickSkillHost). With an explicit selection every named host must
 // be a configured SkillHost that is on PATH; otherwise an error naming
 // the available hosts is returned.
 func (i *installer) resolveSkillTargets(
+	ctx context.Context,
 	tool *ToolDefinition,
 	hosts []string,
+	upgrade bool,
 ) ([]SkillHost, error) {
 	if len(hosts) == 0 {
+		// For an upgrade, prefer the host that already has the skill so we
+		// don't run an update against a host that never installed it (e.g.
+		// updating copilot when the skill was installed via claude).
+		if upgrade {
+			if status, err := i.detector.DetectTool(ctx, tool); err == nil &&
+				status.Installed && status.InstalledHost != "" {
+				idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
+					return h.Host == status.InstalledHost
+				})
+				if idx >= 0 {
+					return []SkillHost{tool.SkillHosts[idx]}, nil
+				}
+			}
+		}
 		host, err := i.pickSkillHost(tool)
 		if err != nil {
 			return nil, err
@@ -600,7 +624,7 @@ func (i *installer) verifySkillInstalled(
 ) (*ToolStatus, error) {
 	const maxAttempts = 4 // 1 initial + 3 retries
 	var status *ToolStatus
-	backoff := 1 * time.Second
+	backoff := i.retryBackoff
 
 	for attempt := range maxAttempts {
 		var err error

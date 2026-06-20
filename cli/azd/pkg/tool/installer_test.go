@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -431,6 +432,7 @@ func TestInstall_NonCLI_ExhaustsRetries(t *testing.T) {
 
 	pd := NewPlatformDetector(runner)
 	inst := NewInstaller(runner, pd, det)
+	inst.(*installer).retryBackoff = time.Millisecond // keep the test fast
 
 	tool := &ToolDefinition{
 		Id:       "ext-tool",
@@ -1398,6 +1400,52 @@ func TestRunSkill_Upgrade_RunsUpdateCommand_NotMarketplaceAdd(t *testing.T) {
 		"copilot upgrade must not also run plugin install")
 }
 
+// TestRunSkill_Upgrade_PrefersInstalledHost verifies that, with no
+// explicit --host, an upgrade targets the host the detector reports the
+// skill is installed through — not simply the first host on PATH.
+func TestRunSkill_Upgrade_PrefersInstalledHost(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot", "claude") // both on PATH
+	runner.MockToolInPath("node", nil)
+
+	var updatedHost string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
+			slices.Contains(args.Args, "update")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		updatedHost = args.Cmd
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// The detector reports the skill is installed via claude, even though
+	// copilot is listed first; the upgrade must run against claude.
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{
+				Tool:             tool,
+				Installed:        true,
+				InstalledVersion: "1.1.71",
+				InstalledHost:    "claude",
+			}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Upgrade(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.True(t, result.Success, "result.Error=%v", result.Error)
+	assert.Equal(t, "claude", result.Strategy)
+	assert.Equal(t, "claude", updatedHost,
+		"upgrade must target the host that has the skill (claude), "+
+			"not the first on PATH (copilot)",
+	)
+}
+
 func TestRunSkill_MarketplaceAlreadyRegistered_StillInstalls(t *testing.T) {
 	t.Parallel()
 
@@ -1611,6 +1659,7 @@ func TestRunSkill_VerificationFails_AfterRetries(t *testing.T) {
 	}
 
 	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+	inst.(*installer).retryBackoff = time.Millisecond // keep the test fast
 
 	result, err := inst.Install(t.Context(), newSkillTool())
 	require.NoError(t, err)

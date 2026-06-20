@@ -26,6 +26,10 @@ type ToolStatus struct {
 	// output. It is empty when the tool is not installed or when
 	// version parsing fails.
 	InstalledVersion string
+	// InstalledHost is the agentic CLI host a skill was detected through
+	// (e.g. "copilot"). It is empty for non-skill tools or when the skill
+	// is not installed.
+	InstalledHost string
 	// Error records any unexpected failure during detection (e.g. a
 	// timeout). A tool that is simply not installed has Error == nil.
 	Error error
@@ -503,8 +507,7 @@ func (d *detector) detectSkill(
 		//      only in installed-plugin output, e.g. claude's
 		//      "Version:" line).
 		output := result.Stdout
-		if host.PluginName != "" &&
-			!strings.Contains(output, host.PluginName) {
+		if !strings.Contains(output, host.PluginName) {
 			continue
 		}
 		if version := matchVersion(
@@ -512,6 +515,7 @@ func (d *detector) detectSkill(
 		); version != "" {
 			status.Installed = true
 			status.InstalledVersion = version
+			status.InstalledHost = host.Host
 			return status
 		}
 	}

@@ -68,6 +68,14 @@ func (m *Manager) FindTool(id string) (*ToolDefinition, error) {
 	return nil, fmt.Errorf("finding tool %q: not found", id)
 }
 
+// AvailableSkillHosts returns the names of the given skill tool's
+// configured agentic CLI hosts that are currently on PATH, in manifest
+// order (preferred host first). It returns nil for non-skill tools or
+// when none of the hosts are available.
+func (m *Manager) AvailableSkillHosts(tool *ToolDefinition) []string {
+	return m.installer.AvailableSkillHosts(tool)
+}
+
 // DetectAll probes every tool in the manifest and returns a status
 // entry for each one. Individual detection failures are captured in
 // each [ToolStatus.Error]; the returned error is non-nil only for
@@ -100,6 +108,7 @@ func (m *Manager) DetectTool(
 func (m *Manager) InstallTools(
 	ctx context.Context,
 	ids []string,
+	opts ...InstallOption,
 ) ([]*InstallResult, error) {
 	// 1. Resolve every requested id to its definition.
 	requested, err := m.resolveTools(ids)
@@ -132,7 +141,7 @@ func (m *Manager) InstallTools(
 			continue
 		}
 
-		result, installErr := m.installer.Install(ctx, tool)
+		result, installErr := m.installer.Install(ctx, tool, opts...)
 		if installErr != nil {
 			results = append(results, &InstallResult{
 				Tool:  tool,

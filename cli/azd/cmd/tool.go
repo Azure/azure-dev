@@ -444,6 +444,7 @@ func (a *toolListAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 type toolInstallFlags struct {
 	all    bool
+	hosts  []string
 	dryRun bool
 }
 
@@ -451,6 +452,11 @@ func newToolInstallFlags(cmd *cobra.Command) *toolInstallFlags {
 	flags := &toolInstallFlags{}
 	cmd.Flags().BoolVar(
 		&flags.all, "all", false, "Install all recommended tools",
+	)
+	cmd.Flags().StringSliceVar(
+		&flags.hosts, "host", nil,
+		"Install the skill for the specified agent host(s): copilot, claude. "+
+			"Use --host all for every detected host (skill tools only)",
 	)
 	cmd.Flags().BoolVar(
 		&flags.dryRun, "dry-run", false,
@@ -538,8 +544,16 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 	tracing.SetUsageAttributes(idAttrs...)
 
+	// Resolve which agent host(s) to install skills for, based on the
+	// --host flag. When no host is given and several are detected, the
+	// user is asked to choose explicitly.
+	hostOpts, hostErr := a.resolveHostOptions(tools)
+	if hostErr != nil {
+		return nil, hostErr
+	}
+
 	operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
-		return a.manager.InstallTools(ctx, allIDs)
+		return a.manager.InstallTools(ctx, allIDs, hostOpts...)
 	}
 
 	start := time.Now()
@@ -570,6 +584,81 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 			Header: "Tool installation complete",
 		},
 	}, nil
+}
+
+// allHostsKeyword is the reserved --host value that selects every
+// detected agent host.
+const allHostsKeyword = "all"
+
+// resolveHostOptions determines which agentic CLI host(s) a skill should
+// be installed for. With --host it targets the named host(s); the
+// reserved value --host all targets every detected host. When --host is
+// omitted and several hosts are detected, it returns guidance asking the
+// user to choose explicitly rather than guessing. It returns the install
+// options to pass to the installer (empty selects the single preferred
+// host).
+func (a *toolInstallAction) resolveHostOptions(
+	tools []*tool.ToolDefinition,
+) ([]tool.InstallOption, error) {
+	explicit := len(a.flags.hosts) > 0
+
+	var skill *tool.ToolDefinition
+	for _, t := range tools {
+		if t.Category == tool.ToolCategorySkill {
+			skill = t
+			break
+		}
+	}
+
+	if explicit && skill == nil {
+		return nil, fmt.Errorf("--host only applies to skill tools")
+	}
+
+	if skill == nil {
+		return nil, nil
+	}
+
+	if explicit {
+		// --host all selects every detected host. It cannot be mixed with
+		// specific host names.
+		if slices.Contains(a.flags.hosts, allHostsKeyword) {
+			if len(a.flags.hosts) > 1 {
+				return nil, fmt.Errorf(
+					"--host all cannot be combined with specific hosts",
+				)
+			}
+			present := a.manager.AvailableSkillHosts(skill)
+			if len(present) > 0 {
+				return []tool.InstallOption{tool.WithHosts(present...)}, nil
+			}
+			// None detected: let the installer emit its no-host guidance.
+			return nil, nil
+		}
+		// The installer validates that each named host is configured and
+		// on PATH, surfacing a descriptive error otherwise.
+		return []tool.InstallOption{tool.WithHosts(a.flags.hosts...)}, nil
+	}
+
+	// No --host flag. When multiple hosts are detected we cannot safely
+	// guess which the user wants
+	present := a.manager.AvailableSkillHosts(skill)
+	if len(present) > 1 {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("multiple agent hosts detected for %s", skill.Name),
+			Message: fmt.Sprintf(
+				"Detected multiple hosts: %s", strings.Join(present, ", "),
+			),
+			Suggestion: fmt.Sprintf(
+				"Specify which host(s) to install for:\n\n"+
+					"    azd tool install %s --host <host>\n\n"+
+					"    azd tool install %s --host all",
+				skill.Id, skill.Id,
+			),
+		}
+	}
+
+	// Zero or one host detected: keep the single preferred-host default.
+	return nil, nil
 }
 
 // dryRun detects the current status of the requested tools and

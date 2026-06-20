@@ -343,24 +343,6 @@ func azureSkills() *ToolDefinition {
 		Website:  "https://github.com/microsoft/azure-skills",
 		SkillHosts: []SkillHost{
 			{
-				// APM (Agent Package Manager) is a cross-runtime package
-				// manager. It installs azure-skills to the user scope
-				// (~/.apm/) and deploys it to every detected agent. Listed
-				// first so the universal cross-agent installer is preferred
-				// when available; the host-specific agent CLIs below are
-				// fallbacks.
-				Host:                 "apm",
-				PluginInstallCommand: []string{"install", "microsoft/azure-skills", "-g"},
-				PluginUpdateCommand:  []string{"update", "microsoft/azure-skills", "-g"},
-				PluginListCommand:    []string{"deps", "list", "-g"},
-				PluginName:           "microsoft/azure-skills",
-				// `apm deps list -g` renders a table whose azure-skills row
-				// is "│ microsoft/azure-skills │ 1.1.71 │ github │ ...".
-				// Anchor on the package name and capture the first version
-				// that follows on the same row.
-				VersionRegex: `microsoft/azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
-			},
-			{
 				Host:                  "copilot",
 				MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
 				PluginInstallCommand:  []string{"plugin", "install", "azure@azure-skills"},
@@ -384,38 +366,6 @@ func azureSkills() *ToolDefinition {
 				// Claude only returns the queried plugin, so a single
 				// "Version: x.y.z" line is unambiguous.
 				VersionRegex: `Version:\s*v?(\d+\.\d+\.\d+)`,
-			},
-			{
-				Host:                 "gemini",
-				PluginInstallCommand: []string{"extensions", "install", "https://github.com/microsoft/azure-skills"},
-				PluginUpdateCommand:  []string{"extensions", "update", "azure"},
-				PluginListCommand:    []string{"extensions", "list"},
-				PluginName:           "azure",
-				// `gemini extensions list` may include many extensions,
-				// each with its own version line. Anchor on the
-				// azure-skills Source URL (unique to this extension) and
-				// then capture the FIRST version that follows in the same
-				// block. The version line differs by install method:
-				//   - github-release install: "Release tag: v1.1.71"
-				//   - git ref install:        "Ref: v1.1.70"
-				// so we match either label. (?s) makes . match newlines
-				// so .*? spans lines.
-				VersionRegex: `(?s)Source:\s*https://github\.com/microsoft/azure-skills` +
-					`.*?(?:Release tag|Ref):\s*v?(\d+\.\d+\.\d+)`,
-			},
-			{
-				Host:                  "codex",
-				MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
-				PluginInstallCommand:  []string{"plugin", "add", "azure@azure-skills"},
-				PluginUpdateCommand:   []string{"plugin", "marketplace", "upgrade", "azure-skills"},
-				PluginListCommand:     []string{"plugin", "list"},
-				PluginName:            "azure@azure-skills",
-				// `codex plugin list` is tabular with multiple plugins.
-				// Anchor at line start so we only match the row whose
-				// PLUGIN column is azure@azure-skills — not another row
-				// whose PATH column happens to contain that substring.
-				// (?m) enables ^ to match the start of any line.
-				VersionRegex: `(?m)^azure@azure-skills\b[^\n]*?(\d+\.\d+\.\d+)`,
 			},
 		},
 	}

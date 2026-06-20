@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -333,22 +334,38 @@ func (m *cmdMockDetector) DetectAll(
 }
 
 type cmdMockInstaller struct {
-	install func(ctx context.Context, t *tool.ToolDefinition) (*tool.InstallResult, error)
-	upgrade func(ctx context.Context, t *tool.ToolDefinition) (*tool.InstallResult, error)
+	install func(
+		ctx context.Context, t *tool.ToolDefinition, opts ...tool.InstallOption,
+	) (*tool.InstallResult, error)
+	upgrade func(
+		ctx context.Context, t *tool.ToolDefinition, opts ...tool.InstallOption,
+	) (*tool.InstallResult, error)
+	availableSkillHosts func(t *tool.ToolDefinition) []string
 }
 
-func (m *cmdMockInstaller) Install(ctx context.Context, t *tool.ToolDefinition) (*tool.InstallResult, error) {
+func (m *cmdMockInstaller) Install(
+	ctx context.Context, t *tool.ToolDefinition, opts ...tool.InstallOption,
+) (*tool.InstallResult, error) {
 	if m.install != nil {
-		return m.install(ctx, t)
+		return m.install(ctx, t, opts...)
 	}
 	return &tool.InstallResult{Tool: t, Success: true}, nil
 }
 
-func (m *cmdMockInstaller) Upgrade(ctx context.Context, t *tool.ToolDefinition) (*tool.InstallResult, error) {
+func (m *cmdMockInstaller) Upgrade(
+	ctx context.Context, t *tool.ToolDefinition, opts ...tool.InstallOption,
+) (*tool.InstallResult, error) {
 	if m.upgrade != nil {
-		return m.upgrade(ctx, t)
+		return m.upgrade(ctx, t, opts...)
 	}
 	return &tool.InstallResult{Tool: t, Success: true}, nil
+}
+
+func (m *cmdMockInstaller) AvailableSkillHosts(t *tool.ToolDefinition) []string {
+	if m.availableSkillHosts != nil {
+		return m.availableSkillHosts(t)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -430,7 +447,7 @@ func TestToolInstallAction_AllFailureBatch_EmitsCorrectAggregates(t *testing.T) 
 	tracing.ResetUsageAttributesForTest()
 
 	installer := &cmdMockInstaller{
-		install: func(_ context.Context, td *tool.ToolDefinition) (*tool.InstallResult, error) {
+		install: func(_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption) (*tool.InstallResult, error) {
 			return &tool.InstallResult{
 				Tool:    td,
 				Success: false,
@@ -481,7 +498,7 @@ func TestToolInstallAction_Failure_ReturnsErrorNotSuccess(t *testing.T) {
 	tracing.ResetUsageAttributesForTest()
 
 	installer := &cmdMockInstaller{
-		install: func(_ context.Context, td *tool.ToolDefinition) (*tool.InstallResult, error) {
+		install: func(_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption) (*tool.InstallResult, error) {
 			return &tool.InstallResult{
 				Tool:    td,
 				Success: false,
@@ -527,7 +544,7 @@ func TestToolUpgradeAction_SuccessEmitsFromAndToVersion(t *testing.T) {
 		},
 	}
 	installer := &cmdMockInstaller{
-		upgrade: func(_ context.Context, td *tool.ToolDefinition) (*tool.InstallResult, error) {
+		upgrade: func(_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption) (*tool.InstallResult, error) {
 			return &tool.InstallResult{
 				Tool:             td,
 				Success:          true,
@@ -579,7 +596,7 @@ func TestToolUpgradeAction_FailureDoesNotEmitToVersion(t *testing.T) {
 		},
 	}
 	installer := &cmdMockInstaller{
-		upgrade: func(_ context.Context, td *tool.ToolDefinition) (*tool.InstallResult, error) {
+		upgrade: func(_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption) (*tool.InstallResult, error) {
 			return &tool.InstallResult{
 				Tool:    td,
 				Success: false,
@@ -608,4 +625,92 @@ func TestToolUpgradeAction_FailureDoesNotEmitToVersion(t *testing.T) {
 	// to_version must be absent — there is no installed version to report.
 	_, ok = lookupToolStrUsage(string(fields.ToolUpgradeToVersionKey.Key))
 	assert.False(t, ok, "tool.upgrade.to_version must not be emitted on upgrade failure")
+}
+
+// ---------------------------------------------------------------------------
+// resolveHostOptions — --host / --all-hosts flag handling
+// ---------------------------------------------------------------------------
+
+func TestResolveHostOptions(t *testing.T) {
+	skill := &tool.ToolDefinition{
+		Id:       "azure-skills",
+		Name:     "Azure Skills",
+		Category: tool.ToolCategorySkill,
+	}
+	nonSkill := &tool.ToolDefinition{
+		Id:       "azure-mcp-server",
+		Category: tool.ToolCategoryServer,
+	}
+
+	newAction := func(flags *toolInstallFlags, present []string) *toolInstallAction {
+		installer := &cmdMockInstaller{
+			availableSkillHosts: func(_ *tool.ToolDefinition) []string {
+				return present
+			},
+		}
+		manager := tool.NewManager(&cmdMockDetector{}, installer, nil)
+		return newToolInstallAction(
+			nil, flags, manager,
+			mockinput.NewMockConsole(), &output.NoneFormatter{}, io.Discard,
+		).(*toolInstallAction)
+	}
+
+	t.Run("HostWithoutSkillTool", func(t *testing.T) {
+		a := newAction(&toolInstallFlags{hosts: []string{"copilot"}}, nil)
+		_, err := a.resolveHostOptions([]*tool.ToolDefinition{nonSkill})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "only applies to skill tools")
+	})
+
+	t.Run("HostAllCannotMixWithSpecificHosts", func(t *testing.T) {
+		a := newAction(&toolInstallFlags{hosts: []string{"all", "copilot"}}, []string{"copilot", "claude"})
+		_, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot be combined with specific hosts")
+	})
+
+	t.Run("ExplicitHostsReturnsOptions", func(t *testing.T) {
+		a := newAction(&toolInstallFlags{hosts: []string{"claude"}}, []string{"copilot", "claude"})
+		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.Len(t, opts, 1)
+	})
+
+	t.Run("HostAllIteratesDetectedHosts", func(t *testing.T) {
+		a := newAction(&toolInstallFlags{hosts: []string{"all"}}, []string{"copilot", "claude"})
+		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.Len(t, opts, 1)
+	})
+
+	t.Run("HostAllNoneDetectedDefersToInstaller", func(t *testing.T) {
+		a := newAction(&toolInstallFlags{hosts: []string{"all"}}, nil)
+		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.Nil(t, opts)
+	})
+
+	t.Run("MultipleHostsNoFlagAsksToChoose", func(t *testing.T) {
+		a := newAction(&toolInstallFlags{}, []string{"copilot", "claude"})
+		_, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		require.Error(t, err)
+		var sug *internal.ErrorWithSuggestion
+		require.ErrorAs(t, err, &sug)
+		assert.Contains(t, sug.Message, "copilot, claude")
+		assert.Contains(t, sug.Suggestion, "--host all")
+	})
+
+	t.Run("SingleHostNoFlagReturnsNil", func(t *testing.T) {
+		a := newAction(&toolInstallFlags{}, []string{"copilot"})
+		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.Nil(t, opts)
+	})
+
+	t.Run("NonSkillNoFlagReturnsNil", func(t *testing.T) {
+		a := newAction(&toolInstallFlags{}, nil)
+		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{nonSkill})
+		require.NoError(t, err)
+		assert.Nil(t, opts)
+	})
 }

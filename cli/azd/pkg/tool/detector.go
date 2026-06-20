@@ -490,9 +490,8 @@ func (d *detector) detectSkill(
 			continue
 		}
 
-		// Match against stdout for most hosts. Gemini writes its
-		// extensions list output to stderr, so for gemini we check
-		// both streams.
+		// Match only against stdout: stderr is usually diagnostics, not
+		// the canonical listing.
 		//
 		// Use a two-stage gate to avoid false positives on hosts whose
 		// list command echoes the queried name in "not found" output
@@ -502,11 +501,8 @@ func (d *detector) detectSkill(
 		//   2. VersionRegex must capture a version (authoritative —
 		//      every host's regex anchors on a token that is present
 		//      only in installed-plugin output, e.g. claude's
-		//      "Version:" line or gemini's "Release tag:" line).
+		//      "Version:" line).
 		output := result.Stdout
-		if host.Host == "gemini" {
-			output = result.Stdout + "\n" + result.Stderr
-		}
 		if host.PluginName != "" &&
 			!strings.Contains(output, host.PluginName) {
 			continue

@@ -6337,6 +6337,16 @@ const completionSpec: Fig.Spec = {
 							name: ['--dry-run'],
 							description: 'Preview what would be installed without making changes',
 						},
+						{
+							name: ['--host'],
+							description: 'Install the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'host',
+								},
+							],
+						},
 					],
 					args: {
 						name: 'tool-name...',

@@ -438,66 +438,44 @@ func TestDetectTool_Extension(t *testing.T) {
 // DetectTool — Skills (host plugin listing)
 // ---------------------------------------------------------------------------
 
-// TestDetectTool_Skill_Gemini exercises the gemini-specific detection
-// quirks in detectSkill:
-//   - gemini writes its `extensions list` output to STDERR (not stdout),
-//     so detection must inspect stderr.
-//   - the version line label differs by install method: a github-release
-//     install prints "Release tag: vX.Y.Z" while a git `--ref` install
-//     prints "Ref: vX.Y.Z"; both must be recognized.
-func TestDetectTool_Skill_Gemini(t *testing.T) {
+// TestDetectTool_Skill_Copilot exercises detectSkill for the copilot
+// host, whose `plugin list` output is a bullet list. The skill is
+// reported installed only when PluginName appears AND the VersionRegex
+// captures a version.
+func TestDetectTool_Skill_Copilot(t *testing.T) {
 	t.Parallel()
 
-	// geminiSkill builds a minimal skill tool with a single gemini
-	// SkillHost mirroring the azure-skills manifest entry.
-	geminiSkill := func() *ToolDefinition {
+	copilotSkill := func() *ToolDefinition {
 		return &ToolDefinition{
 			Id:       "azure-skills",
 			Name:     "Azure Skills",
 			Category: ToolCategorySkill,
 			SkillHosts: []SkillHost{
 				{
-					Host:              "gemini",
-					PluginListCommand: []string{"extensions", "list"},
-					PluginName:        "azure",
-					VersionRegex: `(?s)Source:\s*https://github\.com/microsoft/` +
-						`azure-skills.*?(?:Release tag|Ref):\s*v?(\d+\.\d+\.\d+)`,
+					Host:              "copilot",
+					PluginListCommand: []string{"plugin", "list"},
+					PluginName:        "azure@azure-skills",
+					VersionRegex:      `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
 				},
 			},
 		}
 	}
 
-	// geminiList renders a representative `gemini extensions list` block
-	// for the azure-skills extension using the given version label/value.
-	geminiList := func(label, version string) string {
-		return "✓ azure (1.0.1)\n" +
-			" Source: https://github.com/microsoft/azure-skills (Type: git)\n" +
-			" " + label + ": " + version + "\n" +
-			" Enabled (User): true\n"
-	}
-
 	tests := []struct {
 		name            string
 		stdout          string
-		stderr          string
 		expectInstalled bool
 		expectVersion   string
 	}{
 		{
-			name:            "InstalledViaStderr_ReleaseTag",
-			stderr:          geminiList("Release tag", "v1.1.71"),
-			expectInstalled: true,
-			expectVersion:   "1.1.71",
-		},
-		{
-			name:            "InstalledViaStderr_Ref",
-			stderr:          geminiList("Ref", "v1.1.70"),
+			name:            "Installed",
+			stdout:          "Installed plugins:\n  • azure@azure-skills (v1.1.70)\n",
 			expectInstalled: true,
 			expectVersion:   "1.1.70",
 		},
 		{
 			name:            "NotInstalled",
-			stderr:          "No extensions installed.\n",
+			stdout:          "Installed plugins:\n  • other@thing (v0.0.1)\n",
 			expectInstalled: false,
 			expectVersion:   "",
 		},
@@ -508,19 +486,15 @@ func TestDetectTool_Skill_Gemini(t *testing.T) {
 			t.Parallel()
 
 			runner := mockexec.NewMockCommandRunner()
-			runner.MockToolInPath("gemini", nil)
+			runner.MockToolInPath("copilot", nil)
 			runner.When(func(args exec.RunArgs, _ string) bool {
-				return args.Cmd == "gemini" &&
-					slices.Contains(args.Args, "extensions") &&
+				return args.Cmd == "copilot" &&
+					slices.Contains(args.Args, "plugin") &&
 					slices.Contains(args.Args, "list")
-			}).Respond(exec.RunResult{
-				ExitCode: 0,
-				Stdout:   tt.stdout,
-				Stderr:   tt.stderr,
-			})
+			}).Respond(exec.RunResult{ExitCode: 0, Stdout: tt.stdout})
 
 			d := NewDetector(runner)
-			status, err := d.DetectTool(t.Context(), geminiSkill())
+			status, err := d.DetectTool(t.Context(), copilotSkill())
 
 			require.NoError(t, err)
 			require.NotNil(t, status)
@@ -530,23 +504,24 @@ func TestDetectTool_Skill_Gemini(t *testing.T) {
 	}
 }
 
-// TestDetectTool_Skill_Apm verifies detection of azure-skills installed
-// via APM. `apm deps list -g` renders a box-drawing table; detection must
-// anchor on the package name and capture the version from that row.
-func TestDetectTool_Skill_Apm(t *testing.T) {
+// TestDetectTool_Skill_Claude exercises detectSkill for the claude host.
+// claude's target-filtered `plugin list azure@azure-skills` echoes the
+// queried name even when the plugin is NOT installed, so the VersionRegex
+// match on the "Version:" line is the authoritative existence signal.
+func TestDetectTool_Skill_Claude(t *testing.T) {
 	t.Parallel()
 
-	apmSkill := func() *ToolDefinition {
+	claudeSkill := func() *ToolDefinition {
 		return &ToolDefinition{
 			Id:       "azure-skills",
 			Name:     "Azure Skills",
 			Category: ToolCategorySkill,
 			SkillHosts: []SkillHost{
 				{
-					Host:              "apm",
-					PluginListCommand: []string{"deps", "list", "-g"},
-					PluginName:        "microsoft/azure-skills",
-					VersionRegex:      `microsoft/azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
+					Host:              "claude",
+					PluginListCommand: []string{"plugin", "list", "azure@azure-skills"},
+					PluginName:        "azure@azure-skills",
+					VersionRegex:      `Version:\s*v?(\d+\.\d+\.\d+)`,
 				},
 			},
 		}
@@ -560,18 +535,17 @@ func TestDetectTool_Skill_Apm(t *testing.T) {
 	}{
 		{
 			name: "Installed",
-			stdout: "                  APM Dependencies (Global)\n" +
-				"┌────────────────────────┬─────────┬────────┬────────┐\n" +
-				"│ Package                │ Version │ Source │ Skills │\n" +
-				"├────────────────────────┼─────────┼────────┼────────┤\n" +
-				"│ microsoft/azure-skills │ 1.1.71  │ github │   28   │\n" +
-				"└────────────────────────┴─────────┴────────┴────────┘\n",
+			stdout: "❯ azure@azure-skills\n" +
+				"    Version: 1.1.70\n" +
+				"    Scope: user\n",
 			expectInstalled: true,
-			expectVersion:   "1.1.71",
+			expectVersion:   "1.1.70",
 		},
 		{
-			name:            "NotInstalled",
-			stdout:          "No APM dependencies declared in apm.yml.\n",
+			// claude echoes the queried name even when not installed; the
+			// absence of a Version line means NOT installed.
+			name:            "EchoesNameButNotInstalled",
+			stdout:          "azure@azure-skills not found\n",
 			expectInstalled: false,
 			expectVersion:   "",
 		},
@@ -582,15 +556,15 @@ func TestDetectTool_Skill_Apm(t *testing.T) {
 			t.Parallel()
 
 			runner := mockexec.NewMockCommandRunner()
-			runner.MockToolInPath("apm", nil)
+			runner.MockToolInPath("claude", nil)
 			runner.When(func(args exec.RunArgs, _ string) bool {
-				return args.Cmd == "apm" &&
-					slices.Contains(args.Args, "deps") &&
+				return args.Cmd == "claude" &&
+					slices.Contains(args.Args, "plugin") &&
 					slices.Contains(args.Args, "list")
 			}).Respond(exec.RunResult{ExitCode: 0, Stdout: tt.stdout})
 
 			d := NewDetector(runner)
-			status, err := d.DetectTool(t.Context(), apmSkill())
+			status, err := d.DetectTool(t.Context(), claudeSkill())
 
 			require.NoError(t, err)
 			require.NotNil(t, status)

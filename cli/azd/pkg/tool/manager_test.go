@@ -20,19 +20,23 @@ type mockInstaller struct {
 	installFn func(
 		ctx context.Context,
 		tool *ToolDefinition,
+		opts ...InstallOption,
 	) (*InstallResult, error)
 	upgradeFn func(
 		ctx context.Context,
 		tool *ToolDefinition,
+		opts ...InstallOption,
 	) (*InstallResult, error)
+	availableSkillHostsFn func(tool *ToolDefinition) []string
 }
 
 func (m *mockInstaller) Install(
 	ctx context.Context,
 	tool *ToolDefinition,
+	opts ...InstallOption,
 ) (*InstallResult, error) {
 	if m.installFn != nil {
-		return m.installFn(ctx, tool)
+		return m.installFn(ctx, tool, opts...)
 	}
 	return &InstallResult{
 		Tool:    tool,
@@ -43,14 +47,22 @@ func (m *mockInstaller) Install(
 func (m *mockInstaller) Upgrade(
 	ctx context.Context,
 	tool *ToolDefinition,
+	opts ...InstallOption,
 ) (*InstallResult, error) {
 	if m.upgradeFn != nil {
-		return m.upgradeFn(ctx, tool)
+		return m.upgradeFn(ctx, tool, opts...)
 	}
 	return &InstallResult{
 		Tool:    tool,
 		Success: true,
 	}, nil
+}
+
+func (m *mockInstaller) AvailableSkillHosts(tool *ToolDefinition) []string {
+	if m.availableSkillHostsFn != nil {
+		return m.availableSkillHostsFn(tool)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +219,7 @@ func TestManager_InstallTools(t *testing.T) {
 			installFn: func(
 				_ context.Context,
 				tool *ToolDefinition,
+				_ ...InstallOption,
 			) (*InstallResult, error) {
 				installedIDs = append(installedIDs, tool.Id)
 				return &InstallResult{
@@ -290,6 +303,7 @@ func TestManager_InstallToolsDependencyResolution(t *testing.T) {
 			installFn: func(
 				_ context.Context,
 				tool *ToolDefinition,
+				_ ...InstallOption,
 			) (*InstallResult, error) {
 				installedIDs = append(installedIDs, tool.Id)
 				return &InstallResult{Tool: tool, Success: true}, nil
@@ -326,6 +340,7 @@ func TestManager_InstallToolsDependencyResolution(t *testing.T) {
 			installFn: func(
 				_ context.Context,
 				tool *ToolDefinition,
+				_ ...InstallOption,
 			) (*InstallResult, error) {
 				installedIDs = append(installedIDs, tool.Id)
 				return &InstallResult{Tool: tool, Success: true}, nil
@@ -357,6 +372,7 @@ func TestManager_InstallToolsDependencyResolution(t *testing.T) {
 			installFn: func(
 				_ context.Context,
 				tool *ToolDefinition,
+				_ ...InstallOption,
 			) (*InstallResult, error) {
 				if tool.Id == "base" {
 					return &InstallResult{
@@ -408,6 +424,7 @@ func TestManager_UpgradeTools(t *testing.T) {
 			upgradeFn: func(
 				_ context.Context,
 				tool *ToolDefinition,
+				_ ...InstallOption,
 			) (*InstallResult, error) {
 				upgradedIDs = append(upgradedIDs, tool.Id)
 				return &InstallResult{
@@ -540,6 +557,7 @@ func TestManager_UpgradeAll(t *testing.T) {
 			upgradeFn: func(
 				_ context.Context,
 				tool *ToolDefinition,
+				_ ...InstallOption,
 			) (*InstallResult, error) {
 				upgradedIDs = append(upgradedIDs, tool.Id)
 				return &InstallResult{
@@ -572,4 +590,23 @@ func TestManager_UpgradeAll(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, results, 1, "only installed tools upgraded")
 	})
+}
+
+// ---------------------------------------------------------------------------
+// AvailableSkillHosts
+// ---------------------------------------------------------------------------
+
+func TestManager_AvailableSkillHosts(t *testing.T) {
+	installer := &mockInstaller{
+		availableSkillHostsFn: func(_ *ToolDefinition) []string {
+			return []string{"copilot", "claude"}
+		},
+	}
+	m := NewManager(&mockDetector{}, installer, nil)
+
+	got := m.AvailableSkillHosts(&ToolDefinition{
+		Id:       "azure-skills",
+		Category: ToolCategorySkill,
+	})
+	assert.Equal(t, []string{"copilot", "claude"}, got)
 }

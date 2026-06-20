@@ -93,10 +93,13 @@ func AggregateInstallResults(
 // the current platform.
 type Installer interface {
 	// Install attempts to install the given tool using the best
-	// strategy available for the current platform.
+	// strategy available for the current platform. For skill tools the
+	// optional [WithHosts] option restricts installation to the named
+	// agentic CLI hosts.
 	Install(
 		ctx context.Context,
 		tool *ToolDefinition,
+		opts ...InstallOption,
 	) (*InstallResult, error)
 
 	// Upgrade attempts to upgrade the given tool to its latest
@@ -105,7 +108,34 @@ type Installer interface {
 	Upgrade(
 		ctx context.Context,
 		tool *ToolDefinition,
+		opts ...InstallOption,
 	) (*InstallResult, error)
+
+	// AvailableSkillHosts returns the names of the tool's configured
+	// SkillHosts that are currently on PATH, in manifest order
+	// (preferred host first). It returns nil for non-skill tools or
+	// when none of the hosts are available.
+	AvailableSkillHosts(tool *ToolDefinition) []string
+}
+
+// installConfig holds the resolved options for an install or upgrade
+// operation.
+type installConfig struct {
+	// hosts, when non-empty, restricts a skill install/upgrade to the
+	// named agentic CLI hosts (e.g. "copilot", "claude"). An empty slice
+	// selects the single preferred host (the first configured host on
+	// PATH). Ignored for non-skill tools.
+	hosts []string
+}
+
+// InstallOption customizes an install or upgrade operation.
+type InstallOption func(*installConfig)
+
+// WithHosts restricts a skill install/upgrade to the named agentic CLI
+// hosts. It is ignored for non-skill tools. Passing no hosts (or not
+// using this option) selects the single preferred host.
+func WithHosts(hosts ...string) InstallOption {
+	return func(c *installConfig) { c.hosts = hosts }
 }
 
 // installer is the default, unexported implementation of [Installer].
@@ -160,8 +190,9 @@ func NewInstallerWithHTTPClient(
 func (i *installer) Install(
 	ctx context.Context,
 	tool *ToolDefinition,
+	opts ...InstallOption,
 ) (*InstallResult, error) {
-	return i.run(ctx, tool, false)
+	return i.run(ctx, tool, false, opts)
 }
 
 // Upgrade detects the current platform, selects an appropriate
@@ -171,8 +202,26 @@ func (i *installer) Install(
 func (i *installer) Upgrade(
 	ctx context.Context,
 	tool *ToolDefinition,
+	opts ...InstallOption,
 ) (*InstallResult, error) {
-	return i.run(ctx, tool, true)
+	return i.run(ctx, tool, true, opts)
+}
+
+// AvailableSkillHosts returns the names of the tool's configured
+// SkillHosts that are currently on PATH, in manifest order (preferred
+// host first). It returns nil for non-skill tools or when none of the
+// hosts are available.
+func (i *installer) AvailableSkillHosts(tool *ToolDefinition) []string {
+	if tool.Category != ToolCategorySkill {
+		return nil
+	}
+	var present []string
+	for _, host := range tool.SkillHosts {
+		if i.commandRunner.ToolInPath(host.Host) == nil {
+			present = append(present, host.Host)
+		}
+	}
+	return present
 }
 
 // run is the shared implementation for Install and Upgrade.
@@ -180,12 +229,18 @@ func (i *installer) run(
 	ctx context.Context,
 	tool *ToolDefinition,
 	upgrade bool,
+	opts []InstallOption,
 ) (*InstallResult, error) {
+	var cfg installConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	// Skills follow a different flow: they install through the host
 	// agentic CLI native plugin command rather than the platform's
 	// package manager, so we short-circuit before platform detection.
 	if tool.Category == ToolCategorySkill {
-		return i.runSkill(ctx, tool, upgrade)
+		return i.runSkill(ctx, tool, upgrade, cfg.hosts)
 	}
 
 	start := time.Now()
@@ -333,51 +388,50 @@ func (i *installer) run(
 // Skill install / upgrade
 // ---------------------------------------------------------------------------
 
-// runSkill implements the install/upgrade flow for [ToolCategorySkill].
+// runSkill installs (or upgrades) a skill across one or more agentic CLI
+// hosts.
 //
 // Prerequisite rules:
-//  1. HARD — at least one supported agentic CLI host (e.g. copilot,
-//     claude, gemini, codex) must be on PATH. We do NOT offer to
-//     install one ourselves; if none is present we fail with an
-//     [errorhandler.ErrorWithSuggestion] that points the user at the
-//     install docs for each supported host.
+//  1. HARD — at least one supported agentic CLI host (copilot or claude)
+//     must be on PATH. We do NOT install one ourselves; if none is
+//     present resolveSkillTargets fails with an
+//     [errorhandler.ErrorWithSuggestion] pointing at the install docs.
 //  2. SOFT — Node.js (`node`) on PATH. The Azure MCP server is started
-//     via `npx`, so its absence breaks MCP-backed scenarios but does
-//     NOT prevent installing the skill files. Emit a one-line warning
-//     via [log.Printf] and continue.
-//  3. Git is NOT pre-checked. The host CLI fetches the skill repo
-//     itself and surfaces its own diagnostic when git is missing.
+//     via `npx`, so its absence breaks MCP-backed scenarios but does NOT
+//     prevent installing the skill files. We warn and continue.
+//  3. Git is NOT pre-checked. The host CLI fetches the skill repo itself
+//     and surfaces its own diagnostic when git is missing.
 //
-// The first supported host found on PATH wins. For fresh installs the
-// host's MarketplaceAddCommand (if any) runs first; an "already
-// registered/added/on disk" response is tolerated as idempotent
-// success, but other failures are propagated to the caller.
+// The hosts argument, when non-empty, restricts the operation to the
+// named hosts; otherwise the single preferred host (first on PATH) is
+// used.
 func (i *installer) runSkill(
 	ctx context.Context,
 	tool *ToolDefinition,
 	upgrade bool,
+	hosts []string,
 ) (*InstallResult, error) {
 	start := time.Now()
 	result := &InstallResult{Tool: tool}
 
 	if len(tool.SkillHosts) == 0 {
-		result.Error = fmt.Errorf(
-			"%s has no SkillHosts configured", tool.Name,
-		)
+		result.Error = fmt.Errorf("%s has no SkillHosts configured", tool.Name)
 		result.Duration = time.Since(start)
 		return result, nil
 	}
 
-	// 1. HARD prerequisite: at least one supported host must be on PATH.
-	host, hostErr := i.pickSkillHost(tool)
-	if hostErr != nil {
-		result.Error = hostErr
+	// 1. HARD prerequisite: resolve the target host(s).
+	targets, err := i.resolveSkillTargets(tool, hosts)
+	if err != nil {
+		result.Error = err
 		result.Duration = time.Since(start)
 		return result, nil
 	}
-	result.Strategy = host.Host
 
-	// 2. SOFT prerequisite: warn if Node.js is missing.
+	// 2. SOFT prerequisite: warn if Node.js is missing. The Azure MCP
+	//    server is started via `npx`, so its absence breaks MCP-backed
+	//    scenarios but does not prevent installing the skill files. Write
+	//    to stderr so structured stdout stays clean in `--output json`.
 	if err := i.commandRunner.ToolInPath("node"); err != nil {
 		log.Printf("node not found on PATH: %v", err)
 		fmt.Fprintln(os.Stderr, output.WithWarningFormat(
@@ -388,89 +442,89 @@ func (i *installer) runSkill(
 		)+output.WithLinkFormat("https://nodejs.org/"))
 	}
 
-	// 3. Run the install / upgrade via the host's native commands.
-	//
-	// Gemini exits non-zero with "already installed. Please uninstall it
-	// first." when asked to install an extension that is already present.
-	// Unlike the other hosts it has no idempotent re-install, so for a
-	// fresh install we detect first and treat an already-present skill as
-	// a successful no-op. (Upgrades still run their update command.)
-	if !upgrade && host.Host == "gemini" {
-		if status, err := i.detector.DetectTool(ctx, tool); err == nil && status.Installed {
-			log.Printf("gemini: %s already installed; skipping install", tool.Name)
-			result.Success = true
-			result.InstalledVersion = status.InstalledVersion
-			result.Duration = time.Since(start)
-			return result, nil
+	// 3. Install / upgrade for each target host, collecting outcomes.
+	var (
+		succeeded []string
+		failures  []error
+		version   string
+	)
+	for _, host := range targets {
+		hostVersion, hostErr := i.installSkillForHost(ctx, tool, host, upgrade)
+		if hostErr != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
+			continue
+		}
+		succeeded = append(succeeded, host.Host)
+		if version == "" {
+			version = hostVersion
 		}
 	}
 
-	if err := i.runSkillHostCommand(ctx, host, upgrade); err != nil {
-		result.Error = err
-		result.Duration = time.Since(start)
-		return result, nil
-	}
+	result.Strategy = strings.Join(succeeded, ", ")
+	result.InstalledVersion = version
+	result.Duration = time.Since(start)
 
-	// 4. Verify by detecting the skill via the host's plugin list.
-	//    Plugin-list output sometimes lags the install action (the
-	//    pre-existing copilot CLI integration documents the same race —
-	//    see internal/agent/copilot/cli.go), so retry a few times with
-	//    exponential backoff to match the package-manager install path.
-	const maxAttempts = 4 // 1 initial + 3 retries
-	var status *ToolStatus
-	backoff := 1 * time.Second
-
-	for attempt := range maxAttempts {
-		var err error
-		status, err = i.detector.DetectTool(ctx, tool)
-		if err != nil {
+	// On failure, preserve the wrapped error for a single host so callers
+	// can match it with errors.Is/As; summarize when several hosts fail.
+	if len(failures) > 0 {
+		if len(failures) == 1 {
+			result.Error = failures[0]
+		} else {
+			msgs := make([]string, len(failures))
+			for j, f := range failures {
+				msgs[j] = f.Error()
+			}
 			result.Error = fmt.Errorf(
-				"verifying installation of %s: %w", tool.Name, err,
+				"%s could not be installed for %d host(s): %s",
+				tool.Name, len(failures), strings.Join(msgs, "; "),
 			)
-			result.Duration = time.Since(start)
-			return result, nil
 		}
-
-		if status.Installed {
-			break
-		}
-
-		if attempt >= maxAttempts-1 {
-			break
-		}
-
-		log.Printf(
-			"installer: %s not yet detected, retrying in %s (attempt %d/%d)",
-			tool.Name, backoff, attempt+1, maxAttempts-1,
-		)
-
-		select {
-		case <-ctx.Done():
-			result.Error = fmt.Errorf(
-				"verifying installation of %s: %w",
-				tool.Name, ctx.Err(),
-			)
-			result.Duration = time.Since(start)
-			return result, nil
-		case <-time.After(backoff):
-		}
-
-		backoff *= 2
-	}
-
-	if !status.Installed {
-		result.Error = fmt.Errorf(
-			"%s was installed via %s but verification failed",
-			tool.Name, host.Host,
-		)
-		result.Duration = time.Since(start)
 		return result, nil
 	}
 
 	result.Success = true
-	result.InstalledVersion = status.InstalledVersion
-	result.Duration = time.Since(start)
 	return result, nil
+}
+
+// resolveSkillTargets resolves the host(s) a skill should be installed
+// to. With no explicit selection it returns the single preferred host
+// (via pickSkillHost). With an explicit selection every named host must
+// be a configured SkillHost that is on PATH; otherwise an error naming
+// the available hosts is returned.
+func (i *installer) resolveSkillTargets(
+	tool *ToolDefinition,
+	hosts []string,
+) ([]SkillHost, error) {
+	if len(hosts) == 0 {
+		host, err := i.pickSkillHost(tool)
+		if err != nil {
+			return nil, err
+		}
+		return []SkillHost{host}, nil
+	}
+
+	targets := make([]SkillHost, 0, len(hosts))
+	for _, name := range hosts {
+		// A requested host is usable only if it is a configured SkillHost
+		// that is also on PATH. "unknown name" and "known but not on PATH"
+		// both mean the host can't be used, so we point the user at the
+		// supported hosts.
+		idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
+			return h.Host == name
+		})
+		if idx < 0 || i.commandRunner.ToolInPath(name) != nil {
+			supported := make([]string, len(tool.SkillHosts))
+			for j, h := range tool.SkillHosts {
+				supported[j] = h.Host
+			}
+			return nil, fmt.Errorf(
+				"host %s not found on PATH for %s",
+				strings.Join(supported, " or "), tool.Name,
+			)
+		}
+		targets = append(targets, tool.SkillHosts[idx])
+	}
+	return targets, nil
 }
 
 // pickSkillHost returns the first SkillHost whose binary is on PATH.
@@ -515,15 +569,87 @@ func (i *installer) pickSkillHost(
 	}
 }
 
+// installSkillForHost installs (or upgrades) the skill through a single
+// host and verifies the result, returning the detected version.
+func (i *installer) installSkillForHost(
+	ctx context.Context,
+	tool *ToolDefinition,
+	host SkillHost,
+	upgrade bool,
+) (string, error) {
+	if err := i.runSkillHostCommand(ctx, host, upgrade); err != nil {
+		return "", err
+	}
+
+	status, err := i.verifySkillInstalled(ctx, tool, host)
+	if err != nil {
+		return "", err
+	}
+	return status.InstalledVersion, nil
+}
+
+// verifySkillInstalled confirms the skill is detectable after install.
+// Plugin-list output sometimes lags the install action (the pre-existing
+// copilot CLI integration documents the same race — see
+// internal/agent/copilot/cli.go), so it retries a few times with
+// exponential backoff to match the package-manager install path.
+func (i *installer) verifySkillInstalled(
+	ctx context.Context,
+	tool *ToolDefinition,
+	host SkillHost,
+) (*ToolStatus, error) {
+	const maxAttempts = 4 // 1 initial + 3 retries
+	var status *ToolStatus
+	backoff := 1 * time.Second
+
+	for attempt := range maxAttempts {
+		var err error
+		status, err = i.detector.DetectTool(ctx, tool)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"verifying installation of %s: %w", tool.Name, err,
+			)
+		}
+
+		if status.Installed {
+			return status, nil
+		}
+
+		if attempt >= maxAttempts-1 {
+			break
+		}
+
+		log.Printf(
+			"installer: %s not yet detected, retrying in %s (attempt %d/%d)",
+			tool.Name, backoff, attempt+1, maxAttempts-1,
+		)
+
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf(
+				"verifying installation of %s: %w",
+				tool.Name, ctx.Err(),
+			)
+		case <-time.After(backoff):
+		}
+
+		backoff *= 2
+	}
+
+	return nil, fmt.Errorf(
+		"%s was installed via %s but verification failed",
+		tool.Name, host.Host,
+	)
+}
+
 // runSkillHostCommand executes the host's install (or update) command
 // with stdin/stdout/stderr connected to the user (WithInteractive=true)
-// so any prompts the host CLI surfaces — e.g. gemini's "Do you want to
-// continue? [Y/n]" — are answered by the user directly. azd never pipes
-// canned answers on the user's behalf.
+// so any prompts the host CLI surfaces are answered by the user
+// directly. azd never pipes canned answers on the user's behalf.
 //
 // For fresh installs it first runs MarketplaceAddCommand when the host
-// declares one. Hosts that have no marketplace concept (e.g. gemini)
-// leave MarketplaceAddCommand empty and that step is skipped entirely.
+// declares one. Hosts that declare no MarketplaceAddCommand skip this
+// step entirely.
 //
 // A non-zero exit is returned to the caller as an error; the caller is
 // expected to verify via the detector and decide whether to treat the
@@ -559,17 +685,6 @@ func (i *installer) runSkillHostCommand(
 		)
 	}
 
-	// For codex, need to install after marketplace is updated
-	if upgrade && host.Host == "codex" {
-		runArgs = exec.NewRunArgs(host.Host, host.PluginInstallCommand...)
-		if _, err := i.commandRunner.Run(ctx, runArgs); err != nil {
-			return fmt.Errorf(
-				"running `%s %s`: %w",
-				host.Host, strings.Join(host.PluginInstallCommand, " "), err,
-			)
-		}
-	}
-
 	return nil
 }
 
@@ -577,7 +692,7 @@ func (i *installer) runSkillHostCommand(
 // Some hosts (e.g. copilot) return a non-zero exit when the marketplace
 // is already registered; we recognize that case from the captured
 // output and treat it as success so the install can proceed. Hosts that
-// already exit 0 in the "already added" case (e.g. codex, claude) flow
+// already exit 0 in the "already added" case (e.g. claude) flow
 // through naturally. Any other failure is returned to the caller.
 func (i *installer) runMarketplaceAdd(
 	ctx context.Context,
@@ -600,7 +715,6 @@ func (i *installer) runMarketplaceAdd(
 // isMarketplaceAlreadyAdded reports whether the host CLI output indicates
 // the marketplace is already registered. Observed wording per host:
 //   - copilot: "Failed to add marketplace: ... already registered"
-//   - codex:   "Marketplace ... is already added from ..."
 //   - claude:  "Marketplace ... already on disk"
 func isMarketplaceAlreadyAdded(output string) bool {
 	lower := strings.ToLower(output)

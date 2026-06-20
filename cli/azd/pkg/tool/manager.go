@@ -166,6 +166,7 @@ func (m *Manager) InstallTools(
 func (m *Manager) UpgradeTools(
 	ctx context.Context,
 	ids []string,
+	opts ...InstallOption,
 ) ([]*InstallResult, error) {
 	tools, err := m.resolveTools(ids)
 	if err != nil {
@@ -174,7 +175,7 @@ func (m *Manager) UpgradeTools(
 
 	var results []*InstallResult
 	for _, tool := range tools {
-		result, upgradeErr := m.installer.Upgrade(ctx, tool)
+		result, upgradeErr := m.installer.Upgrade(ctx, tool, opts...)
 		if upgradeErr != nil {
 			results = append(results, &InstallResult{
 				Tool:  tool,

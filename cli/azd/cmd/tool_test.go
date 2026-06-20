@@ -333,6 +333,12 @@ func (m *cmdMockDetector) DetectAll(
 	return results, nil
 }
 
+func (m *cmdMockDetector) DetectSkillHosts(
+	ctx context.Context, t *tool.ToolDefinition,
+) ([]string, error) {
+	return nil, nil
+}
+
 type cmdMockInstaller struct {
 	install func(
 		ctx context.Context, t *tool.ToolDefinition, opts ...tool.InstallOption,
@@ -710,6 +716,76 @@ func TestResolveHostOptions(t *testing.T) {
 	t.Run("NonSkillNoFlagReturnsNil", func(t *testing.T) {
 		a := newAction(&toolInstallFlags{}, nil)
 		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{nonSkill})
+		require.NoError(t, err)
+		assert.Nil(t, opts)
+	})
+}
+
+func TestResolveHostOptions_Upgrade(t *testing.T) {
+	skill := &tool.ToolDefinition{
+		Id:       "azure-skills",
+		Name:     "Azure Skills",
+		Category: tool.ToolCategorySkill,
+	}
+	nonSkill := &tool.ToolDefinition{
+		Id:       "azure-mcp-server",
+		Category: tool.ToolCategoryServer,
+	}
+
+	newAction := func(flags *toolUpgradeFlags, present []string) *toolUpgradeAction {
+		installer := &cmdMockInstaller{
+			availableSkillHosts: func(_ *tool.ToolDefinition) []string {
+				return present
+			},
+		}
+		manager := tool.NewManager(&cmdMockDetector{}, installer, nil)
+		return newToolUpgradeAction(
+			nil, flags, manager,
+			mockinput.NewMockConsole(), &output.NoneFormatter{}, io.Discard,
+		).(*toolUpgradeAction)
+	}
+
+	t.Run("HostWithoutSkillTool", func(t *testing.T) {
+		a := newAction(&toolUpgradeFlags{hosts: []string{"copilot"}}, nil)
+		_, err := a.resolveHostOptions([]*tool.ToolDefinition{nonSkill})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "only applies to skill tools")
+	})
+
+	t.Run("HostAllCannotMixWithSpecificHosts", func(t *testing.T) {
+		a := newAction(&toolUpgradeFlags{hosts: []string{"all", "copilot"}}, []string{"copilot", "claude"})
+		_, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot be combined with specific hosts")
+	})
+
+	t.Run("ExplicitHostsReturnsOptions", func(t *testing.T) {
+		a := newAction(&toolUpgradeFlags{hosts: []string{"claude"}}, []string{"copilot", "claude"})
+		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.Len(t, opts, 1)
+	})
+
+	t.Run("HostAllIteratesDetectedHosts", func(t *testing.T) {
+		a := newAction(&toolUpgradeFlags{hosts: []string{"all"}}, []string{"copilot", "claude"})
+		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.Len(t, opts, 1)
+	})
+
+	t.Run("HostAllNoneDetectedDefersToInstaller", func(t *testing.T) {
+		a := newAction(&toolUpgradeFlags{hosts: []string{"all"}}, nil)
+		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.Nil(t, opts)
+	})
+
+	// Unlike install, upgrade with no --host never errors on multiple
+	// hosts: the installer upgrades the host the skill is installed
+	// through, so no explicit choice is required.
+	t.Run("MultipleHostsNoFlagReturnsNil", func(t *testing.T) {
+		a := newAction(&toolUpgradeFlags{}, []string{"copilot", "claude"})
+		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
 		require.NoError(t, err)
 		assert.Nil(t, opts)
 	})

@@ -822,6 +822,7 @@ func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error
 
 type toolUpgradeFlags struct {
 	dryRun bool
+	hosts  []string
 }
 
 func newToolUpgradeFlags(cmd *cobra.Command) *toolUpgradeFlags {
@@ -829,6 +830,11 @@ func newToolUpgradeFlags(cmd *cobra.Command) *toolUpgradeFlags {
 	cmd.Flags().BoolVar(
 		&flags.dryRun, "dry-run", false,
 		"Preview what would be upgraded without making changes",
+	)
+	cmd.Flags().StringSliceVar(
+		&flags.hosts, "host", nil,
+		"Upgrade the skill for the specified agent host(s): copilot, claude. "+
+			"Use --host all for every detected host (skill tools only)",
 	)
 	return flags
 }
@@ -946,7 +952,11 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 	})
 
 	operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
-		return a.manager.UpgradeTools(ctx, allIDs)
+		hostOpts, hostErr := a.resolveHostOptions(toolsToUpgrade)
+		if hostErr != nil {
+			return nil, hostErr
+		}
+		return a.manager.UpgradeTools(ctx, allIDs, hostOpts...)
 	}
 
 	start := time.Now()
@@ -987,6 +997,50 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 			Header: "Tool upgrade complete",
 		},
 	}, nil
+}
+
+// resolveHostOptions determines which agentic CLI host(s) a skill should
+// be upgraded for, based on the --host flag. --host all targets every
+// detected host; specific names target those hosts. When --host is
+// omitted it returns no options, letting the installer upgrade the host
+// the skill is already installed through.
+func (a *toolUpgradeAction) resolveHostOptions(
+	tools []*tool.ToolDefinition,
+) ([]tool.InstallOption, error) {
+	if len(a.flags.hosts) == 0 {
+		return nil, nil
+	}
+
+	var skill *tool.ToolDefinition
+	for _, t := range tools {
+		if t.Category == tool.ToolCategorySkill {
+			skill = t
+			break
+		}
+	}
+	if skill == nil {
+		return nil, fmt.Errorf("--host only applies to skill tools")
+	}
+
+	// --host all selects every detected host. It cannot be mixed with
+	// specific host names.
+	if slices.Contains(a.flags.hosts, allHostsKeyword) {
+		if len(a.flags.hosts) > 1 {
+			return nil, fmt.Errorf(
+				"--host all cannot be combined with specific hosts",
+			)
+		}
+		present := a.manager.AvailableSkillHosts(skill)
+		if len(present) > 0 {
+			return []tool.InstallOption{tool.WithHosts(present...)}, nil
+		}
+		// None detected: let the installer emit its no-host guidance.
+		return nil, nil
+	}
+
+	// The installer validates that each named host is configured and on
+	// PATH, surfacing a descriptive error otherwise.
+	return []tool.InstallOption{tool.WithHosts(a.flags.hosts...)}, nil
 }
 
 // dryRun detects the current status of the tools and displays what

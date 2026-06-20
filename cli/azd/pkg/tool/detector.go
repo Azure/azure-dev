@@ -52,6 +52,15 @@ type Detector interface {
 		ctx context.Context,
 		tools []*ToolDefinition,
 	) ([]*ToolStatus, error)
+
+	// DetectSkillHosts returns the names of every configured SkillHost
+	// the skill is currently installed through, in manifest order. It
+	// returns nil for non-skill tools. The returned error is non-nil
+	// only for context cancellation/timeout while listing plugins.
+	DetectSkillHosts(
+		ctx context.Context,
+		tool *ToolDefinition,
+	) ([]string, error)
 }
 
 type detector struct {
@@ -466,53 +475,12 @@ func (d *detector) detectSkill(
 	}
 
 	for _, host := range tool.SkillHosts {
-		if len(host.PluginListCommand) == 0 || host.PluginName == "" {
-			continue
-		}
-
-		// A host that is not on PATH cannot have the skill installed
-		// through it; skip silently.
-		if err := d.commandRunner.ToolInPath(host.Host); err != nil {
-			continue
-		}
-
-		// Run the list command. If it fails for any reason we cannot
-		// reliably tell whether the skill is installed via this host —
-		// fail closed and try the next one rather than guessing from
-		// the error output (which often echoes the queried name).
-		result, err := d.commandRunner.Run(ctx, exec.RunArgs{
-			Cmd:  host.Host,
-			Args: host.PluginListCommand,
-		})
+		version, err := d.skillHostVersion(ctx, host)
 		if err != nil {
-			if isContextErr(err) {
-				status.Error = fmt.Errorf(
-					"listing %s plugins: %w", host.Host, err,
-				)
-				return status
-			}
-			continue
+			status.Error = err
+			return status
 		}
-
-		// Match only against stdout: stderr is usually diagnostics, not
-		// the canonical listing.
-		//
-		// Use a two-stage gate to avoid false positives on hosts whose
-		// list command echoes the queried name in "not found" output
-		// (e.g. claude's `plugin list azure@azure-skills` prints the
-		// query name regardless of whether the plugin is installed):
-		//   1. PluginName must appear in the output (fast pre-filter), and
-		//   2. VersionRegex must capture a version (authoritative —
-		//      every host's regex anchors on a token that is present
-		//      only in installed-plugin output, e.g. claude's
-		//      "Version:" line).
-		output := result.Stdout
-		if !strings.Contains(output, host.PluginName) {
-			continue
-		}
-		if version := matchVersion(
-			output, host.VersionRegex,
-		); version != "" {
+		if version != "" {
 			status.Installed = true
 			status.InstalledVersion = version
 			status.InstalledHost = host.Host
@@ -521,6 +489,84 @@ func (d *detector) detectSkill(
 	}
 
 	return status
+}
+
+// DetectSkillHosts returns every configured SkillHost the skill is
+// currently installed through, in manifest order. Unlike detectSkill
+// (which stops at the first match) it probes all hosts, so callers can
+// act on every install — e.g. `azd tool upgrade` refreshing the skill on
+// each host it was installed to.
+func (d *detector) DetectSkillHosts(
+	ctx context.Context,
+	tool *ToolDefinition,
+) ([]string, error) {
+	if tool == nil {
+		return nil, errors.New("tool definition must not be nil")
+	}
+	if tool.Category != ToolCategorySkill {
+		return nil, nil
+	}
+
+	var hosts []string
+	for _, host := range tool.SkillHosts {
+		version, err := d.skillHostVersion(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		if version != "" {
+			hosts = append(hosts, host.Host)
+		}
+	}
+	return hosts, nil
+}
+
+// skillHostVersion reports the version of the skill as installed through
+// a single host, or "" when the host is not on PATH, its list command
+// fails, or the skill is not present. The error is non-nil only for
+// context cancellation/timeout.
+//
+// It uses the same two-stage gate as the rest of skill detection to
+// avoid false positives on hosts whose list command echoes the queried
+// name in "not found" output (e.g. claude's `plugin list
+// azure@azure-skills`): PluginName must appear in stdout AND VersionRegex
+// must capture a version (the regex anchors on a token present only in
+// installed-plugin output, such as claude's "Version:" line).
+func (d *detector) skillHostVersion(
+	ctx context.Context,
+	host SkillHost,
+) (string, error) {
+	if len(host.PluginListCommand) == 0 || host.PluginName == "" {
+		return "", nil
+	}
+
+	// A host that is not on PATH cannot have the skill installed through
+	// it; skip silently.
+	if err := d.commandRunner.ToolInPath(host.Host); err != nil {
+		return "", nil
+	}
+
+	// Run the list command. If it fails for any reason other than a
+	// context error we cannot reliably tell whether the skill is
+	// installed via this host — fail closed and report not-installed
+	// rather than guessing from the error output (which often echoes the
+	// queried name).
+	result, err := d.commandRunner.Run(ctx, exec.RunArgs{
+		Cmd:  host.Host,
+		Args: host.PluginListCommand,
+	})
+	if err != nil {
+		if isContextErr(err) {
+			return "", fmt.Errorf("listing %s plugins: %w", host.Host, err)
+		}
+		return "", nil
+	}
+
+	// Match only against stdout: stderr is usually diagnostics, not the
+	// canonical listing.
+	if !strings.Contains(result.Stdout, host.PluginName) {
+		return "", nil
+	}
+	return matchVersion(result.Stdout, host.VersionRegex), nil
 }
 
 // ---------------------------------------------------------------------------

@@ -506,17 +506,25 @@ func (i *installer) resolveSkillTargets(
 	upgrade bool,
 ) ([]SkillHost, error) {
 	if len(hosts) == 0 {
-		// For an upgrade, prefer the host that already has the skill so we
-		// don't run an update against a host that never installed it (e.g.
-		// updating copilot when the skill was installed via claude).
+		// For an upgrade with no explicit host, refresh every host the
+		// skill is currently installed through — not just the first —
+		// so a multi-host install (e.g. copilot AND claude) is kept
+		// fully up to date. We also avoid running an update against a
+		// host that never installed it.
 		if upgrade {
-			if status, err := i.detector.DetectTool(ctx, tool); err == nil &&
-				status.Installed && status.InstalledHost != "" {
-				idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
-					return h.Host == status.InstalledHost
-				})
-				if idx >= 0 {
-					return []SkillHost{tool.SkillHosts[idx]}, nil
+			if installed, err := i.detector.DetectSkillHosts(ctx, tool); err == nil &&
+				len(installed) > 0 {
+				targets := make([]SkillHost, 0, len(installed))
+				for _, name := range installed {
+					idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
+						return h.Host == name
+					})
+					if idx >= 0 {
+						targets = append(targets, tool.SkillHosts[idx])
+					}
+				}
+				if len(targets) > 0 {
+					return targets, nil
 				}
 			}
 		}

@@ -40,6 +40,10 @@ type mockDetector struct {
 		ctx context.Context,
 		tools []*ToolDefinition,
 	) ([]*ToolStatus, error)
+	detectSkillHostsFn func(
+		ctx context.Context,
+		tool *ToolDefinition,
+	) ([]string, error)
 }
 
 func (m *mockDetector) DetectTool(
@@ -64,6 +68,27 @@ func (m *mockDetector) DetectAll(
 		results[i] = &ToolStatus{Tool: t}
 	}
 	return results, nil
+}
+
+func (m *mockDetector) DetectSkillHosts(
+	ctx context.Context,
+	tool *ToolDefinition,
+) ([]string, error) {
+	if m.detectSkillHostsFn != nil {
+		return m.detectSkillHostsFn(ctx, tool)
+	}
+	// Default: derive from detectToolFn so tests that report a single
+	// InstalledHost via DetectTool keep working without extra wiring.
+	if m.detectToolFn != nil {
+		status, err := m.detectToolFn(ctx, tool)
+		if err != nil {
+			return nil, err
+		}
+		if status != nil && status.Installed && status.InstalledHost != "" {
+			return []string{status.InstalledHost}, nil
+		}
+	}
+	return nil, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1444,6 +1469,54 @@ func TestRunSkill_Upgrade_PrefersInstalledHost(t *testing.T) {
 		"upgrade must target the host that has the skill (claude), "+
 			"not the first on PATH (copilot)",
 	)
+}
+
+// TestRunSkill_Upgrade_AllInstalledHosts verifies that, with no explicit
+// --host, an upgrade refreshes EVERY host the skill is installed through
+// (not just the first), so a multi-host install is kept fully current.
+func TestRunSkill_Upgrade_AllInstalledHosts(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot", "claude")
+	runner.MockToolInPath("node", nil)
+
+	var updatedHosts []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
+			slices.Contains(args.Args, "update")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		updatedHosts = append(updatedHosts, args.Cmd)
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// The skill is installed through BOTH copilot and claude.
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]string, error) {
+			return []string{"copilot", "claude"}, nil
+		},
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{
+				Tool:             tool,
+				Installed:        true,
+				InstalledVersion: "1.1.71",
+			}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Upgrade(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.True(t, result.Success, "result.Error=%v", result.Error)
+	assert.ElementsMatch(t, []string{"copilot", "claude"}, updatedHosts,
+		"upgrade with no --host must refresh every installed host")
+	assert.Contains(t, result.Strategy, "copilot")
+	assert.Contains(t, result.Strategy, "claude")
 }
 
 func TestRunSkill_MarketplaceAlreadyRegistered_StillInstalls(t *testing.T) {

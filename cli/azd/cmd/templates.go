@@ -393,7 +393,7 @@ func (a *templateSourceListAction) Run(ctx context.Context) (*actions.ActionResu
 						if s == "" {
 							return s
 						}
-						return output.WithLinkFormat(s)
+						return output.WithLinkFormat("%s", s)
 					},
 				},
 				Priority: 3,

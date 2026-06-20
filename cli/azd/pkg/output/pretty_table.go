@@ -360,7 +360,7 @@ func (f *PrettyTableFormatter) formatGroupedCards(
 			strippedGroup := stripTerminalEscapes(group)
 			headerText := "── " + parsed[groupColIdx].col.Heading + ": " + strippedGroup + " "
 			remaining := max(termWidth-displayWidth(headerText), 1)
-			buf.WriteString(WithGrayFormat(headerText + strings.Repeat("─", remaining)))
+			buf.WriteString(WithGrayFormat("%s", headerText+strings.Repeat("─", remaining)))
 			buf.WriteByte('\n')
 			buf.WriteByte('\n')
 

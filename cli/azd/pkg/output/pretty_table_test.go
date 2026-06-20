@@ -315,8 +315,12 @@ func TestPrettyCardBreakpoint(t *testing.T) {
 	require.Contains(t, output, "ID:")
 	require.Contains(t, output, "VERSION:")
 	require.Contains(t, output, "STATUS:")
-	// SOURCE should NOT appear in card body (it's the group header)
-	require.NotContains(t, stripped, "\nSOURCE:")
+	// SOURCE should only appear in group headers, not card-body fields.
+	for line := range strings.SplitSeq(stripped, "\n") {
+		if strings.Contains(line, "SOURCE:") {
+			require.True(t, strings.HasPrefix(line, "── SOURCE:"), "SOURCE appeared outside a group header: %q", line)
+		}
+	}
 }
 
 func TestPrettyCardGroupingOrder(t *testing.T) {
@@ -659,6 +663,32 @@ func TestPrettyCardGroupHeaderIncludesLabelAndUsesGrayDivider(t *testing.T) {
 	require.Regexp(t, sgrPrefixPattern("── SOURCE: azd "), output)
 }
 
+func TestPrettyCardGroupHeaderPreservesPercentLiterals(t *testing.T) {
+	rows := []prettyInput{
+		{Id: "ext-a", Name: "Extension A", Source: "azd%20source"},
+	}
+
+	formatter := &PrettyTableFormatter{
+		ConsoleWidthFn: func() int { return 40 },
+	}
+
+	buf := &bytes.Buffer{}
+	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
+		Columns: []PrettyColumn{
+			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
+			{Column: Column{Heading: "NAME", ValueTemplate: "{{.Name}}"}, Priority: 1},
+			{Column: Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"}, Priority: 4},
+		},
+		CardGroupColumn: "SOURCE",
+	})
+
+	require.NoError(t, err)
+	output := buf.String()
+
+	require.Contains(t, stripTerminalEscapes(output), "── SOURCE: azd%20source ")
+	require.NotContains(t, output, "%!")
+}
+
 func TestPrettyCardGroupHeaderStripsHyperlinkEscapes(t *testing.T) {
 	rows := []prettyInput{
 		{Id: "ext-a", Name: "Extension A", Source: "azd"},
@@ -701,7 +731,7 @@ func TestPrettyColumnTransformerCanUseLinkFormat(t *testing.T) {
 	rows := []struct {
 		Location string
 	}{
-		{Location: "https://example.com"},
+		{Location: "https://example.com/a%20b"},
 	}
 
 	formatter := &PrettyTableFormatter{
@@ -716,7 +746,7 @@ func TestPrettyColumnTransformerCanUseLinkFormat(t *testing.T) {
 					Heading:       "LOCATION",
 					ValueTemplate: "{{.Location}}",
 					Transformer: func(s string) string {
-						return WithLinkFormat(s)
+						return WithLinkFormat("%s", s)
 					},
 				},
 				Priority: 1,
@@ -725,7 +755,8 @@ func TestPrettyColumnTransformerCanUseLinkFormat(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Regexp(t, sgrPrefixPattern("https://example.com"), buf.String())
+	require.Regexp(t, sgrPrefixPattern("https://example.com/a%20b"), buf.String())
+	require.NotContains(t, buf.String(), "%!")
 }
 
 func TestPrettyTableANSIAlignment(t *testing.T) {

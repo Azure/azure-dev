@@ -43,7 +43,7 @@ type mockDetector struct {
 	detectSkillHostsFn func(
 		ctx context.Context,
 		tool *ToolDefinition,
-	) ([]string, error)
+	) ([]InstalledSkillHost, error)
 }
 
 func (m *mockDetector) DetectTool(
@@ -73,19 +73,29 @@ func (m *mockDetector) DetectAll(
 func (m *mockDetector) DetectSkillHosts(
 	ctx context.Context,
 	tool *ToolDefinition,
-) ([]string, error) {
+) ([]InstalledSkillHost, error) {
 	if m.detectSkillHostsFn != nil {
 		return m.detectSkillHostsFn(ctx, tool)
 	}
-	// Default: derive from detectToolFn so tests that report a single
-	// InstalledHost via DetectTool keep working without extra wiring.
-	if m.detectToolFn != nil {
+	// Default (host-agnostic): when detectToolFn reports the skill
+	// installed, treat every configured host as having that version. This
+	// keeps host-selection tests passing without per-host wiring;
+	// host-scoped verification is covered by tests that set
+	// detectSkillHostsFn explicitly.
+	if m.detectToolFn != nil && tool != nil {
 		status, err := m.detectToolFn(ctx, tool)
 		if err != nil {
 			return nil, err
 		}
-		if status != nil && status.Installed && status.InstalledHost != "" {
-			return []string{status.InstalledHost}, nil
+		if status != nil && status.Installed {
+			hosts := make([]InstalledSkillHost, 0, len(tool.SkillHosts))
+			for _, h := range tool.SkillHosts {
+				hosts = append(hosts, InstalledSkillHost{
+					Host:    h.Host,
+					Version: status.InstalledVersion,
+				})
+			}
+			return hosts, nil
 		}
 	}
 	return nil, nil
@@ -1411,7 +1421,14 @@ func TestRunSkill_Upgrade_RunsUpdateCommand_NotMarketplaceAdd(t *testing.T) {
 	})
 
 	inst := NewInstaller(
-		runner, NewPlatformDetector(runner), installedDetector("1.1.71"),
+		runner, NewPlatformDetector(runner),
+		&mockDetector{
+			detectSkillHostsFn: func(
+				_ context.Context, _ *ToolDefinition,
+			) ([]InstalledSkillHost, error) {
+				return []InstalledSkillHost{{Host: "copilot", Version: "1.1.71"}}, nil
+			},
+		},
 	)
 
 	result, err := inst.Upgrade(t.Context(), newSkillTool())
@@ -1447,15 +1464,10 @@ func TestRunSkill_Upgrade_PrefersInstalledHost(t *testing.T) {
 	// The detector reports the skill is installed via claude, even though
 	// copilot is listed first; the upgrade must run against claude.
 	det := &mockDetector{
-		detectToolFn: func(
-			_ context.Context, tool *ToolDefinition,
-		) (*ToolStatus, error) {
-			return &ToolStatus{
-				Tool:             tool,
-				Installed:        true,
-				InstalledVersion: "1.1.71",
-				InstalledHost:    "claude",
-			}, nil
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			return []InstalledSkillHost{{Host: "claude", Version: "1.1.71"}}, nil
 		},
 	}
 
@@ -1494,16 +1506,10 @@ func TestRunSkill_Upgrade_AllInstalledHosts(t *testing.T) {
 	det := &mockDetector{
 		detectSkillHostsFn: func(
 			_ context.Context, _ *ToolDefinition,
-		) ([]string, error) {
-			return []string{"copilot", "claude"}, nil
-		},
-		detectToolFn: func(
-			_ context.Context, tool *ToolDefinition,
-		) (*ToolStatus, error) {
-			return &ToolStatus{
-				Tool:             tool,
-				Installed:        true,
-				InstalledVersion: "1.1.71",
+		) ([]InstalledSkillHost, error) {
+			return []InstalledSkillHost{
+				{Host: "copilot", Version: "1.1.71"},
+				{Host: "claude", Version: "1.1.71"},
 			}, nil
 		},
 	}
@@ -1517,6 +1523,44 @@ func TestRunSkill_Upgrade_AllInstalledHosts(t *testing.T) {
 		"upgrade with no --host must refresh every installed host")
 	assert.Contains(t, result.Strategy, "copilot")
 	assert.Contains(t, result.Strategy, "claude")
+}
+
+// TestRunSkill_Install_HostScopedVerification verifies that install
+// verification is scoped to the host just installed: if claude's install
+// silently no-ops while copilot already has the skill, verification must
+// FAIL — it must not falsely succeed on copilot's presence (the prior
+// DetectTool-based check did, reporting the wrong host's version).
+func TestRunSkill_Install_HostScopedVerification(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot", "claude")
+	runner.MockToolInPath("node", nil)
+	// Both hosts' commands exit 0 (claude's install silently no-ops).
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" || args.Cmd == "claude"
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	// Detector reports the skill installed ONLY via copilot — never claude.
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			return []InstalledSkillHost{{Host: "copilot", Version: "1.1.71"}}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+	inst.(*installer).retryBackoff = time.Millisecond // keep the test fast
+
+	// Install via claude: claude is not actually registered, so
+	// verification must fail rather than pass on copilot's presence.
+	result, err := inst.Install(t.Context(), newSkillTool(), WithHosts("claude"))
+	require.NoError(t, err)
+	require.False(t, result.Success,
+		"claude install must NOT be verified by copilot's presence")
+	require.NotNil(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "claude")
 }
 
 func TestRunSkill_MarketplaceAlreadyRegistered_StillInstalls(t *testing.T) {

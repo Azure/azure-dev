@@ -126,6 +126,13 @@ type installConfig struct {
 	// selects the single preferred host (the first configured host on
 	// PATH). Ignored for non-skill tools.
 	hosts []string
+	// allAvailableHosts, when true, installs a skill through every
+	// configured host that is on PATH, resolved at install time. It is
+	// used by batch flows (e.g. `azd tool install --all`) where the host
+	// CLIs may themselves be installed earlier in the same batch, so the
+	// set of available hosts is not known until the skill's turn. Ignored
+	// when hosts is non-empty or for non-skill tools.
+	allAvailableHosts bool
 }
 
 // InstallOption customizes an install or upgrade operation.
@@ -136,6 +143,14 @@ type InstallOption func(*installConfig)
 // using this option) selects the single preferred host.
 func WithHosts(hosts ...string) InstallOption {
 	return func(c *installConfig) { c.hosts = hosts }
+}
+
+// WithAllAvailableHosts installs a skill through every configured host
+// on PATH, resolved at install time. Use it for batch flows where the
+// host set is not known up front. It is ignored for non-skill tools and
+// is overridden by WithHosts.
+func WithAllAvailableHosts() InstallOption {
+	return func(c *installConfig) { c.allAvailableHosts = true }
 }
 
 // installer is the default, unexported implementation of [Installer].
@@ -246,7 +261,7 @@ func (i *installer) run(
 	// agentic CLI native plugin command rather than the platform's
 	// package manager, so we short-circuit before platform detection.
 	if tool.Category == ToolCategorySkill {
-		return i.runSkill(ctx, tool, upgrade, cfg.hosts)
+		return i.runSkill(ctx, tool, upgrade, cfg.hosts, cfg.allAvailableHosts)
 	}
 
 	start := time.Now()
@@ -332,48 +347,23 @@ func (i *installer) run(
 	}
 
 	var status *ToolStatus
-	backoff := i.retryBackoff
-
-	for attempt := range maxAttempts {
-		status, err = i.detector.DetectTool(ctx, tool)
-		if err != nil {
-			result.Error = fmt.Errorf(
-				"verifying installation of %s: %w",
-				tool.Name, err,
-			)
-			result.Duration = time.Since(start)
-			return result, nil
+	found, verifyErr := i.retryDetect(ctx, maxAttempts, tool.Name, func() (bool, error) {
+		var e error
+		status, e = i.detector.DetectTool(ctx, tool)
+		if e != nil {
+			return false, e
 		}
-
-		if status.Installed {
-			break
-		}
-
-		// No more retries left — fall through to the failure path.
-		if attempt >= maxAttempts-1 {
-			break
-		}
-
-		log.Printf(
-			"installer: %s not yet detected, retrying in %s (attempt %d/%d)",
-			tool.Name, backoff, attempt+1, maxAttempts-1,
+		return status.Installed, nil
+	})
+	if verifyErr != nil {
+		result.Error = fmt.Errorf(
+			"verifying installation of %s: %w", tool.Name, verifyErr,
 		)
-
-		select {
-		case <-ctx.Done():
-			result.Error = fmt.Errorf(
-				"verifying installation of %s: %w",
-				tool.Name, ctx.Err(),
-			)
-			result.Duration = time.Since(start)
-			return result, nil
-		case <-time.After(backoff):
-		}
-
-		backoff *= 2
+		result.Duration = time.Since(start)
+		return result, nil
 	}
 
-	if !status.Installed {
+	if !found {
 		result.Error = fmt.Errorf(
 			"%s was installed but verification failed",
 			tool.Name,
@@ -388,6 +378,50 @@ func (i *installer) run(
 	result.Duration = time.Since(start)
 
 	return result, nil
+}
+
+// retryDetect repeats detect with exponential backoff (starting at
+// i.retryBackoff, doubling each attempt) until it reports found=true or
+// maxAttempts is exhausted. label names the tool in retry logs. It
+// returns found=true on success; a non-nil error only for a detect
+// failure or context cancellation. Plugin/package listings sometimes lag
+// the install action, so both the package-manager and skill install
+// paths share this helper to converge on detection.
+func (i *installer) retryDetect(
+	ctx context.Context,
+	maxAttempts int,
+	toolName string,
+	detect func() (bool, error),
+) (bool, error) {
+	backoff := i.retryBackoff
+	for attempt := range maxAttempts {
+		found, err := detect()
+		if err != nil {
+			return false, err
+		}
+		if found {
+			return true, nil
+		}
+
+		// No more retries left — report not-found.
+		if attempt >= maxAttempts-1 {
+			break
+		}
+
+		log.Printf(
+			"installer: %s not yet detected, retrying in %s (attempt %d/%d)",
+			toolName, backoff, attempt+1, maxAttempts-1,
+		)
+
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-time.After(backoff):
+		}
+
+		backoff *= 2
+	}
+	return false, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -409,13 +443,16 @@ func (i *installer) run(
 //     and surfaces its own diagnostic when git is missing.
 //
 // The hosts argument, when non-empty, restricts the operation to the
-// named hosts; otherwise the single preferred host (first on PATH) is
-// used.
+// named hosts. When allAvailable is true (and hosts is empty) the skill
+// is installed through every configured host on PATH. Otherwise the
+// single preferred host (first on PATH) is used (or, for an upgrade,
+// every host the skill is already installed through).
 func (i *installer) runSkill(
 	ctx context.Context,
 	tool *ToolDefinition,
 	upgrade bool,
 	hosts []string,
+	allAvailable bool,
 ) (*InstallResult, error) {
 	start := time.Now()
 	result := &InstallResult{Tool: tool}
@@ -427,7 +464,7 @@ func (i *installer) runSkill(
 	}
 
 	// 1. HARD prerequisite: resolve the target host(s).
-	targets, err := i.resolveSkillTargets(ctx, tool, hosts, upgrade)
+	targets, err := i.resolveSkillTargets(ctx, tool, hosts, allAvailable, upgrade)
 	if err != nil {
 		result.Error = err
 		result.Duration = time.Since(start)
@@ -493,19 +530,42 @@ func (i *installer) runSkill(
 }
 
 // resolveSkillTargets resolves the host(s) a skill should be installed
-// to. With no explicit selection it returns a single host: for an
-// upgrade, the host the detector reports the skill is installed through
-// (falling back to the preferred host); otherwise the preferred host
-// (via pickSkillHost). With an explicit selection every named host must
-// be a configured SkillHost that is on PATH; otherwise an error naming
-// the available hosts is returned.
+// to. With an explicit selection (hosts) every named host must be a
+// configured SkillHost that is on PATH; otherwise an error naming the
+// available hosts is returned. With allAvailable it installs through
+// every configured host on PATH, resolved now (used by batch flows). With
+// neither it returns a single host: for an upgrade, every host the skill
+// is already installed through; otherwise the preferred host (first on
+// PATH, via pickSkillHost).
 func (i *installer) resolveSkillTargets(
 	ctx context.Context,
 	tool *ToolDefinition,
 	hosts []string,
+	allAvailable bool,
 	upgrade bool,
 ) ([]SkillHost, error) {
 	if len(hosts) == 0 {
+		// Batch flows (e.g. --all): install through every configured host
+		// on PATH. Resolved here, at install time, so host CLIs installed
+		// earlier in the same batch are picked up. Falls back to the
+		// preferred-host error when none are present.
+		if allAvailable {
+			var targets []SkillHost
+			for _, host := range tool.SkillHosts {
+				if i.commandRunner.ToolInPath(host.Host) == nil {
+					targets = append(targets, host)
+				}
+			}
+			if len(targets) > 0 {
+				return targets, nil
+			}
+			host, err := i.pickSkillHost(tool)
+			if err != nil {
+				return nil, err
+			}
+			return []SkillHost{host}, nil
+		}
+
 		// For an upgrade with no explicit host, refresh every host the
 		// skill is currently installed through — not just the first —
 		// so a multi-host install (e.g. copilot AND claude) is kept
@@ -515,9 +575,9 @@ func (i *installer) resolveSkillTargets(
 			if installed, err := i.detector.DetectSkillHosts(ctx, tool); err == nil &&
 				len(installed) > 0 {
 				targets := make([]SkillHost, 0, len(installed))
-				for _, name := range installed {
+				for _, inst := range installed {
 					idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
-						return h.Host == name
+						return h.Host == inst.Host
 					})
 					if idx >= 0 {
 						targets = append(targets, tool.SkillHosts[idx])
@@ -613,65 +673,52 @@ func (i *installer) installSkillForHost(
 		return "", err
 	}
 
-	status, err := i.verifySkillInstalled(ctx, tool, host)
-	if err != nil {
-		return "", err
-	}
-	return status.InstalledVersion, nil
+	return i.verifySkillInstalled(ctx, tool, host)
 }
 
-// verifySkillInstalled confirms the skill is detectable after install.
-// Plugin-list output sometimes lags the install action (the pre-existing
-// copilot CLI integration documents the same race — see
-// internal/agent/copilot/cli.go), so it retries a few times with
-// exponential backoff to match the package-manager install path.
+// verifySkillInstalled confirms the skill is detectable **through the
+// specific host** it was just installed via, and returns that host's
+// version. This is host-scoped on purpose: verifying via the generic
+// DetectTool would report success whenever ANY host has the skill, so a
+// silent no-op install on a secondary host (e.g. `--host claude` while
+// copilot already has it) would be falsely reported as success with the
+// wrong host's version. Plugin-list output sometimes lags the install
+// action (the pre-existing copilot CLI integration documents the same
+// race — see internal/agent/copilot/cli.go), so it retries a few times
+// with exponential backoff.
 func (i *installer) verifySkillInstalled(
 	ctx context.Context,
 	tool *ToolDefinition,
 	host SkillHost,
-) (*ToolStatus, error) {
+) (string, error) {
 	const maxAttempts = 4 // 1 initial + 3 retries
-	var status *ToolStatus
-	backoff := i.retryBackoff
+	var version string
 
-	for attempt := range maxAttempts {
-		var err error
-		status, err = i.detector.DetectTool(ctx, tool)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"verifying installation of %s: %w", tool.Name, err,
-			)
+	found, err := i.retryDetect(ctx, maxAttempts, tool.Name, func() (bool, error) {
+		installed, detectErr := i.detector.DetectSkillHosts(ctx, tool)
+		if detectErr != nil {
+			return false, detectErr
 		}
-
-		if status.Installed {
-			return status, nil
+		for _, h := range installed {
+			if h.Host == host.Host {
+				version = h.Version
+				return true, nil
+			}
 		}
-
-		if attempt >= maxAttempts-1 {
-			break
-		}
-
-		log.Printf(
-			"installer: %s not yet detected, retrying in %s (attempt %d/%d)",
-			tool.Name, backoff, attempt+1, maxAttempts-1,
+		return false, nil
+	})
+	if err != nil {
+		return "", fmt.Errorf(
+			"verifying installation of %s: %w", tool.Name, err,
 		)
-
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf(
-				"verifying installation of %s: %w",
-				tool.Name, ctx.Err(),
-			)
-		case <-time.After(backoff):
-		}
-
-		backoff *= 2
 	}
-
-	return nil, fmt.Errorf(
-		"%s was installed via %s but verification failed",
-		tool.Name, host.Host,
-	)
+	if !found {
+		return "", fmt.Errorf(
+			"%s was installed via %s but verification failed",
+			tool.Name, host.Host,
+		)
+	}
+	return version, nil
 }
 
 // runSkillHostCommand executes the host's install (or update) command

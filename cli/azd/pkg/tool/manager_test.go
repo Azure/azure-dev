@@ -409,6 +409,49 @@ func TestManager_InstallToolsDependencyResolution(t *testing.T) {
 	})
 }
 
+// TestManager_InstallTools_SkillsInstallLast verifies that skill tools
+// are installed after non-skill tools in the same batch, so any host CLI
+// (e.g. github-copilot-cli) is present before the skill installs through
+// it — even when the skill is listed first in the requested IDs.
+func TestManager_InstallTools_SkillsInstallLast(t *testing.T) {
+	t.Parallel()
+
+	cliTool := &ToolDefinition{Id: "host-cli", Category: ToolCategoryCLI}
+	skillTool := &ToolDefinition{Id: "the-skill", Category: ToolCategorySkill}
+
+	var installedIDs []string
+	inst := &mockInstaller{
+		installFn: func(
+			_ context.Context,
+			tool *ToolDefinition,
+			_ ...InstallOption,
+		) (*InstallResult, error) {
+			installedIDs = append(installedIDs, tool.Id)
+			return &InstallResult{Tool: tool, Success: true}, nil
+		},
+	}
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+
+	mgr := &Manager{
+		manifest:  []*ToolDefinition{cliTool, skillTool},
+		detector:  det,
+		installer: inst,
+	}
+
+	// Request the skill FIRST; it must still install after the CLI.
+	results, err := mgr.InstallTools(t.Context(), []string{"the-skill", "host-cli"})
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	assert.Equal(t, []string{"host-cli", "the-skill"}, installedIDs,
+		"non-skill tools must install before skills")
+}
+
 // ---------------------------------------------------------------------------
 // UpgradeTools
 // ---------------------------------------------------------------------------

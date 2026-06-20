@@ -590,57 +590,74 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 // detected agent host.
 const allHostsKeyword = "all"
 
+// firstSkillTool returns the first skill tool among tools, or nil when
+// none are present.
+func firstSkillTool(tools []*tool.ToolDefinition) *tool.ToolDefinition {
+	for _, t := range tools {
+		if t.Category == tool.ToolCategorySkill {
+			return t
+		}
+	}
+	return nil
+}
+
+// resolveExplicitSkillHosts maps an explicit --host flag value to install
+// options. The reserved value "all" installs through every available
+// host (resolved at install time); otherwise the named hosts are passed
+// through for the installer to validate. Shared by the install and
+// upgrade actions.
+func resolveExplicitSkillHosts(hosts []string) ([]tool.InstallOption, error) {
+	// --host all selects every detected host. It cannot be mixed with
+	// specific host names.
+	if slices.Contains(hosts, allHostsKeyword) {
+		if len(hosts) > 1 {
+			return nil, fmt.Errorf(
+				"--host all cannot be combined with specific hosts",
+			)
+		}
+		return []tool.InstallOption{tool.WithAllAvailableHosts()}, nil
+	}
+	// The installer validates that each named host is configured and on
+	// PATH, surfacing a descriptive error otherwise.
+	return []tool.InstallOption{tool.WithHosts(hosts...)}, nil
+}
+
 // resolveHostOptions determines which agentic CLI host(s) a skill should
-// be installed for. With --host it targets the named host(s); the
-// reserved value --host all targets every detected host. When --host is
-// omitted and several hosts are detected, it returns guidance asking the
-// user to choose explicitly rather than guessing. It returns the install
-// options to pass to the installer (empty selects the single preferred
-// host).
+// be installed for. With --host it targets the named host(s); --host all
+// targets every detected host. Without --host, a skill pulled in by a
+// batch (--all or the interactive picker) installs through every
+// available host, while an explicitly-named skill with several detected
+// hosts returns guidance asking the user to choose. It returns the
+// install options to pass to the installer (nil selects the single
+// preferred host).
 func (a *toolInstallAction) resolveHostOptions(
 	tools []*tool.ToolDefinition,
 ) ([]tool.InstallOption, error) {
 	explicit := len(a.flags.hosts) > 0
-
-	var skill *tool.ToolDefinition
-	for _, t := range tools {
-		if t.Category == tool.ToolCategorySkill {
-			skill = t
-			break
-		}
-	}
+	skill := firstSkillTool(tools)
 
 	if explicit && skill == nil {
 		return nil, fmt.Errorf("--host only applies to skill tools")
 	}
-
 	if skill == nil {
 		return nil, nil
 	}
 
 	if explicit {
-		// --host all selects every detected host. It cannot be mixed with
-		// specific host names.
-		if slices.Contains(a.flags.hosts, allHostsKeyword) {
-			if len(a.flags.hosts) > 1 {
-				return nil, fmt.Errorf(
-					"--host all cannot be combined with specific hosts",
-				)
-			}
-			present := a.manager.AvailableSkillHosts(skill)
-			if len(present) > 0 {
-				return []tool.InstallOption{tool.WithHosts(present...)}, nil
-			}
-			// None detected: let the installer emit its no-host guidance.
-			return nil, nil
-		}
-		// The installer validates that each named host is configured and
-		// on PATH, surfacing a descriptive error otherwise.
-		return []tool.InstallOption{tool.WithHosts(a.flags.hosts...)}, nil
+		return resolveExplicitSkillHosts(a.flags.hosts)
 	}
 
-	// No --host flag. When multiple hosts are detected we cannot safely
-	// guess which the user wants
+	// No --host. A skill the user did not name explicitly (batch --all or
+	// interactive selection) installs through every available host,
+	// resolved at install time so host CLIs installed earlier in the same
+	// batch are picked up. This is also why --all does not abort when
+	// several hosts are present.
+	if !slices.Contains(a.args, skill.Id) {
+		return []tool.InstallOption{tool.WithAllAvailableHosts()}, nil
+	}
+
+	// Explicitly-named skill: when multiple hosts are detected we cannot
+	// safely guess which the user wants, so ask them to choose.
 	present := a.manager.AvailableSkillHosts(skill)
 	if len(present) > 1 {
 		return nil, &internal.ErrorWithSuggestion{
@@ -1002,7 +1019,7 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 // resolveHostOptions determines which agentic CLI host(s) a skill should
 // be upgraded for, based on the --host flag. --host all targets every
 // detected host; specific names target those hosts. When --host is
-// omitted it returns no options, letting the installer upgrade the host
+// omitted it returns no options, letting the installer upgrade every host
 // the skill is already installed through.
 func (a *toolUpgradeAction) resolveHostOptions(
 	tools []*tool.ToolDefinition,
@@ -1011,36 +1028,12 @@ func (a *toolUpgradeAction) resolveHostOptions(
 		return nil, nil
 	}
 
-	var skill *tool.ToolDefinition
-	for _, t := range tools {
-		if t.Category == tool.ToolCategorySkill {
-			skill = t
-			break
-		}
-	}
+	skill := firstSkillTool(tools)
 	if skill == nil {
 		return nil, fmt.Errorf("--host only applies to skill tools")
 	}
 
-	// --host all selects every detected host. It cannot be mixed with
-	// specific host names.
-	if slices.Contains(a.flags.hosts, allHostsKeyword) {
-		if len(a.flags.hosts) > 1 {
-			return nil, fmt.Errorf(
-				"--host all cannot be combined with specific hosts",
-			)
-		}
-		present := a.manager.AvailableSkillHosts(skill)
-		if len(present) > 0 {
-			return []tool.InstallOption{tool.WithHosts(present...)}, nil
-		}
-		// None detected: let the installer emit its no-host guidance.
-		return nil, nil
-	}
-
-	// The installer validates that each named host is configured and on
-	// PATH, surfacing a descriptive error otherwise.
-	return []tool.InstallOption{tool.WithHosts(a.flags.hosts...)}, nil
+	return resolveExplicitSkillHosts(a.flags.hosts)
 }
 
 // dryRun detects the current status of the tools and displays what

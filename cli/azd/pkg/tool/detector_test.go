@@ -610,25 +610,28 @@ func TestDetectSkillHosts(t *testing.T) {
 		name      string
 		copilot   string
 		claude    string
-		wantHosts []string
+		wantHosts []InstalledSkillHost
 	}{
 		{
-			name:      "BothInstalled",
-			copilot:   copilotInstalled,
-			claude:    claudeInstalled,
-			wantHosts: []string{"copilot", "claude"},
+			name:    "BothInstalled",
+			copilot: copilotInstalled,
+			claude:  claudeInstalled,
+			wantHosts: []InstalledSkillHost{
+				{Host: "copilot", Version: "1.1.71"},
+				{Host: "claude", Version: "1.1.71"},
+			},
 		},
 		{
 			name:      "OnlyClaude",
 			copilot:   notInstalled,
 			claude:    claudeInstalled,
-			wantHosts: []string{"claude"},
+			wantHosts: []InstalledSkillHost{{Host: "claude", Version: "1.1.71"}},
 		},
 		{
 			name:      "OnlyCopilot",
 			copilot:   copilotInstalled,
 			claude:    notInstalled,
-			wantHosts: []string{"copilot"},
+			wantHosts: []InstalledSkillHost{{Host: "copilot", Version: "1.1.71"}},
 		},
 		{
 			name:      "NoneInstalled",

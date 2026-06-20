@@ -26,13 +26,18 @@ type ToolStatus struct {
 	// output. It is empty when the tool is not installed or when
 	// version parsing fails.
 	InstalledVersion string
-	// InstalledHost is the agentic CLI host a skill was detected through
-	// (e.g. "copilot"). It is empty for non-skill tools or when the skill
-	// is not installed.
-	InstalledHost string
 	// Error records any unexpected failure during detection (e.g. a
 	// timeout). A tool that is simply not installed has Error == nil.
 	Error error
+}
+
+// InstalledSkillHost pairs an agentic CLI host with the skill version
+// installed through it.
+type InstalledSkillHost struct {
+	// Host is the agentic CLI host binary name (e.g. "copilot").
+	Host string
+	// Version is the skill version installed through that host.
+	Version string
 }
 
 // Detector checks whether tools are installed and extracts their
@@ -53,14 +58,15 @@ type Detector interface {
 		tools []*ToolDefinition,
 	) ([]*ToolStatus, error)
 
-	// DetectSkillHosts returns the names of every configured SkillHost
-	// the skill is currently installed through, in manifest order. It
-	// returns nil for non-skill tools. The returned error is non-nil
-	// only for context cancellation/timeout while listing plugins.
+	// DetectSkillHosts returns every configured SkillHost the skill is
+	// currently installed through (with the version installed via each),
+	// in manifest order. It returns nil for non-skill tools. The returned
+	// error is non-nil only for context cancellation/timeout while
+	// listing plugins.
 	DetectSkillHosts(
 		ctx context.Context,
 		tool *ToolDefinition,
-	) ([]string, error)
+	) ([]InstalledSkillHost, error)
 }
 
 type detector struct {
@@ -483,7 +489,6 @@ func (d *detector) detectSkill(
 		if version != "" {
 			status.Installed = true
 			status.InstalledVersion = version
-			status.InstalledHost = host.Host
 			return status
 		}
 	}
@@ -492,14 +497,15 @@ func (d *detector) detectSkill(
 }
 
 // DetectSkillHosts returns every configured SkillHost the skill is
-// currently installed through, in manifest order. Unlike detectSkill
-// (which stops at the first match) it probes all hosts, so callers can
-// act on every install — e.g. `azd tool upgrade` refreshing the skill on
-// each host it was installed to.
+// currently installed through (with the version installed via each), in
+// manifest order. Unlike detectSkill (which stops at the first match) it
+// probes all hosts, so callers can act on every install — e.g.
+// `azd tool upgrade` refreshing the skill on each host it was installed
+// to, or per-host install verification.
 func (d *detector) DetectSkillHosts(
 	ctx context.Context,
 	tool *ToolDefinition,
-) ([]string, error) {
+) ([]InstalledSkillHost, error) {
 	if tool == nil {
 		return nil, errors.New("tool definition must not be nil")
 	}
@@ -507,14 +513,17 @@ func (d *detector) DetectSkillHosts(
 		return nil, nil
 	}
 
-	var hosts []string
+	var hosts []InstalledSkillHost
 	for _, host := range tool.SkillHosts {
 		version, err := d.skillHostVersion(ctx, host)
 		if err != nil {
 			return nil, err
 		}
 		if version != "" {
-			hosts = append(hosts, host.Host)
+			hosts = append(hosts, InstalledSkillHost{
+				Host:    host.Host,
+				Version: version,
+			})
 		}
 	}
 	return hosts, nil

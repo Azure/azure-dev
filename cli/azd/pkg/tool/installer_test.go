@@ -1525,6 +1525,125 @@ func TestRunSkill_Upgrade_AllInstalledHosts(t *testing.T) {
 	assert.Contains(t, result.Strategy, "claude")
 }
 
+// TestRunSkill_Upgrade_AllAvailable_SkipsNotInstalled verifies that
+// `upgrade --host all` upgrades only the hosts that actually have the
+// skill installed and skips on-PATH-but-not-installed hosts (with a
+// warning to stderr) rather than erroring — a host CLI cannot upgrade a
+// plugin it never installed.
+func TestRunSkill_Upgrade_AllAvailable_SkipsNotInstalled(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot", "claude") // both on PATH
+	runner.MockToolInPath("node", nil)
+
+	var updatedHosts []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
+			slices.Contains(args.Args, "update")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		updatedHosts = append(updatedHosts, args.Cmd)
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// Only copilot has the skill installed.
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			return []InstalledSkillHost{{Host: "copilot", Version: "1.1.71"}}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Upgrade(t.Context(), newSkillTool(), WithAllAvailableHosts())
+	require.NoError(t, err)
+	require.True(t, result.Success,
+		"upgrade must succeed by skipping the not-installed host; err=%v",
+		result.Error)
+	assert.Equal(t, []string{"copilot"}, updatedHosts,
+		"only the installed host (copilot) must be upgraded; claude skipped")
+}
+
+// TestRunSkill_Upgrade_AllAvailable_NoneInstalled verifies that
+// `upgrade --host all` errors with a clear "not installed on any host"
+// message when the skill is present on no host (and runs no update).
+func TestRunSkill_Upgrade_AllAvailable_NoneInstalled(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot", "claude")
+	runner.MockToolInPath("node", nil)
+
+	var updateRan bool
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "update")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		updateRan = true
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			return nil, nil // not installed anywhere
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Upgrade(t.Context(), newSkillTool(), WithAllAvailableHosts())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "not installed on any available host")
+	assert.False(t, updateRan, "no host update must run when nothing is installed")
+}
+
+// TestRunSkill_Install_AllAvailable_TargetsEveryHostOnPath verifies that
+// `install --host all` installs through every host on PATH regardless of
+// prior install state (unlike upgrade, install does not skip).
+func TestRunSkill_Install_AllAvailable_TargetsEveryHostOnPath(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot", "claude")
+	runner.MockToolInPath("node", nil)
+
+	var installedHosts []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
+			(slices.Contains(args.Args, "install") || slices.Contains(args.Args, "marketplace"))
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if slices.Contains(args.Args, "install") {
+			installedHosts = append(installedHosts, args.Cmd)
+		}
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			// Reflects post-install state for verification.
+			return []InstalledSkillHost{
+				{Host: "copilot", Version: "1.1.71"},
+				{Host: "claude", Version: "1.1.71"},
+			}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Install(t.Context(), newSkillTool(), WithAllAvailableHosts())
+	require.NoError(t, err)
+	require.True(t, result.Success, "result.Error=%v", result.Error)
+	assert.ElementsMatch(t, []string{"copilot", "claude"}, installedHosts,
+		"install --host all must install through every host on PATH")
+}
+
 // TestRunSkill_Install_HostScopedVerification verifies that install
 // verification is scoped to the host just installed: if claude's install
 // silently no-ops while copilot already has the skill, verification must

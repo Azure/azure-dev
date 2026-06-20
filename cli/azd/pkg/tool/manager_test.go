@@ -6,6 +6,7 @@ package tool
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -409,47 +410,47 @@ func TestManager_InstallToolsDependencyResolution(t *testing.T) {
 	})
 }
 
-// TestManager_InstallTools_SkillsInstallLast verifies that skill tools
-// are installed after non-skill tools in the same batch, so any host CLI
-// (e.g. github-copilot-cli) is present before the skill installs through
-// it — even when the skill is listed first in the requested IDs.
-func TestManager_InstallTools_SkillsInstallLast(t *testing.T) {
+// TestManifest_SkillsListedAfterHostCLIs verifies the ordering invariant
+// the install flow relies on: every skill tool appears AFTER any agent
+// host CLI it could install through (e.g. github-copilot-cli) in the
+// built-in manifest. Batch installs (--all, interactive picker) derive
+// their order from the manifest, so this ordering is what guarantees the
+// host CLI is installed before the skill — no runtime re-sorting needed.
+func TestManifest_SkillsListedAfterHostCLIs(t *testing.T) {
 	t.Parallel()
 
-	cliTool := &ToolDefinition{Id: "host-cli", Category: ToolCategoryCLI}
-	skillTool := &ToolDefinition{Id: "the-skill", Category: ToolCategorySkill}
-
-	var installedIDs []string
-	inst := &mockInstaller{
-		installFn: func(
-			_ context.Context,
-			tool *ToolDefinition,
-			_ ...InstallOption,
-		) (*InstallResult, error) {
-			installedIDs = append(installedIDs, tool.Id)
-			return &InstallResult{Tool: tool, Success: true}, nil
-		},
-	}
-	det := &mockDetector{
-		detectToolFn: func(
-			_ context.Context, tool *ToolDefinition,
-		) (*ToolStatus, error) {
-			return &ToolStatus{Tool: tool, Installed: false}, nil
-		},
+	tools := BuiltInTools()
+	indexOf := func(id string) int {
+		return slices.IndexFunc(tools, func(td *ToolDefinition) bool {
+			return td.Id == id
+		})
 	}
 
-	mgr := &Manager{
-		manifest:  []*ToolDefinition{cliTool, skillTool},
-		detector:  det,
-		installer: inst,
+	// Maps a host binary name to the manifest tool id that provides it.
+	hostToolID := map[string]string{
+		"copilot": "github-copilot-cli",
 	}
 
-	// Request the skill FIRST; it must still install after the CLI.
-	results, err := mgr.InstallTools(t.Context(), []string{"the-skill", "host-cli"})
-	require.NoError(t, err)
-	require.Len(t, results, 2)
-	assert.Equal(t, []string{"host-cli", "the-skill"}, installedIDs,
-		"non-skill tools must install before skills")
+	for _, td := range tools {
+		if td.Category != ToolCategorySkill {
+			continue
+		}
+		skillIdx := indexOf(td.Id)
+		for _, host := range td.SkillHosts {
+			cliID, ok := hostToolID[host.Host]
+			if !ok {
+				continue // host has no installable CLI in the manifest
+			}
+			cliIdx := indexOf(cliID)
+			if cliIdx < 0 {
+				continue
+			}
+			assert.Greater(t, skillIdx, cliIdx,
+				"skill %q must be listed after its host CLI %q in the "+
+					"manifest so batch installs install the host CLI first",
+				td.Id, cliID)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -532,11 +532,13 @@ func (i *installer) runSkill(
 // resolveSkillTargets resolves the host(s) a skill should be installed
 // to. With an explicit selection (hosts) every named host must be a
 // configured SkillHost that is on PATH; otherwise an error naming the
-// available hosts is returned. With allAvailable it installs through
-// every configured host on PATH, resolved now (used by batch flows). With
-// neither it returns a single host: for an upgrade, every host the skill
-// is already installed through; otherwise the preferred host (first on
-// PATH, via pickSkillHost).
+// available hosts is returned. With allAvailable it acts on every
+// configured host on PATH: for install, all of them; for upgrade, only
+// the ones that already have the skill installed (the rest are skipped
+// with a warning, and an error is returned when none have it). With
+// neither it returns a single host for install (the preferred host on
+// PATH) or, for an upgrade, every host the skill is already installed
+// through.
 func (i *installer) resolveSkillTargets(
 	ctx context.Context,
 	tool *ToolDefinition,
@@ -545,25 +547,62 @@ func (i *installer) resolveSkillTargets(
 	upgrade bool,
 ) ([]SkillHost, error) {
 	if len(hosts) == 0 {
-		// Batch flows (e.g. --all): install through every configured host
-		// on PATH. Resolved here, at install time, so host CLIs installed
-		// earlier in the same batch are picked up. Falls back to the
-		// preferred-host error when none are present.
+		// Batch / --host all: act on every configured host on PATH,
+		// resolved here (at run time) so host CLIs installed earlier in
+		// the same batch are picked up.
 		if allAvailable {
-			var targets []SkillHost
+			var onPath []SkillHost
 			for _, host := range tool.SkillHosts {
 				if i.commandRunner.ToolInPath(host.Host) == nil {
-					targets = append(targets, host)
+					onPath = append(onPath, host)
 				}
 			}
-			if len(targets) > 0 {
-				return targets, nil
+			// No host CLI present at all — surface the install guidance.
+			if len(onPath) == 0 {
+				host, err := i.pickSkillHost(tool)
+				if err != nil {
+					return nil, err
+				}
+				return []SkillHost{host}, nil
 			}
-			host, err := i.pickSkillHost(tool)
-			if err != nil {
-				return nil, err
+
+			// For install, target every host on PATH.
+			if !upgrade {
+				return onPath, nil
 			}
-			return []SkillHost{host}, nil
+
+			// For upgrade, target only hosts that actually have the skill
+			// installed; warn-and-skip the rest, since a host CLI cannot
+			// upgrade a plugin it never installed.
+			installedSet := map[string]bool{}
+			if installed, err := i.detector.DetectSkillHosts(ctx, tool); err == nil {
+				for _, h := range installed {
+					installedSet[h.Host] = true
+				}
+			}
+			var targets []SkillHost
+			for _, host := range onPath {
+				if installedSet[host.Host] {
+					targets = append(targets, host)
+					continue
+				}
+				fmt.Fprintln(os.Stderr, output.WithWarningFormat(
+					"Skipping upgrade for %s: %s is not installed on it.",
+					host.Host, tool.Name,
+				))
+			}
+			if len(targets) == 0 {
+				onPathNames := make([]string, len(onPath))
+				for j, h := range onPath {
+					onPathNames[j] = h.Host
+				}
+				return nil, fmt.Errorf(
+					"%s is not installed on any available host (%s); "+
+						"nothing to upgrade",
+					tool.Name, strings.Join(onPathNames, ", "),
+				)
+			}
+			return targets, nil
 		}
 
 		// For an upgrade with no explicit host, refresh every host the

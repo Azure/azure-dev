@@ -1,4 +1,125 @@
 {
   "schemaVersion": "1.0",
-  "extensions": []
+  "extensions": [
+    {
+      "id": "microsoft.azd.demo",
+      "namespace": "demo",
+      "displayName": "Demo Extension",
+      "description": "This extension provides examples of the azd extension framework.",
+      "versions": [
+        {
+          "version": "0.6.0-nightly.6460630",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider",
+            "framework-service-provider",
+            "provisioning-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "demo",
+              "type": "service-target",
+              "description": "Deploys application components to demo"
+            },
+            {
+              "name": "demo",
+              "type": "provisioning-provider",
+              "description": "Provisions infrastructure using the demo provider"
+            }
+          ],
+          "usage": "azd demo <command> [options]",
+          "examples": [
+            {
+              "name": "context",
+              "description": "Displays the current `azd` project & environment context.",
+              "usage": "azd demo context"
+            },
+            {
+              "name": "prompt",
+              "description": "Display prompt capabilities.",
+              "usage": "azd demo prompt"
+            },
+            {
+              "name": "ai models",
+              "description": "Browse available AI models interactively.",
+              "usage": "azd demo ai models"
+            },
+            {
+              "name": "ai deployment",
+              "description": "Select model/version/SKU/capacity and resolve a deployment configuration.",
+              "usage": "azd demo ai deployment"
+            },
+            {
+              "name": "ai quota",
+              "description": "View usage meters and limits for a selected location.",
+              "usage": "azd demo ai quota"
+            },
+            {
+              "name": "mcp",
+              "description": "Start MCP server with demo tools.",
+              "usage": "azd demo mcp start"
+            },
+            {
+              "name": "copilot",
+              "description": "Interactive Copilot chat loop demonstrating CopilotService gRPC API.",
+              "usage": "azd demo copilot [--model <model>] [--resume]"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d2a14c615280aa20b41be41167606a21f9effae26ec67878b0212c7b2716bbd5"
+              },
+              "entryPoint": "microsoft-azd-demo-darwin-amd64",
+              "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "89612ac4aa83dd8c648025d6f26a3432ff4facf75911b4d2945b6e744d02d2a4"
+              },
+              "entryPoint": "microsoft-azd-demo-darwin-arm64",
+              "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "b7d2b34b0a481561d079c3d9ae10fd1cafc86679465d37b35290bc42e4ba5375"
+              },
+              "entryPoint": "microsoft-azd-demo-linux-amd64",
+              "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "98e88f2b5986d8d3cfbaf610f8a76532f3d06a73f34eb77f8ceb50c6a087c283"
+              },
+              "entryPoint": "microsoft-azd-demo-linux-arm64",
+              "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9f14ba5700a6abe0f49c88033eb9e5ab4c415b8ed16c8534da0bbf619ed7e8d4"
+              },
+              "entryPoint": "microsoft-azd-demo-windows-amd64.exe",
+              "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "4744da0de59ccc9e7e907ca3b312a98d9bab9493119cea3e0eb43a46564039e5"
+              },
+              "entryPoint": "microsoft-azd-demo-windows-arm64.exe",
+              "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-windows-arm64.zip"
+            }
+          }
+        }
+      ]
+    }
+  ]
 }

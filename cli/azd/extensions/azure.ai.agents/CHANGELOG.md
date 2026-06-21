@@ -1,5 +1,9 @@
 # Release History
 
+## 0.1.41-preview (2026-06-21)
+
+- [[#8753]](https://github.com/Azure/azure-dev/pull/8753) Add native Activity-protocol support: auto-inject the agent endpoint with `activity` + `BotServiceRbac`, send the `AgentEndpoints=V1Preview` Foundry feature header, and normalize the user-facing `activity` protocol name. Introduce `activity.use_case` (`simple` | `digital_worker`) profiles that gate endpoint injection, blueprint reference, and M365 onboarding; round-trip `use_case` through `azd ai agent init`; set `ENABLE_DIGITAL_WORKER`/`AGENT_NAME` so the starter template provisions the MAIB and Bot Service; and print digital-worker M365 onboarding next steps after `azd deploy`.
+
 ## 0.1.40-preview (2026-06-15)
 
 - [[#8641]](https://github.com/Azure/azure-dev/pull/8641) Fix optimize/eval handling for array-valued mutations, resolve `dataset.local_uri` relative to the agent project, and align optimize test schema data with the current API format. Thanks @Zyysurely for the contribution!

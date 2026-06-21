@@ -768,13 +768,14 @@ func TestKnownProtocolNames(t *testing.T) {
 	if !strings.Contains(result, "invocations") {
 		t.Errorf("knownProtocolNames() = %q, want to contain 'invocations'", result)
 	}
-	if !strings.Contains(result, "activity_protocol") {
-		t.Errorf("knownProtocolNames() = %q, want to contain 'activity_protocol'", result)
+	if !strings.Contains(result, "activity") {
+		t.Errorf("knownProtocolNames() = %q, want to contain 'activity'", result)
 	}
 }
 
-// TestPromptProtocols_ActivityProtocol verifies that activity_protocol can be
-// selected via flag and is returned with its canonical version.
+// TestPromptProtocols_ActivityProtocol verifies that the "activity_protocol"
+// alias can be selected via flag and is normalized to the friendly "activity"
+// name with its canonical version.
 func TestPromptProtocols_ActivityProtocol(t *testing.T) {
 	t.Parallel()
 
@@ -785,11 +786,33 @@ func TestPromptProtocols_ActivityProtocol(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("got %d protocols, want 1", len(got))
 	}
-	if got[0].Protocol != "activity_protocol" {
-		t.Errorf("protocol = %q, want %q", got[0].Protocol, "activity_protocol")
+	if got[0].Protocol != "activity" {
+		t.Errorf("protocol = %q, want %q", got[0].Protocol, "activity")
 	}
 	if got[0].Version != "1.0.0" {
 		t.Errorf("version = %q, want %q", got[0].Version, "1.0.0")
+	}
+}
+
+// TestResolveActivityUseCase verifies the --activity-use-case flag normalization.
+func TestResolveActivityUseCase(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		in   string
+		want agent_yaml.ActivityUseCase
+	}{
+		{"", agent_yaml.ActivityUseCaseDigitalWorker},
+		{"digital_worker", agent_yaml.ActivityUseCaseDigitalWorker},
+		{"  Digital_Worker ", agent_yaml.ActivityUseCaseDigitalWorker},
+		{"simple", agent_yaml.ActivityUseCaseSimple},
+		{"SIMPLE", agent_yaml.ActivityUseCaseSimple},
+		{"unknown", agent_yaml.ActivityUseCaseDigitalWorker},
+	}
+	for _, tc := range cases {
+		if got := resolveActivityUseCase(tc.in); got != tc.want {
+			t.Errorf("resolveActivityUseCase(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 
@@ -805,6 +828,11 @@ func TestIsActivityOnlyProtocols(t *testing.T) {
 		{
 			name:      "activity only",
 			protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: "activity_protocol", Version: "1.0.0"}},
+			want:      true,
+		},
+		{
+			name:      "activity only (friendly name)",
+			protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "1.0.0"}},
 			want:      true,
 		},
 		{
@@ -903,18 +931,18 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 			wantErrContain: "cancelled",
 		},
 		{
-			name: "activity_protocol selected interactively",
+			name: "activity selected interactively",
 			multiSelectFn: func(_ context.Context, _ *azdext.MultiSelectRequest, _ ...grpc.CallOption) (*azdext.MultiSelectResponse, error) {
 				return &azdext.MultiSelectResponse{
 					Values: []*azdext.MultiSelectChoice{
 						{Value: "responses", Label: "responses", Selected: false},
 						{Value: "invocations", Label: "invocations", Selected: false},
-						{Value: "activity_protocol", Label: "activity_protocol", Selected: true},
+						{Value: "activity", Label: "activity", Selected: true},
 					},
 				}, nil
 			},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "activity_protocol", Version: "1.0.0"},
+				{Protocol: "activity", Version: "1.0.0"},
 			},
 		},
 		{

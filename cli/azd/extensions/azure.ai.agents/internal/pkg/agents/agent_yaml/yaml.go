@@ -6,6 +6,7 @@ package agent_yaml
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -230,6 +231,7 @@ type ContainerAgent struct {
 	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
 	Policies             []Policy                `json:"policies,omitempty" yaml:"policies,omitempty"`
 	BlueprintReference   *BlueprintReference     `json:"blueprintReference,omitempty" yaml:"blueprint_reference,omitempty"`
+	Activity             *ActivityConfig         `json:"activity,omitempty" yaml:"activity,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.
@@ -688,6 +690,116 @@ type AgentEndpoint struct {
 	VersionSelector      *VersionSelector      `json:"versionSelector,omitempty" yaml:"version_selector,omitempty"`
 	Protocols            []string              `json:"protocols,omitempty" yaml:"protocols,omitempty"`
 	AuthorizationSchemes []AuthorizationScheme `json:"authorizationSchemes,omitempty" yaml:"authorization_schemes,omitempty"`
+}
+
+// ActivityUseCase identifies how an activity-protocol agent is consumed, which
+// determines the additional deployment operations azd performs.
+type ActivityUseCase string
+
+const (
+	// ActivityUseCaseSimple is a plain activity-protocol agent: it receives
+	// pushed activities but is not registered as an M365 digital worker. Only
+	// the activity protocol + endpoint are configured.
+	ActivityUseCaseSimple ActivityUseCase = "simple"
+	// ActivityUseCaseDigitalWorker is an activity agent published into M365 as a
+	// digital worker. In addition to the activity endpoint, azd injects the
+	// BotServiceRbac auth scheme and blueprint reference, and runs the M365
+	// registration steps (OAuth2 grants, blueprint owner, digital-worker
+	// publish, Teams backend configuration).
+	ActivityUseCaseDigitalWorker ActivityUseCase = "digital_worker"
+)
+
+// ActivityConfig holds activity-protocol specific configuration in agent.yaml.
+type ActivityConfig struct {
+	// UseCase selects the activity deployment profile: "simple" or
+	// "digital_worker". When empty, the profile is inferred from the
+	// environment (see ResolveActivityProfile).
+	UseCase string `json:"useCase,omitempty" yaml:"use_case,omitempty"`
+}
+
+// ActivityProfile describes which activity-specific deployment operations apply
+// to an agent. It is the single source of truth shared by the deploy path and
+// the provision/deploy lifecycle handlers.
+type ActivityProfile struct {
+	// IsActivity is true when the agent declares the activity protocol.
+	IsActivity bool
+	// UseCase is the resolved use case (simple or digital_worker). Only
+	// meaningful when IsActivity is true.
+	UseCase ActivityUseCase
+	// InjectActivityEndpoint registers agent_endpoint.protocols=["activity"].
+	InjectActivityEndpoint bool
+	// InjectBotServiceRbac adds the BotServiceRbac authorization scheme so a Bot
+	// Service channel can authenticate to the agent.
+	InjectBotServiceRbac bool
+	// InjectBlueprintReference injects blueprint_reference from MAIB_NAME.
+	InjectBlueprintReference bool
+	// M365Provision runs the post-provision M365 registration (OAuth2 grants +
+	// blueprint owner).
+	M365Provision bool
+	// M365Publish runs the post-deploy M365 publish (digital-worker publish +
+	// Teams backend configuration).
+	M365Publish bool
+}
+
+// IsActivityProtocol reports whether the agent declares the activity protocol,
+// accepting both the friendly name "activity" and the wire name
+// "activity_protocol".
+func (c ContainerAgent) IsActivityProtocol() bool {
+	for _, p := range c.Protocols {
+		switch strings.ToLower(strings.TrimSpace(p.Protocol)) {
+		case "activity", "activity_protocol":
+			return true
+		}
+	}
+	return false
+}
+
+// ResolveActivityProfile resolves the activity deployment profile for the agent.
+//
+// The use case is taken from agent.yaml's activity.use_case when set. When it is
+// unset, the profile falls back to the environment: if a blueprint/MAIB is
+// present (hasBlueprintEnv), the agent is treated as a digital worker for
+// backward compatibility; otherwise it is a simple activity agent.
+//
+// hasBlueprintEnv should be true when MAIB_NAME or AGENT_IDENTITY_BLUEPRINT_ID is
+// set in the azd environment (i.e. the infra provisioned a digital-worker
+// blueprint).
+func (c ContainerAgent) ResolveActivityProfile(hasBlueprintEnv bool) ActivityProfile {
+	if !c.IsActivityProtocol() {
+		return ActivityProfile{IsActivity: false}
+	}
+
+	useCase := ActivityUseCase(strings.ToLower(strings.TrimSpace(activityUseCaseOf(c))))
+	if useCase == "" {
+		if hasBlueprintEnv {
+			useCase = ActivityUseCaseDigitalWorker
+		} else {
+			useCase = ActivityUseCaseSimple
+		}
+	}
+
+	profile := ActivityProfile{
+		IsActivity:             true,
+		UseCase:                useCase,
+		InjectActivityEndpoint: true, // all activity agents receive pushed activities
+	}
+
+	if useCase == ActivityUseCaseDigitalWorker {
+		profile.InjectBotServiceRbac = true
+		profile.InjectBlueprintReference = true
+		profile.M365Provision = true
+		profile.M365Publish = true
+	}
+
+	return profile
+}
+
+// activityUseCaseOf returns the configured activity use case, or "" when unset.
+func activityUseCaseOf(c ContainerAgent) string {
+	if c.Activity == nil {
+		return ""
+	}
+	return c.Activity.UseCase
 }
 
 // AgentCardSkill describes a single capability that an agent can perform.

@@ -130,17 +130,69 @@ func postprovisionHandler(
 				)
 			}
 
-			// For activity-protocol agents, register the blueprint into M365
-			// (delegated OAuth2 grants + blueprint owner). Gated on the presence
-			// of AGENT_IDENTITY_BLUEPRINT_ID, which only activity agents emit.
+			// For digital-worker activity agents, register the blueprint into
+			// M365 (delegated OAuth2 grants + blueprint owner). Gated on the
+			// resolved activity profile (agent.yaml activity.use_case, with an
+			// env-var fallback). Simple activity agents skip this.
 			// Best-effort: a failure is logged and does not fail provision.
-			if err := runBlueprintM365Provisioning(ctx, azdClient, envName); err != nil {
-				log.Printf("warning: blueprint M365 provisioning failed: %v", err)
+			hasBlueprintEnv := getEnvValueOrEmpty(ctx, azdClient, envName, "AGENT_IDENTITY_BLUEPRINT_ID") != "" ||
+				getEnvValueOrEmpty(ctx, azdClient, envName, "MAIB_NAME") != ""
+			if anyDigitalWorkerService(args.Project, hasBlueprintEnv, func(p agent_yaml.ActivityProfile) bool {
+				return p.M365Provision
+			}) {
+				if err := runBlueprintM365Provisioning(ctx, azdClient, envName); err != nil {
+					log.Printf("warning: blueprint M365 provisioning failed: %v", err)
+				}
 			}
 		}
 	}
 
 	return nil
+}
+
+// loadContainerAgentForService reads and parses agent.yaml for the given hosted
+// agent service. Returns false when the file is absent or cannot be parsed.
+func loadContainerAgentForService(
+	proj *azdext.ProjectConfig,
+	svc *azdext.ServiceConfig,
+) (agent_yaml.ContainerAgent, bool) {
+	agentYamlPath, err := paths.JoinAllowRoot(proj.Path, svc.RelativePath, "agent.yaml")
+	if err != nil {
+		return agent_yaml.ContainerAgent{}, false
+	}
+	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // path from azd project config
+	if err != nil {
+		return agent_yaml.ContainerAgent{}, false
+	}
+	var def agent_yaml.ContainerAgent
+	if err := yaml.Unmarshal(data, &def); err != nil {
+		return agent_yaml.ContainerAgent{}, false
+	}
+	return def, true
+}
+
+// anyDigitalWorkerService reports whether any hosted agent service resolves to an
+// activity profile for which want(profile) is true (e.g. M365Provision or
+// M365Publish). hasBlueprintEnv enables the env-var fallback when agent.yaml does
+// not set activity.use_case.
+func anyDigitalWorkerService(
+	proj *azdext.ProjectConfig,
+	hasBlueprintEnv bool,
+	want func(agent_yaml.ActivityProfile) bool,
+) bool {
+	for _, svc := range proj.Services {
+		if svc.Host != AiAgentHost {
+			continue
+		}
+		def, ok := loadContainerAgentForService(proj, svc)
+		if !ok {
+			continue
+		}
+		if want(def.ResolveActivityProfile(hasBlueprintEnv)) {
+			return true
+		}
+	}
+	return false
 }
 
 // runBlueprintM365Provisioning performs the post-provision M365 registration for
@@ -314,9 +366,15 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 
 	agentClient := agent_api.NewAgentClient(endpointResp.Value, cred)
 
+	// Whether the environment provisioned a digital-worker blueprint, used as the
+	// fallback when agent.yaml does not set activity.use_case.
+	hasBlueprintEnv := getEnvValueOrEmpty(ctx, azdClient, envName, "AGENT_IDENTITY_BLUEPRINT_ID") != "" ||
+		getEnvValueOrEmpty(ctx, azdClient, envName, "MAIB_NAME") != ""
+
 	// Build name→principalID map by fetching the agent version for each hosted service.
 	agentIdentities := make(map[string]string)
 	// Track agent GUIDs per service for activity-protocol M365 publish (post-deploy).
+	// Only digital-worker agents are added here; simple activity agents are skipped.
 	agentGUIDs := make(map[string]string)
 	for _, svc := range hostedAgents {
 		serviceKey := toServiceKey(svc.Name)
@@ -362,8 +420,13 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		}
 
 		agentIdentities[agentName] = principalID
+		// Only collect the GUID for digital-worker agents — simple activity agents
+		// are not published to M365.
 		if versionObj.AgentGUID != "" {
-			agentGUIDs[agentName] = versionObj.AgentGUID
+			if def, ok := loadContainerAgentForService(args.Project, svc); ok &&
+				def.ResolveActivityProfile(hasBlueprintEnv).M365Publish {
+				agentGUIDs[agentName] = versionObj.AgentGUID
+			}
 		}
 	}
 
@@ -583,8 +646,51 @@ func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *az
 		if err := setEnvVar(ctx, azdClient, envName, "ENABLE_CAPABILITY_HOST", "false"); err != nil {
 			return err
 		}
+
+		// For activity-protocol digital workers, signal the infra template to
+		// create the MAIB + Bot Service by setting ENABLE_DIGITAL_WORKER and
+		// AGENT_NAME. The starter-basic infra gates the digital-worker modules on
+		// these (off by default, so other agents are unaffected).
+		if err := digitalWorkerEnvUpdate(ctx, azdClient, data, envName); err != nil {
+			return err
+		}
 	}
 
+	return nil
+}
+
+// digitalWorkerEnvUpdate inspects the agent.yaml and, when it declares an
+// activity-protocol digital worker, sets ENABLE_DIGITAL_WORKER=true and AGENT_NAME
+// so the infra template provisions the MAIB + Bot Service. For non-digital-worker
+// agents it is a no-op.
+func digitalWorkerEnvUpdate(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentYaml []byte,
+	envName string,
+) error {
+	var def agent_yaml.ContainerAgent
+	if err := yaml.Unmarshal(agentYaml, &def); err != nil {
+		// Non-fatal: a parse issue here shouldn't block provision; the agent.yaml
+		// was already validated above for the kind field.
+		return nil
+	}
+
+	// hasBlueprintEnv is false here: at preprovision the blueprint env vars don't
+	// exist yet. The profile therefore relies on agent.yaml's activity.use_case.
+	profile := def.ResolveActivityProfile(false)
+	if !profile.IsActivity || profile.UseCase != agent_yaml.ActivityUseCaseDigitalWorker {
+		return nil
+	}
+
+	if err := setEnvVar(ctx, azdClient, envName, "ENABLE_DIGITAL_WORKER", "true"); err != nil {
+		return err
+	}
+	if def.Name != "" {
+		if err := setEnvVar(ctx, azdClient, envName, "AGENT_NAME", def.Name); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

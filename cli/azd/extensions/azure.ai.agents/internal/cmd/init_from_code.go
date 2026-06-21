@@ -760,8 +760,13 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	// Step 2: Model configuration — skipped for activity-only agents which use M365 SDK, not AI models.
 	if isActivityOnlyProtocols(protocols) {
 		fmt.Println(output.WithGrayFormat(
-			"Skipping model configuration: activity_protocol agents use the M365 Agents SDK and do not require a model deployment.",
+			"Skipping model configuration: activity agents use the M365 Agents SDK and do not require a model deployment.",
 		))
+
+		// Resolve the activity deployment profile. Only "digital_worker" has full
+		// init support today; an unset flag defaults to it.
+		useCase := resolveActivityUseCase(a.flags.activityUseCase)
+
 		// Build the definition directly without model prompts.
 		agentKind := agent_yaml.AgentKindHosted
 		definition := &agent_yaml.ContainerAgent{
@@ -771,11 +776,26 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			},
 			Protocols:         protocols,
 			CodeConfiguration: codeConfig,
-			// activity_protocol requires agent_endpoint.protocols=["activity"] for the Foundry PATCH call.
+			// activity agents require agent_endpoint.protocols=["activity"] for the Foundry PATCH call.
 			AgentEndpoint: &agent_yaml.AgentEndpoint{
 				Protocols: []string{"activity"},
 			},
+			Activity: &agent_yaml.ActivityConfig{UseCase: string(useCase)},
 		}
+
+		if useCase == agent_yaml.ActivityUseCaseDigitalWorker {
+			// From-code init does not scaffold the MAIB + Bot Service infrastructure
+			// a digital worker requires. Point users to the sample manifest, which
+			// carries that infra alongside the agent code.
+			fmt.Println(output.WithWarningFormat(
+				"Digital-worker agents require Managed Agent Identity Blueprint (MAIB) and Bot Service\n"+
+					"infrastructure that this from-code init does not generate. To get a complete,\n"+
+					"deployable digital worker (infra + agent.yaml), initialize from the echo-agent manifest:\n"+
+					"  azd ai agent init -m https://github.com/microsoft-foundry/foundry-samples/blob/main/"+
+					"samples/python/hosted-agents/bring-your-own/activity/echo-agent/agent.manifest.yaml",
+			))
+		}
+
 		return definition, nil
 	}
 
@@ -878,12 +898,17 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		CodeConfiguration: codeConfig,
 	}
 
-	// When activity_protocol is among the selected protocols, set agent_endpoint.protocols
-	// so the Foundry PATCH call registers the activity endpoint correctly.
+	// When the activity protocol is among the selected protocols, set
+	// agent_endpoint.protocols so the Foundry PATCH call registers the activity
+	// endpoint correctly, and record the activity deployment profile. Accepts
+	// both "activity" and "activity_protocol".
 	for _, p := range protocols {
-		if p.Protocol == "activity_protocol" {
+		if isActivityProtocolName(p.Protocol) {
 			definition.AgentEndpoint = &agent_yaml.AgentEndpoint{
 				Protocols: []string{"activity"},
+			}
+			definition.Activity = &agent_yaml.ActivityConfig{
+				UseCase: string(resolveActivityUseCase(a.flags.activityUseCase)),
 			}
 			break
 		}
@@ -1247,21 +1272,46 @@ type protocolInfo struct {
 var knownProtocols = []protocolInfo{
 	{Name: "responses", Version: "1.0.0"},
 	{Name: "invocations", Version: "1.0.0"},
-	{Name: "activity_protocol", Version: "1.0.0"},
+	{Name: "activity", Version: "1.0.0"},
 }
 
-// isActivityOnlyProtocols reports whether protocols contains only activity_protocol.
-// Activity-protocol agents use the M365 Agents SDK and don't require a model deployment.
+// isActivityOnlyProtocols reports whether protocols contains only the activity
+// protocol. agent.yaml may use the friendly name "activity" or the canonical
+// wire name "activity_protocol"; both are recognized. Activity agents use the
+// M365 Agents SDK and don't require a model deployment.
 func isActivityOnlyProtocols(protocols []agent_yaml.ProtocolVersionRecord) bool {
 	if len(protocols) == 0 {
 		return false
 	}
 	for _, p := range protocols {
-		if p.Protocol != "activity_protocol" {
+		if !isActivityProtocolName(p.Protocol) {
 			return false
 		}
 	}
 	return true
+}
+
+// isActivityProtocolName reports whether the given protocol name refers to the
+// activity protocol, accepting both "activity" and "activity_protocol".
+func isActivityProtocolName(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "activity", "activity_protocol":
+		return true
+	default:
+		return false
+	}
+}
+
+// resolveActivityUseCase normalizes the --activity-use-case flag value to a known
+// ActivityUseCase. An empty or unrecognized value defaults to digital_worker,
+// the only activity profile with full init support today.
+func resolveActivityUseCase(flag string) agent_yaml.ActivityUseCase {
+	switch strings.ToLower(strings.TrimSpace(flag)) {
+	case string(agent_yaml.ActivityUseCaseSimple):
+		return agent_yaml.ActivityUseCaseSimple
+	default:
+		return agent_yaml.ActivityUseCaseDigitalWorker
+	}
 }
 
 // promptProtocols asks the user which protocols their agent supports.
@@ -1277,6 +1327,10 @@ func promptProtocols(
 	versionOf := make(map[string]string, len(knownProtocols))
 	for _, p := range knownProtocols {
 		versionOf[p.Name] = p.Version
+	}
+	// Accept "activity_protocol" as a backward-compatible alias for "activity".
+	if v, ok := versionOf["activity"]; ok {
+		versionOf["activity_protocol"] = v
 	}
 
 	// If explicit flag values were provided, use them directly (with dedup).
@@ -1298,8 +1352,13 @@ func promptProtocols(
 					fmt.Sprintf("Use one of the supported protocol values: %s", knownProtocolNames()),
 				)
 			}
+			// Normalize the activity alias to the friendly "activity" name.
+			recordName := name
+			if isActivityProtocolName(name) {
+				recordName = "activity"
+			}
 			records = append(records, agent_yaml.ProtocolVersionRecord{
-				Protocol: name,
+				Protocol: recordName,
 				Version:  version,
 			})
 		}

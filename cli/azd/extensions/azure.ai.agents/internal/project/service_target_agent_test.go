@@ -700,7 +700,7 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 					URL:      baseURL + "openai/responses?api-version=v1",
 				},
 				{
-					Protocol: "activity_protocol",
+					Protocol: "activity",
 					URL:      baseURL + "activity?api-version=v1",
 				},
 				{
@@ -720,7 +720,19 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			},
 			expected: []protocolEndpointInfo{
 				{
-					Protocol: "activity_protocol",
+					Protocol: "activity",
+					URL:      baseURL + "activity?api-version=v1",
+				},
+			},
+		},
+		{
+			name: "friendly activity name yields single endpoint",
+			protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "activity", Version: "1.0.0"},
+			},
+			expected: []protocolEndpointInfo{
+				{
+					Protocol: "activity",
 					URL:      baseURL + "activity?api-version=v1",
 				},
 			},
@@ -886,7 +898,7 @@ func TestDeployArtifacts_ActivityProtocol_SingleEndpoint(t *testing.T) {
 	require.Len(t, artifacts, 1)
 	wantURL := ep + "/agents/echo-agent/endpoint/protocols/activity?api-version=v1"
 	require.Equal(t, wantURL, artifacts[0].Location)
-	require.Equal(t, "Agent endpoint (activity_protocol)", artifacts[0].Metadata["label"])
+	require.Equal(t, "Agent endpoint (activity)", artifacts[0].Metadata["label"])
 }
 
 // TestPackage_NoEarlyFailureWithoutACR is a regression test ensuring that
@@ -1040,9 +1052,19 @@ func TestAgentDefDeclaresActivity(t *testing.T) {
 func TestEnsureActivityEndpointDefaults(t *testing.T) {
 	t.Parallel()
 
-	t.Run("nil endpoint gets activity protocol and BotServiceRbac", func(t *testing.T) {
+	digitalWorker := agent_yaml.ActivityProfile{
+		IsActivity:             true,
+		InjectActivityEndpoint: true,
+		InjectBotServiceRbac:   true,
+	}
+	simple := agent_yaml.ActivityProfile{
+		IsActivity:             true,
+		InjectActivityEndpoint: true,
+	}
+
+	t.Run("digital worker: nil endpoint gets activity protocol and BotServiceRbac", func(t *testing.T) {
 		req := &agent_api.CreateAgentRequest{}
-		ensureActivityEndpointDefaults(req)
+		ensureActivityEndpointDefaults(req, digitalWorker)
 
 		require.NotNil(t, req.AgentEndpoint)
 		require.Equal(t,
@@ -1056,7 +1078,20 @@ func TestEnsureActivityEndpointDefaults(t *testing.T) {
 		)
 	})
 
-	t.Run("preserves existing activity and BotServiceRbac without duplicates", func(t *testing.T) {
+	t.Run("simple: gets activity protocol but NO BotServiceRbac", func(t *testing.T) {
+		req := &agent_api.CreateAgentRequest{}
+		ensureActivityEndpointDefaults(req, simple)
+
+		require.NotNil(t, req.AgentEndpoint)
+		require.Equal(t,
+			[]agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+			req.AgentEndpoint.Protocols,
+		)
+		require.Empty(t, req.AgentEndpoint.AuthorizationSchemes,
+			"simple activity agents must not get a BotServiceRbac scheme")
+	})
+
+	t.Run("digital worker: preserves existing activity and BotServiceRbac without duplicates", func(t *testing.T) {
 		req := &agent_api.CreateAgentRequest{
 			AgentEndpoint: &agent_api.AgentEndpoint{
 				Protocols: []agent_api.AgentEndpointProtocol{
@@ -1067,7 +1102,7 @@ func TestEnsureActivityEndpointDefaults(t *testing.T) {
 				},
 			},
 		}
-		ensureActivityEndpointDefaults(req)
+		ensureActivityEndpointDefaults(req, digitalWorker)
 
 		require.Equal(t,
 			[]agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
@@ -1076,7 +1111,7 @@ func TestEnsureActivityEndpointDefaults(t *testing.T) {
 		require.Len(t, req.AgentEndpoint.AuthorizationSchemes, 1)
 	})
 
-	t.Run("adds activity and BotServiceRbac alongside existing values", func(t *testing.T) {
+	t.Run("digital worker: adds activity and BotServiceRbac alongside existing values", func(t *testing.T) {
 		req := &agent_api.CreateAgentRequest{
 			AgentEndpoint: &agent_api.AgentEndpoint{
 				Protocols: []agent_api.AgentEndpointProtocol{
@@ -1087,7 +1122,7 @@ func TestEnsureActivityEndpointDefaults(t *testing.T) {
 				},
 			},
 		}
-		ensureActivityEndpointDefaults(req)
+		ensureActivityEndpointDefaults(req, digitalWorker)
 
 		require.Contains(t, req.AgentEndpoint.Protocols, agent_api.AgentEndpointProtocolActivity)
 		require.Contains(t, req.AgentEndpoint.Protocols, agent_api.AgentEndpointProtocolResponses)
@@ -1679,6 +1714,77 @@ func TestAugmentDeployNote_NoReadme_AppendsBelowAkaMsLink(t *testing.T) {
 	require.Contains(t, got, "Next:", "Next: block should be appended")
 	require.Contains(t, got, "azd ai agent invoke ", "should suggest invoking the deployed agent")
 	require.Equal(t, 1, strings.Count(got, "Next:"), "Next: header should appear exactly once")
+}
+
+func TestAppendDigitalWorkerNextSteps(t *testing.T) {
+	t.Parallel()
+
+	activityProtocols := []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "1.0.0"}}
+
+	t.Run("digital worker appends onboarding steps to existing note", func(t *testing.T) {
+		t.Parallel()
+		artifact := &azdext.Artifact{
+			Kind:     azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+			Metadata: map[string]string{"label": "Agent endpoint (activity)", "note": "static aka.ms link"},
+		}
+
+		appendDigitalWorkerNextSteps(
+			[]*azdext.Artifact{artifact},
+			map[string]string{"AGENT_IDENTITY_BLUEPRINT_ID": "bp-123"},
+			activityProtocols,
+		)
+
+		got := artifact.Metadata["note"]
+		require.Contains(t, got, "static aka.ms link", "existing note should be preserved")
+		require.Contains(t, got, "onboarding your digital worker", "should append digital-worker next steps")
+		require.Contains(t, got, "admin.cloud.microsoft", "should include the M365 admin center link")
+		require.Contains(t, got, "bp-123", "should surface the blueprint ID")
+		require.Contains(t, got, "Teams Developer Portal", "should include the Teams instance step")
+	})
+
+	t.Run("internal activity_protocol wire value is recognized", func(t *testing.T) {
+		t.Parallel()
+		artifact := &azdext.Artifact{
+			Kind:     azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+			Metadata: map[string]string{"note": "n"},
+		}
+
+		appendDigitalWorkerNextSteps(
+			[]*azdext.Artifact{artifact},
+			map[string]string{"AGENT_IDENTITY_BLUEPRINT_ID": "bp-9"},
+			[]agent_yaml.ProtocolVersionRecord{{Protocol: "activity_protocol", Version: "1.0.0"}},
+		)
+
+		require.Contains(t, artifact.Metadata["note"], "onboarding your digital worker")
+	})
+
+	t.Run("no blueprint env is a no-op (simple activity profile)", func(t *testing.T) {
+		t.Parallel()
+		artifact := &azdext.Artifact{
+			Kind:     azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+			Metadata: map[string]string{"note": "untouched"},
+		}
+
+		appendDigitalWorkerNextSteps([]*azdext.Artifact{artifact}, map[string]string{}, activityProtocols)
+
+		require.Equal(t, "untouched", artifact.Metadata["note"], "should not modify note when no blueprint is present")
+	})
+
+	t.Run("non-activity protocol is a no-op", func(t *testing.T) {
+		t.Parallel()
+		artifact := &azdext.Artifact{
+			Kind:     azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+			Metadata: map[string]string{"note": "untouched"},
+		}
+
+		appendDigitalWorkerNextSteps(
+			[]*azdext.Artifact{artifact},
+			map[string]string{"AGENT_IDENTITY_BLUEPRINT_ID": "bp-123"},
+			[]agent_yaml.ProtocolVersionRecord{{Protocol: "invocations", Version: "1.0.0"}},
+		)
+
+		require.Equal(t, "untouched", artifact.Metadata["note"], "should not modify note for non-activity agents")
+	})
 }
 
 func TestAugmentDeployNote_WithReadme_ReplacesAkaMsLink(t *testing.T) {

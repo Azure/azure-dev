@@ -732,7 +732,7 @@ func TestCreateAgentAPIRequest_AllFields(t *testing.T) {
 		Metadata:    &meta,
 	}
 
-	req, err := createAgentAPIRequest(agentDef, "placeholder-definition", nil, nil)
+	req, err := createAgentAPIRequest(agentDef, "placeholder-definition", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -757,7 +757,7 @@ func TestCreateAgentAPIRequest_DefaultName(t *testing.T) {
 	t.Parallel()
 	agentDef := AgentDefinition{Kind: AgentKindHosted}
 
-	req, err := createAgentAPIRequest(agentDef, nil, nil, nil)
+	req, err := createAgentAPIRequest(agentDef, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -770,7 +770,7 @@ func TestCreateAgentAPIRequest_NilMetadata(t *testing.T) {
 	t.Parallel()
 	agentDef := AgentDefinition{Kind: AgentKindHosted, Name: "test"}
 
-	req, err := createAgentAPIRequest(agentDef, nil, nil, nil)
+	req, err := createAgentAPIRequest(agentDef, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -788,7 +788,7 @@ func TestCreateAgentAPIRequest_EmptyDescription(t *testing.T) {
 		Description: &empty,
 	}
 
-	req, err := createAgentAPIRequest(agentDef, nil, nil, nil)
+	req, err := createAgentAPIRequest(agentDef, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -809,7 +809,7 @@ func TestCreateAgentAPIRequest_MetadataWithNonStringValues(t *testing.T) {
 		Metadata: &meta,
 	}
 
-	req, err := createAgentAPIRequest(agentDef, nil, nil, nil)
+	req, err := createAgentAPIRequest(agentDef, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -832,7 +832,7 @@ func TestCreateAgentAPIRequest_AuthorsSingleAuthor(t *testing.T) {
 		Metadata: &meta,
 	}
 
-	req, err := createAgentAPIRequest(agentDef, nil, nil, nil)
+	req, err := createAgentAPIRequest(agentDef, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -59,6 +59,10 @@ type initFlags struct {
 	src               string
 	env               string
 	protocols         []string
+	// activityUseCase selects the activity deployment profile written to
+	// agent.yaml for activity agents: "digital_worker" or "simple". Empty defaults
+	// to "digital_worker" (the only profile with full init support today).
+	activityUseCase string
 	// deploy mode flags for non-interactive code deploy support
 	deployMode    string // "container" or "code"; empty = prompt interactively
 	runtime       string // e.g. "python_3_13", "python_3_14", "dotnet_10"
@@ -1297,6 +1301,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
 		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
 
+	cmd.Flags().StringVar(&flags.activityUseCase, "activity-use-case", "",
+		"Activity deployment profile for activity agents: 'digital_worker' (default) or 'simple'.")
+
 	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "",
 		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'container' in --no-prompt.")
 
@@ -1508,8 +1515,16 @@ func ensureProject(
 			envName = base + "-dev"
 		}
 
+		// Template defaults to the published starter. AZD_AI_STARTER_TEMPLATE allows
+		// pointing at a local clone or fork for testing infra changes before they
+		// land upstream (azd init -t accepts a local directory path).
+		starterTemplate := "Azure-Samples/azd-ai-starter-basic"
+		if override := os.Getenv("AZD_AI_STARTER_TEMPLATE"); override != "" {
+			starterTemplate = override
+		}
+
 		initArgs := []string{
-			"init", "-t", "Azure-Samples/azd-ai-starter-basic", targetDir,
+			"init", "-t", starterTemplate, targetDir,
 			"--environment", envName,
 		}
 

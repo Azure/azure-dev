@@ -52,6 +52,11 @@ type displayableProtocolEntry struct {
 	Protocol  agent_api.AgentProtocol
 	URLPath   string // path suffix in the invocation URL (empty when BuildURL is set)
 	EnvSuffix string // suffix used in AGENT_{KEY}_{SUFFIX}_ENDPOINT env vars
+	// DisplayLabel optionally overrides the user-facing protocol name. When empty,
+	// string(Protocol) is used. This lets the wire-level name (e.g.
+	// "activity_protocol", required by the service) differ from the friendly name
+	// shown to users (e.g. "activity").
+	DisplayLabel string
 	// BuildURL optionally builds a custom invocation URL for this protocol.
 	// When set, it overrides the generic URL template that uses URLPath.
 	// projectEndpoint is the Foundry project root
@@ -79,9 +84,10 @@ var displayableProtocols = []displayableProtocolEntry{
 		BuildURL:  buildInvocationsWSProtocolURL,
 	},
 	{
-		Protocol:  agent_api.AgentProtocolActivityProtocol,
-		EnvSuffix: "ACTIVITY",
-		BuildURL:  buildActivityProtocolURL,
+		Protocol:     agent_api.AgentProtocolActivityProtocol,
+		EnvSuffix:    "ACTIVITY",
+		DisplayLabel: string(agent_api.AgentEndpointProtocolActivity),
+		BuildURL:     buildActivityProtocolURL,
 	},
 }
 
@@ -153,8 +159,12 @@ type ProtocolEnvSuffix struct {
 func DisplayableProtocolEnvSuffixes() []ProtocolEnvSuffix {
 	result := make([]ProtocolEnvSuffix, len(displayableProtocols))
 	for i, dp := range displayableProtocols {
+		label := dp.DisplayLabel
+		if label == "" {
+			label = string(dp.Protocol)
+		}
 		result[i] = ProtocolEnvSuffix{
-			Label:  string(dp.Protocol),
+			Label:  label,
 			Suffix: dp.EnvSuffix,
 		}
 	}
@@ -1241,10 +1251,18 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 
 	applyAgentMetadata(request)
 
-	// For activity-protocol agents, inject BlueprintReference from MAIB_NAME env var
+	// Resolve the activity deployment profile. The use case comes from
+	// agent.yaml's activity.use_case when set; otherwise it falls back to the
+	// environment (a provisioned blueprint/MAIB implies a digital worker).
+	hasBlueprintEnv := azdEnv["MAIB_NAME"] != "" || azdEnv["AGENT_IDENTITY_BLUEPRINT_ID"] != ""
+	activityProfile := agentDef.ResolveActivityProfile(hasBlueprintEnv)
+
+	// For digital-worker agents, inject BlueprintReference from MAIB_NAME env var
 	// when not already specified in agent.yaml. MAIB_NAME is a Bicep output that
-	// identifies the Managed Agent Identity Blueprint backing this agent.
-	if request.BlueprintReference == nil && azdEnv["MAIB_NAME"] != "" {
+	// identifies the Managed Agent Identity Blueprint backing this agent. Simple
+	// activity agents are not backed by a blueprint and skip this.
+	if activityProfile.InjectBlueprintReference &&
+		request.BlueprintReference == nil && azdEnv["MAIB_NAME"] != "" {
 		request.BlueprintReference = &agent_api.BlueprintReference{
 			Type:        "ManagedAgentIdentityBlueprint",
 			BlueprintID: azdEnv["MAIB_NAME"],
@@ -1252,13 +1270,11 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	}
 
 	// For activity-protocol agents, ensure the agent endpoint advertises the
-	// "activity" protocol and registers a BotServiceRbac authorization scheme so
-	// the Bot Service channel can authenticate to the push-based agent endpoint.
-	// This mirrors the unconditional endpoint patch the legacy activity scripts
-	// perform, making activity agents work out of the box without sample authors
-	// hand-writing agent_endpoint. Existing user-specified values are preserved.
-	if agentDefDeclaresActivity(agentDef) {
-		ensureActivityEndpointDefaults(request)
+	// "activity" protocol. Digital-worker agents additionally register a
+	// BotServiceRbac authorization scheme so the Bot Service channel can
+	// authenticate. Existing user-specified values are preserved.
+	if activityProfile.IsActivity {
+		ensureActivityEndpointDefaults(request, activityProfile)
 	}
 
 	// Default to "responses" protocol when none specified in agent.yaml.
@@ -1280,53 +1296,50 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 // activity protocol. agent.yaml may use either the endpoint-level name
 // "activity" or the canonical definition-level name "activity_protocol".
 func agentDefDeclaresActivity(agentDef agent_yaml.ContainerAgent) bool {
-	for _, p := range agentDef.Protocols {
-		switch strings.ToLower(strings.TrimSpace(p.Protocol)) {
-		case string(agent_api.AgentEndpointProtocolActivity),
-			string(agent_api.AgentProtocolActivityProtocol):
-			return true
-		}
-	}
-	return false
+	return agentDef.IsActivityProtocol()
 }
 
-// ensureActivityEndpointDefaults makes sure an activity agent's endpoint is
-// configured for push-based delivery: the "activity" endpoint protocol must be
-// present and a BotServiceRbac authorization scheme must be registered so the
-// Bot Service channel can authenticate. Existing values are preserved; this only
-// adds what is missing.
-func ensureActivityEndpointDefaults(request *agent_api.CreateAgentRequest) {
+// ensureActivityEndpointDefaults configures an activity agent's endpoint for
+// push-based delivery per the resolved profile: the "activity" endpoint protocol
+// is added when missing, and (for digital-worker agents) a BotServiceRbac
+// authorization scheme is registered so the Bot Service channel can
+// authenticate. Existing values are preserved; this only adds what is missing.
+func ensureActivityEndpointDefaults(request *agent_api.CreateAgentRequest, profile agent_yaml.ActivityProfile) {
 	if request.AgentEndpoint == nil {
 		request.AgentEndpoint = &agent_api.AgentEndpoint{}
 	}
 
-	hasActivity := false
-	for _, p := range request.AgentEndpoint.Protocols {
-		if p == agent_api.AgentEndpointProtocolActivity {
-			hasActivity = true
-			break
+	if profile.InjectActivityEndpoint {
+		hasActivity := false
+		for _, p := range request.AgentEndpoint.Protocols {
+			if p == agent_api.AgentEndpointProtocolActivity {
+				hasActivity = true
+				break
+			}
 		}
-	}
-	if !hasActivity {
-		request.AgentEndpoint.Protocols = append(
-			request.AgentEndpoint.Protocols, agent_api.AgentEndpointProtocolActivity,
-		)
+		if !hasActivity {
+			request.AgentEndpoint.Protocols = append(
+				request.AgentEndpoint.Protocols, agent_api.AgentEndpointProtocolActivity,
+			)
+		}
 	}
 
-	hasBotServiceRbac := false
-	for _, s := range request.AgentEndpoint.AuthorizationSchemes {
-		if s.Type == agent_api.AgentEndpointAuthSchemeBotServiceRbac {
-			hasBotServiceRbac = true
-			break
+	if profile.InjectBotServiceRbac {
+		hasBotServiceRbac := false
+		for _, s := range request.AgentEndpoint.AuthorizationSchemes {
+			if s.Type == agent_api.AgentEndpointAuthSchemeBotServiceRbac {
+				hasBotServiceRbac = true
+				break
+			}
 		}
-	}
-	if !hasBotServiceRbac {
-		request.AgentEndpoint.AuthorizationSchemes = append(
-			request.AgentEndpoint.AuthorizationSchemes,
-			agent_api.AgentEndpointAuthorizationScheme{
-				Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac,
-			},
-		)
+		if !hasBotServiceRbac {
+			request.AgentEndpoint.AuthorizationSchemes = append(
+				request.AgentEndpoint.AuthorizationSchemes,
+				agent_api.AgentEndpointAuthorizationScheme{
+					Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac,
+				},
+			)
+		}
 	}
 }
 
@@ -1417,6 +1430,13 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 		}
 		augmentDeployNote(state, artifacts, projectRoot, configDir)
 	}
+
+	// For activity digital-worker agents, append the M365 onboarding
+	// "Next steps" (admin-center approval, blueprint ID, Teams instance) to
+	// the visible deploy note. These are tenant-admin actions azd cannot
+	// perform automatically; the helper self-gates and is a no-op for
+	// non-digital-worker agents.
+	appendDigitalWorkerNextSteps(artifacts, azdEnv, protocols)
 
 	return &azdext.ServiceDeployResult{
 		Artifacts: artifacts,
@@ -2120,6 +2140,61 @@ func lastNoteArtifact(artifacts []*azdext.Artifact) *azdext.Artifact {
 	return nil
 }
 
+// appendDigitalWorkerNextSteps appends the M365 onboarding "Next steps"
+// guidance to the visible deploy note for activity digital-worker agents.
+// These steps — admin-center approval, blueprint ID, and creating a Teams
+// instance — are tenant-admin actions azd cannot perform automatically, so
+// they are surfaced in the deploy output the same way the legacy post-deploy
+// script printed them. The block is attached to the last note-bearing
+// artifact (the same artifact augmentDeployNote enriches) so it renders in
+// the deploy summary rather than the extension's listen-process stdout, which
+// is not shown by `azd deploy`.
+//
+// No-op when no blueprint identity is present (the "simple" activity profile
+// is never published to M365) or when the agent does not speak the activity
+// protocol.
+func appendDigitalWorkerNextSteps(
+	artifacts []*azdext.Artifact,
+	azdEnv map[string]string,
+	protocols []agent_yaml.ProtocolVersionRecord,
+) {
+	blueprintID := strings.TrimSpace(azdEnv["AGENT_IDENTITY_BLUEPRINT_ID"])
+	if blueprintID == "" || !protocolsIncludeActivity(protocols) {
+		return
+	}
+
+	target := lastNoteArtifact(artifacts)
+	if target == nil {
+		return
+	}
+
+	block := "Next steps to finish onboarding your digital worker:\n" +
+		"  1. Approve the agent in the M365 Admin Center: " +
+		output.WithLinkFormat("https://admin.cloud.microsoft/#/agents/all/requested") + "\n" +
+		fmt.Sprintf("  2. Blueprint ID: %s\n", blueprintID) +
+		"  3. Create a Teams instance of the agent in the Teams Developer Portal: " +
+		output.WithLinkFormat("https://dev.teams.microsoft.com/tools/agent-blueprint")
+
+	if existing := target.Metadata["note"]; existing != "" {
+		target.Metadata["note"] = existing + "\n\n" + block
+	} else {
+		target.Metadata["note"] = block
+	}
+}
+
+// protocolsIncludeActivity reports whether any record names the activity
+// protocol, accepting both the user-facing "activity" alias and the internal
+// "activity_protocol" wire value.
+func protocolsIncludeActivity(protocols []agent_yaml.ProtocolVersionRecord) bool {
+	for _, p := range protocols {
+		switch strings.ToLower(strings.TrimSpace(p.Protocol)) {
+		case string(agent_api.AgentEndpointProtocolActivity), "activity_protocol":
+			return true
+		}
+	}
+	return false
+}
+
 // suggestionsIncludeReadme reports whether any suggestion is a local-README
 // pointer (ResolveAfterDeploy emits these as "see <relPath>/README.md").
 // Used by augmentDeployNote to decide whether to replace or append to the
@@ -2157,13 +2232,25 @@ type protocolEndpointInfo struct {
 
 // displayableProtocolFor returns the displayable protocol entry matching the given
 // protocol string, or nil if the protocol does not produce a user-visible endpoint.
+// The friendly endpoint-level name "activity" and the wire-level name
+// "activity_protocol" both resolve to the same entry.
 func displayableProtocolFor(protocol string) *displayableProtocolEntry {
+	normalized := normalizeDisplayProtocol(protocol)
 	for i, dp := range displayableProtocols {
-		if agent_api.AgentProtocol(protocol) == dp.Protocol {
+		if normalized == dp.Protocol {
 			return &displayableProtocols[i]
 		}
 	}
 	return nil
+}
+
+// normalizeDisplayProtocol maps the endpoint-level alias "activity" to the
+// canonical definition-level protocol "activity_protocol" used by the registry.
+func normalizeDisplayProtocol(protocol string) agent_api.AgentProtocol {
+	if strings.EqualFold(strings.TrimSpace(protocol), string(agent_api.AgentEndpointProtocolActivity)) {
+		return agent_api.AgentProtocolActivityProtocol
+	}
+	return agent_api.AgentProtocol(protocol)
 }
 
 // agentInvocationEndpoints builds the list of displayable invocation endpoints
@@ -2178,6 +2265,14 @@ func agentInvocationEndpoints(
 		dp := displayableProtocolFor(p.Protocol)
 		if dp == nil {
 			continue
+		}
+
+		// Prefer the friendly display label (e.g. "activity") over the raw
+		// agent.yaml value so endpoint output is consistent regardless of whether
+		// the user wrote "activity" or "activity_protocol".
+		displayProtocol := p.Protocol
+		if dp.DisplayLabel != "" {
+			displayProtocol = dp.DisplayLabel
 		}
 
 		var endpointURL string
@@ -2200,7 +2295,7 @@ func agentInvocationEndpoints(
 		}
 
 		endpoints = append(endpoints, protocolEndpointInfo{
-			Protocol: p.Protocol,
+			Protocol: displayProtocol,
 			URL:      endpointURL,
 		})
 	}

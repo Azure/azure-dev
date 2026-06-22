@@ -209,6 +209,20 @@ def find_service_name(testdir):
     return None
 
 
+def _assert_safe_testdir(path):
+    """Guardrail before `rm -rf`: refuse a path that is not a clearly disposable
+    test dir, so a bad E2E_TESTDIR (e.g. '/', '/tmp', '$HOME') can never trigger
+    a destructive delete. Returns the normalized absolute path."""
+    abspath = os.path.abspath(path)
+    home = os.path.abspath(os.path.expanduser("~"))
+    protected = {"/", "/tmp", "/var", "/usr", "/etc", "/bin", "/lib",
+                 "/root", "/home", home}
+    if abspath in protected or abspath.count("/") < 2:
+        raise RuntimeError(
+            f"Refusing to `rm -rf` unsafe E2E_TESTDIR={path!r} (resolved {abspath!r})")
+    return abspath
+
+
 # ===========================================================
 # SETUP
 # ===========================================================
@@ -220,9 +234,10 @@ def setup():
     subprocess.run([TMUX, "-L", SOCK, "kill-server"], capture_output=True)
     time.sleep(0.5)
 
-    # Clean test dir
-    subprocess.run(["rm", "-rf", TESTDIR])
-    os.makedirs(TESTDIR, exist_ok=True)
+    # Clean test dir (guard against a destructive E2E_TESTDIR like '/' or '/tmp')
+    safe_testdir = _assert_safe_testdir(TESTDIR)
+    subprocess.run(["rm", "-rf", "--", safe_testdir])
+    os.makedirs(safe_testdir, exist_ok=True)
 
     # Create tmux session
     tmux("new-session", "-d", "-s", SESS, "-x", "200", "-y", "50", "bash --norc --noprofile")
@@ -606,7 +621,7 @@ def phase_provision():
         return False
 
     print(f"Project dir: {project_dir}")
-    send(f"cd {project_dir}")
+    send(f"cd {shlex.quote(project_dir)}")
     key("Enter")
     time.sleep(1)
 
@@ -689,7 +704,7 @@ def phase_invoke():
     for attempt in range(1, max_retries + 1):
         print(f"\nInvoke attempt {attempt}/{max_retries}...")
         cap, rc = run_cmd(
-            f"azd ai agent invoke {service_name} --new-session -f {payload_file}",
+            f"azd ai agent invoke {shlex.quote(service_name)} --new-session -f {shlex.quote(payload_file)}",
             timeout=180,
         )
         if cap is None:
@@ -725,7 +740,7 @@ def phase_invoke():
             else:
                 # Get container logs for debugging
                 print("\n  Fetching agent logs for debugging...")
-                send(f"azd ai agent monitor {service_name} --tail 50")
+                send(f"azd ai agent monitor {shlex.quote(service_name)} --tail 50")
                 key("Enter")
                 time.sleep(10)
                 log_cap = _wait_for_shell_prompt_legacy(timeout=60)
@@ -856,7 +871,7 @@ if __name__ == "__main__":
                     break
         if project_dir and not args.keep:
             print(f"\nInit failed but found .azure in {project_dir} — attempting cleanup...")
-            send(f"cd {project_dir}")
+            send(f"cd {shlex.quote(project_dir)}")
             key("Enter")
             time.sleep(1)
             phase_teardown()

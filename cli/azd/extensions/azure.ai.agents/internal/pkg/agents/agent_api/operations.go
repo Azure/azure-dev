@@ -37,6 +37,8 @@ const (
 	UserIdentityHeader = "x-ms-user-identity"
 	// AgentUserIDHeader is the user identity header for local agent invocations.
 	AgentUserIDHeader = "x-agent-user-id"
+	// AgentFoundryCallIDHeader is the call ID header for local agent invocations.
+	AgentFoundryCallIDHeader = "x-agent-foundry-call-id"
 )
 
 // SessionRequestOptions holds optional headers shared by session-level agent operations.

@@ -50,3 +50,12 @@ func applyLocalUserIdentityHeader(req *http.Request, flags *userIdentityFlags) {
 		req.Header.Set(agent_api.AgentUserIDHeader, flags.userIdentity)
 	}
 }
+
+// applyLocalCallIDHeader sets the local call ID header (x-agent-foundry-call-id)
+// on a request destined for a locally running agent. The call ID is local-only
+// and is never sent on remote (Foundry) invokes.
+func applyLocalCallIDHeader(req *http.Request, callID string) {
+	if callID != "" {
+		req.Header.Set(agent_api.AgentFoundryCallIDHeader, callID)
+	}
+}

@@ -44,6 +44,7 @@ type invokeFlags struct {
 	agentEndpoint   string
 	version         string
 	outputFmt       string
+	callID          string
 }
 
 // outputRaw is the sentinel value of the inherited --output flag that selects
@@ -97,6 +98,10 @@ azd creates or reuses a hosted agent session backed by that version.
 For agents configured with header-based isolation, pass --user-identity
 on each invoke. Locally it is sent as the x-agent-user-id header; for
 remote invokes it is sent as the x-ms-user-identity header.
+
+Use --call-id to send a call ID with a local invoke. It is sent as the
+x-agent-foundry-call-id header and applies only to local invocations; it is
+ignored for remote requests.
 
 Use --output raw (or -o raw) to dump the unmodified server response (status
 line, headers, and body verbatim) to stdout. Useful for debugging server
@@ -234,6 +239,13 @@ suppressed in raw mode.`,
 	cmd.Flags().StringVar(&flags.conversation, "conversation-id", "", "Explicit conversation ID override")
 	cmd.Flags().BoolVar(&flags.newConversation, "new-conversation", false, "Force a new conversation (discard saved one)")
 	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
+	cmd.Flags().StringVar(
+		&flags.callID,
+		"call-id",
+		"",
+		"Call ID header value (sent as "+agent_api.AgentFoundryCallIDHeader+" for local invocations only; "+
+			"ignored for remote requests)",
+	)
 	cmd.Flags().StringVar(
 		&flags.agentEndpoint,
 		"agent-endpoint",
@@ -582,6 +594,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	applyLocalUserIdentityHeader(req, &a.flags.userIdentityFlags)
+	applyLocalCallIDHeader(req, a.flags.callID)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
 		// body match what the server actually sent on the wire.
@@ -1108,6 +1121,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", contentTypeForBody(body))
 	applyLocalUserIdentityHeader(req, &a.flags.userIdentityFlags)
+	applyLocalCallIDHeader(req, a.flags.callID)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
 		// body match what the server actually sent on the wire.

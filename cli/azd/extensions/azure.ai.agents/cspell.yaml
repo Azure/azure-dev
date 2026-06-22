@@ -81,3 +81,10 @@ words:
   - deepseek
   - ttfb
   - Bhadauria
+  # E2E test documentation terms
+  - norc
+  - noprofile
+  - pyenv
+  - TESTDIR
+  - Hanrahan's
+

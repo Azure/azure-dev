@@ -1,0 +1,200 @@
+name: "ext-azure-ai-agents-e2e-static"
+
+# Static (deterministic) E2E tests for the azure.ai.agents CLI extension.
+#
+# Architecture:
+#   Python test scripts → tmux → azd ai agent CLI (under test)
+#
+# No LLM / Copilot needed — all interactions are deterministic.
+# Tiers:
+#   0: Offline validation (no auth, ~15s)
+#   1: Init variants (auth needed, no deploy, ~3min)
+#   2: Full golden path (provision + deploy + invoke, ~15min)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "Which tiers to run (0=offline ~15s, 1=init variants ~3min, 2=full golden path ~15min each)"
+        type: choice
+        options:
+          - "0"
+          - "0+1"
+          - "0+1+2"
+        default: "0+1"
+      deploy_modes:
+        description: "Tier 2 deploy modes (code=source zip, container=ACR build, both=parallel)"
+        type: choice
+        options:
+          - "both"
+          - "code"
+          - "container"
+        default: "both"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Do NOT cancel in-progress: Tier 2 creates cloud resources that need teardown.
+  # A cancelled run would skip cleanup → resource leak + billing.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write  # For OIDC federated credentials (Tier 1/2)
+
+env:
+  TESTS_DIR: cli/azd/extensions/azure.ai.agents/tests/e2e-static
+
+jobs:
+  # Tier 0 and Tier 1 run in parallel (fast, no resources created).
+  # Tier 2 runs only after both pass (creates Azure resources that cost money).
+  tier0:
+    name: "Tier 0 — Offline Validation"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "cli/azd/go.mod"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tmux
+        run: sudo apt-get install -y tmux
+
+      - name: Build azd + install extension
+        working-directory: cli/azd
+        run: |
+          go build -o ./azd .
+          echo "$PWD" >> "$GITHUB_PATH"
+          export PATH="$PWD:$PATH"
+          azd extension source add -n local -t file -l "$PWD/extensions/registry.json"
+          azd extension install azure.ai.agents --source local
+
+      - name: Run Tier 0 tests
+        working-directory: ${{ env.TESTS_DIR }}
+        run: python3 test_tier0.py
+
+  tier1:
+    name: "Tier 1 — Init Variants"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    if: contains(inputs.tier, '1')
+    # No needs: — runs in parallel with tier0
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "cli/azd/go.mod"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tmux
+        run: sudo apt-get install -y tmux
+
+      - name: Build azd + install extension
+        working-directory: cli/azd
+        run: |
+          go build -o ./azd .
+          echo "$PWD" >> "$GITHUB_PATH"
+          export PATH="$PWD:$PATH"
+          azd extension source add -n local -t file -l "$PWD/extensions/registry.json"
+          azd extension install azure.ai.agents --source local
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.FOUNDRY_EXT_DEVOPS_CLIENT_ID }}
+          tenant-id: ${{ secrets.FOUNDRY_EXT_DEVOPS_TENANT_ID }}
+          subscription-id: ${{ secrets.FOUNDRY_EXT_DEVOPS_SUB_ID }}
+
+      - name: Configure azd to use az CLI auth
+        # On GitHub runners, az CLI runs natively (fast). useAzCliAuth is safe here.
+        # In WSL local-dev, this causes timeouts — see LOCAL-TEST-GUIDE.md.
+        run: azd config set auth.useAzCliAuth true
+
+      - name: Run Tier 1 tests
+        working-directory: ${{ env.TESTS_DIR }}
+        env:
+          E2E_SUBSCRIPTION: ${{ secrets.FOUNDRY_EXT_DEVOPS_SUB_ID }}
+          E2E_PROJECT: ${{ secrets.FOUNDRY_PROJECT_NAME }}
+          E2E_TENANT: ${{ secrets.FOUNDRY_EXT_DEVOPS_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 test_tier1.py
+
+  tier2:
+    name: "Tier 2 — Golden Path (${{ inputs.deploy_modes || 'both' }})"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30  # Each deploy mode takes ~13min; both modes run in parallel within test_tier2.py
+    if: contains(inputs.tier, '2')
+    needs: [tier0, tier1]  # Only run after both fast tiers pass
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "cli/azd/go.mod"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tmux
+        run: sudo apt-get install -y tmux
+
+      - name: Build azd + install extension
+        working-directory: cli/azd
+        run: |
+          go build -o ./azd .
+          echo "$PWD" >> "$GITHUB_PATH"
+          export PATH="$PWD:$PATH"
+          azd extension source add -n local -t file -l "$PWD/extensions/registry.json"
+          azd extension install azure.ai.agents --source local
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.FOUNDRY_EXT_DEVOPS_CLIENT_ID }}
+          tenant-id: ${{ secrets.FOUNDRY_EXT_DEVOPS_TENANT_ID }}
+          subscription-id: ${{ secrets.FOUNDRY_EXT_DEVOPS_SUB_ID }}
+
+      - name: Configure azd to use az CLI auth
+        # On GitHub runners, az CLI runs natively (fast). useAzCliAuth is safe here.
+        run: azd config set auth.useAzCliAuth true
+
+      - name: Run Tier 2 tests
+        working-directory: ${{ env.TESTS_DIR }}
+        env:
+          # These secrets must be configured in the repository's Actions settings:
+          # FOUNDRY_EXT_DEVOPS_SUB_ID: Azure subscription ID for test resources
+          # FOUNDRY_PROJECT_NAME: Existing Foundry project (or set E2E_CREATE_PROJECT=true to skip)
+          # FOUNDRY_EXT_DEVOPS_TENANT_ID: AAD tenant ID for OIDC auth
+          E2E_SUBSCRIPTION: ${{ secrets.FOUNDRY_EXT_DEVOPS_SUB_ID }}
+          E2E_PROJECT: ${{ secrets.FOUNDRY_PROJECT_NAME }}
+          E2E_TENANT: ${{ secrets.FOUNDRY_EXT_DEVOPS_TENANT_ID }}
+          E2E_CREATE_PROJECT: "true"
+          E2E_LOCATION: "eastus2"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 test_tier2.py --mode ${{ inputs.deploy_modes || 'both' }}
+
+      - name: Teardown on failure
+        if: failure() || cancelled()
+        working-directory: ${{ env.TESTS_DIR }}
+        run: |
+          echo "Attempting cleanup of any leaked resources..."
+          # test_full_e2e.py includes teardown, but if it crashed mid-way:
+          for dir in /tmp/e2e-tests/tier2-*/; do
+            if [ -d "$dir" ]; then
+              cd "$dir"
+              PROJ_DIR=$(find . -maxdepth 2 -name "azure.yaml" -exec dirname {} \; | head -1)
+              if [ -n "$PROJ_DIR" ]; then
+                cd "$PROJ_DIR" && azd down --force --purge --no-prompt 2>/dev/null || true
+              fi
+            fi
+          done

@@ -227,18 +227,15 @@ func Test_credentialOptions_withOIDCCustomSubject(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, opts.EnableFederatedCredentials)
 
+		// Without "context" in claim keys, PR and branch subjects
+		// collapse to the same value — deduplication yields 1 FIC.
+		require.Len(t, opts.FederatedCredentialOptions, 1)
+
 		prCred := opts.FederatedCredentialOptions[0]
 		require.Equal(t,
 			"repository_owner_id:1844662:"+
-				"repository_id:599293758:pull_request",
+				"repository_id:599293758",
 			prCred.Subject,
-		)
-
-		mainCred := opts.FederatedCredentialOptions[1]
-		require.Equal(t,
-			"repository_owner_id:1844662:"+
-				"repository_id:599293758:ref:refs/heads/main",
-			mainCred.Subject,
 		)
 	})
 
@@ -301,11 +298,13 @@ func Test_credentialOptions_withOIDCCustomSubject(t *testing.T) {
 			nil,
 		)
 		require.NoError(t, err)
-		// PR + develop + main = 3 credentials
-		require.Len(t, opts.FederatedCredentialOptions, 3)
+		// Without "context", all subjects collapse to the same value.
+		// Deduplication yields only 1 FIC.
+		require.Len(t, opts.FederatedCredentialOptions, 1)
 
-		for _, cred := range opts.FederatedCredentialOptions {
-			require.Contains(t, cred.Subject, "repository_owner_id:1844662")
-		}
+		require.Contains(t,
+			opts.FederatedCredentialOptions[0].Subject,
+			"repository_owner_id:1844662",
+		)
 	})
 }

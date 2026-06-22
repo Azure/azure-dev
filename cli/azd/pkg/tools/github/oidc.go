@@ -111,9 +111,11 @@ func (cli *Cli) GetRepoInfo(
 //
 //	repo:{owner}/{repo}:{suffix}
 //
-// For custom configs, claim keys are mapped to values and joined with the
-// suffix. Unknown claim keys cause an error so the user knows azd needs
-// updating.
+// For custom configs, claim keys are mapped to values and joined.
+// The special "context" claim key represents the dynamic trailing part of
+// the subject (e.g., "ref:refs/heads/main" or "pull_request"), and "repo"
+// is the short-form repository identifier ("repo:owner/name").
+// Unknown claim keys cause an error so the user knows azd needs updating.
 func BuildOIDCSubject(
 	repoSlug string,
 	repoInfo *RepoInfo,
@@ -171,6 +173,17 @@ func BuildOIDCSubject(
 			parts = append(parts,
 				fmt.Sprintf("repository:%s", repoSlug),
 			)
+		case "context":
+			// "context" is GitHub's term for the dynamic trailing part of the
+			// subject (e.g. "ref:refs/heads/main", "pull_request", or
+			// "environment:prod"). It maps directly to the suffix parameter.
+			parts = append(parts, suffix)
+		case "repo":
+			// "repo" is the short-form repository claim used in default format
+			// subjects: "repo:owner/name".
+			parts = append(parts,
+				fmt.Sprintf("repo:%s", repoSlug),
+			)
 		default:
 			return "", fmt.Errorf(
 				"unsupported OIDC claim key %q in subject"+
@@ -179,6 +192,5 @@ func BuildOIDCSubject(
 			)
 		}
 	}
-	parts = append(parts, suffix)
 	return strings.Join(parts, ":"), nil
 }

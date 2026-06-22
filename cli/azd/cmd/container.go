@@ -73,6 +73,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	golangtools "github.com/azure/azure-dev/cli/azd/pkg/tools/golang"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
@@ -723,6 +724,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(dotnet.NewCli)
 	container.MustRegisterSingleton(git.NewCli)
 	container.MustRegisterSingleton(github.NewGitHubCli)
+	container.MustRegisterSingleton(golangtools.NewCli)
 	container.MustRegisterSingleton(javac.NewCli)
 	container.MustRegisterSingleton(kubectl.NewCli)
 	container.MustRegisterSingleton(maven.NewCli)
@@ -809,6 +811,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		project.ServiceLanguageJavaScript: project.NewNodeProject,
 		project.ServiceLanguageTypeScript: project.NewNodeProject,
 		project.ServiceLanguageJava:       project.NewMavenProject,
+		project.ServiceLanguageGo:         project.NewGoProject,
 		project.ServiceLanguageDocker:     project.NewDockerProject,
 		project.ServiceLanguageSwa:        project.NewSwaProject,
 		project.ServiceLanguageCustom:     project.NewCustomProject,

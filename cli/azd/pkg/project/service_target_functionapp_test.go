@@ -181,6 +181,28 @@ func TestResolveFunctionAppRemoteBuild_NonJavaScriptDefaults(t *testing.T) {
 	require.False(t, remoteBuild)
 }
 
+func TestResolveFunctionAppRemoteBuild_Go(t *testing.T) {
+	t.Parallel()
+
+	// Default: Go should return false (no remote build)
+	goConfig := createTestServiceConfig(t.TempDir(), AzureFunctionTarget, ServiceLanguageGo)
+	remoteBuild, err := resolveFunctionAppRemoteBuild(goConfig)
+	require.NoError(t, err)
+	require.False(t, remoteBuild, "Go should default to local build (remoteBuild=false)")
+
+	// Explicit false: should succeed
+	goConfig.RemoteBuild = new(false)
+	remoteBuild, err = resolveFunctionAppRemoteBuild(goConfig)
+	require.NoError(t, err)
+	require.False(t, remoteBuild)
+
+	// Explicit true: should error (remote build not supported for Go)
+	goConfig.RemoteBuild = new(true)
+	_, err = resolveFunctionAppRemoteBuild(goConfig)
+	require.Error(t, err, "Go should reject remoteBuild=true")
+	require.Contains(t, err.Error(), "remote build is not supported for Go")
+}
+
 func TestResolveFunctionAppRemoteBuild_BOMHandling(t *testing.T) {
 	t.Parallel()
 

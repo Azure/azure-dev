@@ -5686,8 +5686,9 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 					args: {
-						name: 'extension-id',
+						name: 'extension-id|extension-bundle.zip',
 						generators: azdGenerators.listExtensions,
+						template: 'filepaths',
 					},
 				},
 				{
@@ -6484,6 +6485,16 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['--codeowners'],
+							description: 'GitHub handles or teams for the generated CODEOWNERS entry when --internal is set.',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'codeowners',
+								},
+							],
+						},
+						{
 							name: ['--id'],
 							description: 'The extension identifier (e.g., company.extension).',
 							args: [
@@ -6491,6 +6502,10 @@ const completionSpec: Fig.Spec = {
 									name: 'id',
 								},
 							],
+						},
+						{
+							name: ['--internal'],
+							description: 'Scaffold Azure/azure-dev first-party extension files. Currently supports Go extensions only.',
 						},
 						{
 							name: ['--language'],
@@ -6539,6 +6554,10 @@ const completionSpec: Fig.Spec = {
 					name: ['pack'],
 					description: 'Build and pack extension artifacts',
 					options: [
+						{
+							name: ['--bundle'],
+							description: 'Produce a single self-contained bundle (.zip) containing a registry.json and the extension artifacts, installable via \'azd extension install <bundle.zip>\'.',
+						},
 						{
 							name: ['--input', '-i'],
 							description: 'Path to the input directory.',

@@ -1944,8 +1944,10 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 //     user at the more-detailed local doc, so the canned link is
 //     redundant.
 //   - Otherwise the aka.ms line is preserved and the "Next:" block is
-//     appended below, separated by a blank line — aka.ms remains the
-//     fallback doc pointer when no local README is present.
+//     appended below, separated by a single blank line — aka.ms remains
+//     the fallback doc pointer when no local README is present. The block
+//     returned by FormatNextForNote already starts with a newline, so the
+//     append joins with a single "\n" to avoid a double blank line.
 //
 // The function is a no-op when state is nil, no artifact carries a note,
 // or the resolver returns no suggestions; this keeps the deploy path
@@ -2008,7 +2010,10 @@ func augmentDeployNote(state *nextstep.State, artifacts []*azdext.Artifact, proj
 		target.Metadata["note"] = block
 		return
 	}
-	target.Metadata["note"] = existing + "\n\n" + block
+	// FormatNextForNote prefixes block with its own leading newline, so a
+	// single "\n" here yields exactly one blank line between the preserved
+	// aka.ms note and the "Next:" header.
+	target.Metadata["note"] = existing + "\n" + block
 }
 
 // lastNoteArtifact returns the last artifact in the slice whose

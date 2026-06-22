@@ -29,11 +29,12 @@ func newToolboxDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Delete a toolbox or a single version.",
 		Long: `Delete a toolbox or one of its versions.
 
-Without --version the whole toolbox is removed (cascades to every version).
-With --version the named version is deleted; the CLI refuses to delete the
-default version while others exist (retarget first) or — without --force —
-when it is the only remaining version (which would cascade and remove the
-toolbox).`,
+Without --version the whole toolbox is removed (cascades to every version) and
+its TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT value is cleared from the active azd
+environment. With --version the named version is deleted; the CLI refuses to
+delete the default version while others exist (retarget first) or — without
+--force — when it is the only remaining version (which would cascade and remove
+the toolbox).`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runToolboxDelete(cmd.Context(), args[0], *flags, readToolboxFlags(cmd, extCtx))
@@ -116,6 +117,10 @@ func runDeleteToolbox(
 			}
 			if err := client.DeleteToolbox(ctx, name); err != nil && !isAzureNotFound(err) {
 				return exterrors.ServiceFromAzure(err, exterrors.OpDeleteToolbox)
+			}
+			// Whole-toolbox delete clears the endpoint; version delete does not.
+			if err := setToolboxEndpointEnvFunc(ctx, name, ""); err != nil {
+				return err
 			}
 			return emitDeleteResult(name, "", "deleted", parent.output)
 

@@ -125,37 +125,33 @@ extends:
                   EOF
                 displayName: Install azure.ai.agents extension
 
-              # OIDC login via the service connection. Leaves an authenticated az
-              # CLI session on the agent (used by azd via auth.useAzCliAuth) and
-              # exports the resolved subscription/tenant for the test driver.
+              # Run the live golden path INSIDE the AzureCLI@2 task so the az CLI
+              # session (consumed by azd via auth.useAzCliAuth) stays valid for the
+              # whole run. keepAzSessionActive is REQUIRED: the service connection
+              # uses Workload Identity Federation and the test runs well past the
+              # ~10 min default token lifetime. A separate login step would NOT
+              # work — AzureCLI@2 isolates AZURE_CONFIG_DIR to a task-temp dir, so
+              # the session does not persist to later plain bash steps.
               - task: AzureCLI@2
-                displayName: Azure Login (TME)
+                displayName: Run Tier 2 live golden path
+                timeoutInMinutes: 80
                 inputs:
                   azureSubscription: ${{ parameters.serviceConnection }}
+                  keepAzSessionActive: true
+                  visibleAzLogin: false
                   scriptType: bash
                   scriptLocation: inlineScript
+                  workingDirectory: cli/azd/extensions/azure.ai.agents/tests/e2e-live
                   inlineScript: |
-                    set -euo pipefail
-                    SUB_ID=$(az account show --query id -o tsv)
-                    TENANT_ID=$(az account show --query tenantId -o tsv)
-                    echo "##vso[task.setvariable variable=SubscriptionId;issecret=false]$SUB_ID"
-                    echo "##vso[task.setvariable variable=TenantId;issecret=false]$TENANT_ID"
-                    echo "Logged in. Subscription: $SUB_ID"
-
-              - bash: azd config set auth.useAzCliAuth true
-                displayName: Configure azd to use az CLI auth
-
-              - bash: |
-                  set -o pipefail
-                  mkdir -p "$(Build.ArtifactStagingDirectory)/logs"
-                  python3 test_tier2.py --mode ${{ parameters.deployModes }} 2>&1 \
-                    | tee "$(Build.ArtifactStagingDirectory)/logs/tier2.log"
-                workingDirectory: cli/azd/extensions/azure.ai.agents/tests/e2e-live
-                timeoutInMinutes: 80
-                displayName: Run Tier 2 live golden path
+                    set -o pipefail
+                    azd config set auth.useAzCliAuth true
+                    export E2E_SUBSCRIPTION="$(az account show --query id -o tsv)"
+                    export E2E_TENANT="$(az account show --query tenantId -o tsv)"
+                    echo "Using subscription: $E2E_SUBSCRIPTION"
+                    mkdir -p "$(Build.ArtifactStagingDirectory)/logs"
+                    python3 test_tier2.py --mode ${{ parameters.deployModes }} 2>&1 \
+                      | tee "$(Build.ArtifactStagingDirectory)/logs/tier2.log"
                 env:
-                  E2E_SUBSCRIPTION: $(SubscriptionId)
-                  E2E_TENANT: $(TenantId)
                   E2E_CREATE_PROJECT: "true"
                   E2E_LOCATION: eastus2
                   E2E_USE_AZ_CLI_AUTH: "true"
@@ -165,21 +161,31 @@ extends:
               - task: PublishPipelineArtifact@1
                 condition: always()
                 inputs:
-                  targetPath: $(Build.ArtifactStagingDirectory)/logs
+                  targetPath: $(Build.ArtifactStagingDirectory)
                   artifactName: tier2-live-logs-$(Build.BuildId)
                 displayName: Publish test logs
 
-              # Safety net: the test self-tears-down via `azd down`, but if it
-              # crashed mid-run, force-purge any leftover project environments.
-              - bash: |
-                  echo "Best-effort teardown of any leaked resources..."
-                  for dir in /tmp/e2e-tests/tier2-*/; do
-                    [ -d "$dir" ] || continue
-                    proj=$(find "$dir" -maxdepth 2 -name azure.yaml -exec dirname {} \; | head -1)
-                    if [ -n "$proj" ]; then
-                      ( cd "$proj" && azd down --force --purge --no-prompt ) 2>/dev/null || true
-                    fi
-                  done
+              # Safety net for hard crashes / step timeout: the in-test teardown
+              # runs `azd down` already, but if the run died mid-way, force-purge
+              # any leftover project environments. Must run inside AzureCLI@2 so it
+              # is authenticated — the previous task's az session does not persist.
+              - task: AzureCLI@2
                 condition: always()
                 continueOnError: true
                 displayName: Cleanup leaked Azure resources
+                inputs:
+                  azureSubscription: ${{ parameters.serviceConnection }}
+                  keepAzSessionActive: true
+                  visibleAzLogin: false
+                  scriptType: bash
+                  scriptLocation: inlineScript
+                  inlineScript: |
+                    azd config set auth.useAzCliAuth true
+                    echo "Best-effort teardown of any leaked resources..."
+                    for dir in /tmp/e2e-tests/tier2-*/; do
+                      [ -d "$dir" ] || continue
+                      proj=$(find "$dir" -maxdepth 2 -name azure.yaml -exec dirname {} \; | head -1)
+                      if [ -n "$proj" ]; then
+                        ( cd "$proj" && azd down --force --purge --no-prompt ) 2>/dev/null || true
+                      fi
+                    done

@@ -56,6 +56,11 @@ services:
         image: myprivacr.azurecr.io/agents/my-agent:v1   # BYO image required
 ```
 
+> You do not hand-author the `agents:` entry above. Run
+> `azd ai agent init --no-prompt --agent-name my-agent --image <registry/image:tag>`
+> to scaffold it (it writes `agent.yaml`); then add the `network:` block to the
+> generated service.
+
 > The example above uses **managed egress** so every field — including
 > `isolationMode` — is shown as valid YAML. For **BYO egress**, swap the
 > `isolationMode` line for an `agentSubnet` block (see comment `(b)` and the BYO
@@ -147,9 +152,17 @@ services:
 ```
 
 ```bash
+azd ai agent init --no-prompt --agent-name my-agent \
+  --image myprivacr.azurecr.io/agents/my-agent:v1   # writes agent.yaml
+```
+
+Then add the `network:` block above to the generated service and provision:
+
+```bash
 azd env new my-env --subscription "<sub>" --location westus
 azd env set AZURE_RESOURCE_GROUP "<rg>"
 azd env set AZURE_VNET_ID "<vnet-resource-id>"
+azd env set AZD_AGENT_SKIP_ACR true   # BYO image: skip the ACR build
 azd provision --no-prompt
 ```
 
@@ -161,12 +174,23 @@ azd deploy --no-prompt
 azd ai agent invoke --new-session "hello"
 ```
 
-Expected outputs:
+Validate the real resource state (not azd's echoed output):
 
-```text
-AZURE_FOUNDRY_NETWORK_MODE=managed
-AZURE_FOUNDRY_MANAGED_ISOLATION_MODE=AllowInternetOutbound
+```bash
+# account data plane is actually private
+az cognitiveservices account show -g "<rg>" -n "<account>" \
+  --query "properties.publicNetworkAccess" -o tsv          # -> Disabled
+
+# the V2 managed network actually carries the isolation mode
+az resource show --ids "<account-id>/managedNetworks/default" \
+  --api-version 2025-10-01-preview \
+  --query "properties.managedNetwork.isolationMode" -o tsv  # -> AllowInternetOutbound
 ```
+
+A successful `azd ai agent invoke` echo response over the private endpoint is the
+end-to-end proof. azd also writes `AZURE_FOUNDRY_NETWORK_MODE` and
+`AZURE_FOUNDRY_MANAGED_ISOLATION_MODE` to the environment as outputs, but those
+are azd's own classification — confirm posture from the resource state above.
 
 > **`isolationMode` note.** When set, azd provisions the account's V2
 > managed network (`managednetworks/default`) with the chosen isolation mode.

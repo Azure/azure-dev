@@ -134,6 +134,17 @@ instead of your VNet. `peSubnet` is still required: the account data plane stays
 private behind an account private endpoint in your VNet, reachable from inside
 the VNet / VPN.
 
+Scaffold the agent with a pre-built (BYO) image (writes `azure.yaml` and
+`agent.yaml`):
+
+```bash
+azd ai agent init --no-prompt --agent-name my-agent \
+  --image myprivacr.azurecr.io/agents/my-agent:v1
+```
+
+Then add a `network:` block to the generated service in `azure.yaml` (omit
+`agentSubnet` for managed egress; `isolationMode` is valid only in this mode):
+
 ```yaml
 name: my-agent
 infra:
@@ -151,12 +162,7 @@ services:
         prefix: 192.168.11.0/24
 ```
 
-```bash
-azd ai agent init --no-prompt --agent-name my-agent \
-  --image myprivacr.azurecr.io/agents/my-agent:v1   # writes agent.yaml
-```
-
-Then add the `network:` block above to the generated service and provision:
+Configure and provision:
 
 ```bash
 azd env new my-env --subscription "<sub>" --location westus

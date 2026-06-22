@@ -23,7 +23,13 @@ var templatesFS embed.FS
 // no compile step (no ARM JSON to regenerate); azd-core's built-in Terraform
 // provider consumes the .tf files directly at `azd provision`.
 //
+// acr.tf is copied only when an agent uses docker:; outputs.tf is generated
+// from outputs.tf.tmpl (text/template) so the ACR outputs reference the
+// registry resources only when acr.tf is present. main.tfvars.json is likewise
+// generated at eject time.
+//
 //go:embed templates/terraform/*.tf
+//go:embed templates/terraform/outputs.tf.tmpl
 var terraformTemplatesFS embed.FS
 
 // TemplatesFS exposes the embedded provisioning templates. Callers that
@@ -31,7 +37,8 @@ var terraformTemplatesFS embed.FS
 func TemplatesFS() embed.FS { return templatesFS }
 
 // TerraformTemplatesFS exposes the embedded Terraform module (the *.tf files
-// under templates/terraform/). The eject step copies these to ./infra/ and
+// and outputs.tf.tmpl under templates/terraform/). The eject step copies the
+// static .tf files to ./infra/, renders outputs.tf from outputs.tf.tmpl, and
 // generates main.tfvars.json alongside them.
 func TerraformTemplatesFS() embed.FS { return terraformTemplatesFS }
 

@@ -1,11 +1,5 @@
-# Input variables for the Foundry Terraform module. These mirror the params
-# of the Bicep template (internal/synthesis/templates/main.bicep). azd-core
-# substitutes the ${...} placeholders in main.tfvars.json from the azd
-# environment at provision time; deployments and include_acr are written by
-# the eject step from azure.yaml.
-
 variable "subscription_id" {
-  description = "Azure subscription id. Supplied by azd from AZURE_SUBSCRIPTION_ID."
+  description = "Azure subscription id."
   type        = string
 }
 
@@ -20,7 +14,7 @@ variable "resource_group_name" {
 }
 
 variable "environment_name" {
-  description = "azd environment name. Used to tag resources (azd-env-name)."
+  description = "azd environment name. Used to tag resources and to derive default names."
   type        = string
 }
 
@@ -37,11 +31,7 @@ variable "resource_token_salt" {
 }
 
 variable "foundry_project_name" {
-  description = <<-EOT
-    Foundry project name (3-32 alphanumeric/hyphen chars). When empty, it is
-    derived from environment_name (see local.foundry_project_name in main.tf),
-    mirroring the Bicep provider's default-to-env-name behavior.
-  EOT
+  description = "Foundry project name (3-32 alphanumeric/hyphen chars). When empty, derived from environment_name."
   type        = string
   default     = ""
 
@@ -68,18 +58,8 @@ variable "deployments" {
   default = []
 }
 
-variable "include_acr" {
-  description = "Include an Azure Container Registry. Set true when any agent uses docker."
-  type        = bool
-  default     = false
-}
-
 variable "principal_id" {
-  description = <<-EOT
-    Object id of the developer running azd. When set, grants Cognitive Services
-    User on the project. Empty disables the role assignment so headless / CI
-    runs do not fail.
-  EOT
+  description = "Object id of the developer running azd. When empty, the developer role assignment is skipped."
   type        = string
   default     = ""
 }

@@ -1,36 +1,32 @@
-# Resource-group-scoped resources for a microsoft.foundry service: the Foundry
-# (AIServices) account, its project, model deployments, the optional container
-# registry, and the developer role assignment.
-#
-# This is the Terraform equivalent of internal/synthesis/templates/main.bicep +
-# modules/resources.bicep. It provisions the same resources and emits the same
-# output contract (see outputs.tf), so the agent deploy + RBAC flow is
-# unchanged on the Terraform path.
+# Foundry (AIServices) account, its project, model deployments, and the
+# developer role assignment.
 
 locals {
-  # Deterministic token to vary resource names, mirroring the Bicep template's
-  # uniqueString(subscription().id, resourceGroup().id, location[, salt]).
-  # Terraform has no uniqueString; sha1 over the same inputs is stable across
-  # re-provisions and keeps the cog-/cr prefixes from abbreviations.json.
+  # Resource group name. Falls back to rg-{environment_name} when not provided.
+  resource_group_name = (
+    var.resource_group_name != "" ? var.resource_group_name : "rg-${local.derived_rg_suffix}"
+  )
+  derived_rg_suffix = trimsuffix(
+    substr(trim(coalesce(var.environment_name, "env"), "-."), 0, 87),
+    "-",
+  )
+
+  # Token to keep globally-unique resource names stable across re-provisions.
   resource_token = substr(sha1(join("-", compact([
     var.subscription_id,
-    var.resource_group_name,
+    local.resource_group_name,
     var.location,
     var.resource_token_salt,
   ]))), 0, 13)
 
-  foundry_account_name    = "cog-${local.resource_token}"
-  container_registry_name = "cr${local.resource_token}"
+  foundry_account_name = "cog-${local.resource_token}"
 
-  # Foundry project name. When foundry_project_name is empty (e.g. the bicepless
-  # default flow where AZURE_AI_PROJECT_NAME is unset), derive it from
-  # environment_name, mirroring the Bicep provider's sanitizeFoundryName:
-  # lowercase, non [a-z0-9-] -> '-', trim '-', cap at 32, pad to >= 3 chars.
+  # Project name. Falls back to a sanitized environment_name (3-32 chars) when
+  # not provided.
   foundry_project_name = (
     var.foundry_project_name != "" ? var.foundry_project_name : local.derived_project_name
   )
 
-  # Sanitize environment_name into a valid project name candidate.
   sanitized_env_name = trim(
     replace(lower(coalesce(var.environment_name, "")), "/[^a-z0-9-]/", "-"),
     "-",
@@ -47,20 +43,18 @@ locals {
     : (local.capped_env_name == "" ? "foundryproject" : "${local.capped_env_name}prj")
   )
 
-  # Built-in role definition ids.
   # https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
   cognitive_services_user_role_id = "a97b65f3-24c7-4388-baec-2e87135dc908"
 }
 
 resource "azurerm_resource_group" "this" {
-  name     = var.resource_group_name
+  name     = local.resource_group_name
   location = var.location
   tags     = var.tags
 }
 
-# Foundry AIServices account. Uses azapi so allowProjectManagement and the
-# disableLocalAuth/networkAcls body match the Bicep template exactly (the
-# azurerm_cognitive_account resource does not expose allowProjectManagement).
+# azapi is used so allowProjectManagement can be set (not exposed by
+# azurerm_cognitive_account).
 resource "azapi_resource" "foundry_account" {
   type      = "Microsoft.CognitiveServices/accounts@2025-06-01"
   name      = local.foundry_account_name
@@ -91,9 +85,7 @@ resource "azapi_resource" "foundry_account" {
   }
 }
 
-# Model deployments. ARM throttles concurrent deployments on the same account,
-# so they are created one at a time via the chain below (the Bicep template
-# uses @batchSize(1) for the same reason).
+# Created one at a time; ARM throttles concurrent deployments on one account.
 resource "azurerm_cognitive_deployment" "model" {
   for_each = { for d in var.deployments : d.name => d }
 
@@ -112,9 +104,7 @@ resource "azurerm_cognitive_deployment" "model" {
   }
 }
 
-# Foundry project. Created after all model deployments complete (the project
-# does not reference them, so the dependency is declared explicitly to mirror
-# the Bicep dependsOn).
+# Created after all model deployments complete.
 resource "azapi_resource" "project" {
   type      = "Microsoft.CognitiveServices/accounts/projects@2025-06-01"
   name      = local.foundry_project_name
@@ -137,8 +127,9 @@ resource "azapi_resource" "project" {
   depends_on = [azurerm_cognitive_deployment.model]
 }
 
-# Grant the developer Cognitive Services User on the project so they can call
-# the Foundry data-plane (chat/completions, agents API) from their machine.
+# Grants the developer Cognitive Services User on the project to call the
+# Foundry data-plane (chat/completions, agents API). Skipped when principal_id
+# is empty.
 resource "azurerm_role_assignment" "developer_cognitive_services_user" {
   count = var.principal_id == "" ? 0 : 1
 

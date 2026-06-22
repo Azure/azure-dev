@@ -462,6 +462,13 @@ func TestEjectInfra_Terraform_HappyPath_WritesExpectedFiles(t *testing.T) {
 	assert.Contains(t, stdout, "infra/main.tfvars.json")
 	assert.Contains(t, stdout, "infra.provider: terraform")
 	assert.Contains(t, stdout, "azd provision")
+
+	// This fixture has a docker: agent, so acr.tf is present and the generated
+	// outputs.tf must reference the registry resources (not empty strings).
+	outputs, err := os.ReadFile(filepath.Join(dir, "infra", "outputs.tf")) //nolint:gosec // G304: test path from t.TempDir()
+	require.NoError(t, err)
+	assert.Contains(t, string(outputs), "azurerm_container_registry.this.login_server",
+		"docker fixture => ACR outputs reference the registry")
 }
 
 func TestEjectInfra_Terraform_StampsProviderInAzureYaml(t *testing.T) {
@@ -516,8 +523,12 @@ func TestEjectInfra_Terraform_TfvarsShape(t *testing.T) {
 	assert.Equal(t, "${AZURE_SUBSCRIPTION_ID}", doc["subscription_id"])
 	assert.Equal(t, "${AZURE_PRINCIPAL_ID}", doc["principal_id"])
 
-	// Synthesizer-derived values: docker block => include_acr true, one deployment.
-	assert.Equal(t, true, doc["include_acr"])
+	// include_acr is NOT written to tfvars; the ACR decision is the presence of
+	// acr.tf at eject time, not a Terraform variable.
+	assert.NotContains(t, doc, "include_acr",
+		"include_acr must not be emitted to main.tfvars.json")
+
+	// deployments is the synthesizer-derived value carried into tfvars.
 	deps, ok := doc["deployments"].([]any)
 	require.True(t, ok, "deployments should be an array, got %T", doc["deployments"])
 	require.Len(t, deps, 1)
@@ -526,7 +537,7 @@ func TestEjectInfra_Terraform_TfvarsShape(t *testing.T) {
 func TestEjectInfra_Terraform_NoDockerOmitsAcr(t *testing.T) {
 	// Not parallel: captures os.Stdout.
 	dir := t.TempDir()
-	// image-only agent (no docker:) -> include_acr false.
+	// image-only agent (no docker:) -> no ACR.
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
 services:
   my-foundry:
@@ -541,15 +552,38 @@ services:
 		require.NoError(t, ejectInfra(dir, "terraform"))
 	})
 
-	// acr.tf is still written (the template set is static; include_acr gates it).
+	// acr.tf must NOT be written when no agent uses docker:.
 	_, err := os.Stat(filepath.Join(dir, "infra", "acr.tf"))
-	assert.NoError(t, err, "acr.tf is part of the static template set")
+	assert.True(t, os.IsNotExist(err), "acr.tf must be omitted when no agent uses docker:")
 
+	// outputs.tf must not contain any ACR output at all when ACR is not used --
+	// no resource references and no empty-string placeholders.
+	outputs, err := os.ReadFile(filepath.Join(dir, "infra", "outputs.tf")) //nolint:gosec // G304: test path from t.TempDir()
+	require.NoError(t, err)
+	assert.NotContains(t, string(outputs), "azurerm_container_registry",
+		"no ACR resource references when acr.tf is omitted")
+	assert.NotContains(t, string(outputs), "azapi_resource.acr_connection",
+		"no ACR connection reference when acr.tf is omitted")
+	assert.NotContains(t, string(outputs), "AZURE_CONTAINER_REGISTRY_ENDPOINT",
+		"ACR outputs must be omitted entirely, not emitted as empty strings")
+	assert.NotContains(t, string(outputs), "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+	assert.NotContains(t, string(outputs), "AZURE_AI_PROJECT_ACR_CONNECTION_NAME")
+	// The non-ACR outputs are still present.
+	assert.Contains(t, string(outputs), "AZURE_RESOURCE_GROUP")
+	assert.Contains(t, string(outputs), "FOUNDRY_PROJECT_ENDPOINT")
+
+	// main.tf must not carry any ACR leftovers (e.g. container_registry_name).
+	main, err := os.ReadFile(filepath.Join(dir, "infra", "main.tf")) //nolint:gosec // G304: test path from t.TempDir()
+	require.NoError(t, err)
+	assert.NotContains(t, string(main), "container_registry",
+		"main.tf must have no ACR references when ACR is not used")
+
+	// include_acr is not emitted to tfvars either.
 	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.tfvars.json")) //nolint:gosec // G304: test file path from t.TempDir()
 	require.NoError(t, err)
 	var doc map[string]any
 	require.NoError(t, json.Unmarshal(raw, &doc))
-	assert.Equal(t, false, doc["include_acr"])
+	assert.NotContains(t, doc, "include_acr")
 }
 
 func TestEjectInfra_Terraform_RefusesWhenInfraExists(t *testing.T) {

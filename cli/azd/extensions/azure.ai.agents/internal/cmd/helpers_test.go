@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -379,13 +380,13 @@ func (s *helpersProjectServer) Get(
 type helpersPromptServer struct {
 	azdext.UnimplementedPromptServiceServer
 	selectIndex int32
-	selectCalls int
+	selectCalls atomic.Int32
 }
 
 func (s *helpersPromptServer) Select(
 	_ context.Context, req *azdext.SelectRequest,
 ) (*azdext.SelectResponse, error) {
-	s.selectCalls++
+	s.selectCalls.Add(1)
 	idx := s.selectIndex
 	return &azdext.SelectResponse{Value: &idx}, nil
 }
@@ -407,7 +408,10 @@ func newHelpersTestAzdClient(
 	require.NoError(t, err)
 
 	go func() { _ = grpcServer.Serve(listener) }()
-	t.Cleanup(func() { grpcServer.Stop() })
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
 
 	azdClient, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
 	require.NoError(t, err)
@@ -522,6 +526,6 @@ func TestResolveAgentProtocol_MultipleServicesPromptsOnce(t *testing.T) {
 	_, serviceName, err := resolveAgentProtocol(t.Context(), azdClient, "", false)
 	require.NoError(t, err)
 	require.Equal(t, "svc-a", serviceName)
-	require.Equal(t, 1, promptServer.selectCalls,
+	require.Equal(t, int32(1), promptServer.selectCalls.Load(),
 		"resolveAgentProtocol should trigger exactly one prompt")
 }

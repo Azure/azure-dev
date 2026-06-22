@@ -716,9 +716,6 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 }
 
 // provisionToolboxes creates or updates Foundry Toolsets for each toolbox
-// in the service config. Called during post-provision after the project
-// endpoint has been created by Bicep.
-// provisionToolboxes creates or updates Foundry Toolsets for each toolbox
 // sourced from the sibling azure.ai.toolbox services. Called during
 // post-provision after the project endpoint has been created by Bicep. The
 // connections and toolConnections are used to resolve connection references

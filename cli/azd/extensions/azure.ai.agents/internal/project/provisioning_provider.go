@@ -8,6 +8,15 @@ package project
 // resolver to dispatch provisioning to this extension.
 const FoundryProviderName = "microsoft.foundry"
 
+// BicepProviderName and TerraformProviderName are azd-core's built-in
+// provisioning providers. `azd ai agent init --infra=terraform` stamps
+// TerraformProviderName onto azure.yaml so azd-core's Terraform provider
+// (not this extension's microsoft.foundry provider) handles provisioning.
+const (
+	BicepProviderName     = "bicep"
+	TerraformProviderName = "terraform"
+)
+
 // FoundryServiceHosts lists the values of `services.<name>.host` that
 // this extension's provisioning provider treats as Foundry services.
 // Must stay in sync with cmd.AiAgentHost ("azure.ai.agent") — kept here

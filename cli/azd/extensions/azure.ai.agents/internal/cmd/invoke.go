@@ -452,11 +452,6 @@ func (a *InvokeAction) resolveProtocol(
 	}
 	defer azdClient.Close()
 
-	if a.flags.local {
-		return resolveAgentProtocol(
-			ctx, azdClient, a.flags.name, a.noPrompt,
-		)
-	}
 	return resolveAgentProtocol(
 		ctx, azdClient, a.flags.name, a.noPrompt,
 	)

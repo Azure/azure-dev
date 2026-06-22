@@ -445,11 +445,14 @@ func TestInvokeLocalWithNamedAgent(t *testing.T) {
 
 	cmd := newInvokeCommand(nil)
 	cmd.SetArgs([]string{"my-agent", "--local", "Hello!"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
 	err := cmd.Execute()
 
-	// The command will error because there is no azd project or local server,
-	// but the error must NOT be the old validation rejection.
-	if err != nil && strings.Contains(err.Error(), "cannot use --local with a named agent") {
+	if err == nil {
+		t.Fatal("expected an error (no azd project), got nil")
+	}
+	if strings.Contains(err.Error(), "cannot use --local with a named agent") {
 		t.Fatalf("unexpected validation rejection: %v", err)
 	}
 }

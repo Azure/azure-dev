@@ -19,17 +19,49 @@ import (
 // returning a bool to indicate whether the entry should be included in the final zip.
 type OnZipFn func(src string, info os.FileInfo) (bool, error)
 
+// ExecutableMatcherFn is a predicate invoked for each regular file added to the
+// archive. When it returns true, the file's zip entry is marked executable
+// (the Unix execute bits are OR'd into its mode).
+//
+// This exists primarily for Windows, whose filesystem does not track Unix execute
+// bits: a compiled binary (e.g. the Azure Functions Go worker) would otherwise lose
+// its +x permission when the zip is extracted on Linux. Callers that produce such
+// binaries can flag exactly those entries instead of relying on a blunt heuristic.
+type ExecutableMatcherFn func(src string, info os.FileInfo) bool
+
+// CreateOption configures optional behavior of CreateFromDirectory.
+type CreateOption func(*createOptions)
+
+type createOptions struct {
+	executableMatcher ExecutableMatcherFn
+}
+
+// WithExecutableMatcher registers a predicate used to flag regular-file entries
+// that must be marked executable (Unix mode +x) in the resulting zip. See
+// ExecutableMatcherFn for details.
+func WithExecutableMatcher(fn ExecutableMatcherFn) CreateOption {
+	return func(o *createOptions) {
+		o.executableMatcher = fn
+	}
+}
+
 // CreateFromDirectory creates a zip archive from the given directory recursively,
 // that is suitable for transporting across machines.
 //
 // It resolves any symlinks it encounters.
 //
 // An optional function callback onZip can be passed to observe files being included,
-// or simply to exclude files.
-func CreateFromDirectory(source string, buf *os.File, onZip OnZipFn) error {
+// or simply to exclude files. Additional behavior (e.g. flagging executable entries)
+// can be configured via CreateOption values.
+func CreateFromDirectory(source string, buf *os.File, onZip OnZipFn, opts ...CreateOption) error {
+	options := createOptions{}
+	for _, opt := range opts {
+		opt(&options)
+	}
+
 	w := zip.NewWriter(buf)
 
-	err := addDirRoot(w, source, onZip)
+	err := addDirRoot(w, source, onZip, options.executableMatcher)
 	if err != nil {
 		return err
 	}
@@ -40,8 +72,9 @@ func CreateFromDirectory(source string, buf *os.File, onZip OnZipFn) error {
 func addDirRoot(
 	w *zip.Writer,
 	src string,
-	onZip OnZipFn) error {
-	return addDir(w, "", src, onZip, 0)
+	onZip OnZipFn,
+	execMatcher ExecutableMatcherFn) error {
+	return addDir(w, "", src, onZip, 0, execMatcher)
 }
 
 func addDir(
@@ -49,7 +82,8 @@ func addDir(
 	destRoot,
 	src string,
 	onZip OnZipFn,
-	symlinkDepth int) error {
+	symlinkDepth int,
+	execMatcher ExecutableMatcherFn) error {
 	if symlinkDepth > 40 {
 		// too deep, bail out similarly to the 'zip' tool
 		log.Println("skipping", src, "too many levels of symbolic links")
@@ -80,12 +114,12 @@ func addDir(
 
 		switch {
 		case info.Mode()&os.ModeSymlink != 0:
-			err = onSymlink(w, destRoot, s, info, onZip, symlinkDepth)
+			err = onSymlink(w, destRoot, s, info, onZip, symlinkDepth, execMatcher)
 		case info.IsDir():
 			root := filepath.Join(destRoot, info.Name())
-			err = addDir(w, root, s, onZip, symlinkDepth)
+			err = addDir(w, root, s, onZip, symlinkDepth, execMatcher)
 		default:
-			err = addFile(w, destRoot, s, info.Name(), info)
+			err = addFile(w, destRoot, s, info.Name(), info, execMatcher)
 		}
 
 		if err != nil {
@@ -100,13 +134,24 @@ func addFile(
 	destRoot string,
 	src string,
 	name string,
-	info os.FileInfo) error {
+	info os.FileInfo,
+	execMatcher ExecutableMatcherFn) error {
 	dest := filepath.Join(destRoot, name)
 	header := &zip.FileHeader{
 		Name:     strings.ReplaceAll(dest, "\\", "/"),
 		Modified: info.ModTime(),
 		Method:   zip.Deflate,
 	}
+	mode := info.Mode()
+	// On Windows, file mode bits don't include Unix execute permission, so a file
+	// that must be executable on Linux (e.g. a compiled binary) would otherwise lose
+	// its execute bit in the zip. Callers flag such entries via WithExecutableMatcher
+	// so only those get +x, keeping this generic utility free of target-specific
+	// assumptions.
+	if execMatcher != nil && execMatcher(src, info) {
+		mode |= 0o111
+	}
+	header.SetMode(mode)
 
 	f, err := w.CreateHeader(header)
 	if err != nil {
@@ -133,7 +178,8 @@ func onSymlink(
 	src string,
 	link os.FileInfo,
 	onZip OnZipFn,
-	symlinkDepth int) error {
+	symlinkDepth int,
+	execMatcher ExecutableMatcherFn) error {
 	target, err := filepath.EvalSymlinks(src)
 	if err != nil {
 		return err
@@ -148,9 +194,9 @@ func onSymlink(
 	case info.IsDir():
 		symlinkDepth++
 		root := filepath.Join(destRoot, link.Name())
-		return addDir(w, root, target, onZip, symlinkDepth)
+		return addDir(w, root, target, onZip, symlinkDepth, execMatcher)
 	default:
-		return addFile(w, destRoot, target, link.Name(), info)
+		return addFile(w, destRoot, target, link.Name(), info, execMatcher)
 	}
 }
 

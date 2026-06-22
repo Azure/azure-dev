@@ -204,6 +204,8 @@
                             "js",
                             "ts",
                             "java",
+                            "go",
+                            "golang",
                             "docker"
                         ]
                     },

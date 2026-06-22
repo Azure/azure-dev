@@ -162,41 +162,25 @@ services:
         prefix: 192.168.11.0/24
 ```
 
-Configure and provision:
+`azd ai agent init --image` already created and selected an azd environment and
+set `AZD_AGENT_SKIP_ACR=true` (BYO image → no ACR build). Set the deployment
+inputs on that environment and provision:
 
 ```bash
-azd env new my-env --subscription "<sub>" --location westus
+azd env set AZURE_SUBSCRIPTION_ID "<sub>"
+azd env set AZURE_LOCATION westus
 azd env set AZURE_RESOURCE_GROUP "<rg>"
 azd env set AZURE_VNET_ID "<vnet-resource-id>"
-azd env set AZD_AGENT_SKIP_ACR true   # BYO image: skip the ACR build
 azd provision --no-prompt
 ```
 
-If using a BYO image, grant the Foundry project MI ACR pull permission, then run
-deploy/invoke from a host that can reach the account private endpoint:
+Grant the Foundry project MI ACR pull permission, then run deploy/invoke from a
+host that can reach the account private endpoint:
 
 ```bash
 azd deploy --no-prompt
 azd ai agent invoke --new-session "hello"
 ```
-
-Validate the real resource state (not azd's echoed output):
-
-```bash
-# account data plane is actually private
-az cognitiveservices account show -g "<rg>" -n "<account>" \
-  --query "properties.publicNetworkAccess" -o tsv          # -> Disabled
-
-# the V2 managed network actually carries the isolation mode
-az resource show --ids "<account-id>/managedNetworks/default" \
-  --api-version 2025-10-01-preview \
-  --query "properties.managedNetwork.isolationMode" -o tsv  # -> AllowInternetOutbound
-```
-
-A successful `azd ai agent invoke` echo response over the private endpoint is the
-end-to-end proof. azd also writes `AZURE_FOUNDRY_NETWORK_MODE` and
-`AZURE_FOUNDRY_MANAGED_ISOLATION_MODE` to the environment as outputs, but those
-are azd's own classification — confirm posture from the resource state above.
 
 > **`isolationMode` note.** When set, azd provisions the account's V2
 > managed network (`managednetworks/default`) with the chosen isolation mode.
@@ -205,14 +189,6 @@ are azd's own classification — confirm posture from the resource state above.
 > here those are managed by the Foundry platform.
 
 ### Cheatsheet: BYO image + VNet hosted agent (BYO egress)
-
-```bash
-export SUBSCRIPTION_ID="<sub>"
-export LOCATION="westus"
-export RESOURCE_GROUP="<rg>"
-export VNET_ID="<vnet-resource-id>"
-export IMAGE="<acr>.azurecr.io/<repo>:<tag>"
-```
 
 ACR requirements:
 
@@ -247,13 +223,14 @@ services:
         prefix: 192.168.11.0/24
 ```
 
-Configure and provision:
+Configure and provision (`init --image` already created/selected the env and set
+`AZD_AGENT_SKIP_ACR=true`):
 
 ```bash
-azd env new my-env --subscription "$SUBSCRIPTION_ID" --location "$LOCATION"
-azd env set AZURE_RESOURCE_GROUP "$RESOURCE_GROUP"
-azd env set AZURE_VNET_ID "$VNET_ID"
-azd env set AZD_AGENT_SKIP_ACR true   # BYO image: skip the ACR build
+azd env set AZURE_SUBSCRIPTION_ID "<sub>"
+azd env set AZURE_LOCATION westus
+azd env set AZURE_RESOURCE_GROUP "<rg>"
+azd env set AZURE_VNET_ID "<vnet-resource-id>"
 azd provision --no-prompt
 ```
 

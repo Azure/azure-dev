@@ -33,19 +33,17 @@ type AgentClient struct {
 }
 
 const (
-	// SessionIsolationKeyHeader is the session ownership header used by session mutating operations.
-	SessionIsolationKeyHeader = "x-session-isolation-key"
-	// AgentUserIsolationKeyHeader is the Foundry user isolation key header.
-	AgentUserIsolationKeyHeader = "x-agent-user-isolation-key"
-	// AgentChatIsolationKeyHeader is the Foundry chat isolation key header.
-	AgentChatIsolationKeyHeader = "x-agent-chat-isolation-key"
+	// UserIdentityHeader is the user identity header for remote (Foundry) requests.
+	UserIdentityHeader = "x-ms-user-identity"
+	// AgentUserIDHeader is the user identity header for local agent invocations.
+	AgentUserIDHeader = "x-agent-user-id"
 )
 
 // SessionRequestOptions holds optional headers shared by session-level agent operations.
+// These options target remote (Foundry) requests, so the user identity is emitted as the
+// remote UserIdentityHeader.
 type SessionRequestOptions struct {
-	SessionIsolationKey string
-	UserIsolationKey    string
-	ChatIsolationKey    string
+	UserIdentity string
 }
 
 // ApplyHeaders applies non-empty session-level request headers.
@@ -53,14 +51,8 @@ func (o *SessionRequestOptions) ApplyHeaders(headers http.Header) {
 	if o == nil {
 		return
 	}
-	if o.SessionIsolationKey != "" {
-		headers.Set(SessionIsolationKeyHeader, o.SessionIsolationKey)
-	}
-	if o.UserIsolationKey != "" {
-		headers.Set(AgentUserIsolationKeyHeader, o.UserIsolationKey)
-	}
-	if o.ChatIsolationKey != "" {
-		headers.Set(AgentChatIsolationKeyHeader, o.ChatIsolationKey)
+	if o.UserIdentity != "" {
+		headers.Set(UserIdentityHeader, o.UserIdentity)
 	}
 }
 

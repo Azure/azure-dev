@@ -269,7 +269,7 @@ func resolveInitAgentName(
 			if exterrors.IsCancellation(err) {
 				return "", exterrors.Cancelled("agent name prompt was cancelled")
 			}
-			return "", fmt.Errorf("failed to prompt for agent name: %w", err)
+			return "", exterrors.FromPrompt(err, "failed to prompt for agent name")
 		}
 
 		agentName := strings.TrimSpace(promptResp.Value)

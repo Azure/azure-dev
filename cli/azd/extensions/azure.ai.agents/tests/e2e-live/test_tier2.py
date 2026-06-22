@@ -61,8 +61,11 @@ def run_e2e(deploy_mode, label):
 
     script_path = os.path.join(SCRIPT_DIR, "test_full_e2e.py")
 
+    # Use sys.executable (not "python3") so the child runs under the exact same
+    # interpreter/version as this parent — matches the UsePythonVersion@0 pinned
+    # Python in CI and works inside virtualenvs.
     cmd = [
-        "python3", script_path, "--deploy-mode", deploy_mode
+        sys.executable, script_path, "--deploy-mode", deploy_mode
     ]
 
     env = os.environ.copy()

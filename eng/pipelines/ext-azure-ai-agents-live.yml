@@ -170,7 +170,10 @@ extends:
                     export E2E_SUBSCRIPTION E2E_TENANT
                     echo "Using subscription: $E2E_SUBSCRIPTION"
                     mkdir -p "$(Build.ArtifactStagingDirectory)/logs"
-                    python3 test_tier2.py --mode ${{ parameters.deployModes }} 2>&1 \
+                    # Invoke as `python` (not `python3`) so the UsePythonVersion@0
+                    # pinned 3.12 is used; `python3` may still resolve to the system
+                    # Python on some agent images (matches eng/pipelines/eval-unit.yml).
+                    python test_tier2.py --mode ${{ parameters.deployModes }} 2>&1 \
                       | tee "$(Build.ArtifactStagingDirectory)/logs/tier2.log"
                 env:
                   E2E_CREATE_PROJECT: "true"

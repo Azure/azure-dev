@@ -909,11 +909,17 @@ if __name__ == "__main__":
 
     required = ["init", "provision", "deploy", "invoke"]
     passed_required = all(results.get(p, "").startswith("PASS") for p in required)
+    # A failed `azd down` leaks live Azure resources, so a teardown FAIL must fail
+    # the run too — never report a green run while leaking. "SKIPPED (--keep)" and
+    # an unreached teardown don't start with "FAIL", so they don't trip this.
+    teardown_ok = not results.get("teardown", "").startswith("FAIL")
 
-    if passed_required:
+    if passed_required and teardown_ok:
         print("\n✓ ALL REQUIRED PHASES PASSED")
         sys.exit(0)
     else:
         missing = [p for p in required if not results.get(p, "").startswith("PASS")]
+        if not teardown_ok:
+            missing.append("teardown")
         print(f"\n✗ FAILED PHASES: {', '.join(missing)}")
         sys.exit(1)

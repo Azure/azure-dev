@@ -229,6 +229,7 @@ def _assert_safe_testdir(path):
 # SETUP
 # ===========================================================
 def setup():
+    global TESTDIR
     print("=" * 60)
     print("SETUP")
     print("=" * 60)
@@ -239,11 +240,14 @@ def setup():
     time.sleep(0.5)
 
     # Clean test dir (guard against a destructive E2E_TESTDIR like '/' or '/tmp').
+    # Normalize to a vetted ABSOLUTE path and assign it back to the module global
+    # so every later step (cd, payload --input-file, dir scans, teardown) acts on
+    # the exact directory we wipe/create here — even if E2E_TESTDIR was relative.
     # check=True surfaces a failed delete instead of running against a dirty dir;
     # timeout keeps a stuck delete from stalling the job with no diagnostic.
-    safe_testdir = _assert_safe_testdir(TESTDIR)
-    subprocess.run(["rm", "-rf", "--", safe_testdir], check=True, timeout=120)
-    os.makedirs(safe_testdir, exist_ok=True)
+    TESTDIR = _assert_safe_testdir(TESTDIR)
+    subprocess.run(["rm", "-rf", "--", TESTDIR], check=True, timeout=120)
+    os.makedirs(TESTDIR, exist_ok=True)
 
     # Create tmux session
     tmux("new-session", "-d", "-s", SESS, "-x", "200", "-y", "50", "bash --norc --noprofile")

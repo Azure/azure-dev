@@ -61,9 +61,12 @@ extends:
               name: $(LINUXPOOL)
               image: $(LINUXVMIMAGE)
               os: linux
-            # Two golden paths (code + container) run sequentially, ~13-15 min
-            # each, plus build/provision overhead.
-            timeoutInMinutes: 90
+            # Two golden paths (code + container) run sequentially (~13-15 min
+            # each in the typical case), plus build/provision overhead. The cap
+            # is sized for the worst case so an ungraceful job timeout never
+            # preempts the in-test teardown: 2x the child's 50 min watchdog
+            # (test_tier2.py timeout_s) + per-run cleanup + build/setup steps.
+            timeoutInMinutes: 130
             steps:
               - checkout: self
 
@@ -141,7 +144,11 @@ extends:
               # the session does not persist to later plain bash steps.
               - task: AzureCLI@2
                 displayName: Run Tier 2 live golden path
-                timeoutInMinutes: 80
+                # Holds BOTH deploy modes run sequentially: 2x the child's 50 min
+                # watchdog (test_tier2.py timeout_s) + per-run cleanup margin, so
+                # this step timeout never trips before the child's own watchdog
+                # (which runs the graceful azd teardown).
+                timeoutInMinutes: 110
                 inputs:
                   azureSubscription: ${{ parameters.serviceConnection }}
                   keepAzSessionActive: true

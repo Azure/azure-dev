@@ -33,15 +33,16 @@ HOME_DIR = os.environ.get("E2E_HOME", os.environ.get("HOME", "/home/runner"))
 SUBSCRIPTION = os.environ.get("E2E_SUBSCRIPTION", "")
 PROJECT = os.environ.get("E2E_PROJECT", "")
 TENANT = os.environ.get("E2E_TENANT", "")
-GH_TOKEN = os.environ.get("GH_TOKEN", os.environ.get("GITHUB_TOKEN", ""))
 AGENT_NAME = os.environ.get("E2E_AGENT_NAME", "")  # Optional: unique name for parallel isolation
 CREATE_PROJECT = os.environ.get("E2E_CREATE_PROJECT", "").lower() in ("1", "true", "yes")
 LOCATION = os.environ.get("E2E_LOCATION", "eastus2")  # Region for new projects
 # Inherit full parent PATH so tmux sessions get az-wrapper, azd, etc.
 PARENT_PATH = os.environ.get("PATH", f"{HOME_DIR}/bin:/usr/local/bin:/usr/bin:/bin")
 _tenant_env = f"; export AZURE_TENANT_ID={shlex.quote(TENANT)}" if TENANT else ""
-_gh_env = f"; export GH_TOKEN={shlex.quote(GH_TOKEN)}; export GITHUB_TOKEN={shlex.quote(GH_TOKEN)}" if GH_TOKEN else ""
-ENV_SETUP = f"export HOME={shlex.quote(HOME_DIR)}; export PATH={shlex.quote(PARENT_PATH)}{_tenant_env}{_gh_env}"
+# The GitHub token is intentionally NOT baked into ENV_SETUP. It is exported
+# exactly once in setup() (immediately before the tmux scrollback is cleared),
+# so the secret never lingers in pane history or gets duplicated across panes.
+ENV_SETUP = f"export HOME={shlex.quote(HOME_DIR)}; export PATH={shlex.quote(PARENT_PATH)}{_tenant_env}"
 
 # Track results
 results = {}

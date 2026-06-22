@@ -105,7 +105,8 @@ def run_e2e(deploy_mode, label):
             cmd, env=env, text=True, bufsize=1,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         )
-        assert proc.stdout is not None  # stdout=PIPE guarantees this
+        if proc.stdout is None:  # stdout=PIPE guarantees a pipe; be explicit for `python -O`
+            raise RuntimeError("subprocess stdout pipe was not created")
         timed_out = threading.Event()
 
         def _on_timeout():

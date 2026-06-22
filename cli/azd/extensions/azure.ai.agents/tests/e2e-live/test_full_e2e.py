@@ -232,12 +232,16 @@ def setup():
     print("SETUP")
     print("=" * 60)
 
-    subprocess.run([TMUX, "-L", SOCK, "kill-server"], capture_output=True)
+    # Bound kill-server so a wedged tmux cannot hang the whole CI job. It stays
+    # best-effort (no check): a "no server running" error here is expected.
+    subprocess.run([TMUX, "-L", SOCK, "kill-server"], capture_output=True, timeout=30)
     time.sleep(0.5)
 
-    # Clean test dir (guard against a destructive E2E_TESTDIR like '/' or '/tmp')
+    # Clean test dir (guard against a destructive E2E_TESTDIR like '/' or '/tmp').
+    # check=True surfaces a failed delete instead of running against a dirty dir;
+    # timeout keeps a stuck delete from stalling the job with no diagnostic.
     safe_testdir = _assert_safe_testdir(TESTDIR)
-    subprocess.run(["rm", "-rf", "--", safe_testdir])
+    subprocess.run(["rm", "-rf", "--", safe_testdir], check=True, timeout=120)
     os.makedirs(safe_testdir, exist_ok=True)
 
     # Create tmux session

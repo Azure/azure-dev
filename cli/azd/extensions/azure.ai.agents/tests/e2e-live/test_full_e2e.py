@@ -22,6 +22,7 @@ import sys
 import os
 
 import re
+import shlex
 
 TMUX = os.environ.get("E2E_TMUX", "tmux")
 SOCK = os.environ.get("E2E_SOCK", "e2e")
@@ -38,7 +39,7 @@ LOCATION = os.environ.get("E2E_LOCATION", "eastus2")  # Region for new projects
 # Inherit full parent PATH so tmux sessions get az-wrapper, azd, etc.
 PARENT_PATH = os.environ.get("PATH", f"{HOME_DIR}/bin:/usr/local/bin:/usr/bin:/bin")
 _tenant_env = f"; export AZURE_TENANT_ID={TENANT}" if TENANT else ""
-_gh_env = f"; export GH_TOKEN={GH_TOKEN}; export GITHUB_TOKEN={GH_TOKEN}" if GH_TOKEN else ""
+_gh_env = f"; export GH_TOKEN={shlex.quote(GH_TOKEN)}; export GITHUB_TOKEN={shlex.quote(GH_TOKEN)}" if GH_TOKEN else ""
 ENV_SETUP = f"export HOME={HOME_DIR}; export PATH={PARENT_PATH}{_tenant_env}{_gh_env}"
 
 # Track results
@@ -234,7 +235,7 @@ def setup():
     gh_token = get_gh_token()
     env_cmd = ENV_SETUP
     if gh_token:
-        env_cmd += f"; export GH_TOKEN={gh_token}; export GITHUB_TOKEN={gh_token}"
+        env_cmd += f"; export GH_TOKEN={shlex.quote(gh_token)}; export GITHUB_TOKEN={shlex.quote(gh_token)}"
         print(f"GitHub token: {len(gh_token)} chars")
     send(env_cmd)
     key("Enter")

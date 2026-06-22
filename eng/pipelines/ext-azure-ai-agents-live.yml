@@ -99,11 +99,19 @@ extends:
               # minimal config.json so `azd ai agent` resolves the extension.
               - bash: |
                   set -euo pipefail
+                  # Map the agent architecture to azd's expected binary suffix so
+                  # this keeps working if the pool ever moves off linux/amd64.
+                  case "$(uname -m)" in
+                    x86_64|amd64) GOARCH=amd64 ;;
+                    aarch64|arm64) GOARCH=arm64 ;;
+                    *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+                  esac
+                  BIN_NAME="azure-ai-agents-linux-${GOARCH}"
                   EXT_DIR="$HOME/.azd/extensions/azure.ai.agents"
                   mkdir -p "$EXT_DIR"
-                  cp cli/azd/extensions/azure.ai.agents/azure-ai-agents "$EXT_DIR/azure-ai-agents-linux-amd64"
-                  chmod +x "$EXT_DIR/azure-ai-agents-linux-amd64"
-                  cat > "$HOME/.azd/config.json" << 'EOF'
+                  cp cli/azd/extensions/azure.ai.agents/azure-ai-agents "$EXT_DIR/$BIN_NAME"
+                  chmod +x "$EXT_DIR/$BIN_NAME"
+                  cat > "$HOME/.azd/config.json" << EOF
                   {
                     "extension": {
                       "installed": {
@@ -115,7 +123,7 @@ extends:
                           "description": "Ship agents with Microsoft Foundry from your terminal. (Preview)",
                           "version": "0.0.0-test",
                           "usage": "azd ai agent <command> [options]",
-                          "path": "extensions/azure.ai.agents/azure-ai-agents-linux-amd64",
+                          "path": "extensions/azure.ai.agents/${BIN_NAME}",
                           "source": "azd"
                         }
                       }

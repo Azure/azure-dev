@@ -19,6 +19,9 @@ import os
 import time
 import tempfile
 import shutil
+import hashlib
+import collections
+import threading
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -79,51 +82,73 @@ def run_e2e(deploy_mode, label):
     else:
         os.makedirs(azd_config_dir, exist_ok=True)
     env["AZD_CONFIG_DIR"] = azd_config_dir
-    # Unique agent name to avoid Azure resource collisions in parallel runs
-    import hashlib
-    unique_suffix = hashlib.md5(f"{deploy_mode}-{os.getpid()}".encode()).hexdigest()[:6]
+    # Unique agent name to avoid Azure resource collisions across runs.
+    # sha256 (not md5) only to avoid noise from security scanners — this is a
+    # non-cryptographic uniqueness suffix.
+    unique_suffix = hashlib.sha256(f"{deploy_mode}-{os.getpid()}".encode()).hexdigest()[:6]
     env["E2E_AGENT_NAME"] = f"e2e-{deploy_mode}-{unique_suffix}"
 
     print(f"\n{'='*60}")
     print(f"[{label}] Starting: deploy_mode={deploy_mode}, sock={sock}")
     print(f"{'='*60}")
 
+    timeout_s = 1500  # 25 min hard cap per test
+    keep_artifacts = os.environ.get("E2E_KEEP_ARTIFACTS", "").lower() in ("1", "true", "yes")
     start = time.time()
     try:
-        r = subprocess.run(
-            cmd, env=env,
-            capture_output=True, text=True, timeout=1500  # 25 min max per test
+        # Stream child output live (visible in the CI log, nothing buffered in
+        # memory) while keeping a bounded tail for the summary. A watchdog timer
+        # enforces the hard timeout even if the child hangs without any output.
+        tail = collections.deque(maxlen=30)
+        proc = subprocess.Popen(
+            cmd, env=env, text=True, bufsize=1,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         )
-        elapsed = time.time() - start
-        success = r.returncode == 0
+        assert proc.stdout is not None  # stdout=PIPE guarantees this
+        timed_out = threading.Event()
 
-        # Print output
-        print(f"\n--- [{label}] Output ({elapsed:.0f}s) ---")
-        lines = r.stdout.strip().split("\n")
-        for line in lines[-30:]:
+        def _on_timeout():
+            timed_out.set()
+            proc.kill()
+
+        watchdog = threading.Timer(timeout_s, _on_timeout)
+        watchdog.start()
+        try:
+            for line in proc.stdout:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                tail.append(line.rstrip("\n"))
+        finally:
+            watchdog.cancel()
+        returncode = proc.wait()
+        elapsed = time.time() - start
+
+        if timed_out.is_set():
+            print(f"\n--- [{label}] TIMEOUT after {elapsed:.0f}s ---")
+            # Best-effort cleanup so a hung run does not leak Azure resources.
+            _cleanup_leaked_resources(testdir, env, label)
+            return {
+                "label": label,
+                "deploy_mode": deploy_mode,
+                "success": False,
+                "elapsed": elapsed,
+                "returncode": -1,
+            }
+
+        print(f"\n--- [{label}] Summary ({elapsed:.0f}s, exit {returncode}) ---")
+        for line in tail:
             print(f"  {line}")
-        if r.stderr.strip():
-            print(f"  [stderr] {r.stderr.strip()[:200]}")
-
         return {
             "label": label,
             "deploy_mode": deploy_mode,
-            "success": success,
+            "success": returncode == 0,
             "elapsed": elapsed,
-            "returncode": r.returncode,
+            "returncode": returncode,
         }
-    except subprocess.TimeoutExpired:
-        elapsed = time.time() - start
-        print(f"\n--- [{label}] TIMEOUT after {elapsed:.0f}s ---")
-        # Attempt cleanup: find any azure.yaml and run azd down to prevent resource leak.
-        _cleanup_leaked_resources(testdir, env, label)
-        return {
-            "label": label,
-            "deploy_mode": deploy_mode,
-            "success": False,
-            "elapsed": elapsed,
-            "returncode": -1,
-        }
+    finally:
+        # Drop the per-mode AZD_CONFIG_DIR copy unless explicitly kept for debugging.
+        if not keep_artifacts and os.path.isdir(azd_config_dir):
+            shutil.rmtree(azd_config_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Tier 2: Full E2E golden path tests — code deploy + container deploy in parallel.
+"""Tier 2: Full E2E golden path tests — code deploy + container deploy.
 
-Runs two instances of test_full_e2e.py simultaneously with different:
-  - deploy modes (code vs container)
-  - tmux session/socket names
-  - working directories
-
-Note: Agent names are derived from template defaults in separate directories.
-Each instance uses its own isolated tmux socket and test directory.
+Runs test_full_e2e.py once per deploy mode (code, then container), sequentially.
+Each run is isolated with its own:
+  - deploy mode (code vs container)
+  - tmux session/socket name
+  - working directory
+  - AZD_CONFIG_DIR (copied from ~/.azd so the installed extension is available)
+  - unique agent name (avoids Azure resource collisions)
 
 Prerequisites:
   - Same as test_full_e2e.py (WSL, tmux, azd, az CLI, tokens)
-  - Sufficient quota for 2 concurrent deployments
+  - Model quota for one deployment at a time
 """
 import subprocess
 import sys
@@ -19,7 +19,6 @@ import os
 import time
 import tempfile
 import shutil
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -123,8 +122,7 @@ def run_e2e(deploy_mode, label):
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Tier 2: Parallel golden path E2E tests")
-    parser.add_argument("--serial", action="store_true", help="Run sequentially instead of parallel")
+    parser = argparse.ArgumentParser(description="Tier 2: Golden path E2E tests")
     parser.add_argument("--mode", choices=["both", "code", "container"], default="both",
                         help="Which mode(s) to run")
     args = parser.parse_args()
@@ -140,16 +138,16 @@ if __name__ == "__main__":
         tests.append(("container", "CONTAINER-DEPLOY"))
 
     print(f"  Tests: {[t[1] for t in tests]}")
-    print(f"  Parallel: {not args.serial}")
+    print("  Execution: sequential")
 
     start_all = time.time()
     results = []
 
-    if args.serial or len(tests) == 1 or len(tests) > 1:
-        # Always run sequentially — parallel causes resource conflicts in same subscription
-        for mode, label in tests:
-            result = run_e2e(mode, label)
-            results.append(result)
+    # Always run sequentially: concurrent deploys in the same subscription race
+    # on shared resources (ACR, Foundry project) and exhaust model quota.
+    for mode, label in tests:
+        result = run_e2e(mode, label)
+        results.append(result)
 
     total_elapsed = time.time() - start_all
 

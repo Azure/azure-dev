@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Full E2E test: init -> provision -> deploy -> invoke -> down.
 
-See LOCAL-TEST-GUIDE.md for complete setup & run instructions.
+See README.md for complete setup & run instructions.
 
 Prerequisites:
   - WSL with tmux (>=3.4), Python 3.12+

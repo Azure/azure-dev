@@ -49,16 +49,32 @@ func emitResourceServices(
 ) error {
 	var agentUses []string
 
+	// Track every azure.yaml service key we emit so two resource names that
+	// sanitize to the same key (e.g. "my conn" and "myconn") fail fast instead
+	// of silently overwriting each other -- AddService overwrites by name.
+	// Seed it with the agent service name, which the caller adds before this
+	// runs, so a resource colliding with the agent is caught too.
+	usedNames := map[string]string{}
+	if agentServiceName != "" {
+		usedNames[agentServiceName] = "agent service"
+	}
+
 	// One project service owns the model deployments. Deployments stay an
 	// array on it (there is a single Foundry project and deployments belong
-	// to it).
+	// to it). Create it whenever any Foundry resource is emitted -- even with
+	// no deployments (e.g. "Skip model configuration") -- so connections and
+	// toolboxes always have a stable ai-project dependency that enforces
+	// provisioning order.
 	projectServiceName := ""
-	if len(deployments) > 0 {
+	if len(deployments) > 0 || len(connections) > 0 || len(toolboxes) > 0 {
 		projectCfg, err := project.MarshalStruct(&project.ServiceTargetAgentConfig{Deployments: deployments})
 		if err != nil {
 			return fmt.Errorf("marshaling project service config: %w", err)
 		}
 		projectServiceName = aiProjectServiceName
+		if err := reserveServiceName(usedNames, projectServiceName, "project service"); err != nil {
+			return err
+		}
 		if err := addResourceService(ctx, azdClient, projectServiceName, AiProjectHost, projectCfg, nil); err != nil {
 			return err
 		}
@@ -78,6 +94,9 @@ func emitResourceServices(
 		if connName == "" {
 			continue
 		}
+		if err := reserveServiceName(usedNames, connName, fmt.Sprintf("connection %q", conn.Name)); err != nil {
+			return err
+		}
 		connCfg, err := project.MarshalStruct(&conn)
 		if err != nil {
 			return fmt.Errorf("marshaling connection service %q config: %w", connName, err)
@@ -93,6 +112,9 @@ func emitResourceServices(
 		toolboxName := sanitizeServiceName(toolbox.Name)
 		if toolboxName == "" {
 			continue
+		}
+		if err := reserveServiceName(usedNames, toolboxName, fmt.Sprintf("toolbox %q", toolbox.Name)); err != nil {
+			return err
 		}
 		toolboxCfg, err := project.MarshalStruct(&toolbox)
 		if err != nil {
@@ -175,6 +197,23 @@ func setServiceUses(ctx context.Context, azdClient *azdext.AzdClient, serviceNam
 // derived from the agent name.
 func sanitizeServiceName(name string) string {
 	return strings.ReplaceAll(strings.TrimSpace(name), " ", "")
+}
+
+// reserveServiceName records an azure.yaml service key derived from a Foundry
+// resource name, returning an error when two resources sanitize to the same
+// key. AddService overwrites by name, so without this a collision would
+// silently drop a resource and corrupt the uses: graph; failing fast lets the
+// user rename the offending resource.
+func reserveServiceName(used map[string]string, name, source string) error {
+	if existing, ok := used[name]; ok {
+		return fmt.Errorf(
+			"resource service name collision: %s and %s both map to azure.yaml service %q; "+
+				"rename one so they produce distinct service names",
+			existing, source, name,
+		)
+	}
+	used[name] = source
+	return nil
 }
 
 // collectProjectDeployments gathers the model deployments declared across all

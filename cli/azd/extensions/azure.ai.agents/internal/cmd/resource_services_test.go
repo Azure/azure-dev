@@ -62,6 +62,28 @@ func TestSanitizeServiceName(t *testing.T) {
 	assert.Equal(t, "", sanitizeServiceName("   "))
 }
 
+// TestReserveServiceName verifies distinct service keys are accepted and that
+// two resources collapsing to the same azure.yaml key (e.g. "my conn" and
+// "myconn") fail fast with an actionable collision error instead of silently
+// overwriting each other.
+func TestReserveServiceName(t *testing.T) {
+	t.Parallel()
+
+	used := map[string]string{"weatheragent": "agent service"}
+	require.NoError(t, reserveServiceName(used, "myconn", `connection "my conn"`))
+	require.NoError(t, reserveServiceName(used, "toolbox", `toolbox "toolbox"`))
+
+	err := reserveServiceName(used, "myconn", `connection "myconn"`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "collision")
+	assert.Contains(t, err.Error(), "myconn")
+
+	// A resource colliding with the seeded agent service is also caught.
+	err = reserveServiceName(used, "weatheragent", `connection "weather agent"`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "agent service")
+}
+
 // TestCollectProjectDeployments verifies deployments are sourced only from
 // azure.ai.project services and ignore sibling hosts.
 func TestCollectProjectDeployments(t *testing.T) {

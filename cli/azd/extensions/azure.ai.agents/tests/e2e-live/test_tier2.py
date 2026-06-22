@@ -10,7 +10,8 @@ Each run is isolated with its own:
   - unique agent name (avoids Azure resource collisions)
 
 Prerequisites:
-  - Same as test_full_e2e.py (WSL, tmux, azd, az CLI, tokens)
+  - Same as test_full_e2e.py: Linux (including WSL) with tmux, azd, az CLI,
+    tokens. Runs unattended on the Azure DevOps Linux agent in CI.
   - Model quota for one deployment at a time
 """
 import subprocess

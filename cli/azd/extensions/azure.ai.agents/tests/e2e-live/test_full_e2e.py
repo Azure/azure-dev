@@ -4,7 +4,8 @@
 See README.md for complete setup & run instructions.
 
 Prerequisites:
-  - WSL with tmux (>=3.4), Python 3.12+
+  - Linux (including WSL) with tmux (>=3.4), Python 3.12+ — also runs on the
+    Azure DevOps Linux agent via eng/pipelines/ext-azure-ai-agents-live.yml
   - azd (>=1.25.5) with azure.ai.agents extension, logged in via `azd auth login`
   - For local WSL runs, leave auth.useAzCliAuth unset (azd built-in auth, via
     `azd config unset auth.useAzCliAuth`); under CI (GitHub Actions / Azure

@@ -147,6 +147,11 @@ func Test_ServiceLanguageKind_IsDotNet(t *testing.T) {
 			kind:     ServiceLanguageGo,
 			expected: false,
 		},
+		{
+			name:     "unknown language is not dotnet",
+			kind:     ServiceLanguageKind("forth"),
+			expected: false,
+		},
 	}
 
 	for _, tt := range tests {

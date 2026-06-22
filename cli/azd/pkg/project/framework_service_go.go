@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -19,7 +18,14 @@ import (
 )
 
 const (
-	// goBinaryName is the compiled binary name for Azure Functions Go worker on Linux.
+	// goBinaryName is the compiled binary name for the Azure Functions Go worker on Linux.
+	//
+	// The binary name ("app"), Linux/amd64 target, and CGO being disabled are dictated by
+	// the Flex Consumption Go worker contract: the platform ships a proxy that execs this
+	// binary by name. See the worker spec for the authoritative source of truth:
+	// https://github.com/Azure/azure-functions-golang-worker
+	// A future change (e.g. a different worker name, or arm64 support) should update both
+	// this constant and the build target env vars in Build below.
 	goBinaryName = "app"
 )
 
@@ -107,7 +113,8 @@ func (gp *goProject) Build(
 
 	outputPath := filepath.Join(buildDir, goBinaryName)
 
-	// Cross-compile for linux/amd64 (Azure Functions target)
+	// Cross-compile for linux/amd64 with CGO disabled, as required by the Flex
+	// Consumption Go worker contract (see goBinaryName above for the spec link).
 	buildEnv := append(
 		gp.env.Environ(),
 		"GOOS=linux",
@@ -154,32 +161,17 @@ func (gp *goProject) Package(
 ) (*ServicePackageResult, error) {
 	progress.SetProgress(NewServiceProgress("Staging Go Functions deployment"))
 
-	// Resolve build output directory and binary path
-	buildDir := ""
-	binaryRelPath := goBinaryName
-	if artifact, found := serviceContext.Build.FindFirst(
-		WithKind(ArtifactKindDirectory),
-	); found {
-		buildDir = artifact.Location
-		if bp, ok := artifact.Metadata["binaryPath"]; ok && bp != "" {
-			if filepath.IsAbs(bp) {
-				rel, err := filepath.Rel(buildDir, bp)
-				if err != nil || strings.HasPrefix(rel, "..") {
-					return nil, fmt.Errorf("binaryPath %q is not under build directory %q", bp, buildDir)
-				}
-				binaryRelPath = rel
-			} else {
-				// Validate relative path doesn't escape the build directory
-				cleaned := filepath.Clean(bp)
-				if strings.HasPrefix(cleaned, "..") {
-					return nil, fmt.Errorf("binaryPath %q escapes the build directory", bp)
-				}
-				binaryRelPath = cleaned
-			}
-		}
-	}
-	if buildDir == "" {
+	// Resolve the compiled binary path from the build artifact. We own the Build
+	// step (see Build above), which always records an absolute binaryPath pointing
+	// at <buildDir>/app, so we can trust the metadata directly without sanitizing
+	// against path traversal. Fall back to <buildDir>/app if the metadata is absent.
+	artifact, found := serviceContext.Build.FindFirst(WithKind(ArtifactKindDirectory))
+	if !found {
 		return nil, fmt.Errorf("no build output found in service context")
+	}
+	binaryPath := artifact.Metadata["binaryPath"]
+	if binaryPath == "" {
+		binaryPath = filepath.Join(artifact.Location, goBinaryName)
 	}
 
 	packageDir, err := os.MkdirTemp("", "azd-go-package")
@@ -188,11 +180,10 @@ func (gp *goProject) Package(
 	}
 
 	// Copy compiled binary and ensure execute permission is set.
-	// On Windows, os.Chmod is a no-op for Unix execute bits, but this is handled
-	// by rzip which defaults to 0755 on Windows when creating zip entries.
+	// On Windows, os.Chmod is a no-op for Unix execute bits; the binary is instead
+	// flagged executable at zip time via rzip.WithExecutableMatcher (see createDeployableZip).
 	progress.SetProgress(NewServiceProgress("Copying compiled binary"))
-	binaryPath := filepath.Join(buildDir, binaryRelPath)
-	destBinaryPath := filepath.Join(packageDir, filepath.Base(binaryRelPath))
+	destBinaryPath := filepath.Join(packageDir, filepath.Base(binaryPath))
 	if err := copy.Copy(binaryPath, destBinaryPath); err != nil {
 		return nil, fmt.Errorf("copying Go binary: %w", err)
 	}

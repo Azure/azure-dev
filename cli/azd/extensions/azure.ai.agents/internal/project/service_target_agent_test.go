@@ -319,6 +319,31 @@ func newPromptTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *az
 	return newServiceTargetTestClient(t, nil, promptSrv)
 }
 
+func TestInitializeIsCheapAndSideEffectFree(t *testing.T) {
+	// azd-core calls ServiceTargetProvider.Initialize for every service on
+	// every action (provision, deploy, env refresh, show, ...). Initialize
+	// must not touch disk, prompt for credentials, or call Azure. The
+	// agent.yaml lookup lives in ensureDeployContext and runs only when
+	// a deploy-time entrypoint needs it.
+
+	// Project root with NO agent.yaml/agent.yml anywhere.
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "svc"), 0o750))
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	// Initialize must succeed and leave heavy state untouched.
+	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"}))
+	require.Empty(t, provider.agentDefinitionPath)
+	require.Nil(t, provider.credential)
+	require.Empty(t, provider.tenantId)
+
+	// Same provider, called again with the same service config: still no-op.
+	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"}))
+}
+
 func TestInitializeAcceptsProjectLocalAgentYaml(t *testing.T) {
 	t.Setenv("AGENT_DEFINITION_PATH", "")
 
@@ -331,7 +356,13 @@ func TestInitializeAcceptsProjectLocalAgentYaml(t *testing.T) {
 		azdClient: newInitializeTestClient(t, projectRoot),
 	}
 
-	err := provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"})
+	// Initialize is now cheap: it only stores the service config and does
+	// not resolve the agent.yaml on disk. agentDefinitionPath remains
+	// empty until a deploy-time entrypoint triggers ensureDeployContext.
+	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"}))
+	require.Empty(t, provider.agentDefinitionPath, "Initialize must not touch disk")
+
+	err := provider.ensureDeployContext(t.Context())
 
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(serviceDir, "agent.yaml"), provider.agentDefinitionPath)
@@ -355,7 +386,9 @@ func TestInitializeRejectsAgentYamlSymlinkEscapingRoot(t *testing.T) {
 		azdClient: newInitializeTestClient(t, projectRoot),
 	}
 
-	err := provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"})
+	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"}))
+
+	err := provider.ensureDeployContext(t.Context())
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "escapes project root")

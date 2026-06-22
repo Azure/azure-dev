@@ -676,3 +676,57 @@ func TestTracingDisclaimer(t *testing.T) {
 	require.Equal(t, "https://aka.ms/tracing-overview", tracingOverviewURL)
 	require.Equal(t, "https://aka.ms/disable-tracing", disableTracingURL)
 }
+
+// TestConfigureFoundryProjectEnv_BicepLessShortCircuits verifies that
+// bicepless=true seeds identity env vars and returns before any Foundry
+// data-plane call. The nil credential turns a regression that re-enables
+// connection discovery into a nil-pointer panic.
+func TestConfigureFoundryProjectEnv_BicepLessShortCircuits(t *testing.T) {
+	t.Parallel()
+
+	const envName = "test-env"
+	envServer := &testEnvironmentServiceServer{
+		environments: map[string]*azdext.Environment{envName: {Name: envName}},
+	}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+	project := FoundryProjectInfo{
+		SubscriptionId:    "00000000-0000-0000-0000-000000000000",
+		ResourceGroupName: "rg-test",
+		AccountName:       "acct-test",
+		ProjectName:       "proj-test",
+		Location:          "eastus2",
+	}
+
+	err := configureFoundryProjectEnv(
+		t.Context(), azdClient, nil, envName,
+		project, project.SubscriptionId,
+		false, // skipACR
+		true,  // bicepless
+	)
+	require.NoError(t, err)
+
+	written := envServer.values[envName]
+
+	for _, key := range []string{
+		"AZURE_AI_PROJECT_ID",
+		"AZURE_RESOURCE_GROUP",
+		"AZURE_AI_ACCOUNT_NAME",
+		"AZURE_AI_PROJECT_NAME",
+		"FOUNDRY_PROJECT_ENDPOINT",
+		"AZURE_OPENAI_ENDPOINT",
+	} {
+		require.NotEmpty(t, written[key], "expected basic project env var %q to be set", key)
+	}
+
+	for _, key := range []string{
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT",
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+		"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+		"APPLICATIONINSIGHTS_CONNECTION_STRING",
+		"APPLICATIONINSIGHTS_RESOURCE_ID",
+		"APPLICATIONINSIGHTS_CONNECTION_NAME",
+	} {
+		require.Empty(t, written[key], "must not write %q when bicepless is true", key)
+	}
+}

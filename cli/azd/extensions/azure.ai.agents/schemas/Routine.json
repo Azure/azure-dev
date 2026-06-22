@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/Routine.json",
+  "title": "Foundry routine (scheduled or event-driven agent invocation)",
+  "description": "Items in a routines array may be inline or a $ref to an external file.",
+  "oneOf": [
+    { "$ref": "#/definitions/Inline" },
+    { "$ref": "FileRef.json" }
+  ],
+  "definitions": {
+    "Inline": {
+      "type": "object",
+      "required": ["name", "trigger", "agent"],
+      "additionalProperties": false,
+      "properties": {
+        "name":        { "type": "string", "description": "Name of the routine." },
+        "description": { "type": "string" },
+        "trigger": {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": true,
+          "allOf": [
+            {
+              "if": { "properties": { "type": { "const": "schedule" } }, "required": ["type"] },
+              "then": { "required": ["cron"] }
+            },
+            {
+              "if": { "properties": { "type": { "enum": ["webhook", "event"] } }, "required": ["type"] },
+              "then": { "required": ["filter"] }
+            }
+          ],
+          "properties": {
+            "type":   { "type": "string", "enum": ["schedule", "webhook", "event"] },
+            "cron":   { "type": "string", "description": "Cron expression. Required for type: schedule." },
+            "filter": { "type": "object", "description": "Event/webhook filter. Required for type: webhook | event." }
+          }
+        },
+        "agent": {
+          "type": "string",
+          "description": "Name of the agent (declared in agents[]) the routine invokes."
+        },
+        "input": {
+          "type": "object",
+          "description": "Input payload passed to the agent. Values may use ${VAR} or ${{event.<field>}}.",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

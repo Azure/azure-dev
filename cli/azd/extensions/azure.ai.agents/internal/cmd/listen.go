@@ -6,7 +6,9 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/url"
 	"os"
@@ -38,6 +40,9 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 	host.
 		WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
 			return project.NewAgentServiceTargetProvider(azdClient)
+		}).
+		WithProvisioningProvider(project.FoundryProviderName, func() azdext.ProvisioningProvider {
+			return project.NewFoundryProvisioningProvider(azdClient)
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return preprovisionHandler(ctx, azdClient, args)
@@ -421,6 +426,15 @@ func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azd
 	return nil
 }
 
+// kindEnvUpdate inspects the service's on-disk agent.yaml (when present) and
+// stamps env vars that signal the agent kind -- today ENABLE_HOSTED_AGENTS=true
+// and ENABLE_CAPABILITY_HOST=false for `kind: hosted`; every other kind is a
+// no-op past the parse.
+//
+// Tolerates a missing agent.yaml: the bicepless flow lets users declare prompt
+// agents inline in azure.yaml, so a missing file short-circuits cleanly here.
+// Service-targets that truly need agent.yaml still surface the error where they
+// read its contents.
 func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig, envName string) error {
 	agentYamlPath, err := paths.JoinAllowRoot(project.Path, svc.RelativePath, "agent.yaml")
 	if err != nil {
@@ -430,6 +444,11 @@ func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *az
 	//nolint:gosec // agentYamlPath is resolved from project/service paths in current workspace
 	data, err := os.ReadFile(agentYamlPath)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			// Bicepless inline-agents path: no on-disk agent.yaml required.
+			log.Printf("[debug] kindEnvUpdate: no agent.yaml at %s; skipping (inline-agents path)", agentYamlPath)
+			return nil
+		}
 		return fmt.Errorf("failed to read YAML file: %w", err)
 	}
 

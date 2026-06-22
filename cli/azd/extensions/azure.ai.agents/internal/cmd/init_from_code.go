@@ -7,27 +7,20 @@ import (
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/azdignore"
 	"azureaiagent/internal/project"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
-	posixpath "path"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/ux"
-	gitignore "github.com/denormal/go-gitignore"
 	"github.com/fatih/color"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v3"
@@ -49,13 +42,6 @@ type InitFromCodeAction struct {
 	// addToProject can disable remote build for VNET-injected accounts
 	// without issuing a second account read.
 	selectedFoundryProject *FoundryProjectInfo
-}
-
-// templateFileInfo represents a file from the GitHub template repository.
-type templateFileInfo struct {
-	Path     string // Relative path in the repo
-	URL      string // Download URL for the file content
-	Collides bool   // Whether the file already exists locally
 }
 
 func (a *InitFromCodeAction) Run(ctx context.Context) error {
@@ -189,15 +175,52 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 	if err != nil {
 		fmt.Println("Let's get your project initialized.")
 
-		if err := a.scaffoldTemplate(ctx, a.azdClient, "Azure-Samples/azd-ai-starter-basic", "main"); err != nil {
+		// Derive an environment name when the user didn't pass --environment.
+		// from-code runs in the user's existing code directory, so the
+		// default uses the cwd basename.
+		envName := a.flags.env
+		if envName == "" {
+			cwd, cwdErr := os.Getwd()
+			base := "agent"
+			if cwdErr == nil {
+				base = filepath.Base(cwd)
+			}
+			base = sanitizeAgentName(base)
+			if len(base) > 59 {
+				base = strings.TrimRight(base[:59], "-")
+			}
+			envName = base + "-dev"
+		}
+
+		// Scaffold a minimal project locally via azd-core. Runs in cwd
+		// (no -C) since from-code starts inside the user's existing code
+		// directory. `writeFoundryProvider` below stamps the provider name
+		// onto the resulting azure.yaml.
+		initArgs := []string{
+			"init", "--minimal", "--no-prompt",
+			"--environment", envName,
+		}
+		workflow := &azdext.Workflow{
+			Name: "init",
+			Steps: []*azdext.WorkflowStep{
+				{Command: &azdext.WorkflowCommand{Args: initArgs}},
+			},
+		}
+		if _, err := a.azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+			Workflow: workflow,
+		}); err != nil {
 			if exterrors.IsCancellation(err) {
 				return nil, exterrors.Cancelled("project initialization was cancelled")
 			}
 			return nil, exterrors.Dependency(
-				exterrors.CodeScaffoldTemplateFailed,
-				fmt.Sprintf("failed to scaffold template: %s", err),
+				exterrors.CodeProjectInitFailed,
+				fmt.Sprintf("failed to initialize project: %s", err),
 				"",
 			)
+		}
+
+		if err := writeFoundryProvider(ctx, a.azdClient); err != nil {
+			return nil, err
 		}
 
 		projectResponse, err = a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
@@ -221,351 +244,6 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 	}
 
 	return projectResponse.Project, nil
-}
-
-// gitHubToken returns a GitHub personal access token from the environment, if available.
-// It checks GITHUB_TOKEN first, then GH_TOKEN.
-func gitHubToken() string {
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		return token
-	}
-	return os.Getenv("GH_TOKEN")
-}
-
-// setGitHubAuthHeader adds an Authorization header to the request if a GitHub token
-// is available in the environment. This raises the rate limit from 60 to 5,000 requests/hour.
-func setGitHubAuthHeader(req *http.Request, token string) {
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-}
-
-// treeEntry is the minimal shape of a single entry returned by the
-// GitHub Git Trees API. Declared here so helpers can accept the slice
-// without coupling to the anonymous struct declared inline in
-// scaffoldTemplate.
-type treeEntry struct {
-	Path string `json:"path"`
-	Type string `json:"type"`
-}
-
-// fetchAzdIgnoreMatcher fetches the root .azdignore from a GitHub repo
-// branch when the tree listing reports one, and returns a matcher
-// suitable for pre-filtering paths during the from-code starter
-// template flow. Returns nil when:
-//
-//   - the tree contains no root .azdignore,
-//   - the file exceeds azdignore.MaxSize,
-//   - the file is empty after BOM stripping, or
-//   - any HTTP/read error occurs (best-effort; the caller falls back
-//     to the unfiltered behavior).
-//
-// Errors are deliberately swallowed (logged at debug) because the
-// alternative -- failing init when an optional metadata file cannot be
-// read -- regresses users whose templates do not ship one.
-func fetchAzdIgnoreMatcher(
-	ctx context.Context,
-	httpClient *http.Client,
-	repoSlug, branch, ghToken string,
-	tree []treeEntry,
-) gitignore.GitIgnore {
-	hasRootIgnore := false
-	for _, entry := range tree {
-		if entry.Type == "blob" && entry.Path == azdignore.FileName {
-			hasRootIgnore = true
-			break
-		}
-	}
-	if !hasRootIgnore {
-		return nil
-	}
-
-	rawURL := fmt.Sprintf(
-		"https://raw.githubusercontent.com/%s/%s/%s",
-		repoSlug, branch, azdignore.FileName,
-	)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		log.Printf("skipping %s: %v", azdignore.FileName, err)
-		return nil
-	}
-	setGitHubAuthHeader(req, ghToken)
-
-	//nolint:gosec // URL is constructed from validated repo slug + constant filename
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		log.Printf("skipping %s: fetch failed: %v", azdignore.FileName, err)
-		return nil
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("skipping %s: status %d", azdignore.FileName, resp.StatusCode)
-		return nil
-	}
-
-	// Cap reads at azdignore.MaxSize+1 so an oversized server response
-	// cannot exhaust memory and we still detect the overflow.
-	data, err := io.ReadAll(io.LimitReader(resp.Body, azdignore.MaxSize+1))
-	if err != nil {
-		log.Printf("skipping %s: read failed: %v", azdignore.FileName, err)
-		return nil
-	}
-	if int64(len(data)) > azdignore.MaxSize {
-		log.Printf("skipping %s: exceeds maximum size (%d bytes)", azdignore.FileName, azdignore.MaxSize)
-		return nil
-	}
-
-	return azdignore.ParseBytes(data, ".")
-}
-
-// scaffoldTemplate downloads a GitHub template repo into the current directory,
-// checking for file collisions before writing. Files that don't collide are shown
-// in green; colliding files are shown in yellow and the user is prompted for how
-// to handle them.
-func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *azdext.AzdClient, repoSlug string, branch string) error {
-	// 1. Fetch the recursive file tree from GitHub
-	ghToken := gitHubToken()
-
-	apiUrl := fmt.Sprintf("https://api.github.com/repos/%s/git/trees/%s?recursive=1", repoSlug, branch)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiUrl, nil)
-	if err != nil {
-		return fmt.Errorf("creating tree request: %w", err)
-	}
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	setGitHubAuthHeader(req, ghToken)
-
-	//nolint:gosec // URL is explicitly constructed for GitHub API tree endpoint
-	resp, err := a.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("fetching repo tree: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
-			return fmt.Errorf(
-				"fetching repo tree: status %d (GitHub API rate limit may have been exceeded; "+
-					"set GITHUB_TOKEN or GH_TOKEN environment variable to increase the limit)",
-				resp.StatusCode,
-			)
-		}
-		return fmt.Errorf("fetching repo tree: status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("reading tree response: %w", err)
-	}
-
-	var treeResp struct {
-		Tree []treeEntry `json:"tree"`
-	}
-	if err := json.Unmarshal(body, &treeResp); err != nil {
-		return fmt.Errorf("parsing tree response: %w", err)
-	}
-
-	// Best-effort fetch of the root .azdignore from the same repo+branch.
-	// When present, it pre-filters the file list so ignored entries never
-	// appear in the displayed plan or get downloaded. Fetch errors are
-	// non-fatal: the legacy behavior (no filtering) is the safe fallback.
-	azdIgnoreMatcher := fetchAzdIgnoreMatcher(ctx, a.httpClient, repoSlug, branch, ghToken, treeResp.Tree)
-
-	// Collect only files (blobs) from the infra folder and azure.yaml
-	var files []templateFileInfo
-	for _, entry := range treeResp.Tree {
-		if entry.Type != "blob" {
-			continue
-		}
-		// Only include files in the infra folder or the azure.yaml file
-		if !strings.HasPrefix(entry.Path, "infra/") && entry.Path != "azure.yaml" {
-			continue
-		}
-		// Guard against path traversal or unexpected absolute paths.
-		// Use posixpath (path) for URL-safe cleaning since GitHub returns forward-slash paths.
-		cleanPath := posixpath.Clean(entry.Path)
-		if posixpath.IsAbs(cleanPath) || strings.HasPrefix(cleanPath, "..") {
-			return fmt.Errorf("invalid path in repository tree: %s", entry.Path)
-		}
-		// Honor .azdignore from the template repo if one was published.
-		// Filtering happens before display/prompt/download so the user
-		// only ever sees the post-filter file plan.
-		if azdIgnoreMatcher != nil && azdignore.IsIgnored(azdIgnoreMatcher, cleanPath) {
-			log.Printf("Skipping %s due to .azdignore rule", cleanPath)
-			continue
-		}
-		downloadURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", repoSlug, branch, cleanPath)
-		collides := false
-		if _, statErr := os.Stat(filepath.FromSlash(cleanPath)); statErr == nil {
-			collides = true
-		}
-		files = append(files, templateFileInfo{
-			Path:     cleanPath,
-			URL:      downloadURL,
-			Collides: collides,
-		})
-	}
-
-	if len(files) == 0 {
-		return fmt.Errorf("template repository %s has no files", repoSlug)
-	}
-
-	// Sort by path for consistent display
-	slices.SortFunc(files, func(a, b templateFileInfo) int {
-		return strings.Compare(a.Path, b.Path)
-	})
-
-	// 2. Classify into new and colliding
-	var newFiles, collidingFiles []templateFileInfo
-	for _, f := range files {
-		if f.Collides {
-			collidingFiles = append(collidingFiles, f)
-		} else {
-			newFiles = append(newFiles, f)
-		}
-	}
-
-	// 3. Display the file list
-	fmt.Print("\nThe following files will be created from the starter template:\n\n")
-	for _, f := range files {
-		if f.Collides {
-			fmt.Printf("  %s  %s\n", color.YellowString("!"), color.YellowString(f.Path))
-		} else {
-			fmt.Printf("  %s  %s\n", color.GreenString("+"), color.GreenString(f.Path))
-		}
-	}
-	fmt.Println()
-
-	// 4. If there are collisions, show warning and prompt for resolution
-	overwriteCollisions := false
-	if len(collidingFiles) > 0 {
-		fmt.Printf("%s %d file(s) already exist and would be overwritten.\n\n",
-			color.YellowString("Warning:"), len(collidingFiles))
-
-		// In no-prompt mode, default to the safest behavior: keep the user's
-		// existing files (skip the collisions). The user can re-run
-		// interactively or delete the files themselves if they want the
-		// template versions.
-		if a.flags.noPrompt {
-			// Diagnostic on stderr so scripted consumers can keep stdout
-			// clean for the regular init output stream.
-			fmt.Fprintln(os.Stderr, "--no-prompt: keeping existing files; template versions are skipped.")
-			overwriteCollisions = false
-		} else {
-			conflictChoices := []*azdext.SelectChoice{
-				{Label: "Overwrite existing files", Value: "overwrite"},
-				{Label: "Skip existing files (keep my versions)", Value: "skip"},
-				{Label: "Cancel", Value: "cancel"},
-			}
-
-			conflictResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-				Options: &azdext.SelectOptions{
-					Message: "How would you like to handle existing files?",
-					Choices: conflictChoices,
-				},
-			})
-			if err != nil {
-				return fmt.Errorf("prompting for conflict resolution: %w", err)
-			}
-
-			selectedValue := conflictChoices[*conflictResp.Value].Value
-			switch selectedValue {
-			case "overwrite":
-				overwriteCollisions = true
-			case "skip":
-				overwriteCollisions = false
-			case "cancel":
-				return fmt.Errorf("operation cancelled, no changes were made")
-			}
-		}
-	} else {
-		// No collisions - confirm to proceed
-		confirmResp, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-			Options: &azdext.ConfirmOptions{
-				Message:      "Initialize the starter template?",
-				DefaultValue: new(true),
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("prompting for confirmation: %w", err)
-		}
-		if !*confirmResp.Value {
-			return fmt.Errorf("operation cancelled, no changes were made")
-		}
-	}
-
-	// 5. Download and write files
-	filesToWrite := newFiles
-	if overwriteCollisions {
-		filesToWrite = files
-	}
-
-	spinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text:        fmt.Sprintf("Downloading template (%d files)...", len(filesToWrite)),
-		ClearOnStop: true,
-	})
-	if err := spinner.Start(ctx); err != nil {
-		return fmt.Errorf("starting spinner: %w", err)
-	}
-
-	for _, f := range filesToWrite {
-		localPath := filepath.FromSlash(f.Path)
-
-		// Create parent directories
-		dir := filepath.Dir(localPath)
-		if dir != "." {
-			//nolint:gosec // scaffolded directories are intended to be readable/traversable
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				_ = spinner.Stop(ctx)
-				return fmt.Errorf("creating directory %s: %w", dir, err)
-			}
-		}
-
-		// Download file content
-		fileReq, err := http.NewRequestWithContext(ctx, http.MethodGet, f.URL, nil)
-		if err != nil {
-			_ = spinner.Stop(ctx)
-			return fmt.Errorf("creating request for %s: %w", f.Path, err)
-		}
-		setGitHubAuthHeader(fileReq, ghToken)
-
-		//nolint:gosec // URL is from GitHub tree API entries for the selected template
-		fileResp, err := a.httpClient.Do(fileReq)
-		if err != nil {
-			_ = spinner.Stop(ctx)
-			return fmt.Errorf("downloading %s: %w", f.Path, err)
-		}
-
-		if fileResp.StatusCode != http.StatusOK {
-			_ = spinner.Stop(ctx)
-			return fmt.Errorf("downloading %s: status %d", f.Path, fileResp.StatusCode)
-		}
-
-		content, err := io.ReadAll(fileResp.Body)
-		_ = fileResp.Body.Close()
-		if err != nil {
-			_ = spinner.Stop(ctx)
-			return fmt.Errorf("reading %s: %w", f.Path, err)
-		}
-
-		//nolint:gosec // scaffolded files should remain readable by project tooling
-		if err := os.WriteFile(localPath, content, 0644); err != nil {
-			_ = spinner.Stop(ctx)
-			return fmt.Errorf("writing %s: %w", localPath, err)
-		}
-	}
-
-	if err := spinner.Stop(ctx); err != nil {
-		return fmt.Errorf("stopping spinner: %w", err)
-	}
-
-	skipped := len(files) - len(filesToWrite)
-	if skipped > 0 {
-		fmt.Printf("  Template initialized: %d file(s) written, %d file(s) skipped.\n", len(filesToWrite), skipped)
-	} else {
-		fmt.Printf("  Template initialized: %d file(s) written.\n", len(filesToWrite))
-	}
-
-	return nil
 }
 
 // createDefinitionFromLocalAgent creates a ContainerAgent for local agent code
@@ -664,7 +342,12 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 		a.credential = newCred
 
-		proj, err := selectFoundryProject(ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name, a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId, deployMode == "code")
+		proj, err := selectFoundryProject(
+			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
+			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
+			deployMode == "code",
+			true, // bicepless
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -726,7 +409,12 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			}
 			a.credential = newCred
 
-			proj, err := selectFoundryProject(ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name, a.azureContext.Scope.SubscriptionId, "", deployMode == "code")
+			proj, err := selectFoundryProject(
+				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
+				a.azureContext.Scope.SubscriptionId, "",
+				deployMode == "code",
+				true, // bicepless
+			)
 			if err != nil {
 				return nil, err
 			}

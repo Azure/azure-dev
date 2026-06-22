@@ -54,10 +54,10 @@ Logs for each run are published as the `tier2-live-logs-<BuildId>` artifact.
    `azuresdk-github-pat` (already provided by the Azure SDK ADO project) to avoid
    anonymous rate limits, so no extra secret setup is required.
 
-## Running locally (WSL)
+## Running locally (Linux / WSL)
 
-Prerequisites: WSL with `tmux` (>= 3.4), Python 3.12+, `azd` (>= 1.25.5) with the
-`azure.ai.agents` extension installed, and `az` logged in.
+Prerequisites: Linux (including WSL) with `tmux` (>= 3.4), Python 3.12+, `azd`
+(>= 1.25.5) with the `azure.ai.agents` extension installed, and `az` logged in.
 
 ```bash
 # Use azd's built-in auth locally (NOT az CLI auth — it is slow under WSL).

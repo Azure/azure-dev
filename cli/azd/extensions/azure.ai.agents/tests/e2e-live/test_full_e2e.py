@@ -792,12 +792,19 @@ def phase_invoke():
                 results["invoke"] = "FAIL (empty response)"
                 return False
 
-            # Payload asks "what is 2+2?" — response should contain "4"
-            has_expected = "4" in response_text
+            # Payload asks "what is 2+2?". Accept a standalone "4" token or the
+            # spelled-out word "four" (a live model may answer either). The regex
+            # requires "4" to stand alone so unrelated "4"s in captured output —
+            # model names ("gpt-4o-mini"), versions ("4.1"), or status codes
+            # ("404") — don't produce a false pass.
+            has_expected = (
+                re.search(r"(?<![\w.])4(?!\.\d)(?!\w)", response_text) is not None
+                or re.search(r"\bfour\b", response_text, re.IGNORECASE) is not None
+            )
             print(f"  Response ({len(response_text)} chars): {response_text[:120]}")
             if not has_expected:
-                print("  FAIL: response does not contain expected '4'")
-                results["invoke"] = "FAIL (response missing '4')"
+                print("  FAIL: response does not contain expected '4'/'four'")
+                results["invoke"] = "FAIL (response missing '4'/'four')"
                 return False
 
             results["invoke"] = "PASS"

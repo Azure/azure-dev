@@ -104,10 +104,14 @@ extends:
                   set -euo pipefail
                   # Map the agent architecture to azd's expected binary suffix so
                   # this keeps working if the pool ever moves off linux/amd64.
-                  case "$(uname -m)" in
+                  # Use backticks (not $(...)) for the command substitution so
+                  # Azure DevOps cannot mistake it for a $(macro) variable; assign
+                  # once and reference the plain shell var ($ARCH) thereafter.
+                  ARCH=`uname -m`
+                  case "$ARCH" in
                     x86_64|amd64) GOARCH=amd64 ;;
                     aarch64|arm64) GOARCH=arm64 ;;
-                    *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+                    *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
                   esac
                   BIN_NAME="azure-ai-agents-linux-${GOARCH}"
                   EXT_DIR="$HOME/.azd/extensions/azure.ai.agents"

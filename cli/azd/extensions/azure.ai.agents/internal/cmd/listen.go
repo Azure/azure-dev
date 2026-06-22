@@ -62,13 +62,22 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	deployments, err := collectProjectDeployments(args.Project.Services)
+	if err != nil {
+		return err
+	}
+	connections, err := collectConnections(args.Project.Services)
+	if err != nil {
+		return err
+	}
+
 	for _, svc := range args.Project.Services {
 		switch svc.Host {
 		case AiAgentHost:
 			if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
 				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 			}
-			if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
+			if err := envUpdate(ctx, azdClient, args.Project, svc, deployments, connections); err != nil {
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 			}
 		}
@@ -82,18 +91,34 @@ func postprovisionHandler(
 	azdClient *azdext.AzdClient,
 	args *azdext.ProjectEventArgs,
 ) error {
+	// Toolboxes live in sibling azure.ai.toolbox services; their connection
+	// enrichment still needs the project connections (azure.ai.connection
+	// services) and the agent tool connections.
+	toolboxes, err := collectToolboxes(args.Project.Services)
+	if err != nil {
+		return fmt.Errorf("failed to collect toolboxes: %w", err)
+	}
+
+	if len(toolboxes) > 0 {
+		connections, err := collectConnections(args.Project.Services)
+		if err != nil {
+			return fmt.Errorf("failed to collect connections: %w", err)
+		}
+		toolConnections, err := collectAgentToolConnections(args.Project.Services)
+		if err != nil {
+			return fmt.Errorf("failed to collect tool connections: %w", err)
+		}
+
+		if err := provisionToolboxes(ctx, azdClient, toolboxes, connections, toolConnections); err != nil {
+			return fmt.Errorf("failed to provision toolboxes: %w", err)
+		}
+	}
+
 	hasAgent := false
 	for _, svc := range args.Project.Services {
-		if svc.Host != AiAgentHost {
-			continue
-		}
-		hasAgent = true
-
-		if err := provisionToolboxes(ctx, azdClient, svc); err != nil {
-			return fmt.Errorf(
-				"failed to provision toolboxes for service %q: %w",
-				svc.Name, err,
-			)
+		if svc.Host == AiAgentHost {
+			hasAgent = true
+			break
 		}
 	}
 
@@ -156,6 +181,15 @@ func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 }
 
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	deployments, err := collectProjectDeployments(args.Project.Services)
+	if err != nil {
+		return err
+	}
+	connections, err := collectConnections(args.Project.Services)
+	if err != nil {
+		return err
+	}
+
 	hasHostedAgentService := false
 	for _, svc := range args.Project.Services {
 		if svc.Host != AiAgentHost {
@@ -165,7 +199,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
 			return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 		}
-		if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
+		if err := envUpdate(ctx, azdClient, args.Project, svc, deployments, connections); err != nil {
 			return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 		}
 
@@ -376,7 +410,14 @@ func cleanupAgentSessionState(ctx context.Context, azdClient *azdext.AzdClient, 
 	return !failed
 }
 
-func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
+func envUpdate(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azdProject *azdext.ProjectConfig,
+	svc *azdext.ServiceConfig,
+	deployments []project.Deployment,
+	connections []project.Connection,
+) error {
 
 	var foundryAgentConfig *project.ServiceTargetAgentConfig
 
@@ -393,28 +434,31 @@ func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azd
 		return err
 	}
 
-	if len(foundryAgentConfig.Deployments) > 0 {
-		if err := deploymentEnvUpdate(ctx, foundryAgentConfig.Deployments, azdClient, currentEnvResponse.Environment.Name); err != nil {
+	// Deployments and connections are sourced from the sibling
+	// azure.ai.project and azure.ai.connection services. Resources and tool
+	// connections stay on the agent service.
+	if len(deployments) > 0 {
+		if err := deploymentEnvUpdate(ctx, deployments, azdClient, currentEnvResponse.Environment.Name); err != nil {
 			return err
 		}
 	}
 
-	if len(foundryAgentConfig.Resources) > 0 {
+	if foundryAgentConfig != nil && len(foundryAgentConfig.Resources) > 0 {
 		if err := resourcesEnvUpdate(ctx, foundryAgentConfig.Resources, azdClient, currentEnvResponse.Environment.Name); err != nil {
 			return err
 		}
 	}
 
-	if len(foundryAgentConfig.Connections) > 0 {
+	if len(connections) > 0 {
 		if err := connectionsEnvUpdate(
-			ctx, foundryAgentConfig.Connections,
+			ctx, connections,
 			azdClient, currentEnvResponse.Environment.Name,
 		); err != nil {
 			return err
 		}
 	}
 
-	if len(foundryAgentConfig.ToolConnections) > 0 {
+	if foundryAgentConfig != nil && len(foundryAgentConfig.ToolConnections) > 0 {
 		if err := toolConnectionsEnvUpdate(
 			ctx, foundryAgentConfig.ToolConnections,
 			azdClient, currentEnvResponse.Environment.Name,
@@ -674,19 +718,27 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 // provisionToolboxes creates or updates Foundry Toolsets for each toolbox
 // in the service config. Called during post-provision after the project
 // endpoint has been created by Bicep.
+// provisionToolboxes creates or updates Foundry Toolsets for each toolbox
+// sourced from the sibling azure.ai.toolbox services. Called during
+// post-provision after the project endpoint has been created by Bicep. The
+// connections and toolConnections are used to resolve connection references
+// declared on the toolboxes.
 func provisionToolboxes(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
-	svc *azdext.ServiceConfig,
+	toolboxes []project.Toolbox,
+	connections []project.Connection,
+	toolConnections []project.ToolConnection,
 ) error {
-	var config *project.ServiceTargetAgentConfig
-	if err := project.UnmarshalStruct(svc.Config, &config); err != nil {
-		return fmt.Errorf("failed to parse service config: %w", err)
-	}
-
-	if config == nil || len(config.Toolboxes) == 0 {
+	if len(toolboxes) == 0 {
 		return nil
 	}
+
+	// Build connection lookup for enriching tool entries with server_url/server_label
+	connByName := toolboxConnectionsByName(&project.ServiceTargetAgentConfig{
+		Connections:     connections,
+		ToolConnections: toolConnections,
+	})
 
 	currentEnv, err := azdClient.Environment().GetCurrent(
 		ctx, &azdext.EmptyRequest{},
@@ -751,10 +803,7 @@ func provisionToolboxes(
 		return fmt.Errorf("loading connection IDs: %w", err)
 	}
 
-	// Build connection lookup for enriching tool entries with server_url/server_label
-	connByName := toolboxConnectionsByName(config)
-
-	for _, toolbox := range config.Toolboxes {
+	for _, toolbox := range toolboxes {
 		fmt.Fprintf(
 			os.Stderr, "Provisioning toolbox: %s\n", toolbox.Name,
 		)

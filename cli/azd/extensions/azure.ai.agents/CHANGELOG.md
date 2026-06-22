@@ -1,5 +1,11 @@
 # Release History
 
+## Unreleased
+
+### Features Added
+
+- `azd ai agent init` now writes each Foundry resource as its own `azure.yaml` service entry instead of bundling everything into the agent service. Model deployments become a single `azure.ai.project` service, each connection becomes an `azure.ai.connection` service, and each toolbox becomes an `azure.ai.toolbox` service, all wired to the agent through `uses:`. Provisioning is unchanged: the agent extension re-sources deployments, connections, and toolboxes from the sibling services when setting provisioning environment variables and creating toolsets.
+
 ## 0.1.41-preview (2026-06-19)
 
 - [[#8731]](https://github.com/Azure/azure-dev/pull/8731) Improve the post-deploy `Next:` guidance with a stacked layout that puts each command on its own line above its description, adds a blank line between suggestions, and highlights `azd` commands. The new layout applies across deploy, `azd ai agent show`, `init`, and `doctor`. Thanks @therealjohn for the contribution!

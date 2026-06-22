@@ -30,5 +30,9 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newProjectUnsetCommand(extCtx))
 	rootCmd.AddCommand(newProjectShowCommand(extCtx))
 
+	// Register the azure.ai.project service target so `azd up`/`azd deploy`
+	// succeed for project service entries written by `azd ai agent init`.
+	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
+
 	return rootCmd
 }

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features Added
+
+- Register the `azure.ai.connection` service target. `azd ai agent init` can now write Foundry connections as their own `azure.ai.connection` service entries wired to the agent via `uses:`, and this extension registers the host so `azd up`/`azd deploy` succeed for those entries. Connections continue to be provisioned by Bicep during `azd provision`, so the deploy-time hook is intentionally a no-op.
+
 ## 0.1.2-preview (2026-06-19)
 
 ### Bugs Fixed

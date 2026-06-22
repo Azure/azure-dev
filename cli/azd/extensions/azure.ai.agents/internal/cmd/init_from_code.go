@@ -832,6 +832,11 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 		agentConfig.StartupCommand = startupCmd
 	}
 
+	// Move the model deployments out of the agent config into a sibling
+	// azure.ai.project service, emitted after the agent service below.
+	resourceDeployments := agentConfig.Deployments
+	agentConfig.Deployments = nil
+
 	var agentConfigStruct *structpb.Struct
 	var err error
 	if agentConfigStruct, err = project.MarshalStruct(&agentConfig); err != nil {
@@ -886,6 +891,15 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
+	}
+
+	// Emit the sibling azure.ai.project service carrying the model deployments
+	// and wire the agent's uses: to it.
+	agentServiceName := strings.ReplaceAll(agentName, " ", "")
+	if err := emitResourceServices(
+		ctx, a.azdClient, agentServiceName, resourceDeployments, nil, nil,
+	); err != nil {
+		return err
 	}
 
 	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentName)

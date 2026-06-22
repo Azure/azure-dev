@@ -1501,7 +1501,7 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serv
 
 // zipSourceDir creates a ZIP archive of srcDir honoring .agentignore, writes it to a
 // temp file, and computes its SHA-256. It returns the temp file path and SHA-256 hex
-// string. Shared by the azure.ai.agent and microsoft.foundry code-deploy packaging paths.
+// string.
 func zipSourceDir(ctx context.Context, srcDir string) (string, string, error) {
 	// Load .agentignore (or use defaults if no file exists)
 	ignoreMatcher, err := newAgentIgnoreMatcher(ctx, srcDir)

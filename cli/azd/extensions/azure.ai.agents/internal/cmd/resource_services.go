@@ -181,6 +181,10 @@ func sanitizeServiceName(name string) string {
 // azure.ai.project services so provisioning handlers can source them from the
 // sibling project service instead of the agent service config. Services are
 // visited in sorted name order so serialized env-var output stays stable.
+//
+// Falls back to the deployments bundled on the agent service when no project
+// service carries any, so an azure.yaml written before the per-resource split
+// still provisions without re-running init.
 func collectProjectDeployments(services map[string]*azdext.ServiceConfig) ([]project.Deployment, error) {
 	var out []project.Deployment
 	for _, svc := range sortedServices(services) {
@@ -195,11 +199,23 @@ func collectProjectDeployments(services map[string]*azdext.ServiceConfig) ([]pro
 			out = append(out, cfg.Deployments...)
 		}
 	}
+	if len(out) > 0 {
+		return out, nil
+	}
+	legacy, err := collectLegacyAgentConfigs(services)
+	if err != nil {
+		return nil, err
+	}
+	for _, cfg := range legacy {
+		out = append(out, cfg.Deployments...)
+	}
 	return out, nil
 }
 
 // collectConnections gathers the connections declared across all
-// azure.ai.connection services.
+// azure.ai.connection services. Falls back to the connections bundled on the
+// agent service when no connection service carries any, so a pre-split
+// azure.yaml still provisions without re-running init.
 func collectConnections(services map[string]*azdext.ServiceConfig) ([]project.Connection, error) {
 	var out []project.Connection
 	for _, svc := range sortedServices(services) {
@@ -214,11 +230,23 @@ func collectConnections(services map[string]*azdext.ServiceConfig) ([]project.Co
 			out = append(out, *conn)
 		}
 	}
+	if len(out) > 0 {
+		return out, nil
+	}
+	legacy, err := collectLegacyAgentConfigs(services)
+	if err != nil {
+		return nil, err
+	}
+	for _, cfg := range legacy {
+		out = append(out, cfg.Connections...)
+	}
 	return out, nil
 }
 
 // collectToolboxes gathers the toolboxes declared across all azure.ai.toolbox
-// services.
+// services. Falls back to the toolboxes bundled on the agent service when no
+// toolbox service carries any, so a pre-split azure.yaml still provisions
+// without re-running init.
 func collectToolboxes(services map[string]*azdext.ServiceConfig) ([]project.Toolbox, error) {
 	var out []project.Toolbox
 	for _, svc := range sortedServices(services) {
@@ -233,6 +261,16 @@ func collectToolboxes(services map[string]*azdext.ServiceConfig) ([]project.Tool
 			out = append(out, *toolbox)
 		}
 	}
+	if len(out) > 0 {
+		return out, nil
+	}
+	legacy, err := collectLegacyAgentConfigs(services)
+	if err != nil {
+		return nil, err
+	}
+	for _, cfg := range legacy {
+		out = append(out, cfg.Toolboxes...)
+	}
 	return out, nil
 }
 
@@ -241,7 +279,24 @@ func collectToolboxes(services map[string]*azdext.ServiceConfig) ([]project.Tool
 // configuration), so toolbox enrichment still needs them alongside the
 // connections sourced from azure.ai.connection services.
 func collectAgentToolConnections(services map[string]*azdext.ServiceConfig) ([]project.ToolConnection, error) {
+	configs, err := collectLegacyAgentConfigs(services)
+	if err != nil {
+		return nil, err
+	}
 	var out []project.ToolConnection
+	for _, cfg := range configs {
+		out = append(out, cfg.ToolConnections...)
+	}
+	return out, nil
+}
+
+// collectLegacyAgentConfigs parses the bundled ServiceTargetAgentConfig from
+// every agent service, in sorted name order. Tool connections always live here;
+// projects created before the per-resource split also carry their deployments,
+// connections, and toolboxes here rather than in sibling azure.ai.<kind>
+// services, so the collectors fall back to these when no sibling service exists.
+func collectLegacyAgentConfigs(services map[string]*azdext.ServiceConfig) ([]*project.ServiceTargetAgentConfig, error) {
+	var out []*project.ServiceTargetAgentConfig
 	for _, svc := range sortedServices(services) {
 		if svc.Host != AiAgentHost || svc.Config == nil {
 			continue
@@ -251,7 +306,7 @@ func collectAgentToolConnections(services map[string]*azdext.ServiceConfig) ([]p
 			return nil, fmt.Errorf("parsing agent service %q config: %w", svc.Name, err)
 		}
 		if cfg != nil {
-			out = append(out, cfg.ToolConnections...)
+			out = append(out, cfg)
 		}
 	}
 	return out, nil

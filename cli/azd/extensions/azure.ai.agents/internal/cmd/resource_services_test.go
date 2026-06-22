@@ -156,3 +156,62 @@ func TestCollectHelpers_EmptyAndNilConfigs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, toolboxes)
 }
+
+// TestCollect_FallbackToBundledAgentConfig verifies that a pre-split azure.yaml
+// -- deployments, connections, and toolboxes bundled on the agent service with
+// no sibling azure.ai.<kind> services -- still yields those resources, so
+// existing projects provision without re-running init.
+func TestCollect_FallbackToBundledAgentConfig(t *testing.T) {
+	t.Parallel()
+
+	bundled := &project.ServiceTargetAgentConfig{
+		Deployments: []project.Deployment{{Name: "gpt-4o", Model: project.DeploymentModel{Name: "gpt-4o"}}},
+		Connections: []project.Connection{{Name: "conn", Category: "ApiKey"}},
+		Toolboxes:   []project.Toolbox{{Name: "tb", Tools: []map[string]any{{"type": "mcp"}}}},
+	}
+	svc := mustMarshalConfig(t, bundled)
+	svc.Name = "my-agent"
+	svc.Host = AiAgentHost
+	services := map[string]*azdext.ServiceConfig{"my-agent": svc}
+
+	deployments, err := collectProjectDeployments(services)
+	require.NoError(t, err)
+	require.Len(t, deployments, 1)
+	assert.Equal(t, "gpt-4o", deployments[0].Name)
+
+	connections, err := collectConnections(services)
+	require.NoError(t, err)
+	require.Len(t, connections, 1)
+	assert.Equal(t, "conn", connections[0].Name)
+
+	toolboxes, err := collectToolboxes(services)
+	require.NoError(t, err)
+	require.Len(t, toolboxes, 1)
+	assert.Equal(t, "tb", toolboxes[0].Name)
+}
+
+// TestCollectProjectDeployments_SiblingWinsOverBundled verifies the sibling
+// azure.ai.project service takes precedence: the fallback to bundled agent
+// deployments only applies when no project service carries any.
+func TestCollectProjectDeployments_SiblingWinsOverBundled(t *testing.T) {
+	t.Parallel()
+
+	bundled := &project.ServiceTargetAgentConfig{
+		Deployments: []project.Deployment{{Name: "legacy", Model: project.DeploymentModel{Name: "legacy"}}},
+	}
+	agentSvc := mustMarshalConfig(t, bundled)
+	agentSvc.Name = "my-agent"
+	agentSvc.Host = AiAgentHost
+
+	services := map[string]*azdext.ServiceConfig{
+		"my-agent": agentSvc,
+		"ai-project": projectService(
+			t, "ai-project", project.Deployment{Name: "gpt-4o", Model: project.DeploymentModel{Name: "gpt-4o"}},
+		),
+	}
+
+	deployments, err := collectProjectDeployments(services)
+	require.NoError(t, err)
+	require.Len(t, deployments, 1)
+	assert.Equal(t, "gpt-4o", deployments[0].Name)
+}

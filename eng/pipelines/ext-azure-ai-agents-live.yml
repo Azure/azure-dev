@@ -16,8 +16,9 @@
 #   - Service connection (parameter `serviceConnection`, default `azure-sdk-tests`)
 #     must map to the shared TME test subscription with Contributor + the RBAC
 #     needed to create Foundry projects and deploy models.
-#   - Optional secret variable `GitHubPat`: a GitHub PAT used when cloning the
-#     starter template, to avoid anonymous GitHub rate limits.
+#   - GitHub clones of the starter template authenticate with the azure-sdk org
+#     secret `azuresdk-github-pat` (already provided by the Azure SDK ADO
+#     project) to avoid anonymous rate limits — no extra secret setup required.
 
 trigger: none
 pr: none
@@ -53,8 +54,6 @@ extends:
         displayName: AI Agents Live Golden Path
         variables:
           - template: /eng/pipelines/templates/variables/image.yml
-          - name: GitHubPat
-            value: ""
         jobs:
           - job: Tier2
             displayName: Tier 2 — init/provision/deploy/invoke/down
@@ -95,9 +94,9 @@ extends:
               - bash: echo "##vso[task.prependpath]$(Build.SourcesDirectory)/cli/azd"
                 displayName: Add azd to PATH
 
-              # Install the freshly built extension into the azd config dir.
-              # Mirrors the install used by lint-ext-azure-ai-agents.yml, but with
-              # the live (non-record) binary.
+              # Install the freshly built (live, non-record) extension into the
+              # azd config dir: copy the binary where azd expects it and write a
+              # minimal config.json so `azd ai agent` resolves the extension.
               - bash: |
                   set -euo pipefail
                   EXT_DIR="$HOME/.azd/extensions/azure.ai.agents"
@@ -143,10 +142,17 @@ extends:
                   scriptLocation: inlineScript
                   workingDirectory: cli/azd/extensions/azure.ai.agents/tests/e2e-live
                   inlineScript: |
-                    set -o pipefail
+                    set -euo pipefail
                     azd config set auth.useAzCliAuth true
-                    export E2E_SUBSCRIPTION="$(az account show --query id -o tsv)"
-                    export E2E_TENANT="$(az account show --query tenantId -o tsv)"
+                    # Assign first (not `export X=$(...)`, which hides command
+                    # substitution failures from set -e), then verify non-empty.
+                    E2E_SUBSCRIPTION="$(az account show --query id -o tsv)"
+                    E2E_TENANT="$(az account show --query tenantId -o tsv)"
+                    if [ -z "$E2E_SUBSCRIPTION" ] || [ -z "$E2E_TENANT" ]; then
+                      echo "ERROR: failed to resolve subscription/tenant from az account show" >&2
+                      exit 1
+                    fi
+                    export E2E_SUBSCRIPTION E2E_TENANT
                     echo "Using subscription: $E2E_SUBSCRIPTION"
                     mkdir -p "$(Build.ArtifactStagingDirectory)/logs"
                     python3 test_tier2.py --mode ${{ parameters.deployModes }} 2>&1 \
@@ -155,8 +161,9 @@ extends:
                   E2E_CREATE_PROJECT: "true"
                   E2E_LOCATION: eastus2
                   E2E_USE_AZ_CLI_AUTH: "true"
-                  # Optional GitHub PAT to avoid anonymous clone rate limits.
-                  GH_TOKEN: $(GitHubPat)
+                  # azure-sdk org PAT (ambient in the ADO project) used only to
+                  # avoid anonymous GitHub rate limits when cloning the template.
+                  GH_TOKEN: $(azuresdk-github-pat)
 
               - task: PublishPipelineArtifact@1
                 condition: always()

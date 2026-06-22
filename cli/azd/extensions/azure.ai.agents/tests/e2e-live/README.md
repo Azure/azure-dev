@@ -50,8 +50,9 @@ Logs for each run are published as the `tier2-live-logs-<BuildId>` artifact.
    workload-identity federation. The federated identity needs enough RBAC to
    create Foundry projects and deploy models (Contributor + Azure AI Developer +
    Cognitive Services Contributor, or equivalent).
-3. **Optional `GitHubPat`** — add a secret pipeline variable with a GitHub PAT to
-   avoid anonymous rate limits when the template is cloned during `init`.
+3. **GitHub auth** — clones of the starter template use the azure-sdk org secret
+   `azuresdk-github-pat` (already provided by the Azure SDK ADO project) to avoid
+   anonymous rate limits, so no extra secret setup is required.
 
 ## Running locally (WSL)
 

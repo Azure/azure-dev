@@ -33,12 +33,18 @@ def _cleanup_leaked_resources(testdir, env, label):
         if os.path.isdir(project_dir) and os.path.isfile(azure_yaml):
             print(f"  [{label}] Cleaning up leaked resources in {project_dir}...")
             try:
-                subprocess.run(
+                r = subprocess.run(
                     ["azd", "down", "--force", "--purge", "--no-prompt"],
                     cwd=project_dir, env=env,
                     capture_output=True, text=True, timeout=300,
                 )
-                print(f"  [{label}] Cleanup complete")
+                if r.returncode == 0:
+                    print(f"  [{label}] Cleanup complete")
+                else:
+                    print(f"  [{label}] Cleanup FAILED (exit {r.returncode}) — "
+                          f"resources may be leaked, check the subscription")
+                    if r.stderr.strip():
+                        print(f"  [{label}] [stderr] {r.stderr.strip()[:300]}")
             except Exception as e:
                 print(f"  [{label}] Cleanup failed: {e}")
 

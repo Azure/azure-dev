@@ -6,7 +6,9 @@ See README.md for complete setup & run instructions.
 Prerequisites:
   - WSL with tmux (>=3.4), Python 3.12+
   - azd (>=1.25.5) with azure.ai.agents extension, logged in via `azd auth login`
-  - auth.useAzCliAuth must NOT be true (use `azd config unset auth.useAzCliAuth`)
+  - For local WSL runs, leave auth.useAzCliAuth unset (azd built-in auth, via
+    `azd config unset auth.useAzCliAuth`); under CI (GitHub Actions / Azure
+    DevOps / E2E_USE_AZ_CLI_AUTH=true) the script auto-enables az CLI auth.
   - GitHub token available via gh.exe or $GITHUB_TOKEN
 
 Recommended env vars:
@@ -237,10 +239,13 @@ def setup():
     send(env_cmd)
     key("Enter")
     time.sleep(1)
-    # Clear scrollback to avoid token leaking into capture output
+    # Clear scrollback to avoid token leaking into capture output. `clear` only
+    # wipes the visible screen, so also drop tmux's scrollback buffer — the GH
+    # token was just typed into this pane and must never resurface in capture().
     send("clear")
     key("Enter")
     time.sleep(0.5)
+    tmux("clear-history", "-t", SESS)
 
     send("echo ENV_OK")
     key("Enter")

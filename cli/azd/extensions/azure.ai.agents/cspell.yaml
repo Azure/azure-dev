@@ -38,6 +38,7 @@ words:
   - aoai
   - authorizationfailed
   - azdaiagent
+  - azuresdk
   - CLIENTSECRET
   - curr
   - dataagent

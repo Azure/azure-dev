@@ -2,10 +2,6 @@
 
 ## Unreleased
 
-### Features Added
-
-- Register the `azure.ai.toolbox` service target. `azd ai agent init` can now write Foundry toolboxes as their own `azure.ai.toolbox` service entries wired to the agent via `uses:`, and this extension registers the host so `azd up`/`azd deploy` succeed for those entries. Toolboxes continue to be created via the dataplane API during `azd provision`, so the deploy-time hook is intentionally a no-op.
-
 ## 0.1.1-preview (2026-06-19)
 
 ### Features

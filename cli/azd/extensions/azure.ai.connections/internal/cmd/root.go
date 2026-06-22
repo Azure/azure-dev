@@ -27,10 +27,6 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
 
-	// Register the azure.ai.connection service target so `azd up`/`azd deploy`
-	// succeed for connection service entries written by `azd ai agent init`.
-	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
-
 	// Register -p / --project-endpoint as a persistent flag inherited by
 	// connection CRUD subcommands (list, show, create, update, delete).
 	rootCmd.PersistentFlags().StringP("project-endpoint", "p", "",

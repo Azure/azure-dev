@@ -2,18 +2,13 @@
 capabilities:
     - custom-commands
     - metadata
-    - service-target-provider
 description: Manage Microsoft Foundry Project resources from your terminal. (Preview)
 displayName: Foundry Projects (Preview)
 id: azure.ai.projects
 language: go
 namespace: ai.project
-providers:
-    - name: azure.ai.project
-      type: service-target
-      description: Registers Foundry project service entries so azd up/deploy succeed
 tags:
     - ai
     - project
 usage: azd ai project <command> [options]
-version: 0.1.1-preview
+version: 0.1.0-preview

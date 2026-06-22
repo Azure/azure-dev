@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// Package project implements the azd service target for the azure.ai.project host.
 package project
 
 import (
@@ -10,30 +9,34 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// ProjectHost is the azd service host served by this extension. It must match
-// the provider name declared in extension.yaml.
-const ProjectHost = "azure.ai.project"
+var _ azdext.ServiceTargetProvider = (*ResourceServiceTargetProvider)(nil)
 
-var _ azdext.ServiceTargetProvider = (*ProjectServiceTargetProvider)(nil)
-
-// ProjectServiceTargetProvider is a no-op service target for the
-// azure.ai.project host. The Foundry project and its model deployments are
-// created by Bicep during `azd provision` (orchestrated by the Foundry agents
-// extension), so the deploy-time hooks here intentionally do nothing.
-// Registering the host is what lets `azd up`/`azd deploy` succeed for project
-// service entries that an agent service references via `uses:`.
-type ProjectServiceTargetProvider struct {
+// ResourceServiceTargetProvider is a no-op service target shared by the Foundry
+// resource hosts that `azd ai agent init` writes as sibling service entries:
+// azure.ai.project, azure.ai.connection, and azure.ai.toolbox. The agents
+// extension registers all three so `azd up`/`azd deploy` can walk the service
+// entries the agent references via uses:, without requiring a separate
+// extension per host. The resources themselves are created by Bicep during
+// `azd provision` (orchestrated by this extension), so every deploy-time hook
+// here intentionally does nothing.
+//
+// These hosts share one provider type because none of them has deploy-time
+// behavior yet. When a host gains real backend functionality it can move to its
+// own dedicated extension, at which point that extension registers the host
+// instead of this one.
+type ResourceServiceTargetProvider struct {
 	azdClient     *azdext.AzdClient
 	serviceConfig *azdext.ServiceConfig
 }
 
-// NewProjectServiceTargetProvider creates a no-op project service target.
-func NewProjectServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
-	return &ProjectServiceTargetProvider{azdClient: azdClient}
+// NewResourceServiceTargetProvider creates a no-op service target for a Foundry
+// resource host.
+func NewResourceServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
+	return &ResourceServiceTargetProvider{azdClient: azdClient}
 }
 
 // Initialize stores the service configuration; no other setup is required.
-func (p *ProjectServiceTargetProvider) Initialize(
+func (p *ResourceServiceTargetProvider) Initialize(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 ) error {
@@ -41,8 +44,8 @@ func (p *ProjectServiceTargetProvider) Initialize(
 	return nil
 }
 
-// Endpoints returns no endpoints; the project service does not expose any.
-func (p *ProjectServiceTargetProvider) Endpoints(
+// Endpoints returns no endpoints; Foundry resource services do not expose any.
+func (p *ResourceServiceTargetProvider) Endpoints(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	targetResource *azdext.TargetResource,
@@ -52,7 +55,7 @@ func (p *ProjectServiceTargetProvider) Endpoints(
 
 // GetTargetResource resolves the target resource. It delegates to azd's default
 // resolver and falls back to a minimal target so the deploy pipeline can proceed.
-func (p *ProjectServiceTargetProvider) GetTargetResource(
+func (p *ResourceServiceTargetProvider) GetTargetResource(
 	ctx context.Context,
 	subscriptionId string,
 	serviceConfig *azdext.ServiceConfig,
@@ -69,8 +72,8 @@ func (p *ProjectServiceTargetProvider) GetTargetResource(
 	return &azdext.TargetResource{SubscriptionId: subscriptionId}, nil
 }
 
-// Package is a no-op; there is nothing to build or stage for the project service.
-func (p *ProjectServiceTargetProvider) Package(
+// Package is a no-op; there is nothing to build or stage for a resource service.
+func (p *ResourceServiceTargetProvider) Package(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
@@ -79,8 +82,8 @@ func (p *ProjectServiceTargetProvider) Package(
 	return &azdext.ServicePackageResult{}, nil
 }
 
-// Publish is a no-op; the project service has no artifacts to publish.
-func (p *ProjectServiceTargetProvider) Publish(
+// Publish is a no-op; resource services have no artifacts to publish.
+func (p *ResourceServiceTargetProvider) Publish(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
@@ -91,8 +94,8 @@ func (p *ProjectServiceTargetProvider) Publish(
 	return &azdext.ServicePublishResult{}, nil
 }
 
-// Deploy is a no-op; the project and its deployments are created at provision time by Bicep.
-func (p *ProjectServiceTargetProvider) Deploy(
+// Deploy is a no-op; the resources are created at provision time by Bicep.
+func (p *ResourceServiceTargetProvider) Deploy(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,

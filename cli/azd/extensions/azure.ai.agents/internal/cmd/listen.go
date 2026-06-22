@@ -41,6 +41,19 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
 			return project.NewAgentServiceTargetProvider(azdClient)
 		}).
+		// The Foundry resource hosts written by `azd ai agent init` are owned by
+		// this extension too, so `azd up`/`azd deploy` can walk them without a
+		// separate extension per host. They are no-ops today; the resources are
+		// created by Bicep at provision time.
+		WithServiceTarget(AiProjectHost, func() azdext.ServiceTargetProvider {
+			return project.NewResourceServiceTargetProvider(azdClient)
+		}).
+		WithServiceTarget(AiConnectionHost, func() azdext.ServiceTargetProvider {
+			return project.NewResourceServiceTargetProvider(azdClient)
+		}).
+		WithServiceTarget(AiToolboxHost, func() azdext.ServiceTargetProvider {
+			return project.NewResourceServiceTargetProvider(azdClient)
+		}).
 		WithProvisioningProvider(project.FoundryProviderName, func() azdext.ProvisioningProvider {
 			return project.NewFoundryProvisioningProvider(azdClient)
 		}).

@@ -1,11 +1,5 @@
 # Release History
 
-## Unreleased
-
-### Features Added
-
-- Register the `azure.ai.project` service target. `azd ai agent init` can now write the Foundry project (and its model deployments) as its own `azure.ai.project` service entry wired to the agent via `uses:`, and this extension registers the host so `azd up`/`azd deploy` succeed for that entry. The project and its deployments continue to be provisioned by Bicep during `azd provision`, so the deploy-time hook is intentionally a no-op.
-
 ## 0.1.0-preview (2026-05-28)
 
 Initial preview release of the Foundry Projects extension.

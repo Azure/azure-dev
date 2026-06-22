@@ -54,9 +54,5 @@ to promote a version.`,
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
 
-	// Register the azure.ai.toolbox service target so `azd up`/`azd deploy`
-	// succeed for toolbox service entries written by `azd ai agent init`.
-	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
-
 	return rootCmd
 }

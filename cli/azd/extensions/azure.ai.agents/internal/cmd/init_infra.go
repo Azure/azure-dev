@@ -510,8 +510,8 @@ func writeOutputsFile(infraDir string, includeAcr bool) (ejectArtifact, error) {
 // time by the presence of acr.tf, not by a Terraform variable.
 func writeTfvarsFile(infraDir string, params map[string]any) (ejectArtifact, error) {
 	// Static keys carry ${...} placeholders azd resolves from the environment.
-	// Use an ordered slice of lines so the generated file stays human-readable
-	// and stable; the placeholder values are JSON strings azd env-substitutes.
+	// json.MarshalIndent sorts map keys alphabetically, so the generated file is
+	// deterministic; the placeholder values are JSON strings azd env-substitutes.
 	doc := map[string]any{
 		"subscription_id":      "${AZURE_SUBSCRIPTION_ID}",
 		"location":             "${AZURE_LOCATION}",

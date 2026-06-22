@@ -547,7 +547,7 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 	// Resolve which agent host(s) to install skills for, based on the
 	// --host flag. When no host is given and several are detected, the
 	// user is asked to choose explicitly.
-	hostOpts, hostErr := a.resolveHostOptions(tools)
+	hostOpts, hostErr := a.resolveHostOptions(ctx, tools)
 	if hostErr != nil {
 		return nil, hostErr
 	}
@@ -630,7 +630,13 @@ func resolveExplicitSkillHosts(hosts []string) ([]tool.InstallOption, error) {
 // hosts returns guidance asking the user to choose. It returns the
 // install options to pass to the installer (nil selects the single
 // preferred host).
+//
+// When an explicitly-named skill has several hosts on PATH, an
+// interactive terminal is prompted to choose which host(s) to install
+// for (we still print a --host hint); in non-interactive mode it falls
+// back to a guidance error telling the user to re-run with --host.
 func (a *toolInstallAction) resolveHostOptions(
+	ctx context.Context,
 	tools []*tool.ToolDefinition,
 ) ([]tool.InstallOption, error) {
 	explicit := len(a.flags.hosts) > 0
@@ -657,9 +663,35 @@ func (a *toolInstallAction) resolveHostOptions(
 	}
 
 	// Explicitly-named skill: when multiple hosts are detected we cannot
-	// safely guess which the user wants, so ask them to choose.
+	// safely guess which the user wants.
 	present := a.manager.AvailableSkillHosts(skill)
 	if len(present) > 1 {
+		// Interactive terminal: prompt the user to pick the host(s),
+		// after surfacing the --host hint so they learn the shortcut too.
+		if a.console.IsSpinnerInteractive() && !a.console.IsNoPromptMode() {
+			a.console.Message(ctx, fmt.Sprintf(
+				"Multiple agent hosts detected. You can install "+
+					"directly with `azd tool install %s --host <host>` "+
+					"or `azd tool install %s --host all`.",
+				skill.Id, skill.Id,
+			))
+
+			selected, err := a.console.MultiSelect(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf(
+					"Select the agent host(s) to install %s for", skill.Name,
+				),
+				Options:      present,
+				DefaultValue: []string{present[0]},
+			})
+			if err != nil {
+				return nil, fmt.Errorf("selecting hosts: %w", err)
+			}
+			if len(selected) > 0 {
+				return []tool.InstallOption{tool.WithHosts(selected...)}, nil
+			}
+			// Nothing selected — fall through to the guidance error.
+		}
+
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf("multiple agent hosts detected for %s", skill.Name),
 			Message: fmt.Sprintf(

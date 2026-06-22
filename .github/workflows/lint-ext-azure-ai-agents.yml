@@ -84,5 +84,5 @@ jobs:
           # Make azd-record available as "azd" on PATH so that
           # azidentity.AzureDeveloperCLICredential (exec.LookPath("azd")) works in playback
           sudo ln -sf "$GITHUB_WORKSPACE/cli/azd/azd-record" /usr/local/bin/azd
-          go test -tags=record -run "Test_AIAgent_Init_NoPrompt_(Defer|WithProject)" \
+          go test -tags=record -run "Test_AIAgent_Init_(NoPrompt_(Defer|WithProject)|NegativeControl_BadCassette)" \
             ./test/functional/ -v -timeout 5m

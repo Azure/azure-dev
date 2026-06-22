@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
@@ -233,13 +234,77 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 	require.DirExists(t, agentDir)
 	require.FileExists(t, filepath.Join(agentDir, "agent.yaml"))
 
-	// Verify agent.yaml has a resolved model deployment value (not a placeholder).
-	// The key AZURE_AI_MODEL_DEPLOYMENT_NAME is always present, but its value is only
-	// resolved to an actual model name (e.g. "gpt-4.1") when ARM calls succeed.
-	// If ARM fails, the value would be the template placeholder "{{AZURE_AI_MODEL_DEPLOYMENT_NAME}}".
+	// Verify ARM resolution: the model deployment name is written to the azd environment
+	// .env file as a resolved value (e.g. "gpt-4.1"), proving the ARM calls in the cassette
+	// were consumed. The agent.yaml also contains the resolved value (not a ${...} placeholder)
+	// because azd resolves env refs at write time.
+	envFile := filepath.Join(projectDir, ".azure", "pr-gate-test-agent-dev", ".env")
+	require.FileExists(t, envFile, ".azure env file should be created by init")
+	envContent, err := os.ReadFile(envFile)
+	require.NoError(t, err)
+	envStr := string(envContent)
+	require.Contains(t, envStr, "AZURE_AI_MODEL_DEPLOYMENT_NAME=", "model deployment should be set in .env")
+	// The value must be an actual model name, not an unresolved placeholder.
+	require.NotContains(t, envStr, `AZURE_AI_MODEL_DEPLOYMENT_NAME="${AZURE_AI_MODEL_DEPLOYMENT_NAME}"`,
+		"model deployment should be resolved, not a placeholder reference")
+
+	// Cross-check: agent.yaml should also have the resolved value, not ${...} placeholder.
 	agentContent, err := os.ReadFile(filepath.Join(agentDir, "agent.yaml"))
 	require.NoError(t, err)
 	agentStr := string(agentContent)
-	require.Contains(t, agentStr, "AZURE_AI_MODEL_DEPLOYMENT_NAME")
-	require.NotContains(t, agentStr, "{{AZURE_AI_MODEL_DEPLOYMENT_NAME}}", "model deployment should be resolved, not a placeholder")
+	require.NotContains(t, agentStr, "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
+		"agent.yaml should have resolved model name, not azd env placeholder")
+}
+
+// Test_AIAgent_Init_NegativeControl_BadCassette verifies that the recording cassette is actually
+// consumed during playback. If we corrupt the cassette (make it empty), the test must fail,
+// proving the Tier 1 tests above are not false-green.
+//
+// This test ONLY runs in playback mode. It intentionally corrupts the WithProject cassette,
+// runs init, and asserts failure.
+func Test_AIAgent_Init_NegativeControl_BadCassette(t *testing.T) {
+	if strings.ToLower(os.Getenv("AZURE_RECORD_MODE")) != "playback" {
+		t.Skip("negative control only runs in playback mode")
+	}
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+
+	// Create a cassette file for THIS test that has no interactions (empty YAML).
+	// recording.Start will load it, but when the extension makes ARM calls,
+	// the proxy will find no matching recorded response → connection error → init fails.
+	_, thisFile, _, _ := runtime.Caller(0)
+	cassetteDir := filepath.Join(filepath.Dir(thisFile), "testdata", "recordings")
+	cassettePath := filepath.Join(cassetteDir, "Test_AIAgent_Init_NegativeControl_BadCassette.yaml")
+
+	// Write a minimal valid cassette with no interactions (empty responses).
+	emptyCassette := "---\nversion: 2\ninteractions: []\n"
+	err := os.WriteFile(cassettePath, []byte(emptyCassette), 0644)
+	require.NoError(t, err)
+	t.Cleanup(func() { os.Remove(cassettePath) })
+
+	session := recording.Start(t)
+	session.Variables[recording.SubscriptionIdKey] = "1756abc0-3554-4341-8d6a-46674962ea19"
+	session.Variables["project_id"] = "/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/resourceGroups/rg-hello-world-python-responses-dev-79ba4103/providers/Microsoft.CognitiveServices/accounts/wujia-6956-resource/projects/wujia-1670"
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+
+	result, err := cli.RunCommand(ctx,
+		"ai", "agent", "init", "--no-prompt",
+		"-m", manifestPath(t),
+		"--project-id", session.Variables["project_id"],
+		"--model-deployment", "gpt-4o",
+		"--deploy-mode", "code",
+		"--runtime", "python_3_13",
+		"--entry-point", "app:app",
+		"--agent-name", "neg-control-agent",
+		"--force",
+	)
+	// With an empty cassette, ARM calls will fail (no recorded response to replay).
+	// The init command must NOT succeed.
+	require.Error(t, err, "init should fail with empty cassette — proves cassette is consumed; stdout=%s", result.Stdout)
 }

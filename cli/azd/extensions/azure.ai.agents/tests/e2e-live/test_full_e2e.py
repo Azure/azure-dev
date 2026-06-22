@@ -38,9 +38,9 @@ CREATE_PROJECT = os.environ.get("E2E_CREATE_PROJECT", "").lower() in ("1", "true
 LOCATION = os.environ.get("E2E_LOCATION", "eastus2")  # Region for new projects
 # Inherit full parent PATH so tmux sessions get az-wrapper, azd, etc.
 PARENT_PATH = os.environ.get("PATH", f"{HOME_DIR}/bin:/usr/local/bin:/usr/bin:/bin")
-_tenant_env = f"; export AZURE_TENANT_ID={TENANT}" if TENANT else ""
+_tenant_env = f"; export AZURE_TENANT_ID={shlex.quote(TENANT)}" if TENANT else ""
 _gh_env = f"; export GH_TOKEN={shlex.quote(GH_TOKEN)}; export GITHUB_TOKEN={shlex.quote(GH_TOKEN)}" if GH_TOKEN else ""
-ENV_SETUP = f"export HOME={HOME_DIR}; export PATH={PARENT_PATH}{_tenant_env}{_gh_env}"
+ENV_SETUP = f"export HOME={shlex.quote(HOME_DIR)}; export PATH={shlex.quote(PARENT_PATH)}{_tenant_env}{_gh_env}"
 
 # Track results
 results = {}
@@ -274,7 +274,7 @@ def setup():
     key("Enter")
     time.sleep(1)
 
-    send(f"cd {TESTDIR}")
+    send(f"cd {shlex.quote(TESTDIR)}")
     key("Enter")
     time.sleep(1)
 
@@ -289,7 +289,7 @@ def phase_init():
 
     init_cmd = "azd ai agent init"
     if AGENT_NAME:
-        init_cmd += f" --agent-name {AGENT_NAME}"
+        init_cmd += f" --agent-name {shlex.quote(AGENT_NAME)}"
     send(init_cmd)
     key("Enter")
     time.sleep(8)

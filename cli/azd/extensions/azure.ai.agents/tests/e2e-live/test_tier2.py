@@ -125,6 +125,17 @@ def run_e2e(deploy_mode, label):
 
         if timed_out.is_set():
             print(f"\n--- [{label}] TIMEOUT after {elapsed:.0f}s ---")
+            # The child's tmux server runs detached, so killing the child Python
+            # process does not stop it. Tear it down explicitly so we don't leak
+            # orphaned tmux servers/sockets on reused CI agents.
+            tmux_bin = env.get("E2E_TMUX", "tmux")
+            try:
+                subprocess.run(
+                    [tmux_bin, "-L", sock, "kill-server"],
+                    capture_output=True, text=True, timeout=30,
+                )
+            except Exception as e:
+                print(f"  [{label}] tmux kill-server failed: {e}")
             # Best-effort cleanup so a hung run does not leak Azure resources.
             _cleanup_leaked_resources(testdir, env, label)
             return {

@@ -3,6 +3,7 @@
 
 package contracts
 
+// ConsoleMessage represents a message to be displayed in the console.
 type ConsoleMessage struct {
 	Message string `json:"message"`
 }

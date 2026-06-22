@@ -120,6 +120,9 @@ suppressed in raw mode.`,
   # Invoke locally (agent must be running via 'azd ai agent run')
   azd ai agent invoke --local "Hello!"
 
+  # Invoke a specific agent locally (useful in multi-agent projects)
+  azd ai agent invoke my-agent --local "Hello!"
+
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
 
@@ -192,14 +195,6 @@ suppressed in raw mode.`,
 
 			if err := validateInvokeVersionFlags(cmd, flags); err != nil {
 				return err
-			}
-
-			if flags.name != "" && flags.local {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"cannot use --local with a named agent; named agents are always invoked remotely on Foundry",
-					"omit the agent name for local invocation, or remove --local for remote",
-				)
 			}
 
 			if flags.protocol != "" {
@@ -459,7 +454,7 @@ func (a *InvokeAction) resolveProtocol(
 
 	if a.flags.local {
 		return resolveAgentProtocol(
-			ctx, azdClient, "", a.noPrompt,
+			ctx, azdClient, a.flags.name, a.noPrompt,
 		)
 	}
 	return resolveAgentProtocol(

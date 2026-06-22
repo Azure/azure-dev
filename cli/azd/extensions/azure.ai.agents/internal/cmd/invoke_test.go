@@ -436,6 +436,24 @@ func TestInvokeCommandIsolationFlags(t *testing.T) {
 	}
 }
 
+// TestInvokeLocalWithNamedAgent verifies that --local combined with a
+// positional agent name passes validation (no "cannot use --local with a
+// named agent" error). The command will still fail at Run time (no azd
+// project), but the validation stage must not reject it.
+func TestInvokeLocalWithNamedAgent(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInvokeCommand(nil)
+	cmd.SetArgs([]string{"my-agent", "--local", "Hello!"})
+	err := cmd.Execute()
+
+	// The command will error because there is no azd project or local server,
+	// but the error must NOT be the old validation rejection.
+	if err != nil && strings.Contains(err.Error(), "cannot use --local with a named agent") {
+		t.Fatalf("unexpected validation rejection: %v", err)
+	}
+}
+
 func TestIsolationHeaderFlags_SessionRequestOptions(t *testing.T) {
 	t.Parallel()
 

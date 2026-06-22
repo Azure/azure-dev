@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # run-network-e2e.sh : end-to-end validation of Foundry private networking for
-# `host: microsoft.foundry`, optimized for minimal Azure resource-operation time.
+# `host: azure.ai.agent`, optimized for minimal Azure resource-operation time.
 #
 # Strategy (see README.md for the cost rationale):
 #   - ONE real network account is provisioned (the create+own matrix cell).
@@ -10,10 +10,10 @@
 #     once and reused across cells.
 #
 # Phases 0-4 validate all the *networking* code and do NOT require the BYO-image
-# init UX (`azd ai agent init --image`, PR 8689). The project is hand-authored
+# init UX (`azd ai agent init --image`). The project is hand-authored
 # (azure.yaml fixture), so it runs against the current branch today. Phase 5
-# (deploy + invoke the BYO image under the VNet) needs the deploy-time pre-built
-# short-circuit from PR 8689 and is gated behind RUN_DEPLOY=true.
+# (deploy + invoke the BYO image under the VNet) uses the deploy-time pre-built
+# image short-circuit and is gated behind RUN_DEPLOY=true.
 #
 # Phases:
 #   0  local gates        (no Azure)
@@ -31,13 +31,25 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
+# shellcheck source=lib-jumpbox.sh
+source "$SCRIPT_DIR/lib-jumpbox.sh"
 
 # --- configuration (override via env) ----------------------------------------
 
-# Hard requirement from the test plan: the network-enabled Foundry account must
-# be in westus. VM-style quota is not consumed by this template, but override if
-# a region hits capacity.
+# Region constraints (from the test plan):
+#  - The network-enabled Foundry account, its VNet, DNS zones, and ACR MUST be
+#    in westus: Foundry VNet injection is only supported there. Everything this
+#    harness creates lives in ACCOUNT_LOCATION.
+#  - westus is frequently out of VM capacity. The harness itself creates no VM,
+#    but the gated deploy+invoke phase needs VNet line-of-sight to the account
+#    private endpoint. If you stand up a jumpbox for that, put it in a
+#    capacity-available region (CLIENT_LOCATION, default eastus) in its own VNet
+#    and global-peer it to the westus VNet (+ link the private DNS zones to it).
 ACCOUNT_LOCATION="${ACCOUNT_LOCATION:-westus}"
+CLIENT_LOCATION="${CLIENT_LOCATION:-eastus}"
+
+# Bound on concurrent what-if cells in phase 2 (independent, create nothing).
+MAX_PARALLEL="${MAX_PARALLEL:-4}"
 
 RUN_ID="${RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 PREFIX="${PREFIX:-azdnet${RUN_ID//-/}}"
@@ -45,8 +57,11 @@ PREFIX="${PREFIX:0:18}"  # keep within name limits
 
 # BYO image, written into agent.yaml. Only pulled during the gated deploy phase
 # (RUN_DEPLOY=true); the Foundry project MI is granted repository read on this
-# RBAC+ABAC registry then.
-IMAGE="${IMAGE:-1756abcawemengncus3a16acr.azurecr.io/echodual@sha256:76a9463463acf11d4068e8468fb232a3de0709177b6b35de95de6a34b33fa686}"
+# RBAC+ABAC registry then. NOTE: this digest can be garbage-collected when the
+# fixture image is rebuilt (a stale digest fails deploy with [ImageError]
+# "Container image tag not found"). Refresh it, or use BUILD_IMAGE=true to build
+# and push a fresh image from $ECHO_DUAL_DIR.
+IMAGE="${IMAGE:-1756abcawemengncus3a16acr.azurecr.io/echodual@sha256:7d5009a3008258c242a1602dd1749926875b9810a7954c9b16d86ae5fecaff8a}"
 
 # BUILD_IMAGE=true builds ~/agents/echo-dual into an ABAC-enabled ACR before any
 # project fixture is generated, then rewrites IMAGE to the pushed tag.
@@ -56,8 +71,8 @@ IMAGE_REPO="${IMAGE_REPO:-network-e2e/echo-dual}"
 IMAGE_TAG="${IMAGE_TAG:-$RUN_ID}"
 ACR_SKU="${ACR_SKU:-Basic}"
 
-# Phase 5 (deploy + invoke) needs the BYO-image deploy short-circuit from PR
-# 8689. Off by default so phases 0-4 run against the current branch today.
+# Phase 5 (deploy + invoke) uses the BYO-image deploy short-circuit. Off by
+# default so phases 0-4 run against the current branch today.
 RUN_DEPLOY="${RUN_DEPLOY:-false}"
 
 # TARGET_RG lets investigation runs keep all test resources in a single RG.
@@ -66,6 +81,12 @@ TARGET_RG="${TARGET_RG:-}"
 VNET_RG="${VNET_RG:-${TARGET_RG:-${PREFIX}-vnet-rg}}"
 DNS_RG="${DNS_RG:-${TARGET_RG:-${PREFIX}-dns-rg}}"        # external zones for the reference cells
 VNET_NAME="${VNET_NAME:-${PREFIX}-vnet}"
+# Dedicated VNet for the managed-iso cell (phase 3b). A dns=own account links
+# its VNet to the AI privatelink zones, and a VNet may hold only one link per
+# zone namespace; the phase-3 account already owns the shared VNet's links, so
+# phase 3b needs its own VNet. Same address space is fine (the two VNets are
+# never peered).
+ISO_VNET_NAME="${ISO_VNET_NAME:-${PREFIX}-iso-vnet}"
 VNET_CIDR="${VNET_CIDR:-192.168.0.0/16}"
 DEFAULT_ACR_NAME="$(printf '%sacr' "$PREFIX" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
 DEFAULT_ACR_NAME="${DEFAULT_ACR_NAME:0:50}"
@@ -94,9 +115,12 @@ VNET_ID=""  # set in phase 1
 # --- helpers -----------------------------------------------------------------
 
 # write a network: block for a given matrix cell into $1 (azure.yaml).
-# args: <azure.yaml> <subnet_mode create|reference> <dns_mode own|reference>
+# args: <azure.yaml> <egress byo|managed> <subnet_mode create|reference> <dns_mode own|reference> [iso]
+#   egress=byo     -> inject the agent into agentSubnet (BYO egress)
+#   egress=managed -> omit agentSubnet (Microsoft-managed egress); [iso] sets isolationMode
+# peSubnet is always written (required: the account data plane is never public).
 write_network_block() {
-  local file="$1" subnet_mode="$2" dns_mode="$3"
+  local file="$1" egress="$2" subnet_mode="$3" dns_mode="$4" iso="${5:-}"
   local agent pe
   if [[ "$subnet_mode" == "create" ]]; then
     agent="$AGENT_SUBNET_CREATE"; pe="$PE_SUBNET_CREATE"
@@ -104,16 +128,18 @@ write_network_block() {
     agent="$AGENT_SUBNET_REF"; pe="$PE_SUBNET_REF"
   fi
   {
-    echo "mode: byo"
-    echo "byo:"
-    echo "  vnet:"
-    echo "    id: \${AZURE_VNET_ID}"
-    echo "  agentSubnet:"
-    echo "    name: $agent"
-    [[ "$subnet_mode" == "create" ]] && echo "    prefix: 192.168.10.0/24"
-    echo "  peSubnet:"
-    echo "    name: $pe"
-    [[ "$subnet_mode" == "create" ]] && echo "    prefix: 192.168.11.0/24"
+    if [[ "$egress" == "byo" ]]; then
+      echo "agentSubnet:"
+      echo "  vnet: \${AZURE_VNET_ID}"
+      echo "  name: $agent"
+      [[ "$subnet_mode" == "create" ]] && echo "  prefix: 192.168.10.0/24"
+    elif [[ -n "$iso" ]]; then
+      echo "isolationMode: $iso"
+    fi
+    echo "peSubnet:"
+    echo "  vnet: \${AZURE_VNET_ID}"
+    echo "  name: $pe"
+    [[ "$subnet_mode" == "create" ]] && echo "  prefix: 192.168.11.0/24"
     if [[ "$dns_mode" == "reference" ]]; then
       echo "dns:"
       echo "  resourceGroup: $DNS_RG"
@@ -124,11 +150,11 @@ write_network_block() {
 
 # write a hand-authored azure.yaml fixture for a matrix cell into a fresh
 # project dir and create its azd environment. No `azd ai agent init --image`:
-# phases 0-4 do not need the BYO-image init UX (PR 8689). The agent entry uses
+# phases 0-4 do not need the BYO-image init UX. The agent entry uses
 # `image:` (so the synthesizer sets includeAcr=false, matching BYO image).
-# args: <name> <subnet_mode create|reference> <dns_mode own|reference>
+# args: <name> <egress byo|managed> <subnet_mode create|reference> <dns_mode own|reference> [iso]
 setup_project() {
-  local name="$1" subnet_mode="$2" dns_mode="$3"
+  local name="$1" egress="$2" subnet_mode="$3" dns_mode="$4" iso="${5:-}"
   PROJECT_DIR="$WORK_DIR/$name"
   rm -rf "${PROJECT_DIR:?}"; mkdir -p "$PROJECT_DIR"
   cat >"$PROJECT_DIR/azure.yaml" <<YAML
@@ -157,7 +183,7 @@ resources:
   cpu: "0.5"
   memory: 1Gi
 YAML
-  write_network_block "$PROJECT_DIR/azure.yaml" "$subnet_mode" "$dns_mode"
+  write_network_block "$PROJECT_DIR/azure.yaml" "$egress" "$subnet_mode" "$dns_mode" "$iso"
   ( cd "$PROJECT_DIR"
     run_capture "env-$name" azd env new "$name" \
       --subscription "$SUBSCRIPTION_ID" --location "$ACCOUNT_LOCATION"
@@ -291,42 +317,60 @@ build_byo_image() {
 
 # --- phase 2: what-if matrix -------------------------------------------------
 
-# the 4 matrix cells. The first (create/own) is also the real-provision cell.
+# the matrix cells. The first BYO create/own cell is also the real-provision
+# cell. Managed-egress cells omit agentSubnet; the last two exercise both
+# isolationMode values (the managedNetworks child resource).
+# fields: <egress> <subnet_mode> <dns_mode> [iso]
 MATRIX=(
-  "create own"
-  "create reference"
-  "reference own"
-  "reference reference"
+  "byo create own"
+  "byo create reference"
+  "byo reference own"
+  "byo reference reference"
+  "managed create own"
+  "managed reference reference"
+  "managed create own AllowInternetOutbound"
+  "managed create own AllowOnlyApprovedOutbound"
 )
 
 phase2_whatif_matrix() {
-  info "### phase 2: what-if matrix (no creation)"
-  local cell sm dm tag
+  info "### phase 2: what-if matrix (no creation, up to ${MAX_PARALLEL} parallel)"
+  local cell eg sm dm iso tag
+  local -a pids=() tags=()
+  local rc=0
   for cell in "${MATRIX[@]}"; do
-    read -r sm dm <<<"$cell"
-    tag="${sm}-${dm}"
-    setup_project "wi-$tag" "$sm" "$dm"
-    ( cd "$PROJECT_DIR"
-      # A successful subscription-scoped ARM what-if is the gate: it proves the
-      # synthesized template is valid AND that ARM accepts it against the real
-      # VNet. For reference cells this also validates that the pre-created
-      # subnets/zones exist and the agent-subnet delegation is correct (ARM
-      # what-if fails otherwise). Creates nothing. preview_capture returns
-      # non-zero on failure, which aborts the run under set -e.
+    read -r eg sm dm iso <<<"$cell"
+    tag="${eg}-${sm}-${dm}${iso:+-$iso}"
+    # Throttle: wait for a slot when MAX_PARALLEL cells are in flight.
+    while (( ${#pids[@]} >= MAX_PARALLEL )); do
+      if ! wait "${pids[0]}"; then rc=1; warn "what-if[${tags[0]}] failed"; fi
+      pids=("${pids[@]:1}"); tags=("${tags[@]:1}")
+    done
+    # Each cell uses an isolated project dir + azd env, and what-if creates
+    # nothing against the shared VNet, so cells are safe to run concurrently.
+    (
+      setup_project "wi-$tag" "$eg" "$sm" "$dm" "$iso"
+      cd "$PROJECT_DIR"
       preview_capture "20-whatif-$tag"
       info "ok: what-if[$tag] generated a valid plan"
-    )
+    ) &
+    pids+=("$!"); tags+=("$tag")
   done
+  # Drain the rest.
+  local i
+  for i in "${!pids[@]}"; do
+    if ! wait "${pids[$i]}"; then rc=1; warn "what-if[${tags[$i]}] failed"; fi
+  done
+  (( rc == 0 )) || die "phase 2: one or more what-if cells failed"
 }
 
 # --- phase 3: real provision (create/own) ------------------------------------
 
 phase3_real_provision() {
   info "### phase 3: real provision (create+own)"
-  setup_project "real" create own
+  setup_project "real" byo create own
   REAL_DIR="$PROJECT_DIR"
   ( cd "$REAL_DIR"
-    run_capture "30-provision" azd provision --no-prompt
+    STEP_TIMEOUT=1800 run_capture "30-provision" azd provision --no-prompt
     azd env get-values >"$OUT_DIR/30-env-after-provision.txt" 2>&1 || true
   )
 
@@ -341,6 +385,46 @@ phase3_real_provision() {
       EXPECT_DNS_ZONES=own \
       bash "$SCRIPT_DIR/assert-resources.sh"
   ) 2>&1 | tee "$OUT_DIR/31-assert-resources.log"
+}
+
+# --- phase 3b: managed-egress isolationMode (gated) --------------------------
+
+# Provisions the managed-egress AllowOnlyApprovedOutbound cell and asserts the
+# managedNetworks/default child resource was accepted with that isolationMode.
+# This is the one scenario `azd provision --preview` cannot confirm (the V2
+# managed network is created, not just planned). Gated behind RUN_MANAGED_ISO
+# because it provisions a second real account. Cleans up its own RG inline.
+phase3b_managed_iso() {
+  [[ "${RUN_MANAGED_ISO:-false}" == "true" ]] || { info "### phase 3b: managed-iso (skipped; set RUN_MANAGED_ISO=true)"; return 0; }
+  info "### phase 3b: managed-egress AllowOnlyApprovedOutbound (real provision)"
+  # Dedicated VNet (see ISO_VNET_NAME): a dns=own account links its VNet to the
+  # AI privatelink zones, and a VNet may hold only one link per zone namespace.
+  # The phase-3 account already linked the shared VNet, so the managed cell
+  # provisions into its own VNet to create+link its zones without colliding.
+  # (Brownfield/multi-account callers use dns: reference mode, which skips the
+  # link entirely.)
+  run_capture "31-iso-vnet" az network vnet create -g "$VNET_RG" -n "$ISO_VNET_NAME" \
+    --address-prefixes "$VNET_CIDR" -l "$ACCOUNT_LOCATION"
+  local iso_vnet_id
+  iso_vnet_id="$(az network vnet show -g "$VNET_RG" -n "$ISO_VNET_NAME" --query id -o tsv)"
+  setup_project "iso" managed create own AllowOnlyApprovedOutbound
+  local iso_dir="$PROJECT_DIR" iso_rg iso_acct iso_mode
+  ( cd "$iso_dir"
+    azd env set AZURE_VNET_ID "$iso_vnet_id" >/dev/null   # override the shared VNet
+    STEP_TIMEOUT=1800 run_capture "32-provision-iso" azd provision --no-prompt
+  )
+  iso_rg="$(cd "$iso_dir" && azd env get-value AZURE_RESOURCE_GROUP)"
+  iso_acct="$(cd "$iso_dir" && azd env get-value AZURE_AI_ACCOUNT_NAME)"
+  iso_mode="$(az resource show \
+    --ids "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$iso_rg/providers/Microsoft.CognitiveServices/accounts/$iso_acct/managedNetworks/default" \
+    --api-version 2025-10-01-preview --query 'properties.managedNetwork.isolationMode' -o tsv 2>/dev/null || echo '')"
+  # Always clean up the second account RG, then fail if the assertion missed.
+  run_capture "33-del-iso-rg" az group delete -n "$iso_rg" --yes --no-wait || true
+  if [[ "$iso_mode" == "AllowOnlyApprovedOutbound" ]]; then
+    info "ok: managedNetworks/default isolationMode=$iso_mode"
+  else
+    die "managedNetworks/default isolationMode mismatch: got '$iso_mode', want AllowOnlyApprovedOutbound"
+  fi
 }
 
 # grant the Foundry project managed identity repository read on the BYO
@@ -399,19 +483,27 @@ phase4_eject() {
   )
 }
 
-# --- phase 5: deploy + invoke (gated: needs PR 8689) -------------------------
+# --- phase 5: deploy + invoke (gated: RUN_DEPLOY=true) -----------------------
 
 phase5_deploy_invoke() {
   if [[ "$RUN_DEPLOY" != "true" ]]; then
-    warn "RUN_DEPLOY!=true: skipping deploy+invoke (needs the BYO-image deploy short-circuit from PR 8689)"
+    warn "RUN_DEPLOY!=true: skipping deploy+invoke."
+    warn "deploy+invoke also needs VNet line-of-sight to the westus account PE; if using a jumpbox, put it in ${CLIENT_LOCATION} (peered to the westus VNet)."
     return 0
   fi
   info "### phase 5: deploy + invoke under the VNet"
-  grant_acr_pull   # repository read for the BYO image pull
+  jumpbox_up          # line-of-sight VM (in-VNet, or peered fallback)
+  jumpbox_socks_open  # local SOCKS5 proxy into the VNet
+  grant_acr_pull      # repository read for the BYO image pull
+  # Tunnel azd's data-plane HTTPS to the private account FQDNs through the
+  # jumpbox. SOCKS5 (socks5h) does remote DNS on the jumpbox, which resolves
+  # the privatelink names to the PE IP. azd itself runs here (our extension).
   ( cd "$REAL_DIR"
-    run_capture "50-deploy" azd deploy --no-prompt
+    export HTTPS_PROXY="socks5://127.0.0.1:${JB_SOCKS_PORT}"
+    export HTTP_PROXY="$HTTPS_PROXY" ALL_PROXY="$HTTPS_PROXY" NO_PROXY="127.0.0.1,localhost"
+    STEP_TIMEOUT=1800 run_capture "50-deploy" azd deploy --no-prompt
     azd ai agent show --output json >"$OUT_DIR/51-show.json" 2>&1 || true
-    run_capture "52-invoke" azd ai agent invoke --new-session "hello, are you up?"
+    STEP_TIMEOUT=300 run_capture "52-invoke" azd ai agent invoke --new-session "hello, are you up?"
   )
 }
 
@@ -420,6 +512,7 @@ phase5_deploy_invoke() {
 phase6_teardown() {
   if [[ "$KEEP" == "true" ]]; then warn "KEEP=true: skipping teardown"; return 0; fi
   info "### phase 6: teardown"
+  jumpbox_down
   if [[ -n "${REAL_DIR:-}" && -d "$REAL_DIR" ]]; then
     ( cd "$REAL_DIR" && run_capture "60-down" azd down --force --purge ) || \
       warn "azd down failed; clean up manually"
@@ -437,6 +530,7 @@ main() {
     echo "run_id=$RUN_ID"
     echo "subscription=$SUBSCRIPTION_ID"
     echo "account_location=$ACCOUNT_LOCATION"
+    echo "client_location=$CLIENT_LOCATION max_parallel=$MAX_PARALLEL"
     echo "image=$IMAGE"
     echo "build_image=$BUILD_IMAGE"
     echo "echo_dual_dir=$ECHO_DUAL_DIR"
@@ -458,10 +552,15 @@ main() {
   build_byo_image
   if (( max >= 2 )); then phase2_whatif_matrix; fi
   if (( max >= 3 )); then phase3_real_provision; fi
+  if (( max >= 3 )); then phase3b_managed_iso; fi
   if (( max >= 4 )); then phase4_eject; fi
   if (( max >= 5 )); then phase5_deploy_invoke; fi
   # teardown runs via trap
   info "E2E complete (through phase $max). Logs: $OUT_DIR"
 }
 
-main "$@"
+# Run main only when executed directly; sourcing (e.g. a phase-5 iteration
+# driver) gets the functions/vars without kicking off a full run.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi

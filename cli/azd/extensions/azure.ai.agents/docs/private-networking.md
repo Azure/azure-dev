@@ -1,31 +1,54 @@
-# Private networking for `host: microsoft.foundry`
+# Private networking for `host: azure.ai.agent`
 
 A Foundry service can be provisioned as a **network-secured (VNet-bound)**
 account by adding a `network:` block to the service body in `azure.yaml`. When
 `network:` is omitted the account uses public networking (unchanged behavior).
-When present, azd configures the Foundry account for either customer BYO VNet
-mode or Microsoft-managed VNet mode. BYO mode provisions or references the
-customer VNet, private endpoint, and AI private DNS zones; dependent stores
-(Cosmos DB, AI Search, Storage) stay platform-managed.
+
+When `network:` is present, azd always provisions an **account private
+endpoint** and disables public network access — the data plane is never left
+public. Dependent stores (Cosmos DB, AI Search, Storage) stay platform-managed.
+
+The block models two orthogonal axes:
+
+- **Egress** (agent runtime network) — set `agentSubnet` to inject the agent
+  into your subnet (BYO VNet), or omit it to use the Microsoft-managed network.
+  `isolationMode` tunes the managed network's outbound posture and is valid only
+  when `agentSubnet` is omitted.
+- **Ingress** (account data plane) — `peSubnet` is **required** and always
+  yields an account private endpoint, so callers (`azd deploy`,
+  `azd ai agent invoke`) must reach the account from inside the VNet, a peered
+  VNet, or VPN.
 
 ```yaml
 services:
   my-project:
-    host: microsoft.foundry
+    host: azure.ai.agent
     network:
-      mode: byo                  # byo | managed
-      byo:
-        vnet:
-          id: ${AZURE_VNET_ID}   # required for byo (v1); must already exist
-        agentSubnet:
-          name: agent-subnet
-          prefix: 192.168.0.0/24
-        peSubnet:
-          name: pe-subnet
-          prefix: 192.168.1.0/24
+      # ----- Egress: agent runtime network (pick ONE) -----
+      #
+      # (a) Managed egress (shown live below): omit agentSubnet so the agent
+      #     runs in the Microsoft-managed network. isolationMode is valid only
+      #     in this mode.
+      isolationMode: AllowOnlyApprovedOutbound  # or AllowInternetOutbound (default)
+      #
+      # (b) BYO egress: inject the agent into your subnet instead. Replace the
+      #     isolationMode line above with an agentSubnet block (same VNet as
+      #     peSubnet in v1):
+      #   agentSubnet:
+      #     vnet: ${AZURE_VNET_ID}
+      #     name: agent-subnet
+      #     prefix: 192.168.10.0/24   # omit prefix to reference an existing subnet
+
+      # ----- Ingress: account private endpoint (REQUIRED) -----
+      peSubnet:
+        vnet: ${AZURE_VNET_ID}        # ARM id of the VNet (must already exist)
+        name: pe-subnet
+        prefix: 192.168.11.0/24       # omit prefix to reference an existing subnet
+
+      # ----- Private DNS (optional) -----
       dns:
-        resourceGroup: rg-private-dns
-        subscription: ${AZURE_DNS_SUBSCRIPTION_ID}
+        resourceGroup: rg-private-dns               # omit to let azd create + link the zones
+        subscription: ${AZURE_DNS_SUBSCRIPTION_ID}  # optional; defaults to the deployment subscription
     agents:
       - name: my-agent
         kind: hosted
@@ -33,15 +56,22 @@ services:
         image: myprivacr.azurecr.io/agents/my-agent:v1   # BYO image required
 ```
 
+> The example above uses **managed egress** so every field — including
+> `isolationMode` — is shown as valid YAML. For **BYO egress**, swap the
+> `isolationMode` line for an `agentSubnet` block (see comment `(b)` and the BYO
+> cheatsheet below); `isolationMode` is then invalid and must be removed.
+
 ### Field reference
 
 | Field | Rule |
 | --- | --- |
-| `mode` | Required. `byo` (customer VNet) or `managed` (Foundry-managed VNet). The matching sub-block is required; the other must be absent. |
-| `byo.vnet.id` | Required in v1. ARM id of an existing VNet. Supports `${VAR}` resolved from the azd environment. |
-| `byo.agentSubnet` / `byo.peSubnet` | Tri-state. Omitted: azd creates a default subnet. Name only: azd references an existing subnet. Name **and** prefix: azd creates the subnet with that name/CIDR. |
-| `managed.isolationMode` | `AllowInternetOutbound` or `AllowOnlyApprovedOutbound`. |
-| `dns.resourceGroup` | Omitted: azd creates and links the AI private DNS zones. Set: azd references existing zones in that resource group. |
+| `agentSubnet` | Optional. Present: the agent is injected into this customer subnet (BYO egress). Absent: the agent uses the Microsoft-managed network (managed egress). |
+| `peSubnet` | **Required.** Subnet for the account private endpoint. Establishes the private data plane (public access disabled). |
+| `isolationMode` | Optional. `AllowInternetOutbound` or `AllowOnlyApprovedOutbound`. Valid **only** when `agentSubnet` is omitted (managed egress). |
+| subnet `vnet` | Required. ARM id of the VNet that holds (or will hold) the subnet. Supports `${VAR}`. When `agentSubnet` is present, it must reference the same VNet as `peSubnet`. |
+| subnet `name` | Required. Subnet name. |
+| subnet `prefix` | Optional. Omit to reference an existing subnet; set to create the subnet with that CIDR. |
+| `dns.resourceGroup` | Omitted: azd creates and links the AI private DNS zones. Set: azd references existing zones in that resource group. Requires `peSubnet`. |
 | `dns.subscription` | Optional. Defaults to the deployment subscription. Accepts a bare GUID or `${VAR}`. |
 
 ### Environment variables
@@ -52,11 +82,16 @@ user-chosen; the example above uses:
 
 | Variable | Format | Used by |
 | --- | --- | --- |
-| `AZURE_VNET_ID` | ARM resource id of an existing `Microsoft.Network/virtualNetworks` | `network.byo.vnet.id` |
+| `AZURE_VNET_ID` | ARM resource id of an existing `Microsoft.Network/virtualNetworks` | subnet `vnet` |
 | `AZURE_DNS_SUBSCRIPTION_ID` | bare GUID or `/subscriptions/<guid>` | `network.dns.subscription` |
 
 ### Requirements and limits
 
+- **`peSubnet` is mandatory.** A network-bound account always gets a private
+  endpoint; there is no public data-plane fallback. Run `azd deploy` /
+  `azd ai agent invoke` from inside the VNet, a peered VNet, or VPN.
+- **Single VNet (v1).** When `agentSubnet` is present it must live in the same
+  VNet as `peSubnet`.
 - **BYO container image required.** Secured agents must reference a pre-built
   image via `agents[].image` (`registry/image:tag`); the developer owns the
   registry's SKU, private endpoint, DNS, and firewall. Local build into a
@@ -65,12 +100,34 @@ user-chosen; the example above uses:
   account's network posture is fixed by whoever created it; azd warns and does
   not reconcile `network:`.
 
-### Cheatsheet: managed VNet account
+### Known limitations
 
-Use `managed` mode when Foundry should use a Microsoft-managed network for the
-hosted-agent runtime instead of injecting into your VNet. Managed mode does not
-create a customer private endpoint, so the Foundry data plane remains public for
-`azd deploy` and `azd ai agent invoke`.
+- **BYO egress is single-VNet (v1).** When `agentSubnet` is set it must
+  reference the same VNet as `peSubnet`; azd errors otherwise. Cross-VNet
+  topologies (agent injected in one VNet, account private endpoint in another)
+  are deferred: they require customer-managed VNet **peering** between the two
+  VNets — so the agent can route to the account private endpoint — plus private
+  DNS zone links to *both* VNets. azd does not provision or validate that
+  peering, so the data path would silently fail. Managed egress is unaffected:
+  the agent reaches the account over Microsoft-managed connectivity and never
+  the customer ingress VNet, so it needs only the single `peSubnet` VNet.
+
+- **One default-DNS account per VNet.** By default (no `dns:` block) azd
+  creates the three `privatelink.*` AI zones and **links them to your VNet**.
+  Azure allows a VNet to be linked to only one zone per namespace, so a second
+  Foundry account that also owns its DNS cannot reuse the same VNet — the link
+  fails with `A virtual network cannot be linked to multiple zones with
+  overlapping namespaces`. If the VNet is already linked to those zones (a
+  second account, or a brownfield hub that pre-links the AI privatelink zones),
+  set the `dns:` block to **reference** the existing zones; reference mode binds
+  the account private endpoint to them and skips creating a new VNet link.
+
+### Cheatsheet: managed-egress account (private data plane)
+
+Omit `agentSubnet` so the hosted-agent runtime uses a Microsoft-managed network
+instead of your VNet. `peSubnet` is still required: the account data plane stays
+private behind an account private endpoint in your VNet, reachable from inside
+the VNet / VPN.
 
 ```yaml
 name: my-agent
@@ -82,18 +139,22 @@ services:
     host: azure.ai.agent
     deployments: []
     network:
-      mode: managed
-      managed:
-        isolationMode: AllowInternetOutbound
+      isolationMode: AllowInternetOutbound   # managed-egress outbound posture
+      peSubnet:
+        vnet: ${AZURE_VNET_ID}
+        name: pe-subnet
+        prefix: 192.168.11.0/24
 ```
 
 ```bash
 azd env new my-env --subscription "<sub>" --location westus
 azd env set AZURE_RESOURCE_GROUP "<rg>"
+azd env set AZURE_VNET_ID "<vnet-resource-id>"
 azd provision --no-prompt
 ```
 
-If using a BYO image, grant the Foundry project MI ACR pull permission, then:
+If using a BYO image, grant the Foundry project MI ACR pull permission, then run
+deploy/invoke from a host that can reach the account private endpoint:
 
 ```bash
 azd deploy --no-prompt
@@ -107,7 +168,13 @@ AZURE_FOUNDRY_NETWORK_MODE=managed
 AZURE_FOUNDRY_MANAGED_ISOLATION_MODE=AllowInternetOutbound
 ```
 
-### Cheatsheet: BYO image + VNet hosted agent
+> **`isolationMode` note.** When set, azd provisions the account's V2
+> managed network (`managednetworks/default`) with the chosen isolation mode.
+> `AllowOnlyApprovedOutbound` additionally requires approved outbound rules for
+> the agent to reach dependent resources; for the platform-managed stores used
+> here those are managed by the Foundry platform.
+
+### Cheatsheet: BYO image + VNet hosted agent (BYO egress)
 
 ```bash
 export SUBSCRIPTION_ID="<sub>"
@@ -125,42 +192,29 @@ ACR requirements:
   `privatelink.azurecr.io` DNS zone linked to the VNet. Disable public access
   only after the image is pushed.
 
-Create `azure.yaml`:
+Scaffold the agent with a pre-built (BYO) image — this writes `azure.yaml` and
+`agent.yaml` for you, so there is no hand-edited manifest to keep in sync:
+
+```bash
+azd ai agent init --no-prompt --agent-name my-agent \
+  --image myprivacr.azurecr.io/agents/my-agent:v1
+```
+
+Then add a `network:` block to the generated service in `azure.yaml`:
 
 ```yaml
-name: my-agent
-infra:
-  provider: microsoft.foundry
-
 services:
   my-agent:
     host: azure.ai.agent
-    deployments: []
     network:
-      mode: byo
-      byo:
-        vnet:
-          id: ${AZURE_VNET_ID}
-        agentSubnet:
-          name: agent-subnet
-          prefix: 192.168.10.0/24
-        peSubnet:
-          name: pe-subnet
-          prefix: 192.168.11.0/24
-```
-
-Create `agent.yaml`:
-
-```yaml
-kind: hosted
-name: my-agent
-image: ${IMAGE}
-protocols:
-  - protocol: responses
-    version: 1.0.0
-resources:
-  cpu: "0.5"
-  memory: 1Gi
+      agentSubnet:                  # omit the whole block for managed egress
+        vnet: ${AZURE_VNET_ID}
+        name: agent-subnet
+        prefix: 192.168.10.0/24     # omit prefix to reference an existing subnet
+      peSubnet:                      # required: makes the data plane private
+        vnet: ${AZURE_VNET_ID}
+        name: pe-subnet
+        prefix: 192.168.11.0/24
 ```
 
 Configure and provision:
@@ -169,8 +223,7 @@ Configure and provision:
 azd env new my-env --subscription "$SUBSCRIPTION_ID" --location "$LOCATION"
 azd env set AZURE_RESOURCE_GROUP "$RESOURCE_GROUP"
 azd env set AZURE_VNET_ID "$VNET_ID"
-azd env set IMAGE "$IMAGE"
-azd env set AZD_AGENT_SKIP_ACR true
+azd env set AZD_AGENT_SKIP_ACR true   # BYO image: skip the ACR build
 azd provision --no-prompt
 ```
 
@@ -183,5 +236,7 @@ azd ai agent invoke --new-session "hello"
 
 Common failures:
 
-- `403 Public access is disabled`: for BYO VNet mode, run deploy/invoke from inside the VNet, a peered VNet, or VPN.
+- `403 Public access is disabled`: the data plane is private in every
+  network-bound mode — run deploy/invoke from inside the VNet, a peered VNet, or
+  VPN.
 - `ImageError: registry authentication failed`: grant ACR pull permission to the Foundry project MI.

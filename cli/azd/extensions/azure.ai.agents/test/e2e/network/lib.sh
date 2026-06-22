@@ -16,15 +16,38 @@ warn() { log "[warn ] $*" >&2; }
 die()  { log "[fatal] $*" >&2; exit 1; }
 
 # run_capture <name> <cmd...> : run a command, tee stdout+stderr+timing to
-# $OUT_DIR/<name>.log, and still propagate failures.
+# $OUT_DIR/<name>.log, and still propagate failures. The command is time-capped
+# (default STEP_TIMEOUT seconds, SIGKILL 30s after) so a silently-stuck Azure
+# operation fails fast instead of hanging the run. Override per call with
+# `STEP_TIMEOUT=<sec> run_capture ...`.
 run_capture() {
   local name="$1"; shift
   local f="$OUT_DIR/$name.log"
-  info "==> $name: $*"
-  { time "$@"; } >"$f" 2>&1 || {
-    warn "$name FAILED (see $f)"; tail -n 40 "$f" >&2 || true; return 1
-  }
+  local t="${STEP_TIMEOUT:-1200}"
+  info "==> $name: $* (timeout ${t}s)"
+  local rc=0
+  { time timeout -k 30 "$t" "$@"; } >"$f" 2>&1 || rc=$?
+  if (( rc == 124 || rc == 137 )); then
+    warn "$name TIMED OUT after ${t}s (rc=$rc; see $f)"; tail -n 40 "$f" >&2 || true; return 1
+  elif (( rc != 0 )); then
+    warn "$name FAILED (rc=$rc; see $f)"; tail -n 40 "$f" >&2 || true; return 1
+  fi
   info "<== $name ok"
+}
+
+# run_retry <attempts> <name> <cmd...> : run_capture with retries, for ARM
+# eventual-consistency transients (e.g. a create racing resource-group
+# propagation). Backs off 10s between attempts.
+run_retry() {
+  local n="$1" name="$2"; shift 2
+  local i
+  for i in $(seq 1 "$n"); do
+    if run_capture "$([[ $i -gt 1 ]] && echo "${name}-try$i" || echo "$name")" "$@"; then
+      return 0
+    fi
+    (( i < n )) && { warn "$name attempt $i/$n failed; retrying in 10s"; sleep 10; }
+  done
+  return 1
 }
 
 # --- assertions --------------------------------------------------------------

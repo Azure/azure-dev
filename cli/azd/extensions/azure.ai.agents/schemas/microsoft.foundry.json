@@ -42,52 +42,26 @@
     },
     "network": {
       "type": "object",
-      "description": "Private networking for the Foundry account. When omitted, the account uses public networking. When present, azd provisions or references a VNet-bound (private) account and uses platform-managed dependent stores. Ignored when 'endpoint' is set (brownfield).",
+      "description": "Private networking for the Foundry account. When omitted, the account uses public networking. When present, azd always provisions an account private endpoint (the data plane is never left public) and uses platform-managed dependent stores. Ignored when 'endpoint' is set (brownfield).",
       "additionalProperties": false,
-      "required": ["mode"],
+      "required": ["peSubnet"],
       "properties": {
-        "mode": {
+        "agentSubnet": {
+          "description": "Egress: when set, the agent runtime is injected into this customer subnet (BYO VNet). When omitted, the agent uses the Microsoft-managed network.",
+          "$ref": "#/definitions/subnet"
+        },
+        "isolationMode": {
           "type": "string",
-          "description": "Network provisioning mode. 'byo' brings an existing customer VNet; 'managed' uses a Foundry-managed VNet. The matching sub-block ('byo' or 'managed') is required and the other must be absent.",
-          "enum": ["byo", "managed"]
+          "description": "Outbound posture of the Microsoft-managed network. Valid only when 'agentSubnet' is omitted (managed egress).",
+          "enum": ["AllowInternetOutbound", "AllowOnlyApprovedOutbound"]
         },
-        "byo": {
-          "type": "object",
-          "description": "Bring-your-own VNet configuration. Used only when mode is 'byo'.",
-          "additionalProperties": false,
-          "required": ["vnet"],
-          "properties": {
-            "vnet": {
-              "type": "object",
-              "description": "The existing customer virtual network to bind the account to.",
-              "additionalProperties": false,
-              "required": ["id"],
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "description": "ARM resource id of the existing VNet. Required in v1. Supports ${VAR} resolved from the azd environment."
-                }
-              }
-            },
-            "agentSubnet": { "$ref": "#/definitions/subnet" },
-            "peSubnet": { "$ref": "#/definitions/subnet" }
-          }
-        },
-        "managed": {
-          "type": "object",
-          "description": "Foundry-managed VNet configuration. Used only when mode is 'managed'.",
-          "additionalProperties": false,
-          "properties": {
-            "isolationMode": {
-              "type": "string",
-              "description": "Managed-network isolation mode applied to the account.",
-              "enum": ["AllowInternetOutbound", "AllowOnlyApprovedOutbound"]
-            }
-          }
+        "peSubnet": {
+          "description": "Ingress: subnet for the account private endpoint. Required. Establishes the private data plane (public network access disabled).",
+          "$ref": "#/definitions/subnet"
         },
         "dns": {
           "type": "object",
-          "description": "Private DNS zone configuration. When omitted (or resourceGroup omitted), azd creates and links the required AI private DNS zones. When resourceGroup is set, azd references existing zones in that resource group.",
+          "description": "Private DNS zones for the account private endpoint. When omitted (or resourceGroup omitted), azd creates and links the required AI private DNS zones. When resourceGroup is set, azd references existing zones in that resource group.",
           "additionalProperties": false,
           "properties": {
             "resourceGroup": {
@@ -106,16 +80,21 @@
   "definitions": {
     "subnet": {
       "type": "object",
-      "description": "Subnet descriptor (tri-state). Omitted: azd creates a default subnet. Name only: azd references and validates an existing subnet. Name and prefix: azd creates the subnet with that name and prefix.",
+      "description": "Subnet descriptor. vnet and name are required. Omit prefix to reference an existing subnet; set prefix to create the subnet with that CIDR.",
       "additionalProperties": false,
+      "required": ["vnet", "name"],
       "properties": {
+        "vnet": {
+          "type": "string",
+          "description": "ARM resource id of the virtual network that holds (or will hold) the subnet. Supports ${VAR} resolved from the azd environment."
+        },
         "name": {
           "type": "string",
           "description": "Subnet name."
         },
         "prefix": {
           "type": "string",
-          "description": "Subnet CIDR. When set, name is required and azd creates the subnet."
+          "description": "Subnet CIDR. When set, azd creates the subnet; when omitted, azd references the existing subnet."
         }
       }
     }

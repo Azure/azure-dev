@@ -322,9 +322,7 @@ services:
   my-foundry:
     host: azure.ai.agent
     network:
-      mode: byo
-      byo:
-        vnet: {id: "${AZURE_VNET_ID}"}
+      peSubnet: {vnet: "${AZURE_VNET_ID}", name: pe-subnet}
       dns:
         resourceGroup: rg-dns
         subscription: "${AZURE_DNS_SUBSCRIPTION_ID}"

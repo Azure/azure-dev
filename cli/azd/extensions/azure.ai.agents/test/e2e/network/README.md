@@ -1,6 +1,6 @@
 # Foundry Private Networking — E2E Harness
 
-Real Azure end-to-end validation for `host: microsoft.foundry` private
+Real Azure end-to-end validation for `host: azure.ai.agent` private
 networking (the `network:` block: BYO VNet, create/reference subnets, own/
 reference private DNS), plus the BYO-image agent lifecycle under a VNet.
 
@@ -25,15 +25,13 @@ checked with what-if only.
 The project is **hand-authored** (an `azure.yaml` fixture with the foundry
 service, `network:` block, and an agent entry using `image:`), so phases 0–4
 run against the current branch **without** the BYO-image init UX
-(`azd ai agent init --image`, PR 8689). `image:` makes the synthesizer set
+(`azd ai agent init --image`). `image:` makes the synthesizer set
 `includeAcr=false`, matching BYO image, so no ACR is created at provision.
 
-**Phase 5 (deploy + invoke) is gated behind `RUN_DEPLOY=true`** because it needs
-the deploy-time pre-built-image short-circuit from PR 8689 (`AZD_AGENT_SKIP_ACR`
+**Phase 5 (deploy + invoke) is gated behind `RUN_DEPLOY=true`** because it uses
+the deploy-time pre-built-image short-circuit (`AZD_AGENT_SKIP_ACR`
 consumption in `service_target_agent.go`). Without it, a headless `azd deploy`
-defaults to "build" and fails for a BYO image. Run phases 0–4 today; enable
-phase 5 once PR 8689 (via PR 8643 landing on `huimiu/foundry-azure-yaml`) is in
-your build.
+defaults to "build" and fails for a BYO image.
 
 ## Why it's cheap
 
@@ -82,6 +80,17 @@ template/parameter fails in seconds, not after a 15-minute provision.
   phase 5 deploy/invoke must run from a host that can resolve and reach the
   private endpoint. Running from the public internet fails with `403 Public
   access is disabled. Please configure private endpoint.`
+- The harness captures that line-of-sight automatically (`lib-jumpbox.sh`): it
+  stands up a jumpbox VM and exposes it as a local SOCKS5 proxy, so `azd
+  deploy`/`invoke` still run on **this** host (the extension built from the
+  current branch, the existing azd env) with data-plane HTTPS tunneled into the
+  VNet. It prefers a VM **inside the foundry VNet** (reachability is structural:
+  the `dns=own` zones are already linked there); if that region has no VM
+  capacity it falls back to a **peered VNet** in another region (global peering
+  + the account FQDNs pinned to the PE IP in the VM's `/etc/hosts`). VM
+  creation loops over `JB_VM_SIZES` and `JB_FALLBACK_LOCATIONS` until an
+  allocation succeeds, and the SSH NSG opens then narrows to the client's
+  actual /24. `phase5-iter.sh` re-runs only phase 5 against a `KEEP=true` run.
 
 ## Usage
 
@@ -114,7 +123,11 @@ Useful overrides:
 | Var | Default | Purpose |
 |---|---|---|
 | `ACCOUNT_LOCATION` | `westus` | region of the network-enabled Foundry account |
-| `RUN_DEPLOY` | `false` | `true` runs phase 5 (deploy + invoke); needs PR 8689 |
+| `RUN_DEPLOY` | `false` | `true` runs phase 5 (deploy + invoke) |
+| `RUN_MANAGED_ISO` | `false` | `true` runs phase 3b (managed-egress `AllowOnlyApprovedOutbound` provision + `managedNetworks/default` assertion) |
+| `MAX_PARALLEL` | `4` | concurrent what-if cells in phase 2 |
+| `JB_VM_SIZES` | `D2as_v5 D2s_v5 B2s …` | jumpbox VM sizes tried in order until one allocates (phase 5) |
+| `JB_FALLBACK_LOCATIONS` | `$CLIENT_LOCATION eastus2 …` | regions for a peered jumpbox when `ACCOUNT_LOCATION` has no VM capacity |
 | `MAX_PHASE` | `6` | stop after phase N (e.g. `2` for the cheap VNet + what-if gates) |
 | `SKIP_EXT_REFRESH` | `false` | `true` skips the phase-0 dev-extension rebuild/reinstall |
 | `BUILD_IMAGE` | `false` | `true` builds `ECHO_DUAL_DIR` into an ABAC-enabled ACR before fixtures are generated |

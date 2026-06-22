@@ -62,10 +62,19 @@ assert_dns_zones() {
   fi
 }
 
-assert_network_mode_output() {
-  local mode
-  mode="$(azd env get-value AZURE_FOUNDRY_NETWORK_MODE 2>/dev/null || echo '')"
-  assert_contains "$mode" "byo" "AZURE_FOUNDRY_NETWORK_MODE output"
+# Real BYO-egress signal read off the account resource itself (not azd's own
+# echoed AZURE_FOUNDRY_NETWORK_MODE output): the account's agent network
+# injection must reference the customer agent subnet, with the Microsoft-managed
+# network disabled. The output-variable classification is covered separately by
+# the synthesizer unit tests (wantMode cases).
+assert_byo_network_injection() {
+  local j inj
+  j="$(az cognitiveservices account show -g "$RG" -n "$ACCOUNT_NAME" -o json)"
+  inj="$(jq -c '.properties.networkInjections[]? | select(.scenario=="agent")' <<<"$j")"
+  assert_contains "$(jq -r '.subnetArmId // ""' <<<"$inj")" \
+    "/subnets/$AGENT_SUBNET" "account agent networkInjection subnet"
+  assert_eq "$(jq -r '.useMicrosoftManagedNetwork' <<<"$inj")" "false" \
+    "account agent networkInjection useMicrosoftManagedNetwork"
 }
 
 main() {
@@ -75,7 +84,7 @@ main() {
   assert_private_endpoint
   assert_subnet_delegation
   assert_dns_zones
-  assert_network_mode_output
+  assert_byo_network_injection
   info "ALL RESOURCE ASSERTIONS PASSED"
 }
 

@@ -51,7 +51,7 @@ type Input struct {
 	AcceptedHosts []string
 
 	// Env maps azd environment variable names to values. Used to resolve
-	// ${VAR} references in network fields (byo.vnet.id, dns.subscription).
+	// ${VAR} references in network fields (subnet vnet ids, dns.subscription).
 	// When a referenced variable is absent here, the synthesizer falls back
 	// to the process environment before failing. May be nil.
 	Env map[string]string
@@ -123,34 +123,31 @@ type foundryService struct {
 }
 
 // networkBlock mirrors the network: sub-tree on the service body.
+//
+// The block models two orthogonal axes:
+//
+//   - Egress (agent runtime network): agentSubnet present injects the agent into
+//     that customer subnet; agentSubnet absent uses the Microsoft-managed
+//     network. isolationMode tunes the managed network's outbound posture and is
+//     valid only when agentSubnet is absent.
+//   - Ingress (account data plane): peSubnet is required and always yields an
+//     account private endpoint, so a network-bound account is never public.
 type networkBlock struct {
-	Mode    string        `yaml:"mode"`
-	Byo     *byoBlock     `yaml:"byo,omitempty"`
-	Managed *managedBlock `yaml:"managed,omitempty"`
-	DNS     *dnsBlock     `yaml:"dns,omitempty"`
+	AgentSubnet   *subnetSpec `yaml:"agentSubnet,omitempty"`
+	IsolationMode string      `yaml:"isolationMode,omitempty"`
+	PESubnet      *subnetSpec `yaml:"peSubnet,omitempty"`
+	DNS           *dnsBlock   `yaml:"dns,omitempty"`
 }
 
-// byoBlock mirrors network.byo (bring-your-own VNet).
-type byoBlock struct {
-	VNet        *vnetRef    `yaml:"vnet,omitempty"`
-	AgentSubnet *subnetSpec `yaml:"agentSubnet,omitempty"`
-	PESubnet    *subnetSpec `yaml:"peSubnet,omitempty"`
-}
-
-// vnetRef mirrors network.byo.vnet.
-type vnetRef struct {
-	ID string `yaml:"id"`
-}
-
-// subnetSpec mirrors a tri-state subnet descriptor.
+// subnetSpec is a self-contained subnet descriptor: vnet + name identify the
+// subnet, and the optional prefix toggles create-vs-reference.
+//
+//	vnet + name           -> reference the existing subnet
+//	vnet + name + prefix  -> create the subnet with that CIDR
 type subnetSpec struct {
+	VNet   string `yaml:"vnet,omitempty"`
 	Name   string `yaml:"name,omitempty"`
 	Prefix string `yaml:"prefix,omitempty"`
-}
-
-// managedBlock mirrors network.managed (Foundry-managed VNet).
-type managedBlock struct {
-	IsolationMode string `yaml:"isolationMode,omitempty"`
 }
 
 // dnsBlock mirrors network.dns (private DNS zone references).
@@ -276,7 +273,7 @@ func synthesizeNetwork(
 	// Public account: every network param defaults off.
 	params := map[string]any{
 		"enableNetworkIsolation": false,
-		"networkMode":            "",
+		"useManagedEgress":       false,
 		"vnetId":                 "",
 		"agentSubnetName":        defaultAgentSubnetName,
 		"agentSubnetPrefix":      "",
@@ -296,82 +293,62 @@ func synthesizeNetwork(
 		return fmt.Sprintf("services.%s.network%s", svcName, suffix)
 	}
 
-	// Mode coherence.
-	switch net.Mode {
-	case NetworkModeByo:
-		if net.Byo == nil {
-			return nil, "", fmt.Errorf("%s: mode is byo but byo: block is missing", fp(""))
-		}
-		if net.Managed != nil {
-			return nil, "", fmt.Errorf("%s: mode is byo but managed: block is also set", fp(""))
-		}
-	case NetworkModeManaged:
-		if net.Managed == nil {
-			return nil, "", fmt.Errorf("%s: mode is managed but managed: block is missing", fp(""))
-		}
-		if net.Byo != nil {
-			return nil, "", fmt.Errorf("%s: mode is managed but byo: block is also set", fp(""))
-		}
-	case "":
-		return nil, "", fmt.Errorf("%s: mode is required when network: is present", fp(""))
-	default:
-		return nil, "", fmt.Errorf("%s.mode: %q is not one of byo, managed", fp(""), net.Mode)
+	// Ingress: a network-bound account always gets an account private endpoint,
+	// so peSubnet is mandatory. There is no public data-plane fallback.
+	if net.PESubnet == nil {
+		return nil, "", fmt.Errorf("%s: private networking requires peSubnet", fp(""))
 	}
 
-	params["enableNetworkIsolation"] = true
-	params["networkMode"] = net.Mode
+	// Egress: agentSubnet present injects the agent into the customer subnet;
+	// absent uses the Microsoft-managed network.
+	useManagedEgress := net.AgentSubnet == nil
 
-	if net.Mode == NetworkModeByo {
-		if net.Byo.VNet == nil || strings.TrimSpace(net.Byo.VNet.ID) == "" {
-			return nil, "", fmt.Errorf("%s.byo.vnet.id: required in v1", fp(""))
-		}
-		vnetID := strings.TrimSpace(net.Byo.VNet.ID)
-		if resolve {
-			resolved, err := resolveVars(vnetID, env)
-			if err != nil {
-				return nil, "", fmt.Errorf("%s.byo.vnet.id: %w", fp(""), err)
-			}
-			vnetID = resolved
-		}
-		// Validate the ARM id shape only when the value is fully concrete; an
-		// unexpanded ${VAR} (eject path) is validated at provision time.
-		if !containsVarRef(vnetID) && !vnetIDPattern.MatchString(vnetID) {
+	// isolationMode governs the Microsoft-managed network only.
+	isoMode := strings.TrimSpace(net.IsolationMode)
+	if isoMode != "" {
+		if !useManagedEgress {
 			return nil, "", fmt.Errorf(
-				"%s.byo.vnet.id: %q is not a well-formed Microsoft.Network/virtualNetworks id",
-				fp(""), vnetID)
+				"%s.isolationMode: only valid for managed egress (omit agentSubnet)", fp(""))
 		}
-		params["vnetId"] = vnetID
+		if isoMode != "AllowInternetOutbound" && isoMode != "AllowOnlyApprovedOutbound" {
+			return nil, "", fmt.Errorf(
+				"%s.isolationMode: %q is not one of AllowInternetOutbound, AllowOnlyApprovedOutbound",
+				fp(""), isoMode)
+		}
+	}
 
-		agentName, agentPrefix, createAgent, err := resolveSubnet(
-			net.Byo.AgentSubnet, defaultAgentSubnetName, fp(".byo.agentSubnet"))
-		if err != nil {
-			return nil, "", err
+	// Ingress subnet (account private endpoint).
+	peVnet, peName, pePrefix, createPE, err := resolveSubnet(net.PESubnet, fp(".peSubnet"), env, resolve)
+	if err != nil {
+		return nil, "", err
+	}
+	vnetID := peVnet
+
+	// Egress subnet (byo only). v1 keeps both subnets in one VNet so a single
+	// vnetId drives injection, the PE, and DNS linking.
+	if !useManagedEgress {
+		agentVnet, agentName, agentPrefix, createAgent, aerr := resolveSubnet(
+			net.AgentSubnet, fp(".agentSubnet"), env, resolve)
+		if aerr != nil {
+			return nil, "", aerr
+		}
+		if !sameVNet(agentVnet, peVnet) {
+			return nil, "", fmt.Errorf(
+				"%s: agentSubnet.vnet and peSubnet.vnet must reference the same virtual network", fp(""))
 		}
 		params["agentSubnetName"] = agentName
 		params["agentSubnetPrefix"] = agentPrefix
 		params["createAgentSubnet"] = createAgent
-
-		peName, pePrefix, createPE, err := resolveSubnet(
-			net.Byo.PESubnet, defaultPESubnetName, fp(".byo.peSubnet"))
-		if err != nil {
-			return nil, "", err
-		}
-		params["peSubnetName"] = peName
-		params["peSubnetPrefix"] = pePrefix
-		params["createPESubnet"] = createPE
+		vnetID = agentVnet
 	}
 
-	if net.Mode == NetworkModeManaged {
-		mode := net.Managed.IsolationMode
-		if mode != "" &&
-			mode != "AllowInternetOutbound" &&
-			mode != "AllowOnlyApprovedOutbound" {
-			return nil, "", fmt.Errorf(
-				"%s.managed.isolationMode: %q is not one of AllowInternetOutbound, AllowOnlyApprovedOutbound",
-				fp(""), mode)
-		}
-		params["managedIsolationMode"] = mode
-	}
+	params["enableNetworkIsolation"] = true
+	params["useManagedEgress"] = useManagedEgress
+	params["vnetId"] = vnetID
+	params["peSubnetName"] = peName
+	params["peSubnetPrefix"] = pePrefix
+	params["createPESubnet"] = createPE
+	params["managedIsolationMode"] = isoMode
 
 	if net.DNS != nil {
 		if rg := strings.TrimSpace(net.DNS.ResourceGroup); rg != "" {
@@ -402,38 +379,70 @@ func synthesizeNetwork(
 		}
 	}
 
-	return params, net.Mode, nil
+	mode := NetworkModeByo
+	if useManagedEgress {
+		mode = NetworkModeManaged
+	}
+	return params, mode, nil
 }
 
-// resolveSubnet applies the subnet tri-state rules and returns the resolved
+// resolveSubnet validates a subnet descriptor and returns the VNet id, subnet
 // name, prefix, and whether azd should create the subnet.
 //
-//	nil          -> create default subnet (defaultName, default prefix, create=true)
-//	name only    -> reference existing subnet (name, "", create=false)
-//	name+prefix  -> create subnet (name, prefix, create=true)
-//	prefix only  -> error
-func resolveSubnet(s *subnetSpec, defaultName, fieldPath string) (string, string, bool, error) {
+//	vnet + name           -> reference existing subnet (create=false)
+//	vnet + name + prefix  -> create subnet with that CIDR (create=true)
+//
+// vnet and name are required; ${VAR} references in vnet are expanded when
+// resolve is true and validated as a Microsoft.Network/virtualNetworks id only
+// when fully concrete.
+func resolveSubnet(
+	s *subnetSpec, fieldPath string, env map[string]string, resolve bool,
+) (vnetID, name, prefix string, create bool, err error) {
 	if s == nil {
-		return defaultName, "", true, nil
+		return "", "", "", false, fmt.Errorf("%s: required", fieldPath)
 	}
-	name := strings.TrimSpace(s.Name)
-	prefix := strings.TrimSpace(s.Prefix)
+	vnetID = strings.TrimSpace(s.VNet)
+	name = strings.TrimSpace(s.Name)
+	prefix = strings.TrimSpace(s.Prefix)
 
-	if prefix != "" && name == "" {
-		return "", "", false, fmt.Errorf("%s: prefix set without name", fieldPath)
+	if vnetID == "" {
+		return "", "", "", false, fmt.Errorf("%s.vnet: required", fieldPath)
+	}
+	if name == "" {
+		return "", "", "", false, fmt.Errorf("%s.name: required", fieldPath)
+	}
+	if resolve {
+		resolved, rerr := resolveVars(vnetID, env)
+		if rerr != nil {
+			return "", "", "", false, fmt.Errorf("%s.vnet: %w", fieldPath, rerr)
+		}
+		vnetID = resolved
+	}
+	// Validate the ARM id shape only when fully concrete; an unexpanded ${VAR}
+	// (eject path) is validated at provision time.
+	if !containsVarRef(vnetID) && !vnetIDPattern.MatchString(vnetID) {
+		return "", "", "", false, fmt.Errorf(
+			"%s.vnet: %q is not a well-formed Microsoft.Network/virtualNetworks id", fieldPath, vnetID)
 	}
 	if prefix != "" {
-		if _, _, err := net.ParseCIDR(prefix); err != nil {
-			return "", "", false, fmt.Errorf("%s: %q is not a valid CIDR", fieldPath, prefix)
+		if _, _, perr := net.ParseCIDR(prefix); perr != nil {
+			return "", "", "", false, fmt.Errorf("%s.prefix: %q is not a valid CIDR", fieldPath, prefix)
 		}
-		return name, prefix, true, nil
+		create = true
 	}
-	if name != "" {
-		// Reference an existing subnet.
-		return name, "", false, nil
+	return vnetID, name, prefix, create, nil
+}
+
+// sameVNet reports whether two VNet references point at the same VNet. Concrete
+// ids compare case-insensitively (ARM ids are case-insensitive); unresolved
+// ${VAR} references compare verbatim.
+func sameVNet(a, b string) bool {
+	a = strings.TrimSpace(a)
+	b = strings.TrimSpace(b)
+	if containsVarRef(a) || containsVarRef(b) {
+		return a == b
 	}
-	// Empty descriptor: treat like omitted.
-	return defaultName, "", true, nil
+	return strings.EqualFold(a, b)
 }
 
 // containsVarRef reports whether s still contains a ${VAR} reference.

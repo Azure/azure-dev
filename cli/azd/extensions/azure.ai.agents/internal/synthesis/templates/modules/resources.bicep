@@ -61,8 +61,8 @@ param principalType string = 'User'
 @description('Master switch: when true the account is VNet-bound (private).')
 param enableNetworkIsolation bool = false
 
-@description('Network mode: "byo" (customer VNet) or "managed" (Foundry-managed VNet). Empty when isolation is off.')
-param networkMode string = ''
+@description('When true (and isolation on), the agent runtime uses the Microsoft-managed network instead of injecting into a customer subnet.')
+param useManagedEgress bool = false
 
 @description('ARM id of the existing customer VNet (byo mode).')
 param vnetId string = ''
@@ -104,13 +104,12 @@ var abbrs = loadJsonContent('../abbreviations.json')
 
 var foundryAccountName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'
 
-var useByoNetwork = enableNetworkIsolation && networkMode == 'byo'
-var useManagedNetwork = enableNetworkIsolation && networkMode == 'managed'
-// BYO mode creates a customer private endpoint for data-plane access, so public
-// access can be disabled. Managed mode only uses a Microsoft-managed network for
-// the hosted-agent runtime; the customer still needs public data-plane access to
-// deploy and invoke from azd.
-var disablePublicDataPlaneAccess = useByoNetwork
+// Egress: byo injects the agent into a customer subnet; managed uses the
+// Microsoft-managed network. Ingress: an account private endpoint is always
+// provisioned when isolation is on, so the data plane is never left public.
+var useByoNetwork = enableNetworkIsolation && !useManagedEgress
+var useManagedNetwork = enableNetworkIsolation && useManagedEgress
+var disablePublicDataPlaneAccess = enableNetworkIsolation
 
 // Built-in role definition ids. See: https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
 var cognitiveServicesUserRoleId = subscriptionResourceId(
@@ -120,9 +119,10 @@ var cognitiveServicesUserRoleId = subscriptionResourceId(
 
 // Resources
 
-// Customer VNet wiring (byo mode only): reference the VNet and create or
-// reference the agent + private-endpoint subnets.
-module network 'network.bicep' = if (useByoNetwork) {
+// Customer VNet wiring: reference the VNet and create or reference the agent
+// (byo egress only) + private-endpoint subnets. Runs whenever isolation is on
+// because the account private endpoint is always provisioned.
+module network 'network.bicep' = if (enableNetworkIsolation) {
   name: 'foundry-network'
   params: {
     vnetId: vnetId
@@ -225,6 +225,23 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   }
 }
 
+// Managed-network isolation (managed egress only). Applies the chosen outbound
+// isolation mode to the Microsoft-managed VNet that hosts the agent runtime.
+// Only deployed when an explicit isolationMode is requested; otherwise the
+// platform default applies. Note: AllowOnlyApprovedOutbound additionally
+// requires approved outbound rules for the agent to reach dependent resources;
+// for the platform-managed stores used here those are managed by the platform.
+resource foundryManagedNetwork 'Microsoft.CognitiveServices/accounts/managednetworks@2025-10-01-preview' =
+  if (useManagedNetwork && !empty(managedIsolationMode)) {
+    parent: foundryAccount
+    name: 'default'
+    properties: {
+      managedNetwork: {
+        isolationMode: managedIsolationMode
+      }
+    }
+  }
+
 module acr 'acr.bicep' = if (includeAcr) {
   name: 'acr'
   params: {
@@ -237,9 +254,10 @@ module acr 'acr.bicep' = if (includeAcr) {
   }
 }
 
-// Account private endpoint + AI private DNS zones (byo mode). Dependent stores
-// stay platform-managed, so only the account gets a private endpoint.
-module privateEndpointDns 'private-endpoint-dns.bicep' = if (useByoNetwork) {
+// Account private endpoint + AI private DNS zones. The account is always given a
+// private endpoint when isolation is on (byo or managed egress); dependent
+// stores stay platform-managed, so only the account gets an endpoint.
+module privateEndpointDns 'private-endpoint-dns.bicep' = if (enableNetworkIsolation) {
   name: 'foundry-private-endpoint-dns'
   params: {
     aiAccountName: foundryAccount.name
@@ -273,5 +291,5 @@ output FOUNDRY_PROJECT_ENDPOINT string = 'https://${foundryAccount.name}.service
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = includeAcr ? acr!.outputs.loginServer : ''
 output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = includeAcr ? acr!.outputs.resourceId : ''
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = includeAcr ? acr!.outputs.connectionName : ''
-output AZURE_FOUNDRY_NETWORK_MODE string = enableNetworkIsolation ? networkMode : 'none'
+output AZURE_FOUNDRY_NETWORK_MODE string = !enableNetworkIsolation ? 'none' : (useManagedEgress ? 'managed' : 'byo')
 output AZURE_FOUNDRY_MANAGED_ISOLATION_MODE string = useManagedNetwork ? managedIsolationMode : ''

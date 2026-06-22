@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "7882591531077682939"
+      "templateHash": "15130149524391891581"
     }
   },
   "definitions": {
@@ -128,11 +128,11 @@
         "description": "Master switch: when true the account is VNet-bound (private)."
       }
     },
-    "networkMode": {
-      "type": "string",
-      "defaultValue": "",
+    "useManagedEgress": {
+      "type": "bool",
+      "defaultValue": false,
       "metadata": {
-        "description": "Network mode: \"byo\" or \"managed\". Empty when isolation is off."
+        "description": "When true (and isolation on), the agent runtime uses the Microsoft-managed network instead of injecting into a customer subnet."
       }
     },
     "vnetId": {
@@ -252,8 +252,8 @@
           "enableNetworkIsolation": {
             "value": "[parameters('enableNetworkIsolation')]"
           },
-          "networkMode": {
-            "value": "[parameters('networkMode')]"
+          "useManagedEgress": {
+            "value": "[parameters('useManagedEgress')]"
           },
           "vnetId": {
             "value": "[parameters('vnetId')]"
@@ -294,7 +294,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "7775684901946506823"
+              "templateHash": "769018913626752462"
             }
           },
           "definitions": {
@@ -409,11 +409,11 @@
                 "description": "Master switch: when true the account is VNet-bound (private)."
               }
             },
-            "networkMode": {
-              "type": "string",
-              "defaultValue": "",
+            "useManagedEgress": {
+              "type": "bool",
+              "defaultValue": false,
               "metadata": {
-                "description": "Network mode: \"byo\" (customer VNet) or \"managed\" (Foundry-managed VNet). Empty when isolation is off."
+                "description": "When true (and isolation on), the agent runtime uses the Microsoft-managed network instead of injecting into a customer subnet."
               }
             },
             "vnetId": {
@@ -495,9 +495,9 @@
             "resourceToken": "[if(empty(parameters('resourceTokenSalt')), uniqueString(subscription().id, resourceGroup().id, parameters('location')), uniqueString(subscription().id, resourceGroup().id, parameters('location'), parameters('resourceTokenSalt')))]",
             "abbrs": "[variables('$fxv#0')]",
             "foundryAccountName": "[format('{0}{1}', variables('abbrs').cognitiveServicesAccounts, variables('resourceToken'))]",
-            "useByoNetwork": "[and(parameters('enableNetworkIsolation'), equals(parameters('networkMode'), 'byo'))]",
-            "useManagedNetwork": "[and(parameters('enableNetworkIsolation'), equals(parameters('networkMode'), 'managed'))]",
-            "disablePublicDataPlaneAccess": "[variables('useByoNetwork')]",
+            "useByoNetwork": "[and(parameters('enableNetworkIsolation'), not(parameters('useManagedEgress')))]",
+            "useManagedNetwork": "[and(parameters('enableNetworkIsolation'), parameters('useManagedEgress'))]",
+            "disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]",
             "cognitiveServicesUserRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908')]",
             "agentSubnetArmId": "[format('{0}/subnets/{1}', parameters('vnetId'), parameters('agentSubnetName'))]",
             "agentNetworkInjections": "[if(variables('useByoNetwork'), createArray(createObject('scenario', 'agent', 'subnetArmId', variables('agentSubnetArmId'), 'useMicrosoftManagedNetwork', false())), if(variables('useManagedNetwork'), createArray(createObject('scenario', 'agent', 'useMicrosoftManagedNetwork', true())), null()))]"
@@ -568,6 +568,20 @@
                 "network"
               ]
             },
+            "foundryManagedNetwork": {
+              "condition": "[and(variables('useManagedNetwork'), not(empty(parameters('managedIsolationMode'))))]",
+              "type": "Microsoft.CognitiveServices/accounts/managedNetworks",
+              "apiVersion": "2025-10-01-preview",
+              "name": "[format('{0}/{1}', variables('foundryAccountName'), 'default')]",
+              "properties": {
+                "managedNetwork": {
+                  "isolationMode": "[parameters('managedIsolationMode')]"
+                }
+              },
+              "dependsOn": [
+                "foundryAccount"
+              ]
+            },
             "developerCognitiveServicesUser": {
               "condition": "[not(empty(parameters('principalId')))]",
               "type": "Microsoft.Authorization/roleAssignments",
@@ -584,7 +598,7 @@
               ]
             },
             "network": {
-              "condition": "[variables('useByoNetwork')]",
+              "condition": "[parameters('enableNetworkIsolation')]",
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
               "name": "foundry-network",
@@ -1055,7 +1069,7 @@
               ]
             },
             "privateEndpointDns": {
-              "condition": "[variables('useByoNetwork')]",
+              "condition": "[parameters('enableNetworkIsolation')]",
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
               "name": "foundry-private-endpoint-dns",
@@ -1316,7 +1330,7 @@
             },
             "AZURE_FOUNDRY_NETWORK_MODE": {
               "type": "string",
-              "value": "[if(parameters('enableNetworkIsolation'), parameters('networkMode'), 'none')]"
+              "value": "[if(not(parameters('enableNetworkIsolation')), 'none', if(parameters('useManagedEgress'), 'managed', 'byo'))]"
             },
             "AZURE_FOUNDRY_MANAGED_ISOLATION_MODE": {
               "type": "string",

@@ -69,8 +69,8 @@ param principalType string = 'User'
 @description('Master switch: when true the account is VNet-bound (private).')
 param enableNetworkIsolation bool = false
 
-@description('Network mode: "byo" or "managed". Empty when isolation is off.')
-param networkMode string = ''
+@description('When true (and isolation on), the agent runtime uses the Microsoft-managed network instead of injecting into a customer subnet.')
+param useManagedEgress bool = false
 
 @description('ARM id of the existing customer VNet (byo mode).')
 param vnetId string = ''
@@ -123,7 +123,7 @@ module resources 'modules/resources.bicep' = {
     principalId: principalId
     principalType: principalType
     enableNetworkIsolation: enableNetworkIsolation
-    networkMode: networkMode
+    useManagedEgress: useManagedEgress
     vnetId: vnetId
     agentSubnetName: agentSubnetName
     agentSubnetPrefix: agentSubnetPrefix

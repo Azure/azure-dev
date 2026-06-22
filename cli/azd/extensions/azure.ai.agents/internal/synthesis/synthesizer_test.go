@@ -199,6 +199,19 @@ services:
 			wantErr:     ErrEndpointBrownfield,
 		},
 		{
+			name: "brownfield: endpoint + network => network ignored, still ErrEndpointBrownfield",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    endpoint: https://existing.services.ai.azure.com/api/projects/p1
+    network:
+      peSubnet: {vnet: /subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v, name: pe}
+`,
+			serviceName: "my-project",
+			wantErr:     ErrEndpointBrownfield,
+		},
+		{
 			name: "service not found",
 			yaml: `
 services:
@@ -262,9 +275,7 @@ services:
   my-project:
     host: azure.ai.agent
     network:
-      mode: byo
-      byo:
-        vnet: {id: "${AZURE_VNET_ID}"}
+      peSubnet: {vnet: "${AZURE_VNET_ID}", name: pe-subnet}
       dns:
         resourceGroup: rg-dns
         subscription: "${AZURE_DNS_SUBSCRIPTION_ID}"
@@ -290,9 +301,7 @@ services:
   my-project:
     host: azure.ai.agent
     network:
-      mode: byo
-      byo:
-        vnet: {id: not-an-arm-id}
+      peSubnet: {vnet: not-an-arm-id, name: pe-subnet}
 `
 	_, err := Synthesize(Input{
 		RawAzureYAML:    []byte(yaml),
@@ -387,13 +396,47 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	// Network isolation parameters must exist so the synthesizer's network
 	// param set is accepted by ARM (extra params would fail the deployment).
 	for _, p := range []string{
-		"enableNetworkIsolation", "networkMode", "vnetId",
+		"enableNetworkIsolation", "useManagedEgress", "vnetId",
 		"agentSubnetName", "agentSubnetPrefix", "createAgentSubnet",
 		"peSubnetName", "peSubnetPrefix", "createPESubnet",
 		"managedIsolationMode", "dnsZonesResourceGroup", "dnsZonesSubscription",
 	} {
 		assert.Contains(t, params, p, "network param %q must be declared in the ARM template", p)
 	}
+
+	// The old mode-enum param must be gone; egress is driven by useManagedEgress.
+	assert.NotContains(t, params, "networkMode",
+		"networkMode param was replaced by useManagedEgress")
+
+	// Secure-by-default lock: the account data plane must be private whenever
+	// network isolation is on. The compiled template must gate public access on
+	// enableNetworkIsolation (not on egress mode), so a network-bound account is
+	// never left public. This is the regression guard for the data-plane fix.
+	text := string(data)
+	wantDisable := `"disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]"`
+	wantPublic := `"publicNetworkAccess": "[if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled')]"`
+	assert.Contains(t, text, wantDisable,
+		"public data-plane access must be disabled for every network-isolated account")
+	assert.Contains(t, text, wantPublic,
+		"account publicNetworkAccess must follow disablePublicDataPlaneAccess")
+
+	// Egress injection shape: byo injects into the customer subnet
+	// (useMicrosoftManagedNetwork=false), managed uses the Microsoft-managed
+	// network (useMicrosoftManagedNetwork=true). Both branches must survive
+	// compilation so the account gets the right networkInjections per mode.
+	assert.Contains(t, text, "'useMicrosoftManagedNetwork', false()",
+		"byo egress must inject the agent subnet (useMicrosoftManagedNetwork=false)")
+	assert.Contains(t, text, "'useMicrosoftManagedNetwork', true()",
+		"managed egress must use the Microsoft-managed network (useMicrosoftManagedNetwork=true)")
+	assert.Contains(t, text, `"networkInjections": "[variables('agentNetworkInjections')]"`,
+		"account must carry the computed networkInjections")
+
+	// isolationMode must be wired to the V2 managed network child resource
+	// (regression guard: it was previously a no-op echoed only to output).
+	assert.Contains(t, text, `"type": "Microsoft.CognitiveServices/accounts/managedNetworks"`,
+		"managed isolationMode must provision a managedNetworks child resource")
+	assert.Contains(t, text, `"isolationMode": "[parameters('managedIsolationMode')]"`,
+		"managedNetworks isolationMode must come from the managedIsolationMode param")
 }
 
 func TestSynthesize_Network(t *testing.T) {
@@ -424,21 +467,18 @@ services:
 			wantMode: NetworkModeNone,
 			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, false, p["enableNetworkIsolation"])
-				assert.Equal(t, "", p["networkMode"])
+				assert.Equal(t, false, p["useManagedEgress"])
 			},
 		},
 		{
-			name: "byo with explicit subnets => create both",
+			name: "byo egress (agentSubnet present) with explicit subnets => create both",
 			yaml: `
 services:
   my-project:
     host: azure.ai.agent
     network:
-      mode: byo
-      byo:
-        vnet: {id: ` + validVNet + `}
-        agentSubnet: {name: agent-subnet, prefix: 192.168.0.0/24}
-        peSubnet: {name: pe-subnet, prefix: 192.168.1.0/24}
+      agentSubnet: {vnet: ` + validVNet + `, name: agent-subnet, prefix: 192.168.0.0/24}
+      peSubnet: {vnet: ` + validVNet + `, name: pe-subnet, prefix: 192.168.1.0/24}
       dns:
         resourceGroup: rg-private-dns
         subscription: 22222222-2222-2222-2222-222222222222
@@ -446,7 +486,7 @@ services:
 			wantMode: NetworkModeByo,
 			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, true, p["enableNetworkIsolation"])
-				assert.Equal(t, "byo", p["networkMode"])
+				assert.Equal(t, false, p["useManagedEgress"])
 				assert.Equal(t, validVNet, p["vnetId"])
 				assert.Equal(t, "agent-subnet", p["agentSubnetName"])
 				assert.Equal(t, "192.168.0.0/24", p["agentSubnetPrefix"])
@@ -457,57 +497,52 @@ services:
 			},
 		},
 		{
-			name: "byo subnet name only => reference (create=false)",
+			name: "subnet without prefix => reference (create=false)",
 			yaml: `
 services:
   my-project:
     host: azure.ai.agent
     network:
-      mode: byo
-      byo:
-        vnet: {id: ` + validVNet + `}
-        agentSubnet: {name: existing-agent}
+      agentSubnet: {vnet: ` + validVNet + `, name: existing-agent}
+      peSubnet: {vnet: ` + validVNet + `, name: pe-subnet, prefix: 192.168.1.0/24}
 `,
 			wantMode: NetworkModeByo,
 			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, "existing-agent", p["agentSubnetName"])
 				assert.Equal(t, false, p["createAgentSubnet"])
-				// pe subnet omitted => default + create
 				assert.Equal(t, "pe-subnet", p["peSubnetName"])
 				assert.Equal(t, true, p["createPESubnet"])
 			},
 		},
 		{
-			name: "byo vnet id from ${VAR}",
+			name: "subnet vnet from ${VAR}",
 			yaml: `
 services:
   my-project:
     host: azure.ai.agent
     network:
-      mode: byo
-      byo:
-        vnet: {id: "${AZURE_VNET_ID}"}
+      peSubnet: {vnet: "${AZURE_VNET_ID}", name: pe-subnet}
 `,
-			wantMode: NetworkModeByo,
+			wantMode: NetworkModeManaged,
 			check: func(t *testing.T, p map[string]any) {
 				assert.Contains(t, p["vnetId"], "/virtualNetworks/my-vnet")
 			},
 		},
 		{
-			name: "managed mode with isolation",
+			name: "managed egress (agentSubnet absent) with isolation",
 			yaml: `
 services:
   my-project:
     host: azure.ai.agent
     network:
-      mode: managed
-      managed:
-        isolationMode: AllowOnlyApprovedOutbound
+      isolationMode: AllowOnlyApprovedOutbound
+      peSubnet: {vnet: ` + validVNet + `, name: pe-subnet, prefix: 192.168.1.0/24}
 `,
 			wantMode: NetworkModeManaged,
 			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, true, p["enableNetworkIsolation"])
-				assert.Equal(t, "managed", p["networkMode"])
+				assert.Equal(t, true, p["useManagedEgress"])
+				assert.Equal(t, false, p["createAgentSubnet"])
 				assert.Equal(t, "AllowOnlyApprovedOutbound", p["managedIsolationMode"])
 			},
 		},
@@ -518,16 +553,48 @@ services:
   my-project:
     host: azure.ai.agent
     network:
-      mode: byo
-      byo:
-        vnet: {id: ` + validVNet + `}
+      peSubnet: {vnet: ` + validVNet + `, name: pe-subnet}
       dns:
         resourceGroup: rg-dns
         subscription: /subscriptions/33333333-3333-3333-3333-333333333333
 `,
-			wantMode: NetworkModeByo,
+			wantMode: NetworkModeManaged,
 			check: func(t *testing.T, p map[string]any) {
 				assert.Equal(t, "33333333-3333-3333-3333-333333333333", p["dnsZonesSubscription"])
+			},
+		},
+		{
+			name: "managed egress, isolationMode unset => empty managedIsolationMode",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      peSubnet: {vnet: ` + validVNet + `, name: pe-subnet, prefix: 192.168.1.0/24}
+`,
+			wantMode: NetworkModeManaged,
+			check: func(t *testing.T, p map[string]any) {
+				assert.Equal(t, true, p["useManagedEgress"])
+				assert.Equal(t, "", p["managedIsolationMode"])
+				assert.Equal(t, true, p["createPESubnet"])
+			},
+		},
+		{
+			name: "managed egress, AllowInternetOutbound with referenced peSubnet",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      isolationMode: AllowInternetOutbound
+      peSubnet: {vnet: ` + validVNet + `, name: existing-pe}
+`,
+			wantMode: NetworkModeManaged,
+			check: func(t *testing.T, p map[string]any) {
+				assert.Equal(t, true, p["useManagedEgress"])
+				assert.Equal(t, "AllowInternetOutbound", p["managedIsolationMode"])
+				assert.Equal(t, "existing-pe", p["peSubnetName"])
+				assert.Equal(t, false, p["createPESubnet"])
 			},
 		},
 	}
@@ -552,6 +619,8 @@ services:
 func TestSynthesize_NetworkValidationErrors(t *testing.T) {
 	const validVNet = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/" +
 		"providers/Microsoft.Network/virtualNetworks/my-vnet"
+	const validVNet2 = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/" +
+		"providers/Microsoft.Network/virtualNetworks/other-vnet"
 
 	tests := []struct {
 		name    string
@@ -559,66 +628,62 @@ func TestSynthesize_NetworkValidationErrors(t *testing.T) {
 		wantSub string
 	}{
 		{
-			name: "missing mode",
+			name: "network present but peSubnet missing",
 			yaml: `
 services:
   my-project:
     host: azure.ai.agent
     network:
-      byo:
-        vnet: {id: ` + validVNet + `}
+      isolationMode: AllowInternetOutbound
 `,
-			wantSub: "mode is required",
+			wantSub: "private networking requires peSubnet",
 		},
 		{
-			name: "invalid mode",
+			name: "isolationMode with agentSubnet present",
 			yaml: `
 services:
   my-project:
     host: azure.ai.agent
     network:
-      mode: hybrid
+      isolationMode: AllowInternetOutbound
+      agentSubnet: {vnet: ` + validVNet + `, name: a, prefix: 192.168.0.0/24}
+      peSubnet: {vnet: ` + validVNet + `, name: pe, prefix: 192.168.1.0/24}
 `,
-			wantSub: "not one of byo, managed",
+			wantSub: "only valid for managed egress",
 		},
 		{
-			name: "byo mode but managed block set",
+			name: "agentSubnet and peSubnet in different vnets",
 			yaml: `
 services:
   my-project:
     host: azure.ai.agent
     network:
-      mode: byo
-      byo:
-        vnet: {id: ` + validVNet + `}
-      managed:
-        isolationMode: AllowInternetOutbound
+      agentSubnet: {vnet: ` + validVNet + `, name: a, prefix: 192.168.0.0/24}
+      peSubnet: {vnet: ` + validVNet2 + `, name: pe, prefix: 192.168.1.0/24}
 `,
-			wantSub: "managed: block is also set",
+			wantSub: "same virtual network",
 		},
 		{
-			name: "managed mode missing managed block",
+			name: "subnet missing vnet",
 			yaml: `
 services:
   my-project:
     host: azure.ai.agent
     network:
-      mode: managed
+      peSubnet: {name: pe}
 `,
-			wantSub: "managed: block is missing",
+			wantSub: "peSubnet.vnet: required",
 		},
 		{
-			name: "byo missing vnet id",
+			name: "subnet missing name",
 			yaml: `
 services:
   my-project:
     host: azure.ai.agent
     network:
-      mode: byo
-      byo:
-        agentSubnet: {name: a}
+      peSubnet: {vnet: ` + validVNet + `}
 `,
-			wantSub: "byo.vnet.id: required",
+			wantSub: "peSubnet.name: required",
 		},
 		{
 			name: "malformed vnet id",
@@ -627,25 +692,9 @@ services:
   my-project:
     host: azure.ai.agent
     network:
-      mode: byo
-      byo:
-        vnet: {id: not-an-arm-id}
+      peSubnet: {vnet: not-an-arm-id, name: pe}
 `,
 			wantSub: "not a well-formed",
-		},
-		{
-			name: "subnet prefix without name",
-			yaml: `
-services:
-  my-project:
-    host: azure.ai.agent
-    network:
-      mode: byo
-      byo:
-        vnet: {id: ` + validVNet + `}
-        agentSubnet: {prefix: 192.168.0.0/24}
-`,
-			wantSub: "prefix set without name",
 		},
 		{
 			name: "subnet invalid cidr",
@@ -654,10 +703,7 @@ services:
   my-project:
     host: azure.ai.agent
     network:
-      mode: byo
-      byo:
-        vnet: {id: ` + validVNet + `}
-        agentSubnet: {name: a, prefix: not-a-cidr}
+      peSubnet: {vnet: ` + validVNet + `, name: pe, prefix: not-a-cidr}
 `,
 			wantSub: "not a valid CIDR",
 		},
@@ -668,9 +714,7 @@ services:
   my-project:
     host: azure.ai.agent
     network:
-      mode: byo
-      byo:
-        vnet: {id: "${DEFINITELY_NOT_SET_VAR_XYZ}"}
+      peSubnet: {vnet: "${DEFINITELY_NOT_SET_VAR_XYZ}", name: pe}
 `,
 			wantSub: "unresolved environment variable",
 		},
@@ -681,9 +725,8 @@ services:
   my-project:
     host: azure.ai.agent
     network:
-      mode: managed
-      managed:
-        isolationMode: Wide
+      isolationMode: Wide
+      peSubnet: {vnet: ` + validVNet + `, name: pe}
 `,
 			wantSub: "isolationMode",
 		},

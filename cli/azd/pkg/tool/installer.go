@@ -574,11 +574,13 @@ func (i *installer) resolveSkillTargets(
 			// For upgrade, target only hosts that actually have the skill
 			// installed; warn-and-skip the rest, since a host CLI cannot
 			// upgrade a plugin it never installed.
+			installed, err := i.detector.DetectSkillHosts(ctx, tool)
+			if err != nil {
+				return nil, err
+			}
 			installedSet := map[string]bool{}
-			if installed, err := i.detector.DetectSkillHosts(ctx, tool); err == nil {
-				for _, h := range installed {
-					installedSet[h.Host] = true
-				}
+			for _, h := range installed {
+				installedSet[h.Host] = true
 			}
 			var targets []SkillHost
 			for _, host := range onPath {
@@ -611,8 +613,12 @@ func (i *installer) resolveSkillTargets(
 		// fully up to date. We also avoid running an update against a
 		// host that never installed it.
 		if upgrade {
-			if installed, err := i.detector.DetectSkillHosts(ctx, tool); err == nil &&
-				len(installed) > 0 {
+			installed, err := i.detector.DetectSkillHosts(ctx, tool)
+			if err != nil {
+				return nil, err
+			}
+
+			if len(installed) > 0 {
 				targets := make([]SkillHost, 0, len(installed))
 				for _, inst := range installed {
 					idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
@@ -649,8 +655,8 @@ func (i *installer) resolveSkillTargets(
 				supported[j] = h.Host
 			}
 			return nil, fmt.Errorf(
-				"host %s not found on PATH for %s",
-				strings.Join(supported, " or "), tool.Name,
+				"host %q is not available for %s; supported hosts: %s",
+				name, tool.Name, strings.Join(supported, ", "),
 			)
 		}
 		targets = append(targets, tool.SkillHosts[idx])

@@ -49,9 +49,10 @@ type Checksum struct {
 }
 
 // SkillHost describes how a single agent CLI host (e.g. GitHub Copilot CLI,
-// Claude Code) installs, updates, and uninstalls a skill. Skill
-// tools carry one or more SkillHost entries; the installer picks the first
-// host whose binary is on PATH.
+// Claude Code) installs and updates a skill. Skill tools carry one or more
+// SkillHost entries; by default the installer targets the preferred host
+// (the first on PATH), but install/upgrade can target specific or all
+// detected hosts when the caller selects them (e.g. via `--host`).
 type SkillHost struct {
 	// Host is the binary name of the agent CLI (e.g. "copilot", "claude").
 	Host string
@@ -127,10 +128,11 @@ type ToolDefinition struct {
 	// platform-specific installation strategy.
 	InstallStrategies map[string]InstallStrategy
 	// SkillHosts describes the agent CLI hosts that can install this tool when
-	// Category == ToolCategorySkill. Hosts are evaluated in order; the first
-	// one whose binary is on PATH is used. Platform-agnostic because the host
-	// CLI's plugin command syntax does not vary between operating systems.
-	// Ignored for other categories.
+	// Category == ToolCategorySkill. Hosts are listed in preference order: by
+	// default the first host on PATH is used, but install/upgrade can target
+	// specific or all detected hosts (e.g. `--host all`). Platform-agnostic
+	// because the host CLI's plugin command syntax does not vary between
+	// operating systems. Ignored for other categories.
 	SkillHosts []SkillHost
 	// Dependencies lists the IDs of tools that must be installed before this one.
 	Dependencies []string

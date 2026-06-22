@@ -2003,7 +2003,9 @@ func TestRunSkill_ExplicitUnknownHost_Errors(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, result.Success)
 	require.NotNil(t, result.Error)
-	assert.Contains(t, result.Error.Error(), "not found on PATH")
+	assert.Contains(t, result.Error.Error(), "not available")
+	// The error names the requested host so a typo is obvious.
+	assert.Contains(t, result.Error.Error(), "bogus")
 }
 
 func TestRunSkill_ExplicitHostNotPresent_Errors(t *testing.T) {
@@ -2023,9 +2025,62 @@ func TestRunSkill_ExplicitHostNotPresent_Errors(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, result.Success)
 	require.NotNil(t, result.Error)
-	assert.Contains(t, result.Error.Error(), "not found on PATH")
-	// The error names the supported hosts so the user knows their options.
-	assert.Contains(t, result.Error.Error(), "copilot")
+	assert.Contains(t, result.Error.Error(), "not available")
+	// The error names the requested host so the user knows which one failed.
+	assert.Contains(t, result.Error.Error(), "claude")
+}
+
+// TestRunSkill_Upgrade_DetectError_Propagated verifies that a context
+// cancellation/timeout from DetectSkillHosts on the default upgrade path
+// is treated as fatal rather than silently falling back to a host.
+func TestRunSkill_Upgrade_DetectError_Propagated(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot")
+	runner.MockToolInPath("node", nil)
+
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			return nil, context.Canceled
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Upgrade(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.ErrorIs(t, result.Error, context.Canceled)
+}
+
+// TestRunSkill_UpgradeAllHosts_DetectError_Propagated verifies the same
+// for the --host all upgrade path.
+func TestRunSkill_UpgradeAllHosts_DetectError_Propagated(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot", "claude")
+	runner.MockToolInPath("node", nil)
+
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			return nil, context.Canceled
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Upgrade(
+		t.Context(), newSkillTool(), WithAllAvailableHosts(),
+	)
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.ErrorIs(t, result.Error, context.Canceled)
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,185 @@
+# Live E2E: azure.ai.agents extension — Tier 2 golden path
+#
+# Runs the full agent lifecycle (init -> provision -> deploy -> invoke -> down)
+# against LIVE Azure resources, driving the real `azd ai agent` CLI through tmux.
+#
+# This pipeline is the live counterpart to the PR-gate checks in
+# `.github/workflows/lint-ext-azure-ai-agents.yml` (Tier 0 offline + Tier 1
+# recording/playback). Live Azure access is intentionally kept OUT of the
+# automatic PR pipeline (per Azure SDK EngSys / SFI guidance) and runs here only:
+#   - On demand via the PR comment:  /azp run ext-azure-ai-agents-live
+#     (requires write permission on the repo)
+#   - On the weekly schedule below.
+#
+# Required ADO setup (one-time, admin) — see tests/e2e-live/README.md:
+#   - Register this YAML as a pipeline named `ext-azure-ai-agents-live`.
+#   - Service connection (parameter `serviceConnection`, default `azure-sdk-tests`)
+#     must map to the shared TME test subscription with Contributor + the RBAC
+#     needed to create Foundry projects and deploy models.
+#   - Optional secret variable `GitHubPat`: a GitHub PAT used when cloning the
+#     starter template, to avoid anonymous GitHub rate limits.
+
+trigger: none
+pr: none
+
+schedules:
+  # 7am UTC Monday (offset from other weekly E2E pipelines to reduce contention).
+  - cron: "0 7 * * 1"
+    displayName: Weekly live golden-path E2E
+    branches:
+      include:
+        - main
+    always: true
+
+parameters:
+  - name: deployModes
+    displayName: "Tier 2 deploy modes"
+    type: string
+    default: both
+    values:
+      - both
+      - code
+      - container
+  - name: serviceConnection
+    displayName: "Azure service connection (TME subscription)"
+    type: string
+    default: azure-sdk-tests
+
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - stage: AiAgentsLiveE2E
+        displayName: AI Agents Live Golden Path
+        variables:
+          - template: /eng/pipelines/templates/variables/image.yml
+          - name: GitHubPat
+            value: ""
+        jobs:
+          - job: Tier2
+            displayName: Tier 2 — init/provision/deploy/invoke/down
+            pool:
+              name: $(LINUXPOOL)
+              image: $(LINUXVMIMAGE)
+              os: linux
+            # Two golden paths (code + container) run sequentially, ~13-15 min
+            # each, plus build/provision overhead.
+            timeoutInMinutes: 90
+            steps:
+              - checkout: self
+
+              - template: /eng/pipelines/templates/steps/setup-go.yml
+
+              - task: UsePythonVersion@0
+                inputs:
+                  versionSpec: "3.12"
+                displayName: Use Python 3.12
+
+              - bash: |
+                  set -euo pipefail
+                  sudo apt-get update
+                  sudo apt-get install -y tmux
+                  tmux -V
+                displayName: Install tmux
+
+              # Live build — NO `-tags=record`, so the CLI/extension talk to real
+              # Azure instead of the recording proxy used by the PR-gate tests.
+              - bash: go build -o azd .
+                workingDirectory: cli/azd
+                displayName: Build azd
+
+              - bash: go build -o azure-ai-agents .
+                workingDirectory: cli/azd/extensions/azure.ai.agents
+                displayName: Build azure.ai.agents extension
+
+              - bash: echo "##vso[task.prependpath]$(Build.SourcesDirectory)/cli/azd"
+                displayName: Add azd to PATH
+
+              # Install the freshly built extension into the azd config dir.
+              # Mirrors the install used by lint-ext-azure-ai-agents.yml, but with
+              # the live (non-record) binary.
+              - bash: |
+                  set -euo pipefail
+                  EXT_DIR="$HOME/.azd/extensions/azure.ai.agents"
+                  mkdir -p "$EXT_DIR"
+                  cp cli/azd/extensions/azure.ai.agents/azure-ai-agents "$EXT_DIR/azure-ai-agents-linux-amd64"
+                  chmod +x "$EXT_DIR/azure-ai-agents-linux-amd64"
+                  cat > "$HOME/.azd/config.json" << 'EOF'
+                  {
+                    "extension": {
+                      "installed": {
+                        "azure.ai.agents": {
+                          "id": "azure.ai.agents",
+                          "namespace": "ai.agent",
+                          "capabilities": ["custom-commands", "lifecycle-events", "mcp-server", "service-target-provider", "metadata"],
+                          "displayName": "Foundry agents (Preview)",
+                          "description": "Ship agents with Microsoft Foundry from your terminal. (Preview)",
+                          "version": "0.0.0-test",
+                          "usage": "azd ai agent <command> [options]",
+                          "path": "extensions/azure.ai.agents/azure-ai-agents-linux-amd64",
+                          "source": "azd"
+                        }
+                      }
+                    }
+                  }
+                  EOF
+                displayName: Install azure.ai.agents extension
+
+              # OIDC login via the service connection. Leaves an authenticated az
+              # CLI session on the agent (used by azd via auth.useAzCliAuth) and
+              # exports the resolved subscription/tenant for the test driver.
+              - task: AzureCLI@2
+                displayName: Azure Login (TME)
+                inputs:
+                  azureSubscription: ${{ parameters.serviceConnection }}
+                  scriptType: bash
+                  scriptLocation: inlineScript
+                  inlineScript: |
+                    set -euo pipefail
+                    SUB_ID=$(az account show --query id -o tsv)
+                    TENANT_ID=$(az account show --query tenantId -o tsv)
+                    echo "##vso[task.setvariable variable=SubscriptionId;issecret=false]$SUB_ID"
+                    echo "##vso[task.setvariable variable=TenantId;issecret=false]$TENANT_ID"
+                    echo "Logged in. Subscription: $SUB_ID"
+
+              - bash: azd config set auth.useAzCliAuth true
+                displayName: Configure azd to use az CLI auth
+
+              - bash: |
+                  set -o pipefail
+                  mkdir -p "$(Build.ArtifactStagingDirectory)/logs"
+                  python3 test_tier2.py --mode ${{ parameters.deployModes }} 2>&1 \
+                    | tee "$(Build.ArtifactStagingDirectory)/logs/tier2.log"
+                workingDirectory: cli/azd/extensions/azure.ai.agents/tests/e2e-live
+                timeoutInMinutes: 80
+                displayName: Run Tier 2 live golden path
+                env:
+                  E2E_SUBSCRIPTION: $(SubscriptionId)
+                  E2E_TENANT: $(TenantId)
+                  E2E_CREATE_PROJECT: "true"
+                  E2E_LOCATION: eastus2
+                  E2E_USE_AZ_CLI_AUTH: "true"
+                  # Optional GitHub PAT to avoid anonymous clone rate limits.
+                  GH_TOKEN: $(GitHubPat)
+
+              - task: PublishPipelineArtifact@1
+                condition: always()
+                inputs:
+                  targetPath: $(Build.ArtifactStagingDirectory)/logs
+                  artifactName: tier2-live-logs-$(Build.BuildId)
+                displayName: Publish test logs
+
+              # Safety net: the test self-tears-down via `azd down`, but if it
+              # crashed mid-run, force-purge any leftover project environments.
+              - bash: |
+                  echo "Best-effort teardown of any leaked resources..."
+                  for dir in /tmp/e2e-tests/tier2-*/; do
+                    [ -d "$dir" ] || continue
+                    proj=$(find "$dir" -maxdepth 2 -name azure.yaml -exec dirname {} \; | head -1)
+                    if [ -n "$proj" ]; then
+                      ( cd "$proj" && azd down --force --purge --no-prompt ) 2>/dev/null || true
+                    fi
+                  done
+                condition: always()
+                continueOnError: true
+                displayName: Cleanup leaked Azure resources

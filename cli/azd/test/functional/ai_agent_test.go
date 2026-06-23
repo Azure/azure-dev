@@ -66,6 +66,9 @@ func Test_AIAgent_Init_NoPrompt_MissingFlags(t *testing.T) {
 		"--deploy-mode", "code",
 	)
 	require.Error(t, err, "should fail without -m flag: stdout=%s", result.Stdout)
+	combinedOutput := result.Stdout + result.Stderr
+	require.Contains(t, combinedOutput, "template selection requires interactive mode",
+		"should fail with clear validation error, not crash")
 }
 
 // Test_AIAgent_SampleList verifies sample list returns results.

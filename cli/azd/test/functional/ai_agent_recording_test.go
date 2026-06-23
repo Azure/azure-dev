@@ -17,6 +17,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// These constants must match the sanitized cassette content exactly (equal-length replacements).
+// They are fake values used during recording sanitization; the recording proxy matches by URL,
+// so test code and cassette must use identical strings.
+const (
+	testSubscriptionID = "00000000-0000-0000-0000-000000000000"
+	testProjectID      = "/subscriptions/00000000-0000-0000-0000-000000000000/" +
+		"resourceGroups/rg-test-agents-recording-0000000000000000000/" +
+		"providers/Microsoft.CognitiveServices/accounts/test-ai-account-000/" +
+		"projects/test-proj0"
+)
+
 // manifestPath returns the absolute path to the local test manifest file.
 func manifestPath(t *testing.T) string {
 	t.Helper()
@@ -76,8 +87,7 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 	t.Logf("DIR: %s", dir)
 
 	session := recording.Start(t)
-	subscriptionId := "1756abc0-3554-4341-8d6a-46674962ea19"
-	session.Variables[recording.SubscriptionIdKey] = subscriptionId
+	session.Variables[recording.SubscriptionIdKey] = testSubscriptionID
 
 	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
@@ -88,18 +98,18 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 		projectId = session.Variables["project_id"]
 	}
 	if projectId == "" {
-		projectId = "/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/resourceGroups/rg-hello-world-python-responses-dev-79ba4103/providers/Microsoft.CognitiveServices/accounts/wujia-6956-resource/projects/wujia-1670"
+		projectId = testProjectID
 	}
 	session.Variables["project_id"] = projectId
 
+	// --model-deployment's existence routes no-prompt to the "existing" branch
+	// (init_from_code.go:784). The project deployment list in the cassette is empty,
+	// so it falls back to selectNewModel, which resolves manifest resources[0].id
+	// ("gpt-4.1") as a new deployment. The flag VALUE is not used or asserted.
 	modelDeployment := os.Getenv("TEST_MODEL_DEPLOYMENT")
-	if modelDeployment == "" {
-		modelDeployment = session.Variables["model_deployment"]
-	}
 	if modelDeployment == "" {
 		modelDeployment = "gpt-4o"
 	}
-	session.Variables["model_deployment"] = modelDeployment
 
 	result, err := cli.RunCommand(ctx,
 		"ai", "agent", "init", "--no-prompt",
@@ -129,9 +139,10 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 	require.FileExists(t, filepath.Join(agentDir, "agent.yaml"))
 
 	// Verify ARM resolution: the model deployment name is written to the azd environment
-	// .env file as a resolved value (e.g. "gpt-4.1"), proving the ARM calls in the cassette
-	// were consumed. The cassette's model catalog response determines the auto-selected model;
-	// the --model-deployment flag is a preference, not a hard constraint.
+	// .env file. The --model-deployment flag's existence routes no-prompt to the "existing"
+	// branch (init_from_code.go:784); the cassette's deployment list is empty, so it falls
+	// back to selectNewModel which resolves manifest resources[0].id ("gpt-4.1") as a new
+	// deployment. This proves ARM calls in the cassette were consumed.
 	envFiles, err := filepath.Glob(filepath.Join(projectDir, ".azure", "*", ".env"))
 	require.NoError(t, err)
 	require.Len(t, envFiles, 1, "expected exactly one azd environment .env file")
@@ -139,9 +150,9 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 	envContent, err := os.ReadFile(envFile)
 	require.NoError(t, err)
 	envStr := string(envContent)
-	// Pin to the exact value the cassette produces (auto-selected from model catalog).
+	// Pin to the exact value produced by manifest resources[0].id resolution.
 	require.Contains(t, envStr, `AZURE_AI_MODEL_DEPLOYMENT_NAME="gpt-4.1"`,
-		"model deployment should be resolved to cassette's auto-selected model")
+		"model deployment should be resolved from manifest resource id via ARM catalog")
 
 	// Cross-check: agent.yaml should also have the resolved value, not ${...} placeholder.
 	agentContent, err := os.ReadFile(filepath.Join(agentDir, "agent.yaml"))
@@ -170,8 +181,8 @@ func Test_AIAgent_Init_NegativeControl_BadCassette(t *testing.T) {
 	// Uses the pre-committed empty cassette at testdata/recordings/Test_AIAgent_Init_NegativeControl_BadCassette.yaml
 	// (interactions: []), so the recording proxy has nothing to replay.
 	session := recording.Start(t)
-	session.Variables[recording.SubscriptionIdKey] = "1756abc0-3554-4341-8d6a-46674962ea19"
-	session.Variables["project_id"] = "/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/resourceGroups/rg-hello-world-python-responses-dev-79ba4103/providers/Microsoft.CognitiveServices/accounts/wujia-6956-resource/projects/wujia-1670"
+	session.Variables[recording.SubscriptionIdKey] = testSubscriptionID
+	session.Variables["project_id"] = testProjectID
 
 	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
@@ -180,7 +191,7 @@ func Test_AIAgent_Init_NegativeControl_BadCassette(t *testing.T) {
 	result, err := cli.RunCommand(ctx,
 		"ai", "agent", "init", "--no-prompt",
 		"-m", manifestPath(t),
-		"--project-id", session.Variables["project_id"],
+		"--project-id", testProjectID,
 		"--model-deployment", "gpt-4o",
 		"--deploy-mode", "code",
 		"--runtime", "python_3_13",

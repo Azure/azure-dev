@@ -624,9 +624,19 @@ func installPythonDeps(projectDir string) error {
 
 func installPythonDepsPip(projectDir string) error {
 	venvDir := filepath.Join(projectDir, ".venv")
-	if _, err := os.Stat(venvDir); os.IsNotExist(err) {
+
+	info, err := os.Stat(venvDir)
+	switch {
+	case err == nil && !info.IsDir():
+		return fmt.Errorf(".venv exists but is not a directory")
+	case err != nil && !os.IsNotExist(err):
+		return fmt.Errorf("failed to check .venv: %w", err)
+	case os.IsNotExist(err):
 		fmt.Println("Setting up Python environment...")
-		pythonBin := findSystemPython()
+		pythonBin, findErr := findSystemPython()
+		if findErr != nil {
+			return findErr
+		}
 		//nolint:gosec // G204: venvDir is derived from the project directory path
 		cmd := exec.Command(pythonBin, "-m", "venv", venvDir)
 		cmd.Dir = projectDir
@@ -763,13 +773,18 @@ func venvPip(venvDir string) string {
 	return filepath.Join(venvDir, "bin", "pip")
 }
 
-func findSystemPython() string {
-	for _, name := range []string{"python3", "python"} {
+func findSystemPython() (string, error) {
+	candidates := []string{"python3", "python"}
+	if runtime.GOOS == "windows" {
+		candidates = append(candidates, "py")
+	}
+	for _, name := range candidates {
 		if p, err := exec.LookPath(name); err == nil {
-			return p
+			return p, nil
 		}
 	}
-	return "python"
+	return "", fmt.Errorf(
+		"python not found on PATH. Install Python 3.13+ from https://www.python.org/downloads/")
 }
 
 // appendFoundryEnvVars translates azd environment keys to FOUNDRY_* env vars that hosted

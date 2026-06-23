@@ -1041,11 +1041,36 @@ func TestVenvPip(t *testing.T) {
 }
 
 func TestFindSystemPython(t *testing.T) {
-	t.Parallel()
+	t.Run("finds python3 on PATH", func(t *testing.T) {
+		dir := t.TempDir()
 
-	result := findSystemPython()
-	// Should return a non-empty string (either a found path or "python" fallback)
-	if result == "" {
-		t.Error("expected non-empty python path")
-	}
+		// Create a fake python3 executable
+		name := "python3"
+		if runtime.GOOS == "windows" {
+			name = "python3.exe"
+		}
+		fakePython := filepath.Join(dir, name)
+		err := os.WriteFile(fakePython, []byte(""), 0o755) //nolint:gosec // G306: test binary needs exec permission
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Setenv("PATH", dir)
+		result, err := findSystemPython()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != fakePython {
+			t.Errorf("expected %q, got %q", fakePython, result)
+		}
+	})
+
+	t.Run("returns error when no python on PATH", func(t *testing.T) {
+		dir := t.TempDir() // empty directory
+		t.Setenv("PATH", dir)
+		_, err := findSystemPython()
+		if err == nil {
+			t.Fatal("expected error when no python on PATH")
+		}
+	})
 }

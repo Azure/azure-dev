@@ -25,6 +25,12 @@ examples:
   - name: versions
     description: List RLE environment versions.
     usage: azd ai rle versions <environment-id> --endpoint http://localhost:5000 --account local --project demo
-  - name: modify
-    description: Modify an existing RLE resource.
-    usage: azd ai rle modify <name>
+  - name: sandbox create
+    description: Create an RLE sandbox for an environment.
+    usage: azd ai rle sandbox create <environment-id> --endpoint http://localhost:5000 --project demo
+  - name: sandbox list
+    description: List RLE sandboxes for an environment.
+    usage: azd ai rle sandbox list <environment-id> --endpoint http://localhost:5000 --project demo
+  - name: sandbox show
+    description: Show an RLE sandbox.
+    usage: azd ai rle sandbox show <environment-id> <sandbox-id> --endpoint http://localhost:5000 --project demo

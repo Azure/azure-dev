@@ -6,9 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"log"
 	"net/url"
 	"os"
@@ -16,17 +14,13 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/envkey"
-	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/braydonk/yaml"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // configureExtensionHost wires the service target and event handlers on the
@@ -231,23 +225,12 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	return nil
 }
 
-// isHostedAgentService checks if a service is a hosted (container) agent by reading
-// the agent.yaml kind from the service directory.
+// isHostedAgentService checks if a service is a hosted (container) agent by
+// resolving its agent definition from the service entry (the unified inline
+// shape, or a legacy agent.yaml on disk).
 func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig) bool {
-	agentYamlPath, err := paths.JoinAllowRoot(proj.Path, svc.RelativePath, "agent.yaml")
-	if err != nil {
-		return false
-	}
-	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // path from azd project config
-	if err != nil {
-		return false
-	}
-	var generic map[string]any
-	if err := yaml.Unmarshal(data, &generic); err != nil {
-		return false
-	}
-	kind, ok := generic["kind"].(string)
-	return ok && kind == string(agent_yaml.AgentKindHosted)
+	_, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+	return err == nil && isHosted
 }
 
 func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
@@ -432,9 +415,8 @@ func envUpdate(
 	connections []project.Connection,
 ) error {
 
-	var foundryAgentConfig *project.ServiceTargetAgentConfig
-
-	if err := project.UnmarshalStruct(svc.Config, &foundryAgentConfig); err != nil {
+	foundryAgentConfig, err := project.LoadServiceTargetAgentConfig(svc)
+	if err != nil {
 		return fmt.Errorf("failed to parse foundry agent config: %w", err)
 	}
 
@@ -492,40 +474,28 @@ func envUpdate(
 // agents inline in azure.yaml, so a missing file short-circuits cleanly here.
 // Service-targets that truly need agent.yaml still surface the error where they
 // read its contents.
-func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig, envName string) error {
-	agentYamlPath, err := paths.JoinAllowRoot(project.Path, svc.RelativePath, "agent.yaml")
+func kindEnvUpdate(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azdProject *azdext.ProjectConfig,
+	svc *azdext.ServiceConfig,
+	envName string,
+) error {
+	// The agent definition is carried inline on the service entry (unified shape)
+	// or, for older projects, in a legacy agent.yaml on disk. A missing or
+	// unreadable definition is tolerated here: the bicepless inline path lets
+	// users declare prompt agents that carry no hosted definition, and service
+	// targets that truly need the definition surface the error where they read it.
+	_, isHosted, source, err := project.LoadAgentDefinition(svc, azdProject.Path)
 	if err != nil {
-		return fmt.Errorf("invalid service path: %w", err)
+		log.Printf("[debug] kindEnvUpdate: skipping %s, no readable agent definition: %v", svc.Name, err)
+		return nil
+	}
+	if source.IsLegacy() {
+		project.WarnLegacyAgentShape(source)
 	}
 
-	//nolint:gosec // agentYamlPath is resolved from project/service paths in current workspace
-	data, err := os.ReadFile(agentYamlPath)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			// Bicepless inline-agents path: no on-disk agent.yaml required.
-			log.Printf("[debug] kindEnvUpdate: no agent.yaml at %s; skipping (inline-agents path)", agentYamlPath)
-			return nil
-		}
-		return fmt.Errorf("failed to read YAML file: %w", err)
-	}
-
-	err = agent_yaml.ValidateAgentDefinition(data)
-	if err != nil {
-		return fmt.Errorf("agent.yaml is not valid: %w", err)
-	}
-
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return fmt.Errorf("YAML content is not valid: %w", err)
-	}
-
-	kind, ok := genericTemplate["kind"].(string)
-	if !ok {
-		return fmt.Errorf("kind field is not a valid string")
-	}
-
-	switch kind {
-	case string(agent_yaml.AgentKindHosted):
+	if isHosted {
 		if err := setEnvVar(ctx, azdClient, envName, "ENABLE_HOSTED_AGENTS", "true"); err != nil {
 			return err
 		}
@@ -673,50 +643,32 @@ func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string,
 }
 
 func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient, svc *azdext.ServiceConfig) error {
-	var foundryAgentConfig *project.ServiceTargetAgentConfig
-	if err := project.UnmarshalStruct(svc.Config, &foundryAgentConfig); err != nil {
+	foundryAgentConfig, err := project.LoadServiceTargetAgentConfig(svc)
+	if err != nil {
 		return fmt.Errorf("failed to parse foundry agent config: %w", err)
 	}
 
-	// Initialize result with existing values
-	result := &project.ContainerSettings{}
-
-	// Check and populate base object
-	containerSettings := foundryAgentConfig.Container
-	if containerSettings == nil {
-		containerSettings = &project.ContainerSettings{}
-	}
-
-	// Check and populate Resources
-	if containerSettings.Resources == nil {
-		result.Resources = &project.ResourceSettings{}
-	} else {
-		result.Resources = &project.ResourceSettings{
-			Memory: containerSettings.Resources.Memory,
-			Cpu:    containerSettings.Resources.Cpu,
-		}
+	// Resolve the container resources, applying defaults when unset.
+	result := &project.ResourceSettings{}
+	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
+		result.Memory = foundryAgentConfig.Container.Resources.Memory
+		result.Cpu = foundryAgentConfig.Container.Resources.Cpu
 	}
 
 	// Set default values if zero or empty
-	if result.Resources.Memory == "" {
-		result.Resources.Memory = project.DefaultMemory
+	if result.Memory == "" {
+		result.Memory = project.DefaultMemory
 	}
 
-	if result.Resources.Cpu == "" {
-		result.Resources.Cpu = project.DefaultCpu
+	if result.Cpu == "" {
+		result.Cpu = project.DefaultCpu
 	}
 
-	// Update the container settings in the existing config
-	foundryAgentConfig.Container = result
-
-	// Marshal the complete updated agent config back to the service config
-	var agentConfigStruct *structpb.Struct
-	var err error
-	if agentConfigStruct, err = project.MarshalStruct(foundryAgentConfig); err != nil {
-		return fmt.Errorf("failed to marshal agent config: %w", err)
+	// Persist the resolved container settings back onto the service's inline
+	// properties, preserving the agent definition and other config keys.
+	if err := project.SetAgentContainerSettings(svc, &project.ContainerSettings{Resources: result}); err != nil {
+		return fmt.Errorf("failed to update agent container settings: %w", err)
 	}
-
-	svc.Config = agentConfigStruct
 
 	// Need to add the service config back to the project for use further down the pipeline
 	req := &azdext.AddServiceRequest{Service: svc}

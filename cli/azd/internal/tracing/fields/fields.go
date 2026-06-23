@@ -202,6 +202,15 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}
+	// Whether the project contains a Foundry agent service (host: azure.ai.agent)
+	// still using the deprecated config-nested shape (a populated `config:` block)
+	// instead of service-level properties. Tracks migration of older Foundry
+	// projects off the legacy shape.
+	FoundryAgentLegacyConfigKey = AttributeKey{
+		Key:            attribute.Key("foundry.agent.legacy_config_shape"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Platform related attributes for integrations like devcenter / ADE

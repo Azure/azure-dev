@@ -330,11 +330,14 @@ func collectAgentToolConnections(services map[string]*azdext.ServiceConfig) ([]p
 func collectLegacyAgentConfigs(services map[string]*azdext.ServiceConfig) ([]*project.ServiceTargetAgentConfig, error) {
 	var out []*project.ServiceTargetAgentConfig
 	for _, svc := range sortedServices(services) {
-		if svc.Host != AiAgentHost || svc.Config == nil {
+		if svc.Host != AiAgentHost {
 			continue
 		}
-		var cfg *project.ServiceTargetAgentConfig
-		if err := project.UnmarshalStruct(svc.Config, &cfg); err != nil {
+		if project.ServiceConfigProps(svc) == nil {
+			continue
+		}
+		cfg, err := project.LoadServiceTargetAgentConfig(svc)
+		if err != nil {
 			return nil, fmt.Errorf("parsing agent service %q config: %w", svc.Name, err)
 		}
 		if cfg != nil {

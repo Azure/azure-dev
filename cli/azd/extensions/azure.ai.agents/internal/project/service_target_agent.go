@@ -39,7 +39,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/braydonk/yaml"
 	"github.com/fatih/color"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -152,6 +151,9 @@ type AgentServiceTargetProvider struct {
 	azdClient           *azdext.AzdClient
 	serviceConfig       *azdext.ServiceConfig
 	agentDefinitionPath string
+	projectPath         string
+	servicePath         string
+	deployContextReady  bool
 	credential          *azidentity.AzureDeveloperCLICredential
 	tenantId            string
 	env                 *azdext.Environment
@@ -189,7 +191,7 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 // environment, the tenant, and the credential. Idempotent via the
 // agentDefinitionPath short-circuit.
 func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) error {
-	if p.agentDefinitionPath != "" {
+	if p.deployContextReady {
 		return nil
 	}
 	if p.serviceConfig == nil {
@@ -270,6 +272,9 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 
 	fmt.Fprintf(os.Stderr, "Project path: %s, Service path: %s\n", proj.Project.Path, fullPath)
 
+	p.projectPath = proj.Project.Path
+	p.servicePath = fullPath
+
 	// Check if user has specified agent definition path via environment variable
 	if envPath := os.Getenv("AGENT_DEFINITION_PATH"); envPath != "" {
 		// Verify the file exists and has correct extension
@@ -293,10 +298,20 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 
 		p.agentDefinitionPath = envPath
 		fmt.Printf("Using agent definition from environment variable: %s\n", color.New(color.FgHiGreen).Sprint(envPath))
+		p.deployContextReady = true
 		return nil
 	}
 
-	// Look for agent.yaml or agent.yml in the service directory root
+	// Unified shape: the agent definition is carried inline on the service entry,
+	// so no on-disk agent.yaml is required.
+	if _, _, found, _, defErr := AgentDefinitionFromService(p.serviceConfig); defErr != nil {
+		return defErr
+	} else if found {
+		p.deployContextReady = true
+		return nil
+	}
+
+	// Legacy shape: look for agent.yaml or agent.yml in the service directory root
 	agentYamlPath, err := paths.JoinAllowRoot(proj.Project.Path, servicePath, "agent.yaml")
 	if err != nil {
 		return exterrors.Validation(
@@ -317,12 +332,14 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	if _, err := os.Stat(agentYamlPath); err == nil {
 		p.agentDefinitionPath = agentYamlPath
 		fmt.Printf("Using agent definition: %s\n", color.New(color.FgHiGreen).Sprint(agentYamlPath))
+		p.deployContextReady = true
 		return nil
 	}
 
 	if _, err := os.Stat(agentYmlPath); err == nil {
 		p.agentDefinitionPath = agentYmlPath
 		fmt.Printf("Using agent definition: %s\n", color.New(color.FgHiGreen).Sprint(agentYmlPath))
+		p.deployContextReady = true
 		return nil
 	}
 
@@ -944,6 +961,17 @@ func hasContainerArtifact(artifacts []*azdext.Artifact) bool {
 }
 
 func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.ContainerAgent, bool, error) {
+	// Prefer the agent definition carried inline on the service entry (the
+	// unified service-level shape, or the deprecated config-nested shape). Fall
+	// back to a legacy agent.yaml/agent.yml on disk so older projects still build
+	// and deploy during the deprecation window.
+	if ca, isHosted, found, source, err := AgentDefinitionFromService(p.serviceConfig); found || err != nil {
+		if found && source.IsLegacy() {
+			WarnLegacyAgentShape(source)
+		}
+		return ca, isHosted, err
+	}
+
 	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
@@ -953,54 +981,8 @@ func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.
 		)
 	}
 
-	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent.yaml is not valid: %s", err),
-			"fix the agent.yaml file according to the schema",
-		)
-	}
-
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("YAML content is not valid: %s", err),
-			"verify the agent.yaml has valid YAML syntax",
-		)
-	}
-
-	kind, ok := genericTemplate["kind"].(string)
-	if !ok {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeMissingAgentKind,
-			"kind field is missing or not a valid string in agent.yaml",
-			"add a valid 'kind' field (e.g., 'hosted') to agent.yaml",
-		)
-	}
-
-	if kind != string(agent_yaml.AgentKindHosted) {
-		return agent_yaml.ContainerAgent{}, false, nil
-	}
-
-	var agentDef agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &agentDef); err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("YAML content is not valid for hosted agent: %s", err),
-			"fix the agent.yaml to match the hosted agent schema",
-		)
-	}
-
-	if agentDef.Image != "" && !containerImageRefRe.MatchString(agentDef.Image) {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("invalid container image reference in agent.yaml: %q", agentDef.Image),
-			"use a valid image reference, e.g. 'myregistry.azurecr.io/image:v1'",
-		)
-	}
-
-	return agentDef, true, nil
+	WarnLegacyAgentShape(AgentDefinitionSourceDisk)
+	return parseContainerAgentYAML(data)
 }
 
 // Deploy performs the deployment operation for the agent service
@@ -1036,8 +1018,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 		azdEnv[kval.Key] = kval.Value
 	}
 
-	var serviceTargetConfig *ServiceTargetAgentConfig
-	if err := UnmarshalStruct(serviceConfig.Config, &serviceTargetConfig); err != nil {
+	serviceTargetConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
+	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			fmt.Sprintf("failed to parse service target config: %s", err),
@@ -1049,7 +1031,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Println("Loaded custom service target configuration")
 	}
 
-	warnDeprecatedScaleSettings(serviceConfig.Config)
+	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
 
 	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
 	if err != nil {
@@ -1163,29 +1145,14 @@ func (p *AgentServiceTargetProvider) shouldSkipACRForEnvironment(ctx context.Con
 	return strings.EqualFold(strings.TrimSpace(resp.Value), "true")
 }
 
-// isCodeDeployAgent returns true if the agent.yaml has code_configuration (code deploy mode)
+// isCodeDeployAgent returns true if the agent definition has code_configuration (code deploy mode)
 func (p *AgentServiceTargetProvider) isCodeDeployAgent() bool {
-	data, err := os.ReadFile(p.agentDefinitionPath)
-	if err != nil {
+	agentDef, isHosted, err := p.loadContainerAgentDefinition()
+	if err != nil || !isHosted {
 		return false
 	}
 
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return false
-	}
-
-	kind, ok := genericTemplate["kind"].(string)
-	if !ok {
-		return false
-	}
-
-	if kind != string(agent_yaml.AgentKindHosted) {
-		return false
-	}
-
-	_, hasCodeConfig := genericTemplate["code_configuration"]
-	return hasCodeConfig
+	return agentDef.CodeConfiguration != nil
 }
 
 // deployPrepResult holds the common outputs from prepareDeploy, used by both
@@ -1236,7 +1203,9 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		)
 	}
 
-	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
+	if p.agentDefinitionPath != "" {
+		fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
+	}
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
@@ -1249,8 +1218,8 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	}
 
 	// Parse service config for container resource overrides
-	var foundryAgentConfig *ServiceTargetAgentConfig
-	if err := UnmarshalStruct(serviceConfig.Config, &foundryAgentConfig); err != nil {
+	foundryAgentConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
+	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("failed to parse foundry agent config: %s", err),
@@ -1258,7 +1227,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		)
 	}
 
-	warnDeprecatedScaleSettings(serviceConfig.Config)
+	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
 
 	var cpu, memory string
 	if foundryAgentConfig != nil && foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
@@ -1470,28 +1439,30 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
 // and computes its SHA-256. Returns the temp file path and SHA-256 hex string.
 func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serviceConfig *azdext.ServiceConfig) (string, string, error) {
-	// Source directory is the service's relative path
-	srcDir := filepath.Dir(p.agentDefinitionPath)
+	// Source directory is the service's directory. Fall back to the directory of
+	// a legacy on-disk agent.yaml when the service path was not resolved.
+	srcDir := p.servicePath
+	if srcDir == "" {
+		srcDir = filepath.Dir(p.agentDefinitionPath)
+	}
 
-	// Load agent.yaml to check runtime and dependency resolution for dotnet bundled mode
-	if data, err := os.ReadFile(p.agentDefinitionPath); err == nil { //nolint:gosec // path from internal state
-		var agentDef agent_yaml.ContainerAgent
-		if err := yaml.Unmarshal(data, &agentDef); err == nil && agentDef.CodeConfiguration != nil {
-			isDotnet := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "dotnet_")
-			isBundled := false // default is remote_build (matches promptCodeConfig and deployHostedCodeAgent defaults)
-			if agentDef.CodeConfiguration.DependencyResolution != nil {
-				isBundled = *agentDef.CodeConfiguration.DependencyResolution == "bundled"
-			}
-			if isDotnet && isBundled {
-				return p.packageDotnetBundled(srcDir)
-			}
+	// Check runtime and dependency resolution for dotnet bundled mode
+	if agentDef, isHosted, err := p.loadContainerAgentDefinition(); err == nil && isHosted &&
+		agentDef.CodeConfiguration != nil {
+		isDotnet := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "dotnet_")
+		isBundled := false // default is remote_build (matches promptCodeConfig and deployHostedCodeAgent defaults)
+		if agentDef.CodeConfiguration.DependencyResolution != nil {
+			isBundled = *agentDef.CodeConfiguration.DependencyResolution == "bundled"
+		}
+		if isDotnet && isBundled {
+			return p.packageDotnetBundled(srcDir)
+		}
 
-			// Python bundled: validate that dependencies are installed in srcDir
-			isPython := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "python_")
-			if isPython && isBundled {
-				if err := validatePythonBundledDeps(srcDir); err != nil {
-					return "", "", err
-				}
+		// Python bundled: validate that dependencies are installed in srcDir
+		isPython := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "python_")
+		if isPython && isBundled {
+			if err := validatePythonBundledDeps(srcDir); err != nil {
+				return "", "", err
 			}
 		}
 	}

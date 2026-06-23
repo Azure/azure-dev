@@ -623,9 +623,39 @@ func installPythonDeps(projectDir string) error {
 }
 
 func installPythonDepsPip(projectDir string) error {
+	venvDir := filepath.Join(projectDir, ".venv")
+	if _, err := os.Stat(venvDir); os.IsNotExist(err) {
+		fmt.Println("Setting up Python environment...")
+		pythonBin := findSystemPython()
+		//nolint:gosec // G204: venvDir is derived from the project directory path
+		cmd := exec.Command(pythonBin, "-m", "venv", venvDir)
+		cmd.Dir = projectDir
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to create venv: %w", err)
+		}
+	}
+
+	pipPath := venvPip(venvDir)
+
+	if fileExists(filepath.Join(projectDir, "pyproject.toml")) {
+		fmt.Println("Installing dependencies (pyproject.toml)...")
+		//nolint:gosec // G204: pipPath is derived from the project venv directory
+		cmd := exec.Command(pipPath, "install", "-e", ".", "-q")
+		cmd.Dir = projectDir
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("pip install failed: %w", err)
+		}
+		fmt.Println("  ✓ Dependencies installed (pyproject.toml)")
+	}
+
 	if fileExists(filepath.Join(projectDir, "requirements.txt")) {
 		fmt.Println("Installing dependencies (requirements.txt)...")
-		cmd := exec.Command("pip", "install", "-r", "requirements.txt", "-q")
+		//nolint:gosec // G204: pipPath is derived from the project venv directory
+		cmd := exec.Command(pipPath, "install", "-r", "requirements.txt", "-q")
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -634,6 +664,7 @@ func installPythonDepsPip(projectDir string) error {
 		}
 		fmt.Println("  ✓ Dependencies installed (requirements.txt)")
 	}
+
 	return nil
 }
 
@@ -723,6 +754,22 @@ func venvBinDir(venvDir string) string {
 		return filepath.Join(venvDir, "Scripts")
 	}
 	return filepath.Join(venvDir, "bin")
+}
+
+func venvPip(venvDir string) string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(venvDir, "Scripts", "pip.exe")
+	}
+	return filepath.Join(venvDir, "bin", "pip")
+}
+
+func findSystemPython() string {
+	for _, name := range []string{"python3", "python"} {
+		if p, err := exec.LookPath(name); err == nil {
+			return p
+		}
+	}
+	return "python"
 }
 
 // appendFoundryEnvVars translates azd environment keys to FOUNDRY_* env vars that hosted

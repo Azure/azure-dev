@@ -1020,3 +1020,32 @@ environment_variables:
 		}
 	})
 }
+
+func TestVenvPip(t *testing.T) {
+	t.Parallel()
+
+	venvDir := "/project/.venv"
+	result := venvPip(venvDir)
+
+	if runtime.GOOS == "windows" {
+		expected := filepath.Join(venvDir, "Scripts", "pip.exe")
+		if result != expected {
+			t.Errorf("expected %q, got %q", expected, result)
+		}
+	} else {
+		expected := filepath.Join(venvDir, "bin", "pip")
+		if result != expected {
+			t.Errorf("expected %q, got %q", expected, result)
+		}
+	}
+}
+
+func TestFindSystemPython(t *testing.T) {
+	t.Parallel()
+
+	result := findSystemPython()
+	// Should return a non-empty string (either a found path or "python" fallback)
+	if result == "" {
+		t.Error("expected non-empty python path")
+	}
+}

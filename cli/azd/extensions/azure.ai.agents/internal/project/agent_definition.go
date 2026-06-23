@@ -69,14 +69,16 @@ func WarnLegacyAgentShape(source AgentDefinitionSource) {
 // AgentDefinitionInline is the hosted-agent definition (formerly agent.yaml)
 // carried as flat service-level properties on the azure.ai.agent service entry.
 //
-// It mirrors [agent_yaml.ContainerAgent] except for the CPU/memory Resources,
-// which are carried in the `container` config to avoid a key/type collision with
-// the tool Resources list ([ServiceTargetAgentConfig.Resources], also keyed
-// `resources`). The embedded [agent_yaml.AgentDefinition] promotes kind, name,
-// description, and the schema fields to the top level.
+// It mirrors [agent_yaml.ContainerAgent] except for two fields that map onto core
+// [azdext.ServiceConfig] fields instead of the inline property bag: the CPU/memory
+// Resources (carried in the `container` config to avoid a key/type collision with
+// the tool Resources list [ServiceTargetAgentConfig.Resources], also keyed
+// `resources`), and Image (carried on the core `image` service field, since
+// `image` is a first-class ServiceConfig field that core binds and round-trips).
+// The embedded [agent_yaml.AgentDefinition] promotes kind, name, description, and
+// the schema fields to the top level.
 type AgentDefinitionInline struct {
 	agent_yaml.AgentDefinition `json:",inline"`
-	Image                      string                             `json:"image,omitempty"`
 	Protocols                  []agent_yaml.ProtocolVersionRecord `json:"protocols,omitempty"`
 	EnvironmentVariables       *[]agent_yaml.EnvironmentVariable  `json:"environmentVariables,omitempty"`
 	AgentEndpoint              *agent_yaml.AgentEndpoint          `json:"agentEndpoint,omitempty"`
@@ -85,13 +87,13 @@ type AgentDefinitionInline struct {
 	Policies                   []agent_yaml.Policy                `json:"policies,omitempty"`
 }
 
-// agentDefinitionToInline splits a ContainerAgent into the inline definition.
-// The CPU/memory Resources are returned separately so the caller can store them
-// in the `container` config.
-func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInline, *ContainerSettings) {
+// agentDefinitionToInline splits a ContainerAgent into the inline definition,
+// the CPU/memory ContainerSettings (carried in the `container` config), and the
+// prebuilt image (carried on the core `image` service field). The latter two are
+// returned separately so the caller can place them on their respective homes.
+func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInline, *ContainerSettings, string) {
 	inline := AgentDefinitionInline{
 		AgentDefinition:      ca.AgentDefinition,
-		Image:                ca.Image,
 		Protocols:            ca.Protocols,
 		EnvironmentVariables: ca.EnvironmentVariables,
 		AgentEndpoint:        ca.AgentEndpoint,
@@ -107,15 +109,16 @@ func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInlin
 		}
 	}
 
-	return inline, container
+	return inline, container, ca.Image
 }
 
 // toContainerAgent rebuilds the agent_yaml.ContainerAgent from the inline
-// definition plus the CPU/memory carried in the `container` config.
-func (d AgentDefinitionInline) toContainerAgent(container *ContainerSettings) agent_yaml.ContainerAgent {
+// definition, the CPU/memory carried in the `container` config, and the image
+// carried on the core service field.
+func (d AgentDefinitionInline) toContainerAgent(container *ContainerSettings, image string) agent_yaml.ContainerAgent {
 	ca := agent_yaml.ContainerAgent{
 		AgentDefinition:      d.AgentDefinition,
-		Image:                d.Image,
+		Image:                image,
 		Protocols:            d.Protocols,
 		EnvironmentVariables: d.EnvironmentVariables,
 		AgentEndpoint:        d.AgentEndpoint,
@@ -191,7 +194,7 @@ func AgentDefinitionFromService(
 		}
 	}
 
-	ca, isHosted, err := agentDefinitionFromStruct(inlineStruct)
+	ca, isHosted, err := agentDefinitionFromStruct(inlineStruct, svc.GetImage())
 	return ca, isHosted, true, source, err
 }
 
@@ -309,8 +312,10 @@ func SetAgentContainerSettings(svc *azdext.ServiceConfig, container *ContainerSe
 }
 
 // agentDefinitionFromStruct builds the ContainerAgent from an inline/config
-// struct that carries the agent definition as service-level properties.
-func agentDefinitionFromStruct(s *structpb.Struct) (agent_yaml.ContainerAgent, bool, error) {
+// struct that carries the agent definition as service-level properties. coreImage
+// is the value of the service's `image` field, which is carried on the core
+// [azdext.ServiceConfig] rather than in the inline property bag.
+func agentDefinitionFromStruct(s *structpb.Struct, coreImage string) (agent_yaml.ContainerAgent, bool, error) {
 	var inline AgentDefinitionInline
 	if err := UnmarshalStruct(s, &inline); err != nil {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
@@ -333,7 +338,22 @@ func agentDefinitionFromStruct(s *structpb.Struct) (agent_yaml.ContainerAgent, b
 		)
 	}
 
-	ca := inline.toContainerAgent(cfg.Container)
+	ca := inline.toContainerAgent(cfg.Container, coreImage)
+
+	// Validate the inline definition with the same rules the on-disk agent.yaml
+	// path uses (kind, name format, policies), so an inline definition cannot
+	// silently bypass validation. Marshal back to YAML so ValidateAgentDefinition
+	// sees the same shape it expects from disk.
+	if defBytes, marshalErr := yaml.Marshal(ca); marshalErr == nil {
+		if err := agent_yaml.ValidateAgentDefinition(defBytes); err != nil {
+			return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("agent service definition is not valid: %s", err),
+				"fix the agent service entry in azure.yaml or re-run `azd ai agent init`",
+			)
+		}
+	}
+
 	if ca.Image != "" && !containerImageRefRe.MatchString(ca.Image) {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
@@ -433,11 +453,15 @@ func parseContainerAgentYAML(data []byte) (agent_yaml.ContainerAgent, bool, erro
 // service-level properties (and the `container` CPU/memory config) used by the
 // unified azure.ai.agent service entry. The returned struct is merged into the
 // service entry's AdditionalProperties at init time.
+//
+// Note: the agent's prebuilt `image` is NOT included here — it maps onto the core
+// [azdext.ServiceConfig.Image] field, which the caller must set from ca.Image so
+// it round-trips through azure.yaml.
 func AgentDefinitionToServiceProperties(
 	ca agent_yaml.ContainerAgent,
 	extra *ServiceTargetAgentConfig,
 ) (*structpb.Struct, error) {
-	inline, container := agentDefinitionToInline(ca)
+	inline, container, _ := agentDefinitionToInline(ca)
 
 	defStruct, err := MarshalStruct(&inline)
 	if err != nil {

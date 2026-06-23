@@ -119,6 +119,79 @@ func TestAgentDefinitionFromService_NoDefinition(t *testing.T) {
 	require.False(t, found)
 }
 
+// TestAgentDefinition_ImageRidesOnCoreServiceField verifies the prebuilt image
+// maps onto the core ServiceConfig.Image field (which core binds and round-trips)
+// rather than the inline property bag, where core would strip it on reload.
+func TestAgentDefinition_ImageRidesOnCoreServiceField(t *testing.T) {
+	const image = "myregistry.azurecr.io/img:v1"
+	ca := sampleContainerAgent()
+	ca.Image = image
+
+	props, err := AgentDefinitionToServiceProperties(ca, nil)
+	require.NoError(t, err)
+	// image must NOT be carried in the inline AdditionalProperties: core binds
+	// the typed `image` field, so an inline `image` key is dropped on reload.
+	_, hasInlineImage := props.GetFields()["image"]
+	require.False(t, hasInlineImage, "image must not be carried in inline AdditionalProperties")
+
+	// The definition reads its image back from the core service field.
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 "azure.ai.agent",
+		Image:                image,
+		AdditionalProperties: props,
+	}
+	got, isHosted, found, _, err := AgentDefinitionFromService(svc)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, isHosted)
+	require.Equal(t, image, got.Image)
+
+	// With no core image field, image is empty — proving it is not in props.
+	svcNoImage := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	gotNoImage, _, _, _, err := AgentDefinitionFromService(svcNoImage)
+	require.NoError(t, err)
+	require.Empty(t, gotNoImage.Image)
+}
+
+// TestAgentDefinitionFromService_InvalidImage verifies the image reference (from
+// the core service field) is still validated for the inline shape.
+func TestAgentDefinitionFromService_InvalidImage(t *testing.T) {
+	props, err := AgentDefinitionToServiceProperties(sampleContainerAgent(), nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 "azure.ai.agent",
+		Image:                "not a valid image ref",
+		AdditionalProperties: props,
+	}
+	_, _, _, _, err = AgentDefinitionFromService(svc)
+	require.Error(t, err)
+}
+
+// TestAgentDefinitionFromService_InvalidDefinition verifies that inline
+// definitions get the same structural validation as the on-disk agent.yaml path,
+// so a malformed definition (e.g. an invalid agent name) is not silently used.
+func TestAgentDefinitionFromService_InvalidDefinition(t *testing.T) {
+	ca := sampleContainerAgent()
+	ca.Name = "Invalid Name!" // fails ValidateAgentName
+	props, err := AgentDefinitionToServiceProperties(ca, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	_, _, _, _, err = AgentDefinitionFromService(svc)
+	require.Error(t, err)
+}
+
 // TestLoadAgentDefinition_DiskFallback verifies the legacy on-disk agent.yaml
 // fallback used during the migration window.
 func TestLoadAgentDefinition_DiskFallback(t *testing.T) {

@@ -2953,6 +2953,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		RelativePath:         targetDir,
 		Host:                 AiAgentHost,
 		Language:             "docker",
+		Image:                containerDef.Image,
 		AdditionalProperties: agentProps,
 	}
 

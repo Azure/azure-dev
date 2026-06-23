@@ -843,6 +843,7 @@ func (a *InitFromCodeAction) addToProject(
 		RelativePath:         targetDir,
 		Host:                 AiAgentHost,
 		Language:             language,
+		Image:                definition.Image,
 		AdditionalProperties: agentProps,
 	}
 

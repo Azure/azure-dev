@@ -16,4 +16,4 @@ tags:
     - ai
     - routine
 usage: azd ai routine <command> [options]
-version: 0.1.0-preview
+version: 0.1.1-preview

@@ -85,9 +85,45 @@ func TestARMTemplate_MatchesBicepBuild(t *testing.T) {
 	rebuilt, err := os.ReadFile(out)
 	require.NoError(t, err)
 
-	assert.True(t, bytes.Equal(committed, rebuilt),
+	committedNormalized := normalizeArmTemplate(t, committed)
+	rebuiltNormalized := normalizeArmTemplate(t, rebuilt)
+
+	assert.True(t, bytes.Equal(committedNormalized, rebuiltNormalized),
 		"templates/main.arm.json is stale; regenerate with `bicep build main.bicep "+
 			"--outfile main.arm.json` from the templates directory")
+}
+
+// normalizeArmTemplate returns a stable JSON representation of an ARM template
+// for drift comparison. Bicep generator metadata includes the local Bicep CLI
+// version/hash and can differ between developer machines and CI images without
+// changing the template semantics.
+func normalizeArmTemplate(t *testing.T, raw []byte) []byte {
+	t.Helper()
+
+	var doc any
+	require.NoError(t, json.Unmarshal(raw, &doc))
+	stripBicepGeneratorMetadata(doc)
+
+	normalized, err := json.Marshal(doc)
+	require.NoError(t, err)
+	return normalized
+}
+
+// stripBicepGeneratorMetadata recursively removes Bicep's generator metadata
+// from a decoded ARM template. Bicep emits this metadata for the top-level
+// template and nested module templates.
+func stripBicepGeneratorMetadata(value any) {
+	switch v := value.(type) {
+	case map[string]any:
+		delete(v, "_generator")
+		for _, child := range v {
+			stripBicepGeneratorMetadata(child)
+		}
+	case []any:
+		for _, child := range v {
+			stripBicepGeneratorMetadata(child)
+		}
+	}
 }
 
 // lookupBicep returns a usable bicep binary path, preferring PATH and falling

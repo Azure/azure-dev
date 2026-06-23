@@ -35,7 +35,7 @@ func TestArchiveDirectory_HappyPathRoundTrips(t *testing.T) {
 
 	data, err := ArchiveDirectory(src, ArchiveOptions{})
 	require.NoError(t, err)
-	require.Equal(t, ArchiveZip, DetectArchiveFormat(data))
+	require.True(t, isZipMagic(data))
 
 	// Round-trip through SafeExtract: every file should land in dst with the
 	// same content, using forward-slash paths regardless of the OS.
@@ -81,7 +81,7 @@ func TestArchiveDirectory_FollowsTopLevelSymlink(t *testing.T) {
 
 	data, err := ArchiveDirectory(link, ArchiveOptions{})
 	require.NoError(t, err)
-	require.Equal(t, ArchiveZip, DetectArchiveFormat(data))
+	require.True(t, isZipMagic(data))
 }
 
 func TestArchiveDirectory_RejectsInnerSymlink(t *testing.T) {

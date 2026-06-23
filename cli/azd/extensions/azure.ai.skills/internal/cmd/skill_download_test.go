@@ -67,3 +67,13 @@ func TestDownloadAction_RejectsInvalidName(t *testing.T) {
 	require.True(t, errors.As(err, &le))
 	require.Equal(t, exterrors.CodeInvalidSkillName, le.Code)
 }
+
+func TestDownloadAction_RejectsWhitespaceOnlyVersion(t *testing.T) {
+	a := &downloadAction{flags: &downloadFlags{name: "my-skill", version: "   "}}
+	err := a.Run(context.Background())
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeInvalidParameter, le.Code)
+	require.Contains(t, le.Message, "whitespace")
+}

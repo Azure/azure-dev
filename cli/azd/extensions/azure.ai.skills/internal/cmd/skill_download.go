@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"azureaiskills/internal/exterrors"
 	"azureaiskills/internal/pkg/skill_api"
@@ -44,6 +45,16 @@ type downloadResult struct {
 func (a *downloadAction) Run(ctx context.Context) error {
 	if err := validateSkillName(a.flags.name); err != nil {
 		return err
+	}
+
+	// Reject whitespace-only --version to catch scripting bugs like
+	// --version "$UNSET_VAR" that would silently download the default.
+	if a.flags.version != "" && strings.TrimSpace(a.flags.version) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--version must not be empty or whitespace-only",
+			"pass an explicit version identifier, or omit --version to use the default",
+		)
 	}
 
 	outputDir := a.flags.outputDir

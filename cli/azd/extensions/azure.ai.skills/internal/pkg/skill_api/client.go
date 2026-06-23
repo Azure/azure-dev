@@ -48,19 +48,24 @@ const (
 	userAgentPrefix = "azd-ext-azure-ai-skills"
 )
 
-// downloadByteCap is the active per-response cap used by downloadContent.
-// Defaults to MaxDownloadBytes; tests may override it via withDownloadCap.
-var downloadByteCap int64 = MaxDownloadBytes
-
 type Client struct {
-	endpoint string
-	pipeline runtime.Pipeline
+	endpoint       string
+	pipeline       runtime.Pipeline
+	maxDownloadCap int64
 }
 
 // NewClient returns a Skills client rooted at endpoint, using cred for
 // bearer-token auth.
 func NewClient(endpoint string, cred azcore.TokenCredential, extensionVersion string) *Client {
 	return newClient(endpoint, cred, extensionVersion, false)
+}
+
+// WithMaxDownloadBytes overrides the per-response download size cap on the
+// client. Intended for testing; production callers use the default
+// MaxDownloadBytes value.
+func (c *Client) WithMaxDownloadBytes(cap int64) *Client {
+	c.maxDownloadCap = cap
+	return c
 }
 
 func newClient(endpoint string, cred azcore.TokenCredential, extensionVersion string, allowHTTP bool) *Client {
@@ -91,8 +96,9 @@ func newClient(endpoint string, cred azcore.TokenCredential, extensionVersion st
 	)
 
 	return &Client{
-		endpoint: strings.TrimRight(endpoint, "/"),
-		pipeline: pipeline,
+		endpoint:       strings.TrimRight(endpoint, "/"),
+		pipeline:       pipeline,
+		maxDownloadCap: MaxDownloadBytes,
 	}
 }
 
@@ -430,22 +436,24 @@ func (c *Client) downloadContent(ctx context.Context, fullURL string) ([]byte, e
 		}
 	}
 
+	cap := c.maxDownloadCap
+
 	// Fail fast on a server-declared oversize before reading the body.
-	if resp.ContentLength > downloadByteCap {
+	if resp.ContentLength > cap {
 		return nil, fmt.Errorf(
 			"download size %d exceeds the %d byte limit",
-			resp.ContentLength, downloadByteCap,
+			resp.ContentLength, cap,
 		)
 	}
 
 	// Read one extra byte so we can distinguish "exactly at limit" from
 	// "tried to send more than the limit".
-	body, err := io.ReadAll(io.LimitReader(resp.Body, downloadByteCap+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, cap+1))
 	if err != nil {
 		return nil, fmt.Errorf("read download body: %w", err)
 	}
-	if int64(len(body)) > downloadByteCap {
-		return nil, fmt.Errorf("download exceeds the %d byte limit", downloadByteCap)
+	if int64(len(body)) > cap {
+		return nil, fmt.Errorf("download exceeds the %d byte limit", cap)
 	}
 	return body, nil
 }

@@ -439,6 +439,10 @@ func (a *InvokeAction) emitInvokeFailureNextStep(mode nextstep.InvokeMode, agent
 // resolveProtocol returns the protocol to use for this invocation.
 // The explicit --protocol flag takes priority; otherwise the protocol
 // is auto-detected from agent.yaml (local or remote).
+// When the protocol is auto-detected and the agent name was not already
+// set, the resolved service name is cached in a.flags.name so that
+// downstream calls (resolveRemoteContext, resolveLocalAgentKey) do an
+// exact lookup instead of prompting the user a second time.
 func (a *InvokeAction) resolveProtocol(
 	ctx context.Context,
 ) (agent_api.AgentProtocol, error) {
@@ -452,9 +456,19 @@ func (a *InvokeAction) resolveProtocol(
 	}
 	defer azdClient.Close()
 
-	return resolveAgentProtocol(
+	protocol, serviceName, err := resolveAgentProtocol(
 		ctx, azdClient, a.flags.name, a.noPrompt,
 	)
+	if err != nil {
+		return "", err
+	}
+
+	// Cache the resolved service name so downstream calls avoid re-prompting.
+	if a.flags.name == "" && serviceName != "" {
+		a.flags.name = serviceName
+	}
+
+	return protocol, nil
 }
 
 func (a *InvokeAction) httpTimeout() time.Duration {

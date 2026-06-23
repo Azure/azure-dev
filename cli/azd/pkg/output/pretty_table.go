@@ -241,7 +241,7 @@ func (f *PrettyTableFormatter) renderPaddedTable(
 
 	// Header underline
 	lineWidth := min(sumWidths(colWidths)+max(0, len(cols)-1)*columnPadding, termWidth)
-	buf.WriteString(strings.Repeat("─", lineWidth))
+	buf.WriteString(WithGrayFormat(strings.Repeat("─", lineWidth)))
 	buf.WriteByte('\n')
 
 	// Data rows
@@ -355,14 +355,12 @@ func (f *PrettyTableFormatter) formatGroupedCards(
 		}
 
 		for gi, group := range groupOrder {
-			// Group header: "── {value} ────────"
-			// Strip ANSI codes from group value — it comes from template execution
-			// and may contain color codes if the column has a ColorFunc.
-			strippedGroup := ansiRegex.ReplaceAllString(group, "")
-			headerText := "── " + strippedGroup + " "
+			// Group header: "── {label}: {value} ────────"
+			// Strip terminal escapes from group value — it comes from template execution.
+			strippedGroup := stripTerminalEscapes(group)
+			headerText := "── " + parsed[groupColIdx].col.Heading + ": " + strippedGroup + " "
 			remaining := max(termWidth-displayWidth(headerText), 1)
-			buf.WriteString(headerText)
-			buf.WriteString(strings.Repeat("─", remaining))
+			buf.WriteString(WithGrayFormat("%s", headerText+strings.Repeat("─", remaining)))
 			buf.WriteByte('\n')
 			buf.WriteByte('\n')
 
@@ -404,7 +402,7 @@ func (f *PrettyTableFormatter) formatGroupedCards(
 
 			borderWidth := min(max(termWidth-2, 20), 76)
 
-			buf.WriteString("┌" + strings.Repeat("─", borderWidth))
+			buf.WriteString(WithGrayFormat("┌" + strings.Repeat("─", borderWidth)))
 			buf.WriteByte('\n')
 			buf.WriteString("│ ")
 			buf.WriteString(boldTitle.Sprint(titleVal))
@@ -432,7 +430,7 @@ func (f *PrettyTableFormatter) formatGroupedCards(
 				buf.WriteByte('\n')
 			}
 
-			buf.WriteString("└" + strings.Repeat("─", borderWidth))
+			buf.WriteString(WithGrayFormat("└" + strings.Repeat("─", borderWidth)))
 			buf.WriteByte('\n')
 			if ri < len(allRows)-1 {
 				buf.WriteByte('\n')
@@ -471,9 +469,12 @@ var osc8Regex = regexp.MustCompile(`\x1b\]8;[^;]*;[^\x1b\a]*(?:\x1b\\|\a)`)
 // displayWidth returns the visible column width of s, ignoring ANSI escape
 // codes, OSC-8 hyperlink sequences, and accounting for wide Unicode characters (e.g. CJK).
 func displayWidth(s string) int {
+	return runewidth.StringWidth(stripTerminalEscapes(s))
+}
+
+func stripTerminalEscapes(s string) string {
 	stripped := osc8Regex.ReplaceAllString(s, "")
-	stripped = ansiRegex.ReplaceAllString(stripped, "")
-	return runewidth.StringWidth(stripped)
+	return ansiRegex.ReplaceAllString(stripped, "")
 }
 
 var _ Formatter = (*PrettyTableFormatter)(nil)

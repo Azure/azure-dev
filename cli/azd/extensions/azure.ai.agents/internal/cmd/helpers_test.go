@@ -9,8 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	goyaml "go.yaml.in/yaml/v3"
 )
 
 func TestDetectStartupCommand(t *testing.T) {
@@ -205,18 +208,6 @@ func TestProtocolFromAgentYaml(t *testing.T) {
 			wantProto: "invocations",
 		},
 		{
-			name:       "no file",
-			noFile:     true,
-			wantErr:    true,
-			errContain: "could not read agent.yaml",
-		},
-		{
-			name:       "invalid yaml",
-			yaml:       "protocols: [[[invalid",
-			wantErr:    true,
-			errContain: "could not parse agent.yaml",
-		},
-		{
 			name:       "no protocols field",
 			yaml:       "name: my-agent\n",
 			wantErr:    true,
@@ -268,18 +259,10 @@ func TestProtocolFromAgentYaml(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			dir := t.TempDir()
-			yamlPath := filepath.Join(dir, "agent.yaml")
+			var agentDef agent_yaml.ContainerAgent
+			require.NoError(t, goyaml.Unmarshal([]byte(tt.yaml), &agentDef))
 
-			if !tt.noFile {
-				if err := os.WriteFile(
-					yamlPath, []byte(tt.yaml), 0600,
-				); err != nil {
-					t.Fatalf("failed to write agent.yaml: %v", err)
-				}
-			}
-
-			got, err := protocolFromAgentYaml(yamlPath)
+			got, err := protocolFromContainerAgent(agentDef)
 
 			if tt.wantErr {
 				if err == nil {

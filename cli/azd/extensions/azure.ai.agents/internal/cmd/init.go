@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -1672,9 +1671,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return err
 		}
 
-		// Write the final agent.yaml to disk (after deployment names have been injected)
-		if err := writeAgentDefinitionFile(targetDir, agentManifest); err != nil {
-			return fmt.Errorf("writing agent definition: %w", err)
+		// Generate .agentignore. The agent definition now lives in azure.yaml,
+		// not in an on-disk agent.yaml, but .agentignore is still used to scope
+		// code-deploy ZIP packaging.
+		if err := writeAgentIgnoreFile(targetDir); err != nil {
+			return fmt.Errorf("writing .agentignore: %w", err)
 		}
 
 		// Add the agent to the azd project (azure.yaml) services
@@ -2794,29 +2795,11 @@ func (a *InitAction) downloadAgentYaml(
 	return agentManifest, targetDir, nil
 }
 
-// writeAgentDefinitionFile writes the agent definition to disk as agent.yaml in targetDir.
-// This should be called after all parameter/deployment injection is complete so the on-disk
-// file has fully resolved values (no `{{...}}` placeholders).
-func writeAgentDefinitionFile(targetDir string, agentManifest *agent_yaml.AgentManifest) error {
-	content, err := yaml.Marshal(agentManifest.Template)
-	if err != nil {
-		return fmt.Errorf("marshaling agent manifest to YAML: %w", err)
-	}
-
-	annotation := "# yaml-language-server: $schema=https://raw.githubusercontent.com/microsoft/AgentSchema/refs/heads/main/schemas/v1.0/ContainerAgent.yaml"
-	agentFileContents := bytes.NewBufferString(annotation + "\n\n")
-	if _, err = agentFileContents.Write(content); err != nil {
-		return fmt.Errorf("preparing agent.yaml file contents: %w", err)
-	}
-
-	filePath := filepath.Join(targetDir, "agent.yaml")
-	if err := os.WriteFile(filePath, agentFileContents.Bytes(), osutil.PermissionFile); err != nil {
-		return fmt.Errorf("saving file to %s: %w", filePath, err)
-	}
-
-	log.Printf("Processed agent.yaml at %s", filePath)
-
-	// Generate .agentignore if it doesn't already exist
+// writeAgentIgnoreFile generates a default .agentignore in targetDir if one does
+// not already exist. The agent definition itself is no longer written to disk —
+// it lives as service-level properties in azure.yaml — but .agentignore is still
+// used to scope which files are included in code-deploy ZIP packaging.
+func writeAgentIgnoreFile(targetDir string) error {
 	agentIgnorePath := filepath.Join(targetDir, ".agentignore")
 	if _, err := os.Stat(agentIgnorePath); os.IsNotExist(err) {
 		if err := os.WriteFile(agentIgnorePath, []byte(project.DefaultAgentIgnoreContent()), osutil.PermissionFile); err != nil {
@@ -2953,17 +2936,45 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		agentConfig.StartupCommand = startupCmd
 	}
 
-	var agentConfigStruct *structpb.Struct
-	if agentConfigStruct, err = project.MarshalStruct(&agentConfig); err != nil {
-		return fmt.Errorf("failed to marshal agent config: %w", err)
+	// Each Foundry resource is written as its own azure.yaml service entry, so
+	// the deployments, connections, and toolboxes move out of the agent config
+	// into sibling azure.ai.project/connection/toolbox services emitted below.
+	// The agent keeps its container, resources, tool connections, and startup
+	// command. The provisioning handlers re-source the moved data from the
+	// sibling services.
+	resourceDeployments := agentConfig.Deployments
+	resourceConnections := agentConfig.Connections
+	resourceToolboxes := agentConfig.Toolboxes
+	agentConfig.Deployments = nil
+	agentConfig.Connections = nil
+	agentConfig.Toolboxes = nil
+
+	// The agent definition (formerly written to agent.yaml) now lives as
+	// service-level properties on the azure.ai.agent entry. Rebuild the full
+	// container agent from the manifest template so it can be embedded inline
+	// alongside the remaining agent config (container, tool connections,
+	// startup command).
+	var containerDef agent_yaml.ContainerAgent
+	templateYAML, err := yaml.Marshal(agentManifest.Template)
+	if err != nil {
+		return fmt.Errorf("marshaling agent definition: %w", err)
+	}
+	if err := yaml.Unmarshal(templateYAML, &containerDef); err != nil {
+		return fmt.Errorf("parsing agent definition: %w", err)
+	}
+
+	agentProps, err := project.AgentDefinitionToServiceProperties(containerDef, &agentConfig)
+	if err != nil {
+		return err
 	}
 
 	serviceConfig := &azdext.ServiceConfig{
-		Name:         a.serviceNameOverride,
-		RelativePath: targetDir,
-		Host:         AiAgentHost,
-		Language:     "docker",
-		Config:       agentConfigStruct,
+		Name:                 a.serviceNameOverride,
+		RelativePath:         targetDir,
+		Host:                 AiAgentHost,
+		Language:             "docker",
+		Image:                containerDef.Image,
+		AdditionalProperties: agentProps,
 	}
 
 	// For hosted agents, configure Docker or code deploy settings
@@ -2988,6 +2999,15 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
+	}
+
+	// Emit the sibling Foundry resource services (project + deployments,
+	// connections, toolboxes) and wire the agent's uses: to them.
+	if err := emitResourceServices(
+		ctx, a.azdClient, a.serviceNameOverride,
+		resourceDeployments, resourceConnections, resourceToolboxes,
+	); err != nil {
+		return err
 	}
 
 	fmt.Printf(

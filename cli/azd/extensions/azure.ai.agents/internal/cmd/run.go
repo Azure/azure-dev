@@ -29,7 +29,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -194,7 +193,7 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// the Foundry data plane). Agent definition env vars do not override
 	// values already present in the process environment.
 	endpoint, _ := resolveAgentEndpoint(ctx, "", "")
-	defEnv, defErr := resolveAgentDefinitionEnvVars(ctx, projectDir, azdEnvVars, endpoint)
+	defEnv, defErr := resolveAgentDefinitionEnvVars(ctx, runCtx.Definition, azdEnvVars, endpoint)
 	if defErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %s\n", defErr)
 	}
@@ -456,38 +455,22 @@ func shouldWarnLoadAzdEnvironmentFailure(err error) bool {
 	return !strings.Contains(strings.ToLower(msg), "default environment not found")
 }
 
-// resolveAgentDefinitionEnvVars loads agent.yaml from projectDir, extracts
+// resolveAgentDefinitionEnvVars takes a resolved agent definition, extracts its
 // environment_variables, and resolves all value types:
 //   - Hardcoded values are used as-is
 //   - ${VAR} references are resolved using azdEnvVars via envsubst
 //   - ${{connections.<name>.credentials.<key>}} are resolved via Foundry API
 //
-// Returns nil if no agent.yaml is found or it has no environment_variables.
+// Returns nil when the definition is nil or has no environment_variables.
 // Errors during connection resolution are returned so the caller can decide
 // whether to warn or fail.
 func resolveAgentDefinitionEnvVars(
 	ctx context.Context,
-	projectDir string,
+	agentDef *agent_yaml.ContainerAgent,
 	azdEnvVars map[string]string,
 	endpoint string,
 ) ([]string, error) {
-	// Find agent.yaml in projectDir
-	agentYamlPath := findAgentYaml(projectDir)
-	if agentYamlPath == "" {
-		return nil, nil
-	}
-
-	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // G304: path from findAgentYaml which checks known filenames in projectDir
-	if err != nil {
-		return nil, fmt.Errorf("could not read agent definition %s: %w", agentYamlPath, err)
-	}
-
-	var agentDef agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &agentDef); err != nil {
-		return nil, fmt.Errorf("could not parse agent definition %s: %w", agentYamlPath, err)
-	}
-
-	if agentDef.EnvironmentVariables == nil || len(*agentDef.EnvironmentVariables) == 0 {
+	if agentDef == nil || agentDef.EnvironmentVariables == nil || len(*agentDef.EnvironmentVariables) == 0 {
 		return nil, nil
 	}
 

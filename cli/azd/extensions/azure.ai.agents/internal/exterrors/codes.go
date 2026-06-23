@@ -13,6 +13,11 @@ const (
 // These are usually paired with [Validation] when user input, manifests,
 // or configuration values fail validation.
 const (
+	// CodeInvalidAgentManifest is retained while azd still reads the deprecated
+	// on-disk agent manifest (agent.yaml/agent.manifest.yaml) during the
+	// migration window. Rename or retire it once the on-disk manifest path is
+	// removed and the agent definition is read only from azure.yaml (see the
+	// unify-azure-yaml design, §2.9).
 	CodeInvalidAgentManifest      = "invalid_agent_manifest"
 	CodeInvalidManifestPointer    = "invalid_manifest_pointer"
 	CodeInvalidProjectResourceId  = "invalid_project_resource_id"

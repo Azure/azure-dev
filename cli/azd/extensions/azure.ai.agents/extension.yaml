@@ -5,7 +5,7 @@ displayName: Foundry agents (Preview)
 description: Ship agents with Microsoft Foundry from your terminal. (Preview)
 usage: azd ai agent <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 0.1.41-preview
+version: 0.1.42-preview
 requiredAzdVersion: ">1.25.2"
 dependencies:
   - id: azure.ai.inspector
@@ -22,6 +22,15 @@ providers:
   - name: azure.ai.agent
     type: service-target
     description: Deploys agents to the Foundry Agent Service
+  - name: azure.ai.project
+    type: service-target
+    description: Registers Foundry project service entries so azd up/deploy succeed
+  - name: azure.ai.connection
+    type: service-target
+    description: Registers Foundry connection service entries so azd up/deploy succeed
+  - name: azure.ai.toolbox
+    type: service-target
+    description: Registers Foundry toolbox service entries so azd up/deploy succeed
   - name: microsoft.foundry
     type: provisioning-provider
     description: Provisions a Microsoft Foundry project from azure.yaml without an on-disk infra/ directory

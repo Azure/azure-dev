@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/FileRef.json",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/FileRef.json",
   "title": "External file reference",
   "description": "Replace an inline definition with a reference to an external YAML or JSON file. Sibling properties on the same object act as overlay overrides on top of the loaded file.",
   "type": "object",

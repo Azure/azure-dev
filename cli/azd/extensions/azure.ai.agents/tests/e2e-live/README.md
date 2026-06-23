@@ -56,7 +56,7 @@ Logs for each run are published as the `tier2-live-logs-<BuildId>` artifact.
 
 ## Running locally (Linux / WSL)
 
-Prerequisites: Linux (including WSL) with `tmux` (>= 3.4), Python 3.12+, `azd`
+Prerequisites: Linux (including WSL) with `tmux` (>= 3.2), Python 3.12+, `azd`
 (>= 1.25.5) with the `azure.ai.agents` extension installed, and `az` logged in.
 
 ```bash

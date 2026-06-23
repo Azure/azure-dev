@@ -216,6 +216,7 @@ const (
 	CodeInfraEjectAzureYamlMissing        = "infra_eject_azure_yaml_missing"
 	CodeInfraEjectWriteFailed             = "infra_eject_write_failed"
 	CodeInfraEjectConflictingArguments    = "infra_eject_conflicting_arguments"
+	CodeInfraEjectNetworkUnsupported      = "infra_eject_network_unsupported"
 )
 
 // Operation names for the microsoft.foundry provisioning provider.

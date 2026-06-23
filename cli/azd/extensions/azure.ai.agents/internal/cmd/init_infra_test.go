@@ -306,7 +306,7 @@ services:
 `)
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir))
+		require.NoError(t, ejectInfra(dir, "bicep"))
 	})
 
 	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec // G304: test file path from t.TempDir()
@@ -615,6 +615,42 @@ func TestEjectInfra_Terraform_RefusesWhenInfraExists(t *testing.T) {
 	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
 
 	// The refusal must fire before azure.yaml is touched: provider stays foundry.
+	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test file path from t.TempDir()
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "provider: microsoft.foundry",
+		"azure.yaml must not be stamped when eject refuses")
+}
+
+func TestEjectInfra_Terraform_RefusesWhenNetworkDeclared(t *testing.T) {
+	t.Parallel()
+	// Private networking is Bicep-only: the Terraform module has no VNet / PE /
+	// DNS / networkInjections resources. Ejecting it for a network: service would
+	// silently drop the config and provision a public account. Eject must refuse
+	// rather than emit an insecure template.
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: microsoft.foundry
+services:
+  my-foundry:
+    host: azure.ai.agent
+    network:
+      peSubnet: {vnet: "${AZURE_VNET_ID}", name: pe-subnet}
+    deployments: []
+    agents:
+      - name: my-agent
+        image: registry.io/myorg/myagent:latest
+`)
+
+	err := ejectInfra(dir, "terraform")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected structured azdext.LocalError, got %T", err)
+	assert.Equal(t, exterrors.CodeInfraEjectNetworkUnsupported, localErr.Code)
+
+	// The refusal must fire before any files land or azure.yaml is stamped.
+	_, statErr := os.Stat(filepath.Join(dir, "infra"))
+	assert.True(t, os.IsNotExist(statErr), "infra/ must not be written when eject refuses")
 	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test file path from t.TempDir()
 	require.NoError(t, err)
 	assert.Contains(t, string(raw), "provider: microsoft.foundry",

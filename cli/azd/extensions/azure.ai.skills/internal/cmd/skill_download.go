@@ -28,6 +28,7 @@ type downloadFlags struct {
 	projectEndpoint string
 
 	outputDirSet bool
+	versionSet   bool
 }
 
 type downloadAction struct{ flags *downloadFlags }
@@ -47,9 +48,10 @@ func (a *downloadAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Reject whitespace-only --version to catch scripting bugs like
-	// --version "$UNSET_VAR" that would silently download the default.
-	if a.flags.version != "" && strings.TrimSpace(a.flags.version) == "" {
+	// Reject explicitly-provided but empty/whitespace --version to catch
+	// scripting bugs like --version "$UNSET_VAR" that would otherwise
+	// silently download the default version.
+	if a.flags.versionSet && strings.TrimSpace(a.flags.version) == "" {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--version must not be empty or whitespace-only",
@@ -234,6 +236,7 @@ total uncompressed size.`,
 			flags.name = args[0]
 			flags.output = extCtx.OutputFormat
 			flags.outputDirSet = cmd.Flags().Changed("output-dir")
+			flags.versionSet = cmd.Flags().Changed("version")
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
 			return action.Run(azdext.WithAccessToken(cmd.Context()))
 		},

@@ -12,8 +12,6 @@
 
 ### Other Changes
 
-- [[#8667]](https://github.com/Azure/azure-dev/issues/8667) Standardize the responsive table layouts for `azd extension list`, `azd tool check`, `azd tool list`, and `azd template list`. The list commands now adapt to terminal width with consistent column ordering and labels: at full width all columns are shown (truncating lower-priority values with an ellipsis when needed), at medium width lower-priority columns are hidden behind a `...` indicator with a "Showing N of M columns" hint, and at narrow width rows render as readable cards. `azd extension list` now shows separate `INSTALLED` and `LATEST` version columns, and `azd template list` renders as cards with a dedicated `SOURCE` field.
-
 ## 1.25.6 (2026-06-12)
 
 ### Bugs Fixed

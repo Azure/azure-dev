@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.projects/schemas/azure.ai.project.json",
+  "title": "Azure AI Foundry project service",
+  "description": "Service-level configuration for a host: azure.ai.project entry. The project owns its model deployments and an optional endpoint to an existing project. When endpoint is omitted, azd provisions a new project; when set, azd connects to that existing project instead of creating one.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "endpoint": {
+      "type": "string",
+      "description": "Endpoint URL of an existing Foundry project (e.g. https://my-account.services.ai.azure.com/api/projects/my-project). When set, azd connects to this project instead of provisioning a new one. May contain ${VAR} (azd env, resolved client-side)."
+    },
+    "deployments": {
+      "type": "array",
+      "description": "Model deployments to upsert on the project.",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/Deployment" },
+          { "$ref": "#/definitions/FileRef" }
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "Deployment": {
+      "type": "object",
+      "required": ["name", "model", "sku"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the model deployment."
+        },
+        "model": {
+          "type": "object",
+          "required": ["format", "name", "version"],
+          "additionalProperties": false,
+          "properties": {
+            "format": { "type": "string", "description": "Model format (e.g., 'OpenAI')." },
+            "name": { "type": "string", "description": "Model name (e.g., 'gpt-4.1-mini')." },
+            "version": { "type": "string", "description": "Model version (e.g., '2025-04-14')." }
+          }
+        },
+        "sku": {
+          "type": "object",
+          "required": ["capacity", "name"],
+          "additionalProperties": false,
+          "properties": {
+            "capacity": { "type": "integer", "description": "SKU capacity (TPM units)." },
+            "name": { "type": "string", "description": "SKU name (e.g., 'Standard', 'GlobalStandard', 'GlobalBatch')." }
+          }
+        }
+      }
+    },
+    "FileRef": {
+      "type": "object",
+      "required": ["$ref"],
+      "additionalProperties": true,
+      "properties": {
+        "$ref": {
+          "type": "string",
+          "description": "Path to a YAML or JSON file containing the definition. Relative paths resolve from the file containing this $ref. Absolute paths and URLs are also accepted."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.connections/schemas/azure.ai.connection.json",
+  "title": "Azure AI Foundry connection service",
+  "description": "Service-level configuration for a host: azure.ai.connection entry. The service key is the connection name. azd upserts the connection on the project the entry uses:.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "category": {
+      "type": "string",
+      "description": "Connection category (e.g., 'CustomKeys', 'ApiKey', 'AzureOpenAI', 'CognitiveSearch', 'RemoteTool')."
+    },
+    "target": {
+      "type": "string",
+      "description": "Target endpoint URL or ARM resource ID. May contain ${VAR} (azd env, resolved client-side)."
+    },
+    "authType": {
+      "type": "string",
+      "description": "Authentication type.",
+      "enum": [
+        "AAD",
+        "AccessKey",
+        "AccountKey",
+        "AgenticIdentity",
+        "AgenticIdentityToken",
+        "ApiKey",
+        "CustomKeys",
+        "ManagedIdentity",
+        "None",
+        "OAuth2",
+        "PAT",
+        "ProjectManagedIdentity",
+        "SAS",
+        "ServicePrincipal",
+        "UserEntraToken",
+        "UsernamePassword"
+      ]
+    },
+    "credentials": {
+      "type": "object",
+      "description": "Credentials. Values may contain ${VAR} (azd env, resolved client-side) or ${{...}} (Foundry server-side resolution, passed through untouched).",
+      "additionalProperties": true
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional metadata as key-value pairs.",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

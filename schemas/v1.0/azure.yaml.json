@@ -191,7 +191,12 @@
                             "staticwebapp",
                             "aks",
                             "ai.endpoint",
-                            "azure.ai.agent"
+                            "azure.ai.agent",
+                            "azure.ai.project",
+                            "azure.ai.connection",
+                            "azure.ai.toolbox",
+                            "azure.ai.skill",
+                            "azure.ai.routine"
                         ]
                     },
                     "language": {
@@ -385,6 +390,106 @@
                                 "config": false,
                                 "k8s": false,
                                 "apiVersion": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Azure AI Foundry project host - code-less resource service; composes the project schema at the service level and disables source/container properties",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "azure.ai.project" }
+                            }
+                        },
+                        "then": {
+                            "allOf": [
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.projects/schemas/azure.ai.project.json" }
+                            ],
+                            "properties": {
+                                "project": false,
+                                "runtime": false,
+                                "docker": false,
+                                "image": false,
+                                "config": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Azure AI Foundry connection host - code-less resource service; the service key is the connection name",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "azure.ai.connection" }
+                            }
+                        },
+                        "then": {
+                            "allOf": [
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.connections/schemas/azure.ai.connection.json" }
+                            ],
+                            "properties": {
+                                "project": false,
+                                "runtime": false,
+                                "docker": false,
+                                "image": false,
+                                "config": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Azure AI Foundry toolbox host - code-less resource service; the service key is the toolbox name",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "azure.ai.toolbox" }
+                            }
+                        },
+                        "then": {
+                            "allOf": [
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.toolboxes/schemas/azure.ai.toolbox.json" }
+                            ],
+                            "properties": {
+                                "project": false,
+                                "runtime": false,
+                                "docker": false,
+                                "image": false,
+                                "config": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Azure AI Foundry skill host - code-less resource service; the service key is the skill name",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "azure.ai.skill" }
+                            }
+                        },
+                        "then": {
+                            "allOf": [
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.skills/schemas/azure.ai.skill.json" }
+                            ],
+                            "properties": {
+                                "project": false,
+                                "runtime": false,
+                                "docker": false,
+                                "image": false,
+                                "config": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Azure AI Foundry routine host - code-less resource service; the service key is the routine name and it uses: the agent it invokes",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "azure.ai.routine" }
+                            }
+                        },
+                        "then": {
+                            "allOf": [
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.routines/schemas/azure.ai.routine.json" }
+                            ],
+                            "properties": {
+                                "project": false,
+                                "runtime": false,
+                                "docker": false,
+                                "image": false,
+                                "config": false
                             }
                         }
                     },

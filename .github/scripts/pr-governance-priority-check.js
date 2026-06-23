@@ -200,7 +200,7 @@ module.exports = async ({ github, context, core }) => {
       `### 📋 Prioritization Note`,
       '',
       `Thanks for the contribution! The linked issue isn't in the current milestone yet.`,
-      'Review may take a bit longer — reach out to **@RickWinter** or **@kristenwomack** if you\'d like to discuss prioritization.',
+      'Thank you for logging this issue; our team is reviewing it. If you need urgent prioritization, tag **@RickWinter** and **@kristenwomack** to let us know.',
     ].join('\n');
   }
 

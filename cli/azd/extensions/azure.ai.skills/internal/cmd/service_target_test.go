@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -58,4 +60,26 @@ func TestParseSkillServiceConfig_Empty(t *testing.T) {
 	cfg, err := parseSkillServiceConfig(&azdext.ServiceConfig{Name: "empty", Host: aiSkillHost})
 	require.NoError(t, err)
 	assert.Empty(t, cfg.Instructions)
+}
+
+func TestResolveSkillInstructions_Inline(t *testing.T) {
+	t.Parallel()
+
+	got, err := resolveSkillInstructions(&azdext.ServiceConfig{Name: "inline"}, "Review code for correctness.")
+	require.NoError(t, err)
+	assert.Equal(t, "Review code for correctness.", got)
+}
+
+func TestResolveSkillInstructions_FilePath(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "instructions.md"), []byte("Review from file."), 0600))
+
+	got, err := resolveSkillInstructions(
+		&azdext.ServiceConfig{Name: "file", RelativePath: dir},
+		"instructions.md",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "Review from file.", got)
 }

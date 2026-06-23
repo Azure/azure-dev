@@ -40,7 +40,8 @@ func (s AgentDefinitionSource) IsLegacy() bool {
 
 // MigrationGuideURL points at guidance for migrating older Foundry agent
 // projects onto the unified azure.yaml shape.
-const MigrationGuideURL = "https://github.com/Azure/azure-dev/issues/8773"
+const MigrationGuideURL = "https://github.com/Azure/azure-dev/tree/main/cli/azd/extensions/" +
+	"azure.ai.agents#migrating-legacy-agent-configuration"
 
 var legacyAgentShapeWarnOnce sync.Once
 

@@ -540,8 +540,8 @@ skill of the same name before creating.`,
 	return cmd
 }
 
-// readFileWithLimit reads up to 1 MiB from path. SKILL.md is small in practice;
-// the cap guards against reading a giant file by accident.
+// readFileWithLimit reads up to 1 MiB from path. Skill files are small in
+// practice; the cap guards against reading a giant file by accident.
 func readFileWithLimit(path string) ([]byte, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -554,15 +554,15 @@ func readFileWithLimit(path string) ([]byte, error) {
 	if info.IsDir() {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("--file %s is a directory; expected a SKILL.md file", path),
-			"pass a single .md file",
+			fmt.Sprintf("%s is a directory; expected a skill file", path),
+			"pass a single file",
 		)
 	}
 	const maxBytes = 1 << 20
 	if info.Size() > maxBytes {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("%s exceeds the 1 MiB SKILL.md size limit (got %d bytes)", path, info.Size()),
+			fmt.Sprintf("%s exceeds the 1 MiB skill file size limit (got %d bytes)", path, info.Size()),
 			"split the file into smaller assets and use a package upload",
 		)
 	}

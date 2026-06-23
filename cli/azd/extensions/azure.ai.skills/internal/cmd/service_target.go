@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"azureaiskills/internal/pkg/skill_api"
 
@@ -98,9 +100,9 @@ func (p *skillServiceTarget) Publish(
 }
 
 // Deploy upserts the skill by creating a new default version from the entry's
-// inline instructions. The call is idempotent: re-running deploy creates a new
-// version rather than failing. Removing the service from azure.yaml stops azd
-// managing the skill but does not delete it (use `azd ai skill delete`).
+// instructions. Re-running deploy creates another immutable version rather than
+// failing. Removing the service from azure.yaml stops azd managing the skill but
+// does not delete it (use `azd ai skill delete`).
 func (p *skillServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
@@ -112,10 +114,11 @@ func (p *skillServiceTarget) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	// TODO: when instructions is a file path (.md/.txt), load the file contents
-	// at deploy time, rebasing relative paths to the declaring file.
-	// For now only inline instruction text is upserted.
-	if cfg.Instructions == "" {
+	instructions, err := resolveSkillInstructions(serviceConfig, cfg.Instructions)
+	if err != nil {
+		return nil, err
+	}
+	if instructions == "" {
 		return nil, fmt.Errorf("skill service %q requires instructions", serviceConfig.GetName())
 	}
 
@@ -134,7 +137,7 @@ func (p *skillServiceTarget) Deploy(
 		skill_api.CreateVersionRequest{
 			InlineContent: &skill_api.SkillInlineContent{
 				Description:  cfg.Description,
-				Instructions: cfg.Instructions,
+				Instructions: instructions,
 				AllowedTools: cfg.Tools,
 			},
 			Default: true,
@@ -166,4 +169,34 @@ func parseSkillServiceConfig(svc *azdext.ServiceConfig) (*skillServiceConfig, er
 		return nil, fmt.Errorf("parsing skill service %q config: %w", svc.GetName(), err)
 	}
 	return cfg, nil
+}
+
+func resolveSkillInstructions(svc *azdext.ServiceConfig, instructions string) (string, error) {
+	if !isInstructionFilePath(instructions) {
+		return instructions, nil
+	}
+
+	path := strings.TrimSpace(instructions)
+	if !filepath.IsAbs(path) {
+		baseDir := svc.GetRelativePath()
+		if baseDir == "" {
+			baseDir = "."
+		}
+		path = filepath.Join(baseDir, path)
+	}
+
+	data, err := readFileWithLimit(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func isInstructionFilePath(instructions string) bool {
+	switch strings.ToLower(filepath.Ext(strings.TrimSpace(instructions))) {
+	case ".md", ".txt":
+		return true
+	default:
+		return false
+	}
 }

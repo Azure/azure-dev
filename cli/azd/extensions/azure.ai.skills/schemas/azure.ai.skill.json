@@ -12,7 +12,7 @@
     },
     "instructions": {
       "type": "string",
-      "description": "Inline instruction text, or a file path (.md, .txt) the extension reads at deploy time. A relative path resolves from the file that declares it. ${VAR} and ${{...}} expansion applies to the loaded text."
+      "description": "Inline instruction text, or a file path (.md, .txt) the extension reads at deploy time. A relative path resolves from the service path when set, otherwise from the current project directory."
     },
     "tools": {
       "type": "array",

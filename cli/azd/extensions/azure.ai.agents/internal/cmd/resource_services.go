@@ -59,34 +59,27 @@ func emitResourceServices(
 		usedNames[agentServiceName] = "agent service"
 	}
 
-	// One project service owns the model deployments. Deployments stay an
-	// array on it (there is a single Foundry project and deployments belong
-	// to it). Create it whenever any Foundry resource is emitted -- even with
-	// no deployments (e.g. "Skip model configuration") -- so connections and
-	// toolboxes always have a stable ai-project dependency that enforces
-	// provisioning order.
-	projectServiceName := ""
-	if len(deployments) > 0 || len(connections) > 0 || len(toolboxes) > 0 {
-		projectCfg, err := project.MarshalStruct(&project.ServiceTargetAgentConfig{Deployments: deployments})
-		if err != nil {
-			return fmt.Errorf("marshaling project service config: %w", err)
-		}
-		projectServiceName = aiProjectServiceName
-		if err := reserveServiceName(usedNames, projectServiceName, "project service"); err != nil {
-			return err
-		}
-		if err := addResourceService(ctx, azdClient, projectServiceName, AiProjectHost, projectCfg, nil); err != nil {
-			return err
-		}
-		agentUses = append(agentUses, projectServiceName)
+	// One project service owns the model deployments and represents the single
+	// Foundry project the agent targets. It is always emitted -- even with no
+	// deployments (e.g. "Skip model configuration") -- so every agent has one
+	// stable ai-project sibling that connections and toolboxes can depend on to
+	// enforce provisioning order.
+	projectCfg, err := project.MarshalStruct(&project.ServiceTargetAgentConfig{Deployments: deployments})
+	if err != nil {
+		return fmt.Errorf("marshaling project service config: %w", err)
 	}
+	projectServiceName := aiProjectServiceName
+	if err := reserveServiceName(usedNames, projectServiceName, "project service"); err != nil {
+		return err
+	}
+	if err := addResourceService(ctx, azdClient, projectServiceName, AiProjectHost, projectCfg, nil); err != nil {
+		return err
+	}
+	agentUses = append(agentUses, projectServiceName)
 
-	// Connection and toolbox services depend on the project service when one
-	// exists, so the project is provisioned first.
-	var siblingUses []string
-	if projectServiceName != "" {
-		siblingUses = []string{projectServiceName}
-	}
+	// Connection and toolbox services depend on the project service so the
+	// project is provisioned first.
+	siblingUses := []string{projectServiceName}
 
 	for i := range connections {
 		conn := connections[i]

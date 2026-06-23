@@ -4,6 +4,9 @@
 package cmd
 
 import (
+	"context"
+	"net"
+	"sync"
 	"testing"
 
 	"azureaiagent/internal/project"
@@ -11,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 )
 
 func mustMarshalConfig[T any](t *testing.T, in *T) *azdext.ServiceConfig {
@@ -236,4 +240,130 @@ func TestCollectProjectDeployments_SiblingWinsOverBundled(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, deployments, 1)
 	assert.Equal(t, "gpt-4o", deployments[0].Name)
+}
+
+// recordingProjectServer captures the AddService and SetServiceConfigValue
+// calls emitResourceServices makes, so tests can assert on the emitted
+// azure.yaml service graph without a real azd host.
+type recordingProjectServer struct {
+	azdext.UnimplementedProjectServiceServer
+
+	mu    sync.Mutex
+	added []*azdext.ServiceConfig
+	uses  map[string][]string
+}
+
+func (s *recordingProjectServer) AddService(
+	_ context.Context, req *azdext.AddServiceRequest,
+) (*azdext.EmptyResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.added = append(s.added, req.Service)
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServer) SetServiceConfigValue(
+	_ context.Context, req *azdext.SetServiceConfigValueRequest,
+) (*azdext.EmptyResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.uses == nil {
+		s.uses = map[string][]string{}
+	}
+	if req.Path == "uses" && req.Value != nil {
+		if list, ok := req.Value.AsInterface().([]any); ok {
+			vals := make([]string, 0, len(list))
+			for _, v := range list {
+				if str, ok := v.(string); ok {
+					vals = append(vals, str)
+				}
+			}
+			s.uses[req.ServiceName] = vals
+		}
+	}
+	return &azdext.EmptyResponse{}, nil
+}
+
+// newProjectRecorderClient spins up an in-process gRPC server backed by the
+// supplied project server stub and returns a client wired to its address.
+func newProjectRecorderClient(t *testing.T, server azdext.ProjectServiceServer) *azdext.AzdClient {
+	t.Helper()
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(grpcServer, server)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	serveErr := make(chan error, 1)
+	go func() {
+		if err := grpcServer.Serve(listener); err != nil {
+			serveErr <- err
+		}
+	}()
+
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+		select {
+		case err := <-serveErr:
+			require.ErrorIs(t, err, grpc.ErrServerStopped)
+		default:
+		}
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+
+	return client
+}
+
+// TestEmitResourceServices_AlwaysEmitsProjectService verifies the ai-project
+// service is written even when the agent has no deployments, connections, or
+// toolboxes, and that the agent's uses: is wired to it. The project service is
+// emitted unconditionally as the stable provisioning-order anchor every agent
+// references rather than being gated on a Foundry resource being present.
+func TestEmitResourceServices_AlwaysEmitsProjectService(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+
+	err := emitResourceServices(t.Context(), client, "myagent", nil, nil, nil)
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+
+	require.Len(t, server.added, 1)
+	assert.Equal(t, aiProjectServiceName, server.added[0].Name)
+	assert.Equal(t, AiProjectHost, server.added[0].Host)
+	assert.Equal(t, []string{aiProjectServiceName}, server.uses["myagent"])
+}
+
+// TestEmitResourceServices_WiresSiblingsToProject verifies a connection service
+// is emitted alongside the project service, depends on it via uses: so the
+// project provisions first, and that the agent is wired to both siblings.
+func TestEmitResourceServices_WiresSiblingsToProject(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+
+	conns := []project.Connection{{Name: "myconn", Category: "ApiKey"}}
+	err := emitResourceServices(t.Context(), client, "myagent", nil, conns, nil)
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+
+	require.Len(t, server.added, 2)
+	assert.Equal(t, aiProjectServiceName, server.added[0].Name)
+	assert.Equal(t, AiProjectHost, server.added[0].Host)
+	assert.Equal(t, "myconn", server.added[1].Name)
+	assert.Equal(t, AiConnectionHost, server.added[1].Host)
+
+	assert.Equal(t, []string{aiProjectServiceName}, server.uses["myconn"])
+	assert.Equal(t, []string{aiProjectServiceName, "myconn"}, server.uses["myagent"])
 }

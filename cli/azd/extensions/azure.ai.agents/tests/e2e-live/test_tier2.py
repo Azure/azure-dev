@@ -96,14 +96,17 @@ def run_e2e(deploy_mode, label):
     print(f"[{label}] Starting: deploy_mode={deploy_mode}, sock={sock}")
     print(f"{'='*60}")
 
-    # Hard cap for the whole child run. Must be >= the SUM of the child's own
-    # sequential per-phase bounds in test_full_e2e.py, so this watchdog only
-    # trips for a truly hung child and never preempts a slow-but-healthy run
-    # (which would be a spurious failure AND would skip the child's azd
-    # teardown, leaking live Azure resources). Child phase budget:
+    # Hard cap for the whole child run. Must be strictly GREATER than the SUM of
+    # the child's own sequential per-phase bounds in test_full_e2e.py, so this
+    # watchdog only trips for a truly hung child and never preempts a
+    # slow-but-healthy run (which would be a spurious failure AND would skip the
+    # child's azd teardown, leaking live Azure resources). Child phase budget:
     #   setup ~3m + init ~5m + provision 10m + deploy 10m + invoke ~12m
     #   + teardown 10m  ~= 50m.
-    timeout_s = 3000  # 50 min hard cap per child (>= sum of child phase bounds)
+    # The 10 min margin over that 50m sum is a full extra teardown budget, so even
+    # a run that exhausts every earlier phase still has room to tear down
+    # gracefully before this hard kill fires.
+    timeout_s = 3600  # 60 min hard cap per child (50m phase sum + 10m teardown margin)
     keep_artifacts = os.environ.get("E2E_KEEP_ARTIFACTS", "").lower() in ("1", "true", "yes")
     start = time.time()
     try:

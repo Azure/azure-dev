@@ -730,6 +730,96 @@ func TestResolveHostOptions(t *testing.T) {
 		assert.Len(t, opts, 1)
 	})
 
+	t.Run("ExplicitUnavailableHostInteractivePrompts", func(t *testing.T) {
+		// `--host gemini` names a host that isn't supported/available.
+		// In an interactive terminal we prompt over the hosts that ARE
+		// on PATH instead of hard-failing.
+		a := newAction(
+			[]string{"azure-skills"},
+			&toolInstallFlags{hosts: []string{"gemini"}},
+			[]string{"copilot", "claude"},
+		)
+		mockConsole := a.console.(*mockinput.MockConsole)
+		mockConsole.SetTerminal(true)
+		var prompted []string
+		mockConsole.WhenMultiSelect(func(options input.ConsoleOptions) bool {
+			prompted = options.Options
+			return true
+		}).Respond([]string{"copilot"})
+
+		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.Len(t, opts, 1)
+		// The picker offered the available hosts, not the bogus request.
+		assert.Equal(t, []string{"copilot", "claude"}, prompted)
+	})
+
+	t.Run("ExplicitUnavailableHostNonInteractivePassesThrough", func(t *testing.T) {
+		// Without a TTY we cannot prompt, so the request is passed
+		// through unchanged for the installer to validate and reject.
+		a := newAction(
+			[]string{"azure-skills"},
+			&toolInstallFlags{hosts: []string{"gemini"}},
+			[]string{"copilot", "claude"},
+		)
+		mockConsole := a.console.(*mockinput.MockConsole)
+		prompted := false
+		mockConsole.WhenMultiSelect(func(options input.ConsoleOptions) bool {
+			prompted = true
+			return true
+		}).Respond([]string{"copilot"})
+
+		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.Len(t, opts, 1)
+		assert.False(t, prompted, "must not prompt without a terminal")
+	})
+
+	t.Run("ExplicitUnavailableHostNoneOnPathDefersToGuidance", func(t *testing.T) {
+		// `--host gemini` with no supported host on PATH: skip the picker
+		// and target every available host so the installer surfaces its
+		// install-a-CLI-host guidance.
+		a := newAction(
+			[]string{"azure-skills"},
+			&toolInstallFlags{hosts: []string{"gemini"}},
+			nil,
+		)
+		mockConsole := a.console.(*mockinput.MockConsole)
+		mockConsole.SetTerminal(true)
+		prompted := false
+		mockConsole.WhenMultiSelect(func(options input.ConsoleOptions) bool {
+			prompted = true
+			return true
+		}).Respond([]string{"copilot"})
+
+		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.Len(t, opts, 1)
+		assert.False(t, prompted, "must not prompt when no host is available")
+	})
+
+	t.Run("ExplicitAvailableHostSkipsPrompt", func(t *testing.T) {
+		// A valid, available --host is used directly without prompting,
+		// even in an interactive terminal.
+		a := newAction(
+			[]string{"azure-skills"},
+			&toolInstallFlags{hosts: []string{"copilot"}},
+			[]string{"copilot", "claude"},
+		)
+		mockConsole := a.console.(*mockinput.MockConsole)
+		mockConsole.SetTerminal(true)
+		prompted := false
+		mockConsole.WhenMultiSelect(func(options input.ConsoleOptions) bool {
+			prompted = true
+			return true
+		}).Respond([]string{"claude"})
+
+		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.Len(t, opts, 1)
+		assert.False(t, prompted, "available host must not trigger a prompt")
+	})
+
 	t.Run("ExplicitlyNamedSingleHostReturnsNil", func(t *testing.T) {
 		a := newAction([]string{"azure-skills"}, &toolInstallFlags{}, []string{"copilot"})
 		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})

@@ -650,6 +650,15 @@ func (a *toolInstallAction) resolveHostOptions(
 	}
 
 	if explicit {
+		// "all" expands to every detected host and is validated at
+		// install time. Specific host names are checked here so an
+		// unusable host (unknown name or not on PATH) can fall back to
+		// an interactive picker instead of hard-failing.
+		if !slices.Contains(a.flags.hosts, allHostsKeyword) {
+			if opts, handled, err := a.resolveUnavailableHostPrompt(ctx, skill); handled || err != nil {
+				return opts, err
+			}
+		}
 		return resolveExplicitSkillHosts(a.flags.hosts)
 	}
 
@@ -676,18 +685,12 @@ func (a *toolInstallAction) resolveHostOptions(
 				skill.Id, skill.Id,
 			))
 
-			selected, err := a.console.MultiSelect(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf(
-					"Select the agent host(s) to install %s for", skill.Name,
-				),
-				Options:      present,
-				DefaultValue: []string{present[0]},
-			})
+			opts, err := a.promptForSkillHosts(ctx, skill, present)
 			if err != nil {
-				return nil, fmt.Errorf("selecting hosts: %w", err)
+				return nil, err
 			}
-			if len(selected) > 0 {
-				return []tool.InstallOption{tool.WithHosts(selected...)}, nil
+			if opts != nil {
+				return opts, nil
 			}
 			// Nothing selected — fall through to the guidance error.
 		}
@@ -708,6 +711,83 @@ func (a *toolInstallAction) resolveHostOptions(
 
 	// Zero or one host detected: keep the single preferred-host default.
 	return nil, nil
+}
+
+// resolveUnavailableHostPrompt handles an explicit --host whose named
+// host(s) are not usable (unknown name or not on PATH). In an
+// interactive terminal it tells the user the requested host is
+// unavailable and prompts them to pick from the hosts detected on PATH;
+// the chosen host(s) are returned with handled=true. When no supported
+// host is on PATH at all it defers to the installer's install guidance
+// (handled=true via WithAllAvailableHosts). In non-interactive mode, or
+// when every requested host is already available, it returns
+// handled=false so the caller validates the request as usual.
+func (a *toolInstallAction) resolveUnavailableHostPrompt(
+	ctx context.Context,
+	skill *tool.ToolDefinition,
+) (opts []tool.InstallOption, handled bool, err error) {
+	if !a.console.IsSpinnerInteractive() || a.console.IsNoPromptMode() {
+		return nil, false, nil
+	}
+
+	available := a.manager.AvailableSkillHosts(skill)
+	var unavailable []string
+	for _, host := range a.flags.hosts {
+		if !slices.Contains(available, host) {
+			unavailable = append(unavailable, fmt.Sprintf("%q", host))
+		}
+	}
+	if len(unavailable) == 0 {
+		return nil, false, nil
+	}
+
+	// No usable host on PATH — defer to the installer's install guidance
+	// (recommends installing a CLI host first) by targeting every
+	// available host.
+	if len(available) == 0 {
+		return []tool.InstallOption{tool.WithAllAvailableHosts()}, true, nil
+	}
+
+	a.console.Message(ctx, fmt.Sprintf(
+		"Host %s is not available for %s. Choose from the hosts detected "+
+			"on your PATH:",
+		strings.Join(unavailable, ", "), skill.Name,
+	))
+	picked, err := a.promptForSkillHosts(ctx, skill, available)
+	if err != nil {
+		return nil, false, err
+	}
+	// Nothing selected — let the caller surface the installer's
+	// validation error for the originally requested host.
+	if picked == nil {
+		return nil, false, nil
+	}
+	return picked, true, nil
+}
+
+// promptForSkillHosts shows an interactive multi-select over the given
+// available hosts and returns the matching install option, or (nil, nil)
+// when the user selects nothing so callers can fall back to their own
+// guidance.
+func (a *toolInstallAction) promptForSkillHosts(
+	ctx context.Context,
+	skill *tool.ToolDefinition,
+	available []string,
+) ([]tool.InstallOption, error) {
+	selected, err := a.console.MultiSelect(ctx, input.ConsoleOptions{
+		Message: fmt.Sprintf(
+			"Select the agent host(s) to install %s for", skill.Name,
+		),
+		Options:      available,
+		DefaultValue: []string{available[0]},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("selecting hosts: %w", err)
+	}
+	if len(selected) == 0 {
+		return nil, nil
+	}
+	return []tool.InstallOption{tool.WithHosts(selected...)}, nil
 }
 
 // dryRun detects the current status of the requested tools and

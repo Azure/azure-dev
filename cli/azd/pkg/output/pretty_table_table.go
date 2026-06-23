@@ -225,8 +225,8 @@ func colorLineLikeValue(colorFunc func(string) string, value, line string) strin
 	// Transfer the leading/trailing escape sequences that wrap the value onto
 	// the visible line. colorFunc embeds value verbatim between a leading SGR
 	// prefix and a trailing reset.
-	if idx := strings.Index(colored, value); idx >= 0 {
-		return colored[:idx] + line + colored[idx+len(value):]
+	if before, after, ok := strings.Cut(colored, value); ok {
+		return before + line + after
 	}
 	// Fallback: color the line directly.
 	return colorFunc(line)

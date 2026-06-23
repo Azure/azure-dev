@@ -396,7 +396,7 @@ func TestAlignLeadingSymbols(t *testing.T) {
 func TestResponsiveStatusAlignment(t *testing.T) {
 	// dataLineContaining returns the stripped rendered line containing substr.
 	dataLineContaining := func(out, substr string) string {
-		for _, line := range strings.Split(out, "\n") {
+		for line := range strings.SplitSeq(out, "\n") {
 			if strings.Contains(line, substr) {
 				return line
 			}

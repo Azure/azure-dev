@@ -486,12 +486,20 @@ func (i *installer) runSkill(
 	}
 
 	// 3. Install / upgrade for each target host, collecting outcomes.
+	//    Print a header before each host so the host CLI's streamed
+	//    output (it runs interactively) is clearly attributed to the
+	//    host it belongs to.
+	verb := "Installing"
+	if upgrade {
+		verb = "Upgrading"
+	}
 	var (
 		succeeded []string
 		failures  []error
 		version   string
 	)
 	for _, host := range targets {
+		fmt.Fprintf(os.Stderr, "\n%s %s in %s\n", verb, tool.Name, host.Host)
 		hostVersion, hostErr := i.installSkillForHost(ctx, tool, host, upgrade)
 		if hostErr != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
@@ -631,6 +639,25 @@ func (i *installer) resolveSkillTargets(
 				if len(targets) > 0 {
 					return targets, nil
 				}
+			}
+
+			// The skill is not installed on any available host. Don't
+			// fall through to pickSkillHost — updating a plugin that was
+			// never installed only produces a confusing "verification
+			// failed" error. Point the user at install instead. No Links:
+			// the suggestion is a self-contained azd command, so there is
+			// nothing to link (cf. managerUnavailableError).
+			return nil, &errorhandler.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"%s is not installed on any available host",
+					tool.Name,
+				),
+				Message: "Cannot upgrade " + tool.Name,
+				Suggestion: fmt.Sprintf(
+					"%s is not installed yet. Install it first:\n\n"+
+						"    azd tool install %s",
+					tool.Name, tool.Id,
+				),
 			}
 		}
 		host, err := i.pickSkillHost(tool)

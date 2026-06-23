@@ -1191,6 +1191,24 @@ func captureLog(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
+// captureStderr redirects os.Stderr to a temp file for the duration of
+// fn and returns everything written to it. NOT parallel-safe: it mutates
+// the global os.Stderr, so callers must not use t.Parallel().
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "stderr-*.txt")
+	require.NoError(t, err)
+	prev := os.Stderr
+	os.Stderr = f
+	t.Cleanup(func() { os.Stderr = prev })
+	fn()
+	os.Stderr = prev
+	require.NoError(t, f.Close())
+	data, err := os.ReadFile(f.Name())
+	require.NoError(t, err)
+	return string(data)
+}
+
 // installedDetector is a mockDetector that always reports the tool as
 // installed with the given version.
 func installedDetector(version string) *mockDetector {
@@ -1523,6 +1541,97 @@ func TestRunSkill_Upgrade_AllInstalledHosts(t *testing.T) {
 		"upgrade with no --host must refresh every installed host")
 	assert.Contains(t, result.Strategy, "copilot")
 	assert.Contains(t, result.Strategy, "claude")
+}
+
+// TestRunSkill_Upgrade_PrintsPerHostHeader verifies a header line is
+// printed before each host's (interactive) command output so the user
+// can tell which host the streamed output belongs to.
+func TestRunSkill_Upgrade_PrintsPerHostHeader(t *testing.T) {
+	// NOT parallel: captureStderr mutates the global os.Stderr.
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot", "claude")
+	runner.MockToolInPath("node", nil)
+
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
+			slices.Contains(args.Args, "update")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			return []InstalledSkillHost{
+				{Host: "copilot", Version: "1.1.71"},
+				{Host: "claude", Version: "1.1.71"},
+			}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	var result *InstallResult
+	stderr := captureStderr(t, func() {
+		var err error
+		result, err = inst.Upgrade(t.Context(), newSkillTool())
+		require.NoError(t, err)
+	})
+
+	require.True(t, result.Success, "result.Error=%v", result.Error)
+	assert.Contains(t, stderr, "Upgrading Test Azure Skills in copilot")
+	assert.Contains(t, stderr, "Upgrading Test Azure Skills in claude")
+}
+
+// TestRunSkill_Upgrade_NoHost_NotInstalled_ReturnsInstallGuidance
+// verifies that `azd tool upgrade <skill>` with no --host, when the
+// skill is installed on no available host, returns a clear "install
+// first" guidance error instead of falling through to a host and
+// attempting to update a plugin that was never installed (which used to
+// produce a confusing "verification failed" error).
+func TestRunSkill_Upgrade_NoHost_NotInstalled_ReturnsInstallGuidance(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot", "claude") // both on PATH
+	runner.MockToolInPath("node", nil)
+
+	updateRan := false
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return (args.Cmd == "copilot" || args.Cmd == "claude") &&
+			slices.Contains(args.Args, "update")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		updateRan = true
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// The skill is installed on no host.
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			return nil, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Upgrade(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	assert.False(t, updateRan,
+		"must not attempt to update a skill that is not installed")
+
+	ews, ok := errors.AsType[*errorhandler.ErrorWithSuggestion](result.Error)
+	require.True(t, ok,
+		"expected *errorhandler.ErrorWithSuggestion, got %T: %v",
+		result.Error, result.Error,
+	)
+	assert.NotEmpty(t, ews.Err)
+	assert.NotEmpty(t, ews.Message)
+	assert.NotEmpty(t, ews.Suggestion)
+	assert.Contains(t, result.Error.Error(), "not installed on any available host")
+	assert.Contains(t, ews.Suggestion, "azd tool install test-azure-skills")
 }
 
 // TestRunSkill_Upgrade_AllAvailable_SkipsNotInstalled verifies that

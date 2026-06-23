@@ -730,6 +730,40 @@ func TestResolveHostOptions(t *testing.T) {
 		assert.Len(t, opts, 1)
 	})
 
+	t.Run("ExplicitlyNamedMultipleHostsPromptErrorPropagates", func(t *testing.T) {
+		// A failing prompt surfaces the error rather than silently
+		// falling back.
+		a := newAction([]string{"azure-skills"}, &toolInstallFlags{}, []string{"copilot", "claude"})
+		mockConsole := a.console.(*mockinput.MockConsole)
+		mockConsole.SetTerminal(true)
+		mockConsole.WhenMultiSelect(func(options input.ConsoleOptions) bool {
+			return true
+		}).RespondFn(func(_ input.ConsoleOptions) (any, error) {
+			return []string(nil), errors.New("prompt boom")
+		})
+
+		_, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "prompt boom")
+	})
+
+	t.Run("ExplicitlyNamedMultipleHostsEmptySelectionFallsBackToError", func(t *testing.T) {
+		// Selecting nothing in the picker falls back to the guidance
+		// error telling the user to re-run with --host.
+		a := newAction([]string{"azure-skills"}, &toolInstallFlags{}, []string{"copilot", "claude"})
+		mockConsole := a.console.(*mockinput.MockConsole)
+		mockConsole.SetTerminal(true)
+		mockConsole.WhenMultiSelect(func(options input.ConsoleOptions) bool {
+			return true
+		}).Respond([]string{})
+
+		_, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		require.Error(t, err)
+		var sug *internal.ErrorWithSuggestion
+		require.ErrorAs(t, err, &sug)
+		assert.Contains(t, sug.Suggestion, "--host all")
+	})
+
 	t.Run("ExplicitUnavailableHostInteractivePrompts", func(t *testing.T) {
 		// `--host gemini` names a host that isn't supported/available.
 		// In an interactive terminal we prompt over the hosts that ARE
@@ -796,6 +830,46 @@ func TestResolveHostOptions(t *testing.T) {
 		require.NoError(t, err)
 		assert.Len(t, opts, 1)
 		assert.False(t, prompted, "must not prompt when no host is available")
+	})
+
+	t.Run("ExplicitUnavailableHostMultiSelectErrorPropagates", func(t *testing.T) {
+		// A failing picker during the unavailable-host fallback surfaces
+		// the error.
+		a := newAction(
+			[]string{"azure-skills"},
+			&toolInstallFlags{hosts: []string{"gemini"}},
+			[]string{"copilot", "claude"},
+		)
+		mockConsole := a.console.(*mockinput.MockConsole)
+		mockConsole.SetTerminal(true)
+		mockConsole.WhenMultiSelect(func(options input.ConsoleOptions) bool {
+			return true
+		}).RespondFn(func(_ input.ConsoleOptions) (any, error) {
+			return []string(nil), errors.New("picker boom")
+		})
+
+		_, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "picker boom")
+	})
+
+	t.Run("ExplicitUnavailableHostEmptySelectionPassesThrough", func(t *testing.T) {
+		// Selecting nothing leaves the original request intact so the
+		// installer surfaces its validation error for the bad host.
+		a := newAction(
+			[]string{"azure-skills"},
+			&toolInstallFlags{hosts: []string{"gemini"}},
+			[]string{"copilot", "claude"},
+		)
+		mockConsole := a.console.(*mockinput.MockConsole)
+		mockConsole.SetTerminal(true)
+		mockConsole.WhenMultiSelect(func(options input.ConsoleOptions) bool {
+			return true
+		}).Respond([]string{})
+
+		opts, err := a.resolveHostOptions(ctx, []*tool.ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.Len(t, opts, 1)
 	})
 
 	t.Run("ExplicitAvailableHostSkipsPrompt", func(t *testing.T) {

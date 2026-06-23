@@ -22,6 +22,7 @@ import (
 
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
+	"azureaiagent/internal/pkg/paths"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -118,7 +119,10 @@ func (a *OptimizeApplyAction) apply(
 		return err
 	}
 
-	serviceDir := filepath.Join(project.Path, svc.RelativePath)
+	serviceDir, err := paths.JoinAllowRoot(project.Path, svc.RelativePath)
+	if err != nil {
+		return fmt.Errorf("invalid service path for %s: %w", svc.Name, err)
+	}
 	candidateDir := filepath.Join(serviceDir, agentConfigsDir, a.flags.candidate)
 
 	_, _ = bold.Fprintf(out, "Applying optimization candidate %s...\n\n", a.flags.candidate)

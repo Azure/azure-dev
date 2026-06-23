@@ -377,9 +377,9 @@ func (m *ValidationManager) onPrepareContextChunk(
 
 	// Only the IsLastKey chunk carries the request_id the core's SendAndWait
 	// blocks on; every other chunk is fire-and-forget on the core side. To
-	// avoid acking with the wrong request_id (which would leave the core
-	// blocked until cancellation), non-IsLastKey handlers never ack — even if
-	// they happen to be the handler that completes assembly.
+	// avoid sending an ack with the wrong request_id (which would leave the
+	// core blocked until cancellation), non-IsLastKey handlers never ack —
+	// even if they happen to be the handler that completes assembly.
 	if !chunk.GetIsLastKey() {
 		return nil, nil
 	}

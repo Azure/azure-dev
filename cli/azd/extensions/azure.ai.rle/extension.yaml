@@ -13,24 +13,12 @@ tags:
 usage: azd ai rle <command> [options]
 version: 0.1.0-preview
 examples:
-  - name: create
-    description: Create or update an RLE environment.
-    usage: azd ai rle create <name> --endpoint http://localhost:5000 --account local --project demo
-  - name: list
-    description: List RLE environments.
-    usage: azd ai rle list --endpoint http://localhost:5000 --account local --project demo
-  - name: show
-    description: Show an RLE environment.
-    usage: azd ai rle show <environment-id> --endpoint http://localhost:5000 --account local --project demo
-  - name: versions
-    description: List RLE environment versions.
-    usage: azd ai rle versions <environment-id> --endpoint http://localhost:5000 --account local --project demo
-  - name: sandbox create
-    description: Create an RLE sandbox for an environment.
-    usage: azd ai rle sandbox create <environment-id> --endpoint http://localhost:5000 --project demo
-  - name: sandbox list
-    description: List RLE sandboxes for an environment.
-    usage: azd ai rle sandbox list <environment-id> --endpoint http://localhost:5000 --project demo
-  - name: sandbox show
-    description: Show an RLE sandbox.
-    usage: azd ai rle sandbox show <environment-id> <sandbox-id> --endpoint http://localhost:5000 --project demo
+  - name: init
+    description: Scaffold a local RLE environment.
+    usage: azd ai rle init code_rl
+  - name: deploy
+    description: Create or update the RLE environment.
+    usage: azd ai rle deploy
+  - name: invoke
+    description: Placeholder for triggering an RLE training job.
+    usage: azd ai rle invoke

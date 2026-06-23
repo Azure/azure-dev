@@ -23,12 +23,17 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
-	rootCmd.AddCommand(newCreateCommand())
-	rootCmd.AddCommand(newListCommand())
-	rootCmd.AddCommand(newModifyCommand())
-	rootCmd.AddCommand(newSandboxCommand())
-	rootCmd.AddCommand(newShowCommand())
-	rootCmd.AddCommand(newVersionsCommand())
+	defaultHelp := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		if cmd == rootCmd {
+			printBanner(cmd.OutOrStdout())
+		}
+		defaultHelp(cmd, args)
+	})
+
+	rootCmd.AddCommand(newDeployCommand())
+	rootCmd.AddCommand(newInitCommand())
+	rootCmd.AddCommand(newInvokeCommand())
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
 

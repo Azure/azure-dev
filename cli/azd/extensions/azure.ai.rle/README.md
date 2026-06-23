@@ -12,15 +12,15 @@ git checkout farhannawaz/rle-cli
 cd cli\azd\extensions\azure.ai.rle
 ```
 
-### 2. Start the local RLE control plane
+### 2. Configure the RLE control plane
 
-Follow the existing [RLE service setup](https://msdata.visualstudio.com/Vienna/_git/vienna?path=/src/azureml-api/src/RLE).
-
-The examples below assume the RLE control plane is running at:
-
-```text
-http://localhost:5000
+```powershell
+$env:RLE_ENDPOINT = "https://rle-controlplane.orangeground-ba9696de.eastus2.azurecontainerapps.io"
+$env:RLE_PROJECT_NAME = "demo-3"
+$env:RLE_ACR_IMAGE = "devrle.azurecr.io/coding_env:latest"
 ```
+
+To target a local control plane instead, set `RLE_ENDPOINT` to `http://localhost:5000`.
 
 ### 3. Install the extension into azd
 
@@ -51,40 +51,27 @@ azd ai rle --help
 azd ai rle version
 ```
 
-### 4. Create an RLE environment
+### 4. Initialize a local RLE session
 
 ```powershell
-$env:AZD_RLE_CONTROL_PLANE = "http://localhost:5000"
-$project = "demo"
-$image = "devrle.azurecr.io/coding_env:latest"
-$environmentName = "coding-env-e2e"
-
-azd ai rle create $environmentName `
-  --project $project `
-  --image $image
+azd ai rle init code_rl
 ```
 
-Copy the generated environment id from the output.
+Init creates a local session folder named `code_rl`, including an OpenEnv-style FastAPI package, `Dockerfile`, and `rle.yaml`.
 
-You can list or show environments with:
+Deploy from the session folder:
 
 ```powershell
-azd ai rle list --project $project
-azd ai rle show <environment-id> --project $project
-azd ai rle versions <environment-id> --project $project
+cd .\code_rl
+azd ai rle deploy
 ```
 
-### 5. Create a sandbox
+Deploy creates or updates the RLE environment and saves the environment id/version locally.
 
-Disk image conversion starts automatically after environment creation. If sandbox creation returns `conversion status: Pending`, wait and retry the same command.
+### 5. Training placeholder
 
 ```powershell
-azd ai rle sandbox create <environment-id> --project $project
+azd ai rle invoke
 ```
 
-After the sandbox is created, inspect it with:
-
-```powershell
-azd ai rle sandbox list <environment-id> --project $project
-azd ai rle sandbox show <environment-id> <sandbox-id> --project $project
-```
+This command is a placeholder for now. Later, it will trigger the actual training job for the deployed RLE environment.

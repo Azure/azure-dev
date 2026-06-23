@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -20,6 +19,7 @@ type sharedFlags struct {
 
 type createFlags struct {
 	sharedFlags
+	recipe  string
 	image   string
 	version string
 }
@@ -30,6 +30,7 @@ func newCreateCommand() *cobra.Command {
 			account: defaultAccountName,
 			project: defaultProjectName,
 		},
+		recipe:  defaultRecipeName,
 		version: "1.0.0",
 	}
 
@@ -40,40 +41,36 @@ func newCreateCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			environmentId := slug(name)
+			image, err := resolveRecipeImage(flags.recipe, flags.image)
+			if err != nil {
+				return err
+			}
+
 			client := newRleClient(resolveControlPlaneEndpoint(flags.endpoint))
 			environment, err := client.createOrUpdateEnvironment(
 				cmd.Context(),
 				flags.account,
 				flags.project,
 				environmentId,
-				newManifest(environmentId, name, flags.image, flags.version),
+				newEnvironmentCreateRequest(environmentId, name, image, flags.version),
 			)
 			if err != nil {
 				return serviceError(err)
 			}
 
-			encoded, err := json.MarshalIndent(environment, "", "  ")
-			if err != nil {
-				return err
+			if isJsonOutput(cmd) {
+				return printJson(cmd, environment)
 			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
-			return err
+
+			return printEnvironmentCreated(cmd, environment, flags)
 		},
 	}
 
 	addSharedFlags(cmd, &flags.sharedFlags)
-	cmd.Flags().StringVar(&flags.image, "image", "", "Container image for the RLE environment")
+	cmd.Flags().StringVar(&flags.recipe, "recipe", flags.recipe, "Recipe to use for the RLE environment")
+	cmd.Flags().StringVar(&flags.image, "image", "", "Container image for the RLE environment. Overrides --recipe")
 	cmd.Flags().StringVar(&flags.version, "version-label", flags.version, "Environment version label")
 	return cmd
-}
-
-func notImplementedError(commandName string, resourceName string) error {
-	return &azdext.LocalError{
-		Message:    fmt.Sprintf("azd ai rle %s is not implemented yet for %q.", commandName, resourceName),
-		Code:       fmt.Sprintf("%s_not_implemented", commandName),
-		Category:   azdext.LocalErrorCategoryCompatibility,
-		Suggestion: "Add the RLE service workflow for this command, then try again.",
-	}
 }
 
 func serviceError(err error) error {
@@ -116,4 +113,36 @@ func slug(name string) string {
 		}
 	}
 	return strings.Trim(builder.String(), "-")
+}
+
+func printEnvironmentCreated(cmd *cobra.Command, environment *environmentResource, flags *createFlags) error {
+	nextCommand := nextSandboxCreateCommand(environment.Id, flags.sharedFlags)
+	_, err := fmt.Fprintf(
+		cmd.OutOrStdout(),
+		"Environment created: %s\nName: %s\nImage: %s\n\nNext:\n  %s\n",
+		environment.Id,
+		environment.Name,
+		environment.Manifest.Runtime.Image,
+		nextCommand,
+	)
+	return err
+}
+
+func nextSandboxCreateCommand(environmentId string, flags sharedFlags) string {
+	command := fmt.Sprintf("azd ai rle sandbox create %s --wait", environmentId)
+	command = appendNonDefaultSharedFlags(command, flags)
+	return command
+}
+
+func appendNonDefaultSharedFlags(command string, flags sharedFlags) string {
+	if flags.project != "" && flags.project != defaultProjectName {
+		command += fmt.Sprintf(" --project %s", flags.project)
+	}
+	if flags.account != "" && flags.account != defaultAccountName {
+		command += fmt.Sprintf(" --account %s", flags.account)
+	}
+	if flags.endpoint != "" {
+		command += fmt.Sprintf(" --endpoint %s", flags.endpoint)
+	}
+	return command
 }

@@ -27,17 +27,45 @@ type rleClient struct {
 	httpClient *http.Client
 }
 
-type environmentManifest struct {
-	Name         string `json:"name"`
+type environmentCreateRequest struct {
+	Id           string         `json:"id"`
+	Name         string         `json:"name"`
+	VersionLabel string         `json:"versionLabel"`
+	Runtime      runtimeSpec    `json:"runtime"`
+	World        worldSpec      `json:"world"`
+	Compliance   complianceSpec `json:"compliance"`
+}
+
+type v1EnvironmentRequest struct {
+	Name         string `json:"name,omitempty"`
 	AcrImagePath string `json:"acrImagePath"`
 }
 
+type runtimeSpec struct {
+	Mode  string `json:"mode"`
+	Image string `json:"image,omitempty"`
+}
+
+type worldSpec struct {
+	Capability string `json:"capability"`
+}
+
+type complianceSpec struct {
+	Boundary string `json:"boundary"`
+}
+
 type environmentResource struct {
-	Id           string `json:"id"`
-	Name         string `json:"name"`
-	ProjectId    string `json:"projectId,omitempty"`
-	AcrImagePath string `json:"acrImagePath,omitempty"`
-	Version      string `json:"version,omitempty"`
+	Id           string                   `json:"id"`
+	ProjectId    string                   `json:"projectId,omitempty"`
+	Name         string                   `json:"name,omitempty"`
+	AcrImagePath string                   `json:"acrImagePath,omitempty"`
+	Version      string                   `json:"version,omitempty"`
+	CreatedAtUtc string                   `json:"createdAtUtc,omitempty"`
+	UpdatedAtUtc string                   `json:"updatedAtUtc,omitempty"`
+	AccountName  string                   `json:"accountName,omitempty"`
+	ProjectName  string                   `json:"projectName,omitempty"`
+	VersionLabel string                   `json:"versionLabel,omitempty"`
+	Manifest     environmentCreateRequest `json:"manifest,omitempty"`
 }
 
 type listEnvironmentsResponse struct {
@@ -77,6 +105,22 @@ type listSandboxesResponse struct {
 	Value []sandboxResource `json:"value"`
 }
 
+type environmentInstanceCreateRequest struct {
+	VersionLabel string            `json:"versionLabel,omitempty"`
+	Provider     string            `json:"provider,omitempty"`
+	Environment  map[string]string `json:"environmentVariables,omitempty"`
+}
+
+type environmentInstanceResource struct {
+	Id            string `json:"id"`
+	EnvironmentId string `json:"environmentId,omitempty"`
+	VersionLabel  string `json:"versionLabel,omitempty"`
+	Status        string `json:"status,omitempty"`
+	Provider      string `json:"provider,omitempty"`
+	Endpoint      string `json:"endpoint,omitempty"`
+	Reason        string `json:"reason,omitempty"`
+}
+
 type rleHTTPError struct {
 	statusCode int
 	body       string
@@ -102,6 +146,9 @@ func resolveControlPlaneEndpoint(endpoint string) string {
 	if endpoint = os.Getenv("AZD_RLE_CONTROL_PLANE"); endpoint != "" {
 		return endpoint
 	}
+	if endpoint = os.Getenv("RLE_ENDPOINT"); endpoint != "" {
+		return endpoint
+	}
 	if endpoint = os.Getenv("RLE_CONTROL_PLANE"); endpoint != "" {
 		return endpoint
 	}
@@ -113,17 +160,77 @@ func (c *rleClient) createOrUpdateEnvironment(
 	account string,
 	project string,
 	environmentId string,
-	manifest environmentManifest,
+	request environmentCreateRequest,
 ) (*environmentResource, error) {
-	_ = account
-	_ = environmentId
+	path := fmt.Sprintf(
+		"/rle/v1.0/accounts/%s/projects/%s/environments/%s",
+		url.PathEscape(account),
+		url.PathEscape(project),
+		url.PathEscape(environmentId),
+	)
+
+	var result environmentResource
+	if err := c.do(ctx, http.MethodPut, path, request, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (c *rleClient) createV1Environment(
+	ctx context.Context,
+	project string,
+	request v1EnvironmentRequest,
+) (*environmentResource, error) {
 	path := fmt.Sprintf(
 		"/rle/v1.0/projects/%s/environments",
 		url.PathEscape(project),
 	)
 
 	var result environmentResource
-	if err := c.do(ctx, http.MethodPost, path, manifest, &result); err != nil {
+	if err := c.do(ctx, http.MethodPost, path, request, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (c *rleClient) updateV1Environment(
+	ctx context.Context,
+	project string,
+	environmentId string,
+	request v1EnvironmentRequest,
+) (*environmentResource, error) {
+	path := fmt.Sprintf(
+		"/rle/v1.0/projects/%s/environments/%s",
+		url.PathEscape(project),
+		url.PathEscape(environmentId),
+	)
+
+	var result environmentResource
+	if err := c.do(ctx, http.MethodPut, path, request, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (c *rleClient) createEnvironmentInstance(
+	ctx context.Context,
+	account string,
+	project string,
+	environmentId string,
+	request environmentInstanceCreateRequest,
+) (*environmentInstanceResource, error) {
+	path := fmt.Sprintf(
+		"/rle/v1.0/accounts/%s/projects/%s/environments/%s/instances",
+		url.PathEscape(account),
+		url.PathEscape(project),
+		url.PathEscape(environmentId),
+	)
+
+	var result environmentInstanceResource
+	if err := c.do(ctx, http.MethodPost, path, request, &result); err != nil {
 		return nil, err
 	}
 
@@ -304,11 +411,20 @@ func (c *rleClient) do(ctx context.Context, method string, path string, body any
 	return nil
 }
 
-func newManifest(environmentId string, name string, image string, version string) environmentManifest {
-	_ = environmentId
-	_ = version
-	return environmentManifest{
+func newEnvironmentCreateRequest(environmentId string, name string, image string, version string) environmentCreateRequest {
+	return environmentCreateRequest{
+		Id:           environmentId,
 		Name:         name,
-		AcrImagePath: image,
+		VersionLabel: version,
+		Runtime: runtimeSpec{
+			Mode:  "container",
+			Image: image,
+		},
+		World: worldSpec{
+			Capability: "eval",
+		},
+		Compliance: complianceSpec{
+			Boundary: "foundry",
+		},
 	}
 }

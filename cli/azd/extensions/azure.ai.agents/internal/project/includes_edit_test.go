@@ -139,6 +139,58 @@ services:
 	assert.False(t, isRef)
 }
 
+// TestEntryRef_EdgeCases documents the intentional divergence from the resolver for
+// degenerate $ref values: EntryRef falls back to (false) rather than erroring, so the
+// write path treats the entry as inline. The read path (ResolveFileRefs) will surface
+// CodeInvalidFileRef on these same inputs — the divergence is safe because the write
+// still lands somewhere, and the read failure gives a clear diagnostic.
+func TestEntryRef_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		wantRef bool
+		wantVal string
+	}{
+		{
+			name: "empty $ref falls back to not-a-ref",
+			yaml: "services:\n  svc:\n    $ref: \"\"\n",
+		},
+		{
+			name: "whitespace-only $ref falls back to not-a-ref",
+			yaml: "services:\n  svc:\n    $ref: \"   \"\n",
+		},
+		{
+			name: "no $ref key at all",
+			yaml: "services:\n  svc:\n    kind: prompt\n",
+		},
+		{
+			name:    "numeric $ref value is coerced to string — treated as ref",
+			yaml:    "services:\n  svc:\n    $ref: 123\n",
+			wantRef: true,
+			wantVal: "123",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := ParseYAMLDocument("azure.yaml", []byte(tc.yaml))
+			require.NoError(t, err)
+			entry, err := doc.ServiceEntry("svc", false)
+			require.NoError(t, err)
+			got, isRef := EntryRef(entry)
+			assert.Equal(t, tc.wantRef, isRef)
+			if tc.wantRef {
+				assert.Equal(t, tc.wantVal, got)
+			}
+		})
+	}
+}
+
+// TestEntryRef_NilEntry documents that EntryRef is nil-safe.
+func TestEntryRef_NilEntry(t *testing.T) {
+	_, isRef := EntryRef(nil)
+	assert.False(t, isRef)
+}
+
 func TestYAMLDocument_SetServiceField_InlineOverlayAndAgreement(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "agents/research-agent.yaml", `

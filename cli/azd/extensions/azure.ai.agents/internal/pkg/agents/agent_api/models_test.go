@@ -1378,9 +1378,9 @@ func TestAgentEndpoint_ProtocolConfiguration_RoundTrip(t *testing.T) {
 			Activity:      &ActivityProtocolConfiguration{EnableM365PublicEndpoint: new(true)},
 			Responses:     &ResponsesProtocolConfiguration{},
 			A2A:           &A2AProtocolConfiguration{},
-			MCP:           &McpProtocolConfiguration{},
+			MCP:           &MCPProtocolConfiguration{},
 			Invocations:   &InvocationsProtocolConfiguration{},
-			InvocationsWs: &InvocationsWsProtocolConfiguration{},
+			InvocationsWS: &InvocationsWSProtocolConfiguration{},
 		},
 	}
 
@@ -1426,7 +1426,7 @@ func TestAgentEndpoint_ProtocolConfiguration_RoundTrip(t *testing.T) {
 	if got.ProtocolConfiguration.Invocations == nil {
 		t.Error("Invocations is nil")
 	}
-	if got.ProtocolConfiguration.InvocationsWs == nil {
-		t.Error("InvocationsWs is nil")
+	if got.ProtocolConfiguration.InvocationsWS == nil {
+		t.Error("InvocationsWS is nil")
 	}
 }

@@ -154,24 +154,24 @@ type ResponsesProtocolConfiguration struct{}
 // A2AProtocolConfiguration describes configuration specific to the A2A protocol.
 type A2AProtocolConfiguration struct{}
 
-// McpProtocolConfiguration describes configuration specific to the MCP protocol.
-type McpProtocolConfiguration struct{}
+// MCPProtocolConfiguration describes configuration specific to the MCP protocol.
+type MCPProtocolConfiguration struct{}
 
 // InvocationsProtocolConfiguration describes configuration specific to the invocations protocol.
 type InvocationsProtocolConfiguration struct{}
 
-// InvocationsWsProtocolConfiguration describes configuration specific to the WebSocket-based invocations protocol.
-type InvocationsWsProtocolConfiguration struct{}
+// InvocationsWSProtocolConfiguration describes configuration specific to the WebSocket-based invocations protocol.
+type InvocationsWSProtocolConfiguration struct{}
 
 // ProtocolConfiguration describes per-protocol configuration for the agent endpoint.
 // The presence of a key declares the protocol is enabled.
 type ProtocolConfiguration struct {
-	Activity      *ActivityProtocolConfiguration      `json:"activity,omitempty"`
-	Responses     *ResponsesProtocolConfiguration     `json:"responses,omitempty"`
-	A2A           *A2AProtocolConfiguration           `json:"a2a,omitempty"`
-	MCP           *McpProtocolConfiguration           `json:"mcp,omitempty"`
-	Invocations   *InvocationsProtocolConfiguration   `json:"invocations,omitempty"`
-	InvocationsWs *InvocationsWsProtocolConfiguration `json:"invocations_ws,omitempty"`
+	Activity      *ActivityProtocolConfiguration       `json:"activity,omitempty"`
+	Responses     *ResponsesProtocolConfiguration      `json:"responses,omitempty"`
+	A2A           *A2AProtocolConfiguration            `json:"a2a,omitempty"`
+	MCP           *MCPProtocolConfiguration            `json:"mcp,omitempty"`
+	Invocations   *InvocationsProtocolConfiguration    `json:"invocations,omitempty"`
+	InvocationsWS *InvocationsWSProtocolConfiguration  `json:"invocations_ws,omitempty"`
 }
 
 // AgentEndpoint describes the endpoint configuration for an agent.

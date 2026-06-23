@@ -1,0 +1,464 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package routines
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
+	"testing"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// newTestClient creates a Client with a pipeline that skips auth (no TLS
+// requirement) pointing at a local httptest server.
+func newTestClient(t *testing.T, handler http.Handler) (*Client, *httptest.Server) {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	// Build a pipeline without bearer-token policy so plain HTTP works.
+	pipeline := azruntime.NewPipeline("test", "v0", azruntime.PipelineOptions{}, &policy.ClientOptions{})
+	client := &Client{
+		endpoint: srv.URL + "/api/projects/test-project",
+		pipeline: pipeline,
+	}
+	return client, srv
+}
+
+// ─── GetRoutine ──────────────────────────────────────────────────────────────
+
+func TestGetRoutine_Success(t *testing.T) {
+	t.Parallel()
+	routine := Routine{Name: "my-routine", Description: "test routine", Enabled: new(true)}
+
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Contains(t, r.URL.Path, "/routines/my-routine")
+		assert.Equal(t, routinesPreviewValue, r.Header.Get(routinesPreviewHeader))
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(routine)
+	}))
+
+	got, err := client.GetRoutine(t.Context(), "my-routine")
+	require.NoError(t, err)
+	assert.Equal(t, "my-routine", got.Name)
+	assert.Equal(t, "test routine", got.Description)
+	assert.True(t, *got.Enabled)
+}
+
+func TestGetRoutine_NotFound(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":{"code":"NotFound","message":"routine not found"}}`))
+	}))
+
+	_, err := client.GetRoutine(t.Context(), "nonexistent")
+	require.Error(t, err)
+
+	var respErr *azcore.ResponseError
+	require.ErrorAs(t, err, &respErr)
+	assert.Equal(t, http.StatusNotFound, respErr.StatusCode)
+}
+
+func TestGetRoutine_ContextCancellation(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(Routine{Name: "x"})
+	}))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // cancel immediately
+
+	_, err := client.GetRoutine(ctx, "x")
+	require.Error(t, err)
+}
+
+// ─── ListRoutines ────────────────────────────────────────────────────────────
+
+func TestListRoutines_SinglePage(t *testing.T) {
+	t.Parallel()
+	page := PagedRoutine{
+		Value: []Routine{
+			{Name: "r1"},
+			{Name: "r2"},
+		},
+	}
+
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(page)
+	}))
+
+	got, err := client.ListRoutines(t.Context())
+	require.NoError(t, err)
+	assert.Len(t, got, 2)
+	assert.Equal(t, "r1", got[0].Name)
+	assert.Equal(t, "r2", got[1].Name)
+}
+
+func TestListRoutines_MultiPage(t *testing.T) {
+	t.Parallel()
+	var callCount atomic.Int32
+
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := callCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+
+		switch call {
+		case 1:
+			// First page has a continuation token
+			json.NewEncoder(w).Encode(PagedRoutine{
+				Value:             []Routine{{Name: "r1"}},
+				ContinuationToken: "token-page2",
+			})
+		case 2:
+			// Second page: verify "after" query param is passed
+			assert.Contains(t, r.URL.RawQuery, "after=token-page2")
+			json.NewEncoder(w).Encode(PagedRoutine{
+				Value: []Routine{{Name: "r2"}},
+			})
+		default:
+			t.Fatal("unexpected extra request")
+		}
+	}))
+
+	got, err := client.ListRoutines(t.Context())
+	require.NoError(t, err)
+	assert.Len(t, got, 2)
+	assert.Equal(t, "r1", got[0].Name)
+	assert.Equal(t, "r2", got[1].Name)
+}
+
+func TestListRoutines_ServerError(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":{"code":"InternalError","message":"boom"}}`))
+	}))
+
+	_, err := client.ListRoutines(t.Context())
+	require.Error(t, err)
+}
+
+// ─── PutRoutine ──────────────────────────────────────────────────────────────
+
+func TestPutRoutine_Created(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPut, r.Method)
+		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+
+		var body Routine
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.Equal(t, "new-routine", body.Name)
+
+		w.WriteHeader(http.StatusCreated)
+		w.Header().Set("Content-Type", "application/json")
+		body.CreatedAt = "2025-01-01T00:00:00Z"
+		json.NewEncoder(w).Encode(body)
+	}))
+
+	input := &Routine{Name: "new-routine", Description: "desc"}
+	got, err := client.PutRoutine(t.Context(), "new-routine", input)
+	require.NoError(t, err)
+	assert.Equal(t, "new-routine", got.Name)
+	assert.Equal(t, "2025-01-01T00:00:00Z", got.CreatedAt)
+}
+
+func TestPutRoutine_Updated(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Routine{Name: "existing", UpdatedAt: "2025-06-01T00:00:00Z"})
+	}))
+
+	got, err := client.PutRoutine(t.Context(), "existing", &Routine{Name: "existing"})
+	require.NoError(t, err)
+	assert.Equal(t, "2025-06-01T00:00:00Z", got.UpdatedAt)
+}
+
+func TestPutRoutine_Conflict(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"error":{"code":"Conflict","message":"name in use"}}`))
+	}))
+
+	_, err := client.PutRoutine(t.Context(), "dup", &Routine{Name: "dup"})
+	require.Error(t, err)
+
+	var respErr *azcore.ResponseError
+	require.ErrorAs(t, err, &respErr)
+	assert.Equal(t, http.StatusConflict, respErr.StatusCode)
+}
+
+// ─── DeleteRoutine ───────────────────────────────────────────────────────────
+
+func TestDeleteRoutine_OK(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodDelete, r.Method)
+		assert.Contains(t, r.URL.Path, "/routines/doomed")
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	err := client.DeleteRoutine(t.Context(), "doomed")
+	require.NoError(t, err)
+}
+
+func TestDeleteRoutine_NoContent(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	err := client.DeleteRoutine(t.Context(), "gone")
+	require.NoError(t, err)
+}
+
+func TestDeleteRoutine_NotFound(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":{"code":"NotFound","message":"not found"}}`))
+	}))
+
+	err := client.DeleteRoutine(t.Context(), "missing")
+	require.Error(t, err)
+
+	var respErr *azcore.ResponseError
+	require.ErrorAs(t, err, &respErr)
+	assert.Equal(t, http.StatusNotFound, respErr.StatusCode)
+}
+
+// ─── EnableRoutine / DisableRoutine ──────────────────────────────────────────
+
+func TestEnableRoutine_Success(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Contains(t, r.URL.Path, "/routines/my-routine:enable")
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Routine{Name: "my-routine", Enabled: new(true)})
+	}))
+
+	got, err := client.EnableRoutine(t.Context(), "my-routine")
+	require.NoError(t, err)
+	assert.True(t, *got.Enabled)
+}
+
+func TestDisableRoutine_Success(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Contains(t, r.URL.Path, "/routines/my-routine:disable")
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Routine{Name: "my-routine", Enabled: new(false)})
+	}))
+
+	got, err := client.DisableRoutine(t.Context(), "my-routine")
+	require.NoError(t, err)
+	assert.False(t, *got.Enabled)
+}
+
+func TestEnableRoutine_ServerError(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":{"code":"InternalError","message":"oops"}}`))
+	}))
+
+	_, err := client.EnableRoutine(t.Context(), "broken")
+	require.Error(t, err)
+}
+
+// ─── DispatchRoutineAsync ────────────────────────────────────────────────────
+
+func TestDispatchRoutineAsync_Success(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Contains(t, r.URL.Path, "/routines/my-routine:dispatch_async")
+
+		var body DispatchRoutineRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.Equal(t, "invoke_agent_responses_api", body.Payload.Type)
+
+		w.WriteHeader(http.StatusAccepted)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(DispatchRoutineResponse{
+			DispatchID:          "d-123",
+			ActionCorrelationID: "ac-456",
+		})
+	}))
+
+	resp, err := client.DispatchRoutineAsync(t.Context(), "my-routine", &DispatchRoutineRequest{
+		Payload: &RoutineDispatchPayload{
+			Type:  "invoke_agent_responses_api",
+			Input: "hello",
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "d-123", resp.DispatchID)
+	assert.Equal(t, "ac-456", resp.ActionCorrelationID)
+}
+
+func TestDispatchRoutineAsync_NilPayload(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// With nil payload, body should be empty (no Content-Type set by setJSONBody)
+		assert.Equal(t, int64(0), r.ContentLength)
+
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(DispatchRoutineResponse{DispatchID: "d-nil"})
+	}))
+
+	resp, err := client.DispatchRoutineAsync(t.Context(), "my-routine", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "d-nil", resp.DispatchID)
+}
+
+func TestDispatchRoutineAsync_Error(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":{"code":"BadRequest","message":"invalid payload"}}`))
+	}))
+
+	_, err := client.DispatchRoutineAsync(t.Context(), "bad", &DispatchRoutineRequest{})
+	require.Error(t, err)
+}
+
+// ─── ListRoutineRuns ─────────────────────────────────────────────────────────
+
+func TestListRoutineRuns_SinglePage(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Contains(t, r.URL.Path, "/routines/my-routine/runs")
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(PagedRoutineRun{
+			Value: []RoutineRun{
+				{ID: "run-1", Status: "completed"},
+				{ID: "run-2", Status: "running"},
+			},
+		})
+	}))
+
+	runs, err := client.ListRoutineRuns(t.Context(), "my-routine", ListRoutineRunsOptions{})
+	require.NoError(t, err)
+	assert.Len(t, runs, 2)
+}
+
+func TestListRoutineRuns_WithTop(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Contains(t, r.URL.RawQuery, "limit=1")
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(PagedRoutineRun{
+			Value:         []RoutineRun{{ID: "run-1"}, {ID: "run-2"}},
+			NextPageToken: "page2",
+		})
+	}))
+
+	runs, err := client.ListRoutineRuns(t.Context(), "my-routine", ListRoutineRunsOptions{Top: 1})
+	require.NoError(t, err)
+	assert.Len(t, runs, 1, "Top should cap results to 1")
+}
+
+func TestListRoutineRuns_WithFilter(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Contains(t, r.URL.RawQuery, "filter=status+eq+%27completed%27")
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(PagedRoutineRun{
+			Value: []RoutineRun{{ID: "run-1", Status: "completed"}},
+		})
+	}))
+
+	runs, err := client.ListRoutineRuns(t.Context(), "my-routine", ListRoutineRunsOptions{
+		Filter: "status eq 'completed'",
+	})
+	require.NoError(t, err)
+	assert.Len(t, runs, 1)
+}
+
+func TestListRoutineRuns_Pagination(t *testing.T) {
+	t.Parallel()
+	var callCount atomic.Int32
+
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := callCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+
+		switch call {
+		case 1:
+			json.NewEncoder(w).Encode(PagedRoutineRun{
+				Value:         []RoutineRun{{ID: "run-1"}},
+				NextPageToken: "next-tok",
+			})
+		case 2:
+			assert.Contains(t, r.URL.RawQuery, "after=next-tok")
+			json.NewEncoder(w).Encode(PagedRoutineRun{
+				Value: []RoutineRun{{ID: "run-2"}},
+			})
+		default:
+			t.Fatal("unexpected extra request")
+		}
+	}))
+
+	runs, err := client.ListRoutineRuns(t.Context(), "my-routine", ListRoutineRunsOptions{})
+	require.NoError(t, err)
+	assert.Len(t, runs, 2)
+}
+
+// ─── URL construction helpers ────────────────────────────────────────────────
+
+func TestRoutineURL_EscapesName(t *testing.T) {
+	t.Parallel()
+	pipeline := azruntime.NewPipeline("test", "v0", azruntime.PipelineOptions{}, &policy.ClientOptions{})
+	c := &Client{endpoint: "https://example.com/api/projects/p", pipeline: pipeline}
+
+	url := c.routineURL("has space")
+	assert.Contains(t, url, "/routines/has%20space")
+	assert.Contains(t, url, "api-version="+routinesAPIVersion)
+}
+
+func TestRoutineActionURL(t *testing.T) {
+	t.Parallel()
+	pipeline := azruntime.NewPipeline("test", "v0", azruntime.PipelineOptions{}, &policy.ClientOptions{})
+	c := &Client{endpoint: "https://example.com/api/projects/p", pipeline: pipeline}
+
+	url := c.routineActionURL("my-routine", "enable")
+	assert.Contains(t, url, "/routines/my-routine:enable")
+}
+
+func TestRoutineRunsURL_WithQuery(t *testing.T) {
+	t.Parallel()
+	pipeline := azruntime.NewPipeline("test", "v0", azruntime.PipelineOptions{}, &policy.ClientOptions{})
+	c := &Client{endpoint: "https://example.com/api/projects/p", pipeline: pipeline}
+
+	url := c.routineRunsURL("r1", "limit=5", "after=tok")
+	assert.Contains(t, url, "/routines/r1/runs")
+	assert.Contains(t, url, "limit=5")
+	assert.Contains(t, url, "after=tok")
+}

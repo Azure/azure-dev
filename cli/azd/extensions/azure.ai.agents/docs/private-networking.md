@@ -63,8 +63,8 @@ services:
 
 > The example above uses **managed egress** so every field — including
 > `isolationMode` — is shown as valid YAML. For **BYO egress**, swap the
-> `isolationMode` line for an `agentSubnet` block (see comment `(b)` and the BYO
-> cheatsheet below); `isolationMode` is then invalid and must be removed.
+> `isolationMode` line for an `agentSubnet` block (see comment `(b)` and
+> Scenario 2 below); `isolationMode` is then invalid and must be removed.
 
 ### Field reference
 
@@ -110,10 +110,10 @@ user-chosen; the example above uses:
   re-linking.
 - **Terraform IaC is not supported for private networking (v1).** Bicep-only
   today; `azd ai agent init --infra=terraform` is refused when `network:` is
-  declared. Eject Bicep instead (see *Advanced: eject the Bicep and customize
-  it*).
+  declared. Eject Bicep instead (see *Scenario 3 — Eject and customize the
+  Bicep*).
 
-### Cheatsheet: managed-egress account (private data plane)
+### Scenario 1 — Managed egress: private account, agent on Microsoft's network
 
 Omit `agentSubnet` so the hosted-agent runtime uses a Microsoft-managed network
 instead of your VNet. `peSubnet` is still required: the account data plane stays
@@ -174,7 +174,7 @@ azd ai agent invoke --new-session "hello"
 > the agent to reach dependent resources; for the platform-managed stores used
 > here those are managed by the Foundry platform.
 
-### Cheatsheet: BYO image + VNet hosted agent (BYO egress)
+### Scenario 2 — BYO egress: agent injected into your VNet subnet
 
 ACR requirements:
 
@@ -234,7 +234,7 @@ Common failures:
   VPN.
 - `ImageError: registry authentication failed`: grant ACR pull permission to the Foundry project MI.
 
-### Advanced: eject the Bicep and customize it (power users)
+### Scenario 3 — Eject and customize the Bicep (advanced)
 
 The synthesized template covers the common private-networking shapes. When you
 need something it doesn't express — an extra subnet, a private endpoint for a BYO
@@ -243,7 +243,7 @@ dependent store, custom DNS wiring, a non-default account property, additional
 provision your edited tree.
 
 ```bash
-# 1. Scaffold + declare a network: block in azure.yaml (see the cheatsheets
+# 1. Scaffold + declare a network: block in azure.yaml (see Scenarios 1–2
 #    above), then eject the infrastructure:
 azd ai agent init --infra          # writes ./infra/ from azure.yaml
 ```

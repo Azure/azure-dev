@@ -116,9 +116,10 @@ type VersionSelector struct {
 type AgentEndpointAuthorizationSchemeType string
 
 const (
-	AgentEndpointAuthSchemeEntra          AgentEndpointAuthorizationSchemeType = "Entra"
-	AgentEndpointAuthSchemeBotService     AgentEndpointAuthorizationSchemeType = "BotService"
-	AgentEndpointAuthSchemeBotServiceRbac AgentEndpointAuthorizationSchemeType = "BotServiceRbac"
+	AgentEndpointAuthSchemeEntra            AgentEndpointAuthorizationSchemeType = "Entra"
+	AgentEndpointAuthSchemeBotService       AgentEndpointAuthorizationSchemeType = "BotService"
+	AgentEndpointAuthSchemeBotServiceRbac   AgentEndpointAuthorizationSchemeType = "BotServiceRbac"
+	AgentEndpointAuthSchemeBotServiceTenant AgentEndpointAuthorizationSchemeType = "BotServiceTenant"
 )
 
 // IsolationKeySourceKind represents the kind of isolation key source.
@@ -142,11 +143,43 @@ type AgentEndpointAuthorizationScheme struct {
 	IsolationKeySource *IsolationKeySource                  `json:"isolation_key_source,omitempty"`
 }
 
+// ActivityProtocolConfiguration describes configuration specific to the activity protocol.
+type ActivityProtocolConfiguration struct {
+	EnableM365PublicEndpoint *bool `json:"enable_m365_public_endpoint,omitempty"`
+}
+
+// ResponsesProtocolConfiguration describes configuration specific to the responses protocol.
+type ResponsesProtocolConfiguration struct{}
+
+// A2AProtocolConfiguration describes configuration specific to the A2A protocol.
+type A2AProtocolConfiguration struct{}
+
+// McpProtocolConfiguration describes configuration specific to the MCP protocol.
+type McpProtocolConfiguration struct{}
+
+// InvocationsProtocolConfiguration describes configuration specific to the invocations protocol.
+type InvocationsProtocolConfiguration struct{}
+
+// InvocationsWsProtocolConfiguration describes configuration specific to the WebSocket-based invocations protocol.
+type InvocationsWsProtocolConfiguration struct{}
+
+// ProtocolConfiguration describes per-protocol configuration for the agent endpoint.
+// The presence of a key declares the protocol is enabled.
+type ProtocolConfiguration struct {
+	Activity      *ActivityProtocolConfiguration      `json:"activity,omitempty"`
+	Responses     *ResponsesProtocolConfiguration     `json:"responses,omitempty"`
+	A2A           *A2AProtocolConfiguration           `json:"a2a,omitempty"`
+	MCP           *McpProtocolConfiguration           `json:"mcp,omitempty"`
+	Invocations   *InvocationsProtocolConfiguration   `json:"invocations,omitempty"`
+	InvocationsWs *InvocationsWsProtocolConfiguration `json:"invocations_ws,omitempty"`
+}
+
 // AgentEndpoint describes the endpoint configuration for an agent.
 type AgentEndpoint struct {
-	VersionSelector      *VersionSelector                   `json:"version_selector,omitempty"`
-	Protocols            []AgentEndpointProtocol            `json:"protocols,omitempty"`
-	AuthorizationSchemes []AgentEndpointAuthorizationScheme `json:"authorization_schemes,omitempty"`
+	VersionSelector        *VersionSelector                   `json:"version_selector,omitempty"`
+	Protocols              []AgentEndpointProtocol            `json:"protocols,omitempty"`
+	ProtocolConfiguration  *ProtocolConfiguration             `json:"protocol_configuration,omitempty"`
+	AuthorizationSchemes   []AgentEndpointAuthorizationScheme `json:"authorization_schemes,omitempty"`
 }
 
 // AgentCardSkill describes a single capability that an agent can perform.
@@ -315,12 +348,16 @@ type AgentVersionError struct {
 
 // AgentObject represents an agent
 type AgentObject struct {
-	Object        string         `json:"object"`
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	AgentEndpoint *AgentEndpoint `json:"agent_endpoint,omitempty"`
-	AgentCard     *AgentCard     `json:"agent_card,omitempty"`
-	Versions      struct {
+	Object             string              `json:"object"`
+	ID                 string              `json:"id"`
+	Name               string              `json:"name"`
+	State              string              `json:"state,omitempty"`
+	AgentEndpoint      *AgentEndpoint      `json:"agent_endpoint,omitempty"`
+	AgentCard          *AgentCard          `json:"agent_card,omitempty"`
+	InstanceIdentity   *AgentIdentityInfo  `json:"instance_identity,omitempty"`
+	Blueprint          *BlueprintInfo      `json:"blueprint,omitempty"`
+	BlueprintReference *BlueprintReference `json:"blueprint_reference,omitempty"`
+	Versions           struct {
 		Latest AgentVersionObject `json:"latest"`
 	} `json:"versions"`
 }

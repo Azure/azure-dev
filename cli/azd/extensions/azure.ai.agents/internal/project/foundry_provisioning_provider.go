@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -69,6 +70,11 @@ type FoundryProvisioningProvider struct {
 	armTemplate  map[string]any  // embedded ARM JSON; nil when onDiskSource is set
 	onDiskSource *templateSource // non-nil when ./infra/main.{bicep,bicepparam} exists
 
+	// brownfieldEndpoint is the existing project endpoint when the foundry
+	// service sets endpoint: (bring-your-own). When non-empty the provider skips
+	// provisioning and connects to that project instead of creating a new one.
+	brownfieldEndpoint string
+
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
 }
@@ -124,9 +130,11 @@ func (p *FoundryProvisioningProvider) Initialize(
 	if p.onDiskTemplatePresent() {
 		log.Printf("[debug] foundry provider: on-disk Bicep detected under %s; "+
 			"skipping synthesizer", filepath.Join(projectPath, onDiskInfraDir))
-		// endpoint: (brownfield) is rejected even on the on-disk path.
-		if err := rejectBrownfield(rawYAML, svcName); err != nil {
-			return err
+		// endpoint: (brownfield) reuse skips provisioning even on the on-disk
+		// path; connect to the existing project instead of compiling Bicep.
+		if endpoint := foundryServiceEndpoint(rawYAML, svcName); endpoint != "" {
+			p.brownfieldEndpoint = endpoint
+			return p.resolveEnvName(ctx)
 		}
 		return p.resolveEnv(ctx)
 	}
@@ -138,12 +146,9 @@ func (p *FoundryProvisioningProvider) Initialize(
 	})
 	switch {
 	case errors.Is(err, synthesis.ErrEndpointBrownfield):
-		return exterrors.Validation(
-			exterrors.CodeBrownfieldNotSupported,
-			"endpoint: is set on the foundry service; existing-project (brownfield) "+
-				"provisioning is not supported yet",
-			"remove endpoint: to provision a new Foundry project, or switch infra.provider to bicep",
-		)
+		// endpoint: reuse — connect to the existing project, skip provisioning.
+		p.brownfieldEndpoint = foundryServiceEndpoint(rawYAML, svcName)
+		return p.resolveEnvName(ctx)
 	case errors.Is(err, synthesis.ErrServiceNotFound):
 		return exterrors.Dependency(
 			exterrors.CodeProvisioningServiceNotFound,
@@ -186,9 +191,11 @@ func (p *FoundryProvisioningProvider) onDiskTemplatePresent() bool {
 		fileExistsAt(filepath.Join(infraDir, onDiskBicepFile))
 }
 
-// rejectBrownfield refuses an on-disk service that sets endpoint:, matching
-// the synthesizer's ErrEndpointBrownfield branch (which the on-disk path skips).
-func rejectBrownfield(rawYAML []byte, svcName string) error {
+// foundryServiceEndpoint returns the endpoint: value set on the named foundry
+// service, or "" when none is set. A non-empty endpoint means bring-your-own
+// (brownfield): the provider connects to that existing project instead of
+// provisioning a new one.
+func foundryServiceEndpoint(rawYAML []byte, svcName string) string {
 	type svc struct {
 		Endpoint string `yaml:"endpoint,omitempty"`
 	}
@@ -198,17 +205,55 @@ func rejectBrownfield(rawYAML []byte, svcName string) error {
 	var r root
 	if err := yaml.Unmarshal(rawYAML, &r); err != nil {
 		// Malformed yaml is surfaced upstream; don't mask the parser error.
-		return nil
+		return ""
 	}
-	if r.Services[svcName].Endpoint == "" {
-		return nil
+	return strings.TrimSpace(r.Services[svcName].Endpoint)
+}
+
+// resolveEnvName resolves just the active azd environment name. The brownfield
+// (endpoint:) path uses it instead of resolveEnv because connecting to an
+// existing project needs no subscription, location, or resource group.
+func (p *FoundryProvisioningProvider) resolveEnvName(ctx context.Context) error {
+	currEnv, err := p.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeEnvironmentNotFound,
+			fmt.Sprintf("get current azd environment: %s", err),
+			"run 'azd env new' to create an environment",
+		)
 	}
-	return exterrors.Validation(
-		exterrors.CodeBrownfieldNotSupported,
-		"endpoint: is set on the foundry service; existing-project (brownfield) "+
-			"provisioning is not supported yet",
-		"remove endpoint: to provision a new Foundry project, or switch infra.provider to bicep",
-	)
+	p.envName = currEnv.Environment.Name
+	return nil
+}
+
+// brownfieldOutputs builds the provisioning outputs for a bring-your-own
+// project: the endpoint downstream services consume, plus the project name
+// parsed from it when present.
+func brownfieldOutputs(endpoint string) map[string]*azdext.ProvisioningOutputParameter {
+	outputs := map[string]*azdext.ProvisioningOutputParameter{
+		"FOUNDRY_PROJECT_ENDPOINT": {Type: "string", Value: endpoint},
+	}
+	if name := projectNameFromEndpoint(endpoint); name != "" {
+		outputs["AZURE_AI_PROJECT_NAME"] = &azdext.ProvisioningOutputParameter{Type: "string", Value: name}
+	}
+	return outputs
+}
+
+// projectNameFromEndpoint extracts the project name from a Foundry project
+// endpoint of the form https://<account>.services.ai.azure.com/api/projects/<name>.
+// Returns "" when the path does not carry a project segment.
+func projectNameFromEndpoint(endpoint string) string {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	for i := 0; i+1 < len(parts); i++ {
+		if parts[i] == "projects" {
+			return parts[i+1]
+		}
+	}
+	return ""
 }
 
 // resolveEnv pulls the env values the provider needs from azd-core. It does
@@ -319,6 +364,15 @@ func (p *FoundryProvisioningProvider) State(
 	ctx context.Context,
 	options *azdext.ProvisioningStateOptions,
 ) (*azdext.ProvisioningStateResult, error) {
+	if p.brownfieldEndpoint != "" {
+		return &azdext.ProvisioningStateResult{
+			State: &azdext.ProvisioningState{
+				Outputs:   brownfieldOutputs(p.brownfieldEndpoint),
+				Resources: []*azdext.ProvisioningResource{},
+			},
+		}, nil
+	}
+
 	client, err := p.deploymentsClient(ctx)
 	if err != nil {
 		return nil, err
@@ -354,6 +408,15 @@ func (p *FoundryProvisioningProvider) Deploy(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDeployResult, error) {
+	if p.brownfieldEndpoint != "" {
+		progress("Using existing Foundry project (endpoint set); skipping provisioning")
+		return &azdext.ProvisioningDeployResult{
+			Deployment: &azdext.ProvisioningDeployment{
+				Outputs: brownfieldOutputs(p.brownfieldEndpoint),
+			},
+		}, nil
+	}
+
 	progress("Preparing Foundry provisioning template...")
 
 	src, err := p.resolveTemplate(ctx, progress)
@@ -527,6 +590,13 @@ func (p *FoundryProvisioningProvider) Preview(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
+	if p.brownfieldEndpoint != "" {
+		progress("Using existing Foundry project (endpoint set); nothing to provision")
+		return &azdext.ProvisioningPreviewResult{
+			Preview: &azdext.ProvisioningDeploymentPreview{},
+		}, nil
+	}
+
 	progress("Computing deployment plan...")
 
 	src, err := p.resolveTemplate(ctx, progress)
@@ -600,6 +670,12 @@ func (p *FoundryProvisioningProvider) Destroy(
 	options *azdext.ProvisioningDestroyOptions,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDestroyResult, error) {
+	if p.brownfieldEndpoint != "" {
+		progress("Foundry project is bring-your-own (endpoint set); azd did not " +
+			"create it, so azd down leaves it in place")
+		return &azdext.ProvisioningDestroyResult{}, nil
+	}
+
 	if !options.GetForce() {
 		return nil, exterrors.Validation(
 			exterrors.CodeDestroyRequiresForce,

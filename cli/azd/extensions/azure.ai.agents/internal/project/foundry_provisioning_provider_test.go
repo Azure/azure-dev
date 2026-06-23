@@ -709,63 +709,74 @@ func TestResolveTemplate_OnDiskFallsBackWhenSourceLoaderReturnsNil(t *testing.T)
 	assert.Equal(t, templateModeEmbedded, got.mode)
 }
 
-func TestRejectBrownfield(t *testing.T) {
+func TestFoundryServiceEndpoint(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name      string
-		yaml      string
-		svcName   string
-		wantError bool
+		name         string
+		yaml         string
+		svcName      string
+		wantEndpoint string
 	}{
 		{
-			name: "greenfield (no endpoint:) -> nil",
+			name: "greenfield (no endpoint:) -> empty",
 			yaml: `name: x
 services:
   foundry:
     host: azure.ai.agent`,
-			svcName:   "foundry",
-			wantError: false,
+			svcName:      "foundry",
+			wantEndpoint: "",
 		},
 		{
-			name: "endpoint set -> brownfield error",
+			name: "endpoint set -> returned for brownfield reuse",
 			yaml: `name: x
 services:
   foundry:
     host: azure.ai.agent
     endpoint: https://example.foundry.example.com`,
-			svcName:   "foundry",
-			wantError: true,
+			svcName:      "foundry",
+			wantEndpoint: "https://example.foundry.example.com",
 		},
 		{
-			name: "service not in yaml -> nil (not our error to raise)",
+			name: "service not in yaml -> empty",
 			yaml: `name: x
 services:
   other:
     host: containerapp`,
-			svcName:   "foundry",
-			wantError: false,
+			svcName:      "foundry",
+			wantEndpoint: "",
 		},
 		{
-			name:      "malformed yaml -> nil (upstream surfaces parse error)",
-			yaml:      "not: : valid: yaml",
-			svcName:   "foundry",
-			wantError: false,
+			name:         "malformed yaml -> empty (upstream surfaces parse error)",
+			yaml:         "not: : valid: yaml",
+			svcName:      "foundry",
+			wantEndpoint: "",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			err := rejectBrownfield([]byte(tt.yaml), tt.svcName)
-			if !tt.wantError {
-				assert.NoError(t, err)
-				return
-			}
-			require.Error(t, err)
-			var local *azdext.LocalError
-			require.True(t, errors.As(err, &local))
-			assert.Equal(t, exterrors.CodeBrownfieldNotSupported, local.Code)
+			assert.Equal(t, tt.wantEndpoint, foundryServiceEndpoint([]byte(tt.yaml), tt.svcName))
 		})
 	}
+}
+
+func TestProjectNameFromEndpoint(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "my-project", projectNameFromEndpoint(
+		"https://acct.services.ai.azure.com/api/projects/my-project"))
+	assert.Equal(t, "", projectNameFromEndpoint("https://acct.services.ai.azure.com"))
+	assert.Equal(t, "", projectNameFromEndpoint(""))
+}
+
+func TestBrownfieldOutputs(t *testing.T) {
+	t.Parallel()
+	outputs := brownfieldOutputs("https://acct.services.ai.azure.com/api/projects/my-project")
+	require.Contains(t, outputs, "FOUNDRY_PROJECT_ENDPOINT")
+	assert.Equal(t,
+		"https://acct.services.ai.azure.com/api/projects/my-project",
+		outputs["FOUNDRY_PROJECT_ENDPOINT"].Value)
+	require.Contains(t, outputs, "AZURE_AI_PROJECT_NAME")
+	assert.Equal(t, "my-project", outputs["AZURE_AI_PROJECT_NAME"].Value)
 }
 
 func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {

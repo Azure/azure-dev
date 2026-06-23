@@ -34,6 +34,15 @@ func serviceEntryMap(t *testing.T, doc, name string) map[string]any {
 	return entry
 }
 
+func assertSubstringOrder(t *testing.T, s, before, after string) {
+	t.Helper()
+	beforeIndex := strings.Index(s, before)
+	afterIndex := strings.Index(s, after)
+	require.NotEqual(t, -1, beforeIndex, "%q missing", before)
+	require.NotEqual(t, -1, afterIndex, "%q missing", after)
+	assert.Less(t, beforeIndex, afterIndex)
+}
+
 func TestYAMLDocument_RoundTripPreservesCommentsAndOrder(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "azure.yaml")
@@ -58,7 +67,7 @@ services:
 	assert.Contains(t, first, "# a standalone comment about services")
 	assert.Contains(t, first, "# the agent host")
 	// Key order within the entry is preserved (host before $ref).
-	assert.Less(t, strings.Index(first, "host:"), strings.Index(first, "$ref:"))
+	assertSubstringOrder(t, first, "host:", "$ref:")
 
 	// Re-encoding is stable (idempotent).
 	doc2, err := ParseYAMLDocument(path, out)
@@ -244,7 +253,7 @@ func TestYAMLDocument_SetServiceField_InlineUpdateInPlace(t *testing.T) {
 	// The replaced value's inline comment is preserved.
 	assert.Contains(t, saved, "# current endpoint")
 	// Existing key order is preserved (host before endpoint).
-	assert.Less(t, strings.Index(saved, "host:"), strings.Index(saved, "endpoint:"))
+	assertSubstringOrder(t, saved, "host:", "endpoint:")
 }
 
 func TestYAMLDocument_SetServiceField_EditRefFile(t *testing.T) {

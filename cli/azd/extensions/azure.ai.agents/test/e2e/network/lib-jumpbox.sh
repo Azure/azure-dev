@@ -110,24 +110,34 @@ jumpbox_peer_and_pin() {
     --vnet-name "$JB_VNET" -n "to-foundry" --remote-vnet "$fvnet" \
     --allow-vnet-access --allow-forwarded-traffic
 
-  # resolve the account PE private IP and derive the three account FQDNs. The
-  # PE customDnsConfigs are often empty and the dns=own zones live in the
-  # account RG, so derive the public FQDNs from the account's custom subdomain
-  # (defaults to the account name) and pin them to the PE IP.
-  local pe_name pe_ip nic_id sub fqdns hosts_line
-  pe_name="$(az network private-endpoint list -g "$RG" --query "[0].name" -o tsv 2>/dev/null)"
-  nic_id="$(az network private-endpoint show -g "$RG" -n "$pe_name" \
-    --query "networkInterfaces[0].id" -o tsv 2>/dev/null)"
-  pe_ip="$(az network nic show --ids "$nic_id" \
-    --query "ipConfigurations[0].privateIPAddress" -o tsv 2>/dev/null)"
+  # Resolve the account FQDNs from private DNS records and pin each FQDN to its
+  # matching PE IP. A private endpoint can allocate different IPs for
+  # services.ai, openai, and cognitiveservices; pinning all FQDNs to the first NIC
+  # IP causes "Traffic is not from an approved private endpoint" in dns=reference
+  # fallback runs.
+  local sub hosts_lines zone rg ip fqdn
   sub="$(az cognitiveservices account show -g "$RG" -n "$ACCOUNT_NAME" \
     --query "properties.customSubDomainName" -o tsv 2>/dev/null)"
   [[ -z "$sub" ]] && sub="$ACCOUNT_NAME"
-  fqdns="${sub}.services.ai.azure.com ${sub}.openai.azure.com ${sub}.cognitiveservices.azure.com"
-  info "jumpbox: pinning PE_IP=$pe_ip for FQDNs: $fqdns"
-  [[ -z "$pe_ip" ]] && { warn "could not resolve PE IP; /etc/hosts pin skipped"; return 0; }
-  hosts_line="$pe_ip $fqdns"
-  jumpbox_ssh "echo '$hosts_line' | sudo tee -a /etc/hosts >/dev/null"
+  hosts_lines=""
+  for zone in privatelink.services.ai.azure.com privatelink.openai.azure.com \
+              privatelink.cognitiveservices.azure.com; do
+    rg="$RG"
+    if [[ -n "${DNS_RG:-}" ]] && \
+       az network private-dns record-set a show -g "$DNS_RG" -z "$zone" -n "$sub" >/dev/null 2>&1; then
+      rg="$DNS_RG"
+    fi
+    ip="$(az network private-dns record-set a show -g "$rg" -z "$zone" -n "$sub" \
+      --query "aRecords[0].ipv4Address" -o tsv 2>/dev/null || echo '')"
+    [[ -n "$ip" ]] || { warn "could not resolve private DNS A record for $sub in $zone"; continue; }
+    fqdn="${sub}.${zone#privatelink.}"
+    hosts_lines+="$ip $fqdn"$'\n'
+  done
+  [[ -n "$hosts_lines" ]] || { warn "could not resolve PE DNS records; /etc/hosts pin skipped"; return 0; }
+  info "jumpbox: pinning account FQDNs via private DNS records: ${hosts_lines//$'\n'/; }"
+  jumpbox_ssh "cat <<'EOF' | sudo tee -a /etc/hosts >/dev/null
+$hosts_lines
+EOF"
 }
 
 # jumpbox_ssh <remote-cmd> : run a command on the jumpbox (capped).
@@ -185,6 +195,8 @@ jumpbox_up() {
         "$JB_SUBNET_NAME" "$JB_FALLBACK_SUBNET_CIDR" true
       if jumpbox_vm_sizeloop "$JB_RG" "$loc" "$jbvnet" "$JB_SUBNET_NAME"; then
         JB_LOCATION="$loc"; JB_VNET="$jbvnet"
+        JB_HOST="$(az vm show -d -g "$JB_RG" -n "$JB_VM_NAME" --query publicIps -o tsv)"
+        jumpbox_wait_ssh
         jumpbox_peer_and_pin "$VNET_ID" \
           "$(az network vnet show -g "$JB_RG" -n "$jbvnet" --query id -o tsv)"
         break

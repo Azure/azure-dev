@@ -323,6 +323,84 @@ services:
 	assert.Equal(t, "${AZURE_DNS_SUBSCRIPTION_ID}", doc.Parameters["dnsZonesSubscription"].Value,
 		"dns subscription ${VAR} must be preserved for provision-time resolution")
 	assert.Equal(t, true, doc.Parameters["enableNetworkIsolation"].Value)
+
+	// Managed egress (no agentSubnet): the full param set must thread through.
+	assert.Equal(t, true, doc.Parameters["useManagedEgress"].Value,
+		"omitting agentSubnet selects managed egress")
+	assert.Equal(t, false, doc.Parameters["createAgentSubnet"].Value,
+		"managed egress creates no agent subnet")
+	assert.Equal(t, "pe-subnet", doc.Parameters["peSubnetName"].Value)
+	assert.Equal(t, false, doc.Parameters["createPESubnet"].Value,
+		"peSubnet without prefix references an existing subnet")
+	assert.Equal(t, "rg-dns", doc.Parameters["dnsZonesResourceGroup"].Value,
+		"dns.resourceGroup selects reference mode")
+}
+
+// TestEjectInfra_Bicep_NetworkParamsComplete_Byo ejects a BYO-egress service
+// (agentSubnet + peSubnet, both with prefixes) and asserts the complete network
+// parameter set lands in main.parameters.json. This is the Bicep eject path's
+// end-to-end contract: every value the synthesizer derives from network: must
+// reach the ejected parameters file so a later `azd provision` reproduces the
+// declared topology.
+func TestEjectInfra_Bicep_NetworkParamsComplete_Byo(t *testing.T) {
+	// Not parallel: shares the stdout-capture rationale of the other eject tests.
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: microsoft.foundry
+services:
+  my-foundry:
+    host: azure.ai.agent
+    network:
+      agentSubnet:
+        vnet: "${AZURE_VNET_ID}"
+        name: agent-subnet
+        prefix: 192.168.10.0/24
+      peSubnet:
+        vnet: "${AZURE_VNET_ID}"
+        name: pe-subnet
+        prefix: 192.168.11.0/24
+    deployments: []
+    agents:
+      - name: my-agent
+        image: registry.io/myorg/myagent:latest
+`)
+
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfra(dir, "bicep"))
+	})
+
+	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec // G304: test file path from t.TempDir()
+	require.NoError(t, err)
+	var doc struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &doc))
+
+	// Ingress + egress are both private; agentSubnet present => BYO egress.
+	assert.Equal(t, true, doc.Parameters["enableNetworkIsolation"].Value)
+	assert.Equal(t, false, doc.Parameters["useManagedEgress"].Value,
+		"agentSubnet present selects BYO egress")
+	assert.Equal(t, "${AZURE_VNET_ID}", doc.Parameters["vnetId"].Value,
+		"vnet id ${VAR} must be preserved for provision-time resolution")
+
+	// Agent (egress) subnet: prefix set => create.
+	assert.Equal(t, "agent-subnet", doc.Parameters["agentSubnetName"].Value)
+	assert.Equal(t, "192.168.10.0/24", doc.Parameters["agentSubnetPrefix"].Value)
+	assert.Equal(t, true, doc.Parameters["createAgentSubnet"].Value,
+		"agentSubnet with a prefix is created")
+
+	// PE (ingress) subnet: prefix set => create.
+	assert.Equal(t, "pe-subnet", doc.Parameters["peSubnetName"].Value)
+	assert.Equal(t, "192.168.11.0/24", doc.Parameters["peSubnetPrefix"].Value)
+	assert.Equal(t, true, doc.Parameters["createPESubnet"].Value,
+		"peSubnet with a prefix is created")
+
+	// BYO egress has no managed-network knobs.
+	assert.Equal(t, "", doc.Parameters["managedIsolationMode"].Value,
+		"isolationMode is managed-egress only")
 }
 
 func TestEjectInfra_RefusesWhenInfraIsAFile(t *testing.T) {

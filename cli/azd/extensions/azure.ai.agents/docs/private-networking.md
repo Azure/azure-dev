@@ -127,6 +127,11 @@ user-chosen; the example above uses:
   set the `dns:` block to **reference** the existing zones; reference mode binds
   the account private endpoint to them and skips creating a new VNet link.
 
+- **Terraform IaC is not supported for private networking (v1).** Private
+  networking is Bicep-only today. `azd ai agent init --infra=terraform` is
+  refused when the service declares a `network:` block; eject Bicep instead (see
+  *Advanced: eject the Bicep and customize it*).
+
 ### Cheatsheet: managed-egress account (private data plane)
 
 Omit `agentSubnet` so the hosted-agent runtime uses a Microsoft-managed network
@@ -247,3 +252,82 @@ Common failures:
   network-bound mode — run deploy/invoke from inside the VNet, a peered VNet, or
   VPN.
 - `ImageError: registry authentication failed`: grant ACR pull permission to the Foundry project MI.
+
+### Advanced: eject the Bicep and customize it (power users)
+
+The synthesized template covers the common private-networking shapes. When you
+need something it doesn't express — an extra subnet, a private endpoint for a BYO
+dependent store, custom DNS wiring, a non-default account property, additional
+`networkInjections` rules — eject the Bicep, edit it directly, and let azd
+provision your edited tree.
+
+```bash
+# 1. Scaffold + declare a network: block in azure.yaml (see the cheatsheets
+#    above), then eject the infrastructure:
+azd ai agent init --infra          # writes ./infra/ from azure.yaml
+```
+
+Eject writes the **full** Bicep tree from your `network:` block —
+`infra/main.bicep`, `infra/modules/{resources,network,subnet,private-endpoint-dns,acr}.bicep`,
+and `infra/main.parameters.json` — and **preserves `${VAR}` placeholders**
+(resolved from the azd environment at provision time). `azure.yaml` is left
+unchanged: `infra.provider` stays `microsoft.foundry`.
+
+```bash
+# 2. Edit the ejected Bicep to taste. Two worked examples:
+
+# (a) infra/modules/network.bicep — add a subnet the network: schema can't
+#     express (e.g. for a future dependent-store private endpoint). Pick a CIDR
+#     free in your VNet space. Use the '<vnet>/<subnet>' name form (vnet is an
+#     existing resource in a possibly different RG):
+#
+#   resource extraStoreSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' = {
+#     name: '${vnetName}/byo-store-pe-subnet'
+#     properties: {
+#       addressPrefix: '192.168.30.0/24'
+#       privateEndpointNetworkPolicies: 'Disabled'
+#     }
+#     dependsOn: [ peSubnet ]
+#   }
+
+# (b) infra/modules/resources.bicep — set an extra account property directly on
+#     the foundryAccount resource, e.g. merge a tag:
+#
+#   tags: union(tags, { editedByPowerUser: 'true' })
+```
+
+```bash
+# 3. Provision the edited tree. azd detects ./infra/main.bicep and compiles it
+#    instead of synthesizing from azure.yaml:
+azd env set AZURE_SUBSCRIPTION_ID "<sub>"
+azd env set AZURE_LOCATION westus
+azd env set AZURE_RESOURCE_GROUP "<rg>"
+azd env set AZURE_VNET_ID "<vnet-resource-id>"
+azd provision --no-prompt
+
+# 4. Deploy and invoke from a host with line-of-sight to the account private
+#    endpoint (inside the VNet, a peered VNet, or VPN):
+azd deploy --no-prompt
+azd ai agent invoke --new-session "hello"
+```
+
+**How it works.** Once `./infra/main.bicep` exists, azd provisions it directly
+and **stops synthesizing from `azure.yaml`** — your edited Bicep is now the
+source of truth. Your `main.parameters.json` values are layered over azd's
+host-derived parameters (subscription, location, resource group, project name,
+`principalId`); you win on keys you set, and azd fills in the rest.
+
+**Notes.**
+
+- Re-running `azd ai agent init --infra` is **refused** while `./infra/` exists,
+  so your edits are never overwritten — delete `./infra/` to regenerate from
+  `azure.yaml`.
+- After ejecting, further `network:` edits in `azure.yaml` have **no effect**;
+  change the Bicep directly.
+- `infra/main.arm.json` is intentionally not ejected (it would go stale the
+  moment you edit `main.bicep`); azd compiles `main.bicep` on each provision.
+- **Terraform is not supported for private networking.**
+  `azd ai agent init --infra=terraform` is refused for a service that declares
+  `network:` (the Terraform module has no VNet / private-endpoint / DNS
+  resources, so ejecting it would silently provision a public account). Use
+  `--infra` (Bicep) and customize as above.

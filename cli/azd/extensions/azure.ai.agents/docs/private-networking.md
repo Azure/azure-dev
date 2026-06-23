@@ -90,47 +90,28 @@ user-chosen; the example above uses:
 | `AZURE_VNET_ID` | ARM resource id of an existing `Microsoft.Network/virtualNetworks` | subnet `vnet` |
 | `AZURE_DNS_SUBSCRIPTION_ID` | bare GUID or `/subscriptions/<guid>` | `network.dns.subscription` |
 
-### Requirements and limits
+### Limitations
 
-- **`peSubnet` is mandatory.** A network-bound account always gets a private
-  endpoint; there is no public data-plane fallback. Run `azd deploy` /
-  `azd ai agent invoke` from inside the VNet, a peered VNet, or VPN.
 - **Single VNet (v1).** When `agentSubnet` is present it must live in the same
-  VNet as `peSubnet`.
+  VNet as `peSubnet`; azd errors otherwise. Cross-VNet topologies (agent and
+  account private endpoint in different VNets) are deferred — they need
+  customer-managed peering plus DNS-zone links to both VNets, which azd does not
+  provision. Managed egress is unaffected (it needs only the `peSubnet` VNet).
 - **BYO container image required.** Secured agents must reference a pre-built
-  image via `agents[].image` (`registry/image:tag`); the developer owns the
-  registry's SKU, private endpoint, DNS, and firewall. Local build into a
-  private ACR is not supported in v1.
+  image via `agents[].image`; local build into a private ACR is not supported in
+  v1. The developer owns the registry's SKU, private endpoint, DNS, and firewall.
 - **Brownfield (`endpoint:`) ignores `network:`.** When `endpoint:` is set the
   account's network posture is fixed by whoever created it; azd warns and does
   not reconcile `network:`.
-
-### Known limitations
-
-- **BYO egress is single-VNet (v1).** When `agentSubnet` is set it must
-  reference the same VNet as `peSubnet`; azd errors otherwise. Cross-VNet
-  topologies (agent injected in one VNet, account private endpoint in another)
-  are deferred: they require customer-managed VNet **peering** between the two
-  VNets — so the agent can route to the account private endpoint — plus private
-  DNS zone links to *both* VNets. azd does not provision or validate that
-  peering, so the data path would silently fail. Managed egress is unaffected:
-  the agent reaches the account over Microsoft-managed connectivity and never
-  the customer ingress VNet, so it needs only the single `peSubnet` VNet.
-
-- **One default-DNS account per VNet.** By default (no `dns:` block) azd
-  creates the three `privatelink.*` AI zones and **links them to your VNet**.
-  Azure allows a VNet to be linked to only one zone per namespace, so a second
-  Foundry account that also owns its DNS cannot reuse the same VNet — the link
-  fails with `A virtual network cannot be linked to multiple zones with
-  overlapping namespaces`. If the VNet is already linked to those zones (a
-  second account, or a brownfield hub that pre-links the AI privatelink zones),
-  set the `dns:` block to **reference** the existing zones; reference mode binds
-  the account private endpoint to them and skips creating a new VNet link.
-
-- **Terraform IaC is not supported for private networking (v1).** Private
-  networking is Bicep-only today. `azd ai agent init --infra=terraform` is
-  refused when the service declares a `network:` block; eject Bicep instead (see
-  *Advanced: eject the Bicep and customize it*).
+- **One default-DNS account per VNet.** Without a `dns:` block azd links the
+  three `privatelink.*` AI zones to your VNet, and a VNet may hold only one link
+  per namespace. A second account (or a brownfield hub that pre-links the zones)
+  must use `dns:` **reference** mode to bind the private endpoint without
+  re-linking.
+- **Terraform IaC is not supported for private networking (v1).** Bicep-only
+  today; `azd ai agent init --infra=terraform` is refused when `network:` is
+  declared. Eject Bicep instead (see *Advanced: eject the Bicep and customize
+  it*).
 
 ### Cheatsheet: managed-egress account (private data plane)
 

@@ -368,6 +368,65 @@ func TestTemplatesFS_Embedded(t *testing.T) {
 	}
 }
 
+func TestTerraformTemplatesFS_Embedded(t *testing.T) {
+	fs := TerraformTemplatesFS()
+
+	wantFiles := []string{
+		"templates/terraform/provider.tf",
+		"templates/terraform/variables.tf",
+		"templates/terraform/main.tf",
+		"templates/terraform/acr.tf",
+		"templates/terraform/outputs.tf.tmpl",
+	}
+	for _, p := range wantFiles {
+		t.Run(p, func(t *testing.T) {
+			data, err := fs.ReadFile(p)
+			require.NoError(t, err)
+			assert.NotEmpty(t, data, "%s should not be empty", p)
+		})
+	}
+
+	// outputs.tf is rendered from outputs.tf.tmpl at eject time, and
+	// main.tfvars.json is generated -- neither is embedded as a final file
+	// (otherwise they would go stale).
+	for _, p := range []string{
+		"templates/terraform/outputs.tf",
+		"templates/terraform/main.tfvars.json",
+	} {
+		_, err := fs.ReadFile(p)
+		assert.Error(t, err, "%s must not be embedded; it is generated at eject time", p)
+	}
+}
+
+// TestTerraformModule_DerivesNamesWhenEmpty guards the regression where unset
+// AZURE_AI_PROJECT_NAME / AZURE_RESOURCE_GROUP substituted to "" in
+// main.tfvars.json and failed at plan time (foundry_project_name validation /
+// "name cannot be blank" on the resource group). The fix: main.tf derives both
+// names from environment_name when the corresponding var is empty. This asserts
+// the embedded templates still carry those fallbacks so they cannot regress.
+func TestTerraformModule_DerivesNamesWhenEmpty(t *testing.T) {
+	fs := TerraformTemplatesFS()
+
+	vars, err := fs.ReadFile("templates/terraform/variables.tf")
+	require.NoError(t, err)
+	// Empty must be accepted by the variable validation (not a hard 3-32 regex).
+	assert.Contains(t, string(vars), `var.foundry_project_name == ""`,
+		"variables.tf must allow an empty foundry_project_name (empty => derive from env)")
+
+	main, err := fs.ReadFile("templates/terraform/main.tf")
+	require.NoError(t, err)
+	// main.tf must compute an effective project name with an env-name fallback.
+	assert.Contains(t, string(main), "derived_project_name",
+		"main.tf must derive a project name when foundry_project_name is empty")
+	assert.Contains(t, string(main), "local.foundry_project_name",
+		"the project resource must use the derived local, not the raw variable")
+	// main.tf must compute an effective resource group name with a fallback.
+	assert.Contains(t, string(main), "local.resource_group_name",
+		"the resource group must use the derived local, not the raw variable")
+	assert.Contains(t, string(main), `"rg-${local.derived_rg_suffix}"`,
+		"main.tf must derive an rg-{env} name when resource_group_name is empty")
+}
+
 func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	data, err := ARMTemplate()
 	require.NoError(t, err)

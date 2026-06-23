@@ -79,10 +79,12 @@ type initFlags struct {
 	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
 	// and is not registered as a CLI flag on the init command itself.
 	noPrompt bool
-	// infra, when true, synthesizes the Bicep templates from azure.yaml and
-	// writes them to ./infra/ -- as an eject step after a fresh init, or
+	// infra selects the IaC flavor to eject from azure.yaml into ./infra/.
+	// Empty means the flag was not passed (bicepless default, no files). A bare
+	// `--infra` resolves to "bicep" via the flag's NoOptDefVal; `--infra=terraform`
+	// and `--infra=bicep` are explicit. The eject runs after a fresh init or
 	// standalone when azure.yaml already exists.
-	infra bool
+	infra string
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -1010,10 +1012,23 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// set flags.manifestPointer. This drives the opinionated-defaults path.
 			userProvidedManifest := flags.manifestPointer != ""
 
+			// Resolve the eject provider once (when --infra was passed) so an
+			// invalid value fails fast regardless of whether azure.yaml exists
+			// yet, and both the standalone and post-init eject paths agree.
+			infraProvider := ""
+			if flags.infra != "" {
+				p, err := parseInfraProvider(flags.infra)
+				if err != nil {
+					return err
+				}
+				infraProvider = p
+			}
+
 			// `--infra` on a directory that already has an azd agent project
-			// is a standalone eject: synthesize Bicep from the existing
-			// azure.yaml, write ./infra/, and return without prompting.
-			if flags.infra && fileExists("azure.yaml") {
+			// is a standalone eject: synthesize infra (Bicep or Terraform) from
+			// the existing azure.yaml, write ./infra/, and return without
+			// prompting.
+			if infraProvider != "" && fileExists("azure.yaml") {
 				// Reject inputs the eject path would silently ignore (a
 				// positional arg, -m, or --src) instead of pretending they
 				// were honored.
@@ -1024,7 +1039,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if err != nil {
 					return fmt.Errorf("resolve current directory: %w", err)
 				}
-				return ejectInfra(cwd)
+				return ejectInfra(cwd, infraProvider)
 			}
 
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -1428,7 +1443,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// wrote azure.yaml, chain the eject step. Skip silently when init
 			// didn't produce a foundry-bearing azure.yaml (cancelled or
 			// non-foundry flow) to avoid a confusing "nothing to eject" error.
-			if flags.infra {
+			if infraProvider != "" {
 				cwd, err := os.Getwd()
 				if err != nil {
 					return fmt.Errorf("resolve current directory: %w", err)
@@ -1443,7 +1458,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				default:
 					// Skip silently when no foundry service is present.
 					if _, svcErr := findFoundryServiceForEject(rawYAML); svcErr == nil {
-						if err := ejectInfra(cwd); err != nil {
+						if err := ejectInfra(cwd, infraProvider); err != nil {
 							return err
 						}
 					}
@@ -1497,9 +1512,14 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+
 			"Required together with --no-prompt when init would otherwise need confirmation.")
 
-	cmd.Flags().BoolVar(&flags.infra, "infra", false,
-		"Synthesize Bicep templates from azure.yaml and write them to ./infra/. "+
+	cmd.Flags().StringVar(&flags.infra, "infra", "",
+		"Eject infrastructure-as-code from azure.yaml into ./infra/. "+
+			"A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets "+
+			"infra.provider: terraform; --infra=bicep is explicit Bicep. "+
 			"When azure.yaml already exists, runs as a standalone eject and skips the init prompts.")
+	// NoOptDefVal makes a bare `--infra` resolve to "bicep" while still allowing
+	// `--infra=terraform` / `--infra=bicep`. Absent flag stays "" (no eject).
+	cmd.Flags().Lookup("infra").NoOptDefVal = project.BicepProviderName
 
 	return cmd
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 )
 
 // validFoundryAzureYAML returns an azure.yaml payload exercising the
@@ -47,7 +48,7 @@ func TestEjectInfra_RefusesWhenAzureYamlMissing(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 
-	err := ejectInfra(dir)
+	err := ejectInfra(dir, "bicep")
 	require.Error(t, err)
 
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -68,7 +69,7 @@ func TestEjectInfra_RefusesWhenInfraExists(t *testing.T) {
 	// Pre-create infra/ -- contents don't matter, even an empty dir refuses.
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
 
-	err := ejectInfra(dir)
+	err := ejectInfra(dir, "bicep")
 	require.Error(t, err)
 
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -112,7 +113,7 @@ infra:
 			dir := t.TempDir()
 			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), tt.yaml)
 
-			err := ejectInfra(dir)
+			err := ejectInfra(dir, "bicep")
 			require.Error(t, err)
 
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -137,7 +138,7 @@ services:
     host: azure.ai.agent
 `)
 
-	err := ejectInfra(dir)
+	err := ejectInfra(dir, "bicep")
 	require.Error(t, err)
 
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -156,7 +157,7 @@ func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
 
 	stdout := withCapturedStdout(t, func() {
-		err := ejectInfra(dir)
+		err := ejectInfra(dir, "bicep")
 		require.NoError(t, err)
 	})
 
@@ -206,7 +207,7 @@ func TestEjectInfra_HappyPath_ParametersFileShape(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir))
+		require.NoError(t, ejectInfra(dir, "bicep"))
 	})
 
 	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec // G304: test file path from t.TempDir()
@@ -265,7 +266,7 @@ services:
 `)
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir))
+		require.NoError(t, ejectInfra(dir, "bicep"))
 	})
 
 	// acr.bicep is still in the ejected tree -- the template is static.
@@ -334,7 +335,7 @@ func TestEjectInfra_RefusesWhenInfraIsAFile(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
 	mustWriteFile(t, filepath.Join(dir, "infra"), "this is a file, not a dir")
 
-	err := ejectInfra(dir)
+	err := ejectInfra(dir, "bicep")
 	require.Error(t, err)
 
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -398,4 +399,224 @@ func TestValidateStandaloneEjectArgs(t *testing.T) {
 			assert.Contains(t, localErr.Suggestion, "remove --infra")
 		})
 	}
+}
+
+func TestParseInfraProvider(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{name: "bicep", in: "bicep", want: "bicep"},
+		{name: "terraform", in: "terraform", want: "terraform"},
+		{name: "uppercase terraform", in: "TERRAFORM", want: "terraform"},
+		{name: "mixed case bicep", in: "Bicep", want: "bicep"},
+		{name: "whitespace trimmed", in: "  terraform  ", want: "terraform"},
+		{name: "unknown value", in: "pulumi", wantErr: true},
+		{name: "arm not supported", in: "arm", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := parseInfraProvider(tt.in)
+			if tt.wantErr {
+				require.Error(t, err)
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+				assert.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+				assert.Contains(t, localErr.Suggestion, "--infra=bicep")
+				assert.Contains(t, localErr.Suggestion, "--infra=terraform")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestEjectInfra_Terraform_HappyPath_WritesExpectedFiles(t *testing.T) {
+	// Not parallel: captures os.Stdout (see TestEjectInfra_HappyPath_WritesExpectedFiles).
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
+
+	stdout := withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfra(dir, "terraform"))
+	})
+
+	// Every embedded .tf under templates/terraform/ should be on disk under
+	// ./infra/, plus the generated main.tfvars.json. Bicep artifacts must NOT
+	// be present.
+	expected := []string{
+		filepath.Join("infra", "provider.tf"),
+		filepath.Join("infra", "variables.tf"),
+		filepath.Join("infra", "main.tf"),
+		filepath.Join("infra", "acr.tf"),
+		filepath.Join("infra", "outputs.tf"),
+		filepath.Join("infra", "main.tfvars.json"),
+	}
+	for _, rel := range expected {
+		info, err := os.Stat(filepath.Join(dir, rel))
+		require.NoError(t, err, "expected file %s", rel)
+		assert.Greater(t, info.Size(), int64(0), "file %s should not be empty", rel)
+	}
+
+	// Bicep outputs must not leak onto the Terraform path.
+	for _, rel := range []string{
+		filepath.Join("infra", "main.bicep"),
+		filepath.Join("infra", "main.parameters.json"),
+		filepath.Join("infra", "modules", "acr.bicep"),
+	} {
+		_, err := os.Stat(filepath.Join(dir, rel))
+		assert.True(t, os.IsNotExist(err), "%s must not be written on the terraform path", rel)
+	}
+
+	// Summary mentions the created files and the azure.yaml provider stamp.
+	assert.Contains(t, stdout, "Generating infrastructure files from azure.yaml")
+	assert.Contains(t, stdout, "infra/main.tf")
+	assert.Contains(t, stdout, "infra/main.tfvars.json")
+	assert.Contains(t, stdout, "infra.provider: terraform")
+	assert.Contains(t, stdout, "azd provision")
+
+	// This fixture has a docker: agent, so acr.tf is present and the generated
+	// outputs.tf must reference the registry resources (not empty strings).
+	outputs, err := os.ReadFile(filepath.Join(dir, "infra", "outputs.tf")) //nolint:gosec // G304: test path from t.TempDir()
+	require.NoError(t, err)
+	assert.Contains(t, string(outputs), "azurerm_container_registry.this.login_server",
+		"docker fixture => ACR outputs reference the registry")
+}
+
+func TestEjectInfra_Terraform_StampsProviderInAzureYaml(t *testing.T) {
+	// Not parallel: captures os.Stdout.
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
+
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfra(dir, "terraform"))
+	})
+
+	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test file path from t.TempDir()
+	require.NoError(t, err)
+
+	var doc struct {
+		Infra struct {
+			Provider string `yaml:"provider"`
+			Path     string `yaml:"path"`
+		} `yaml:"infra"`
+		Services map[string]any `yaml:"services"`
+	}
+	require.NoError(t, yaml.Unmarshal(raw, &doc))
+
+	// The Terraform path is the one place eject mutates azure.yaml: the
+	// provider must flip from microsoft.foundry to terraform so azd-core's
+	// built-in provider handles provisioning.
+	assert.Equal(t, "terraform", doc.Infra.Provider)
+	assert.Empty(t, doc.Infra.Path, "starter infra.path must be dropped")
+	// The rest of azure.yaml (services) must survive the edit.
+	require.Contains(t, doc.Services, "my-foundry")
+}
+
+func TestEjectInfra_Terraform_TfvarsShape(t *testing.T) {
+	// Not parallel: captures os.Stdout.
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
+
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfra(dir, "terraform"))
+	})
+
+	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.tfvars.json")) //nolint:gosec // G304: test file path from t.TempDir()
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(raw, &doc), "main.tfvars.json must be valid JSON")
+
+	// Static keys carry ${...} placeholders azd resolves at provision time.
+	assert.Equal(t, "${AZURE_LOCATION}", doc["location"])
+	assert.Equal(t, "${AZURE_RESOURCE_GROUP}", doc["resource_group_name"])
+	assert.Equal(t, "${AZURE_AI_PROJECT_NAME}", doc["foundry_project_name"])
+	assert.Equal(t, "${AZURE_SUBSCRIPTION_ID}", doc["subscription_id"])
+	assert.Equal(t, "${AZURE_PRINCIPAL_ID}", doc["principal_id"])
+
+	// include_acr is NOT written to tfvars; the ACR decision is the presence of
+	// acr.tf at eject time, not a Terraform variable.
+	assert.NotContains(t, doc, "include_acr",
+		"include_acr must not be emitted to main.tfvars.json")
+
+	// deployments is the synthesizer-derived value carried into tfvars.
+	deps, ok := doc["deployments"].([]any)
+	require.True(t, ok, "deployments should be an array, got %T", doc["deployments"])
+	require.Len(t, deps, 1)
+}
+
+func TestEjectInfra_Terraform_NoDockerOmitsAcr(t *testing.T) {
+	// Not parallel: captures os.Stdout.
+	dir := t.TempDir()
+	// image-only agent (no docker:) -> no ACR.
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+services:
+  my-foundry:
+    host: azure.ai.agent
+    deployments: []
+    agents:
+      - name: my-agent
+        image: registry.io/myorg/myagent:latest
+`)
+
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfra(dir, "terraform"))
+	})
+
+	// acr.tf must NOT be written when no agent uses docker:.
+	_, err := os.Stat(filepath.Join(dir, "infra", "acr.tf"))
+	assert.True(t, os.IsNotExist(err), "acr.tf must be omitted when no agent uses docker:")
+
+	// outputs.tf must not contain any ACR output at all when ACR is not used --
+	// no resource references and no empty-string placeholders.
+	outputs, err := os.ReadFile(filepath.Join(dir, "infra", "outputs.tf")) //nolint:gosec // G304: test path from t.TempDir()
+	require.NoError(t, err)
+	assert.NotContains(t, string(outputs), "azurerm_container_registry",
+		"no ACR resource references when acr.tf is omitted")
+	assert.NotContains(t, string(outputs), "azapi_resource.acr_connection",
+		"no ACR connection reference when acr.tf is omitted")
+	assert.NotContains(t, string(outputs), "AZURE_CONTAINER_REGISTRY_ENDPOINT",
+		"ACR outputs must be omitted entirely, not emitted as empty strings")
+	assert.NotContains(t, string(outputs), "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+	assert.NotContains(t, string(outputs), "AZURE_AI_PROJECT_ACR_CONNECTION_NAME")
+	// The non-ACR outputs are still present.
+	assert.Contains(t, string(outputs), "AZURE_RESOURCE_GROUP")
+	assert.Contains(t, string(outputs), "FOUNDRY_PROJECT_ENDPOINT")
+
+	// main.tf must not carry any ACR leftovers (e.g. container_registry_name).
+	main, err := os.ReadFile(filepath.Join(dir, "infra", "main.tf")) //nolint:gosec // G304: test path from t.TempDir()
+	require.NoError(t, err)
+	assert.NotContains(t, string(main), "container_registry",
+		"main.tf must have no ACR references when ACR is not used")
+
+	// include_acr is not emitted to tfvars either.
+	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.tfvars.json")) //nolint:gosec // G304: test file path from t.TempDir()
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(raw, &doc))
+	assert.NotContains(t, doc, "include_acr")
+}
+
+func TestEjectInfra_Terraform_RefusesWhenInfraExists(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
+
+	err := ejectInfra(dir, "terraform")
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected structured azdext.LocalError, got %T", err)
+	assert.Equal(t, exterrors.CodeInfraEjectExists, localErr.Code)
+
+	// The refusal must fire before azure.yaml is touched: provider stays foundry.
+	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test file path from t.TempDir()
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "provider: microsoft.foundry",
+		"azure.yaml must not be stamped when eject refuses")
 }

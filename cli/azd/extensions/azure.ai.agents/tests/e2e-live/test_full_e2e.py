@@ -434,7 +434,7 @@ def phase_init():
                 key("Enter")
                 time.sleep(5)
         else:
-            print(f"[6] Not on project picker, moving to dynamic")
+            print("[6] Not on project picker, moving to dynamic")
 
     # Step 7+: Dynamic prompts
     _last_prompt = ""
@@ -744,7 +744,7 @@ def phase_invoke():
         if rc != 0 and has_error and ("500" in error_msg or "Internal Server Error" in error_msg):
             print(f"  Server error: {error_msg[:100]}")
             if attempt < max_retries:
-                print(f"  Retrying in 30s (container may still be starting)...")
+                print("  Retrying in 30s (container may still be starting)...")
                 time.sleep(30)
                 continue
             else:

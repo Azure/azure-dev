@@ -961,10 +961,24 @@ func hasContainerArtifact(artifacts []*azdext.Artifact) bool {
 }
 
 func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.ContainerAgent, bool, error) {
+	// An explicit AGENT_DEFINITION_PATH override is represented by
+	// agentDefinitionPath and must win over the service entry.
+	if p.agentDefinitionPath != "" {
+		data, err := os.ReadFile(p.agentDefinitionPath)
+		if err != nil {
+			return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("failed to read agent manifest file: %s", err),
+				"verify the agent.yaml file exists and is readable",
+			)
+		}
+
+		WarnLegacyAgentShape(AgentDefinitionSourceDisk)
+		return parseContainerAgentYAML(data)
+	}
+
 	// Prefer the agent definition carried inline on the service entry (the
-	// unified service-level shape, or the deprecated config-nested shape). Fall
-	// back to a legacy agent.yaml/agent.yml on disk so older projects still build
-	// and deploy during the deprecation window.
+	// unified service-level shape, or the deprecated config-nested shape).
 	if ca, isHosted, found, source, err := AgentDefinitionFromService(p.serviceConfig); found || err != nil {
 		if found && source.IsLegacy() {
 			WarnLegacyAgentShape(source)
@@ -972,17 +986,11 @@ func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.
 		return ca, isHosted, err
 	}
 
-	data, err := os.ReadFile(p.agentDefinitionPath)
-	if err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("failed to read agent manifest file: %s", err),
-			"verify the agent.yaml file exists and is readable",
-		)
-	}
-
-	WarnLegacyAgentShape(AgentDefinitionSourceDisk)
-	return parseContainerAgentYAML(data)
+	return agent_yaml.ContainerAgent{}, false, exterrors.Dependency(
+		exterrors.CodeAgentDefinitionNotFound,
+		fmt.Sprintf("agent definition not found for service %q", p.serviceConfig.GetName()),
+		"re-run `azd ai agent init` to write the agent definition into azure.yaml",
+	)
 }
 
 // Deploy performs the deployment operation for the agent service

@@ -987,6 +987,34 @@ func TestLoadContainerAgentDefinition_MalformedYAMLReturnsError(t *testing.T) {
 	require.Contains(t, err.Error(), "agent.yaml is not valid")
 }
 
+func TestLoadContainerAgentDefinition_EnvPathOverridesInlineDefinition(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := filepath.Join(dir, "agent.yaml")
+	require.NoError(t, os.WriteFile(
+		agentPath,
+		[]byte("kind: hosted\nname: override-agent\nprotocols:\n  - protocol: responses\n    version: \"1.0.0\"\n"),
+		0o600,
+	))
+
+	props, err := AgentDefinitionToServiceProperties(sampleContainerAgent(), nil)
+	require.NoError(t, err)
+	provider := &AgentServiceTargetProvider{
+		agentDefinitionPath: agentPath,
+		serviceConfig: &azdext.ServiceConfig{
+			Name:                 "basic-agent",
+			Host:                 "azure.ai.agent",
+			AdditionalProperties: props,
+		},
+	}
+
+	got, isHosted, err := provider.loadContainerAgentDefinition()
+	require.NoError(t, err)
+	require.True(t, isHosted)
+	require.Equal(t, "override-agent", got.Name)
+}
+
 func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
 	t.Parallel()
 

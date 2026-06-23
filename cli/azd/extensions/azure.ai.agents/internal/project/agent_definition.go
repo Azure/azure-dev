@@ -222,6 +222,58 @@ func ServiceConfigProps(svc *azdext.ServiceConfig) *structpb.Struct {
 	return svc.GetConfig()
 }
 
+// UpsertAgentEnvVars adds or updates environment variables on the agent
+// definition carried inline on the service entry, preserving every other key.
+// It is used by commands that mutate the definition (e.g. `optimize apply`).
+// Returns an error when the service carries no inline definition; callers fall
+// back to mutating a legacy on-disk agent.yaml in that case.
+func UpsertAgentEnvVars(svc *azdext.ServiceConfig, kv map[string]string) error {
+	ca, _, found, source, err := AgentDefinitionFromService(svc)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("service %q does not carry an inline agent definition", svc.GetName())
+	}
+
+	envVars := []agent_yaml.EnvironmentVariable{}
+	if ca.EnvironmentVariables != nil {
+		envVars = *ca.EnvironmentVariables
+	}
+	for key, value := range kv {
+		idx := -1
+		for i := range envVars {
+			if envVars[i].Name == key {
+				idx = i
+				break
+			}
+		}
+		if idx >= 0 {
+			envVars[idx].Value = value
+		} else {
+			envVars = append(envVars, agent_yaml.EnvironmentVariable{Name: key, Value: value})
+		}
+	}
+	ca.EnvironmentVariables = &envVars
+
+	cfg, err := LoadServiceTargetAgentConfig(svc)
+	if err != nil {
+		return err
+	}
+
+	props, err := AgentDefinitionToServiceProperties(ca, cfg)
+	if err != nil {
+		return err
+	}
+
+	if source == AgentDefinitionSourceLegacyConfig {
+		svc.Config = props
+	} else {
+		svc.AdditionalProperties = props
+	}
+	return nil
+}
+
 // SetAgentContainerSettings writes the resolved container settings onto the
 // agent service's inline properties, preserving every other key (the agent
 // definition and the rest of the deploy/provision config). It mutates whichever

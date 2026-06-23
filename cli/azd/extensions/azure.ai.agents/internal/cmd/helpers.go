@@ -706,6 +706,9 @@ type ServiceRunContext struct {
 	ServiceName    string // the resolved service name (from azure.yaml)
 	ProjectDir     string // absolute path to the service source directory
 	StartupCommand string // startupCommand from AdditionalProperties (may be empty)
+	// Definition is the resolved agent definition (from the inline azure.yaml
+	// entry or a legacy agent.yaml). It is nil when no definition can be resolved.
+	Definition *agent_yaml.ContainerAgent
 }
 
 // resolveServiceRunContext queries the azd project to find the matching azure.ai.agent
@@ -730,10 +733,19 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 		startupCmd = agentConfig.StartupCommand
 	}
 
+	var definition *agent_yaml.ContainerAgent
+	if def, _, source, defErr := projectpkg.LoadAgentDefinition(svc, project.Path); defErr == nil {
+		definition = &def
+		if source.IsLegacy() {
+			projectpkg.WarnLegacyAgentShape(source)
+		}
+	}
+
 	return &ServiceRunContext{
 		ServiceName:    svc.Name,
 		ProjectDir:     projectDir,
 		StartupCommand: startupCmd,
+		Definition:     definition,
 	}, nil
 }
 

@@ -12,13 +12,12 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
-	goyaml "go.yaml.in/yaml/v3"
 )
 
 func newEndpointCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -91,25 +90,20 @@ func runEndpointUpdate(
 		return err
 	}
 
-	// Read and parse agent.yaml.
-	agentYamlPath, err := paths.JoinAllowRoot(proj.Path, svc.RelativePath, "agent.yaml")
+	// Resolve the agent definition (inline on the service entry, or a legacy
+	// agent.yaml on disk).
+	agentDef, _, source, err := project.LoadAgentDefinition(svc, proj.Path)
 	if err != nil {
-		return fmt.Errorf("invalid agent.yaml path: %w", err)
+		return fmt.Errorf("failed to resolve agent definition: %w", err)
 	}
-	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // path validated by JoinAllowRoot
-	if err != nil {
-		return fmt.Errorf("failed to read agent.yaml: %w", err)
-	}
-
-	var agentDef agent_yaml.ContainerAgent
-	if err := goyaml.Unmarshal(data, &agentDef); err != nil {
-		return fmt.Errorf("failed to parse agent.yaml: %w", err)
+	if source.IsLegacy() {
+		project.WarnLegacyAgentShape(source)
 	}
 
 	// Validate that endpoint or card is defined.
 	if agentDef.AgentEndpoint == nil && agentDef.AgentCard == nil {
 		return fmt.Errorf(
-			"agent.yaml for service %q does not define agent_endpoint or agent_card — nothing to update",
+			"agent service %q does not define agent_endpoint or agent_card — nothing to update",
 			svc.Name,
 		)
 	}

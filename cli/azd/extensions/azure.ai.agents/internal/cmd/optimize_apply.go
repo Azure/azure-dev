@@ -22,6 +22,7 @@ import (
 
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -160,15 +161,31 @@ func (a *OptimizeApplyAction) apply(
 	}
 	fmt.Fprintf(out, "  → %s\n", filepath.Join(candidateDir, opt_eval.MetadataFile))
 
-	// Step 3: Write OPTIMIZATION_LOCAL_DIR and OPTIMIZATION_CANDIDATE_ID into agent.yaml
-	// so the deploy pipeline knows which local optimization config to use.
-	agentYamlPath := filepath.Join(serviceDir, "agent.yaml")
-	fmt.Fprintf(out, "  Updating %s...\n", agentYamlPath)
-	if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_LOCAL_DIR", agentConfigsDir); err != nil {
-		return fmt.Errorf("failed to update agent.yaml: %w", err)
+	// Step 3: Persist OPTIMIZATION_LOCAL_DIR and OPTIMIZATION_CANDIDATE_ID onto the
+	// agent definition so the deploy pipeline knows which local optimization
+	// config to use. New projects carry the definition inline in azure.yaml;
+	// older projects still keep it in an on-disk agent.yaml.
+	envUpdates := map[string]string{
+		"OPTIMIZATION_LOCAL_DIR":    agentConfigsDir,
+		"OPTIMIZATION_CANDIDATE_ID": a.flags.candidate,
 	}
-	if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_CANDIDATE_ID", a.flags.candidate); err != nil {
-		return fmt.Errorf("failed to update agent.yaml: %w", err)
+	if _, _, found, _, _ := projectpkg.AgentDefinitionFromService(svc); found {
+		fmt.Fprintf(out, "  Updating agent definition in azure.yaml...\n")
+		if err := projectpkg.UpsertAgentEnvVars(svc, envUpdates); err != nil {
+			return fmt.Errorf("failed to update agent definition: %w", err)
+		}
+		if _, err := azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{Service: svc}); err != nil {
+			return fmt.Errorf("failed to persist agent definition: %w", err)
+		}
+	} else {
+		agentYamlPath := filepath.Join(serviceDir, "agent.yaml")
+		fmt.Fprintf(out, "  Updating %s...\n", agentYamlPath)
+		if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_LOCAL_DIR", agentConfigsDir); err != nil {
+			return fmt.Errorf("failed to update agent.yaml: %w", err)
+		}
+		if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_CANDIDATE_ID", a.flags.candidate); err != nil {
+			return fmt.Errorf("failed to update agent.yaml: %w", err)
+		}
 	}
 
 	// Step 4: Store candidate ID in the azd environment for tracking.

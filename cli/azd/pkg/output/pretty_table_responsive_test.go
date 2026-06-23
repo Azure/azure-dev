@@ -359,83 +359,6 @@ func TestCardTitleUngroupedBorderless(t *testing.T) {
 	require.NotContains(t, stripTerminalEscapes(out), "LATEST:")
 }
 
-func TestAlignLeadingSymbols(t *testing.T) {
-	tests := []struct {
-		name string
-		in   []string
-		want []string
-	}{
-		{
-			name: "no leading symbol leaves values untouched",
-			in:   []string{"Up to date", "Not installed", "Installed"},
-			want: []string{"Up to date", "Not installed", "Installed"},
-		},
-		{
-			name: "pads plain values to align under symbol text",
-			in:   []string{"⟳ Update available", "Up to date", "Not installed"},
-			want: []string{"⟳ Update available", "  Up to date", "  Not installed"},
-		},
-		{
-			name: "value that already has a symbol is unchanged",
-			in:   []string{"⟳ Update available", "⚠ Incompatible"},
-			want: []string{"⟳ Update available", "⚠ Incompatible"},
-		},
-		{
-			name: "empty values are not padded",
-			in:   []string{"⟳ Update available", ""},
-			want: []string{"⟳ Update available", ""},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, alignLeadingSymbols(tt.in))
-		})
-	}
-}
-
-func TestResponsiveStatusAlignment(t *testing.T) {
-	// dataLineContaining returns the stripped rendered line containing substr.
-	dataLineContaining := func(out, substr string) string {
-		for line := range strings.SplitSeq(out, "\n") {
-			if strings.Contains(line, substr) {
-				return line
-			}
-		}
-		return ""
-	}
-	textColumn := func(line, text string) int {
-		before, _, ok := strings.Cut(line, text)
-		require.True(t, ok, "text %q not found in %q", text, line)
-		return displayWidth(before)
-	}
-
-	columns := []PrettyColumn{
-		{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
-		{
-			Column:             Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
-			Priority:           1,
-			AlignLeadingSymbol: true,
-		},
-		{Column: Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"}, Priority: 1},
-	}
-
-	// When a symbol is present, the status text aligns: "Update available" and
-	// "Up to date" begin at the same display column (the no-padding case is
-	// covered directly by TestAlignLeadingSymbols).
-	rows := []responsiveInput{
-		{Id: "a", Status: "⟳ Update available", Source: "azd"},
-		{Id: "b", Status: "Up to date", Source: "azd"},
-	}
-	formatter := &PrettyTableFormatter{ConsoleWidthFn: func() int { return 120 }}
-	buf := &bytes.Buffer{}
-	require.NoError(t, formatter.Format(rows, buf, PrettyTableFormatterOptions{Columns: columns}))
-	out := stripTerminalEscapes(buf.String())
-
-	updateCol := textColumn(dataLineContaining(out, "Update available"), "Update available")
-	upToDateCol := textColumn(dataLineContaining(out, "Up to date"), "Up to date")
-	require.Equal(t, updateCol, upToDateCol)
-}
-
 func TestEllipsisAndHiddenColumnGlyphs(t *testing.T) {
 	// The package uses the single-character ellipsis for truncated values and
 	// three middle dots for the hidden-column placeholder header.
@@ -495,11 +418,10 @@ func TestResponsiveTruncatedStatusKeepsColor(t *testing.T) {
 	columns := []PrettyColumn{
 		{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
 		{
-			Column:             Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
-			Priority:           1,
-			Truncatable:        true,
-			AlignLeadingSymbol: true,
-			ColorFunc:          statusColor,
+			Column:      Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
+			Priority:    1,
+			Truncatable: true,
+			ColorFunc:   statusColor,
 		},
 		{Column: Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"}, Priority: 1},
 	}

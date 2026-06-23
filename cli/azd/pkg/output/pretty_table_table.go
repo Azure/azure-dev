@@ -34,21 +34,6 @@ func (f *PrettyTableFormatter) renderTable(
 		}
 	}
 
-	// Apply leading-symbol alignment per column where requested.
-	for ci, rc := range cols {
-		if !rc.col.AlignLeadingSymbol {
-			continue
-		}
-		column := make([]string, len(rows))
-		for ri := range rows {
-			column[ri] = plain[ri][ci]
-		}
-		column = alignLeadingSymbols(column)
-		for ri := range rows {
-			plain[ri][ci] = column[ri]
-		}
-	}
-
 	// Natural width = max of heading and all cell values.
 	natural := make([]int, len(cols))
 	for ci, rc := range cols {

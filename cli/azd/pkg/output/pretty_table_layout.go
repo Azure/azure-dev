@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
-	"unicode"
 
 	"github.com/mattn/go-runewidth"
 )
@@ -272,45 +271,4 @@ func buildColumnHint(visible, total int, truncated bool) string {
 		return fmt.Sprintf("Showing %d of %d columns. %s", visible, total, resize)
 	}
 	return resize
-}
-
-// alignLeadingSymbols left-pads values that lack a leading "symbol + space"
-// prefix so their text aligns with values that have one (e.g. so "Up to date"
-// aligns under the text of "⟳ Update available"). When no value has a leading
-// symbol, the values are returned unchanged (left-aligned).
-func alignLeadingSymbols(values []string) []string {
-	width := 0
-	for _, v := range values {
-		width = max(width, leadingSymbolWidth(v))
-	}
-	if width == 0 {
-		return values
-	}
-	out := make([]string, len(values))
-	for i, v := range values {
-		if v == "" {
-			out[i] = ""
-			continue
-		}
-		out[i] = strings.Repeat(" ", width-leadingSymbolWidth(v)) + v
-	}
-	return out
-}
-
-// leadingSymbolWidth returns the display width of a leading "symbol + space"
-// prefix (e.g. "⟳ "), or 0 when the value is empty or begins with a letter,
-// digit, or whitespace.
-func leadingSymbolWidth(v string) int {
-	if v == "" {
-		return 0
-	}
-	first := []rune(v)[0]
-	if unicode.IsLetter(first) || unicode.IsDigit(first) || unicode.IsSpace(first) {
-		return 0
-	}
-	idx := strings.IndexByte(v, ' ')
-	if idx < 0 {
-		return 0
-	}
-	return displayWidth(v[:idx+1])
 }

@@ -404,10 +404,9 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 					Heading:       "STATUS",
 					ValueTemplate: "{{.Status}}",
 				},
-				Priority:           1,
-				Truncatable:        true,
-				AlignLeadingSymbol: true,
-				ColorFunc:          extensionStatusColor,
+				Priority:    1,
+				Truncatable: true,
+				ColorFunc:   extensionStatusColor,
 			},
 			{
 				Column: output.Column{

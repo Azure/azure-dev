@@ -82,12 +82,6 @@ type PrettyColumn struct {
 	// title line (without a label) in the card layout, excluding it from the
 	// labeled card fields.
 	CardTitle bool
-
-	// AlignLeadingSymbol left-pads values that lack a leading "symbol + space"
-	// prefix (e.g. "⟳ Update available") so their text aligns with values that
-	// have one. When no value in the column has a leading symbol, values are
-	// left-aligned without padding. Applies to the table layouts only.
-	AlignLeadingSymbol bool
 }
 
 // PrettyTableFormatterOptions configures the pretty table formatter.

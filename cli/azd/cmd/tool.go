@@ -1037,11 +1037,10 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 				Truncatable: true,
 			},
 			{
-				Column:             output.Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
-				Priority:           1,
-				Truncatable:        true,
-				AlignLeadingSymbol: true,
-				ColorFunc:          extensionStatusColor,
+				Column:      output.Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
+				Priority:    1,
+				Truncatable: true,
+				ColorFunc:   extensionStatusColor,
 			},
 			{
 				Column: output.Column{

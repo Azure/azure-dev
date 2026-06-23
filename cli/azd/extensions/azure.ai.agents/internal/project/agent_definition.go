@@ -355,7 +355,11 @@ func agentDefinitionFromDisk(
 	for _, name := range []string{"agent.yaml", "agent.yml"} {
 		defPath, err := paths.JoinAllowRoot(projectRoot, svc.GetRelativePath(), name)
 		if err != nil {
-			continue
+			return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk, exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				fmt.Sprintf("invalid service path for %s: %s", svc.GetName(), err),
+				"update azure.yaml so the agent service path stays within the project directory",
+			)
 		}
 		data, err := os.ReadFile(defPath) //nolint:gosec // path derived from azd project config
 		if err != nil {

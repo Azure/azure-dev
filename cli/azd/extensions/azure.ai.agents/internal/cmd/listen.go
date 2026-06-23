@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -488,8 +489,16 @@ func kindEnvUpdate(
 	// targets that truly need the definition surface the error where they read it.
 	_, isHosted, source, err := project.LoadAgentDefinition(svc, azdProject.Path)
 	if err != nil {
-		log.Printf("[debug] kindEnvUpdate: skipping %s, no readable agent definition: %v", svc.Name, err)
-		return nil
+		// Tolerate only a missing definition: the bicepless inline path lets users
+		// declare prompt agents that carry no hosted definition. Validation and
+		// path-traversal errors still propagate so a malformed or out-of-tree
+		// definition fails fast here.
+		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
+			localErr.Code == exterrors.CodeAgentDefinitionNotFound {
+			log.Printf("[debug] kindEnvUpdate: no agent definition for %s; skipping (inline-agents path)", svc.Name)
+			return nil
+		}
+		return err
 	}
 	if source.IsLegacy() {
 		project.WarnLegacyAgentShape(source)

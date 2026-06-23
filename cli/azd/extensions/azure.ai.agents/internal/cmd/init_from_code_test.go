@@ -410,115 +410,38 @@ func TestExtractResourceGroup(t *testing.T) {
 	}
 }
 
-func TestWriteDefinitionToSrcDir(t *testing.T) {
+func TestWriteAgentIgnoreToSrcDir(t *testing.T) {
 	t.Parallel()
 
-	t.Run("writes agent.yaml to directory", func(t *testing.T) {
+	t.Run("writes .agentignore and not agent.yaml", func(t *testing.T) {
 		t.Parallel()
 
-		dir := t.TempDir()
-		srcDir := filepath.Join(dir, "src")
-
-		definition := &agent_yaml.ContainerAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Name: "test-agent",
-				Kind: agent_yaml.AgentKindHosted,
-			},
-			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "1.0.0"},
-			},
-			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
-				{Name: "AZURE_AI_MODEL_DEPLOYMENT_NAME", Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}"},
-			},
-		}
+		srcDir := filepath.Join(t.TempDir(), "src")
 
 		action := &InitFromCodeAction{}
-		resultPath, err := action.writeDefinitionToSrcDir(definition, srcDir)
-		if err != nil {
+		if err := action.writeAgentIgnoreToSrcDir(srcDir); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		expectedPath := filepath.Join(srcDir, "agent.yaml")
-		if resultPath != expectedPath {
-			t.Errorf("path = %q, want %q", resultPath, expectedPath)
+		if _, err := os.Stat(filepath.Join(srcDir, ".agentignore")); err != nil {
+			t.Fatalf("expected .agentignore to exist: %v", err)
 		}
-
-		//nolint:gosec // test fixture path is created within test temp directory
-		content, err := os.ReadFile(resultPath)
-		if err != nil {
-			t.Fatalf("failed to read written file: %v", err)
-		}
-
-		contentStr := string(content)
-		// Verify key content is present in the YAML
-		if !containsAll(contentStr, "name: test-agent", "kind: hosted", "responses", "AZURE_AI_MODEL_DEPLOYMENT_NAME") {
-			t.Errorf("written content missing expected fields:\n%s", contentStr)
-		}
-		// AZURE_OPENAI_ENDPOINT and FOUNDRY_PROJECT_ENDPOINT should NOT be written to agent.yaml.
-		// Hosted agents receive platform-provided FOUNDRY_* variables such as FOUNDRY_PROJECT_ENDPOINT instead.
-		if strings.Contains(contentStr, "AZURE_OPENAI_ENDPOINT") || strings.Contains(contentStr, "FOUNDRY_PROJECT_ENDPOINT") {
-			t.Errorf("agent.yaml should not contain AZURE_OPENAI_ENDPOINT or FOUNDRY_PROJECT_ENDPOINT:\n%s", contentStr)
+		// The agent definition now lives in azure.yaml; no agent.yaml on disk.
+		if _, err := os.Stat(filepath.Join(srcDir, "agent.yaml")); !os.IsNotExist(err) {
+			t.Fatalf("agent.yaml should not be written; stat err = %v", err)
 		}
 	})
 
 	t.Run("creates nested directories", func(t *testing.T) {
 		t.Parallel()
 
-		dir := t.TempDir()
-		srcDir := filepath.Join(dir, "deep", "nested", "path")
-
-		definition := &agent_yaml.ContainerAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Name: "nested-agent",
-				Kind: agent_yaml.AgentKindHosted,
-			},
-		}
-
+		srcDir := filepath.Join(t.TempDir(), "deep", "nested", "path")
 		action := &InitFromCodeAction{}
-		_, err := action.writeDefinitionToSrcDir(definition, srcDir)
-		if err != nil {
+		if err := action.writeAgentIgnoreToSrcDir(srcDir); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-
-		if _, err := os.Stat(filepath.Join(srcDir, "agent.yaml")); err != nil {
-			t.Fatalf("expected file to exist: %v", err)
-		}
-	})
-
-	t.Run("overwrites existing file", func(t *testing.T) {
-		t.Parallel()
-
-		dir := t.TempDir()
-		existingFile := filepath.Join(dir, "agent.yaml")
-		//nolint:gosec // test fixture file permissions are intentional
-		if err := os.WriteFile(existingFile, []byte("old content"), 0644); err != nil {
-			t.Fatalf("write existing file: %v", err)
-		}
-
-		definition := &agent_yaml.ContainerAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Name: "new-agent",
-				Kind: agent_yaml.AgentKindHosted,
-			},
-		}
-
-		action := &InitFromCodeAction{}
-		_, err := action.writeDefinitionToSrcDir(definition, dir)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		//nolint:gosec // test fixture path is created within test temp directory
-		content, err := os.ReadFile(existingFile)
-		if err != nil {
-			t.Fatalf("failed to read file: %v", err)
-		}
-
-		if string(content) == "old content" {
-			t.Error("expected file to be overwritten, but old content remains")
-		}
-		if !containsAll(string(content), "name: new-agent") {
-			t.Errorf("written content missing expected fields:\n%s", string(content))
+		if _, err := os.Stat(filepath.Join(srcDir, ".agentignore")); err != nil {
+			t.Fatalf("expected .agentignore to exist: %v", err)
 		}
 	})
 }

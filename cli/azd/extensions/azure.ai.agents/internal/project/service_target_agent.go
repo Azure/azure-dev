@@ -191,7 +191,7 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 // environment, the tenant, and the credential. Idempotent via the
 // agentDefinitionPath short-circuit.
 func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) error {
-	if p.deployContextReady {
+	if p.deployContextReady || p.agentDefinitionPath != "" {
 		return nil
 	}
 	if p.serviceConfig == nil {

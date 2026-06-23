@@ -112,9 +112,9 @@ func (p *skillServiceTarget) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	// TODO(#8049 follow-up): when instructions is a file path (.md/.txt), load
-	// the file contents at deploy time, rebasing relative paths to the file that
-	// declares them (spec 2.4). For now only inline instruction text is upserted.
+	// TODO: when instructions is a file path (.md/.txt), load the file contents
+	// at deploy time, rebasing relative paths to the declaring file.
+	// For now only inline instruction text is upserted.
 	if cfg.Instructions == "" {
 		return nil, fmt.Errorf("skill service %q requires instructions", serviceConfig.GetName())
 	}

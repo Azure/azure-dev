@@ -336,6 +336,14 @@ func synthesizeNetwork(
 			return nil, "", fmt.Errorf(
 				"%s: agentSubnet.vnet and peSubnet.vnet must reference the same virtual network", fp(""))
 		}
+		// The agent and PE subnets share one VNet, so their names must differ.
+		// Identical names would point the account private endpoint at the
+		// Microsoft.App/environments-delegated agent subnet (PEs cannot live in a
+		// delegated subnet), surfacing as a confusing deploy-time failure.
+		if strings.EqualFold(agentName, peName) {
+			return nil, "", fmt.Errorf(
+				"%s: agentSubnet.name and peSubnet.name must differ (both subnets share one VNet)", fp(""))
+		}
 		params["agentSubnetName"] = agentName
 		params["agentSubnetPrefix"] = agentPrefix
 		params["createAgentSubnet"] = createAgent

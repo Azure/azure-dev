@@ -163,7 +163,6 @@ func (p *FoundryProvisioningProvider) Initialize(
 		)
 	}
 	p.synthResult = res
-	log.Printf("[debug] foundry provider: network mode = %q", res.NetworkMode)
 
 	tmplBytes, err := synthesis.ARMTemplate()
 	if err != nil {

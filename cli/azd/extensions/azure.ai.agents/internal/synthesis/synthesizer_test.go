@@ -664,6 +664,18 @@ services:
 			wantSub: "same virtual network",
 		},
 		{
+			name: "agentSubnet and peSubnet share a name in one vnet",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    network:
+      agentSubnet: {vnet: ` + validVNet + `, name: shared, prefix: 192.168.0.0/24}
+      peSubnet: {vnet: ` + validVNet + `, name: shared, prefix: 192.168.1.0/24}
+`,
+			wantSub: "agentSubnet.name and peSubnet.name must differ",
+		},
+		{
 			name: "subnet missing vnet",
 			yaml: `
 services:

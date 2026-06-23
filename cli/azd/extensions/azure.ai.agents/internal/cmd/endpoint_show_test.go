@@ -135,6 +135,70 @@ func TestPrintEndpointJSON(t *testing.T) {
 	t.Logf("=== endpoint show --output json ===\n%s", output)
 }
 
+func TestPrintEndpointTable_ProtocolConfiguration(t *testing.T) {
+	agent := &agent_api.AgentObject{
+		Name: "proto-config-agent",
+		AgentEndpoint: &agent_api.AgentEndpoint{
+			ProtocolConfiguration: &agent_api.ProtocolConfiguration{
+				Responses:   &agent_api.ResponsesProtocolConfiguration{},
+				A2A:         &agent_api.A2AProtocolConfiguration{},
+				Invocations: &agent_api.InvocationsProtocolConfiguration{},
+			},
+		},
+	}
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := printEndpointTable(agent)
+	require.NoError(t, err)
+
+	_ = w.Close() //nolint:gosec
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	output := buf.String()
+
+	assert.Contains(t, output, "proto-config-agent")
+	assert.Contains(t, output, "responses")
+	assert.Contains(t, output, "a2a")
+	assert.Contains(t, output, "invocations")
+	// Should NOT contain "mcp" since it's not in protocol_configuration
+	assert.NotContains(t, output, "mcp")
+
+	t.Logf("=== endpoint show (protocol_configuration) ===\n%s", output)
+}
+
+func TestResolveEndpointProtocols(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint *agent_api.AgentEndpoint
+		want     []string
+	}{
+		{"nil endpoint", nil, nil},
+		{"empty endpoint", &agent_api.AgentEndpoint{}, nil},
+		{"protocol_configuration preferred over protocols", &agent_api.AgentEndpoint{
+			Protocols: []agent_api.AgentEndpointProtocol{"activity"},
+			ProtocolConfiguration: &agent_api.ProtocolConfiguration{
+				Responses: &agent_api.ResponsesProtocolConfiguration{},
+				MCP:       &agent_api.MCPProtocolConfiguration{},
+			},
+		}, []string{"responses", "mcp"}},
+		{"fallback to protocols", &agent_api.AgentEndpoint{
+			Protocols: []agent_api.AgentEndpointProtocol{"responses", "a2a"},
+		}, []string{"responses", "a2a"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveEndpointProtocols(tt.endpoint)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestGetIsolationKind(t *testing.T) {
 	tests := []struct {
 		name     string

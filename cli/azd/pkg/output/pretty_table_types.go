@@ -59,10 +59,6 @@ type PrettyColumn struct {
 	// 1 and 2 are shown at compact; 3+ are full-table only. 0 is treated as 1.
 	Priority int
 
-	// ShortValueTemplate is an alternative Go template used at the compact
-	// breakpoint. If empty, the regular ValueTemplate is used.
-	ShortValueTemplate string
-
 	// CardValueTemplate is an alternative Go template used by the card layout.
 	// If empty, the regular ValueTemplate is used. It allows a column to omit
 	// redundant values in cards (e.g. a "latest" version that equals the
@@ -112,7 +108,7 @@ type PrettyTableFormatterOptions struct {
 	// Defaults to DefaultCompactThreshold (60).
 	CompactThreshold int
 
-	// ResponsiveColumnHint enables the header-only "..." column and the
+	// ResponsiveColumnHint enables the header-only "···" column and the
 	// "Showing N of M columns" / "Resize the terminal..." hint message in the
 	// table layouts when columns are hidden or values are truncated.
 	ResponsiveColumnHint bool
@@ -123,10 +119,9 @@ type PrettyTableFormatterOptions struct {
 
 // resolvedColumn pairs a PrettyColumn with its compiled templates.
 type resolvedColumn struct {
-	col       PrettyColumn
-	tmpl      *template.Template
-	shortTmpl *template.Template // nil when ShortValueTemplate is empty
-	cardTmpl  *template.Template // nil when CardValueTemplate is empty
+	col      PrettyColumn
+	tmpl     *template.Template
+	cardTmpl *template.Template // nil when CardValueTemplate is empty
 }
 
 // priority returns the effective compact-visibility priority (0 maps to 1).

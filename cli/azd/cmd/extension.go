@@ -476,10 +476,11 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 }
 
 // Status indicator constants for extension list display.
+// Only "Update available" carries a leading symbol; the others are plain text.
 const (
 	statusUpToDate   = "Up to date"
 	statusUpdate     = "⟳ Update available"
-	statusIncompat   = "⚠ Incompatible"
+	statusIncompat   = "Incompatible"
 	statusNotInstall = "Not installed"
 )
 
@@ -2316,8 +2317,9 @@ func (a *extensionSourceListAction) Run(ctx context.Context) (*actions.ActionRes
 		}
 
 		err = prettyFormatter.Format(sourceConfigs, a.writer, output.PrettyTableFormatterOptions{
-			Columns:         columns,
-			CardGroupColumn: "TYPE",
+			Columns:              columns,
+			CardGroupColumn:      "TYPE",
+			ResponsiveColumnHint: true,
 		})
 	} else {
 		err = a.formatter.Format(sourceConfigs, a.writer, nil)

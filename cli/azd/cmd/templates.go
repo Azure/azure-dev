@@ -397,8 +397,9 @@ func (a *templateSourceListAction) Run(ctx context.Context) (*actions.ActionResu
 		}
 
 		err = prettyFormatter.Format(sourceConfigs, a.writer, output.PrettyTableFormatterOptions{
-			Columns:         columns,
-			CardGroupColumn: "TYPE",
+			Columns:              columns,
+			CardGroupColumn:      "TYPE",
+			ResponsiveColumnHint: true,
 		})
 	} else {
 		err = a.formatter.Format(sourceConfigs, a.writer, nil)

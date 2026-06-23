@@ -683,8 +683,9 @@ func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 		prettyFormatter := &output.PrettyTableFormatter{}
 		err = prettyFormatter.Format(rows, a.writer, output.PrettyTableFormatterOptions{
-			Columns:         columns,
-			CardGroupColumn: "KEY",
+			Columns:              columns,
+			CardGroupColumn:      "KEY",
+			ResponsiveColumnHint: true,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed formatting config options: %w", err)

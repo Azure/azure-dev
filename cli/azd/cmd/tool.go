@@ -1232,7 +1232,7 @@ func (a *toolShowAction) displayToolDetails(
 	}
 
 	// Tool Information
-	installedVersion := "Not Installed"
+	installedVersion := "Not installed"
 	if status.Installed {
 		installedVersion = status.InstalledVersion
 		if installedVersion == "" {

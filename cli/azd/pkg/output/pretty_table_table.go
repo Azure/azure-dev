@@ -13,21 +13,17 @@ import (
 )
 
 // renderTable renders cols and rows as a whitespace-padded table with a header
-// underline. When useShort is true, ShortValueTemplate is used where available.
-// It returns the rendered table and whether any value was truncated to fit.
+// underline. It returns the rendered table and whether any value was truncated
+// to fit.
 func (f *PrettyTableFormatter) renderTable(
-	cols []resolvedColumn, rows []any, termWidth int, useShort bool,
+	cols []resolvedColumn, rows []any, termWidth int,
 ) (string, bool, error) {
 	// Resolve plain cell values.
 	plain := make([][]string, len(rows))
 	for ri, row := range rows {
 		plain[ri] = make([]string, len(cols))
 		for ci, rc := range cols {
-			tmpl := rc.tmpl
-			if useShort && rc.shortTmpl != nil {
-				tmpl = rc.shortTmpl
-			}
-			val, err := prettyExecTemplate(tmpl, row)
+			val, err := prettyExecTemplate(rc.tmpl, row)
 			if err != nil {
 				return "", false, fmt.Errorf("row %d, column %q: %w", ri, rc.col.Heading, err)
 			}
@@ -143,7 +139,7 @@ func (f *PrettyTableFormatter) renderFullTable(
 	parsed []resolvedColumn, rows []any, termWidth int, writer io.Writer,
 	opts PrettyTableFormatterOptions,
 ) error {
-	out, truncated, err := f.renderTable(parsed, rows, termWidth, false)
+	out, truncated, err := f.renderTable(parsed, rows, termWidth)
 	if err != nil {
 		return err
 	}
@@ -158,7 +154,7 @@ func (f *PrettyTableFormatter) renderFullTable(
 
 // renderCompactTable renders only the columns visible at the compact breakpoint
 // (Priority ≤ compactPriorityThreshold). When ResponsiveColumnHint is set and
-// columns are dropped, a header-only "..." column and a hint message are added.
+// columns are dropped, a header-only "···" column and a hint message are added.
 func (f *PrettyTableFormatter) renderCompactTable(
 	parsed []resolvedColumn, rows []any, termWidth int,
 	writer io.Writer, opts PrettyTableFormatterOptions,
@@ -179,7 +175,7 @@ func (f *PrettyTableFormatter) renderCompactTable(
 		cols = append(cols, hiddenColumnPlaceholder())
 	}
 
-	out, truncated, err := f.renderTable(cols, rows, termWidth, true)
+	out, truncated, err := f.renderTable(cols, rows, termWidth)
 	if err != nil {
 		return err
 	}

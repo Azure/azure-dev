@@ -11,7 +11,7 @@ import (
 )
 
 // emptyTemplate renders an empty string for any data row. It backs the
-// header-only "..." placeholder column at the compact breakpoint.
+// header-only "···" placeholder column at the compact breakpoint.
 var emptyTemplate = template.Must(template.New("empty").Parse(""))
 
 // PrettyTableFormatter renders tabular data with responsive breakpoints.
@@ -103,13 +103,6 @@ func parseColumns(columns []PrettyColumn) ([]resolvedColumn, error) {
 			return nil, fmt.Errorf("column %q: %w", c.Heading, err)
 		}
 		rc := resolvedColumn{col: c, tmpl: t}
-		if c.ShortValueTemplate != "" {
-			st, err := template.New(c.Heading + "_short").Parse(c.ShortValueTemplate)
-			if err != nil {
-				return nil, fmt.Errorf("column %q short template: %w", c.Heading, err)
-			}
-			rc.shortTmpl = st
-		}
 		if c.CardValueTemplate != "" {
 			ct, err := template.New(c.Heading + "_card").Parse(c.CardValueTemplate)
 			if err != nil {

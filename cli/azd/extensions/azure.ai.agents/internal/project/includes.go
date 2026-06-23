@@ -29,13 +29,24 @@ const maxRefDepth = 32
 // are rejected for now; only local YAML/JSON files are supported.
 var remoteRefPattern = regexp.MustCompile(`(?i)^[a-z][a-z0-9+.-]*://`)
 
-// ResolveFileRefs resolves $ref file includes within a parsed Foundry service configuration.
+// ResolveFileRefs resolves $ref file includes within a Foundry resource service configuration.
 //
-// cfg is the Foundry service entry as already-parsed data (the inline azure.yaml keys that
+// In the separate-services azure.yaml shape every Foundry resource is its own service entry, so
+// each owning extension calls ResolveFileRefs on its resource's inline map: the entry keys that
 // reach the extension over gRPC, where they arrive as a structpb.Struct decoded to
-// map[string]any). projectRoot is the directory that holds azure.yaml; relative $ref targets
-// at the top level resolve against it, and rebased project/instructions paths are anchored to
-// it.
+// map[string]any. The core ServiceConfig fields (host, the service key, uses) are stripped by
+// core and never appear here. cfg therefore takes any of these shapes:
+//
+//   - A service-entry-level $ref. In azure.yaml the service entry can be authored with host:
+//     plus $ref (and optional overlay keys). Core removes ServiceConfig fields such as host
+//     before the extension sees the config, so the cfg map passed here has $ref at its top level.
+//   - A deployment array-item $ref. Deployments stay an array on the project service, so each
+//     item in deployments may be its own $ref (e.g. ./deployments/gpt-4o.yaml).
+//   - Any nested $ref reached while walking the entry (a $ref inside a loaded file, or a sibling
+//     value), since resolution is recursive over every map and sequence node.
+//
+// projectRoot is the directory that holds azure.yaml; relative $ref targets at the top level
+// resolve against it, and rebased project/instructions paths are anchored to it.
 //
 // Any object that contains a "$ref" string is replaced by the referenced YAML or JSON file,
 // with the object's remaining keys overlaid on top. The overlay is a shallow, top-level merge:

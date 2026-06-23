@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.connections/schemas/azure.ai.connection.json",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.connections/schemas/azure.ai.connection.json",
   "title": "Azure AI Foundry connection service",
-  "description": "Service-level configuration for a host: azure.ai.connection entry. The service key is the connection name. azd upserts the connection on the project the entry uses:.",
+  "description": "Service-level configuration for a host: azure.ai.connection entry. The service key is the connection name. azd updates or creates the connection on the project the entry depends on.",
   "type": "object",
   "additionalProperties": true,
   "properties": {

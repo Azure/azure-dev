@@ -57,7 +57,7 @@ func WarnLegacyAgentShape(source AgentDefinitionSource) {
 	legacyAgentShapeWarnOnce.Do(func() {
 		detail := "the deprecated config-nested azure.ai.agent shape"
 		if source == AgentDefinitionSourceDisk {
-			detail = "an on-disk agent.yaml/agent.manifest.yaml"
+			detail = "an on-disk agent.yaml/agent.yml"
 		}
 		fmt.Fprintf(os.Stderr,
 			"WARNING: this project uses %s. azd still reads it, but the shape is deprecated; "+

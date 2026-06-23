@@ -173,7 +173,9 @@ func (a *OptimizeApplyAction) apply(
 		"OPTIMIZATION_LOCAL_DIR":    agentConfigsDir,
 		"OPTIMIZATION_CANDIDATE_ID": a.flags.candidate,
 	}
-	if _, _, found, _, _ := projectpkg.AgentDefinitionFromService(svc); found {
+	if _, _, found, _, err := projectpkg.AgentDefinitionFromService(svc); err != nil {
+		return fmt.Errorf("failed to read agent definition: %w", err)
+	} else if found {
 		fmt.Fprintf(out, "  Updating agent definition in azure.yaml...\n")
 		if err := projectpkg.UpsertAgentEnvVars(svc, envUpdates); err != nil {
 			return fmt.Errorf("failed to update agent definition: %w", err)

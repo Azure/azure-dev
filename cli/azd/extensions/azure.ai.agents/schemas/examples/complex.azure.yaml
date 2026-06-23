@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/schemas/v1.0/azure.yaml.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 
 # Exercises the full microsoft.foundry surface: deployments, connections,
 # toolboxes, skills, routines, hosted + prompt agents, inline tools, and

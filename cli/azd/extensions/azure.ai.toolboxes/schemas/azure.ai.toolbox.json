@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.toolboxes/schemas/azure.ai.toolbox.json",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.toolboxes/schemas/azure.ai.toolbox.json",
   "title": "Azure AI Foundry toolbox service",
   "description": "Service-level configuration for a host: azure.ai.toolbox entry. The service key is the toolbox name. A toolbox is a named bundle of connection-backed tools that agents reference by name.",
   "type": "object",

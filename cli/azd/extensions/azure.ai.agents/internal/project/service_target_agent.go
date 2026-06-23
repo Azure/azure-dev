@@ -270,8 +270,6 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	}
 	p.credential = cred
 
-	fmt.Fprintf(os.Stderr, "Project path: %s, Service path: %s\n", proj.Project.Path, fullPath)
-
 	p.projectPath = proj.Project.Path
 	p.servicePath = fullPath
 

@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.projects/schemas/azure.ai.project.json",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.projects/schemas/azure.ai.project.json",
   "title": "Azure AI Foundry project service",
   "description": "Service-level configuration for a host: azure.ai.project entry. The project owns its model deployments and an optional endpoint to an existing project. When endpoint is omitted, azd provisions a new project; when set, azd connects to that existing project instead of creating one.",
   "type": "object",

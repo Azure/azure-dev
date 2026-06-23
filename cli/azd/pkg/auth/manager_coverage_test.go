@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -14,6 +15,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -581,6 +583,73 @@ func TestLogout_NotLoggedIn(t *testing.T) {
 	// Should succeed even when not logged in
 	err := m.Logout(t.Context())
 	require.NoError(t, err)
+}
+
+// --- CleanAllAuthCache ---
+
+func TestCleanAllAuthCache(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", tempDir)
+
+	// Create auth directory structure with files
+	authDir := filepath.Join(tempDir, "auth")
+	msalDir := filepath.Join(authDir, "msal")
+	require.NoError(t, os.MkdirAll(msalDir, osutil.PermissionDirectoryOwnerOnly))
+
+	// Create MSAL cache file
+	require.NoError(t, os.WriteFile(
+		filepath.Join(msalDir, "cache.json"), []byte(`{"tokens":"stale"}`), osutil.PermissionFileOwnerOnly))
+
+	// Create credential cache file
+	require.NoError(t, os.WriteFile(
+		filepath.Join(authDir, "credtenant.client.json"), []byte(`{"secret":"old"}`), osutil.PermissionFileOwnerOnly))
+
+	// Create auth.json
+	require.NoError(t, os.WriteFile(
+		filepath.Join(tempDir, "auth.json"), []byte(`{"auth.account.currentUser":{}}`), osutil.PermissionFileOwnerOnly))
+
+	// Create auth.claims
+	require.NoError(t, os.WriteFile(
+		filepath.Join(tempDir, "auth.claims"), []byte(`claims-data`), osutil.PermissionFileOwnerOnly))
+
+	m := &Manager{}
+	err := m.CleanAllAuthCache()
+	require.NoError(t, err)
+
+	// auth.json should be removed
+	_, err = os.Stat(filepath.Join(tempDir, "auth.json"))
+	assert.True(t, os.IsNotExist(err), "auth.json should be deleted")
+
+	// auth.claims should be removed
+	_, err = os.Stat(filepath.Join(tempDir, "auth.claims"))
+	assert.True(t, os.IsNotExist(err), "auth.claims should be deleted")
+
+	// Old MSAL cache files should be gone
+	_, err = os.Stat(filepath.Join(msalDir, "cache.json"))
+	assert.True(t, os.IsNotExist(err), "MSAL cache should be deleted")
+
+	// Old credential files should be gone
+	_, err = os.Stat(filepath.Join(authDir, "credtenant.client.json"))
+	assert.True(t, os.IsNotExist(err), "credential cache should be deleted")
+
+	// auth/msal directory should be recreated (empty)
+	info, err := os.Stat(msalDir)
+	require.NoError(t, err, "msal directory should be recreated")
+	assert.True(t, info.IsDir())
+}
+
+func TestCleanAllAuthCache_NoExistingFiles(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", tempDir)
+
+	m := &Manager{}
+	err := m.CleanAllAuthCache()
+	require.NoError(t, err, "should succeed even when no auth files exist")
+
+	// auth/msal directory should still be created
+	info, err := os.Stat(filepath.Join(tempDir, "auth", "msal"))
+	require.NoError(t, err)
+	assert.True(t, info.IsDir())
 }
 
 // --- EnsureLoggedInCredential ---

@@ -582,7 +582,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		envManager,
 		env,
 		mockContext.Console,
-		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, resourceService, cloud.AzurePublic()),
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, nil, resourceService, cloud.AzurePublic()),
 		&mockCurrentPrincipal{},
 		keyvault.NewKeyVaultService(
 			mockaccount.SubscriptionCredentialProviderFunc(
@@ -1258,7 +1258,7 @@ func TestUserDefinedTypes(t *testing.T) {
 		&mockenv.MockEnvManager{},
 		env,
 		mockContext.Console,
-		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil, cloud.AzurePublic()),
+		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil, nil, cloud.AzurePublic()),
 		&mockCurrentPrincipal{},
 		keyvault.NewKeyVaultService(
 			mockaccount.SubscriptionCredentialProviderFunc(
@@ -1924,7 +1924,7 @@ func createBicepProviderWithEnvAndMode(
 		envManager,
 		env,
 		mockContext.Console,
-		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, resourceService, cloud.AzurePublic()),
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, nil, resourceService, cloud.AzurePublic()),
 		&mockCurrentPrincipal{},
 		keyvault.NewKeyVaultService(
 			mockaccount.SubscriptionCredentialProviderFunc(

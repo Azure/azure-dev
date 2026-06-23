@@ -5,10 +5,16 @@ package cmd
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"maps"
 	"net"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -24,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/codes"
@@ -69,8 +76,13 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 	// azd extension install <extension-id>
 	group.Add("install", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "install <extension-id>",
+			Use:   "install <extension-id|extension-bundle.zip>",
 			Short: "Installs specified extensions.",
+			Long: `Installs one or more extensions by id from a registered extension source.
+
+You can also pass the path to a self-contained extension bundle (.zip): azd
+extracts it and installs the bundled extension. Bundled extensions aren't
+tracked for updates; reinstall from a newer bundle to update.`,
 		},
 		ActionResolver: newExtensionInstallAction,
 		FlagsResolver:  newExtensionInstallFlags,
@@ -259,6 +271,11 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 	extensionRows := []extensionListItem{}
 	azdVersion := currentAzdSemver()
 
+	// Track installed extensions that are represented by a matching registry row
+	// so the local pass below can surface the rest (e.g. bundle-installed
+	// extensions, or extensions whose source was removed).
+	coveredInstalled := map[string]bool{}
+
 	for _, extension := range registryExtensions {
 		if len(extension.Versions) == 0 {
 			continue
@@ -266,6 +283,9 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 		installedExtension, has := installedExtensions[extension.Id]
 		installed := has && installedExtension.Source == extension.Source
+		if installed {
+			coveredInstalled[extension.Id] = true
+		}
 
 		if a.flags.installed && !installed {
 			continue
@@ -316,6 +336,37 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			DisplayVersion:   displayVersion,
 			Status:           status,
 			StatusSymbol:     extensionStatusSymbol(status),
+		})
+	}
+
+	// Surface installed extensions that are not represented by any configured
+	// registry (e.g. installed from a self-contained bundle, or whose source was
+	// removed). These have no live source to track updates against, so they are
+	// shown as up to date; the SOURCE column distinguishes them (e.g. "bundle").
+	for _, ext := range slices.SortedFunc(maps.Values(installedExtensions),
+		func(a, b *extensions.Extension) int { return strings.Compare(a.Id, b.Id) }) {
+		if coveredInstalled[ext.Id] {
+			continue
+		}
+		// Respect an explicit --source filter.
+		if a.flags.source != "" && !strings.EqualFold(a.flags.source, ext.Source) {
+			continue
+		}
+		// Installed records carry no tag metadata, so they cannot satisfy a tag filter.
+		if len(a.flags.tags) > 0 {
+			continue
+		}
+
+		extensionRows = append(extensionRows, extensionListItem{
+			Id:               ext.Id,
+			Name:             ext.DisplayName,
+			Namespace:        ext.Namespace,
+			Version:          ext.Version,
+			InstalledVersion: ext.Version,
+			Source:           ext.Source,
+			DisplayVersion:   ext.Version,
+			Status:           statusUpToDate,
+			StatusSymbol:     extensionStatusSymbol(statusUpToDate),
 		})
 	}
 
@@ -752,6 +803,14 @@ type extensionInstallAction struct {
 	flags            *extensionInstallFlags
 	console          input.Console
 	extensionManager *extensions.Manager
+	sourceManager    *extensions.SourceManager
+	// bundleSourceName is the transient source registered while installing from a
+	// self-contained bundle (.zip). It is removed during cleanup; extensions
+	// installed under it are re-pointed to extensions.BundleSourceName.
+	bundleSourceName string
+	// bundleTempDir is the temporary directory the bundle was extracted into. It
+	// is deleted during cleanup once installation completes.
+	bundleTempDir string
 }
 
 func newExtensionInstallAction(
@@ -759,12 +818,14 @@ func newExtensionInstallAction(
 	flags *extensionInstallFlags,
 	console input.Console,
 	extensionManager *extensions.Manager,
+	sourceManager *extensions.SourceManager,
 ) actions.Action {
 	return &extensionInstallAction{
 		args:             args,
 		flags:            flags,
 		console:          console,
 		extensionManager: extensionManager,
+		sourceManager:    sourceManager,
 	}
 }
 
@@ -773,6 +834,18 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		Title:     "Install an azd extension (azd extension install)",
 		TitleNote: "Installs the specified extension onto the local machine",
 	})
+
+	// A single .zip argument is a self-contained bundle: extract it, register an
+	// ephemeral source, and queue its extensions for install (this rewrites
+	// a.args/a.flags.source for the loop below). The deferred cleanup removes the
+	// ephemeral source and temp dir afterwards.
+	if isBundleArg(a.args) {
+		if err := a.prepareBundleInstall(ctx, a.args[0]); err != nil {
+			a.cleanupBundleInstall(ctx)
+			return nil, err
+		}
+		defer a.cleanupBundleInstall(ctx)
+	}
 
 	extensionIds := a.args
 	if len(extensionIds) == 0 {
@@ -878,32 +951,57 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		var extensionVersion *extensions.ExtensionVersion
 
 		if alreadyInstalled {
-			// Extension is already installed - apply smart upgrade/downgrade logic
+			// Compare sources by raw name: each bundle install registers a unique
+			// transient source, so installing any bundle over an existing install is
+			// always a source change (and prompts), even at the same version.
+			sameSource := strings.EqualFold(installedExtension.Source, compatibleExtension.Source)
 
-			// Check if same version (regardless of source)
-			if installedExtension.Version == targetVersion && !a.flags.force {
-				stepMessage += output.WithGrayFormat(" (version %s already installed)", installedExtension.Version)
-				a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
-				continue
-			}
+			if !a.flags.force {
+				if sameSource {
+					if installedExtension.Version == targetVersion {
+						stepMessage += output.WithGrayFormat(
+							" (version %s already installed)", installedExtension.Version)
+						a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+						continue
+					}
 
-			// Parse versions for semantic comparison. Non-semver tags
-			// (e.g. "nightly", "dev") have no defined ordering, so when
-			// either side fails to parse we skip the downgrade guard and
-			// fall through to the upgrade path. The string equality check
-			// above already short-circuits the no-op case.
-			installedSemver, installedErr := semver.NewVersion(installedExtension.Version)
-			targetSemver, targetErr := semver.NewVersion(targetVersion)
-			if installedErr == nil && targetErr == nil &&
-				targetSemver.LessThan(installedSemver) && !a.flags.force {
-				// Would be a downgrade - require --force
-				stepMessage += output.WithGrayFormat(
-					" (would downgrade from %s to %s, use --force to override)",
-					installedExtension.Version,
-					targetVersion,
-				)
-				a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
-				continue
+					// Downgrades have no defined order for non-semver tags, so detect
+					// them only when both versions parse as semver.
+					installedSemver, installedErr := semver.NewVersion(installedExtension.Version)
+					targetSemver, targetErr := semver.NewVersion(targetVersion)
+					if installedErr == nil && targetErr == nil && targetSemver.LessThan(installedSemver) {
+						// Confirm before replacing a newer install with an older one.
+						question := fmt.Sprintf(
+							"%s %s is installed. %s?",
+							output.WithHighLightFormat(extensionId), installedExtension.Version,
+							versionTransitionVerb(installedExtension.Version, targetVersion),
+						)
+						skipSuffix := fmt.Sprintf(
+							" (would downgrade from %s to %s, use --force to override)",
+							installedExtension.Version, targetVersion,
+						)
+						proceed, err := a.confirmReplace(ctx, stepMessage, question, skipSuffix)
+						if err != nil {
+							return nil, err
+						}
+						if !proceed {
+							continue
+						}
+					}
+					// Same-source upgrade falls through and proceeds without prompting.
+				} else {
+					// Source is changing (e.g. bundle over registry build); confirm first.
+					proceed, err := a.confirmSourceChange(
+						ctx, stepMessage, extensionId, installedExtension,
+						compatibleExtension.Source, targetVersion,
+					)
+					if err != nil {
+						return nil, err
+					}
+					if !proceed {
+						continue
+					}
+				}
 			}
 
 			// Use upgrade logic for existing installations
@@ -917,7 +1015,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			)
 			if err != nil {
 				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, fmt.Errorf("failed to upgrade extension: %w", err)
+				return nil, wrapDependencyError(fmt.Errorf("failed to upgrade extension: %w", err))
 			}
 
 			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
@@ -936,7 +1034,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			)
 			if err != nil {
 				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, fmt.Errorf("failed to install extension: %w", err)
+				return nil, wrapDependencyError(fmt.Errorf("failed to install extension: %w", err))
 			}
 
 			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
@@ -962,6 +1060,329 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			Header: "Extension(s) installed successfully",
 		},
 	}, nil
+}
+
+// extensionBundleTempPrefix is the prefix used for the temporary directory a
+// self-contained bundle (.zip) is extracted into during installation. The
+// directory is removed once installation completes.
+const extensionBundleTempPrefix = "azd-extension-bundle-"
+
+// sourceDisplayLabel returns a user-facing label for an extension source. The
+// transient source registered while installing a bundle is an implementation
+// detail, so it (and the reserved bundle source) are presented as "bundle"
+// rather than by their internal name.
+func (a *extensionInstallAction) sourceDisplayLabel(source string) string {
+	if a.bundleSourceName != "" && strings.EqualFold(source, a.bundleSourceName) {
+		return "bundle"
+	}
+	if strings.EqualFold(source, extensions.BundleSourceName) {
+		return "bundle"
+	}
+	return fmt.Sprintf("source %q", source)
+}
+
+// sourceDisplayLabelForInstalled is like sourceDisplayLabel but phrases the
+// bundle case with an article ("a bundle") so it reads naturally after
+// "installed from".
+func (a *extensionInstallAction) sourceDisplayLabelForInstalled(source string) string {
+	label := a.sourceDisplayLabel(source)
+	if label == "bundle" {
+		return "a bundle"
+	}
+	return label
+}
+
+// versionTransitionVerb returns a capitalized verb phrase describing the move
+// from the installed version to the target version: "Reinstall" when they match,
+// "Upgrade to <target>" / "Downgrade to <target>" when both parse as semver, and
+// a neutral "Replace with <target>" when ordering is undefined (non-semver tags).
+func versionTransitionVerb(installedVersion, targetVersion string) string {
+	if installedVersion == targetVersion {
+		return "Reinstall"
+	}
+
+	installedSemver, installedErr := semver.NewVersion(installedVersion)
+	targetSemver, targetErr := semver.NewVersion(targetVersion)
+	switch {
+	case installedErr == nil && targetErr == nil && targetSemver.LessThan(installedSemver):
+		return fmt.Sprintf("Downgrade to %s", targetVersion)
+	case installedErr == nil && targetErr == nil && targetSemver.GreaterThan(installedSemver):
+		return fmt.Sprintf("Upgrade to %s", targetVersion)
+	default:
+		return fmt.Sprintf("Replace with %s", targetVersion)
+	}
+}
+
+// confirmSourceChange prompts before replacing an already-installed extension
+// with one from a different source (e.g. a bundle build over a registry build),
+// since the artifacts may differ. In --no-prompt mode it skips with --force
+// guidance. It reports whether the install should proceed.
+func (a *extensionInstallAction) confirmSourceChange(
+	ctx context.Context,
+	stepMessage string,
+	extensionId string,
+	installed *extensions.Extension,
+	newSource string,
+	targetVersion string,
+) (bool, error) {
+	oldLabel := a.sourceDisplayLabelForInstalled(installed.Source)
+	newLabel := a.sourceDisplayLabel(newSource)
+
+	question := fmt.Sprintf(
+		"%s %s is already installed from %s. %s from %s?",
+		output.WithHighLightFormat(extensionId), installed.Version, oldLabel,
+		versionTransitionVerb(installed.Version, targetVersion), newLabel,
+	)
+	skipSuffix := fmt.Sprintf(
+		" (%s already installed from %s; use --force to install from %s)",
+		installed.Version, oldLabel, newLabel,
+	)
+
+	return a.confirmReplace(ctx, stepMessage, question, skipSuffix)
+}
+
+// confirmReplace prompts with the given question and reports whether to proceed,
+// managing spinner state and prompt spacing. In --no-prompt mode it does not
+// prompt: it skips with noPromptSkipSuffix appended to the step message.
+func (a *extensionInstallAction) confirmReplace(
+	ctx context.Context,
+	stepMessage string,
+	question string,
+	noPromptSkipSuffix string,
+) (bool, error) {
+	if a.flags.global.NoPrompt {
+		a.console.StopSpinner(ctx, stepMessage+output.WithGrayFormat(noPromptSkipSuffix), input.StepSkipped)
+		return false, nil
+	}
+
+	a.console.StopSpinner(ctx, stepMessage, input.Step)
+	a.console.Message(ctx, "")
+	confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
+		Message:      question,
+		DefaultValue: false,
+	})
+	if err != nil {
+		return false, err
+	}
+	if !confirm {
+		a.console.StopSpinner(ctx, stepMessage+output.WithGrayFormat(" (skipped)"), input.StepSkipped)
+		return false, nil
+	}
+
+	a.console.Message(ctx, "")
+	return true, nil
+}
+
+// wrapDependencyError augments a dependency-not-found failure with actionable
+// guidance. azd does not resolve dependencies across sources during install, so
+// when a required dependency is missing from the parent's source the user is
+// directed to install it explicitly first. Other errors pass through unchanged.
+func wrapDependencyError(err error) error {
+	if depErr, ok := errors.AsType[*extensions.DependencyNotFoundError](err); ok {
+		return &internal.ErrorWithSuggestion{
+			Err: depErr,
+			Suggestion: fmt.Sprintf(
+				"Install the required dependency first with %s, then retry.",
+				output.WithHighLightFormat("azd extension install %s", depErr.DependencyId),
+			),
+		}
+	}
+
+	return err
+}
+
+// isBundleArg reports whether the provided arguments represent a single
+// self-contained extension bundle (.zip) path that exists on disk.
+func isBundleArg(args []string) bool {
+	if len(args) != 1 {
+		return false
+	}
+
+	if !strings.EqualFold(filepath.Ext(args[0]), ".zip") {
+		return false
+	}
+
+	info, err := os.Stat(args[0])
+	return err == nil && !info.IsDir()
+}
+
+// prepareBundleInstall extracts the bundle, registers an ephemeral source over
+// it, and rewrites a.args/a.flags.source so the standard install loop installs
+// the bundled extensions from that source. cleanupBundleInstall tears the
+// ephemeral state down afterwards.
+func (a *extensionInstallAction) prepareBundleInstall(ctx context.Context, zipPath string) error {
+	absZipPath, err := filepath.Abs(zipPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve bundle path: %w", err)
+	}
+
+	// Use a unique transient source name so the ephemeral source never collides
+	// with a user-configured source. The name is an implementation detail and is
+	// not surfaced to the user, since the source is removed after installation.
+	suffix, err := randomHexToken()
+	if err != nil {
+		return fmt.Errorf("failed to generate bundle source name: %w", err)
+	}
+	base := bundleSourceName(absZipPath)
+	if base == "" {
+		base = "bundle"
+	}
+	sourceName := fmt.Sprintf("%s-%s", base, suffix)
+
+	stepMessage := fmt.Sprintf("Extracting bundle %s", output.WithHighLightFormat(filepath.Base(absZipPath)))
+	a.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+	bundleDir, err := os.MkdirTemp("", extensionBundleTempPrefix)
+	if err != nil {
+		a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+		return fmt.Errorf("failed to create temporary bundle directory: %w", err)
+	}
+	// Record the temp dir immediately so cleanup removes it even if a later step fails.
+	a.bundleTempDir = bundleDir
+
+	if err := rzip.ExtractToDirectory(absZipPath, bundleDir); err != nil {
+		a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+		return fmt.Errorf("failed to extract bundle: %w", err)
+	}
+
+	registryPath := filepath.Join(bundleDir, extensions.BundleRegistryFileName)
+	if _, err := os.Stat(registryPath); err != nil {
+		a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+		return &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("bundle does not contain a %s at its root", extensions.BundleRegistryFileName),
+			Suggestion: "Ensure the .zip is a self-contained azd extension bundle " +
+				"produced by 'azd x pack --bundle'.",
+		}
+	}
+	a.console.StopSpinner(ctx, stepMessage, input.StepDone)
+
+	sourceConfig := &extensions.SourceConfig{
+		Name:     sourceName,
+		Type:     extensions.SourceKindBundle,
+		Location: bundleDir,
+	}
+
+	// Validate the bundle by hydrating the source.
+	source, err := a.sourceManager.CreateSource(ctx, sourceConfig)
+	if err != nil {
+		return fmt.Errorf("bundle validation failed: %w", err)
+	}
+
+	bundledExtensions, err := source.ListExtensions(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to read bundled extensions: %w", err)
+	}
+	if len(bundledExtensions) == 0 {
+		return fmt.Errorf("bundle %q contains no extensions", filepath.Base(absZipPath))
+	}
+
+	// Register the ephemeral bundle source so the install loop can resolve it.
+	if err := a.sourceManager.Add(ctx, sourceName, sourceConfig); err != nil {
+		return fmt.Errorf("failed to register bundle source: %w", err)
+	}
+	// Record the source name immediately so cleanup removes it even if a later step fails.
+	a.bundleSourceName = sourceName
+
+	// The manager cached the source list and a snapshot of user config at startup.
+	// Invalidate the cache so the new bundle source is visible, and reload the
+	// config so the install save below does not clobber it.
+	a.extensionManager.InvalidateSourceCache()
+	if err := a.extensionManager.ReloadUserConfig(); err != nil {
+		return err
+	}
+
+	// Install every extension the bundle declares. Bundles are produced per
+	// extension by 'azd x pack --bundle', so this is typically a single id.
+	ids := make([]string, len(bundledExtensions))
+	for i, ext := range bundledExtensions {
+		ids[i] = ext.Id
+	}
+
+	a.args = ids
+	a.flags.source = sourceName
+
+	return nil
+}
+
+// cleanupBundleInstall tears down the ephemeral state created by
+// prepareBundleInstall: it re-points any extension installed from the transient
+// bundle source to extensions.BundleSourceName, removes the transient source, and
+// deletes the extracted bundle directory. It is safe to call multiple times and
+// when prepareBundleInstall failed partway through.
+func (a *extensionInstallAction) cleanupBundleInstall(ctx context.Context) {
+	if a.bundleSourceName != "" {
+		// Re-point extensions installed from the transient source so they are not
+		// orphaned once the source is removed.
+		if installed, err := a.extensionManager.ListInstalled(); err == nil {
+			for _, ext := range installed {
+				if !strings.EqualFold(ext.Source, a.bundleSourceName) {
+					continue
+				}
+				ext.Source = extensions.BundleSourceName
+				if err := a.extensionManager.UpdateInstalled(ext); err != nil {
+					log.Printf("failed to mark extension %q as bundle-installed: %v", ext.Id, err)
+				}
+			}
+		} else {
+			log.Printf("failed to list installed extensions during bundle cleanup: %v", err)
+		}
+
+		if err := a.sourceManager.Remove(ctx, a.bundleSourceName); err != nil &&
+			!errors.Is(err, extensions.ErrSourceNotFound) {
+			log.Printf("failed to remove bundle source %q: %v", a.bundleSourceName, err)
+		}
+		a.extensionManager.InvalidateSourceCache()
+		a.bundleSourceName = ""
+	}
+
+	if a.bundleTempDir != "" {
+		if err := os.RemoveAll(a.bundleTempDir); err != nil {
+			log.Printf("failed to remove bundle directory %q: %v", a.bundleTempDir, err)
+		}
+		a.bundleTempDir = ""
+	}
+}
+
+// randomHexToken returns a short random hex string used to make the transient
+// bundle source name unique.
+func randomHexToken() (string, error) {
+	buf := make([]byte, 4)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+// bundleSourceName derives a normalized source name from a bundle file path by
+// stripping the .zip extension.
+func bundleSourceName(zipPath string) string {
+	base := filepath.Base(zipPath)
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+	return normalizeBundleSourceName(base)
+}
+
+// normalizeBundleSourceName produces a filesystem- and config-safe source name
+// by lowercasing, replacing characters outside [a-z0-9_] with a hyphen, and
+// collapsing consecutive hyphens. Dots are intentionally excluded because
+// extension source names are used as dot-delimited configuration keys, so a
+// dot (e.g. in a version like 1.2.3) would be misinterpreted as a nested key.
+func normalizeBundleSourceName(name string) string {
+	name = strings.ToLower(name)
+	var sb strings.Builder
+	prevHyphen := false
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_':
+			sb.WriteRune(r)
+			prevHyphen = false
+		default:
+			if !prevHyphen {
+				sb.WriteRune('-')
+				prevHyphen = true
+			}
+		}
+	}
+	return strings.Trim(sb.String(), "-")
 }
 
 // azd extension uninstall
@@ -1334,6 +1755,27 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	}
 	baseResult.FromVersion = installed.Version
 	baseResult.FromSource = installed.Source
+
+	// Extensions installed from a self-contained bundle have no live registry to
+	// upgrade against. Skip them gracefully and direct the user to reinstall with
+	// a newer bundle (or re-point to a registry via `azd extension install`).
+	if installed.Source == extensions.BundleSourceName {
+		baseResult.Status = extensions.UpgradeStatusSkipped
+		baseResult.SkipReason = "installed from a self-contained bundle; " +
+			"reinstall with a newer bundle to update"
+		if !isJsonOutput {
+			skipMsg := fmt.Sprintf(
+				"Upgrading %s extension",
+				output.WithHighLightFormat(extensionId),
+			) + output.WithGrayFormat(
+				" (Installed from a bundle)",
+			)
+			a.console.StopSpinner(
+				ctx, skipMsg, input.StepSkipped,
+			)
+		}
+		return baseResult
+	}
 
 	// Resolve which registry source to use.
 	allMatchOptions := &extensions.FilterOptions{
@@ -2013,6 +2455,7 @@ func (a *extensionSourceRemoveAction) Run(ctx context.Context) (*actions.ActionR
 	var key = strings.ToLower(a.args[0])
 	spinnerMessage := fmt.Sprintf("Removing extension source (%s)", key)
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+
 	err := a.sourceManager.Remove(ctx, key)
 	a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
 	if err != nil {
@@ -2128,7 +2571,7 @@ func selectDistinctExtension(
 		return matches[0], nil
 	}
 
-	if global.NoPrompt {
+	if global != nil && global.NoPrompt {
 		return nil, &internal.ErrorWithSuggestion{
 			Err:        fmt.Errorf("the %s extension was found in multiple sources.", extensionId),
 			Suggestion: "Specify the extension source using the --source flag.",
@@ -2150,7 +2593,8 @@ func selectDistinctExtension(
 			"The %s extension was found in multiple sources.\nSelect the source to continue",
 			output.WithHighLightFormat(extensionId),
 		),
-		Choices: sourceChoices,
+		Choices:       sourceChoices,
+		SelectedIndex: defaultExtensionSourceIndex(matches),
 	})
 
 	sourceResponseIndex, err := selectSource.Ask(ctx)
@@ -2161,6 +2605,16 @@ func selectDistinctExtension(
 	console.Message(ctx, "")
 
 	return matches[*sourceResponseIndex], nil
+}
+
+func defaultExtensionSourceIndex(matches []*extensions.ExtensionMetadata) *int {
+	for i, ext := range matches {
+		if strings.EqualFold(ext.Source, "azd") {
+			return new(i)
+		}
+	}
+
+	return new(0)
 }
 
 // checkNamespaceConflict checks if the given namespace conflicts with any installed extension.

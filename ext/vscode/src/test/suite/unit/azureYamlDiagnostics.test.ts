@@ -228,6 +228,6 @@ services:
             isDirty: false,
             isClosed: false,
             isUntitled: false
-        } as vscode.TextDocument;
+        };
     }
 });

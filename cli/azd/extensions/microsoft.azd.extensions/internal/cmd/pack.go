@@ -26,6 +26,8 @@ type packageFlags struct {
 	inputPath  string
 	outputPath string
 	rebuild    bool
+	bundle     bool
+	zip        bool
 }
 
 func newPackCommand(outputPath *string) *cobra.Command {
@@ -79,6 +81,21 @@ func newPackCommand(outputPath *string) *cobra.Command {
 		"Rebuild the extension before packaging.",
 	)
 
+	packageCmd.Flags().BoolVar(
+		&flags.bundle,
+		"bundle", false,
+		"Produce a single self-contained bundle (.zip) containing a registry.json and the "+
+			"extension artifacts, installable via 'azd extension install <bundle.zip>'.",
+	)
+
+	// --zip is a hidden alias for --bundle.
+	packageCmd.Flags().BoolVar(
+		&flags.zip,
+		"zip", false,
+		"Alias for --bundle.",
+	)
+	_ = packageCmd.Flags().MarkHidden("zip")
+
 	return packageCmd
 }
 
@@ -113,7 +130,15 @@ func runPackageAction(ctx context.Context, flags *packageFlags) (bool, error) {
 
 	extensionPack := isExtensionPack(extensionMetadata)
 
-	if flags.outputPath == "" && !extensionPack {
+	// For self-contained bundles the output is a single .zip file rather than a
+	// directory of artifacts. Resolve the destination bundle path up front.
+	var bundleOutputPath string
+	if flags.bundle {
+		bundleOutputPath, err = resolveBundleOutputPath(flags.outputPath, extensionMetadata)
+		if err != nil {
+			return false, err
+		}
+	} else if flags.outputPath == "" && !extensionPack {
 		localRegistryArtifactsPath, err := internal.LocalRegistryArtifactsPath()
 		if err != nil {
 			return false, err
@@ -127,12 +152,17 @@ func runPackageAction(ctx context.Context, flags *packageFlags) (bool, error) {
 		fmt.Printf("%s: Extension pack\n", output.WithBold("Extension Type"))
 	} else {
 		absInputPath := filepath.Join(extensionMetadata.Path, flags.inputPath)
+		fmt.Printf("%s: %s\n", output.WithBold("Input Path"), output.WithHyperlink(absInputPath, absInputPath))
+	}
+
+	if flags.bundle {
+		fmt.Printf("%s: %s\n", output.WithBold("Bundle"), output.WithHyperlink(bundleOutputPath, bundleOutputPath))
+	} else if !extensionPack {
 		absOutputPath, err := filepath.Abs(flags.outputPath)
 		if err != nil {
 			return false, fmt.Errorf("failed to get absolute path for output directory: %w", err)
 		}
 
-		fmt.Printf("%s: %s\n", output.WithBold("Input Path"), output.WithHyperlink(absInputPath, absInputPath))
 		fmt.Printf("%s: %s\n", output.WithBold("Output Path"), output.WithHyperlink(absOutputPath, absOutputPath))
 	}
 
@@ -194,6 +224,17 @@ func runPackageAction(ctx context.Context, flags *packageFlags) (bool, error) {
 		AddTask(ux.TaskOptions{
 			Title: "Packaging extension",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+				if flags.bundle {
+					if err := packSelfContainedBundle(ctx, extensionMetadata, bundleOutputPath); err != nil {
+						return ux.Error, common.NewDetailedError(
+							"Packaging failed",
+							fmt.Errorf("failed to create self-contained bundle: %w", err),
+						)
+					}
+
+					return ux.Success, nil
+				}
+
 				if extensionPack {
 					spf("Extension packs contain no artifacts; nothing to package")
 					return ux.Skipped, nil
@@ -210,7 +251,13 @@ func runPackageAction(ctx context.Context, flags *packageFlags) (bool, error) {
 			},
 		})
 
-	return extensionPack, taskList.Run()
+	// A self-contained bundle is always produced (even for extension packs), so
+	// report it as a successful package rather than an empty extension pack.
+	if err := taskList.Run(); err != nil {
+		return false, err
+	}
+
+	return extensionPack && !flags.bundle, nil
 }
 
 func packExtensionBinaries(
@@ -264,6 +311,10 @@ func packExtensionBinaries(
 func defaultPackageFlags(flags *packageFlags) {
 	if flags.inputPath == "" {
 		flags.inputPath = "bin"
+	}
+	// --zip is an alias for --bundle.
+	if flags.zip {
+		flags.bundle = true
 	}
 }
 

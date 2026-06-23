@@ -658,6 +658,25 @@ func TestConfigureDeferredInitAzureContext_PersistsProjectSignalOnly(t *testing.
 	require.Contains(t, output, "format: OpenAI")
 }
 
+func TestTracingDisclaimer(t *testing.T) {
+	t.Parallel()
+
+	got := tracingDisclaimer()
+
+	// String-contains assertions are safe against any surrounding ANSI color or
+	// OSC-8 hyperlink escape sequences, since the phrases/URL appear contiguously.
+	require.Contains(t, got, "When using Hosted Agents apply appropriate safeguards")
+	require.Contains(t, got, "You are responsible for managing all data that may flow outside")
+	require.Contains(t, got, "your organization's compliance and geographic boundaries")
+	require.Contains(t, got, "Use third-party systems at your own risk")
+	require.Contains(t, got, "When AppInsights is enabled, this project logs traces")
+	require.Contains(t, got, "Certain project members may be able to view user data")
+	require.Contains(t, got, tracingOverviewURL)
+	require.Contains(t, got, disableTracingURL)
+	require.Equal(t, "https://aka.ms/tracing-overview", tracingOverviewURL)
+	require.Equal(t, "https://aka.ms/disable-tracing", disableTracingURL)
+}
+
 // TestConfigureFoundryProjectEnv_BicepLessShortCircuits verifies that
 // bicepless=true seeds identity env vars and returns before any Foundry
 // data-plane call. The nil credential turns a regression that re-enables

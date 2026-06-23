@@ -5131,6 +5131,20 @@ const completionSpec: Fig.Spec = {
 					description: 'Show all the configuration values.',
 				},
 				{
+					name: ['sub-filter'],
+					description: 'Manage subscription filters for tenant-scoped subscription prompts.',
+					subcommands: [
+						{
+							name: ['remove'],
+							description: 'Remove a saved subscription filter for a tenant.',
+						},
+						{
+							name: ['set'],
+							description: 'Set a subscription filter for a tenant.',
+						},
+					],
+				},
+				{
 					name: ['unset'],
 					description: 'Unsets a configuration.',
 					args: {
@@ -5672,8 +5686,9 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 					args: {
-						name: 'extension-id',
+						name: 'extension-id|extension-bundle.zip',
 						generators: azdGenerators.listExtensions,
+						template: 'filepaths',
 					},
 				},
 				{

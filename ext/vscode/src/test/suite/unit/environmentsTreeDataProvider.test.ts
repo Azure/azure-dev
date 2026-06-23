@@ -51,7 +51,7 @@ suite('EnvironmentsTreeDataProvider', () => {
                 {
                     configurationPath: mockConfigPath,
                     configurationFolder: '/test',
-                    workspaceFolder: mockWorkspaceFolder as vscode.WorkspaceFolder
+                    workspaceFolder: mockWorkspaceFolder
                 }
             ]);
 
@@ -76,7 +76,7 @@ suite('EnvironmentsTreeDataProvider', () => {
                 {
                     configurationPath: mockConfigPath,
                     configurationFolder: '/test',
-                    workspaceFolder: mockWorkspaceFolder as vscode.WorkspaceFolder
+                    workspaceFolder: mockWorkspaceFolder
                 }
             ]);
 

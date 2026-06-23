@@ -5,6 +5,7 @@ package grpcserver
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -184,6 +185,92 @@ func Test_ProjectService_AddService(t *testing.T) {
 	require.Equal(t, filepath.Join("src", "service1"), serviceConfig.RelativePath)
 	require.Equal(t, project.ServiceLanguagePython, serviceConfig.Language)
 	require.Equal(t, project.ContainerAppTarget, serviceConfig.Host)
+}
+
+// Test_ProjectService_AddService_PreservesExistingProperties is a regression
+// test for issue #8678: AddService must not drop top-level azure.yaml
+// properties (e.g. hooks) or pre-existing services that are present on disk but
+// absent from a stale in-memory lazyProjectConfig cache. It reproduces the init
+// flow where azure.yaml is materialized/updated after the lazy cache was first
+// resolved.
+func Test_ProjectService_AddService_PreservesExistingProperties(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	temp := t.TempDir()
+
+	// Mock GitHub CLI version check.
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: github.Version.String(),
+	})
+
+	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
+
+	// The azure.yaml on disk has hooks, a custom top-level key, and an existing
+	// service — none of which are in the stale cache seeded below.
+	onDiskYaml := "" +
+		"name: test\n" +
+		"metadata:\n" +
+		"  template: foo@1.0\n" +
+		"hooks:\n" +
+		"  preprovision:\n" +
+		"    shell: sh\n" +
+		"    run: ./scripts/pre.sh\n" +
+		"customTopLevel:\n" +
+		"  foo: bar\n" +
+		"services:\n" +
+		"  existing:\n" +
+		"    project: ./src/existing\n" +
+		"    host: containerapp\n" +
+		"    language: python\n"
+	require.NoError(t, os.WriteFile(azdContext.ProjectPath(), []byte(onDiskYaml), 0600))
+
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
+	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
+	require.NoError(t, err)
+
+	lazyAzdContext := lazy.From(azdContext)
+	lazyEnvManager := lazy.From(envManager)
+
+	// Seed the cache with a STALE minimal config that does not reflect what is
+	// on disk (mirrors the lazy being resolved before the template azure.yaml
+	// was written). Without the reload fix, AddService would persist this stale
+	// config and wipe hooks/custom keys/existing services.
+	staleConfig := &project.ProjectConfig{Name: "test"}
+	lazyProjectConfig := lazy.From(staleConfig)
+
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, ghCli)
+
+	serviceRequest := &azdext.AddServiceRequest{
+		Service: &azdext.ServiceConfig{
+			Name:         "service1",
+			RelativePath: filepath.Join("src", "service1"),
+			Language:     "python",
+			Host:         "containerapp",
+		},
+	}
+
+	_, err = service.AddService(*mockContext.Context, serviceRequest)
+	require.NoError(t, err)
+
+	// The raw file must still contain the pre-existing top-level properties.
+	saved, err := os.ReadFile(azdContext.ProjectPath())
+	require.NoError(t, err)
+	require.Contains(t, string(saved), "hooks", "hooks must be preserved")
+	require.Contains(t, string(saved), "customTopLevel", "unknown top-level properties must be preserved")
+
+	// And a structured reload must show both the existing and the new service
+	// plus the hooks.
+	updatedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+	require.NoError(t, err)
+	require.NotEmpty(t, updatedConfig.Hooks, "hooks must be preserved")
+	require.Contains(t, updatedConfig.Services, "existing", "existing service must be preserved")
+	require.Contains(t, updatedConfig.Services, "service1", "new service must be added")
+	require.Contains(t, updatedConfig.AdditionalProperties, "customTopLevel",
+		"unknown top-level properties must be preserved")
 }
 
 func Test_ProjectService_ConfigSection(t *testing.T) {

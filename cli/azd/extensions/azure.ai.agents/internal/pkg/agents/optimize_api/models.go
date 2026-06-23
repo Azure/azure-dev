@@ -234,13 +234,13 @@ func (e *JobError) UnmarshalJSON(data []byte) error {
 
 // CandidateResult holds the evaluation result for a single candidate.
 type CandidateResult struct {
-	Name        string            `json:"name"`
-	Mutations   map[string]string `json:"mutations,omitempty"`
-	AvgScore    float64           `json:"avg_score"`
-	AvgTokens   float64           `json:"avg_tokens"`
-	CandidateID string            `json:"candidate_id,omitempty"`
-	EvalID      string            `json:"eval_id,omitempty"`
-	EvalRunID   string            `json:"eval_run_id,omitempty"`
+	Name        string         `json:"name"`
+	Mutations   map[string]any `json:"mutations,omitempty"`
+	AvgScore    float64        `json:"avg_score"`
+	AvgTokens   float64        `json:"avg_tokens"`
+	CandidateID string         `json:"candidate_id,omitempty"`
+	EvalID      string         `json:"eval_id,omitempty"`
+	EvalRunID   string         `json:"eval_run_id,omitempty"`
 }
 
 // MutationKeys returns the candidate's mutation keys (the names of the agent

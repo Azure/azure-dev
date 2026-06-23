@@ -719,6 +719,10 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 		return response, nil
 	}
 
+	if c.isTerminal && !c.noPrompt {
+		return c.promptUx(ctx, options)
+	}
+
 	err := c.doInteraction(func(c *AskerConsole) error {
 		return c.asker(promptFromOptions(options), &response)
 	})
@@ -779,6 +783,10 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 		}
 
 		return res, nil
+	}
+
+	if c.isTerminal && !c.noPrompt {
+		return c.selectUx(ctx, options)
 	}
 
 	surveyOptions := make([]string, len(options.Options))
@@ -852,6 +860,10 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 		}
 
 		return response, nil
+	}
+
+	if c.isTerminal && !c.noPrompt {
+		return c.multiSelectUx(ctx, options)
 	}
 
 	surveyOptions := make([]string, len(options.Options))
@@ -929,6 +941,10 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 			return false, fmt.Errorf("invalid response: %s", response)
 
 		}
+	}
+
+	if c.isTerminal && !c.noPrompt {
+		return c.confirmUx(ctx, options)
 	}
 
 	var defaultValue bool

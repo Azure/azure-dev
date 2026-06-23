@@ -109,6 +109,12 @@ type InitAction struct {
 	serviceNameOverride  string // when set, addToProject uses this instead of the manifest name
 	createdFolderDisplay string // pre-computed relative display path for the created folder
 
+	// selectedFoundryProject holds the existing Foundry project resolved during
+	// init (nil when creating a new project). It carries NetworkInjected so
+	// addToProject can disable remote build for VNET-injected accounts
+	// without issuing a second account read.
+	selectedFoundryProject *FoundryProjectInfo
+
 	// userProvidedManifest is true when the init flow is driven by a manifest —
 	// either explicitly via the -m flag/positional argument, or when the user
 	// interactively selects a template that resolves to a manifest. When true,
@@ -1972,6 +1978,7 @@ func (a *InitAction) configureModelChoice(
 			if err != nil {
 				return nil, err
 			}
+			a.selectedFoundryProject = selectedProject
 
 			if selectedProject == nil {
 				return nil, fmt.Errorf("specified foundry project was not found or is not eligible for the current configuration: %s", a.flags.projectResourceId)
@@ -2039,6 +2046,7 @@ func (a *InitAction) configureModelChoice(
 				if err != nil {
 					return nil, err
 				}
+				a.selectedFoundryProject = selectedProject
 
 				if selectedProject == nil {
 					// No existing project selected → fall back to "create new" path
@@ -2127,6 +2135,7 @@ func (a *InitAction) configureModelChoice(
 		if err != nil {
 			return nil, err
 		}
+		a.selectedFoundryProject = selectedProject
 
 		if selectedProject != nil {
 			if err := setEnvValue(
@@ -2205,6 +2214,7 @@ func (a *InitAction) configureModelChoice(
 			if err != nil {
 				return nil, err
 			}
+			a.selectedFoundryProject = selectedProject
 
 			if selectedProject == nil {
 				// No existing project selected → fall back to "create new" path
@@ -2947,9 +2957,10 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 				serviceConfig.Language = "csharp"
 			}
 		} else {
-			serviceConfig.Docker = &azdext.DockerProjectOptions{
-				RemoteBuild: true,
-			}
+			// Disable remote build when the Foundry account is VNET-injected; remote
+			// build runs on worker IPs that can't reach a registry in the VNET.
+			networkInjected := a.selectedFoundryProject != nil && a.selectedFoundryProject.NetworkInjected
+			serviceConfig.Docker = &azdext.DockerProjectOptions{RemoteBuild: !networkInjected}
 		}
 	}
 

@@ -8,9 +8,26 @@
 
 ### Bugs Fixed
 
-- [[#8561]](https://github.com/Azure/azure-dev/pull/8561) Make `azd init` idempotent with respect to the environment: re-running init in an initialized project now reuses the existing environment instead of failing with "environment already initialized". With `--no-prompt` and no `-e`, the recorded default environment is reused, and an explicitly requested environment is created and promoted to the default when it does not already exist.
+- [[#8649]](https://github.com/Azure/azure-dev/pull/8649) Fix interactive prompts (for example the `azd init` environment-name prompt) rendering twice on Windows terminals by rendering prompts with azd's own UX components instead of the archived survey library.
 
 ### Other Changes
+
+## 1.25.6 (2026-06-12)
+
+### Bugs Fixed
+
+- [[#8414]](https://github.com/Azure/azure-dev/pull/8414) Fix stale token errors (for example `AADSTS700082`) persisting after re-running `azd auth login`; azd now automatically clears cached authentication data when re-logging in while already signed in.
+- [[#8551]](https://github.com/Azure/azure-dev/pull/8551) Fix intermittent `DeploymentNotFound` failures during `azd up`, `azd provision`, and `azd down` by retrying the transient ARM 404 that can be returned immediately after a subscription- or resource-group-scoped deployment is submitted.
+- [[#8561]](https://github.com/Azure/azure-dev/pull/8561) Make `azd init` idempotent with respect to the environment: re-running init in an initialized project now reuses the existing environment instead of failing with "environment already initialized". With `--no-prompt` and no `-e`, the recorded default environment is reused, and an explicitly requested environment is created and promoted to the default when it does not already exist.
+- [[#8571]](https://github.com/Azure/azure-dev/pull/8571) Fix the AI model quota preflight rejecting all locations on free-tier subscriptions by lowering the required `OpenAI.S0.AccountCount` capacity from 2 to 1.
+- [[#8588]](https://github.com/Azure/azure-dev/pull/8588) Fix Static Web Apps deployment failing with a BadRequest error for the `default` environment name by passing `production` to the SWA CLI, and add an optional `environment` field in `azure.yaml` for targeting named preview environments.
+- [[#8598]](https://github.com/Azure/azure-dev/pull/8598) Fix Aspire .NET deployments not using Podman when Docker is unavailable by lazily detecting the container engine in the deploy path.
+
+### Other Changes
+
+- [[#8417]](https://github.com/Azure/azure-dev/pull/8417) Reduce the size of the generated Fig completion spec (`azd completion fig`) by pruning duplicated help subcommands and redundant extension output options; add `--include-help-subcommands` to restore the previous expanded output.
+- [[#8579]](https://github.com/Azure/azure-dev/pull/8579) Update user-facing references from ".NET Aspire" to "Aspire" to reflect the product rebrand. Thanks @IEvangelist for the contribution!
+- [[#8594]](https://github.com/Azure/azure-dev/pull/8594) Update the bundled Bicep CLI to v0.44.1.
 
 ## 1.25.5 (2026-06-05)
 

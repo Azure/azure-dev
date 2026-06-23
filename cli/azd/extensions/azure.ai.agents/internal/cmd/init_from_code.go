@@ -36,6 +36,12 @@ type InitFromCodeAction struct {
 	deploymentDetails []project.Deployment
 	needsProvision    bool
 	httpClient        *http.Client
+
+	// selectedFoundryProject holds the existing Foundry project resolved during
+	// init (nil when creating a new project). It carries NetworkInjected so
+	// addToProject can disable remote build for VNET-injected accounts
+	// without issuing a second account read.
+	selectedFoundryProject *FoundryProjectInfo
 }
 
 func (a *InitFromCodeAction) Run(ctx context.Context) error {
@@ -446,6 +452,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	}
 
 	// Step 2: Model configuration
+	a.selectedFoundryProject = selectedProject
 	var modelConfigChoices []*azdext.SelectChoice
 	if selectedProject != nil {
 		modelConfigChoices = []*azdext.SelectChoice{
@@ -861,11 +868,12 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 		Config:       agentConfigStruct,
 	}
 
-	// For hosted container-based agents, set remoteBuild to true by default
+	// For hosted container-based agents, enable remote build by default. It is
+	// silently disabled when the target Foundry account has VNET network injection
+	// configured, since it cannot reach a registry in the VNET.
 	if !isCodeDeploy {
-		serviceConfig.Docker = &azdext.DockerProjectOptions{
-			RemoteBuild: true,
-		}
+		networkInjected := a.selectedFoundryProject != nil && a.selectedFoundryProject.NetworkInjected
+		serviceConfig.Docker = &azdext.DockerProjectOptions{RemoteBuild: !networkInjected}
 	}
 
 	// Set AZD_AGENT_SKIP_ACR so Bicep knows whether to create a container registry.

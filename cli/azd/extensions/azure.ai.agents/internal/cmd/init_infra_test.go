@@ -6,10 +6,8 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
@@ -18,32 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// withCapturedStdout replaces os.Stdout with a pipe for the duration of fn,
-// returns everything the function wrote, and restores stdout afterward.
-// Pattern mirrors endpoint_show_test.go in the same package.
-func withCapturedStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	orig := os.Stdout
-	r, w, err := os.Pipe()
-	require.NoError(t, err, "create stdout pipe")
-	os.Stdout = w
-
-	done := make(chan string, 1)
-	go func() {
-		var sb strings.Builder
-		_, _ = io.Copy(&sb, r)
-		done <- sb.String()
-	}()
-
-	defer func() {
-		os.Stdout = orig
-	}()
-
-	fn()
-	_ = w.Close()
-	return <-done
-}
 
 // validFoundryAzureYAML returns an azure.yaml payload exercising the
 // synthesizer's two derived parameters: deployments and includeAcr.

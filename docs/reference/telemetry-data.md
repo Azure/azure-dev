@@ -519,9 +519,9 @@ Built-in tool IDs come from azd's curated tool manifest (run `azd tool list` to 
 | `exegraph.step.count` | measurement | Total steps in graph |
 | `exegraph.max_concurrency` | string | Effective concurrency limit |
 | `exegraph.error_policy` | string | `fail_fast` or `continue_on_error` |
-| `exegraph.step.name` | string | Step name |
-| `exegraph.step.deps` | string[] | Step dependencies |
-| `exegraph.step.tags` | string[] | Step tags |
+| `exegraph.step.name` | string | Step name. **SHA-256 hashed** — embeds user-defined service/layer names from `azure.yaml` |
+| `exegraph.step.deps` | string[] | Step dependencies (other step names). **SHA-256 hashed** for the same reason |
+| `exegraph.step.tags` | string[] | Step tags (fixed internal vocabulary; emitted raw) |
 | `exegraph.step.timeout_s` | measurement | Per-step timeout in seconds, if set |
 </details>
 
@@ -634,7 +634,7 @@ Many failed commands produce the catch-all result code `internal.errors_errorStr
 
 ### Hashed Fields and Template Joins
 
-Fields like `project.template.id`, `project.name`, `env.name` are **SHA-256 hashed** before emission to protect privacy. You cannot reverse them.
+Fields like `project.template.id`, `project.name`, `env.name`, `exegraph.step.name`, and `exegraph.step.deps` are **SHA-256 hashed** before emission to protect privacy. You cannot reverse them. (`hooks.name` is also hashed except for built-in lifecycle hook names.)
 
 To resolve template IDs to human-readable names, join with a template lookup table using the hashed ID.
 

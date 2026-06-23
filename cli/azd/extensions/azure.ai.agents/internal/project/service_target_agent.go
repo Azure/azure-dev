@@ -1485,6 +1485,14 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serv
 			if isDotnet && isBundled {
 				return p.packageDotnetBundled(srcDir)
 			}
+
+			// Python bundled: validate that dependencies are installed in srcDir
+			isPython := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "python_")
+			if isPython && isBundled {
+				if err := validatePythonBundledDeps(srcDir); err != nil {
+					return "", "", err
+				}
+			}
 		}
 	}
 
@@ -1734,6 +1742,85 @@ func (p *AgentServiceTargetProvider) packageDotnetBundled(srcDir string) (string
 	return tmpPath, sha256Hex, nil
 }
 
+// validatePythonBundledDeps checks that a Python project in bundled mode has
+// installed dependencies in the source directory. It looks for .dist-info
+// directories which are always created by pip install --target.
+// Only returns an error if requirements.txt exists AND has content AND no
+// .dist-info directories are found — this avoids false positives.
+func validatePythonBundledDeps(srcDir string) error {
+	// Check if requirements.txt exists and has non-empty content
+	reqPath := filepath.Join(srcDir, "requirements.txt")
+	data, err := os.ReadFile(reqPath) //nolint:gosec // path from internal state
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// No requirements.txt — nothing to validate
+			return nil
+		}
+		return exterrors.Dependency(
+			exterrors.CodeInvalidFilePath,
+			fmt.Sprintf("failed to read requirements.txt: %s", err),
+			"check file permissions for "+reqPath,
+		)
+	}
+
+	// Check if requirements.txt has any non-comment, non-empty lines
+	hasRequirements := false
+	for line := range strings.SplitSeq(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+			hasRequirements = true
+			break
+		}
+	}
+	if !hasRequirements {
+		return nil
+	}
+
+	// Look for any *.dist-info directory in srcDir (top-level only, which is
+	// where pip install --target . places them). Also check one level deep
+	// for common patterns like vendor/ or lib/.
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeInvalidFilePath,
+			fmt.Sprintf("failed to read source directory: %s", err),
+			"check that the source directory exists and is readable: "+srcDir,
+		)
+	}
+
+	for _, e := range entries {
+		if e.IsDir() && strings.HasSuffix(e.Name(), ".dist-info") {
+			// Found at least one installed package — pass
+			return nil
+		}
+	}
+
+	// Check one level of subdirectories for .dist-info (e.g., vendor/, lib/)
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		subEntries, err := os.ReadDir(filepath.Join(srcDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		for _, se := range subEntries {
+			if se.IsDir() && strings.HasSuffix(se.Name(), ".dist-info") {
+				return nil
+			}
+		}
+	}
+
+	return exterrors.Dependency(
+		exterrors.CodeBundledDepsNotFound,
+		"bundled mode is configured but no installed packages were found in the source directory. "+
+			"Dependencies must be installed locally before deploying",
+		"run: pip install -r requirements.txt -t \""+srcDir+"\""+
+			" --platform manylinux_2_17_x86_64 --platform linux_x86_64 --platform any"+
+			" --implementation cp --only-binary=:all:",
+	)
+}
+
 // deployHostedCodeAgent deploys a code-based hosted agent via multipart ZIP upload.
 func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	ctx context.Context,
@@ -1922,8 +2009,10 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 //     user at the more-detailed local doc, so the canned link is
 //     redundant.
 //   - Otherwise the aka.ms line is preserved and the "Next:" block is
-//     appended below, separated by a blank line — aka.ms remains the
-//     fallback doc pointer when no local README is present.
+//     appended below, separated by a single blank line — aka.ms remains
+//     the fallback doc pointer when no local README is present. The block
+//     returned by FormatNextForNote already starts with a newline, so the
+//     append joins with a single "\n" to avoid a double blank line.
 //
 // The function is a no-op when state is nil, no artifact carries a note,
 // or the resolver returns no suggestions; this keeps the deploy path
@@ -1986,7 +2075,10 @@ func augmentDeployNote(state *nextstep.State, artifacts []*azdext.Artifact, proj
 		target.Metadata["note"] = block
 		return
 	}
-	target.Metadata["note"] = existing + "\n\n" + block
+	// FormatNextForNote prefixes block with its own leading newline, so a
+	// single "\n" here yields exactly one blank line between the preserved
+	// aka.ms note and the "Next:" header.
+	target.Metadata["note"] = existing + "\n" + block
 }
 
 // lastNoteArtifact returns the last artifact in the slice whose

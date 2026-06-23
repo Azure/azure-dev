@@ -184,6 +184,8 @@ $ azd config set defaults.location eastus`,
 		DefaultFormat:  output.NoneFormat,
 	})
 
+	subFilterActions(group)
+
 	return group
 }
 

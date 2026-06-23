@@ -45,6 +45,7 @@ words:
   - opencode
   - grpcbroker
   - msiexec
+  - manylinux
   - nosec
   - npx
   - oneof
@@ -334,12 +335,6 @@ overrides:
   - filename: pkg/extensions/manager.go
     words:
       - myext
-  - filename: extensions/microsoft.azd.extensions/internal/resources/languages/**/.gitignore
-    words:
-      - rsuser
-      - userosscache
-      - docstates
-      - dylib
   - filename: docs/recording-functional-tests-guide.md
     words:
       - httptest

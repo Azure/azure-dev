@@ -37,9 +37,9 @@ var remoteRefPattern = regexp.MustCompile(`(?i)^[a-z][a-z0-9+.-]*://`)
 // map[string]any. The core ServiceConfig fields (host, the service key, uses) are stripped by
 // core and never appear here. cfg therefore takes any of these shapes:
 //
-//   - A service-entry-level $ref. The $ref sits at the top level of the inline map, beside the
-//     host and service key that core already removed (e.g. an agent or skill entry whose body
-//     lives in ./agents/research-agent.yaml). The map itself is the $ref directive.
+//   - A service-entry-level $ref. In azure.yaml the service entry can be authored with host:
+//     plus $ref (and optional overlay keys). Core removes ServiceConfig fields such as host
+//     before the extension sees the config, so the cfg map passed here has $ref at its top level.
 //   - A deployment array-item $ref. Deployments stay an array on the project service, so each
 //     item in deployments may be its own $ref (e.g. ./deployments/gpt-4o.yaml).
 //   - Any nested $ref reached while walking the entry (a $ref inside a loaded file, or a sibling

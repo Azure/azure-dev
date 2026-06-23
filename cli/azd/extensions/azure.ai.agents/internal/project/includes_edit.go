@@ -43,8 +43,8 @@ const (
 //
 // It is the $ref-aware write counterpart to ResolveFileRefs: EntryRef recognizes a $ref entry
 // with the same key the resolver uses, and EditRefFile resolves the split-file path with the
-// resolver's shared path logic, so reads and writes of $ref entries agree. The composition
-// commands tracked by #8049 share this helper.
+// resolver's shared path logic, so reads and writes of $ref entries agree. It is also intended
+// for the #8049 composition command write path.
 //
 // Edits mutate the tree in memory; call Save to persist. Writes through EditRefFile lazily load
 // the referenced file, and Save persists every file touched this way alongside the main one.

@@ -148,11 +148,9 @@ services:
 	assert.False(t, isRef)
 }
 
-// TestEntryRef_EdgeCases documents the intentional divergence from the resolver for
-// degenerate $ref values: EntryRef falls back to (false) rather than erroring, so the
-// write path treats the entry as inline. The read path (ResolveFileRefs) will surface
-// CodeInvalidFileRef on these same inputs — the divergence is safe because the write
-// still lands somewhere, and the read failure gives a clear diagnostic.
+// TestEntryRef_EdgeCases documents EntryRef's narrow detection behavior: empty or whitespace-only
+// $ref values fall back to not-a-ref so the write helper treats the entry as inline, while scalar
+// values such as 123 are reported as refs and fail later if the referenced file is invalid.
 func TestEntryRef_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -173,7 +171,7 @@ func TestEntryRef_EdgeCases(t *testing.T) {
 			yaml: "services:\n  svc:\n    kind: prompt\n",
 		},
 		{
-			name:    "numeric $ref value is coerced to string — treated as ref",
+			name:    "numeric $ref value parses as scalar string - treated as ref",
 			yaml:    "services:\n  svc:\n    $ref: 123\n",
 			wantRef: true,
 			wantVal: "123",

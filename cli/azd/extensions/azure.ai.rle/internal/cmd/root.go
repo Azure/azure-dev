@@ -24,7 +24,11 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
 	rootCmd.AddCommand(newCreateCommand())
+	rootCmd.AddCommand(newListCommand())
 	rootCmd.AddCommand(newModifyCommand())
+	rootCmd.AddCommand(newSandboxCommand())
+	rootCmd.AddCommand(newShowCommand())
+	rootCmd.AddCommand(newVersionsCommand())
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
 

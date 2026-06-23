@@ -14,8 +14,17 @@ usage: azd ai rle <command> [options]
 version: 0.1.0-preview
 examples:
   - name: create
-    description: Create a new RLE resource.
-    usage: azd ai rle create <name>
+    description: Create or update an RLE environment.
+    usage: azd ai rle create <name> --endpoint http://localhost:5000 --account local --project demo
+  - name: list
+    description: List RLE environments.
+    usage: azd ai rle list --endpoint http://localhost:5000 --account local --project demo
+  - name: show
+    description: Show an RLE environment.
+    usage: azd ai rle show <environment-id> --endpoint http://localhost:5000 --account local --project demo
+  - name: versions
+    description: List RLE environment versions.
+    usage: azd ai rle versions <environment-id> --endpoint http://localhost:5000 --account local --project demo
   - name: modify
     description: Modify an existing RLE resource.
     usage: azd ai rle modify <name>

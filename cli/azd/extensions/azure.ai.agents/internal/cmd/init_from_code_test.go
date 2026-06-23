@@ -573,16 +573,6 @@ func stringSlicesEqual(a, b []string) bool {
 	return true
 }
 
-// containsAll checks that s contains all the given substrings.
-func containsAll(s string, substrings ...string) bool {
-	for _, sub := range substrings {
-		if !strings.Contains(s, sub) {
-			return false
-		}
-	}
-	return true
-}
-
 func TestPromptProtocols_FlagValues(t *testing.T) {
 	t.Parallel()
 

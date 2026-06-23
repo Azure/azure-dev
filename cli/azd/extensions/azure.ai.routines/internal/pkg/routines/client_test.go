@@ -131,7 +131,7 @@ func TestListRoutines_MultiPage(t *testing.T) {
 				Value: []Routine{{Name: "r2"}},
 			})
 		default:
-			t.Fatal("unexpected extra request")
+			w.WriteHeader(http.StatusInternalServerError)
 		}
 	}))
 
@@ -165,8 +165,8 @@ func TestPutRoutine_Created(t *testing.T) {
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		assert.Equal(t, "new-routine", body.Name)
 
-		w.WriteHeader(http.StatusCreated)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
 		body.CreatedAt = "2025-01-01T00:00:00Z"
 		json.NewEncoder(w).Encode(body)
 	}))
@@ -181,8 +181,8 @@ func TestPutRoutine_Created(t *testing.T) {
 func TestPutRoutine_Updated(t *testing.T) {
 	t.Parallel()
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(Routine{Name: "existing", UpdatedAt: "2025-06-01T00:00:00Z"})
 	}))
 
@@ -300,8 +300,8 @@ func TestDispatchRoutineAsync_Success(t *testing.T) {
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		assert.Equal(t, "invoke_agent_responses_api", body.Payload.Type)
 
-		w.WriteHeader(http.StatusAccepted)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
 		json.NewEncoder(w).Encode(DispatchRoutineResponse{
 			DispatchID:          "d-123",
 			ActionCorrelationID: "ac-456",
@@ -325,8 +325,8 @@ func TestDispatchRoutineAsync_NilPayload(t *testing.T) {
 		// With nil payload, body should be empty (no Content-Type set by setJSONBody)
 		assert.Equal(t, int64(0), r.ContentLength)
 
-		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(DispatchRoutineResponse{DispatchID: "d-nil"})
 	}))
 
@@ -422,7 +422,7 @@ func TestListRoutineRuns_Pagination(t *testing.T) {
 				Value: []RoutineRun{{ID: "run-2"}},
 			})
 		default:
-			t.Fatal("unexpected extra request")
+			w.WriteHeader(http.StatusInternalServerError)
 		}
 	}))
 

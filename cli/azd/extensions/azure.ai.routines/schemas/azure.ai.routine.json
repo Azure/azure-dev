@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.routines/schemas/azure.ai.routine.json",
   "title": "Azure AI Foundry routine service",
-  "description": "Service-level configuration for a host: azure.ai.routine entry. The service key is the routine name. A routine is a scheduled or event-driven invocation of an agent declared as an azure.ai.agent service. A routine service must uses: the agent it references.",
+  "description": "Service-level configuration for a host: azure.ai.routine entry. The service key is the routine name. A routine is a scheduled or event-driven invocation of an agent declared as an azure.ai.agent service; the routine service must uses: the agent it invokes. The keys bind directly to the Foundry routine API model, so the schema is intentionally permissive while that API stabilizes.",
   "type": "object",
   "additionalProperties": true,
   "properties": {
@@ -10,35 +10,34 @@
       "type": "string",
       "description": "Description of the routine."
     },
-    "trigger": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Whether the routine is enabled."
+    },
+    "triggers": {
       "type": "object",
-      "description": "What fires the routine.",
-      "required": ["type"],
-      "additionalProperties": true,
-      "allOf": [
-        {
-          "if": { "properties": { "type": { "const": "schedule" } }, "required": ["type"] },
-          "then": { "required": ["cron"] }
-        },
-        {
-          "if": { "properties": { "type": { "enum": ["webhook", "event"] } }, "required": ["type"] },
-          "then": { "required": ["filter"] }
+      "description": "Triggers keyed by a user-defined identifier (commonly 'default'). Each trigger selects a variant via its type (e.g. timer, recurring, github_issue, custom).",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string", "description": "Trigger variant." },
+          "cron_expression": { "type": "string", "description": "Cron expression for a recurring trigger." },
+          "at": { "type": "string", "description": "Fire time for a one-shot timer trigger." }
         }
-      ],
-      "properties": {
-        "type": { "type": "string", "enum": ["schedule", "webhook", "event"] },
-        "cron": { "type": "string", "description": "Cron expression. Required for type: schedule." },
-        "filter": { "type": "object", "description": "Event/webhook filter. Required for type: webhook | event." }
       }
     },
-    "agent": {
-      "type": "string",
-      "description": "Name of the azure.ai.agent service the routine invokes."
-    },
-    "input": {
+    "action": {
       "type": "object",
-      "description": "Input payload passed to the agent. Values may use ${VAR} (azd env, resolved client-side) or ${{...}} (Foundry server-side, passed through untouched).",
-      "additionalProperties": true
+      "description": "What the routine does when it fires. Invokes an agent by name.",
+      "additionalProperties": true,
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "description": "Action variant (e.g. invoke_agent_responses_api, invoke_agent_invocations_api)." },
+        "agent_name": { "type": "string", "description": "Name of the azure.ai.agent service the routine invokes." },
+        "input": { "description": "Static JSON input sent to the agent when the routine fires. Values may use ${VAR} or ${{...}}." }
+      }
     }
   }
 }

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -150,6 +151,12 @@ func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 	return resp.Environment.Name, nil
 }
 
+// developerRBACOnce ensures CheckDeveloperRBAC runs at most once per extension
+// process lifetime. Service-level predeploy handlers fire per-service, but the
+// RBAC pre-flight check is project-scoped and idempotent — running it once is
+// sufficient and avoids duplicate ARM/Graph calls and noisy output.
+var developerRBACOnce sync.Once
+
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
 	svc := args.Service
 
@@ -161,9 +168,15 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	}
 
 	// Run developer RBAC pre-flight checks only for hosted agent deployments.
+	// Guarded by sync.Once since this handler fires per-service but the check
+	// is project-scoped.
 	if isHostedAgentService(svc, args.Project) {
-		if err := project.CheckDeveloperRBAC(ctx, azdClient); err != nil {
-			return err
+		var rbacErr error
+		developerRBACOnce.Do(func() {
+			rbacErr = project.CheckDeveloperRBAC(ctx, azdClient)
+		})
+		if rbacErr != nil {
+			return rbacErr
 		}
 	}
 

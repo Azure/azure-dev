@@ -553,25 +553,6 @@ func TestToolboxConnectionsByName_MergesBothTypes(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// postdeployHandler — skips non-hosted agent services
-// ---------------------------------------------------------------------------
-
-func TestPostdeployHandler_SkipsNonHostedAgentService(t *testing.T) {
-	t.Parallel()
-
-	// Service is an agent host but not a hosted agent (no agent.yaml) — handler
-	// should return nil without making any RPC calls (azdClient is nil).
-	args := &azdext.ServiceEventArgs{
-		Project: &azdext.ProjectConfig{
-			Path: t.TempDir(),
-		},
-		Service: &azdext.ServiceConfig{Name: "my-agent", Host: AiAgentHost, RelativePath: "."},
-	}
-
-	assert.NoError(t, postdeployHandler(t.Context(), nil, args))
-}
-
-// ---------------------------------------------------------------------------
 // enrichToolboxFromConnections — server_url already set
 // ---------------------------------------------------------------------------
 

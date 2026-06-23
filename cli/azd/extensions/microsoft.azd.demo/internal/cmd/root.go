@@ -4,27 +4,26 @@
 package cmd
 
 import (
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
 func NewRootCommand() *cobra.Command {
-	rootCmd := &cobra.Command{
-		Use:           "azd demo <command> [options]",
-		Short:         "Demonstrates azd extension framework capabilities.",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		CompletionOptions: cobra.CompletionOptions{
-			DisableDefaultCmd: true,
-		},
-		Annotations: map[string]string{
-			"azd-sdk-root": "true",
-		},
-	}
+	// Build the root command using the SDK helper so the extension picks up
+	// azd's standard persistent flags (--debug, --no-prompt, -C/--cwd,
+	// -e/--environment, -o/--output) and the azd-sdk-root annotation without
+	// hand-rolling them, avoiding collisions with azd's reserved global flags.
+	rootCmd, _ := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
+		Name:  "demo",
+		Use:   "azd demo <command> [options]",
+		Short: "Demonstrates azd extension framework capabilities.",
+	})
 
-	// Register reserved azd flags so that `listen --debug` doesn't fail.
-	flags := rootCmd.PersistentFlags()
-	flags.Bool("debug", false, "Enables debug and diagnostics logging")
-	flags.Bool("no-prompt", false, "Runs without prompts")
+	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
+	rootCmd.CompletionOptions = cobra.CompletionOptions{
+		DisableDefaultCmd: true,
+	}
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 

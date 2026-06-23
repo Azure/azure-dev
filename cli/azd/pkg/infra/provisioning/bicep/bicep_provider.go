@@ -70,6 +70,13 @@ const (
 	apiVersionResourceGroupExistence = "2025-03-01"
 )
 
+// extensionValidationTimeout bounds how long core preflight waits for
+// extension-provided validation checks to complete. If an extension's check
+// blocks or never responds, dispatch is abandoned once this deadline elapses
+// and preflight continues with the core results. This preserves the guarantee
+// that extensions cannot hang core preflight.
+const extensionValidationTimeout = 60 * time.Second
+
 // Azure reserved resource name words.
 // See https://learn.microsoft.com/azure/azure-resource-manager/templates/error-reserved-resource-name
 var azureReservedResourceNameExactMatches = map[string]struct{}{
@@ -2622,11 +2629,23 @@ func (p *BicepProvider) validatePreflight(
 		// validationContext.extensionContext() are automatically available to extensions.
 		checkContext := valCtx.extensionContext(armTemplate, armParameters)
 
+		// Bound extension dispatch so a blocked or unresponsive extension check
+		// cannot hang core preflight. A timeout surfaces as extErr below and is
+		// treated as a non-fatal skip (logged; preflight continues).
+		dispatchCtx, cancelDispatch := context.WithTimeout(ctx, extensionValidationTimeout)
 		extResults, invokedRuleIDs, extErr := dispatcher.DispatchChecks(
-			ctx, "local-preflight", checkContext,
+			dispatchCtx, "local-preflight", checkContext,
 		)
+		cancelDispatch()
 		if extErr != nil {
-			log.Printf("extension validation checks failed: %v", extErr)
+			if errors.Is(extErr, context.DeadlineExceeded) {
+				log.Printf(
+					"extension validation checks timed out after %s; skipping: %v",
+					extensionValidationTimeout, extErr,
+				)
+			} else {
+				log.Printf("extension validation checks failed: %v", extErr)
+			}
 		}
 		extRuleIDs = append(extRuleIDs, invokedRuleIDs...)
 		for _, extResult := range extResults {

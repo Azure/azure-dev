@@ -130,9 +130,10 @@ func emitResourceServices(
 }
 
 // addResourceService adds a single Foundry resource service to azure.yaml with
-// its schema under config: and optionally wires its uses: list. The service is
-// added with an empty language so azd resolves a no-op framework; the owning
-// extension's service-target provider handles its (currently no-op) lifecycle.
+// its keys composed at the service level (inline, via AdditionalProperties, the
+// same shape the agent service uses) and optionally wires its uses: list. The
+// service is added with an empty language so azd resolves a no-op framework; the
+// owning extension's service-target provider handles its lifecycle.
 func addResourceService(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -142,9 +143,9 @@ func addResourceService(
 	uses []string,
 ) error {
 	svc := &azdext.ServiceConfig{
-		Name:   name,
-		Host:   host,
-		Config: cfg,
+		Name:                 name,
+		Host:                 host,
+		AdditionalProperties: cfg,
 	}
 
 	if _, err := azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{Service: svc}); err != nil {
@@ -220,11 +221,12 @@ func reserveServiceName(used map[string]string, name, source string) error {
 func collectProjectDeployments(services map[string]*azdext.ServiceConfig) ([]project.Deployment, error) {
 	var out []project.Deployment
 	for _, svc := range sortedServices(services) {
-		if svc.Host != AiProjectHost || svc.Config == nil {
+		props := project.ServiceConfigProps(svc)
+		if svc.Host != AiProjectHost || props == nil {
 			continue
 		}
 		var cfg *project.ServiceTargetAgentConfig
-		if err := project.UnmarshalStruct(svc.Config, &cfg); err != nil {
+		if err := project.UnmarshalStruct(props, &cfg); err != nil {
 			return nil, fmt.Errorf("parsing project service %q config: %w", svc.Name, err)
 		}
 		if cfg != nil {
@@ -251,11 +253,12 @@ func collectProjectDeployments(services map[string]*azdext.ServiceConfig) ([]pro
 func collectConnections(services map[string]*azdext.ServiceConfig) ([]project.Connection, error) {
 	var out []project.Connection
 	for _, svc := range sortedServices(services) {
-		if svc.Host != AiConnectionHost || svc.Config == nil {
+		props := project.ServiceConfigProps(svc)
+		if svc.Host != AiConnectionHost || props == nil {
 			continue
 		}
 		var conn *project.Connection
-		if err := project.UnmarshalStruct(svc.Config, &conn); err != nil {
+		if err := project.UnmarshalStruct(props, &conn); err != nil {
 			return nil, fmt.Errorf("parsing connection service %q config: %w", svc.Name, err)
 		}
 		if conn != nil {
@@ -282,11 +285,12 @@ func collectConnections(services map[string]*azdext.ServiceConfig) ([]project.Co
 func collectToolboxes(services map[string]*azdext.ServiceConfig) ([]project.Toolbox, error) {
 	var out []project.Toolbox
 	for _, svc := range sortedServices(services) {
-		if svc.Host != AiToolboxHost || svc.Config == nil {
+		props := project.ServiceConfigProps(svc)
+		if svc.Host != AiToolboxHost || props == nil {
 			continue
 		}
 		var toolbox *project.Toolbox
-		if err := project.UnmarshalStruct(svc.Config, &toolbox); err != nil {
+		if err := project.UnmarshalStruct(props, &toolbox); err != nil {
 			return nil, fmt.Errorf("parsing toolbox service %q config: %w", svc.Name, err)
 		}
 		if toolbox != nil {

@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
-
 )
 
 // writeFile writes content to dir/name (creating parent directories) and returns nothing; it

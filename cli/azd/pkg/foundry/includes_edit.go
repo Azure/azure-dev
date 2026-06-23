@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/yamlnode"
 	"github.com/braydonk/yaml"
-
 )
 
 // ErrServiceNotFound is returned when a named service entry is absent and creation was not

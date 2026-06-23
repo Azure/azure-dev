@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
-
 )
 
 // refKey is the include directive key. Any object that contains it is replaced by the loaded

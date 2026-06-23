@@ -326,6 +326,12 @@ func (m *Manager) updateViaBrew(ctx context.Context, cfg *UpdateConfig, writer i
 
 	targetChannel := cfg.Channel
 
+	// Homebrew (6.0+) refuses to load casks from the third-party azure/azd tap
+	// until it is explicitly trusted, which blocks install, upgrade, and even
+	// uninstall. Trust the tap up front so the cask operations below succeed.
+	// See https://github.com/Azure/azure-dev/issues/8683.
+	m.ensureBrewTapTrusted(ctx, writer)
+
 	if !hasAzd && !hasAzdDaily {
 		// azd is not installed as a cask (formula install or other).
 		// Uninstall the non-cask version and install the correct cask.
@@ -375,6 +381,33 @@ func (m *Manager) updateViaBrew(ctx context.Context, cfg *UpdateConfig, writer i
 		return m.updateViaPackageManager(ctx, "brew", []string{"upgrade", "--cask", "azure/azd/azd@daily"}, writer)
 	default:
 		return fmt.Errorf("unsupported channel: %s", targetChannel)
+	}
+}
+
+// ensureBrewTapTrusted taps and trusts the azure/azd Homebrew tap so that the
+// cask operations performed by updateViaBrew aren't blocked by Homebrew's
+// untrusted-tap guard, which refuses to load casks from third-party taps until
+// they are trusted (see https://github.com/Azure/azure-dev/issues/8683).
+//
+// The tap must exist before it can be trusted (Homebrew no longer auto-taps
+// untrusted taps), so the tap is ensured first. Both steps are best-effort and
+// idempotent: failures are logged rather than returned so that older Homebrew
+// versions without the trust guard (and therefore without a `brew trust`
+// command) still work, and so the subsequent cask command surfaces the real
+// error if trust is genuinely required but missing.
+func (m *Manager) ensureBrewTapTrusted(ctx context.Context, writer io.Writer) {
+	fmt.Fprintf(writer, "Trusting Homebrew tap azure/azd...\n")
+
+	tapArgs := exec.NewRunArgs("brew", "tap", "azure/azd").
+		WithStdOut(writer).WithStdErr(writer).WithInteractive(true)
+	if _, err := m.commandRunner.Run(ctx, tapArgs); err != nil {
+		log.Printf("brew tap azure/azd failed: %v", err)
+	}
+
+	trustArgs := exec.NewRunArgs("brew", "trust", "azure/azd").
+		WithStdOut(writer).WithStdErr(writer).WithInteractive(true)
+	if _, err := m.commandRunner.Run(ctx, trustArgs); err != nil {
+		log.Printf("brew trust azure/azd failed: %v", err)
 	}
 }
 

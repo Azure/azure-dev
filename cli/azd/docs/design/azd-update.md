@@ -237,11 +237,14 @@ Homebrew updates use cask operations for both stable and daily channels:
 ```
 1. Check which cask is currently installed via `brew list --cask`
    - `azd` = stable cask, `azd@daily` = daily cask
-2. If no cask installed (formula or other install) → uninstall and reinstall as correct cask
-3. If switching channels → uninstall current cask, install target cask
+2. Trust the azure/azd tap (`brew tap azure/azd` then `brew trust azure/azd`,
+   best-effort) so Homebrew's untrusted-tap guard doesn't block the cask
+   operations below (see issue #8683)
+3. If no cask installed (formula or other install) → uninstall and reinstall as correct cask
+4. If switching channels → uninstall current cask, install target cask
    - daily→stable: `brew uninstall --cask azd@daily` then `brew install --cask azure/azd/azd`
    - stable→daily: `brew uninstall --cask azd` then `brew install --cask azure/azd/azd@daily`
-4. If same channel → `brew upgrade --cask azure/azd/azd` (or `azure/azd/azd@daily`)
+5. If same channel → `brew upgrade --cask azure/azd/azd` (or `azure/azd/azd@daily`)
 ```
 
 #### Elevation Handling

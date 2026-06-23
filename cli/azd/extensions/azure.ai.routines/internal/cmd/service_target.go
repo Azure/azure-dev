@@ -12,6 +12,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 )
 
 // aiRoutineHost is the azure.yaml service host kind owned by this extension. A
@@ -110,6 +111,16 @@ func (p *routineServiceTarget) Deploy(
 	// The service key is the routine identity; ignore any name in the body.
 	body.Name = serviceConfig.GetName()
 
+	// Resolve ${VAR} references in the routine's action input against the azd
+	// environment, leaving Foundry server-side ${{...}} expressions untouched.
+	if body.Action != nil {
+		env, err := p.currentEnvValues(ctx)
+		if err != nil {
+			return nil, err
+		}
+		body.Action.Input = expandRoutineValue(body.Action.Input, env)
+	}
+
 	if progress != nil {
 		progress(fmt.Sprintf("Upserting routine %q", serviceConfig.GetName()))
 	}
@@ -163,4 +174,52 @@ func newRoutineServiceClient(ctx context.Context) (*routines.Client, error) {
 		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 	return routines.NewClient(resolved.Endpoint, cred), nil
+}
+
+// currentEnvValues loads all key-value pairs from the active azd environment, used to
+// resolve ${VAR} references in routine fields at deploy time.
+func (p *routineServiceTarget) currentEnvValues(ctx context.Context) (map[string]string, error) {
+	current, err := p.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("resolving current azd environment: %w", err)
+	}
+	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: current.GetEnvironment().GetName(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("loading azd environment values: %w", err)
+	}
+	values := make(map[string]string, len(resp.GetKeyValues()))
+	for _, kv := range resp.GetKeyValues() {
+		values[kv.GetKey()] = kv.GetValue()
+	}
+	return values, nil
+}
+
+// expandRoutineValue recursively expands ${VAR} references in every string within a
+// routine value (maps, slices, scalars) against the azd environment, preserving Foundry
+// server-side ${{...}} expressions.
+func expandRoutineValue(value any, env map[string]string) any {
+	switch typed := value.(type) {
+	case string:
+		resolved, err := foundry.ExpandEnv(typed, func(name string) string { return env[name] })
+		if err != nil {
+			return typed
+		}
+		return resolved
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for k, v := range typed {
+			out[k] = expandRoutineValue(v, env)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for i, v := range typed {
+			out[i] = expandRoutineValue(v, env)
+		}
+		return out
+	default:
+		return value
+	}
 }

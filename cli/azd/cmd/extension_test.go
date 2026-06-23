@@ -660,36 +660,17 @@ func TestExtensionStatus(t *testing.T) {
 	}
 }
 
-func TestExtensionStatusSymbol(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		status string
-		want   string
-	}{
-		{statusUpToDate, symbolUpToDate},
-		{statusUpdate, symbolUpdate},
-		{statusIncompat, symbolIncompat},
-		{statusNotInstall, symbolNotInstall},
-	}
-	for _, tt := range tests {
-		t.Run(tt.status, func(t *testing.T) {
-			t.Parallel()
-			got := extensionStatusSymbol(tt.status)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
 func TestExtensionStatusColor(t *testing.T) {
 	// Force color output on — fatih/color disables in non-TTY environments.
 	originalNoColor := color.NoColor
 	color.NoColor = false
 	defer func() { color.NoColor = originalNoColor }()
 
-	// Verify no panics and non-empty output for each status (full and symbol forms)
+	// Verify no panics and non-empty output for each status, including values
+	// with leading alignment padding (which the color function tolerates).
 	for _, s := range []string{
 		statusUpToDate, statusUpdate, statusIncompat, statusNotInstall,
-		symbolUpToDate, symbolUpdate, symbolIncompat, symbolNotInstall,
+		"  " + statusUpToDate, "  " + statusNotInstall,
 	} {
 		result := extensionStatusColor(s)
 		assert.NotEmpty(t, result, "color function should return non-empty for %q", s)

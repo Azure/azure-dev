@@ -145,36 +145,32 @@ func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			{
 				Column: output.Column{
 					Heading:       "NAME",
-					ValueTemplate: `{{if ne .Name ""}}{{.Name}}{{else}}{{.Title}}{{end}}`,
+					ValueTemplate: `{{if ne .Title ""}}{{.Title}}{{else}}{{.Name}}{{end}}`,
 				},
-				Priority: 1,
-			},
-			{
-				Column:   output.Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"},
-				Priority: 1,
-			},
-			{
-				Column:   output.Column{Heading: "TAGS", ValueTemplate: "{{.DisplayTags}}"},
-				Priority: 2,
-			},
-			{
-				Column:   output.Column{Heading: "DESCRIPTION", ValueTemplate: "{{.Description}}"},
-				Priority: 3,
+				CardTitle: true,
 			},
 			{
 				Column: output.Column{
-					Heading: "REPOSITORY PATH",
+					Heading: "REPOSITORY",
 					ValueTemplate: `{{if ne .RepositoryPath ""}}` +
 						`{{.RepositoryPath}}{{else}}{{.RepoSource}}{{end}}`,
 					Transformer: templates.Hyperlink,
 				},
-				Priority: 3,
+			},
+			{
+				Column: output.Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"},
+			},
+			{
+				Column: output.Column{Heading: "TAGS", ValueTemplate: "{{.DisplayTags}}"},
+			},
+			{
+				Column: output.Column{Heading: "DESCRIPTION", ValueTemplate: "{{.Description}}"},
 			},
 		}
 
 		err = prettyFormatter.Format(rows, tl.writer, output.PrettyTableFormatterOptions{
-			Columns:         columns,
-			CardGroupColumn: "SOURCE",
+			Columns:    columns,
+			ForceCards: true,
 		})
 
 		if err == nil {

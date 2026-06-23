@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package project
+package foundry
 
 import (
 	"bytes"
@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/yamlnode"
 	"github.com/braydonk/yaml"
 
-	"azureaiagent/internal/exterrors"
 )
 
 // ErrServiceNotFound is returned when a named service entry is absent and creation was not
@@ -60,8 +59,7 @@ func LoadYAMLDocument(path string) (*YAMLDocument, error) {
 	// trust level as azure.yaml itself (design spec §2.4 treats includes as trusted input).
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidFileRef,
+		return nil, fileRefValidation(
 			fmt.Sprintf("cannot read YAML file %q: %v", path, err),
 			"Check that the path is correct and the file exists and is readable.",
 		)
@@ -81,8 +79,7 @@ func ParseYAMLDocument(path string, data []byte) (*YAMLDocument, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.SetScanBlockScalarAsLiteral(true)
 	if err := decoder.Decode(&doc.root); err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidFileRef,
+		return nil, fileRefValidation(
 			fmt.Sprintf("YAML file %q is not valid: %v", path, err),
 			"Fix the file so it parses as a YAML document.",
 		)

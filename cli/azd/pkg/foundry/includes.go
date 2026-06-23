@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package project
+package foundry
 
 import (
 	"fmt"
@@ -13,7 +13,6 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"azureaiagent/internal/exterrors"
 )
 
 // refKey is the include directive key. Any object that contains it is replaced by the loaded
@@ -74,7 +73,7 @@ func ResolveFileRefs(cfg map[string]any, projectRoot string) (map[string]any, er
 	out, ok := resolved.(map[string]any)
 	if !ok {
 		// resolveValue always returns a map for a map input; this is unreachable in practice.
-		return nil, exterrors.Internal(exterrors.CodeInvalidFileRef, "resolved Foundry config is not a mapping")
+		return nil, fileRefInternal("resolved Foundry config is not a mapping")
 	}
 	return out, nil
 }
@@ -134,8 +133,7 @@ func resolveMapEntry(key string, child any, baseDir, projectRoot string, chain [
 func resolveRef(directive map[string]any, baseDir, projectRoot string, chain []string) (any, error) {
 	ref, ok := directive[refKey].(string)
 	if !ok {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidFileRef,
+		return nil, fileRefValidation(
 			fmt.Sprintf("%s value must be a string, got %T", refKey, directive[refKey]),
 			fmt.Sprintf("Set %s to a relative or absolute path to a YAML or JSON file.", refKey),
 		)
@@ -147,15 +145,13 @@ func resolveRef(directive map[string]any, baseDir, projectRoot string, chain []s
 	}
 
 	if slices.Contains(chain, target) {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidFileRef,
+		return nil, fileRefValidation(
 			fmt.Sprintf("cyclic %s include detected at %q", refKey, target),
 			"Remove the circular reference between the included files.",
 		)
 	}
 	if len(chain) >= maxRefDepth {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidFileRef,
+		return nil, fileRefValidation(
 			fmt.Sprintf("%s include nesting exceeds %d levels at %q", refKey, maxRefDepth, target),
 			"Reduce the depth of nested $ref includes.",
 		)
@@ -175,8 +171,7 @@ func resolveRef(directive map[string]any, baseDir, projectRoot string, chain []s
 	out, ok := resolvedLoaded.(map[string]any)
 	if !ok {
 		// loadRefFile guarantees a mapping, so resolveValue returns a map; unreachable in practice.
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidFileRef,
+		return nil, fileRefValidation(
 			fmt.Sprintf("%s file %q must contain a YAML or JSON object", refKey, target),
 			"The referenced file must define an object, not a list or scalar.",
 		)
@@ -203,15 +198,13 @@ func resolveRef(directive map[string]any, baseDir, projectRoot string, chain []s
 func refTargetPath(ref, baseDir string) (string, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidFileRef,
+		return "", fileRefValidation(
 			fmt.Sprintf("%s value must not be empty", refKey),
 			"Set $ref to a relative or absolute path to a YAML or JSON file.",
 		)
 	}
 	if remoteRefPattern.MatchString(ref) {
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidFileRef,
+		return "", fileRefValidation(
 			fmt.Sprintf("%s %q is a URL; remote includes are not supported yet", refKey, ref),
 			"Use a local file path. Download the file and reference it by a relative or absolute path.",
 		)
@@ -229,8 +222,7 @@ func loadRefFile(path string) (map[string]any, error) {
 	// itself (design spec §2.4 treats includes as trusted input).
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidFileRef,
+		return nil, fileRefValidation(
 			fmt.Sprintf("cannot read %s file %q: %v", refKey, path, err),
 			"Check that the path is correct and the file exists and is readable.",
 		)
@@ -238,15 +230,13 @@ func loadRefFile(path string) (map[string]any, error) {
 
 	var out map[string]any
 	if err := yaml.Unmarshal(data, &out); err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidFileRef,
+		return nil, fileRefValidation(
 			fmt.Sprintf("%s file %q is not a valid YAML or JSON object: %v", refKey, path, err),
 			"Fix the file so it parses as a YAML or JSON object.",
 		)
 	}
 	if out == nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidFileRef,
+		return nil, fileRefValidation(
 			fmt.Sprintf("%s file %q is empty or not a mapping", refKey, path),
 			"The referenced file must contain a YAML or JSON object.",
 		)

@@ -27,9 +27,9 @@ type PredictedResource struct {
 	// Properties is the resource-specific configuration as raw JSON.
 	Properties json.RawMessage `json:"properties,omitempty"`
 	// SKU is the pricing tier / SKU block as raw JSON.
-	SKU json.RawMessage `json:"sku,omitzero"`
+	SKU json.RawMessage `json:"sku,omitempty"`
 	// Tags holds resource tags as raw JSON (may be a map or ARM expression).
-	Tags json.RawMessage `json:"tags,omitzero"`
+	Tags json.RawMessage `json:"tags,omitempty"`
 	// Scope is used for extension or cross-scope resources.
 	Scope string `json:"scope,omitempty"`
 }

@@ -36,6 +36,11 @@ type contextAssembler struct {
 	chunks         map[string][]chunkEntry // key → received chunks (may be out of order)
 	expectedChunks map[string]int          // key → expected chunk count (set when IsLastChunk seen)
 	totalKeys      int                     // expected number of distinct keys
+	// done is closed exactly once when assembly completes. The IsLastKey
+	// chunk handler waits on it so it can deterministically own the ack the
+	// core's SendAndWait is keyed on, even if a different chunk handler is the
+	// one that finishes assembly.
+	done chan struct{}
 }
 
 // addChunk appends a chunk to the assembler. Returns the completed
@@ -341,7 +346,7 @@ func (m *ValidationManager) getOrCreateProvider(
 // onPrepareContextChunk handles incoming context chunks from the core.
 // It reassembles chunks and caches the completed context.
 func (m *ValidationManager) onPrepareContextChunk(
-	_ context.Context,
+	ctx context.Context,
 	chunk *PrepareValidationContextChunk,
 ) (*ValidationMessage, error) {
 	contextID := chunk.GetContextId()
@@ -351,9 +356,11 @@ func (m *ValidationManager) onPrepareContextChunk(
 	if !exists {
 		assembler = &contextAssembler{
 			checkType: chunk.GetCheckType(),
+			done:      make(chan struct{}),
 		}
 		m.assemblers[contextID] = assembler
 	}
+	done := assembler.done
 
 	complete, data := assembler.addChunk(chunk)
 	if complete {
@@ -363,20 +370,37 @@ func (m *ValidationManager) onPrepareContextChunk(
 			Data:      data,
 		}
 		delete(m.assemblers, contextID)
+		// Signal any IsLastKey handler that is waiting for assembly to finish.
+		close(done)
 	}
 	m.mu.Unlock()
 
-	if complete {
-		return &ValidationMessage{
-			MessageType: &ValidationMessage_PrepareValidationContextResponse{
-				PrepareValidationContextResponse: &PrepareValidationContextResponse{},
-			},
-		}, nil
+	// Only the IsLastKey chunk carries the request_id the core's SendAndWait
+	// blocks on; every other chunk is fire-and-forget on the core side. To
+	// avoid acking with the wrong request_id (which would leave the core
+	// blocked until cancellation), non-IsLastKey handlers never ack — even if
+	// they happen to be the handler that completes assembly.
+	if !chunk.GetIsLastKey() {
+		return nil, nil
 	}
 
-	// Not complete yet — ack the chunk with no response (fire-and-forget on core side).
-	// The core only waits for the response on the final chunk (is_last_key=true).
-	return nil, nil
+	// Chunks are dispatched to concurrent goroutines, so the IsLastKey chunk's
+	// handler may run before earlier chunks finish assembling. Wait for the
+	// completing handler to signal done before sending the ack, while
+	// respecting cancellation so a missing chunk can't leak this goroutine.
+	if !complete {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	return &ValidationMessage{
+		MessageType: &ValidationMessage_PrepareValidationContextResponse{
+			PrepareValidationContextResponse: &PrepareValidationContextResponse{},
+		},
+	}, nil
 }
 
 // onValidationCheck handles incoming check requests from the core.

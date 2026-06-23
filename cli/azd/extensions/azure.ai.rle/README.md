@@ -47,15 +47,29 @@ Run these commands from the extension directory:
 ```powershell
 azd extension install microsoft.azd.extensions
 azd x build
+azd x pack
+azd x publish
+azd extension install azure.ai.rle --source local --force
 ```
 
-`azd x build` normally builds and installs the local extension for the current user, so `azd ai rle` should be available immediately after it succeeds.
+`azd x build` builds the extension artifacts. `azd x pack` and `azd x publish`
+register them in the local azd extension source, and `azd extension install`
+makes the `azd ai rle` command group available in any terminal.
 
 Verify:
 
 ```powershell
 azd ai rle --help
 azd ai rle version
+```
+
+After making local code changes, rebuild and update the installed extension with:
+
+```powershell
+azd x build
+azd x pack
+azd x publish
+azd extension install azure.ai.rle --source local --force
 ```
 
 ### 5. Initialize a local RLE session

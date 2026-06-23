@@ -9,15 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
-	"azureaiagent/internal/pkg/azure"
-	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -35,19 +32,6 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 	host.
 		WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
 			return project.NewAgentServiceTargetProvider(azdClient)
-		}).
-		// The Foundry resource hosts written by `azd ai agent init` are owned by
-		// this extension too, so `azd up`/`azd deploy` can walk them without a
-		// separate extension per host. They are no-ops today; the resources are
-		// created by Bicep at provision time.
-		WithServiceTarget(AiProjectHost, func() azdext.ServiceTargetProvider {
-			return project.NewResourceServiceTargetProvider(azdClient)
-		}).
-		WithServiceTarget(AiConnectionHost, func() azdext.ServiceTargetProvider {
-			return project.NewResourceServiceTargetProvider(azdClient)
-		}).
-		WithServiceTarget(AiToolboxHost, func() azdext.ServiceTargetProvider {
-			return project.NewResourceServiceTargetProvider(azdClient)
 		}).
 		WithProvisioningProvider(project.FoundryProviderName, func() azdext.ProvisioningProvider {
 			return project.NewFoundryProvisioningProvider(azdClient)
@@ -99,28 +83,10 @@ func postprovisionHandler(
 	azdClient *azdext.AzdClient,
 	args *azdext.ProjectEventArgs,
 ) error {
-	// Toolboxes live in sibling azure.ai.toolbox services; their connection
-	// enrichment still needs the project connections (azure.ai.connection
-	// services) and the agent tool connections.
-	toolboxes, err := collectToolboxes(args.Project.Services)
-	if err != nil {
-		return fmt.Errorf("failed to collect toolboxes: %w", err)
-	}
-
-	if len(toolboxes) > 0 {
-		connections, err := collectConnections(args.Project.Services)
-		if err != nil {
-			return fmt.Errorf("failed to collect connections: %w", err)
-		}
-		toolConnections, err := collectAgentToolConnections(args.Project.Services)
-		if err != nil {
-			return fmt.Errorf("failed to collect tool connections: %w", err)
-		}
-
-		if err := provisionToolboxes(ctx, azdClient, toolboxes, connections, toolConnections); err != nil {
-			return fmt.Errorf("failed to provision toolboxes: %w", err)
-		}
-	}
+	// Toolboxes are reconciled at deploy time by the azure.ai.toolbox service
+	// target (the azure.ai.toolboxes extension), not at provision. The agent
+	// service's uses: edges order each toolbox before the agent that consumes
+	// it, so the toolbox MCP endpoints are published before the agent deploys.
 
 	hasAgent := false
 	for _, svc := range args.Project.Services {
@@ -687,174 +653,6 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 	}
 
 	return nil
-}
-
-// provisionToolboxes creates or updates Foundry Toolsets for each toolbox
-// sourced from the sibling azure.ai.toolbox services. Called during
-// post-provision after the project endpoint has been created by Bicep. The
-// connections and toolConnections are used to resolve connection references
-// declared on the toolboxes.
-func provisionToolboxes(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	toolboxes []project.Toolbox,
-	connections []project.Connection,
-	toolConnections []project.ToolConnection,
-) error {
-	if len(toolboxes) == 0 {
-		return nil
-	}
-
-	// Build connection lookup for enriching tool entries with server_url/server_label
-	connByName := toolboxConnectionsByName(&project.ServiceTargetAgentConfig{
-		Connections:     connections,
-		ToolConnections: toolConnections,
-	})
-
-	currentEnv, err := azdClient.Environment().GetCurrent(
-		ctx, &azdext.EmptyRequest{},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
-	}
-
-	envValue, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: currentEnv.Environment.Name,
-		Key:     "FOUNDRY_PROJECT_ENDPOINT",
-	})
-	if err != nil || envValue.Value == "" {
-		return exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
-			"FOUNDRY_PROJECT_ENDPOINT is required for toolbox provisioning",
-			"run 'azd provision' to create the AI project first",
-		)
-	}
-	projectEndpoint := envValue.Value
-
-	envValue, err = azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: currentEnv.Environment.Name,
-		Key:     "AZURE_TENANT_ID",
-	})
-	if err != nil || envValue.Value == "" {
-		return exterrors.Dependency(
-			exterrors.CodeMissingAzureTenantId,
-			"AZURE_TENANT_ID is required for toolbox provisioning",
-			"run 'azd auth login' to authenticate",
-		)
-	}
-	tenantId := envValue.Value
-
-	cred, err := azidentity.NewAzureDeveloperCLICredential(
-		&azidentity.AzureDeveloperCLICredentialOptions{
-			TenantID:                   tenantId,
-			AdditionallyAllowedTenants: []string{"*"},
-		},
-	)
-	if err != nil {
-		return exterrors.Auth(
-			exterrors.CodeCredentialCreationFailed,
-			fmt.Sprintf("failed to create credential: %s", err),
-			"run 'azd auth login' to authenticate",
-		)
-	}
-
-	toolboxClient := azure.NewFoundryToolboxClient(
-		projectEndpoint, cred,
-	)
-
-	// Build azd env lookup for resolving ${VAR} references in tool entries
-	azdEnv, err := getAllEnvVars(ctx, azdClient, currentEnv.Environment.Name)
-	if err != nil {
-		return fmt.Errorf("failed to load environment variables: %w", err)
-	}
-
-	// Build connection ID lookup from bicep outputs (name → ARM resource ID)
-	connIDMap, err := parseConnectionIDs(azdEnv["AI_PROJECT_CONNECTION_IDS_JSON"])
-	if err != nil {
-		return fmt.Errorf("loading connection IDs: %w", err)
-	}
-
-	for _, toolbox := range toolboxes {
-		fmt.Fprintf(
-			os.Stderr, "Provisioning toolbox: %s\n", toolbox.Name,
-		)
-
-		// Resolve ${VAR} references in tool map values before sending to API
-		resolveToolboxEnvVars(&toolbox, azdEnv)
-
-		// Fill in server_url/server_label from connection data
-		enrichToolboxFromConnections(&toolbox, connByName)
-
-		// Replace project_connection_id friendly names with ARM resource IDs
-		resolveToolboxConnectionIDs(&toolbox, connIDMap)
-
-		version, err := createToolboxVersion(
-			ctx, toolboxClient, toolbox,
-		)
-		if err != nil {
-			return err
-		}
-
-		if err := registerToolboxEnvVars(
-			ctx, azdClient,
-			currentEnv.Environment.Name,
-			projectEndpoint, toolbox.Name, version,
-		); err != nil {
-			return err
-		}
-
-		fmt.Fprintf(
-			os.Stderr, "Toolbox '%s' provisioned\n", toolbox.Name,
-		)
-	}
-
-	return nil
-}
-
-// createToolboxVersion creates a new version of a toolbox.
-// If the toolbox does not exist, it will be created automatically.
-// Returns the version identifier of the newly created version.
-func createToolboxVersion(
-	ctx context.Context,
-	client *azure.FoundryToolboxClient,
-	toolbox project.Toolbox,
-) (string, error) {
-	req := &azure.CreateToolboxVersionRequest{
-		Description: toolbox.Description,
-		Tools:       toolbox.Tools,
-	}
-
-	result, err := client.CreateToolboxVersion(ctx, toolbox.Name, req)
-	if err != nil {
-		return "", exterrors.Internal(
-			exterrors.CodeCreateToolboxVersionFailed,
-			fmt.Sprintf("failed to create toolbox version '%s': %s", toolbox.Name, err),
-		)
-	}
-
-	return result.Version, nil
-}
-
-// registerToolboxEnvVars sets TOOLBOX_{NAME}_MCP_ENDPOINT with the versioned URL.
-func registerToolboxEnvVars(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	envName string,
-	projectEndpoint string,
-	toolboxName string,
-	toolboxVersion string,
-) error {
-	envKey := envkey.ToolboxMCPEndpoint(toolboxName)
-
-	endpoint := strings.TrimRight(projectEndpoint, "/")
-	mcpEndpoint := fmt.Sprintf(
-		"%s/toolboxes/%s/versions/%s/mcp?api-version=v1",
-		endpoint, url.PathEscape(toolboxName), url.PathEscape(toolboxVersion),
-	)
-
-	return setEnvVar(
-		ctx, azdClient, envName, envKey, mcpEndpoint,
-	)
 }
 
 // resolveToolboxEnvVars resolves ${VAR} references in toolbox name, description,

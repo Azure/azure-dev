@@ -16,26 +16,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestPostdeployHandler_NoAgentService_NoOp verifies postdeployHandler returns nil
-// without any RPC calls when the project has no hosted agent services. Regression
-// guard for #7373.
-func TestPostdeployHandler_NoAgentService_NoOp(t *testing.T) {
+// TestPostdeployHandler_NonHostedAgent_NoOp verifies postdeployHandler returns nil
+// without any RPC calls when the service is an agent but not a hosted agent (no agent.yaml
+// with kind: hostedAgent). With service-level event handlers, the core filters by host type,
+// so this handler is only invoked for azure.ai.agent services.
+func TestPostdeployHandler_NonHostedAgent_NoOp(t *testing.T) {
 	t.Parallel()
 
 	// Use a temp dir + explicit RelativePath so isHostedAgentService deterministically
 	// returns false (no agent.yaml present) regardless of the test working directory.
-	args := &azdext.ProjectEventArgs{
+	args := &azdext.ServiceEventArgs{
 		Project: &azdext.ProjectConfig{
 			Path: t.TempDir(),
-			Services: map[string]*azdext.ServiceConfig{
-				"teams-bot": {Name: "teams-bot", Host: "containerapp", RelativePath: "."},
-			},
 		},
+		Service: &azdext.ServiceConfig{Name: "my-agent", Host: AiAgentHost, RelativePath: "."},
 	}
 
 	// nil azdClient — the early return must fire before any RPC call.
 	if err := postdeployHandler(t.Context(), nil, args); err != nil {
-		t.Fatalf("expected no error for project without agent services, got: %v", err)
+		t.Fatalf("expected no error for non-hosted agent service, got: %v", err)
 	}
 }
 
@@ -554,34 +553,19 @@ func TestToolboxConnectionsByName_MergesBothTypes(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// postdeployHandler — skips non-agent-host services
+// postdeployHandler — skips non-hosted agent services
 // ---------------------------------------------------------------------------
 
-func TestPostdeployHandler_SkipsNonAgentHostServices(t *testing.T) {
+func TestPostdeployHandler_SkipsNonHostedAgentService(t *testing.T) {
 	t.Parallel()
 
-	// Project has one service with a different host type — handler should
-	// return nil without making any RPC calls (azdClient is nil).
-	args := &azdext.ProjectEventArgs{
+	// Service is an agent host but not a hosted agent (no agent.yaml) — handler
+	// should return nil without making any RPC calls (azdClient is nil).
+	args := &azdext.ServiceEventArgs{
 		Project: &azdext.ProjectConfig{
 			Path: t.TempDir(),
-			Services: map[string]*azdext.ServiceConfig{
-				"api": {Name: "api", Host: "containerapp", RelativePath: "."},
-			},
 		},
-	}
-
-	assert.NoError(t, postdeployHandler(t.Context(), nil, args))
-}
-
-func TestPostdeployHandler_SkipsWhenNoServices(t *testing.T) {
-	t.Parallel()
-
-	args := &azdext.ProjectEventArgs{
-		Project: &azdext.ProjectConfig{
-			Path:     t.TempDir(),
-			Services: map[string]*azdext.ServiceConfig{},
-		},
+		Service: &azdext.ServiceConfig{Name: "my-agent", Host: AiAgentHost, RelativePath: "."},
 	}
 
 	assert.NoError(t, postdeployHandler(t.Context(), nil, args))

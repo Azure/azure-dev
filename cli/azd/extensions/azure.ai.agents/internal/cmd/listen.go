@@ -45,12 +45,12 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postprovisionHandler(ctx, azdClient, args)
 		}).
-		WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+		WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return predeployHandler(ctx, azdClient, args)
-		}).
-		WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
+		WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return postdeployHandler(ctx, azdClient, args)
-		}).
+		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
 		WithProjectEventHandler("postdown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postdownHandler(ctx, azdClient, args)
 		})
@@ -150,27 +150,18 @@ func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 	return resp.Environment.Name, nil
 }
 
-func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	hasHostedAgentService := false
-	for _, svc := range args.Project.Services {
-		if svc.Host != AiAgentHost {
-			continue
-		}
+func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
+	svc := args.Service
 
-		if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
-			return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
-		}
-		if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
-			return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
-		}
-
-		if !hasHostedAgentService && isHostedAgentService(svc, args.Project) {
-			hasHostedAgentService = true
-		}
+	if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
+		return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+	}
+	if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
+		return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 	}
 
 	// Run developer RBAC pre-flight checks only for hosted agent deployments.
-	if hasHostedAgentService {
+	if isHostedAgentService(svc, args.Project) {
 		if err := project.CheckDeveloperRBAC(ctx, azdClient); err != nil {
 			return err
 		}
@@ -198,21 +189,15 @@ func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig)
 	return ok && kind == string(agent_yaml.AgentKindHosted)
 }
 
-func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	// Skip when the project has no hosted agent services. `postdeploy` fires on every
-	// `azd deploy`, so without this guard the FOUNDRY_PROJECT_ENDPOINT/AZURE_TENANT_ID
-	// reads below would fail for projects that don't use this extension. See #7373.
-	var hostedAgents []*azdext.ServiceConfig
-	for _, svc := range args.Project.Services {
-		if svc.Host == AiAgentHost && isHostedAgentService(svc, args.Project) {
-			hostedAgents = append(hostedAgents, svc)
-		}
-	}
-	if len(hostedAgents) == 0 {
+func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
+	svc := args.Service
+
+	// Skip when the service is not a hosted agent.
+	if !isHostedAgentService(svc, args.Project) {
 		return nil
 	}
 
-	// Collect agent identities from hosted agent services that were deployed.
+	// Collect agent identity from the hosted agent service that was deployed.
 	// After deploy, each hosted agent's name/version is stored as AGENT_{SERVICE_KEY}_NAME/VERSION.
 	// We fetch the full agent version object from the API to get the instance identity principal ID,
 	// which allows us to skip the slow Graph API discovery during RBAC assignment.
@@ -259,57 +244,46 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 
 	agentClient := agent_api.NewAgentClient(endpointResp.Value, cred)
 
-	// Build name→principalID map by fetching the agent version for each hosted service.
-	agentIdentities := make(map[string]string)
-	for _, svc := range hostedAgents {
-		serviceKey := toServiceKey(svc.Name)
+	// Fetch the agent version to get the instance identity principal ID.
+	serviceKey := toServiceKey(svc.Name)
 
-		versionResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: envName,
-			Key:     fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
-		})
-		if err != nil {
-			return fmt.Errorf(
-				"failed to read AGENT_%s_VERSION from environment: %w",
-				serviceKey, err,
-			)
-		}
-		if versionResp.Value == "" {
-			continue
-		}
-
-		// Fetch the agent version to get the instance identity principal ID.
-		versionObj, err := agentClient.GetAgentVersion(
-			ctx, svc.Name, versionResp.Value, DefaultAgentAPIVersion,
+	versionResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
+	})
+	if err != nil {
+		return fmt.Errorf(
+			"failed to read AGENT_%s_VERSION from environment: %w",
+			serviceKey, err,
 		)
-		if err != nil {
-			return fmt.Errorf(
-				"failed to fetch agent version for %s/%s: %w",
-				svc.Name, versionResp.Value, err,
-			)
-		}
-
-		principalID := ""
-		if versionObj.InstanceIdentity != nil {
-			principalID = versionObj.InstanceIdentity.PrincipalID
-		}
-
-		agentIdentities[svc.Name] = principalID
 	}
-
-	if len(agentIdentities) == 0 {
+	if versionResp.Value == "" {
 		return nil
 	}
+
+	versionObj, err := agentClient.GetAgentVersion(
+		ctx, svc.Name, versionResp.Value, DefaultAgentAPIVersion,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to fetch agent version for %s/%s: %w",
+			svc.Name, versionResp.Value, err,
+		)
+	}
+
+	principalID := ""
+	if versionObj.InstanceIdentity != nil {
+		principalID = versionObj.InstanceIdentity.PrincipalID
+	}
+
+	agentIdentities := map[string]string{svc.Name: principalID}
 
 	if err := project.EnsureAgentIdentityRBAC(ctx, azdClient, agentIdentities); err != nil {
 		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
 	}
 
-	// Report optimization candidate deployments to the optimization service.
-	// If a service has AGENT_{KEY}_OPTIMIZATION_CANDIDATE_ID in the azd environment,
-	// the agent was deployed from an optimization candidate. We notify the
-	// optimization service so it can track which candidates have been deployed.
-	reportOptimizationDeployments(ctx, azdClient, hostedAgents, envName, endpointResp.Value,
+	// Report optimization candidate deployment to the optimization service.
+	reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, endpointResp.Value,
 		func(endpoint string) *optimize_api.OptimizeClient {
 			return optimize_api.NewOptimizeClient(endpoint, cred)
 		},

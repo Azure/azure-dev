@@ -155,7 +155,10 @@ func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 // process lifetime. Service-level predeploy handlers fire per-service, but the
 // RBAC pre-flight check is project-scoped and idempotent — running it once is
 // sufficient and avoids duplicate ARM/Graph calls and noisy output.
-var developerRBACOnce sync.Once
+var (
+	developerRBACOnce sync.Once
+	developerRBACErr  error
+)
 
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
 	svc := args.Service
@@ -171,12 +174,11 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	// Guarded by sync.Once since this handler fires per-service but the check
 	// is project-scoped.
 	if isHostedAgentService(svc, args.Project) {
-		var rbacErr error
 		developerRBACOnce.Do(func() {
-			rbacErr = project.CheckDeveloperRBAC(ctx, azdClient)
+			developerRBACErr = project.CheckDeveloperRBAC(ctx, azdClient)
 		})
-		if rbacErr != nil {
-			return rbacErr
+		if developerRBACErr != nil {
+			return developerRBACErr
 		}
 	}
 
@@ -295,12 +297,19 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
 	}
 
-	// Report optimization candidate deployment to the optimization service.
-	reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, endpointResp.Value,
-		func(endpoint string) *optimize_api.OptimizeClient {
-			return optimize_api.NewOptimizeClient(endpoint, cred)
-		},
-	)
+	// Report optimization candidate deployment (best-effort: panics are logged, not propagated).
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("postdeploy: optimization reporting panicked for %s: %v", svc.Name, r)
+			}
+		}()
+		reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, endpointResp.Value,
+			func(endpoint string) *optimize_api.OptimizeClient {
+				return optimize_api.NewOptimizeClient(endpoint, cred)
+			},
+		)
+	}()
 
 	return nil
 }

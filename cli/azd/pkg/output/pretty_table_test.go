@@ -14,12 +14,11 @@ import (
 )
 
 type prettyInput struct {
-	Name         string
-	Version      string
-	Status       string
-	StatusSymbol string
-	Source       string
-	Id           string
+	Name    string
+	Version string
+	Status  string
+	Source  string
+	Id      string
 }
 
 func sgrPrefixPattern(text string) *regexp.Regexp {
@@ -230,7 +229,7 @@ func TestPrettyHeaderUnderline(t *testing.T) {
 func TestPrettyFullBreakpoint(t *testing.T) {
 	rows := []prettyInput{
 		{Id: "azure.ai.agents", Name: "Foundry agents (Preview)", Version: "0.1.18-preview",
-			Status: "✓ Up to date", StatusSymbol: "✓", Source: "azd"},
+			Status: "✓ Up to date", Source: "azd"},
 	}
 
 	formatter := &PrettyTableFormatter{
@@ -258,7 +257,7 @@ func TestPrettyFullBreakpoint(t *testing.T) {
 func TestPrettyCompactBreakpoint(t *testing.T) {
 	rows := []prettyInput{
 		{Id: "azure.ai.agents", Name: "Foundry agents (Preview)", Version: "0.1.18-preview",
-			Status: "✓ Up to date", StatusSymbol: "✓", Source: "azd"},
+			Status: "✓ Up to date", Source: "azd"},
 	}
 
 	formatter := &PrettyTableFormatter{
@@ -273,23 +272,23 @@ func TestPrettyCompactBreakpoint(t *testing.T) {
 	require.NoError(t, err)
 	output := buf.String()
 
-	// Compact: Priority ≤ 2 columns, status uses ShortValueTemplate (symbol only)
+	// Compact: Priority ≤ 2 columns shown with their full values.
 	require.Contains(t, output, "ID")
 	require.Contains(t, output, "VERSION")
 	require.Contains(t, output, "STATUS")
 	require.Contains(t, output, "SOURCE")
 	// NAME (priority 3) dropped
 	require.NotContains(t, output, "NAME")
-	// Should use short status template (symbol only)
-	require.NotContains(t, output, "Up to date")
+	// Full status text is shown (no symbol substitution).
+	require.Contains(t, output, "Up to date")
 }
 
 func TestPrettyCardBreakpoint(t *testing.T) {
 	rows := []prettyInput{
 		{Id: "azure.ai.agents", Name: "Foundry agents (Preview)", Version: "0.1.18-preview",
-			Status: "✓ Up to date", StatusSymbol: "✓", Source: "azd"},
+			Status: "✓ Up to date", Source: "azd"},
 		{Id: "azure.coding-agent", Name: "Coding agent config", Version: "0.6.1",
-			Status: "⚠ Incompatible", StatusSymbol: "⚠", Source: "local"},
+			Status: "⚠ Incompatible", Source: "local"},
 	}
 
 	formatter := &PrettyTableFormatter{
@@ -357,70 +356,13 @@ func TestPrettyCardGroupingOrder(t *testing.T) {
 	require.Contains(t, output, "Third")
 }
 
-func TestPrettyShortValueTemplate(t *testing.T) {
+func TestPrettyColorFuncAtCompactWidth(t *testing.T) {
 	rows := []prettyInput{
-		{Id: "ext-a", Status: "✓ Up to date", StatusSymbol: "✓"},
-	}
-
-	// Width 70 is in compact range (60-99), should use short template
-	formatter := &PrettyTableFormatter{
-		ConsoleWidthFn: func() int { return 70 },
-	}
-
-	buf := &bytes.Buffer{}
-	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
-		Columns: []PrettyColumn{
-			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
-			{
-				Column:             Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
-				Priority:           1,
-				ShortValueTemplate: "{{.StatusSymbol}}",
-			},
-		},
-	})
-
-	require.NoError(t, err)
-	output := buf.String()
-
-	// At compact width, should use short template (symbol only)
-	require.NotContains(t, output, "Up to date")
-}
-
-func TestPrettyShortValueTemplateNotUsedAtFullWidth(t *testing.T) {
-	rows := []prettyInput{
-		{Id: "ext-a", Status: "✓ Up to date", StatusSymbol: "✓"},
-	}
-
-	formatter := &PrettyTableFormatter{
-		ConsoleWidthFn: func() int { return 120 },
-	}
-
-	buf := &bytes.Buffer{}
-	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
-		Columns: []PrettyColumn{
-			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
-			{
-				Column:             Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
-				Priority:           1,
-				ShortValueTemplate: "{{.StatusSymbol}}",
-			},
-		},
-	})
-
-	require.NoError(t, err)
-	output := buf.String()
-
-	// At full width, should use full template
-	require.Contains(t, output, "✓ Up to date")
-}
-
-func TestPrettyColorFuncWithShortValueTemplate(t *testing.T) {
-	rows := []prettyInput{
-		{Id: "ext-a", Status: "✓ Up to date", StatusSymbol: "✓"},
+		{Id: "ext-a", Status: "✓ Up to date"},
 	}
 
 	colorApplied := false
-	// Width 70 is compact range
+	// Width 70 is in the compact range (60-99).
 	formatter := &PrettyTableFormatter{
 		ConsoleWidthFn: func() int { return 70 },
 	}
@@ -430,9 +372,8 @@ func TestPrettyColorFuncWithShortValueTemplate(t *testing.T) {
 		Columns: []PrettyColumn{
 			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
 			{
-				Column:             Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
-				Priority:           1,
-				ShortValueTemplate: "{{.StatusSymbol}}",
+				Column:   Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
+				Priority: 1,
 				ColorFunc: func(s string) string {
 					colorApplied = true
 					return "[" + s + "]"
@@ -442,11 +383,10 @@ func TestPrettyColorFuncWithShortValueTemplate(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.True(t, colorApplied, "ColorFunc should be applied to short value")
+	require.True(t, colorApplied, "ColorFunc should be applied at compact width")
 	output := buf.String()
-	// At compact width, should use short template AND apply color
-	require.NotContains(t, output, "Up to date")
-	require.Contains(t, output, "[✓]")
+	// Full status text is shown and colored (no symbol substitution).
+	require.Contains(t, output, "[✓ Up to date]")
 }
 
 // Breakpoint boundary transition tests
@@ -454,7 +394,7 @@ func TestPrettyColorFuncWithShortValueTemplate(t *testing.T) {
 func TestPrettyBreakpointTransitions(t *testing.T) {
 	rows := []prettyInput{
 		{Id: "azure.ai.agents", Name: "Foundry agents (Preview)", Version: "0.1.18-preview",
-			Status: "✓ Up to date", StatusSymbol: "✓", Source: "azd"},
+			Status: "✓ Up to date", Source: "azd"},
 	}
 
 	columns := extListTestColumns()
@@ -872,9 +812,8 @@ func extListTestColumns() []PrettyColumn {
 			Priority: 1,
 		},
 		{
-			Column:             Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
-			Priority:           2,
-			ShortValueTemplate: "{{.StatusSymbol}}",
+			Column:   Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
+			Priority: 2,
 		},
 		{
 			Column:   Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"},

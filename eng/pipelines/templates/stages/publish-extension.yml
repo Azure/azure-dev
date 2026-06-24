@@ -143,7 +143,9 @@ stages:
       # Production registry updates also refresh global command snapshots.
       # Mirrors Increment_Version in eng/pipelines/templates/stages/publish.yml.
       - job: Update_Registry
-        dependsOn: Publish_Release
+        dependsOn: 
+          - Publish_Release
+          - Generate_GH_Token
         condition: >-
           and(
             succeeded(),

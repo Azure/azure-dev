@@ -34,7 +34,10 @@ addFormats(ajv);
 ajv.addMetaSchema(require('ajv/dist/refs/json-schema-draft-07.json'));
 
 const core = path.join(repo, 'schemas/v1.0/azure.yaml.json');
-const subs = globSync(path.join(repo, 'cli/azd/extensions/azure.ai.agents/schemas/*.json'));
+// Register every Foundry extension's schemas (agents, projects, connections,
+// toolboxes, skills, routines) so ajv can resolve the cross-extension $refs that
+// schemas/v1.0/azure.yaml.json composes, keeping validation fully offline.
+const subs = globSync(path.join(repo, 'cli/azd/extensions/azure.ai.*/schemas/*.json'));
 for (const f of [core, ...subs]) {
   const s = JSON.parse(fs.readFileSync(f, 'utf8'));
   const rel = path.relative(repo, f).replace(/\\/g, '/');

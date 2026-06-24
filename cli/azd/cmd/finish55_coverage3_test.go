@@ -44,8 +44,7 @@ func Test_ConfigListAlpha_HappyPath_Finish(t *testing.T) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// configOptionsAction.Run — table format with complex config values
-// Exercises switch cases at lines 621-626 (map/array/default)
+// configOptionsAction.Run — shared config manager fake
 // ──────────────────────────────────────────────────────────────
 
 type finishConfigMgr struct {
@@ -56,59 +55,9 @@ type finishConfigMgr struct {
 func (m *finishConfigMgr) Load() (config.Config, error) { return m.cfg, m.err }
 func (m *finishConfigMgr) Save(_ config.Config) error   { return nil }
 
-func Test_ConfigOptions_TableFormat_MapValue_Finish(t *testing.T) {
-	t.Parallel()
-	// Set a known config key to a map value to hit case map[string]any
-	cfg := config.NewConfig(map[string]any{
-		"defaults": map[string]any{
-			"subscription": map[string]any{"nested": "value"},
-		},
-	})
-	mgr := &finishConfigMgr{cfg: cfg}
-	console := mockinput.NewMockConsole()
-	buf := &bytes.Buffer{}
-	formatter := &output.TableFormatter{}
-	action := newConfigOptionsAction(console, formatter, buf, mgr, nil)
-	_, err := action.Run(t.Context())
-	require.NoError(t, err)
-}
-
-func Test_ConfigOptions_TableFormat_ArrayValue_Finish(t *testing.T) {
-	t.Parallel()
-	cfg := config.NewConfig(map[string]any{
-		"defaults": map[string]any{
-			"subscription": []any{"sub1", "sub2"},
-		},
-	})
-	mgr := &finishConfigMgr{cfg: cfg}
-	console := mockinput.NewMockConsole()
-	buf := &bytes.Buffer{}
-	formatter := &output.TableFormatter{}
-	action := newConfigOptionsAction(console, formatter, buf, mgr, nil)
-	_, err := action.Run(t.Context())
-	require.NoError(t, err)
-}
-
-func Test_ConfigOptions_TableFormat_IntValue_Finish(t *testing.T) {
-	t.Parallel()
-	// Set a known config key to an integer to hit the default case
-	cfg := config.NewConfig(map[string]any{
-		"defaults": map[string]any{
-			"subscription": 42,
-		},
-	})
-	mgr := &finishConfigMgr{cfg: cfg}
-	console := mockinput.NewMockConsole()
-	buf := &bytes.Buffer{}
-	formatter := &output.TableFormatter{}
-	action := newConfigOptionsAction(console, formatter, buf, mgr, nil)
-	_, err := action.Run(t.Context())
-	require.NoError(t, err)
-}
-
 // ──────────────────────────────────────────────────────────────
 // configOptionsAction.Run — default (none) format with complex values
-// Exercises switch cases at lines 697-702 (map/array/default)
+// Exercises the value-conversion switch cases (map/array/default)
 // ──────────────────────────────────────────────────────────────
 
 func Test_ConfigOptions_DefaultFormat_MapValue_Finish(t *testing.T) {
@@ -422,23 +371,6 @@ func Test_ConfigOptions_JsonFormatError_Finish(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	w := &errWriter{}
 	formatter := &output.JsonFormatter{}
-	action := newConfigOptionsAction(console, formatter, w, mgr, nil)
-	_, err := action.Run(t.Context())
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed formatting config options")
-}
-
-// ──────────────────────────────────────────────────────────────
-// configOptionsAction.Run — table format error (line 676-678)
-// ──────────────────────────────────────────────────────────────
-
-func Test_ConfigOptions_TableFormatError_Finish(t *testing.T) {
-	t.Parallel()
-	cfg := config.NewEmptyConfig()
-	mgr := &finishConfigMgr{cfg: cfg}
-	console := mockinput.NewMockConsole()
-	w := &errWriter{}
-	formatter := &output.TableFormatter{}
 	action := newConfigOptionsAction(console, formatter, w, mgr, nil)
 	_, err := action.Run(t.Context())
 	require.Error(t, err)

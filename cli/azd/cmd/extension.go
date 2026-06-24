@@ -475,10 +475,9 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 }
 
 // Status indicator constants for extension list display.
-// Only "Update available" carries a leading symbol; the others are plain text.
 const (
 	statusUpToDate   = "Up to date"
-	statusUpdate     = "⟳ Update available"
+	statusUpdate     = "Update available"
 	statusIncompat   = "Incompatible"
 	statusNotInstall = "Not installed"
 )
@@ -498,10 +497,8 @@ func extensionStatus(installed, updateAvailable, incompatible bool) string {
 }
 
 // extensionStatusColor applies color formatting based on the status indicator text.
-// Leading/trailing whitespace (e.g. from column alignment padding) is ignored
-// when matching, but preserved in the returned, colored string.
 func extensionStatusColor(s string) string {
-	switch strings.TrimSpace(s) {
+	switch s {
 	case statusUpToDate:
 		return output.WithSuccessFormat(s)
 	case statusUpdate:

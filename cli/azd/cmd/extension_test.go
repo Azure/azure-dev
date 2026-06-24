@@ -666,11 +666,9 @@ func TestExtensionStatusColor(t *testing.T) {
 	color.NoColor = false
 	defer func() { color.NoColor = originalNoColor }()
 
-	// Verify no panics and non-empty output for each status, including values
-	// with leading alignment padding (which the color function tolerates).
+	// Verify no panics and non-empty colored output for each status value.
 	for _, s := range []string{
 		statusUpToDate, statusUpdate, statusIncompat, statusNotInstall,
-		"  " + statusUpToDate, "  " + statusNotInstall,
 	} {
 		result := extensionStatusColor(s)
 		assert.NotEmpty(t, result, "color function should return non-empty for %q", s)

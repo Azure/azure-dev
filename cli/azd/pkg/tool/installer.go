@@ -1414,7 +1414,7 @@ func (i *installer) managerUnavailableUninstallError(
 		Message: "Cannot uninstall " + tool.Name,
 		Suggestion: fmt.Sprintf(
 			"Package manager %q is not available. "+
-				"Remove %s manually using the tool you originally installed it with.",
+				"Please remove %s manually using the tool you originally installed it with.",
 			strategy.PackageManager, tool.Name,
 		),
 	}

@@ -61,13 +61,17 @@ func TestLocalInvoke_CallIDHeader(t *testing.T) {
 				noPrompt: true,
 			}
 
+			var err error
 			withCapturedStdout(t, func() {
 				if tc.protocol == "responses" {
-					_ = action.responsesLocal(t.Context())
+					err = action.responsesLocal(t.Context())
 				} else {
-					_ = action.invocationsLocal(t.Context())
+					err = action.invocationsLocal(t.Context())
 				}
 			})
+			if err != nil {
+				t.Fatalf("local invoke failed: %v", err)
+			}
 
 			if tc.wantSet {
 				if gotHeader != tc.callID {

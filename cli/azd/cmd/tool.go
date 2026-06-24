@@ -1554,10 +1554,9 @@ func writeDryRunTable(w io.Writer, rows []toolDryRunItem) error {
 }
 
 // toolStatusColor applies color formatting based on install status text.
-// Leading/trailing whitespace is ignored when matching but preserved in output.
 func toolStatusColor(s string) string {
-	switch strings.TrimSpace(s) {
-	case "Installed", "✓":
+	switch s {
+	case "Installed":
 		return output.WithSuccessFormat(s)
 	default:
 		// "Not installed" and any other state render in gray.

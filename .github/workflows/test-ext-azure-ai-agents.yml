@@ -1,0 +1,73 @@
+name: ext-azure-ai-agents-test
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/azure.ai.agents/**"
+      - "cli/azd/test/functional/ai_agents/**"
+      - ".github/workflows/test-ext-azure-ai-agents.yml"
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/azd/go.mod
+
+      - name: Build azd
+        working-directory: cli/azd
+        run: |
+          go build -tags=record -o azd-record ./
+          # Make the record-tagged binary available as "azd" on PATH.
+          # Required by extension sub-processes (azd x publish) and by
+          # azidentity.AzureDeveloperCLICredential (exec.LookPath("azd")) in playback.
+          sudo ln -sf "$GITHUB_WORKSPACE/cli/azd/azd-record" /usr/local/bin/azd
+
+      - name: Install extension toolchain
+        run: |
+          # Install the developer extension (provides 'azd x' commands).
+          # The built-in 'azd' source is auto-registered, so no source-add needed.
+          azd extension install microsoft.azd.extensions --no-prompt
+          # Pre-install the inspector dependency so the local install can resolve it.
+          azd extension install azure.ai.inspector --no-prompt
+
+      - name: Build, pack & register extension (record-tagged)
+        working-directory: cli/azd/extensions/azure.ai.agents
+        env:
+          GOFLAGS: -tags=record
+        run: |
+          # build.sh inherits GOFLAGS, so go build gets -tags=record automatically.
+          azd x build --skip-install
+          azd x pack
+          azd x publish
+
+      - name: Install extension from local registry
+        run: azd extension install azure.ai.agents --source local --force --no-prompt
+
+      - name: Run Tier 0 tests (offline)
+        working-directory: cli/azd
+        env:
+          CLI_TEST_AZD_PATH: ${{ github.workspace }}/cli/azd/azd-record
+        run: |
+          go test -tags=record -run "Test_AIAgent_(Version|Help|Init_NoPrompt_MissingFlags|Doctor_Help)" \
+            ./test/functional/ai_agents/ -v -timeout 5m
+
+      - name: Run Tier 1 tests (playback)
+        working-directory: cli/azd
+        env:
+          AZURE_RECORD_MODE: playback
+          CLI_TEST_AZD_PATH: ${{ github.workspace }}/cli/azd/azd-record
+        run: |
+          go test -tags=record -run "Test_AIAgent_(Init_(NoPrompt_(Defer|WithProject)|NegativeControl_BadCassette)|SampleList_(Recorded|JSON_Recorded))" \
+            ./test/functional/ai_agents/ -v -timeout 5m

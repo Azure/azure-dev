@@ -46,7 +46,7 @@ func TestGetRoutine_Success(t *testing.T) {
 		assert.Equal(t, routinesPreviewValue, r.Header.Get(routinesPreviewHeader))
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(routine)
+		_ = json.NewEncoder(w).Encode(routine)
 	}))
 
 	got, err := client.GetRoutine(t.Context(), "my-routine")
@@ -60,7 +60,7 @@ func TestGetRoutine_NotFound(t *testing.T) {
 	t.Parallel()
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"error":{"code":"NotFound","message":"routine not found"}}`))
+		_, _ = w.Write([]byte(`{"error":{"code":"NotFound","message":"routine not found"}}`))
 	}))
 
 	_, err := client.GetRoutine(t.Context(), "nonexistent")
@@ -75,7 +75,7 @@ func TestGetRoutine_ContextCancellation(t *testing.T) {
 	t.Parallel()
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(Routine{Name: "x"})
+		_ = json.NewEncoder(w).Encode(Routine{Name: "x"})
 	}))
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -99,7 +99,7 @@ func TestListRoutines_SinglePage(t *testing.T) {
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(page)
+		_ = json.NewEncoder(w).Encode(page)
 	}))
 
 	got, err := client.ListRoutines(t.Context())
@@ -120,14 +120,14 @@ func TestListRoutines_MultiPage(t *testing.T) {
 		switch call {
 		case 1:
 			// First page has a continuation token
-			json.NewEncoder(w).Encode(PagedRoutine{
+			_ = json.NewEncoder(w).Encode(PagedRoutine{
 				Value:             []Routine{{Name: "r1"}},
 				ContinuationToken: "token-page2",
 			})
 		case 2:
 			// Second page: verify "after" query param is passed
 			assert.Contains(t, r.URL.RawQuery, "after=token-page2")
-			json.NewEncoder(w).Encode(PagedRoutine{
+			_ = json.NewEncoder(w).Encode(PagedRoutine{
 				Value: []Routine{{Name: "r2"}},
 			})
 		default:
@@ -146,7 +146,7 @@ func TestListRoutines_ServerError(t *testing.T) {
 	t.Parallel()
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error":{"code":"InternalError","message":"boom"}}`))
+		_, _ = w.Write([]byte(`{"error":{"code":"InternalError","message":"boom"}}`))
 	}))
 
 	_, err := client.ListRoutines(t.Context())
@@ -162,13 +162,16 @@ func TestPutRoutine_Created(t *testing.T) {
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 
 		var body Routine
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		assert.Equal(t, "new-routine", body.Name)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		body.CreatedAt = "2025-01-01T00:00:00Z"
-		json.NewEncoder(w).Encode(body)
+		_ = json.NewEncoder(w).Encode(body)
 	}))
 
 	input := &Routine{Name: "new-routine", Description: "desc"}
@@ -183,7 +186,7 @@ func TestPutRoutine_Updated(t *testing.T) {
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(Routine{Name: "existing", UpdatedAt: "2025-06-01T00:00:00Z"})
+		_ = json.NewEncoder(w).Encode(Routine{Name: "existing", UpdatedAt: "2025-06-01T00:00:00Z"})
 	}))
 
 	got, err := client.PutRoutine(t.Context(), "existing", &Routine{Name: "existing"})
@@ -195,7 +198,7 @@ func TestPutRoutine_Conflict(t *testing.T) {
 	t.Parallel()
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusConflict)
-		w.Write([]byte(`{"error":{"code":"Conflict","message":"name in use"}}`))
+		_, _ = w.Write([]byte(`{"error":{"code":"Conflict","message":"name in use"}}`))
 	}))
 
 	_, err := client.PutRoutine(t.Context(), "dup", &Routine{Name: "dup"})
@@ -234,7 +237,7 @@ func TestDeleteRoutine_NotFound(t *testing.T) {
 	t.Parallel()
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"error":{"code":"NotFound","message":"not found"}}`))
+		_, _ = w.Write([]byte(`{"error":{"code":"NotFound","message":"not found"}}`))
 	}))
 
 	err := client.DeleteRoutine(t.Context(), "missing")
@@ -254,7 +257,7 @@ func TestEnableRoutine_Success(t *testing.T) {
 		assert.Contains(t, r.URL.Path, "/routines/my-routine:enable")
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(Routine{Name: "my-routine", Enabled: new(true)})
+		_ = json.NewEncoder(w).Encode(Routine{Name: "my-routine", Enabled: new(true)})
 	}))
 
 	got, err := client.EnableRoutine(t.Context(), "my-routine")
@@ -269,7 +272,7 @@ func TestDisableRoutine_Success(t *testing.T) {
 		assert.Contains(t, r.URL.Path, "/routines/my-routine:disable")
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(Routine{Name: "my-routine", Enabled: new(false)})
+		_ = json.NewEncoder(w).Encode(Routine{Name: "my-routine", Enabled: new(false)})
 	}))
 
 	got, err := client.DisableRoutine(t.Context(), "my-routine")
@@ -281,7 +284,7 @@ func TestEnableRoutine_ServerError(t *testing.T) {
 	t.Parallel()
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error":{"code":"InternalError","message":"oops"}}`))
+		_, _ = w.Write([]byte(`{"error":{"code":"InternalError","message":"oops"}}`))
 	}))
 
 	_, err := client.EnableRoutine(t.Context(), "broken")
@@ -297,12 +300,15 @@ func TestDispatchRoutineAsync_Success(t *testing.T) {
 		assert.Contains(t, r.URL.Path, "/routines/my-routine:dispatch_async")
 
 		var body DispatchRoutineRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		assert.Equal(t, "invoke_agent_responses_api", body.Payload.Type)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(DispatchRoutineResponse{
+		_ = json.NewEncoder(w).Encode(DispatchRoutineResponse{
 			DispatchID:          "d-123",
 			ActionCorrelationID: "ac-456",
 		})
@@ -327,7 +333,7 @@ func TestDispatchRoutineAsync_NilPayload(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(DispatchRoutineResponse{DispatchID: "d-nil"})
+		_ = json.NewEncoder(w).Encode(DispatchRoutineResponse{DispatchID: "d-nil"})
 	}))
 
 	resp, err := client.DispatchRoutineAsync(t.Context(), "my-routine", nil)
@@ -339,7 +345,7 @@ func TestDispatchRoutineAsync_Error(t *testing.T) {
 	t.Parallel()
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error":{"code":"BadRequest","message":"invalid payload"}}`))
+		_, _ = w.Write([]byte(`{"error":{"code":"BadRequest","message":"invalid payload"}}`))
 	}))
 
 	_, err := client.DispatchRoutineAsync(t.Context(), "bad", &DispatchRoutineRequest{})
@@ -354,7 +360,7 @@ func TestListRoutineRuns_SinglePage(t *testing.T) {
 		assert.Contains(t, r.URL.Path, "/routines/my-routine/runs")
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(PagedRoutineRun{
+		_ = json.NewEncoder(w).Encode(PagedRoutineRun{
 			Value: []RoutineRun{
 				{ID: "run-1", Status: "completed"},
 				{ID: "run-2", Status: "running"},
@@ -373,7 +379,7 @@ func TestListRoutineRuns_WithTop(t *testing.T) {
 		assert.Contains(t, r.URL.RawQuery, "limit=1")
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(PagedRoutineRun{
+		_ = json.NewEncoder(w).Encode(PagedRoutineRun{
 			Value:         []RoutineRun{{ID: "run-1"}, {ID: "run-2"}},
 			NextPageToken: "page2",
 		})
@@ -390,7 +396,7 @@ func TestListRoutineRuns_WithFilter(t *testing.T) {
 		assert.Contains(t, r.URL.RawQuery, "filter=status+eq+%27completed%27")
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(PagedRoutineRun{
+		_ = json.NewEncoder(w).Encode(PagedRoutineRun{
 			Value: []RoutineRun{{ID: "run-1", Status: "completed"}},
 		})
 	}))
@@ -412,13 +418,13 @@ func TestListRoutineRuns_Pagination(t *testing.T) {
 
 		switch call {
 		case 1:
-			json.NewEncoder(w).Encode(PagedRoutineRun{
+			_ = json.NewEncoder(w).Encode(PagedRoutineRun{
 				Value:         []RoutineRun{{ID: "run-1"}},
 				NextPageToken: "next-tok",
 			})
 		case 2:
 			assert.Contains(t, r.URL.RawQuery, "after=next-tok")
-			json.NewEncoder(w).Encode(PagedRoutineRun{
+			_ = json.NewEncoder(w).Encode(PagedRoutineRun{
 				Value: []RoutineRun{{ID: "run-2"}},
 			})
 		default:

@@ -132,7 +132,13 @@ Shows detailed information for a specific extension, including description, tags
 Installs one or more extensions from any configured extension source.
 
 - `-v, --version` Specifies the exact version to install.
-- `-s, --source` Specifies the extension source used for installations.
+- `-s, --source` Specifies the extension source used for installations. In addition to the name of a registered source, this accepts a registry location (a URL or file path). When a location is provided, `azd` registers it as a new persisted source — prompting for a source name, and confirming first when the location is a URL — and then installs from it. This lets you install in one step without a separate `azd extension source add`:
+
+  ```bash
+  azd extension install <id> -s https://link/to/registry.json
+  ```
+
+  Under `--no-prompt`, registering a source from a location is not allowed; add the source first with `azd extension source add`.
 
 #### `azd extension uninstall <extension-ids> [flags]`
 

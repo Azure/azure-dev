@@ -5668,7 +5668,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--source', '-s'],
-							description: 'The extension source to use for installs',
+							description: 'The extension source to use for installs. Accepts a registered source name or a registry location (URL or file path) to register and install from.',
 							args: [
 								{
 									name: 'source',

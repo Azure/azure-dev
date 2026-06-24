@@ -13,6 +13,7 @@ import (
 	"log"
 	"maps"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -79,6 +80,12 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 			Use:   "install <extension-id|extension-bundle.zip>",
 			Short: "Installs specified extensions.",
 			Long: `Installs one or more extensions by id from a registered extension source.
+
+The --source flag also accepts a registry location (a URL or file path) instead
+of the name of a registered source. When a location is given, azd registers it as
+a new source (prompting for a name, and confirming first for a URL) and then
+installs from it. The source is persisted so later upgrade/list/show commands work
+against it without re-specifying the location.
 
 You can also pass the path to a self-contained extension bundle (.zip): azd
 extracts it and installs the bundled extension. Bundled extensions aren't
@@ -768,7 +775,9 @@ func newExtensionInstallFlags(cmd *cobra.Command, global *internal.GlobalCommand
 		global: global,
 	}
 
-	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use for installs")
+	cmd.Flags().StringVarP(&flags.source, "source", "s", "",
+		"The extension source to use for installs. Accepts a registered source name "+
+			"or a registry location (URL or file path) to register and install from.")
 	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to install")
 	cmd.Flags().
 		BoolVarP(&flags.force, "force", "f", false, "Force installation, including downgrades and reinstalls")
@@ -848,6 +857,13 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			Suggestion: "Use an exact extension version with --version. " +
 				"Dependency constraints belong in extension manifests.",
 		}
+	}
+
+	// If -s/--source points directly at a registry location (URL or file path)
+	// rather than an already-registered source name, register the source first so
+	// the install loop below can resolve extensions from it.
+	if err := a.resolveSourceLocation(ctx); err != nil {
+		return nil, err
 	}
 
 	azdVersion := currentAzdSemver()
@@ -1362,6 +1378,155 @@ func normalizeBundleSourceName(name string) string {
 		}
 	}
 	return strings.Trim(sb.String(), "-")
+}
+
+// resolveSourceLocation handles the case where -s/--source points directly at a
+// registry location (URL or file path) rather than the name of an
+// already-registered source. When a location is detected, it confirms before
+// registering an untrusted URL, prompts for a source name, persists the source,
+// and rewrites a.flags.source to the registered name so the install loop
+// resolves extensions from it. Registered source names and values that do not
+// look like a location are left unchanged.
+func (a *extensionInstallAction) resolveSourceLocation(ctx context.Context) error {
+	if a.flags.source == "" {
+		return nil
+	}
+
+	// If the value already names a registered source, keep current behavior.
+	_, err := a.sourceManager.Get(ctx, a.flags.source)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, extensions.ErrSourceNotFound) {
+		return fmt.Errorf("failed to resolve extension source %q: %w", a.flags.source, err)
+	}
+
+	// Not a registered source — detect whether it is a registry location.
+	location := a.flags.source
+	kind, ok := inferSourceKind(location)
+	if !ok {
+		// Not a location; leave the value untouched so existing resolution and
+		// error messaging applies.
+		return nil
+	}
+
+	// Registering a source is interactive (naming + trust confirmation), so in
+	// --no-prompt mode direct the user to add the source explicitly first.
+	if a.flags.global.NoPrompt {
+		return &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"cannot register a new extension source from %q while --no-prompt is set", location),
+			Suggestion: fmt.Sprintf(
+				"Add the source first with %s, then install with %s.",
+				output.WithHighLightFormat(
+					"azd extension source add -n <name> -t %s -l %q", kind, location),
+				output.WithHighLightFormat("azd extension install <id> -s <name>"),
+			),
+		}
+	}
+
+	// Confirm before registering a URL source, which may be untrusted.
+	if kind == extensions.SourceKindUrl {
+		a.console.Message(ctx, "")
+		confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf(
+				"Register and install from the extension source at %s?",
+				output.WithHighLightFormat(location)),
+			DefaultValue: false,
+		})
+		if err != nil {
+			return err
+		}
+		if !confirm {
+			return &internal.ErrorWithSuggestion{
+				Err: errors.New("extension source registration declined"),
+				Suggestion: "Re-run and confirm to register the source, " +
+					"or add it explicitly with 'azd extension source add'.",
+			}
+		}
+	}
+
+	// Prompt for a source name with a sensible default derived from the location.
+	defaultName := defaultSourceName(location)
+	sourceName, err := a.console.Prompt(ctx, input.ConsoleOptions{
+		Message:      "Enter a name for this extension source:",
+		DefaultValue: defaultName,
+	})
+	if err != nil {
+		return err
+	}
+	sourceName = strings.TrimSpace(sourceName)
+	if sourceName == "" {
+		sourceName = defaultName
+	}
+
+	sourceConfig := &extensions.SourceConfig{
+		Name:     sourceName,
+		Type:     kind,
+		Location: location,
+	}
+
+	spinnerMessage := fmt.Sprintf("Registering extension source %s", output.WithHighLightFormat(sourceName))
+	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+
+	// Validate the source by hydrating it before persisting.
+	if _, err := a.sourceManager.CreateSource(ctx, sourceConfig); err != nil {
+		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+		return fmt.Errorf("failed to validate extension source: %w", err)
+	}
+
+	if err := a.sourceManager.Add(ctx, sourceName, sourceConfig); err != nil {
+		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+		return fmt.Errorf("failed to add extension source: %w", err)
+	}
+	a.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
+
+	// Refresh manager caches so the new source is visible and the cached config
+	// snapshot is not clobbered when the install below saves.
+	a.extensionManager.InvalidateSourceCache()
+	if err := a.extensionManager.ReloadUserConfig(); err != nil {
+		return err
+	}
+
+	// Add normalizes the persisted name; resolve extensions against that name.
+	a.flags.source = sourceConfig.Name
+	return nil
+}
+
+// inferSourceKind infers the extension source kind from a registry location,
+// matching the URL-vs-file heuristics used by 'azd extension source validate'.
+// It reports false when the value does not look like a location and is more
+// likely the name of a source.
+func inferSourceKind(location string) (extensions.SourceKind, bool) {
+	if strings.HasPrefix(location, "http://") || strings.HasPrefix(location, "https://") {
+		return extensions.SourceKindUrl, true
+	}
+	if info, err := os.Stat(location); err == nil && !info.IsDir() {
+		return extensions.SourceKindFile, true
+	}
+	if strings.ContainsAny(location, `/\`) || strings.EqualFold(filepath.Ext(location), ".json") {
+		return extensions.SourceKindFile, true
+	}
+	return "", false
+}
+
+// defaultSourceName derives a config-safe default extension source name from a
+// registry location: the host for URLs, otherwise the file name without its
+// extension. It falls back to "custom" when nothing usable can be derived.
+func defaultSourceName(location string) string {
+	base := ""
+	if u, err := url.Parse(location); err == nil && u.Host != "" {
+		base = u.Host
+	} else {
+		base = filepath.Base(location)
+		base = strings.TrimSuffix(base, filepath.Ext(base))
+	}
+
+	name := normalizeBundleSourceName(base)
+	if name == "" {
+		name = "custom"
+	}
+	return name
 }
 
 // azd extension uninstall

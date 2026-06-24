@@ -80,6 +80,23 @@ type SkillHost struct {
 	// captured group as InstalledVersion). A host with an empty
 	// VersionRegex is never reported as installed.
 	VersionRegex string
+	// BinaryVersionArgs are the CLI arguments that make the host binary
+	// print its own version (e.g. ["--version"]). Together with
+	// BinaryVersionRegex these let the installer confirm the host is a
+	// genuine, functional CLI before installing through it — not merely a
+	// file of the same name on PATH. Some environments place a launcher
+	// stub on PATH (e.g. the VS Code GitHub Copilot Chat extension drops a
+	// small `copilot` stub into its globalStorage and adds that folder to
+	// the integrated terminal's PATH) that exits 0 but only prompts to
+	// install the real CLI; such a stub passes a bare PATH existence check
+	// yet cannot install the skill. When empty, the installer falls back to
+	// an existence-only check.
+	BinaryVersionArgs []string
+	// BinaryVersionRegex is a Go regular expression whose first capture
+	// group matches the host binary's own version (e.g. `\d+\.\d+\.\d+`).
+	// The installer treats a match as proof the host CLI is genuinely
+	// installed. When empty, the functional probe is skipped.
+	BinaryVersionRegex string
 }
 
 // InstallStrategy describes how to install a tool on a specific platform.
@@ -353,6 +370,10 @@ func azureSkills() *ToolDefinition {
 				PluginName:            "azure@azure-skills",
 				// Sample: "  • azure@azure-skills (v1.1.70)"
 				VersionRegex: `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
+				// Probe the host binary itself so a launcher stub that only
+				// prompts to install the real CLI is not mistaken for a host.
+				BinaryVersionArgs:  []string{"--version"},
+				BinaryVersionRegex: `(\d+\.\d+\.\d+)`,
 			},
 			{
 				Host:                  "claude",
@@ -368,6 +389,10 @@ func azureSkills() *ToolDefinition {
 				// Claude only returns the queried plugin, so a single
 				// "Version: x.y.z" line is unambiguous.
 				VersionRegex: `Version:\s*v?(\d+\.\d+\.\d+)`,
+				// Probe the host binary itself so a launcher stub that only
+				// prompts to install the real CLI is not mistaken for a host.
+				BinaryVersionArgs:  []string{"--version"},
+				BinaryVersionRegex: `(\d+\.\d+\.\d+)`,
 			},
 		},
 	}

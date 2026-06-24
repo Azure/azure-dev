@@ -561,13 +561,14 @@ func (i *installer) resolveSkillTargets(
 		if allAvailable {
 			var onPath []SkillHost
 			for _, host := range tool.SkillHosts {
-				if i.commandRunner.ToolInPath(host.Host) == nil {
+				if i.hostUsable(ctx, host) {
 					onPath = append(onPath, host)
 				}
 			}
-			// No host CLI present at all — surface the install guidance.
+			// No usable host CLI present at all — surface the install
+			// guidance.
 			if len(onPath) == 0 {
-				host, err := i.pickSkillHost(tool)
+				host, err := i.pickSkillHost(ctx, tool)
 				if err != nil {
 					return nil, err
 				}
@@ -660,7 +661,7 @@ func (i *installer) resolveSkillTargets(
 				),
 			}
 		}
-		host, err := i.pickSkillHost(tool)
+		host, err := i.pickSkillHost(ctx, tool)
 		if err != nil {
 			return nil, err
 		}
@@ -670,13 +671,13 @@ func (i *installer) resolveSkillTargets(
 	targets := make([]SkillHost, 0, len(hosts))
 	for _, name := range hosts {
 		// A requested host is usable only if it is a configured SkillHost
-		// that is also on PATH. "unknown name" and "known but not on PATH"
-		// both mean the host can't be used, so we point the user at the
-		// supported hosts.
+		// that is a functional CLI on PATH. "unknown name", "not on PATH"
+		// and "present but a launcher stub" all mean the host can't be
+		// used, so we point the user at the supported hosts.
 		idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
 			return h.Host == name
 		})
-		if idx < 0 || i.commandRunner.ToolInPath(name) != nil {
+		if idx < 0 || !i.hostUsable(ctx, tool.SkillHosts[idx]) {
 			supported := make([]string, len(tool.SkillHosts))
 			for j, h := range tool.SkillHosts {
 				supported[j] = h.Host
@@ -691,18 +692,58 @@ func (i *installer) resolveSkillTargets(
 	return targets, nil
 }
 
-// pickSkillHost returns the first SkillHost whose binary is on PATH.
-// When none of the configured hosts is available it returns an
-// [errorhandler.ErrorWithSuggestion] (all four fields populated per the
-// AGENTS.md completeness rule) that recommends installing GitHub
-// Copilot CLI via `azd tool install github-copilot-cli` — a single
-// command the user can copy-paste without leaving azd.
+// hostUsable reports whether an agentic CLI host is a *functional*
+// installation rather than merely a file named like the host on PATH.
+//
+// Some environments place a launcher stub on PATH that is not the
+// real CLI — most notably the VS Code GitHub Copilot Chat extension, which
+// drops a small `copilot` stub into its globalStorage and adds that folder
+// to the integrated terminal's PATH. Invoking the stub only prints
+// "Install GitHub Copilot CLI?" and exits 0 without doing anything, so it
+// satisfies a bare exec.LookPath existence check yet cannot install the
+// skill — which previously surfaced as the misleading
+// "<skill> was installed via <host> but verification failed".
+//
+// hostUsable runs the host's configured version probe and treats the host
+// as usable only when it reports a real version. The probe runs
+// non-interactively with an empty stdin, so a stub that prompts for input
+// reads EOF and exits instead of hanging. Hosts that do not configure a
+// version probe (BinaryVersionArgs/BinaryVersionRegex) fall back to the
+// existence check.
+func (i *installer) hostUsable(ctx context.Context, host SkillHost) bool {
+	if i.commandRunner.ToolInPath(host.Host) != nil {
+		return false
+	}
+	if len(host.BinaryVersionArgs) == 0 || host.BinaryVersionRegex == "" {
+		return true
+	}
+	result, err := i.commandRunner.Run(
+		ctx,
+		exec.NewRunArgs(host.Host, host.BinaryVersionArgs...).
+			WithStdIn(strings.NewReader("")),
+	)
+	// A cancelled/timed-out probe is not evidence the host is a stub; do
+	// not penalize it here (context handling is the caller's concern).
+	if isContextErr(err) {
+		return true
+	}
+	return matchVersion(result.Stdout+result.Stderr, host.BinaryVersionRegex) != ""
+}
+
+// pickSkillHost returns the first SkillHost that is a usable (functional)
+// CLI — see [installer.hostUsable], which rejects launcher stubs that merely
+// share the host's name on PATH. When none of the configured hosts is usable
+// it returns an [errorhandler.ErrorWithSuggestion] (all four fields populated
+// per the AGENTS.md completeness rule) that recommends installing GitHub
+// Copilot CLI via `azd tool install github-copilot-cli` — a single command
+// the user can copy-paste without leaving azd.
 func (i *installer) pickSkillHost(
+	ctx context.Context,
 	tool *ToolDefinition,
 ) (SkillHost, error) {
 	var checked []string
 	for _, host := range tool.SkillHosts {
-		if err := i.commandRunner.ToolInPath(host.Host); err == nil {
+		if i.hostUsable(ctx, host) {
 			return host, nil
 		}
 		checked = append(checked, host.Host)

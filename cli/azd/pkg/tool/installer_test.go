@@ -1149,6 +1149,8 @@ func newSkillTool() *ToolDefinition {
 				PluginUpdateCommand:   []string{"plugin", "update", "azure@azure-skills"},
 				PluginListCommand:     []string{"plugin", "list"},
 				PluginName:            "azure@azure-skills",
+				BinaryVersionArgs:     []string{"--version"},
+				BinaryVersionRegex:    `(\d+\.\d+\.\d+)`,
 			},
 			{
 				Host:                  "claude",
@@ -1157,6 +1159,8 @@ func newSkillTool() *ToolDefinition {
 				PluginUpdateCommand:   []string{"plugin", "update", "azure@azure-skills"},
 				PluginListCommand:     []string{"plugin", "list", "azure@azure-skills"},
 				PluginName:            "azure@azure-skills",
+				BinaryVersionArgs:     []string{"--version"},
+				BinaryVersionRegex:    `(\d+\.\d+\.\d+)`,
 			},
 		},
 	}
@@ -1164,7 +1168,10 @@ func newSkillTool() *ToolDefinition {
 
 // mockHostPresence wires ToolInPath responses so only the named hosts
 // resolve successfully. Pass an empty slice to mock every host as
-// missing.
+// missing. Present hosts also get a version-probe response (a real semver)
+// so installer.hostUsable treats them as genuine, functional CLIs rather
+// than launcher stubs. Tests that want to simulate a stub register their
+// own later "--version" expectation, which wins (last match).
 func mockHostPresence(
 	runner *mockexec.MockCommandRunner,
 	present ...string,
@@ -1172,6 +1179,10 @@ func mockHostPresence(
 	for _, h := range allSkillHostNames {
 		if slices.Contains(present, h) {
 			runner.MockToolInPath(h, nil)
+			host := h
+			runner.When(func(args exec.RunArgs, _ string) bool {
+				return args.Cmd == host && slices.Contains(args.Args, "--version")
+			}).Respond(exec.RunResult{Stdout: "1.1.70", ExitCode: 0})
 		} else {
 			runner.MockToolInPath(h, errors.New("not found"))
 		}
@@ -1368,6 +1379,68 @@ func TestRunSkill_NoHost_FailsWithSuggestion(t *testing.T) {
 	assert.Contains(t, ews.Links[0].Title, "GitHub Copilot CLI")
 }
 
+// TestRunSkill_Install_LauncherStubHost_ReturnsInstallGuidance verifies
+// that a host binary present on PATH but non-functional — e.g. the VS Code
+// Copilot Chat extension's `copilot` launcher stub, which only prompts to
+// install the real CLI and exits 0 — is not mistaken for a usable host.
+// The install must fail with the same clean "install GitHub Copilot CLI"
+// guidance as a host that is entirely absent (matching Windows), never the
+// misleading "was installed via copilot but verification failed", and must
+// not attempt any plugin command through the stub.
+func TestRunSkill_Install_LauncherStubHost_ReturnsInstallGuidance(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	// copilot is on PATH (the launcher stub); claude is not.
+	runner.MockToolInPath("copilot", nil)
+	runner.MockToolInPath("claude", errors.New("not found"))
+	runner.MockToolInPath("node", nil)
+
+	// The launcher stub answers `copilot --version` with its install
+	// prompt instead of a version, and exits 0.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{
+		Stdout:   "Install GitHub Copilot CLI? ['y/N']",
+		Stderr:   "Cannot find GitHub Copilot CLI (https://docs.github.com/copilot)",
+		ExitCode: 0,
+	})
+
+	// Fail the assertion if any plugin command is attempted via the stub.
+	var attemptedInstall bool
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" &&
+			(slices.Contains(args.Args, "install") ||
+				slices.Contains(args.Args, "marketplace") ||
+				slices.Contains(args.Args, "list"))
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		attemptedInstall = true
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner), installedDetector("1.1.70"),
+	)
+
+	result, err := inst.Install(t.Context(), newSkillTool())
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+
+	// Clean, actionable guidance — not "verification failed".
+	ews, ok := errors.AsType[*errorhandler.ErrorWithSuggestion](result.Error)
+	require.True(t, ok,
+		"expected *errorhandler.ErrorWithSuggestion, got %T: %v",
+		result.Error, result.Error,
+	)
+	assert.Contains(t, ews.Suggestion, "azd tool install github-copilot-cli")
+	assert.NotContains(t, result.Error.Error(), "verification failed")
+
+	// The stub must never be driven through an install/marketplace flow.
+	assert.False(t, attemptedInstall,
+		"must not attempt to install through a non-functional launcher stub")
+}
+
 // ---------------------------------------------------------------------------
 // runSkill — node soft prereq
 // ---------------------------------------------------------------------------
@@ -1383,7 +1456,8 @@ func TestRunSkill_NodeMissing_WarnsButProceeds(t *testing.T) {
 	runner.MockToolInPath("node", errors.New("not found"))
 
 	runner.When(func(args exec.RunArgs, _ string) bool {
-		return args.Cmd == "copilot"
+		return args.Cmd == "copilot" &&
+			!slices.Contains(args.Args, "--version")
 	}).Respond(exec.RunResult{ExitCode: 0})
 
 	inst := NewInstaller(
@@ -1857,7 +1931,8 @@ func TestRunSkill_MarketplaceRealError_FailsBeforeInstall(t *testing.T) {
 
 	runner.When(func(args exec.RunArgs, _ string) bool {
 		return args.Cmd == "copilot" &&
-			!slices.Contains(args.Args, "marketplace")
+			!slices.Contains(args.Args, "marketplace") &&
+			!slices.Contains(args.Args, "--version")
 	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
 		installRan = true
 		return exec.RunResult{ExitCode: 0}, nil
@@ -1896,7 +1971,8 @@ func TestRunSkill_InstallCommandFails_SurfacesError(t *testing.T) {
 
 	wantErr := errors.New("exit status 2")
 	runner.When(func(args exec.RunArgs, _ string) bool {
-		return args.Cmd == "claude"
+		return args.Cmd == "claude" &&
+			!slices.Contains(args.Args, "--version")
 	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
 		return exec.RunResult{ExitCode: 2, Stderr: "Network unreachable"}, wantErr
 	})
@@ -1955,7 +2031,8 @@ func TestRunSkill_VerifyDetectorError_Surfaces(t *testing.T) {
 	mockHostPresence(runner, "copilot")
 	runner.MockToolInPath("node", nil)
 	runner.When(func(args exec.RunArgs, _ string) bool {
-		return args.Cmd == "copilot"
+		return args.Cmd == "copilot" &&
+			!slices.Contains(args.Args, "--version")
 	}).Respond(exec.RunResult{ExitCode: 0})
 
 	wantErr := errors.New("plugin list failed")
@@ -1988,7 +2065,8 @@ func TestRunSkill_VerificationFails_AfterRetries(t *testing.T) {
 	mockHostPresence(runner, "copilot")
 	runner.MockToolInPath("node", nil)
 	runner.When(func(args exec.RunArgs, _ string) bool {
-		return args.Cmd == "copilot"
+		return args.Cmd == "copilot" &&
+			!slices.Contains(args.Args, "--version")
 	}).Respond(exec.RunResult{ExitCode: 0})
 
 	// Detection never reports the skill installed, so verification
@@ -2027,7 +2105,8 @@ func TestRunSkill_ContextCanceledDuringVerify(t *testing.T) {
 	mockHostPresence(runner, "copilot")
 	runner.MockToolInPath("node", nil)
 	runner.When(func(args exec.RunArgs, _ string) bool {
-		return args.Cmd == "copilot"
+		return args.Cmd == "copilot" &&
+			!slices.Contains(args.Args, "--version")
 	}).Respond(exec.RunResult{ExitCode: 0})
 
 	var callCount atomic.Int32

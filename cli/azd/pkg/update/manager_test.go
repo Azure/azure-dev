@@ -651,13 +651,10 @@ func (t *urlRewriteTransport) RoundTrip(req *http.Request) (*http.Response, erro
 	return t.base.RoundTrip(newReq)
 }
 
-// mockBrewTapTrust registers success responses for the best-effort
-// `brew tap azure/azd` and `brew trust azure/azd` steps that updateViaBrew runs
-// before any cask operation so the third-party tap is trusted (see #8683).
-func mockBrewTapTrust(runner *mockexec.MockCommandRunner) {
-	runner.When(func(args exec.RunArgs, command string) bool {
-		return command == "brew tap azure/azd"
-	}).Respond(exec.NewRunResult(0, "", ""))
+// mockBrewTrust registers a success response for the best-effort
+// `brew trust azure/azd` step that updateViaBrew runs before any cask operation
+// so azd's Homebrew source is trusted.
+func mockBrewTrust(runner *mockexec.MockCommandRunner) {
 	runner.When(func(args exec.RunArgs, command string) bool {
 		return command == "brew trust azure/azd"
 	}).Respond(exec.NewRunResult(0, "", ""))
@@ -666,7 +663,7 @@ func mockBrewTapTrust(runner *mockexec.MockCommandRunner) {
 func TestUpdateViaBrew(t *testing.T) {
 	t.Run("NotCask_Stable", func(t *testing.T) {
 		mockRunner := mockexec.NewMockCommandRunner()
-		mockBrewTapTrust(mockRunner)
+		mockBrewTrust(mockRunner)
 		mockRunner.When(func(args exec.RunArgs, command string) bool {
 			return command == "brew list --cask"
 		}).Respond(exec.NewRunResult(0, "some-other-cask\n", ""))
@@ -686,7 +683,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 	t.Run("NotCask_Daily", func(t *testing.T) {
 		mockRunner := mockexec.NewMockCommandRunner()
-		mockBrewTapTrust(mockRunner)
+		mockBrewTrust(mockRunner)
 		mockRunner.When(func(args exec.RunArgs, command string) bool {
 			return command == "brew list --cask"
 		}).Respond(exec.NewRunResult(0, "some-other-cask\n", ""))
@@ -706,7 +703,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 	t.Run("NotCask_UnsupportedChannel", func(t *testing.T) {
 		mockRunner := mockexec.NewMockCommandRunner()
-		mockBrewTapTrust(mockRunner)
+		mockBrewTrust(mockRunner)
 		mockRunner.When(func(args exec.RunArgs, command string) bool {
 			return command == "brew list --cask"
 		}).Respond(exec.NewRunResult(0, "some-other-cask\n", ""))
@@ -723,7 +720,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 	t.Run("SwitchDailyToStable", func(t *testing.T) {
 		mockRunner := mockexec.NewMockCommandRunner()
-		mockBrewTapTrust(mockRunner)
+		mockBrewTrust(mockRunner)
 		mockRunner.When(func(args exec.RunArgs, command string) bool {
 			return command == "brew list --cask"
 		}).Respond(exec.NewRunResult(0, "azd@daily\n", ""))
@@ -743,7 +740,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 	t.Run("SwitchStableToDaily", func(t *testing.T) {
 		mockRunner := mockexec.NewMockCommandRunner()
-		mockBrewTapTrust(mockRunner)
+		mockBrewTrust(mockRunner)
 		mockRunner.When(func(args exec.RunArgs, command string) bool {
 			return command == "brew list --cask"
 		}).Respond(exec.NewRunResult(0, "azd\n", ""))
@@ -763,7 +760,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 	t.Run("SwitchDailyToStable_UninstallFails", func(t *testing.T) {
 		mockRunner := mockexec.NewMockCommandRunner()
-		mockBrewTapTrust(mockRunner)
+		mockBrewTrust(mockRunner)
 		mockRunner.When(func(args exec.RunArgs, command string) bool {
 			return command == "brew list --cask"
 		}).Respond(exec.NewRunResult(0, "azd@daily\n", ""))
@@ -782,7 +779,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 	t.Run("UpgradeStable", func(t *testing.T) {
 		mockRunner := mockexec.NewMockCommandRunner()
-		mockBrewTapTrust(mockRunner)
+		mockBrewTrust(mockRunner)
 		mockRunner.When(func(args exec.RunArgs, command string) bool {
 			return command == "brew list --cask"
 		}).Respond(exec.NewRunResult(0, "azd\n", ""))
@@ -794,7 +791,7 @@ func TestUpdateViaBrew(t *testing.T) {
 		var buf bytes.Buffer
 		err := m.updateViaBrew(t.Context(), &UpdateConfig{Channel: ChannelStable}, &buf)
 		require.NoError(t, err)
-		require.Contains(t, buf.String(), "Trusting Homebrew tap azure/azd")
+		require.Contains(t, buf.String(), "Trusting azd's Homebrew source (azure/azd)")
 		require.Contains(t, buf.String(), "Updating azd (stable channel)")
 	})
 
@@ -802,9 +799,6 @@ func TestUpdateViaBrew(t *testing.T) {
 		// Trust is best-effort: a failure (e.g. older Homebrew without the
 		// `brew trust` command) must not abort the upgrade. See #8683.
 		mockRunner := mockexec.NewMockCommandRunner()
-		mockRunner.When(func(args exec.RunArgs, command string) bool {
-			return command == "brew tap azure/azd"
-		}).Respond(exec.NewRunResult(0, "", ""))
 		mockRunner.When(func(args exec.RunArgs, command string) bool {
 			return command == "brew trust azure/azd"
 		}).SetError(fmt.Errorf("Unknown command: trust"))
@@ -824,7 +818,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 	t.Run("UpgradeDaily", func(t *testing.T) {
 		mockRunner := mockexec.NewMockCommandRunner()
-		mockBrewTapTrust(mockRunner)
+		mockBrewTrust(mockRunner)
 		mockRunner.When(func(args exec.RunArgs, command string) bool {
 			return command == "brew list --cask"
 		}).Respond(exec.NewRunResult(0, "azd@daily\n", ""))
@@ -841,7 +835,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 	t.Run("UpgradeStable_Fails", func(t *testing.T) {
 		mockRunner := mockexec.NewMockCommandRunner()
-		mockBrewTapTrust(mockRunner)
+		mockBrewTrust(mockRunner)
 		mockRunner.When(func(args exec.RunArgs, command string) bool {
 			return command == "brew list --cask"
 		}).Respond(exec.NewRunResult(0, "azd\n", ""))
@@ -860,7 +854,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 	t.Run("UpgradeUnsupportedChannel", func(t *testing.T) {
 		mockRunner := mockexec.NewMockCommandRunner()
-		mockBrewTapTrust(mockRunner)
+		mockBrewTrust(mockRunner)
 		mockRunner.When(func(args exec.RunArgs, command string) bool {
 			return command == "brew list --cask"
 		}).Respond(exec.NewRunResult(0, "azd\n", ""))
@@ -874,7 +868,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 	t.Run("ListFails_FallsBackToInstall", func(t *testing.T) {
 		mockRunner := mockexec.NewMockCommandRunner()
-		mockBrewTapTrust(mockRunner)
+		mockBrewTrust(mockRunner)
 		mockRunner.When(func(args exec.RunArgs, command string) bool {
 			return command == "brew list --cask"
 		}).SetError(fmt.Errorf("brew not found"))
@@ -893,7 +887,7 @@ func TestUpdateViaBrew(t *testing.T) {
 
 	t.Run("UninstallFails_StillInstallsCask", func(t *testing.T) {
 		mockRunner := mockexec.NewMockCommandRunner()
-		mockBrewTapTrust(mockRunner)
+		mockBrewTrust(mockRunner)
 		mockRunner.When(func(args exec.RunArgs, command string) bool {
 			return command == "brew list --cask"
 		}).Respond(exec.NewRunResult(0, "other-cask\n", ""))

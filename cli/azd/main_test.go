@@ -126,7 +126,7 @@ func TestPlatformUpgradeHintFor(t *testing.T) {
 			goos:            "darwin",
 			installedBy:     installer.InstallTypeBrew,
 			channel:         update.ChannelDaily,
-			wantContains:    []string{"brew trust azure/azd && brew upgrade --cask azure/azd/azd"},
+			wantContains:    []string{"brew trust azure/azd && brew uninstall azd && brew install --cask azure/azd/azd"},
 			wantNotContains: []string{detailsMarker},
 		},
 		{

@@ -30,6 +30,7 @@
 ### Other Changes
 
 - [[#8725]](https://github.com/Azure/azure-dev/pull/8725) Improve stacked table readability by labeling grouped headers, dimming structural lines, and highlighting source URLs.
+- [[#8785]](https://github.com/Azure/azure-dev/pull/8785) Improve responsive table layouts across `azd extension list`, `azd tool check`, `azd tool list`, and `azd template list` as part of [[#8667]](https://github.com/Azure/azure-dev/issues/8667).
 
 ## 1.25.6 (2026-06-12)
 

@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	_ "google.golang.org/grpc/encoding/gzip" // registers gzip compressor for gRPC streams
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -42,6 +43,7 @@ type Server struct {
 	aiModelService       azdext.AiModelServiceServer
 	copilotService       azdext.CopilotServiceServer
 	provisioningService  azdext.ProvisioningServiceServer
+	validationService    azdext.ValidationServiceServer
 }
 
 func NewServer(
@@ -61,6 +63,7 @@ func NewServer(
 	aiModelService azdext.AiModelServiceServer,
 	copilotService azdext.CopilotServiceServer,
 	provisioningService azdext.ProvisioningServiceServer,
+	validationService azdext.ValidationServiceServer,
 ) *Server {
 	return &Server{
 		projectService:       projectService,
@@ -79,6 +82,7 @@ func NewServer(
 		aiModelService:       aiModelService,
 		copilotService:       copilotService,
 		provisioningService:  provisioningService,
+		validationService:    validationService,
 	}
 }
 
@@ -127,6 +131,7 @@ func (s *Server) Start() (*ServerInfo, error) {
 	azdext.RegisterAiModelServiceServer(s.grpcServer, s.aiModelService)
 	azdext.RegisterCopilotServiceServer(s.grpcServer, s.copilotService)
 	azdext.RegisterProvisioningServiceServer(s.grpcServer, s.provisioningService)
+	azdext.RegisterValidationServiceServer(s.grpcServer, s.validationService)
 
 	serverInfo.Address = fmt.Sprintf("127.0.0.1:%d", randomPort)
 	serverInfo.Port = randomPort

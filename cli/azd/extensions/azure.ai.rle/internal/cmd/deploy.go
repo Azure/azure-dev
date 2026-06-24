@@ -8,14 +8,18 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
 type rleDeployFlags struct {
-	project string
-	image   string
+	project   string
+	image     string
+	registry  string
+	skipBuild bool
 }
 
 func newDeployCommand() *cobra.Command {
@@ -97,6 +101,23 @@ func newDeployCommand() *cobra.Command {
 				image = defaultRegistryLoginServer + "/" + slug(state.Name) + ":latest"
 			}
 
+			// Host-qualify the image so the control plane / ADC can pull it: the disk-image
+			// conversion uses the image reference verbatim as the pull source, so a bare
+			// "name:tag" is rewritten to "<registry-login-server>/name:tag".
+			loginServer, repoTag := splitImageHost(image)
+			if loginServer == "" {
+				loginServer = normalizeRegistryLoginServer(flags.registry)
+			}
+			if loginServer == "" {
+				return &azdext.LocalError{
+					Message:    "No container registry was specified for the environment image.",
+					Code:       "rle_registry_required",
+					Category:   azdext.LocalErrorCategoryUser,
+					Suggestion: "Pass --registry <name> (e.g. devrle) or use a host-qualified image reference.",
+				}
+			}
+			image = loginServer + "/" + repoTag
+
 			environmentId := firstNonEmpty(state.EnvironmentId, slug(state.Name))
 			client := newRleClient(resolveControlPlaneEndpoint(""))
 			request := v1EnvironmentRequest{
@@ -111,8 +132,41 @@ func newDeployCommand() *cobra.Command {
 				action = "Updating"
 			}
 
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Skipping build; using existing image '%s'.\n", image); err != nil {
-				return err
+			// Build the local Dockerfile and push it to the registry before registering, so the
+			// environment always points at an image that actually exists in the target ACR.
+			registryName := registryShortName(loginServer)
+			switch {
+			case flags.skipBuild:
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(),
+					"Skipping build (--skip-build); using image '%s'.\n", image); err != nil {
+					return err
+				}
+			case !fileExists("Dockerfile"):
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(),
+					"No Dockerfile in current directory; skipping build and using image '%s'.\n", image); err != nil {
+					return err
+				}
+			default:
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(),
+					"Building and pushing '%s' to registry '%s' (az acr build) ...\n",
+					repoTag, registryName); err != nil {
+					return err
+				}
+				build := exec.CommandContext(cmd.Context(),
+					"az", "acr", "build", "--registry", registryName, "--image", repoTag, ".")
+				build.Stdout = cmd.OutOrStdout()
+				build.Stderr = cmd.ErrOrStderr()
+				if err := build.Run(); err != nil {
+					return &azdext.LocalError{
+						Message: fmt.Sprintf(
+							"Failed to build and push image '%s' to registry '%s': %v",
+							repoTag, registryName, err),
+						Code:     "rle_acr_build_failed",
+						Category: azdext.LocalErrorCategoryUser,
+						Suggestion: "Ensure 'az login' is done, you have push access to the registry, " +
+							"and a valid Dockerfile is present. Use --skip-build to register a prebuilt image.",
+					}
+				}
 			}
 
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s environment '%s' (image=%s) ...\n", action, state.Name, image); err != nil {
@@ -178,7 +232,52 @@ func newDeployCommand() *cobra.Command {
 		"RLE project name. Defaults to the project saved in .azd-rle.json.")
 	cmd.Flags().StringVar(&flags.image, "image", "",
 		"Image reference to deploy (overrides the per-environment default derived from the environment name)")
+	cmd.Flags().StringVar(&flags.registry, "registry", "devrle",
+		"Container registry (short name or login server) to build and push the environment image into")
+	cmd.Flags().BoolVar(&flags.skipBuild, "skip-build", false,
+		"Skip building/pushing the image and register the existing image reference as-is")
 	return cmd
+}
+
+// splitImageHost splits a container image reference into its registry host (login server)
+// and the remaining repository:tag. The leading segment is treated as a host only when it
+// looks like one (contains '.' or ':' or is "localhost"); otherwise there is no host.
+func splitImageHost(image string) (host string, repoTag string) {
+	image = strings.TrimSpace(image)
+	if slash := strings.IndexByte(image, '/'); slash > 0 {
+		first := image[:slash]
+		if first == "localhost" || strings.ContainsAny(first, ".:") {
+			return first, image[slash+1:]
+		}
+	}
+	return "", image
+}
+
+// normalizeRegistryLoginServer turns a registry short name ("devrle") into a login server
+// ("devrle.azurecr.io"). A value that already contains a '.' is assumed to be a login server.
+func normalizeRegistryLoginServer(registry string) string {
+	registry = strings.TrimSpace(registry)
+	if registry == "" {
+		return ""
+	}
+	if strings.Contains(registry, ".") {
+		return registry
+	}
+	return registry + ".azurecr.io"
+}
+
+// registryShortName returns the ACR short name (the part before ".azurecr.io") for use with
+// "az acr build --registry".
+func registryShortName(loginServer string) string {
+	if host, _, ok := strings.Cut(loginServer, "."); ok {
+		return host
+	}
+	return loginServer
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 type environmentOutput struct {

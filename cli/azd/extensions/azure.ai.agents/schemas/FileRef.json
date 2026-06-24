@@ -8,7 +8,7 @@
   "properties": {
     "$ref": {
       "type": "string",
-      "description": "Path to a YAML or JSON file containing the definition. Relative paths resolve from the file containing this $ref. Absolute paths and URLs are also accepted."
+      "description": "Path to a YAML or JSON file containing the definition. Relative paths resolve from the file containing this $ref. Absolute paths are also accepted; remote URLs are not supported."
     }
   },
   "additionalProperties": true

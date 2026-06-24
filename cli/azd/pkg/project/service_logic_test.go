@@ -6,6 +6,7 @@ package project
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/stretchr/testify/require"
@@ -94,10 +95,15 @@ func Test_NewServiceContext(t *testing.T) {
 
 func Test_NewServiceProgress(t *testing.T) {
 	msg := "deploying to Azure"
+	before := time.Now()
 	progress := NewServiceProgress(msg)
+	after := time.Now()
 
 	require.Equal(t, msg, progress.Message)
 	require.False(t, progress.Timestamp.IsZero())
+	// Timestamp should be captured within the call window, not just non-zero.
+	require.True(t, progress.Timestamp.After(before) || progress.Timestamp.Equal(before))
+	require.True(t, progress.Timestamp.Before(after) || progress.Timestamp.Equal(after))
 }
 
 func Test_envResolver_NilEnv(t *testing.T) {

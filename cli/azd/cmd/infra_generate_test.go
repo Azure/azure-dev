@@ -8,8 +8,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
 
 func TestDetermineDuplicates(t *testing.T) {
@@ -79,4 +83,70 @@ func TestDetermineDuplicates(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, duplicates)
 	})
+}
+
+func Test_NewInfraGenerateAction_Constructor(t *testing.T) {
+	t.Parallel()
+	flags := &infraGenerateFlags{}
+	console := mockinput.NewMockConsole()
+	calledAs := CmdCalledAs("infra generate")
+	a := newInfraGenerateAction(nil, nil, flags, console, nil, nil, calledAs)
+	ia := a.(*infraGenerateAction)
+	require.Same(t, flags, ia.flags)
+	require.Equal(t, calledAs, ia.calledAs)
+}
+
+func Test_DetermineDuplicates_NoDuplicates(t *testing.T) {
+	t.Parallel()
+	source := t.TempDir()
+	target := t.TempDir()
+	require.NoError(t, os.WriteFile(source+"/file1.bicep", []byte("a"), 0600))
+	require.NoError(t, os.WriteFile(source+"/file2.bicep", []byte("b"), 0600))
+
+	dups, err := determineDuplicates(source, target)
+	require.NoError(t, err)
+	require.Empty(t, dups)
+}
+
+func Test_DetermineDuplicates_WithDuplicates(t *testing.T) {
+	t.Parallel()
+	source := t.TempDir()
+	target := t.TempDir()
+	require.NoError(t, os.WriteFile(source+"/file1.bicep", []byte("a"), 0600))
+	require.NoError(t, os.WriteFile(source+"/file2.bicep", []byte("b"), 0600))
+	require.NoError(t, os.WriteFile(target+"/file1.bicep", []byte("c"), 0600))
+
+	dups, err := determineDuplicates(source, target)
+	require.NoError(t, err)
+	require.Len(t, dups, 1)
+	require.Contains(t, dups, "file1.bicep")
+}
+
+func Test_DetermineDuplicates_AllDuplicates(t *testing.T) {
+	t.Parallel()
+	source := t.TempDir()
+	target := t.TempDir()
+	require.NoError(t, os.WriteFile(source+"/file1.bicep", []byte("a"), 0600))
+	require.NoError(t, os.WriteFile(source+"/file2.bicep", []byte("b"), 0600))
+	require.NoError(t, os.WriteFile(target+"/file1.bicep", []byte("c"), 0600))
+	require.NoError(t, os.WriteFile(target+"/file2.bicep", []byte("d"), 0600))
+
+	dups, err := determineDuplicates(source, target)
+	require.NoError(t, err)
+	require.Len(t, dups, 2)
+}
+
+func Test_NewInfraGenerateFlags(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{Use: "test"}
+	global := &internal.GlobalCommandOptions{}
+	flags := newInfraGenerateFlags(cmd, global)
+	require.NotNil(t, flags)
+}
+
+func Test_NewInfraGenerateCmd(t *testing.T) {
+	t.Parallel()
+	cmd := newInfraGenerateCmd()
+	require.NotNil(t, cmd)
+	assert.Contains(t, cmd.Use, "generate")
 }

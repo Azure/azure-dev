@@ -49,6 +49,7 @@ func newDeployCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
 			environmentId := firstNonEmpty(state.EnvironmentId, slug(state.Name))
 			client := newRleClient(resolveControlPlaneEndpoint(""))
 			request := v1EnvironmentRequest{
@@ -62,9 +63,11 @@ func newDeployCommand() *cobra.Command {
 			if !created {
 				action = "Updating"
 			}
+
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Skipping build; using existing image '%s'.\n", image); err != nil {
 				return err
 			}
+
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s environment '%s' (image=%s) ...\n", action, state.Name, image); err != nil {
 				return err
 			}
@@ -72,6 +75,20 @@ func newDeployCommand() *cobra.Command {
 				environment, err = client.createV1Environment(cmd.Context(), state.Project, request)
 			} else {
 				environment, err = client.updateV1Environment(cmd.Context(), state.Project, environmentId, request)
+				if isNotFoundError(err) {
+					// The recorded environment no longer exists in the target project
+					// (e.g. the project changed or the control plane was reset). Recreate it.
+					if _, msgErr := fmt.Fprintf(
+						cmd.OutOrStdout(),
+						"Environment '%s' not found in project '%s'; creating a new one.\n",
+						environmentId,
+						state.Project,
+					); msgErr != nil {
+						return msgErr
+					}
+					created = true
+					environment, err = client.createV1Environment(cmd.Context(), state.Project, request)
+				}
 			}
 			if err != nil {
 				return serviceError(err)

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -128,6 +129,14 @@ type rleHTTPError struct {
 
 func (e *rleHTTPError) Error() string {
 	return fmt.Sprintf("RLE control plane returned HTTP %d: %s", e.statusCode, strings.TrimSpace(e.body))
+}
+
+// isNotFoundError reports whether err is an RLE control plane error with HTTP 404 status.
+func isNotFoundError(err error) bool {
+	if httpErr, ok := errors.AsType[*rleHTTPError](err); ok {
+		return httpErr.statusCode == http.StatusNotFound
+	}
+	return false
 }
 
 func newRleClient(endpoint string) *rleClient {

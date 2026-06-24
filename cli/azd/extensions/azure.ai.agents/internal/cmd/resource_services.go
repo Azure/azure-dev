@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -85,6 +86,10 @@ func emitResourceServices(
 		conn := connections[i]
 		connName := sanitizeServiceName(conn.Name)
 		if connName == "" {
+			fmt.Fprintf(os.Stderr,
+				"warning: connection %q has no characters usable as an azure.yaml service key; "+
+					"skipping it. Rename the connection so it is written to azure.yaml.\n",
+				conn.Name)
 			continue
 		}
 		if err := reserveServiceName(usedNames, connName, fmt.Sprintf("connection %q", conn.Name)); err != nil {
@@ -104,6 +109,10 @@ func emitResourceServices(
 		toolbox := toolboxes[i]
 		toolboxName := sanitizeServiceName(toolbox.Name)
 		if toolboxName == "" {
+			fmt.Fprintf(os.Stderr,
+				"warning: toolbox %q has no characters usable as an azure.yaml service key; "+
+					"skipping it. Rename the toolbox so it is written to azure.yaml.\n",
+				toolbox.Name)
 			continue
 		}
 		if err := reserveServiceName(usedNames, toolboxName, fmt.Sprintf("toolbox %q", toolbox.Name)); err != nil {
@@ -186,9 +195,12 @@ func setServiceUses(ctx context.Context, azdClient *azdext.AzdClient, serviceNam
 	return nil
 }
 
-// sanitizeServiceName converts a resource name into a valid azure.yaml service
-// key by trimming and removing spaces, matching how the agent service name is
-// derived from the agent name.
+// sanitizeServiceName converts a resource name into an azure.yaml service key by
+// trimming surrounding whitespace and removing interior spaces, matching how the
+// agent service name is derived from the agent name. Only spaces are stripped, so
+// the name is expected to otherwise consist of characters valid in a YAML map key
+// (letters, digits, '-', '_', '.'); Foundry resource names already meet this. A
+// name that reduces to an empty string is skipped by the caller with a warning.
 func sanitizeServiceName(name string) string {
 	return strings.ReplaceAll(strings.TrimSpace(name), " ", "")
 }

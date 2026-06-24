@@ -13,6 +13,14 @@ Use `--no-inspector` to run only the local agent process:
 azd ai agent run --no-inspector
 ```
 
+## Private networking for `host: microsoft.foundry`
+
+Foundry services can be provisioned as network-secured, VNet-bound accounts by
+adding a `network:` block to `azure.yaml`. See
+[Private networking for `host: microsoft.foundry`](docs/private-networking.md)
+for the schema reference, BYO-image requirements, and VNet deployment
+cheatsheet.
+
 ## Local Development
 
 ### Prerequisites

@@ -1,0 +1,6 @@
+import: ../../.vscode/cspell.yaml
+words:
+  - fset
+  - goimports
+  - mergetool
+  - testreorg

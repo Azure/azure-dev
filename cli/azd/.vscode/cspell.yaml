@@ -154,13 +154,6 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
-  - filename: tools/testreorg/mergetool/main.go
-    words:
-      - mergetool
-      - fset
-  - filename: tools/testreorg/router/main.go
-    words:
-      - fset
   - filename: cmd/mcp.go
     words:
       - internalcmd

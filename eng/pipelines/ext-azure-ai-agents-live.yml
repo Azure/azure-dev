@@ -1,7 +1,9 @@
 # Live E2E: azure.ai.agents extension — Tier 2 golden path
 #
 # Runs the full agent lifecycle (init -> provision -> deploy -> invoke -> down)
-# against LIVE Azure resources, driving the real `azd ai agent` CLI through tmux.
+# against LIVE Azure resources. The interactive `azd ai agent init` prompts are
+# driven by the Go pseudo-terminal test driver (go-expect + vt10x); the other
+# phases shell out to azd with --no-prompt. See tests/e2e-live/README.md.
 #
 # This pipeline is the live counterpart to the PR-gate checks in
 # `.github/workflows/lint-ext-azure-ai-agents.yml` (Tier 0 offline + Tier 1
@@ -64,25 +66,13 @@ extends:
             # Two golden paths (code + container) run sequentially (~13-15 min
             # each in the typical case), plus build/provision overhead. The cap
             # is sized for the worst case so an ungraceful job timeout never
-            # preempts the in-test teardown: 2x the child's 60 min watchdog
-            # (test_tier2.py timeout_s) + per-run cleanup + build/setup steps.
+            # preempts the in-test teardown: 2x the per-mode 60 min runTimeout
+            # (tier2_live_test.go) + per-run cleanup + build/setup steps.
             timeoutInMinutes: 150
             steps:
               - checkout: self
 
               - template: /eng/pipelines/templates/steps/setup-go.yml
-
-              - task: UsePythonVersion@0
-                inputs:
-                  versionSpec: "3.12"
-                displayName: Use Python 3.12
-
-              - bash: |
-                  set -euo pipefail
-                  sudo apt-get update
-                  sudo apt-get install -y tmux
-                  tmux -V
-                displayName: Install tmux
 
               # Live build — NO `-tags=record`, so the CLI/extension talk to real
               # Azure instead of the recording proxy used by the PR-gate tests.
@@ -148,10 +138,10 @@ extends:
               # the session does not persist to later plain bash steps.
               - task: AzureCLI@2
                 displayName: Run Tier 2 live golden path
-                # Holds BOTH deploy modes run sequentially: 2x the child's 60 min
-                # watchdog (test_tier2.py timeout_s) + per-run cleanup margin, so
-                # this step timeout never trips before the child's own watchdog
-                # (which runs the graceful azd teardown).
+                # Holds BOTH deploy modes run sequentially. `go test -timeout`
+                # (below) self-caps at 125 min — under this 130 min step budget —
+                # so the test process exits before ADO force-kills the step, and
+                # the per-mode 60 min runTimeout drives the graceful azd teardown.
                 timeoutInMinutes: 130
                 inputs:
                   azureSubscription: ${{ parameters.serviceConnection }}
@@ -159,7 +149,7 @@ extends:
                   visibleAzLogin: false
                   scriptType: bash
                   scriptLocation: inlineScript
-                  workingDirectory: cli/azd/extensions/azure.ai.agents/tests/e2e-live
+                  workingDirectory: cli/azd/extensions/azure.ai.agents
                   inlineScript: |
                     set -euo pipefail
                     azd config set auth.useAzCliAuth true
@@ -174,12 +164,17 @@ extends:
                     export E2E_SUBSCRIPTION E2E_TENANT
                     echo "Using subscription: $E2E_SUBSCRIPTION"
                     mkdir -p "$(Build.ArtifactStagingDirectory)/logs"
-                    # Invoke as `python` (not `python3`) so the UsePythonVersion@0
-                    # pinned 3.12 is used; `python3` may still resolve to the system
-                    # Python on some agent images (matches eng/pipelines/eval-unit.yml).
-                    python test_tier2.py --mode ${{ parameters.deployModes }} 2>&1 \
+                    # Drive the live golden path through the Go pseudo-terminal
+                    # test driver. -v streams per-phase logs; -count=1 defeats the
+                    # test cache (a live test must always re-run); -timeout self-
+                    # caps the process under this step's budget so the per-mode
+                    # teardown (t.Cleanup) runs before ADO force-kills the step.
+                    go test -run TestTier2Live -count=1 -timeout 125m -v ./tests/e2e-live/ 2>&1 \
                       | tee "$(Build.ArtifactStagingDirectory)/logs/tier2.log"
                 env:
+                  # Gate + mode selection consumed by tier2_live_test.go.
+                  AZURE_AI_AGENTS_E2E_LIVE: "1"
+                  E2E_DEPLOY_MODES: ${{ parameters.deployModes }}
                   E2E_CREATE_PROJECT: "true"
                   E2E_LOCATION: eastus2
                   E2E_USE_AZ_CLI_AUTH: "true"

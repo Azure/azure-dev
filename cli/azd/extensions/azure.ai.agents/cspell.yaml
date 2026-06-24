@@ -82,3 +82,7 @@ words:
   - deepseek
   - ttfb
   - Bhadauria
+  # Live E2E (Tier 2) Go driver
+  - creack
+  - elive
+  - testdir

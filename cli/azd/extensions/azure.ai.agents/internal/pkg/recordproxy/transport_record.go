@@ -44,7 +44,7 @@ func init() {
 	}
 	transport.Proxy = http.ProxyURL(proxyUrl)
 
-	// This affects extension's own http.Client{} (init.go:937) which uses DefaultTransport.
+	// This affects extension's own http.Client{} usage which relies on DefaultTransport.
 	// Azure SDK ARM clients are handled separately via ClientOptions.Transport in client_options.go.
 	http.DefaultTransport = transport
 	Transport = transport

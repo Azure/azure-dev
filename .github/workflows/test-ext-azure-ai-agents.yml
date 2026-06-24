@@ -68,7 +68,7 @@ jobs:
         env:
           CLI_TEST_AZD_PATH: ${{ github.workspace }}/cli/azd/azd-record
         run: |
-          go test -tags=record -run "Test_AIAgent_(Version|Help|Init_NoPrompt_MissingFlags|SampleList|Doctor_Help)" \
+          go test -tags=record -run "Test_AIAgent_(Version|Help|Init_NoPrompt_MissingFlags|Doctor_Help)" \
             ./test/functional/ai_agents/ -v -timeout 5m
 
       - name: Run Tier 1 tests (playback)
@@ -80,5 +80,5 @@ jobs:
           # Make azd-record available as "azd" on PATH so that
           # azidentity.AzureDeveloperCLICredential (exec.LookPath("azd")) works in playback
           sudo ln -sf "$GITHUB_WORKSPACE/cli/azd/azd-record" /usr/local/bin/azd
-          go test -tags=record -run "Test_AIAgent_Init_(NoPrompt_(Defer|WithProject)|NegativeControl_BadCassette)" \
+          go test -tags=record -run "Test_AIAgent_(Init_(NoPrompt_(Defer|WithProject)|NegativeControl_BadCassette)|SampleList_(Recorded|JSON_Recorded))" \
             ./test/functional/ai_agents/ -v -timeout 5m

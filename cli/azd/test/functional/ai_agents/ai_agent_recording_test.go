@@ -6,6 +6,7 @@
 package ai_agents_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -35,7 +36,50 @@ func manifestPath(t *testing.T) string {
 	return filepath.Join(filepath.Dir(thisFile), "testdata", "manifests", "foundry-toolbox.yaml")
 }
 
-// --- Tier 1: Recording tests (ARM calls replayed from cassette) ---
+// --- Tier 1: Recording tests (replayed from cassette) ---
+
+// Test_AIAgent_SampleList_Recorded verifies sample list returns results via recording proxy.
+// The catalog fetch (aka.ms/foundry-agents-samples) is replayed from cassette, making this
+// deterministic and network-independent.
+func Test_AIAgent_SampleList_Recorded(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+
+	session := recording.Start(t)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+
+	result, err := cli.RunCommand(ctx, "ai", "agent", "sample", "list")
+	require.NoError(t, err, "stdout=%s, stderr=%s", result.Stdout, result.Stderr)
+	require.Greater(t, len(result.Stdout), 50, "sample list output too short")
+}
+
+// Test_AIAgent_SampleList_JSON_Recorded verifies sample list --output json via recording proxy.
+func Test_AIAgent_SampleList_JSON_Recorded(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+
+	session := recording.Start(t)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+
+	result, err := cli.RunCommand(ctx, "ai", "agent", "sample", "list", "--output", "json")
+	require.NoError(t, err, "stdout=%s, stderr=%s", result.Stdout, result.Stderr)
+
+	var output map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(result.Stdout), &output), "output is not valid JSON: %s", result.Stdout)
+	require.Contains(t, output, "templates", "expected 'templates' key in JSON output")
+}
 
 // Test_AIAgent_Init_NoPrompt_Defer verifies --no-prompt defer path (no ARM calls).
 // When --project-id is omitted, the extension writes scaffold files without calling ARM.
@@ -103,9 +147,10 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 	session.Variables["project_id"] = projectId
 
 	// --model-deployment's existence routes no-prompt to the "existing" branch
-	// (init_from_code.go:784). The project deployment list in the cassette is empty,
-	// so it falls back to selectNewModel, which resolves manifest resources[0].id
-	// ("gpt-4.1") as a new deployment. The flag VALUE is not used or asserted.
+	// (see modelConfigChoice logic in init_from_code.go). The project deployment
+	// list in the cassette is empty, so it falls back to selectNewModel, which
+	// resolves manifest resources[0].id ("gpt-4.1") as a new deployment.
+	// The flag VALUE is not used or asserted.
 	modelDeployment := os.Getenv("TEST_MODEL_DEPLOYMENT")
 	if modelDeployment == "" {
 		modelDeployment = "gpt-4o"
@@ -140,9 +185,10 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 
 	// Verify ARM resolution: the model deployment name is written to the azd environment
 	// .env file. The --model-deployment flag's existence routes no-prompt to the "existing"
-	// branch (init_from_code.go:784); the cassette's deployment list is empty, so it falls
-	// back to selectNewModel which resolves manifest resources[0].id ("gpt-4.1") as a new
-	// deployment. This proves ARM calls in the cassette were consumed.
+	// branch (see modelConfigChoice logic in init_from_code.go); the cassette's deployment
+	// list is empty, so it falls back to selectNewModel which resolves manifest
+	// resources[0].id ("gpt-4.1") as a new deployment. This proves ARM calls in the
+	// cassette were consumed.
 	envFiles, err := filepath.Glob(filepath.Join(projectDir, ".azure", "*", ".env"))
 	require.NoError(t, err)
 	require.Len(t, envFiles, 1, "expected exactly one azd environment .env file")

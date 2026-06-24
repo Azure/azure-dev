@@ -2953,6 +2953,19 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		agentConfig.StartupCommand = startupCmd
 	}
 
+	// Each Foundry resource is written as its own azure.yaml service entry, so
+	// the deployments, connections, and toolboxes move out of the agent config
+	// into sibling azure.ai.project/connection/toolbox services emitted below.
+	// The agent keeps its container, resources, tool connections, and startup
+	// command. The provisioning handlers re-source the moved data from the
+	// sibling services.
+	resourceDeployments := agentConfig.Deployments
+	resourceConnections := agentConfig.Connections
+	resourceToolboxes := agentConfig.Toolboxes
+	agentConfig.Deployments = nil
+	agentConfig.Connections = nil
+	agentConfig.Toolboxes = nil
+
 	var agentConfigStruct *structpb.Struct
 	if agentConfigStruct, err = project.MarshalStruct(&agentConfig); err != nil {
 		return fmt.Errorf("failed to marshal agent config: %w", err)
@@ -2988,6 +3001,15 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
+	}
+
+	// Emit the sibling Foundry resource services (project + deployments,
+	// connections, toolboxes) and wire the agent's uses: to them.
+	if err := emitResourceServices(
+		ctx, a.azdClient, a.serviceNameOverride,
+		resourceDeployments, resourceConnections, resourceToolboxes,
+	); err != nil {
+		return err
 	}
 
 	fmt.Printf(

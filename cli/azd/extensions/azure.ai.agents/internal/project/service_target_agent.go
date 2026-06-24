@@ -1496,6 +1496,13 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serv
 		}
 	}
 
+	return zipSourceDir(ctx, srcDir)
+}
+
+// zipSourceDir creates a ZIP archive of srcDir honoring .agentignore, writes it to a
+// temp file, and computes its SHA-256. It returns the temp file path and SHA-256 hex
+// string.
+func zipSourceDir(ctx context.Context, srcDir string) (string, string, error) {
 	// Load .agentignore (or use defaults if no file exists)
 	ignoreMatcher, err := newAgentIgnoreMatcher(ctx, srcDir)
 	if err != nil {

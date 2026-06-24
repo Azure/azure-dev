@@ -397,6 +397,7 @@ stages:
           - template: /eng/pipelines/templates/steps/publish-cli-brew.yml
 
       - job: Generate_GH_Token
+        dependsOn: []
 
         pool:
           name: $(LINUXPOOL)

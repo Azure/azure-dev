@@ -53,6 +53,7 @@ stages:
 
     jobs:
       - job: Generate_GH_Token
+        dependsOn: []
 
         pool:
           name: $(LINUXPOOL)

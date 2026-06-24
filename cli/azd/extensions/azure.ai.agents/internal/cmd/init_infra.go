@@ -122,6 +122,10 @@ func ejectInfra(projectRoot, provider string) error {
 		RawAzureYAML:  rawYAML,
 		ServiceName:   svcName,
 		AcceptedHosts: project.FoundryServiceHosts,
+		// Eject writes a static infra/ tree. Keep ${VAR} references verbatim so
+		// the ejected main.parameters.json stays environment-portable; the
+		// on-disk provision flow resolves them from the azd environment.
+		PreserveVarRefs: true,
 	})
 	if err != nil {
 		// Reuse the provider's vocabulary so eject and provision report
@@ -134,6 +138,19 @@ func ejectInfra(projectRoot, provider string) error {
 	}
 
 	if provider == project.TerraformProviderName {
+		// Private networking is Bicep-only today: the Terraform module has no
+		// VNet / private-endpoint / DNS / networkInjections resources, so ejecting
+		// it for a network: service would silently drop the config and provision a
+		// public account — the exact silent public fallback the network: contract
+		// forbids. Fail fast instead of ejecting an insecure template.
+		if res.NetworkMode != synthesis.NetworkModeNone {
+			return exterrors.Validation(
+				exterrors.CodeInfraEjectNetworkUnsupported,
+				"private networking (the service's network: block) is not yet supported with Terraform",
+				"eject Bicep instead with `azd ai agent init --infra` (or `--infra=bicep`), "+
+					"or remove the network: block to provision a public account with Terraform",
+			)
+		}
 		return ejectTerraform(projectRoot, infraDir, res.Parameters)
 	}
 	return ejectBicep(infraDir, res.Parameters)

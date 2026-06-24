@@ -5,6 +5,7 @@ package project
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"sync"
 
@@ -345,14 +346,17 @@ func agentDefinitionFromStruct(s *structpb.Struct, coreImage string) (agent_yaml
 	// path uses (kind, name format, policies), so an inline definition cannot
 	// silently bypass validation. Marshal back to YAML so ValidateAgentDefinition
 	// sees the same shape it expects from disk.
-	if defBytes, marshalErr := yaml.Marshal(ca); marshalErr == nil {
-		if err := agent_yaml.ValidateAgentDefinition(defBytes); err != nil {
-			return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("agent service definition is not valid: %s", err),
-				"fix the agent service entry in azure.yaml or re-run `azd ai agent init`",
-			)
-		}
+	if defBytes, marshalErr := yaml.Marshal(ca); marshalErr != nil {
+		// A ContainerAgent should always marshal; log at debug so a regression
+		// here is visible during troubleshooting rather than silently skipping
+		// validation.
+		log.Printf("[debug] skipping inline agent definition validation: marshal to YAML failed: %v", marshalErr)
+	} else if err := agent_yaml.ValidateAgentDefinition(defBytes); err != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("agent service definition is not valid: %s", err),
+			"fix the agent service entry in azure.yaml or re-run `azd ai agent init`",
+		)
 	}
 
 	if ca.Image != "" && !containerImageRefRe.MatchString(ca.Image) {

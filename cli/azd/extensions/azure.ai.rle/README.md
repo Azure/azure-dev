@@ -37,17 +37,21 @@ cd cli\azd\extensions\azure.ai.rle
 
 ```powershell
 $env:RLE_ENDPOINT = "http://localhost:5000"
-$env:RLE_ACR_IMAGE = "devrle.azurecr.io/coding_env:latest"
+$env:RLE_PROJECT_NAME = "demo-3"
 ```
 
-`http://localhost:5000` is also the built-in default, so you can omit `RLE_ENDPOINT` when using a local RLE control plane.
-`RLE_ACR_IMAGE` is required by deploy and is expanded from the generated `rle.yaml`.
+`http://localhost:5000` is also the built-in default, so you can omit `RLE_ENDPOINT` when using a local RLE control plane. To target the hosted control plane, set `RLE_ENDPOINT` to its URL.
 
 For `invoke`, provide the Azure AI project endpoint as a parameter:
 
 ```powershell
 az login
 ```
+
+The environment image is no longer configured through an environment variable. By default,
+`deploy` registers a per-environment image named after the environment (for example
+`devrle.azurecr.io/code-rl:latest`). Use `--image <reference>` to deploy a specific prebuilt
+image instead.
 
 ### 4. Install the extension into azd
 

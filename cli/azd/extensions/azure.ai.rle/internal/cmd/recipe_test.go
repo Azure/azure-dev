@@ -5,13 +5,13 @@ package cmd
 
 import "testing"
 
-func TestResolveRecipeImageRequiresCodeRlImage(t *testing.T) {
+func TestResolveRecipeImageDerivesFromEnvName(t *testing.T) {
 	image, err := resolveRecipeImage(defaultRecipeName, "")
-	if err == nil {
-		t.Fatal("expected missing code_rl image to fail")
+	if err != nil {
+		t.Fatal(err)
 	}
 	if image != "" {
-		t.Fatalf("expected no image, got %q", image)
+		t.Fatalf("expected empty image so it is derived from the environment name, got %q", image)
 	}
 }
 

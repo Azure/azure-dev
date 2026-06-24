@@ -382,10 +382,6 @@ func (c *rleClient) do(ctx context.Context, method string, path string, body any
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if token := os.Getenv("RLE_BEARER_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("call RLE control plane %s: %w", c.baseUrl, err)

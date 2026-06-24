@@ -9,29 +9,26 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-const defaultRecipeName = "code_rl"
-
-var recipeImages = map[string]string{
-	defaultRecipeName: "devrle.azurecr.io/coding_env:latest",
-}
+const defaultRecipeName = "code_rl_with_rle"
 
 func resolveRecipeImage(recipe string, imageOverride string) (string, error) {
 	if imageOverride != "" {
 		return imageOverride, nil
 	}
 
-	image, ok := recipeImages[recipe]
-	if !ok {
+	if recipe != defaultRecipeName {
 		return "", &azdext.LocalError{
-			Message:  fmt.Sprintf("Unknown RLE recipe %q.", recipe),
-			Code:     "rle_unknown_recipe",
-			Category: azdext.LocalErrorCategoryUser,
-			Suggestion: fmt.Sprintf(
-				"Use --recipe %s or provide an explicit image with --image.",
-				defaultRecipeName,
-			),
+			Message:    fmt.Sprintf("Unknown RLE recipe %q.", recipe),
+			Code:       "rle_unknown_recipe",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: fmt.Sprintf("Use recipe %s or provide an image in rle.yaml.", defaultRecipeName),
 		}
 	}
 
-	return image, nil
+	return "", &azdext.LocalError{
+		Message:    "RLE environment image is required.",
+		Code:       "rle_image_required",
+		Category:   azdext.LocalErrorCategoryUser,
+		Suggestion: "Set RLE_ACR_IMAGE, then run azd ai rle deploy again.",
+	}
 }

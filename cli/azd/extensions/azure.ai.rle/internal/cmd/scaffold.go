@@ -23,6 +23,14 @@ func validateEnvName(name string) (string, error) {
 	return name, nil
 }
 
+func validateRecipeName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if !envNamePattern.MatchString(name) {
+		return "", fmt.Errorf("invalid recipe name %q", name)
+	}
+	return name, nil
+}
+
 func scaffoldRleSession(name string, dest string, image string, force bool) (string, error) {
 	envClass := toPascal(name)
 	envTitle := toTitle(name)

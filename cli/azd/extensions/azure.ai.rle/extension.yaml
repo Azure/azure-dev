@@ -20,5 +20,5 @@ examples:
     description: Create or update the RLE environment.
     usage: azd ai rle deploy
   - name: invoke
-    description: Placeholder for triggering an RLE training job.
-    usage: azd ai rle invoke
+    description: Run the Loom RLE training recipe.
+    usage: azd ai rle invoke --recipe code_rl_with_rle

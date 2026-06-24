@@ -13,7 +13,6 @@ import (
 
 type rleInitFlags struct {
 	path  string
-	image string
 	force bool
 }
 
@@ -35,13 +34,16 @@ func newInitCommand() *cobra.Command {
 				}
 			}
 
-			sessionDir, err := scaffoldRleSession(envName, flags.path, flags.image, flags.force)
+			sessionDir, err := scaffoldRleSession(envName, flags.path, "${RLE_ACR_IMAGE}", flags.force)
 			if err != nil {
 				return err
 			}
 
 			state := defaultRleState(envName, defaultRecipeName)
 			if err := saveRleStateIn(sessionDir, state); err != nil {
+				return err
+			}
+			if _, err := materializeBundledRleSdk(sessionDir); err != nil {
 				return err
 			}
 
@@ -60,7 +62,6 @@ func newInitCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&flags.path, "path", ".", "Directory where the RLE session folder is created")
-	cmd.Flags().StringVar(&flags.image, "image", "${RLE_ACR_IMAGE}", "Image reference written to rle.yaml")
 	cmd.Flags().BoolVar(&flags.force, "force", false, "Overwrite local RLE state if it already exists")
 	return cmd
 }

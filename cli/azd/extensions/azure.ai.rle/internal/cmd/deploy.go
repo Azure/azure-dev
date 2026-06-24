@@ -12,7 +12,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type rleDeployFlags struct {
+	project string
+}
+
 func newDeployCommand() *cobra.Command {
+	flags := &rleDeployFlags{}
+
 	cmd := &cobra.Command{
 		Use:   "deploy",
 		Short: "Create or update the RLE environment",
@@ -33,17 +39,18 @@ func newDeployCommand() *cobra.Command {
 				}
 				state.Name = firstNonEmpty(manifestState.Name, state.Name)
 				state.Account = firstNonEmpty(manifestState.Account, state.Account)
-				state.Project = firstNonEmpty(os.Getenv("RLE_PROJECT_NAME"), manifestState.Project, state.Project)
+				state.Project = firstNonEmpty(manifestState.Project, state.Project)
 				state.Endpoint = firstNonEmpty(manifestState.Endpoint, state.Endpoint)
 				state.Image = firstNonEmpty(manifestState.Image, state.Image)
 			}
+			state.Project = firstNonEmpty(flags.project, state.Project)
 
 			image, err := resolveRecipeImage(state.Recipe, state.Image)
 			if err != nil {
 				return err
 			}
 			environmentId := firstNonEmpty(state.EnvironmentId, slug(state.Name))
-			client := newRleClient(resolveControlPlaneEndpoint(state.Endpoint))
+			client := newRleClient(resolveControlPlaneEndpoint(""))
 			request := v1EnvironmentRequest{
 				Name:         state.Name,
 				AcrImagePath: image,
@@ -103,6 +110,7 @@ func newDeployCommand() *cobra.Command {
 		},
 	}
 
+	cmd.Flags().StringVar(&flags.project, "project", "", "RLE project name. Defaults to the project saved in .azd-rle.json.")
 	return cmd
 }
 

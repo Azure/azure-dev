@@ -5,13 +5,13 @@ package cmd
 
 import "testing"
 
-func TestResolveRecipeImageUsesCodeRlDefault(t *testing.T) {
+func TestResolveRecipeImageRequiresCodeRlImage(t *testing.T) {
 	image, err := resolveRecipeImage(defaultRecipeName, "")
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("expected missing code_rl image to fail")
 	}
-	if image != "devrle.azurecr.io/coding_env:latest" {
-		t.Fatalf("expected code_rl image, got %q", image)
+	if image != "" {
+		t.Fatalf("expected no image, got %q", image)
 	}
 }
 

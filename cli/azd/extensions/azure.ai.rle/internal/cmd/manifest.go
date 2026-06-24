@@ -70,7 +70,7 @@ func expandManifestEnv(content string) (string, error) {
 		Code:     "rle_manifest_env_missing",
 		Category: azdext.LocalErrorCategoryUser,
 		Suggestion: fmt.Sprintf(
-			"Set %s, then run azd ai rle init again.",
+			"Set %s, then run the command again.",
 			strings.Join(names, ", "),
 		),
 	}

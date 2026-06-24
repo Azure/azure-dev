@@ -166,20 +166,20 @@ type InvocationsWSProtocolConfiguration struct{}
 // ProtocolConfiguration describes per-protocol configuration for the agent endpoint.
 // The presence of a key declares the protocol is enabled.
 type ProtocolConfiguration struct {
-	Activity      *ActivityProtocolConfiguration       `json:"activity,omitempty"`
-	Responses     *ResponsesProtocolConfiguration      `json:"responses,omitempty"`
-	A2A           *A2AProtocolConfiguration            `json:"a2a,omitempty"`
-	MCP           *MCPProtocolConfiguration            `json:"mcp,omitempty"`
-	Invocations   *InvocationsProtocolConfiguration    `json:"invocations,omitempty"`
-	InvocationsWS *InvocationsWSProtocolConfiguration  `json:"invocations_ws,omitempty"`
+	Activity      *ActivityProtocolConfiguration      `json:"activity,omitempty"`
+	Responses     *ResponsesProtocolConfiguration     `json:"responses,omitempty"`
+	A2A           *A2AProtocolConfiguration           `json:"a2a,omitempty"`
+	MCP           *MCPProtocolConfiguration           `json:"mcp,omitempty"`
+	Invocations   *InvocationsProtocolConfiguration   `json:"invocations,omitempty"`
+	InvocationsWS *InvocationsWSProtocolConfiguration `json:"invocations_ws,omitempty"`
 }
 
 // AgentEndpoint describes the endpoint configuration for an agent.
 type AgentEndpoint struct {
-	VersionSelector        *VersionSelector                   `json:"version_selector,omitempty"`
-	Protocols              []AgentEndpointProtocol            `json:"protocols,omitempty"`
-	ProtocolConfiguration  *ProtocolConfiguration             `json:"protocol_configuration,omitempty"`
-	AuthorizationSchemes   []AgentEndpointAuthorizationScheme `json:"authorization_schemes,omitempty"`
+	VersionSelector       *VersionSelector                   `json:"version_selector,omitempty"`
+	Protocols             []AgentEndpointProtocol            `json:"protocols,omitempty"`
+	ProtocolConfiguration *ProtocolConfiguration             `json:"protocol_configuration,omitempty"`
+	AuthorizationSchemes  []AgentEndpointAuthorizationScheme `json:"authorization_schemes,omitempty"`
 }
 
 // AgentCardSkill describes a single capability that an agent can perform.

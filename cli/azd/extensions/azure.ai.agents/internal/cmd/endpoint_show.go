@@ -141,6 +141,8 @@ func resolveEndpointProtocols(endpoint *agent_api.AgentEndpoint) []string {
 	}
 
 	// Prefer protocol_configuration (newer API shape).
+	// A non-nil ProtocolConfiguration is authoritative even if empty,
+	// so we never fall through to the deprecated Protocols field.
 	if pc := endpoint.ProtocolConfiguration; pc != nil {
 		var protocols []string
 		if pc.Activity != nil {
@@ -161,9 +163,7 @@ func resolveEndpointProtocols(endpoint *agent_api.AgentEndpoint) []string {
 		if pc.InvocationsWS != nil {
 			protocols = append(protocols, "invocations_ws")
 		}
-		if len(protocols) > 0 {
-			return protocols
-		}
+		return protocols
 	}
 
 	// Fall back to deprecated Protocols field.

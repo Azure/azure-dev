@@ -186,6 +186,10 @@ func TestResolveEndpointProtocols(t *testing.T) {
 				MCP:       &agent_api.MCPProtocolConfiguration{},
 			},
 		}, []string{"responses", "mcp"}},
+		{"empty protocol_configuration is authoritative", &agent_api.AgentEndpoint{
+			Protocols:             []agent_api.AgentEndpointProtocol{"activity"},
+			ProtocolConfiguration: &agent_api.ProtocolConfiguration{},
+		}, nil},
 		{"fallback to protocols", &agent_api.AgentEndpoint{
 			Protocols: []agent_api.AgentEndpointProtocol{"responses", "a2a"},
 		}, []string{"responses", "a2a"}},

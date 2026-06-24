@@ -22,28 +22,38 @@ func TestLocalInvoke_CallIDHeader(t *testing.T) {
 	})
 
 	cases := []struct {
-		name     string
-		protocol string
-		callID   string
-		wantSet  bool
+		name         string
+		protocol     string
+		callID       string
+		userIdentity string
+		wantCallID   bool
+		wantUserID   bool
 	}{
-		{"responses_with_call_id", "responses", "call-123", true},
-		{"responses_without_call_id", "responses", "", false},
-		{"invocations_with_call_id", "invocations", "call-456", true},
-		{"invocations_without_call_id", "invocations", "", false},
+		{"responses_with_call_id", "responses", "call-123", "", true, false},
+		{"responses_without_call_id", "responses", "", "", false, false},
+		{"invocations_with_call_id", "invocations", "call-456", "", true, false},
+		{"invocations_without_call_id", "invocations", "", "", false, false},
+		{"responses_with_user_identity", "responses", "", "user-123", false, true},
+		{"invocations_with_user_identity", "invocations", "", "user-456", false, true},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotHeader string
 			var headerPresent bool
+			var gotUserHeader string
+			var userHeaderPresent bool
+			var requestCount int
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if strings.Contains(r.URL.Path, "/openapi") {
 					w.WriteHeader(404)
 					return
 				}
+				requestCount++
 				gotHeader = r.Header.Get(agent_api.AgentFoundryCallIDHeader)
 				_, headerPresent = r.Header[http.CanonicalHeaderKey(agent_api.AgentFoundryCallIDHeader)]
+				gotUserHeader = r.Header.Get(agent_api.AgentUserIDHeader)
+				_, userHeaderPresent = r.Header[http.CanonicalHeaderKey(agent_api.AgentUserIDHeader)]
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(200)
 				fmt.Fprint(w, string(okBody))
@@ -57,6 +67,9 @@ func TestLocalInvoke_CallIDHeader(t *testing.T) {
 					local:    true,
 					protocol: tc.protocol,
 					callID:   tc.callID,
+					userIdentityFlags: userIdentityFlags{
+						userIdentity: tc.userIdentity,
+					},
 				},
 				noPrompt: true,
 			}
@@ -72,13 +85,24 @@ func TestLocalInvoke_CallIDHeader(t *testing.T) {
 			if err != nil {
 				t.Fatalf("local invoke failed: %v", err)
 			}
+			if requestCount == 0 {
+				t.Fatal("expected at least one request to local server")
+			}
 
-			if tc.wantSet {
+			if tc.wantCallID {
 				if gotHeader != tc.callID {
 					t.Errorf("header %s = %q, want %q", agent_api.AgentFoundryCallIDHeader, gotHeader, tc.callID)
 				}
 			} else if headerPresent {
 				t.Errorf("header %s should not be set, got %q", agent_api.AgentFoundryCallIDHeader, gotHeader)
+			}
+
+			if tc.wantUserID {
+				if gotUserHeader != tc.userIdentity {
+					t.Errorf("header %s = %q, want %q", agent_api.AgentUserIDHeader, gotUserHeader, tc.userIdentity)
+				}
+			} else if userHeaderPresent {
+				t.Errorf("header %s should not be set, got %q", agent_api.AgentUserIDHeader, gotUserHeader)
 			}
 		})
 	}

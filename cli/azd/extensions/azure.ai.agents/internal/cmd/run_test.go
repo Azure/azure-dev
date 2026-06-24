@@ -1074,3 +1074,22 @@ func TestFindSystemPython(t *testing.T) {
 		}
 	})
 }
+
+func TestCheckPythonVersion(t *testing.T) {
+	// This test requires a real python on PATH to run --version.
+	// Skip if python is not available or can't execute.
+	pythonBin, err := findSystemPython()
+	if err != nil {
+		t.Skip("python not available on PATH")
+	}
+
+	err = checkPythonVersion(pythonBin)
+	if err != nil {
+		// Accept either a version-too-old error or an execution error
+		// (e.g., Windows Store stub that LookPath finds but can't run).
+		if !strings.Contains(err.Error(), "3.13+ is required") &&
+			!strings.Contains(err.Error(), "failed to check Python version") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	}
+}

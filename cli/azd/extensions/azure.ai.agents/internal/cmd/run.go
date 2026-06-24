@@ -637,6 +637,9 @@ func installPythonDepsPip(projectDir string) error {
 		if findErr != nil {
 			return findErr
 		}
+		if err := checkPythonVersion(pythonBin); err != nil {
+			return err
+		}
 		//nolint:gosec // G204: venvDir is derived from the project directory path
 		cmd := exec.Command(pythonBin, "-m", "venv", venvDir)
 		cmd.Dir = projectDir
@@ -648,6 +651,20 @@ func installPythonDepsPip(projectDir string) error {
 	}
 
 	pipPath := venvPip(venvDir)
+
+	// If the venv was created by uv (which omits pip by default), bootstrap pip.
+	if !fileExists(pipPath) {
+		pythonPath := venvPython(venvDir)
+		fmt.Println("Bootstrapping pip in virtual environment...")
+		//nolint:gosec // G204: pythonPath is derived from the project venv directory
+		cmd := exec.Command(pythonPath, "-m", "ensurepip", "--upgrade")
+		cmd.Dir = projectDir
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to bootstrap pip in venv: %w", err)
+		}
+	}
 
 	if fileExists(filepath.Join(projectDir, "pyproject.toml")) {
 		fmt.Println("Installing dependencies (pyproject.toml)...")
@@ -785,6 +802,46 @@ func findSystemPython() (string, error) {
 	}
 	return "", fmt.Errorf(
 		"python not found on PATH. Install Python 3.13+ from https://www.python.org/downloads/")
+}
+
+// checkPythonVersion verifies the Python binary is >= 3.13 (matching the uv path's
+// --python ">=3.13" constraint). Returns an error if the version is too old.
+func checkPythonVersion(pythonBin string) error {
+	//nolint:gosec // G204: pythonBin is from findSystemPython (exec.LookPath result)
+	out, err := exec.Command(pythonBin, "--version").Output()
+	if err != nil {
+		return fmt.Errorf("failed to check Python version: %w", err)
+	}
+
+	// Output is like "Python 3.13.2"
+	version := strings.TrimSpace(string(out))
+	parts := strings.SplitN(version, " ", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("unexpected python --version output: %s", version)
+	}
+
+	segments := strings.SplitN(parts[1], ".", 3)
+	if len(segments) < 2 {
+		return fmt.Errorf("unexpected python version format: %s", parts[1])
+	}
+
+	major, err := strconv.Atoi(segments[0])
+	if err != nil {
+		return fmt.Errorf("unexpected python major version: %s", segments[0])
+	}
+	minor, err := strconv.Atoi(segments[1])
+	if err != nil {
+		return fmt.Errorf("unexpected python minor version: %s", segments[1])
+	}
+
+	if major < 3 || (major == 3 && minor < 13) {
+		return fmt.Errorf(
+			"Python 3.13+ is required (found %s). "+
+				"Install Python 3.13+ from https://www.python.org/downloads/",
+			parts[1])
+	}
+
+	return nil
 }
 
 // appendFoundryEnvVars translates azd environment keys to FOUNDRY_* env vars that hosted

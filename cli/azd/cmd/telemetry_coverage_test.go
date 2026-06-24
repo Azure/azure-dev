@@ -202,6 +202,7 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"tool check",      // tool.check.updates_available
 		"tool install",    // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
 		"tool show",       // tool.id
+		"tool uninstall",  // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
 		"tool upgrade",    // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.upgrade.* versions
 		"up",              // infra.provider (via hooks middleware, composes provision+deploy)
 		"update",          // update.* fields

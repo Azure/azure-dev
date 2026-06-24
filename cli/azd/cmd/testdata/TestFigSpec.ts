@@ -6366,6 +6366,34 @@ const completionSpec: Fig.Spec = {
 					},
 				},
 				{
+					name: ['uninstall'],
+					description: 'Uninstall installed tools.',
+					options: [
+						{
+							name: ['--all'],
+							description: 'Uninstall all installed tools',
+						},
+						{
+							name: ['--dry-run'],
+							description: 'Preview what would be uninstalled without making changes',
+						},
+						{
+							name: ['--host'],
+							description: 'Uninstall the skill from the specified agent host(s): copilot, claude. Use --host all (or omit --host) to remove the skill from every host it is installed through (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'host',
+								},
+							],
+						},
+					],
+					args: {
+						name: 'tool-name...',
+						isOptional: true,
+					},
+				},
+				{
 					name: ['upgrade'],
 					description: 'Upgrade installed tools.',
 					options: [

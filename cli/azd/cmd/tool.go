@@ -138,6 +138,18 @@ func toolActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		FlagsResolver:  newToolUpgradeFlags,
 	})
 
+	// azd tool uninstall [tool-name...]
+	group.Add("uninstall", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:   "uninstall [tool-name...]",
+			Short: "Uninstall installed tools.",
+		},
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+		ActionResolver: newToolUninstallAction,
+		FlagsResolver:  newToolUninstallFlags,
+	})
+
 	// azd tool check
 	group.Add("check", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
@@ -1165,6 +1177,285 @@ func (a *toolUpgradeAction) dryRun(
 		}
 
 		action := "upgrade"
+		currentVersion := ""
+		if status.Installed {
+			currentVersion = status.InstalledVersion
+		} else {
+			action = "skip (not installed)"
+		}
+
+		rows = append(rows, toolDryRunItem{
+			Id:             t.Id,
+			Name:           t.Name,
+			CurrentVersion: currentVersion,
+			Action:         action,
+		})
+	}
+
+	if a.formatter.Kind() == output.JsonFormat {
+		return nil, a.formatter.Format(rows, a.writer, nil)
+	}
+
+	if err := writeDryRunTable(a.writer, rows); err != nil {
+		return nil, err
+	}
+
+	a.console.Message(ctx, "")
+	a.console.Message(ctx, output.WithGrayFormat(
+		"Dry run complete. No changes were made.",
+	))
+
+	return nil, nil
+}
+
+// ---------------------------------------------------------------------------
+// azd tool uninstall [tool-name...]
+// ---------------------------------------------------------------------------
+
+type toolUninstallFlags struct {
+	all    bool
+	hosts  []string
+	dryRun bool
+}
+
+func newToolUninstallFlags(cmd *cobra.Command) *toolUninstallFlags {
+	flags := &toolUninstallFlags{}
+	cmd.Flags().BoolVar(
+		&flags.all, "all", false, "Uninstall all installed tools",
+	)
+	cmd.Flags().StringSliceVar(
+		&flags.hosts, "host", nil,
+		"Uninstall the skill from the specified agent host(s): copilot, claude. "+
+			"Use --host all (or omit --host) to remove the skill from every host it is "+
+			"installed through (skill tools only)",
+	)
+	cmd.Flags().BoolVar(
+		&flags.dryRun, "dry-run", false,
+		"Preview what would be uninstalled without making changes",
+	)
+	return flags
+}
+
+type toolUninstallAction struct {
+	args      []string
+	flags     *toolUninstallFlags
+	manager   *tool.Manager
+	console   input.Console
+	formatter output.Formatter
+	writer    io.Writer
+}
+
+func newToolUninstallAction(
+	args []string,
+	flags *toolUninstallFlags,
+	manager *tool.Manager,
+	console input.Console,
+	formatter output.Formatter,
+	writer io.Writer,
+) actions.Action {
+	return &toolUninstallAction{
+		args:      args,
+		flags:     flags,
+		manager:   manager,
+		console:   console,
+		formatter: formatter,
+		writer:    writer,
+	}
+}
+
+func (a *toolUninstallAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	ids, err := a.resolveToolIds(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ids) == 0 {
+		a.console.Message(ctx, output.WithGrayFormat("No installed tools to uninstall."))
+		return nil, nil
+	}
+
+	tools := make([]*tool.ToolDefinition, 0, len(ids))
+	resolvedIDs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		toolDef, findErr := a.manager.FindTool(id)
+		if findErr != nil {
+			return nil, wrapToolNotFoundIfErr(findErr)
+		}
+		tools = append(tools, toolDef)
+		resolvedIDs = append(resolvedIDs, toolDef.Id)
+	}
+
+	// Mutually exclusive tool.id vs tool.ids — see the install action for
+	// the same discipline and the rationale in tracing-in-azd.md.
+	idAttrs := []attribute.KeyValue{
+		fields.ToolDryRunKey.Bool(a.flags.dryRun),
+	}
+	if len(resolvedIDs) == 1 {
+		idAttrs = append(idAttrs, fields.ToolIdKey.String(resolvedIDs[0]))
+	} else {
+		sortedIDs := slices.Clone(resolvedIDs)
+		slices.Sort(sortedIDs)
+		idAttrs = append(idAttrs, fields.ToolIdsKey.String(strings.Join(sortedIDs, ",")))
+	}
+	tracing.SetUsageAttributes(idAttrs...)
+
+	// --dry-run: display what would be uninstalled without making changes.
+	if a.flags.dryRun {
+		return a.dryRun(ctx, tools)
+	}
+
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title:     "Uninstall Azure development tools (azd tool uninstall)",
+		TitleNote: "Uninstalls specified tools from the local machine",
+	})
+
+	operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
+		hostOpts, hostErr := a.resolveHostOptions(tools)
+		if hostErr != nil {
+			return nil, hostErr
+		}
+		return a.manager.UninstallTools(ctx, allIDs, hostOpts...)
+	}
+
+	start := time.Now()
+	outcome := runToolOperation(ctx, tools, operationFn, "Uninstalling", "uninstall", a.console)
+	uninstallResults := outcome.Items
+	rawResults := outcome.Results
+	opErr := outcome.Err
+	emitToolInstallTelemetry(rawResults, time.Since(start), opErr, tools)
+
+	if len(rawResults) == 1 {
+		tracing.SetUsageAttributes(singleResultCommonAttrs(rawResults[0])...)
+	}
+
+	if a.formatter.Kind() == output.JsonFormat {
+		return nil, a.formatter.Format(uninstallResults, a.writer, nil)
+	}
+
+	// When one or more tools failed, surface the error so the command
+	// exits non-zero and the success header is NOT printed. The per-tool
+	// failures and a summary warning were already shown by
+	// runToolOperation.
+	if opErr != nil {
+		return nil, opErr
+	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: "Tool uninstall complete",
+		},
+	}, nil
+}
+
+// resolveHostOptions determines which agentic CLI host(s) a skill should
+// be uninstalled from, based on the --host flag. --host all targets every
+// detected host; specific names target those hosts. When --host is
+// omitted it returns no options, letting the installer remove the skill
+// from every host it is installed through.
+func (a *toolUninstallAction) resolveHostOptions(
+	tools []*tool.ToolDefinition,
+) ([]tool.InstallOption, error) {
+	if len(a.flags.hosts) == 0 {
+		return nil, nil
+	}
+
+	skill := firstSkillTool(tools)
+	if skill == nil {
+		return nil, fmt.Errorf("--host only applies to skill tools")
+	}
+
+	return resolveExplicitSkillHosts(a.flags.hosts)
+}
+
+// resolveToolIds determines which tool IDs to uninstall based on flags
+// and arguments. Positional args win; --all selects every installed
+// tool; and the interactive path lets the user pick from installed tools.
+func (a *toolUninstallAction) resolveToolIds(ctx context.Context) ([]string, error) {
+	// Positional args: uninstall specified tools by ID.
+	if len(a.args) > 0 {
+		return a.args, nil
+	}
+
+	// --all and interactive both need the current installed set.
+	var statuses []*tool.ToolStatus
+	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
+		Text:        "Detecting installed tools...",
+		ClearOnStop: true,
+	})
+	if err := spinner.Run(ctx, func(ctx context.Context) error {
+		var detectErr error
+		statuses, detectErr = a.manager.DetectAll(ctx)
+		return detectErr
+	}); err != nil {
+		return nil, fmt.Errorf("detecting installed tools: %w", err)
+	}
+
+	var installed []*tool.ToolStatus
+	for _, s := range statuses {
+		if s.Installed {
+			installed = append(installed, s)
+		}
+	}
+
+	if len(installed) == 0 {
+		return nil, nil
+	}
+
+	// --all: uninstall every installed tool.
+	if a.flags.all {
+		ids := make([]string, 0, len(installed))
+		for _, s := range installed {
+			ids = append(ids, s.Tool.Id)
+		}
+		return ids, nil
+	}
+
+	// Interactive: let the user pick from installed tools. Nothing is
+	// pre-selected so uninstall is always an explicit choice.
+	choices := make([]*uxlib.MultiSelectChoice, len(installed))
+	for i, s := range installed {
+		choices[i] = &uxlib.MultiSelectChoice{
+			Value: s.Tool.Id,
+			Label: s.Tool.Name,
+		}
+	}
+
+	multiSelect := uxlib.NewMultiSelect(&uxlib.MultiSelectOptions{
+		Writer:  a.console.Handles().Stdout,
+		Reader:  a.console.Handles().Stdin,
+		Message: "Select tools to uninstall",
+		Choices: choices,
+	})
+
+	selected, err := multiSelect.Ask(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("selecting tools: %w", err)
+	}
+
+	var ids []string
+	for _, choice := range selected {
+		if choice.Selected {
+			ids = append(ids, choice.Value)
+		}
+	}
+	return ids, nil
+}
+
+// dryRun detects the current status of the tools and displays what the
+// uninstall command would do without making changes.
+func (a *toolUninstallAction) dryRun(
+	ctx context.Context,
+	tools []*tool.ToolDefinition,
+) (*actions.ActionResult, error) {
+	rows := make([]toolDryRunItem, 0, len(tools))
+
+	for _, t := range tools {
+		status, detectErr := a.manager.DetectTool(ctx, t.Id)
+		if detectErr != nil {
+			return nil, fmt.Errorf("detecting %s: %w", t.Id, detectErr)
+		}
+
+		action := "uninstall"
 		currentVersion := ""
 		if status.Installed {
 			currentVersion = status.InstalledVersion

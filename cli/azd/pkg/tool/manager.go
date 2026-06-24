@@ -217,6 +217,38 @@ func (m *Manager) UpgradeAll(
 	return results, nil
 }
 
+// UninstallTools removes the tools identified by the given ids. Each id
+// is resolved against the manifest and then passed to the installer's
+// Uninstall method. Failures are recorded per tool so that one failure
+// does not abort the batch. For skill tools the optional install options
+// (e.g. [WithHosts]) select which agent host(s) to remove the skill
+// from. Dependencies are intentionally left in place — azd does not
+// auto-remove tools that other tools may rely on.
+func (m *Manager) UninstallTools(
+	ctx context.Context,
+	ids []string,
+	opts ...InstallOption,
+) ([]*InstallResult, error) {
+	tools, err := m.resolveTools(ids)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []*InstallResult
+	for _, tool := range tools {
+		result, uninstallErr := m.installer.Uninstall(ctx, tool, opts...)
+		if uninstallErr != nil {
+			results = append(results, &InstallResult{
+				Tool:  tool,
+				Error: uninstallErr,
+			})
+			continue
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
 // CheckForUpdates delegates to the [UpdateChecker] to check all
 // tools in the manifest for available updates.
 func (m *Manager) CheckForUpdates(

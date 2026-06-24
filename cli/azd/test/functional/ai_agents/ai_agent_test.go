@@ -7,6 +7,7 @@ package ai_agents_test
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
@@ -48,7 +49,7 @@ func Test_AIAgent_Help(t *testing.T) {
 	require.Contains(t, result.Stdout, "invoke")
 }
 
-// Test_AIAgent_Init_NoPrompt_MissingFlags verifies --no-prompt without required flags errors.
+// Test_AIAgent_Init_NoPrompt_MissingFlags verifies --no-prompt without required flags errors clearly.
 func Test_AIAgent_Init_NoPrompt_MissingFlags(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -59,15 +60,20 @@ func Test_AIAgent_Init_NoPrompt_MissingFlags(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 
-	// Missing -m flag should fail
+	// init --no-prompt should fail with a clear error, not crash.
+	// The exact message depends on auth state:
+	// - Not logged in → "not logged in" (ensureLoggedIn runs first)
+	// - Logged in     → "template selection requires interactive mode"
 	result, err := cli.RunCommand(ctx,
 		"ai", "agent", "init", "--no-prompt",
 		"--deploy-mode", "code",
 	)
-	require.Error(t, err, "should fail without -m flag: stdout=%s", result.Stdout)
+	require.Error(t, err, "should fail without required flags: stdout=%s", result.Stdout)
 	combinedOutput := result.Stdout + result.Stderr
-	require.Contains(t, combinedOutput, "template selection requires interactive mode",
-		"should fail with clear validation error, not crash")
+	hasExpectedError := strings.Contains(combinedOutput, "not logged in") ||
+		strings.Contains(combinedOutput, "template selection requires interactive mode")
+	require.True(t, hasExpectedError,
+		"should fail with clear validation error (not logged in OR template selection), got: %s", combinedOutput)
 }
 
 // NOTE: SampleList tests moved to ai_agent_recording_test.go (Tier 1) to avoid

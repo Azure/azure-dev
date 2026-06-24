@@ -405,9 +405,6 @@ overrides:
   - filename: extensions/azure.ai.agents/internal/cmd/init_locations.go
     words:
       - swedencentral
-  - filename: extensions/azure.ai.agents/internal/cmd/run.go
-    words:
-      - ensurepip
   - filename: docs/code-coverage-guide.md
     words:
       - covdata

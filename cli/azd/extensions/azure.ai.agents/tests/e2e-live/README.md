@@ -10,8 +10,14 @@ init → provision → deploy → invoke → down
 A Go test driver answers the interactive `azd ai agent init` prompts through a
 **pseudo-terminal** — [go-expect] sends keystrokes and [vt10x] renders the CLI's
 terminal UI so the test can assert on the on-screen text, with [creack/pty]
-providing the PTY. The non-interactive phases (`provision`, `deploy`, `invoke`,
-`down`) shell out to `azd ... --no-prompt`. Both deploy modes are covered:
+providing the PTY. Synchronization is **event-driven**: the driver blocks on
+go-expect reads until the survey UI stops emitting — i.e. a prompt is fully
+drawn and waiting for input — instead of sleeping a fixed interval, then
+dispatches on the rendered prompt text. The deploy mode is chosen up front via
+`azd ai agent init --deploy-mode code|container` (it is not an interactive
+prompt once a manifest is supplied). The non-interactive phases (`provision`,
+`deploy`, `invoke`, `down`) shell out to `azd ... --no-prompt`. Both deploy
+modes are covered:
 
 | Mode        | What it does                                            |
 | ----------- | ------------------------------------------------------- |
@@ -23,6 +29,23 @@ The two modes run **sequentially** (same subscription → avoids resource races)
 [go-expect]: https://github.com/Netflix/go-expect
 [vt10x]: https://github.com/hinshun/vt10x
 [creack/pty]: https://github.com/creack/pty
+
+## How the `init` driver answers prompts
+
+The interactive sub-flows (Foundry project selection, model/deployment) branch
+on live runtime state, so the exact set and order of prompts is not fixed ahead
+of time. Rather than a linear expect script, the driver runs a **dispatch
+loop**: it waits for output to settle, reads the rendered screen, matches the
+active `?` prompt against the verbatim strings the extension prints — each case
+in `dispatchPrompt` is annotated with the source `file:line` it mirrors — and
+sends the answer. A loop detector bounds any prompt that fails to advance so a
+wording change upstream fails fast instead of hanging.
+
+Because the prompt strings are calibrated against the extension source, changes
+there can require updating `dispatchPrompt`. And because a real PTY, Azure auth,
+and the installed extension are all required, the **end-to-end interactive
+correctness is only exercised by a live Tier 2 run** — it cannot be reproduced
+by the platform-agnostic unit tests in this package.
 
 ## Where this fits
 

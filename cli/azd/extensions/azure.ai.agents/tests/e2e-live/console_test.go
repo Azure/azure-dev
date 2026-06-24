@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	expect "github.com/Netflix/go-expect"
 	"github.com/creack/pty"
@@ -19,16 +21,22 @@ import (
 const (
 	keyEnter = "\r"
 	keyDown  = "\x1b[B"
+	keyUp    = "\x1b[A"
 )
 
+// tailBytes caps the rolling raw-output buffer kept for failure diagnostics
+// (the interactive init screen is otherwise not echoed to the test log).
+const tailBytes = 16 << 10
+
 // console drives an interactive child process through a pseudo-terminal and
-// renders its output with a vt10x virtual terminal so tests can assert on the
-// on-screen text (the same role tmux capture-pane played in the old driver).
+// renders its output with a vt10x virtual terminal so tests can both block on
+// expected output (go-expect) and assert on the on-screen text (the role tmux
+// capture-pane played in the old driver).
 //
 // Wiring (mirrors AlecAivazis/survey's posix expect tests):
 //
 //	child stdio ── ec.Tty() (pts) ─┐
-//	                                ├─ go-expect tees child output ─► vt10x screen
+//	                                ├─ go-expect tees child output ─► vt10x screen + tail
 //	vt10x query replies ─► extSlave ┘             ▲
 //	                       extMaster ─ go-expect feeds back to child stdin
 //
@@ -39,6 +47,7 @@ const (
 type console struct {
 	term vt10x.Terminal
 	ec   *expect.Console
+	tail *ringBuffer
 }
 
 // newConsole creates a console with a virtual terminal of the given size.
@@ -49,13 +58,15 @@ func newConsole(cols, rows int) (*console, error) {
 	}
 
 	term := vt10x.New(vt10x.WithWriter(extSlave), vt10x.WithSize(cols, rows))
+	tail := newRingBuffer(tailBytes)
 
-	// Deliberately no WithDefaultTimeout: the drain goroutine runs ExpectEOF for
-	// the whole child lifetime, and a read timeout would stop it (ending screen
-	// updates) during the long quiet stretches of init (e.g. template download).
+	// go-expect tees everything it reads to these writers, so every read driven
+	// by expect()/waitForQuiet() simultaneously renders the screen (term) and
+	// records the raw bytes (tail) for diagnostics. No WithDefaultTimeout: each
+	// read's deadline is supplied per call via expect.WithTimeout.
 	ec, err := expect.NewConsole(
 		expect.WithStdin(extMaster),
-		expect.WithStdout(term),
+		expect.WithStdout(term, tail),
 		expect.WithCloser(extMaster, extSlave),
 	)
 	if err != nil {
@@ -69,7 +80,7 @@ func newConsole(cols, rows int) (*console, error) {
 	//nolint:gosec // cols/rows are small fixed test dimensions; no overflow.
 	_ = pty.Setsize(ec.Tty(), &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 
-	return &console{term: term, ec: ec}, nil
+	return &console{term: term, ec: ec, tail: tail}, nil
 }
 
 // tty returns the slave pseudo-terminal the child process should attach its
@@ -83,13 +94,29 @@ func (c *console) send(s string) {
 	_, _ = c.ec.Send(s)
 }
 
-// drain continuously renders child output to the virtual terminal until the
-// child's tty closes (process exit). It MUST run for the whole child lifetime:
-// go-expect only tees output to the screen while a read is in flight, so
-// without this the screen would stay blank and the child would eventually block
-// once the output pipe filled.
-func (c *console) drain() {
-	_, _ = c.ec.ExpectEOF()
+// expect reads child output (teeing it to the screen and the tail buffer) until
+// one of opts matches, idle elapses with no new byte, or the child's tty
+// closes. It is the event-driven synchronization primitive that replaces the
+// old fixed-interval polling: go-expect only renders output to the screen while
+// a read is in flight, so every wait routes through here.
+//
+// Return contract (go-expect's passthrough pipe, see passthrough_pipe.go):
+//   - a match               => (buf, nil)
+//   - idle of silence       => (buf, err) with os.IsTimeout(err) == true
+//   - child exit / pts close => (buf, err) with a non-timeout error
+func (c *console) expect(idle time.Duration, opts ...expect.ExpectOpt) (string, error) {
+	return c.ec.Expect(append(opts, expect.WithTimeout(idle))...)
+}
+
+// waitForQuiet renders pending output to the screen until the UI stops emitting
+// for quiet (a survey prompt fully drawn and now blocking on input) or the
+// child exits. It returns exited=true once the child's tty has closed.
+//
+// It passes no matchers, so go-expect can only return on the idle read deadline
+// (os.IsTimeout) or on a terminal read error (EOF / pts closed == child gone).
+func (c *console) waitForQuiet(quiet time.Duration) (exited bool) {
+	_, err := c.expect(quiet)
+	return err != nil && !os.IsTimeout(err)
 }
 
 // screen returns the current rendered virtual-terminal contents, cleaned of NUL
@@ -98,9 +125,42 @@ func (c *console) screen() string {
 	return cleanScreen(c.term.String())
 }
 
+// tailString returns the most recent raw child output captured for diagnostics.
+func (c *console) tailString() string {
+	return c.tail.String()
+}
+
 // close tears down the console and all of its pseudo-terminals.
 func (c *console) close() {
 	_ = c.ec.Close()
+}
+
+// ringBuffer is an io.Writer that retains only the last max bytes written, used
+// to keep a bounded tail of raw child output for failure diagnostics.
+type ringBuffer struct {
+	mu  sync.Mutex
+	buf []byte
+	max int
+}
+
+func newRingBuffer(max int) *ringBuffer {
+	return &ringBuffer{max: max}
+}
+
+func (r *ringBuffer) Write(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.buf = append(r.buf, p...)
+	if len(r.buf) > r.max {
+		r.buf = r.buf[len(r.buf)-r.max:]
+	}
+	return len(p), nil
+}
+
+func (r *ringBuffer) String() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return string(r.buf)
 }
 
 // cleanScreen normalizes a vt10x screen dump: empty cells render as NUL, which
@@ -126,7 +186,8 @@ func nonEmptyLines(screen string) []string {
 }
 
 // activePrompt returns the lowercased text of the last survey "?" prompt line on
-// screen, or "" if none is visible.
+// screen, or "" if none is visible. The last "?" line is the one survey is
+// currently blocking on (earlier "?" lines are answered prompts it echoed).
 func activePrompt(screen string) string {
 	lines := nonEmptyLines(screen)
 	for i := len(lines) - 1; i >= 0; i-- {

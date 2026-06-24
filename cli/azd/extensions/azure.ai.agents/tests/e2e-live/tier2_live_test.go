@@ -47,7 +47,13 @@ const (
 	monitorTimeout   = 60 * time.Second
 	teardownTimeout  = 10 * time.Minute
 
-	initStepDelay = 3 * time.Second
+	// Event-driven tuning for the interactive init loop. promptQuiet is how long
+	// the survey UI must stop emitting before we treat the current prompt as
+	// "drawn and waiting for input"; listSettle is the shorter pause we let a
+	// filtered Select list redraw after typing before confirming with Enter.
+	// Both replace the old fixed 3s poll; the hard init cap is the ctx deadline.
+	promptQuiet = 800 * time.Millisecond
+	listSettle  = 600 * time.Millisecond
 )
 
 // TestTier2Live exercises the full golden path against live Azure for each
@@ -206,7 +212,11 @@ func (r *runner) phaseInit(ctx context.Context) error {
 	ictx, cancel := context.WithTimeout(ctx, initTimeout)
 	defer cancel()
 
-	args := []string{"ai", "agent", "init", "--agent-name", r.agentName}
+	// Deploy mode is NOT an interactive prompt in the template/--agent-name
+	// flow: init auto-resolves it to "container" when a manifest is provided
+	// (init_from_code.go:1373), so it must be chosen via the --deploy-mode flag
+	// (init.go:1306). r.mode is exactly "container" or "code".
+	args := []string{"ai", "agent", "init", "--agent-name", r.agentName, "--deploy-mode", r.mode}
 	//nolint:gosec // azd is a trusted fixed binary; args are test-controlled.
 	cmd := exec.CommandContext(ictx, "azd", args...)
 	cmd.Dir = r.testDir
@@ -222,9 +232,10 @@ func (r *runner) phaseInit(ctx context.Context) error {
 		return fmt.Errorf("start azd ai agent init: %w", err)
 	}
 
-	// Render child output to the screen for the whole lifetime of the process.
-	go c.drain()
-
+	// No separate render goroutine: go-expect's passthrough pipe drains the
+	// child's pty in the background, and driveInit's expect()/waitForQuiet()
+	// calls do the reading that renders the screen. (A concurrent reader would
+	// race those calls for the same stream.)
 	exited := make(chan struct{})
 	go func() {
 		_ = cmd.Wait()
@@ -244,71 +255,67 @@ func (r *runner) phaseInit(ctx context.Context) error {
 	return driveErr
 }
 
-// driveInit is the prompt state machine: it polls the rendered screen and
-// answers each survey prompt until init reports completion (or the process
-// exits, or it times out).
+// driveInit is the event-driven prompt loop: it waits (via go-expect) for the
+// survey UI to settle on a prompt, reads the rendered screen, and answers it,
+// until init reports completion (or the process exits, or it times out).
+//
+// Why a screen-dispatch loop and not a linear ExpectString script: the live
+// model/deployment and Foundry-project sub-flows branch on runtime state —
+// whether the just-created project already has the model deployed, region/model
+// availability, existing-name collisions — so the exact set and order of
+// prompts cannot be predetermined. A linear ExpectString sequence would desync
+// at the first conditional prompt. Instead we block on output settling (the
+// go-expect read), then dispatch on the verbatim prompt strings the extension
+// prints (each case annotated with its source file:line).
 func (r *runner) driveInit(ctx context.Context, exited <-chan struct{}) error {
-	var lastPromptKey string
-	samePromptCount := 0
+	var lastKey string
+	repeat := 0
 
 	for {
-		if err := sleepCtx(ctx, initStepDelay); err != nil {
-			return fmt.Errorf("init timed out: %w", err)
-		}
-
 		select {
+		case <-ctx.Done():
+			return fmt.Errorf("init timed out: %w\n--- tail ---\n%s",
+				ctx.Err(), tail(r.c.tailString(), 2000))
 		case <-exited:
-			if r.validateInitOutput() {
-				return nil
-			}
-			return errors.New("azd ai agent init exited without producing artifacts")
+			return r.finishInit(ctx)
 		default:
 		}
 
-		screen := r.c.screen()
+		// Block until the UI stops emitting (prompt fully drawn, awaiting input)
+		// or the child exits. Replaces the old fixed-interval poll.
+		if r.c.waitForQuiet(promptQuiet) {
+			return r.finishInit(ctx)
+		}
 
-		if screenContains(screen, "added to your azd project") ||
-			screenContains(screen, "agent definition added") {
-			if r.validateInitOutput() {
-				return nil
-			}
-			if err := sleepCtx(ctx, 5*time.Second); err != nil {
-				return err
-			}
-			if r.validateInitOutput() {
-				return nil
-			}
-			return errors.New("init completion marker found but artifacts missing on disk")
+		screen := r.c.screen()
+		if isInitComplete(screen) {
+			return r.finishInit(ctx)
 		}
 
 		prompt := activePrompt(screen)
 		if prompt == "" {
-			continue
+			continue // spinner / transient output, not a survey prompt yet
 		}
 		r.t.Logf("prompt: %s", truncate(prompt, 100))
 
 		// Loop detection: compare the question text before ':' so varying filter
 		// text on the same prompt doesn't reset the counter.
-		key := prompt
-		if i := strings.Index(prompt, ":"); i > 0 {
-			key = strings.TrimSpace(prompt[:i])
-		}
-		if key == lastPromptKey {
-			samePromptCount++
+		key := promptKey(prompt)
+		if key == lastKey {
+			repeat++
 		} else {
-			samePromptCount = 1
-			lastPromptKey = key
+			repeat, lastKey = 1, key
 		}
-		if samePromptCount >= 3 {
+		if repeat >= 3 {
 			if strings.Contains(prompt, "model") || strings.Contains(prompt, "is specified") {
 				r.t.Log("loop detected on model prompt; trying next option")
 				r.c.send(keyDown)
-				time.Sleep(300 * time.Millisecond)
+				r.c.waitForQuiet(listSettle)
 				r.c.send(keyEnter)
 				continue
 			}
-			if samePromptCount >= 5 {
-				return fmt.Errorf("init stuck in prompt loop: %q", key)
+			if repeat >= 5 {
+				return fmt.Errorf("init stuck in prompt loop: %q\n--- screen ---\n%s", key, screen)
 			}
 		}
 
@@ -316,74 +323,152 @@ func (r *runner) driveInit(ctx context.Context, exited <-chan struct{}) error {
 	}
 }
 
-// dispatchPrompt answers a single survey prompt. The case order mirrors the
-// original Python elif chain: more specific prompts must precede generic ones.
+// finishInit confirms init produced the expected artifacts on disk, allowing a
+// brief grace for files to flush after the completion marker or process exit.
+func (r *runner) finishInit(ctx context.Context) error {
+	if r.validateInitOutput() {
+		return nil
+	}
+	_ = sleepCtx(ctx, 5*time.Second)
+	if r.validateInitOutput() {
+		return nil
+	}
+	return fmt.Errorf(
+		"init finished but expected artifacts are missing on disk\n--- tail ---\n%s",
+		tail(r.c.tailString(), 2000),
+	)
+}
+
+// isInitComplete reports whether the success marker is on screen. Source:
+// init.go:1483 prints "AI agent definition added to your azd project
+// successfully!" in green at the end of runInitFromManifest.
+func isInitComplete(screen string) bool {
+	return screenContains(screen, "added to your azd project") ||
+		screenContains(screen, "agent definition added")
+}
+
+// promptKey reduces a prompt line to its stable question text (before the first
+// ':') for loop detection.
+func promptKey(prompt string) string {
+	if i := strings.Index(prompt, ":"); i > 0 {
+		return strings.TrimSpace(prompt[:i])
+	}
+	return prompt
+}
+
+// dispatchPrompt answers a single survey prompt. Cases are ordered specific →
+// generic and keyed on the verbatim messages the extension prints; the file:line
+// in each comment points at the source string this matches. The prompt argument
+// is already lowercased (see activePrompt).
+//
+// Only a subset of these fire on the --agent-name template critical path
+// (language, template, Foundry project, subscription, location, the manifest
+// model, deployment name, capacity/sku/version). The rest are kept as defensive
+// handlers because init auto-resolves them under userProvidedManifest=true (so
+// they normally do NOT prompt) or only surfaces them for specific runtime state.
 func (r *runner) dispatchPrompt(screen, prompt string) {
-	contains := func(sub string) bool { return strings.Contains(prompt, sub) }
+	has := func(sub string) bool { return strings.Contains(prompt, sub) }
 
 	switch {
-	case contains("[y/n]") || contains("(y/n)"):
-		if contains("continue with this existing agent name") {
-			r.c.send("n") // use a fresh name
+	// Yes/No confirms. "Continue with this existing agent name?" (init.go:722)
+	// only fires when the unique name already exists; decline it to reach the
+	// fresh-name input. Any other confirm: accept.
+	case has("[y/n]") || has("(y/n)") || has("continue with this existing agent name"):
+		if has("continue with this existing agent name") {
+			r.c.send("n")
 		} else {
 			r.c.send("y")
 		}
 		r.c.send(keyEnter)
-	case contains("language"):
-		r.selectByText("Python", 1500*time.Millisecond)
-	case contains("template"):
-		r.selectByText("Basic agent (Invocations", 1500*time.Millisecond)
-	case contains("protocol") || contains("git operations"):
-		r.enter() // HTTPS (default)
-	case contains("enter a different name"):
-		r.enter()
-	case contains("container registry") || contains("acr"):
-		r.enter() // blank -> create new
-	case contains("model deployment name") ||
-		(contains("enter") && contains("deployment") && contains("name")):
-		r.enter()
-	case contains("existing deployment") || contains("is specified in the agent manifest") ||
-		(contains("found") && contains("deployment")):
-		r.enter()
-	case contains("capacity"):
-		r.enter()
-	case contains("sku"):
-		r.enter()
-	case contains("version"):
-		r.enter()
-	case contains("select") && contains("model"):
-		r.selectByText("gpt-4o-mini", 1500*time.Millisecond)
-	case contains("subscription"):
+
+	// Language select — "Select a language" (init_from_templates_helpers.go:263).
+	case has("select a language"):
+		r.selectByText("Python")
+
+	// Template select — "Select a starter template" / "Select an agent template"
+	// (init_from_templates_helpers.go:304 / 327).
+	case has("starter template") || has("agent template"):
+		r.selectByText("Basic agent (Invocations")
+
+	// Foundry project hosting — "Select a Foundry project to host your agent..."
+	// (init.go:1752 / 1910); choices "Use an existing..." / "Create a new...".
+	case has("foundry project to host"):
+		if r.createProject() {
+			r.selectByText("Create a new Foundry project")
+		} else {
+			r.selectByText("Use an existing Foundry project")
+		}
+
+	// Existing-project picker — "Select a Foundry project"
+	// (init_foundry_resources_helpers.go:1360); only when reusing a project.
+	case has("select a foundry project"):
+		if p := os.Getenv("E2E_PROJECT"); p != "" {
+			r.selectByText(p)
+		} else {
+			r.enter()
+		}
+
+	// Subscription — preamble "Select an Azure subscription..."
+	// (init_foundry_resources_helpers.go:905) + azd-core picker.
+	case has("subscription"):
 		if sub := os.Getenv("E2E_SUBSCRIPTION"); sub != "" {
-			r.selectByText(sub[:min(8, len(sub))], 2*time.Second)
+			r.selectByText(sub[:min(8, len(sub))])
 		} else {
 			r.enter()
 		}
-	case contains("location") || contains("region"):
-		r.selectByText(getenvDefault("E2E_LOCATION", "eastus2"), 2*time.Second)
-	case contains("foundry project") || (contains("select") && contains("project")):
-		switch {
-		case r.createProject() && screenContains(screen, "create a new"):
-			r.selectByText("Create", 3*time.Second)
-		case os.Getenv("E2E_PROJECT") != "":
-			r.selectByText(os.Getenv("E2E_PROJECT"), 3*time.Second)
-		default:
-			r.enter()
-		}
-	case contains("account name") || contains("resource name") || contains("hub name"):
+
+	// Location — preamble "Select an Azure location..."
+	// (init_foundry_resources_helpers.go:1004) + azd-core picker.
+	case has("location") || has("region"):
+		r.selectByText(getenvDefault("E2E_LOCATION", "eastus2"))
+
+	// Manifest model decision — "Model '%s' is specified in the agent manifest."
+	// (init_models.go:463); keep the manifest model (default first choice).
+	case has("is specified in the agent manifest"):
 		r.enter()
-	case contains("model") && !contains("capacity"):
+
+	// Existing deployments / generic proceed — init_models.go:263 / 330.
+	case has("how would you like to proceed") || has("existing deployment"):
 		r.enter()
-	case contains("deploy") && (contains("mode") || contains("how")) && !contains("capacity"):
-		if r.mode == "container" {
-			r.selectByText("Container", 1500*time.Millisecond)
-		} else {
-			r.selectByText("Source", 1500*time.Millisecond)
-		}
-	case contains("what would you like to do"):
-		r.enter() // Exit setup (default)
-	case contains("enter a name"):
+
+	// Model deployment name input — init_models.go:398 (default = model name).
+	case has("model deployment name") || (has("deployment name") && has("model")):
 		r.enter()
+
+	// Model select — "Select a model" (init_models.go:704 etc.).
+	case has("select a model"):
+		r.selectByText("gpt-4o-mini")
+
+	// Deployment capacity / sku / version — azd-core PromptAiDeployment
+	// (init_models.go:519); accept defaults.
+	case has("capacity") || has("sku") || has("version"):
+		r.enter()
+
+	// Code-deploy prompts (init_from_code.go:1508 / 1534 / 1563). Auto-resolved
+	// under userProvidedManifest=true, so kept as defensive handlers only.
+	case has("select the runtime for your agent"):
+		r.enter() // default Python 3.13
+	case has("entry point"):
+		r.enter() // accept detected default
+	case has("how should dependencies be resolved"):
+		r.enter() // default remote build
+
+	// Optional infra (blank => create new): ACR login server
+	// (init_foundry_resources_helpers.go:481), App Insights (:606 / :621).
+	case has("acr login server") || has("container registry"):
+		r.enter()
+	case has("application insights"):
+		r.enter()
+
+	// Startup command (helpers.go:773); blank => skip.
+	case has("command to start your agent"):
+		r.enter()
+
+	// Replacement agent name after declining the existing-name confirm
+	// (init.go:745) / the name input (init.go:261); accept the default.
+	case has("enter a different name for your agent") || has("enter a name for your agent"):
+		r.enter()
+
 	default:
 		r.enter()
 	}
@@ -519,11 +604,15 @@ func (r *runner) runAzd(ctx context.Context, dir string, timeout time.Duration, 
 	return buf.String(), exitCode(err)
 }
 
-// selectByText filters a survey list by typing target, waits for the list to
-// settle, then confirms with Enter.
-func (r *runner) selectByText(target string, delay time.Duration) {
+// selectByText filters a survey list by typing target, waits (event-driven) for
+// the filtered list to stop redrawing, then confirms with Enter. This assumes
+// the survey / azd-core Select supports type-to-filter; that behavior is only
+// verifiable against a live run (documented in README). waitForQuiet's exited
+// result is intentionally ignored: a child that exited mid-select makes the
+// trailing Enter a harmless no-op on the closed pty.
+func (r *runner) selectByText(target string) {
 	r.c.send(target)
-	time.Sleep(delay)
+	r.c.waitForQuiet(listSettle)
 	r.c.send(keyEnter)
 }
 

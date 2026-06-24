@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/stretchr/testify/require"
@@ -154,6 +155,53 @@ func TestLayoutCellPreservesEscapedValues(t *testing.T) {
 	lines, trunc := layoutCell(value, 10, false)
 	require.False(t, trunc)
 	require.Equal(t, []string{value}, lines)
+}
+
+func TestWrapWordsTerminatesAtNarrowWidth(t *testing.T) {
+	// Regression: a width narrower than the leading rune's display width (e.g.
+	// width 1 with a width-2 CJK rune) must not loop forever. Each subtest runs
+	// in a bounded goroutine and fails if wrapping hangs.
+	cases := []struct {
+		name  string
+		words []string
+		width int
+	}{
+		{"wide rune at width 1", []string{"日本語"}, 1},
+		{"mixed ascii and wide rune at width 1", []string{"ab", "日"}, 1},
+		{"wide runes at width 0 via wrapValue", []string{"日本"}, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			done := make(chan []string, 1)
+			go func() { done <- wrapWords(tc.words, tc.width) }()
+			select {
+			case lines := <-done:
+				// Every input rune is preserved across the produced lines.
+				require.NotEmpty(t, lines)
+				require.Equal(t,
+					strings.Join(strings.Fields(strings.Join(tc.words, " ")), ""),
+					strings.ReplaceAll(strings.Join(lines, ""), " ", ""))
+			case <-time.After(2 * time.Second):
+				t.Fatal("wrapWords did not terminate")
+			}
+		})
+	}
+}
+
+func TestWrapValueNarrowWidthTerminates(t *testing.T) {
+	// layoutCell delegates to wrapValue for wrappable values; a degenerate width
+	// must still terminate and stay bounded to maxWrapLines.
+	done := make(chan []string, 1)
+	go func() {
+		lines, _ := layoutCell("日本語テスト", 1, true)
+		done <- lines
+	}()
+	select {
+	case lines := <-done:
+		require.LessOrEqual(t, len(lines), maxWrapLines)
+	case <-time.After(2 * time.Second):
+		t.Fatal("layoutCell did not terminate for a wrappable wide-rune value at width 1")
+	}
 }
 
 func TestShrinkOrderLeastImportantFirst(t *testing.T) {

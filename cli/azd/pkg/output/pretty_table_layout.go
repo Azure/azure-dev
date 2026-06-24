@@ -148,8 +148,14 @@ func shrinkOrder(cols []resolvedColumn) []int {
 // layoutCell returns the display lines for a value rendered within width and
 // reports whether content was lost (truncated). Wrappable values wrap onto at
 // most maxWrapLines lines before truncating; others render on a single line,
-// truncating with an ellipsis when needed. Values that contain terminal escape
-// sequences are returned unchanged to avoid corrupting them.
+// truncating with an ellipsis when needed.
+//
+// Values that contain terminal escape sequences (ANSI color or OSC-8
+// hyperlinks) are returned unchanged: truncating mid-sequence would corrupt the
+// output, and escape-bearing columns are only configured as non-shrinkable
+// (e.g. LOCATION links), so they are never assigned a width below their content
+// and this branch is not reached in practice. Mark such a column Truncatable
+// only after teaching this function to truncate while preserving escapes.
 func layoutCell(value string, width int, wrappable bool) ([]string, bool) {
 	if value == "" {
 		return []string{""}, false
@@ -215,6 +221,13 @@ func wrapWords(words []string, width int) []string {
 				current = ""
 			}
 			head := takeWidth(word, width)
+			if head == "" {
+				// width is too narrow for even the first rune (e.g. width 1 with a
+				// width-2 rune). Take one rune anyway so the loop makes progress;
+				// the cell overflows by at most one rune, which only happens at
+				// degenerate widths.
+				head = string([]rune(word)[0])
+			}
 			lines = append(lines, head)
 			word = word[len(head):]
 		}

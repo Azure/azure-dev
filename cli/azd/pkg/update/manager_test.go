@@ -120,7 +120,7 @@ func TestPackageManagerUninstallCmd(t *testing.T) {
 		installedBy installer.InstallType
 		want        string
 	}{
-		{"brew", installer.InstallTypeBrew, "brew uninstall azd"},
+		{"brew", installer.InstallTypeBrew, "brew trust azure/azd && brew uninstall azd"},
 		{"winget", installer.InstallTypeWinget, "winget uninstall Microsoft.Azd"},
 		{"choco", installer.InstallTypeChoco, "choco uninstall azd"},
 		{"unknown", installer.InstallTypeUnknown, "your package manager"},

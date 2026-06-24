@@ -962,7 +962,9 @@ func IsPackageManagerInstall() bool {
 func PackageManagerUninstallCmd(installedBy installer.InstallType) string {
 	switch installedBy {
 	case installer.InstallTypeBrew:
-		return "brew uninstall azd"
+		// `brew uninstall azd` reads the azure/azd cask metadata, which Homebrew
+		// blocks until the source is trusted, so trust it first.
+		return "brew trust azure/azd && brew uninstall azd"
 	case installer.InstallTypeWinget:
 		return "winget uninstall Microsoft.Azd"
 	case installer.InstallTypeChoco:

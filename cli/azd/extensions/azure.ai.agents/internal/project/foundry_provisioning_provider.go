@@ -135,6 +135,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 		// endpoint: (brownfield) reuse skips provisioning even on the on-disk
 		// path; connect to the existing project instead of compiling Bicep.
 		if endpoint := foundryServiceEndpoint(rawYAML, svcName); endpoint != "" {
+			warnNetworkIgnoredInBrownfield(rawYAML, svcName)
 			p.brownfieldEndpoint = endpoint
 			return p.resolveEnvName(ctx)
 		}
@@ -234,7 +235,7 @@ func warnNetworkIgnoredInBrownfield(rawYAML []byte, svcName string) {
 		return
 	}
 	s := r.Services[svcName]
-	if s.Endpoint != "" && !s.Network.IsZero() {
+	if strings.TrimSpace(s.Endpoint) != "" && !s.Network.IsZero() {
 		log.Printf("[warn] foundry provider: service %q sets both endpoint: and network:; "+
 			"network: is ignored in brownfield mode (the account's network posture is fixed)", svcName)
 	}

@@ -189,7 +189,7 @@ func Synthesize(in Input) (*Result, error) {
 	if len(in.AcceptedHosts) > 0 && !slices.Contains(in.AcceptedHosts, svc.Host) {
 		return nil, ErrServiceNotFound
 	}
-	if svc.Endpoint != "" {
+	if strings.TrimSpace(svc.Endpoint) != "" {
 		return nil, ErrEndpointBrownfield
 	}
 

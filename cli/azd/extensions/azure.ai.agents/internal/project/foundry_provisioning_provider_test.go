@@ -39,6 +39,15 @@ services:
 			want: "my-project",
 		},
 		{
+			name: "legacy microsoft.foundry service host",
+			yaml: `
+services:
+  my-project:
+    host: microsoft.foundry
+`,
+			want: "my-project",
+		},
+		{
 			name: "foundry service alongside other hosts",
 			yaml: `
 services:
@@ -67,6 +76,17 @@ services:
     host: azure.ai.agent
   b:
     host: azure.ai.agent
+`,
+			wantErr: true,
+		},
+		{
+			name: "new and legacy foundry services rejected as ambiguous",
+			yaml: `
+services:
+  a:
+    host: azure.ai.agent
+  b:
+    host: microsoft.foundry
 `,
 			wantErr: true,
 		},
@@ -745,6 +765,16 @@ services:
     endpoint: https://example.foundry.example.com`,
 			svcName:      "foundry",
 			wantEndpoint: "https://example.foundry.example.com",
+		},
+		{
+			name: "blank endpoint -> empty",
+			yaml: `name: x
+services:
+  foundry:
+    host: azure.ai.agent
+    endpoint: "   "`,
+			svcName:      "foundry",
+			wantEndpoint: "",
 		},
 		{
 			name: "service not in yaml -> empty",

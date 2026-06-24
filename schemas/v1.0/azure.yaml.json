@@ -192,6 +192,7 @@
                             "aks",
                             "ai.endpoint",
                             "azure.ai.agent",
+                            "microsoft.foundry",
                             "azure.ai.project",
                             "azure.ai.connection",
                             "azure.ai.toolbox",
@@ -483,6 +484,26 @@
                         "then": {
                             "allOf": [
                                 { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.routines/schemas/azure.ai.routine.json" }
+                            ],
+                            "properties": {
+                                "project": false,
+                                "runtime": false,
+                                "docker": false,
+                                "image": false,
+                                "config": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Legacy Microsoft Foundry host - deprecated compatibility alias for azure.ai.agent provisioning shape",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "microsoft.foundry" }
+                            }
+                        },
+                        "then": {
+                            "allOf": [
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json" }
                             ],
                             "properties": {
                                 "project": false,

@@ -89,21 +89,37 @@ func TestLocalInvoke_CallIDHeader(t *testing.T) {
 				t.Fatal("expected at least one request to local server")
 			}
 
-			if tc.wantCallID {
-				if gotHeader != tc.callID {
-					t.Errorf("header %s = %q, want %q", agent_api.AgentFoundryCallIDHeader, gotHeader, tc.callID)
-				}
-			} else if headerPresent {
-				t.Errorf("header %s should not be set, got %q", agent_api.AgentFoundryCallIDHeader, gotHeader)
-			}
-
-			if tc.wantUserID {
-				if gotUserHeader != tc.userIdentity {
-					t.Errorf("header %s = %q, want %q", agent_api.AgentUserIDHeader, gotUserHeader, tc.userIdentity)
-				}
-			} else if userHeaderPresent {
-				t.Errorf("header %s should not be set, got %q", agent_api.AgentUserIDHeader, gotUserHeader)
-			}
+			assertLocalHeader(
+				t,
+				agent_api.AgentFoundryCallIDHeader,
+				gotHeader,
+				tc.callID,
+				headerPresent,
+				tc.wantCallID,
+			)
+			assertLocalHeader(
+				t,
+				agent_api.AgentUserIDHeader,
+				gotUserHeader,
+				tc.userIdentity,
+				userHeaderPresent,
+				tc.wantUserID,
+			)
 		})
+	}
+}
+
+func assertLocalHeader(t *testing.T, header, got, want string, present bool, shouldBeSet bool) {
+	t.Helper()
+
+	if shouldBeSet {
+		if got != want {
+			t.Errorf("header %s = %q, want %q", header, got, want)
+		}
+		return
+	}
+
+	if present {
+		t.Errorf("header %s should not be set, got %q", header, got)
 	}
 }

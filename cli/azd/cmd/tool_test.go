@@ -347,6 +347,9 @@ type cmdMockInstaller struct {
 	upgrade func(
 		ctx context.Context, t *tool.ToolDefinition, opts ...tool.InstallOption,
 	) (*tool.InstallResult, error)
+	uninstall func(
+		ctx context.Context, t *tool.ToolDefinition, opts ...tool.InstallOption,
+	) (*tool.InstallResult, error)
 	availableSkillHosts func(t *tool.ToolDefinition) []string
 }
 
@@ -373,6 +376,15 @@ func (m *cmdMockInstaller) AvailableSkillHosts(t *tool.ToolDefinition) []string 
 		return m.availableSkillHosts(t)
 	}
 	return nil
+}
+
+func (m *cmdMockInstaller) Uninstall(
+	ctx context.Context, t *tool.ToolDefinition, opts ...tool.InstallOption,
+) (*tool.InstallResult, error) {
+	if m.uninstall != nil {
+		return m.uninstall(ctx, t, opts...)
+	}
+	return &tool.InstallResult{Tool: t, Success: true}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -989,4 +1001,136 @@ func TestResolveHostOptions_Upgrade(t *testing.T) {
 		require.NoError(t, err)
 		assert.Nil(t, opts)
 	})
+}
+
+func TestResolveHostOptions_Uninstall(t *testing.T) {
+	skill := &tool.ToolDefinition{
+		Id:       "azure-skills",
+		Name:     "Azure Skills",
+		Category: tool.ToolCategorySkill,
+	}
+	nonSkill := &tool.ToolDefinition{
+		Id:       "azure-mcp-server",
+		Category: tool.ToolCategoryServer,
+	}
+
+	newAction := func(flags *toolUninstallFlags) *toolUninstallAction {
+		manager := tool.NewManager(&cmdMockDetector{}, &cmdMockInstaller{}, nil)
+		return newToolUninstallAction(
+			nil, flags, manager,
+			mockinput.NewMockConsole(), &output.NoneFormatter{}, io.Discard,
+		).(*toolUninstallAction)
+	}
+
+	t.Run("NoFlagReturnsNil", func(t *testing.T) {
+		a := newAction(&toolUninstallFlags{})
+		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.Nil(t, opts, "no --host removes from every installed host")
+	})
+
+	t.Run("HostWithoutSkillTool", func(t *testing.T) {
+		a := newAction(&toolUninstallFlags{hosts: []string{"copilot"}})
+		_, err := a.resolveHostOptions([]*tool.ToolDefinition{nonSkill})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "only applies to skill tools")
+	})
+
+	t.Run("ExplicitHostReturnsOptions", func(t *testing.T) {
+		a := newAction(&toolUninstallFlags{hosts: []string{"claude"}})
+		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.Len(t, opts, 1)
+	})
+
+	t.Run("HostAllReturnsOptions", func(t *testing.T) {
+		a := newAction(&toolUninstallFlags{hosts: []string{"all"}})
+		opts, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		require.NoError(t, err)
+		assert.Len(t, opts, 1)
+	})
+
+	t.Run("HostAllCannotMixWithSpecificHosts", func(t *testing.T) {
+		a := newAction(&toolUninstallFlags{hosts: []string{"all", "copilot"}})
+		_, err := a.resolveHostOptions([]*tool.ToolDefinition{skill})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot be combined with specific hosts")
+	})
+}
+
+// TestToolUninstallAction_SingleTool_DelegatesAndEmitsToolId verifies that an
+// explicit single-tool uninstall delegates to the installer and emits tool.id
+// (not tool.ids), honoring the mutual-exclusion contract.
+func TestToolUninstallAction_SingleTool_DelegatesAndEmitsToolId(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+
+	var uninstalledID string
+	installer := &cmdMockInstaller{
+		uninstall: func(
+			_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption,
+		) (*tool.InstallResult, error) {
+			uninstalledID = td.Id
+			return &tool.InstallResult{Tool: td, Success: true, Strategy: "winget"}, nil
+		},
+	}
+	manager := tool.NewManager(&cmdMockDetector{}, installer, nil)
+
+	action := newToolUninstallAction(
+		[]string{"az-cli"},
+		&toolUninstallFlags{},
+		manager,
+		mockinput.NewMockConsole(),
+		&output.NoneFormatter{},
+		io.Discard,
+	)
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "az-cli", uninstalledID)
+
+	gotID, ok := lookupToolStrUsage(string(fields.ToolIdKey.Key))
+	require.True(t, ok, "tool.id must be emitted on single-tool uninstall")
+	assert.Equal(t, "az-cli", gotID)
+
+	_, ok = lookupToolStrUsage(string(fields.ToolIdsKey.Key))
+	assert.False(t, ok, "tool.ids must NOT be emitted alongside tool.id (mutual exclusion)")
+}
+
+// TestToolUninstallAction_DryRun_DoesNotDelegate verifies that a dry-run
+// uninstall emits tool.dry_run=true without invoking the installer.
+func TestToolUninstallAction_DryRun_DoesNotDelegate(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+
+	detector := &cmdMockDetector{
+		detectTool: func(_ context.Context, td *tool.ToolDefinition) (*tool.ToolStatus, error) {
+			return &tool.ToolStatus{Tool: td, Installed: true, InstalledVersion: "1.0.0"}, nil
+		},
+	}
+	uninstallCalled := false
+	installer := &cmdMockInstaller{
+		uninstall: func(
+			_ context.Context, td *tool.ToolDefinition, _ ...tool.InstallOption,
+		) (*tool.InstallResult, error) {
+			uninstallCalled = true
+			return &tool.InstallResult{Tool: td, Success: true}, nil
+		},
+	}
+	manager := tool.NewManager(detector, installer, nil)
+
+	action := newToolUninstallAction(
+		[]string{"az-cli"},
+		&toolUninstallFlags{dryRun: true},
+		manager,
+		mockinput.NewMockConsole(),
+		&output.NoneFormatter{},
+		io.Discard,
+	)
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+	assert.False(t, uninstallCalled, "dry-run must not invoke the installer")
+
+	gotDry, ok := lookupToolBoolUsage(string(fields.ToolDryRunKey.Key))
+	require.True(t, ok, "tool.dry_run must be emitted on dry-run uninstall")
+	assert.True(t, gotDry)
 }

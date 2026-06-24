@@ -1,0 +1,84 @@
+name: ext-azure-ai-agents-test
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/azure.ai.agents/**"
+      - "cli/azd/test/functional/ai_agents/**"
+      - ".github/workflows/test-ext-azure-ai-agents.yml"
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/azd/go.mod
+
+      - name: Build azd
+        working-directory: cli/azd
+        run: go build -tags=record -o azd-record ./
+
+      - name: Build extension (record-tagged)
+        working-directory: cli/azd/extensions/azure.ai.agents
+        run: go build -tags=record -o azure-ai-agents .
+
+      - name: Install extension
+        run: |
+          EXT_DIR="$HOME/.azd/extensions/azure.ai.agents"
+          mkdir -p "$EXT_DIR"
+          cp cli/azd/extensions/azure.ai.agents/azure-ai-agents "$EXT_DIR/azure-ai-agents-linux-amd64"
+          # Register extension in azd config
+          mkdir -p "$HOME/.azd"
+          python3 -c "
+          import json, pathlib
+          config = {
+            'extension': {
+              'installed': {
+                'azure.ai.agents': {
+                  'id': 'azure.ai.agents',
+                  'namespace': 'ai.agent',
+                  'capabilities': ['custom-commands', 'lifecycle-events', 'mcp-server', 'service-target-provider', 'metadata'],
+                  'displayName': 'Foundry agents (Preview)',
+                  'description': 'Ship agents with Microsoft Foundry from your terminal. (Preview)',
+                  'version': '0.0.0-test',
+                  'usage': 'azd ai agent <command> [options]',
+                  'path': 'extensions/azure.ai.agents/azure-ai-agents-linux-amd64',
+                  'source': 'azd'
+                }
+              }
+            }
+          }
+          pathlib.Path.home().joinpath('.azd', 'config.json').write_text(json.dumps(config, indent=2))
+          "
+          cat "$HOME/.azd/config.json"
+
+      - name: Run Tier 0 tests (offline)
+        working-directory: cli/azd
+        env:
+          CLI_TEST_AZD_PATH: ${{ github.workspace }}/cli/azd/azd-record
+        run: |
+          go test -tags=record -run "Test_AIAgent_(Version|Help|Init_NoPrompt_MissingFlags|SampleList|Doctor_Help)" \
+            ./test/functional/ai_agents/ -v -timeout 5m
+
+      - name: Run Tier 1 tests (playback)
+        working-directory: cli/azd
+        env:
+          AZURE_RECORD_MODE: playback
+          CLI_TEST_AZD_PATH: ${{ github.workspace }}/cli/azd/azd-record
+        run: |
+          # Make azd-record available as "azd" on PATH so that
+          # azidentity.AzureDeveloperCLICredential (exec.LookPath("azd")) works in playback
+          sudo ln -sf "$GITHUB_WORKSPACE/cli/azd/azd-record" /usr/local/bin/azd
+          go test -tags=record -run "Test_AIAgent_Init_(NoPrompt_(Defer|WithProject)|NegativeControl_BadCassette)" \
+            ./test/functional/ai_agents/ -v -timeout 5m

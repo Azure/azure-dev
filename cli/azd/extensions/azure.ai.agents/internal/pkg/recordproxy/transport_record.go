@@ -3,6 +3,12 @@
 
 //go:build record
 
+// Package recordproxy intercepts ALL outbound HTTP traffic when the "record"
+// build tag is active, routing it through the recording proxy (azd-record).
+// This includes http.DefaultTransport (covers http.Client{} and similar) and
+// Azure SDK clients (via client_options.go). Third-party SDKs that accept a
+// custom transport parameter should also use Transport from this package to
+// ensure their traffic is captured during recording/playback.
 package recordproxy
 
 import (

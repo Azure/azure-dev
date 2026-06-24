@@ -3,7 +3,7 @@
 
 //go:build record
 
-package cli_test
+package ai_agents_test
 
 import (
 	"encoding/json"

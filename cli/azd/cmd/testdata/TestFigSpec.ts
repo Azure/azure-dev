@@ -6212,6 +6212,16 @@ const completionSpec: Fig.Spec = {
 							name: ['--dry-run'],
 							description: 'Preview what would be installed without making changes',
 						},
+						{
+							name: ['--host'],
+							description: 'Install the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'host',
+								},
+							],
+						},
 					],
 					args: {
 						name: 'tool-name...',
@@ -6236,6 +6246,16 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['--dry-run'],
 							description: 'Preview what would be upgraded without making changes',
+						},
+						{
+							name: ['--host'],
+							description: 'Upgrade the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'host',
+								},
+							],
 						},
 					],
 					args: {
@@ -6339,6 +6359,16 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['--codeowners'],
+							description: 'GitHub handles or teams for the generated CODEOWNERS entry when --internal is set.',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'codeowners',
+								},
+							],
+						},
+						{
 							name: ['--id'],
 							description: 'The extension identifier (e.g., company.extension).',
 							args: [
@@ -6346,6 +6376,10 @@ const completionSpec: Fig.Spec = {
 									name: 'id',
 								},
 							],
+						},
+						{
+							name: ['--internal'],
+							description: 'Scaffold Azure/azure-dev first-party extension files. Currently supports Go extensions only.',
 						},
 						{
 							name: ['--language'],
@@ -6394,6 +6428,10 @@ const completionSpec: Fig.Spec = {
 					name: ['pack'],
 					description: 'Build and pack extension artifacts',
 					options: [
+						{
+							name: ['--bundle'],
+							description: 'Produce a single self-contained bundle (.zip) containing a registry.json and the extension artifacts, installable via \'azd extension install <bundle.zip>\'.',
+						},
 						{
 							name: ['--input', '-i'],
 							description: 'Path to the input directory.',

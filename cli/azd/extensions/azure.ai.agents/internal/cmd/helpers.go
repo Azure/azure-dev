@@ -785,7 +785,9 @@ func resolveStartupCommandForInit(
 }
 
 // resolveAgentProtocol loads the agent.yaml manifest for the service and returns the
-// protocol that the agent implements (e.g. "responses", "invocations").
+// protocol that the agent implements (e.g. "responses", "invocations") along with
+// the resolved service name. The service name is useful for callers that need to
+// avoid a redundant resolveAgentService call (and its interactive prompt) later.
 // Returns an error when the protocol cannot be determined, with a contextual
 // suggestion guiding the user to fix the underlying issue.
 func resolveAgentProtocol(
@@ -793,10 +795,10 @@ func resolveAgentProtocol(
 	azdClient *azdext.AzdClient,
 	name string,
 	noPrompt bool,
-) (agent_api.AgentProtocol, error) {
+) (agent_api.AgentProtocol, string, error) {
 	svc, project, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
-		return "", exterrors.Validation(
+		return "", "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf(
 				"could not resolve agent service in azd project: %s", err,
@@ -808,13 +810,17 @@ func resolveAgentProtocol(
 
 	agentYamlPath, err := paths.JoinAllowRoot(project.Path, svc.RelativePath, "agent.yaml")
 	if err != nil {
-		return "", exterrors.Validation(
+		return "", "", exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			fmt.Sprintf("invalid service path for %s: %s", svc.Name, err),
 			"update azure.yaml so the agent service path stays within the project directory",
 		)
 	}
-	return protocolFromAgentYaml(agentYamlPath)
+	protocol, err := protocolFromAgentYaml(agentYamlPath)
+	if err != nil {
+		return "", "", err
+	}
+	return protocol, svc.Name, nil
 }
 
 // protocolFromAgentYaml reads and parses the agent.yaml file at the given path

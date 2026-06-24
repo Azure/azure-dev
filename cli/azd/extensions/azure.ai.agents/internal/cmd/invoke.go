@@ -126,6 +126,9 @@ suppressed in raw mode.`,
   # Invoke locally (agent must be running via 'azd ai agent run')
   azd ai agent invoke --local "Hello!"
 
+  # Invoke a specific agent locally (useful in multi-agent projects)
+  azd ai agent invoke my-agent --local "Hello!"
+
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
 
@@ -198,14 +201,6 @@ suppressed in raw mode.`,
 
 			if err := validateInvokeVersionFlags(cmd, flags); err != nil {
 				return err
-			}
-
-			if flags.name != "" && flags.local {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"cannot use --local with a named agent; named agents are always invoked remotely on Foundry",
-					"omit the agent name for local invocation, or remove --local for remote",
-				)
 			}
 
 			if flags.protocol != "" {
@@ -457,6 +452,10 @@ func (a *InvokeAction) emitInvokeFailureNextStep(mode nextstep.InvokeMode, agent
 // resolveProtocol returns the protocol to use for this invocation.
 // The explicit --protocol flag takes priority; otherwise the protocol
 // is auto-detected from agent.yaml (local or remote).
+// When the protocol is auto-detected and the agent name was not already
+// set, the resolved service name is cached in a.flags.name so that
+// downstream calls (resolveRemoteContext, resolveLocalAgentKey) do an
+// exact lookup instead of prompting the user a second time.
 func (a *InvokeAction) resolveProtocol(
 	ctx context.Context,
 ) (agent_api.AgentProtocol, error) {
@@ -470,14 +469,19 @@ func (a *InvokeAction) resolveProtocol(
 	}
 	defer azdClient.Close()
 
-	if a.flags.local {
-		return resolveAgentProtocol(
-			ctx, azdClient, "", a.noPrompt,
-		)
-	}
-	return resolveAgentProtocol(
+	protocol, serviceName, err := resolveAgentProtocol(
 		ctx, azdClient, a.flags.name, a.noPrompt,
 	)
+	if err != nil {
+		return "", err
+	}
+
+	// Cache the resolved service name so downstream calls avoid re-prompting.
+	if a.flags.name == "" && serviceName != "" {
+		a.flags.name = serviceName
+	}
+
+	return protocol, nil
 }
 
 func (a *InvokeAction) httpTimeout() time.Duration {

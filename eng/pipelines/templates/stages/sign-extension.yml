@@ -43,7 +43,8 @@ stages:
               -DestinationPath mac/${{ parameters.SanitizedExtensionId }}-darwin-arm64.zip
             displayName: Package mac binary for signing
 
-          - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+          # Sign stable/CI release builds and scheduled (nightly) builds.
+          - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual', 'Schedule'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
             - template: pipelines/steps/azd-cli-mac-signing.yml@azure-sdk-build-tools
               parameters:
                 MacPath: mac
@@ -117,7 +118,8 @@ stages:
               Get-Childitem -Recurse win/ | Select-Object -Property Length,FullName
             displayName: Prepare assets for signing
 
-          - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+          # Sign stable/CI release builds and scheduled (nightly) builds.
+          - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual', 'Schedule'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
             - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
               parameters:
                 WinPath:  win

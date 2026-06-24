@@ -84,6 +84,15 @@ azd extension source add -n dev -t url -l "https://aka.ms/azd/extensions/registr
 
 Extensions installed from the dev registry are automatically promoted to the main registry when a newer version becomes available there. See the [Dev/Experimental Extension Registry](./extension-resolution-and-versioning.md#devexperimental-extension-registry) section for full details on stability expectations, submission guidelines, promotion behavior, and troubleshooting.
 
+A separate **nightly** registry distributes always-latest, automatically built snapshots of first-party extensions (signed on Windows/macOS, built from `main`). To opt in:
+
+```bash
+# Add a new extension source name 'nightly' to your `azd` configuration.
+azd extension source add -n nightly -t url -l "https://raw.githubusercontent.com/Azure/azure-dev/nightly/cli/azd/extensions/registry.nightly.json"
+```
+
+See the [Nightly Extension Registry](./extension-resolution-and-versioning.md#nightly-extension-registry) section for version semantics, promotion behavior, and caveats.
+
 #### `azd extension source list`
 
 Displays a list of installed extension sources.

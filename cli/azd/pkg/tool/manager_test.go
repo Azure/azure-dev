@@ -6,6 +6,7 @@ package tool
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,19 +21,23 @@ type mockInstaller struct {
 	installFn func(
 		ctx context.Context,
 		tool *ToolDefinition,
+		opts ...InstallOption,
 	) (*InstallResult, error)
 	upgradeFn func(
 		ctx context.Context,
 		tool *ToolDefinition,
+		opts ...InstallOption,
 	) (*InstallResult, error)
+	availableSkillHostsFn func(tool *ToolDefinition) []string
 }
 
 func (m *mockInstaller) Install(
 	ctx context.Context,
 	tool *ToolDefinition,
+	opts ...InstallOption,
 ) (*InstallResult, error) {
 	if m.installFn != nil {
-		return m.installFn(ctx, tool)
+		return m.installFn(ctx, tool, opts...)
 	}
 	return &InstallResult{
 		Tool:    tool,
@@ -43,14 +48,22 @@ func (m *mockInstaller) Install(
 func (m *mockInstaller) Upgrade(
 	ctx context.Context,
 	tool *ToolDefinition,
+	opts ...InstallOption,
 ) (*InstallResult, error) {
 	if m.upgradeFn != nil {
-		return m.upgradeFn(ctx, tool)
+		return m.upgradeFn(ctx, tool, opts...)
 	}
 	return &InstallResult{
 		Tool:    tool,
 		Success: true,
 	}, nil
+}
+
+func (m *mockInstaller) AvailableSkillHosts(tool *ToolDefinition) []string {
+	if m.availableSkillHostsFn != nil {
+		return m.availableSkillHostsFn(tool)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +220,7 @@ func TestManager_InstallTools(t *testing.T) {
 			installFn: func(
 				_ context.Context,
 				tool *ToolDefinition,
+				_ ...InstallOption,
 			) (*InstallResult, error) {
 				installedIDs = append(installedIDs, tool.Id)
 				return &InstallResult{
@@ -290,6 +304,7 @@ func TestManager_InstallToolsDependencyResolution(t *testing.T) {
 			installFn: func(
 				_ context.Context,
 				tool *ToolDefinition,
+				_ ...InstallOption,
 			) (*InstallResult, error) {
 				installedIDs = append(installedIDs, tool.Id)
 				return &InstallResult{Tool: tool, Success: true}, nil
@@ -326,6 +341,7 @@ func TestManager_InstallToolsDependencyResolution(t *testing.T) {
 			installFn: func(
 				_ context.Context,
 				tool *ToolDefinition,
+				_ ...InstallOption,
 			) (*InstallResult, error) {
 				installedIDs = append(installedIDs, tool.Id)
 				return &InstallResult{Tool: tool, Success: true}, nil
@@ -357,6 +373,7 @@ func TestManager_InstallToolsDependencyResolution(t *testing.T) {
 			installFn: func(
 				_ context.Context,
 				tool *ToolDefinition,
+				_ ...InstallOption,
 			) (*InstallResult, error) {
 				if tool.Id == "base" {
 					return &InstallResult{
@@ -393,6 +410,49 @@ func TestManager_InstallToolsDependencyResolution(t *testing.T) {
 	})
 }
 
+// TestManifest_SkillsListedAfterHostCLIs verifies the ordering invariant
+// the install flow relies on: every skill tool appears AFTER any agent
+// host CLI it could install through (e.g. github-copilot-cli) in the
+// built-in manifest. Batch installs (--all, interactive picker) derive
+// their order from the manifest, so this ordering is what guarantees the
+// host CLI is installed before the skill — no runtime re-sorting needed.
+func TestManifest_SkillsListedAfterHostCLIs(t *testing.T) {
+	t.Parallel()
+
+	tools := BuiltInTools()
+	indexOf := func(id string) int {
+		return slices.IndexFunc(tools, func(td *ToolDefinition) bool {
+			return td.Id == id
+		})
+	}
+
+	// Maps a host binary name to the manifest tool id that provides it.
+	hostToolID := map[string]string{
+		"copilot": "github-copilot-cli",
+	}
+
+	for _, td := range tools {
+		if td.Category != ToolCategorySkill {
+			continue
+		}
+		skillIdx := indexOf(td.Id)
+		for _, host := range td.SkillHosts {
+			cliID, ok := hostToolID[host.Host]
+			if !ok {
+				continue // host has no installable CLI in the manifest
+			}
+			cliIdx := indexOf(cliID)
+			if cliIdx < 0 {
+				continue
+			}
+			assert.Greater(t, skillIdx, cliIdx,
+				"skill %q must be listed after its host CLI %q in the "+
+					"manifest so batch installs install the host CLI first",
+				td.Id, cliID)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // UpgradeTools
 // ---------------------------------------------------------------------------
@@ -408,6 +468,7 @@ func TestManager_UpgradeTools(t *testing.T) {
 			upgradeFn: func(
 				_ context.Context,
 				tool *ToolDefinition,
+				_ ...InstallOption,
 			) (*InstallResult, error) {
 				upgradedIDs = append(upgradedIDs, tool.Id)
 				return &InstallResult{
@@ -540,6 +601,7 @@ func TestManager_UpgradeAll(t *testing.T) {
 			upgradeFn: func(
 				_ context.Context,
 				tool *ToolDefinition,
+				_ ...InstallOption,
 			) (*InstallResult, error) {
 				upgradedIDs = append(upgradedIDs, tool.Id)
 				return &InstallResult{
@@ -572,4 +634,23 @@ func TestManager_UpgradeAll(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, results, 1, "only installed tools upgraded")
 	})
+}
+
+// ---------------------------------------------------------------------------
+// AvailableSkillHosts
+// ---------------------------------------------------------------------------
+
+func TestManager_AvailableSkillHosts(t *testing.T) {
+	installer := &mockInstaller{
+		availableSkillHostsFn: func(_ *ToolDefinition) []string {
+			return []string{"copilot", "claude"}
+		},
+	}
+	m := NewManager(&mockDetector{}, installer, nil)
+
+	got := m.AvailableSkillHosts(&ToolDefinition{
+		Id:       "azure-skills",
+		Category: ToolCategorySkill,
+	})
+	assert.Equal(t, []string{"copilot", "claude"}, got)
 }

@@ -83,3 +83,19 @@ func TestResolveSkillInstructions_FilePath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Review from file.", got)
 }
+
+// TestResolveSkillInstructions_PathTraversal verifies a relative instructions
+// path that tries to escape the service directory with ".." is rejected rather
+// than read from disk.
+func TestResolveSkillInstructions_PathTraversal(t *testing.T) {
+	t.Parallel()
+
+	for _, instructions := range []string{"../secret.md", "../../etc/passwd.txt", "sub/../../escape.md"} {
+		_, err := resolveSkillInstructions(
+			&azdext.ServiceConfig{Name: "traversal", RelativePath: t.TempDir()},
+			instructions,
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must not contain '..'")
+	}
+}

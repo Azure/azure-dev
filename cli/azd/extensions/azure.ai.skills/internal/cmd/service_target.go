@@ -178,6 +178,13 @@ func resolveSkillInstructions(svc *azdext.ServiceConfig, instructions string) (s
 
 	path := strings.TrimSpace(instructions)
 	if !filepath.IsAbs(path) {
+		// Reject path traversal: a relative instructions path is read from disk
+		// under the service directory, so a value like "../../secret.md" must not
+		// be allowed to escape it via filepath.Join.
+		if hasParentTraversal(path) {
+			return "", fmt.Errorf(
+				"skill instructions path %q must not contain '..' or escape the service directory", instructions)
+		}
 		baseDir := svc.GetRelativePath()
 		if baseDir == "" {
 			baseDir = "."
@@ -190,6 +197,17 @@ func resolveSkillInstructions(svc *azdext.ServiceConfig, instructions string) (s
 		return "", err
 	}
 	return string(data), nil
+}
+
+// hasParentTraversal reports whether a relative path contains a ".." segment
+// that could escape its base directory, treating both '/' and '\' as separators.
+func hasParentTraversal(p string) bool {
+	for _, seg := range strings.Split(strings.ReplaceAll(p, "\\", "/"), "/") {
+		if seg == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 func isInstructionFilePath(instructions string) bool {

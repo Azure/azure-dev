@@ -392,6 +392,16 @@ Emitted on `azd provision` / `azd up` to measure adoption and safety of `infra.l
 </details>
 
 <details>
+<summary><strong>Foundry Private Networking</strong></summary>
+
+Emitted at provision start by the `microsoft.foundry` provisioning provider (the `azure.ai.agents` extension) to measure secured-agent adoption and the BYO-vs-managed split.
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `provision.network_mode` | string | `none` (public account, no `network:` block), `byo` (customer VNet), or `managed` (Foundry-managed VNet) |
+</details>
+
+<details>
 <summary><strong>Environment Management</strong></summary>
 
 | Field Key | Type | Description |

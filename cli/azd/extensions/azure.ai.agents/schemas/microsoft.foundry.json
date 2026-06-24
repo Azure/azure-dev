@@ -1,0 +1,102 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json",
+  "title": "Microsoft Foundry project (services entry with host: microsoft.foundry)",
+  "description": "Schema for a Foundry project as a service in azure.yaml. Composes per-resource sub-schemas via $ref, modeled on microsoft/AgentSchema's split-file pattern.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "endpoint": {
+      "type": "string",
+      "description": "URL of an existing Foundry project. When present, azd connects to the existing project instead of provisioning a new one. Absence of this field is the signal to provision a new project."
+    },
+    "deployments": {
+      "type": "array",
+      "description": "Model deployments to create on the Foundry project.",
+      "items": { "$ref": "Deployment.json" }
+    },
+    "connections": {
+      "type": "array",
+      "description": "Project connections.",
+      "items": { "$ref": "Connection.json" }
+    },
+    "toolboxes": {
+      "type": "array",
+      "description": "Named toolboxes that agents can reference by name.",
+      "items": { "$ref": "Toolbox.json" }
+    },
+    "skills": {
+      "type": "array",
+      "description": "Named skills that agents can reference by name.",
+      "items": { "$ref": "Skill.json" }
+    },
+    "routines": {
+      "type": "array",
+      "description": "Scheduled or event-driven agent invocations.",
+      "items": { "$ref": "Routine.json" }
+    },
+    "agents": {
+      "type": "array",
+      "description": "All agent definitions (hosted and prompt).",
+      "items": { "$ref": "Agent.json" }
+    },
+    "network": {
+      "type": "object",
+      "description": "Private networking for the Foundry account. When omitted, the account uses public networking. When present, azd always provisions an account private endpoint (the data plane is never left public) and uses platform-managed dependent stores. Ignored when 'endpoint' is set (brownfield).",
+      "additionalProperties": false,
+      "required": ["peSubnet"],
+      "properties": {
+        "agentSubnet": {
+          "description": "Egress: when set, the agent runtime is injected into this customer subnet (BYO VNet). When omitted, the agent uses the Microsoft-managed network.",
+          "$ref": "#/definitions/subnet"
+        },
+        "isolationMode": {
+          "type": "string",
+          "description": "Outbound posture of the Microsoft-managed network. Valid only when 'agentSubnet' is omitted (managed egress).",
+          "enum": ["AllowInternetOutbound", "AllowOnlyApprovedOutbound"]
+        },
+        "peSubnet": {
+          "description": "Ingress: subnet for the account private endpoint. Required. Establishes the private data plane (public network access disabled).",
+          "$ref": "#/definitions/subnet"
+        },
+        "dns": {
+          "type": "object",
+          "description": "Private DNS zones for the account private endpoint. When omitted (or resourceGroup omitted), azd creates and links the required AI private DNS zones. When resourceGroup is set, azd references existing zones in that resource group.",
+          "additionalProperties": false,
+          "properties": {
+            "resourceGroup": {
+              "type": "string",
+              "description": "Resource group that holds existing private DNS zones to reference."
+            },
+            "subscription": {
+              "type": "string",
+              "description": "Subscription that holds the existing private DNS zones. Defaults to the deployment subscription. Accepts a bare GUID or ${VAR}."
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "subnet": {
+      "type": "object",
+      "description": "Subnet descriptor. vnet and name are required. Omit prefix to reference an existing subnet; set prefix to create the subnet with that CIDR.",
+      "additionalProperties": false,
+      "required": ["vnet", "name"],
+      "properties": {
+        "vnet": {
+          "type": "string",
+          "description": "ARM resource id of the virtual network that holds (or will hold) the subnet. Supports ${VAR} resolved from the azd environment."
+        },
+        "name": {
+          "type": "string",
+          "description": "Subnet name."
+        },
+        "prefix": {
+          "type": "string",
+          "description": "Subnet CIDR. When set, azd creates the subnet; when omitted, azd references the existing subnet."
+        }
+      }
+    }
+  }
+}

@@ -386,3 +386,161 @@ agents:
 	_, err := ResolveFileRefs(cfg, root)
 	requireFileRefError(t, err, "must not be empty")
 }
+
+// In the separate-services shape an agent's body lives in its own file and the inline map is
+// itself the $ref directive (the host and service key are stripped by core before the entry
+// reaches the extension), so the whole entry resolves from the file.
+func TestResolveFileRefs_ServiceEntryTopLevelRef(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "agents/research-agent.yaml", `
+kind: hosted
+project: ../src/research-agent
+docker:
+  path: Dockerfile
+`)
+	cfg := parseYAML(t, `
+$ref: ./agents/research-agent.yaml
+`)
+
+	got, err := ResolveFileRefs(cfg, root)
+	require.NoError(t, err)
+
+	// project rebased from the agents/ directory to the project root; docker.path is not a
+	// path-bearing key and is left untouched.
+	want := parseYAML(t, `
+kind: hosted
+project: src/research-agent
+docker:
+  path: Dockerfile
+`)
+	assert.Equal(t, want, got)
+}
+
+// A service-entry-level $ref may carry sibling overrides authored inline in azure.yaml, which
+// overlay the loaded file shallowly. Inline values are left exactly as written; only the file's
+// own paths rebase.
+func TestResolveFileRefs_ServiceEntryTopLevelRefWithOverlay(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "agents/research-agent.yaml", `
+kind: hosted
+project: ../src/research-agent
+env:
+  A: "1"
+`)
+	cfg := parseYAML(t, `
+$ref: ./agents/research-agent.yaml
+kind: prompt
+instructions: Do the thing inline.
+env:
+  B: "2"
+`)
+
+	got, err := ResolveFileRefs(cfg, root)
+	require.NoError(t, err)
+
+	// kind scalar overridden, env map replaced wholesale (shallow), inline instructions prose
+	// kept as-is (not a .md/.txt path, so not rebased), and the file's project still rebases.
+	want := parseYAML(t, `
+kind: prompt
+project: src/research-agent
+instructions: Do the thing inline.
+env:
+  B: "2"
+`)
+	assert.Equal(t, want, got)
+}
+
+// Deployments stay an array on the project service, so a deployment $ref sits at the array-item
+// level. Each item resolves independently; inline items pass through unchanged.
+func TestResolveFileRefs_ProjectDeploymentsArrayItemRef(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "deployments/gpt-4o.yaml", `
+name: gpt-4o
+model:
+  name: gpt-4o
+  format: OpenAI
+  version: "2024-08-06"
+sku:
+  name: GlobalStandard
+  capacity: 10
+`)
+	cfg := parseYAML(t, `
+endpoint: https://my-account.services.ai.azure.com/api/projects/my-project
+deployments:
+  - $ref: ./deployments/gpt-4o.yaml
+  - name: text-embedding-3-large
+    model:
+      name: text-embedding-3-large
+      format: OpenAI
+      version: "1"
+    sku:
+      name: Standard
+      capacity: 50
+`)
+
+	got, err := ResolveFileRefs(cfg, root)
+	require.NoError(t, err)
+
+	want := parseYAML(t, `
+endpoint: https://my-account.services.ai.azure.com/api/projects/my-project
+deployments:
+  - name: gpt-4o
+    model:
+      name: gpt-4o
+      format: OpenAI
+      version: "2024-08-06"
+    sku:
+      name: GlobalStandard
+      capacity: 10
+  - name: text-embedding-3-large
+    model:
+      name: text-embedding-3-large
+      format: OpenAI
+      version: "1"
+    sku:
+      name: Standard
+      capacity: 50
+`)
+	assert.Equal(t, want, got)
+}
+
+// A deployment array-item $ref may carry sibling overrides, which overlay the loaded file
+// shallowly: scalars replace, and a sibling map replaces the loaded map wholesale.
+func TestResolveFileRefs_DeploymentRefOverlay(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "deployments/base.yaml", `
+name: base-name
+model:
+  name: gpt-4o
+  format: OpenAI
+  version: "2024-08-06"
+sku:
+  name: Standard
+  capacity: 10
+`)
+	cfg := parseYAML(t, `
+deployments:
+  - $ref: ./deployments/base.yaml
+    name: overridden
+    sku:
+      name: GlobalStandard
+      capacity: 100
+`)
+
+	got, err := ResolveFileRefs(cfg, root)
+	require.NoError(t, err)
+
+	// name scalar overridden, sku map replaced wholesale, model left untouched.
+	want := parseYAML(t, `
+deployments:
+  - name: overridden
+    model:
+      name: gpt-4o
+      format: OpenAI
+      version: "2024-08-06"
+    sku:
+      name: GlobalStandard
+      capacity: 100
+`)
+	assert.Equal(t, want, got)
+}

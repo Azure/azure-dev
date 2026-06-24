@@ -35,7 +35,11 @@ require (
 
 require github.com/denormal/go-gitignore v0.0.0-20180930084346-ae8ad1d07817
 
-require golang.org/x/term v0.44.0
+require (
+	go.opentelemetry.io/otel v1.43.0
+	go.opentelemetry.io/otel/trace v1.43.0
+	golang.org/x/term v0.44.0
+)
 
 require (
 	dario.cat/mergo v1.0.2 // indirect
@@ -107,10 +111,8 @@ require (
 	github.com/yuin/goldmark v1.7.16 // indirect
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/otel v1.43.0 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.43.0 // indirect
-	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.53.0 // indirect

@@ -25,6 +25,13 @@
       "description": "Private networking for the Foundry account that backs this project. When omitted, the account uses public networking. When present, azd provisions an account private endpoint and disables public data-plane access.",
       "additionalProperties": false,
       "required": ["peSubnet"],
+      "allOf": [
+        {
+          "not": {
+            "required": ["agentSubnet", "isolationMode"]
+          }
+        }
+      ],
       "properties": {
         "agentSubnet": {
           "description": "Egress: when set, the agent runtime is injected into this customer subnet (BYO VNet). When omitted, the agent uses the Microsoft-managed network.",

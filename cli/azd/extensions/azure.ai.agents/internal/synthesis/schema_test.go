@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -35,6 +36,7 @@ func TestSchema_NetworkStructuralInvariants(t *testing.T) {
 		Properties struct {
 			Network struct {
 				Required   []string                   `json:"required"`
+				AllOf      []json.RawMessage          `json:"allOf"`
 				Properties map[string]json.RawMessage `json:"properties"`
 			} `json:"network"`
 		} `json:"properties"`
@@ -54,6 +56,8 @@ func TestSchema_NetworkStructuralInvariants(t *testing.T) {
 	assert.Contains(t, net.Properties, "isolationMode", "network must expose isolationMode")
 	assert.Contains(t, net.Properties, "peSubnet", "network must expose peSubnet")
 
+	assertNetworkRejectsAgentSubnetWithIsolationMode(t, net.AllOf)
+
 	// The retired mode-enum shape must not reappear.
 	assert.NotContains(t, net.Properties, "mode", "network.mode was removed")
 	assert.NotContains(t, net.Properties, "byo", "network.byo was removed")
@@ -63,6 +67,25 @@ func TestSchema_NetworkStructuralInvariants(t *testing.T) {
 	assert.ElementsMatch(t, []string{"vnet", "name"}, sub.Required,
 		"a subnet must require exactly vnet + name")
 	assert.Contains(t, sub.Properties, "prefix", "subnet must expose prefix (create vs reference)")
+}
+
+func assertNetworkRejectsAgentSubnetWithIsolationMode(t *testing.T, allOf []json.RawMessage) {
+	t.Helper()
+
+	for _, rule := range allOf {
+		var candidate struct {
+			Not struct {
+				Required []string `json:"required"`
+			} `json:"not"`
+		}
+		require.NoError(t, json.Unmarshal(rule, &candidate), "network allOf rule must be valid JSON")
+		if slices.Contains(candidate.Not.Required, "agentSubnet") &&
+			slices.Contains(candidate.Not.Required, "isolationMode") {
+			return
+		}
+	}
+
+	assert.Fail(t, "network schema must reject agentSubnet and isolationMode together")
 }
 
 // TestARMTemplate_MatchesBicepBuild fails if templates/main.arm.json is stale

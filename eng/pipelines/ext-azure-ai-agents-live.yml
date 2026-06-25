@@ -210,6 +210,6 @@ extends:
                       [ -d "$dir" ] || continue
                       proj=$(find "$dir" -maxdepth 2 -name azure.yaml -exec dirname {} \; | head -1)
                       if [ -n "$proj" ]; then
-                        ( cd "$proj" && azd down --force --purge --no-prompt ) 2>/dev/null || true
+                        ( cd "$proj" && azd down --force --purge --no-prompt ) 2>&1 || true
                       fi
                     done

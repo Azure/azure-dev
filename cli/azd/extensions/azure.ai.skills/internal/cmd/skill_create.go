@@ -150,9 +150,12 @@ func (a *createAction) runFileMd(ctx context.Context, client *skill_api.Client) 
 
 	version, err := client.CreateVersionInline(ctx, a.flags.name, skill_api.CreateVersionRequest{
 		InlineContent: &skill_api.SkillInlineContent{
-			Description:  parsed.Description,
-			Instructions: parsed.Instructions,
-			Metadata:     parsed.Metadata,
+			Description:   parsed.Description,
+			Instructions:  parsed.Instructions,
+			Metadata:      parsed.Metadata,
+			License:       parsed.License,
+			Compatibility: parsed.Compatibility,
+			AllowedTools:  parsed.AllowedTools,
 		},
 		Default: true,
 	})
@@ -276,6 +279,7 @@ func (a *createAction) printCreateResult(ctx context.Context, client *skill_api.
 	if err != nil {
 		// Don't fail the create just because the follow-up GET failed; fall
 		// back to printing the version envelope instead.
+		fmt.Fprintf(os.Stderr, "Warning: could not fetch skill details: %v\n", err)
 		return printSkillVersionDetail(version, outputTable)
 	}
 	return printSkillDetail(skill, outputTable)

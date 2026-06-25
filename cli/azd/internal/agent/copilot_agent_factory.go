@@ -25,7 +25,7 @@ type pluginSpec struct {
 
 // requiredPlugins lists plugins that must be installed before starting a Copilot session.
 var requiredPlugins = []pluginSpec{
-	{Source: "microsoft/GitHub-Copilot-for-Azure:plugin", Name: "azure"},
+	{Source: "microsoft/azure-skills:.github/plugins/azure-skills", Name: "azure"},
 }
 
 // CopilotAgentFactory creates CopilotAgent instances with all dependencies wired.

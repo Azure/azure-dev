@@ -10,11 +10,15 @@ words:
   - agentdetect
   - Authenticode
   - azdignore
+  - borderless
   - gofmt
   - golangci
+  - golangtools
   - lightspeed
   - runewidth
   - toplevel
+  - truncatable
+  - wrappable
   - myacr
   - myconn
   - myorg

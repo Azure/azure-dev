@@ -88,3 +88,5 @@ words:
   - deepseek
   - ttfb
   - Bhadauria
+  # Test infrastructure
+  - recordproxy

@@ -25,6 +25,9 @@ const (
 	ToolCategoryServer ToolCategory = "server"
 	// ToolCategoryAzdExtension is an azd extension installed via `azd extension install`.
 	ToolCategoryAzdExtension ToolCategory = "azd-extension"
+	// ToolCategorySkill is a skill hosted by an agent CLI that azd installs through the
+	// host's native plugin commands.
+	ToolCategorySkill ToolCategory = "skill"
 )
 
 // ToolPriority indicates how strongly a tool is recommended.
@@ -43,6 +46,40 @@ type Checksum struct {
 	Algorithm string
 	// Value is the hex-encoded checksum to compare against.
 	Value string
+}
+
+// SkillHost describes how a single agent CLI host (e.g. GitHub Copilot CLI,
+// Claude Code) installs and updates a skill. Skill tools carry one or more
+// SkillHost entries; by default the installer targets the preferred host
+// (the first on PATH), but install/upgrade can target specific or all
+// detected hosts when the caller selects them (e.g. via `--host`).
+type SkillHost struct {
+	// Host is the binary name of the agent CLI (e.g. "copilot", "claude").
+	Host string
+	// MarketplaceAddCommand is the optional one-time command that registers
+	// the plugin marketplace with the host (e.g. ["plugin", "marketplace",
+	// "add", "microsoft/azure-skills"]). Empty when not required.
+	MarketplaceAddCommand []string
+	// PluginInstallCommand installs the plugin via the host
+	// (e.g. ["plugin", "install", "azure@azure-skills"]).
+	PluginInstallCommand []string
+	// PluginUpdateCommand updates the plugin to its latest version.
+	PluginUpdateCommand []string
+	// PluginListCommand lists installed plugins on the host
+	// (e.g. ["plugin", "list"]). The detector runs this command and
+	// searches the output for PluginName to decide whether the skill
+	// is installed.
+	PluginListCommand []string
+	// PluginName is the plugin's short name as reported by the host's
+	// plugin listing (e.g. "azure"). Used by the detector.
+	PluginName string
+	// VersionRegex is a Go regular expression with a capture group for
+	// the semver portion of the version output of PluginListCommand.
+	// Required: the detector treats a VersionRegex match as the
+	// authoritative signal that the skill is installed (and uses the
+	// captured group as InstalledVersion). A host with an empty
+	// VersionRegex is never reported as installed.
+	VersionRegex string
 }
 
 // InstallStrategy describes how to install a tool on a specific platform.
@@ -90,6 +127,13 @@ type ToolDefinition struct {
 	// InstallStrategies maps a GOOS value ("windows", "darwin", "linux") to the
 	// platform-specific installation strategy.
 	InstallStrategies map[string]InstallStrategy
+	// SkillHosts describes the agent CLI hosts that can install this tool when
+	// Category == ToolCategorySkill. Hosts are listed in preference order: by
+	// default the first host on PATH is used, but install/upgrade can target
+	// specific or all detected hosts (e.g. `--host all`). Platform-agnostic
+	// because the host CLI's plugin command syntax does not vary between
+	// operating systems. Ignored for other categories.
+	SkillHosts []SkillHost
 	// Dependencies lists the IDs of tools that must be installed before this one.
 	Dependencies []string
 }
@@ -132,6 +176,7 @@ var builtInTools = []*ToolDefinition{
 	vscodeGitHubCopilot(),
 	azureMCPServer(),
 	azdAIExtensions(),
+	azureSkills(),
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +306,7 @@ func azureMCPServer() *ToolDefinition {
 		Description:   "Model Context Protocol server for Azure resource interaction.",
 		Category:      ToolCategoryServer,
 		Priority:      ToolPriorityOptional,
-		Website:       "https://github.com/Azure/azure-mcp",
+		Website:       "https://github.com/microsoft/mcp",
 		DetectCommand: "npm",
 		VersionArgs:   []string{"list", "-g", "@azure/mcp", "--json"},
 		VersionRegex:  `"@azure/mcp":\s*\{\s*"version":\s*"(\d+\.\d+\.\d+(?:-[^"]*)?)"`,
@@ -286,6 +331,45 @@ func azdAIExtensions() *ToolDefinition {
 		InstallStrategies: allPlatforms(InstallStrategy{
 			InstallCommand: "azd extension install azure.ai.agents --source azd",
 		}),
+	}
+}
+
+func azureSkills() *ToolDefinition {
+	return &ToolDefinition{
+		Id:   "azure-skills",
+		Name: "Azure Skills",
+		Description: "Azure skills for AI coding assistants. " +
+			"Provides skills and MCP server configurations for Azure scenarios.",
+		Category: ToolCategorySkill,
+		Priority: ToolPriorityRecommended,
+		Website:  "https://github.com/microsoft/azure-skills",
+		SkillHosts: []SkillHost{
+			{
+				Host:                  "copilot",
+				MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
+				PluginInstallCommand:  []string{"plugin", "install", "azure@azure-skills"},
+				PluginUpdateCommand:   []string{"plugin", "update", "azure@azure-skills"},
+				PluginListCommand:     []string{"plugin", "list"},
+				PluginName:            "azure@azure-skills",
+				// Sample: "  • azure@azure-skills (v1.1.70)"
+				VersionRegex: `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
+			},
+			{
+				Host:                  "claude",
+				MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "https://github.com/microsoft/azure-skills"},
+				PluginInstallCommand:  []string{"plugin", "install", "azure"},
+				PluginUpdateCommand:   []string{"plugin", "update", "azure@azure-skills"},
+				PluginListCommand:     []string{"plugin", "list", "azure@azure-skills"},
+				PluginName:            "azure@azure-skills",
+				// Sample (target-filtered output):
+				//   ❯ azure@azure-skills
+				//     Version: 1.1.70
+				//     Scope: user
+				// Claude only returns the queried plugin, so a single
+				// "Version: x.y.z" line is unambiguous.
+				VersionRegex: `Version:\s*v?(\d+\.\d+\.\d+)`,
+			},
+		},
 	}
 }
 

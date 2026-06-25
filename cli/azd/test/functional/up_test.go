@@ -228,6 +228,114 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	t.Logf("Done\n")
 }
 
+func Test_CLI_Up_Down_GoFuncApp(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "gofuncapp")
+	require.NoError(t, err, "failed expanding sample")
+
+	// go.mod and go.sum are stored as .txt to avoid Go embed module boundary issues
+	require.NoError(t, os.Rename(filepath.Join(dir, "go.mod.txt"), filepath.Join(dir, "go.mod")))
+	require.NoError(t, os.Rename(filepath.Join(dir, "go.sum.txt"), filepath.Join(dir, "go.sum")))
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	t.Logf("Starting infra create\n")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--cwd", dir)
+	require.NoError(t, err)
+
+	// Retry deploy — resources may not be immediately discoverable via ARM tags
+	t.Logf("Starting deploy\n")
+	err = retry.Do(ctx, retry.WithMaxRetries(3, retry.NewConstant(30*time.Second)), func(ctx context.Context) error {
+		deployResult, deployErr := cli.RunCommand(ctx, "deploy", "--cwd", dir)
+		deployOutput := ""
+		if deployResult != nil {
+			deployOutput = deployResult.Stdout + deployResult.Stderr
+		}
+		if deployErr != nil && strings.Contains(deployOutput, "unable to find a resource tagged") {
+			t.Logf("Resource not yet discoverable, retrying deploy...\n")
+			return retry.RetryableError(deployErr)
+		}
+		// "partially successful" means the zip was uploaded but the worker restart
+		// health check returned 503 during cold start. The health probe below will
+		// verify the function is actually working.
+		if deployErr != nil && strings.Contains(deployOutput, "partially successful") {
+			t.Logf("Deploy partially successful (cold-start timing), proceeding to health check\n")
+			return nil
+		}
+		return deployErr
+	})
+	require.NoError(t, err)
+
+	result, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
+	require.NoError(t, err)
+
+	t.Logf("env get-values command output: %s\n", result.Stdout)
+
+	var envValues map[string]any
+	err = json.Unmarshal([]byte(result.Stdout), &envValues)
+	require.NoError(t, err)
+
+	if session != nil {
+		subID, ok := envValues[environment.SubscriptionIdEnvVarName].(string)
+		require.True(t, ok, "AZURE_SUBSCRIPTION_ID should be a string in env values")
+		session.Variables[recording.SubscriptionIdKey] = subID
+	}
+
+	funcURI, ok := envValues["AZURE_FUNCTION_URI"].(string)
+	require.True(t, ok, "AZURE_FUNCTION_URI should be a string in env values")
+	url := fmt.Sprintf("%s/api/hello", funcURI)
+	t.Logf("Issuing GET request to Go function at %s\n", url)
+
+	// Retry the request since the Go worker may need cold-start time
+	err = retry.Do(ctx, retry.WithMaxRetries(30, retry.NewConstant(10*time.Second)), func(ctx context.Context) error {
+		client := http.DefaultClient
+		if session != nil {
+			client = session.ProxyClient
+		}
+
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if reqErr != nil {
+			return retry.RetryableError(reqErr)
+		}
+		/* #nosec G107 - Potential HTTP request made with variable url false positive */
+		res, err := client.Do(req)
+		if err != nil {
+			return retry.RetryableError(err)
+		}
+		defer res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			return retry.RetryableError(
+				fmt.Errorf("expected %d but got %d for request to %s", http.StatusOK, res.StatusCode, url),
+			)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	t.Logf("Starting infra delete\n")
+	_, err = cli.RunCommand(ctx, "down", "--cwd", dir, "--force", "--purge")
+	require.NoError(t, err)
+
+	t.Logf("Done\n")
+}
+
 func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 	t.Parallel()
 

@@ -20,7 +20,7 @@ stages:
           eq('Manual', variables['BuildReasonOverride']),
           and(
             eq('', variables['BuildReasonOverride']),
-            eq('Manual', variables['Build.Reason'])
+            in(variables['Build.Reason'], 'Manual', 'Schedule')
           )
         )
       )
@@ -28,7 +28,15 @@ stages:
     variables:
       - template: /eng/pipelines/templates/variables/image.yml
       - template: /eng/pipelines/templates/variables/globals.yml
-      - ${{ if eq(parameters.PublishToDevRegistry, true) }}:
+      #
+      # Scheduled runs publish our nightly builds to a dedicated registry on the
+      # 'nightly' branch (direct push, no PR).
+      #
+      # Manual runs publish to the stable or dev registry via a pull request.
+      - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+        - name: ExtensionRegistryFile
+          value: registry.nightly.json
+      - ${{ elseif eq(parameters.PublishToDevRegistry, true) }}:
         - name: ExtensionRegistryFile
           value: registry.dev.json
         - name: ExtensionRegistryPullRequestPrefix
@@ -50,7 +58,13 @@ stages:
             succeeded(),
             ne('true', variables['Skip.Publish'])
           )
-        environment: package-publish
+        # Nightly publishes unattended, so it uses the no-approval 'none'
+        # environment and is not a governed production release. Manual releases
+        # go through the approval-gated package-publish environment.
+        ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+          environment: none
+        ${{ else }}:
+          environment: package-publish
 
         pool:
           name: azsdk-pool
@@ -59,7 +73,10 @@ stages:
 
         templateContext:
           type: releaseJob
-          isProduction: true
+          ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+            isProduction: false
+          ${{ else }}:
+            isProduction: true
           inputs:
             - input: pipelineArtifact
               artifactName: release
@@ -77,19 +94,31 @@ stages:
                   parameters:
                     Use1ESArtifactTask: true
 
-                - pwsh: |
-                    # Initial upload locations
-                    $publishUploadLocations = '${{ parameters.SanitizedExtensionId }}/$(EXT_VERSION)'
+                - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+                  - pwsh: |
+                      # Nightly: always-latest folder, overwritten each run.
+                      $publishUploadLocations = '${{ parameters.SanitizedExtensionId }}/nightly'
+                      Write-Host "Setting StorageUploadLocations to $publishUploadLocations"
+                      Write-Host "###vso[task.setvariable variable=StorageUploadLocations]$publishUploadLocations"
+                    displayName: Set StorageUploadLocations (nightly)
+                - ${{ else }}:
+                  - pwsh: |
+                      # Initial upload locations
+                      $publishUploadLocations = '${{ parameters.SanitizedExtensionId }}/$(EXT_VERSION)'
 
-                    Write-Host "Setting StorageUploadLocations to $publishUploadLocations"
-                    Write-Host "###vso[task.setvariable variable=StorageUploadLocations]$publishUploadLocations"
-                  displayName: Set StorageUploadLocations
+                      Write-Host "Setting StorageUploadLocations to $publishUploadLocations"
+                      Write-Host "###vso[task.setvariable variable=StorageUploadLocations]$publishUploadLocations"
+                    displayName: Set StorageUploadLocations
 
                 - template: /eng/pipelines/templates/steps/publish-extension.yml
                   parameters:
                     PublishUploadLocations: $(StorageUploadLocations)
                     TagPrefix: azd-ext-${{ parameters.SanitizedExtensionId }}
                     TagVersion: $(EXT_VERSION)
+                    # Nightly builds publish to storage only; no GitHub release since that'd just be a ton of clutter. 
+                    # Nightly extension consumers just grab it from blob storage.
+                    ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+                      CreateGitHubRelease: false
 
       # Updates the selected extension registry after the GitHub Release exists.
       # Production registry updates also refresh global command snapshots.
@@ -125,33 +154,113 @@ stages:
               azd ext install microsoft.azd.extensions --source azd
             displayName: Install microsoft.azd.extensions
 
-          - bash: |
-              set -euo pipefail
-              cd "${{ parameters.AzdExtensionDirectory }}"
-              azd x publish \
-                --registry "../$(ExtensionRegistryFile)" \
-                --repo "$(Build.Repository.Name)" \
-                --version "$(EXT_VERSION)"
-            displayName: Update $(ExtensionRegistryFile) (azd x publish)
-            env:
-              GH_TOKEN: $(azuresdk-github-pat)
+          - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+            # Nightly: there is no GitHub release, so publish from the local
+            # release artifacts and direct-push the nightly registry to the
+            # 'nightly' branch with a fetch/reset/retry loop so concurrent
+            # extension pipelines don't clobber each other.
+            - task: DownloadPipelineArtifact@2
+              displayName: Download release artifacts
+              inputs:
+                artifactName: release
+                targetPath: $(Build.ArtifactStagingDirectory)/release
 
-          - ${{ if ne(parameters.PublishToDevRegistry, true) }}:
             - bash: |
                 set -euo pipefail
-                cd cli/azd
-                go build .
-                go test ./cmd -run 'TestFigSpec|TestUsage'
-              displayName: Refresh Fig/Usage snapshots
-              env:
-                UPDATE_SNAPSHOTS: "true"
 
-          - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-            parameters:
-              PRBranchName: $(ExtensionRegistryPullRequestPrefix)/${{ parameters.SanitizedExtensionId }}/$(EXT_VERSION)-$(Build.BuildId)
-              CommitMsg: "[${{ parameters.AzdExtensionId }}] $(ExtensionRegistryPullRequestTitle) for $(EXT_VERSION)"
-              PRTitle: "[${{ parameters.AzdExtensionId }}] $(ExtensionRegistryPullRequestTitle) for $(EXT_VERSION)"
-              PRBody: >-
-                $(ExtensionRegistryPullRequestTitle) for the
-                [azd-ext-${{ parameters.SanitizedExtensionId }}_$(EXT_VERSION)](https://github.com/$(Build.Repository.Name)/releases/tag/azd-ext-${{ parameters.SanitizedExtensionId }}_$(EXT_VERSION))
-                release.
+                EXT_DIR="${{ parameters.AzdExtensionDirectory }}"
+                EXT_ID="${{ parameters.AzdExtensionId }}"
+                SANITIZED="${{ parameters.SanitizedExtensionId }}"
+                VERSION="$(EXT_VERSION)"
+                STATIC_HOST="$(publish-storage-static-host)"
+                ARTIFACTS_DIR="$(Build.ArtifactStagingDirectory)/release"
+                REPO="$(Build.Repository.Name)"
+                REPO_URL="https://$(azuresdk-github-pat)@github.com/${REPO}.git"
+                WORKTREE="$(Agent.TempDirectory)/nightly-registry"
+                REGISTRY_REL="cli/azd/extensions/registry.nightly.json"
+
+                git config --global user.email "azuresdk@microsoft.com"
+                git config --global user.name "azure-sdk"
+
+                max=5
+                attempt=1
+                while [ "$attempt" -le "$max" ]; do
+                  echo "== Nightly registry publish attempt ${attempt}/${max}"
+
+                  rm -rf "$WORKTREE"
+                  git clone --depth 1 --branch nightly "$REPO_URL" "$WORKTREE"
+
+                  # Normal extension publishing uses a GitHub Release as the artifact
+                  # source, so azd x publish can write release asset URLs directly to
+                  # the registry. Nightlies intentionally publish only to the storage
+                  # account, so --artifacts is the closest supported mode; it computes
+                  # the same checksums from local files but writes local file paths as
+                  # artifact URLs. The normalization step below rewrites those paths to
+                  # the public storage URLs.
+                  ( cd "$EXT_DIR" && azd x publish \
+                      --registry "$WORKTREE/$REGISTRY_REL" \
+                      --artifacts "${ARTIFACTS_DIR}/*.zip,${ARTIFACTS_DIR}/*.tar.gz" \
+                      --version "$VERSION" )
+
+                  # Rewrite artifact URLs to their public storage location and prune to
+                  # only this nightly version (storage is overwritten).
+                  pwsh -NoProfile -File eng/scripts/Update-NightlyExtensionRegistry.ps1 \
+                      -RegistryPath "$WORKTREE/$REGISTRY_REL" \
+                      -ExtensionId "$EXT_ID" \
+                      -Version "$VERSION" \
+                      -SanitizedExtensionId "$SANITIZED" \
+                      -StaticHost "$STATIC_HOST"
+
+                  cd "$WORKTREE"
+                  git add "$REGISTRY_REL"
+                  if git diff --cached --quiet; then
+                    echo "No changes to nightly registry; done."
+                    exit 0
+                  fi
+                  git commit -m "[${EXT_ID}] Nightly registry update for ${VERSION}"
+
+                  if git push origin HEAD:nightly; then
+                    echo "Nightly registry updated."
+                    exit 0
+                  fi
+
+                  echo "Push rejected (likely concurrent update); retrying from fresh tip."
+                  cd "$(Build.SourcesDirectory)"
+                  attempt=$((attempt + 1))
+                done
+
+                echo "Failed to push nightly registry after ${max} attempts." >&2
+                exit 1
+              displayName: Publish nightly registry (azd x publish + push)
+
+          - ${{ else }}:
+            - bash: |
+                set -euo pipefail
+                cd "${{ parameters.AzdExtensionDirectory }}"
+                azd x publish \
+                  --registry "../$(ExtensionRegistryFile)" \
+                  --repo "$(Build.Repository.Name)" \
+                  --version "$(EXT_VERSION)"
+              displayName: Update $(ExtensionRegistryFile) (azd x publish)
+              env:
+                GH_TOKEN: $(azuresdk-github-pat)
+
+            - ${{ if ne(parameters.PublishToDevRegistry, true) }}:
+              - bash: |
+                  set -euo pipefail
+                  cd cli/azd
+                  go build .
+                  go test ./cmd -run 'TestFigSpec|TestUsage'
+                displayName: Refresh Fig/Usage snapshots
+                env:
+                  UPDATE_SNAPSHOTS: "true"
+
+            - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+              parameters:
+                PRBranchName: $(ExtensionRegistryPullRequestPrefix)/${{ parameters.SanitizedExtensionId }}/$(EXT_VERSION)-$(Build.BuildId)
+                CommitMsg: "[${{ parameters.AzdExtensionId }}] $(ExtensionRegistryPullRequestTitle) for $(EXT_VERSION)"
+                PRTitle: "[${{ parameters.AzdExtensionId }}] $(ExtensionRegistryPullRequestTitle) for $(EXT_VERSION)"
+                PRBody: >-
+                  $(ExtensionRegistryPullRequestTitle) for the
+                  [azd-ext-${{ parameters.SanitizedExtensionId }}_$(EXT_VERSION)](https://github.com/$(Build.Repository.Name)/releases/tag/azd-ext-${{ parameters.SanitizedExtensionId }}_$(EXT_VERSION))
+                  release.

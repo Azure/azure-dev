@@ -992,7 +992,7 @@ func TestValidateErrors(t *testing.T) {
 
 		pre := newLocalArmPreflight("main.bicep", p.bicepCli, nil, "eastus2")
 		// Pass invalid JSON to trigger parseTemplate error.
-		_, err := pre.validate(
+		_, _, err := pre.validate(
 			t.Context(),
 			mockContext.Console,
 			azure.RawArmTemplate("not-json"),
@@ -1023,7 +1023,7 @@ func TestValidateErrors(t *testing.T) {
 				`"name":"x","apiVersion":"2020-10-01"}]}`)
 
 		pre := newLocalArmPreflight("nonexistent.bicepparam", p.bicepCli, nil, "")
-		results, err := pre.validate(
+		_, results, err := pre.validate(
 			t.Context(),
 			mockContext.Console,
 			raw,
@@ -1058,7 +1058,7 @@ func TestValidateErrors(t *testing.T) {
 		modulePath := moduleDir + "/main.bicep"
 
 		pre := newLocalArmPreflight(modulePath, p.bicepCli, nil, "eastus2")
-		results, err := pre.validate(
+		_, results, err := pre.validate(
 			t.Context(),
 			mockContext.Console,
 			raw,

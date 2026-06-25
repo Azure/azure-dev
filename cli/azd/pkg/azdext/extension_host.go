@@ -98,11 +98,13 @@ type ExtensionHost struct {
 	projectHandlers       []ProjectEventRegistration
 	serviceHandlers       []ServiceEventRegistration
 	provisioningProviders []ProvisioningProviderRegistration
+	validationChecks      []ValidationCheckRegistration
 
 	serviceTargetManager    serviceTargetRegistrar
 	frameworkServiceManager frameworkServiceRegistrar
 	eventManager            extensionEventManager
 	provisioningManager     provisioningRegistrar
+	validationManager       *ValidationManager
 }
 
 // NewExtensionHost creates a new ExtensionHost for the supplied azd client.
@@ -137,6 +139,9 @@ func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logg
 	}
 	if er.provisioningManager == nil {
 		er.provisioningManager = NewProvisioningManager(extensionId, er.client, brokerLogger)
+	}
+	if er.validationManager == nil {
+		er.validationManager = NewValidationManager(extensionId, er.client, brokerLogger)
 	}
 }
 
@@ -184,6 +189,16 @@ func (er *ExtensionHost) WithProvisioningProvider(
 	return er
 }
 
+// WithValidationCheck registers a validation check to be wired when Run is invoked.
+// The checkType identifies the validation context (e.g. "local-preflight"),
+// and the ruleID is a stable identifier for this check.
+func (er *ExtensionHost) WithValidationCheck(
+	reg ValidationCheckRegistration,
+) *ExtensionHost {
+	er.validationChecks = append(er.validationChecks, reg)
+	return er
+}
+
 // Run wires the configured service targets and event handlers, signals readiness, and blocks until shutdown.
 func (er *ExtensionHost) Run(ctx context.Context) error {
 	extensionId := getExtensionId(ctx)
@@ -213,6 +228,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	hasFrameworkServices := len(er.frameworkServices) > 0
 	hasEventHandlers := len(er.projectHandlers) > 0 || len(er.serviceHandlers) > 0
 	hasProvisioningProviders := len(er.provisioningProviders) > 0
+	hasValidationChecks := len(er.validationChecks) > 0
 
 	// Set up defer for cleanup
 	defer func() {
@@ -227,6 +243,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		}
 		if hasProvisioningProviders {
 			_ = er.provisioningManager.Close()
+		}
+		if hasValidationChecks {
+			_ = er.validationManager.Close()
 		}
 	}()
 
@@ -244,6 +263,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	}
 	if hasProvisioningProviders {
 		receivers = append(receivers, er.provisioningManager)
+	}
+	if hasValidationChecks {
+		receivers = append(receivers, er.validationManager)
 	}
 
 	// Start receiving messages from active managers in separate goroutines
@@ -279,7 +301,8 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	// Register all registrations in parallel - service targets, framework services, event handlers, and provisioning
 	var registrationsWaitGroup sync.WaitGroup
 	totalCount := len(er.serviceTargets) + len(er.frameworkServices) +
-		len(er.projectHandlers) + len(er.serviceHandlers) + len(er.provisioningProviders)
+		len(er.projectHandlers) + len(er.serviceHandlers) +
+		len(er.provisioningProviders) + len(er.validationChecks)
 	registrationErrChan := make(chan error, totalCount)
 
 	// Register service targets in parallel
@@ -349,6 +372,28 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 			if err := er.provisioningManager.Register(ctx, r.Factory, r.Name); err != nil {
 				registrationErrChan <- fmt.Errorf(
 					"failed to register provisioning provider '%s': %w", r.Name, err,
+				)
+			}
+		})
+	}
+
+	// Register validation checks in parallel
+	for _, reg := range er.validationChecks {
+		if reg.Factory == nil {
+			return fmt.Errorf(
+				"validation check factory for '%s/%s' is nil",
+				reg.CheckType, reg.RuleID,
+			)
+		}
+
+		r := reg
+		registrationsWaitGroup.Go(func() {
+			if err := er.validationManager.Register(
+				ctx, r.Factory, r.CheckType, r.RuleID,
+			); err != nil {
+				registrationErrChan <- fmt.Errorf(
+					"failed to register validation check '%s/%s': %w",
+					r.CheckType, r.RuleID, err,
 				)
 			}
 		})

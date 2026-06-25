@@ -699,6 +699,17 @@ var (
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,
 	}
+
+	// PreflightExtensionRulesKey records the list of rule IDs from extension-provided
+	// validation checks that were executed. Separate from PreflightRulesKey (core rules)
+	// to distinguish the source of checks in telemetry.
+	//
+	// Example: ["todo_resource_name", "naming_convention"]
+	PreflightExtensionRulesKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.extension_rules"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Provision-related fields

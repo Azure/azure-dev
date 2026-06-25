@@ -43,6 +43,7 @@ func Test_Server_Start(t *testing.T) {
 		azdext.UnimplementedAiModelServiceServer{},
 		azdext.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
+		azdext.UnimplementedValidationServiceServer{},
 	)
 
 	serverInfo, err := server.Start()
@@ -131,6 +132,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		azdext.UnimplementedAiModelServiceServer{},
 		azdext.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
+		azdext.UnimplementedValidationServiceServer{},
 	)
 
 	serverInfo, err := server.Start()

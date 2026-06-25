@@ -463,6 +463,27 @@ func TestResolveInitAgentName_NoPromptUsesDefault(t *testing.T) {
 	}
 }
 
+func TestResolveInitAgentName_InvalidNameRepromptsUntilValid(t *testing.T) {
+	t.Parallel()
+
+	tooLong := strings.Repeat("a", 64) // 64 chars > 63 char limit
+	prompts := &testPromptServiceServer{
+		promptResponses: []string{tooLong, "valid-agent"},
+	}
+	azdClient := newTestAzdClient(t, &testEnvironmentServiceServer{}, &testWorkflowServiceServer{}, prompts)
+
+	name, err := resolveInitAgentName(t.Context(), azdClient, &initFlags{}, "default-agent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "valid-agent" {
+		t.Fatalf("name = %q, want valid-agent", name)
+	}
+	if len(prompts.promptRequests) != 2 {
+		t.Fatalf("text prompts = %d, want 2 (first invalid, second valid)", len(prompts.promptRequests))
+	}
+}
+
 func TestAgentNameTemplateHelpers(t *testing.T) {
 	t.Parallel()
 

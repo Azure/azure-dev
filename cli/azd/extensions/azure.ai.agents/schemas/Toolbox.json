@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/Toolbox.json",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/Toolbox.json",
   "title": "Foundry toolbox",
   "description": "A named bundle of tools that agents reference by name (matches the existing azure.ai.agent.json Toolbox shape). Items in a toolboxes array may be inline or a $ref to an external file.",
   "oneOf": [

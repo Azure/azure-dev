@@ -153,11 +153,14 @@ type AgentServiceTargetProvider struct {
 	agentDefinitionPath string
 	projectPath         string
 	servicePath         string
-	deployContextReady  bool
-	credential          *azidentity.AzureDeveloperCLICredential
-	tenantId            string
-	env                 *azdext.Environment
-	foundryProject      *arm.ResourceID
+	// deployContextReady is set by every successful ensureDeployContext path;
+	// agentDefinitionPath is only set for the file-based and env-override paths
+	// (not the inline unified shape), so both are checked as the idempotency guard.
+	deployContextReady bool
+	credential         *azidentity.AzureDeveloperCLICredential
+	tenantId           string
+	env                *azdext.Environment
+	foundryProject     *arm.ResourceID
 }
 
 const (

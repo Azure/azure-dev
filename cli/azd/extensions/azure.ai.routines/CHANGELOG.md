@@ -1,5 +1,11 @@
 # Release History
 
+## Unreleased
+
+### Features Added
+
+- `azd deploy` now expands `${VAR}` references in a routine's `action.input` against the azd environment, leaving Foundry server-side `${{...}}` expressions untouched.
+
 ## 0.1.0-preview (2026-05-28)
 
 - Initial preview release of the `azure.ai.routines` extension for managing

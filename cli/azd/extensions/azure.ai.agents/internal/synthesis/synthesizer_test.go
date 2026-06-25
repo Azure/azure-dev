@@ -212,6 +212,16 @@ services:
 			wantErr:     ErrEndpointBrownfield,
 		},
 		{
+			name: "blank endpoint is treated as greenfield",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.agent
+    endpoint: "   "
+`,
+			serviceName: "my-project",
+		},
+		{
 			name: "service not found",
 			yaml: `
 services:

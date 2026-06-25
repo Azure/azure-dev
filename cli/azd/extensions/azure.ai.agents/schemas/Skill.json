@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/Skill.json",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/Skill.json",
   "title": "Foundry skill",
   "description": "A reusable capability bundle (instructions + tools). Items in a skills array may be inline or a $ref to an external file.",
   "oneOf": [

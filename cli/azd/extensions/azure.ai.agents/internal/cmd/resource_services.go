@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -85,6 +86,10 @@ func emitResourceServices(
 		conn := connections[i]
 		connName := sanitizeServiceName(conn.Name)
 		if connName == "" {
+			fmt.Fprintf(os.Stderr,
+				"warning: connection %q has no characters usable as an azure.yaml service key; "+
+					"skipping it. Rename the connection so it is written to azure.yaml.\n",
+				conn.Name)
 			continue
 		}
 		if err := reserveServiceName(usedNames, connName, fmt.Sprintf("connection %q", conn.Name)); err != nil {
@@ -104,6 +109,10 @@ func emitResourceServices(
 		toolbox := toolboxes[i]
 		toolboxName := sanitizeServiceName(toolbox.Name)
 		if toolboxName == "" {
+			fmt.Fprintf(os.Stderr,
+				"warning: toolbox %q has no characters usable as an azure.yaml service key; "+
+					"skipping it. Rename the toolbox so it is written to azure.yaml.\n",
+				toolbox.Name)
 			continue
 		}
 		if err := reserveServiceName(usedNames, toolboxName, fmt.Sprintf("toolbox %q", toolbox.Name)); err != nil {
@@ -130,9 +139,10 @@ func emitResourceServices(
 }
 
 // addResourceService adds a single Foundry resource service to azure.yaml with
-// its schema under config: and optionally wires its uses: list. The service is
-// added with an empty language so azd resolves a no-op framework; the owning
-// extension's service-target provider handles its (currently no-op) lifecycle.
+// its keys composed at the service level (inline, via AdditionalProperties, the
+// same shape the agent service uses) and optionally wires its uses: list. The
+// service is added with an empty language so azd resolves a no-op framework; the
+// owning extension's service-target provider handles its lifecycle.
 func addResourceService(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -142,9 +152,9 @@ func addResourceService(
 	uses []string,
 ) error {
 	svc := &azdext.ServiceConfig{
-		Name:   name,
-		Host:   host,
-		Config: cfg,
+		Name:                 name,
+		Host:                 host,
+		AdditionalProperties: cfg,
 	}
 
 	if _, err := azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{Service: svc}); err != nil {
@@ -185,9 +195,12 @@ func setServiceUses(ctx context.Context, azdClient *azdext.AzdClient, serviceNam
 	return nil
 }
 
-// sanitizeServiceName converts a resource name into a valid azure.yaml service
-// key by trimming and removing spaces, matching how the agent service name is
-// derived from the agent name.
+// sanitizeServiceName converts a resource name into an azure.yaml service key by
+// trimming surrounding whitespace and removing interior spaces, matching how the
+// agent service name is derived from the agent name. Only spaces are stripped, so
+// the name is expected to otherwise consist of characters valid in a YAML map key
+// (letters, digits, '-', '_', '.'); Foundry resource names already meet this. A
+// name that reduces to an empty string is skipped by the caller with a warning.
 func sanitizeServiceName(name string) string {
 	return strings.ReplaceAll(strings.TrimSpace(name), " ", "")
 }
@@ -220,11 +233,12 @@ func reserveServiceName(used map[string]string, name, source string) error {
 func collectProjectDeployments(services map[string]*azdext.ServiceConfig) ([]project.Deployment, error) {
 	var out []project.Deployment
 	for _, svc := range sortedServices(services) {
-		if svc.Host != AiProjectHost || svc.Config == nil {
+		props := project.ServiceConfigProps(svc)
+		if svc.Host != AiProjectHost || props == nil {
 			continue
 		}
 		var cfg *project.ServiceTargetAgentConfig
-		if err := project.UnmarshalStruct(svc.Config, &cfg); err != nil {
+		if err := project.UnmarshalStruct(props, &cfg); err != nil {
 			return nil, fmt.Errorf("parsing project service %q config: %w", svc.Name, err)
 		}
 		if cfg != nil {
@@ -251,11 +265,12 @@ func collectProjectDeployments(services map[string]*azdext.ServiceConfig) ([]pro
 func collectConnections(services map[string]*azdext.ServiceConfig) ([]project.Connection, error) {
 	var out []project.Connection
 	for _, svc := range sortedServices(services) {
-		if svc.Host != AiConnectionHost || svc.Config == nil {
+		props := project.ServiceConfigProps(svc)
+		if svc.Host != AiConnectionHost || props == nil {
 			continue
 		}
 		var conn *project.Connection
-		if err := project.UnmarshalStruct(svc.Config, &conn); err != nil {
+		if err := project.UnmarshalStruct(props, &conn); err != nil {
 			return nil, fmt.Errorf("parsing connection service %q config: %w", svc.Name, err)
 		}
 		if conn != nil {
@@ -282,11 +297,12 @@ func collectConnections(services map[string]*azdext.ServiceConfig) ([]project.Co
 func collectToolboxes(services map[string]*azdext.ServiceConfig) ([]project.Toolbox, error) {
 	var out []project.Toolbox
 	for _, svc := range sortedServices(services) {
-		if svc.Host != AiToolboxHost || svc.Config == nil {
+		props := project.ServiceConfigProps(svc)
+		if svc.Host != AiToolboxHost || props == nil {
 			continue
 		}
 		var toolbox *project.Toolbox
-		if err := project.UnmarshalStruct(svc.Config, &toolbox); err != nil {
+		if err := project.UnmarshalStruct(props, &toolbox); err != nil {
 			return nil, fmt.Errorf("parsing toolbox service %q config: %w", svc.Name, err)
 		}
 		if toolbox != nil {
@@ -330,11 +346,14 @@ func collectAgentToolConnections(services map[string]*azdext.ServiceConfig) ([]p
 func collectLegacyAgentConfigs(services map[string]*azdext.ServiceConfig) ([]*project.ServiceTargetAgentConfig, error) {
 	var out []*project.ServiceTargetAgentConfig
 	for _, svc := range sortedServices(services) {
-		if svc.Host != AiAgentHost || svc.Config == nil {
+		if svc.Host != AiAgentHost {
 			continue
 		}
-		var cfg *project.ServiceTargetAgentConfig
-		if err := project.UnmarshalStruct(svc.Config, &cfg); err != nil {
+		if project.ServiceConfigProps(svc) == nil {
+			continue
+		}
+		cfg, err := project.LoadServiceTargetAgentConfig(svc)
+		if err != nil {
 			return nil, fmt.Errorf("parsing agent service %q config: %w", svc.Name, err)
 		}
 		if cfg != nil {

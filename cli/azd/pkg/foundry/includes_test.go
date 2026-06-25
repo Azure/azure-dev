@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package project
+package foundry
 
 import (
 	"os"
@@ -12,8 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
-
-	"azureaiagent/internal/exterrors"
 )
 
 // writeFile writes content to dir/name (creating parent directories) and returns nothing; it
@@ -41,7 +39,7 @@ func requireFileRefError(t *testing.T, err error, substr string) {
 	require.Error(t, err)
 	var localErr *azdext.LocalError
 	require.ErrorAs(t, err, &localErr)
-	assert.Equal(t, exterrors.CodeInvalidFileRef, localErr.Code)
+	assert.Equal(t, CodeInvalidFileRef, localErr.Code)
 	assert.Contains(t, localErr.Message, substr)
 }
 

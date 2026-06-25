@@ -231,10 +231,17 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		hosts := make([]string, len(projectConfig.Services))
 		languages := make([]string, len(projectConfig.Services))
 		i := 0
+		legacyAgentConfig := false
 		for _, svcConfig := range projectConfig.Services {
 			hosts[i] = string(svcConfig.Host)
 			languages[i] = string(svcConfig.Language)
 			i++
+			// Detect the deprecated config-nested Foundry agent shape (a populated
+			// `config:` on a host: azure.ai.agent service). The unified shape carries
+			// the agent config as service-level properties instead.
+			if svcConfig.Host == "azure.ai.agent" && len(svcConfig.Config) > 0 {
+				legacyAgentConfig = true
+			}
 		}
 
 		slices.Sort(hosts)
@@ -242,6 +249,9 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 
 		tracing.SetUsageAttributes(fields.ProjectServiceLanguagesKey.StringSlice(languages))
 		tracing.SetUsageAttributes(fields.ProjectServiceHostsKey.StringSlice(hosts))
+		if legacyAgentConfig {
+			tracing.SetUsageAttributes(fields.FoundryAgentLegacyConfigKey.Bool(true))
+		}
 	}
 
 	return projectConfig, nil

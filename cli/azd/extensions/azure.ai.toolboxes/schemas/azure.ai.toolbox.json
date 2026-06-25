@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.toolboxes/schemas/azure.ai.toolbox.json",
+  "title": "Azure AI Foundry toolbox service",
+  "description": "Service-level configuration for a host: azure.ai.toolbox entry. The service key is the toolbox name. A toolbox is a named bundle of connection-backed tools that agents reference by name.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "description": {
+      "type": "string",
+      "description": "Description of the toolbox."
+    },
+    "tools": {
+      "type": "array",
+      "description": "List of tools in the toolbox.",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "additionalProperties": true,
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Tool type (e.g., 'web_search', 'code_interpreter', 'file_search', 'mcp', 'azure_ai_search', 'bing_grounding', 'openapi')."
+          },
+          "connection": {
+            "type": "string",
+            "description": "Name of an azure.ai.connection service (required for connection-backed tool types like 'mcp', 'azure_ai_search')."
+          }
+        }
+      }
+    }
+  }
+}

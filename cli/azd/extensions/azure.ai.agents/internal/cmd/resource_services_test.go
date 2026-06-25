@@ -367,3 +367,46 @@ func TestEmitResourceServices_WiresSiblingsToProject(t *testing.T) {
 	assert.Equal(t, []string{aiProjectServiceName}, server.uses["myconn"])
 	assert.Equal(t, []string{aiProjectServiceName, "myconn"}, server.uses["myagent"])
 }
+
+// TestEmitResourceServices_WritesServiceLevelProps verifies resource services are
+// written with their keys composed at the service level (inline via
+// AdditionalProperties, matching the agent service shape and the config:false
+// host schema conditionals) rather than nested under config:, and that the
+// collectors read that service-level shape back.
+func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+
+	deployments := []project.Deployment{{
+		Name:  "gpt-4.1-mini",
+		Model: project.DeploymentModel{Format: "OpenAI", Name: "gpt-4.1-mini", Version: "2025-04-14"},
+		Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
+	}}
+	conns := []project.Connection{{Name: "myconn", Category: "ApiKey", Target: "https://example", AuthType: "ApiKey"}}
+	require.NoError(t, emitResourceServices(t.Context(), client, "myagent", deployments, conns, nil))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+
+	services := map[string]*azdext.ServiceConfig{}
+	for _, svc := range server.added {
+		// Resource keys must travel at the service level, not under config:.
+		assert.Nil(t, svc.Config, "service %q must not nest keys under config:", svc.Name)
+		assert.NotNil(t, svc.AdditionalProperties, "service %q must carry service-level keys", svc.Name)
+		services[svc.Name] = svc
+	}
+
+	// The collectors read the service-level shape back through ServiceConfigProps.
+	gotDeployments, err := collectProjectDeployments(services)
+	require.NoError(t, err)
+	require.Len(t, gotDeployments, 1)
+	assert.Equal(t, "gpt-4.1-mini", gotDeployments[0].Name)
+
+	gotConns, err := collectConnections(services)
+	require.NoError(t, err)
+	require.Len(t, gotConns, 1)
+	assert.Equal(t, "myconn", gotConns[0].Name)
+	assert.Equal(t, "ApiKey", gotConns[0].Category)
+}

@@ -22,8 +22,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
-	"google.golang.org/protobuf/types/known/structpb"
-	"gopkg.in/yaml.v3"
 )
 
 type InitFromCodeAction struct {
@@ -128,28 +126,23 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 
 	if localDefinition != nil {
 
-		// Write the definition to a file in the src directory
-		_, err := a.writeDefinitionToSrcDir(localDefinition, srcDir)
-		if err != nil {
-			return fmt.Errorf("failed to write definition to src directory: %w", err)
+		// Generate .agentignore. The agent definition is written into the
+		// azure.yaml service entry below, not to an on-disk agent.yaml.
+		if err := a.writeAgentIgnoreToSrcDir(srcDir); err != nil {
+			return fmt.Errorf("failed to write .agentignore: %w", err)
 		}
 
 		// Add the agent to the azd project (azure.yaml) services
 		isCodeDeploy := localDefinition.CodeConfiguration != nil
-		if err := a.addToProject(ctx, srcDir, localDefinition.Name, isCodeDeploy); err != nil {
+		if err := a.addToProject(ctx, srcDir, localDefinition, isCodeDeploy); err != nil {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
-		}
-
-		if srcDir == "." {
-			fmt.Printf("  %s  %s\n", color.GreenString("+"), color.GreenString("agent.yaml"))
-		} else {
-			fmt.Printf("  %s  %s\n", color.GreenString("+"), color.GreenString("%s/agent.yaml", srcDir))
 		}
 
 		// Run post-init validations (advisory warnings only)
 		validatePostInit(srcDir, localDefinition.CodeConfiguration)
 
-		fmt.Println("\nYou can customize environment variables and other settings in the agent.yaml.")
+		fmt.Println("\nYou can customize environment variables and other settings " +
+			"in the agent service entry in azure.yaml.")
 
 		// Delegate the trailing Next: block to the shared nextstep
 		// resolver — the same path used by the manifest-driven init
@@ -766,41 +759,33 @@ func findDefaultModelIndex(modelNames []string) int32 {
 	return 0
 }
 
-// writeDefinitionToSrcDir writes a ContainerAgent to a YAML file in the src directory and returns the path
-func (a *InitFromCodeAction) writeDefinitionToSrcDir(definition *agent_yaml.ContainerAgent, srcDir string) (string, error) {
-	// Ensure the src directory exists
+// writeAgentIgnoreToSrcDir generates a default .agentignore in srcDir if one
+// does not already exist. The agent definition itself is written into the
+// azure.yaml service entry (not an on-disk agent.yaml); .agentignore is still
+// needed to scope code-deploy ZIP packaging.
+func (a *InitFromCodeAction) writeAgentIgnoreToSrcDir(srcDir string) error {
 	//nolint:gosec // scaffold directory should be readable/traversable for project tools
 	if err := os.MkdirAll(srcDir, 0755); err != nil {
-		return "", fmt.Errorf("creating src directory: %w", err)
+		return fmt.Errorf("creating src directory: %w", err)
 	}
 
-	// Create the definition file path
-	definitionPath := filepath.Join(srcDir, "agent.yaml")
-
-	// Marshal the definition to YAML
-	content, err := yaml.Marshal(definition)
-	if err != nil {
-		return "", fmt.Errorf("marshaling definition to YAML: %w", err)
-	}
-
-	// Write to the file
-	//nolint:gosec // generated manifest file should be readable by tooling and users
-	if err := os.WriteFile(definitionPath, content, 0644); err != nil {
-		return "", fmt.Errorf("writing definition to file: %w", err)
-	}
-
-	// Generate .agentignore if it doesn't already exist
 	agentIgnorePath := filepath.Join(srcDir, ".agentignore")
 	if _, err := os.Stat(agentIgnorePath); os.IsNotExist(err) {
 		if err := os.WriteFile(agentIgnorePath, []byte(project.DefaultAgentIgnoreContent()), osutil.PermissionFile); err != nil {
-			return "", fmt.Errorf("writing .agentignore: %w", err)
+			return fmt.Errorf("writing .agentignore: %w", err)
 		}
 	}
 
-	return definitionPath, nil
+	return nil
 }
 
-func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string, agentName string, isCodeDeploy bool) error {
+func (a *InitFromCodeAction) addToProject(
+	ctx context.Context,
+	targetDir string,
+	definition *agent_yaml.ContainerAgent,
+	isCodeDeploy bool,
+) error {
+	agentName := definition.Name
 	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
 	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.
 	if targetDir == "." {
@@ -837,40 +822,29 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 	resourceDeployments := agentConfig.Deployments
 	agentConfig.Deployments = nil
 
-	var agentConfigStruct *structpb.Struct
-	var err error
-	if agentConfigStruct, err = project.MarshalStruct(&agentConfig); err != nil {
-		return fmt.Errorf("failed to marshal agent config: %w", err)
+	// Embed the agent definition (formerly written to agent.yaml) as
+	// service-level properties on the azure.ai.agent entry, merged with the
+	// remaining agent config (container settings, startup command).
+	agentProps, err := project.AgentDefinitionToServiceProperties(*definition, &agentConfig)
+	if err != nil {
+		return err
 	}
 
 	language := "python"
 	if !isCodeDeploy {
 		language = "docker"
-	} else {
-		// Detect language from the on-disk definition. Skip manifest filenames:
-		// their fields are nested under template: and would not match here.
-		for _, name := range []string{"agent.yaml", "agent.yml"} {
-			langDetectPath := filepath.Join(a.projectConfig.Path, targetDir, name)
-			data, err := os.ReadFile(langDetectPath) //nolint:gosec // path from project config
-			if err != nil {
-				continue
-			}
-			var langDef agent_yaml.ContainerAgent
-			if err := yaml.Unmarshal(data, &langDef); err == nil &&
-				langDef.CodeConfiguration != nil &&
-				strings.HasPrefix(langDef.CodeConfiguration.Runtime, "dotnet_") {
-				language = "csharp"
-			}
-			break
-		}
+	} else if definition.CodeConfiguration != nil &&
+		strings.HasPrefix(definition.CodeConfiguration.Runtime, "dotnet_") {
+		language = "csharp"
 	}
 
 	serviceConfig := &azdext.ServiceConfig{
-		Name:         strings.ReplaceAll(agentName, " ", ""),
-		RelativePath: targetDir,
-		Host:         AiAgentHost,
-		Language:     language,
-		Config:       agentConfigStruct,
+		Name:                 strings.ReplaceAll(agentName, " ", ""),
+		RelativePath:         targetDir,
+		Host:                 AiAgentHost,
+		Language:             language,
+		Image:                definition.Image,
+		AdditionalProperties: agentProps,
 	}
 
 	// For hosted container-based agents, enable remote build by default. It is

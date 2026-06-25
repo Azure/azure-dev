@@ -17,8 +17,10 @@ const (
 	TerraformProviderName = "terraform"
 )
 
-// FoundryServiceHosts lists the values of `services.<name>.host` that
-// this extension's provisioning provider treats as Foundry services.
-// Must stay in sync with cmd.AiAgentHost ("azure.ai.agent") — kept here
-// to avoid a cmd -> project import cycle.
-var FoundryServiceHosts = []string{"azure.ai.agent"}
+// FoundryServiceHosts lists the values of `services.<name>.host` that this
+// extension's provisioning provider treats as Foundry services. Keep
+// "azure.ai.agent" first so suggestions point users at the unified host while
+// "microsoft.foundry" remains accepted for existing projects during migration.
+// Must stay in sync with cmd.AiAgentHost ("azure.ai.agent") — kept here to avoid
+// a cmd -> project import cycle.
+var FoundryServiceHosts = []string{"azure.ai.agent", "microsoft.foundry"}

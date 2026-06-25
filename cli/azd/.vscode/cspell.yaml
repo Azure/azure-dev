@@ -1,5 +1,11 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - braydonk
+  - osutil
+  - upserted
+  - upserting
+  - upserts
+  - yamlnode
   - agentcopilot
   - agentdetect
   - Authenticode
@@ -9,6 +15,9 @@ words:
   - lightspeed
   - runewidth
   - toplevel
+  - myacr
+  - myconn
+  - myorg
   - azcloud
   - azdext
   - azdxignore

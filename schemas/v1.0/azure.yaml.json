@@ -192,7 +192,12 @@
                             "aks",
                             "ai.endpoint",
                             "azure.ai.agent",
-                            "microsoft.foundry"
+                            "microsoft.foundry",
+                            "azure.ai.project",
+                            "azure.ai.connection",
+                            "azure.ai.toolbox",
+                            "azure.ai.skill",
+                            "azure.ai.routine"
                         ]
                     },
                     "language": {
@@ -371,7 +376,7 @@
                         }
                     },
                     {
-                        "comment": "Azure AI Agent host - requires project, supports docker and config",
+                        "comment": "Azure AI Agent host - agent schema composed at the service level; keeps project/runtime/docker/image, disables config",
                         "if": {
                             "properties": {
                                 "host": { "const": "azure.ai.agent" }
@@ -379,21 +384,118 @@
                         },
                         "then": {
                             "required": ["project"],
+                            "allOf": [
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json" }
+                            ],
                             "properties": {
-                                "config": {
-                                    "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json",
-                                    "title": "The Azure AI Agent configuration.",
-                                    "description": "Optional. Provides additional configuration for Azure AI Agent deployment."
-                                },
-                                "image": false,
+                                "config": false,
                                 "k8s": false,
-                                "apiVersion": false,
-                                "env": false
+                                "apiVersion": false
                             }
                         }
                     },
                     {
-                        "comment": "Microsoft Foundry host - project config composed at the service level",
+                        "comment": "Azure AI Foundry project host - code-less resource service; composes the project schema at the service level and disables source/container properties",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "azure.ai.project" }
+                            }
+                        },
+                        "then": {
+                            "allOf": [
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.projects/schemas/azure.ai.project.json" }
+                            ],
+                            "properties": {
+                                "project": false,
+                                "runtime": false,
+                                "docker": false,
+                                "image": false,
+                                "config": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Azure AI Foundry connection host - code-less resource service; the service key is the connection name",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "azure.ai.connection" }
+                            }
+                        },
+                        "then": {
+                            "allOf": [
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.connections/schemas/azure.ai.connection.json" }
+                            ],
+                            "properties": {
+                                "project": false,
+                                "runtime": false,
+                                "docker": false,
+                                "image": false,
+                                "config": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Azure AI Foundry toolbox host - code-less resource service; the service key is the toolbox name",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "azure.ai.toolbox" }
+                            }
+                        },
+                        "then": {
+                            "allOf": [
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.toolboxes/schemas/azure.ai.toolbox.json" }
+                            ],
+                            "properties": {
+                                "project": false,
+                                "runtime": false,
+                                "docker": false,
+                                "image": false,
+                                "config": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Azure AI Foundry skill host - code-less resource service; the service key is the skill name",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "azure.ai.skill" }
+                            }
+                        },
+                        "then": {
+                            "allOf": [
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.skills/schemas/azure.ai.skill.json" }
+                            ],
+                            "properties": {
+                                "project": false,
+                                "runtime": false,
+                                "docker": false,
+                                "image": false,
+                                "config": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Azure AI Foundry routine host - code-less resource service; the service key is the routine name and it uses: the agent it invokes",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "azure.ai.routine" }
+                            }
+                        },
+                        "then": {
+                            "allOf": [
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.routines/schemas/azure.ai.routine.json" }
+                            ],
+                            "properties": {
+                                "project": false,
+                                "runtime": false,
+                                "docker": false,
+                                "image": false,
+                                "config": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Legacy Microsoft Foundry host - deprecated compatibility alias for azure.ai.agent provisioning shape",
                         "if": {
                             "properties": {
                                 "host": { "const": "microsoft.foundry" }
@@ -401,7 +503,7 @@
                         },
                         "then": {
                             "allOf": [
-                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json" }
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json" }
                             ],
                             "properties": {
                                 "project": false,
@@ -1057,7 +1159,7 @@
                 "tag": {
                     "type": "string",
                     "title": "The tag that will be applied to the built container image.",
-                    "description": "If omitted, will default to 'azd-deploy-{unix time (seconds)}'. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
+                    "description": "If omitted, will default to 'azd-deploy-{unix time (seconds)}'. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/image:${DOCKER_IMAGE_TAG}"
                 },
                 "buildArgs": {
                     "type": "array",

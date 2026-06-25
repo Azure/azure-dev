@@ -8,25 +8,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log"
-	"net/url"
 	"os"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/optimize_api"
-	"azureaiagent/internal/pkg/azure"
-	"azureaiagent/internal/pkg/envkey"
-	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/braydonk/yaml"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // configureExtensionHost wires the service target and event handlers on the
@@ -40,19 +32,6 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 	host.
 		WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
 			return project.NewAgentServiceTargetProvider(azdClient)
-		}).
-		// The Foundry resource hosts written by `azd ai agent init` are owned by
-		// this extension too, so `azd up`/`azd deploy` can walk them without a
-		// separate extension per host. They are no-ops today; the resources are
-		// created by Bicep at provision time.
-		WithServiceTarget(AiProjectHost, func() azdext.ServiceTargetProvider {
-			return project.NewResourceServiceTargetProvider(azdClient)
-		}).
-		WithServiceTarget(AiConnectionHost, func() azdext.ServiceTargetProvider {
-			return project.NewResourceServiceTargetProvider(azdClient)
-		}).
-		WithServiceTarget(AiToolboxHost, func() azdext.ServiceTargetProvider {
-			return project.NewResourceServiceTargetProvider(azdClient)
 		}).
 		WithProvisioningProvider(project.FoundryProviderName, func() azdext.ProvisioningProvider {
 			return project.NewFoundryProvisioningProvider(azdClient)
@@ -104,28 +83,10 @@ func postprovisionHandler(
 	azdClient *azdext.AzdClient,
 	args *azdext.ProjectEventArgs,
 ) error {
-	// Toolboxes live in sibling azure.ai.toolbox services; their connection
-	// enrichment still needs the project connections (azure.ai.connection
-	// services) and the agent tool connections.
-	toolboxes, err := collectToolboxes(args.Project.Services)
-	if err != nil {
-		return fmt.Errorf("failed to collect toolboxes: %w", err)
-	}
-
-	if len(toolboxes) > 0 {
-		connections, err := collectConnections(args.Project.Services)
-		if err != nil {
-			return fmt.Errorf("failed to collect connections: %w", err)
-		}
-		toolConnections, err := collectAgentToolConnections(args.Project.Services)
-		if err != nil {
-			return fmt.Errorf("failed to collect tool connections: %w", err)
-		}
-
-		if err := provisionToolboxes(ctx, azdClient, toolboxes, connections, toolConnections); err != nil {
-			return fmt.Errorf("failed to provision toolboxes: %w", err)
-		}
-	}
+	// Toolboxes are reconciled at deploy time by the azure.ai.toolbox service
+	// target (the azure.ai.toolboxes extension), not at provision. The agent
+	// service's uses: edges order each toolbox before the agent that consumes
+	// it, so the toolbox MCP endpoints are published before the agent deploys.
 
 	hasAgent := false
 	for _, svc := range args.Project.Services {
@@ -231,23 +192,12 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	return nil
 }
 
-// isHostedAgentService checks if a service is a hosted (container) agent by reading
-// the agent.yaml kind from the service directory.
+// isHostedAgentService checks if a service is a hosted (container) agent by
+// resolving its agent definition from the service entry (the unified inline
+// shape, or a legacy agent.yaml on disk).
 func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig) bool {
-	agentYamlPath, err := paths.JoinAllowRoot(proj.Path, svc.RelativePath, "agent.yaml")
-	if err != nil {
-		return false
-	}
-	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // path from azd project config
-	if err != nil {
-		return false
-	}
-	var generic map[string]any
-	if err := yaml.Unmarshal(data, &generic); err != nil {
-		return false
-	}
-	kind, ok := generic["kind"].(string)
-	return ok && kind == string(agent_yaml.AgentKindHosted)
+	_, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+	return err == nil && isHosted
 }
 
 func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
@@ -432,9 +382,8 @@ func envUpdate(
 	connections []project.Connection,
 ) error {
 
-	var foundryAgentConfig *project.ServiceTargetAgentConfig
-
-	if err := project.UnmarshalStruct(svc.Config, &foundryAgentConfig); err != nil {
+	foundryAgentConfig, err := project.LoadServiceTargetAgentConfig(svc)
+	if err != nil {
 		return fmt.Errorf("failed to parse foundry agent config: %w", err)
 	}
 
@@ -492,40 +441,36 @@ func envUpdate(
 // agents inline in azure.yaml, so a missing file short-circuits cleanly here.
 // Service-targets that truly need agent.yaml still surface the error where they
 // read its contents.
-func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig, envName string) error {
-	agentYamlPath, err := paths.JoinAllowRoot(project.Path, svc.RelativePath, "agent.yaml")
+func kindEnvUpdate(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azdProject *azdext.ProjectConfig,
+	svc *azdext.ServiceConfig,
+	envName string,
+) error {
+	// The agent definition is carried inline on the service entry (unified shape)
+	// or, for older projects, in a legacy agent.yaml on disk. A missing or
+	// unreadable definition is tolerated here: the bicepless inline path lets
+	// users declare prompt agents that carry no hosted definition, and service
+	// targets that truly need the definition surface the error where they read it.
+	_, isHosted, source, err := project.LoadAgentDefinition(svc, azdProject.Path)
 	if err != nil {
-		return fmt.Errorf("invalid service path: %w", err)
-	}
-
-	//nolint:gosec // agentYamlPath is resolved from project/service paths in current workspace
-	data, err := os.ReadFile(agentYamlPath)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			// Bicepless inline-agents path: no on-disk agent.yaml required.
-			log.Printf("[debug] kindEnvUpdate: no agent.yaml at %s; skipping (inline-agents path)", agentYamlPath)
+		// Tolerate only a missing definition: the bicepless inline path lets users
+		// declare prompt agents that carry no hosted definition. Validation and
+		// path-traversal errors still propagate so a malformed or out-of-tree
+		// definition fails fast here.
+		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
+			localErr.Code == exterrors.CodeAgentDefinitionNotFound {
+			log.Printf("[debug] kindEnvUpdate: no agent definition for %s; skipping (inline-agents path)", svc.Name)
 			return nil
 		}
-		return fmt.Errorf("failed to read YAML file: %w", err)
+		return err
+	}
+	if source.IsLegacy() {
+		project.WarnLegacyAgentShape(source)
 	}
 
-	err = agent_yaml.ValidateAgentDefinition(data)
-	if err != nil {
-		return fmt.Errorf("agent.yaml is not valid: %w", err)
-	}
-
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return fmt.Errorf("YAML content is not valid: %w", err)
-	}
-
-	kind, ok := genericTemplate["kind"].(string)
-	if !ok {
-		return fmt.Errorf("kind field is not a valid string")
-	}
-
-	switch kind {
-	case string(agent_yaml.AgentKindHosted):
+	if isHosted {
 		if err := setEnvVar(ctx, azdClient, envName, "ENABLE_HOSTED_AGENTS", "true"); err != nil {
 			return err
 		}
@@ -673,50 +618,32 @@ func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string,
 }
 
 func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient, svc *azdext.ServiceConfig) error {
-	var foundryAgentConfig *project.ServiceTargetAgentConfig
-	if err := project.UnmarshalStruct(svc.Config, &foundryAgentConfig); err != nil {
+	foundryAgentConfig, err := project.LoadServiceTargetAgentConfig(svc)
+	if err != nil {
 		return fmt.Errorf("failed to parse foundry agent config: %w", err)
 	}
 
-	// Initialize result with existing values
-	result := &project.ContainerSettings{}
-
-	// Check and populate base object
-	containerSettings := foundryAgentConfig.Container
-	if containerSettings == nil {
-		containerSettings = &project.ContainerSettings{}
-	}
-
-	// Check and populate Resources
-	if containerSettings.Resources == nil {
-		result.Resources = &project.ResourceSettings{}
-	} else {
-		result.Resources = &project.ResourceSettings{
-			Memory: containerSettings.Resources.Memory,
-			Cpu:    containerSettings.Resources.Cpu,
-		}
+	// Resolve the container resources, applying defaults when unset.
+	result := &project.ResourceSettings{}
+	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
+		result.Memory = foundryAgentConfig.Container.Resources.Memory
+		result.Cpu = foundryAgentConfig.Container.Resources.Cpu
 	}
 
 	// Set default values if zero or empty
-	if result.Resources.Memory == "" {
-		result.Resources.Memory = project.DefaultMemory
+	if result.Memory == "" {
+		result.Memory = project.DefaultMemory
 	}
 
-	if result.Resources.Cpu == "" {
-		result.Resources.Cpu = project.DefaultCpu
+	if result.Cpu == "" {
+		result.Cpu = project.DefaultCpu
 	}
 
-	// Update the container settings in the existing config
-	foundryAgentConfig.Container = result
-
-	// Marshal the complete updated agent config back to the service config
-	var agentConfigStruct *structpb.Struct
-	var err error
-	if agentConfigStruct, err = project.MarshalStruct(foundryAgentConfig); err != nil {
-		return fmt.Errorf("failed to marshal agent config: %w", err)
+	// Persist the resolved container settings back onto the service's inline
+	// properties, preserving the agent definition and other config keys.
+	if err := project.SetAgentContainerSettings(svc, &project.ContainerSettings{Resources: result}); err != nil {
+		return fmt.Errorf("failed to update agent container settings: %w", err)
 	}
-
-	svc.Config = agentConfigStruct
 
 	// Need to add the service config back to the project for use further down the pipeline
 	req := &azdext.AddServiceRequest{Service: svc}
@@ -726,174 +653,6 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 	}
 
 	return nil
-}
-
-// provisionToolboxes creates or updates Foundry Toolsets for each toolbox
-// sourced from the sibling azure.ai.toolbox services. Called during
-// post-provision after the project endpoint has been created by Bicep. The
-// connections and toolConnections are used to resolve connection references
-// declared on the toolboxes.
-func provisionToolboxes(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	toolboxes []project.Toolbox,
-	connections []project.Connection,
-	toolConnections []project.ToolConnection,
-) error {
-	if len(toolboxes) == 0 {
-		return nil
-	}
-
-	// Build connection lookup for enriching tool entries with server_url/server_label
-	connByName := toolboxConnectionsByName(&project.ServiceTargetAgentConfig{
-		Connections:     connections,
-		ToolConnections: toolConnections,
-	})
-
-	currentEnv, err := azdClient.Environment().GetCurrent(
-		ctx, &azdext.EmptyRequest{},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
-	}
-
-	envValue, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: currentEnv.Environment.Name,
-		Key:     "FOUNDRY_PROJECT_ENDPOINT",
-	})
-	if err != nil || envValue.Value == "" {
-		return exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
-			"FOUNDRY_PROJECT_ENDPOINT is required for toolbox provisioning",
-			"run 'azd provision' to create the AI project first",
-		)
-	}
-	projectEndpoint := envValue.Value
-
-	envValue, err = azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: currentEnv.Environment.Name,
-		Key:     "AZURE_TENANT_ID",
-	})
-	if err != nil || envValue.Value == "" {
-		return exterrors.Dependency(
-			exterrors.CodeMissingAzureTenantId,
-			"AZURE_TENANT_ID is required for toolbox provisioning",
-			"run 'azd auth login' to authenticate",
-		)
-	}
-	tenantId := envValue.Value
-
-	cred, err := azidentity.NewAzureDeveloperCLICredential(
-		&azidentity.AzureDeveloperCLICredentialOptions{
-			TenantID:                   tenantId,
-			AdditionallyAllowedTenants: []string{"*"},
-		},
-	)
-	if err != nil {
-		return exterrors.Auth(
-			exterrors.CodeCredentialCreationFailed,
-			fmt.Sprintf("failed to create credential: %s", err),
-			"run 'azd auth login' to authenticate",
-		)
-	}
-
-	toolboxClient := azure.NewFoundryToolboxClient(
-		projectEndpoint, cred,
-	)
-
-	// Build azd env lookup for resolving ${VAR} references in tool entries
-	azdEnv, err := getAllEnvVars(ctx, azdClient, currentEnv.Environment.Name)
-	if err != nil {
-		return fmt.Errorf("failed to load environment variables: %w", err)
-	}
-
-	// Build connection ID lookup from bicep outputs (name → ARM resource ID)
-	connIDMap, err := parseConnectionIDs(azdEnv["AI_PROJECT_CONNECTION_IDS_JSON"])
-	if err != nil {
-		return fmt.Errorf("loading connection IDs: %w", err)
-	}
-
-	for _, toolbox := range toolboxes {
-		fmt.Fprintf(
-			os.Stderr, "Provisioning toolbox: %s\n", toolbox.Name,
-		)
-
-		// Resolve ${VAR} references in tool map values before sending to API
-		resolveToolboxEnvVars(&toolbox, azdEnv)
-
-		// Fill in server_url/server_label from connection data
-		enrichToolboxFromConnections(&toolbox, connByName)
-
-		// Replace project_connection_id friendly names with ARM resource IDs
-		resolveToolboxConnectionIDs(&toolbox, connIDMap)
-
-		version, err := createToolboxVersion(
-			ctx, toolboxClient, toolbox,
-		)
-		if err != nil {
-			return err
-		}
-
-		if err := registerToolboxEnvVars(
-			ctx, azdClient,
-			currentEnv.Environment.Name,
-			projectEndpoint, toolbox.Name, version,
-		); err != nil {
-			return err
-		}
-
-		fmt.Fprintf(
-			os.Stderr, "Toolbox '%s' provisioned\n", toolbox.Name,
-		)
-	}
-
-	return nil
-}
-
-// createToolboxVersion creates a new version of a toolbox.
-// If the toolbox does not exist, it will be created automatically.
-// Returns the version identifier of the newly created version.
-func createToolboxVersion(
-	ctx context.Context,
-	client *azure.FoundryToolboxClient,
-	toolbox project.Toolbox,
-) (string, error) {
-	req := &azure.CreateToolboxVersionRequest{
-		Description: toolbox.Description,
-		Tools:       toolbox.Tools,
-	}
-
-	result, err := client.CreateToolboxVersion(ctx, toolbox.Name, req)
-	if err != nil {
-		return "", exterrors.Internal(
-			exterrors.CodeCreateToolboxVersionFailed,
-			fmt.Sprintf("failed to create toolbox version '%s': %s", toolbox.Name, err),
-		)
-	}
-
-	return result.Version, nil
-}
-
-// registerToolboxEnvVars sets TOOLBOX_{NAME}_MCP_ENDPOINT with the versioned URL.
-func registerToolboxEnvVars(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	envName string,
-	projectEndpoint string,
-	toolboxName string,
-	toolboxVersion string,
-) error {
-	envKey := envkey.ToolboxMCPEndpoint(toolboxName)
-
-	endpoint := strings.TrimRight(projectEndpoint, "/")
-	mcpEndpoint := fmt.Sprintf(
-		"%s/toolboxes/%s/versions/%s/mcp?api-version=v1",
-		endpoint, url.PathEscape(toolboxName), url.PathEscape(toolboxVersion),
-	)
-
-	return setEnvVar(
-		ctx, azdClient, envName, envKey, mcpEndpoint,
-	)
 }
 
 // resolveToolboxEnvVars resolves ${VAR} references in toolbox name, description,

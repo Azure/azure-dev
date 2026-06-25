@@ -26,7 +26,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/google/uuid"
-	"go.yaml.in/yaml/v3"
 	"golang.org/x/term"
 )
 
@@ -707,6 +706,9 @@ type ServiceRunContext struct {
 	ServiceName    string // the resolved service name (from azure.yaml)
 	ProjectDir     string // absolute path to the service source directory
 	StartupCommand string // startupCommand from AdditionalProperties (may be empty)
+	// Definition is the resolved agent definition (from the inline azure.yaml
+	// entry or a legacy agent.yaml). It is nil when no definition can be resolved.
+	Definition *agent_yaml.ContainerAgent
 }
 
 // resolveServiceRunContext queries the azd project to find the matching azure.ai.agent
@@ -727,10 +729,15 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	}
 
 	var startupCmd string
-	if svc.Config != nil {
-		var agentConfig projectpkg.ServiceTargetAgentConfig
-		if err := projectpkg.UnmarshalStruct(svc.Config, &agentConfig); err == nil {
-			startupCmd = agentConfig.StartupCommand
+	if agentConfig, cfgErr := projectpkg.LoadServiceTargetAgentConfig(svc); cfgErr == nil {
+		startupCmd = agentConfig.StartupCommand
+	}
+
+	var definition *agent_yaml.ContainerAgent
+	if def, _, source, defErr := projectpkg.LoadAgentDefinition(svc, project.Path); defErr == nil {
+		definition = &def
+		if source.IsLegacy() {
+			projectpkg.WarnLegacyAgentShape(source)
 		}
 	}
 
@@ -738,6 +745,7 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 		ServiceName:    svc.Name,
 		ProjectDir:     projectDir,
 		StartupCommand: startupCmd,
+		Definition:     definition,
 	}, nil
 }
 
@@ -797,7 +805,7 @@ func resolveAgentProtocol(
 	name string,
 	noPrompt bool,
 ) (agent_api.AgentProtocol, error) {
-	svc, project, err := resolveAgentService(ctx, azdClient, name, noPrompt)
+	svc, proj, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
@@ -809,56 +817,42 @@ func resolveAgentProtocol(
 		)
 	}
 
-	agentYamlPath, err := paths.JoinAllowRoot(project.Path, svc.RelativePath, "agent.yaml")
+	hosted, isHosted, source, err := projectpkg.LoadAgentDefinition(svc, proj.Path)
 	if err != nil {
 		return "", exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("invalid service path for %s: %s", svc.Name, err),
-			"update azure.yaml so the agent service path stays within the project directory",
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("could not resolve the agent definition for %s: %s", svc.Name, err),
+			"ensure the agent definition is present in azure.yaml or run `azd ai agent init`",
 		)
 	}
-	return protocolFromAgentYaml(agentYamlPath)
+	if source.IsLegacy() {
+		projectpkg.WarnLegacyAgentShape(source)
+	}
+	if !isHosted {
+		return "", exterrors.Validation(
+			exterrors.CodeUnsupportedAgentKind,
+			fmt.Sprintf("agent service %s is not a hosted agent", svc.Name),
+			"only hosted agents can be invoked",
+		)
+	}
+
+	return protocolFromContainerAgent(hosted)
 }
 
-// protocolFromAgentYaml reads and parses the agent.yaml file at the given path
-// and extracts the protocol to use for invocation. Returns an error with a
-// contextual suggestion when the file cannot be read, parsed, or does not
-// declare exactly one invocable protocol.
+// protocolFromContainerAgent extracts the protocol to use for invocation from a
+// resolved agent definition. Returns an error with a contextual suggestion when
+// the definition does not declare exactly one invocable protocol.
 //
 // When multiple protocols are declared (e.g. "responses" + "a2a"), the caller
 // must use --protocol to disambiguate.
-func protocolFromAgentYaml(
-	agentYamlPath string,
+func protocolFromContainerAgent(
+	hosted agent_yaml.ContainerAgent,
 ) (agent_api.AgentProtocol, error) {
-	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // G304: path constructed from azd project root
-	if err != nil {
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf(
-				"could not read agent.yaml at %s: %s",
-				agentYamlPath, err,
-			),
-			"ensure agent.yaml exists in the azd service directory",
-		)
-	}
-
-	var hosted agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &hosted); err != nil {
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf(
-				"could not parse agent.yaml at %s: %s",
-				agentYamlPath, err,
-			),
-			"fix the agent.yaml syntax",
-		)
-	}
-
 	if len(hosted.Protocols) == 0 {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			"agent.yaml does not declare any protocols",
-			"add a protocols section to agent.yaml",
+			"the agent definition does not declare any protocols",
+			"add a protocols section to the agent definition",
 		)
 	}
 

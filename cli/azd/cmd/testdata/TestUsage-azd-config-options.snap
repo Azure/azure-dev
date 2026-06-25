@@ -19,7 +19,4 @@ Examples
   List all available configuration settings in JSON format
     azd config options -o json
 
-  List all available configuration settings in table format
-    azd config options -o table
-
 

@@ -4,8 +4,10 @@
 package azure
 
 import (
+	"azureaiagent/internal/pkg/recordproxy"
 	"azureaiagent/internal/version"
 	"fmt"
+	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -17,7 +19,7 @@ import (
 func NewArmClientOptions() *arm.ClientOptions {
 	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
 
-	return &arm.ClientOptions{
+	opts := &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Logging: policy.LogOptions{
 				AllowedHeaders: []string{azsdk.MsCorrelationIdHeader},
@@ -28,4 +30,11 @@ func NewArmClientOptions() *arm.ClientOptions {
 			},
 		},
 	}
+
+	// In record/playback mode, inject proxy transport so ARM calls route through the recording proxy.
+	if recordproxy.Transport != nil {
+		opts.ClientOptions.Transport = &http.Client{Transport: recordproxy.Transport}
+	}
+
+	return opts
 }

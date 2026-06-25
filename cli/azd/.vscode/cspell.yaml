@@ -4,11 +4,15 @@ words:
   - agentdetect
   - Authenticode
   - azdignore
+  - borderless
   - gofmt
   - golangci
+  - golangtools
   - lightspeed
   - runewidth
   - toplevel
+  - truncatable
+  - wrappable
   - azcloud
   - azdext
   - azdxignore

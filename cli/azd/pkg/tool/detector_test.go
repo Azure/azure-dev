@@ -435,6 +435,247 @@ func TestDetectTool_Extension(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// DetectTool — Skills (host plugin listing)
+// ---------------------------------------------------------------------------
+
+// TestDetectTool_Skill_Copilot exercises detectSkill for the copilot
+// host, whose `plugin list` output is a bullet list. The skill is
+// reported installed only when PluginName appears AND the VersionRegex
+// captures a version.
+func TestDetectTool_Skill_Copilot(t *testing.T) {
+	t.Parallel()
+
+	copilotSkill := func() *ToolDefinition {
+		return &ToolDefinition{
+			Id:       "azure-skills",
+			Name:     "Azure Skills",
+			Category: ToolCategorySkill,
+			SkillHosts: []SkillHost{
+				{
+					Host:              "copilot",
+					PluginListCommand: []string{"plugin", "list"},
+					PluginName:        "azure@azure-skills",
+					VersionRegex:      `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name            string
+		stdout          string
+		expectInstalled bool
+		expectVersion   string
+	}{
+		{
+			name:            "Installed",
+			stdout:          "Installed plugins:\n  • azure@azure-skills (v1.1.70)\n",
+			expectInstalled: true,
+			expectVersion:   "1.1.70",
+		},
+		{
+			name:            "NotInstalled",
+			stdout:          "Installed plugins:\n  • other@thing (v0.0.1)\n",
+			expectInstalled: false,
+			expectVersion:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			runner := mockexec.NewMockCommandRunner()
+			runner.MockToolInPath("copilot", nil)
+			runner.When(func(args exec.RunArgs, _ string) bool {
+				return args.Cmd == "copilot" &&
+					slices.Contains(args.Args, "plugin") &&
+					slices.Contains(args.Args, "list")
+			}).Respond(exec.RunResult{ExitCode: 0, Stdout: tt.stdout})
+
+			d := NewDetector(runner)
+			status, err := d.DetectTool(t.Context(), copilotSkill())
+
+			require.NoError(t, err)
+			require.NotNil(t, status)
+			assert.Equal(t, tt.expectInstalled, status.Installed)
+			assert.Equal(t, tt.expectVersion, status.InstalledVersion)
+		})
+	}
+}
+
+// TestDetectTool_Skill_Claude exercises detectSkill for the claude host.
+// claude's target-filtered `plugin list azure@azure-skills` echoes the
+// queried name even when the plugin is NOT installed, so the VersionRegex
+// match on the "Version:" line is the authoritative existence signal.
+func TestDetectTool_Skill_Claude(t *testing.T) {
+	t.Parallel()
+
+	claudeSkill := func() *ToolDefinition {
+		return &ToolDefinition{
+			Id:       "azure-skills",
+			Name:     "Azure Skills",
+			Category: ToolCategorySkill,
+			SkillHosts: []SkillHost{
+				{
+					Host:              "claude",
+					PluginListCommand: []string{"plugin", "list", "azure@azure-skills"},
+					PluginName:        "azure@azure-skills",
+					VersionRegex:      `Version:\s*v?(\d+\.\d+\.\d+)`,
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name            string
+		stdout          string
+		expectInstalled bool
+		expectVersion   string
+	}{
+		{
+			name: "Installed",
+			stdout: "❯ azure@azure-skills\n" +
+				"    Version: 1.1.70\n" +
+				"    Scope: user\n",
+			expectInstalled: true,
+			expectVersion:   "1.1.70",
+		},
+		{
+			// claude echoes the queried name even when not installed; the
+			// absence of a Version line means NOT installed.
+			name:            "EchoesNameButNotInstalled",
+			stdout:          "azure@azure-skills not found\n",
+			expectInstalled: false,
+			expectVersion:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			runner := mockexec.NewMockCommandRunner()
+			runner.MockToolInPath("claude", nil)
+			runner.When(func(args exec.RunArgs, _ string) bool {
+				return args.Cmd == "claude" &&
+					slices.Contains(args.Args, "plugin") &&
+					slices.Contains(args.Args, "list")
+			}).Respond(exec.RunResult{ExitCode: 0, Stdout: tt.stdout})
+
+			d := NewDetector(runner)
+			status, err := d.DetectTool(t.Context(), claudeSkill())
+
+			require.NoError(t, err)
+			require.NotNil(t, status)
+			assert.Equal(t, tt.expectInstalled, status.Installed)
+			assert.Equal(t, tt.expectVersion, status.InstalledVersion)
+		})
+	}
+}
+
+// TestDetectSkillHosts verifies that DetectSkillHosts returns EVERY host
+// the skill is installed through (not just the first), in manifest order.
+func TestDetectSkillHosts(t *testing.T) {
+	t.Parallel()
+
+	twoHostSkill := func() *ToolDefinition {
+		return &ToolDefinition{
+			Id:       "azure-skills",
+			Name:     "Azure Skills",
+			Category: ToolCategorySkill,
+			SkillHosts: []SkillHost{
+				{
+					Host:              "copilot",
+					PluginListCommand: []string{"plugin", "list"},
+					PluginName:        "azure@azure-skills",
+					VersionRegex:      `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
+				},
+				{
+					Host:              "claude",
+					PluginListCommand: []string{"plugin", "list", "azure@azure-skills"},
+					PluginName:        "azure@azure-skills",
+					VersionRegex:      `Version:\s*v?(\d+\.\d+\.\d+)`,
+				},
+			},
+		}
+	}
+
+	// installedOutput renders host stdout that reports the skill present.
+	copilotInstalled := "  • azure@azure-skills (v1.1.71)\n"
+	claudeInstalled := "❯ azure@azure-skills\n    Version: 1.1.71\n"
+	notInstalled := "" // empty stdout => not installed
+
+	tests := []struct {
+		name      string
+		copilot   string
+		claude    string
+		wantHosts []InstalledSkillHost
+	}{
+		{
+			name:    "BothInstalled",
+			copilot: copilotInstalled,
+			claude:  claudeInstalled,
+			wantHosts: []InstalledSkillHost{
+				{Host: "copilot", Version: "1.1.71"},
+				{Host: "claude", Version: "1.1.71"},
+			},
+		},
+		{
+			name:      "OnlyClaude",
+			copilot:   notInstalled,
+			claude:    claudeInstalled,
+			wantHosts: []InstalledSkillHost{{Host: "claude", Version: "1.1.71"}},
+		},
+		{
+			name:      "OnlyCopilot",
+			copilot:   copilotInstalled,
+			claude:    notInstalled,
+			wantHosts: []InstalledSkillHost{{Host: "copilot", Version: "1.1.71"}},
+		},
+		{
+			name:      "NoneInstalled",
+			copilot:   notInstalled,
+			claude:    notInstalled,
+			wantHosts: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			runner := mockexec.NewMockCommandRunner()
+			runner.MockToolInPath("copilot", nil)
+			runner.MockToolInPath("claude", nil)
+			runner.When(func(args exec.RunArgs, _ string) bool {
+				return args.Cmd == "copilot"
+			}).Respond(exec.RunResult{ExitCode: 0, Stdout: tt.copilot})
+			runner.When(func(args exec.RunArgs, _ string) bool {
+				return args.Cmd == "claude"
+			}).Respond(exec.RunResult{ExitCode: 0, Stdout: tt.claude})
+
+			d := NewDetector(runner)
+			hosts, err := d.DetectSkillHosts(t.Context(), twoHostSkill())
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantHosts, hosts)
+		})
+	}
+
+	t.Run("NonSkillReturnsNil", func(t *testing.T) {
+		t.Parallel()
+		d := NewDetector(mockexec.NewMockCommandRunner())
+		hosts, err := d.DetectSkillHosts(t.Context(), &ToolDefinition{
+			Id:       "az-cli",
+			Category: ToolCategoryCLI,
+		})
+		require.NoError(t, err)
+		assert.Nil(t, hosts)
+	})
+}
+
+// ---------------------------------------------------------------------------
 // DetectTool — Server / Library (commandBased)
 // ---------------------------------------------------------------------------
 

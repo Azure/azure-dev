@@ -2089,6 +2089,8 @@ type PromptAiModelLocationWithQuotaResponse struct {
 	// Selected location.
 	Location *Location `protobuf:"bytes,1,opt,name=location,proto3" json:"location,omitempty"`
 	// Maximum remaining quota at the selected location across model SKUs.
+	// A value of -1 indicates that usage data was unavailable (e.g. free-tier
+	// subscriptions) and the actual remaining quota is unknown.
 	MaxRemainingQuota float64 `protobuf:"fixed64,2,opt,name=max_remaining_quota,json=maxRemainingQuota,proto3" json:"max_remaining_quota,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache

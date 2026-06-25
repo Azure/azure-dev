@@ -256,27 +256,35 @@ func resolveInitAgentName(
 		return defaultName, nil
 	}
 
-	promptResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter a name for your agent",
-			DefaultValue: defaultName,
-			HelpMessage: "Foundry agents are unique by name within a project. " +
-				"Reusing a name creates a new version of the existing agent.",
-		},
-	})
-	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return "", exterrors.Cancelled("agent name prompt was cancelled")
+	for {
+		promptResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:      "Enter a name for your agent",
+				DefaultValue: defaultName,
+				HelpMessage: "Foundry agents are unique by name within a project. " +
+					"Reusing a name creates a new version of the existing agent.",
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return "", exterrors.Cancelled("agent name prompt was cancelled")
+			}
+			return "", exterrors.FromPrompt(err, "failed to prompt for agent name")
 		}
-		return "", fmt.Errorf("failed to prompt for agent name: %w", err)
-	}
 
-	agentName := strings.TrimSpace(promptResp.Value)
-	if agentName == "" {
-		agentName = defaultName
-	}
+		agentName := strings.TrimSpace(promptResp.Value)
+		if agentName == "" {
+			agentName = defaultName
+		}
 
-	return validateInitAgentName(agentName)
+		validName, err := validateInitAgentName(agentName)
+		if err != nil {
+			writeValidationRetryError(err)
+			continue
+		}
+
+		return validName, nil
+	}
 }
 
 // resolveAgentNameFromManifestPointer resolves the agent name BEFORE any

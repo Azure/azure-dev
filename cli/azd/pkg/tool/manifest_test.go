@@ -17,7 +17,7 @@ func TestBuiltInTools(t *testing.T) {
 		t.Parallel()
 
 		tools := BuiltInTools()
-		require.Len(t, tools, 7, "expected 7 built-in tools")
+		require.Len(t, tools, 8, "expected 8 built-in tools")
 	})
 
 	t.Run("ContainsAllExpectedToolIDs", func(t *testing.T) {
@@ -31,6 +31,7 @@ func TestBuiltInTools(t *testing.T) {
 			"GitHub.copilot-chat",
 			"azure-mcp-server",
 			"azure.ai.agents",
+			"azure-skills",
 		}
 
 		tools := BuiltInTools()
@@ -70,8 +71,10 @@ func TestBuiltInTools(t *testing.T) {
 				"tool %q must have a Description", tool.Id)
 			assert.NotEmpty(t, tool.Category,
 				"tool %q must have a Category", tool.Id)
-			assert.NotEmpty(t, tool.DetectCommand,
-				"tool %q must have a DetectCommand", tool.Id)
+			if tool.Category != ToolCategorySkill {
+				assert.NotEmpty(t, tool.DetectCommand,
+					"tool %q must have a DetectCommand", tool.Id)
+			}
 		}
 	})
 
@@ -83,6 +86,7 @@ func TestBuiltInTools(t *testing.T) {
 			ToolCategoryVSCodeExtension: true,
 			ToolCategoryServer:          true,
 			ToolCategoryAzdExtension:    true,
+			ToolCategorySkill:           true,
 		}
 
 		tools := BuiltInTools()
@@ -114,6 +118,13 @@ func TestBuiltInTools(t *testing.T) {
 
 		tools := BuiltInTools()
 		for _, tool := range tools {
+			if tool.Category == ToolCategorySkill {
+				// Skill tools install via SkillHosts, not InstallStrategies.
+				assert.NotEmpty(t, tool.SkillHosts,
+					"skill tool %q must have SkillHosts",
+					tool.Id)
+				continue
+			}
 			assert.NotEmpty(t, tool.InstallStrategies,
 				"tool %q must have InstallStrategies",
 				tool.Id)
@@ -266,8 +277,9 @@ func TestFindToolsByCategory(t *testing.T) {
 		ext := FindToolsByCategory(ToolCategoryVSCodeExtension)
 		srv := FindToolsByCategory(ToolCategoryServer)
 		lib := FindToolsByCategory(ToolCategoryAzdExtension)
+		skills := FindToolsByCategory(ToolCategorySkill)
 
-		total := len(cli) + len(ext) + len(srv) + len(lib)
+		total := len(cli) + len(ext) + len(srv) + len(lib) + len(skills)
 		assert.Equal(t, len(allTools), total,
 			"sum of categorised tools must equal total")
 	})

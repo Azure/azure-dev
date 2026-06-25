@@ -18,6 +18,28 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// ErrResourceExhausted is returned when a gRPC message exceeds the size limit.
+var ErrResourceExhausted = errors.New("gRPC message size limit exceeded")
+
+// wrapResourceExhausted detects gRPC ResourceExhausted errors (message too large)
+// and wraps them with a clear message so callers can identify the root cause.
+// Without this, oversized messages silently kill the broker stream and surface as
+// confusing "channel closed by broker" errors far from the root cause.
+func wrapResourceExhausted(err error, operation string) error {
+	if err == nil {
+		return nil
+	}
+	if st, ok := status.FromError(err); ok && st.Code() == codes.ResourceExhausted {
+		return fmt.Errorf("%w: %s failed: "+
+			"the message is larger than the default 4 MB max. "+
+			"Enable gzip compression (grpc.UseCompressor(\"gzip\") call option) "+
+			"on both client and server, or reduce the payload size: %w",
+			ErrResourceExhausted, operation, err,
+		)
+	}
+	return err
+}
+
 // ProgressFunc is a callback function for sending progress updates during handler execution
 type ProgressFunc func(message string)
 
@@ -229,6 +251,7 @@ func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessag
 			return nil, ctx.Err()
 		case err := <-errCh:
 			if err != nil {
+				err = wrapResourceExhausted(err, "SendAndWait")
 				mb.logger.Printf(
 					"[%s] [RequestId=%s] ERROR: Send failed, MessageType=%v, Error=%v",
 					mb.name,
@@ -278,6 +301,7 @@ func (mb *MessageBroker[TMessage]) Send(ctx context.Context, msg *TMessage) erro
 	defer mb.sendMu.Unlock()
 
 	if err := mb.stream.Send(msg); err != nil {
+		err = wrapResourceExhausted(err, "Send")
 		mb.logger.Printf(
 			"[%s] [RequestId=%s] ERROR: Failed to send fire-and-forget message, MessageType=%v, Error=%v",
 			mb.name,
@@ -343,6 +367,7 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 			return nil, ctx.Err()
 		case err := <-errCh:
 			if err != nil {
+				err = wrapResourceExhausted(err, "SendAndWaitWithProgress")
 				mb.logger.Printf(
 					"[%s] [RequestId=%s] ERROR: Failed to send request, MessageType=%v, Error=%v",
 					mb.name,
@@ -435,6 +460,8 @@ func (mb *MessageBroker[TMessage]) Run(ctx context.Context) error {
 		default:
 			resp, err := mb.stream.Recv()
 			if err != nil {
+				err = wrapResourceExhausted(err, "Recv")
+
 				// Any error from stream.Recv() is terminal for this stream.
 				// Check for graceful closure conditions:
 				// 1. Direct io.EOF
@@ -565,6 +592,7 @@ func (mb *MessageBroker[TMessage]) processHandlerRequest(
 		defer mb.sendMu.Unlock()
 
 		if err := mb.stream.Send(responseEnvelope); err != nil {
+			err = wrapResourceExhausted(err, "Send handler response")
 			mb.logger.Printf(
 				"[%s] ERROR: Failed to send handler response: RequestId=%s, MessageType=%v, Error=%v",
 				mb.name,
@@ -634,7 +662,14 @@ func (mb *MessageBroker[TMessage]) invokeHandler(
 		}
 	}()
 
-	// If handler returned nil envelope, create a new one
+	// If handler returned nil envelope and no error, suppress the response entirely.
+	// This allows handlers to return (nil, nil) to indicate no response should be sent,
+	// which is used by intermediate chunk handlers that don't need acknowledgment.
+	if responseEnvelope == nil && handlerErr == nil {
+		return nil
+	}
+
+	// If handler returned nil envelope but has an error, create one to carry the error
 	if responseEnvelope == nil {
 		responseEnvelope = new(TMessage)
 	}
@@ -664,6 +699,7 @@ func (mb *MessageBroker[TMessage]) createProgressFunc(ctx context.Context, reque
 		defer mb.sendMu.Unlock()
 
 		if err := mb.stream.Send(progressEnvelope); err != nil {
+			err = wrapResourceExhausted(err, "Send progress")
 			mb.logger.Printf("[%s] ERROR: Failed to send progress message for RequestId=%s: %v", mb.name, requestId, err)
 		}
 	}

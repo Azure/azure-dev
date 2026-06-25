@@ -31,6 +31,7 @@ var (
 		extensions.ServiceTargetProviderCapability,
 		extensions.FrameworkServiceProviderCapability,
 		extensions.ProvisioningProviderCapability,
+		extensions.ValidationProviderCapability,
 	}
 )
 
@@ -192,6 +193,9 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 			if err := ext.WaitUntilReady(readyCtx); err != nil {
 				elapsed := time.Since(startTime)
 				log.Printf("'%s' extension failed to become ready after %v: %v\n", ext.Id, elapsed, err)
+				if reportedErr := ext.GetReportedError(); reportedErr != nil {
+					log.Printf("'%s' extension reported error: %v\n", ext.Id, reportedErr)
+				}
 
 				// Track failed extensions for warning display
 				mu.Lock()

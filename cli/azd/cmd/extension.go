@@ -237,13 +237,9 @@ type extensionListItem struct {
 	UpdateAvailable  bool   `json:"updateAvailable"`
 	Incompatible     bool   `json:"-"`
 	Source           string `json:"source"`
-	// DisplayVersion is installed version or "Not installed" for table rendering.
-	DisplayVersion string `json:"-"`
 	// Status is a human-readable installation/update status indicator.
 	// Populated only for pretty-table rendering; omitted from JSON.
 	Status string `json:"-"`
-	// StatusSymbol is the symbol-only status (✓, ↑, ⚠, -) for medium/narrow widths.
-	StatusSymbol string `json:"-"`
 }
 
 func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -319,10 +315,6 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		}
 
 		status := extensionStatus(installed, updateAvailable && !updateIncompatible, updateIncompatible)
-		displayVersion := installedVersion
-		if displayVersion == "" {
-			displayVersion = "Not installed"
-		}
 
 		extensionRows = append(extensionRows, extensionListItem{
 			Id:               extension.Id,
@@ -333,9 +325,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			UpdateAvailable:  updateAvailable && !updateIncompatible,
 			Incompatible:     updateIncompatible,
 			Source:           extension.Source,
-			DisplayVersion:   displayVersion,
 			Status:           status,
-			StatusSymbol:     extensionStatusSymbol(status),
 		})
 	}
 
@@ -364,9 +354,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			Version:          ext.Version,
 			InstalledVersion: ext.Version,
 			Source:           ext.Source,
-			DisplayVersion:   ext.Version,
 			Status:           statusUpToDate,
-			StatusSymbol:     extensionStatusSymbol(statusUpToDate),
 		})
 	}
 
@@ -407,23 +395,35 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 					Heading:       "NAME",
 					ValueTemplate: "{{.Name}}",
 				},
-				Priority: 3,
-			},
-			{
-				Column: output.Column{
-					Heading:       "VERSION",
-					ValueTemplate: "{{.DisplayVersion}}",
-				},
-				Priority: 1,
+				Priority:    3,
+				CardTitle:   true,
+				Truncatable: true,
 			},
 			{
 				Column: output.Column{
 					Heading:       "STATUS",
 					ValueTemplate: "{{.Status}}",
 				},
-				Priority:           1,
-				ShortValueTemplate: "{{.StatusSymbol}}",
-				ColorFunc:          extensionStatusColor,
+				Priority:    1,
+				Truncatable: true,
+				ColorFunc:   extensionStatusColor,
+			},
+			{
+				Column: output.Column{
+					Heading:       "INSTALLED",
+					ValueTemplate: `{{if .InstalledVersion}}{{.InstalledVersion}}{{else}}-{{end}}`,
+				},
+				CardValueTemplate: `{{if .InstalledVersion}}{{.InstalledVersion}}{{end}}`,
+				Priority:          1,
+			},
+			{
+				Column: output.Column{
+					Heading:       "LATEST",
+					ValueTemplate: "{{.Version}}",
+				},
+				CardValueTemplate: `{{if or .UpdateAvailable (not .InstalledVersion)}}{{.Version}}{{end}}`,
+				Priority:          3,
+				Truncatable:       true,
 			},
 			{
 				Column: output.Column{
@@ -435,8 +435,9 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		}
 
 		formatErr = prettyFormatter.Format(extensionRows, a.writer, output.PrettyTableFormatterOptions{
-			Columns:         columns,
-			CardGroupColumn: "SOURCE",
+			Columns:              columns,
+			CardGroupColumn:      "SOURCE",
+			ResponsiveColumnHint: true,
 		})
 
 		if formatErr == nil {
@@ -475,10 +476,10 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 // Status indicator constants for extension list display.
 const (
-	statusUpToDate   = "✓ Up to date"
-	statusUpdate     = "↑ Update available"
-	statusIncompat   = "⚠ Incompatible"
-	statusNotInstall = "-"
+	statusUpToDate   = "Up to date"
+	statusUpdate     = "Update available"
+	statusIncompat   = "Incompatible"
+	statusNotInstall = "Not installed"
 )
 
 // extensionStatus returns a human-readable status string for the extension list table.
@@ -495,36 +496,14 @@ func extensionStatus(installed, updateAvailable, incompatible bool) string {
 	}
 }
 
-// Status symbol constants for medium/narrow display.
-const (
-	symbolUpToDate   = "✓"
-	symbolUpdate     = "↑"
-	symbolIncompat   = "⚠"
-	symbolNotInstall = "-"
-)
-
-// extensionStatusSymbol returns the symbol-only version of a status string.
-func extensionStatusSymbol(status string) string {
-	switch status {
-	case statusUpToDate:
-		return symbolUpToDate
-	case statusUpdate:
-		return symbolUpdate
-	case statusIncompat:
-		return symbolIncompat
-	default:
-		return symbolNotInstall
-	}
-}
-
 // extensionStatusColor applies color formatting based on the status indicator text.
 func extensionStatusColor(s string) string {
 	switch s {
-	case statusUpToDate, symbolUpToDate:
+	case statusUpToDate:
 		return output.WithSuccessFormat(s)
-	case statusUpdate, symbolUpdate:
+	case statusUpdate:
 		return output.WithWarningFormat(s)
-	case statusIncompat, symbolIncompat:
+	case statusIncompat:
 		return output.WithErrorFormat(s)
 	default:
 		return output.WithGrayFormat(s)
@@ -2319,14 +2298,24 @@ func (a *extensionSourceListAction) Run(ctx context.Context) (*actions.ActionRes
 				Priority: 1,
 			},
 			{
-				Column:   output.Column{Heading: "LOCATION", ValueTemplate: "{{.Location}}"},
+				Column: output.Column{
+					Heading:       "LOCATION",
+					ValueTemplate: "{{.Location}}",
+					Transformer: func(s string) string {
+						if s == "" {
+							return s
+						}
+						return output.WithLinkFormat("%s", s)
+					},
+				},
 				Priority: 2,
 			},
 		}
 
 		err = prettyFormatter.Format(sourceConfigs, a.writer, output.PrettyTableFormatterOptions{
-			Columns:         columns,
-			CardGroupColumn: "TYPE",
+			Columns:              columns,
+			CardGroupColumn:      "TYPE",
+			ResponsiveColumnHint: true,
 		})
 	} else {
 		err = a.formatter.Format(sourceConfigs, a.writer, nil)

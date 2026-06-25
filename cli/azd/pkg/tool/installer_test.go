@@ -2692,3 +2692,385 @@ func TestUninstallSkill_ExplicitUnknownHost_Errors(t *testing.T) {
 	require.Error(t, result.Error)
 	assert.Contains(t, result.Error.Error(), "not available")
 }
+
+// ---------------------------------------------------------------------------
+// Uninstall — additional non-skill branch coverage
+// ---------------------------------------------------------------------------
+
+// allManagersMissing mocks every known package manager as absent from PATH.
+func allManagersMissing(runner *mockexec.MockCommandRunner) {
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+}
+
+func TestUninstall_DirectDownload_RemovesArtifact(t *testing.T) {
+	// Not parallel: mutates AZD_CONFIG_DIR via t.Setenv.
+	cfgDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", cfgDir)
+
+	// Place the artifact where executeDirectDownload would have put it.
+	toolsDir := filepath.Join(cfgDir, "tools")
+	require.NoError(t, os.MkdirAll(toolsDir, 0o755))
+	artifact := filepath.Join(toolsDir, "tool.bin")
+	require.NoError(t, os.WriteFile(artifact, []byte("binary"), 0o600))
+
+	runner := mockexec.NewMockCommandRunner()
+	allManagersMissing(runner)
+
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	toolDef := &ToolDefinition{
+		Id:       "direct-dl",
+		Name:     "Direct Download Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			DirectDownloadUrl: "https://example.com/tool.bin",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), toolDef)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+	assert.Equal(t, "direct-download", result.Strategy)
+	assert.NoFileExists(t, artifact)
+}
+
+func TestUninstall_DirectDownload_MissingFileIsIdempotent(t *testing.T) {
+	// Not parallel: mutates AZD_CONFIG_DIR via t.Setenv.
+	cfgDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", cfgDir)
+	// No artifact file is created — uninstall must still succeed.
+
+	runner := mockexec.NewMockCommandRunner()
+	allManagersMissing(runner)
+
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	toolDef := &ToolDefinition{
+		Id:       "direct-dl",
+		Name:     "Direct Download Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			DirectDownloadUrl: "https://example.com/tool.bin",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), toolDef)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+}
+
+func TestUninstall_NonSkill_ManagerUnavailable(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	allManagersMissing(runner) // npm not on PATH either
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+
+	tool := &ToolDefinition{
+		Id:       "test-npm-tool",
+		Name:     "Test NPM Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/tool",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	assert.Equal(t, "manual", result.Strategy)
+
+	var suggestion *errorhandler.ErrorWithSuggestion
+	require.ErrorAs(t, result.Error, &suggestion)
+	assert.Contains(t, suggestion.Message, "Cannot uninstall")
+}
+
+func TestUninstall_NoStrategyForPlatform(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	allManagersMissing(runner)
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+
+	// A strategy that does not cover the current OS.
+	tool := &ToolDefinition{
+		Id:       "no-strategy",
+		Name:     "No Strategy Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: map[string]InstallStrategy{
+			"plan9": {PackageManager: "npm", PackageId: "x"},
+		},
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "no install strategy")
+}
+
+func TestUninstall_NonSkill_CommandFails(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	allManagersMissing(runner)
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 1}, errors.New("npm boom")
+	})
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+
+	tool := &ToolDefinition{
+		Id:       "test-npm-tool",
+		Name:     "Test NPM Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/tool",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "running uninstall command")
+}
+
+func TestUninstall_NonSkill_VerifyDetectError(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	allManagersMissing(runner)
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "uninstall")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	wantErr := errors.New("detect boom")
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) (*ToolStatus, error) {
+			return nil, wantErr
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	tool := &ToolDefinition{
+		Id:       "test-npm-tool",
+		Name:     "Test NPM Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/tool",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.ErrorIs(t, result.Error, wantErr)
+	assert.Contains(t, result.Error.Error(), "verifying removal")
+}
+
+// ---------------------------------------------------------------------------
+// Uninstall — additional skill branch coverage
+// ---------------------------------------------------------------------------
+
+func TestUninstallSkill_NoSkillHosts_Errors(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+
+	tool := &ToolDefinition{
+		Id:       "skill-no-hosts",
+		Name:     "Skill No Hosts",
+		Category: ToolCategorySkill,
+		// No SkillHosts configured.
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "no SkillHosts configured")
+}
+
+func TestUninstallSkill_MultipleHostFailures_Summarized(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot", "claude")
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 1}, errors.New("remove failed")
+	})
+
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			return []InstalledSkillHost{
+				{Host: "copilot", Version: "1.0.0"},
+				{Host: "claude", Version: "1.0.0"},
+			}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Uninstall(t.Context(), newSkillTool())
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "could not be uninstalled for 2 host(s)")
+}
+
+func TestUninstallSkill_VerificationFails(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot")
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	// The skill remains installed on copilot after the command runs, so
+	// host-scoped verification never confirms removal.
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			return []InstalledSkillHost{{Host: "copilot", Version: "1.0.0"}}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+	inst.(*installer).retryBackoff = time.Millisecond // keep the test fast
+
+	result, err := inst.Uninstall(t.Context(), newSkillTool(), WithHosts("copilot"))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "verification failed")
+}
+
+func TestUninstallSkill_VerifyDetectError(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	mockHostPresence(runner, "copilot")
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return slices.Contains(args.Args, "uninstall")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	// Explicit --host copilot skips DetectSkillHosts during target
+	// resolution, so the only call is from verification, which errors.
+	wantErr := errors.New("plugin list failed")
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			return nil, wantErr
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Uninstall(t.Context(), newSkillTool(), WithHosts("copilot"))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.ErrorIs(t, result.Error, wantErr)
+}
+
+func TestUninstallSkill_NoUninstallCommandConfigured(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	runner.MockToolInPath("copilot", nil)
+
+	det := &mockDetector{
+		detectSkillHostsFn: func(
+			_ context.Context, _ *ToolDefinition,
+		) ([]InstalledSkillHost, error) {
+			return []InstalledSkillHost{{Host: "copilot", Version: "1.0.0"}}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	// A skill host with no PluginUninstallCommand configured.
+	tool := &ToolDefinition{
+		Id:       "skill-no-uninstall-cmd",
+		Name:     "Skill No Uninstall Cmd",
+		Category: ToolCategorySkill,
+		SkillHosts: []SkillHost{
+			{
+				Host:              "copilot",
+				PluginListCommand: []string{"plugin", "list"},
+				PluginName:        "azure@azure-skills",
+				VersionRegex:      `(\d+\.\d+\.\d+)`,
+				// No PluginUninstallCommand.
+			},
+		},
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool, WithHosts("copilot"))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "no uninstall command configured")
+}

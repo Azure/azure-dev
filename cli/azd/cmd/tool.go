@@ -1306,7 +1306,7 @@ func (a *toolUninstallAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title:     "Uninstall Azure development tools (azd tool uninstall)",
-		TitleNote: "Uninstalls specified tools from the machine",
+		TitleNote: "Uninstalls specified tools from the local machine",
 	})
 
 	operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {

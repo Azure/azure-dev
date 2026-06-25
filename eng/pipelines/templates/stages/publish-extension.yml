@@ -52,38 +52,59 @@ stages:
           value: Registry update
 
     jobs:
-      - job: Generate_GH_Token
-        dependsOn: []
+      - ${{ if ne(variables['Build.Reason'], 'Schedule') }}:
+        - job: Create_GitHub_Release
+          dependsOn: []
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
 
-        pool:
-          name: $(LINUXPOOL)
-          image: $(LINUXVMIMAGE)
-          os: linux
+          pool:
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
+            os: linux
 
-        steps:
-          - checkout: self
+          steps:
+            - checkout: self
 
-          - template: /eng/common/pipelines/templates/steps/login-to-github.yml
-            parameters:
-              ExportAsOutputVariable: true
+            - template: /eng/common/pipelines/templates/steps/login-to-github.yml
 
-      - deployment: Publish_Release
-        dependsOn: Generate_GH_Token
+            - template: /eng/pipelines/templates/steps/extension-set-metadata-variables.yml
+
+            - task: DownloadPipelineArtifact@2
+              displayName: Download release artifact
+              inputs:
+                artifactName: release
+                targetPath: release
+
+            - task: DownloadPipelineArtifact@2
+              displayName: Download changelog artifact
+              inputs:
+                artifactName: changelog
+                targetPath: changelog
+
+            - template: /eng/pipelines/templates/steps/publish-extension-github-release.yml
+              parameters:
+                TagPrefix: azd-ext-${{ parameters.SanitizedExtensionId }}
+                TagVersion: $(EXT_VERSION)
+
+      # Storage upload — runs for both nightly and manual. 1ES releaseJob keeps
+      # production governance (package-publish approval on manual runs). No
+      # GH_TOKEN needed here. azcopy --overwrite=true makes retry safe.
+      - deployment: Publish_Storage
+        ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+          dependsOn: []
+          environment: none
+        ${{ else }}:
+          dependsOn: Create_GitHub_Release
+          environment: package-publish
         condition: >-
           and(
             succeeded(),
             ne('true', variables['Skip.Publish'])
-          )
-        # Nightly publishes unattended, so it uses the no-approval 'none'
-        # environment and is not a governed production release. Manual releases
-        # go through the approval-gated package-publish environment.
-        ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
-          environment: none
-        ${{ else }}:
-          environment: package-publish
-
-        variables:
-          GH_TOKEN: $[ dependencies.Generate_GH_Token.outputs['LoginToGitHub.GH_TOKEN'] ]
+          )        
 
         pool:
           name: azsdk-pool
@@ -100,10 +121,6 @@ stages:
             - input: pipelineArtifact
               artifactName: release
               targetPath: release
-
-            - input: pipelineArtifact
-              artifactName: changelog
-              targetPath: changelog
 
         strategy:
           runOnce:
@@ -122,22 +139,15 @@ stages:
                     displayName: Set StorageUploadLocations (nightly)
                 - ${{ else }}:
                   - pwsh: |
-                      # Initial upload locations
                       $publishUploadLocations = '${{ parameters.SanitizedExtensionId }}/$(EXT_VERSION)'
-
                       Write-Host "Setting StorageUploadLocations to $publishUploadLocations"
                       Write-Host "###vso[task.setvariable variable=StorageUploadLocations]$publishUploadLocations"
                     displayName: Set StorageUploadLocations
 
-                - template: /eng/pipelines/templates/steps/publish-extension.yml
+                - template: /eng/pipelines/templates/steps/publish-extension-storage.yml
                   parameters:
                     PublishUploadLocations: $(StorageUploadLocations)
-                    TagPrefix: azd-ext-${{ parameters.SanitizedExtensionId }}
-                    TagVersion: $(EXT_VERSION)
-                    # Nightly builds publish to storage only; no GitHub release since that'd just be a ton of clutter. 
-                    # Nightly extension consumers just grab it from blob storage.
-                    ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
-                      CreateGitHubRelease: false
+
 
       # Updates the selected extension registry after the GitHub Release exists.
       # Production registry updates also refresh global command snapshots.
@@ -145,15 +155,11 @@ stages:
       - job: Update_Registry
         dependsOn: 
           - Publish_Release
-          - Generate_GH_Token
         condition: >-
           and(
             succeeded(),
             ne('true', variables['Skip.RegistryUpdate'])
           )
-
-        variables:
-          GH_TOKEN: $[ dependencies.Generate_GH_Token.outputs['LoginToGitHub.GH_TOKEN'] ]
 
         pool:
           name: $(LINUXPOOL)
@@ -162,6 +168,8 @@ stages:
 
         steps:
           - checkout: self
+
+          - template: /eng/common/pipelines/templates/steps/login-to-github.yml
 
           - template: /eng/pipelines/templates/steps/extension-set-metadata-variables.yml
 

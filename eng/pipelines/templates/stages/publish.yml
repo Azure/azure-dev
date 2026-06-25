@@ -396,23 +396,7 @@ stages:
 
           - template: /eng/pipelines/templates/steps/publish-cli-brew.yml
 
-      - job: Generate_GH_Token
-        dependsOn: []
-
-        pool:
-          name: $(LINUXPOOL)
-          image: $(LINUXVMIMAGE)
-          os: linux
-
-        steps:
-          - checkout: self
-
-          - template: /eng/common/pipelines/templates/steps/login-to-github.yml
-            parameters:
-              ExportAsOutputVariable: true
-
       - deployment: Publish_For_PR
-        dependsOn: Generate_GH_Token
         environment: none
         condition: >-
           and(
@@ -426,9 +410,6 @@ stages:
               )
             )
           )
-
-        variables:
-          GH_TOKEN: $[ dependencies.Generate_GH_Token.outputs['LoginToGitHub.GH_TOKEN'] ]
 
         pool:
           name: azsdk-pool
@@ -478,97 +459,137 @@ stages:
                     PublishUploadLocations: pr/$(PRNumber)
                     UploadInstaller: true
 
-                - pwsh: |
-                    $urlBase = "$(publish-storage-static-host)/azd/standalone/pr/$(PRNumber)"
-                    Write-Host "##vso[task.setvariable variable=UrlBase;isOutput=true]$urlBase"
-                  name: GenerateUrlBase
-                  displayName: Set UrlBase
+      - job: Comment_On_PR
+        dependsOn: Publish_For_PR
+        condition: >-
+          and(
+            succeeded(),
+            ne(variables['Skip.Release'], 'true'),
+            or(
+              eq('PullRequest', variables['BuildReasonOverride']),
+              and(
+                eq('', variables['BuildReasonOverride']),
+                eq(variables['Build.Reason'], 'PullRequest')
+              )
+            )
+          )
 
-                - pwsh: |
-                    $urlBase = "$(GenerateUrlBase.UrlBase)"
-                    $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
-                    $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64.tar.gz"
-                    $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
-                    $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64.zip"
-                    $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
-                    $windowsReleaseUrlArm64 = "$urlBase/azd-windows-arm64-alpha.zip"
-                    $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
 
-                    $refDocContent = Get-Content docs/azd.md -Raw
+        steps:
+          - checkout: self
 
-                    $content = @"
-                    <!-- #comment-cli-pr -->
-                    ## Azure Dev CLI Install Instructions
+          - template: /eng/common/pipelines/templates/steps/login-to-github.yml
 
-                    ### Install scripts
+          - task: DownloadPipelineArtifact@2
+            displayName: Download docs artifact
+            inputs:
+              artifactName: docs
+              targetPath: docs
 
-                    #### MacOS/Linux
+          - pwsh: |
+              $PRNumber = '$(System.PullRequest.PullRequestNumber)'
+              if ($env:PRNUMBEROVERRIDE) {
+                Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
+                $PRNumber = "$($env:PRNUMBEROVERRIDE)"
+              }
+              Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
+            displayName: Set PR Number Variable
 
-                    > May elevate using ``sudo`` on some platforms and configurations
+          - pwsh: |
+              $urlBase = "$(publish-storage-static-host)/azd/standalone/pr/$(PRNumber)"
+              Write-Host "##vso[task.setvariable variable=UrlBase;isOutput=true]$urlBase"
+            name: GenerateUrlBase
+            displayName: Set UrlBase
 
-                    bash:
-                    ``````
-                    curl -fsSL $urlBase/uninstall-azd.sh | bash;
-                    curl -fsSL $urlBase/install-azd.sh | bash -s -- --base-url $urlBase --version '' --verbose --skip-verify
-                    ``````
+          - pwsh: |
+              $urlBase = "$(GenerateUrlBase.UrlBase)"
+              $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
+              $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64.tar.gz"
+              $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
+              $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64.zip"
+              $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
+              $windowsReleaseUrlArm64 = "$urlBase/azd-windows-arm64-alpha.zip"
+              $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
 
-                    pwsh:
-                    ``````
-                    Invoke-RestMethod '$urlBase/uninstall-azd.ps1' -OutFile uninstall-azd.ps1; ./uninstall-azd.ps1
-                    Invoke-RestMethod '$urlBase/install-azd.ps1' -OutFile install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose
-                    ``````
+              $refDocContent = Get-Content docs/azd.md -Raw
+
+              $content = @"
+              <!-- #comment-cli-pr -->
+              ## Azure Dev CLI Install Instructions
+
+              ### Install scripts
+
+              #### MacOS/Linux
+
+              > May elevate using ``sudo`` on some platforms and configurations
+
+              bash:
+              ``````
+              curl -fsSL $urlBase/uninstall-azd.sh | bash;
+              curl -fsSL $urlBase/install-azd.sh | bash -s -- --base-url $urlBase --version '' --verbose --skip-verify
+              ``````
+
+              pwsh:
+              ``````
+              Invoke-RestMethod '$urlBase/uninstall-azd.ps1' -OutFile uninstall-azd.ps1; ./uninstall-azd.ps1
+              Invoke-RestMethod '$urlBase/install-azd.ps1' -OutFile install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose
+              ``````
 
 
-                    #### Windows
+              #### Windows
 
-                    PowerShell install
+              PowerShell install
 
-                    ``````
-                    powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/uninstall-azd.ps1' > uninstall-azd.ps1; ./uninstall-azd.ps1;"
-                    powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/install-azd.ps1' > install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose;"
-                    ``````
+              ``````
+              powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/uninstall-azd.ps1' > uninstall-azd.ps1; ./uninstall-azd.ps1;"
+              powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/install-azd.ps1' > install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose;"
+              ``````
 
-                    MSI install
-                    ``````
-                    powershell -c "irm '$msiReleaseUrl' -OutFile azd-windows-amd64.msi; msiexec /i azd-windows-amd64.msi /qn"
-                    ``````
+              MSI install
+              ``````
+              powershell -c "irm '$msiReleaseUrl' -OutFile azd-windows-amd64.msi; msiexec /i azd-windows-amd64.msi /qn"
+              ``````
 
-                    ### Standalone Binary
+              ### Standalone Binary
 
-                    * Linux -
-                        * x86_64 - $linuxReleaseUrl
-                        * ARM64 - $linuxReleaseUrlArm64
-                    * MacOS -
-                        * x86_64 - $macosReleaseUrl
-                        * ARM64 - $macosReleaseUrlArm64
-                    * Windows -
-                        * x86_64 - $windowsReleaseUrl
-                        * ARM64 - $windowsReleaseUrlArm64
+              * Linux -
+                  * x86_64 - $linuxReleaseUrl
+                  * ARM64 - $linuxReleaseUrlArm64
+              * MacOS -
+                  * x86_64 - $macosReleaseUrl
+                  * ARM64 - $macosReleaseUrlArm64
+              * Windows -
+                  * x86_64 - $windowsReleaseUrl
+                  * ARM64 - $windowsReleaseUrlArm64
 
-                    ### MSI
+              ### MSI
 
-                    * x86_64 - $msiReleaseUrl
+              * x86_64 - $msiReleaseUrl
 
-                    ## Documentation
+              ## Documentation
 
-                    <details>
-                    <summary>learn.microsoft.com documentation</summary>
+              <details>
+              <summary>learn.microsoft.com documentation</summary>
 
-                    $refDocContent
+              $refDocContent
 
-                    </details>
-                    "@
-                    $file = New-TemporaryFile
-                    Set-Content -Path $file -Value $content
-                    Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
-                  displayName: Write body content to temporary file
+              </details>
+              "@
+              $file = New-TemporaryFile
+              Set-Content -Path $file -Value $content
+              Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
+            displayName: Write body content to temporary file
 
-                - template: /eng/pipelines/templates/steps/update-prcomment.yml
-                  parameters:
-                    PrNumber: $(PRNumber)
-                    BodyFile: $(CommentBodyFile)
-                    Tag: '<!-- #comment-cli-pr -->'
-                    GitHubToken: $(GH_TOKEN)
+          - template: /eng/pipelines/templates/steps/update-prcomment.yml
+            parameters:
+              PrNumber: $(PRNumber)
+              BodyFile: $(CommentBodyFile)
+              Tag: '<!-- #comment-cli-pr -->'
+              GitHubToken: $(GH_TOKEN)
 
   - stage: PublishInstallers
     dependsOn: Sign

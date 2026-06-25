@@ -31,7 +31,7 @@ author: alexwolfmsft
 ms.author: alexwolf
 ms.date: %v
 ms.service: azure-dev-cli
-ms.topic: conceptual
+ms.topic: reference
 ms.custom: devx-track-azdevcli
 ---
 

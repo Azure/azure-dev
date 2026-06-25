@@ -1,5 +1,9 @@
 # Release History
 
+## 0.1.42-preview (Unreleased)
+
+- [[#8824]](https://github.com/Azure/azure-dev/pull/8824) Add `activity_protocol` support to `azd ai agent invoke`, alongside the existing `responses` and `invocations` protocols. A plain message is wrapped as a message Activity, `--input-file` sends a complete Activity object, and `--output raw` dumps the response verbatim.
+
 ## 0.1.41-preview (2026-06-19)
 
 - [[#8731]](https://github.com/Azure/azure-dev/pull/8731) Improve the post-deploy `Next:` guidance with a stacked layout that puts each command on its own line above its description, adds a blank line between suggestions, and highlights `azd` commands. The new layout applies across deploy, `azd ai agent show`, `init`, and `doctor`. Thanks @therealjohn for the contribution!

@@ -409,9 +409,9 @@ func newHelpersTestAzdClient(
 func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
 	t.Parallel()
 
-	// Create a temp dir with agent.yaml declaring the "responses" protocol.
+	// Create a temp dir with a hosted agent.yaml declaring the "responses" protocol.
 	svcDir := t.TempDir()
-	agentYaml := "protocols:\n  - protocol: responses\n    version: \"1.0\"\n"
+	agentYaml := "kind: hosted\nname: my-agent\nprotocols:\n  - protocol: responses\n    version: \"1.0\"\n"
 	require.NoError(t, os.WriteFile(filepath.Join(svcDir, "agent.yaml"), []byte(agentYaml), 0600))
 
 	tests := []struct {
@@ -491,7 +491,7 @@ func TestResolveAgentProtocol_MultipleServicesPromptsOnce(t *testing.T) {
 	t.Parallel()
 
 	svcDir := t.TempDir()
-	agentYaml := "protocols:\n  - protocol: responses\n    version: \"1.0\"\n"
+	agentYaml := "kind: hosted\nname: my-agent\nprotocols:\n  - protocol: responses\n    version: \"1.0\"\n"
 	require.NoError(t, os.WriteFile(filepath.Join(svcDir, "agent.yaml"), []byte(agentYaml), 0600))
 
 	projectServer := &helpersProjectServer{

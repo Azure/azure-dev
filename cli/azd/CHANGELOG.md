@@ -1,6 +1,6 @@
 # Release History
 
-## 1.26.0-beta.1 (Unreleased)
+## 1.27.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -8,10 +8,30 @@
 
 ### Bugs Fixed
 
-- [[#8776]](https://github.com/Azure/azure-dev/pull/8776) Fix the macOS Homebrew update banner and `azd update` suggesting/running cask commands that fail with `Refusing to load cask azure/azd/azd from untrusted tap` on current Homebrew. azd now trusts its Homebrew source (`brew trust azure/azd`) before the cask install/upgrade in both the update banner and `azd update`, and the install instructions show the trust step.
+### Other Changes
+
+## 1.26.0 (2026-06-24)
+
+### Features Added
+
+- [[#8424]](https://github.com/Azure/azure-dev/pull/8424) Add `azd config sub-filter set` and `azd config sub-filter remove` to save per-tenant subscription filters and apply them automatically in subscription prompts.
+- [[#8599]](https://github.com/Azure/azure-dev/pull/8599) Add Go support for Azure Functions services, enabling `azd up` for Go Function Apps on Flex Consumption.
+- [[#8656]](https://github.com/Azure/azure-dev/pull/8656) Add the `validation-provider` extension capability so extensions can contribute checks to local Bicep preflight validation.
+- [[#8697]](https://github.com/Azure/azure-dev/pull/8697) Add self-contained extension bundles with `azd x pack --bundle` and `azd extension install <bundle.zip>` for sharing and installing extensions without a registry.
+- [[#8704]](https://github.com/Azure/azure-dev/pull/8704) Add `azd tool install azure-skills` and `azd tool upgrade azure-skills` with per-host selection for supported agentic CLI hosts.
+
+### Bugs Fixed
+
 - [[#8649]](https://github.com/Azure/azure-dev/pull/8649) Fix interactive prompts (for example the `azd init` environment-name prompt) rendering twice on Windows terminals by rendering prompts with azd's own UX components instead of the archived survey library.
+- [[#8666]](https://github.com/Azure/azure-dev/pull/8666) Fix `azd init` required extension installation failing when an extension is available from multiple sources by prompting users to choose the source interactively.
+- [[#8679]](https://github.com/Azure/azure-dev/pull/8679) Fix extension `Project().AddService` calls overwriting existing top-level `azure.yaml` properties such as hooks when adding services.
+- [[#8681]](https://github.com/Azure/azure-dev/pull/8681) Fix `azd pipeline config` creating mismatched GitHub OIDC federated credentials for organizations using `context` or `repo` claim keys.
+- [[#8776]](https://github.com/Azure/azure-dev/pull/8776) Fix `azd update` and the macOS update banner failing with "Refusing to load cask from untrusted tap" by running `brew trust azure/azd` before any Homebrew cask install, upgrade, or uninstall.
 
 ### Other Changes
+
+- [[#8725]](https://github.com/Azure/azure-dev/pull/8725) Improve stacked table readability by labeling grouped headers, dimming structural lines, and highlighting source URLs.
+- [[#8785]](https://github.com/Azure/azure-dev/pull/8785) Improve responsive table layouts across `azd extension list`, `azd tool check`, `azd tool list`, and `azd template list` as part of [[#8667]](https://github.com/Azure/azure-dev/issues/8667).
 
 ## 1.25.6 (2026-06-12)
 

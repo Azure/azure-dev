@@ -8,6 +8,7 @@
 
 ### Bugs Fixed
 
+- [[#8776]](https://github.com/Azure/azure-dev/pull/8776) Fix the macOS Homebrew update banner and `azd update` suggesting/running cask commands that fail with `Refusing to load cask azure/azd/azd from untrusted tap` on current Homebrew. azd now trusts its Homebrew source (`brew trust azure/azd`) before the cask install/upgrade in both the update banner and `azd update`, and the install instructions show the trust step.
 - [[#8649]](https://github.com/Azure/azure-dev/pull/8649) Fix interactive prompts (for example the `azd init` environment-name prompt) rendering twice on Windows terminals by rendering prompts with azd's own UX components instead of the archived survey library.
 
 ### Other Changes

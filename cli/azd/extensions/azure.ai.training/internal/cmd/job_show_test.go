@@ -13,34 +13,41 @@ import (
 )
 
 // captureStdout runs fn while redirecting os.Stdout to a pipe, then returns
-// everything fn wrote. The write end is closed (so the reader unblocks) and
-// the original stdout is restored even if fn panics, via t.Cleanup, so the
-// helper is safe to use in table-driven tests.
+// everything fn wrote. A goroutine drains the pipe into a strings.Builder so
+// large writes can't deadlock on the OS pipe buffer; os.Stdout is restored and
+// the read end closed via t.Cleanup so the helper is safe even if fn panics.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()
 	if err != nil {
-		t.Fatalf("pipe: %v", err)
+		t.Fatalf("os.Pipe: %v", err)
 	}
 	orig := os.Stdout
 	os.Stdout = w
+
+	// Drain in a goroutine so large output can't deadlock on a full pipe buffer.
+	var sb strings.Builder
+	copyDone := make(chan error, 1)
+	go func() {
+		_, copyErr := io.Copy(&sb, r)
+		_ = r.Close()
+		copyDone <- copyErr
+	}()
+
 	t.Cleanup(func() {
 		os.Stdout = orig
-		_ = r.Close()
+		_ = w.Close()
 	})
-
-	done := make(chan string, 1)
-	go func() {
-		b, _ := io.ReadAll(r)
-		done <- string(b)
-	}()
 
 	func() {
 		defer func() { _ = w.Close() }()
 		fn()
 	}()
 
-	return <-done
+	if err := <-copyDone; err != nil {
+		t.Fatalf("capture stdout: %v", err)
+	}
+	return sb.String()
 }
 
 func TestPrintJobDetails_FoundryPortalURI(t *testing.T) {

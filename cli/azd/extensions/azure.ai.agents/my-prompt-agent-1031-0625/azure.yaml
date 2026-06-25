@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: ai-foundry-starter-basic
+
+infra:
+  provider: bicep
+  path: ./infra
+
+requiredVersions:
+  extensions:
+    # the azd ai agent extension is required for this template
+    "azure.ai.agents": ">=0.1.0-preview"
+

@@ -133,8 +133,11 @@ func CreateAgentAPIRequestFromDefinition(agentTemplate any, options ...AgentBuil
 	case AgentKindHosted:
 		hostedDef := agentTemplate.(ContainerAgent)
 		return CreateHostedAgentAPIRequest(hostedDef, buildConfig)
+	case AgentKindManaged:
+		managedDef := agentTemplate.(ManagedAgent)
+		return CreateManagedAgentAPIRequest(managedDef, buildConfig)
 	default:
-		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: hosted", agentDef.Kind)
+		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: hosted, managed", agentDef.Kind)
 	}
 }
 
@@ -445,6 +448,51 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 
 	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageDef,
 		hostedAgent.AgentEndpoint, hostedAgent.AgentCard)
+}
+
+// CreateManagedAgentAPIRequest converts a ManagedAgent YAML definition into the
+// API CreateAgentRequest expected by the Foundry managed-agent endpoint.
+//
+// Managed agents are simpler than hosted agents — the customer only declares
+// model + instructions (plus optional skills/policies). The platform manages
+// the Brain+Hand sandbox, so no image/cpu/memory fields are required from the
+// customer for the minimum case.
+func CreateManagedAgentAPIRequest(
+	managedAgent ManagedAgent,
+	buildConfig *AgentBuildConfig,
+) (*agent_api.CreateAgentRequest, error) {
+	if strings.TrimSpace(managedAgent.Model) == "" {
+		return nil, fmt.Errorf("managed agent requires a non-empty model")
+	}
+	if strings.TrimSpace(managedAgent.Instructions) == "" {
+		return nil, fmt.Errorf("managed agent requires non-empty instructions")
+	}
+
+	managedDef := agent_api.ManagedAgentDefinition{
+		AgentDefinition: agent_api.AgentDefinition{
+			Kind:      agent_api.AgentKindManaged,
+			RaiConfig: mapRaiConfig(managedAgent.Policies),
+		},
+		Model:        managedAgent.Model,
+		Harness:      agent_api.ManagedAgentHarnessGitHubCopilot,
+		Instructions: managedAgent.Instructions,
+	}
+
+	if len(managedAgent.Skills) > 0 {
+		managedDef.Skills = append([]string(nil), managedAgent.Skills...)
+	}
+
+	// Build-time environment variables (if supplied) get carried into the
+	// managed environment block so the Hand sandbox can read them.
+	if buildConfig != nil && len(buildConfig.EnvironmentVariables) > 0 {
+		managedDef.Environment = &agent_api.ManagedEnvironment{
+			EnvironmentVariables: maps.Clone(buildConfig.EnvironmentVariables),
+		}
+	}
+
+	// Managed agents do not have endpoint or agent-card customization at the
+	// YAML layer today, so pass nil for both.
+	return createAgentAPIRequest(managedAgent.AgentDefinition, managedDef, nil, nil)
 }
 
 // createAgentAPIRequest is a helper function to create the final request with common fields.

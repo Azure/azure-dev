@@ -72,7 +72,10 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 		)
 	}
 
-	if !strings.EqualFold(u.Scheme, "https") {
+	bypass := foundryEndpointValidationBypassed()
+
+	if !strings.EqualFold(u.Scheme, "https") &&
+		!(bypass && strings.EqualFold(u.Scheme, "http")) {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--agent-endpoint must use https",
@@ -81,7 +84,14 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 	}
 
 	host := strings.ToLower(u.Hostname())
-	if host == "" || !isFoundryHost(host) {
+	if host == "" {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--agent-endpoint host must not be empty",
+			agentEndpointHint,
+		)
+	}
+	if !bypass && !isFoundryHost(host) {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("--agent-endpoint host %q is not a Foundry host (*%s)", u.Hostname(), agentEndpointHostHint),
@@ -91,7 +101,8 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 
 	// Reject explicit ports — Foundry endpoints always use the default HTTPS port,
 	// and silently dropping a non-default port would route requests to a different origin.
-	if u.Port() != "" {
+	// The override path allows ports (e.g. http://localhost:5000) for local backends.
+	if !bypass && u.Port() != "" {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("--agent-endpoint host %q must not include a port", u.Host),

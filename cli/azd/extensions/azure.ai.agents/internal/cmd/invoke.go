@@ -355,6 +355,25 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
+	// Prompt (kind=managed) agents use a workspace-rooted Responses API on the
+	// harness. When the resolved azure.ai.agent service is a prompt agent we
+	// route there before the hosted protocol resolution — unless the user
+	// explicitly targeted a local server (--local) or a full deployed agent
+	// endpoint (--agent-endpoint), in which case we honor that intent.
+	if a.endpoint == nil && !a.flags.local {
+		azdClient, err := azdext.NewAzdClient()
+		if err != nil {
+			return fmt.Errorf("failed to create azd client: %w", err)
+		}
+		pctx, isPrompt, pErr := resolvePromptAgentService(ctx, azdClient, a.flags.name, a.noPrompt)
+		azdClient.Close()
+		if pErr == nil && isPrompt {
+			return a.runPromptInvoke(ctx, pctx)
+		}
+		// pErr (e.g. no azure.yaml) is non-fatal here: fall through to the
+		// existing hosted/local resolution which surfaces its own errors.
+	}
+
 	protocol, err := a.resolveProtocol(ctx)
 	if err != nil {
 		return err

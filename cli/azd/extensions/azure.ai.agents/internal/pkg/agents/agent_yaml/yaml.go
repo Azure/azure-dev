@@ -16,6 +16,11 @@ type AgentKind string
 const (
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
+	// AgentKindManaged is the Foundry "managed" agent kind backed by the
+	// Prompt Execution Service (PES) Brain+Hand sandbox architecture.
+	// Lifecycle and response APIs live behind the same data-plane routes
+	// as the other Foundry kinds, with a "kind": "managed" discriminator.
+	AgentKindManaged AgentKind = "managed"
 )
 
 // IsValidAgentKind checks if the provided AgentKind is valid
@@ -28,6 +33,7 @@ func ValidAgentKinds() []AgentKind {
 	return []AgentKind{
 		AgentKindHosted,
 		AgentKindWorkflow,
+		AgentKindManaged,
 	}
 }
 
@@ -229,6 +235,29 @@ type ContainerAgent struct {
 	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agent_card,omitempty"`
 	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
 	Policies             []Policy                `json:"policies,omitempty" yaml:"policies,omitempty"`
+}
+
+// ManagedAgent represents a Foundry "managed" agent — a PES (Prompt Execution
+// Service) backed agent whose Brain+Hand sandbox is provisioned by the
+// platform on demand. The customer declares the model and instructions; the
+// platform manages the runtime, lifecycle, and orchestration.
+//
+// Unlike ContainerAgent, the customer does not provide a container image or
+// code; the only required fields are Model and Instructions.
+type ManagedAgent struct {
+	AgentDefinition `json:",inline" yaml:",inline"`
+
+	// Model is the model deployment name to use for this agent (e.g. "gpt-4.1-mini").
+	Model string `json:"model" yaml:"model"`
+
+	// Instructions is the system/developer message inserted into the model's context.
+	Instructions string `json:"instructions" yaml:"instructions"`
+
+	// Skills is an optional list of Foundry skill names attached to the agent.
+	Skills []string `json:"skills,omitempty" yaml:"skills,omitempty"`
+
+	// Policies is an optional list of governance policies (e.g. RAI).
+	Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.

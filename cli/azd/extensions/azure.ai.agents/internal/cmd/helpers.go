@@ -546,6 +546,11 @@ type AgentServiceInfo struct {
 	AgentName     string // deployed agent name from env
 	Version       string // deployed agent version from env
 	AgentEndpoint string // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
+	// ServiceDir is the absolute path to the service's source directory
+	// (project.Path joined with svc.RelativePath). It points at the folder
+	// that contains the service's agent.yaml, when one was scaffolded by
+	// `azd ai agent init`. May be empty if the resolver could not compute it.
+	ServiceDir string
 }
 
 // promptForAgentService prompts the user to select one of multiple azure.ai.agent services.
@@ -657,12 +662,22 @@ func resolveAgentService(
 // resolveAgentServiceFromProject finds the azure.ai.agent service in azure.yaml
 // and resolves its deployed agent name and version from the azd environment.
 func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) (*AgentServiceInfo, error) {
-	svc, _, err := resolveAgentService(ctx, azdClient, name, noPrompt)
+	svc, project, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
 		return nil, err
 	}
 
 	info := &AgentServiceInfo{ServiceName: svc.Name}
+
+	// Best-effort: compute the on-disk service directory so callers can find
+	// the agent.yaml that backs the service. Errors here are intentionally
+	// not fatal — older azure.yaml entries (or services in unusual layouts)
+	// may not resolve cleanly, and the rest of the resolver remains useful.
+	if project != nil {
+		if dir, joinErr := paths.JoinAllowRoot(project.Path, svc.RelativePath); joinErr == nil {
+			info.ServiceDir = dir
+		}
+	}
 
 	// Resolve agent name and version from azd environment
 	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})

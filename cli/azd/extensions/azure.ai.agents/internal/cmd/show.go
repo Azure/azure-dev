@@ -46,8 +46,8 @@ func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "show [name]",
-		Short: "Show the status of a hosted agent.",
-		Long: `Show the status of a hosted agent.
+		Short: "Show the status of an agent.",
+		Long: `Show the status of an agent.
 
 The agent name and version are resolved automatically from the azure.yaml service
 configuration and the current azd environment. Optionally specify the service name
@@ -74,6 +74,18 @@ configuration and the current azd environment. Optionally specify the service na
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
+			// Prompt (kind=managed) agents are azd services too, but they live
+			// on the harness rather than the Foundry service. Resolve the
+			// service and, when it is a prompt agent, query the harness for
+			// status instead of the Foundry agent endpoint.
+			if pctx, isPrompt, pErr := resolvePromptAgentService(
+				ctx, azdClient, flags.name, extCtx.NoPrompt,
+			); pErr != nil {
+				return pErr
+			} else if isPrompt {
+				return runPromptShow(ctx, flags, pctx)
+			}
 
 			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, extCtx.NoPrompt)
 			if err != nil {
@@ -194,6 +206,54 @@ func (a *ShowAction) Run(ctx context.Context) error {
 	}
 
 	return printShowResult(result, a.flags.output, suggestions)
+}
+
+// runPromptShow handles `azd ai agent show` for a prompt (kind=managed) agent.
+// It is dispatched from RunE when the resolved azure.ai.agent service carries a
+// promptAgent config block. The status comes from the harness GetAgent API
+// rather than the Foundry agent endpoint.
+func runPromptShow(ctx context.Context, flags *showFlags, pctx *promptServiceContext) error {
+	agentName := pctx.AgentName()
+	client, err := pctx.newClient()
+	if err != nil {
+		return err
+	}
+
+	agent, err := client.GetAgent(ctx, agentName, pctx.Settings.EffectiveAPIVersion())
+	if err != nil {
+		return fmt.Errorf("failed to get prompt agent %q: %w", agentName, err)
+	}
+
+	switch flags.output {
+	case "json":
+		data, jsonErr := json.MarshalIndent(agent, "", "  ")
+		if jsonErr != nil {
+			return fmt.Errorf("failed to marshal response: %w", jsonErr)
+		}
+		fmt.Println(string(data))
+	default:
+		printPromptShowTable(agent, pctx.Settings)
+	}
+	return nil
+}
+
+// printPromptShowTable renders a concise status table for a prompt agent.
+func printPromptShowTable(agent *agent_api.AgentObject, settings *projectpkg.PromptAgentSettings) {
+	latest := agent.Versions.Latest
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(w, "Name:\t%s\n", agent.Name)
+	fmt.Fprintf(w, "Kind:\t%s\n", "prompt")
+	if latest.Version != "" {
+		fmt.Fprintf(w, "Version:\t%s\n", latest.Version)
+	}
+	if latest.Status != "" {
+		fmt.Fprintf(w, "Status:\t%s\n", latest.Status)
+	}
+	fmt.Fprintf(w, "Harness:\t%s\n", settings.BaseURL)
+	if latest.Error != nil && latest.Error.Message != "" {
+		fmt.Fprintf(w, "Error:\t%s (%s)\n", latest.Error.Message, latest.Error.Code)
+	}
+	_ = w.Flush()
 }
 
 func printShowResult(result *showResult, output string, suggestions []nextstep.Suggestion) error {

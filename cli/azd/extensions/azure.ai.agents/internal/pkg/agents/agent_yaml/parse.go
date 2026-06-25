@@ -117,6 +117,14 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 
 		agent.AgentDefinition = agentDef
 		return agent, nil
+	case AgentKindManaged:
+		var agent ManagedAgent
+		if err := yaml.Unmarshal(templateBytes, &agent); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal to ManagedAgent: %w", err)
+		}
+
+		agent.AgentDefinition = agentDef
+		return agent, nil
 	}
 
 	return nil, fmt.Errorf("unrecognized agent kind: %s", agentDef.Kind)
@@ -417,6 +425,35 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 					// Workflow doesn't have models, so no model validation needed
 				} else {
 					errors = append(errors, fmt.Sprintf("failed to unmarshal to Workflow: %v", err))
+				}
+			case AgentKindManaged:
+				var agent ManagedAgent
+				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
+					if strings.TrimSpace(agent.Model) == "" {
+						errors = append(errors, "template.model is required for managed agents")
+					}
+					if strings.TrimSpace(agent.Instructions) == "" {
+						errors = append(errors, "template.instructions is required for managed agents")
+					}
+					for i, policy := range agent.Policies {
+						switch policy.Type {
+						case PolicyTypeRai:
+							if policy.RaiPolicyName == "" {
+								errors = append(errors, fmt.Sprintf(
+									"policies[%d] of type '%s' requires a policy name (rai_policy_name)",
+									i, policy.Type))
+							}
+						case "":
+							errors = append(errors, fmt.Sprintf(
+								"policies[%d] requires a type", i))
+						default:
+							errors = append(errors, fmt.Sprintf(
+								"policies[%d] has an unsupported type '%s' (supported: %s)",
+								i, policy.Type, PolicyTypeRai))
+						}
+					}
+				} else {
+					errors = append(errors, fmt.Sprintf("failed to unmarshal to ManagedAgent: %v", err))
 				}
 			}
 		}

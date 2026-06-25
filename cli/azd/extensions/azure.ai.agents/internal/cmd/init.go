@@ -56,6 +56,7 @@ type initFlags struct {
 	model             string
 	manifestPointer   string
 	agentName         string
+	description       string
 	src               string
 	env               string
 	protocols         []string
@@ -69,6 +70,11 @@ type initFlags struct {
 	// mirrors the `--force` convention used by `azd down`, `azd env remove`,
 	// `azd config reset`, and `azd infra generate`.
 	force bool
+	// kind, when set, explicitly selects the agent runtime ("hosted" or
+	// "managed") and bypasses the interactive kind prompt. This is primarily
+	// for non-interactive callers (--no-prompt) and automation; interactive
+	// users get the kind prompt when this is empty.
+	kind string
 	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
 	// and is not registered as a CLI flag on the init command itself.
 	noPrompt bool
@@ -932,6 +938,46 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				Timeout: 30 * time.Second,
 			}
 
+			// Ask the user which agent kind to initialize, before any
+			// hosted-specific manifest/template detection runs. When the user
+			// has already passed a manifest, --src, or any other hosted-only
+			// signal we skip the prompt and stay on the hosted path; only an
+			// otherwise-blank invocation can branch into the prompt-agent flow.
+			//
+			// An explicit --kind flag always wins: it bypasses both the prompt
+			// and the hosted-signal gating so automation can select the
+			// prompt-agent runtime non-interactively. "managed" is accepted as
+			// a backward-compatible alias for "prompt".
+			if flags.kind != "" {
+				switch agentKindChoice(strings.ToLower(strings.TrimSpace(flags.kind))) {
+				case AgentKindChoicePrompt, AgentKindChoiceManaged:
+					return runInitManaged(ctx, flags, azdClient)
+				case AgentKindChoiceHosted:
+					// Fall through to the hosted flow below.
+				default:
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						fmt.Sprintf("unknown --kind value %q", flags.kind),
+						"supported values are: hosted, prompt",
+					)
+				}
+			} else {
+				hostedSignalsPresent := userProvidedManifest ||
+					flags.src != "" ||
+					flags.deployMode != "" ||
+					flags.runtime != "" ||
+					flags.entryPoint != ""
+				if !hostedSignalsPresent {
+					kindChoice, kindErr := promptAgentKind(ctx, azdClient, flags.noPrompt)
+					if kindErr != nil {
+						return kindErr
+					}
+					if kindChoice == AgentKindChoicePrompt || kindChoice == AgentKindChoiceManaged {
+						return runInitManaged(ctx, flags, azdClient)
+					}
+				}
+			}
+
 			// Track whether a project already exists so the cd hint is
 			// only shown for brand-new top-level project folders, not
 			// when a template adds a subfolder to an existing project.
@@ -1291,6 +1337,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVar(&flags.agentName, "agent-name", "",
 		"Foundry agent name to write to agent.yaml. Reusing a name creates a new version of the existing agent.")
 
+	cmd.Flags().StringVar(&flags.description, "description", "",
+		"Description to write to agent.yaml. Used as the agent's human-readable summary.")
+
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
@@ -1312,6 +1361,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite an input manifest that already lives inside the generated src tree without prompting. "+
 			"Required together with --no-prompt when init would otherwise need confirmation.")
+
+	cmd.Flags().StringVar(&flags.kind, "kind", "",
+		"Agent runtime to initialize: 'hosted' (bring your own code/container) or 'prompt' "+
+			"(model + instructions; Foundry runs Brain+Hand, Harness: GHCP). When omitted, you are "+
+			"prompted interactively.")
 
 	return cmd
 }

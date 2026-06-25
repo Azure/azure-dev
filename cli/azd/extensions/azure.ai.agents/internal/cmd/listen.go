@@ -61,8 +61,16 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 	for _, svc := range args.Project.Services {
 		switch svc.Host {
 		case AiAgentHost:
-			if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
-				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+			// Prompt (kind=managed) agents have no container to provision
+			// settings for — the harness owns the runtime. But they DO carry a
+			// model deployment in their service config, so still run envUpdate
+			// (which translates `deployments` into AI_PROJECT_DEPLOYMENTS for
+			// Bicep). Only the container-settings step is hosted-specific.
+			_, isPrompt := promptSettingsFromService(svc)
+			if !isPrompt {
+				if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
+					return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+				}
 			}
 			if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
@@ -84,6 +92,14 @@ func postprovisionHandler(
 			continue
 		}
 		hasAgent = true
+
+		// Prompt (kind=managed) agents have no toolboxes to provision on a
+		// Foundry project — the harness owns those. Skip toolbox provisioning
+		// but still treat the project as having an agent (for the
+		// pending-provision signal clear below).
+		if _, isPrompt := promptSettingsFromService(svc); isPrompt {
+			continue
+		}
 
 		if err := provisionToolboxes(ctx, azdClient, svc); err != nil {
 			return fmt.Errorf(
@@ -155,6 +171,12 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	hasHostedAgentService := false
 	for _, svc := range args.Project.Services {
 		if svc.Host != AiAgentHost {
+			continue
+		}
+
+		// Prompt (kind=managed) agents have no container settings and no
+		// developer-RBAC pre-flight — the harness owns the runtime.
+		if _, isPrompt := promptSettingsFromService(svc); isPrompt {
 			continue
 		}
 
@@ -335,12 +357,44 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 			continue
 		}
 
+		// Prompt (kind=managed) agents are removed from the harness on down so
+		// `azd down` fully tears down the agent alongside the infrastructure.
+		// Best-effort: a harness failure is logged but does not block down.
+		if settings, isPrompt := promptSettingsFromService(svc); isPrompt {
+			deletePromptAgentOnDown(ctx, svc, settings)
+		}
+
 		if cleanupAgentSessionState(ctx, azdClient, envName, svc.Name) {
 			fmt.Printf("Cleaned up saved session and conversation for agent %q\n", svc.Name)
 		}
 	}
 
 	return nil
+}
+
+// deletePromptAgentOnDown best-effort deletes a prompt agent from the harness
+// during `azd down`. Failures are logged, never returned — teardown of the
+// project should not be blocked by a harness hiccup.
+func deletePromptAgentOnDown(
+	ctx context.Context,
+	svc *azdext.ServiceConfig,
+	settings *project.PromptAgentSettings,
+) {
+	settings.ApplyEnvOverrides()
+	if err := settings.Validate(); err != nil {
+		log.Printf("postdown: skipping harness delete for %q: %v", svc.Name, err)
+		return
+	}
+	client, err := project.NewPromptAgentClient(settings)
+	if err != nil {
+		log.Printf("postdown: failed to build harness client for %q: %v", svc.Name, err)
+		return
+	}
+	if _, err := client.DeleteAgent(ctx, svc.Name, settings.EffectiveAPIVersion(), true); err != nil {
+		log.Printf("postdown: failed to delete prompt agent %q from harness: %v", svc.Name, err)
+		return
+	}
+	fmt.Printf("Deleted prompt agent %q from the harness\n", svc.Name)
 }
 
 // cleanupAgentSessionState removes saved session and conversation IDs for a

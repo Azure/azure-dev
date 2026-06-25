@@ -85,6 +85,71 @@ const (
 	initModeTemplate = "template"
 )
 
+// agentKindChoice represents the discriminator the user picks at the very
+// start of `azd ai agent init`. It selects between the two supported agent
+// runtimes: hosted (today's container/code-deploy flow) and prompt (the
+// Foundry Brain+Hand harness, currently powered by GitHub Copilot / GHCP).
+type agentKindChoice string
+
+const (
+	// AgentKindChoiceHosted is the existing hosted-agent path — the customer
+	// supplies code or a container image and the platform runs it on Azure
+	// Container Apps.
+	AgentKindChoiceHosted agentKindChoice = "hosted"
+	// AgentKindChoicePrompt is the "prompt" agent path — the customer declares
+	// model + instructions and the Foundry harness (GHCP) runs Brain+Hand on
+	// demand. Note: the on-the-wire agent kind for this path is still
+	// "managed" (see agent_yaml.AgentKindManaged); "prompt" is the
+	// user-facing choice value only.
+	AgentKindChoicePrompt agentKindChoice = "prompt"
+	// AgentKindChoiceManaged is a backward-compatible alias for
+	// AgentKindChoicePrompt accepted on the --kind flag. Prefer "prompt".
+	AgentKindChoiceManaged agentKindChoice = "managed"
+)
+
+// promptAgentKind asks the user which agent kind to initialize. In no-prompt
+// mode it returns AgentKindChoiceHosted to preserve today's behaviour for CI
+// callers that do not yet know about the new kind. The selection is the very
+// first interactive prompt in `azd ai agent init` and routes the rest of the
+// init flow.
+func promptAgentKind(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	noPrompt bool,
+) (agentKindChoice, error) {
+	if noPrompt {
+		return AgentKindChoiceHosted, nil
+	}
+
+	choices := []*azdext.SelectChoice{
+		{
+			Label: "Hosted agent  — bring your own code or container (deployed to Azure Container Apps)",
+			Value: string(AgentKindChoiceHosted),
+		},
+		{
+			Label: "Prompt agent  — model + instructions only (Foundry runs Brain+Hand; Harness: GHCP)",
+			Value: string(AgentKindChoicePrompt),
+		},
+	}
+	defaultIndex := int32(0)
+
+	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "What kind of agent do you want to initialize?",
+			Choices:       choices,
+			SelectedIndex: &defaultIndex,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", exterrors.Cancelled("agent kind selection was cancelled")
+		}
+		return "", fmt.Errorf("failed to prompt for agent kind: %w", err)
+	}
+
+	return agentKindChoice(choices[*resp.Value].Value), nil
+}
+
 // promptInitMode asks the user whether to use existing code or start from a template.
 // If the current directory is empty, automatically returns initModeTemplate.
 // In no-prompt mode with existing local files, defaults to using the current directory.

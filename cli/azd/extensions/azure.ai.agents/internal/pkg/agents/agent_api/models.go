@@ -47,6 +47,10 @@ type AgentKind string
 const (
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
+	// AgentKindManaged is the Foundry "managed" / "prompt" agent kind backed
+	// by the Prompt Execution Service (PES). The API control plane accepts the
+	// value "prompt" as the wire discriminator for this kind.
+	AgentKindManaged AgentKind = "prompt"
 )
 
 // AgentEventType represents the types of events that can be handled
@@ -239,6 +243,48 @@ func (d *HostedAgentDefinition) UnmarshalJSON(data []byte) error {
 		d.ProtocolVersions = raw.ContainerProtocolVersions
 	}
 	return nil
+}
+
+// ManagedPackages describes packages to install in the managed agent sandbox.
+type ManagedPackages struct {
+	Pip []string `json:"pip,omitempty"`
+	Apt []string `json:"apt,omitempty"`
+}
+
+// ManagedEnvironment describes the runtime environment for a managed agent's Hand sandbox.
+// All fields are optional; the platform applies sensible defaults when unset.
+type ManagedEnvironment struct {
+	BaseImage            *string           `json:"base_image,omitempty"`
+	Image                *string           `json:"image,omitempty"`
+	Packages             *ManagedPackages  `json:"packages,omitempty"`
+	CPU                  *string           `json:"cpu,omitempty"`
+	Memory               *string           `json:"memory,omitempty"`
+	EgressPolicy         *string           `json:"egress_policy,omitempty"`
+	EnvironmentVariables map[string]string `json:"environment_variables,omitempty"`
+}
+
+// ManagedAgentHarnessGitHubCopilot is the execution harness identifier sent in
+// the managed agent definition's `harness` field to run the agent on the
+// GitHub Copilot harness.
+const ManagedAgentHarnessGitHubCopilot = "ghcp"
+
+// ManagedAgentDefinition represents a Foundry "managed" agent backed by the
+// Prompt Execution Service (PES). Managed agents declare a model + instructions
+// and optionally tools, skills, and environment overrides. The platform
+// provisions Brain+Hand sandboxes on demand to execute the agent.
+type ManagedAgentDefinition struct {
+	AgentDefinition
+	Model string `json:"model"`
+	// Harness identifies the execution harness the platform should use to run
+	// the managed agent (e.g. "ghcp" for the GitHub Copilot harness).
+	Harness          string              `json:"harness,omitempty"`
+	Instructions     string              `json:"instructions,omitempty"`
+	Tools            []any               `json:"tools,omitempty"`
+	ToolChoice       any                 `json:"tool_choice,omitempty"`
+	Skills           []string            `json:"skills,omitempty"`
+	StructuredInputs map[string]any      `json:"structured_inputs,omitempty"`
+	Environment      *ManagedEnvironment `json:"environment,omitempty"`
+	Files            map[string]string   `json:"files,omitempty"`
 }
 
 // CreateAgentVersionRequest represents a request to create an agent version

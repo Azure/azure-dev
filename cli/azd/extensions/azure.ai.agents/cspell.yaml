@@ -79,3 +79,9 @@ words:
   - parseable
   - azd's
   - deepseek
+  # Managed agent (Foundry PES / vienna harness) terms
+  - vienna
+  - azureml
+  - cognitiveservices
+  - fdp
+  - PES

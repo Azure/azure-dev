@@ -25,6 +25,11 @@ var spelledFourRe = regexp.MustCompile(`(?i)\bfour\b`)
 // The standalone-"4" rule is the lookaround (?<![\w.])4(?!\.\d)(?!\w); the
 // spelled-out "four" is matched case-insensitively as a whole word.
 //
+// A decimal such as "4.0" is deliberately rejected too: although 4.0 == 4
+// mathematically, the "4.<digit>" form is treated as a version/decimal token to
+// keep "4.1"-style strings out, and a live model answering "2+2" replies "4" or
+// "four", never "4.0".
+//
 // Go's regexp engine (RE2) has no lookahead/lookbehind, so the standalone-"4"
 // rule is implemented by scanning runes instead of with a single expression.
 func responseHasExpectedAnswer(text string) bool {
@@ -37,7 +42,7 @@ func responseHasExpectedAnswer(text string) bool {
 // hasStandaloneFour reports whether text contains a "4" digit that stands alone,
 // reproducing the lookaround in the Python regex (?<![\w.])4(?!\.\d)(?!\w):
 //   - not preceded by a word rune or '.'  (rejects "x4", "_4", ".4")
-//   - not followed by '.' then a digit    (rejects "4.1")
+//   - not followed by '.' then a digit    (rejects "4.1", "4.0")
 //   - not followed by a word rune         (rejects "40", "4o")
 func hasStandaloneFour(text string) bool {
 	runes := []rune(text)

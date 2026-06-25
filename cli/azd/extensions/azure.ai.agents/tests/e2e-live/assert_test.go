@@ -22,6 +22,7 @@ func TestResponseHasExpectedAnswer(t *testing.T) {
 		{"trailing period mid-sentence", "the value 4. is final", true},
 		{"model name", "gpt-4o-mini", false},
 		{"version", "4.1", false},
+		{"decimal four", "4.0", false}, // intentional: see responseHasExpectedAnswer doc
 		{"status code", "404", false},
 		{"price", "$40", false},
 		{"ratio", "24/7", false},

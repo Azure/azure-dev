@@ -6,6 +6,7 @@ package project
 import (
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"sync"
 
@@ -488,9 +489,7 @@ func AgentDefinitionToServiceProperties(
 
 	// Merge the deploy/provision config keys onto the definition keys. The two
 	// sets are disjoint except `container`, which only the config carries.
-	for k, v := range cfgStruct.GetFields() {
-		defStruct.Fields[k] = v
-	}
+	maps.Copy(defStruct.Fields, cfgStruct.GetFields())
 
 	return defStruct, nil
 }

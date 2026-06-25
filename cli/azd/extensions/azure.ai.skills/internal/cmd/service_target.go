@@ -202,7 +202,7 @@ func resolveSkillInstructions(svc *azdext.ServiceConfig, instructions string) (s
 // hasParentTraversal reports whether a relative path contains a ".." segment
 // that could escape its base directory, treating both '/' and '\' as separators.
 func hasParentTraversal(p string) bool {
-	for _, seg := range strings.Split(strings.ReplaceAll(p, "\\", "/"), "/") {
+	for seg := range strings.SplitSeq(strings.ReplaceAll(p, "\\", "/"), "/") {
 		if seg == ".." {
 			return true
 		}

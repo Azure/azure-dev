@@ -892,10 +892,6 @@ func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
 	assert.Equal(t, "pid", got[envKeyPrincipalID])
 }
 
-// strPtr returns a pointer to its argument; small helper to keep the
-// armcognitiveservices.Account literals below readable.
-func strPtr(s string) *string { return &s }
-
 func TestCollectPurgeableAccounts(t *testing.T) {
 	// Pure helper -- maps the SDK's pointer-heavy Account model down to the
 	// {name, location} pairs the purge step needs, skipping anything with a
@@ -919,7 +915,7 @@ func TestCollectPurgeableAccounts(t *testing.T) {
 		{
 			name: "complete account is captured",
 			in: []*armcognitiveservices.Account{
-				{Name: strPtr("cog-abc"), Location: strPtr("eastus")},
+				{Name: new("cog-abc"), Location: new("eastus")},
 			},
 			want: []purgeableAccount{{name: "cog-abc", location: "eastus"}},
 		},
@@ -927,32 +923,32 @@ func TestCollectPurgeableAccounts(t *testing.T) {
 			name: "nil entry is skipped",
 			in: []*armcognitiveservices.Account{
 				nil,
-				{Name: strPtr("cog-abc"), Location: strPtr("eastus")},
+				{Name: new("cog-abc"), Location: new("eastus")},
 			},
 			want: []purgeableAccount{{name: "cog-abc", location: "eastus"}},
 		},
 		{
 			name: "entry with nil Name is skipped",
 			in: []*armcognitiveservices.Account{
-				{Location: strPtr("eastus")},
-				{Name: strPtr("cog-ok"), Location: strPtr("westus2")},
+				{Location: new("eastus")},
+				{Name: new("cog-ok"), Location: new("westus2")},
 			},
 			want: []purgeableAccount{{name: "cog-ok", location: "westus2"}},
 		},
 		{
 			name: "entry with nil Location is skipped",
 			in: []*armcognitiveservices.Account{
-				{Name: strPtr("cog-bad")},
-				{Name: strPtr("cog-ok"), Location: strPtr("westus2")},
+				{Name: new("cog-bad")},
+				{Name: new("cog-ok"), Location: new("westus2")},
 			},
 			want: []purgeableAccount{{name: "cog-ok", location: "westus2"}},
 		},
 		{
 			name: "mixed list preserves order and skips invalid entries",
 			in: []*armcognitiveservices.Account{
-				{Name: strPtr("cog-a"), Location: strPtr("eastus")},
-				{Name: strPtr("cog-b")}, // dropped: no location
-				{Name: strPtr("cog-c"), Location: strPtr("westus2")},
+				{Name: new("cog-a"), Location: new("eastus")},
+				{Name: new("cog-b")}, // dropped: no location
+				{Name: new("cog-c"), Location: new("westus2")},
 			},
 			want: []purgeableAccount{
 				{name: "cog-a", location: "eastus"},

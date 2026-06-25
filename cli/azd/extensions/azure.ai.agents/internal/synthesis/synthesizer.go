@@ -15,6 +15,7 @@ package synthesis
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"regexp"
@@ -215,9 +216,7 @@ func Synthesize(in Input) (*Result, error) {
 		"deployments": deployments,
 		"includeAcr":  includeAcr,
 	}
-	for k, v := range netParams {
-		params[k] = v
-	}
+	maps.Copy(params, netParams)
 
 	return &Result{
 		Parameters:  params,

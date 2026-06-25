@@ -16,8 +16,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 	goyaml "go.yaml.in/yaml/v3"
+	"google.golang.org/grpc"
 )
 
 func TestDetectStartupCommand(t *testing.T) {

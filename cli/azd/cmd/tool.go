@@ -673,7 +673,7 @@ func (a *toolInstallAction) resolveHostOptions(
 
 	// Explicitly-named skill: when multiple hosts are detected we cannot
 	// safely guess which the user wants.
-	present := a.manager.AvailableSkillHosts(skill)
+	present := a.manager.AvailableSkillHosts(ctx, skill)
 	if len(present) > 1 {
 		// Interactive terminal: prompt the user to pick the host(s),
 		// after surfacing the --host hint so they learn the shortcut too.
@@ -730,7 +730,7 @@ func (a *toolInstallAction) resolveUnavailableHostPrompt(
 		return nil, false, nil
 	}
 
-	available := a.manager.AvailableSkillHosts(skill)
+	available := a.manager.AvailableSkillHosts(ctx, skill)
 	var unavailable []string
 	for _, host := range a.flags.hosts {
 		if !slices.Contains(available, host) {

@@ -28,7 +28,7 @@ type mockInstaller struct {
 		tool *ToolDefinition,
 		opts ...InstallOption,
 	) (*InstallResult, error)
-	availableSkillHostsFn func(tool *ToolDefinition) []string
+	availableSkillHostsFn func(ctx context.Context, tool *ToolDefinition) []string
 }
 
 func (m *mockInstaller) Install(
@@ -59,9 +59,9 @@ func (m *mockInstaller) Upgrade(
 	}, nil
 }
 
-func (m *mockInstaller) AvailableSkillHosts(tool *ToolDefinition) []string {
+func (m *mockInstaller) AvailableSkillHosts(ctx context.Context, tool *ToolDefinition) []string {
 	if m.availableSkillHostsFn != nil {
-		return m.availableSkillHostsFn(tool)
+		return m.availableSkillHostsFn(ctx, tool)
 	}
 	return nil
 }
@@ -642,13 +642,13 @@ func TestManager_UpgradeAll(t *testing.T) {
 
 func TestManager_AvailableSkillHosts(t *testing.T) {
 	installer := &mockInstaller{
-		availableSkillHostsFn: func(_ *ToolDefinition) []string {
+		availableSkillHostsFn: func(_ context.Context, _ *ToolDefinition) []string {
 			return []string{"copilot", "claude"}
 		},
 	}
 	m := NewManager(&mockDetector{}, installer, nil)
 
-	got := m.AvailableSkillHosts(&ToolDefinition{
+	got := m.AvailableSkillHosts(t.Context(), &ToolDefinition{
 		Id:       "azure-skills",
 		Category: ToolCategorySkill,
 	})

@@ -2287,7 +2287,7 @@ func TestAvailableSkillHosts_ReturnsPresentInManifestOrder(t *testing.T) {
 
 	assert.Equal(t,
 		[]string{"copilot", "claude"},
-		inst.AvailableSkillHosts(newSkillTool()),
+		inst.AvailableSkillHosts(t.Context(), newSkillTool()),
 	)
 }
 
@@ -2297,7 +2297,7 @@ func TestAvailableSkillHosts_NonSkillToolReturnsNil(t *testing.T) {
 	runner := mockexec.NewMockCommandRunner()
 	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
 
-	assert.Nil(t, inst.AvailableSkillHosts(&ToolDefinition{
+	assert.Nil(t, inst.AvailableSkillHosts(t.Context(), &ToolDefinition{
 		Id:       "not-a-skill",
 		Category: ToolCategoryServer,
 	}))

@@ -112,10 +112,11 @@ type Installer interface {
 	) (*InstallResult, error)
 
 	// AvailableSkillHosts returns the names of the tool's configured
-	// SkillHosts that are currently on PATH, in manifest order
-	// (preferred host first). It returns nil for non-skill tools or
-	// when none of the hosts are available.
-	AvailableSkillHosts(tool *ToolDefinition) []string
+	// SkillHosts that are currently usable (a functional CLI on PATH, per
+	// hostUsable), in manifest order (preferred host first). It returns nil
+	// for non-skill tools or when none of the hosts are usable. It probes
+	// the host binaries, so it takes a context.
+	AvailableSkillHosts(ctx context.Context, tool *ToolDefinition) []string
 }
 
 // installConfig holds the resolved options for an install or upgrade
@@ -229,16 +230,19 @@ func (i *installer) Upgrade(
 }
 
 // AvailableSkillHosts returns the names of the tool's configured
-// SkillHosts that are currently on PATH, in manifest order (preferred
-// host first). It returns nil for non-skill tools or when none of the
-// hosts are available.
-func (i *installer) AvailableSkillHosts(tool *ToolDefinition) []string {
+// SkillHosts that are currently usable, in manifest order (preferred host
+// first). A host counts only if [installer.hostUsable] confirms it is a
+// functional CLI — not merely a same-named launcher stub on PATH — so the
+// interactive host picker never offers a host the install path would later
+// reject. It returns nil for non-skill tools or when none of the hosts are
+// usable.
+func (i *installer) AvailableSkillHosts(ctx context.Context, tool *ToolDefinition) []string {
 	if tool.Category != ToolCategorySkill {
 		return nil
 	}
 	var present []string
 	for _, host := range tool.SkillHosts {
-		if i.commandRunner.ToolInPath(host.Host) == nil {
+		if i.hostUsable(ctx, host) {
 			present = append(present, host.Host)
 		}
 	}

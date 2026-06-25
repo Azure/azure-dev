@@ -324,7 +324,7 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 	}
 
 	annotation := fmt.Sprintf(
-		"# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/%s/azure.yaml.json",
+		"# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/schemas/%s/azure.yaml.json",
 		version)
 	projectFileContents := bytes.NewBufferString(annotation + "\n\n")
 	_, err = projectFileContents.Write(projectBytes)

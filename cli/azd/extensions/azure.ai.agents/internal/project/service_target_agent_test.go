@@ -1884,3 +1884,58 @@ func TestFilterServicesByName(t *testing.T) {
 	require.Equal(t, services, filterServicesByName(services, ""),
 		"empty name returns input unchanged (defensive)")
 }
+
+func TestValidatePythonBundledDeps_NoRequirements(t *testing.T) {
+	dir := t.TempDir()
+	// No requirements.txt — should pass
+	err := validatePythonBundledDeps(dir)
+	require.NoError(t, err)
+}
+
+func TestValidatePythonBundledDeps_EmptyRequirements(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("# just a comment\n\n"), 0600))
+
+	err := validatePythonBundledDeps(dir)
+	require.NoError(t, err)
+}
+
+func TestValidatePythonBundledDeps_NoDepsInstalled(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("azure-ai-agents>=1.0\n"), 0600))
+
+	err := validatePythonBundledDeps(dir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no installed packages were found")
+}
+
+func TestValidatePythonBundledDeps_TopLevelDistInfo(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("azure-ai-agents>=1.0\n"), 0600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "azure_ai_agents-1.0.dist-info"), 0o750))
+
+	err := validatePythonBundledDeps(dir)
+	require.NoError(t, err)
+}
+
+func TestValidatePythonBundledDeps_SubdirDistInfo(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("azure-ai-agents>=1.0\n"), 0600))
+	// Installed into vendor/ subdir
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "vendor", "azure_ai_agents-1.0.dist-info"), 0o750))
+
+	err := validatePythonBundledDeps(dir)
+	require.NoError(t, err)
+}
+
+func TestValidatePythonBundledDeps_ErrorCodeCorrect(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("some-package\n"), 0600))
+
+	err := validatePythonBundledDeps(dir)
+	require.Error(t, err)
+
+	var localErr *azdext.LocalError
+	require.True(t, errors.As(err, &localErr))
+	require.Equal(t, exterrors.CodeBundledDepsNotFound, localErr.Code)
+}

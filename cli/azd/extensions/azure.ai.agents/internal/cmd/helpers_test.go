@@ -4,13 +4,17 @@
 package cmd
 
 import (
+	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 )
 
 func TestDetectStartupCommand(t *testing.T) {
@@ -357,4 +361,171 @@ func TestIsTerminal_NonTTY(t *testing.T) {
 	if isTerminal(r.Fd()) {
 		t.Errorf("isTerminal(pipe read end) = true, want false")
 	}
+}
+
+// helpersProjectServer is a fake ProjectServiceServer that returns a fixed project config.
+type helpersProjectServer struct {
+	azdext.UnimplementedProjectServiceServer
+	project *azdext.ProjectConfig
+}
+
+func (s *helpersProjectServer) Get(
+	_ context.Context, _ *azdext.EmptyRequest,
+) (*azdext.GetProjectResponse, error) {
+	return &azdext.GetProjectResponse{Project: s.project}, nil
+}
+
+// helpersPromptServer is a fake PromptServiceServer that records Select calls
+// and returns a canned choice index.
+type helpersPromptServer struct {
+	azdext.UnimplementedPromptServiceServer
+	selectIndex int32
+	selectCalls atomic.Int32
+}
+
+func (s *helpersPromptServer) Select(
+	_ context.Context, req *azdext.SelectRequest,
+) (*azdext.SelectResponse, error) {
+	s.selectCalls.Add(1)
+	idx := s.selectIndex
+	return &azdext.SelectResponse{Value: &idx}, nil
+}
+
+// newHelpersTestAzdClient spins up a gRPC server with the supplied Project and
+// Prompt stubs and returns a client wired to its address.
+func newHelpersTestAzdClient(
+	t *testing.T,
+	projectServer *helpersProjectServer,
+	promptServer *helpersPromptServer,
+) *azdext.AzdClient {
+	t.Helper()
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(grpcServer, projectServer)
+	azdext.RegisterPromptServiceServer(grpcServer, promptServer)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+
+	azdClient, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() { azdClient.Close() })
+
+	return azdClient
+}
+
+// TestResolveAgentProtocol_ReturnsServiceName verifies that resolveAgentProtocol
+// returns the resolved service name alongside the protocol, so callers can cache
+// it and avoid a redundant prompt.
+func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
+	t.Parallel()
+
+	// Create a temp dir with agent.yaml declaring the "responses" protocol.
+	svcDir := t.TempDir()
+	agentYaml := "protocols:\n  - protocol: responses\n    version: \"1.0\"\n"
+	require.NoError(t, os.WriteFile(filepath.Join(svcDir, "agent.yaml"), []byte(agentYaml), 0600))
+
+	tests := []struct {
+		name        string
+		inputName   string // name passed to resolveAgentProtocol
+		services    map[string]*azdext.ServiceConfig
+		selectIndex int32 // which service the prompt returns (0-based)
+		wantName    string
+	}{
+		{
+			name:      "single service auto-resolved",
+			inputName: "",
+			services: map[string]*azdext.ServiceConfig{
+				"my-agent": {Name: "my-agent", Host: AiAgentHost, RelativePath: "."},
+			},
+			wantName: "my-agent",
+		},
+		{
+			name:      "explicit name returns that service",
+			inputName: "agent-b",
+			services: map[string]*azdext.ServiceConfig{
+				"agent-a": {Name: "agent-a", Host: AiAgentHost, RelativePath: "."},
+				"agent-b": {Name: "agent-b", Host: AiAgentHost, RelativePath: "."},
+			},
+			wantName: "agent-b",
+		},
+		{
+			name:      "multiple services prompt selects first",
+			inputName: "",
+			services: map[string]*azdext.ServiceConfig{
+				"alpha": {Name: "alpha", Host: AiAgentHost, RelativePath: "."},
+				"beta":  {Name: "beta", Host: AiAgentHost, RelativePath: "."},
+			},
+			selectIndex: 0,
+			wantName:    "alpha",
+		},
+		{
+			name:      "multiple services prompt selects second",
+			inputName: "",
+			services: map[string]*azdext.ServiceConfig{
+				"alpha": {Name: "alpha", Host: AiAgentHost, RelativePath: "."},
+				"beta":  {Name: "beta", Host: AiAgentHost, RelativePath: "."},
+			},
+			selectIndex: 1,
+			wantName:    "beta",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			projectServer := &helpersProjectServer{
+				project: &azdext.ProjectConfig{
+					Path:     svcDir,
+					Services: tt.services,
+				},
+			}
+			promptServer := &helpersPromptServer{selectIndex: tt.selectIndex}
+			azdClient := newHelpersTestAzdClient(t, projectServer, promptServer)
+
+			protocol, serviceName, err := resolveAgentProtocol(
+				t.Context(), azdClient, tt.inputName, false,
+			)
+			require.NoError(t, err)
+			require.Equal(t, "responses", string(protocol))
+			require.Equal(t, tt.wantName, serviceName,
+				"resolveAgentProtocol should return the resolved service name")
+		})
+	}
+}
+
+// TestResolveAgentProtocol_MultipleServicesPromptsOnce verifies that a single
+// call to resolveAgentProtocol triggers exactly one prompt when there are
+// multiple agent services and no name is provided.
+func TestResolveAgentProtocol_MultipleServicesPromptsOnce(t *testing.T) {
+	t.Parallel()
+
+	svcDir := t.TempDir()
+	agentYaml := "protocols:\n  - protocol: responses\n    version: \"1.0\"\n"
+	require.NoError(t, os.WriteFile(filepath.Join(svcDir, "agent.yaml"), []byte(agentYaml), 0600))
+
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{
+			Path: svcDir,
+			Services: map[string]*azdext.ServiceConfig{
+				"svc-a": {Name: "svc-a", Host: AiAgentHost, RelativePath: "."},
+				"svc-b": {Name: "svc-b", Host: AiAgentHost, RelativePath: "."},
+			},
+		},
+	}
+	promptServer := &helpersPromptServer{selectIndex: 0}
+	azdClient := newHelpersTestAzdClient(t, projectServer, promptServer)
+
+	_, serviceName, err := resolveAgentProtocol(t.Context(), azdClient, "", false)
+	require.NoError(t, err)
+	require.Equal(t, "svc-a", serviceName)
+	require.Equal(t, int32(1), promptServer.selectCalls.Load(),
+		"resolveAgentProtocol should trigger exactly one prompt")
 }

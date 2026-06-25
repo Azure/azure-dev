@@ -180,9 +180,11 @@ $ azd config set defaults.location eastus`,
 			Footer: getCmdConfigOptionsHelpFooter,
 		},
 		ActionResolver: newConfigOptionsAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat, output.NoneFormat},
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
 	})
+
+	subFilterActions(group)
 
 	return group
 }
@@ -537,9 +539,6 @@ func getCmdConfigOptionsHelpFooter(*cobra.Command) string {
 		"List all available configuration settings in JSON format": output.WithHighLightFormat(
 			"azd config options -o json",
 		),
-		"List all available configuration settings in table format": output.WithHighLightFormat(
-			"azd config options -o table",
-		),
 	})
 }
 
@@ -587,107 +586,6 @@ func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, e
 		if err != nil {
 			return nil, fmt.Errorf("failed formatting config options: %w", err)
 		}
-		return nil, nil
-	}
-
-	if a.formatter.Kind() == output.TableFormat {
-		// Table format
-		type tableRow struct {
-			Key           string
-			Description   string
-			Type          string
-			CurrentValue  string
-			AllowedValues string
-			EnvVar        string
-			Example       string
-		}
-
-		var rows []tableRow
-		for _, option := range options {
-			allowedValues := ""
-			if len(option.AllowedValues) > 0 {
-				allowedValues = strings.Join(option.AllowedValues, ", ")
-			}
-
-			// Get current value from config
-			currentValue := ""
-			// Skip environment-only variables (those with keys starting with EnvOnlyPrefix)
-			if !strings.HasPrefix(option.Key, config.EnvOnlyPrefix) {
-				if val, ok := currentConfig.Get(option.Key); ok {
-					// Convert value to string representation
-					switch v := val.(type) {
-					case string:
-						currentValue = v
-					case map[string]any:
-						currentValue = "<object>"
-					case []any:
-						currentValue = "<array>"
-					default:
-						currentValue = fmt.Sprintf("%v", v)
-					}
-				}
-			}
-
-			rows = append(rows, tableRow{
-				Key:           option.Key,
-				Description:   option.Description,
-				Type:          option.Type,
-				CurrentValue:  currentValue,
-				AllowedValues: allowedValues,
-				EnvVar:        option.EnvVar,
-				Example:       option.Example,
-			})
-		}
-
-		columns := []output.PrettyColumn{
-			{
-				Column:   output.Column{Heading: "KEY", ValueTemplate: "{{.Key}}"},
-				Priority: 1,
-			},
-			{
-				Column:   output.Column{Heading: "DESCRIPTION", ValueTemplate: "{{.Description}}"},
-				Priority: 1,
-			},
-			{
-				Column:   output.Column{Heading: "TYPE", ValueTemplate: "{{.Type}}"},
-				Priority: 2,
-			},
-			{
-				Column: output.Column{
-					Heading:       "CURRENT VALUE",
-					ValueTemplate: "{{.CurrentValue}}",
-				},
-				Priority: 2,
-			},
-			{
-				Column: output.Column{
-					Heading:       "ALLOWED VALUES",
-					ValueTemplate: "{{.AllowedValues}}",
-				},
-				Priority: 3,
-			},
-			{
-				Column: output.Column{
-					Heading:       "ENVIRONMENT VARIABLE",
-					ValueTemplate: "{{.EnvVar}}",
-				},
-				Priority: 3,
-			},
-			{
-				Column:   output.Column{Heading: "EXAMPLE", ValueTemplate: "{{.Example}}"},
-				Priority: 3,
-			},
-		}
-
-		prettyFormatter := &output.PrettyTableFormatter{}
-		err = prettyFormatter.Format(rows, a.writer, output.PrettyTableFormatterOptions{
-			Columns:         columns,
-			CardGroupColumn: "KEY",
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed formatting config options: %w", err)
-		}
-
 		return nil, nil
 	}
 

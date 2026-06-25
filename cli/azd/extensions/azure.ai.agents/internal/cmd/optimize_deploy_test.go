@@ -14,7 +14,7 @@ import (
 )
 
 func TestOptimizeDeployCommand_HasRequiredFlags(t *testing.T) {
-	cmd := newOptimizeDeployCommand()
+	cmd := newOptimizeDeployCommand(&azdext.ExtensionContext{})
 
 	candidateFlag := cmd.Flags().Lookup("candidate")
 	require.NotNil(t, candidateFlag, "--candidate flag should be registered")
@@ -24,7 +24,7 @@ func TestOptimizeDeployCommand_HasRequiredFlags(t *testing.T) {
 }
 
 func TestOptimizeDeployCommand_CandidateIsRequired(t *testing.T) {
-	cmd := newOptimizeDeployCommand()
+	cmd := newOptimizeDeployCommand(&azdext.ExtensionContext{})
 
 	// Set only --agent, omit --candidate
 	cmd.SetArgs([]string{"--agent", "my-agent"})
@@ -34,7 +34,7 @@ func TestOptimizeDeployCommand_CandidateIsRequired(t *testing.T) {
 }
 
 func TestOptimizeDeployCommand_AgentResolvedFromFlagOrYaml(t *testing.T) {
-	cmd := newOptimizeDeployCommand()
+	cmd := newOptimizeDeployCommand(&azdext.ExtensionContext{})
 
 	// --agent is no longer MarkFlagRequired; it falls back to agent.yaml
 	agentFlag := cmd.Flags().Lookup("agent")
@@ -47,7 +47,7 @@ func TestOptimizeDeployCommand_AgentResolvedFromFlagOrYaml(t *testing.T) {
 }
 
 func TestOptimizeDeployCommand_HasConnectionFlags(t *testing.T) {
-	cmd := newOptimizeDeployCommand()
+	cmd := newOptimizeDeployCommand(&azdext.ExtensionContext{})
 
 	assert.NotNil(t, cmd.Flags().Lookup("endpoint"))
 	assert.NotNil(t, cmd.Flags().Lookup("project-endpoint"))

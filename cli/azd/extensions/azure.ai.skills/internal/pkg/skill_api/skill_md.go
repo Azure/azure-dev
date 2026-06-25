@@ -20,7 +20,10 @@ const SkillMdFileName = "SKILL.md"
 type SkillMd struct {
 	Name           string
 	Description    string
+	License        string
+	Compatibility  string
 	Metadata       map[string]string
+	AllowedTools   []string
 	Instructions   string
 	RawFrontMatter map[string]any
 }
@@ -83,6 +86,27 @@ func ParseSkillMd(data []byte) (*SkillMd, error) {
 			return nil, err
 		}
 		out.Metadata = m
+	}
+	if v, ok := raw["license"]; ok {
+		s, err := frontMatterString("license", v)
+		if err != nil {
+			return nil, err
+		}
+		out.License = s
+	}
+	if v, ok := raw["compatibility"]; ok {
+		s, err := frontMatterString("compatibility", v)
+		if err != nil {
+			return nil, err
+		}
+		out.Compatibility = s
+	}
+	if v, ok := raw["allowed_tools"]; ok {
+		list, err := frontMatterStringSlice("allowed_tools", v)
+		if err != nil {
+			return nil, err
+		}
+		out.AllowedTools = list
 	}
 	return out, nil
 }
@@ -174,6 +198,28 @@ func frontMatterStringMap(field string, v any) (map[string]string, error) {
 			return nil, err
 		}
 		out[k] = s
+	}
+	return out, nil
+}
+
+func frontMatterStringSlice(field string, v any) ([]string, error) {
+	if v == nil {
+		return nil, nil
+	}
+	raw, ok := v.([]any)
+	if !ok {
+		return nil, fmt.Errorf("SKILL.md front matter field %q must be a list", field)
+	}
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(raw))
+	for i, elem := range raw {
+		s, err := frontMatterString(fmt.Sprintf("%s[%d]", field, i), elem)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
 	}
 	return out, nil
 }

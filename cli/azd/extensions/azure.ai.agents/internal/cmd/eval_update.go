@@ -24,6 +24,7 @@ import (
 
 // evalUpdateFlags holds CLI flags for the eval update command.
 type evalUpdateFlags struct {
+	envName       string // explicit environment name (from -e flag)
 	config        string // eval config path
 	datasetOnly   bool   // only update the dataset
 	evaluatorOnly bool   // only update evaluators
@@ -46,6 +47,7 @@ local changes. Use --dataset-only or --evaluator-only to skip prompts.`,
 			ctx := azdext.WithAccessToken(cmd.Context())
 			logCleanup := setupDebugLogging(cmd.Flags())
 			defer logCleanup()
+			flags.envName = extCtx.Environment
 			return runEvalUpdate(ctx, flags, extCtx.NoPrompt)
 		},
 	}
@@ -56,7 +58,7 @@ local changes. Use --dataset-only or --evaluator-only to skip prompts.`,
 }
 
 func runEvalUpdate(ctx context.Context, flags *evalUpdateFlags, noPrompt bool) error {
-	resolved, err := resolveEvalContext(ctx, evalContextOptions{})
+	resolved, err := resolveEvalContext(ctx, evalContextOptions{envName: flags.envName})
 	if err != nil {
 		return err
 	}
@@ -69,9 +71,9 @@ func runEvalUpdate(ctx context.Context, flags *evalUpdateFlags, noPrompt bool) e
 	}
 
 	// Detect what has local changes.
-	hasDataset := evalCfg.DatasetReference != nil &&
-		evalCfg.DatasetReference.Name != "" &&
-		evalCfg.DatasetReference.LocalURI != ""
+	hasDataset := evalCfg.Dataset != nil &&
+		evalCfg.Dataset.Name != "" &&
+		evalCfg.Dataset.LocalURI != ""
 	hasEvaluators := len(evalCfg.Evaluators.FindByLocalURI()) > 0
 
 	// Determine what to update based on flags and interactive prompts.
@@ -83,7 +85,7 @@ func runEvalUpdate(ctx context.Context, flags *evalUpdateFlags, noPrompt bool) e
 		if hasDataset {
 			updateDS = confirmUpdate(ctx, resolved, fmt.Sprintf(
 				"Dataset %s has local changes. Upload new version?",
-				evalCfg.DatasetReference.Name,
+				evalCfg.Dataset.Name,
 			))
 		}
 		if hasEvaluators {
@@ -143,7 +145,7 @@ func updateDataset(
 	evalCfg *evalConfig,
 	configPath string,
 ) (int, error) {
-	ref := evalCfg.DatasetReference
+	ref := evalCfg.Dataset
 	if ref == nil || ref.Name == "" || ref.LocalURI == "" {
 		return 0, nil
 	}

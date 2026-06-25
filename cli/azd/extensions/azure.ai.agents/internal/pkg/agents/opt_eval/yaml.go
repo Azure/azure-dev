@@ -35,17 +35,57 @@ func SafePath(baseDir, untrusted string) (string, error) {
 // Config is the shared YAML configuration for eval and optimize commands.
 //
 // Contains fields common to both commands. Optimize-specific fields
-// (Criteria, ValidationReference, etc) live in
+// (Criteria, ValidationDataset, etc) live in
 // the OptimizeConfig wrapper in the cmd package.
 //
 // Runtime state (operation IDs, eval IDs, status) is stored in
 // the azd environment rather than in this config file.
 type Config struct {
-	Name             string        `yaml:"name,omitempty"`
-	Agent            AgentRef      `yaml:"agent"`
-	DatasetFile      string        `yaml:"dataset_file,omitempty"`
-	DatasetReference *DatasetRef   `yaml:"dataset_reference,omitempty"`
-	Evaluators       EvaluatorList `yaml:"evaluators,omitempty"`
+	Name  string   `yaml:"name,omitempty"`
+	Agent AgentRef `yaml:"agent"`
+	// DatasetFile is the deprecated local dataset path. New configs use a
+	// local dataset block instead (a `dataset:` with only `local_uri` set, no
+	// `name`). It is still read for backward compatibility and takes
+	// precedence when set.
+	DatasetFile string      `yaml:"dataset_file,omitempty"`
+	Dataset     *DatasetRef `yaml:"dataset,omitempty"`
+	// LegacyDatasetReference reads the deprecated `dataset_reference` YAML key.
+	// Use Dataset instead; this is consulted only for backward compatibility
+	// and is merged into Dataset by NormalizeDataset at load time.
+	LegacyDatasetReference *DatasetRef   `yaml:"dataset_reference,omitempty"`
+	Evaluators             EvaluatorList `yaml:"evaluators,omitempty"`
+}
+
+// NormalizeDataset merges the deprecated `dataset_reference` key into Dataset
+// when Dataset is unset, then clears the legacy field so it is not re-written.
+// Loaders call this after unmarshaling for backward compatibility.
+func (c *Config) NormalizeDataset() {
+	if c.Dataset == nil && c.LegacyDatasetReference != nil {
+		c.Dataset = c.LegacyDatasetReference
+	}
+	c.LegacyDatasetReference = nil
+}
+
+// LocalDatasetPath returns the local dataset path, if any. It prefers the
+// deprecated dataset_file (backward compatibility), then falls back to a
+// local dataset block (a `dataset:` with `local_uri` set and no `name`).
+func (c *Config) LocalDatasetPath() string {
+	if c.DatasetFile != "" {
+		return c.DatasetFile
+	}
+	if c.Dataset.IsLocal() {
+		return c.Dataset.LocalURI
+	}
+	return ""
+}
+
+// RemoteDatasetReference returns the dataset when it points to a registered
+// dataset, or nil for a local-only or unset dataset.
+func (c *Config) RemoteDatasetReference() *DatasetRef {
+	if c.Dataset.IsRemote() {
+		return c.Dataset
+	}
+	return nil
 }
 
 // EvaluatorRef describes an evaluator. It can be a simple string name or a
@@ -162,7 +202,7 @@ func (el EvaluatorList) SetLocalURI(name, uri string) {
 // under AgentConfigsDir as a self-contained directory with a fixed layout:
 //
 //	.agent_configs/
-//	├── baseline/                  # original agent config captured by eval init or optimize
+//	├── baseline/                  # original agent config captured by eval generate or optimize
 //	│   ├── metadata.yaml          # MetadataFile  — model, file pointers
 //	│   ├── instructions.md        # InstructionFile — system prompt
 //	│   ├── skills/                # SkillsDir — skill definitions (optional)
@@ -174,7 +214,7 @@ func (el EvaluatorList) SetLocalURI(name, uri string) {
 //	    └── tools.json
 //
 // Both eval and optimize commands share these constants and layout conventions.
-// Eval init writes the baseline directory; optimize apply writes candidate
+// Eval generate writes the baseline directory; optimize apply writes candidate
 // directories and reads the baseline for diff display.
 const (
 	// AgentConfigsDir is the top-level folder that holds agent configuration
@@ -364,11 +404,32 @@ func (r InstructionRef) MarshalYAML() (any, error) {
 	return r.Value, nil
 }
 
-// DatasetRef references a named/versioned dataset.
+// DatasetRef references a dataset. A remote dataset points to a registered
+// dataset by name and optional version; a local dataset points to a local file
+// via local_uri. The kind is inferred from the populated fields: a name implies
+// a remote dataset, otherwise a populated local_uri implies a local one.
 type DatasetRef struct {
-	Name     string `yaml:"name"`
+	Name     string `yaml:"name,omitempty"`
 	Version  string `yaml:"version,omitempty"`
 	LocalURI string `yaml:"local_uri,omitempty"`
+}
+
+// IsLocal reports whether the reference points to a local dataset file.
+// A populated local_uri without a registered name implies a local dataset.
+func (d *DatasetRef) IsLocal() bool {
+	if d == nil {
+		return false
+	}
+	return d.Name == "" && d.LocalURI != ""
+}
+
+// IsRemote reports whether the reference points to a registered dataset.
+// A registered name implies a remote dataset reference.
+func (d *DatasetRef) IsRemote() bool {
+	if d == nil {
+		return false
+	}
+	return d.Name != ""
 }
 
 // OptimizationConfig is a per-target-attribute map of configuration overrides.
@@ -379,8 +440,8 @@ type DatasetRef struct {
 // automatically converted to json.RawMessage, allowing users to write:
 //
 //	optimization_config:
-//	  model: ["gpt-4o", "gpt-5"]
-//	  baselineModel: gpt-4o
+//	  model_search_space: ["gpt-4o", "gpt-5"]
+//	  model: gpt-4o
 type OptimizationConfig map[string]json.RawMessage
 
 // UnmarshalYAML decodes each value as a YAML native type and re-encodes it as
@@ -416,20 +477,9 @@ func (oc *OptimizationConfig) UnmarshalYAML(value *yaml.Node) error {
 type Options struct {
 	EvalModel          string             `yaml:"eval_model,omitempty"`
 	OptimizationConfig OptimizationConfig `yaml:"optimization_config,omitempty"`
-	MaxIterations      *int               `yaml:"max_iterations,omitempty"`
+	MaxCandidates      *int               `yaml:"max_candidates,omitempty"`
 	OptimizationModel  string             `yaml:"optimization_model,omitempty"`
 	EvaluationLevel    string             `yaml:"evaluation_level,omitempty"`
-}
-
-// UnmarshalYAML decodes Options from a YAML node.
-func (o *Options) UnmarshalYAML(value *yaml.Node) error {
-	// Alias avoids infinite recursion.
-	type raw Options
-	if err := value.Decode((*raw)(o)); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // Read reads a YAML config file (eval or optimize format).

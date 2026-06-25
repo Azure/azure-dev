@@ -413,14 +413,25 @@ func (p *GitHubCiProvider) credentialOptions(
 			},
 		}
 
+		// Track seen subjects to avoid duplicate FICs. When the OIDC
+		// template omits "context", all suffixes collapse to the same
+		// subject and Azure rejects duplicates on issuer+subject.
+		seenSubjects := map[string]bool{subjects.pullRequest: true}
+
 		for _, branch := range branches {
+			subject := subjects.branches[branch]
+			if seenSubjects[subject] {
+				continue
+			}
+			seenSubjects[subject] = true
+
 			safeBranchName := credentialNameSanitizer.ReplaceAllString(
 				branch, "-",
 			)
 			branchCredentials := &graphsdk.FederatedIdentityCredential{
 				Name:    fmt.Sprintf("%s-%s", credentialSafeName, safeBranchName),
 				Issuer:  federatedIdentityIssuer,
-				Subject: subjects.branches[branch],
+				Subject: subject,
 				Description: new(
 					"Created by Azure Developer CLI",
 				),

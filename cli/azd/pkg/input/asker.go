@@ -122,6 +122,11 @@ func askOnePrompt(p survey.Prompt, response any, isTerminal bool, stdout io.Writ
 			opts = append(opts, withShowCursor)
 		}
 
+		// Keep the filter text after toggling selections in multi-select prompts.
+		if _, ok := p.(*survey.MultiSelect); ok {
+			opts = append(opts, survey.WithKeepFilter(true))
+		}
+
 		opts = append(opts, survey.WithIcons(func(icons *survey.IconSet) {
 			// use bright, bold, blue question mark for all questions
 			icons.Question.Format = "blue+hb"

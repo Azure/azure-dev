@@ -40,6 +40,7 @@ func LoadEvalConfig(path string) (*EvalConfig, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse eval config %q: %w", path, err)
 	}
+	cfg.NormalizeDataset()
 
 	return &cfg, nil
 }
@@ -85,15 +86,11 @@ func (c *EvalConfig) Validate() error {
 			"add an 'evaluators:' section to your eval.yaml or use --evaluator")
 	}
 
-	hasFile := c.DatasetFile != ""
-	hasRef := c.DatasetReference != nil
+	hasLocal := c.LocalDatasetPath() != ""
+	hasRemote := c.RemoteDatasetReference() != nil
 
-	if hasFile && hasRef {
-		return fmt.Errorf("dataset_file and dataset_reference are mutually exclusive; specify one, not both")
-	}
-
-	if !hasFile && !hasRef {
-		return fmt.Errorf("one of dataset_file or dataset_reference is required")
+	if !hasLocal && !hasRemote {
+		return fmt.Errorf("a dataset is required: provide a local or registered dataset in your eval config")
 	}
 
 	return nil

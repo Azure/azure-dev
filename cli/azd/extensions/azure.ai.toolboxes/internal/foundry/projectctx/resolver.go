@@ -18,10 +18,12 @@ import (
 var ReadAzdHostedSourcesFunc = readAzdHostedSources
 
 // readAzdHostedSources dials the azd daemon (if reachable) and reads both the
-// active environment's FOUNDRY_PROJECT_ENDPOINT and the global-config project context
-// in a single client lifetime. Errors talking to the daemon are returned only
-// for non-Unavailable cases on the config read — Unavailable is treated as
-// "no daemon" and the caller falls through to subsequent levels.
+// active environment's project endpoint and the global-config project context
+// in a single client lifetime. The active-env read prefers
+// FOUNDRY_PROJECT_ENDPOINT and falls back to AZURE_AI_PROJECT_ENDPOINT (the key
+// `azd ai agent init` / `azd add` persist). Errors talking to the daemon are
+// returned only for non-Unavailable cases on the config read — Unavailable is
+// treated as "no daemon" and the caller falls through to subsequent levels.
 func readAzdHostedSources(ctx context.Context) (AzdHostedSources, error) {
 	var out AzdHostedSources
 
@@ -35,13 +37,16 @@ func readAzdHostedSources(ctx context.Context) (AzdHostedSources, error) {
 	if envResp, err := azdClient.Environment().GetCurrent(
 		ctx, &azdext.EmptyRequest{},
 	); err == nil {
-		envVal, valErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: envResp.Environment.Name,
-			Key:     "FOUNDRY_PROJECT_ENDPOINT",
-		})
-		if valErr == nil && envVal.Value != "" {
-			out.EnvValue = envVal.Value
-			out.EnvName = envResp.Environment.Name
+		for _, key := range []string{foundryEnvKey, azureAiEnvKey} {
+			envVal, valErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+				EnvName: envResp.Environment.Name,
+				Key:     key,
+			})
+			if valErr == nil && envVal.Value != "" {
+				out.EnvValue = envVal.Value
+				out.EnvName = envResp.Environment.Name
+				break
+			}
 		}
 	}
 
@@ -78,10 +83,10 @@ func containsGRPCCode(err error, code codes.Code) bool {
 // Resolve resolves a Foundry project endpoint using the 5-level cascade:
 //
 //  1. --project-endpoint flag
-//  2. Active azd env value (FOUNDRY_PROJECT_ENDPOINT)
+//  2. Active azd env value (FOUNDRY_PROJECT_ENDPOINT, then AZURE_AI_PROJECT_ENDPOINT)
 //  3. Global config: extensions.ai-agents.project.context.endpoint (read-only;
 //     owned by azure.ai.agents)
-//  4. Host environment variable FOUNDRY_PROJECT_ENDPOINT
+//  4. Host environment variable (FOUNDRY_PROJECT_ENDPOINT, then AZURE_AI_PROJECT_ENDPOINT)
 //  5. Structured error with actionable suggestion
 //
 // Invalid values at any level produce a hard validation error (no silent fallback).
@@ -101,7 +106,8 @@ func Resolve(ctx context.Context, opts ResolveOpts) (*Resolved, error) {
 		return nil, err
 	}
 
-	// Level 2: active azd environment's FOUNDRY_PROJECT_ENDPOINT.
+	// Level 2: active azd environment's FOUNDRY_PROJECT_ENDPOINT (with the
+	// AZURE_AI_PROJECT_ENDPOINT fallback applied in readAzdHostedSources).
 	if sources.EnvValue != "" {
 		normalized, _, err := Validate(sources.EnvValue)
 		if err != nil {
@@ -127,8 +133,13 @@ func Resolve(ctx context.Context, opts ResolveOpts) (*Resolved, error) {
 		}, nil
 	}
 
-	// Level 4: host environment variable FOUNDRY_PROJECT_ENDPOINT.
-	if envVal := os.Getenv("FOUNDRY_PROJECT_ENDPOINT"); envVal != "" {
+	// Level 4: host environment variable (FOUNDRY_PROJECT_ENDPOINT, then the
+	// AZURE_AI_PROJECT_ENDPOINT fallback).
+	for _, key := range []string{foundryEnvKey, azureAiEnvKey} {
+		envVal := os.Getenv(key)
+		if envVal == "" {
+			continue
+		}
 		normalized, _, err := Validate(envVal)
 		if err != nil {
 			return nil, err

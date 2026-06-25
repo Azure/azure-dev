@@ -18,9 +18,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 )
 
-// TODO: Enhance for multi-environment support
-// https://github.com/Azure/azure-dev/issues/1152
+// DefaultStaticWebAppEnvironmentName is the identifier used by the Azure REST API
+// to refer to the production environment of a Static Web App.
+// This value is distinct from the --env flag accepted by the SWA CLI.
 const DefaultStaticWebAppEnvironmentName = "default"
+
+// swaCliProductionEnvironment is the value the SWA CLI recognizes for production
+// deployments. The SWA CLI treats "production" and "prod" as special values that
+// deploy to the production environment (by not setting DEPLOYMENT_ENVIRONMENT
+// internally). See: https://github.com/Azure/static-web-apps-cli/blob/main/src/cli/commands/deploy/deploy.ts
+const swaCliProductionEnvironment = "production"
 
 type staticWebAppTarget struct {
 	env *environment.Environment
@@ -177,13 +184,23 @@ func (at *staticWebAppTarget) Deploy(
 		dOptions.OutputRelativeFolderPath = packagePath
 		cwd = serviceConfig.Project.Path
 	}
+	// Determine the environment to pass to the SWA CLI.
+	// When swa-cli.config.json is present, omit --env and let the SWA CLI resolve
+	// the environment from its own config (respecting the config file as source of truth).
+	// When no config file is present (opinionated mode), pass --env production to fix
+	// the BadRequest that occurred with the old --env default.
+	swaEnv := ""
+	if !usingSwaConfig(serviceContext.Package) {
+		swaEnv = swaCliProductionEnvironment
+	}
+
 	_, err = at.swa.Deploy(ctx,
 		cwd,
 		at.env.GetTenantId(),
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
-		DefaultStaticWebAppEnvironmentName,
+		swaEnv,
 		*deploymentToken,
 		dOptions,
 		at.env.Environ())
@@ -237,12 +254,13 @@ func (at *staticWebAppTarget) Endpoints(
 ) ([]string, error) {
 	// TODO: Enhance for multi-environment support
 	// https://github.com/Azure/azure-dev/issues/1152
+	apiEnvName := DefaultStaticWebAppEnvironmentName
 	if envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
-		DefaultStaticWebAppEnvironmentName,
+		apiEnvName,
 	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {
@@ -264,9 +282,13 @@ func (at *staticWebAppTarget) validateTargetResource(
 	return nil
 }
 
-func (at *staticWebAppTarget) verifyDeployment(ctx context.Context, targetResource *environment.TargetResource) error {
+func (at *staticWebAppTarget) verifyDeployment(
+	ctx context.Context,
+	targetResource *environment.TargetResource,
+) error {
 	retries := 0
 	const maxRetries = 10
+	apiEnvName := DefaultStaticWebAppEnvironmentName
 
 	for {
 		envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(
@@ -274,7 +296,7 @@ func (at *staticWebAppTarget) verifyDeployment(ctx context.Context, targetResour
 			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),
 			targetResource.ResourceName(),
-			DefaultStaticWebAppEnvironmentName,
+			apiEnvName,
 		)
 		if err != nil {
 			return fmt.Errorf("failed verifying static web app deployment: %w", err)

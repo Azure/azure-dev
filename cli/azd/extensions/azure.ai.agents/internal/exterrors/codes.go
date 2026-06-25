@@ -114,6 +114,11 @@ const (
 	CodeInvalidFilePath  = "invalid_file_path"
 )
 
+// Error codes for packaging/deploy errors.
+const (
+	CodeBundledDepsNotFound = "bundled_deps_not_found"
+)
+
 // Error codes for toolbox operations.
 const (
 	CodeInvalidToolbox             = "invalid_toolbox"

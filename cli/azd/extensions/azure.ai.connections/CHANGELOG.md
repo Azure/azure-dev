@@ -1,5 +1,13 @@
 # Release History
 
+## Unreleased
+
+## 0.1.2-preview (2026-06-19)
+
+### Bugs Fixed
+
+- [[#8688]](https://github.com/Azure/azure-dev/issues/8688) Resolve the project endpoint that `azd ai agent init` stores. `azd ai connection` commands now fall back to `AZURE_AI_PROJECT_ENDPOINT` (after `FOUNDRY_PROJECT_ENDPOINT`) in both the active azd environment and the host environment, so the resolution cascade no longer fails with "no Foundry project endpoint resolved" when only the `AZURE_AI_*` key is set.
+
 ## 0.1.1-preview (2026-06-05)
 
 ### Features Added

@@ -36,6 +36,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -73,6 +74,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	golangtools "github.com/azure/azure-dev/cli/azd/pkg/tools/golang"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
@@ -723,6 +725,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(dotnet.NewCli)
 	container.MustRegisterSingleton(git.NewCli)
 	container.MustRegisterSingleton(github.NewGitHubCli)
+	container.MustRegisterSingleton(golangtools.NewCli)
 	container.MustRegisterSingleton(javac.NewCli)
 	container.MustRegisterSingleton(kubectl.NewCli)
 	container.MustRegisterSingleton(maven.NewCli)
@@ -809,6 +812,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		project.ServiceLanguageJavaScript: project.NewNodeProject,
 		project.ServiceLanguageTypeScript: project.NewNodeProject,
 		project.ServiceLanguageJava:       project.NewMavenProject,
+		project.ServiceLanguageGo:         project.NewGoProject,
 		project.ServiceLanguageDocker:     project.NewDockerProject,
 		project.ServiceLanguageSwa:        project.NewSwaProject,
 		project.ServiceLanguageCustom:     project.NewCustomProject,
@@ -1015,6 +1019,19 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)
 	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
 	container.MustRegisterSingleton(grpcserver.NewProvisioningService)
+	container.MustRegisterSingleton(grpcserver.NewValidationService)
+	// Bind the concrete ValidationService to both the gRPC interface and
+	// the dispatcher interface so DI resolves both from the same instance.
+	container.MustRegisterSingleton(
+		func(svc *grpcserver.ValidationService) azdext.ValidationServiceServer {
+			return svc
+		},
+	)
+	container.MustRegisterSingleton(
+		func(svc *grpcserver.ValidationService) provisioning.ValidationCheckDispatcher {
+			return svc
+		},
+	)
 	container.MustRegisterSingleton(grpcserver.NewAiModelService)
 	container.MustRegisterScoped(grpcserver.NewCopilotService)
 

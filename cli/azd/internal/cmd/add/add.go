@@ -397,7 +397,7 @@ func ensureCompatibleProject(
 	if hasAppHost := importManager.HasAppHost(ctx, prjConfig); hasAppHost {
 		return &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf("incompatible project: found Aspire app host"),
-			Suggestion: fmt.Sprintf("%s does not support .NET Aspire projects.",
+			Suggestion: fmt.Sprintf("%s does not support Aspire projects.",
 				output.WithHighLightFormat("azd add")),
 		}
 	}

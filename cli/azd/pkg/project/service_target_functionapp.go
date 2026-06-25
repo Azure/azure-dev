@@ -77,6 +77,17 @@ func resolveFunctionAppRemoteBuild(serviceConfig *ServiceConfig) (remoteBuild bo
 		}
 
 		return *serviceConfig.RemoteBuild, nil
+	case ServiceLanguageGo:
+		// Go compiles to a static binary — remote build is not supported
+		if serviceConfig.RemoteBuild != nil && *serviceConfig.RemoteBuild {
+			return false, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"remote build is not supported for Go function apps",
+				),
+				Suggestion: "Go compiles to a static binary locally. Set 'remoteBuild: false' or remove the setting.",
+			}
+		}
+		return false, nil
 	default:
 		if serviceConfig.RemoteBuild != nil {
 			return *serviceConfig.RemoteBuild, nil

@@ -118,7 +118,7 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
             return;
         }
 
-        const envChoices  = envData.map(d => ({ label: d.Name, data: d,} as IAzureQuickPickItem<EnvironmentInfo>));
+        const envChoices  = envData.map(d => ({ label: d.Name, data: d,}));
         const selectedEnv = await context.ui.showQuickPick(envChoices, {
             canPickMany: false,
             title: vscode.l10n.t('Which environment should be deleted?')
@@ -192,7 +192,7 @@ export async function selectEnvironment(context: IActionContext, selectedItem?: 
                 label: d.Name,
                 data: d,
                 description: description,
-            } as IAzureQuickPickItem<EnvironmentInfo>;
+            };
         });
         const selectedEnv = await context.ui.showQuickPick(envChoices, {
             placeHolder: vscode.l10n.t('Select environment'),

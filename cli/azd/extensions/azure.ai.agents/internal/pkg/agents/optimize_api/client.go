@@ -30,6 +30,22 @@ type OptimizeClient struct {
 	pipeline runtime.Pipeline
 }
 
+// optimizeJobsPath is the base path segment for optimization job endpoints.
+// (defined in models.go)
+
+// optimizeFeatureHeader is the Foundry-Features value required by the v2
+// optimization API. It is sent on every request via foundryFeaturesPolicy.
+const optimizeFeatureHeader = "AgentsOptimization=V2Preview"
+
+// foundryFeaturesPolicy sets the Foundry-Features header on every request so
+// the optimization service enables the required preview feature.
+type foundryFeaturesPolicy struct{}
+
+func (foundryFeaturesPolicy) Do(req *policy.Request) (*http.Response, error) {
+	req.Raw().Header.Set("Foundry-Features", optimizeFeatureHeader)
+	return req.Next()
+}
+
 // NewOptimizeClient creates a new OptimizeClient with the given endpoint and credential.
 func NewOptimizeClient(endpoint string, cred azcore.TokenCredential) *OptimizeClient {
 	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
@@ -43,6 +59,7 @@ func NewOptimizeClient(endpoint string, cred azcore.TokenCredential) *OptimizeCl
 			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
 			azsdk.NewMsCorrelationPolicy(),
 			azsdk.NewUserAgentPolicy(userAgent),
+			foundryFeaturesPolicy{},
 		},
 	}
 
@@ -73,9 +90,13 @@ func (c *OptimizeClient) StartOptimize(
 	ctx context.Context,
 	optimizeReq *OptimizeRequest,
 ) (*OptimizeResponse, error) {
-	url := fmt.Sprintf("%s/optimize?api-version=%s", c.endpoint, APIVersion)
+	url := fmt.Sprintf("%s/%s?api-version=%s", c.endpoint, optimizeJobsPath, APIVersion)
 
-	payload, err := json.Marshal(optimizeReq)
+	// The service expects the request body wrapped in an "inputs" envelope,
+	// mirroring the shape echoed back in the job status response.
+	payload, err := json.Marshal(struct {
+		Inputs *OptimizeRequest `json:"inputs"`
+	}{Inputs: optimizeReq})
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -117,7 +138,7 @@ func (c *OptimizeClient) GetOptimizeStatus(
 	ctx context.Context,
 	operationID string,
 ) (*OptimizeJobStatus, error) {
-	url := fmt.Sprintf("%s/optimize/%s?api-version=%s", c.endpoint, netURL.PathEscape(operationID), APIVersion)
+	url := fmt.Sprintf("%s/%s/%s?api-version=%s", c.endpoint, optimizeJobsPath, netURL.PathEscape(operationID), APIVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
@@ -153,7 +174,7 @@ func (c *OptimizeClient) ListOptimizeJobs(
 	limit int,
 	status string,
 ) (*OptimizeListResponse, error) {
-	url := fmt.Sprintf("%s/optimize?api-version=%s&limit=%d", c.endpoint, APIVersion, limit)
+	url := fmt.Sprintf("%s/%s?api-version=%s&limit=%d", c.endpoint, optimizeJobsPath, APIVersion, limit)
 	if status != "" {
 		url += "&status=" + netURL.QueryEscape(status)
 	}
@@ -191,7 +212,7 @@ func (c *OptimizeClient) CancelOptimize(
 	ctx context.Context,
 	operationID string,
 ) (*OptimizeCancelResponse, error) {
-	url := fmt.Sprintf("%s/optimize/%s/cancel?api-version=%s", c.endpoint, netURL.PathEscape(operationID), APIVersion)
+	url := fmt.Sprintf("%s/%s/%s:cancel?api-version=%s", c.endpoint, optimizeJobsPath, netURL.PathEscape(operationID), APIVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
@@ -225,11 +246,12 @@ func (c *OptimizeClient) CancelOptimize(
 // deployed. This allows the optimization service to track which candidates have been deployed.
 func (c *OptimizeClient) ReportDeployment(
 	ctx context.Context,
+	jobID string,
 	report *DeploymentReport,
 ) error {
 	url := fmt.Sprintf(
-		"%s/optimize/candidates/%s:promote?api-version=%s",
-		c.endpoint, netURL.PathEscape(report.CandidateID), APIVersion,
+		"%s/%s/%s/candidates/%s:promote?api-version=%s",
+		c.endpoint, optimizeJobsPath, netURL.PathEscape(jobID), netURL.PathEscape(report.CandidateID), APIVersion,
 	)
 
 	payload, err := json.Marshal(report)
@@ -262,12 +284,14 @@ func (c *OptimizeClient) ReportDeployment(
 }
 
 // GetCandidateConfig fetches the candidate configuration from the optimization service.
-// GET /optimize/candidates/{id}/config
+// GET /agent_optimization_jobs/{jobId}/candidates/{id}/config
 func (c *OptimizeClient) GetCandidateConfig(
 	ctx context.Context,
+	jobID string,
 	candidateID string,
 ) (json.RawMessage, error) {
-	url := fmt.Sprintf("%s/optimize/candidates/%s/config?api-version=%s", c.endpoint, netURL.PathEscape(candidateID), APIVersion)
+	url := fmt.Sprintf("%s/%s/%s/candidates/%s/config?api-version=%s",
+		c.endpoint, optimizeJobsPath, netURL.PathEscape(jobID), netURL.PathEscape(candidateID), APIVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
@@ -297,12 +321,14 @@ func (c *OptimizeClient) GetCandidateConfig(
 }
 
 // GetCandidate fetches the candidate manifest (metadata + file list) from the optimization service.
-// GET /optimize/candidates/{id}
+// GET /agent_optimization_jobs/{jobId}/candidates/{id}
 func (c *OptimizeClient) GetCandidate(
 	ctx context.Context,
+	jobID string,
 	candidateID string,
 ) (*CandidateManifest, error) {
-	url := fmt.Sprintf("%s/optimize/candidates/%s?api-version=%s", c.endpoint, netURL.PathEscape(candidateID), APIVersion)
+	url := fmt.Sprintf("%s/%s/%s/candidates/%s?api-version=%s",
+		c.endpoint, optimizeJobsPath, netURL.PathEscape(jobID), netURL.PathEscape(candidateID), APIVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
@@ -332,14 +358,16 @@ func (c *OptimizeClient) GetCandidate(
 }
 
 // GetCandidateFile downloads a single file from a candidate.
-// GET /optimize/candidates/{id}/files?path={path}
+// GET /agent_optimization_jobs/{jobId}/candidates/{id}/files?path={path}
 func (c *OptimizeClient) GetCandidateFile(
 	ctx context.Context,
+	jobID string,
 	candidateID string,
 	filePath string,
 ) (string, error) {
-	url := fmt.Sprintf("%s/optimize/candidates/%s/files?api-version=%s&path=%s",
-		c.endpoint, netURL.PathEscape(candidateID), APIVersion, netURL.QueryEscape(filePath))
+	url := fmt.Sprintf("%s/%s/%s/candidates/%s/files?api-version=%s&path=%s",
+		c.endpoint, optimizeJobsPath, netURL.PathEscape(jobID), netURL.PathEscape(candidateID),
+		APIVersion, netURL.QueryEscape(filePath))
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {

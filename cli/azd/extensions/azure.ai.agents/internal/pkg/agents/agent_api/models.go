@@ -361,10 +361,12 @@ type AgentVersionError struct {
 
 // AgentObject represents an agent
 type AgentObject struct {
-	Object   string `json:"object"`
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Versions struct {
+	Object        string         `json:"object"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	AgentEndpoint *AgentEndpoint `json:"agent_endpoint,omitempty"`
+	AgentCard     *AgentCard     `json:"agent_card,omitempty"`
+	Versions      struct {
 		Latest AgentVersionObject `json:"latest"`
 	} `json:"versions"`
 }

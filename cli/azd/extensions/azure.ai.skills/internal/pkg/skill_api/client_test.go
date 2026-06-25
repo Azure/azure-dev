@@ -230,7 +230,6 @@ func TestClient_DownloadSkillContent_ReturnsZipBytes(t *testing.T) {
 }
 
 func TestClient_DownloadSkillContent_RejectsOversizeContentLength(t *testing.T) {
-	withDownloadCap(t, 16)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body := strings.Repeat("A", 17)
 		w.Header().Set("Content-Type", ContentTypeZip)
@@ -239,14 +238,13 @@ func TestClient_DownloadSkillContent_RejectsOversizeContentLength(t *testing.T) 
 	}))
 	defer srv.Close()
 
-	c := newTestClient(t, srv)
+	c := newTestClient(t, srv).WithMaxDownloadBytes(16)
 	_, err := c.DownloadSkillContent(context.Background(), "my-skill")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "exceeds")
 }
 
 func TestClient_DownloadSkillContent_RejectsOversizeStreamingBody(t *testing.T) {
-	withDownloadCap(t, 16)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", ContentTypeZip)
 		// No Content-Length: force the streaming-limit path.
@@ -264,14 +262,13 @@ func TestClient_DownloadSkillContent_RejectsOversizeStreamingBody(t *testing.T) 
 	}))
 	defer srv.Close()
 
-	c := newTestClient(t, srv)
+	c := newTestClient(t, srv).WithMaxDownloadBytes(16)
 	_, err := c.DownloadSkillContent(context.Background(), "my-skill")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "exceeds")
 }
 
 func TestClient_DownloadSkillContent_AcceptsAtLimit(t *testing.T) {
-	withDownloadCap(t, 16)
 	payload := []byte("PK\x03\x04tinybody")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", ContentTypeZip)
@@ -279,19 +276,10 @@ func TestClient_DownloadSkillContent_AcceptsAtLimit(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := newTestClient(t, srv)
+	c := newTestClient(t, srv).WithMaxDownloadBytes(16)
 	got, err := c.DownloadSkillContent(context.Background(), "my-skill")
 	require.NoError(t, err)
 	require.Equal(t, payload, got)
-}
-
-// withDownloadCap lowers downloadByteCap for the duration of a single test so
-// the cap can be exercised without writing MaxDownloadBytes through httptest.
-func withDownloadCap(t *testing.T, cap int64) {
-	t.Helper()
-	prev := downloadByteCap
-	downloadByteCap = cap
-	t.Cleanup(func() { downloadByteCap = prev })
 }
 
 func TestClient_DownloadVersionContent_TargetsVersionPath(t *testing.T) {

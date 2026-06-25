@@ -750,7 +750,8 @@ func TestCustomizations_GetCommandArgGenerator(t *testing.T) {
 		{"env_get_value_other", "azd env get-value", "other", ""},
 		{"env_select", "azd env select", "environment", FigGenListEnvironments},
 		{"template_show", "azd template show", "template", FigGenListTemplates},
-		{"ext_install", "azd extension install", "extension-id", FigGenListExtensions},
+		// install is handled via GetCommandArgs (combined id|zip arg), not here.
+		{"ext_install", "azd extension install", "extension-id", ""},
 		{"ext_show", "azd extension show", "extension-id", FigGenListExtensions},
 		{"ext_upgrade", "azd extension upgrade", "extension-id", FigGenListInstalledExtensions},
 		{"ext_uninstall", "azd extension uninstall", "extension-id", FigGenListInstalledExtensions},
@@ -826,6 +827,16 @@ func TestCustomizations_GetCommandArgs(t *testing.T) {
 				require.True(t, args[0].IsOptional)
 			})
 		}
+	})
+
+	t.Run("ext_install", func(t *testing.T) {
+		ctx := &CommandContext{CommandPath: "azd extension install"}
+		args := c.GetCommandArgs(ctx)
+		require.Len(t, args, 1)
+		require.Equal(t, "extension-id|extension-bundle.zip", args[0].Name)
+		// Offers both extension-id completion and file-path suggestions.
+		require.Equal(t, FigGenListExtensions, args[0].Generator)
+		require.Equal(t, "filepaths", args[0].Template)
 	})
 
 	t.Run("unknown", func(t *testing.T) {

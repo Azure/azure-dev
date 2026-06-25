@@ -288,34 +288,23 @@ func (a *copilotConsentListAction) Run(ctx context.Context) (*actions.ActionResu
 
 	// Convert rules to display format
 	type ruleDisplay struct {
-		Target           string `json:"target"`
-		Context          string `json:"context"`
-		Action           string `json:"action"`
-		Permission       string `json:"permission"`
-		PermissionSymbol string `json:"-"`
-		Scope            string `json:"scope"`
-		GrantedAt        string `json:"grantedAt"`
+		Target     string `json:"target"`
+		Context    string `json:"context"`
+		Action     string `json:"action"`
+		Permission string `json:"permission"`
+		Scope      string `json:"scope"`
+		GrantedAt  string `json:"grantedAt"`
 	}
 
 	var displayRules []ruleDisplay
 	for _, rule := range rules {
-		perm := string(rule.Permission)
-		symbol := "?"
-		switch perm {
-		case "allow":
-			symbol = "✓"
-		case "deny":
-			symbol = "✗"
-		}
-
 		displayRules = append(displayRules, ruleDisplay{
-			Target:           string(rule.Target),
-			Context:          string(rule.Operation),
-			Action:           string(rule.Action),
-			Permission:       perm,
-			PermissionSymbol: symbol,
-			Scope:            string(rule.Scope),
-			GrantedAt:        rule.GrantedAt.Format("2006-01-02 15:04:05"),
+			Target:     string(rule.Target),
+			Context:    string(rule.Operation),
+			Action:     string(rule.Action),
+			Permission: string(rule.Permission),
+			Scope:      string(rule.Scope),
+			GrantedAt:  rule.GrantedAt.Format("2006-01-02 15:04:05"),
 		})
 	}
 
@@ -332,10 +321,9 @@ func (a *copilotConsentListAction) Run(ctx context.Context) (*actions.ActionResu
 				Priority: 1,
 			},
 			{
-				Column:             output.Column{Heading: "PERMISSION", ValueTemplate: "{{.Permission}}"},
-				Priority:           1,
-				ShortValueTemplate: "{{.PermissionSymbol}}",
-				ColorFunc:          consentPermissionColor,
+				Column:    output.Column{Heading: "PERMISSION", ValueTemplate: "{{.Permission}}"},
+				Priority:  1,
+				ColorFunc: consentPermissionColor,
 			},
 			{
 				Column:   output.Column{Heading: "SCOPE", ValueTemplate: "{{.Scope}}"},
@@ -356,8 +344,9 @@ func (a *copilotConsentListAction) Run(ctx context.Context) (*actions.ActionResu
 		}
 
 		return nil, prettyFormatter.Format(displayRules, a.writer, output.PrettyTableFormatterOptions{
-			Columns:         columns,
-			CardGroupColumn: "SCOPE",
+			Columns:              columns,
+			CardGroupColumn:      "SCOPE",
+			ResponsiveColumnHint: true,
 		})
 	}
 
@@ -649,11 +638,11 @@ func formatConsentRuleDescription(rule consent.ConsentRule) string {
 // consentPermissionColor applies color formatting based on permission value.
 func consentPermissionColor(s string) string {
 	switch s {
-	case "allow", "✓":
+	case "allow":
 		return output.WithSuccessFormat(s)
-	case "deny", "✗":
+	case "deny":
 		return output.WithErrorFormat(s)
-	case "prompt", "?":
+	case "prompt":
 		return output.WithWarningFormat(s)
 	default:
 		return output.WithGrayFormat(s)

@@ -25,11 +25,11 @@ func TestHasModelConfig(t *testing.T) {
 	}{
 		{"nil config", nil, false},
 		{"empty config", opt_eval.OptimizationConfig{}, false},
-		{"has model key", opt_eval.OptimizationConfig{
-			"model": json.RawMessage(`["gpt-4o"]`),
+		{"has model_search_space key", opt_eval.OptimizationConfig{
+			"model_search_space": json.RawMessage(`["gpt-4o"]`),
 		}, true},
 		{"has other keys only", opt_eval.OptimizationConfig{
-			"systemPrompt": json.RawMessage(`"hello"`),
+			"system_prompt": json.RawMessage(`"hello"`),
 		}, false},
 	}
 	for _, tt := range tests {
@@ -43,7 +43,7 @@ func TestHasModelConfig(t *testing.T) {
 // ---- model JSON serialization ----
 
 // TestModelConfigIsPlainArray verifies that when models are stored in
-// OptimizationConfig["model"], the value is a JSON array of strings
+// OptimizationConfig["model_search_space"], the value is a JSON array of strings
 // (e.g. ["gpt-4o","gpt-5"]) — not a wrapped object like {"model":[...]}.
 func TestModelConfigIsPlainArray(t *testing.T) {
 	t.Parallel()
@@ -53,17 +53,17 @@ func TestModelConfigIsPlainArray(t *testing.T) {
 	require.NoError(t, err)
 
 	oc := make(opt_eval.OptimizationConfig)
-	oc["model"] = modelJSON
+	oc["model_search_space"] = modelJSON
 
 	// Deserialize and verify it's a plain array.
 	var parsed []string
-	require.NoError(t, json.Unmarshal(oc["model"], &parsed))
+	require.NoError(t, json.Unmarshal(oc["model_search_space"], &parsed))
 	assert.Equal(t, models, parsed)
 
 	// Verify it does NOT deserialize as an object with a "model" key.
 	var asObject map[string]any
-	err = json.Unmarshal(oc["model"], &asObject)
-	assert.Error(t, err, "model value should not be a JSON object")
+	err = json.Unmarshal(oc["model_search_space"], &asObject)
+	assert.Error(t, err, "model_search_space value should not be a JSON object")
 }
 
 // ---- isRecommendedOptimizationModel ----
@@ -137,7 +137,7 @@ func TestResolveOptimizeEvalModel_NilClient(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{Options: &opt_eval.Options{}}
-	err := resolveOptimizeEvalModel(t.Context(), nil, cfg, false)
+	err := resolveOptimizeEvalModel(t.Context(), nil, cfg, false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot prompt")
 }
@@ -159,7 +159,7 @@ func TestResolveOptimizeOptimizationModel_NilClient(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{Options: &opt_eval.Options{}}
-	err := resolveOptimizeOptimizationModel(t.Context(), nil, cfg)
+	err := resolveOptimizeOptimizationModel(t.Context(), nil, cfg, "")
 	assert.NoError(t, err) // silently skips
 	assert.Empty(t, cfg.Options.OptimizationModel)
 }
@@ -170,7 +170,7 @@ func TestResolveOptimizeTargetModels_NilClient(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{Options: &opt_eval.Options{}}
-	err := resolveOptimizeTargetModels(t.Context(), nil, cfg)
+	err := resolveOptimizeTargetModels(t.Context(), nil, cfg, "")
 	assert.NoError(t, err) // silently skips
 	assert.Nil(t, cfg.Options.OptimizationConfig)
 }

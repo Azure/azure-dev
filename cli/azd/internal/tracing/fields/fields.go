@@ -690,6 +690,17 @@ var (
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,
 	}
+
+	// PreflightExtensionRulesKey records the list of rule IDs from extension-provided
+	// validation checks that were executed. Separate from PreflightRulesKey (core rules)
+	// to distinguish the source of checks in telemetry.
+	//
+	// Example: ["todo_resource_name", "naming_convention"]
+	PreflightExtensionRulesKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.extension_rules"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Provision-related fields
@@ -741,6 +752,9 @@ var (
 	}
 
 	// ExeGraphStepNameKey records the step name within an exegraph.step span.
+	// Hashed: step names embed user-chosen service or layer names from
+	// azure.yaml (e.g., "deploy-<svc.Name>", "<layer.Name>"); emit via
+	// fields.StringHashed.
 	ExeGraphStepNameKey = AttributeKey{
 		Key:            attribute.Key("exegraph.step.name"),
 		Classification: SystemMetadata,
@@ -748,13 +762,18 @@ var (
 	}
 
 	// ExeGraphStepDepsKey records the dependency list for a step.
+	// Hashed: each entry is another step name and therefore embeds user-chosen
+	// identifiers; emit via fields.StringSliceHashed.
 	ExeGraphStepDepsKey = AttributeKey{
 		Key:            attribute.Key("exegraph.step.deps"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}
 
-	// ExeGraphStepTagsKey records the tags for a step.
+	// ExeGraphStepTagsKey records the tags for a step. Tags are a fixed
+	// internal vocabulary (e.g., "provision", "deploy", "package", "cmdhook",
+	// "event") set by azd code; they do not contain user input and are
+	// emitted raw.
 	ExeGraphStepTagsKey = AttributeKey{
 		Key:            attribute.Key("exegraph.step.tags"),
 		Classification: SystemMetadata,

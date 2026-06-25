@@ -56,6 +56,7 @@ func Test_NewExtensionInstallAction(t *testing.T) {
 		&extensionInstallFlags{},
 		mockinput.NewMockConsole(),
 		nil, // extensionManager
+		nil, // sourceManager
 	)
 	require.NotNil(t, action)
 }

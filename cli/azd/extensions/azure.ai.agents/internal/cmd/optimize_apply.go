@@ -41,7 +41,7 @@ type optimizeApplyFlags struct {
 
 func newOptimizeApplyCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &optimizeApplyFlags{}
-	action := &OptimizeApplyAction{flags: flags, noPrompt: extCtx.NoPrompt}
+	action := &OptimizeApplyAction{flags: flags}
 
 	cmd := &cobra.Command{
 		Use:   "apply",
@@ -57,6 +57,12 @@ After applying, run 'azd deploy' to deploy the optimized agent version.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
+
+			// Read extCtx fields here (after PersistentPreRunE has populated them
+			// from -e / AZD_ENVIRONMENT), not at command construction time.
+			action.envName = extCtx.Environment
+			action.noPrompt = extCtx.NoPrompt
+
 			return action.Run(ctx, cmd)
 		},
 	}
@@ -72,6 +78,7 @@ After applying, run 'azd deploy' to deploy the optimized agent version.`,
 // OptimizeApplyAction implements the optimize apply command.
 type OptimizeApplyAction struct {
 	flags    *optimizeApplyFlags
+	envName  string
 	noPrompt bool
 }
 
@@ -105,7 +112,7 @@ func (a *OptimizeApplyAction) apply(
 	out io.Writer,
 	bold *color.Color,
 ) error {
-	projectEndpoint, err := resolveProjectEndpointForDeploy(ctx, &a.flags.optimizeConnectionFlags)
+	projectEndpoint, err := resolveProjectEndpointForDeploy(ctx, &a.flags.optimizeConnectionFlags, a.envName)
 	if err != nil {
 		return err
 	}
@@ -121,9 +128,16 @@ func (a *OptimizeApplyAction) apply(
 	}
 	optClient := optimize_api.NewOptimizeClient(projectEndpoint, credential)
 
+	// Resolve the optimization job ID — candidate endpoints are nested under it.
+	jobID := loadOptimizeJobIDForAgent(ctx, svc.Name, a.envName)
+	if jobID == "" {
+		return fmt.Errorf(
+			"no optimization job found in the environment; run 'azd ai agent optimize' first")
+	}
+
 	// Step 1: Fetch candidate config from the optimization service.
 	fmt.Fprintf(out, "  Fetching candidate config...\n")
-	candidateConfig, err := optClient.GetCandidateConfig(ctx, a.flags.candidate)
+	candidateConfig, err := optClient.GetCandidateConfig(ctx, jobID, a.flags.candidate)
 	if err != nil {
 		return fmt.Errorf("failed to fetch candidate config: %w", err)
 	}
@@ -134,7 +148,7 @@ func (a *OptimizeApplyAction) apply(
 
 	// Step 2: Download skill files into the candidate directory (before metadata.yaml
 	// so the skills/ dir exists when writeAgentConfigFromCandidate checks for it).
-	if n, dlErr := downloadSkillFilesToDir(ctx, optClient, a.flags.candidate, candidateDir, out); dlErr != nil {
+	if n, dlErr := downloadSkillFilesToDir(ctx, optClient, jobID, a.flags.candidate, candidateDir, out); dlErr != nil {
 		fmt.Fprintf(out, "  warning: failed to download skill files: %s\n", dlErr)
 	} else if n > 0 {
 		fmt.Fprintf(out, "  Downloaded %d skill file(s)\n", n)
@@ -159,14 +173,14 @@ func (a *OptimizeApplyAction) apply(
 
 	// Step 4: Store candidate ID in the azd environment for tracking.
 	serviceKey := toServiceKey(svc.Name)
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
+	env := getExistingEnvironment(ctx, a.envName, azdClient)
+	if env == nil {
+		return fmt.Errorf("failed to resolve environment")
 	}
 
 	candidateKey := fmt.Sprintf("AGENT_%s_OPTIMIZATION_CANDIDATE_ID", serviceKey)
 	if _, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: envResp.Environment.Name,
+		EnvName: env.Name,
 		Key:     candidateKey,
 		Value:   a.flags.candidate,
 	}); err != nil {
@@ -286,7 +300,13 @@ func writeAgentConfigFromCandidate(candidateDir string, rawConfig json.RawMessag
 				meta.Name = s
 			}
 		}
-		if v, exists := m["agentName"]; exists {
+		// Candidate API uses snake_case (agent_name); accept the legacy
+		// camelCase form (agentName) for backward compatibility.
+		if v, exists := m["agent_name"]; exists {
+			if s, ok := v.(string); ok {
+				meta.Name = s
+			}
+		} else if v, exists := m["agentName"]; exists {
 			if s, ok := v.(string); ok {
 				meta.Name = s
 			}
@@ -418,11 +438,12 @@ func writeToolsFile(candidateDir string, config map[string]any) error {
 func downloadSkillFilesToDir(
 	ctx context.Context,
 	client *optimize_api.OptimizeClient,
+	jobID string,
 	candidateID string,
 	destDir string,
 	out io.Writer,
 ) (int, error) {
-	manifest, err := client.GetCandidate(ctx, candidateID)
+	manifest, err := client.GetCandidate(ctx, jobID, candidateID)
 	if err != nil {
 		return 0, fmt.Errorf("fetching candidate manifest: %w", err)
 	}
@@ -443,7 +464,7 @@ func downloadSkillFilesToDir(
 			continue
 		}
 
-		content, err := client.GetCandidateFile(ctx, candidateID, f.Path)
+		content, err := client.GetCandidateFile(ctx, jobID, candidateID, f.Path)
 		if err != nil {
 			fmt.Fprintf(out, "  warning: failed to download skill file %s: %s\n", f.Path, err)
 			continue
@@ -470,10 +491,17 @@ func downloadSkillFilesToDir(
 }
 
 // extractInstructions retrieves the system prompt string from a candidate config
-// returned by the optimization service.
+// returned by the optimization service. The candidate API uses snake_case
+// (system_prompt); the legacy camelCase form (systemPrompt) is accepted for
+// backward compatibility.
 func extractInstructions(m map[string]any) string {
 	if m == nil {
 		return ""
+	}
+	if v, exists := m["system_prompt"]; exists {
+		if s, ok := v.(string); ok {
+			return s
+		}
 	}
 	if v, exists := m["systemPrompt"]; exists {
 		if s, ok := v.(string); ok {

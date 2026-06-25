@@ -1,5 +1,28 @@
 # Release History
 
+## 0.1.41-preview (2026-06-19)
+
+- [[#8731]](https://github.com/Azure/azure-dev/pull/8731) Improve the post-deploy `Next:` guidance with a stacked layout that puts each command on its own line above its description, adds a blank line between suggestions, and highlights `azd` commands. The new layout applies across deploy, `azd ai agent show`, `init`, and `doctor`. Thanks @therealjohn for the contribution!
+- [[#8645]](https://github.com/Azure/azure-dev/pull/8645) Detect VNET-injected Foundry accounts during `azd ai agent init` and skip remote builds up front so hosted container agents use local builds without a failing remote-build attempt first. Thanks @m5i-work for the contribution!
+- [[#8714]](https://github.com/Azure/azure-dev/pull/8714) Show a tracing disclaimer when `azd ai agent init` connects or adds an Application Insights connection. Thanks @therealjohn for the contribution!
+- [[#8685]](https://github.com/Azure/azure-dev/pull/8685) Default `azd ai agent run` local Python virtual environments to Python >= 3.13 so local runs match the minimum supported Foundry runtime. Thanks @therealjohn for the contribution!
+- [[#8732]](https://github.com/Azure/azure-dev/pull/8732) Update the Application Insights tracing disclaimer shown during `azd ai agent init` with revised wording and a `Learn more` link. Thanks @therealjohn for the contribution!
+
+## 0.1.40-preview (2026-06-15)
+
+- [[#8641]](https://github.com/Azure/azure-dev/pull/8641) Fix optimize/eval handling for array-valued mutations, resolve `dataset.local_uri` relative to the agent project, and align optimize test schema data with the current API format. Thanks @Zyysurely for the contribution!
+- [[#8625]](https://github.com/Azure/azure-dev/pull/8625) Show server response timing after successful `azd ai agent invoke` calls, including total latency and time to first byte, while keeping failure and `--output raw` flows unchanged. Thanks @VBhadauria for the contribution!
+- [[#8624]](https://github.com/Azure/azure-dev/pull/8624) Add Python bundled-mode guidance after `azd ai agent init` and block `azd deploy` with clear remediation when bundled dependencies were not installed into the source directory. Thanks @v1212 for the contribution!
+
+## 0.1.39-preview (2026-06-11)
+
+- [[#8602]](https://github.com/Azure/azure-dev/pull/8602) Support Foundry `${{...}}` server-side expressions during `azd ai agent` environment-variable expansion, so values that mix azd `${VAR}` references with Foundry `${{...}}` expressions (and `${VAR:-default}` forms) resolve correctly instead of being dropped. Thanks @huimiu for the contribution!
+- [[#8589]](https://github.com/Azure/azure-dev/pull/8589) Align `azd ai agent optimize` and `eval` with the V2Preview optimization API, including snake_case payloads, the new `agent_optimization_jobs` endpoints, a required `optimization_model`, and a Strategy column in the results table. Thanks @Zyysurely for the contribution!
+- [[#8576]](https://github.com/Azure/azure-dev/pull/8576) Add `azd ai agent code download` command to download (and optionally extract) the deployed source code of a code-based hosted agent, with SHA-256 verification. Thanks @v1212 for the contribution!
+- [[#8574]](https://github.com/Azure/azure-dev/pull/8574) Add `azd ai agent endpoint show` command to display the live endpoint configuration, and warn before `azd ai agent endpoint update` applies a breaking authorization isolation-key-source change. Thanks @v1212 for the contribution!
+- [[#8566]](https://github.com/Azure/azure-dev/pull/8566) Rename `azd ai agent eval init` to `eval generate` (keeping a hidden, deprecated `init`), honor the `-e`/`--environment` flag in optimize/eval flows, resolve relative `--dataset` paths against the current directory, and reconcile stale agent versions from the environment. Thanks @Zyysurely for the contribution!
+- [[#8519]](https://github.com/Azure/azure-dev/pull/8519) Add `azd ai agent delete` command to delete a hosted agent and all of its versions, with `--force` to terminate active sessions. Thanks @v1212 for the contribution!
+
 ## 0.1.38-preview (2026-06-05)
 
 - [[#8532]](https://github.com/Azure/azure-dev/pull/8532) Fix Agent Inspector auto-launch for slow-starting local agents by waiting for the local agent port instead of timing out after 30 seconds. Thanks @anchenyi for the contribution!

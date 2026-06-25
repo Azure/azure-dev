@@ -422,6 +422,8 @@ func TestRunToolboxCreateWith_FromFileCreatesInitialVersion(t *testing.T) {
 		Target: "https://mcp.example.com",
 	}
 
+	envCalls := stubToolboxEndpointEnv(t)
+
 	inputPath := t.TempDir() + "/create.yaml"
 	err := os.WriteFile(inputPath, []byte(`
 description: toolbox from file
@@ -438,6 +440,14 @@ connections:
 	require.Len(t, client.createVersionCalls, 1)
 	assert.Equal(t, "toolbox from file", client.createVersionCalls[0].req.Description)
 	assert.Len(t, client.createVersionCalls[0].req.Tools, 1)
+
+	// The versioned MCP endpoint is written to the active azd environment.
+	require.Len(t, *envCalls, 1)
+	assert.Equal(t, "tb", (*envCalls)[0].name)
+	assert.Equal(t,
+		"https://e/toolboxes/tb/versions/v1/mcp?api-version=v1",
+		(*envCalls)[0].value,
+	)
 }
 
 func TestRunToolboxCreateWith_SkillsFromFile(t *testing.T) {

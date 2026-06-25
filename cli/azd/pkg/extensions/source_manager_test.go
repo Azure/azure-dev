@@ -38,6 +38,22 @@ func TestSourceManager_Add(t *testing.T) {
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrSourceExists)
 	})
+
+	t.Run("ReservedBundleName", func(t *testing.T) {
+		reserved := &SourceConfig{
+			Name:     BundleSourceName,
+			Type:     SourceKindFile,
+			Location: "/tmp/registry.json",
+		}
+		err := sourceManager.Add(ctx, BundleSourceName, reserved)
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrSourceReserved)
+
+		// Case-insensitive: the normalized name is also reserved.
+		err = sourceManager.Add(ctx, "Bundle", reserved)
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrSourceReserved)
+	})
 }
 
 func TestSourceManager_Get(t *testing.T) {
@@ -128,4 +144,38 @@ func TestSourceManager_List(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, sources, 1)
 	require.Equal(t, expected, *sources[0])
+}
+
+func TestSourceManager_CreateSource_Bundle(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	ctx := t.Context()
+
+	configManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, configManager, mockContext.HttpClient)
+
+	bundleDir := t.TempDir()
+	registry := &Registry{
+		SchemaVersion: CurrentRegistrySchemaVersion,
+		Extensions: []*ExtensionMetadata{
+			{
+				Id:          "test.ext",
+				DisplayName: "Test",
+				Versions: []ExtensionVersion{
+					{
+						Version:   "1.0.0",
+						Artifacts: map[string]ExtensionArtifact{"linux/amd64": {URL: "artifacts/ext.tar.gz"}},
+					},
+				},
+			},
+		},
+	}
+	writeBundleRegistry(t, bundleDir, registry)
+
+	source, err := sourceManager.CreateSource(ctx, &SourceConfig{
+		Name:     "bundle",
+		Type:     SourceKindBundle,
+		Location: bundleDir,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "bundle", source.Name())
 }

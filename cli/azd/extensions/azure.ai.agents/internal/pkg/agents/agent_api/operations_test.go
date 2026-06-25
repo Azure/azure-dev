@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -848,4 +849,126 @@ func TestCreateAgentVersion_SetsHostedAgentsPreviewHeader(t *testing.T) {
 		transport.lastReq.Header.Get("Foundry-Features"),
 		"CreateAgentVersion must opt in to HostedAgents=V1Preview on the v1 endpoint",
 	)
+}
+
+// ---------------------------------------------------------------------------
+// DownloadAgentCode tests
+// ---------------------------------------------------------------------------
+
+// downloadTransport captures the request and returns a response with custom headers.
+type downloadTransport struct {
+	lastReq    *http.Request
+	statusCode int
+	respBody   string
+	respHeader http.Header
+}
+
+func (d *downloadTransport) Do(req *http.Request) (*http.Response, error) {
+	d.lastReq = req
+	header := http.Header{}
+	maps.Copy(header, d.respHeader)
+	if header.Get("Content-Type") == "" {
+		header.Set("Content-Type", "application/zip")
+	}
+	return &http.Response{
+		StatusCode: d.statusCode,
+		Header:     header,
+		Body:       io.NopCloser(strings.NewReader(d.respBody)),
+		Request:    req,
+	}, nil
+}
+
+func TestDownloadAgentCode_BuildsCorrectURL(t *testing.T) {
+	transport := &downloadTransport{
+		statusCode: http.StatusOK,
+		respBody:   "fake-zip-bytes",
+		respHeader: http.Header{
+			"X-Ms-Code-Zip-Sha256": {"abc123"},
+			"X-Ms-Agent-Version":   {"5"},
+		},
+	}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	result, err := client.DownloadAgentCode(context.Background(), "my-agent", "v1", "")
+	require.NoError(t, err)
+	defer result.Body.Close()
+
+	require.NotNil(t, transport.lastReq)
+	require.Equal(t, http.MethodGet, transport.lastReq.Method)
+	require.Equal(
+		t,
+		"https://test.example.com/api/projects/proj/agents/my-agent/code:download",
+		transport.lastReq.URL.Scheme+"://"+transport.lastReq.URL.Host+transport.lastReq.URL.Path,
+	)
+	require.Equal(t, "v1", transport.lastReq.URL.Query().Get("api-version"))
+	require.Empty(t, transport.lastReq.URL.Query().Get("agent_version"), "agent_version should not be set when empty")
+}
+
+func TestDownloadAgentCode_IncludesVersionParam(t *testing.T) {
+	transport := &downloadTransport{
+		statusCode: http.StatusOK,
+		respBody:   "fake-zip-bytes",
+		respHeader: http.Header{},
+	}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	result, err := client.DownloadAgentCode(context.Background(), "my-agent", "v1", "3")
+	require.NoError(t, err)
+	defer result.Body.Close()
+
+	require.Equal(t, "3", transport.lastReq.URL.Query().Get("agent_version"))
+}
+
+func TestDownloadAgentCode_SetsFeatureHeader(t *testing.T) {
+	transport := &downloadTransport{
+		statusCode: http.StatusOK,
+		respBody:   "fake-zip",
+		respHeader: http.Header{},
+	}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	result, err := client.DownloadAgentCode(context.Background(), "my-agent", "v1", "")
+	require.NoError(t, err)
+	defer result.Body.Close()
+
+	require.Equal(
+		t,
+		"CodeAgents=V1Preview,HostedAgents=V1Preview",
+		transport.lastReq.Header.Get("Foundry-Features"),
+	)
+}
+
+func TestDownloadAgentCode_ReturnsResponseHeaders(t *testing.T) {
+	transport := &downloadTransport{
+		statusCode: http.StatusOK,
+		respBody:   "zip-content",
+		respHeader: http.Header{
+			"X-Ms-Code-Zip-Sha256": {"deadbeef"},
+			"X-Ms-Agent-Version":   {"7"},
+		},
+	}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	result, err := client.DownloadAgentCode(context.Background(), "my-agent", "v1", "")
+	require.NoError(t, err)
+	defer result.Body.Close()
+
+	require.Equal(t, "deadbeef", result.ContentHash)
+	require.Equal(t, "7", result.AgentVersion)
+
+	body, err := io.ReadAll(result.Body)
+	require.NoError(t, err)
+	require.Equal(t, "zip-content", string(body))
+}
+
+func TestDownloadAgentCode_ReturnsErrorOnNon200(t *testing.T) {
+	transport := &downloadTransport{
+		statusCode: http.StatusNotFound,
+		respBody:   `{"error":{"code":"not_found","message":"agent not found"}}`,
+		respHeader: http.Header{"Content-Type": {"application/json"}},
+	}
+	client := newTestClient("https://test.example.com/api/projects/proj", transport)
+
+	_, err := client.DownloadAgentCode(context.Background(), "no-such-agent", "v1", "")
+	require.Error(t, err)
 }

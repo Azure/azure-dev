@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"text/template"
@@ -381,6 +382,43 @@ func TestCollectExtensionMetadataFromFlagsTags(t *testing.T) {
 	assert.Equal(t, []string{"alpha", "beta", "gamma"}, metadata.Tags)
 }
 
+func TestCollectExtensionMetadataFromFlagsInternalDefaultsToGo(t *testing.T) {
+	metadata, err := collectExtensionMetadataFromFlags(&initFlags{
+		internalScaffold: true,
+		id:               "test.extension",
+		name:             "Test Extension",
+		capabilities:     []string{string(extensions.CustomCommandCapability)},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "go", metadata.Language)
+	assert.Equal(t, "0.0.1", metadata.Version)
+}
+
+func TestCollectExtensionMetadataFromFlagsInternalRejectsNonGo(t *testing.T) {
+	_, err := collectExtensionMetadataFromFlags(&initFlags{
+		internalScaffold: true,
+		id:               "test.extension",
+		name:             "Test Extension",
+		capabilities:     []string{string(extensions.CustomCommandCapability)},
+		language:         "python",
+	})
+
+	require.ErrorContains(t, err, "Go extensions only")
+}
+
+func TestCollectExtensionMetadataFromFlagsInternalRejectsUnsafeId(t *testing.T) {
+	_, err := collectExtensionMetadataFromFlags(&initFlags{
+		internalScaffold: true,
+		id:               "../bad",
+		name:             "Test Extension",
+		namespace:        "bad",
+		capabilities:     []string{string(extensions.CustomCommandCapability)},
+	})
+
+	require.ErrorContains(t, err, "invalid extension id")
+}
+
 func TestCollectExtensionMetadataFromFlagsInvalidTags(t *testing.T) {
 	_, err := collectExtensionMetadataFromFlags(&initFlags{
 		id:           "test.extension",
@@ -391,6 +429,183 @@ func TestCollectExtensionMetadataFromFlagsInvalidTags(t *testing.T) {
 	})
 
 	require.ErrorContains(t, err, "control characters")
+}
+
+func TestCreateInternalExtensionScaffold(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "cli", "azd", "extensions", "azure.ai.example"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, ".github"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(repoRoot, ".github", "CODEOWNERS"),
+		[]byte("/**                                         @default\n"),
+		0o600,
+	))
+
+	metadata := &models.ExtensionSchema{
+		Id:        "azure.ai.example",
+		Namespace: "ai.example",
+		Version:   "0.0.1-preview",
+		Language:  "go",
+	}
+
+	err := createInternalExtensionScaffold(metadata, repoRoot, []string{"@owner", "@Azure/team"})
+	require.NoError(t, err)
+
+	sanitizedId := "azure-ai-example"
+	assertFileContains(
+		t,
+		filepath.Join(repoRoot, ".github", "workflows", "lint-ext-"+sanitizedId+".yml"),
+		"name: ext-azure-ai-example-ci",
+		"working-directory: cli/azd/extensions/azure.ai.example",
+		"${{ github.workflow }}-${{ github.event.pull_request.number }}",
+	)
+	assertFileContains(
+		t,
+		filepath.Join(repoRoot, "eng", "pipelines", "release-ext-"+sanitizedId+".yml"),
+		"AzdExtensionId: azure.ai.example",
+		"SanitizedExtensionId: azure-ai-example",
+	)
+	assertFileContains(
+		t,
+		filepath.Join(repoRoot, "cli", "azd", "extensions", "azure.ai.example", "ci-build.ps1"),
+		"azure.ai.example/internal/cmd.Version=$Version",
+	)
+	assertFileContains(
+		t,
+		filepath.Join(repoRoot, "cli", "azd", "extensions", "azure.ai.example", "ci-test.ps1"),
+		"go test ./... -v -count=1",
+	)
+	assertFileContains(
+		t,
+		filepath.Join(repoRoot, "cli", "azd", "extensions", "azure.ai.example", "version.txt"),
+		"0.0.1-preview",
+	)
+	assertFileContains(
+		t,
+		filepath.Join(repoRoot, "cli", "azd", "extensions", "azure.ai.example", "cspell.yaml"),
+		"import: ../../.vscode/cspell.yaml",
+	)
+	assertFileContains(
+		t,
+		filepath.Join(repoRoot, "cli", "azd", "extensions", "azure.ai.example", ".golangci.yaml"),
+		"version: \"2\"",
+		"line-length: 220",
+	)
+	assertFileContains(
+		t,
+		filepath.Join(repoRoot, ".github", "CODEOWNERS"),
+		"/cli/azd/extensions/azure.ai.example/",
+		"@owner @Azure/team",
+	)
+}
+
+func TestCreateInternalExtensionScaffoldRejectsUnsafeId(t *testing.T) {
+	t.Parallel()
+
+	err := createInternalExtensionScaffold(
+		&models.ExtensionSchema{Id: "../bad", Namespace: "bad", Version: "0.0.1-preview"},
+		t.TempDir(),
+		[]string{"@owner"},
+	)
+
+	require.ErrorContains(t, err, "invalid extension id")
+}
+
+func TestFindAzureDevRepoRoot(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, ".git"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, ".github"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "eng", "pipelines"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "cli", "azd", "extensions"), 0o755))
+
+	tests := []struct {
+		name     string
+		startDir string
+		wantErr  string
+	}{
+		{name: "repo root", startDir: repoRoot},
+		{name: "nested directory", startDir: filepath.Join(repoRoot, "cli", "azd", "extensions")},
+		{name: "outside repo", startDir: t.TempDir(), wantErr: "must be run from inside the Azure/azure-dev repository"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			root, err := findAzureDevRepoRoot(tt.startDir)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, repoRoot, root)
+		})
+	}
+}
+
+func TestAddCodeownersEntry(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	codeownersPath := filepath.Join(dir, "CODEOWNERS")
+	require.NoError(t, os.WriteFile(codeownersPath, []byte(
+		"# see /cli/azd/extensions/azure.ai.example/ for details\n"+
+			"/**    @default\n"+
+			"\n"+
+			"/cli/azd/extensions/azure.ai.agents/        @agents\n"+
+			"/cli/azd/extensions/azure.ai.projects/      @projects\n"+
+			"\n"+
+			"# This file (most specific -- must be last)\n"+
+			"/.github/CODEOWNERS    @admins\n",
+	), 0o600))
+
+	entryPath := "/cli/azd/extensions/azure.ai.example/"
+
+	// A comment mentioning the path must not suppress the new entry.
+	require.NoError(t, addCodeownersEntry(codeownersPath, entryPath, []string{"@owner"}))
+
+	// The entry is inserted alphabetically within the extensions block, not
+	// appended after later rules (CODEOWNERS is last-match-wins).
+	contents, err := os.ReadFile(codeownersPath)
+	require.NoError(t, err)
+	lines := strings.Split(string(contents), "\n")
+	agentsIdx := slices.IndexFunc(lines, func(l string) bool {
+		return strings.HasPrefix(l, "/cli/azd/extensions/azure.ai.agents/")
+	})
+	exampleIdx := slices.IndexFunc(lines, func(l string) bool {
+		return strings.HasPrefix(l, entryPath+" ")
+	})
+	projectsIdx := slices.IndexFunc(lines, func(l string) bool {
+		return strings.HasPrefix(l, "/cli/azd/extensions/azure.ai.projects/")
+	})
+	require.GreaterOrEqual(t, exampleIdx, 0)
+	assert.Less(t, agentsIdx, exampleIdx)
+	assert.Less(t, exampleIdx, projectsIdx)
+	assert.Contains(t, lines[exampleIdx], "@owner")
+	assert.Equal(t, "/.github/CODEOWNERS    @admins", lines[len(lines)-2])
+
+	// Calling again must be idempotent.
+	require.NoError(t, addCodeownersEntry(codeownersPath, entryPath, []string{"@owner"}))
+	after, err := os.ReadFile(codeownersPath)
+	require.NoError(t, err)
+	assert.Equal(t, string(contents), string(after))
+}
+
+func TestAddCodeownersEntryNoExtensionsBlock(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	codeownersPath := filepath.Join(dir, "CODEOWNERS")
+	require.NoError(t, os.WriteFile(codeownersPath, []byte("/**    @default\n"), 0o600))
+
+	entryPath := "/cli/azd/extensions/azure.ai.example/"
+	require.NoError(t, addCodeownersEntry(codeownersPath, entryPath, []string{"@owner"}))
+	assertFileContains(t, codeownersPath, "/**    @default", entryPath+" @owner")
 }
 
 func TestValidateExtensionNamespace(t *testing.T) {
@@ -450,6 +665,18 @@ func TestParseTags(t *testing.T) {
 
 	_, err = parseTags("valid,ba\nd")
 	require.ErrorContains(t, err, "control characters")
+}
+
+func TestParseCodeowners(t *testing.T) {
+	codeowners, err := parseCodeowners([]string{"@owner, @Azure/team", "@second"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"@owner", "@Azure/team", "@second"}, codeowners)
+
+	_, err = parseCodeowners(nil)
+	require.ErrorContains(t, err, "at least one CODEOWNER")
+
+	_, err = parseCodeowners([]string{"owner"})
+	require.ErrorContains(t, err, "starting with @")
 }
 
 func TestWriteCollectedWarnings(t *testing.T) {
@@ -583,6 +810,16 @@ func TestTemplateGoStringQuotesDescription(t *testing.T) {
 			require.NoError(t, tmpl.Execute(&buf, struct{ Description string }{tt.description}))
 			assert.Equal(t, tt.want, buf.String())
 		})
+	}
+}
+
+func assertFileContains(t *testing.T, filePath string, expected ...string) {
+	t.Helper()
+
+	contents, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+	for _, value := range expected {
+		assert.Contains(t, string(contents), value)
 	}
 }
 

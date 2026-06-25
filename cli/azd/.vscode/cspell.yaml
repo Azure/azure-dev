@@ -4,11 +4,15 @@ words:
   - agentdetect
   - Authenticode
   - azdignore
+  - borderless
   - gofmt
   - golangci
+  - golangtools
   - lightspeed
   - runewidth
   - toplevel
+  - truncatable
+  - wrappable
   - azcloud
   - azdext
   - azdxignore
@@ -45,6 +49,7 @@ words:
   - opencode
   - grpcbroker
   - msiexec
+  - manylinux
   - nosec
   - npx
   - oneof
@@ -334,12 +339,6 @@ overrides:
   - filename: pkg/extensions/manager.go
     words:
       - myext
-  - filename: extensions/microsoft.azd.extensions/internal/resources/languages/**/.gitignore
-    words:
-      - rsuser
-      - userosscache
-      - docstates
-      - dylib
   - filename: docs/recording-functional-tests-guide.md
     words:
       - httptest

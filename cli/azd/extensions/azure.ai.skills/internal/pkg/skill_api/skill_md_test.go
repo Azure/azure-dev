@@ -87,3 +87,37 @@ func TestParseSkillMd_CRLFLineEndings(t *testing.T) {
 	require.Equal(t, "my-skill", parsed.Name)
 	require.Equal(t, "works", parsed.Description)
 }
+
+func TestParseSkillMd_ExtractsLicenseCompatibilityAllowedTools(t *testing.T) {
+	doc := strings.Join([]string{
+		"---",
+		"name: my-skill",
+		"description: A skill",
+		"license: MIT",
+		"compatibility: gpt-4o",
+		"allowed_tools:",
+		"  - web_search",
+		"  - code_interpreter",
+		"metadata:",
+		"  owner: alice",
+		"---",
+		"Body text.",
+	}, "\n")
+
+	parsed, err := ParseSkillMd([]byte(doc))
+	require.NoError(t, err)
+	require.Equal(t, "my-skill", parsed.Name)
+	require.Equal(t, "A skill", parsed.Description)
+	require.Equal(t, "MIT", parsed.License)
+	require.Equal(t, "gpt-4o", parsed.Compatibility)
+	require.Equal(t, []string{"web_search", "code_interpreter"}, parsed.AllowedTools)
+	require.Equal(t, map[string]string{"owner": "alice"}, parsed.Metadata)
+	require.Equal(t, "Body text.", parsed.Instructions)
+}
+
+func TestParseSkillMd_AllowedToolsNotList(t *testing.T) {
+	doc := "---\nallowed_tools: not-a-list\n---\nbody\n"
+	_, err := ParseSkillMd([]byte(doc))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `"allowed_tools" must be a list`)
+}

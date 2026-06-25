@@ -18,7 +18,7 @@ import (
 )
 
 func TestExtractUniqueTenants_Empty(t *testing.T) {
-	tenants := extractUniqueTenants(nil, nil)
+	tenants := ExtractUniqueTenants(nil, nil)
 	require.Empty(t, tenants)
 }
 
@@ -28,7 +28,7 @@ func TestExtractUniqueTenants_SingleTenant(t *testing.T) {
 		{Id: "sub-2", UserAccessTenantId: "tid-1"},
 	}
 
-	tenants := extractUniqueTenants(subs, map[string]string{"tid-1": "Contoso"})
+	tenants := ExtractUniqueTenants(subs, map[string]string{"tid-1": "Contoso"})
 	require.Len(t, tenants, 1)
 	require.Equal(t, "tid-1", tenants[0].Id)
 	require.Equal(t, "Contoso", tenants[0].DisplayName)
@@ -47,7 +47,7 @@ func TestExtractUniqueTenants_MultipleTenants(t *testing.T) {
 		"tid-2": "Fabrikam",
 	}
 
-	tenants := extractUniqueTenants(subs, names)
+	tenants := ExtractUniqueTenants(subs, names)
 	require.Len(t, tenants, 2)
 	// Sorted alphabetically by display name
 	require.Equal(t, "Contoso", tenants[0].DisplayName)
@@ -61,7 +61,7 @@ func TestExtractUniqueTenants_FallbackToTenantId(t *testing.T) {
 		{Id: "sub-1", TenantId: "tid-1", UserAccessTenantId: ""},
 	}
 
-	tenants := extractUniqueTenants(subs, nil)
+	tenants := ExtractUniqueTenants(subs, nil)
 	require.Len(t, tenants, 1)
 	require.Equal(t, "tid-1", tenants[0].Id)
 	// Display name falls back to the ID when no names provided
@@ -74,7 +74,7 @@ func TestExtractUniqueTenants_NoDisplayNames(t *testing.T) {
 		{Id: "sub-2", UserAccessTenantId: "tid-2"},
 	}
 
-	tenants := extractUniqueTenants(subs, nil)
+	tenants := ExtractUniqueTenants(subs, nil)
 	require.Len(t, tenants, 2)
 	require.Equal(t, "tid-1", tenants[0].DisplayName)
 	require.Equal(t, "tid-2", tenants[1].DisplayName)
@@ -86,7 +86,7 @@ func TestFilterSubscriptionsByTenant_EmptyTenantId(t *testing.T) {
 		{Id: "sub-2", UserAccessTenantId: "tid-2"},
 	}
 
-	result := filterSubscriptionsByTenant(subs, "")
+	result := FilterSubscriptionsByTenantId(subs, "")
 	require.Len(t, result, 2)
 }
 
@@ -97,7 +97,7 @@ func TestFilterSubscriptionsByTenant_Filtered(t *testing.T) {
 		{Id: "sub-3", UserAccessTenantId: "tid-1"},
 	}
 
-	result := filterSubscriptionsByTenant(subs, "tid-1")
+	result := FilterSubscriptionsByTenantId(subs, "tid-1")
 	require.Len(t, result, 2)
 	require.Equal(t, "sub-1", result[0].Id)
 	require.Equal(t, "sub-3", result[1].Id)
@@ -108,7 +108,7 @@ func TestFilterSubscriptionsByTenant_NoMatch(t *testing.T) {
 		{Id: "sub-1", UserAccessTenantId: "tid-1"},
 	}
 
-	result := filterSubscriptionsByTenant(subs, "tid-unknown")
+	result := FilterSubscriptionsByTenantId(subs, "tid-unknown")
 	require.Empty(t, result)
 }
 
@@ -150,7 +150,7 @@ func TestFilterByTenantEnvVar_NoMatchFallsBack(t *testing.T) {
 func TestPromptTenantSelection_SingleTenant(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 
-	tenants := []tenantInfo{
+	tenants := []TenantInfo{
 		{Id: "tid-1", DisplayName: "Contoso", SubscriptionCount: 3},
 	}
 
@@ -166,7 +166,7 @@ func TestPromptTenantSelection_MultipleTenants_SelectFirst(t *testing.T) {
 		return strings.Contains(opts.Message, "Select a tenant")
 	}).Respond(0) // pick first tenant
 
-	tenants := []tenantInfo{
+	tenants := []TenantInfo{
 		{Id: "tid-1", DisplayName: "Contoso", SubscriptionCount: 3},
 		{Id: "tid-2", DisplayName: "Fabrikam", SubscriptionCount: 1},
 	}
@@ -183,7 +183,7 @@ func TestPromptTenantSelection_MultipleTenants_SelectAllTenants(t *testing.T) {
 		return strings.Contains(opts.Message, "Select a tenant")
 	}).Respond(2) // pick "All tenants" (third option with 2 tenants)
 
-	tenants := []tenantInfo{
+	tenants := []TenantInfo{
 		{Id: "tid-1", DisplayName: "Contoso", SubscriptionCount: 3},
 		{Id: "tid-2", DisplayName: "Fabrikam", SubscriptionCount: 1},
 	}
@@ -295,7 +295,7 @@ func newTestPrompterWithCtx(
 		mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 
 	p := NewDefaultPrompter(
-		env, mockCtx.Console, mockAccount, resourceService, cloud.AzurePublic(),
+		env, mockCtx.Console, mockAccount, nil, resourceService, cloud.AzurePublic(),
 	).(*DefaultPrompter)
 
 	return p, mockCtx

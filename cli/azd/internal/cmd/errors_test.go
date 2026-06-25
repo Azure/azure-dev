@@ -1251,6 +1251,12 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 		"ErrNoResourcesFound":   "pkg/prompt: interactive prompt error, caught in command callers",
 		"ErrNoResourceSelected": "pkg/prompt: interactive prompt error, caught in command callers",
 
+		// Subscription filter errors surfaced as user-facing messages in sub-filter commands
+		"ErrInteractiveRequired":  "internal: sub-filter requires interactive mode, caught in command action",
+		"ErrNoSubscriptionsFound": "internal: no subscriptions available, caught in command action",
+		"ErrNoTenantsFound":       "internal: no tenants available, caught in command action",
+		"ErrNoFilterExists":       "internal: no filter to remove, caught in command action",
+
 		// Template errors caught in init flow
 		"ErrTemplateNotFound": "pkg/templates: caught in init/template callers before reaching telemetry",
 
@@ -1265,6 +1271,9 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 
 		// Extension SDK errors used by extensions, never reach host MapError
 		"ErrProjectNotFound": "pkg/azdext: extension SDK helper, used by extensions not the host",
+
+		// gRPC broker errors caught at broker/stream level
+		"ErrResourceExhausted": "pkg/grpcbroker: gRPC message size error, caught in broker send/recv handlers",
 	}
 
 	// Find the azd root directory (two levels up from internal/cmd)

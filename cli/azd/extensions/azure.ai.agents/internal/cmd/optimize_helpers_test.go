@@ -27,7 +27,7 @@ func TestOptimizeConnectionFlags_Resolve_AllEmpty(t *testing.T) {
 	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "")
 	t.Setenv("AZD_SERVER", "")
 	f := &optimizeConnectionFlags{}
-	_, err := f.resolve(t.Context())
+	_, err := f.resolve(t.Context(), "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "endpoint")
 }
@@ -36,7 +36,7 @@ func TestOptimizeConnectionFlags_Resolve_FlagEndpoint(t *testing.T) {
 	f := &optimizeConnectionFlags{
 		endpoint: "https://from-flag.com",
 	}
-	endpoint, err := f.resolve(context.Background())
+	endpoint, err := f.resolve(context.Background(), "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://from-flag.com", endpoint)
 }
@@ -45,7 +45,7 @@ func TestOptimizeConnectionFlags_Resolve_TrimsTrailingSlash(t *testing.T) {
 	f := &optimizeConnectionFlags{
 		endpoint: "https://example.com/",
 	}
-	endpoint, err := f.resolve(context.Background())
+	endpoint, err := f.resolve(context.Background(), "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://example.com", endpoint)
 }
@@ -54,7 +54,7 @@ func TestOptimizeConnectionFlags_Resolve_ProjectEndpointFlag(t *testing.T) {
 	f := &optimizeConnectionFlags{
 		projectEndpoint: "https://my-project.services.ai.azure.com/",
 	}
-	endpoint, err := f.resolve(context.Background())
+	endpoint, err := f.resolve(context.Background(), "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://my-project.services.ai.azure.com", endpoint)
 }
@@ -94,6 +94,28 @@ func newTestOptimizeClient(endpoint string) *optimize_api.OptimizeClient {
 	return optimize_api.NewOptimizeClientFromPipeline(endpoint, pl)
 }
 
+// optimizeJobIDKeyForAgent mirrors the AGENT_{KEY}_OPTIMIZATION_CANDIDATE_ID
+// naming and applies the same service-key normalization (dashes -> underscores,
+// uppercased).
+func TestOptimizeJobIDKeyForAgent(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		agent string
+		want  string
+	}{
+		{"simple", "echo", "AGENT_ECHO_OPTIMIZATION_JOB_ID"},
+		{"dashes", "my-cool-agent", "AGENT_MY_COOL_AGENT_OPTIMIZATION_JOB_ID"},
+		{"already upper", "BOT", "AGENT_BOT_OPTIMIZATION_JOB_ID"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, optimizeJobIDKeyForAgent(tt.agent))
+		})
+	}
+}
+
 func TestReportOptimizationDeployments_NoAgents(t *testing.T) {
 	t.Parallel()
 
@@ -119,6 +141,7 @@ func TestReportOptimizationDeployments_Success_ClearsCandidate(t *testing.T) {
 			"dev": {
 				"AGENT_MY_AGENT_OPTIMIZATION_CANDIDATE_ID": "cand-123",
 				"AGENT_MY_AGENT_VERSION":                   "v2",
+				"OPTIMIZE_LAST_OPERATION_ID":               "opt-1",
 			},
 		},
 	}
@@ -141,7 +164,7 @@ func TestReportOptimizationDeployments_Success_ClearsCandidate(t *testing.T) {
 		newTestOptimizeClient,
 	)
 
-	assert.Contains(t, gotURL, "/optimize/candidates/cand-123:promote")
+	assert.Contains(t, gotURL, "/agent_optimization_jobs/opt-1/candidates/cand-123:promote")
 	assert.Equal(t, "my-agent", gotBody.AgentName)
 	assert.Equal(t, "v2", gotBody.AgentVersion)
 	// CandidateID is json:"-", so it should not appear in the body.
@@ -217,6 +240,7 @@ func TestReportOptimizationDeployments_APIFailure_DoesNotClearCandidate(t *testi
 			"dev": {
 				"AGENT_SVC_OPTIMIZATION_CANDIDATE_ID": "cand-789",
 				"AGENT_SVC_VERSION":                   "v3",
+				"OPTIMIZE_LAST_OPERATION_ID":          "opt-1",
 			},
 		},
 	}
@@ -250,6 +274,7 @@ func TestReportOptimizationDeployments_MultipleAgents(t *testing.T) {
 				// gamma has candidate but API will fail for it.
 				"AGENT_GAMMA_OPTIMIZATION_CANDIDATE_ID": "c-g",
 				"AGENT_GAMMA_VERSION":                   "v3",
+				"OPTIMIZE_LAST_OPERATION_ID":            "opt-1",
 			},
 		},
 	}
@@ -257,7 +282,7 @@ func TestReportOptimizationDeployments_MultipleAgents(t *testing.T) {
 
 	promoted := map[string]bool{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/optimize/candidates/c-g:promote" {
+		if r.URL.Path == "/agent_optimization_jobs/opt-1/candidates/c-g:promote" {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -278,11 +303,11 @@ func TestReportOptimizationDeployments_MultipleAgents(t *testing.T) {
 	)
 
 	// Alpha: promoted and cleared.
-	assert.True(t, promoted["/optimize/candidates/c-a:promote"])
+	assert.True(t, promoted["/agent_optimization_jobs/opt-1/candidates/c-a:promote"])
 	assert.Equal(t, "", envServer.values["dev"]["AGENT_ALPHA_OPTIMIZATION_CANDIDATE_ID"])
 
 	// Beta: skipped (no candidate ID), no API call.
-	assert.False(t, promoted["/optimize/candidates/:promote"]) // shouldn't appear
+	assert.False(t, promoted["/agent_optimization_jobs/opt-1/candidates/:promote"]) // shouldn't appear
 
 	// Gamma: API failed, so candidate key should remain.
 	assert.Equal(t, "c-g", envServer.values["dev"]["AGENT_GAMMA_OPTIMIZATION_CANDIDATE_ID"])
@@ -296,6 +321,7 @@ func TestReportOptimizationDeployments_ServiceNameWithDashes(t *testing.T) {
 			"dev": {
 				"AGENT_MY_COOL_AGENT_OPTIMIZATION_CANDIDATE_ID": "cand-dash",
 				"AGENT_MY_COOL_AGENT_VERSION":                   "v5",
+				"OPTIMIZE_LAST_OPERATION_ID":                    "opt-1",
 			},
 		},
 	}
@@ -314,7 +340,7 @@ func TestReportOptimizationDeployments_ServiceNameWithDashes(t *testing.T) {
 		newTestOptimizeClient,
 	)
 
-	assert.Contains(t, gotURL, "/optimize/candidates/cand-dash:promote")
+	assert.Contains(t, gotURL, "/agent_optimization_jobs/opt-1/candidates/cand-dash:promote")
 	assert.Equal(t, "", envServer.values["dev"]["AGENT_MY_COOL_AGENT_OPTIMIZATION_CANDIDATE_ID"])
 }
 
@@ -352,7 +378,7 @@ func TestOptimizeConnectionFlags_Resolve_FoundryEnvVar(t *testing.T) {
 	t.Setenv("AZD_SERVER", "")
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.example.com/")
 	f := &optimizeConnectionFlags{}
-	endpoint, err := f.resolve(t.Context())
+	endpoint, err := f.resolve(t.Context(), "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://foundry.example.com", endpoint)
 }
@@ -362,7 +388,7 @@ func TestOptimizeConnectionFlags_Resolve_AzureAIEnvVar(t *testing.T) {
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
 	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "https://azure-ai.example.com/")
 	f := &optimizeConnectionFlags{}
-	endpoint, err := f.resolve(t.Context())
+	endpoint, err := f.resolve(t.Context(), "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://azure-ai.example.com", endpoint)
 }
@@ -372,7 +398,7 @@ func TestOptimizeConnectionFlags_Resolve_FoundryTakesPriorityOverAzureAI(t *test
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.example.com")
 	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "https://azure-ai.example.com")
 	f := &optimizeConnectionFlags{}
-	endpoint, err := f.resolve(t.Context())
+	endpoint, err := f.resolve(t.Context(), "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://foundry.example.com", endpoint)
 }
@@ -380,7 +406,7 @@ func TestOptimizeConnectionFlags_Resolve_FoundryTakesPriorityOverAzureAI(t *test
 func TestResolveProjectEndpointForDeploy_FoundryEnvVar(t *testing.T) {
 	t.Setenv("AZD_SERVER", "")
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry-deploy.example.com/")
-	ep, err := resolveProjectEndpointForDeploy(t.Context(), &optimizeConnectionFlags{})
+	ep, err := resolveProjectEndpointForDeploy(t.Context(), &optimizeConnectionFlags{}, "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://foundry-deploy.example.com", ep)
 }
@@ -389,7 +415,7 @@ func TestResolveProjectEndpointForDeploy_AzureAIEnvVar(t *testing.T) {
 	t.Setenv("AZD_SERVER", "")
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
 	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "https://azure-ai-deploy.example.com/")
-	ep, err := resolveProjectEndpointForDeploy(t.Context(), &optimizeConnectionFlags{})
+	ep, err := resolveProjectEndpointForDeploy(t.Context(), &optimizeConnectionFlags{}, "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://azure-ai-deploy.example.com", ep)
 }
@@ -398,7 +424,46 @@ func TestResolveProjectEndpointForDeploy_FoundryTakesPriorityOverAzureAI(t *test
 	t.Setenv("AZD_SERVER", "")
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry-deploy.example.com")
 	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "https://azure-ai-deploy.example.com")
-	ep, err := resolveProjectEndpointForDeploy(t.Context(), &optimizeConnectionFlags{})
+	ep, err := resolveProjectEndpointForDeploy(t.Context(), &optimizeConnectionFlags{}, "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://foundry-deploy.example.com", ep)
+}
+
+// ---------------------------------------------------------------------------
+// getExistingEnvironment
+// ---------------------------------------------------------------------------
+
+func TestGetExistingEnvironment_EmptyName_UsesCurrent(t *testing.T) {
+	t.Parallel()
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+	}
+	azdClient := newOptimizeTestAzdClient(t, envServer)
+	env := getExistingEnvironment(t.Context(), "", azdClient)
+	require.NotNil(t, env)
+	assert.Equal(t, "dev", env.Name)
+}
+
+func TestGetExistingEnvironment_ExplicitName_UsesGet(t *testing.T) {
+	t.Parallel()
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		environments: map[string]*azdext.Environment{
+			"staging": {Name: "staging"},
+		},
+	}
+	azdClient := newOptimizeTestAzdClient(t, envServer)
+	env := getExistingEnvironment(t.Context(), "staging", azdClient)
+	require.NotNil(t, env)
+	assert.Equal(t, "staging", env.Name)
+}
+
+func TestGetExistingEnvironment_NotFound_ReturnsNil(t *testing.T) {
+	t.Parallel()
+	envServer := &testEnvironmentServiceServer{
+		environments: map[string]*azdext.Environment{},
+	}
+	azdClient := newOptimizeTestAzdClient(t, envServer)
+	env := getExistingEnvironment(t.Context(), "nonexistent", azdClient)
+	assert.Nil(t, env)
 }

@@ -65,11 +65,11 @@ func TestNewEvaluatorGenerationJobRequest(t *testing.T) {
 	t.Parallel()
 	sources := []GenerationSource{{Type: "agent", AgentName: "a1"}}
 	req := NewEvaluatorGenerationJobRequest("eval-suite", "gpt-4o", sources)
-	assert.Equal(t, "eval-suite", req.Name)
-	assert.Equal(t, "eval-suite", req.EvaluatorName)
-	assert.Equal(t, "quality", req.Category)
-	assert.Equal(t, "gpt-4o", req.Model)
-	require.Len(t, req.Sources, 1)
+	assert.Equal(t, "eval-suite", req.Inputs.Name)
+	assert.Equal(t, "eval-suite", req.Inputs.EvaluatorName)
+	assert.Empty(t, req.Inputs.Category)
+	assert.Equal(t, "gpt-4o", req.Inputs.Model)
+	require.Len(t, req.Inputs.Sources, 1)
 }
 
 // ---------------------------------------------------------------------------

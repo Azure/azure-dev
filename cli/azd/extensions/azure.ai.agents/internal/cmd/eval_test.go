@@ -48,10 +48,12 @@ func TestNewEvalCommand_HasExpectedSubcommands(t *testing.T) {
 		names = append(names, sub.Name())
 	}
 
-	assert.Contains(t, names, "init")
+	assert.Contains(t, names, "generate")
 	assert.Contains(t, names, "run")
 	assert.Contains(t, names, "list")
 	assert.Contains(t, names, "show")
+	// "init" remains registered as a hidden deprecated alias for "generate".
+	assert.Contains(t, names, "init")
 }
 
 func TestNewEvalCommand_UseString(t *testing.T) {
@@ -194,7 +196,7 @@ func TestDetectEvalAgentKind(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// EvalState — stored in azd environment (integration-tested via eval init/run)
+// EvalState — stored in azd environment (integration-tested via eval generate/run)
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -206,7 +208,7 @@ func TestWriteEvalReviewArtifacts(t *testing.T) {
 	dir := t.TempDir()
 
 	cfg := &evalConfig{}
-	cfg.DatasetReference = &evalDatasetRef{Name: "test-data", Version: "v1"}
+	cfg.Dataset = &evalDatasetRef{Name: "test-data", Version: "v1"}
 	cfg.Evaluators = opt_eval.EvaluatorList{{Name: "quality"}}
 
 	err := eval_api.WriteEvalReviewArtifacts(dir, cfg)
@@ -418,8 +420,8 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 				Kind:    agent_yaml.AgentKindHosted,
 				Version: "v1",
 			},
-			DatasetReference: &evalDatasetRef{Name: "ds", Version: "v1"},
-			Evaluators:       opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			Dataset:    &evalDatasetRef{Name: "ds", Version: "v1"},
+			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
 		Options: &opt_eval.Options{
 			EvalModel: "gpt-4o",
@@ -439,8 +441,8 @@ func TestEvalConfigRoundTrip(t *testing.T) {
 	assert.Equal(t, original.Agent.Version, loaded.Agent.Version)
 	assert.Equal(t, "gpt-4o", loaded.Options.EvalModel)
 	assert.Equal(t, original.MaxSamples, loaded.MaxSamples)
-	require.NotNil(t, loaded.DatasetReference)
-	assert.Equal(t, "ds", loaded.DatasetReference.Name)
+	require.NotNil(t, loaded.Dataset)
+	assert.Equal(t, "ds", loaded.Dataset.Name)
 	require.Len(t, loaded.Evaluators, 1)
 	assert.Equal(t, "builtin.task_adherence", loaded.Evaluators[0].Name)
 }

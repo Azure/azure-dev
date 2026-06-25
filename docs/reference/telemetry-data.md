@@ -188,7 +188,7 @@ Valid values for `project.service.hosts` and `project.service.targets`:
 |-------|-------------|
 | `appservice` | Azure App Service |
 | `containerapp` | Azure Container Apps |
-| `containerapp-dotnet` | Azure Container Apps (.NET Aspire) |
+| `containerapp-dotnet` | Azure Container Apps (Aspire) |
 | `function` | Azure Functions |
 | `staticwebapp` | Azure Static Web Apps |
 | `springapp` | Azure Spring Apps |
@@ -365,6 +365,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 | `validation.preflight.outcome` | string | `passed`, `warnings_accepted`, `aborted_by_errors`, `aborted_by_user`, `skipped`, `error` |
 | `validation.preflight.diagnostics` | string[] | Diagnostic IDs emitted |
 | `validation.preflight.rules` | string[] | Rule IDs executed |
+| `validation.preflight.extension_rules` | string[] | Rule IDs executed from extension-provided validation checks |
 | `validation.preflight.warning.count` | measurement | Number of warnings |
 | `validation.preflight.error.count` | measurement | Number of errors |
 </details>
@@ -509,9 +510,9 @@ Built-in tool IDs come from azd's curated tool manifest (run `azd tool list` to 
 | `exegraph.step.count` | measurement | Total steps in graph |
 | `exegraph.max_concurrency` | string | Effective concurrency limit |
 | `exegraph.error_policy` | string | `fail_fast` or `continue_on_error` |
-| `exegraph.step.name` | string | Step name |
-| `exegraph.step.deps` | string[] | Step dependencies |
-| `exegraph.step.tags` | string[] | Step tags |
+| `exegraph.step.name` | string | Step name. **SHA-256 hashed** — embeds user-defined service/layer names from `azure.yaml` |
+| `exegraph.step.deps` | string[] | Step dependencies (other step names). **SHA-256 hashed** for the same reason |
+| `exegraph.step.tags` | string[] | Step tags (fixed internal vocabulary; emitted raw) |
 | `exegraph.step.timeout_s` | measurement | Per-step timeout in seconds, if set |
 </details>
 
@@ -624,7 +625,7 @@ Many failed commands produce the catch-all result code `internal.errors_errorStr
 
 ### Hashed Fields and Template Joins
 
-Fields like `project.template.id`, `project.name`, `env.name` are **SHA-256 hashed** before emission to protect privacy. You cannot reverse them.
+Fields like `project.template.id`, `project.name`, `env.name`, `exegraph.step.name`, and `exegraph.step.deps` are **SHA-256 hashed** before emission to protect privacy. You cannot reverse them. (`hooks.name` is also hashed except for built-in lifecycle hook names.)
 
 To resolve template IDs to human-readable names, join with a template lookup table using the hashed ID.
 
@@ -643,7 +644,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 |-------------|------------|---------------------|---------------------|
 | **Core Workflows (init/up/deploy/provision/down)** | `cmd.init`, `cmd.up`, `cmd.deploy`, `cmd.provision`, `cmd.down` | `cmd.entry`, `cmd.flags` | Adoption, success rate, duration, error patterns |
 | **Deployment Targets** | `cmd.deploy`, `cmd.package` | `project.service.targets` (`appservice`, `containerapp`, `aks`, etc.) | Usage by target, success rate per target |
-| **Container Apps (.NET / Aspire)** | `cmd.deploy`, `cmd.provision` | `project.service.targets` = `containerapp-dotnet`, `platform.type` = `aca` | Aspire-specific adoption and success |
+| **Container Apps (Aspire)** | `cmd.deploy`, `cmd.provision` | `project.service.targets` = `containerapp-dotnet`, `platform.type` = `aca` | Aspire-specific adoption and success |
 | **Language Support** | `cmd.deploy`, `cmd.package`, `cmd.restore` | `project.service.languages`, `project.service.language` | Usage by language |
 | **Templates** | `cmd.init`, `cmd.up` | `project.template.id` (hashed — join with template lookup to resolve) | Template adoption, success by template |
 | **Provisioning (IaC)** | `cmd.provision`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`, `terraform`) | Provision success, ARM errors, duration |

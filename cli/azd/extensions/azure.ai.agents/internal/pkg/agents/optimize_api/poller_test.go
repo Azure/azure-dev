@@ -42,10 +42,10 @@ func TestPoller_PollsUntilCompleted(t *testing.T) {
 			status = StatusCompleted
 		}
 		_ = json.NewEncoder(w).Encode(OptimizeJobStatus{
-			OperationID: "op-1",
-			Status:      status,
+			ID:     "op-1",
+			Status: status,
 			Progress: &JobProgress{
-				CurrentIteration: int(n),
+				CandidatesCompleted: int(n),
 			},
 		})
 	}))
@@ -79,8 +79,8 @@ func TestPoller_PollsUntilFailed(t *testing.T) {
 			status = StatusFailed
 		}
 		_ = json.NewEncoder(w).Encode(OptimizeJobStatus{
-			OperationID: "op-fail",
-			Status:      status,
+			ID:     "op-fail",
+			Status: status,
 			Error: &JobError{
 				Code:    "InternalError",
 				Message: "something broke",
@@ -105,8 +105,8 @@ func TestPoller_ContextCancellation(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(OptimizeJobStatus{
-			OperationID: "op-cancel",
-			Status:      StatusRunning,
+			ID:     "op-cancel",
+			Status: StatusRunning,
 		})
 	}))
 	defer server.Close()
@@ -137,8 +137,8 @@ func TestPoller_OnProgressCalled(t *testing.T) {
 			status = StatusCompleted
 		}
 		_ = json.NewEncoder(w).Encode(OptimizeJobStatus{
-			OperationID: "op-prog",
-			Status:      status,
+			ID:     "op-prog",
+			Status: status,
 		})
 	}))
 	defer server.Close()
@@ -173,8 +173,8 @@ func TestPoller_TransientRetryThenSuccess(t *testing.T) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(OptimizeJobStatus{
-			OperationID: "op-retry",
-			Status:      StatusCompleted,
+			ID:     "op-retry",
+			Status: StatusCompleted,
 		})
 	}))
 	defer server.Close()

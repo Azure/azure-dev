@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 
+	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -19,12 +20,13 @@ import (
 
 // optimizeStatusFlags holds CLI flags for the optimize status command.
 type optimizeStatusFlags struct {
-	watch        bool // poll until job completes
-	pollInterval int  // polling interval in seconds
+	envName      string // explicit environment name (from -e flag)
+	watch        bool   // poll until job completes
+	pollInterval int    // polling interval in seconds
 	optimizeConnectionFlags
 }
 
-func newOptimizeStatusCommand() *cobra.Command {
+func newOptimizeStatusCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &optimizeStatusFlags{}
 
 	cmd := &cobra.Command{
@@ -45,11 +47,12 @@ Use --watch to poll until the job completes.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
+			flags.envName = extCtx.Environment
 			operationID := ""
 			if len(args) > 0 {
 				operationID = args[0]
 			} else {
-				operationID = loadLastOptimizeJobID(ctx)
+				operationID = loadLastOptimizeJobID(ctx, flags.envName)
 				if operationID == "" {
 					return fmt.Errorf("operation ID is required: provide it as an argument, or run 'azd ai agent optimize' first")
 				}
@@ -67,7 +70,7 @@ Use --watch to poll until the job completes.`,
 }
 
 func runOptimizeStatus(cmd *cobra.Command, flags *optimizeStatusFlags, operationID string) error {
-	endpoint, err := flags.resolve(cmd.Context())
+	endpoint, err := flags.resolve(cmd.Context(), flags.envName)
 	if err != nil {
 		return err
 	}
@@ -94,9 +97,9 @@ func runOptimizeStatus(cmd *cobra.Command, flags *optimizeStatusFlags, operation
 		if err != nil {
 			return err
 		}
-		printOptimizeResults(cmd.Context(), out, finalStatus, hasProject)
-	} else if len(status.Candidates) > 0 {
-		printOptimizeResults(cmd.Context(), out, status, hasProject)
+		printOptimizeResults(cmd.Context(), out, finalStatus, hasProject, flags.envName)
+	} else if len(status.Candidates()) > 0 {
+		printOptimizeResults(cmd.Context(), out, status, hasProject, flags.envName)
 	}
 
 	if status.Error != nil {
@@ -108,21 +111,22 @@ func runOptimizeStatus(cmd *cobra.Command, flags *optimizeStatusFlags, operation
 
 // printOptimizeJobSummary prints a brief summary of an optimization job's state.
 func printOptimizeJobSummary(out io.Writer, status *optimize_api.OptimizeJobStatus) {
-	fmt.Fprintf(out, "  Job ID:  %s\n", color.CyanString(status.OperationID))
+	fmt.Fprintf(out, "  Job ID:  %s\n", color.CyanString(status.ID))
 	fmt.Fprintf(out, "  Status:  %s\n", formatOptimizeStatus(status.Status))
-	if status.Agent != nil && status.Agent.AgentName != "" {
-		fmt.Fprintf(out, "  Agent:   %s\n", status.Agent.AgentName)
+	if agentName := status.AgentName(); agentName != "" {
+		fmt.Fprintf(out, "  Agent:   %s\n", agentName)
 	}
 	if status.AllTargetAttributesFailed {
 		fmt.Fprintf(out, "  Strategy: %s\n", color.YellowString("failed (baseline only — no candidates generated)"))
-	} else if status.Progress != nil && status.Progress.CurrentTargetAttribute != "" {
-		fmt.Fprintf(out, "  Strategy: %s\n", status.Progress.CurrentTargetAttribute)
 	}
-	if status.Best != nil {
-		fmt.Fprintf(out, "  Best:    %.2f\n", status.Best.AvgScore)
+	if status.Progress != nil {
+		fmt.Fprintf(out, "  Candidates Completed: %d\n", status.Progress.CandidatesCompleted)
 	}
-	if status.CreatedAt != "" {
-		fmt.Fprintf(out, "  Created: %s\n", status.CreatedAt)
+	if best := status.BestCandidate(); best != nil {
+		fmt.Fprintf(out, "  Best:    %.2f\n", best.AvgScore)
+	}
+	if status.CreatedAt != 0 {
+		fmt.Fprintf(out, "  Created: %s\n", eval_api.FormatTimestamp(status.CreatedAt))
 	}
 	if status.Error != nil {
 		fmt.Fprintf(out, "  Error:   %s\n", color.RedString(status.Error.Message))

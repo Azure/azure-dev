@@ -400,9 +400,11 @@ func startTestCredentialServer(t *testing.T) *httptest.Server {
 			Token     string `json:"token"`
 			ExpiresOn string `json:"expiresOn"`
 		}{
-			Status:    "success",
-			Token:     mockJWT,
-			ExpiresOn: expiresOn.Format(time.RFC3339),
+			Status: "success",
+			Token:  mockJWT,
+			// Use explicit UTC Z-suffix format (not time.RFC3339 which may emit +00:00 offset).
+			// The extension parser only accepts the Z-terminated form.
+			ExpiresOn: expiresOn.UTC().Format("2006-01-02T15:04:05Z"),
 		}
 
 		w.Header().Set("Content-Type", "application/json")

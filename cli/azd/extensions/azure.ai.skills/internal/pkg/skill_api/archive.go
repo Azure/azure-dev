@@ -4,10 +4,8 @@
 package skill_api
 
 import (
-	"archive/tar"
 	"archive/zip"
 	"bytes"
-	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
@@ -42,44 +40,7 @@ var (
 	ErrInvalidArchive = errors.New("invalid archive")
 )
 
-type ArchiveFormat int
-
-const (
-	ArchiveUnknown ArchiveFormat = iota
-	ArchiveZip
-	ArchiveTarGz
-)
-
-func (f ArchiveFormat) String() string {
-	switch f {
-	case ArchiveZip:
-		return "zip"
-	case ArchiveTarGz:
-		return "tar.gz"
-	default:
-		return "unknown"
-	}
-}
-
-// DetectArchiveFormat sniffs the first bytes of data. The Foundry Skills
-// download endpoints (GET /skills/{name}/content and
-// GET /skills/{name}/versions/{version}/content) return application/zip;
-// the gzip-tar branch remains for resilience against legacy or alternate
-// content paths.
-func DetectArchiveFormat(data []byte) ArchiveFormat {
-	switch {
-	case len(data) >= 4 && bytes.Equal(data[:4], []byte{'P', 'K', 0x03, 0x04}):
-		return ArchiveZip
-	case len(data) >= 4 && bytes.Equal(data[:4], []byte{'P', 'K', 0x05, 0x06}):
-		return ArchiveZip
-	case len(data) >= 2 && data[0] == 0x1f && data[1] == 0x8b:
-		return ArchiveTarGz
-	default:
-		return ArchiveUnknown
-	}
-}
-
-// SafeExtract extracts a ZIP or gzip-tar archive into opts.OutputDir.
+// SafeExtract extracts a ZIP archive into opts.OutputDir.
 //
 // Two-phase: entries are first written into a temp staging directory and
 // validated against the safety rules below; then symlink-escape checks run
@@ -106,26 +67,18 @@ func SafeExtract(data []byte, opts ExtractOptions) (*ExtractResult, error) {
 		maxBytes = DefaultMaxTotalUncompressed
 	}
 
+	// Validate ZIP magic bytes before attempting extraction.
+	if !isZipMagic(data) {
+		return nil, fmt.Errorf("%w: unrecognized archive format (expected ZIP)", ErrInvalidArchive)
+	}
+
 	staging, err := os.MkdirTemp("", "azd-skill-extract-*")
 	if err != nil {
 		return nil, fmt.Errorf("create staging directory: %w", err)
 	}
 	cleanupStaging := func() { _ = os.RemoveAll(staging) }
 
-	var (
-		files      []string
-		totalBytes int64
-		stageErr   error
-	)
-	switch DetectArchiveFormat(data) {
-	case ArchiveZip:
-		files, totalBytes, stageErr = stageFromZip(data, staging, maxEntries, maxBytes)
-	case ArchiveTarGz:
-		files, totalBytes, stageErr = stageFromTarGz(data, staging, maxEntries, maxBytes)
-	default:
-		cleanupStaging()
-		return nil, fmt.Errorf("%w: unrecognized magic bytes", ErrInvalidArchive)
-	}
+	files, totalBytes, stageErr := stageFromZip(data, staging, maxEntries, maxBytes)
 	if stageErr != nil {
 		cleanupStaging()
 		return nil, stageErr
@@ -138,6 +91,16 @@ func SafeExtract(data []byte, opts ExtractOptions) (*ExtractResult, error) {
 
 	cleanupStaging()
 	return &ExtractResult{Files: files, TotalBytes: totalBytes}, nil
+}
+
+// isZipMagic checks whether data starts with a valid ZIP magic number.
+func isZipMagic(data []byte) bool {
+	if len(data) < 4 {
+		return false
+	}
+	// PK\x03\x04 = local file header, PK\x05\x06 = empty archive (end of central dir)
+	return bytes.Equal(data[:4], []byte{'P', 'K', 0x03, 0x04}) ||
+		bytes.Equal(data[:4], []byte{'P', 'K', 0x05, 0x06})
 }
 
 func stageFromZip(data []byte, staging string, maxEntries int, maxBytes int64) ([]string, int64, error) {
@@ -177,62 +140,6 @@ func stageFromZip(data []byte, staging string, maxEntries int, maxBytes int64) (
 			defer rc.Close()
 			return io.Copy(w, io.LimitReader(rc, limit))
 		}, maxBytes-totalBytes, int64(entry.UncompressedSize64)) //nolint:gosec // bound-checked inside writeStagingEntry
-		if writeErr != nil {
-			return nil, 0, writeErr
-		}
-		totalBytes += written
-		files = append(files, cleaned)
-	}
-	return files, totalBytes, nil
-}
-
-func stageFromTarGz(data []byte, staging string, maxEntries int, maxBytes int64) ([]string, int64, error) {
-	gz, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return nil, 0, fmt.Errorf("%w: %w", ErrInvalidArchive, err)
-	}
-	defer gz.Close()
-
-	tr := tar.NewReader(gz)
-	var files []string
-	var totalBytes int64
-	entryCount := 0
-
-	for {
-		hdr, hdrErr := tr.Next()
-		if errors.Is(hdrErr, io.EOF) {
-			break
-		}
-		if hdrErr != nil {
-			return nil, 0, fmt.Errorf("read tar entry: %w", hdrErr)
-		}
-		if entryCount >= maxEntries {
-			return nil, 0, fmt.Errorf("%w: entry count exceeds %d", ErrLimitExceeded, maxEntries)
-		}
-		entryCount++
-
-		cleaned, ok := validateEntryName(hdr.Name)
-		if !ok {
-			return nil, 0, fmt.Errorf("%w: %q", ErrUnsafeEntry, hdr.Name)
-		}
-
-		switch hdr.Typeflag {
-		case tar.TypeReg, tar.TypeRegA:
-			if hdr.Linkname != "" {
-				return nil, 0, fmt.Errorf("%w: %q regular-file entry has unexpected Linkname", ErrUnsafeEntry, hdr.Name)
-			}
-		case tar.TypeDir:
-			if mkErr := os.MkdirAll(filepath.Join(staging, filepath.FromSlash(cleaned)), 0700); mkErr != nil {
-				return nil, 0, fmt.Errorf("create staging dir %q: %w", cleaned, mkErr)
-			}
-			continue
-		default:
-			return nil, 0, fmt.Errorf("%w: %q has unsupported tar type %c", ErrUnsafeEntry, hdr.Name, hdr.Typeflag)
-		}
-
-		written, writeErr := writeStagingEntry(staging, cleaned, func(w io.Writer, limit int64) (int64, error) {
-			return io.Copy(w, io.LimitReader(tr, limit))
-		}, maxBytes-totalBytes, hdr.Size)
 		if writeErr != nil {
 			return nil, 0, writeErr
 		}

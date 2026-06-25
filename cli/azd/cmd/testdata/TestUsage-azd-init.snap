@@ -4,6 +4,7 @@ Initialize a new application. When using --template, creates a project directory
   • Running init without flags specified will prompt you to initialize using your existing code, or from a template.
   • When using --template, a new directory is created (named after the template) and the project is initialized inside it. Pass . as the directory to use the current directory instead.
   • To view all available sample templates, including those submitted by the azd community, visit: https://azure.github.io/awesome-azd.
+  • Re-running init in an initialized project reuses the existing environment; with --no-prompt and no -e, the recorded default environment is reused.
 
 Usage
   azd init [flags]

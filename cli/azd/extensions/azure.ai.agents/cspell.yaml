@@ -79,6 +79,10 @@ words:
   - parseable
   - azd's
   - deepseek
+  - ttfb
+  - Bhadauria
+  # Test infrastructure
+  - recordproxy
   # Managed agent (Foundry PES / vienna harness) terms
   - vienna
   - azureml

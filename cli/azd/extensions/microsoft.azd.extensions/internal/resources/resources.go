@@ -12,3 +12,6 @@ import (
 //
 //go:embed all:languages
 var Languages embed.FS
+
+//go:embed internal
+var Internal embed.FS

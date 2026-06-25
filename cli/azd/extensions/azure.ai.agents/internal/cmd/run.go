@@ -25,9 +25,9 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/drone/envsubst"
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc/codes"
@@ -514,10 +514,8 @@ func resolveAgentDefinitionEnvVars(
 		if _, isConn := connRefEnvNames[ev.Name]; isConn {
 			continue
 		}
-		resolved, evalErr := envsubst.Eval(ev.Value, lookup)
-		if evalErr != nil {
-			resolved = ev.Value
-		}
+		// ExpandEnv returns the original value on error, so a failed expansion is a no-op.
+		resolved, _ := project.ExpandEnv(ev.Value, lookup)
 		result = append(result, fmt.Sprintf("%s=%s", ev.Name, resolved))
 	}
 
@@ -586,7 +584,7 @@ func installPythonDeps(projectDir string) error {
 	venvDir := filepath.Join(projectDir, ".venv")
 	if _, err := os.Stat(venvDir); os.IsNotExist(err) {
 		fmt.Println("Setting up Python environment...")
-		cmd := exec.Command("uv", "venv", venvDir, "--python", ">=3.12") //nolint:gosec // G204: venvDir is derived from the project directory path
+		cmd := exec.Command("uv", "venv", venvDir, "--python", ">=3.13") //nolint:gosec // G204: venvDir is derived from the project directory path
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

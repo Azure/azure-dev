@@ -14,8 +14,10 @@ import (
 
 // captureStdout runs fn while redirecting os.Stdout to a pipe, then returns
 // everything fn wrote. A goroutine drains the pipe into a strings.Builder so
-// large writes can't deadlock on the OS pipe buffer; os.Stdout is restored and
-// the read end closed via t.Cleanup so the helper is safe even if fn panics.
+// large writes can't deadlock on the OS pipe buffer. os.Stdout is restored
+// immediately after fn returns so any subsequent writes in the same test
+// (e.g. debug logging, a second captureStdout call) behave normally; t.Cleanup
+// remains as a panic safety net.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -34,6 +36,7 @@ func captureStdout(t *testing.T, fn func()) string {
 		copyDone <- copyErr
 	}()
 
+	// Panic safety net only; the happy path restores stdout below.
 	t.Cleanup(func() {
 		os.Stdout = orig
 		_ = w.Close()
@@ -43,6 +46,7 @@ func captureStdout(t *testing.T, fn func()) string {
 		defer func() { _ = w.Close() }()
 		fn()
 	}()
+	os.Stdout = orig
 
 	if err := <-copyDone; err != nil {
 		t.Fatalf("capture stdout: %v", err)

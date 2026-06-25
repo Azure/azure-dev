@@ -96,6 +96,21 @@ func TestResolveSourceLocation_ExistingSourceUnchanged(t *testing.T) {
 	require.Equal(t, "my-source", action.flags.source)
 }
 
+func TestResolveSourceLocation_NormalizedExistingSourceUsed(t *testing.T) {
+	t.Parallel()
+
+	action, _ := newBundleInstallTestAction(t)
+	require.NoError(t, action.sourceManager.Add(t.Context(), "my-source", &extensions.SourceConfig{
+		Name:     "my-source",
+		Type:     extensions.SourceKindUrl,
+		Location: "https://example.com/registry.json",
+	}))
+
+	action.flags.source = "my source"
+	require.NoError(t, action.resolveSourceLocation(t.Context()))
+	require.Equal(t, "my-source", action.flags.source)
+}
+
 func TestResolveSourceLocation_PlainNameUnchanged(t *testing.T) {
 	t.Parallel()
 

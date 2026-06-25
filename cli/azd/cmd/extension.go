@@ -275,9 +275,14 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		options.SourceConfig = sourceConfig
 		options.Source = ""
 	} else if options.Source != "" {
-		if _, err := a.sourceManager.Get(ctx, options.Source); err != nil {
-			return nil, fmt.Errorf("extension source '%s' not found: %w", options.Source, err)
+		resolvedSource, ok, err := resolveRegisteredSourceName(ctx, a.sourceManager, options.Source)
+		if err != nil {
+			return nil, err
 		}
+		if !ok {
+			return nil, fmt.Errorf("extension source '%s' not found: %w", options.Source, extensions.ErrSourceNotFound)
+		}
+		options.Source = resolvedSource
 	}
 
 	registryExtensions, err := a.extensionManager.FindExtensions(ctx, options)
@@ -739,6 +744,14 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 	if sourceConfig != nil {
 		filterOptions.SourceConfig = sourceConfig
 		filterOptions.Source = ""
+	} else if filterOptions.Source != "" {
+		resolvedSource, ok, err := resolveRegisteredSourceName(ctx, a.sourceManager, filterOptions.Source)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			filterOptions.Source = resolvedSource
+		}
 	}
 
 	extensionMatches, err := a.extensionManager.FindExtensions(ctx, filterOptions)
@@ -1439,13 +1452,12 @@ func registerSourceFromLocation(
 		return source, nil
 	}
 
-	// If the value already names a registered source, keep current behavior.
-	_, err := sourceManager.Get(ctx, source)
-	if err == nil {
-		return source, nil
+	resolvedSource, ok, err := resolveRegisteredSourceName(ctx, sourceManager, source)
+	if err != nil {
+		return "", err
 	}
-	if !errors.Is(err, extensions.ErrSourceNotFound) {
-		return "", fmt.Errorf("failed to resolve extension source %q: %w", source, err)
+	if ok {
+		return resolvedSource, nil
 	}
 
 	location := source
@@ -1557,6 +1569,35 @@ func registerSourceFromLocation(
 	return sourceConfig.Name, nil
 }
 
+func resolveRegisteredSourceName(
+	ctx context.Context,
+	sourceManager *extensions.SourceManager,
+	source string,
+) (string, bool, error) {
+	_, err := sourceManager.Get(ctx, source)
+	if err == nil {
+		return source, true, nil
+	}
+	if !errors.Is(err, extensions.ErrSourceNotFound) {
+		return "", false, fmt.Errorf("failed to resolve extension source %q: %w", source, err)
+	}
+
+	normalizedSource := extensions.NormalizeSourceKey(source)
+	if normalizedSource == source {
+		return "", false, nil
+	}
+
+	_, err = sourceManager.Get(ctx, normalizedSource)
+	if err == nil {
+		return normalizedSource, true, nil
+	}
+	if !errors.Is(err, extensions.ErrSourceNotFound) {
+		return "", false, fmt.Errorf("failed to resolve extension source %q: %w", source, err)
+	}
+
+	return "", false, nil
+}
+
 // findSourceByLocation returns the registered source for location, if any.
 func findSourceByLocation(
 	ctx context.Context,
@@ -1626,12 +1667,12 @@ func resolveReadOnlySourceFilter(
 		return nil, nil
 	}
 
-	_, err := sourceManager.Get(ctx, source)
-	if err == nil {
-		return nil, nil
+	_, ok, err := resolveRegisteredSourceName(ctx, sourceManager, source)
+	if err != nil {
+		return nil, err
 	}
-	if !errors.Is(err, extensions.ErrSourceNotFound) {
-		return nil, fmt.Errorf("failed to resolve extension source %q: %w", source, err)
+	if ok {
+		return nil, nil
 	}
 
 	kind, ok := inferSourceKind(source)

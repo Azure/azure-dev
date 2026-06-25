@@ -131,6 +131,36 @@ func TestExtensionList_UnknownRegisteredNameErrors(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestExtensionList_NormalizedRegisteredSourceName(t *testing.T) {
+	t.Parallel()
+
+	mockContext, manager, sourceManager := newSourceLocationTestManager(t)
+	stubRegistryHTTP(mockContext)
+	require.NoError(t, sourceManager.Add(t.Context(), "my-source", &extensions.SourceConfig{
+		Name:     "my-source",
+		Type:     extensions.SourceKindUrl,
+		Location: sourceLocationRegistryURL,
+	}))
+
+	var buf bytes.Buffer
+	action := &extensionListAction{
+		flags:            &extensionListFlags{source: "my source"},
+		formatter:        &output.JsonFormatter{},
+		console:          mockContext.Console,
+		writer:           &buf,
+		sourceManager:    sourceManager,
+		extensionManager: manager,
+	}
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+
+	var rows []extensionListItem
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &rows))
+	require.Len(t, rows, 1)
+	require.Equal(t, "my-source", rows[0].Source)
+}
+
 func TestExtensionList_DirectRelativeFileSource(t *testing.T) {
 	registryPath := writeRegistryFile(t)
 	t.Chdir(filepath.Dir(registryPath))
@@ -201,6 +231,34 @@ func TestExtensionShow_DirectUrlSource(t *testing.T) {
 	require.NoError(t, err)
 
 	requireLocationNotRegistered(t, sourceManager, sourceLocationRegistryURL)
+}
+
+func TestExtensionShow_NormalizedRegisteredSourceName(t *testing.T) {
+	t.Parallel()
+
+	mockContext, manager, sourceManager := newSourceLocationTestManager(t)
+	stubRegistryHTTP(mockContext)
+	require.NoError(t, sourceManager.Add(t.Context(), "my-source", &extensions.SourceConfig{
+		Name:     "my-source",
+		Type:     extensions.SourceKindUrl,
+		Location: sourceLocationRegistryURL,
+	}))
+
+	action := &extensionShowAction{
+		args: []string{"test.ext"},
+		flags: &extensionShowFlags{
+			source: "my source",
+			global: &internal.GlobalCommandOptions{},
+		},
+		console:          mockContext.Console,
+		formatter:        &output.NoneFormatter{},
+		writer:           &bytes.Buffer{},
+		sourceManager:    sourceManager,
+		extensionManager: manager,
+	}
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
 }
 
 func TestExtensionUpgrade_UrlSourceRegistersSource(t *testing.T) {

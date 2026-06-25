@@ -291,6 +291,17 @@ func TestEnableRoutine_ServerError(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestDisableRoutine_ServerError(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":{"code":"InternalError","message":"oops"}}`))
+	}))
+
+	_, err := client.DisableRoutine(t.Context(), "broken")
+	require.Error(t, err)
+}
+
 // ─── DispatchRoutineAsync ────────────────────────────────────────────────────
 
 func TestDispatchRoutineAsync_Success(t *testing.T) {
@@ -375,7 +386,10 @@ func TestListRoutineRuns_SinglePage(t *testing.T) {
 
 func TestListRoutineRuns_WithTop(t *testing.T) {
 	t.Parallel()
+	var callCount atomic.Int32
+
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount.Add(1)
 		assert.Contains(t, r.URL.RawQuery, "limit=1")
 
 		w.Header().Set("Content-Type", "application/json")
@@ -388,6 +402,7 @@ func TestListRoutineRuns_WithTop(t *testing.T) {
 	runs, err := client.ListRoutineRuns(t.Context(), "my-routine", ListRoutineRunsOptions{Top: 1})
 	require.NoError(t, err)
 	assert.Len(t, runs, 1, "Top should cap results to 1")
+	assert.Equal(t, int32(1), callCount.Load(), "client should not fetch page 2 when Top is already satisfied")
 }
 
 func TestListRoutineRuns_WithFilter(t *testing.T) {

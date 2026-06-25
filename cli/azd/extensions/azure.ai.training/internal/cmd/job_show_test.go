@@ -13,15 +13,21 @@ import (
 )
 
 // captureStdout runs fn while redirecting os.Stdout to a pipe, then returns
-// everything fn wrote. Used because printJobDetails writes directly to stdout.
+// everything fn wrote. The write end is closed (so the reader unblocks) and
+// the original stdout is restored even if fn panics, via t.Cleanup, so the
+// helper is safe to use in table-driven tests.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
-	orig := os.Stdout
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
+	orig := os.Stdout
 	os.Stdout = w
+	t.Cleanup(func() {
+		os.Stdout = orig
+		_ = r.Close()
+	})
 
 	done := make(chan string, 1)
 	go func() {
@@ -29,20 +35,21 @@ func captureStdout(t *testing.T, fn func()) string {
 		done <- string(b)
 	}()
 
-	fn()
+	func() {
+		defer func() { _ = w.Close() }()
+		fn()
+	}()
 
-	_ = w.Close()
-	os.Stdout = orig
 	return <-done
 }
 
-func TestPrintJobDetails_FoundryPortalUri(t *testing.T) {
+func TestPrintJobDetails_FoundryPortalURI(t *testing.T) {
 	const portal = "https://ai.azure.com/build/jobs/test-job"
 
 	tests := []struct {
 		name     string
 		services map[string]any
-		wantURL  string // expected value after "Foundry Portal Uri:"
+		wantURL  string // expected value after "Foundry Portal URI:"
 	}{
 		{
 			name: "Studio service present prints URL",
@@ -94,18 +101,18 @@ func TestPrintJobDetails_FoundryPortalUri(t *testing.T) {
 
 			out := captureStdout(t, func() { printJobDetails(d) })
 
-			if !strings.Contains(out, "Foundry Portal Uri:") {
-				t.Fatalf("expected Foundry Portal Uri line to always be present, got:\n%s", out)
+			if !strings.Contains(out, "Foundry Portal URI:") {
+				t.Fatalf("expected Foundry Portal URI line to always be present, got:\n%s", out)
 			}
 			var got string
-			for _, line := range strings.Split(out, "\n") {
-				if i := strings.Index(line, "Foundry Portal Uri:"); i >= 0 {
-					got = strings.TrimSpace(line[i+len("Foundry Portal Uri:"):])
+			for line := range strings.SplitSeq(out, "\n") {
+				if _, after, ok := strings.Cut(line, "Foundry Portal URI:"); ok {
+					got = strings.TrimSpace(after)
 					break
 				}
 			}
 			if got != tc.wantURL {
-				t.Errorf("Foundry Portal Uri value = %q, want %q\nfull output:\n%s", got, tc.wantURL, out)
+				t.Errorf("Foundry Portal URI value = %q, want %q\nfull output:\n%s", got, tc.wantURL, out)
 			}
 		})
 	}

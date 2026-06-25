@@ -306,7 +306,7 @@ func printJobDetails(d *jobDetails) {
 	if props.Description != "" {
 		fmt.Fprintf(w, "Description:\t%s\n", props.Description)
 	}
-	fmt.Fprintf(w, "Foundry Portal Uri:\t%s\n", valueOrDash(utils.ServiceEndpoint(props.Services, "Studio")))
+	fmt.Fprintf(w, "Foundry Portal URI:\t%s\n", valueOrDash(utils.ServiceEndpoint(props.Services, "Studio")))
 	_ = w.Flush()
 	fmt.Println()
 

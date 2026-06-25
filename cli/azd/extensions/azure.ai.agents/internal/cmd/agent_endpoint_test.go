@@ -60,6 +60,21 @@ func TestParseAgentEndpoint(t *testing.T) {
 			wantProto: agent_api.AgentProtocolInvocations,
 		},
 		{
+			name:       "activity with api-version",
+			raw:        "https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/activity?api-version=v1",
+			wantProj:   "https://acct.services.ai.azure.com/api/projects/proj",
+			wantAgent:  "hello",
+			wantProto:  agent_api.AgentProtocolActivityProtocol,
+			wantAPIVer: "v1",
+		},
+		{
+			name:      "activity without api-version",
+			raw:       "https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/activity",
+			wantProj:  "https://acct.services.ai.azure.com/api/projects/proj",
+			wantAgent: "hello",
+			wantProto: agent_api.AgentProtocolActivityProtocol,
+		},
+		{
 			name:        "empty url",
 			raw:         "",
 			wantErr:     true,
@@ -242,6 +257,37 @@ func TestBuildInvocationsURL(t *testing.T) {
 		got := buildInvocationsURL("https://acct.services.ai.azure.com/api/projects/proj", "hello", "weird value&x=1", "")
 		if !strings.Contains(got, "api-version=weird+value%26x%3D1") {
 			t.Errorf("buildInvocationsURL did not escape api-version: %q", got)
+		}
+	})
+}
+
+// TestBuildActivityURL verifies the activity URL builder targets the
+// .../protocols/activity tail, applies the default api-version, and URL-encodes
+// both the api-version and any session id.
+func TestBuildActivityURL(t *testing.T) {
+	t.Parallel()
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+
+	t.Run("no session id, default api-version", func(t *testing.T) {
+		got := buildActivityURL(projectEndpoint, "hello", "", "")
+		want := projectEndpoint + "/agents/hello/endpoint/protocols/activity?api-version=" +
+			DefaultAgentAPIVersion
+		if got != want {
+			t.Errorf("buildActivityURL = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("session id is escaped", func(t *testing.T) {
+		got := buildActivityURL(projectEndpoint, "hello", "v1", "a b/c?d&e")
+		if !strings.Contains(got, "agent_session_id=a+b%2Fc%3Fd%26e") {
+			t.Errorf("buildActivityURL did not escape session id: %q", got)
+		}
+	})
+
+	t.Run("api-version is escaped", func(t *testing.T) {
+		got := buildActivityURL(projectEndpoint, "hello", "weird value&x=1", "")
+		if !strings.Contains(got, "api-version=weird+value%26x%3D1") {
+			t.Errorf("buildActivityURL did not escape api-version: %q", got)
 		}
 	})
 }

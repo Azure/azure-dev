@@ -27,12 +27,13 @@ const agentEndpointHint = "run `azd ai agent show` to see the agent endpoint URL
 //
 //	[1] project name (URL-escaped),
 //	[2] agent name (URL-escaped),
-//	[3] protocol tail ("invocations" or "openai/responses").
+//	[3] protocol tail ("invocations", "activity", or "openai/responses").
 //
 // The "openai/v1/responses" tail is also accepted and rebuilt to the canonical
 // query-parameter form when invoked.
 var agentEndpointPathRegex = regexp.MustCompile(
-	`^/api/projects/([^/]+)/agents/([^/]+)/endpoint/protocols/(invocations|openai/v1/responses|openai/responses)/?$`,
+	`^/api/projects/([^/]+)/agents/([^/]+)/endpoint/protocols/` +
+		`(invocations|activity|openai/v1/responses|openai/responses)/?$`,
 )
 
 // parsedAgentEndpoint describes a deployed agent invocation endpoint.
@@ -134,6 +135,8 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 	switch protocolTail {
 	case "invocations":
 		protocol = agent_api.AgentProtocolInvocations
+	case "activity":
+		protocol = agent_api.AgentProtocolActivityProtocol
 	case "openai/responses", "openai/v1/responses":
 		protocol = agent_api.AgentProtocolResponses
 	}
@@ -186,4 +189,27 @@ func buildInvocationsURL(projectEndpoint, agentName, apiVersion, sid string) str
 		invURL += "&agent_session_id=" + url.QueryEscape(sid)
 	}
 	return invURL
+}
+
+// buildActivityURL builds the Foundry "activity" protocol URL for an agent.
+// When sid is non-empty, an agent_session_id query parameter is appended
+// (URL-encoded) so the request routes to the same agent session, mirroring the
+// invocations protocol.
+//
+// NOTE: The activity protocol wire format (path tail `protocols/activity`,
+// Activity request body, and response shape) follows the same path convention
+// as the responses/invocations endpoints. This is centralized here so it can be
+// adjusted in one place if the Foundry contract differs.
+func buildActivityURL(projectEndpoint, agentName, apiVersion, sid string) string {
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
+	actURL := fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/activity?api-version=%s",
+		projectEndpoint, agentName, url.QueryEscape(apiVersion),
+	)
+	if sid != "" {
+		actURL += "&agent_session_id=" + url.QueryEscape(sid)
+	}
+	return actURL
 }

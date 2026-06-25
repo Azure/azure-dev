@@ -22,19 +22,20 @@ const (
 )
 
 // InvocableProtocols returns the set of protocols that azd can invoke directly.
-// A2A and activity_protocol are deployment-only — they cannot be used for local
-// or remote invocation through azd.
+// A2A is deployment-only — it cannot be used for local or remote invocation
+// through azd.
 func InvocableProtocols() []AgentProtocol {
 	return []AgentProtocol{
 		AgentProtocolResponses,
 		AgentProtocolInvocations,
+		AgentProtocolActivityProtocol,
 	}
 }
 
 // IsInvocable reports whether the protocol can be used for invocation through azd.
 func (p AgentProtocol) IsInvocable() bool {
 	switch p {
-	case AgentProtocolResponses, AgentProtocolInvocations:
+	case AgentProtocolResponses, AgentProtocolInvocations, AgentProtocolActivityProtocol:
 		return true
 	default:
 		return false

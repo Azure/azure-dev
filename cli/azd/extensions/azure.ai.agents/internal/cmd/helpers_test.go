@@ -209,6 +209,11 @@ func TestProtocolFromAgentYaml(t *testing.T) {
 			wantProto: "invocations",
 		},
 		{
+			name:      "single protocol activity_protocol",
+			yaml:      "protocols:\n  - protocol: activity_protocol\n    version: \"1.0\"\n",
+			wantProto: "activity_protocol",
+		},
+		{
 			name:       "no file",
 			noFile:     true,
 			wantErr:    true,

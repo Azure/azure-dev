@@ -75,6 +75,9 @@ func (a *InvokeAction) activityLocal(ctx context.Context) error {
 	}
 
 	agentName := resolveLocalAgentName(ctx, azdClient, a.flags.name, a.noPrompt)
+	// The session-storage key intentionally uses DefaultPort (not a.flags.port),
+	// matching invocationsLocal: keying on a stable port lets local sessions
+	// persist across invokes regardless of which --port the user passes.
 	agentKey := buildLocalAgentKey(DefaultPort, agentName, "", resolveProjectPath(ctx, azdClient))
 
 	// Resolve local session ID (generated locally, not server-assigned).
@@ -87,6 +90,9 @@ func (a *InvokeAction) activityLocal(ctx context.Context) error {
 			log.Printf("invoke local: failed to resolve session ID: %v", err)
 		}
 	}
+
+	// Note: unlike invocationsLocal, the activity protocol has no defined
+	// OpenAPI discovery endpoint, so no spec is fetched/cached here.
 
 	raw := a.flags.outputFmt == outputRaw
 	if !raw {

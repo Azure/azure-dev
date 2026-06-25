@@ -154,7 +154,7 @@ Upgrades one or more extensions to the latest versions.
 
 - `--all` Upgrades all previously installed extensions when specified.
 - `-v, --version` Upgrades a specified extension to an exact version, if provided.
-- `-s, --source` Specifies the source used for the upgrade. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source, updates the extension's stored source, and rejects locations under `--no-prompt`; add the source first with `azd extension source add`.
+- `-s, --source` Specifies the source used for the upgrade. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source before resolving the extension, updates the extension's stored source after a successful upgrade, and rejects locations under `--no-prompt`; add the source first with `azd extension source add`.
 - `--no-dependency-upgrades` Skips upgrading dependencies declared by extension packs.
 
 ## Developing Extensions

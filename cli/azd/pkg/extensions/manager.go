@@ -456,7 +456,22 @@ func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([
 	var sources []Source
 	var err error
 	if options.SourceConfig != nil {
-		sources, err = m.createSourcesFromConfig(ctx, []*SourceConfig{options.SourceConfig}, nil)
+		source, err := m.sourceManager.CreateSource(ctx, options.SourceConfig)
+		if err != nil {
+			if schemaErr, ok := errors.AsType[*ErrUnsupportedRegistrySchema](err); ok {
+				return nil, &errorhandler.ErrorWithSuggestion{
+					Err:        schemaErr,
+					Message:    schemaErr.Error(),
+					Suggestion: "Upgrade azd to the latest version to use this registry",
+					Links: []errorhandler.ErrorLink{{
+						URL:   "https://aka.ms/azd/install",
+						Title: "Install/upgrade azd",
+					}},
+				}
+			}
+			return nil, fmt.Errorf("failed initializing extension source: %w", err)
+		}
+		sources = []Source{source}
 	} else {
 		sources, err = m.getSources(ctx, sourceFilterPredicate)
 	}

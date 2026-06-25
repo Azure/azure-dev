@@ -59,9 +59,14 @@ func TestInferSourceKind(t *testing.T) {
 	})
 
 	t.Run("JsonExtension", func(t *testing.T) {
-		kind, ok := inferSourceKind("missing-registry.json")
+		kind, ok := inferSourceKind(existing)
 		require.True(t, ok)
 		require.Equal(t, extensions.SourceKindFile, kind)
+	})
+
+	t.Run("MissingJsonSourceName", func(t *testing.T) {
+		_, ok := inferSourceKind("missing-registry.json")
+		require.False(t, ok)
 	})
 
 	t.Run("PathSeparator", func(t *testing.T) {

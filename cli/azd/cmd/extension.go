@@ -15,6 +15,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -1518,7 +1519,7 @@ func registerSourceFromLocation(
 			console.Message(ctx, output.WithErrorFormat(err.Error()))
 			continue
 		}
-		if _, err := sourceManager.Get(ctx, normalizeSourceKey(sourceName)); err == nil {
+		if _, err := sourceManager.Get(ctx, extensions.NormalizeSourceKey(sourceName)); err == nil {
 			console.Message(ctx, output.WithErrorFormat("Extension source '%s' already exists", sourceName))
 			continue
 		} else if !errors.Is(err, extensions.ErrSourceNotFound) {
@@ -1582,7 +1583,12 @@ func locationsEqual(kind extensions.SourceKind, a, b string) bool {
 	case extensions.SourceKindUrl:
 		return strings.EqualFold(a, b)
 	case extensions.SourceKindFile:
-		return absPath(a) == absPath(b)
+		a = filepath.Clean(absPath(a))
+		b = filepath.Clean(absPath(b))
+		if runtime.GOOS == "windows" {
+			return strings.EqualFold(a, b)
+		}
+		return a == b
 	default:
 		return a == b
 	}
@@ -1596,10 +1602,6 @@ func absPath(path string) string {
 	return path
 }
 
-func normalizeSourceKey(name string) string {
-	return strings.ReplaceAll(strings.ToLower(name), " ", "-")
-}
-
 func validateSourceName(name string) error {
 	if strings.Contains(name, ".") {
 		return errors.New("Extension source name cannot contain '.'")
@@ -1607,7 +1609,7 @@ func validateSourceName(name string) error {
 	if strings.ContainsAny(name, `/\`) {
 		return errors.New("Extension source name cannot contain path separators")
 	}
-	if strings.EqualFold(normalizeSourceKey(name), extensions.BundleSourceName) {
+	if strings.EqualFold(extensions.NormalizeSourceKey(name), extensions.BundleSourceName) {
 		return fmt.Errorf("Extension source name '%s' is reserved", extensions.BundleSourceName)
 	}
 	return nil
@@ -1661,7 +1663,7 @@ func inferSourceKind(location string) (extensions.SourceKind, bool) {
 	if info, err := os.Stat(location); err == nil && !info.IsDir() {
 		return extensions.SourceKindFile, true
 	}
-	if strings.ContainsAny(location, `/\`) || strings.EqualFold(filepath.Ext(location), ".json") {
+	if strings.ContainsAny(location, `/\`) {
 		return extensions.SourceKindFile, true
 	}
 	return "", false

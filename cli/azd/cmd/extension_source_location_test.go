@@ -157,6 +157,27 @@ func TestExtensionList_DirectRelativeFileSource(t *testing.T) {
 	requireLocationNotRegistered(t, sourceManager, registryPath)
 }
 
+func TestExtensionList_DirectMissingFileSourceReturnsError(t *testing.T) {
+	t.Parallel()
+
+	_, manager, sourceManager := newSourceLocationTestManager(t)
+
+	var buf bytes.Buffer
+	action := &extensionListAction{
+		flags:            &extensionListFlags{source: "./missing-registry.json"},
+		formatter:        &output.JsonFormatter{},
+		console:          mocks.NewMockContext(t.Context()).Console,
+		writer:           &buf,
+		sourceManager:    sourceManager,
+		extensionManager: manager,
+	}
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.ErrorContains(t, err, "failed listing extensions from registry")
+	require.ErrorContains(t, err, "failed initializing extension source")
+}
+
 func TestExtensionShow_DirectUrlSource(t *testing.T) {
 	t.Parallel()
 

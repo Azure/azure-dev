@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -20,7 +23,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_MavenProject(t *testing.T) {
@@ -524,4 +526,25 @@ func getMvnwCmd() string {
 	} else {
 		return "mvnw"
 	}
+}
+
+func Test_mavenProject_Requirements(t *testing.T) {
+	p := NewMavenProject(
+		environment.NewWithValues("test", nil),
+		maven.NewCli(exec.NewCommandRunner(nil)),
+		javac.NewCli(exec.NewCommandRunner(nil)),
+	)
+	reqs := p.Requirements()
+	assert.False(t, reqs.Package.RequireRestore)
+	assert.False(t, reqs.Package.RequireBuild)
+}
+
+func Test_mavenProject_RequiredExternalTools(t *testing.T) {
+	mvnCli := maven.NewCli(exec.NewCommandRunner(nil))
+	javaCli := javac.NewCli(exec.NewCommandRunner(nil))
+	p := NewMavenProject(environment.NewWithValues("test", nil), mvnCli, javaCli)
+	tools := p.RequiredExternalTools(t.Context(), &ServiceConfig{})
+	require.Len(t, tools, 2)
+	assert.Equal(t, mvnCli, tools[0])
+	assert.Equal(t, javaCli, tools[1])
 }

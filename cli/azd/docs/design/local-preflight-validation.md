@@ -218,9 +218,81 @@ pkg/
 │   ├── role_assignment_check_test.go  # Tests for the role assignment check
 │   ├── generate_bicep_param_test.go   # Tests for .bicepparam generation
 │   └── bicep_provider.go          # validatePreflight() integration, checkRoleAssignmentPermissions
+├── infra/provisioning/
+│   └── validation_dispatcher.go   # ValidationCheckDispatcher interface (DI decoupling)
 ├── output/ux/
 │   ├── preflight_report.go        # PreflightReport UxItem
 │   └── preflight_report_test.go   # Tests for PreflightReport
 └── tools/bicep/
     └── bicep.go                   # Snapshot() method, SnapshotOptions builder
 ```
+
+## Extension-Provided Checks
+
+Extensions can contribute validation checks to the local preflight pipeline using
+the `validation-provider` capability. This allows extensions to inspect the Bicep
+deployment data (ARM template, snapshot, parameters, location) and return additional
+warnings or errors that are merged into the preflight report.
+
+### How It Works
+
+1. The extension declares `validation-provider` in its `extension.yaml` capabilities.
+2. During startup, the extension registers one or more checks with a `check_type`
+   (e.g., `"local-preflight"`) and a stable `rule_id`.
+3. When `BicepProvider.validatePreflight()` runs, after the built-in checks complete,
+   it dispatches to all extension-registered checks matching `check_type: "local-preflight"`.
+4. Each extension check receives a context map with:
+   - `resources_snapshot` — Bicep snapshot JSON (`predictedResources`)
+   - `predicted_resources` — Parsed resource array from the snapshot
+   - `arm_template` — Compiled ARM template JSON
+   - `arm_parameters` — Resolved ARM parameters JSON
+   - `env_location` — Azure location string
+5. The extension returns `ValidationCheckResult` items (severity, message, suggestion, links)
+   which are appended to the preflight report.
+
+### Extension Code Example
+
+```go
+// In your extension's listen command:
+host := azdext.NewExtensionHost(azdClient).
+    WithValidationCheck(azdext.ValidationCheckRegistration{
+        CheckType: "local-preflight",
+        RuleID:    "my_naming_rule",
+        Factory: func() azdext.ValidationCheckProvider {
+            return &MyNamingCheck{}
+        },
+    })
+
+// The check implementation:
+type MyNamingCheck struct{}
+
+func (c *MyNamingCheck) Validate(
+    ctx context.Context,
+    valCtx *azdext.ValidationContext,
+    req *azdext.ValidationCheckRequest,
+) (*azdext.ValidationCheckResponse, error) {
+    resources, err := valCtx.ParsePredictedResources()
+    if err != nil || len(resources) == 0 {
+        return &azdext.ValidationCheckResponse{}, nil
+    }
+
+    // Inspect resources, return results...
+    return &azdext.ValidationCheckResponse{
+        Results: results,
+    }, nil
+}
+```
+
+### Failure Handling
+
+If an extension check returns an error (the `Validate` method fails), the error is
+logged as a warning but does **not** block the deployment. Only the extension's
+results are omitted. Built-in check failures still follow the standard error behavior
+described above.
+
+### Future Check Types
+
+The `check_type` field is designed for extensibility. Currently only
+`"local-preflight"` is supported, but future check types (e.g., `"project-config"`,
+`"auth"`) can be added without changing the protocol. Each check type defines its
+own context keys.

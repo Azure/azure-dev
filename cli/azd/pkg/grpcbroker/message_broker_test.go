@@ -14,6 +14,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Test message types
@@ -948,5 +950,172 @@ func TestReady_RunAlreadyStartedMultipleTimes(t *testing.T) {
 
 		assert.NoError(t, err, "Ready() call %d should succeed", i)
 		assert.Less(t, duration, 10*time.Millisecond, "Ready() call %d should be immediate", i)
+	}
+}
+
+func TestWrapResourceExhausted_NilError(t *testing.T) {
+	result := wrapResourceExhausted(nil, "test-op")
+	require.Nil(t, result)
+}
+
+func TestWrapResourceExhausted_NonGRPCError(t *testing.T) {
+	origErr := errors.New("some random error")
+	result := wrapResourceExhausted(origErr, "test-op")
+	require.Equal(t, origErr, result, "non-gRPC errors should pass through unchanged")
+}
+
+func TestWrapResourceExhausted_ResourceExhaustedError(t *testing.T) {
+	grpcErr := status.Error(codes.ResourceExhausted, "message too large")
+	result := wrapResourceExhausted(grpcErr, "Send chunk")
+
+	require.Error(t, result)
+	require.True(t, errors.Is(result, ErrResourceExhausted),
+		"should wrap with ErrResourceExhausted sentinel")
+	require.ErrorContains(t, result, "Send chunk failed")
+	require.ErrorContains(t, result, "4 MB max")
+	require.ErrorContains(t, result, "grpc.UseCompressor")
+}
+
+func TestWrapResourceExhausted_OtherGRPCCode(t *testing.T) {
+	grpcErr := status.Error(codes.NotFound, "not found")
+	result := wrapResourceExhausted(grpcErr, "test-op")
+	require.Equal(t, grpcErr, result, "non-ResourceExhausted gRPC errors should pass through")
+}
+
+func TestInvokeHandler_NilNilSuppressesResponse(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
+
+	// Register handler that returns (nil, nil)
+	err := broker.On(func(_ context.Context, _ *TestRequest) (*TestMessage, error) {
+		return nil, nil
+	})
+	require.NoError(t, err)
+
+	// Simulate dispatching via processMessage
+	msg := &TestMessage{
+		RequestId: "req-nil-nil",
+		InnerMsg:  &TestRequest{Value: "trigger"},
+	}
+
+	requestType := reflect.TypeFor[*TestRequest]()
+	wrapper, ok := broker.handlers.Load(requestType)
+	require.True(t, ok)
+	responseEnvelope := broker.invokeHandler(
+		t.Context(),
+		wrapper,
+		msg,
+		&TestRequest{Value: "trigger"},
+	)
+	require.Nil(t, responseEnvelope,
+		"invokeHandler should return nil when handler returns (nil, nil)")
+}
+
+func TestInvokeHandler_NilEnvelopeWithError(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
+
+	// Register handler that returns (nil, error)
+	err := broker.On(func(_ context.Context, _ *TestRequest) (*TestMessage, error) {
+		return nil, errors.New("check failed")
+	})
+	require.NoError(t, err)
+
+	requestType := reflect.TypeFor[*TestRequest]()
+	wrapper, ok := broker.handlers.Load(requestType)
+	require.True(t, ok)
+	responseEnvelope := broker.invokeHandler(
+		t.Context(),
+		wrapper,
+		&TestMessage{RequestId: "req-err", InnerMsg: &TestRequest{Value: "x"}},
+		&TestRequest{Value: "x"},
+	)
+	require.NotNil(t, responseEnvelope,
+		"invokeHandler should create envelope when handler returns error")
+	require.Error(t, responseEnvelope.Error)
+	require.ErrorContains(t, responseEnvelope.Error, "check failed")
+}
+
+func TestProcessHandlerRequest_NilNilHandler_NoSend(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
+
+	// Register handler that returns (nil, nil) — should NOT trigger a Send
+	err := broker.On(func(_ context.Context, _ *TestRequest) (*TestMessage, error) {
+		return nil, nil
+	})
+	require.NoError(t, err)
+
+	// Call processHandlerRequest directly
+	msg := &TestMessage{
+		RequestId: "req-suppress",
+		InnerMsg:  &TestRequest{Value: "data"},
+	}
+	requestType := reflect.TypeFor[*TestRequest]()
+	broker.processHandlerRequest(t.Context(), msg, "req-suppress", requestType)
+
+	// Verify nothing was sent to the client
+	select {
+	case resp := <-sim.serverToClient:
+		t.Fatalf("expected no response, but got: %+v", resp)
+	default:
+		// Good — nothing was sent
+	}
+}
+
+func TestProcessHandlerRequest_NoHandler_Drops(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
+
+	// No handler registered for TestRequest
+	msg := &TestMessage{
+		RequestId: "req-nohandler",
+		InnerMsg:  &TestRequest{Value: "data"},
+	}
+	// Use a type that has no handler
+	requestType := reflect.TypeFor[*TestResponse]()
+	broker.processHandlerRequest(t.Context(), msg, "req-nohandler", requestType)
+
+	// Verify nothing was sent
+	select {
+	case resp := <-sim.serverToClient:
+		t.Fatalf("expected no response, but got: %+v", resp)
+	default:
+		// Good — dropped as expected
+	}
+}
+
+func TestProcessHandlerRequest_NilInnerMsg(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
+
+	// Message with nil InnerMsg — GetInnerMessage returns nil for nil msg.InnerMsg
+	// But SimpleMessageEnvelope falls back to TestRequest from Data field.
+	// To truly get nil, pass nil message:
+	msg := (*TestMessage)(nil)
+	requestType := reflect.TypeFor[*TestRequest]()
+	broker.processHandlerRequest(t.Context(), msg, "req-nil", requestType)
+
+	// Verify nothing was sent
+	select {
+	case resp := <-sim.serverToClient:
+		t.Fatalf("expected no response, but got: %+v", resp)
+	default:
+		// Good — nil inner message path
 	}
 }

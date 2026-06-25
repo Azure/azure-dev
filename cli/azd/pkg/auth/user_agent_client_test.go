@@ -84,3 +84,9 @@ func TestUserAgentClient(t *testing.T) {
 		})
 	}
 }
+
+func TestUserAgentClient_CloseIdleConnections(t *testing.T) {
+	t.Parallel()
+	c := newUserAgentClient(http.DefaultClient, "ua")
+	c.CloseIdleConnections()
+}

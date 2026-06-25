@@ -82,3 +82,5 @@ words:
   - ttfb
   - Bhadauria
   - ensurepip
+  # Test infrastructure
+  - recordproxy

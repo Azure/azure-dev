@@ -15,6 +15,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
@@ -22,7 +26,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/stretchr/testify/require"
 )
 
 const managementScope = "https://management.azure.com//.default"
@@ -398,4 +401,19 @@ func (m *mockSubscriptionResolver) GetSubscription(
 		TenantId:           "resource-" + m.TenantId,
 		UserAccessTenantId: m.TenantId,
 	}, nil
+}
+
+func Test_NewAuthTokenFlags(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{Use: "test"}
+	global := &internal.GlobalCommandOptions{}
+	flags := newAuthTokenFlags(cmd, global)
+	require.NotNil(t, flags)
+}
+
+func Test_NewAuthTokenCmd(t *testing.T) {
+	t.Parallel()
+	cmd := newAuthTokenCmd()
+	require.NotNil(t, cmd)
+	assert.Contains(t, cmd.Use, "token")
 }

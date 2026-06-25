@@ -1271,6 +1271,9 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 
 		// Extension SDK errors used by extensions, never reach host MapError
 		"ErrProjectNotFound": "pkg/azdext: extension SDK helper, used by extensions not the host",
+
+		// gRPC broker errors caught at broker/stream level
+		"ErrResourceExhausted": "pkg/grpcbroker: gRPC message size error, caught in broker send/recv handlers",
 	}
 
 	// Find the azd root directory (two levels up from internal/cmd)

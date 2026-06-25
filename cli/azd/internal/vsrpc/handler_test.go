@@ -6,6 +6,7 @@ package vsrpc
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -222,4 +223,142 @@ func validateResult(t *testing.T, expected any) jsonrpc2.Replier {
 		require.Equal(t, expected, result)
 		return nil
 	}
+}
+
+func TestNewHandler_PanicsOnNonFunction(t *testing.T) {
+	require.Panics(t, func() {
+		NewHandler("not a function")
+	})
+}
+
+func TestNewHandler_PanicsOnNoArgs(t *testing.T) {
+	require.Panics(t, func() {
+		NewHandler(func() error { return nil })
+	})
+}
+
+func TestNewHandler_PanicsOnWrongFirstArg(t *testing.T) {
+	require.Panics(t, func() {
+		NewHandler(func(s string) error { return nil })
+	})
+}
+
+func TestNewHandler_PanicsOnBadReturnCount(t *testing.T) {
+	require.Panics(t, func() {
+		NewHandler(func(ctx context.Context) {})
+	})
+}
+
+func TestNewHandler_PanicsOnNonErrorReturn(t *testing.T) {
+	require.Panics(t, func() {
+		NewHandler(func(ctx context.Context) string { return "" })
+	})
+}
+
+func TestNewHandler_PanicsOnNonErrorSecondReturn(t *testing.T) {
+	require.Panics(t, func() {
+		NewHandler(func(ctx context.Context) (string, string) { return "", "" })
+	})
+}
+
+func TestNewHandler_ThreeReturnsPanics(t *testing.T) {
+	require.Panics(t, func() {
+		NewHandler(func(ctx context.Context) (string, int, error) { return "", 0, nil })
+	})
+}
+
+func TestUnmarshalArgs_NonArrayParams(t *testing.T) {
+	fnType := reflect.TypeFor[func(ctx context.Context, s string) error]()
+
+	// Params as an object instead of array
+	req, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", map[string]string{"key": "value"})
+	require.NoError(t, err)
+
+	_, err = unmarshalArgs(nil, req, fnType)
+	require.Error(t, err)
+}
+
+func TestUnmarshalArgs_WrongParamCount(t *testing.T) {
+	fnType := reflect.TypeFor[func(ctx context.Context, a, b string) error]()
+
+	// Only one param when two are expected
+	req, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{"only-one"})
+	require.NoError(t, err)
+
+	_, err = unmarshalArgs(nil, req, fnType)
+	require.Error(t, err)
+}
+
+func TestUnmarshalArgs_TypeMismatch(t *testing.T) {
+	fnType := reflect.TypeFor[func(ctx context.Context, n int) error]()
+
+	// Pass a string where int is expected
+	req, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{"not-an-int"})
+	require.NoError(t, err)
+
+	_, err = unmarshalArgs(nil, req, fnType)
+	require.Error(t, err)
+}
+
+func TestNewHandler_ValueAndErrorReturn(t *testing.T) {
+	h := NewHandler(func(ctx context.Context, msg string) (string, error) {
+		return "echo: " + msg, nil
+	})
+
+	call, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{"hello"})
+	require.NoError(t, err)
+
+	var gotResult any
+	replier := func(ctx context.Context, result any, err error) error {
+		gotResult = result
+		require.NoError(t, err)
+		return nil
+	}
+
+	_ = h(t.Context(), nil, replier, call)
+	require.Equal(t, "echo: hello", gotResult)
+}
+
+func TestNewHandler_ValueAndErrorReturn_WithError(t *testing.T) {
+	expectedErr := errors.New("test error")
+	h := NewHandler(func(ctx context.Context) (string, error) {
+		return "", expectedErr
+	})
+
+	call, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{})
+	require.NoError(t, err)
+
+	var gotErr error
+	replier := func(ctx context.Context, result any, err error) error {
+		gotErr = err
+		return nil
+	}
+
+	_ = h(t.Context(), nil, replier, call)
+	require.Equal(t, expectedErr, gotErr)
+}
+
+func TestNewHandler_Cancellation_ValueReturn(t *testing.T) {
+	h := NewHandler(func(ctx context.Context) (string, error) {
+		return "", ctx.Err()
+	})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // cancel immediately
+
+	call, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{})
+	require.NoError(t, err)
+
+	var gotErr error
+	replier := func(ctx context.Context, result any, err error) error {
+		gotErr = err
+		return nil
+	}
+
+	_ = h(ctx, nil, replier, call)
+	require.Error(t, gotErr)
+
+	var rpcErr *jsonrpc2.Error
+	require.True(t, errors.As(gotErr, &rpcErr))
+	require.Equal(t, requestCanceledErrorCode, rpcErr.Code)
 }

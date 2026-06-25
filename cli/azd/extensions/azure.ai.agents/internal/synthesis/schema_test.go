@@ -6,18 +6,20 @@ package synthesis
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// schemaPath is the editor-tooling JSON schema for the Foundry service body,
+// schemaPath is the editor-tooling JSON schema for the Foundry project service body,
 // resolved from this package directory.
-const schemaPath = "../../schemas/microsoft.foundry.json"
+const schemaPath = "../../../azure.ai.projects/schemas/azure.ai.project.json"
 
 // TestSchema_NetworkStructuralInvariants guards the network surface of the
 // hand-maintained JSON schema against drift from the synthesizer's contract:
@@ -25,12 +27,16 @@ const schemaPath = "../../schemas/microsoft.foundry.json"
 // subnet requires an explicit vnet + name.
 func TestSchema_NetworkStructuralInvariants(t *testing.T) {
 	raw, err := os.ReadFile(schemaPath)
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skipf("project schema not found at %s; skipping cross-extension schema invariant test", schemaPath)
+	}
 	require.NoError(t, err)
 
 	var doc struct {
 		Properties struct {
 			Network struct {
 				Required   []string                   `json:"required"`
+				AllOf      []json.RawMessage          `json:"allOf"`
 				Properties map[string]json.RawMessage `json:"properties"`
 			} `json:"network"`
 		} `json:"properties"`
@@ -38,7 +44,7 @@ func TestSchema_NetworkStructuralInvariants(t *testing.T) {
 			Subnet struct {
 				Required   []string                   `json:"required"`
 				Properties map[string]json.RawMessage `json:"properties"`
-			} `json:"subnet"`
+			} `json:"Subnet"`
 		} `json:"definitions"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &doc), "schema must be valid JSON")
@@ -50,6 +56,8 @@ func TestSchema_NetworkStructuralInvariants(t *testing.T) {
 	assert.Contains(t, net.Properties, "isolationMode", "network must expose isolationMode")
 	assert.Contains(t, net.Properties, "peSubnet", "network must expose peSubnet")
 
+	assertNetworkRejectsAgentSubnetWithIsolationMode(t, net.AllOf)
+
 	// The retired mode-enum shape must not reappear.
 	assert.NotContains(t, net.Properties, "mode", "network.mode was removed")
 	assert.NotContains(t, net.Properties, "byo", "network.byo was removed")
@@ -59,6 +67,25 @@ func TestSchema_NetworkStructuralInvariants(t *testing.T) {
 	assert.ElementsMatch(t, []string{"vnet", "name"}, sub.Required,
 		"a subnet must require exactly vnet + name")
 	assert.Contains(t, sub.Properties, "prefix", "subnet must expose prefix (create vs reference)")
+}
+
+func assertNetworkRejectsAgentSubnetWithIsolationMode(t *testing.T, allOf []json.RawMessage) {
+	t.Helper()
+
+	for _, rule := range allOf {
+		var candidate struct {
+			Not struct {
+				Required []string `json:"required"`
+			} `json:"not"`
+		}
+		require.NoError(t, json.Unmarshal(rule, &candidate), "network allOf rule must be valid JSON")
+		if slices.Contains(candidate.Not.Required, "agentSubnet") &&
+			slices.Contains(candidate.Not.Required, "isolationMode") {
+			return
+		}
+	}
+
+	assert.Fail(t, "network schema must reject agentSubnet and isolationMode together")
 }
 
 // TestARMTemplate_MatchesBicepBuild fails if templates/main.arm.json is stale

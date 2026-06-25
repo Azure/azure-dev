@@ -390,7 +390,8 @@
                             "properties": {
                                 "config": false,
                                 "k8s": false,
-                                "apiVersion": false
+                                "apiVersion": false,
+                                "network": false
                             }
                         }
                     },
@@ -495,7 +496,7 @@
                         }
                     },
                     {
-                        "comment": "Legacy Microsoft Foundry host - deprecated compatibility alias for azure.ai.agent provisioning shape",
+                        "comment": "Legacy Microsoft Foundry host - compatibility for old non-network files; new provisioning uses azure.ai.project",
                         "if": {
                             "properties": {
                                 "host": { "const": "microsoft.foundry" }
@@ -510,7 +511,8 @@
                                 "runtime": false,
                                 "docker": false,
                                 "image": false,
-                                "config": false
+                                "config": false,
+                                "network": false
                             }
                         }
                     },

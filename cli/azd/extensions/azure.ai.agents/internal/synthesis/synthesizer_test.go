@@ -30,7 +30,7 @@ func TestSynthesize(t *testing.T) {
 name: my-foundry-agent
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     deployments:
       - name: gpt-4.1-mini
         model:
@@ -54,12 +54,83 @@ services:
 			wantDeployName0: "gpt-4.1-mini",
 		},
 		{
+			name: "split project with sibling docker agent => ACR on",
+			yaml: `
+name: my-foundry-agent
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: src/my-agent
+    uses:
+      - my-project
+    docker:
+      path: Dockerfile
+      remoteBuild: true
+  my-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-4.1-mini
+        model:
+          format: OpenAI
+          name: gpt-4.1-mini
+          version: "2025-04-14"
+        sku:
+          capacity: 10
+          name: GlobalStandard
+`,
+			serviceName:     "my-project",
+			wantDeployLen:   1,
+			wantIncludeAcr:  true,
+			wantDeployName0: "gpt-4.1-mini",
+		},
+		{
+			name: "split project with sibling docker agent and image => no ACR",
+			yaml: `
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: src/my-agent
+    uses:
+      - my-project
+    image: myprivacr.azurecr.io/agents/my-agent:v1
+    docker:
+      path: Dockerfile
+      remoteBuild: true
+  my-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-4.1-mini
+        model: {format: OpenAI, name: gpt-4.1-mini, version: "2025-04-14"}
+        sku: {capacity: 10, name: GlobalStandard}
+`,
+			serviceName:    "my-project",
+			wantDeployLen:  1,
+			wantIncludeAcr: false,
+		},
+		{
+			name: "legacy inline docker agent with image => no ACR",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.project
+    agents:
+      - name: my-agent
+        kind: hosted
+        image: myprivacr.azurecr.io/agents/my-agent:v1
+        docker:
+          path: Dockerfile
+`,
+			serviceName:    "my-project",
+			wantDeployLen:  0,
+			wantIncludeAcr: false,
+		},
+		{
 			name: "greenfield hosted agent runtime-only (no docker)",
 			yaml: `
 name: my-foundry-agent
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     deployments:
       - name: gpt-4.1-mini
         model:
@@ -86,7 +157,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     deployments:
       - name: gpt-4.1-mini
         model:
@@ -110,7 +181,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     deployments:
       - name: gpt-4.1
         model:
@@ -139,7 +210,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     agents:
       - name: prompt-agent
         kind: prompt
@@ -154,7 +225,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     deployments:
       - name: gpt-4.1-mini
         model: {format: OpenAI, name: gpt-4.1-mini, version: "2025-04-14"}
@@ -188,7 +259,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     endpoint: https://existing.services.ai.azure.com/api/projects/p1
     deployments:
       - name: gpt-4.1-mini
@@ -203,7 +274,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     endpoint: https://existing.services.ai.azure.com/api/projects/p1
     network:
       peSubnet: {vnet: /subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v, name: pe}
@@ -216,7 +287,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     endpoint: "   "
 `,
 			serviceName: "my-project",
@@ -226,7 +297,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
 `,
 			serviceName: "nope",
 			wantErr:     ErrServiceNotFound,
@@ -249,7 +320,7 @@ services:
 			res, err := Synthesize(Input{
 				RawAzureYAML:  []byte(tt.yaml),
 				ServiceName:   tt.serviceName,
-				AcceptedHosts: []string{"azure.ai.agent"},
+				AcceptedHosts: []string{"azure.ai.project"},
 			})
 
 			if tt.wantErr != nil {
@@ -283,7 +354,7 @@ func TestSynthesize_NetworkPreserveVarRefs(t *testing.T) {
 	yaml := `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       peSubnet: {vnet: "${AZURE_VNET_ID}", name: pe-subnet}
       dns:
@@ -293,7 +364,7 @@ services:
 	res, err := Synthesize(Input{
 		RawAzureYAML:    []byte(yaml),
 		ServiceName:     "my-project",
-		AcceptedHosts:   []string{"azure.ai.agent"},
+		AcceptedHosts:   []string{"azure.ai.project"},
 		PreserveVarRefs: true,
 	})
 	require.NoError(t, err, "unset ${VAR} must not fail on the eject path")
@@ -309,14 +380,14 @@ func TestSynthesize_NetworkPreserveVarRefs_StillValidatesConcrete(t *testing.T) 
 	yaml := `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       peSubnet: {vnet: not-an-arm-id, name: pe-subnet}
 `
 	_, err := Synthesize(Input{
 		RawAzureYAML:    []byte(yaml),
 		ServiceName:     "my-project",
-		AcceptedHosts:   []string{"azure.ai.agent"},
+		AcceptedHosts:   []string{"azure.ai.project"},
 		PreserveVarRefs: true,
 	})
 	require.Error(t, err)
@@ -336,7 +407,7 @@ func TestSynthesize_InputValidation(t *testing.T) {
 		},
 		{
 			name: "empty service name",
-			in:   Input{RawAzureYAML: []byte("services:\n  x:\n    host: azure.ai.agent\n")},
+			in:   Input{RawAzureYAML: []byte("services:\n  x:\n    host: azure.ai.project\n")},
 			want: "ServiceName is empty",
 		},
 		{
@@ -527,7 +598,7 @@ func TestSynthesize_Network(t *testing.T) {
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     deployments:
       - name: gpt-4.1-mini
         model: {format: OpenAI, name: gpt-4.1-mini, version: "2025-04-14"}
@@ -544,7 +615,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       agentSubnet: {vnet: ` + validVNet + `, name: agent-subnet, prefix: 192.168.0.0/24}
       peSubnet: {vnet: ` + validVNet + `, name: pe-subnet, prefix: 192.168.1.0/24}
@@ -570,7 +641,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       agentSubnet: {vnet: ` + validVNet + `, name: existing-agent}
       peSubnet: {vnet: ` + validVNet + `, name: pe-subnet, prefix: 192.168.1.0/24}
@@ -588,7 +659,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       peSubnet: {vnet: "${AZURE_VNET_ID}", name: pe-subnet}
 `,
@@ -602,7 +673,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       isolationMode: AllowOnlyApprovedOutbound
       peSubnet: {vnet: ` + validVNet + `, name: pe-subnet, prefix: 192.168.1.0/24}
@@ -620,7 +691,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       peSubnet: {vnet: ` + validVNet + `, name: pe-subnet}
       dns:
@@ -637,7 +708,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       peSubnet: {vnet: ` + validVNet + `, name: pe-subnet, prefix: 192.168.1.0/24}
 `,
@@ -653,7 +724,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       isolationMode: AllowInternetOutbound
       peSubnet: {vnet: ` + validVNet + `, name: existing-pe}
@@ -673,7 +744,7 @@ services:
 			res, err := Synthesize(Input{
 				RawAzureYAML:  []byte(tt.yaml),
 				ServiceName:   "my-project",
-				AcceptedHosts: []string{"azure.ai.agent"},
+				AcceptedHosts: []string{"azure.ai.project"},
 			})
 			require.NoError(t, err)
 			require.NotNil(t, res)
@@ -701,7 +772,7 @@ func TestSynthesize_NetworkValidationErrors(t *testing.T) {
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       isolationMode: AllowInternetOutbound
 `,
@@ -712,7 +783,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       isolationMode: AllowInternetOutbound
       agentSubnet: {vnet: ` + validVNet + `, name: a, prefix: 192.168.0.0/24}
@@ -725,7 +796,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       agentSubnet: {vnet: ` + validVNet + `, name: a, prefix: 192.168.0.0/24}
       peSubnet: {vnet: ` + validVNet2 + `, name: pe, prefix: 192.168.1.0/24}
@@ -737,7 +808,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       agentSubnet: {vnet: ` + validVNet + `, name: shared, prefix: 192.168.0.0/24}
       peSubnet: {vnet: ` + validVNet + `, name: shared, prefix: 192.168.1.0/24}
@@ -749,7 +820,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       peSubnet: {name: pe}
 `,
@@ -760,7 +831,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       peSubnet: {vnet: ` + validVNet + `}
 `,
@@ -771,7 +842,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       peSubnet: {vnet: not-an-arm-id, name: pe}
 `,
@@ -782,7 +853,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       peSubnet: {vnet: ` + validVNet + `, name: pe, prefix: not-a-cidr}
 `,
@@ -793,7 +864,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       peSubnet: {vnet: "${DEFINITELY_NOT_SET_VAR_XYZ}", name: pe}
 `,
@@ -804,7 +875,7 @@ services:
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       isolationMode: Wide
       peSubnet: {vnet: ` + validVNet + `, name: pe}
@@ -818,7 +889,7 @@ services:
 			_, err := Synthesize(Input{
 				RawAzureYAML:  []byte(tt.yaml),
 				ServiceName:   "my-project",
-				AcceptedHosts: []string{"azure.ai.agent"},
+				AcceptedHosts: []string{"azure.ai.project"},
 			})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantSub)

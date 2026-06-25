@@ -121,7 +121,7 @@ func ejectInfra(projectRoot, provider string) error {
 	res, err := synthesis.Synthesize(synthesis.Input{
 		RawAzureYAML:  rawYAML,
 		ServiceName:   svcName,
-		AcceptedHosts: project.FoundryServiceHosts,
+		AcceptedHosts: project.FoundryProvisioningServiceHosts,
 		// Eject writes a static infra/ tree. Keep ${VAR} references verbatim so
 		// the ejected main.parameters.json stays environment-portable; the
 		// on-disk provision flow resolves them from the azd environment.
@@ -132,8 +132,8 @@ func ejectInfra(projectRoot, provider string) error {
 		// consistent codes for the same azure.yaml problems.
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf("synthesize foundry service %q: %s", svcName, err),
-			"check the deployments/agents fields under your foundry service",
+			fmt.Sprintf("synthesize foundry project service %q: %s", svcName, err),
+			"check the endpoint, deployments, and network fields under your azure.ai.project service",
 		)
 	}
 
@@ -224,12 +224,13 @@ func ejectTerraform(projectRoot, infraDir string, params map[string]any) error {
 	return nil
 }
 
-// findFoundryServiceForEject scans azure.yaml for a service whose host is in
-// project.FoundryServiceHosts and returns its name, using eject-specific error
-// codes so telemetry can distinguish init-time eject from provision failures.
+// findFoundryServiceForEject scans azure.yaml for the azure.ai.project service
+// and returns its name, using eject-specific error codes so telemetry can
+// distinguish init-time eject from provision failures.
 func findFoundryServiceForEject(raw []byte) (string, error) {
 	type svc struct {
-		Host string `yaml:"host"`
+		Host    string    `yaml:"host"`
+		Network yaml.Node `yaml:"network,omitempty"`
 	}
 	type root struct {
 		Services map[string]svc `yaml:"services"`
@@ -245,31 +246,65 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 	}
 
 	var matches []string
+	var misplacedNetwork []string
 	for name, s := range r.Services {
-		if slices.Contains(project.FoundryServiceHosts, s.Host) {
+		if slices.Contains(project.FoundryProjectServiceHosts, s.Host) {
 			matches = append(matches, name)
+			continue
+		}
+		if project.IsFoundryNetworkHost(s.Host) && !s.Network.IsZero() {
+			misplacedNetwork = append(misplacedNetwork, name)
 		}
 	}
-	switch len(matches) {
-	case 0:
-		return "", exterrors.Dependency(
-			exterrors.CodeInfraEjectNoFoundryService,
-			fmt.Sprintf("no azure.ai.* services found in azure.yaml (looking for host in %v); "+
-				"nothing to eject", project.FoundryServiceHosts),
-			fmt.Sprintf("add a service with `host: %s` to azure.yaml, "+
-				"or remove --infra to run init normally", project.FoundryServiceHosts[0]),
+	if len(misplacedNetwork) > 0 {
+		slices.Sort(misplacedNetwork)
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("network: is only supported on services with host: %s (found on %v)",
+				project.FoundryProjectHost, misplacedNetwork),
+			"move the network: block to the azure.ai.project service (for example, services.ai-project)",
 		)
+	}
+
+	switch len(matches) {
 	case 1:
 		return matches[0], nil
+	case 0:
+		var legacyMatches []string
+		for name, s := range r.Services {
+			if slices.Contains(project.FoundryLegacyProvisioningHosts, s.Host) {
+				legacyMatches = append(legacyMatches, name)
+			}
+		}
+		switch len(legacyMatches) {
+		case 1:
+			return legacyMatches[0], nil
+		case 0:
+			return "", exterrors.Dependency(
+				exterrors.CodeInfraEjectNoFoundryService,
+				fmt.Sprintf("no foundry provisioning service found in azure.yaml (looking for host in %v); "+
+					"nothing to eject", project.FoundryProvisioningServiceHosts),
+				fmt.Sprintf("add a service with `host: %s` to azure.yaml, "+
+					"or remove --infra to run init normally", project.FoundryProjectHost),
+			)
+		default:
+			slices.Sort(legacyMatches)
+			return "", exterrors.Dependency(
+				exterrors.CodeInfraEjectMultipleFoundryServices,
+				fmt.Sprintf("multiple legacy services declare a foundry provisioning host %v (%v); only one is supported",
+					project.FoundryLegacyProvisioningHosts, legacyMatches),
+				"keep a single azure.ai.project service per project, or a single pre-split foundry service",
+			)
+		}
 	default:
 		// Sort for deterministic error message; map iteration order is
 		// randomized and would otherwise produce flaky tests.
 		slices.Sort(matches)
 		return "", exterrors.Dependency(
 			exterrors.CodeInfraEjectMultipleFoundryServices,
-			fmt.Sprintf("multiple services declare a foundry host %v (%v); only one is supported",
-				project.FoundryServiceHosts, matches),
-			"keep a single foundry service per project",
+			fmt.Sprintf("multiple services declare a foundry project host %v (%v); only one is supported",
+				project.FoundryProjectServiceHosts, matches),
+			"keep a single azure.ai.project service per project",
 		)
 	}
 }

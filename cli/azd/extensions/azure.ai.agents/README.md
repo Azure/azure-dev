@@ -48,11 +48,11 @@ services:
     description: My hosted agent
 ```
 
-## Private networking for `host: microsoft.foundry`
+## Private networking for `host: azure.ai.project`
 
-Foundry services can be provisioned as network-secured, VNet-bound accounts by
-adding a `network:` block to `azure.yaml`. See
-[Private networking for `host: microsoft.foundry`](docs/private-networking.md)
+Foundry project services can be provisioned as network-secured, VNet-bound
+accounts by adding a `network:` block to the `host: azure.ai.project` service in
+`azure.yaml`. See [Private networking for `host: azure.ai.project`](docs/private-networking.md)
 for the schema reference, BYO-image requirements, and VNet deployment
 cheatsheet.
 

@@ -28,7 +28,7 @@ infra:
   provider: microsoft.foundry
 services:
   my-foundry:
-    host: azure.ai.agent
+    host: azure.ai.project
     deployments:
       - name: gpt-4-1-mini
         model:
@@ -133,9 +133,9 @@ func TestEjectInfra_RefusesWhenMultipleFoundryServices(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
 services:
   agent-a:
-    host: azure.ai.agent
+    host: azure.ai.project
   agent-b:
-    host: azure.ai.agent
+    host: azure.ai.project
 `)
 
 	err := ejectInfra(dir, "bicep")
@@ -258,7 +258,7 @@ func TestEjectInfra_HappyPath_NoDockerOmitsAcrParam(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
 services:
   my-foundry:
-    host: azure.ai.agent
+    host: azure.ai.project
     deployments: []
     agents:
       - name: my-agent
@@ -293,7 +293,7 @@ func TestEjectInfra_PreservesNetworkVarRefs(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
 services:
   my-foundry:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       peSubnet: {vnet: "${AZURE_VNET_ID}", name: pe-subnet}
       dns:
@@ -350,7 +350,7 @@ infra:
   provider: microsoft.foundry
 services:
   my-foundry:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       agentSubnet:
         vnet: "${AZURE_VNET_ID}"
@@ -635,7 +635,7 @@ func TestEjectInfra_Terraform_NoDockerOmitsAcr(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
 services:
   my-foundry:
-    host: azure.ai.agent
+    host: azure.ai.project
     deployments: []
     agents:
       - name: my-agent
@@ -711,7 +711,7 @@ infra:
   provider: microsoft.foundry
 services:
   my-foundry:
-    host: azure.ai.agent
+    host: azure.ai.project
     network:
       peSubnet: {vnet: "${AZURE_VNET_ID}", name: pe-subnet}
     deployments: []

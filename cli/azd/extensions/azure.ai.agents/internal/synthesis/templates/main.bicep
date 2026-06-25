@@ -1,8 +1,8 @@
-// Provisioning template for a microsoft.foundry service.
+// Provisioning template for a Foundry project service.
 //
-// Inputs are derived from the host: microsoft.foundry service body in
+// Inputs are derived from the host: azure.ai.project service body in
 // azure.yaml by internal/synthesis. Greenfield only (no endpoint:); a
-// brownfield path is a future addition.
+// brownfield path is handled by the provider before synthesis.
 //
 // Subscription-scoped so the resource group is part of the deployment. This
 // keeps `azd provision --preview` side-effect free: the resource group shows

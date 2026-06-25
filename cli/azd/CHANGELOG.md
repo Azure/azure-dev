@@ -26,6 +26,7 @@
 - [[#8666]](https://github.com/Azure/azure-dev/pull/8666) Fix `azd init` required extension installation failing when an extension is available from multiple sources by prompting users to choose the source interactively.
 - [[#8679]](https://github.com/Azure/azure-dev/pull/8679) Fix extension `Project().AddService` calls overwriting existing top-level `azure.yaml` properties such as hooks when adding services.
 - [[#8681]](https://github.com/Azure/azure-dev/pull/8681) Fix `azd pipeline config` creating mismatched GitHub OIDC federated credentials for organizations using `context` or `repo` claim keys.
+- [[#8776]](https://github.com/Azure/azure-dev/pull/8776) Fix `azd update` and the macOS update banner failing with "Refusing to load cask from untrusted tap" by running `brew trust azure/azd` before any Homebrew cask install, upgrade, or uninstall.
 
 ### Other Changes
 

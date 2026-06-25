@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
@@ -75,21 +76,6 @@ func TestInferSourceKind(t *testing.T) {
 	})
 }
 
-func TestDefaultSourceName(t *testing.T) {
-	t.Parallel()
-
-	cases := map[string]string{
-		"https://example.com/registry.json": "example-com",
-		"https://link/to/registry.json":     "link",
-		"/path/to/registry.json":            "registry",
-		"./custom.json":                     "custom",
-	}
-
-	for location, expected := range cases {
-		require.Equal(t, expected, defaultSourceName(location), "location %q", location)
-	}
-}
-
 func TestResolveSourceLocation_ExistingSourceUnchanged(t *testing.T) {
 	t.Parallel()
 
@@ -145,25 +131,85 @@ func TestResolveSourceLocation_FileRegistersSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, extensions.SourceKindFile, src.Type)
 	require.Equal(t, registryPath, src.Location)
+	require.Contains(t, console.Output(), "")
 }
 
-func TestResolveSourceLocation_FileUsesDefaultNameWhenBlank(t *testing.T) {
+func TestResolveSourceLocation_BlankSourceNamePromptsAgain(t *testing.T) {
 	t.Parallel()
 
 	registryPath := writeRegistryFile(t)
 
 	console := mockinput.NewMockConsole()
-	console.WhenPrompt(func(input.ConsoleOptions) bool { return true }).Respond("")
+	promptCount := 0
+	console.WhenPrompt(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) {
+		promptCount++
+		if promptCount == 1 {
+			return "", nil
+		}
+		return "local-dev", nil
+	})
 
 	action, _ := newBundleInstallTestAction(t)
 	action.console = console
 	action.flags.source = registryPath
 
 	require.NoError(t, action.resolveSourceLocation(t.Context()))
-	require.Equal(t, "registry", action.flags.source)
+	require.Equal(t, "local-dev", action.flags.source)
+	require.Equal(t, 2, promptCount)
+}
 
-	_, err := action.sourceManager.Get(t.Context(), "registry")
-	require.NoError(t, err)
+func TestResolveSourceLocation_InvalidSourceNamePromptsAgain(t *testing.T) {
+	t.Parallel()
+
+	registryPath := writeRegistryFile(t)
+
+	console := mockinput.NewMockConsole()
+	promptCount := 0
+	console.WhenPrompt(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) {
+		promptCount++
+		if promptCount == 1 {
+			return "my.registry", nil
+		}
+		return "local-dev", nil
+	})
+
+	action, _ := newBundleInstallTestAction(t)
+	action.console = console
+	action.flags.source = registryPath
+
+	require.NoError(t, action.resolveSourceLocation(t.Context()))
+	require.Equal(t, "local-dev", action.flags.source)
+	require.Equal(t, 2, promptCount)
+	require.Contains(t, console.Output(), output.WithErrorFormat("Extension source name cannot contain '.'"))
+}
+
+func TestResolveSourceLocation_ExistingSourceNamePromptsAgain(t *testing.T) {
+	t.Parallel()
+
+	registryPath := writeRegistryFile(t)
+
+	console := mockinput.NewMockConsole()
+	promptCount := 0
+	console.WhenPrompt(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) {
+		promptCount++
+		if promptCount == 1 {
+			return "existing source", nil
+		}
+		return "local-dev", nil
+	})
+
+	action, _ := newBundleInstallTestAction(t)
+	action.console = console
+	action.flags.source = registryPath
+	require.NoError(t, action.sourceManager.Add(t.Context(), "existing-source", &extensions.SourceConfig{
+		Name:     "existing-source",
+		Type:     extensions.SourceKindUrl,
+		Location: "https://example.com/registry.json",
+	}))
+
+	require.NoError(t, action.resolveSourceLocation(t.Context()))
+	require.Equal(t, "local-dev", action.flags.source)
+	require.Equal(t, 2, promptCount)
 }
 
 func TestResolveSourceLocation_UrlDeclinedReturnsError(t *testing.T) {
@@ -259,7 +305,9 @@ func TestResolveSourceLocation_UrlAcceptedRegistersSource(t *testing.T) {
 		})
 	})
 
-	mockContext.Console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
+	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+		return options.DefaultValue == false
+	}).Respond(true)
 	mockContext.Console.WhenPrompt(func(input.ConsoleOptions) bool { return true }).Respond("example-registry")
 
 	action.flags.source = "https://example.com/registry.json"

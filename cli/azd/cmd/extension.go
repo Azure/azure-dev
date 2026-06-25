@@ -13,7 +13,6 @@ import (
 	"log"
 	"maps"
 	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1482,7 +1481,6 @@ func registerSourceFromLocation(
 	}
 
 	if kind == extensions.SourceKindUrl {
-		console.Message(ctx, "")
 		confirm, err := console.Confirm(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf(
 				"Register and use the extension source at %s?",
@@ -1495,23 +1493,38 @@ func registerSourceFromLocation(
 		if !confirm {
 			return "", &internal.ErrorWithSuggestion{
 				Err: errors.New("extension source registration declined"),
-				Suggestion: "Re-run and confirm to register the source, " +
-					"or add it explicitly with 'azd extension source add'.",
+				Suggestion: fmt.Sprintf(
+					"Re-run and confirm to register the source, or add it explicitly with %s.",
+					output.WithHighLightFormat("azd extension source add"),
+				),
 			}
 		}
 	}
 
-	defaultName := defaultSourceName(location)
-	sourceName, err := console.Prompt(ctx, input.ConsoleOptions{
-		Message:      "Enter a name for this extension source:",
-		DefaultValue: defaultName,
-	})
-	if err != nil {
-		return "", err
-	}
-	sourceName = strings.TrimSpace(sourceName)
-	if sourceName == "" {
-		sourceName = defaultName
+	var sourceName string
+	for {
+		sourceNameInput, err := console.Prompt(ctx, input.ConsoleOptions{
+			Message: "Enter a name for this extension source",
+		})
+		if err != nil {
+			return "", err
+		}
+		sourceName = strings.TrimSpace(sourceNameInput)
+		if sourceName == "" {
+			console.Message(ctx, output.WithErrorFormat("Extension source name cannot be empty"))
+			continue
+		}
+		if err := validateSourceName(sourceName); err != nil {
+			console.Message(ctx, output.WithErrorFormat(err.Error()))
+			continue
+		}
+		if _, err := sourceManager.Get(ctx, normalizeSourceKey(sourceName)); err == nil {
+			console.Message(ctx, output.WithErrorFormat("Extension source '%s' already exists", sourceName))
+			continue
+		} else if !errors.Is(err, extensions.ErrSourceNotFound) {
+			return "", fmt.Errorf("failed to resolve extension source %q: %w", sourceName, err)
+		}
+		break
 	}
 
 	sourceConfig := &extensions.SourceConfig{
@@ -1520,6 +1533,7 @@ func registerSourceFromLocation(
 		Location: location,
 	}
 
+	console.Message(ctx, "")
 	spinnerMessage := fmt.Sprintf("Registering extension source %s", output.WithHighLightFormat(sourceName))
 	console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
@@ -1582,6 +1596,23 @@ func absPath(path string) string {
 	return path
 }
 
+func normalizeSourceKey(name string) string {
+	return strings.ReplaceAll(strings.ToLower(name), " ", "-")
+}
+
+func validateSourceName(name string) error {
+	if strings.Contains(name, ".") {
+		return errors.New("Extension source name cannot contain '.'")
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return errors.New("Extension source name cannot contain path separators")
+	}
+	if strings.EqualFold(normalizeSourceKey(name), extensions.BundleSourceName) {
+		return fmt.Errorf("Extension source name '%s' is reserved", extensions.BundleSourceName)
+	}
+	return nil
+}
+
 // resolveReadOnlySourceFilter returns a temporary source config for read-only
 // commands when --source is a registry location. Registered names return nil.
 func resolveReadOnlySourceFilter(
@@ -1634,25 +1665,6 @@ func inferSourceKind(location string) (extensions.SourceKind, bool) {
 		return extensions.SourceKindFile, true
 	}
 	return "", false
-}
-
-// defaultSourceName derives a config-safe default extension source name from a
-// registry location: the host for URLs, otherwise the file name without its
-// extension. It falls back to "custom" when nothing usable can be derived.
-func defaultSourceName(location string) string {
-	base := ""
-	if u, err := url.Parse(location); err == nil && u.Host != "" {
-		base = u.Host
-	} else {
-		base = filepath.Base(location)
-		base = strings.TrimSuffix(base, filepath.Ext(base))
-	}
-
-	name := normalizeBundleSourceName(base)
-	if name == "" {
-		name = "custom"
-	}
-	return name
 }
 
 // azd extension uninstall

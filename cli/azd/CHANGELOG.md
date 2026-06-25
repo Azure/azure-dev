@@ -4,8 +4,6 @@
 
 ### Features Added
 
-- [[#8581]](https://github.com/Azure/azure-dev/issues/8581) `azd extension install <id> -s <url-or-path>` now accepts a registry location (URL or file path) directly for `-s/--source`, registering it as a persisted source and installing in one step. azd prompts for the source name and confirms before registering an untrusted URL; under `--no-prompt` it directs you to add the source first with `azd extension source add`.
-
 ### Breaking Changes
 
 ### Bugs Fixed

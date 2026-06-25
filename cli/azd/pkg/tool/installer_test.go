@@ -2333,6 +2333,118 @@ func TestUninstall_NonSkill_StillDetectedReportsFailure(t *testing.T) {
 	assert.Contains(t, result.Error.Error(), "still detected")
 }
 
+// TestUninstall_NonSkill_PackageManagerNoRecord_GuidesManualRemoval covers
+// the case where the package manager fails to remove the tool because it no
+// longer has a record of the package (e.g. a self-updating CLI replaced the
+// manager-installed copy) yet azd still detects the tool. The user must get
+// actionable manual-removal guidance rather than the raw package-manager
+// error.
+func TestUninstall_NonSkill_PackageManagerNoRecord_GuidesManualRemoval(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{
+			ExitCode: 1,
+			Stdout:   "not installed",
+		}, errors.New("exit status 1")
+	})
+
+	// The tool is still detected after the failed uninstall.
+	det := installedDetector("1.0.0")
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	tool := &ToolDefinition{
+		Id:   "self-updating-cli",
+		Name: "Self Updating CLI",
+		// A DetectCommand that does not resolve on PATH keeps the
+		// suggestion text deterministic (no machine-specific path).
+		DetectCommand: "azd-nonexistent-cli-xyz",
+		Category:      ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/self-updating",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+
+	var ews *errorhandler.ErrorWithSuggestion
+	require.ErrorAs(t, result.Error, &ews)
+	assert.Contains(t, ews.Suggestion, "no longer has a record")
+	assert.Contains(t, ews.Suggestion, "Remove Self Updating CLI manually")
+}
+
+// TestUninstall_NonSkill_PackageManagerNoRecord_AlreadyGone_Succeeds covers
+// the idempotent case: the package manager reports a failure but the tool is
+// no longer detected, so the uninstall is already effectively complete.
+func TestUninstall_NonSkill_PackageManagerNoRecord_AlreadyGone_Succeeds(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{
+			ExitCode: 1,
+			Stdout:   "not installed",
+		}, errors.New("exit status 1")
+	})
+
+	// The tool is already gone — detection reports not installed.
+	det := &mockDetector{
+		detectToolFn: func(_ context.Context, tool *ToolDefinition) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	tool := &ToolDefinition{
+		Id:            "already-gone-cli",
+		Name:          "Already Gone CLI",
+		DetectCommand: "azd-nonexistent-cli-xyz",
+		Category:      ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/already-gone",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success,
+		"uninstall must be idempotent when the tool is already gone")
+	assert.NoError(t, result.Error)
+}
+
 func TestUninstall_NonSkill_NoPackageManagerIsUnsupported(t *testing.T) {
 	t.Parallel()
 

@@ -350,9 +350,20 @@ func (i *installer) runUninstall(
 		}
 
 		if err := i.executeUninstall(ctx, strategy); err != nil {
-			result.Error = fmt.Errorf(
-				"running uninstall command for %s: %w", tool.Name, err,
-			)
+			// The package manager could not remove the tool. This commonly
+			// happens when a self-updating CLI replaced the copy the package
+			// manager installed (e.g. `copilot update`), so the manager no
+			// longer has a record of the package. If the tool is already
+			// gone, treat the uninstall as complete (idempotent); otherwise
+			// guide the user to remove it manually, since neither the package
+			// manager nor azd can.
+			status, detectErr := i.detector.DetectTool(ctx, tool)
+			if detectErr == nil && !status.Installed {
+				result.Success = true
+				result.Duration = time.Since(start)
+				return result, nil
+			}
+			result.Error = i.packageManagerUninstallFailedError(tool, strategy, err)
 			result.Duration = time.Since(start)
 			return result, nil
 		}
@@ -1420,10 +1431,35 @@ func (i *installer) managerUnavailableUninstallError(
 	}
 }
 
-// uninstallUnsupportedError builds an [errorhandler.ErrorWithSuggestion]
-// for tools that azd cannot remove automatically because their install
-// strategy does not map to a known package manager (e.g. a custom shell
-// InstallCommand).
+// packageManagerUninstallFailedError builds an
+// [errorhandler.ErrorWithSuggestion] for the case where the package
+// manager is present but could not remove a tool that azd still detects
+// as installed. The common cause is a self-updating CLI (for example one
+// updated via its own `update` command) that replaced the copy the
+// package manager installed, so the manager no longer has a record of the
+// package. Since neither the package manager nor azd can remove it
+// automatically, the user is guided to delete it manually.
+func (i *installer) packageManagerUninstallFailedError(
+	tool *ToolDefinition,
+	strategy *InstallStrategy,
+	cause error,
+) error {
+	removal := fmt.Sprintf("Please remove %s manually.", tool.Name)
+
+	return &errorhandler.ErrorWithSuggestion{
+		Err: fmt.Errorf(
+			"running uninstall command for %s: %w", tool.Name, cause,
+		),
+		Message: "Cannot uninstall " + tool.Name,
+		Suggestion: fmt.Sprintf(
+			"%s could not be removed with %s, which no longer has a record "+
+				"of it. This usually means the tool was updated outside the "+
+				"package manager (for example via its own update command). %s",
+			tool.Name, strategy.PackageManager, removal,
+		),
+	}
+}
+
 func (i *installer) uninstallUnsupportedError(
 	tool *ToolDefinition,
 	strategy *InstallStrategy,

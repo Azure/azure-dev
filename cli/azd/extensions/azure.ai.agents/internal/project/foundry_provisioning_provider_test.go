@@ -54,13 +54,54 @@ services:
 			want: "ai-project",
 		},
 		{
-			name: "no project service",
+			name: "pre-split agent service fallback",
 			yaml: `
 services:
   agent:
     host: azure.ai.agent
 `,
+			want: "agent",
+		},
+		{
+			name: "legacy microsoft.foundry service fallback",
+			yaml: `
+services:
+  legacy:
+    host: microsoft.foundry
+`,
+			want: "legacy",
+		},
+		{
+			name: "no project or legacy service",
+			yaml: `
+services:
+  web:
+    host: containerapp
+    project: src/web
+`,
 			wantErr: true,
+		},
+		{
+			name: "multiple pre-split agent services rejected",
+			yaml: `
+services:
+  a:
+    host: azure.ai.agent
+  b:
+    host: azure.ai.agent
+`,
+			wantErr: true,
+		},
+		{
+			name: "project service wins over legacy fallback",
+			yaml: `
+services:
+  agent:
+    host: azure.ai.agent
+  ai-project:
+    host: azure.ai.project
+`,
+			want: "ai-project",
 		},
 		{
 			name: "multiple project services rejected",

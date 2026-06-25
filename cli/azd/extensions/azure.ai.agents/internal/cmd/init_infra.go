@@ -121,7 +121,7 @@ func ejectInfra(projectRoot, provider string) error {
 	res, err := synthesis.Synthesize(synthesis.Input{
 		RawAzureYAML:  rawYAML,
 		ServiceName:   svcName,
-		AcceptedHosts: project.FoundryProjectServiceHosts,
+		AcceptedHosts: project.FoundryProvisioningServiceHosts,
 		// Eject writes a static infra/ tree. Keep ${VAR} references verbatim so
 		// the ejected main.parameters.json stays environment-portable; the
 		// on-disk provision flow resolves them from the azd environment.
@@ -267,16 +267,35 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 	}
 
 	switch len(matches) {
-	case 0:
-		return "", exterrors.Dependency(
-			exterrors.CodeInfraEjectNoFoundryService,
-			fmt.Sprintf("no azure.ai.project service found in azure.yaml (looking for host in %v); "+
-				"nothing to eject", project.FoundryProjectServiceHosts),
-			fmt.Sprintf("add a service with `host: %s` to azure.yaml, "+
-				"or remove --infra to run init normally", project.FoundryProjectHost),
-		)
 	case 1:
 		return matches[0], nil
+	case 0:
+		var legacyMatches []string
+		for name, s := range r.Services {
+			if slices.Contains(project.FoundryLegacyProvisioningHosts, s.Host) {
+				legacyMatches = append(legacyMatches, name)
+			}
+		}
+		switch len(legacyMatches) {
+		case 1:
+			return legacyMatches[0], nil
+		case 0:
+			return "", exterrors.Dependency(
+				exterrors.CodeInfraEjectNoFoundryService,
+				fmt.Sprintf("no foundry provisioning service found in azure.yaml (looking for host in %v); "+
+					"nothing to eject", project.FoundryProvisioningServiceHosts),
+				fmt.Sprintf("add a service with `host: %s` to azure.yaml, "+
+					"or remove --infra to run init normally", project.FoundryProjectHost),
+			)
+		default:
+			slices.Sort(legacyMatches)
+			return "", exterrors.Dependency(
+				exterrors.CodeInfraEjectMultipleFoundryServices,
+				fmt.Sprintf("multiple legacy services declare a foundry provisioning host %v (%v); only one is supported",
+					project.FoundryLegacyProvisioningHosts, legacyMatches),
+				"keep a single azure.ai.project service per project, or a single pre-split foundry service",
+			)
+		}
 	default:
 		// Sort for deterministic error message; map iteration order is
 		// randomized and would otherwise produce flaky tests.

@@ -3,6 +3,8 @@
 
 package project
 
+import "slices"
+
 // FoundryProviderName is the value written to `infra.provider` in
 // azure.yaml by `azd ai agent init` and looked up by azd's provider
 // resolver to dispatch provisioning to this extension.
@@ -25,6 +27,15 @@ const FoundryProjectHost = "azure.ai.project"
 // treats as Foundry project services. Keep this project-scoped: agent services
 // depend on the project service, but do not own account-level provisioning settings.
 var FoundryProjectServiceHosts = []string{FoundryProjectHost}
+
+// FoundryLegacyProvisioningHosts lists pre-split service hosts that can still drive
+// provisioning when no azure.ai.project service exists. network: remains unsupported
+// on these hosts; this compatibility path is only for existing non-network projects.
+var FoundryLegacyProvisioningHosts = []string{"azure.ai.agent", "microsoft.foundry"}
+
+// FoundryProvisioningServiceHosts lists every service host accepted by the synthesizer.
+var FoundryProvisioningServiceHosts = append(
+	slices.Clone(FoundryProjectServiceHosts), FoundryLegacyProvisioningHosts...)
 
 // IsFoundryNetworkHost reports whether a host belongs to a Foundry service shape
 // where network: would be a likely user mistake. The shipped network contract is

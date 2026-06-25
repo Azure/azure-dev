@@ -145,7 +145,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 	res, err := synthesis.Synthesize(synthesis.Input{
 		RawAzureYAML:  rawYAML,
 		ServiceName:   svcName,
-		AcceptedHosts: FoundryProjectServiceHosts,
+		AcceptedHosts: FoundryProvisioningServiceHosts,
 		Env:           p.networkEnvMap(ctx),
 	})
 	switch {
@@ -1131,14 +1131,33 @@ func findFoundryProjectService(raw []byte) (string, error) {
 	}
 
 	switch len(matches) {
-	case 0:
-		return "", exterrors.Dependency(
-			exterrors.CodeProvisioningServiceNotFound,
-			fmt.Sprintf("no service in azure.yaml has host in %v", FoundryProjectServiceHosts),
-			fmt.Sprintf("add a service with `host: %s` to azure.yaml", FoundryProjectHost),
-		)
 	case 1:
 		return matches[0], nil
+	case 0:
+		var legacyMatches []string
+		for name, s := range r.Services {
+			if slices.Contains(FoundryLegacyProvisioningHosts, s.Host) {
+				legacyMatches = append(legacyMatches, name)
+			}
+		}
+		switch len(legacyMatches) {
+		case 1:
+			return legacyMatches[0], nil
+		case 0:
+			return "", exterrors.Dependency(
+				exterrors.CodeProvisioningServiceNotFound,
+				fmt.Sprintf("no service in azure.yaml has host in %v", FoundryProvisioningServiceHosts),
+				fmt.Sprintf("add a service with `host: %s` to azure.yaml", FoundryProjectHost),
+			)
+		default:
+			slices.Sort(legacyMatches)
+			return "", exterrors.Dependency(
+				exterrors.CodeProvisioningServiceNotFound,
+				fmt.Sprintf("multiple legacy services declare a foundry provisioning host %v (%v); only one is supported",
+					FoundryLegacyProvisioningHosts, legacyMatches),
+				"keep a single azure.ai.project service per project, or a single pre-split foundry service",
+			)
+		}
 	default:
 		slices.Sort(matches)
 		return "", exterrors.Dependency(

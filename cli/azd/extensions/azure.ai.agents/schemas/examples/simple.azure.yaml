@@ -1,12 +1,12 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 
-# Minimal microsoft.foundry service: one model deployment and one prompt agent.
-# Schema-validation fixture for the integration branch (see ../README.md).
+# Minimal split Foundry project: one project service with a model deployment and
+# one agent service that depends on it.
 name: foundry-simple
 
 services:
-  ai:
-    host: microsoft.foundry
+  ai-project:
+    host: azure.ai.project
     deployments:
       - name: gpt-4o-mini
         model:
@@ -16,8 +16,12 @@ services:
         sku:
           name: GlobalStandard
           capacity: 10
-    agents:
-      - name: assistant
-        kind: prompt
-        description: A simple prompt-based assistant.
-        instructions: You are a helpful assistant. Answer concisely.
+
+  assistant:
+    host: azure.ai.agent
+    project: ./agents/assistant
+    uses:
+      - ai-project
+    kind: hosted
+    name: assistant
+    description: A simple assistant.

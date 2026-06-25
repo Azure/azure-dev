@@ -84,6 +84,47 @@ services:
 			wantDeployName0: "gpt-4.1-mini",
 		},
 		{
+			name: "split project with sibling docker agent and image => no ACR",
+			yaml: `
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: src/my-agent
+    uses:
+      - my-project
+    image: myprivacr.azurecr.io/agents/my-agent:v1
+    docker:
+      path: Dockerfile
+      remoteBuild: true
+  my-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-4.1-mini
+        model: {format: OpenAI, name: gpt-4.1-mini, version: "2025-04-14"}
+        sku: {capacity: 10, name: GlobalStandard}
+`,
+			serviceName:    "my-project",
+			wantDeployLen:  1,
+			wantIncludeAcr: false,
+		},
+		{
+			name: "legacy inline docker agent with image => no ACR",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.project
+    agents:
+      - name: my-agent
+        kind: hosted
+        image: myprivacr.azurecr.io/agents/my-agent:v1
+        docker:
+          path: Dockerfile
+`,
+			serviceName:    "my-project",
+			wantDeployLen:  0,
+			wantIncludeAcr: false,
+		},
+		{
 			name: "greenfield hosted agent runtime-only (no docker)",
 			yaml: `
 name: my-foundry-agent

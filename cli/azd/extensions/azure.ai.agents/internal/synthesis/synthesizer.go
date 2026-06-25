@@ -114,6 +114,7 @@ type agentBlock struct {
 type serviceBlock struct {
 	Host   string       `yaml:"host"`
 	Docker *dockerBlock `yaml:"docker,omitempty"`
+	Image  string       `yaml:"image,omitempty"`
 	Agents []agentBlock `yaml:"agents,omitempty"`
 }
 
@@ -232,7 +233,7 @@ func Synthesize(in Input) (*Result, error) {
 // transitional files and tests.
 func deriveIncludeAcr(services map[string]yaml.Node, svc projectService) bool {
 	for _, a := range svc.Agents {
-		if a.Docker != nil {
+		if a.Docker != nil && strings.TrimSpace(a.Image) == "" {
 			return true
 		}
 	}
@@ -242,7 +243,7 @@ func deriveIncludeAcr(services map[string]yaml.Node, svc projectService) bool {
 		if err := node.Decode(&service); err != nil {
 			continue
 		}
-		if service.Host == "azure.ai.agent" && service.Docker != nil {
+		if service.Host == "azure.ai.agent" && service.Docker != nil && strings.TrimSpace(service.Image) == "" {
 			return true
 		}
 	}

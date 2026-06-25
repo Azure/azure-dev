@@ -42,7 +42,10 @@ services:
       - $ref: ./deployments/embeddings.yaml
 
   ai:
-    host: microsoft.foundry
+    host: azure.ai.agent
+    project: ./agents/researcher
+    uses:
+      - ai-project
     connections:
       - name: search-conn
         category: CognitiveSearch

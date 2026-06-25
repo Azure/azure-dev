@@ -496,7 +496,7 @@
                         }
                     },
                     {
-                        "comment": "Legacy Microsoft Foundry host - deprecated compatibility alias for azure.ai.agent provisioning shape",
+                        "comment": "Legacy Microsoft Foundry host - schema-only compatibility for old files; new provisioning uses azure.ai.project",
                         "if": {
                             "properties": {
                                 "host": { "const": "microsoft.foundry" }

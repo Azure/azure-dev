@@ -69,7 +69,7 @@ func TestTier2Live(t *testing.T) {
 	for _, mode := range deployModesFromEnv() {
 		t.Run(mode, func(t *testing.T) {
 			r := newRunner(t, mode)
-			ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+			ctx, cancel := context.WithTimeout(t.Context(), runTimeout)
 			defer cancel()
 			r.run(ctx)
 		})
@@ -148,7 +148,7 @@ func newRunner(t *testing.T, mode string) *runner {
 	// CI (GitHub Actions / Azure DevOps / explicit override) uses the az CLI
 	// session for auth; local WSL uses azd's slower-to-avoid built-in auth.
 	if useAzCliAuth() {
-		_, _ = r.runAzd(context.Background(), testDir, time.Minute,
+		_, _ = r.runAzd(t.Context(), testDir, time.Minute,
 			"config", "set", "auth.useAzCliAuth", "true")
 	}
 

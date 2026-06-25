@@ -203,6 +203,7 @@ func (a *updateAction) printUpdateResult(ctx context.Context, client *skill_api.
 	if err != nil {
 		// Don't fail the update just because the follow-up GET failed; fall
 		// back to printing the version envelope instead.
+		fmt.Fprintf(os.Stderr, "Warning: could not fetch skill details: %v\n", err)
 		return printSkillVersionDetail(version, outputTable)
 	}
 	return printSkillDetail(skill, outputTable)
@@ -230,6 +231,9 @@ func (a *updateAction) buildInlineContent() (*skill_api.SkillInlineContent, erro
 		content.Description = parsed.Description
 		content.Instructions = parsed.Instructions
 		content.Metadata = parsed.Metadata
+		content.License = parsed.License
+		content.Compatibility = parsed.Compatibility
+		content.AllowedTools = parsed.AllowedTools
 	}
 
 	if strings.TrimSpace(content.Description) == "" {

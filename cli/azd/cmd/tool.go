@@ -315,13 +315,12 @@ func (a *toolAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 // ---------------------------------------------------------------------------
 
 type toolListItem struct {
-	Id           string `json:"id"`
-	Name         string `json:"name"`
-	Category     string `json:"category"`
-	Priority     string `json:"priority"`
-	Status       string `json:"status"`
-	StatusSymbol string `json:"-"`
-	Version      string `json:"version"`
+	Id       string `json:"id"`
+	Name     string `json:"name"`
+	Category string `json:"category"`
+	Priority string `json:"priority"`
+	Status   string `json:"status"`
+	Version  string `json:"version"`
 }
 
 type toolListAction struct {
@@ -369,23 +368,20 @@ func (a *toolListAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	rows := make([]toolListItem, 0, len(statuses))
 	for _, s := range statuses {
-		status := "Not Installed"
-		statusSymbol := "✗"
+		status := "Not installed"
 		version := ""
 		if s.Installed {
 			status = "Installed"
-			statusSymbol = "✓"
 			version = s.InstalledVersion
 		}
 
 		rows = append(rows, toolListItem{
-			Id:           s.Tool.Id,
-			Name:         s.Tool.Name,
-			Category:     string(s.Tool.Category),
-			Priority:     string(s.Tool.Priority),
-			Status:       status,
-			StatusSymbol: statusSymbol,
-			Version:      version,
+			Id:       s.Tool.Id,
+			Name:     s.Tool.Name,
+			Category: string(s.Tool.Category),
+			Priority: string(s.Tool.Priority),
+			Status:   status,
+			Version:  version,
 		})
 	}
 
@@ -400,36 +396,46 @@ func (a *toolListAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		prettyFormatter := &output.PrettyTableFormatter{}
 		columns := []output.PrettyColumn{
 			{
-				Column:   output.Column{Heading: "NAME", ValueTemplate: "{{.Name}}"},
+				Column:   output.Column{Heading: "ID", ValueTemplate: "{{.Id}}"},
 				Priority: 1,
 			},
 			{
-				Column:             output.Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
-				Priority:           1,
-				ShortValueTemplate: "{{.StatusSymbol}}",
-				ColorFunc:          toolStatusColor,
+				Column:      output.Column{Heading: "NAME", ValueTemplate: "{{.Name}}"},
+				Priority:    2,
+				CardTitle:   true,
+				Wrappable:   true,
+				Truncatable: true,
 			},
 			{
-				Column:   output.Column{Heading: "VERSION", ValueTemplate: "{{.Version}}"},
-				Priority: 2,
+				Column:      output.Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
+				Priority:    1,
+				Truncatable: true,
+				ColorFunc:   toolStatusColor,
 			},
 			{
-				Column:   output.Column{Heading: "CATEGORY", ValueTemplate: "{{.Category}}"},
-				Priority: 2,
+				Column: output.Column{
+					Heading:       "INSTALLED",
+					ValueTemplate: `{{if .Version}}{{.Version}}{{else}}-{{end}}`,
+				},
+				CardValueTemplate: `{{if .Version}}{{.Version}}{{end}}`,
+				Priority:          1,
 			},
 			{
-				Column:   output.Column{Heading: "ID", ValueTemplate: "{{.Id}}"},
-				Priority: 3,
+				Column:      output.Column{Heading: "CATEGORY", ValueTemplate: "{{.Category}}"},
+				Priority:    3,
+				Truncatable: true,
 			},
 			{
-				Column:   output.Column{Heading: "PRIORITY", ValueTemplate: "{{.Priority}}"},
-				Priority: 3,
+				Column:      output.Column{Heading: "PRIORITY", ValueTemplate: "{{.Priority}}"},
+				Priority:    3,
+				Truncatable: true,
 			},
 		}
 
 		formatErr = prettyFormatter.Format(rows, a.writer, output.PrettyTableFormatterOptions{
-			Columns:         columns,
-			CardGroupColumn: "CATEGORY",
+			Columns:              columns,
+			CardGroupColumn:      "CATEGORY",
+			ResponsiveColumnHint: true,
 		})
 	} else {
 		formatErr = a.formatter.Format(rows, a.writer, nil)
@@ -1206,6 +1212,9 @@ type toolCheckItem struct {
 	InstalledVersion string `json:"installedVersion"`
 	LatestVersion    string `json:"latestVersion"`
 	UpdateAvailable  bool   `json:"updateAvailable"`
+	// Status is a human-readable installation/update status indicator.
+	// Populated only for pretty-table rendering; omitted from JSON.
+	Status string `json:"-"`
 }
 
 type toolCheckAction struct {
@@ -1263,6 +1272,7 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 			InstalledVersion: r.CurrentVersion,
 			LatestVersion:    r.LatestVersion,
 			UpdateAvailable:  r.UpdateAvailable,
+			Status:           toolCheckStatus(r.CurrentVersion != "", r.UpdateAvailable),
 		})
 	}
 	tracing.SetUsageAttributes(
@@ -1280,40 +1290,46 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 		prettyFormatter := &output.PrettyTableFormatter{}
 		columns := []output.PrettyColumn{
 			{
-				Column:   output.Column{Heading: "NAME", ValueTemplate: "{{.Name}}"},
+				Column:   output.Column{Heading: "ID", ValueTemplate: "{{.Id}}"},
 				Priority: 1,
 			},
 			{
-				Column: output.Column{
-					Heading:       "UPDATE AVAILABLE",
-					ValueTemplate: `{{if .UpdateAvailable}}Yes{{else}}No{{end}}`,
-				},
-				Priority:           1,
-				ShortValueTemplate: `{{if .UpdateAvailable}}⬆{{else}}✓{{end}}`,
-				ColorFunc:          updateAvailableColor,
+				Column:      output.Column{Heading: "NAME", ValueTemplate: "{{.Name}}"},
+				Priority:    2,
+				CardTitle:   true,
+				Wrappable:   true,
+				Truncatable: true,
+			},
+			{
+				Column:      output.Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
+				Priority:    1,
+				Truncatable: true,
+				ColorFunc:   extensionStatusColor,
 			},
 			{
 				Column: output.Column{
-					Heading:       "INSTALLED VERSION",
-					ValueTemplate: "{{.InstalledVersion}}",
+					Heading:       "INSTALLED",
+					ValueTemplate: `{{if .InstalledVersion}}{{.InstalledVersion}}{{else}}-{{end}}`,
 				},
-				Priority: 2,
+				CardValueTemplate: `{{if .InstalledVersion}}{{.InstalledVersion}}{{end}}`,
+				Priority:          1,
 			},
 			{
 				Column: output.Column{
-					Heading:       "LATEST VERSION",
+					Heading:       "LATEST",
 					ValueTemplate: "{{.LatestVersion}}",
 				},
-				Priority: 2,
-			},
-			{
-				Column:   output.Column{Heading: "ID", ValueTemplate: "{{.Id}}"},
-				Priority: 3,
+				CardValueTemplate: `{{if or .UpdateAvailable (not .InstalledVersion)}}{{.LatestVersion}}{{end}}`,
+				Priority:          3,
+				Truncatable:       true,
 			},
 		}
 
 		formatErr = prettyFormatter.Format(
-			rows, a.writer, output.PrettyTableFormatterOptions{Columns: columns, CardGroupColumn: "NAME"},
+			rows, a.writer, output.PrettyTableFormatterOptions{
+				Columns:              columns,
+				ResponsiveColumnHint: true,
+			},
 		)
 
 		if formatErr == nil {
@@ -1479,7 +1495,7 @@ func (a *toolShowAction) displayToolDetails(
 	}
 
 	// Tool Information
-	installedVersion := "Not Installed"
+	installedVersion := "Not installed"
 	if status.Installed {
 		installedVersion = status.InstalledVersion
 		if installedVersion == "" {
@@ -1811,23 +1827,23 @@ func writeDryRunTable(w io.Writer, rows []toolDryRunItem) error {
 // toolStatusColor applies color formatting based on install status text.
 func toolStatusColor(s string) string {
 	switch s {
-	case "Installed", "✓":
+	case "Installed":
 		return output.WithSuccessFormat(s)
-	case "Not Installed", "✗":
-		return output.WithWarningFormat(s)
 	default:
+		// "Not installed" and any other state render in gray.
 		return output.WithGrayFormat(s)
 	}
 }
 
-// updateAvailableColor applies color formatting based on update availability text.
-func updateAvailableColor(s string) string {
-	switch s {
-	case "No", "✓":
-		return output.WithSuccessFormat(s)
-	case "Yes", "⬆":
-		return output.WithWarningFormat(s)
+// toolCheckStatus returns a human-readable status string for the tool check
+// table, reusing the extension status vocabulary for consistency.
+func toolCheckStatus(installed, updateAvailable bool) string {
+	switch {
+	case !installed:
+		return statusNotInstall
+	case updateAvailable:
+		return statusUpdate
 	default:
-		return output.WithGrayFormat(s)
+		return statusUpToDate
 	}
 }

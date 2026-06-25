@@ -5700,8 +5700,8 @@ const completionSpec: Fig.Spec = {
 							description: 'List installed extensions',
 						},
 						{
-							name: ['--source'],
-							description: 'Filter extensions by source',
+							name: ['--source', '-s'],
+							description: 'Filter extensions by registered source name or registry location (URL or file path).',
 							args: [
 								{
 									name: 'source',
@@ -5726,7 +5726,7 @@ const completionSpec: Fig.Spec = {
 					options: [
 						{
 							name: ['--source', '-s'],
-							description: 'The extension source to use.',
+							description: 'The registered source name or registry location (URL or file path) to use.',
 							args: [
 								{
 									name: 'source',
@@ -5831,7 +5831,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--source', '-s'],
-							description: 'The extension source to use for upgrades',
+							description: 'The registered source name or registry location (URL or file path) to use for upgrades.',
 							args: [
 								{
 									name: 'source',

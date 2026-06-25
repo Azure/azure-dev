@@ -111,6 +111,9 @@ type FilterOptions struct {
 	Version string
 	// Source is used to specify the source of the extension to install
 	Source string
+	// SourceConfig restricts lookup to one source that is not persisted or cached.
+	// It takes precedence over Source.
+	SourceConfig *SourceConfig
 	// Tags is used to specify the tags of the extension to install
 	Tags []string
 	// Capability is used to filter extensions by capability type
@@ -440,10 +443,23 @@ func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([
 		}
 	}
 
-	// Use the centralized extension filter
-	extensionFilter := createExtensionFilter(options)
+	filterOptions := options
+	if options.SourceConfig != nil {
+		filterOptionsCopy := *options
+		filterOptionsCopy.Source = ""
+		filterOptions = &filterOptionsCopy
+	}
 
-	sources, err := m.getSources(ctx, sourceFilterPredicate)
+	// Use the centralized extension filter
+	extensionFilter := createExtensionFilter(filterOptions)
+
+	var sources []Source
+	var err error
+	if options.SourceConfig != nil {
+		sources, err = m.createSourcesFromConfig(ctx, []*SourceConfig{options.SourceConfig}, nil)
+	} else {
+		sources, err = m.getSources(ctx, sourceFilterPredicate)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed listing extensions: %w", err)
 	}

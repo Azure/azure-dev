@@ -4,15 +4,18 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
@@ -32,6 +35,18 @@ func TestInferSourceKind(t *testing.T) {
 
 	t.Run("HttpsUrl", func(t *testing.T) {
 		kind, ok := inferSourceKind("https://example.com/registry.json")
+		require.True(t, ok)
+		require.Equal(t, extensions.SourceKindUrl, kind)
+	})
+
+	t.Run("MixedCaseHttpsUrl", func(t *testing.T) {
+		kind, ok := inferSourceKind("HTTPS://Example.com/registry.json")
+		require.True(t, ok)
+		require.Equal(t, extensions.SourceKindUrl, kind)
+	})
+
+	t.Run("UpperCaseHttpUrl", func(t *testing.T) {
+		kind, ok := inferSourceKind("HTTP://example.com/registry.json")
 		require.True(t, ok)
 		require.Equal(t, extensions.SourceKindUrl, kind)
 	})
@@ -79,14 +94,14 @@ func TestResolveSourceLocation_ExistingSourceUnchanged(t *testing.T) {
 	t.Parallel()
 
 	action, _ := newBundleInstallTestAction(t)
-	require.NoError(t, action.sourceManager.Add(context.Background(), "my-source", &extensions.SourceConfig{
+	require.NoError(t, action.sourceManager.Add(t.Context(), "my-source", &extensions.SourceConfig{
 		Name:     "my-source",
 		Type:     extensions.SourceKindUrl,
 		Location: "https://example.com/registry.json",
 	}))
 
 	action.flags.source = "my-source"
-	require.NoError(t, action.resolveSourceLocation(context.Background()))
+	require.NoError(t, action.resolveSourceLocation(t.Context()))
 	require.Equal(t, "my-source", action.flags.source)
 }
 
@@ -95,7 +110,7 @@ func TestResolveSourceLocation_PlainNameUnchanged(t *testing.T) {
 
 	action, _ := newBundleInstallTestAction(t)
 	action.flags.source = "not-a-location"
-	require.NoError(t, action.resolveSourceLocation(context.Background()))
+	require.NoError(t, action.resolveSourceLocation(t.Context()))
 	require.Equal(t, "not-a-location", action.flags.source)
 }
 
@@ -106,7 +121,7 @@ func TestResolveSourceLocation_NoPromptDirectsToSourceAdd(t *testing.T) {
 	action.flags.global.NoPrompt = true
 	action.flags.source = "https://example.com/registry.json"
 
-	err := action.resolveSourceLocation(context.Background())
+	err := action.resolveSourceLocation(t.Context())
 	require.Error(t, err)
 	require.ErrorAs(t, err, new(*internal.ErrorWithSuggestion))
 }
@@ -123,10 +138,10 @@ func TestResolveSourceLocation_FileRegistersSource(t *testing.T) {
 	action.console = console
 	action.flags.source = registryPath
 
-	require.NoError(t, action.resolveSourceLocation(context.Background()))
+	require.NoError(t, action.resolveSourceLocation(t.Context()))
 	require.Equal(t, "local-dev", action.flags.source)
 
-	src, err := action.sourceManager.Get(context.Background(), "local-dev")
+	src, err := action.sourceManager.Get(t.Context(), "local-dev")
 	require.NoError(t, err)
 	require.Equal(t, extensions.SourceKindFile, src.Type)
 	require.Equal(t, registryPath, src.Location)
@@ -144,10 +159,10 @@ func TestResolveSourceLocation_FileUsesDefaultNameWhenBlank(t *testing.T) {
 	action.console = console
 	action.flags.source = registryPath
 
-	require.NoError(t, action.resolveSourceLocation(context.Background()))
+	require.NoError(t, action.resolveSourceLocation(t.Context()))
 	require.Equal(t, "registry", action.flags.source)
 
-	_, err := action.sourceManager.Get(context.Background(), "registry")
+	_, err := action.sourceManager.Get(t.Context(), "registry")
 	require.NoError(t, err)
 }
 
@@ -161,17 +176,143 @@ func TestResolveSourceLocation_UrlDeclinedReturnsError(t *testing.T) {
 	action.console = console
 	action.flags.source = "https://example.com/registry.json"
 
-	err := action.resolveSourceLocation(context.Background())
+	err := action.resolveSourceLocation(t.Context())
 	require.Error(t, err)
 	require.ErrorAs(t, err, new(*internal.ErrorWithSuggestion))
 
-	// No source should have been registered.
-	_, getErr := action.sourceManager.Get(context.Background(), "example-com")
+	_, getErr := action.sourceManager.Get(t.Context(), "example-com")
 	require.ErrorIs(t, getErr, extensions.ErrSourceNotFound)
 }
 
-// writeRegistryFile writes a minimal valid registry.json to a temp dir and
-// returns its absolute path.
+func TestResolveSourceLocation_ExistingUrlLocationReused(t *testing.T) {
+	t.Parallel()
+
+	action, _ := newBundleInstallTestAction(t)
+	require.NoError(t, action.sourceManager.Add(t.Context(), "myreg", &extensions.SourceConfig{
+		Name:     "myreg",
+		Type:     extensions.SourceKindUrl,
+		Location: "https://example.com/registry.json",
+	}))
+
+	action.flags.source = "HTTPS://example.com/registry.json"
+	require.NoError(t, action.resolveSourceLocation(t.Context()))
+	require.Equal(t, "myreg", action.flags.source)
+
+	sources, err := action.sourceManager.List(t.Context())
+	require.NoError(t, err)
+	matches := 0
+	for _, src := range sources {
+		if src.Location == "https://example.com/registry.json" {
+			matches++
+		}
+	}
+	require.Equal(t, 1, matches)
+}
+
+func TestResolveSourceLocation_ExistingFileLocationReusedFromRelativePath(t *testing.T) {
+	registryPath := writeRegistryFile(t)
+	dir := filepath.Dir(registryPath)
+
+	action, _ := newBundleInstallTestAction(t)
+	require.NoError(t, action.sourceManager.Add(t.Context(), "filereg", &extensions.SourceConfig{
+		Name:     "filereg",
+		Type:     extensions.SourceKindFile,
+		Location: registryPath,
+	}))
+
+	t.Chdir(dir)
+	action.flags.source = "registry.json"
+	require.NoError(t, action.resolveSourceLocation(t.Context()))
+	require.Equal(t, "filereg", action.flags.source)
+}
+
+func TestResolveSourceLocation_FilePersistsAbsolutePath(t *testing.T) {
+	registryPath := writeRegistryFile(t)
+	dir := filepath.Dir(registryPath)
+
+	console := mockinput.NewMockConsole()
+	console.WhenPrompt(func(input.ConsoleOptions) bool { return true }).Respond("local-dev")
+
+	action, _ := newBundleInstallTestAction(t)
+	action.console = console
+
+	t.Chdir(dir)
+	action.flags.source = "registry.json"
+	require.NoError(t, action.resolveSourceLocation(t.Context()))
+	require.Equal(t, "local-dev", action.flags.source)
+
+	src, err := action.sourceManager.Get(t.Context(), "local-dev")
+	require.NoError(t, err)
+	require.True(t, filepath.IsAbs(src.Location), "location %q should be absolute", src.Location)
+	require.Equal(t, registryPath, src.Location)
+}
+
+func TestResolveSourceLocation_UrlAcceptedRegistersSource(t *testing.T) {
+	t.Parallel()
+
+	action, mockContext := newInstallSourceTestAction(t)
+	mockContext.HttpClient.When(func(req *http.Request) bool {
+		return req.URL.String() == "https://example.com/registry.json"
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, extensions.Registry{
+			SchemaVersion: extensions.CurrentRegistrySchemaVersion,
+		})
+	})
+
+	mockContext.Console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
+	mockContext.Console.WhenPrompt(func(input.ConsoleOptions) bool { return true }).Respond("example-registry")
+
+	action.flags.source = "https://example.com/registry.json"
+	require.NoError(t, action.resolveSourceLocation(t.Context()))
+	require.Equal(t, "example-registry", action.flags.source)
+
+	src, err := action.sourceManager.Get(t.Context(), "example-registry")
+	require.NoError(t, err)
+	require.Equal(t, extensions.SourceKindUrl, src.Type)
+	require.Equal(t, "https://example.com/registry.json", src.Location)
+}
+
+func TestResolveSourceLocation_NoPromptFileDirectsToSourceAdd(t *testing.T) {
+	t.Parallel()
+
+	registryPath := writeRegistryFile(t)
+
+	action, _ := newBundleInstallTestAction(t)
+	action.flags.global.NoPrompt = true
+	action.flags.source = registryPath
+
+	err := action.resolveSourceLocation(t.Context())
+	require.Error(t, err)
+	require.ErrorAs(t, err, new(*internal.ErrorWithSuggestion))
+
+	sources, err := action.sourceManager.List(t.Context())
+	require.NoError(t, err)
+	for _, src := range sources {
+		require.NotEqual(t, registryPath, src.Location, "the file source must not be registered")
+	}
+}
+
+func newInstallSourceTestAction(t *testing.T) (*extensionInstallAction, *mocks.MockContext) {
+	t.Helper()
+
+	mockContext := mocks.NewMockContext(t.Context())
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := extensions.NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*extensions.Runner, error) {
+		return extensions.NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := extensions.NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	action := &extensionInstallAction{
+		console:          mockContext.Console,
+		extensionManager: manager,
+		sourceManager:    sourceManager,
+		flags:            &extensionInstallFlags{global: &internal.GlobalCommandOptions{}},
+	}
+	return action, mockContext
+}
+
 func writeRegistryFile(t *testing.T) string {
 	t.Helper()
 

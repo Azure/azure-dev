@@ -55,6 +55,11 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		Command: &cobra.Command{
 			Use:   "list [--installed]",
 			Short: "List available extensions.",
+			Long: `List available extensions from registered extension sources.
+
+The --source flag accepts a registered source name or registry location (URL or
+file path). Locations are queried read-only and are not registered. Extensions
+from an unregistered location show the location itself in the SOURCE column.`,
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 		DefaultFormat:  output.TableFormat,
@@ -67,6 +72,10 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		Command: &cobra.Command{
 			Use:   "show <extension-id>",
 			Short: "Show details for a specific extension.",
+			Long: `Show details for a specific extension from a registered extension source.
+
+The --source flag accepts a registered source name or registry location (URL or
+file path). Locations are queried read-only and are not registered.`,
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
@@ -81,11 +90,10 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 			Short: "Installs specified extensions.",
 			Long: `Installs one or more extensions by id from a registered extension source.
 
-The --source flag also accepts a registry location (a URL or file path) instead
-of the name of a registered source. When a location is given, azd registers it as
-a new source (prompting for a name, and confirming first for a URL) and then
-installs from it. The source is persisted so later upgrade/list/show commands work
-against it without re-specifying the location.
+The --source flag also accepts a registry location (URL or file path). When a
+location is given, azd registers it as a source (prompting for a name, and
+confirming first for a URL) and then installs from it. If the location is already
+registered, azd reuses that source.
 
 You can also pass the path to a self-contained extension bundle (.zip): azd
 extracts it and installs the bundled extension. Bundled extensions aren't
@@ -117,9 +125,12 @@ source is unavailable, falls back to the main (azd) registry. Extensions that
 were installed from a non-main registry (e.g., dev) are automatically promoted
 to the main registry when a newer version is available there.
 
-Use --source to explicitly override the registry source for the upgrade. Use
---all to upgrade all installed extensions in a single batch; failures in one
-extension do not prevent the remaining extensions from being upgraded.
+Use --source to override the registry source for the upgrade. It accepts a
+registered source name or registry location (URL or file path); locations are
+registered first and the upgraded extension's stored source is updated. Because
+registration is interactive, locations are rejected under --no-prompt. Use --all
+to upgrade all installed extensions in a single batch; failures in one extension
+do not prevent the remaining extensions from being upgraded.
 
 When upgrading an extension that has dependencies, any installed
 dependencies are automatically upgraded too, to the highest version
@@ -201,7 +212,8 @@ type extensionListFlags struct {
 func newExtensionListFlags(cmd *cobra.Command) *extensionListFlags {
 	flags := &extensionListFlags{}
 	cmd.Flags().BoolVar(&flags.installed, "installed", false, "List installed extensions")
-	cmd.Flags().StringVar(&flags.source, "source", "", "Filter extensions by source")
+	cmd.Flags().StringVarP(&flags.source, "source", "s", "",
+		"Filter extensions by registered source name or registry location (URL or file path).")
 	cmd.Flags().StringSliceVar(&flags.tags, "tags", nil, "Filter extensions by tags")
 
 	return flags
@@ -255,7 +267,14 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		Tags:   a.flags.tags,
 	}
 
-	if options.Source != "" {
+	sourceConfig, err := resolveReadOnlySourceFilter(ctx, a.sourceManager, a.flags.source)
+	if err != nil {
+		return nil, err
+	}
+	if sourceConfig != nil {
+		options.SourceConfig = sourceConfig
+		options.Source = ""
+	} else if options.Source != "" {
 		if _, err := a.sourceManager.Get(ctx, options.Source); err != nil {
 			return nil, fmt.Errorf("extension source '%s' not found: %w", options.Source, err)
 		}
@@ -527,7 +546,8 @@ func newExtensionShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOpt
 	flags := &extensionShowFlags{
 		global: global,
 	}
-	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use.")
+	cmd.Flags().StringVarP(&flags.source, "source", "s", "",
+		"The registered source name or registry location (URL or file path) to use.")
 	return flags
 }
 
@@ -537,6 +557,7 @@ type extensionShowAction struct {
 	console          input.Console
 	formatter        output.Formatter
 	writer           io.Writer
+	sourceManager    *extensions.SourceManager
 	extensionManager *extensions.Manager
 }
 
@@ -546,6 +567,7 @@ func newExtensionShowAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	sourceManager *extensions.SourceManager,
 	extensionManager *extensions.Manager,
 ) actions.Action {
 	return &extensionShowAction{
@@ -554,6 +576,7 @@ func newExtensionShowAction(
 		console:          console,
 		formatter:        formatter,
 		writer:           writer,
+		sourceManager:    sourceManager,
 		extensionManager: extensionManager,
 	}
 }
@@ -707,6 +730,15 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 	filterOptions := &extensions.FilterOptions{
 		Source: a.flags.source,
 		Id:     extensionId,
+	}
+
+	sourceConfig, err := resolveReadOnlySourceFilter(ctx, a.sourceManager, a.flags.source)
+	if err != nil {
+		return nil, err
+	}
+	if sourceConfig != nil {
+		filterOptions.SourceConfig = sourceConfig
+		filterOptions.Source = ""
 	}
 
 	extensionMatches, err := a.extensionManager.FindExtensions(ctx, filterOptions)
@@ -1380,65 +1412,88 @@ func normalizeBundleSourceName(name string) string {
 	return strings.Trim(sb.String(), "-")
 }
 
-// resolveSourceLocation handles the case where -s/--source points directly at a
-// registry location (URL or file path) rather than the name of an
-// already-registered source. When a location is detected, it confirms before
-// registering an untrusted URL, prompts for a source name, persists the source,
-// and rewrites a.flags.source to the registered name so the install loop
-// resolves extensions from it. Registered source names and values that do not
-// look like a location are left unchanged.
+// resolveSourceLocation registers a direct --source location and rewrites it to
+// the registered source name.
 func (a *extensionInstallAction) resolveSourceLocation(ctx context.Context) error {
-	if a.flags.source == "" {
-		return nil
+	resolved, err := registerSourceFromLocation(
+		ctx, a.console, a.sourceManager, a.extensionManager, a.flags.source, a.flags.global.NoPrompt)
+	if err != nil {
+		return err
+	}
+	a.flags.source = resolved
+	return nil
+}
+
+// registerSourceFromLocation persists a direct --source location for mutating
+// commands, reusing an existing source with the same location when possible.
+// Registered names and non-location values are returned unchanged.
+func registerSourceFromLocation(
+	ctx context.Context,
+	console input.Console,
+	sourceManager *extensions.SourceManager,
+	extensionManager *extensions.Manager,
+	source string,
+	noPrompt bool,
+) (string, error) {
+	if source == "" {
+		return source, nil
 	}
 
 	// If the value already names a registered source, keep current behavior.
-	_, err := a.sourceManager.Get(ctx, a.flags.source)
+	_, err := sourceManager.Get(ctx, source)
 	if err == nil {
-		return nil
+		return source, nil
 	}
 	if !errors.Is(err, extensions.ErrSourceNotFound) {
-		return fmt.Errorf("failed to resolve extension source %q: %w", a.flags.source, err)
+		return "", fmt.Errorf("failed to resolve extension source %q: %w", source, err)
 	}
 
-	// Not a registered source — detect whether it is a registry location.
-	location := a.flags.source
+	location := source
 	kind, ok := inferSourceKind(location)
 	if !ok {
-		// Not a location; leave the value untouched so existing resolution and
-		// error messaging applies.
-		return nil
+		return source, nil
 	}
 
-	// Registering a source is interactive (naming + trust confirmation), so in
-	// --no-prompt mode direct the user to add the source explicitly first.
-	if a.flags.global.NoPrompt {
-		return &internal.ErrorWithSuggestion{
+	if kind == extensions.SourceKindFile {
+		if abs, err := filepath.Abs(location); err == nil {
+			location = abs
+		}
+	}
+
+	existing, err := findSourceByLocation(ctx, sourceManager, kind, location)
+	if err != nil {
+		return "", err
+	}
+	if existing != nil {
+		return existing.Name, nil
+	}
+
+	if noPrompt {
+		return "", &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(
 				"cannot register a new extension source from %q while --no-prompt is set", location),
 			Suggestion: fmt.Sprintf(
-				"Add the source first with %s, then install with %s.",
+				"Add the source first with %s, then re-run with %s.",
 				output.WithHighLightFormat(
 					"azd extension source add -n <name> -t %s -l %q", kind, location),
-				output.WithHighLightFormat("azd extension install <id> -s <name>"),
+				output.WithHighLightFormat("-s <name>"),
 			),
 		}
 	}
 
-	// Confirm before registering a URL source, which may be untrusted.
 	if kind == extensions.SourceKindUrl {
-		a.console.Message(ctx, "")
-		confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
+		console.Message(ctx, "")
+		confirm, err := console.Confirm(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf(
-				"Register and install from the extension source at %s?",
+				"Register and use the extension source at %s?",
 				output.WithHighLightFormat(location)),
 			DefaultValue: false,
 		})
 		if err != nil {
-			return err
+			return "", err
 		}
 		if !confirm {
-			return &internal.ErrorWithSuggestion{
+			return "", &internal.ErrorWithSuggestion{
 				Err: errors.New("extension source registration declined"),
 				Suggestion: "Re-run and confirm to register the source, " +
 					"or add it explicitly with 'azd extension source add'.",
@@ -1446,14 +1501,13 @@ func (a *extensionInstallAction) resolveSourceLocation(ctx context.Context) erro
 		}
 	}
 
-	// Prompt for a source name with a sensible default derived from the location.
 	defaultName := defaultSourceName(location)
-	sourceName, err := a.console.Prompt(ctx, input.ConsoleOptions{
+	sourceName, err := console.Prompt(ctx, input.ConsoleOptions{
 		Message:      "Enter a name for this extension source:",
 		DefaultValue: defaultName,
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 	sourceName = strings.TrimSpace(sourceName)
 	if sourceName == "" {
@@ -1467,30 +1521,101 @@ func (a *extensionInstallAction) resolveSourceLocation(ctx context.Context) erro
 	}
 
 	spinnerMessage := fmt.Sprintf("Registering extension source %s", output.WithHighLightFormat(sourceName))
-	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+	console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
-	// Validate the source by hydrating it before persisting.
-	if _, err := a.sourceManager.CreateSource(ctx, sourceConfig); err != nil {
-		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
-		return fmt.Errorf("failed to validate extension source: %w", err)
+	if _, err := sourceManager.CreateSource(ctx, sourceConfig); err != nil {
+		console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+		return "", fmt.Errorf("failed to validate extension source: %w", err)
 	}
 
-	if err := a.sourceManager.Add(ctx, sourceName, sourceConfig); err != nil {
-		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
-		return fmt.Errorf("failed to add extension source: %w", err)
+	if err := sourceManager.Add(ctx, sourceName, sourceConfig); err != nil {
+		console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+		return "", fmt.Errorf("failed to add extension source: %w", err)
 	}
-	a.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
+	console.StopSpinner(ctx, spinnerMessage, input.StepDone)
 
-	// Refresh manager caches so the new source is visible and the cached config
-	// snapshot is not clobbered when the install below saves.
-	a.extensionManager.InvalidateSourceCache()
-	if err := a.extensionManager.ReloadUserConfig(); err != nil {
-		return err
+	extensionManager.InvalidateSourceCache()
+	if err := extensionManager.ReloadUserConfig(); err != nil {
+		return "", err
 	}
 
-	// Add normalizes the persisted name; resolve extensions against that name.
-	a.flags.source = sourceConfig.Name
-	return nil
+	return sourceConfig.Name, nil
+}
+
+// findSourceByLocation returns the registered source for location, if any.
+func findSourceByLocation(
+	ctx context.Context,
+	sourceManager *extensions.SourceManager,
+	kind extensions.SourceKind,
+	location string,
+) (*extensions.SourceConfig, error) {
+	sources, err := sourceManager.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list extension sources: %w", err)
+	}
+
+	for _, source := range sources {
+		if source.Type == kind && locationsEqual(kind, source.Location, location) {
+			return source, nil
+		}
+	}
+	return nil, nil
+}
+
+// locationsEqual reports whether two locations refer to the same source.
+func locationsEqual(kind extensions.SourceKind, a, b string) bool {
+	switch kind {
+	case extensions.SourceKindUrl:
+		return strings.EqualFold(a, b)
+	case extensions.SourceKindFile:
+		return absPath(a) == absPath(b)
+	default:
+		return a == b
+	}
+}
+
+// absPath returns path as an absolute path when possible.
+func absPath(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
+}
+
+// resolveReadOnlySourceFilter returns a temporary source config for read-only
+// commands when --source is a registry location. Registered names return nil.
+func resolveReadOnlySourceFilter(
+	ctx context.Context,
+	sourceManager *extensions.SourceManager,
+	source string,
+) (*extensions.SourceConfig, error) {
+	if source == "" {
+		return nil, nil
+	}
+
+	_, err := sourceManager.Get(ctx, source)
+	if err == nil {
+		return nil, nil
+	}
+	if !errors.Is(err, extensions.ErrSourceNotFound) {
+		return nil, fmt.Errorf("failed to resolve extension source %q: %w", source, err)
+	}
+
+	kind, ok := inferSourceKind(source)
+	if !ok {
+		return nil, nil
+	}
+
+	location := source
+	if kind == extensions.SourceKindFile {
+		location = absPath(location)
+	}
+
+	return &extensions.SourceConfig{
+		Name:     location,
+		Type:     kind,
+		Location: location,
+	}, nil
 }
 
 // inferSourceKind infers the extension source kind from a registry location,
@@ -1498,7 +1623,8 @@ func (a *extensionInstallAction) resolveSourceLocation(ctx context.Context) erro
 // It reports false when the value does not look like a location and is more
 // likely the name of a source.
 func inferSourceKind(location string) (extensions.SourceKind, bool) {
-	if strings.HasPrefix(location, "http://") || strings.HasPrefix(location, "https://") {
+	lower := strings.ToLower(location)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
 		return extensions.SourceKindUrl, true
 	}
 	if info, err := os.Stat(location); err == nil && !info.IsDir() {
@@ -1648,7 +1774,8 @@ func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommand
 		global: global,
 	}
 	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to upgrade to")
-	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use for upgrades")
+	cmd.Flags().StringVarP(&flags.source, "source", "s", "",
+		"The registered source name or registry location (URL or file path) to use for upgrades.")
 	cmd.Flags().BoolVar(&flags.all, "all", false, "Upgrade all installed extensions")
 	cmd.Flags().BoolVar(&flags.noDependencyUpgrades, "no-dependency-upgrades", false,
 		"Do not upgrade dependencies when upgrading an extension that has dependencies")
@@ -1663,6 +1790,7 @@ type extensionUpgradeAction struct {
 	formatter        output.Formatter
 	writer           io.Writer
 	console          input.Console
+	sourceManager    *extensions.SourceManager
 	extensionManager *extensions.Manager
 }
 
@@ -1672,6 +1800,7 @@ func newExtensionUpgradeAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	console input.Console,
+	sourceManager *extensions.SourceManager,
 	extensionManager *extensions.Manager,
 ) actions.Action {
 	return &extensionUpgradeAction{
@@ -1680,6 +1809,7 @@ func newExtensionUpgradeAction(
 		formatter:        formatter,
 		writer:           writer,
 		console:          console,
+		sourceManager:    sourceManager,
 		extensionManager: extensionManager,
 	}
 }
@@ -1732,6 +1862,13 @@ func (a *extensionUpgradeAction) Run(
 				"on the local machine",
 		})
 	}
+
+	resolvedSource, err := registerSourceFromLocation(
+		ctx, a.console, a.sourceManager, a.extensionManager, a.flags.source, a.flags.global.NoPrompt)
+	if err != nil {
+		return nil, err
+	}
+	a.flags.source = resolvedSource
 
 	azdVersion := currentAzdSemver()
 

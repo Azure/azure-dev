@@ -5,7 +5,7 @@ Usage
   azd extension show <extension-id> [flags]
 
 Flags
-    -s, --source string 	: The extension source to use.
+    -s, --source string 	: The registered source name or registry location (URL or file path) to use.
 
 Global Flags
     -C, --cwd string         	: Sets the current working directory.

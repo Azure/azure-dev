@@ -118,25 +118,27 @@ Extensions are a collection of executable artifacts that extend or enhance funct
 Lists matching extensions from one or more extension sources.
 
 - `--installed` When set displays a list of installed extensions.
-- `--source` When set will only list extensions from the specified source.
+- `-s, --source` Filters by registered source name or registry location (URL or file path). Locations are queried read-only and are not registered. Extensions from an unregistered location show the location itself in the `SOURCE` column.
 - `--tags` Allows filtering extensions by tags (e.g., AI, test)
 
 #### `azd extension show <extension-id> [flags]`
 
 Shows detailed information for a specific extension, including description, tags, versions, and installation status.
 
-- `-s, --source` The extension source to use. Use this flag when the same extension ID exists in multiple sources.
+- `-s, --source` Uses a registered source name or registry location (URL or file path). Locations are queried read-only and are not registered.
 
 #### `azd extension install <extension-ids> [flags]`
 
 Installs one or more extensions from any configured extension source.
 
 - `-v, --version` Specifies the exact version to install.
-- `-s, --source` Specifies the extension source used for installations. In addition to the name of a registered source, this accepts a registry location (a URL or file path). When a location is provided, `azd` registers it as a new persisted source — prompting for a source name, and confirming first when the location is a URL — and then installs from it. This lets you install in one step without a separate `azd extension source add`:
+- `-s, --source` Specifies the extension source used for installations. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source, prompting for a name and confirming first for URLs, then installs from it:
 
   ```bash
   azd extension install <id> -s https://link/to/registry.json
   ```
+
+  If the same location is already registered, `azd` reuses that source. File paths are stored as absolute paths.
 
   Under `--no-prompt`, registering a source from a location is not allowed; add the source first with `azd extension source add`.
 
@@ -152,7 +154,7 @@ Upgrades one or more extensions to the latest versions.
 
 - `--all` Upgrades all previously installed extensions when specified.
 - `-v, --version` Upgrades a specified extension to an exact version, if provided.
-- `-s, --source` Specifies the extension source used for installations.
+- `-s, --source` Specifies the source used for the upgrade. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source, updates the extension's stored source, and rejects locations under `--no-prompt`; add the source first with `azd extension source add`.
 - `--no-dependency-upgrades` Skips upgrading dependencies declared by extension packs.
 
 ## Developing Extensions

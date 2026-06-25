@@ -427,7 +427,7 @@
                         "then": {
                             "required": ["project"],
                             "allOf": [
-                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json" }
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json" }
                             ],
                             "properties": {
                                 "config": false,
@@ -546,7 +546,7 @@
                         },
                         "then": {
                             "allOf": [
-                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json" }
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json" }
                             ],
                             "properties": {
                                 "project": false,

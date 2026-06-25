@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/schemas/v1.0/azure.yaml.json
 
 # Exercises the split Foundry resource surface: project deployments + network,
 # connection services, toolbox services, skill services, routine services, hosted

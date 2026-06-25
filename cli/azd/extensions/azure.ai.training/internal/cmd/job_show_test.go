@@ -40,12 +40,12 @@ func TestPrintJobDetails_FoundryPortalUri(t *testing.T) {
 	const portal = "https://ai.azure.com/build/jobs/test-job"
 
 	tests := []struct {
-		name        string
-		services    map[string]any
-		wantContain bool
+		name     string
+		services map[string]any
+		wantURL  string // expected value after "Foundry Portal Uri:"
 	}{
 		{
-			name: "Studio service present prints Foundry Portal Uri",
+			name: "Studio service present prints URL",
 			services: map[string]any{
 				"Studio": map[string]any{
 					"endpoint":       portal,
@@ -53,26 +53,26 @@ func TestPrintJobDetails_FoundryPortalUri(t *testing.T) {
 					"status":         "Running",
 				},
 			},
-			wantContain: true,
+			wantURL: portal,
 		},
 		{
-			name:        "no services map omits line",
-			services:    nil,
-			wantContain: false,
+			name:     "no services map prints dash",
+			services: nil,
+			wantURL:  "-",
 		},
 		{
-			name: "services without Studio entry omits line",
+			name: "services without Studio entry prints dash",
 			services: map[string]any{
 				"Tracking": map[string]any{"endpoint": "https://tracking/x"},
 			},
-			wantContain: false,
+			wantURL: "-",
 		},
 		{
-			name: "Studio entry with empty endpoint omits line",
+			name: "Studio entry with empty endpoint prints dash",
 			services: map[string]any{
 				"Studio": map[string]any{"endpoint": ""},
 			},
-			wantContain: false,
+			wantURL: "-",
 		},
 	}
 
@@ -94,13 +94,18 @@ func TestPrintJobDetails_FoundryPortalUri(t *testing.T) {
 
 			out := captureStdout(t, func() { printJobDetails(d) })
 
-			hasLine := strings.Contains(out, "Foundry Portal Uri:") &&
-				strings.Contains(out, portal)
-			if tc.wantContain && !hasLine {
-				t.Errorf("expected Foundry Portal Uri line with %q, got:\n%s", portal, out)
+			if !strings.Contains(out, "Foundry Portal Uri:") {
+				t.Fatalf("expected Foundry Portal Uri line to always be present, got:\n%s", out)
 			}
-			if !tc.wantContain && strings.Contains(out, "Foundry Portal Uri:") {
-				t.Errorf("did not expect Foundry Portal Uri line, got:\n%s", out)
+			var got string
+			for _, line := range strings.Split(out, "\n") {
+				if i := strings.Index(line, "Foundry Portal Uri:"); i >= 0 {
+					got = strings.TrimSpace(line[i+len("Foundry Portal Uri:"):])
+					break
+				}
+			}
+			if got != tc.wantURL {
+				t.Errorf("Foundry Portal Uri value = %q, want %q\nfull output:\n%s", got, tc.wantURL, out)
 			}
 		})
 	}

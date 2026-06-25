@@ -5,17 +5,21 @@ package project
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
-	"github.com/stretchr/testify/require"
 )
 
 type serviceTargetValidationTest struct {
@@ -257,4 +261,92 @@ func TestDetermineDeploymentTargets(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_appServiceTarget_Package(t *testing.T) {
+	t.Run("Success_CreatesZip", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		pkgDir := filepath.Join(tmpDir, "pkg")
+		require.NoError(t, os.MkdirAll(pkgDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "app.py"), []byte("print('hi')"), 0o600))
+
+		sc := &ServiceConfig{
+			Name:     "web",
+			Language: ServiceLanguagePython,
+			Project:  &ProjectConfig{Path: tmpDir},
+		}
+
+		sctx := NewServiceContext()
+		require.NoError(t, sctx.Package.Add(&Artifact{
+			Kind:         ArtifactKindDirectory,
+			Location:     pkgDir,
+			LocationKind: LocationKindLocal,
+		}))
+
+		st := &appServiceTarget{}
+		progress := async.NewProgress[ServiceProgress]()
+		go func() {
+			for range progress.Progress() {
+			}
+		}()
+
+		result, err := st.Package(t.Context(), sc, sctx, progress)
+		progress.Done()
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotEmpty(t, result.Artifacts)
+
+		zipArtifact, found := result.Artifacts.FindFirst(WithKind(ArtifactKindArchive))
+		require.True(t, found)
+		assert.FileExists(t, zipArtifact.Location)
+		assert.Equal(t, pkgDir, zipArtifact.Metadata["packagePath"])
+	})
+
+	t.Run("NoArtifact_Error", func(t *testing.T) {
+		sc := &ServiceConfig{
+			Name:     "web",
+			Language: ServiceLanguagePython,
+			Project:  &ProjectConfig{Path: t.TempDir()},
+		}
+
+		sctx := NewServiceContext()
+		st := &appServiceTarget{}
+		progress := async.NewProgress[ServiceProgress]()
+		go func() {
+			for range progress.Progress() {
+			}
+		}()
+
+		_, err := st.Package(t.Context(), sc, sctx, progress)
+		progress.Done()
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no package artifacts found")
+	})
+}
+
+func Test_appServiceTarget_Publish(t *testing.T) {
+	target := &appServiceTarget{}
+	result, err := target.Publish(t.Context(), nil, nil, nil, nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+}
+
+func Test_NewAppServiceTarget(t *testing.T) {
+	env := environment.NewWithValues("test-env", nil)
+	target := NewAppServiceTarget(env, nil, nil)
+	require.NotNil(t, target)
+}
+
+func Test_appServiceTarget_RequiredExternalTools(t *testing.T) {
+	target := NewAppServiceTarget(nil, nil, nil)
+	result := target.RequiredExternalTools(t.Context(), nil)
+	assert.Empty(t, result)
+}
+
+func Test_appServiceTarget_Initialize(t *testing.T) {
+	target := NewAppServiceTarget(nil, nil, nil)
+	err := target.Initialize(t.Context(), nil)
+	require.NoError(t, err)
 }

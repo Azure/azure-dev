@@ -625,6 +625,36 @@ func TestManager_UninstallTools(t *testing.T) {
 		assert.True(t, results[1].Success)
 	})
 
+	t.Run("UninstallsSkillsBeforeHostCLIs", func(t *testing.T) {
+		t.Parallel()
+
+		var order []string
+		inst := &mockInstaller{
+			uninstallFn: func(
+				_ context.Context,
+				tool *ToolDefinition,
+				_ ...InstallOption,
+			) (*InstallResult, error) {
+				order = append(order, tool.Id)
+				return &InstallResult{Tool: tool, Success: true}, nil
+			},
+		}
+
+		mgr := NewManager(&mockDetector{}, inst, nil)
+
+		// IDs supplied in manifest order (host CLI before skill), which is
+		// what `--all` and the interactive picker produce. The skill must
+		// still be uninstalled first so its host CLI is on PATH to remove
+		// it; otherwise removing the host first would orphan the skill.
+		_, err := mgr.UninstallTools(
+			t.Context(),
+			[]string{"github-copilot-cli", "azure-skills"},
+		)
+
+		require.NoError(t, err)
+		require.Equal(t, []string{"azure-skills", "github-copilot-cli"}, order)
+	})
+
 	t.Run("UnknownIDReturnsError", func(t *testing.T) {
 		t.Parallel()
 

@@ -1368,15 +1368,17 @@ func (a *toolUninstallAction) resolveHostOptions(
 }
 
 // resolveToolIds determines which tool IDs to uninstall based on flags
-// and arguments. Positional args win; --all selects every installed
-// tool; and the interactive path lets the user pick from installed tools.
+// and arguments. Positional args win; --all (and --dry-run, which never
+// mutates) select every installed tool; otherwise the interactive path
+// lets the user pick from installed tools.
 func (a *toolUninstallAction) resolveToolIds(ctx context.Context) ([]string, error) {
 	// Positional args: uninstall specified tools by ID.
 	if len(a.args) > 0 {
 		return a.args, nil
 	}
 
-	// --all and interactive both need the current installed set.
+	// --all, --dry-run, and the interactive picker all need the current
+	// installed set.
 	var statuses []*tool.ToolStatus
 	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
 		Text:        "Detecting installed tools...",
@@ -1401,8 +1403,11 @@ func (a *toolUninstallAction) resolveToolIds(ctx context.Context) ([]string, err
 		return nil, nil
 	}
 
-	// --all: uninstall every installed tool.
-	if a.flags.all {
+	// --all selects every installed tool. --dry-run does the same without
+	// prompting: a preview never mutates anything, so it defaults to all
+	// installed tools (a skill is previewed against the host(s) it is
+	// installed through) instead of asking the user to pick.
+	if a.flags.all || a.flags.dryRun {
 		ids := make([]string, 0, len(installed))
 		for _, s := range installed {
 			ids = append(ids, s.Tool.Id)

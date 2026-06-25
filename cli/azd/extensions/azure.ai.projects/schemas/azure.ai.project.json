@@ -19,6 +19,42 @@
           { "$ref": "#/definitions/FileRef" }
         ]
       }
+    },
+    "network": {
+      "type": "object",
+      "description": "Private networking for the Foundry account that backs this project. When omitted, the account uses public networking. When present, azd provisions an account private endpoint and disables public data-plane access.",
+      "additionalProperties": false,
+      "required": ["peSubnet"],
+      "properties": {
+        "agentSubnet": {
+          "description": "Egress: when set, the agent runtime is injected into this customer subnet (BYO VNet). When omitted, the agent uses the Microsoft-managed network.",
+          "$ref": "#/definitions/Subnet"
+        },
+        "isolationMode": {
+          "type": "string",
+          "description": "Outbound posture of the Microsoft-managed network. Valid only when 'agentSubnet' is omitted (managed egress).",
+          "enum": ["AllowInternetOutbound", "AllowOnlyApprovedOutbound"]
+        },
+        "peSubnet": {
+          "description": "Ingress: subnet for the account private endpoint. Required. Establishes the private data plane (public network access disabled).",
+          "$ref": "#/definitions/Subnet"
+        },
+        "dns": {
+          "type": "object",
+          "description": "Private DNS zones for the account private endpoint. When omitted (or resourceGroup omitted), azd creates and links the required AI private DNS zones. When resourceGroup is set, azd references existing zones in that resource group.",
+          "additionalProperties": false,
+          "properties": {
+            "resourceGroup": {
+              "type": "string",
+              "description": "Resource group that holds existing private DNS zones to reference."
+            },
+            "subscription": {
+              "type": "string",
+              "description": "Subscription that holds the existing private DNS zones. Defaults to the deployment subscription. Accepts a bare GUID or ${VAR}."
+            }
+          }
+        }
+      }
     }
   },
   "definitions": {
@@ -60,6 +96,26 @@
         "$ref": {
           "type": "string",
           "description": "Path to a YAML or JSON file containing the definition. Relative paths resolve from the file containing this $ref. Absolute paths are also accepted; remote URLs are not supported."
+        }
+      }
+    },
+    "Subnet": {
+      "type": "object",
+      "description": "Subnet descriptor. vnet and name are required. Omit prefix to reference an existing subnet; set prefix to create the subnet with that CIDR.",
+      "additionalProperties": false,
+      "required": ["vnet", "name"],
+      "properties": {
+        "vnet": {
+          "type": "string",
+          "description": "ARM resource id of the virtual network that holds (or will hold) the subnet. Supports ${VAR} resolved from the azd environment."
+        },
+        "name": {
+          "type": "string",
+          "description": "Subnet name."
+        },
+        "prefix": {
+          "type": "string",
+          "description": "Subnet CIDR. When set, azd creates the subnet; when omitted, azd references the existing subnet."
         }
       }
     }

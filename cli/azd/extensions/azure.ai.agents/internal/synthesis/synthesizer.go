@@ -98,23 +98,28 @@ type DeploymentSku struct {
 	Capacity int    `yaml:"capacity" json:"capacity"`
 }
 
-// dockerBlock is the subset of an agent's docker: object we read to
-// decide whether a registry is needed.
+// dockerBlock is the subset of a docker: object we read to decide whether a registry is needed.
 type dockerBlock struct {
 	Path string `yaml:"path"`
 }
 
-// agentBlock is the subset of an agent entry we inspect.
+// agentBlock is the subset of a legacy inline agent entry we inspect.
 type agentBlock struct {
 	Name   string       `yaml:"name"`
 	Docker *dockerBlock `yaml:"docker,omitempty"`
 	Image  string       `yaml:"image,omitempty"`
 }
 
-// foundryService is the subset of a services.<name> body the synthesizer
-// reads. Unknown fields (connections, tools, agents[].tools, etc.) are
-// intentionally ignored: they are reconciled in azd deploy, not provision.
-type foundryService struct {
+// serviceBlock is the subset of a service entry we inspect for cross-service provisioning inputs.
+type serviceBlock struct {
+	Host   string       `yaml:"host"`
+	Docker *dockerBlock `yaml:"docker,omitempty"`
+	Agents []agentBlock `yaml:"agents,omitempty"`
+}
+
+// projectService is the subset of a host: azure.ai.project service body the synthesizer reads.
+// Unknown fields are intentionally ignored: they are reconciled in deploy-time service targets.
+type projectService struct {
 	Host        string        `yaml:"host"`
 	Endpoint    string        `yaml:"endpoint,omitempty"`
 	Deployments []Deployment  `yaml:"deployments,omitempty"`
@@ -162,7 +167,7 @@ type projectFile struct {
 }
 
 // Synthesize derives the parameter values needed by main.bicep from one
-// Foundry service in azure.yaml.
+// Foundry project service in azure.yaml.
 func Synthesize(in Input) (*Result, error) {
 	if len(in.RawAzureYAML) == 0 {
 		return nil, errors.New("synthesis: RawAzureYAML is empty")
@@ -181,7 +186,7 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, ErrServiceNotFound
 	}
 
-	var svc foundryService
+	var svc projectService
 	if err := node.Decode(&svc); err != nil {
 		return nil, fmt.Errorf("decode service %q: %w", in.ServiceName, err)
 	}
@@ -193,13 +198,7 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, ErrEndpointBrownfield
 	}
 
-	includeAcr := false
-	for _, a := range svc.Agents {
-		if a.Docker != nil {
-			includeAcr = true
-			break
-		}
-	}
+	includeAcr := deriveIncludeAcr(root.Services, svc)
 
 	deployments := svc.Deployments
 	if deployments == nil {
@@ -223,6 +222,31 @@ func Synthesize(in Input) (*Result, error) {
 		Parameters:  params,
 		NetworkMode: netMode,
 	}, nil
+}
+
+// deriveIncludeAcr reports whether provisioning should create an ACR. In the split
+// azure.yaml shape, project provisioning reads the azure.ai.project service while
+// Docker build settings live on sibling azure.ai.agent services. Until ACR gets a
+// first-class project-level switch, any Docker-backed agent in the single-project
+// file requires ACR. The legacy inline agents[] scan is kept for hand-authored
+// transitional files and tests.
+func deriveIncludeAcr(services map[string]yaml.Node, svc projectService) bool {
+	for _, a := range svc.Agents {
+		if a.Docker != nil {
+			return true
+		}
+	}
+
+	for _, node := range services {
+		var service serviceBlock
+		if err := node.Decode(&service); err != nil {
+			continue
+		}
+		if service.Host == "azure.ai.agent" && service.Docker != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // Network mode values surfaced for telemetry and emitted as bicep params.

@@ -1,8 +1,8 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 
-# Exercises the full microsoft.foundry surface: deployments, connections,
-# toolboxes, skills, routines, hosted + prompt agents, inline tools, and
-# external file references ($ref). Schema-validation fixture for the
+# Exercises the split Foundry resource surface: project deployments + network,
+# connections, toolboxes, skills, routines, hosted + prompt agents, inline tools,
+# and external file references ($ref). Schema-validation fixture for the
 # integration branch (see ../README.md). File-ref paths are illustrative.
 name: foundry-complex
 
@@ -10,8 +10,8 @@ metadata:
   template: foundry-complex@0.0.1
 
 services:
-  ai:
-    host: microsoft.foundry
+  ai-project:
+    host: azure.ai.project
     # Private networking: provision a VNet-bound (network-secured) account.
     # Omit this block for a public account.
     network:
@@ -40,6 +40,9 @@ services:
           name: GlobalStandard
           capacity: 50
       - $ref: ./deployments/embeddings.yaml
+
+  ai:
+    host: microsoft.foundry
     connections:
       - name: search-conn
         category: CognitiveSearch

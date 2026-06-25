@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFindFoundryService(t *testing.T) {
+func TestFindFoundryProjectService(t *testing.T) {
 	tests := []struct {
 		name    string
 		yaml    string
@@ -30,63 +30,72 @@ func TestFindFoundryService(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "single foundry service",
+			name: "single project service",
 			yaml: `
 services:
   my-project:
-    host: azure.ai.agent
+    host: azure.ai.project
 `,
 			want: "my-project",
 		},
 		{
-			name: "legacy microsoft.foundry service host",
+			name: "project service alongside agent services",
 			yaml: `
 services:
-  my-project:
-    host: microsoft.foundry
-`,
-			want: "my-project",
-		},
-		{
-			name: "foundry service alongside other hosts",
-			yaml: `
-services:
-  webapp:
-    host: containerapp
-    project: src/web
-  my-foundry:
+  agent-a:
     host: azure.ai.agent
-`,
-			want: "my-foundry",
-		},
-		{
-			name: "no foundry service",
-			yaml: `
-services:
-  webapp:
-    host: containerapp
-`,
-			wantErr: true,
-		},
-		{
-			name: "multiple foundry services rejected",
-			yaml: `
-services:
-  a:
+    uses: [ai-project]
+  agent-b:
     host: azure.ai.agent
-  b:
+    uses: [ai-project]
+  ai-project:
+    host: azure.ai.project
+`,
+			want: "ai-project",
+		},
+		{
+			name: "no project service",
+			yaml: `
+services:
+  agent:
     host: azure.ai.agent
 `,
 			wantErr: true,
 		},
 		{
-			name: "new and legacy foundry services rejected as ambiguous",
+			name: "multiple project services rejected",
 			yaml: `
 services:
   a:
-    host: azure.ai.agent
+    host: azure.ai.project
   b:
+    host: azure.ai.project
+`,
+			wantErr: true,
+		},
+		{
+			name: "network on agent service rejected",
+			yaml: `
+services:
+  agent:
+    host: azure.ai.agent
+    network:
+      peSubnet: {vnet: /subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v, name: pe}
+  ai-project:
+    host: azure.ai.project
+`,
+			wantErr: true,
+		},
+		{
+			name: "network on legacy foundry service rejected",
+			yaml: `
+services:
+  legacy:
     host: microsoft.foundry
+    network:
+      peSubnet: {vnet: /subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v, name: pe}
+  ai-project:
+    host: azure.ai.project
 `,
 			wantErr: true,
 		},
@@ -94,7 +103,7 @@ services:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := findFoundryService([]byte(tt.yaml))
+			got, err := findFoundryProjectService([]byte(tt.yaml))
 			if tt.wantErr {
 				assert.Error(t, err)
 				return
@@ -558,17 +567,17 @@ func TestDestroy_RefusesWithoutForce(t *testing.T) {
 	assert.Contains(t, local.Suggestion, "--force")
 }
 
-func TestFindFoundryService_DependencyCategory(t *testing.T) {
+func TestFindFoundryProjectService_DependencyCategory(t *testing.T) {
 	// Missing service in azure.yaml is a missing-dependency error, not
 	// a validation error (the yaml parses fine). Telemetry classifiers
 	// differentiate these; the wrong category buckets misconfigurations
 	// alongside actual malformed yaml.
-	_, err := findFoundryService([]byte("name: x\nservices:\n  web:\n    host: containerapp\n"))
+	_, err := findFoundryProjectService([]byte("name: x\nservices:\n  web:\n    host: containerapp\n"))
 	require.Error(t, err)
 	var local *azdext.LocalError
 	require.True(t, errors.As(err, &local))
 	assert.Equal(t, azdext.LocalErrorCategoryDependency, local.Category,
-		"missing foundry service is a Dependency, not a Validation")
+		"missing foundry project service is a Dependency, not a Validation")
 }
 
 func TestOnDiskTemplatePresent(t *testing.T) {
@@ -752,7 +761,7 @@ func TestFoundryServiceEndpoint(t *testing.T) {
 			yaml: `name: x
 services:
   foundry:
-    host: azure.ai.agent`,
+    host: azure.ai.project`,
 			svcName:      "foundry",
 			wantEndpoint: "",
 		},
@@ -761,7 +770,7 @@ services:
 			yaml: `name: x
 services:
   foundry:
-    host: azure.ai.agent
+    host: azure.ai.project
     endpoint: https://example.foundry.example.com`,
 			svcName:      "foundry",
 			wantEndpoint: "https://example.foundry.example.com",
@@ -771,7 +780,7 @@ services:
 			yaml: `name: x
 services:
   foundry:
-    host: azure.ai.agent
+    host: azure.ai.project
     endpoint: "   "`,
 			svcName:      "foundry",
 			wantEndpoint: "",

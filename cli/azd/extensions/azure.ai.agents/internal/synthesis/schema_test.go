@@ -6,6 +6,7 @@ package synthesis
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,9 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// schemaPath is the editor-tooling JSON schema for the Foundry service body,
+// schemaPath is the editor-tooling JSON schema for the Foundry project service body,
 // resolved from this package directory.
-const schemaPath = "../../schemas/microsoft.foundry.json"
+const schemaPath = "../../../azure.ai.projects/schemas/azure.ai.project.json"
 
 // TestSchema_NetworkStructuralInvariants guards the network surface of the
 // hand-maintained JSON schema against drift from the synthesizer's contract:
@@ -25,6 +26,9 @@ const schemaPath = "../../schemas/microsoft.foundry.json"
 // subnet requires an explicit vnet + name.
 func TestSchema_NetworkStructuralInvariants(t *testing.T) {
 	raw, err := os.ReadFile(schemaPath)
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skipf("project schema not found at %s; skipping cross-extension schema invariant test", schemaPath)
+	}
 	require.NoError(t, err)
 
 	var doc struct {
@@ -38,7 +42,7 @@ func TestSchema_NetworkStructuralInvariants(t *testing.T) {
 			Subnet struct {
 				Required   []string                   `json:"required"`
 				Properties map[string]json.RawMessage `json:"properties"`
-			} `json:"subnet"`
+			} `json:"Subnet"`
 		} `json:"definitions"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &doc), "schema must be valid JSON")

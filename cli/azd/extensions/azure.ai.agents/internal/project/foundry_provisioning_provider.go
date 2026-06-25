@@ -51,7 +51,7 @@ const (
 const deploymentNamePrefix = "azd-foundry-"
 
 // FoundryProvisioningProvider implements azdext.ProvisioningProvider for
-// services whose host is one of FoundryServiceHosts. By default it deploys
+// the service whose host is FoundryProjectHost. By default it deploys
 // the extension's pre-compiled ARM template (no bicep CLI required). When
 // ./infra/main.bicep or ./infra/main.bicepparam exists on disk (e.g. after
 // `azd ai agent init --infra`), it compiles that Bicep at runtime instead
@@ -123,7 +123,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 		)
 	}
 
-	svcName, err := findFoundryService(rawYAML)
+	svcName, err := findFoundryProjectService(rawYAML)
 	if err != nil {
 		return err
 	}
@@ -145,7 +145,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 	res, err := synthesis.Synthesize(synthesis.Input{
 		RawAzureYAML:  rawYAML,
 		ServiceName:   svcName,
-		AcceptedHosts: FoundryServiceHosts,
+		AcceptedHosts: FoundryProjectServiceHosts,
 		Env:           p.networkEnvMap(ctx),
 	})
 	switch {
@@ -158,14 +158,14 @@ func (p *FoundryProvisioningProvider) Initialize(
 	case errors.Is(err, synthesis.ErrServiceNotFound):
 		return exterrors.Dependency(
 			exterrors.CodeProvisioningServiceNotFound,
-			fmt.Sprintf("no service in azure.yaml has host in %v", FoundryServiceHosts),
-			fmt.Sprintf("add a service with `host: %s` to azure.yaml", FoundryServiceHosts[0]),
+			fmt.Sprintf("no service in azure.yaml has host in %v", FoundryProjectServiceHosts),
+			fmt.Sprintf("add a service with `host: %s` to azure.yaml", FoundryProjectHost),
 		)
 	case err != nil:
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf("synthesize foundry service %q: %s", svcName, err),
-			"check the deployments/agents fields under your foundry service",
+			fmt.Sprintf("synthesize foundry project service %q: %s", svcName, err),
+			"check the endpoint, deployments, and network fields under your azure.ai.project service",
 		)
 	}
 	p.synthResult = res
@@ -1091,11 +1091,11 @@ func (p *FoundryProvisioningProvider) armParameters() map[string]any {
 	return out
 }
 
-// findFoundryService scans azure.yaml for a single service whose host
-// matches one of FoundryServiceHosts and returns its name.
-func findFoundryService(raw []byte) (string, error) {
+// findFoundryProjectService scans azure.yaml for a single azure.ai.project service and returns its name.
+func findFoundryProjectService(raw []byte) (string, error) {
 	type svc struct {
-		Host string `yaml:"host"`
+		Host    string    `yaml:"host"`
+		Network yaml.Node `yaml:"network,omitempty"`
 	}
 	type root struct {
 		Services map[string]svc `yaml:"services"`
@@ -1110,26 +1110,42 @@ func findFoundryService(raw []byte) (string, error) {
 	}
 
 	var matches []string
+	var misplacedNetwork []string
 	for name, s := range r.Services {
-		if slices.Contains(FoundryServiceHosts, s.Host) {
+		if slices.Contains(FoundryProjectServiceHosts, s.Host) {
 			matches = append(matches, name)
+			continue
+		}
+		if IsFoundryNetworkHost(s.Host) && !s.Network.IsZero() {
+			misplacedNetwork = append(misplacedNetwork, name)
 		}
 	}
+	if len(misplacedNetwork) > 0 {
+		slices.Sort(misplacedNetwork)
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("network: is only supported on services with host: %s (found on %v)",
+				FoundryProjectHost, misplacedNetwork),
+			"move the network: block to the azure.ai.project service (for example, services.ai-project)",
+		)
+	}
+
 	switch len(matches) {
 	case 0:
 		return "", exterrors.Dependency(
 			exterrors.CodeProvisioningServiceNotFound,
-			fmt.Sprintf("no service in azure.yaml has host in %v", FoundryServiceHosts),
-			fmt.Sprintf("add a service with `host: %s` to azure.yaml", FoundryServiceHosts[0]),
+			fmt.Sprintf("no service in azure.yaml has host in %v", FoundryProjectServiceHosts),
+			fmt.Sprintf("add a service with `host: %s` to azure.yaml", FoundryProjectHost),
 		)
 	case 1:
 		return matches[0], nil
 	default:
+		slices.Sort(matches)
 		return "", exterrors.Dependency(
 			exterrors.CodeProvisioningServiceNotFound,
-			fmt.Sprintf("multiple services declare a foundry host %v (%v); only one is supported",
-				FoundryServiceHosts, matches),
-			"keep a single foundry service per project",
+			fmt.Sprintf("multiple services declare a foundry project host %v (%v); only one is supported",
+				FoundryProjectServiceHosts, matches),
+			"keep a single azure.ai.project service per project",
 		)
 	}
 }

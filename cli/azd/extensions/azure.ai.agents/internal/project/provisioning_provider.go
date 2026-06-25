@@ -17,10 +17,19 @@ const (
 	TerraformProviderName = "terraform"
 )
 
-// FoundryServiceHosts lists the values of `services.<name>.host` that this
-// extension's provisioning provider treats as Foundry services. Keep
-// "azure.ai.agent" first so suggestions point users at the unified host while
-// "microsoft.foundry" remains accepted for existing projects during migration.
-// Must stay in sync with cmd.AiAgentHost ("azure.ai.agent") — kept here to avoid
-// a cmd -> project import cycle.
-var FoundryServiceHosts = []string{"azure.ai.agent", "microsoft.foundry"}
+// FoundryProjectHost is the `services.<name>.host` value whose service body
+// owns Foundry account/project provisioning inputs such as endpoint:, deployments:, and network:.
+const FoundryProjectHost = "azure.ai.project"
+
+// FoundryProjectServiceHosts lists the values that the provisioning provider
+// treats as Foundry project services. Keep this project-scoped: agent services
+// depend on the project service, but do not own account-level provisioning settings.
+var FoundryProjectServiceHosts = []string{FoundryProjectHost}
+
+// IsFoundryNetworkHost reports whether a host belongs to a Foundry service shape
+// where network: would be a likely user mistake. The shipped network contract is
+// project-scoped, so callers use this to reject misplaced network: blocks with
+// actionable guidance instead of silently ignoring them.
+func IsFoundryNetworkHost(host string) bool {
+	return host == "azure.ai.agent" || host == "microsoft.foundry"
+}

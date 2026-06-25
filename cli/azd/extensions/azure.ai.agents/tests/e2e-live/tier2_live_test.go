@@ -21,6 +21,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // liveEnvVar gates the live test: it only runs when set to "1". This keeps the
@@ -645,7 +647,8 @@ func (r *runner) findProjectDir() string {
 	return ""
 }
 
-// findServiceName reads the first service name from the project's azure.yaml.
+// findServiceName reads the service name from the project's azure.yaml. azd
+// scaffolds exactly one service, so the sole key under services: is the name.
 func (r *runner) findServiceName() string {
 	dir := r.projectDir
 	if dir == "" {
@@ -659,19 +662,16 @@ func (r *runner) findServiceName() string {
 	if err != nil {
 		return ""
 	}
-	inServices := false
-	for line := range strings.SplitSeq(string(data), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "services:" {
-			inServices = true
-			continue
-		}
-		if inServices && strings.HasPrefix(line, "  ") && strings.HasSuffix(trimmed, ":") {
-			return strings.TrimSuffix(trimmed, ":")
-		}
-		if inServices && !strings.HasPrefix(line, " ") && trimmed != "" {
-			break
-		}
+	// A struct unmarshal is more robust than scanning lines: it tolerates
+	// comments and indentation changes that a naive parser would mishandle.
+	var proj struct {
+		Services map[string]any `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(data, &proj); err != nil || len(proj.Services) == 0 {
+		return ""
+	}
+	for name := range proj.Services {
+		return name
 	}
 	return ""
 }

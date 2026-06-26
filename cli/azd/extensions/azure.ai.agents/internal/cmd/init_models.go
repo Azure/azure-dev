@@ -945,6 +945,11 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 	}
 
 	deploymentDetails := []project.Deployment{}
+	// referencedDeployments holds every selected deployment (new AND existing).
+	// It drives the env-var reference (AZURE_AI_MODEL_DEPLOYMENT_NAME) so an
+	// existing-only selection still records the model name, while only NEW
+	// deployments land in deploymentDetails (azure.yaml declarations).
+	referencedDeployments := []project.Deployment{}
 	paramValues := agent_yaml.ParameterValues{}
 	// anyModelProcessed tracks whether we encountered at least one
 	// model resource (so we know whether to call remove on the
@@ -975,7 +980,7 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 			if resourceDef.Kind == agent_yaml.ResourceKindModel {
 				resource := resource.(agent_yaml.ModelResource)
 				model := agent_yaml.Model{Id: resource.Id}
-				modelDeployment, isNew, err := a.getModelDeploymentDetails(ctx, model)
+				deployment, isNew, err := a.getModelDeploymentDetails(ctx, model)
 				if err != nil {
 					if errors.Is(err, errModelSkipped) {
 						// User chose "Skip this model" in the selector. Drop
@@ -987,10 +992,17 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 					}
 					return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
 				}
-				deploymentDetails = append(deploymentDetails, *modelDeployment)
-				paramValues[resource.Name] = modelDeployment.Name
+				// Reference every selected deployment by name (manifest injection
+				// + env var) regardless of new/existing. Only declare NEW
+				// deployments under azure.ai.project.deployments: so azd
+				// creates/upserts them; an existing deployment is referenced, not
+				// managed (REFERENCE.md: anything not declared but referenced by
+				// name is treated as existing).
+				referencedDeployments = append(referencedDeployments, *deployment)
+				paramValues[resource.Name] = deployment.Name
 				anyModelProcessed = true
 				if isNew {
+					deploymentDetails = append(deploymentDetails, *deployment)
 					anyNewDeployment = true
 				}
 			}
@@ -1019,7 +1031,7 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 	setEnv := func(ctx context.Context, key, value string) error {
 		return setEnvValue(ctx, a.azdClient, a.environment.Name, key, value)
 	}
-	if err := persistFirstDeploymentName(ctx, setEnv, deploymentDetails); err != nil {
+	if err := persistFirstDeploymentName(ctx, setEnv, referencedDeployments); err != nil {
 		return nil, nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
 	}
 

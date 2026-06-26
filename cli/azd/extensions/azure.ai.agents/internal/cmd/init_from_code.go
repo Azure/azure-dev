@@ -547,20 +547,10 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 
 	// Add model resource if a model was selected
 	if existingDeployment != nil {
-		// For existing deployments, store the deployment details directly
-		a.deploymentDetails = append(a.deploymentDetails, project.Deployment{
-			Name: existingDeployment.Name,
-			Model: project.DeploymentModel{
-				Name:    existingDeployment.ModelName,
-				Format:  existingDeployment.ModelFormat,
-				Version: existingDeployment.Version,
-			},
-			Sku: project.DeploymentSku{
-				Name:     existingDeployment.SkuName,
-				Capacity: existingDeployment.SkuCapacity,
-			},
-		})
-
+		// Existing deployment: reference it by name only. Per REFERENCE.md an
+		// existing deployment is NOT declared under azure.ai.project.deployments:
+		// (azd does not create/upsert it) — it is referenced via the agent env
+		// var and verified at deploy time. So do not append to a.deploymentDetails.
 		definition.EnvironmentVariables = appendEnvVar(definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
 			Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
 			Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",

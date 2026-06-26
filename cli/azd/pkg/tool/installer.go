@@ -332,6 +332,15 @@ func (i *installer) runUninstall(
 		// Explicit uninstall command (e.g. `azd extension uninstall ...`).
 		result.Strategy = "command"
 		if err := i.executeUninstallCommand(ctx, strategy.UninstallCommand); err != nil {
+			// If the tool is already gone, treat the uninstall as complete
+			// (idempotent), mirroring the package-manager path below.
+			// Otherwise surface the command failure.
+			status, detectErr := i.detector.DetectTool(ctx, tool)
+			if detectErr == nil && !status.Installed {
+				result.Success = true
+				result.Duration = time.Since(start)
+				return result, nil
+			}
 			result.Error = fmt.Errorf(
 				"running uninstall command for %s: %w", tool.Name, err,
 			)

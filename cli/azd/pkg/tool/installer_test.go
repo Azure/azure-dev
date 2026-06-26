@@ -2232,7 +2232,10 @@ func TestAvailableSkillHosts_NonSkillToolReturnsNil(t *testing.T) {
 // Uninstall — non-skill (package manager) path
 // ---------------------------------------------------------------------------
 
-func TestUninstall_NonSkill_UsesUninstallCommand(t *testing.T) {
+// TestUninstall_NonSkill_UsesPackageManagerUninstall verifies the
+// package-manager removal path (npm), distinct from the explicit
+// UninstallCommand path covered by TestUninstall_UsesUninstallCommand.
+func TestUninstall_NonSkill_UsesPackageManagerUninstall(t *testing.T) {
 	t.Parallel()
 
 	runner := mockexec.NewMockCommandRunner()
@@ -2388,7 +2391,7 @@ func TestUninstall_NonSkill_PackageManagerNoRecord_GuidesManualRemoval(t *testin
 	var ews *errorhandler.ErrorWithSuggestion
 	require.ErrorAs(t, result.Error, &ews)
 	assert.Contains(t, ews.Suggestion, "no longer has a record")
-	assert.Contains(t, ews.Suggestion, "Remove Self Updating CLI manually")
+	assert.Contains(t, ews.Suggestion, "remove Self Updating CLI manually")
 }
 
 // TestUninstall_NonSkill_PackageManagerNoRecord_AlreadyGone_Succeeds covers
@@ -2533,6 +2536,91 @@ func TestUninstall_UsesUninstallCommand(t *testing.T) {
 	assert.Contains(t, capturedArgs, "extension")
 	assert.Contains(t, capturedArgs, "uninstall")
 	assert.Contains(t, capturedArgs, "azure.ai.agents")
+}
+
+// TestUninstall_UninstallCommandFails_AlreadyGone_Succeeds covers the
+// idempotent case for the explicit UninstallCommand path: the command exits
+// non-zero but the tool is no longer detected, so the uninstall is treated as
+// already complete (mirrors the package-manager path).
+func TestUninstall_UninstallCommandFails_AlreadyGone_Succeeds(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "azd" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 1}, errors.New("extension not installed")
+	})
+
+	// Tool already not installed.
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{Tool: tool, Installed: false}, nil
+		},
+	}
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	tool := &ToolDefinition{
+		Id:       "azure.ai.agents",
+		Name:     "azd AI Agent Extensions",
+		Category: ToolCategoryAzdExtension,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			UninstallCommand: "azd extension uninstall azure.ai.agents",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+}
+
+// TestUninstall_UninstallCommandFails_StillPresent_Errors covers the
+// non-idempotent case: the command fails and the tool is still detected, so
+// the failure is surfaced.
+func TestUninstall_UninstallCommandFails_StillPresent_Errors(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "azd" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 1}, errors.New("azd boom")
+	})
+
+	// Tool still detected after the failed command.
+	det := installedDetector("1.0.0")
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	tool := &ToolDefinition{
+		Id:       "azure.ai.agents",
+		Name:     "azd AI Agent Extensions",
+		Category: ToolCategoryAzdExtension,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			UninstallCommand: "azd extension uninstall azure.ai.agents",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "running uninstall command")
 }
 
 func TestBuildUninstallCommand(t *testing.T) {
@@ -2853,7 +2941,7 @@ func TestUninstall_NonSkill_CommandFails(t *testing.T) {
 		return exec.RunResult{ExitCode: 1}, errors.New("npm boom")
 	})
 
-	inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+	inst := NewInstaller(runner, NewPlatformDetector(runner), installedDetector("1.0.0"))
 
 	tool := &ToolDefinition{
 		Id:       "test-npm-tool",

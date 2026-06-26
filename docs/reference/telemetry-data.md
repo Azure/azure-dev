@@ -474,7 +474,7 @@ Built-in tool IDs come from azd's curated tool manifest (run `azd tool list` to 
 | `tool.firstrun.install_failed_ids` | string | Comma-separated tool IDs that failed during first-run |
 | `tool.firstrun.install_duration_ms` | measurement | Total first-run install duration (ms) |
 
-**Install / upgrade / check operations:**
+**Install / upgrade / uninstall / check operations:**
 
 | Field Key | Type | Description |
 |-----------|------|-------------|

@@ -330,7 +330,7 @@ func TestEmitResourceServices_AlwaysEmitsProjectService(t *testing.T) {
 	server := &recordingProjectServer{}
 	client := newProjectRecorderClient(t, server)
 
-	err := emitResourceServices(t.Context(), client, "myagent", nil, nil, nil)
+	err := emitResourceServices(t.Context(), client, "myagent", "", nil, nil, nil)
 	require.NoError(t, err)
 
 	server.mu.Lock()
@@ -352,7 +352,7 @@ func TestEmitResourceServices_WiresSiblingsToProject(t *testing.T) {
 	client := newProjectRecorderClient(t, server)
 
 	conns := []project.Connection{{Name: "myconn", Category: "ApiKey"}}
-	err := emitResourceServices(t.Context(), client, "myagent", nil, conns, nil)
+	err := emitResourceServices(t.Context(), client, "myagent", "", nil, conns, nil)
 	require.NoError(t, err)
 
 	server.mu.Lock()
@@ -385,7 +385,7 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 		Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
 	}}
 	conns := []project.Connection{{Name: "myconn", Category: "ApiKey", Target: "https://example", AuthType: "ApiKey"}}
-	require.NoError(t, emitResourceServices(t.Context(), client, "myagent", deployments, conns, nil))
+	require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", deployments, conns, nil))
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
@@ -409,4 +409,47 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 	require.Len(t, gotConns, 1)
 	assert.Equal(t, "myconn", gotConns[0].Name)
 	assert.Equal(t, "ApiKey", gotConns[0].Category)
+}
+
+// TestEmitResourceServices_WritesEndpointForExistingProject verifies that a
+// non-empty projectEndpoint is written as endpoint: on the ai-project service
+// (the brownfield signal provision reads to reuse the project) and that an
+// empty endpoint (new project) leaves the field unset.
+func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
+	t.Parallel()
+
+	const endpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+
+	t.Run("existing project writes endpoint", func(t *testing.T) {
+		server := &recordingProjectServer{}
+		client := newProjectRecorderClient(t, server)
+
+		require.NoError(t, emitResourceServices(t.Context(), client, "myagent", endpoint, nil, nil, nil))
+
+		server.mu.Lock()
+		defer server.mu.Unlock()
+
+		require.Len(t, server.added, 1)
+		projSvc := server.added[0]
+		require.Equal(t, aiProjectServiceName, projSvc.Name)
+		require.NotNil(t, projSvc.AdditionalProperties)
+		assert.Equal(t, endpoint, projSvc.AdditionalProperties.Fields["endpoint"].GetStringValue())
+	})
+
+	t.Run("new project omits endpoint", func(t *testing.T) {
+		server := &recordingProjectServer{}
+		client := newProjectRecorderClient(t, server)
+
+		require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", nil, nil, nil))
+
+		server.mu.Lock()
+		defer server.mu.Unlock()
+
+		require.Len(t, server.added, 1)
+		projSvc := server.added[0]
+		if projSvc.AdditionalProperties != nil {
+			_, ok := projSvc.AdditionalProperties.Fields["endpoint"]
+			assert.False(t, ok, "endpoint must be omitted for a new project")
+		}
+	})
 }

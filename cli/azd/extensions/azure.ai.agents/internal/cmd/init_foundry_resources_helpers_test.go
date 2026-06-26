@@ -17,6 +17,30 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+func TestFoundryProjectInfo_Endpoint(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		info *FoundryProjectInfo
+		want string
+	}{
+		{name: "nil", info: nil, want: ""},
+		{name: "missing account", info: &FoundryProjectInfo{ProjectName: "proj"}, want: ""},
+		{name: "missing project", info: &FoundryProjectInfo{AccountName: "acct"}, want: ""},
+		{
+			name: "complete",
+			info: &FoundryProjectInfo{AccountName: "acct", ProjectName: "proj"},
+			want: "https://acct.services.ai.azure.com/api/projects/proj",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, tc.info.Endpoint())
+		})
+	}
+}
+
 func TestExtractProjectDetails(t *testing.T) {
 	t.Parallel()
 

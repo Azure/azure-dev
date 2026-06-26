@@ -40,10 +40,15 @@ const (
 // azure.ai.connection per connection, one azure.ai.toolbox per toolbox) and
 // wires the agent service's uses: list to them for ordering. Each resource is
 // its own azure.yaml service entry so a different extension can own each host.
+//
+// projectEndpoint, when non-empty, is written as endpoint: on the project
+// service to mark an existing (brownfield) Foundry project so provision
+// connects to it instead of creating a new one. It is empty for new projects.
 func emitResourceServices(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	agentServiceName string,
+	projectEndpoint string,
 	deployments []project.Deployment,
 	connections []project.Connection,
 	toolboxes []project.Toolbox,
@@ -64,8 +69,11 @@ func emitResourceServices(
 	// Foundry project the agent targets. It is always emitted -- even with no
 	// deployments (e.g. "Skip model configuration") -- so every agent has one
 	// stable ai-project sibling that connections and toolboxes can depend on to
-	// enforce provisioning order.
-	projectCfg, err := project.MarshalStruct(&project.ServiceTargetAgentConfig{Deployments: deployments})
+	// enforce provisioning order. A non-empty endpoint marks an existing project.
+	projectCfg, err := project.MarshalStruct(&project.ServiceTargetAgentConfig{
+		Endpoint:    projectEndpoint,
+		Deployments: deployments,
+	})
 	if err != nil {
 		return fmt.Errorf("marshaling project service config: %w", err)
 	}

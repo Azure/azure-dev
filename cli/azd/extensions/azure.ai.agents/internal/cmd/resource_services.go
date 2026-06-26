@@ -44,10 +44,15 @@ const (
 // projectEndpoint, when non-empty, is written as endpoint: on the project
 // service to mark an existing (brownfield) Foundry project so provision
 // connects to it instead of creating a new one. It is empty for new projects.
+//
+// projectName, when known, is the Foundry project name used to derive the
+// project service key (so azure.yaml reads like the real project). It falls back
+// to aiProjectServiceName when unknown or colliding. See resolveProjectServiceKey.
 func emitResourceServices(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	agentServiceName string,
+	projectName string,
 	projectEndpoint string,
 	deployments []project.Deployment,
 	connections []project.Connection,
@@ -68,8 +73,8 @@ func emitResourceServices(
 	// One project service owns the model deployments and represents the single
 	// Foundry project the agent targets. It is always emitted -- even with no
 	// deployments (e.g. "Skip model configuration") -- so every agent has one
-	// stable ai-project sibling that connections and toolboxes can depend on to
-	// enforce provisioning order. A non-empty endpoint marks an existing project.
+	// project sibling that connections and toolboxes can depend on to enforce
+	// provisioning order. A non-empty endpoint marks an existing project.
 	projectCfg, err := project.MarshalStruct(&project.ServiceTargetAgentConfig{
 		Endpoint:    projectEndpoint,
 		Deployments: deployments,
@@ -77,7 +82,7 @@ func emitResourceServices(
 	if err != nil {
 		return fmt.Errorf("marshaling project service config: %w", err)
 	}
-	projectServiceName := aiProjectServiceName
+	projectServiceName := resolveProjectServiceKey(ctx, azdClient, projectName, agentServiceName)
 	if err := reserveServiceName(usedNames, projectServiceName, "project service"); err != nil {
 		return err
 	}
@@ -144,6 +149,77 @@ func emitResourceServices(
 	}
 
 	return nil
+}
+
+// resolveProjectServiceKey picks the azure.yaml service key for the single
+// azure.ai.project service. Precedence:
+//
+//  1. Reuse an existing azure.ai.project service key when one is already in the
+//     project. This keeps repeated inits idempotent (azd's extension API has no
+//     remove-service call, so a changed key would leave a second project service
+//     behind, which the provisioning provider rejects).
+//  2. Otherwise derive the key from the Foundry project name when it is known and
+//     does not collide with the agent service name, so azure.yaml reads like the
+//     real project.
+//  3. Otherwise fall back to the stable "ai-project" default.
+//
+// The key is not load-bearing: the provider and collectors find the project
+// service by host (azure.ai.project), and the generated uses: edges reference
+// whatever key this returns.
+func resolveProjectServiceKey(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	projectName string,
+	agentServiceName string,
+) string {
+	if existing := existingProjectServiceKey(ctx, azdClient); existing != "" {
+		return existing
+	}
+	if key := sanitizeServiceName(projectName); key != "" && key != agentServiceName {
+		return key
+	}
+	return aiProjectServiceName
+}
+
+// existingProjectServiceKey returns the key of the azure.ai.project service
+// already present in the project, or "" when none exists or the project cannot be
+// read. When more than one is present (should not happen) the lexicographically
+// first key is returned so the choice is deterministic.
+func existingProjectServiceKey(ctx context.Context, azdClient *azdext.AzdClient) string {
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp.GetProject() == nil {
+		return ""
+	}
+	var keys []string
+	for name, svc := range resp.GetProject().GetServices() {
+		if svc.GetHost() == AiProjectHost {
+			keys = append(keys, name)
+		}
+	}
+	if len(keys) == 0 {
+		return ""
+	}
+	sort.Strings(keys)
+	return keys[0]
+}
+
+// projectNameHint returns the Foundry project name to derive the project service
+// key from: the selected existing project's name, else the AZURE_AI_PROJECT_NAME
+// azd environment value when concretely set (not a ${...} placeholder), else "".
+func projectNameHint(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	selected *FoundryProjectInfo,
+) string {
+	if selected != nil && selected.ProjectName != "" {
+		return selected.ProjectName
+	}
+	v, err := getEnvValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_NAME")
+	if err != nil || strings.HasPrefix(strings.TrimSpace(v), "${") {
+		return ""
+	}
+	return v
 }
 
 // addResourceService adds a single Foundry resource service to azure.yaml with

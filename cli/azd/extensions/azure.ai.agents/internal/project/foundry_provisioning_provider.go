@@ -42,6 +42,7 @@ const (
 	envKeySubscriptionID = "AZURE_SUBSCRIPTION_ID"
 	envKeyLocation       = "AZURE_LOCATION"
 	envKeyResourceGroup  = "AZURE_RESOURCE_GROUP"
+	envKeyTenantID       = "AZURE_TENANT_ID"
 	envKeyProjectName    = "AZURE_AI_PROJECT_NAME"
 	envKeyPrincipalID    = "AZURE_PRINCIPAL_ID"
 )
@@ -69,6 +70,7 @@ type FoundryProvisioningProvider struct {
 	foundryName  string
 	principalID  string
 	credential   azcore.TokenCredential
+	tenantID     string          // resolved lazily by ensureCredential; surfaced as AZURE_TENANT_ID
 	armTemplate  map[string]any  // embedded ARM JSON; nil when onDiskSource is set
 	onDiskSource *templateSource // non-nil when ./infra/main.{bicep,bicepparam} exists
 
@@ -296,6 +298,32 @@ func brownfieldOutputs(endpoint string) map[string]*azdext.ProvisioningOutputPar
 	return outputs
 }
 
+// defaultResourceGroupName returns the resource group azd provisions into when
+// AZURE_RESOURCE_GROUP is unset, matching azd's standard rg-<env> convention.
+func defaultResourceGroupName(envName string) string {
+	return "rg-" + envName
+}
+
+// withTenantOutput adds AZURE_TENANT_ID to provisioning outputs so azd persists
+// it to the environment. Standard azd provision sets this value; the Foundry
+// provider must too, otherwise downstream steps that need the tenant (e.g. the
+// postdeploy hook) fail with "AZURE_TENANT_ID is not set in the environment".
+// No-op until ensureCredential has resolved the tenant.
+func (p *FoundryProvisioningProvider) withTenantOutput(
+	outputs map[string]*azdext.ProvisioningOutputParameter,
+) map[string]*azdext.ProvisioningOutputParameter {
+	if p.tenantID == "" {
+		return outputs
+	}
+	if outputs == nil {
+		outputs = map[string]*azdext.ProvisioningOutputParameter{}
+	}
+	if _, ok := outputs[envKeyTenantID]; !ok {
+		outputs[envKeyTenantID] = &azdext.ProvisioningOutputParameter{Type: "string", Value: p.tenantID}
+	}
+	return outputs
+}
+
 // projectNameFromEndpoint extracts the project name from a Foundry project
 // endpoint of the form https://<account>.services.ai.azure.com/api/projects/<name>.
 // Returns "" when the path does not carry a project segment.
@@ -356,11 +384,11 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 	}
 
 	if p.rgName, err = get(envKeyResourceGroup); err != nil || p.rgName == "" {
-		return exterrors.Dependency(
-			exterrors.CodeMissingResourceGroup,
-			fmt.Sprintf("%s is required but not set in azd environment %q", envKeyResourceGroup, p.envName),
-			fmt.Sprintf("run `azd env set %s <resource-group>`", envKeyResourceGroup),
-		)
+		// Default to rg-<env>, matching azd's standard Bicep provisioning,
+		// instead of failing. The subscription-scoped template creates the
+		// resource group when it doesn't exist yet.
+		p.rgName = defaultResourceGroupName(p.envName)
+		log.Printf("[debug] %s not set; defaulting to %q", envKeyResourceGroup, p.rgName)
 	}
 
 	if p.foundryName, err = get(envKeyProjectName); err != nil || p.foundryName == "" {
@@ -394,6 +422,8 @@ func (p *FoundryProvisioningProvider) ensureCredential(ctx context.Context) erro
 			"run 'azd auth login' and verify access to the subscription",
 		)
 	}
+	// Cache the tenant so Deploy/State can surface it as AZURE_TENANT_ID.
+	p.tenantID = tenantResp.TenantId
 
 	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
 		TenantID:                   tenantResp.TenantId,
@@ -424,7 +454,7 @@ func (p *FoundryProvisioningProvider) State(
 	if p.brownfieldEndpoint != "" {
 		return &azdext.ProvisioningStateResult{
 			State: &azdext.ProvisioningState{
-				Outputs:   brownfieldOutputs(p.brownfieldEndpoint),
+				Outputs:   p.withTenantOutput(brownfieldOutputs(p.brownfieldEndpoint)),
 				Resources: []*azdext.ProvisioningResource{},
 			},
 		}, nil
@@ -452,7 +482,7 @@ func (p *FoundryProvisioningProvider) State(
 
 	return &azdext.ProvisioningStateResult{
 		State: &azdext.ProvisioningState{
-			Outputs:   armOutputsToProto(deploymentOutputs(resp.Properties)),
+			Outputs:   p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties))),
 			Resources: armResourcesToProto(deploymentResources(resp.Properties)),
 		},
 	}, nil
@@ -467,9 +497,12 @@ func (p *FoundryProvisioningProvider) Deploy(
 ) (*azdext.ProvisioningDeployResult, error) {
 	if p.brownfieldEndpoint != "" {
 		progress("Using existing Foundry project (endpoint set); skipping provisioning")
+		// Best-effort tenant lookup so AZURE_TENANT_ID is still surfaced for the
+		// existing-project path (no resources are provisioned here).
+		_ = p.ensureCredential(ctx)
 		return &azdext.ProvisioningDeployResult{
 			Deployment: &azdext.ProvisioningDeployment{
-				Outputs: brownfieldOutputs(p.brownfieldEndpoint),
+				Outputs: p.withTenantOutput(brownfieldOutputs(p.brownfieldEndpoint)),
 			},
 		}, nil
 	}
@@ -526,7 +559,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	return &azdext.ProvisioningDeployResult{
 		Deployment: &azdext.ProvisioningDeployment{
 			Parameters: armInputsToProto(src.parameters),
-			Outputs:    armOutputsToProto(deploymentOutputs(resp.Properties)),
+			Outputs:    p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties))),
 		},
 	}, nil
 }

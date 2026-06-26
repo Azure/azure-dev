@@ -543,23 +543,9 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 		resolvedIDs = append(resolvedIDs, toolDef.Id)
 	}
 
-	// Emit tool.id for single-target installs and tool.ids for multi-target
-	// installs — never both. The two attributes are documented as mutually
-	// exclusive (tracing-in-azd.md: "Single-target" vs "Batch"), so co-emit
-	// would double-count single-tool installs in any downstream query
-	// against tool.ids. Sort before joining for batch so the attribute
-	// value is a canonical set rather than a permutation.
-
-	idAttrs := []attribute.KeyValue{
-		fields.ToolDryRunKey.Bool(a.flags.dryRun),
-	}
-	if len(resolvedIDs) == 1 {
-		idAttrs = append(idAttrs, fields.ToolIdKey.String(resolvedIDs[0]))
-	} else {
-		sortedIDs := slices.Clone(resolvedIDs)
-		slices.Sort(sortedIDs)
-		idAttrs = append(idAttrs, fields.ToolIdsKey.String(strings.Join(sortedIDs, ",")))
-	}
+	// Emit tool.id (single) or tool.ids (batch) — never both. See
+	// toolIDUsageAttrs and the rationale in tracing-in-azd.md.
+	idAttrs := toolIDUsageAttrs(a.flags.dryRun, resolvedIDs)
 	tracing.SetUsageAttributes(idAttrs...)
 
 	// Resolve which agent host(s) to install skills for, based on the
@@ -844,21 +830,9 @@ func (a *toolInstallAction) dryRun(
 		resolvedIDs = append(resolvedIDs, id)
 	}
 
-	// Emit tool.id vs tool.ids on the dry-run path with the same
-	// mutual-exclusion discipline as the real install path. Values are
-	// built from canonical toolDef.Id strings already validated by
-	// FindTool. tool.dry_run is emitted alongside so the contract is
-	// uniform: dry_run never appears without a matching tool.id/ids.
-	idAttrs := []attribute.KeyValue{
-		fields.ToolDryRunKey.Bool(true),
-	}
-	if len(resolvedIDs) == 1 {
-		idAttrs = append(idAttrs, fields.ToolIdKey.String(resolvedIDs[0]))
-	} else {
-		sortedIDs := slices.Clone(resolvedIDs)
-		slices.Sort(sortedIDs)
-		idAttrs = append(idAttrs, fields.ToolIdsKey.String(strings.Join(sortedIDs, ",")))
-	}
+	// Dry-run emits the same tool.id/tool.ids contract as the real install
+	// path; dry_run is hardcoded true here. See toolIDUsageAttrs.
+	idAttrs := toolIDUsageAttrs(true, resolvedIDs)
 	tracing.SetUsageAttributes(idAttrs...)
 
 	if a.formatter.Kind() == output.JsonFormat {
@@ -1073,18 +1047,8 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 	for _, t := range toolsToUpgrade {
 		upgradeIDs = append(upgradeIDs, t.Id)
 	}
-	// Mutually exclusive tool.id vs tool.ids — see the install action for
-	// the same discipline and the rationale in tracing-in-azd.md.
-	usageAttrs := []attribute.KeyValue{
-		fields.ToolDryRunKey.Bool(a.flags.dryRun),
-	}
-	if len(upgradeIDs) == 1 {
-		usageAttrs = append(usageAttrs, fields.ToolIdKey.String(upgradeIDs[0]))
-	} else {
-		sortedUpgradeIDs := slices.Clone(upgradeIDs)
-		slices.Sort(sortedUpgradeIDs)
-		usageAttrs = append(usageAttrs, fields.ToolIdsKey.String(strings.Join(sortedUpgradeIDs, ",")))
-	}
+	// Mutually exclusive tool.id vs tool.ids — see toolIDUsageAttrs.
+	usageAttrs := toolIDUsageAttrs(a.flags.dryRun, upgradeIDs)
 	tracing.SetUsageAttributes(usageAttrs...)
 
 	// --dry-run: display what would be upgraded without making
@@ -1291,18 +1255,8 @@ func (a *toolUninstallAction) Run(ctx context.Context) (*actions.ActionResult, e
 		resolvedIDs = append(resolvedIDs, toolDef.Id)
 	}
 
-	// Mutually exclusive tool.id vs tool.ids — see the install action for
-	// the same discipline and the rationale in tracing-in-azd.md.
-	idAttrs := []attribute.KeyValue{
-		fields.ToolDryRunKey.Bool(a.flags.dryRun),
-	}
-	if len(resolvedIDs) == 1 {
-		idAttrs = append(idAttrs, fields.ToolIdKey.String(resolvedIDs[0]))
-	} else {
-		sortedIDs := slices.Clone(resolvedIDs)
-		slices.Sort(sortedIDs)
-		idAttrs = append(idAttrs, fields.ToolIdsKey.String(strings.Join(sortedIDs, ",")))
-	}
+	// Mutually exclusive tool.id vs tool.ids — see toolIDUsageAttrs.
+	idAttrs := toolIDUsageAttrs(a.flags.dryRun, resolvedIDs)
 	tracing.SetUsageAttributes(idAttrs...)
 
 	// --dry-run: display what would be uninstalled without making changes.
@@ -1897,6 +1851,25 @@ func wrapToolNotFoundIfErr(err error) error {
 		Suggestion: "Use the tool ID as the argument. " +
 			"Run 'azd tool list' to see available tool IDs.",
 	}
+}
+
+// toolIDUsageAttrs returns the usage attributes for a tool operation. tool.id
+// (single target) and tool.ids (sorted, batch) are mutually exclusive per
+// tracing-in-azd.md ("Single-target" vs "Batch"); emitting both would
+// double-count single-tool operations in any query against tool.ids. tool.ids
+// is sorted so the value is a canonical set rather than a permutation.
+// tool.dry_run is always emitted alongside so dry_run never appears without a
+// matching tool.id/tool.ids.
+func toolIDUsageAttrs(dryRun bool, ids []string) []attribute.KeyValue {
+	attrs := []attribute.KeyValue{fields.ToolDryRunKey.Bool(dryRun)}
+	if len(ids) == 1 {
+		attrs = append(attrs, fields.ToolIdKey.String(ids[0]))
+	} else {
+		sorted := slices.Clone(ids)
+		slices.Sort(sorted)
+		attrs = append(attrs, fields.ToolIdsKey.String(strings.Join(sorted, ",")))
+	}
+	return attrs
 }
 
 // toolOperationFn abstracts InstallTools and UpgradeTools so that

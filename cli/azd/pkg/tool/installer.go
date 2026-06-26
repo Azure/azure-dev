@@ -509,15 +509,7 @@ func (i *installer) resolveSkillUninstallTargets(
 		return nil, err
 	}
 
-	var targets []SkillHost
-	for _, inst := range installed {
-		idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
-			return h.Host == inst.Host
-		})
-		if idx >= 0 {
-			targets = append(targets, tool.SkillHosts[idx])
-		}
-	}
+	targets := configuredSkillHostsFor(tool, installed)
 
 	if len(targets) == 0 {
 		// Nothing to do. No Links: the suggestion is self-contained.
@@ -991,16 +983,7 @@ func (i *installer) resolveSkillTargets(
 			}
 
 			if len(installed) > 0 {
-				targets := make([]SkillHost, 0, len(installed))
-				for _, inst := range installed {
-					idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
-						return h.Host == inst.Host
-					})
-					if idx >= 0 {
-						targets = append(targets, tool.SkillHosts[idx])
-					}
-				}
-				if len(targets) > 0 {
+				if targets := configuredSkillHostsFor(tool, installed); len(targets) > 0 {
 					return targets, nil
 				}
 			}
@@ -1051,10 +1034,8 @@ func (i *installer) explicitSkillHostTargets(
 		// that is also on PATH. "unknown name" and "known but not on PATH"
 		// both mean the host can't be used, so we point the user at the
 		// supported hosts.
-		idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
-			return h.Host == name
-		})
-		if idx < 0 || i.commandRunner.ToolInPath(name) != nil {
+		host, ok := findSkillHost(tool, name)
+		if !ok || i.commandRunner.ToolInPath(name) != nil {
 			supported := make([]string, len(tool.SkillHosts))
 			for j, h := range tool.SkillHosts {
 				supported[j] = h.Host
@@ -1064,9 +1045,37 @@ func (i *installer) explicitSkillHostTargets(
 				name, tool.Name, strings.Join(supported, ", "),
 			)
 		}
-		targets = append(targets, tool.SkillHosts[idx])
+		targets = append(targets, host)
 	}
 	return targets, nil
+}
+
+// findSkillHost returns the configured SkillHost with the given host name and
+// whether one was found. It centralizes the SkillHosts lookup shared by the
+// skill install/upgrade and uninstall paths.
+func findSkillHost(tool *ToolDefinition, name string) (SkillHost, bool) {
+	idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
+		return h.Host == name
+	})
+	if idx < 0 {
+		return SkillHost{}, false
+	}
+	return tool.SkillHosts[idx], true
+}
+
+// configuredSkillHostsFor maps a set of installed hosts back to their
+// configured SkillHost definitions, in installed order, skipping any host that
+// is no longer a configured SkillHost. Shared by the upgrade
+// (resolveSkillTargets) and uninstall (resolveSkillUninstallTargets) paths,
+// which both act on "the hosts the skill is currently installed through".
+func configuredSkillHostsFor(tool *ToolDefinition, installed []InstalledSkillHost) []SkillHost {
+	targets := make([]SkillHost, 0, len(installed))
+	for _, inst := range installed {
+		if host, ok := findSkillHost(tool, inst.Host); ok {
+			targets = append(targets, host)
+		}
+	}
+	return targets
 }
 
 // pickSkillHost returns the first SkillHost whose binary is on PATH.

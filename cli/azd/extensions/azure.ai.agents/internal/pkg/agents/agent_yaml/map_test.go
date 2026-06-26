@@ -1397,6 +1397,46 @@ func TestCreateAgentAPIRequest_CodeDeploy_DotnetRuntime(t *testing.T) {
 	}
 }
 
+func TestCreateAgentAPIRequest_CodeDeploy_DefaultsDependencyResolution(t *testing.T) {
+	// When CodeConfiguration omits dependency_resolution (nil or empty), the
+	// request must still carry a value; Foundry rejects an empty one with a 400.
+	empty := ""
+	for _, tc := range []struct {
+		name   string
+		depRes *string
+	}{
+		{name: "nil", depRes: nil},
+		{name: "empty", depRes: &empty},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := ContainerAgent{
+				AgentDefinition: AgentDefinition{Name: "code-agent", Kind: AgentKindHosted},
+				Protocols:       []ProtocolVersionRecord{{Protocol: "responses", Version: "1.0.0"}},
+				CodeConfiguration: &CodeConfiguration{
+					Runtime:              "python_3_13",
+					EntryPoint:           "main.py",
+					DependencyResolution: tc.depRes,
+				},
+			}
+
+			req, err := CreateAgentAPIRequestFromDefinition(agent)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			codeDef, ok := req.Definition.(agent_api.HostedAgentDefinition)
+			if !ok {
+				t.Fatalf("expected HostedAgentDefinition, got %T", req.Definition)
+			}
+
+			if codeDef.CodeConfiguration.DependencyResolution != DefaultDependencyResolution {
+				t.Errorf("DependencyResolution = %q, want %q",
+					codeDef.CodeConfiguration.DependencyResolution, DefaultDependencyResolution)
+			}
+		})
+	}
+}
+
 func TestCreateAgentAPIRequest_CodeDeploy_PythonRuntime(t *testing.T) {
 	depRes := "bundled"
 	agent := ContainerAgent{

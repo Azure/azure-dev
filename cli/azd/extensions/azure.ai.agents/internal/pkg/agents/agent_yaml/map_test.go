@@ -885,8 +885,8 @@ func TestCreateHostedAgentAPIRequest_FullConfig(t *testing.T) {
 	if imgDef.Kind != agent_api.AgentKindHosted {
 		t.Errorf("Kind = %q", imgDef.Kind)
 	}
-	if imgDef.Image != "myregistry.azurecr.io/agent:v1" {
-		t.Errorf("Image = %q", imgDef.Image)
+	if imgDef.ContainerConfiguration == nil || imgDef.ContainerConfiguration.Image != "myregistry.azurecr.io/agent:v1" {
+		t.Errorf("ContainerConfiguration.Image = %v", imgDef.ContainerConfiguration)
 	}
 	if imgDef.CPU != "4" {
 		t.Errorf("CPU = %q", imgDef.CPU)
@@ -977,8 +977,8 @@ func TestCreateHostedAgentAPIRequest_UsesAgentImage(t *testing.T) {
 	}
 
 	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
-	if imgDef.Image != "myregistry.azurecr.io/agent-image:v1" {
-		t.Errorf("Image = %q", imgDef.Image)
+	if imgDef.ContainerConfiguration == nil || imgDef.ContainerConfiguration.Image != "myregistry.azurecr.io/agent-image:v1" {
+		t.Errorf("ContainerConfiguration.Image = %v", imgDef.ContainerConfiguration)
 	}
 }
 
@@ -1001,8 +1001,8 @@ func TestCreateHostedAgentAPIRequest_BuildConfigImageOverridesAgentImage(t *test
 	}
 
 	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
-	if imgDef.Image != "myregistry.azurecr.io/published:v2" {
-		t.Errorf("Image = %q", imgDef.Image)
+	if imgDef.ContainerConfiguration == nil || imgDef.ContainerConfiguration.Image != "myregistry.azurecr.io/published:v2" {
+		t.Errorf("ContainerConfiguration.Image = %v", imgDef.ContainerConfiguration)
 	}
 }
 
@@ -1105,8 +1105,8 @@ func TestCreateAgentAPIRequestFromDefinition_HostedWithBuildOptions(t *testing.T
 	}
 
 	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
-	if imgDef.Image != "myimg:v2" {
-		t.Errorf("Image = %q", imgDef.Image)
+	if imgDef.ContainerConfiguration == nil || imgDef.ContainerConfiguration.Image != "myimg:v2" {
+		t.Errorf("ContainerConfiguration.Image = %v", imgDef.ContainerConfiguration)
 	}
 	if imgDef.CPU != "2" {
 		t.Errorf("CPU = %q", imgDef.CPU)

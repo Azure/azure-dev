@@ -340,13 +340,20 @@ func buildDeployDefinition(currentDef map[string]any, envVars map[string]string)
 	return newDef
 }
 
-// normalizeProtocolVersions ensures container_protocol_versions use the
-// canonical "1.0.0" format instead of the legacy "v1" format that the
+// normalizeProtocolVersions ensures protocol_versions (or legacy container_protocol_versions)
+// use the canonical "1.0.0" format instead of the legacy "v1" format that the
 // platform no longer accepts for new versions.
 func normalizeProtocolVersions(def map[string]any) {
-	raw, ok := def["container_protocol_versions"]
+	// Try new field name first, fall back to legacy
+	raw, ok := def["protocol_versions"]
 	if !ok {
-		return
+		raw, ok = def["container_protocol_versions"]
+		if !ok {
+			return
+		}
+		// Migrate legacy field to new name
+		def["protocol_versions"] = raw
+		delete(def, "container_protocol_versions")
 	}
 	protocols, ok := raw.([]any)
 	if !ok {

@@ -127,7 +127,7 @@ func TestHostedAgentDefinition_RoundTrip(t *testing.T) {
 
 	s := string(data)
 	for _, field := range []string{
-		`"container_protocol_versions"`, `"cpu"`, `"memory"`, `"environment_variables"`,
+		`"protocol_versions"`, `"cpu"`, `"memory"`, `"environment_variables"`,
 	} {
 		if !strings.Contains(s, field) {
 			t.Errorf("expected JSON to contain %s", field)
@@ -160,7 +160,9 @@ func TestHostedAgentDefinition_ContainerImage_RoundTrip(t *testing.T) {
 		},
 		CPU:    "0.5",
 		Memory: "1Gi",
-		Image:  "myregistry.azurecr.io/agent:latest",
+		ContainerConfiguration: &ContainerConfigurationAPI{
+			Image: "myregistry.azurecr.io/agent:latest",
+		},
 	}
 
 	data, err := json.Marshal(original)
@@ -169,11 +171,15 @@ func TestHostedAgentDefinition_ContainerImage_RoundTrip(t *testing.T) {
 	}
 
 	s := string(data)
-	if !strings.Contains(s, `"image"`) {
-		t.Error("expected JSON to contain \"image\"")
+	if !strings.Contains(s, `"container_configuration"`) {
+		t.Error("expected JSON to contain \"container_configuration\"")
 	}
-	if !strings.Contains(s, `"container_protocol_versions"`) {
-		t.Error("expected JSON to contain \"container_protocol_versions\"")
+	if !strings.Contains(s, `"protocol_versions"`) {
+		t.Error("expected JSON to contain \"protocol_versions\"")
+	}
+	// Should NOT contain legacy top-level "image" or "container_protocol_versions"
+	if strings.Contains(s, `"container_protocol_versions"`) {
+		t.Error("unexpected legacy \"container_protocol_versions\" in JSON")
 	}
 
 	var got HostedAgentDefinition
@@ -181,11 +187,45 @@ func TestHostedAgentDefinition_ContainerImage_RoundTrip(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	if got.Image != original.Image {
-		t.Errorf("Image = %q, want %q", got.Image, original.Image)
+	if got.ContainerConfiguration == nil || got.ContainerConfiguration.Image != original.ContainerConfiguration.Image {
+		t.Errorf("ContainerConfiguration.Image = %v, want %q", got.ContainerConfiguration, original.ContainerConfiguration.Image)
 	}
 	if got.CPU != "0.5" {
 		t.Errorf("CPU = %q, want %q", got.CPU, "0.5")
+	}
+}
+
+func TestHostedAgentDefinition_LegacyUnmarshal(t *testing.T) {
+	t.Parallel()
+
+	// Simulate legacy API response with old schema
+	legacyJSON := `{
+		"kind": "hosted",
+		"image": "myregistry.azurecr.io/agent:latest",
+		"container_protocol_versions": [{"protocol": "responses", "version": "1.0.0"}],
+		"cpu": "0.5",
+		"memory": "1Gi"
+	}`
+
+	var got HostedAgentDefinition
+	if err := json.Unmarshal([]byte(legacyJSON), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// Legacy image should be migrated to container_configuration
+	if got.ContainerConfiguration == nil {
+		t.Fatal("expected ContainerConfiguration to be set from legacy image field")
+	}
+	if got.ContainerConfiguration.Image != "myregistry.azurecr.io/agent:latest" {
+		t.Errorf("ContainerConfiguration.Image = %q, want %q", got.ContainerConfiguration.Image, "myregistry.azurecr.io/agent:latest")
+	}
+	// Legacy image field should be cleared
+	if got.Image != "" {
+		t.Errorf("legacy Image field should be cleared, got %q", got.Image)
+	}
+	// Legacy container_protocol_versions should be migrated to protocol_versions
+	if len(got.ProtocolVersions) != 1 || got.ProtocolVersions[0].Protocol != AgentProtocolResponses {
+		t.Errorf("ProtocolVersions not migrated from legacy container_protocol_versions: %+v", got.ProtocolVersions)
 	}
 }
 

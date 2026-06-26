@@ -440,7 +440,9 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		CPU:                  cpu,
 		Memory:               memory,
 		EnvironmentVariables: envVars,
-		Image:                imageURL,
+		ContainerConfiguration: &agent_api.ContainerConfigurationAPI{
+			Image: imageURL,
+		},
 	}
 
 	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageDef,

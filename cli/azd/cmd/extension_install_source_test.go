@@ -275,6 +275,21 @@ func TestResolveSourceLocation_ExistingUrlLocationReused(t *testing.T) {
 	require.Equal(t, 1, matches)
 }
 
+func TestResolveSourceLocation_ExistingUrlLocationReusedWithTrailingSlash(t *testing.T) {
+	t.Parallel()
+
+	action, _ := newBundleInstallTestAction(t)
+	require.NoError(t, action.sourceManager.Add(t.Context(), "myreg", &extensions.SourceConfig{
+		Name:     "myreg",
+		Type:     extensions.SourceKindUrl,
+		Location: "https://example.com/registry.json",
+	}))
+
+	action.flags.source = "https://example.com/registry.json/"
+	require.NoError(t, action.resolveSourceLocation(t.Context()))
+	require.Equal(t, "myreg", action.flags.source)
+}
+
 func TestResolveSourceLocation_ExistingFileLocationReusedFromRelativePath(t *testing.T) {
 	registryPath := writeRegistryFile(t)
 	dir := filepath.Dir(registryPath)
@@ -338,6 +353,28 @@ func TestResolveSourceLocation_UrlAcceptedRegistersSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, extensions.SourceKindUrl, src.Type)
 	require.Equal(t, "https://example.com/registry.json", src.Location)
+}
+
+func TestResolveSourceLocation_UnsupportedSchemaReturnsSuggestion(t *testing.T) {
+	t.Parallel()
+
+	action, mockContext := newInstallSourceTestAction(t)
+	mockContext.HttpClient.When(func(req *http.Request) bool {
+		return req.URL.String() == "https://example.com/registry.json"
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, extensions.Registry{
+			SchemaVersion: "2.0",
+		})
+	})
+
+	mockContext.Console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
+	mockContext.Console.WhenPrompt(func(input.ConsoleOptions) bool { return true }).Respond("example-registry")
+
+	action.flags.source = "https://example.com/registry.json"
+	err := action.resolveSourceLocation(t.Context())
+	require.Error(t, err)
+	require.ErrorAs(t, err, new(*internal.ErrorWithSuggestion))
+	require.ErrorAs(t, err, new(*extensions.ErrUnsupportedRegistrySchema))
 }
 
 func TestResolveSourceLocation_NoPromptFileDirectsToSourceAdd(t *testing.T) {

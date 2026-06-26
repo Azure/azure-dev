@@ -13,6 +13,7 @@ import (
 	"log"
 	"maps"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -167,6 +168,9 @@ Use --output json for a structured report of all upgrade results.`,
 		Command: &cobra.Command{
 			Use:   "add",
 			Short: "Add an extension source with the specified name",
+			Long: "Add an extension source with the specified name.\n\n" +
+				"`azd extension install --source` and `azd extension upgrade --source` also accept " +
+				"a registry URL or file path directly.",
 		},
 		ActionResolver: newExtensionSourceAddAction,
 		FlagsResolver:  newExtensionSourceAddFlags,
@@ -262,27 +266,22 @@ type extensionListItem struct {
 }
 
 func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.ExtensionSourceKind.String(sourceArgKind(a.flags.source)))
 	options := &extensions.FilterOptions{
 		Source: a.flags.source,
 		Tags:   a.flags.tags,
 	}
 
-	sourceConfig, err := resolveReadOnlySourceFilter(ctx, a.sourceManager, a.flags.source)
+	sourceFilter, err := resolveSourceFilter(ctx, a.sourceManager, a.flags.source)
 	if err != nil {
 		return nil, err
 	}
-	if sourceConfig != nil {
-		options.SourceConfig = sourceConfig
+	options.Source = sourceFilter.source
+	if sourceFilter.config != nil {
+		options.SourceConfig = sourceFilter.config
 		options.Source = ""
-	} else if options.Source != "" {
-		resolvedSource, ok, err := resolveRegisteredSourceName(ctx, a.sourceManager, options.Source)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return nil, fmt.Errorf("extension source '%s' not found: %w", options.Source, extensions.ErrSourceNotFound)
-		}
-		options.Source = resolvedSource
+	} else if options.Source != "" && !sourceFilter.registered {
+		return nil, fmt.Errorf("extension source '%s' not found: %w", a.flags.source, extensions.ErrSourceNotFound)
 	}
 
 	registryExtensions, err := a.extensionManager.FindExtensions(ctx, options)
@@ -719,6 +718,7 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 }
 
 func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.ExtensionSourceKind.String(sourceArgKind(a.flags.source)))
 	if len(a.args) == 0 {
 		return nil, &internal.ErrorWithSuggestion{
 			Err:        internal.ErrNoArgsProvided,
@@ -737,21 +737,17 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 		Id:     extensionId,
 	}
 
-	sourceConfig, err := resolveReadOnlySourceFilter(ctx, a.sourceManager, a.flags.source)
+	sourceFilter, err := resolveSourceFilter(ctx, a.sourceManager, a.flags.source)
 	if err != nil {
 		return nil, err
 	}
-	if sourceConfig != nil {
-		filterOptions.SourceConfig = sourceConfig
+	filterOptions.Source = sourceFilter.source
+	if sourceFilter.config != nil {
+		filterOptions.SourceConfig = sourceFilter.config
 		filterOptions.Source = ""
-	} else if filterOptions.Source != "" {
-		resolvedSource, ok, err := resolveRegisteredSourceName(ctx, a.sourceManager, filterOptions.Source)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			filterOptions.Source = resolvedSource
-		}
+	} else if filterOptions.Source != "" && !sourceFilter.registered {
+		return nil, fmt.Errorf(
+			"extension source '%s' not found: %w", a.flags.source, extensions.ErrSourceNotFound)
 	}
 
 	extensionMatches, err := a.extensionManager.FindExtensions(ctx, filterOptions)
@@ -863,6 +859,7 @@ func newExtensionInstallAction(
 }
 
 func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	sourceKind := sourceArgKind(a.flags.source)
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title:     "Install an azd extension (azd extension install)",
 		TitleNote: "Installs the specified extension onto the local machine",
@@ -879,6 +876,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		}
 		defer a.cleanupBundleInstall(ctx)
 	}
+	tracing.SetUsageAttributes(fields.ExtensionSourceKind.String(sourceKind))
 
 	extensionIds := a.args
 	if len(extensionIds) == 0 {
@@ -1452,25 +1450,16 @@ func registerSourceFromLocation(
 		return source, nil
 	}
 
-	resolvedSource, ok, err := resolveRegisteredSourceName(ctx, sourceManager, source)
+	sourceFilter, err := resolveSourceFilter(ctx, sourceManager, source)
 	if err != nil {
 		return "", err
 	}
-	if ok {
-		return resolvedSource, nil
+	if sourceFilter.config == nil {
+		return sourceFilter.source, nil
 	}
 
-	location := source
-	kind, ok := inferSourceKind(location)
-	if !ok {
-		return source, nil
-	}
-
-	if kind == extensions.SourceKindFile {
-		if abs, err := filepath.Abs(location); err == nil {
-			location = abs
-		}
-	}
+	location := sourceFilter.config.Location
+	kind := sourceFilter.config.Type
 
 	existing, err := findSourceByLocation(ctx, sourceManager, kind, location)
 	if err != nil {
@@ -1552,6 +1541,9 @@ func registerSourceFromLocation(
 
 	if _, err := sourceManager.CreateSource(ctx, sourceConfig); err != nil {
 		console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+		if schemaErr, ok := errors.AsType[*extensions.ErrUnsupportedRegistrySchema](err); ok {
+			return "", extensions.NewUnsupportedRegistrySchemaError(schemaErr)
+		}
 		return "", fmt.Errorf("failed to validate extension source: %w", err)
 	}
 
@@ -1622,7 +1614,7 @@ func findSourceByLocation(
 func locationsEqual(kind extensions.SourceKind, a, b string) bool {
 	switch kind {
 	case extensions.SourceKindUrl:
-		return strings.EqualFold(a, b)
+		return strings.EqualFold(normalizeUrlLocation(a), normalizeUrlLocation(b))
 	case extensions.SourceKindFile:
 		a = filepath.Clean(absPath(a))
 		b = filepath.Clean(absPath(b))
@@ -1643,6 +1635,17 @@ func absPath(path string) string {
 	return path
 }
 
+func normalizeUrlLocation(location string) string {
+	parsed, err := url.Parse(location)
+	if err != nil {
+		return location
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	return parsed.String()
+}
+
 func validateSourceName(name string) error {
 	if strings.Contains(name, ".") {
 		return errors.New("Extension source name cannot contain '.'")
@@ -1656,28 +1659,42 @@ func validateSourceName(name string) error {
 	return nil
 }
 
-// resolveReadOnlySourceFilter returns a temporary source config for read-only
-// commands when --source is a registry location. Registered names return nil.
-func resolveReadOnlySourceFilter(
+func sourceArgKind(source string) string {
+	if source == "" {
+		return "none"
+	}
+	if _, ok := inferSourceKind(source); ok {
+		return "location"
+	}
+	return "registered"
+}
+
+type sourceFilterResolution struct {
+	source     string
+	config     *extensions.SourceConfig
+	registered bool
+}
+
+func resolveSourceFilter(
 	ctx context.Context,
 	sourceManager *extensions.SourceManager,
 	source string,
-) (*extensions.SourceConfig, error) {
+) (sourceFilterResolution, error) {
 	if source == "" {
-		return nil, nil
+		return sourceFilterResolution{}, nil
 	}
 
-	_, ok, err := resolveRegisteredSourceName(ctx, sourceManager, source)
+	resolvedSource, ok, err := resolveRegisteredSourceName(ctx, sourceManager, source)
 	if err != nil {
-		return nil, err
+		return sourceFilterResolution{}, err
 	}
 	if ok {
-		return nil, nil
+		return sourceFilterResolution{source: resolvedSource, registered: true}, nil
 	}
 
 	kind, ok := inferSourceKind(source)
 	if !ok {
-		return nil, nil
+		return sourceFilterResolution{source: source}, nil
 	}
 
 	location := source
@@ -1685,10 +1702,12 @@ func resolveReadOnlySourceFilter(
 		location = absPath(location)
 	}
 
-	return &extensions.SourceConfig{
-		Name:     location,
-		Type:     kind,
-		Location: location,
+	return sourceFilterResolution{
+		config: &extensions.SourceConfig{
+			Name:     location,
+			Type:     kind,
+			Location: location,
+		},
 	}, nil
 }
 
@@ -1872,6 +1891,7 @@ func newExtensionUpgradeAction(
 func (a *extensionUpgradeAction) Run(
 	ctx context.Context,
 ) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.ExtensionSourceKind.String(sourceArgKind(a.flags.source)))
 	if len(a.args) > 0 && a.flags.all {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(

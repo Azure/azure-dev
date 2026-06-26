@@ -30,7 +30,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -459,15 +458,7 @@ func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([
 		source, err := m.sourceManager.CreateSource(ctx, options.SourceConfig)
 		if err != nil {
 			if schemaErr, ok := errors.AsType[*ErrUnsupportedRegistrySchema](err); ok {
-				return nil, &errorhandler.ErrorWithSuggestion{
-					Err:        schemaErr,
-					Message:    schemaErr.Error(),
-					Suggestion: "Upgrade azd to the latest version to use this registry",
-					Links: []errorhandler.ErrorLink{{
-						URL:   "https://aka.ms/azd/install",
-						Title: "Install/upgrade azd",
-					}},
-				}
+				return nil, NewUnsupportedRegistrySchemaError(schemaErr)
 			}
 			return nil, fmt.Errorf("failed initializing extension source: %w", err)
 		}
@@ -1303,16 +1294,7 @@ func (tm *Manager) createSourcesFromConfig(
 	// Only hard-fail when every source had an incompatible schema and
 	// no usable sources remain.
 	if len(sources) == 0 && len(schemaErrors) > 0 {
-		return nil, &errorhandler.ErrorWithSuggestion{
-			Err:     schemaErrors[0],
-			Message: schemaErrors[0].Error(),
-			Suggestion: "Upgrade azd to the latest version " +
-				"to use this registry",
-			Links: []errorhandler.ErrorLink{{
-				URL:   "https://aka.ms/azd/install",
-				Title: "Install/upgrade azd",
-			}},
-		}
+		return nil, NewUnsupportedRegistrySchemaError(schemaErrors[0])
 	}
 
 	return sources, nil

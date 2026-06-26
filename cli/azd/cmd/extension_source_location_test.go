@@ -261,6 +261,29 @@ func TestExtensionShow_NormalizedRegisteredSourceName(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestExtensionShow_UnknownRegisteredNameErrors(t *testing.T) {
+	t.Parallel()
+
+	_, manager, sourceManager := newSourceLocationTestManager(t)
+
+	action := &extensionShowAction{
+		args: []string{"test.ext"},
+		flags: &extensionShowFlags{
+			source: "not-a-registered-source",
+			global: &internal.GlobalCommandOptions{},
+		},
+		console:          mocks.NewMockContext(t.Context()).Console,
+		formatter:        &output.NoneFormatter{},
+		writer:           &bytes.Buffer{},
+		sourceManager:    sourceManager,
+		extensionManager: manager,
+	}
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.ErrorIs(t, err, extensions.ErrSourceNotFound)
+}
+
 func TestExtensionUpgrade_UrlSourceRegistersSource(t *testing.T) {
 	t.Parallel()
 

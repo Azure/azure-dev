@@ -167,6 +167,13 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		kvUpdates := fields.ToolCheckUpdatesAvailableKey.Int(3)
 		require.Equal(t, "tool.check.updates_available", string(kvUpdates.Key))
 	})
+
+	t.Run("ExtensionFields", func(t *testing.T) {
+		t.Parallel()
+		kv := fields.ExtensionSourceKind.String("location")
+		require.Equal(t, "extension.source.kind", string(kv.Key))
+		require.Equal(t, "location", kv.Value.AsString())
+	})
 }
 
 // TestCommandTelemetryCoverage ensures every user-facing command is explicitly categorized
@@ -189,24 +196,28 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 	// When adding a command here, ensure the command's action sets at least one
 	// command-specific attribute (e.g., auth.method, config.operation, env.operation).
 	commandsWithSpecificTelemetry := []string{
-		"auth login",      // auth.method
-		"build",           // (via hooks middleware)
-		"deploy",          // infra.provider, service attributes (via hooks middleware)
-		"down",            // infra.provider (via hooks middleware)
-		"env list",        // env.count
-		"hooks run",       // hooks.name, hooks.type
-		"infra generate",  // infra.provider
-		"init",            // init.method, appinit.* fields
-		"package",         // (via hooks middleware)
-		"pipeline config", // pipeline.provider, pipeline.auth
-		"provision",       // infra.provider (via hooks middleware)
-		"restore",         // (via hooks middleware)
-		"tool check",      // tool.check.updates_available
-		"tool install",    // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
-		"tool show",       // tool.id
-		"tool upgrade",    // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.upgrade.* versions
-		"up",              // infra.provider (via hooks middleware, composes provision+deploy)
-		"update",          // update.* fields
+		"auth login",        // auth.method
+		"build",             // (via hooks middleware)
+		"deploy",            // infra.provider, service attributes (via hooks middleware)
+		"down",              // infra.provider (via hooks middleware)
+		"env list",          // env.count
+		"extension install", // extension.source.kind
+		"extension list",    // extension.source.kind
+		"extension show",    // extension.source.kind
+		"extension upgrade", // extension.source.kind + extension upgrade spans
+		"hooks run",         // hooks.name, hooks.type
+		"infra generate",    // infra.provider
+		"init",              // init.method, appinit.* fields
+		"package",           // (via hooks middleware)
+		"pipeline config",   // pipeline.provider, pipeline.auth
+		"provision",         // infra.provider (via hooks middleware)
+		"restore",           // (via hooks middleware)
+		"tool check",        // tool.check.updates_available
+		"tool install",      // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
+		"tool show",         // tool.id
+		"tool upgrade",      // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.upgrade.* versions
+		"up",                // infra.provider (via hooks middleware, composes provision+deploy)
+		"update",            // update.* fields
 	}
 
 	// Commands that rely ONLY on global middleware telemetry (command name, flags,

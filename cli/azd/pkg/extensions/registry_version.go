@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 )
 
 // ErrUnsupportedRegistrySchema is returned when the registry schema version
@@ -24,6 +25,20 @@ func (e *ErrUnsupportedRegistrySchema) Error() string {
 		"registry schema version %s is not supported (max supported: %s)",
 		e.SchemaVersion, e.MaxSupportedVersion,
 	)
+}
+
+// NewUnsupportedRegistrySchemaError wraps an ErrUnsupportedRegistrySchema in an
+// ErrorWithSuggestion that guides the user to upgrade azd.
+func NewUnsupportedRegistrySchemaError(schemaErr *ErrUnsupportedRegistrySchema) error {
+	return &errorhandler.ErrorWithSuggestion{
+		Err:        schemaErr,
+		Message:    schemaErr.Error(),
+		Suggestion: "Upgrade azd to the latest version to use this registry",
+		Links: []errorhandler.ErrorLink{{
+			URL:   "https://aka.ms/azd/install",
+			Title: "Install/upgrade azd",
+		}},
+	}
 }
 
 // CheckRegistrySchemaVersion validates that the given schema version

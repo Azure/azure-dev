@@ -121,10 +121,10 @@ func TestBuildDeployDefinition_PreservesFieldsAndOverridesEnvVars(t *testing.T) 
 
 func TestBuildDeployDefinition_NormalizesProtocolVersion(t *testing.T) {
 	currentDef := map[string]any{
-		"kind":   "hosted",
+		"kind":                    "hosted",
 		"container_configuration": map[string]any{"image": "myimage:latest"},
-		"cpu":    "1.0",
-		"memory": "2Gi",
+		"cpu":                     "1.0",
+		"memory":                  "2Gi",
 		"container_protocol_versions": []any{
 			map[string]any{"protocol": "responses", "version": "v1"},
 		},

@@ -410,11 +410,12 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 			r.enter()
 		}
 
-	// Subscription — the extension prints "Select an Azure subscription to ..."
-	// (init.go:1709 etc.) before the azd-core picker. Match the full preamble,
-	// not the bare word, so an unrelated prompt mentioning a subscription can't
-	// match by accident.
-	case has("select an azure subscription"):
+	// Subscription — the extension prints a descriptive preamble via fmt.Println
+	// (init.go:1709 etc.), but that line isn't the survey "?" line activePrompt
+	// reads. ensureSubscription passes an empty request, so the picker shows
+	// azd-core's default message "Select subscription" (prompt_service.go:507) —
+	// match that, not the preamble.
+	case has("select subscription"):
 		if sub := os.Getenv("E2E_SUBSCRIPTION"); sub != "" {
 			r.selectByText(sub[:min(8, len(sub))])
 		} else {

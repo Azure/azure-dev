@@ -347,6 +347,116 @@ services:
 	}
 }
 
+func TestBrownfieldDeployments(t *testing.T) {
+	tests := []struct {
+		name        string
+		yaml        string
+		serviceName string
+
+		wantErr     error
+		wantLen     int
+		wantName0   string
+		wantVersion string
+	}{
+		{
+			name: "endpoint set with deployments returns them",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.project
+    endpoint: https://existing.services.ai.azure.com/api/projects/p1
+    deployments:
+      - name: gpt-4.1-mini-new
+        model: {format: OpenAI, name: gpt-4.1-mini, version: "2025-04-14"}
+        sku: {capacity: 10, name: GlobalStandard}
+`,
+			serviceName: "my-project",
+			wantLen:     1,
+			wantName0:   "gpt-4.1-mini-new",
+			wantVersion: "2025-04-14",
+		},
+		{
+			name: "endpoint set, multiple deployments",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.project
+    endpoint: https://existing.services.ai.azure.com/api/projects/p1
+    deployments:
+      - name: gpt-4.1
+        model: {format: OpenAI, name: gpt-4.1, version: "2025-04-14"}
+        sku: {capacity: 50, name: GlobalStandard}
+      - name: text-embedding-3-large
+        model: {format: OpenAI, name: text-embedding-3-large, version: "1"}
+        sku: {capacity: 120, name: Standard}
+`,
+			serviceName: "my-project",
+			wantLen:     2,
+			wantName0:   "gpt-4.1",
+		},
+		{
+			name: "endpoint set, no deployments => nil",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.project
+    endpoint: https://existing.services.ai.azure.com/api/projects/p1
+`,
+			serviceName: "my-project",
+			wantLen:     0,
+		},
+		{
+			name: "service not found",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.project
+    endpoint: https://existing.services.ai.azure.com/api/projects/p1
+`,
+			serviceName: "nope",
+			wantErr:     ErrServiceNotFound,
+		},
+		{
+			name:        "empty service name",
+			yaml:        "services: {}",
+			serviceName: "",
+			wantErr:     nil, // returns a non-typed error; asserted below
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := BrownfieldDeployments([]byte(tt.yaml), tt.serviceName)
+
+			if tt.serviceName == "" {
+				require.Error(t, err)
+				return
+			}
+			if tt.wantErr != nil {
+				require.Error(t, err)
+				assert.True(t, errors.Is(err, tt.wantErr), "got %v, want %v", err, tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Len(t, got, tt.wantLen)
+			if tt.wantName0 != "" {
+				require.NotEmpty(t, got)
+				assert.Equal(t, tt.wantName0, got[0].Name)
+			}
+			if tt.wantVersion != "" {
+				require.NotEmpty(t, got)
+				assert.Equal(t, tt.wantVersion, got[0].Model.Version)
+			}
+		})
+	}
+}
+
+func TestBrownfieldDeployments_EmptyRaw(t *testing.T) {
+	_, err := BrownfieldDeployments(nil, "my-project")
+	require.Error(t, err)
+}
+
 func TestSynthesize_NetworkPreserveVarRefs(t *testing.T) {
 	// Eject path: ${VAR} references must pass through verbatim (and skip the
 	// format checks that cannot run on an unexpanded placeholder), so the

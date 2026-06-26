@@ -225,6 +225,37 @@ func Synthesize(in Input) (*Result, error) {
 	}, nil
 }
 
+// BrownfieldDeployments returns the model deployments declared on a brownfield
+// (endpoint:) Foundry project service. Synthesize short-circuits with
+// ErrEndpointBrownfield before reading deployments:, so the provider uses this
+// to learn which model deployments to create on the existing account. Returns
+// nil (not an error) when the service declares no deployments.
+func BrownfieldDeployments(raw []byte, serviceName string) ([]Deployment, error) {
+	if len(raw) == 0 {
+		return nil, errors.New("synthesis: raw azure.yaml is empty")
+	}
+	if serviceName == "" {
+		return nil, errors.New("synthesis: serviceName is empty")
+	}
+
+	var root projectFile
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return nil, fmt.Errorf("parse azure.yaml: %w", err)
+	}
+
+	node, ok := root.Services[serviceName]
+	if !ok {
+		return nil, ErrServiceNotFound
+	}
+
+	var svc projectService
+	if err := node.Decode(&svc); err != nil {
+		return nil, fmt.Errorf("decode service %q: %w", serviceName, err)
+	}
+
+	return svc.Deployments, nil
+}
+
 // deriveIncludeAcr reports whether provisioning should create an ACR. In the split
 // azure.yaml shape, project provisioning reads the azure.ai.project service while
 // Docker build settings live on sibling azure.ai.agent services. Until ACR gets a

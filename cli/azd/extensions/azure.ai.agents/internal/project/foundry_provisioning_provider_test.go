@@ -869,6 +869,47 @@ func TestBrownfieldOutputs(t *testing.T) {
 	assert.Equal(t, "my-project", outputs["AZURE_AI_PROJECT_NAME"].Value)
 }
 
+func TestDefaultResourceGroupName(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "rg-dev", defaultResourceGroupName("dev"))
+	assert.Equal(t, "rg-my-env", defaultResourceGroupName("my-env"))
+}
+
+func TestWithTenantOutput(t *testing.T) {
+	t.Parallel()
+
+	t.Run("adds AZURE_TENANT_ID and preserves existing outputs", func(t *testing.T) {
+		p := &FoundryProvisioningProvider{tenantID: "tenant-123"}
+		out := p.withTenantOutput(map[string]*azdext.ProvisioningOutputParameter{
+			"FOUNDRY_PROJECT_ENDPOINT": {Type: "string", Value: "https://x"},
+		})
+		require.Contains(t, out, envKeyTenantID)
+		assert.Equal(t, "tenant-123", out[envKeyTenantID].Value)
+		assert.Equal(t, "https://x", out["FOUNDRY_PROJECT_ENDPOINT"].Value)
+	})
+
+	t.Run("initializes a nil map", func(t *testing.T) {
+		p := &FoundryProvisioningProvider{tenantID: "t"}
+		out := p.withTenantOutput(nil)
+		require.Contains(t, out, envKeyTenantID)
+		assert.Equal(t, "t", out[envKeyTenantID].Value)
+	})
+
+	t.Run("no-op when tenant not resolved", func(t *testing.T) {
+		p := &FoundryProvisioningProvider{}
+		out := p.withTenantOutput(map[string]*azdext.ProvisioningOutputParameter{})
+		assert.NotContains(t, out, envKeyTenantID)
+	})
+
+	t.Run("does not overwrite an existing tenant output", func(t *testing.T) {
+		p := &FoundryProvisioningProvider{tenantID: "from-provider"}
+		out := p.withTenantOutput(map[string]*azdext.ProvisioningOutputParameter{
+			envKeyTenantID: {Type: "string", Value: "from-template"},
+		})
+		assert.Equal(t, "from-template", out[envKeyTenantID].Value)
+	})
+}
+
 func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
 	t.Parallel()
 	// envValues must always include the canonical AZURE_* keys

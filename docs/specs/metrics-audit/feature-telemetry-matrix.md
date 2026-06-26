@@ -32,7 +32,7 @@ These commands emit attributes or events beyond the global middleware span.
 | `update` | `update.installMethod`, `update.channel`, `update.fromVersion`, `update.toVersion`, `update.result` | Result codes cover success, failure, and skip reasons |
 | Extensions (dynamic) | `extension.id`, `extension.version`, `extension.version.from`, `extension.version.to`, `extension.source`, `extension.source.from`, `extension.source.to`, `extension.dependency_of`, `extension.dependency_upgrade_count`, `extension.upgrade.outcome`, `extension.upgrade.duration_ms` + trace-context propagation to child process | Covers `ext.run`, `ext.install`, `ext.upgrade`, `ext.promote` events; upgrade/promote spans set source and dependency attributes |
 | `mcp start` | Per-tool spans via `tracing.Start` with `mcp.client.name`, `mcp.client.version` | MCP event prefix `mcp.*` |
-| `tool install` / `tool upgrade` / `tool check` / `tool list` / `tool show` | `tool.id`, `tool.ids`, `tool.dry_run`, `tool.install.strategy`, `tool.install.success`, `tool.install.success_count`, `tool.install.failure_count`, `tool.install.failed_ids`, `tool.install.duration_ms`, `tool.upgrade.from_version`, `tool.upgrade.to_version`, `tool.check.updates_available` | Comprehensive coverage in `cli/azd/cmd/tool.go`; install/upgrade emit `tools.pack.build` spans for pack-based tools |
+| `tool install` / `tool upgrade` / `tool uninstall` / `tool check` / `tool list` / `tool show` | `tool.id`, `tool.ids`, `tool.dry_run`, `tool.install.strategy`, `tool.install.success`, `tool.install.success_count`, `tool.install.failure_count`, `tool.install.failed_ids`, `tool.install.duration_ms`, `tool.upgrade.from_version`, `tool.upgrade.to_version`, `tool.check.updates_available` | Comprehensive coverage in `cli/azd/cmd/tool.go`; install/upgrade emit `tools.pack.build` spans for pack-based tools |
 | `copilot` (agent) | `copilot.initialize` event (model + reasoning config), `copilot.session` event (session create/resume) | Emitted from `internal/agent/copilot_agent.go`; covers the experimental copilot agent surface |
 | `provision` | `validation.preflight` event (preflight outcome + 5 fields), 8 `arm.*` events (subscription / resource-group deploy / stack-deploy / what-if / validate), `aks.postprovision.skip`, per-layer `provision.layer.*` counts (`count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count`) when multi-layer infra is used | Telemetry added across `internal/cmd/provision_*.go` and the ARM deployment client |
 | `deploy` / `publish` / `package` | `deploy.appservice.zip` event (zip-deploy outcome), `container.credentials` / `container.publish` / `container.remotebuild` events for container-based services | Per-service-target instrumentation; container events emitted from container-app and ACR push paths |
@@ -99,6 +99,7 @@ These commands emit attributes or events beyond the global middleware span.
 | `tool list` | — | ✅ | ✅ | ❌ | `tool.ids` listed for visibility into per-row outputs |
 | `tool install` | — | ✅ | ✅ | ✅ | `tool.id`, `tool.install.strategy`, `tool.install.success`, `tool.install.success_count`, `tool.install.failure_count`, `tool.install.failed_ids`, `tool.install.duration_ms`, `tool.dry_run`; `tools.pack.build` for pack-based tools |
 | `tool upgrade` | — | ✅ | ✅ | ✅ | All `tool.install.*` plus `tool.upgrade.from_version`, `tool.upgrade.to_version` |
+| `tool uninstall` | — | ✅ | ✅ | ✅ | `tool.id`/`tool.ids`, `tool.dry_run`, and the `tool.install.*` aggregate/per-tool fields (no version fields) |
 | `tool check` | — | ✅ | ✅ | ❌ | `tool.check.updates_available` (count) |
 | `tool show` | — | ✅ | ✅ | ❌ | `tool.id` |
 | **Copilot (Agent)** | | | | | |
@@ -123,7 +124,7 @@ command-specific telemetry fields provide analytical value beyond the command na
 | Pipeline auth | `pipeline.auth` | `pipeline config` | Distinguishes federated vs client-credentials |
 | Infra provider | `infra.provider` | `infra generate`, `infra synth` | Distinguishes Bicep vs Terraform |
 | Tool ID | `tool.id` / `tool.ids` | `tool *` | Identifies which managed tool (e.g., bicep, gh, kubectl) the command acted on |
-| Tool install metrics | `tool.install.*` | `tool install`, `tool upgrade`, first-run middleware | Success count, failure count, duration, strategy — quantitative install health |
+| Tool install metrics | `tool.install.*` | `tool install`, `tool upgrade`, `tool uninstall`, first-run middleware | Success count, failure count, duration, strategy — quantitative install health |
 | Tool upgrade versions | `tool.upgrade.from_version`, `tool.upgrade.to_version` | `tool upgrade` | Tracks adoption of new tool versions |
 | Preflight outcome | `validation.preflight.outcome` (+ peer fields) | `provision` | Distinguishes passed / warnings-accepted / aborted local validation |
 | ARM deployment events | `arm.deploy.*`, `arm.stack.deploy.*`, `arm.whatif.*`, `arm.validate.*` | `provision` | Distinguishes deployment scope (subscription vs resource-group) and operation kind (deploy / stack / what-if / validate) |

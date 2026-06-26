@@ -510,7 +510,7 @@ func (i *installer) resolveSkillUninstallTargets(
 	hosts []string,
 ) ([]SkillHost, error) {
 	if len(hosts) > 0 {
-		return i.explicitSkillHostTargets(tool, hosts)
+		return i.explicitSkillHostTargets(ctx, tool, hosts)
 	}
 
 	// Default / --host all: remove from every host the skill is
@@ -1026,28 +1026,30 @@ func (i *installer) resolveSkillTargets(
 		return []SkillHost{host}, nil
 	}
 
-	return i.explicitSkillHostTargets(tool, hosts)
+	return i.explicitSkillHostTargets(ctx, tool, hosts)
 }
 
 // explicitSkillHostTargets resolves an explicit list of requested host
 // names to their [SkillHost] definitions. A requested host is usable only
-// when it is a configured SkillHost that is also on PATH; both an unknown
-// name and a known-but-not-on-PATH host fail with an error naming the
+// when it is a configured SkillHost that is also a functional CLI on PATH
+// (see [installer.hostUsable]); an unknown name, a host not on PATH, and a
+// host present only as a launcher stub all fail with an error naming the
 // supported hosts. Shared by the install/upgrade (resolveSkillTargets) and
 // uninstall (resolveSkillUninstallTargets) paths so the host-availability
 // rule lives in one place.
 func (i *installer) explicitSkillHostTargets(
+	ctx context.Context,
 	tool *ToolDefinition,
 	hosts []string,
 ) ([]SkillHost, error) {
 	targets := make([]SkillHost, 0, len(hosts))
 	for _, name := range hosts {
 		// A requested host is usable only if it is a configured SkillHost
-		// that is also on PATH. "unknown name" and "known but not on PATH"
-		// both mean the host can't be used, so we point the user at the
-		// supported hosts.
+		// that is a functional CLI on PATH. "unknown name", "not on PATH"
+		// and "present but a launcher stub" all mean the host can't be
+		// used, so we point the user at the supported hosts.
 		host, ok := findSkillHost(tool, name)
-		if !ok || i.commandRunner.ToolInPath(name) != nil {
+		if !ok || !i.hostUsable(ctx, host) {
 			supported := make([]string, len(tool.SkillHosts))
 			for j, h := range tool.SkillHosts {
 				supported[j] = h.Host

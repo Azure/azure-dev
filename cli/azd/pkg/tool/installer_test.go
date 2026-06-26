@@ -2300,6 +2300,72 @@ func TestRunSkill_ExplicitHostNotPresent_Errors(t *testing.T) {
 	assert.Contains(t, result.Error.Error(), "claude")
 }
 
+// TestRunSkill_Install_ExplicitStubHost_Rejected is a regression guard for
+// the explicit `--host` path: a host requested by name that is present on
+// PATH only as a launcher stub (not a functional CLI) must be rejected the
+// same way the default / `--host all` path rejects it. explicitSkillHostTargets
+// uses [installer.hostUsable] (a version probe), not a bare PATH-existence
+// check, so the stub fails with "not available" instead of being driven
+// through an install flow that would later surface "verification failed".
+func TestRunSkill_Install_ExplicitStubHost_Rejected(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	// copilot is on PATH but is a launcher stub; claude is not on PATH.
+	runner.MockToolInPath("copilot", nil)
+	runner.MockToolInPath("claude", errors.New("not found"))
+	runner.MockToolInPath("node", nil)
+
+	// The stub answers `copilot --version` with its install prompt instead
+	// of a version banner, and exits 0. Record that the probe ran so the
+	// test fails loudly if mock precedence ever let a version-shaped
+	// response through instead.
+	var stubVersionProbed bool
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" && slices.Contains(args.Args, "--version")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		stubVersionProbed = true
+		return exec.RunResult{
+			Stdout:   "Install GitHub Copilot CLI? ['y/N']",
+			Stderr:   "Cannot find GitHub Copilot CLI (https://docs.github.com/copilot)",
+			ExitCode: 0,
+		}, nil
+	})
+
+	// Fail if any plugin command is attempted through the stub.
+	var attemptedInstall bool
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "copilot" &&
+			(slices.Contains(args.Args, "install") ||
+				slices.Contains(args.Args, "marketplace") ||
+				slices.Contains(args.Args, "list"))
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		attemptedInstall = true
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	inst := NewInstaller(
+		runner, NewPlatformDetector(runner), installedDetector("1.1.70"),
+	)
+
+	result, err := inst.Install(
+		t.Context(), newSkillTool(), WithHosts("copilot"),
+	)
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+
+	// The explicit host is rejected up front, naming the requested host —
+	// not driven through an install that fails verification.
+	assert.Contains(t, result.Error.Error(), "not available")
+	assert.Contains(t, result.Error.Error(), "copilot")
+	assert.NotContains(t, result.Error.Error(), "verification failed")
+	assert.False(t, attemptedInstall,
+		"must not attempt to install through a non-functional launcher stub")
+	assert.True(t, stubVersionProbed,
+		"explicitSkillHostTargets must probe `copilot --version` via hostUsable")
+}
+
 // TestRunSkill_Upgrade_DetectError_Propagated verifies that a context
 // cancellation/timeout from DetectSkillHosts on the default upgrade path
 // is treated as fatal rather than silently falling back to a host.

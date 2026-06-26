@@ -505,9 +505,9 @@ func TestDetectTool_Skill_Copilot(t *testing.T) {
 }
 
 // TestDetectTool_Skill_Claude exercises detectSkill for the claude host.
-// claude's target-filtered `plugin list azure@azure-skills` echoes the
-// queried name even when the plugin is NOT installed, so the VersionRegex
-// match on the "Version:" line is the authoritative existence signal.
+// `claude plugin list` ignores a plugin-name argument, so detection lists
+// every plugin via `--json` and anchors the VersionRegex on the
+// azure@azure-skills entry; a listing without that entry is NOT installed.
 func TestDetectTool_Skill_Claude(t *testing.T) {
 	t.Parallel()
 
@@ -519,9 +519,9 @@ func TestDetectTool_Skill_Claude(t *testing.T) {
 			SkillHosts: []SkillHost{
 				{
 					Host:              "claude",
-					PluginListCommand: []string{"plugin", "list", "azure@azure-skills"},
+					PluginListCommand: []string{"plugin", "list", "--json"},
 					PluginName:        "azure@azure-skills",
-					VersionRegex:      `Version:\s*v?(\d+\.\d+\.\d+)`,
+					VersionRegex:      `"id":\s*"azure@azure-skills"[^}]*?"version":\s*"v?(\d+\.\d+\.\d+)"`,
 				},
 			},
 		}
@@ -534,18 +534,25 @@ func TestDetectTool_Skill_Claude(t *testing.T) {
 		expectVersion   string
 	}{
 		{
-			name: "Installed",
-			stdout: "❯ azure@azure-skills\n" +
-				"    Version: 1.1.70\n" +
-				"    Scope: user\n",
+			name:            "Installed",
+			stdout:          `[{"id":"azure@azure-skills","version":"1.1.70","scope":"user"}]`,
 			expectInstalled: true,
 			expectVersion:   "1.1.70",
 		},
 		{
-			// claude echoes the queried name even when not installed; the
-			// absence of a Version line means NOT installed.
-			name:            "EchoesNameButNotInstalled",
-			stdout:          "azure@azure-skills not found\n",
+			// The regex anchors on the azure@azure-skills id, so another
+			// plugin's version is never picked up.
+			name: "InstalledAmongOtherPlugins",
+			stdout: `[{"id":"other-skill@store","version":"2.0.0"},` +
+				`{"id":"azure@azure-skills","version":"1.1.70"}]`,
+			expectInstalled: true,
+			expectVersion:   "1.1.70",
+		},
+		{
+			// Not installed: the JSON lists other plugins but no
+			// azure@azure-skills entry.
+			name:            "NotInstalled",
+			stdout:          `[{"id":"other-skill@store","version":"2.0.0"}]`,
 			expectInstalled: false,
 			expectVersion:   "",
 		},
@@ -593,9 +600,9 @@ func TestDetectSkillHosts(t *testing.T) {
 				},
 				{
 					Host:              "claude",
-					PluginListCommand: []string{"plugin", "list", "azure@azure-skills"},
+					PluginListCommand: []string{"plugin", "list", "--json"},
 					PluginName:        "azure@azure-skills",
-					VersionRegex:      `Version:\s*v?(\d+\.\d+\.\d+)`,
+					VersionRegex:      `"id":\s*"azure@azure-skills"[^}]*?"version":\s*"v?(\d+\.\d+\.\d+)"`,
 				},
 			},
 		}
@@ -603,7 +610,7 @@ func TestDetectSkillHosts(t *testing.T) {
 
 	// installedOutput renders host stdout that reports the skill present.
 	copilotInstalled := "  • azure@azure-skills (v1.1.71)\n"
-	claudeInstalled := "❯ azure@azure-skills\n    Version: 1.1.71\n"
+	claudeInstalled := `[{"id":"azure@azure-skills","version":"1.1.71"}]`
 	notInstalled := "" // empty stdout => not installed
 
 	tests := []struct {

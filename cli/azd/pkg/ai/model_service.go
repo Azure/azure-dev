@@ -621,10 +621,25 @@ func (s *AiModelService) convertToAiModelsAt(
 
 	for loc, models := range rawByLocation {
 		for _, m := range models {
-			if m.Model == nil || m.Model.Name == nil || modelVersionDeprecated(m.Model, now) {
+			if m.Model == nil || m.Model.Name == nil {
 				continue
 			}
-			if len(statuses) > 0 && !slices.Contains(statuses, modelLifecycleStatusValue(m.Model.LifecycleStatus)) {
+			// Always drop versions whose inference endpoint has retired (ARM
+			// deprecation.inference is in the past; inference now returns 410 Gone),
+			// regardless of any explicitly requested lifecycle statuses.
+			if modelInferenceRetired(m.Model.Deprecation, now) {
+				continue
+			}
+			if len(statuses) > 0 {
+				// Explicit opt-in: return only versions whose lifecycle status was
+				// requested. This includes ARM "Deprecating"/"Deprecated" so callers can
+				// support existing-customer management scenarios.
+				if !slices.Contains(statuses, modelLifecycleStatusValue(m.Model.LifecycleStatus)) {
+					continue
+				}
+			} else if modelLifecycleExcluded(m.Model.LifecycleStatus) {
+				// Default new-deployment view excludes customer-facing Deprecated
+				// (ARM "Deprecating") and Retired (ARM "Deprecated") models.
 				continue
 			}
 			name := *m.Model.Name
@@ -718,24 +733,33 @@ func (s *AiModelService) convertToAiModelsAt(
 	return result
 }
 
-func modelVersionDeprecated(model *armcognitiveservices.AccountModel, now time.Time) bool {
+// modelVersionExcluded reports whether a model version should be excluded from the
+// default new-deployment view. A version is excluded when its ARM lifecycleStatus is
+// "Deprecating" (customer-facing Deprecated) or "Deprecated" (Retired), or when its
+// inference endpoint has retired (deprecation.inference <= now).
+func modelVersionExcluded(model *armcognitiveservices.AccountModel, now time.Time) bool {
 	if model == nil {
 		return false
 	}
 
-	if modelLifecycleDeprecated(model.LifecycleStatus) {
+	if modelLifecycleExcluded(model.LifecycleStatus) {
 		return true
 	}
 
-	return modelDeprecationReached(model.Deprecation, now)
+	return modelInferenceRetired(model.Deprecation, now)
 }
 
-func modelLifecycleDeprecated(status *armcognitiveservices.ModelLifecycleStatus) bool {
+// modelLifecycleExcluded reports whether an ARM lifecycleStatus maps to a customer-facing
+// stage that should be excluded from default new-deployment selection. ARM "Deprecating"
+// maps to the customer-facing "Deprecated" stage (existing customers only) and ARM
+// "Deprecated" maps to "Retired"; both are excluded.
+func modelLifecycleExcluded(status *armcognitiveservices.ModelLifecycleStatus) bool {
 	if status == nil {
 		return false
 	}
 
-	return strings.EqualFold(string(*status), "Deprecated")
+	return strings.EqualFold(string(*status), "Deprecating") ||
+		strings.EqualFold(string(*status), "Deprecated")
 }
 
 func modelLifecycleStatusValue(status *armcognitiveservices.ModelLifecycleStatus) string {
@@ -746,7 +770,9 @@ func modelLifecycleStatusValue(status *armcognitiveservices.ModelLifecycleStatus
 	return string(*status)
 }
 
-func modelDeprecationReached(info *armcognitiveservices.ModelDeprecationInfo, now time.Time) bool {
+// modelInferenceRetired reports whether a model version's inference endpoint has retired
+// (ARM deprecation.inference <= now). Such versions return 410 Gone and are always excluded.
+func modelInferenceRetired(info *armcognitiveservices.ModelDeprecationInfo, now time.Time) bool {
 	if info == nil || info.Inference == nil {
 		return false
 	}

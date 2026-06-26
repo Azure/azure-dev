@@ -186,7 +186,6 @@ func TestDetect(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			// Skip subtests that include Java projects when Maven is not installed.
 			for _, p := range tt.want {
 				if p.Language == Java {

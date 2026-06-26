@@ -11,6 +11,11 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/benbjohnson/clock"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -25,9 +30,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
-	"github.com/benbjohnson/clock"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 )
 
 func TestDefaultDockerOptions(t *testing.T) {
@@ -778,6 +780,117 @@ func Test_DockerProject_Package(t *testing.T) {
 
 			require.Equal(t, tt.expectDockerPullCalled, dockerPullCalled)
 			require.Equal(t, tt.expectDockerTagCalled, dockerTagCalled)
+		})
+	}
+}
+
+func Test_NewDockerProjectAsFrameworkService(t *testing.T) {
+	env := environment.NewWithValues("test-env", nil)
+	result := NewDockerProjectAsFrameworkService(env, nil, &ContainerHelper{}, nil, nil, nil)
+	require.NotNil(t, result)
+}
+
+func Test_dockerProject_Requirements(t *testing.T) {
+	env := environment.NewWithValues("test-env", nil)
+	p := NewDockerProject(env, nil, &ContainerHelper{}, nil, nil, nil)
+	reqs := p.(FrameworkService).Requirements()
+	assert.True(t, reqs.Package.RequireBuild)
+	assert.False(t, reqs.Package.RequireRestore)
+}
+
+func Test_dockerProject_RequiredExternalTools_RemoteBuild(t *testing.T) {
+	env := environment.NewWithValues("test-env", nil)
+	ch := &ContainerHelper{}
+	p := NewDockerProject(env, nil, ch, nil, nil, nil)
+
+	svcConfig := &ServiceConfig{
+		Docker: DockerProjectOptions{RemoteBuild: true},
+	}
+
+	ctx := t.Context()
+	tools := p.(FrameworkService).RequiredExternalTools(ctx, svcConfig)
+	// Remote build => no external tools
+	assert.Empty(t, tools)
+}
+
+func Test_dockerProject_Initialize(t *testing.T) {
+	env := environment.NewWithValues("test-env", nil)
+	p := NewDockerProject(env, nil, &ContainerHelper{}, nil, nil, nil)
+	// Initialize delegates to the inner NoOp framework, which returns nil
+	err := p.(FrameworkService).Initialize(t.Context(), &ServiceConfig{})
+	require.NoError(t, err)
+}
+
+func Test_dockerProject_SetSource(t *testing.T) {
+	env := environment.NewWithValues("test-env", nil)
+	p := NewDockerProject(env, nil, &ContainerHelper{}, nil, nil, nil)
+
+	// Set a custom inner framework
+	innerEnv := environment.NewWithValues("inner-env", nil)
+	inner := NewNoOpProject(innerEnv)
+	p.SetSource(inner)
+
+	// Verify Initialize now uses the new inner framework
+	err := p.(FrameworkService).Initialize(t.Context(), &ServiceConfig{})
+	require.NoError(t, err)
+}
+
+func Test_dockerProject_Restore(t *testing.T) {
+	env := environment.NewWithValues("test-env", nil)
+	p := NewDockerProject(env, nil, &ContainerHelper{}, nil, nil, nil)
+
+	result, err := p.(FrameworkService).Restore(
+		t.Context(),
+		&ServiceConfig{},
+		NewServiceContext(),
+		nil,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+}
+
+func Test_ignoreAspireMultiStageDeployment(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   *ServiceConfig
+		expected bool
+	}{
+		{
+			name:     "BuildOnly",
+			config:   &ServiceConfig{BuildOnly: true},
+			expected: true,
+		},
+		{
+			name: "HasContainerFiles",
+			config: &ServiceConfig{
+				DotNetContainerApp: &DotNetContainerAppOptions{
+					ContainerFiles: map[string]ContainerFile{
+						"svc": {Sources: []string{"Dockerfile"}},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "EmptyContainerFiles",
+			config: &ServiceConfig{
+				DotNetContainerApp: &DotNetContainerAppOptions{
+					ContainerFiles: map[string]ContainerFile{},
+				},
+			},
+			expected: false,
+		},
+		{
+			name:     "NoDotNetContainerApp",
+			config:   &ServiceConfig{},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ignoreAspireMultiStageDeployment(tt.config)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }

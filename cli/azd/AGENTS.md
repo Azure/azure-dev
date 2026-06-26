@@ -284,7 +284,7 @@ public reference, and downstream Kusto/LENS consumers drift out of sync. Verify 
 
 **3. Tests**
 
-- `cli/azd/cmd/telemetry_coverage_test.go` — classify the command in exactly one of
+- `cli/azd/cmd/telemetry_test.go` — classify the command in exactly one of
   `commandsWithSpecificTelemetry` / `commandsWithOnlyGlobalTelemetry` (both lists are kept sorted),
   and add field-constant assertions where applicable.
 

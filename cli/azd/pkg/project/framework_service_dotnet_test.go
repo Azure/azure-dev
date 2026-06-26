@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -19,7 +22,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
-	"github.com/stretchr/testify/require"
 )
 
 func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
@@ -290,4 +292,19 @@ func Test_DotNetProject_Package(t *testing.T) {
 		},
 		runArgs.Args,
 	)
+}
+
+func Test_dotnetProject_Requirements(t *testing.T) {
+	p := NewDotNetProject(dotnet.NewCli(exec.NewCommandRunner(nil)), environment.NewWithValues("test", nil))
+	reqs := p.Requirements()
+	assert.False(t, reqs.Package.RequireRestore)
+	assert.False(t, reqs.Package.RequireBuild)
+}
+
+func Test_dotnetProject_RequiredExternalTools(t *testing.T) {
+	cli := dotnet.NewCli(exec.NewCommandRunner(nil))
+	p := NewDotNetProject(cli, environment.NewWithValues("test", nil))
+	tools := p.RequiredExternalTools(t.Context(), &ServiceConfig{})
+	require.Len(t, tools, 1)
+	assert.Equal(t, cli, tools[0])
 }

@@ -13,14 +13,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 //go:embed testdata/aspire-docker.json
@@ -597,4 +599,342 @@ func TestAspireProjectV1Generation(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+}
+
+func TestAspireDashboardUrl(t *testing.T) {
+	t.Run("container_env_domain", func(t *testing.T) {
+		env := environment.NewWithValues("test", map[string]string{
+			"AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN": "example.azurecontainerapps.io",
+		})
+		d := AspireDashboardUrl(t.Context(), env, nil)
+		require.NotNil(t, d)
+		require.Equal(t, "https://aspire-dashboard.ext.example.azurecontainerapps.io", d.Link)
+		// ToString and MarshalJSON
+		s := d.ToString("  ")
+		require.Contains(t, s, "Aspire Dashboard:")
+		b, err := d.MarshalJSON()
+		require.NoError(t, err)
+		require.Contains(t, string(b), "aspire-dashboard.ext.example")
+	})
+
+	t.Run("app_service_dashboard_url", func(t *testing.T) {
+		env := environment.NewWithValues("test", map[string]string{
+			environment.AppServiceAspireDashboardUrlEnvVarName: "https://dashboard.example.com",
+		})
+		d := AspireDashboardUrl(t.Context(), env, nil)
+		require.NotNil(t, d)
+		require.Equal(t, "https://dashboard.example.com", d.Link)
+	})
+
+	t.Run("no_env", func(t *testing.T) {
+		env := environment.NewWithValues("test", map[string]string{})
+		d := AspireDashboardUrl(t.Context(), env, nil)
+		require.Nil(t, d)
+	})
+}
+
+func TestInputMetadata(t *testing.T) {
+	lower := true
+	upper := false
+	cfg := InputDefaultGenerate{
+		MinLength:  uintPtr(16),
+		Lower:      &lower,
+		Upper:      &upper,
+		MinNumeric: uintPtr(2),
+	}
+	s, err := inputMetadata(cfg)
+	require.NoError(t, err)
+	require.Contains(t, s, "length:16")
+	// Lower was true so NoLower should be false -> "minLower" not forced; NoLower exists as false
+	require.Contains(t, s, "noLower:false")
+	require.Contains(t, s, "noUpper:true")
+}
+
+func TestInputMetadata_ClusterLargerThanMin(t *testing.T) {
+	// When cluster sum > MinLength, finalLength = cluster sum
+	cfg := InputDefaultGenerate{
+		MinLength:  uintPtr(4),
+		MinLower:   uintPtr(5),
+		MinUpper:   uintPtr(6),
+		MinNumeric: uintPtr(7),
+		MinSpecial: uintPtr(8),
+	}
+	s, err := inputMetadata(cfg)
+	require.NoError(t, err)
+	require.Contains(t, s, "length:26")
+}
+
+func uintPtr(u uint) *uint { return new(u) }
+
+func TestIsComplexExpression(t *testing.T) {
+	cases := []struct {
+		name        string
+		input       string
+		wantComplex bool
+		wantVal     string
+	}{
+		{"simple", "'{{resource.outputs.x}}'", false, "resource.outputs.x"},
+		{"complex_multi", "'{{a}}' + '{{b}}'", true, ""},
+		{"plain_string", "'hello'", true, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			complex, val := isComplexExpression(c.input)
+			require.Equal(t, c.wantComplex, complex)
+			require.Equal(t, c.wantVal, val)
+		})
+	}
+}
+
+func TestUrlPort(t *testing.T) {
+	t.Run("main_http_no_port", func(t *testing.T) {
+		p, err := urlPort(&Binding{Scheme: "http"}, true)
+		require.NoError(t, err)
+		require.Equal(t, "", p)
+	})
+	t.Run("main_https_no_port", func(t *testing.T) {
+		p, err := urlPort(&Binding{Scheme: "https"}, true)
+		require.NoError(t, err)
+		require.Equal(t, "", p)
+	})
+	t.Run("port_defined", func(t *testing.T) {
+		p, err := urlPort(&Binding{Scheme: "http", Port: new(8080)}, false)
+		require.NoError(t, err)
+		require.Equal(t, "8080", p)
+	})
+	t.Run("target_port_fallback", func(t *testing.T) {
+		p, err := urlPort(&Binding{Scheme: "tcp", TargetPort: new(5432)}, false)
+		require.NoError(t, err)
+		require.Equal(t, "5432", p)
+	})
+	t.Run("templated", func(t *testing.T) {
+		p, err := urlPort(&Binding{Scheme: "http"}, false)
+		require.NoError(t, err)
+		require.Equal(t, acaTemplatedTargetPort, p)
+	})
+}
+
+func TestBindingPort(t *testing.T) {
+	t.Run("main_http", func(t *testing.T) {
+		p, err := bindingPort(&Binding{Scheme: "http"}, true)
+		require.NoError(t, err)
+		require.Equal(t, "80", p)
+	})
+	t.Run("main_https", func(t *testing.T) {
+		p, err := bindingPort(&Binding{Scheme: "https"}, true)
+		require.NoError(t, err)
+		require.Equal(t, "443", p)
+	})
+	t.Run("port_priority", func(t *testing.T) {
+		p, err := bindingPort(&Binding{Scheme: "tcp", Port: new(9000), TargetPort: new(1)}, false)
+		require.NoError(t, err)
+		require.Equal(t, "9000", p)
+	})
+	t.Run("target_port", func(t *testing.T) {
+		p, err := bindingPort(&Binding{Scheme: "tcp", TargetPort: new(1234)}, false)
+		require.NoError(t, err)
+		require.Equal(t, "1234", p)
+	})
+	t.Run("templated", func(t *testing.T) {
+		p, err := bindingPort(&Binding{Scheme: "http"}, false)
+		require.NoError(t, err)
+		require.Equal(t, acaTemplatedTargetPort, p)
+	})
+}
+
+func TestUrlPortFromTargetPort(t *testing.T) {
+	p, err := urlPortFromTargetPort(&Binding{Scheme: "http"}, true)
+	require.NoError(t, err)
+	require.Equal(t, "80", p)
+	p, err = urlPortFromTargetPort(&Binding{Scheme: "https"}, true)
+	require.NoError(t, err)
+	require.Equal(t, "443", p)
+	p, err = urlPortFromTargetPort(&Binding{TargetPort: new(42)}, false)
+	require.NoError(t, err)
+	require.Equal(t, "42", p)
+	p, err = urlPortFromTargetPort(&Binding{}, false)
+	require.NoError(t, err)
+	require.Equal(t, acaTemplatedTargetPort, p)
+}
+
+func TestAsYamlString(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"true", `"true"`},
+		{"hello", "hello"},
+	}
+	for _, c := range cases {
+		got, err := asYamlString(c.in)
+		require.NoError(t, err)
+		require.Equal(t, c.want, got)
+	}
+}
+
+func TestUniqueFnvNumber(t *testing.T) {
+	a := uniqueFnvNumber("example")
+	b := uniqueFnvNumber("example")
+	c := uniqueFnvNumber("different")
+	require.Equal(t, a, b)
+	require.NotEqual(t, a, c)
+	require.Len(t, a, 8)
+}
+
+func TestInputParameter_NoInputs(t *testing.T) {
+	r := &Resource{Value: "just a plain value"}
+	in, err := InputParameter("p", r)
+	require.NoError(t, err)
+	require.Nil(t, in)
+}
+
+func TestEvaluateForOutputs_MultipleAndMigration(t *testing.T) {
+	value := "{r.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT} and " +
+		"{r.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN} and " +
+		"{r.outputs.AZURE_APP_SERVICE_DASHBOARD_URI}"
+	outs, err := evaluateForOutputs(value, true)
+	require.NoError(t, err)
+	// well-known environment keys are injected when appHostOwnsCompute=true
+	_, ok := outs[environment.ContainerRegistryEndpointEnvVarName]
+	require.True(t, ok)
+	_, ok = outs[environment.ContainerEnvironmentEndpointEnvVarName]
+	require.True(t, ok)
+	_, ok = outs[environment.AppServiceAspireDashboardUrlEnvVarName]
+	require.True(t, ok)
+	// normal uppercase keys also present
+	require.Contains(t, outs, "R_AZURE_CONTAINER_REGISTRY_ENDPOINT")
+}
+
+func TestEvaluateForOutputs_NoMatches(t *testing.T) {
+	outs, err := evaluateForOutputs("just a plain value", false)
+	require.NoError(t, err)
+	require.Empty(t, outs)
+}
+
+func TestEvaluateForOutputs_SecretOutputs(t *testing.T) {
+	outs, err := evaluateForOutputs("{resource.secretOutputs.password}", false)
+	require.NoError(t, err)
+	require.Contains(t, outs, "RESOURCE_PASSWORD")
+	require.Equal(t, "resource.secretOutputs.password", outs["RESOURCE_PASSWORD"].Value)
+}
+
+func TestInfraGenerator_ValueResource(t *testing.T) {
+	g := newInfraGenerator()
+	m := &Manifest{Resources: map[string]*Resource{
+		"v": {Type: "value.v0", Value: "hello"},
+	}}
+	require.NoError(t, g.LoadManifest(m))
+	require.Equal(t, "hello", g.valueStrings["v"])
+}
+
+func TestInfraGenerator_AnnotatedString(t *testing.T) {
+	g := newInfraGenerator()
+	m := &Manifest{Resources: map[string]*Resource{
+		"a": {Type: "annotated.string", Filter: "upper", Value: "x"},
+	}}
+	require.NoError(t, g.LoadManifest(m))
+	require.Equal(t, "upper", g.annotatedStrings["a"].Filter)
+	require.Equal(t, "x", g.annotatedStrings["a"].Value)
+}
+
+func TestInfraGenerator_ParameterResource(t *testing.T) {
+	g := newInfraGenerator()
+	m := &Manifest{Resources: map[string]*Resource{
+		"pw": {
+			Type:  "parameter.v0",
+			Value: "{pw.inputs.secret}",
+			Inputs: map[string]Input{
+				"secret": {Secret: true, Type: "string"},
+			},
+		},
+	}}
+	require.NoError(t, g.LoadManifest(m))
+	// Compile should succeed with no projects/containers
+	require.NoError(t, g.Compile())
+	require.Contains(t, g.bicepContext.InputParameters, "pw")
+	require.True(t, g.bicepContext.InputParameters["pw"].Secret)
+}
+
+func TestInfraGenerator_ConnectionString(t *testing.T) {
+	cs := "Server=tcp:{db.outputs.serverName};Database=db"
+	g := newInfraGenerator()
+	m := &Manifest{Resources: map[string]*Resource{
+		"conn": {Type: "value.v0", Value: "placeholder", ConnectionString: &cs},
+	}}
+	require.NoError(t, g.LoadManifest(m))
+	require.Equal(t, cs, g.connectionStrings["conn"])
+	// output from connection string should be captured
+	require.Contains(t, g.bicepContext.OutputParameters, "DB_SERVERNAME")
+}
+
+func TestInfraGenerator_ContainerV0(t *testing.T) {
+	g := newInfraGenerator()
+	m := &Manifest{Resources: map[string]*Resource{
+		"redis": {Type: "container.v0", Image: new("redis:7")},
+	}}
+	require.NoError(t, g.LoadManifest(m))
+	require.NoError(t, g.Compile())
+	require.Contains(t, g.buildContainers, "redis")
+	require.True(t, g.bicepContext.HasContainerEnvironment)
+}
+
+func TestInfraGenerator_DaprComponentRequiresType(t *testing.T) {
+	g := newInfraGenerator()
+	m := &Manifest{Resources: map[string]*Resource{
+		"c": {Type: "dapr.component.v0"},
+	}}
+	err := g.LoadManifest(m)
+	require.Error(t, err)
+}
+
+func TestInfraGenerator_DaprFullFlow(t *testing.T) {
+	app := "frontend"
+	appID := "frontendapp"
+	appPort := 3500
+	appProto := "http"
+
+	g := newInfraGenerator()
+	m := &Manifest{Resources: map[string]*Resource{
+		"frontend": {Type: "project.v0", Path: new("/p/f.csproj")},
+		"dsidecar": {
+			Type: "dapr.v0",
+			Dapr: &DaprResourceMetadata{
+				Application: &app,
+				AppId:       &appID,
+				AppPort:     &appPort,
+				AppProtocol: &appProto,
+			},
+		},
+	}}
+	require.NoError(t, g.LoadManifest(m))
+	require.NoError(t, g.Compile())
+	require.Contains(t, g.dapr, "dsidecar")
+	// Project template context gets Dapr config
+	require.Contains(t, g.containerAppTemplateContexts, "frontend")
+	require.NotNil(t, g.containerAppTemplateContexts["frontend"].Dapr)
+}
+
+func TestInfraGenerator_BicepV0_WithPath(t *testing.T) {
+	g := newInfraGenerator()
+	m := &Manifest{Resources: map[string]*Resource{
+		"mod": {
+			Type:   "azure.bicep.v0",
+			Path:   new("mod/mod.bicep"),
+			Params: map[string]any{"keyVaultName": "", "other": "v"},
+		},
+	}}
+	require.NoError(t, g.LoadManifest(m))
+	require.NoError(t, g.Compile())
+	require.Contains(t, g.bicepContext.BicepModules, "mod")
+	// keyVaultName == "" should trigger auto-injection of a KeyVault
+	require.NotEmpty(t, g.bicepContext.KeyVaults)
+}
+
+func TestInfraGenerator_IgnoreUnsupportedEnvVar(t *testing.T) {
+	t.Setenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES", "true")
+	g := newInfraGenerator()
+	m := &Manifest{Resources: map[string]*Resource{
+		"x": {Type: "totally.unknown.v0"},
+	}}
+	require.NoError(t, g.LoadManifest(m))
 }

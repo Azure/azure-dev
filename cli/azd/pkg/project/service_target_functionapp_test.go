@@ -9,10 +9,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/stretchr/testify/require"
 )
 
 func TestNewFunctionAppTargetTypeValidation(t *testing.T) {
@@ -435,4 +437,29 @@ func TestResolveFunctionAppRemoteBuild_TypeScriptParity(t *testing.T) {
 	_, err = resolveFunctionAppRemoteBuild(serviceConfig2)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "'remoteBuild: true' requires '.funcignore' to exclude node_modules")
+}
+
+func Test_NewFunctionAppTarget(t *testing.T) {
+	env := environment.NewWithValues("test-env", nil)
+	target := NewFunctionAppTarget(env, nil, nil)
+	require.NotNil(t, target)
+}
+
+func Test_functionAppTarget_RequiredExternalTools(t *testing.T) {
+	target := NewFunctionAppTarget(nil, nil, nil)
+	result := target.RequiredExternalTools(t.Context(), nil)
+	assert.Empty(t, result)
+}
+
+func Test_functionAppTarget_Initialize(t *testing.T) {
+	target := NewFunctionAppTarget(nil, nil, nil)
+	err := target.Initialize(t.Context(), nil)
+	require.NoError(t, err)
+}
+
+func Test_functionAppTarget_Publish(t *testing.T) {
+	target := NewFunctionAppTarget(nil, nil, nil)
+	result, err := target.Publish(t.Context(), nil, nil, nil, nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
 }

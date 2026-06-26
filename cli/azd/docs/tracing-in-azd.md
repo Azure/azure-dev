@@ -251,4 +251,4 @@ The `tool install` / `tool upgrade` / `tool check` / `tool show` actions emit:
 
 ### Coverage Test
 
-Every new `tool` subcommand must be classified in `cmd/telemetry_coverage_test.go` (either `commandsWithSpecificTelemetry` or `commandsWithOnlyGlobalTelemetry`), and any new field constant added to `internal/tracing/fields/fields.go` should have a sub-assertion in `TestTelemetryFieldConstants`.
+Every new `tool` subcommand must be classified in `cmd/telemetry_test.go` (either `commandsWithSpecificTelemetry` or `commandsWithOnlyGlobalTelemetry`), and any new field constant added to `internal/tracing/fields/fields.go` should have a sub-assertion in `TestTelemetryFieldConstants`.

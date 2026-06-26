@@ -8,11 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/taskagent"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
 
 func TestSelectAgentQueue(t *testing.T) {
@@ -153,4 +156,24 @@ func TestSelectAgentQueue(t *testing.T) {
 		assert.ErrorContains(t, err, "selecting agent queue")
 		assert.ErrorContains(t, err, "user cancelled")
 	})
+}
+
+func TestCreateAzureDevPipelineArgs_TerraformMissingRemoteStateErrors(t *testing.T) {
+	t.Parallel()
+
+	env := environment.NewWithValues("env-x", map[string]string{
+		"AZURE_LOCATION": "eastus",
+	})
+	queueId := 1
+	queueName := "Azure Pipelines"
+	queue := &taskagent.TaskAgentQueue{Id: &queueId, Name: &queueName}
+
+	_, err := createAzureDevPipelineArgs(
+		"proj-id", "pipeline-name", "repo-name",
+		nil, env, queue,
+		provisioning.Options{Provider: provisioning.Terraform},
+		nil, nil,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "terraform remote state")
 }

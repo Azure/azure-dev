@@ -365,6 +365,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 | `validation.preflight.outcome` | string | `passed`, `warnings_accepted`, `aborted_by_errors`, `aborted_by_user`, `skipped`, `error` |
 | `validation.preflight.diagnostics` | string[] | Diagnostic IDs emitted |
 | `validation.preflight.rules` | string[] | Rule IDs executed |
+| `validation.preflight.extension_rules` | string[] | Rule IDs executed from extension-provided validation checks |
 | `validation.preflight.warning.count` | measurement | Number of warnings |
 | `validation.preflight.error.count` | measurement | Number of errors |
 </details>

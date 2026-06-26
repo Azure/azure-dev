@@ -9,8 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/internal"
 )
 
 func TestGenerateCertificate(t *testing.T) {
@@ -31,4 +34,32 @@ func TestGenerateCertificate(t *testing.T) {
 	assert.True(t, parsedCert.NotBefore.Before(time.Now().Add(time.Second)))
 	assert.True(t, parsedCert.NotAfter.After(time.Now()))
 	assert.Contains(t, parsedCert.ExtKeyUsage, x509.ExtKeyUsageServerAuth)
+}
+
+func Test_GenerateCertificate_Success(t *testing.T) {
+	t.Parallel()
+	cert, derBytes, err := generateCertificate()
+	require.NoError(t, err)
+	require.NotEmpty(t, derBytes)
+	require.NotEmpty(t, cert.Certificate)
+}
+
+func Test_NewVsServerAction(t *testing.T) {
+	t.Parallel()
+	action := newVsServerAction(nil, nil)
+	require.NotNil(t, action)
+}
+
+func Test_NewVsServerFlags(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{Use: "test"}
+	global := &internal.GlobalCommandOptions{}
+	flags := newVsServerFlags(cmd, global)
+	require.NotNil(t, flags)
+}
+
+func Test_NewVsServerCmd(t *testing.T) {
+	t.Parallel()
+	cmd := newVsServerCmd()
+	require.NotNil(t, cmd)
 }

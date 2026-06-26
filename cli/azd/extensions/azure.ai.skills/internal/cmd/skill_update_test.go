@@ -208,3 +208,40 @@ func TestUpdateAction_PackageFileIsDirectoryFails(t *testing.T) {
 	require.True(t, errors.As(err, &le))
 	require.Equal(t, exterrors.CodeInvalidSkillFile, le.Code)
 }
+
+// --- buildInlineContent validation (issue #8366) ---
+
+// TestUpdateAction_InlineDescriptionOnly_RejectsWithoutInstructions verifies
+// that passing --description alone (without --instructions) is rejected at
+// buildInlineContent time with CodeMissingRequiredField.
+func TestUpdateAction_InlineDescriptionOnly_RejectsWithoutInstructions(t *testing.T) {
+	a := &updateAction{flags: &updateFlags{
+		name:           "my-skill",
+		descriptionSet: true,
+		description:    "updated description",
+	}}
+	content, err := a.buildInlineContent()
+	require.Nil(t, content)
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeMissingRequiredField, le.Code)
+	require.Contains(t, le.Message, "instructions")
+}
+
+// TestUpdateAction_InlineInstructionsOnly_RejectsWithoutDescription verifies
+// that passing --instructions alone (without --description) is rejected.
+func TestUpdateAction_InlineInstructionsOnly_RejectsWithoutDescription(t *testing.T) {
+	a := &updateAction{flags: &updateFlags{
+		name:            "my-skill",
+		instructionsSet: true,
+		instructions:    "updated instructions",
+	}}
+	content, err := a.buildInlineContent()
+	require.Nil(t, content)
+	require.Error(t, err)
+	var le *azdext.LocalError
+	require.True(t, errors.As(err, &le))
+	require.Equal(t, exterrors.CodeMissingRequiredField, le.Code)
+	require.Contains(t, le.Message, "description")
+}

@@ -132,6 +132,52 @@ func printEndpointJSON(agent *agent_api.AgentObject) error {
 	return enc.Encode(out)
 }
 
+// resolveEndpointProtocols returns the list of enabled protocol names for display.
+// It prefers ProtocolConfiguration (where key presence declares enablement) and falls
+// back to the deprecated Protocols field for older API responses.
+func resolveEndpointProtocols(endpoint *agent_api.AgentEndpoint) []string {
+	if endpoint == nil {
+		return nil
+	}
+
+	// Prefer protocol_configuration (newer API shape).
+	// A non-nil ProtocolConfiguration is authoritative even if empty,
+	// so we never fall through to the deprecated Protocols field.
+	if pc := endpoint.ProtocolConfiguration; pc != nil {
+		var protocols []string
+		if pc.Activity != nil {
+			protocols = append(protocols, "activity")
+		}
+		if pc.Responses != nil {
+			protocols = append(protocols, "responses")
+		}
+		if pc.A2A != nil {
+			protocols = append(protocols, "a2a")
+		}
+		if pc.MCP != nil {
+			protocols = append(protocols, "mcp")
+		}
+		if pc.Invocations != nil {
+			protocols = append(protocols, "invocations")
+		}
+		if pc.InvocationsWS != nil {
+			protocols = append(protocols, "invocations_ws")
+		}
+		return protocols
+	}
+
+	// Fall back to deprecated Protocols field.
+	if len(endpoint.Protocols) > 0 {
+		protocols := make([]string, len(endpoint.Protocols))
+		for i, p := range endpoint.Protocols {
+			protocols[i] = string(p)
+		}
+		return protocols
+	}
+
+	return nil
+}
+
 func printEndpointTable(agent *agent_api.AgentObject) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 
@@ -140,11 +186,7 @@ func printEndpointTable(agent *agent_api.AgentObject) error {
 
 	// Protocols
 	fmt.Fprintf(w, "Protocols:\t")
-	if agent.AgentEndpoint != nil && len(agent.AgentEndpoint.Protocols) > 0 {
-		protocols := make([]string, len(agent.AgentEndpoint.Protocols))
-		for i, p := range agent.AgentEndpoint.Protocols {
-			protocols[i] = string(p)
-		}
+	if protocols := resolveEndpointProtocols(agent.AgentEndpoint); len(protocols) > 0 {
 		fmt.Fprintf(w, "%s\n", strings.Join(protocols, ", "))
 	} else {
 		fmt.Fprintf(w, "(not configured)\n")

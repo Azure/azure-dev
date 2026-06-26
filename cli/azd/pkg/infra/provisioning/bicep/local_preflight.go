@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -299,6 +300,38 @@ type validationContext struct {
 	EnvLocation string
 }
 
+// extensionContext builds the map[string][]byte to send to extension validation checks.
+// It includes the deployment artifacts and snapshot data that extensions need to perform
+// validation. Internal-only fields (e.g., Props) used by core checks are not included.
+// When new extension-relevant data is added to validationContext, add it here so
+// extensions automatically receive it.
+func (v *validationContext) extensionContext(
+	armTemplate azure.RawArmTemplate,
+	armParameters azure.ArmParameters,
+) map[string][]byte {
+	ctx := map[string][]byte{
+		azdext.ValidationContextARMTemplate: []byte(armTemplate),
+	}
+
+	if paramsJSON := armParametersJSON(armParameters); paramsJSON != nil {
+		ctx[azdext.ValidationContextARMParameters] = paramsJSON
+	}
+
+	if v.EnvLocation != "" {
+		ctx[azdext.ValidationContextEnvLocation] = []byte(v.EnvLocation)
+	}
+	if len(v.ResourcesSnapshot) > 0 {
+		ctx[azdext.ValidationContextResourcesSnapshot] = v.ResourcesSnapshot
+	}
+	if len(v.SnapshotResources) > 0 {
+		if data, err := json.Marshal(v.SnapshotResources); err == nil {
+			ctx[azdext.ValidationContextPredictedResources] = data
+		}
+	}
+
+	return ctx
+}
+
 // snapshotResult represents the top-level structure of the Bicep snapshot JSON output.
 type snapshotResult struct {
 	PredictedResources []armTemplateResource `json:"predictedResources"`
@@ -371,17 +404,17 @@ func (l *localArmPreflight) AddCheck(check PreflightCheck) {
 
 // validate performs local preflight validation on the given ARM template and parameters.
 // It parses the template, resolves parameters, analyzes the resources, and then runs all
-// registered check functions. It returns the collected results from all checks and an error
-// if template parsing fails.
+// registered check functions. It returns the validation context (for extension dispatch),
+// the collected results from all checks, and an error if template parsing fails.
 func (l *localArmPreflight) validate(
 	ctx context.Context,
 	console input.Console,
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
-) ([]PreflightCheckResult, error) {
+) (*validationContext, []PreflightCheckResult, error) {
 	_, err := l.parseTemplate(armTemplate)
 	if err != nil {
-		return nil, fmt.Errorf("parsing ARM template: %w", err)
+		return nil, nil, fmt.Errorf("parsing ARM template: %w", err)
 	}
 
 	// Determine the .bicepparam file to use for the snapshot.
@@ -398,7 +431,7 @@ func (l *localArmPreflight) validate(
 
 		tmpFile, err := os.CreateTemp(moduleDir, "preflight-*.bicepparam")
 		if err != nil {
-			return nil, fmt.Errorf("creating temp bicepparam file: %w", err)
+			return nil, nil, fmt.Errorf("creating temp bicepparam file: %w", err)
 		}
 		bicepParamFile = tmpFile.Name()
 		defer func() {
@@ -407,10 +440,10 @@ func (l *localArmPreflight) validate(
 		}()
 
 		if _, err := tmpFile.WriteString(bicepParamContent); err != nil {
-			return nil, fmt.Errorf("writing temp bicepparam file: %w", err)
+			return nil, nil, fmt.Errorf("writing temp bicepparam file: %w", err)
 		}
 		if err := tmpFile.Close(); err != nil {
-			return nil, fmt.Errorf("closing temp bicepparam file: %w", err)
+			return nil, nil, fmt.Errorf("closing temp bicepparam file: %w", err)
 		}
 	}
 
@@ -440,12 +473,12 @@ func (l *localArmPreflight) validate(
 	data, err := l.bicepCli.Snapshot(ctx, bicepParamFile, snapshotOpts)
 	if err != nil {
 		log.Printf("local preflight: skipping checks, bicep snapshot unavailable: %v", err)
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	var snapshot snapshotResult
 	if err := json.Unmarshal(data, &snapshot); err != nil {
-		return nil, fmt.Errorf("parsing bicep snapshot: %w", err)
+		return nil, nil, fmt.Errorf("parsing bicep snapshot: %w", err)
 	}
 
 	props := analyzeResources(snapshot.PredictedResources)
@@ -464,12 +497,12 @@ func (l *localArmPreflight) validate(
 	for _, check := range l.checks {
 		checkResults, err := check.Fn(ctx, valCtx)
 		if err != nil {
-			return results, fmt.Errorf("preflight check %q failed: %w", check.RuleID, err)
+			return valCtx, results, fmt.Errorf("preflight check %q failed: %w", check.RuleID, err)
 		}
 		results = append(results, checkResults...)
 	}
 
-	return results, nil
+	return valCtx, results, nil
 }
 
 // parseTemplate unmarshals a raw ARM template into the parser's own armTemplate structure.

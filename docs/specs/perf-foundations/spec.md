@@ -257,7 +257,7 @@ invocations.
 | `TunedTransport` | `pkg/httputil/util_test.go` | Verifies all pool params; verifies DefaultTransport not mutated |
 | `isBuildFailure` | `pkg/azapi/webapp_test.go` | 6 cases: nil, unrelated, exact match, wrapped, real build failure, partial |
 | Docker path resolution | `pkg/project/framework_service_docker_test.go` | Updated to verify absolute resolved paths via dynamic resolution |
-| `resolveDockerPaths` | `pkg/project/container_helper_coverage3_test.go` | 4 sub-tests: defaults, user-specified, absolute, mixed |
+| `resolveDockerPaths` | `pkg/project/container_helper_test.go` | 4 sub-tests: defaults, user-specified, absolute, mixed |
 | Docker build args | `pkg/project/framework_service_docker_test.go` | Table-driven tests resolve expected paths to match production behavior |
 | Tracing context propagation | `pkg/project/container_helper_test.go` | Mock assertions updated for tracing context wrapping (`mock.Anything`) |
 

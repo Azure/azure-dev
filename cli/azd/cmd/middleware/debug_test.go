@@ -8,11 +8,12 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
-	"github.com/stretchr/testify/require"
 )
 
 func TestNewDebugMiddleware(t *testing.T) {
@@ -211,4 +212,28 @@ func TestDebugMiddleware_Run_ConfirmAccepted(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, nextCalled)
+}
+
+func TestDebugMiddleware_Run_ConfirmNonInterruptError(t *testing.T) {
+	console := mockinput.NewMockConsole()
+	console.WhenConfirm(func(options input.ConsoleOptions) bool {
+		return true
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		return false, errors.New("console IO failure")
+	})
+
+	m := &DebugMiddleware{
+		options: &Options{CommandPath: "test"},
+		console: console,
+	}
+
+	t.Setenv("AZD_DEBUG", "true")
+
+	_, err := m.Run(t.Context(), func(ctx context.Context) (*actions.ActionResult, error) {
+		t.Fatal("next should not be called on confirm error")
+		return nil, nil
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "debugger prompt failed")
 }

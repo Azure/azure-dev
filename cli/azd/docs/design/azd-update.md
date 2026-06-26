@@ -175,7 +175,7 @@ All flags persist their values to config, which can also be set directly via `az
 
 | Install Method | Strategy |
 |----------------|----------|
-| `brew` | Homebrew cask: `brew install/upgrade --cask azure/azd/azd` (stable) or `azure/azd/azd@daily` (daily). Handles channel switching by uninstalling the current formula or cask and installing the target. |
+| `brew` | Homebrew cask: trust azd's source (`brew trust azure/azd`), then `brew install/upgrade --cask azure/azd/azd` (stable) or `azure/azd/azd@daily` (daily). Handles channel switching by uninstalling the current formula or cask and installing the target. |
 | `winget` | Shell out: `winget upgrade Microsoft.Azd` |
 | `choco` | Shell out: `choco upgrade azd` |
 | `install-azd.ps1`, `msi` (Windows) | Shell out: `install-azd.ps1` with backup/restore of running executable |
@@ -237,11 +237,16 @@ Homebrew updates use cask operations for both stable and daily channels:
 ```
 1. Check which cask is currently installed via `brew list --cask`
    - `azd` = stable cask, `azd@daily` = daily cask
-2. If no cask installed (formula or other install) → uninstall and reinstall as correct cask
-3. If switching channels → uninstall current cask, install target cask
+2. Trust azd's Homebrew source so the cask operations below aren't blocked:
+   run `brew trust azure/azd`.
+   - `azure/azd` is azd's own source — the Homebrew tap name for
+     `github.com/Azure/homebrew-azd`, which publishes the `azd` (stable) and `azd@daily` casks.
+   - Homebrew treats third-party sources as untrusted and refuses to load their casks until trusted, which would otherwise block install upgrade, and even uninstall. Trusting the source unblocks the cask install/upgrade that follows.
+3. If no cask installed (formula or other install) → uninstall and reinstall as correct cask
+4. If switching channels → uninstall current cask, install target cask
    - daily→stable: `brew uninstall --cask azd@daily` then `brew install --cask azure/azd/azd`
    - stable→daily: `brew uninstall --cask azd` then `brew install --cask azure/azd/azd@daily`
-4. If same channel → `brew upgrade --cask azure/azd/azd` (or `azure/azd/azd@daily`)
+5. If same channel → `brew upgrade --cask azure/azd/azd` (or `azure/azd/azd@daily`)
 ```
 
 #### Elevation Handling

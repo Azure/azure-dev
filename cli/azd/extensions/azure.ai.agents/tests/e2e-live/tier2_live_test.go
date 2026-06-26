@@ -410,9 +410,11 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 			r.enter()
 		}
 
-	// Subscription — preamble "Select an Azure subscription..."
-	// (init_foundry_resources_helpers.go:905) + azd-core picker.
-	case has("subscription"):
+	// Subscription — the extension prints "Select an Azure subscription to ..."
+	// (init.go:1709 etc.) before the azd-core picker. Match the full preamble,
+	// not the bare word, so an unrelated prompt mentioning a subscription can't
+	// match by accident.
+	case has("select an azure subscription"):
 		if sub := os.Getenv("E2E_SUBSCRIPTION"); sub != "" {
 			r.selectByText(sub[:min(8, len(sub))])
 		} else {
@@ -441,9 +443,13 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 	case has("select a model"):
 		r.selectByText("gpt-4o-mini")
 
-	// Deployment capacity / sku / version — azd-core PromptAiDeployment
-	// (init_models.go:519); accept defaults.
-	case has("capacity") || has("sku") || has("version"):
+	// Deployment version / SKU / capacity — azd-core PromptAiDeployment renders
+	// these exact picker messages (prompt_service.go:143 / 190 / 226); accept
+	// defaults. Match the full message rather than the bare keyword so a future
+	// prompt merely containing "version"/"sku"/"capacity" can't match by accident
+	// (it would fall through to the logged default instead).
+	case has("select a version for") || has("select a sku for") ||
+		has("enter deployment capacity for"):
 		r.enter()
 
 	// Code-deploy prompts (init_from_code.go:1508 / 1534 / 1563). Auto-resolved

@@ -21,6 +21,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -1013,6 +1014,173 @@ func Test_FindExtensions_MultipleMatches_ErrorHandling(t *testing.T) {
 	}
 	require.True(t, sourceNames["source1"])
 	require.True(t, sourceNames["source2"])
+}
+
+func Test_FindExtensions_SourceConfigDirectSource(t *testing.T) {
+	t.Parallel()
+
+	registryPath := writeExtensionRegistryFile(t, Registry{
+		SchemaVersion: CurrentRegistrySchemaVersion,
+		Extensions: []*ExtensionMetadata{
+			{
+				Id:          "direct.extension",
+				DisplayName: "Direct Extension",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0"},
+				},
+			},
+		},
+	})
+
+	manager := newTestManager(t)
+
+	extensions, err := manager.FindExtensions(t.Context(), &FilterOptions{
+		Id:     "direct.extension",
+		Source: "ignored-source-filter",
+		SourceConfig: &SourceConfig{
+			Name:     "direct",
+			Type:     SourceKindFile,
+			Location: registryPath,
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, extensions, 1)
+	require.Equal(t, "direct.extension", extensions[0].Id)
+	require.Equal(t, "direct", extensions[0].Source)
+}
+
+func Test_FindExtensions_SourceConfigMissingFileReturnsError(t *testing.T) {
+	t.Parallel()
+
+	manager := newTestManager(t)
+
+	_, err := manager.FindExtensions(t.Context(), &FilterOptions{
+		SourceConfig: &SourceConfig{
+			Name:     "missing",
+			Type:     SourceKindFile,
+			Location: filepath.Join(t.TempDir(), "missing-registry.json"),
+		},
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "failed initializing extension source")
+}
+
+func Test_FindExtensions_SourceConfigUnsupportedSchemaReturnsSuggestion(t *testing.T) {
+	t.Parallel()
+
+	registryPath := writeExtensionRegistryFile(t, Registry{
+		SchemaVersion: "2.0",
+		Extensions:    []*ExtensionMetadata{},
+	})
+
+	manager := newTestManager(t)
+
+	_, err := manager.FindExtensions(t.Context(), &FilterOptions{
+		SourceConfig: &SourceConfig{
+			Name:     "future",
+			Type:     SourceKindFile,
+			Location: registryPath,
+		},
+	})
+	require.Error(t, err)
+	require.ErrorAs(t, err, new(*ErrUnsupportedRegistrySchema))
+	require.ErrorAs(t, err, new(*errorhandler.ErrorWithSuggestion))
+}
+
+func Test_UpdateInstalled_UpdatesConfigAndInvalidatesCache(t *testing.T) {
+	t.Parallel()
+
+	manager := newTestManager(t)
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		"test.extension": {
+			Id:      "test.extension",
+			Version: "1.0.0",
+		},
+	}))
+
+	manager.installed = map[string]*Extension{
+		"test.extension": {
+			Id:      "test.extension",
+			Version: "1.0.0",
+		},
+	}
+
+	err := manager.UpdateInstalled(&Extension{
+		Id:      "test.extension",
+		Version: "2.0.0",
+	})
+	require.NoError(t, err)
+	require.Nil(t, manager.installed)
+
+	updated, err := manager.GetInstalled(FilterOptions{Id: "test.extension"})
+	require.NoError(t, err)
+	require.Equal(t, "2.0.0", updated.Version)
+}
+
+func Test_UpdateInstalled_MissingExtension(t *testing.T) {
+	t.Parallel()
+
+	manager := newTestManager(t)
+
+	err := manager.UpdateInstalled(&Extension{Id: "missing"})
+	require.ErrorIs(t, err, ErrInstalledExtensionNotFound)
+}
+
+func Test_InvalidateSourceCache(t *testing.T) {
+	t.Parallel()
+
+	manager := newTestManager(t)
+	manager.sources = []Source{&mockSource{name: "cached"}}
+
+	manager.InvalidateSourceCache()
+
+	require.Nil(t, manager.sources)
+}
+
+func Test_HasMetadataCapability(t *testing.T) {
+	t.Parallel()
+
+	manager := newTestManager(t)
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		"metadata.extension": {
+			Id:           "metadata.extension",
+			Capabilities: []CapabilityType{MetadataCapability},
+		},
+		"plain.extension": {
+			Id: "plain.extension",
+		},
+	}))
+
+	require.True(t, manager.HasMetadataCapability("metadata.extension"))
+	require.False(t, manager.HasMetadataCapability("plain.extension"))
+	require.False(t, manager.HasMetadataCapability("missing.extension"))
+}
+
+func newTestManager(t *testing.T) *Manager {
+	t.Helper()
+
+	mockContext := mocks.NewMockContext(t.Context())
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	return manager
+}
+
+func writeExtensionRegistryFile(t *testing.T, registry Registry) string {
+	t.Helper()
+
+	data, err := json.Marshal(registry)
+	require.NoError(t, err)
+
+	registryPath := filepath.Join(t.TempDir(), "registry.json")
+	require.NoError(t, os.WriteFile(registryPath, data, 0600))
+
+	return registryPath
 }
 
 // mockSource is a test implementation of the Source interface

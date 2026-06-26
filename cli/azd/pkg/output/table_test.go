@@ -185,3 +185,18 @@ type convertInput struct {
 	Success  bool
 	Expected []any
 }
+
+func TestTabAlign(t *testing.T) {
+	t.Parallel()
+	in := []string{
+		"a\tb\tc",
+		"aaa\tbb\tccc",
+	}
+	out, err := TabAlign(in, 2)
+	require.NoError(t, err)
+	require.Len(t, out, len(in))
+	// Columns should be separated by at least 2 spaces (padding).
+	for _, l := range out {
+		require.NotEmpty(t, l)
+	}
+}

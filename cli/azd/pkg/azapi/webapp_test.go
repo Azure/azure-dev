@@ -6,11 +6,18 @@ package azapi
 import (
 	"context"
 	"errors"
+	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
 
 func Test_isBuildFailure(t *testing.T) {
@@ -71,7 +78,7 @@ func Test_waitForScmReady_ContextCanceled(t *testing.T) {
 	defer cancel()
 
 	// Mock returns not-ready on first probe, then context.Canceled on the second call
-	// to exercise the error propagation path inside the ticker loop (lines 306-311).
+	// to exercise the error propagation path inside the ticker loop.
 	mock := &mockScmChecker{fn: func(_ context.Context, call int) (bool, error) {
 		if call == 1 {
 			return false, nil // immediate probe: not ready
@@ -121,4 +128,65 @@ func Test_waitForScmReady_ContextDeadlineExceeded(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.GreaterOrEqual(t, int(mock.calls.Load()), 2, "IsScmReady should be called at least twice")
+}
+
+func Test_AzureClient_GetAppServiceProperties(t *testing.T) {
+	mockCtx := mocks.NewMockContext(t.Context())
+	client := newAzureClientFromMockContext(mockCtx)
+
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodGet &&
+			strings.Contains(req.URL.Path, "/Microsoft.Web/sites/my-app") &&
+			!strings.Contains(req.URL.Path, "/slots/")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+			armappservice.Site{
+				ID:       new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/my-app"),
+				Name:     new("my-app"),
+				Location: new("eastus"),
+				Kind:     new("app,linux"),
+				Properties: &armappservice.SiteProperties{
+					DefaultHostName:   new("my-app.azurewebsites.net"),
+					HTTPSOnly:         new(true),
+					EnabledHostNames:  []*string{new("my-app.azurewebsites.net")},
+					HostNameSSLStates: []*armappservice.HostNameSSLState{},
+					SiteConfig:        &armappservice.SiteConfig{LinuxFxVersion: new("NODE|18-lts")},
+					AvailabilityState: to.Ptr(armappservice.SiteAvailabilityStateNormal),
+				},
+			})
+	})
+
+	props, err := client.GetAppServiceProperties(*mockCtx.Context, "SUB", "RG", "my-app")
+	require.NoError(t, err)
+	assert.Contains(t, props.HostNames, "my-app.azurewebsites.net")
+}
+
+func Test_AzureClient_GetAppServiceSlotProperties(t *testing.T) {
+	mockCtx := mocks.NewMockContext(t.Context())
+	client := newAzureClientFromMockContext(mockCtx)
+
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodGet &&
+			strings.Contains(req.URL.Path, "/slots/staging")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+			armappservice.Site{
+				ID:       new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/my-app/slots/staging"),
+				Name:     new("my-app/staging"),
+				Location: new("eastus"),
+				Kind:     new("app,linux"),
+				Properties: &armappservice.SiteProperties{
+					DefaultHostName:   new("my-app-staging.azurewebsites.net"),
+					HTTPSOnly:         new(true),
+					EnabledHostNames:  []*string{new("my-app-staging.azurewebsites.net")},
+					HostNameSSLStates: []*armappservice.HostNameSSLState{},
+					SiteConfig:        &armappservice.SiteConfig{LinuxFxVersion: new("NODE|18-lts")},
+					AvailabilityState: to.Ptr(armappservice.SiteAvailabilityStateNormal),
+				},
+			})
+	})
+
+	props, err := client.GetAppServiceSlotProperties(*mockCtx.Context, "SUB", "RG", "my-app", "staging")
+	require.NoError(t, err)
+	assert.Contains(t, props.HostNames, "my-app-staging.azurewebsites.net")
 }

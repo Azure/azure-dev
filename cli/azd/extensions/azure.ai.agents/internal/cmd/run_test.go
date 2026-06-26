@@ -991,3 +991,76 @@ environment_variables:
 		}
 	})
 }
+
+func TestVenvPip(t *testing.T) {
+	t.Parallel()
+
+	venvDir := "/project/.venv"
+	result := venvPip(venvDir)
+
+	if runtime.GOOS == "windows" {
+		expected := filepath.Join(venvDir, "Scripts", "pip.exe")
+		if result != expected {
+			t.Errorf("expected %q, got %q", expected, result)
+		}
+	} else {
+		expected := filepath.Join(venvDir, "bin", "pip")
+		if result != expected {
+			t.Errorf("expected %q, got %q", expected, result)
+		}
+	}
+}
+
+func TestFindSystemPython(t *testing.T) {
+	t.Run("finds python3 on PATH", func(t *testing.T) {
+		dir := t.TempDir()
+
+		// Create a fake python3 executable
+		name := "python3"
+		if runtime.GOOS == "windows" {
+			name = "python3.exe"
+		}
+		fakePython := filepath.Join(dir, name)
+		err := os.WriteFile(fakePython, []byte(""), 0o755) //nolint:gosec // G306: test binary needs exec permission
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Setenv("PATH", dir)
+		result, err := findSystemPython()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != fakePython {
+			t.Errorf("expected %q, got %q", fakePython, result)
+		}
+	})
+
+	t.Run("returns error when no python on PATH", func(t *testing.T) {
+		dir := t.TempDir() // empty directory
+		t.Setenv("PATH", dir)
+		_, err := findSystemPython()
+		if err == nil {
+			t.Fatal("expected error when no python on PATH")
+		}
+	})
+}
+
+func TestCheckPythonVersion(t *testing.T) {
+	// This test requires a real python on PATH to run --version.
+	// Skip if python is not available or can't execute.
+	pythonBin, err := findSystemPython()
+	if err != nil {
+		t.Skip("python not available on PATH")
+	}
+
+	err = checkPythonVersion(pythonBin)
+	if err != nil {
+		// Accept either a version-too-old error or an execution error
+		// (e.g., Windows Store stub that LookPath finds but can't run).
+		if !strings.Contains(err.Error(), "3.13+ is required") &&
+			!strings.Contains(err.Error(), "failed to check Python version") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	}
+}

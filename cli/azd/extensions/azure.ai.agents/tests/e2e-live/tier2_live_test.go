@@ -472,6 +472,10 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 		r.enter()
 
 	default:
+		// No specific case matched: send Enter as a safe default, but log the
+		// fall-through so CI can distinguish "matched and answered correctly"
+		// from "hit the catch-all" when a new or changed prompt appears.
+		r.t.Logf("unhandled prompt (default Enter): %s", truncate(prompt, 100))
 		r.enter()
 	}
 }

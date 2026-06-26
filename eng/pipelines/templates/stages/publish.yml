@@ -482,8 +482,6 @@ stages:
         steps:
           - checkout: self
 
-          - template: /eng/common/pipelines/templates/steps/login-to-github.yml
-
           - task: DownloadPipelineArtifact@2
             displayName: Download docs artifact
             inputs:
@@ -584,6 +582,8 @@ stages:
               Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
             displayName: Write body content to temporary file
 
+          - template: /eng/common/pipelines/templates/steps/login-to-github.yml
+          
           - template: /eng/pipelines/templates/steps/update-prcomment.yml
             parameters:
               PrNumber: $(PRNumber)

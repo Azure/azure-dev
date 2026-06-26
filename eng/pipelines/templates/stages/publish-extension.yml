@@ -69,8 +69,6 @@ stages:
           steps:
             - checkout: self
 
-            - template: /eng/common/pipelines/templates/steps/login-to-github.yml
-
             - template: /eng/pipelines/templates/steps/extension-set-metadata-variables.yml
 
             - task: DownloadPipelineArtifact@2

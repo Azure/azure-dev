@@ -5,6 +5,8 @@ parameters:
     type: string
 
 steps:
+  - template: /eng/common/pipelines/templates/steps/login-to-github.yml
+
   # Fail fast if the tag/release already exists. With this split, retrying the
   # downstream storage-upload deployment job won't trip this guard — only a
   # retry of THIS regular job would.

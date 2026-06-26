@@ -7,9 +7,10 @@ on:
       - "cli/azd/test/functional/ai_agents/**"
       - ".github/workflows/test-ext-azure-ai-agents.yml"
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 permissions:
@@ -42,20 +43,25 @@ jobs:
           # Pre-install the inspector dependency so the local install can resolve it.
           azd extension install azure.ai.inspector --no-prompt
 
-      - name: Build, pack & register extension (record-tagged)
+      - name: Build extension (ci-build.ps1)
         working-directory: cli/azd/extensions/azure.ai.agents
-        env:
-          GOFLAGS: -tags=record
         run: |
-          # build.sh inherits GOFLAGS, so go build gets -tags=record automatically.
-          azd x build --skip-install
+          # Use the canonical ci-build.ps1 which includes security flags
+          # (trimpath, pie, cfi, cfg, osusergo) matching release builds.
+          # -BuildRecordMode produces both a production and a record-tagged binary.
+          pwsh -File ci-build.ps1 -BuildRecordMode -OutputFileName azure-ai-agents-linux-amd64 -Version $(cat version.txt | tr -d '\r\n')
+          # Move production binary to bin/ where azd x pack expects it.
+          mkdir -p bin
+          mv azure-ai-agents-linux-amd64 bin/
+
+      - name: Pack, publish & install extension (production)
+        working-directory: cli/azd/extensions/azure.ai.agents
+        run: |
           azd x pack
           azd x publish
+          azd extension install azure.ai.agents --source local --force --no-prompt
 
-      - name: Install extension from local registry
-        run: azd extension install azure.ai.agents --source local --force --no-prompt
-
-      - name: Run Tier 0 tests (offline)
+      - name: Run Tier 0 tests (offline, production extension)
         working-directory: cli/azd
         env:
           CLI_TEST_AZD_PATH: ${{ github.workspace }}/cli/azd/azd-record
@@ -63,7 +69,14 @@ jobs:
           go test -tags=record -run "Test_AIAgent_(Version|Help|Init_NoPrompt_MissingFlags|Doctor_Help)" \
             ./test/functional/ai_agents/ -v -timeout 5m
 
-      - name: Run Tier 1 tests (playback)
+      - name: Swap extension to record binary for Tier 1
+        run: |
+          # Overwrite the installed production binary with the record-tagged
+          # binary so Tier 1 tests can intercept/replay HTTP traffic.
+          cp "${{ github.workspace }}/cli/azd/extensions/azure.ai.agents/azure-ai-agents-linux-amd64-record" \
+            ~/.azd/extensions/azure.ai.agents/azure-ai-agents-linux-amd64
+
+      - name: Run Tier 1 tests (playback, record extension)
         working-directory: cli/azd
         env:
           AZURE_RECORD_MODE: playback

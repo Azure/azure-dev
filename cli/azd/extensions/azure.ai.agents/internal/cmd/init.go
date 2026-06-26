@@ -3013,7 +3013,9 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	// connections, toolboxes) and wire the agent's uses: to them. A selected
 	// existing project contributes its endpoint so provision reuses it.
 	if err := emitResourceServices(
-		ctx, a.azdClient, a.serviceNameOverride, a.selectedFoundryProject.Endpoint(),
+		ctx, a.azdClient, a.serviceNameOverride,
+		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
+		a.selectedFoundryProject.Endpoint(),
 		resourceDeployments, resourceConnections, resourceToolboxes,
 	); err != nil {
 		return err

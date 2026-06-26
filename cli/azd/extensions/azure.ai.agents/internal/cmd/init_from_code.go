@@ -862,7 +862,9 @@ func (a *InitFromCodeAction) addToProject(
 	// its endpoint so provision reuses it instead of creating a new project.
 	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	if err := emitResourceServices(
-		ctx, a.azdClient, agentServiceName, a.selectedFoundryProject.Endpoint(),
+		ctx, a.azdClient, agentServiceName,
+		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
+		a.selectedFoundryProject.Endpoint(),
 		resourceDeployments, nil, nil,
 	); err != nil {
 		return err

@@ -87,7 +87,6 @@ These are set once at process startup via `resource.New()` and attached to every
 | Service targets | `project.service.targets` | SystemMetadata | FeatureInsight | List of deploy targets |
 | Service languages | `project.service.languages` | SystemMetadata | FeatureInsight | List of languages |
 | Service language | `project.service.language` | SystemMetadata | PerformanceAndHealth | Single service language |
-| Foundry legacy agent shape | `foundry.agent.legacy_config_shape` | SystemMetadata | FeatureInsight | Bool; `true` when the deprecated config-nested `host: azure.ai.agent` shape is present |
 | Platform type | `platform.type` | SystemMetadata | FeatureInsight | e.g. `aca`, `aks` |
 
 ### Config and Environment

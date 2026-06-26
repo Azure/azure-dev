@@ -178,7 +178,6 @@ These are set once at process startup and attached to **every** span.
 | `project.service.targets` | string[] | ❌ | Resolved deployment targets — see [Service Targets](#service-targets) |
 | `project.service.languages` | string[] | ❌ | Languages across all services — see [Service Languages](#service-languages) |
 | `project.service.language` | string | ❌ | Language of specific service being executed — see [Service Languages](#service-languages) |
-| `foundry.agent.legacy_config_shape` | bool | ❌ | Set to `true` when a project still uses the deprecated config-nested `host: azure.ai.agent` shape (a populated `config:` block). Tracks migration of Foundry agent projects onto the unified `azure.yaml` shape. |
 | `platform.type` | string | ❌ | Platform integration (e.g., `aca`, `aks`) |
 
 #### Service Targets

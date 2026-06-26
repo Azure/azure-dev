@@ -81,14 +81,6 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		}
 	})
 
-	// Project config telemetry fields
-	t.Run("ProjectFields", func(t *testing.T) {
-		t.Parallel()
-		kv := fields.FoundryAgentLegacyConfigKey.Bool(true)
-		require.Equal(t, "foundry.agent.legacy_config_shape", string(kv.Key))
-		require.True(t, kv.Value.AsBool())
-	})
-
 	// Tool command telemetry fields
 	t.Run("ToolFields", func(t *testing.T) {
 		t.Parallel()

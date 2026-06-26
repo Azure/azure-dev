@@ -161,6 +161,36 @@ func TestNormalizeProtocolVersions_MissingField(t *testing.T) {
 	normalizeProtocolVersions(def) // should not panic
 }
 
+func TestNormalizeContainerImage_MigratesLegacy(t *testing.T) {
+	def := map[string]any{
+		"kind":  "hosted",
+		"image": "myimage:latest",
+	}
+	normalizeContainerImage(def)
+
+	containerConfig, ok := def["container_configuration"].(map[string]any)
+	require.True(t, ok, "container_configuration should be set")
+	assert.Equal(t, "myimage:latest", containerConfig["image"])
+	assert.Nil(t, def["image"], "legacy image field should be removed")
+}
+
+func TestNormalizeContainerImage_NoOpWhenNewSchema(t *testing.T) {
+	def := map[string]any{
+		"kind":                    "hosted",
+		"container_configuration": map[string]any{"image": "existing:v1"},
+	}
+	normalizeContainerImage(def)
+
+	containerConfig := def["container_configuration"].(map[string]any)
+	assert.Equal(t, "existing:v1", containerConfig["image"])
+}
+
+func TestNormalizeContainerImage_NoOpWhenNoImage(t *testing.T) {
+	def := map[string]any{"kind": "hosted"}
+	normalizeContainerImage(def) // should not panic
+	assert.Nil(t, def["container_configuration"])
+}
+
 // ---- upsertAgentYamlEnvVar ----
 
 func TestUpsertAgentYamlEnvVar_InsertsNew(t *testing.T) {

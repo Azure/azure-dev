@@ -170,16 +170,23 @@ func TestHostedAgentDefinition_ContainerImage_RoundTrip(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	s := string(data)
-	if !strings.Contains(s, `"container_configuration"`) {
-		t.Error("expected JSON to contain \"container_configuration\"")
+	// Parse into raw map to verify schema structure
+	var rawMap map[string]json.RawMessage
+	if err := json.Unmarshal(data, &rawMap); err != nil {
+		t.Fatalf("unmarshal to map: %v", err)
 	}
-	if !strings.Contains(s, `"protocol_versions"`) {
-		t.Error("expected JSON to contain \"protocol_versions\"")
+	if _, ok := rawMap["container_configuration"]; !ok {
+		t.Error("expected top-level \"container_configuration\" key")
+	}
+	if _, ok := rawMap["protocol_versions"]; !ok {
+		t.Error("expected top-level \"protocol_versions\" key")
 	}
 	// Should NOT contain legacy top-level "image" or "container_protocol_versions"
-	if strings.Contains(s, `"container_protocol_versions"`) {
-		t.Error("unexpected legacy \"container_protocol_versions\" in JSON")
+	if _, ok := rawMap["container_protocol_versions"]; ok {
+		t.Error("unexpected legacy \"container_protocol_versions\" key")
+	}
+	if _, ok := rawMap["image"]; ok {
+		t.Error("unexpected legacy top-level \"image\" key")
 	}
 
 	var got HostedAgentDefinition

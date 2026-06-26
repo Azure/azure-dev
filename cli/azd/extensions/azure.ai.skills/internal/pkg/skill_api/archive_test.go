@@ -4,10 +4,8 @@
 package skill_api
 
 import (
-	"archive/tar"
 	"archive/zip"
 	"bytes"
-	"compress/gzip"
 	"errors"
 	"os"
 	"path/filepath"
@@ -46,27 +44,6 @@ func makeZip(t *testing.T, entries []zipEntry) []byte {
 		}
 	}
 	require.NoError(t, zw.Close())
-	return buf.Bytes()
-}
-
-type tarEntry struct {
-	Name string
-	Body []byte
-}
-
-func makeTarGz(t *testing.T, entries []tarEntry) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gz)
-	for _, e := range entries {
-		hdr := &tar.Header{Name: e.Name, Mode: 0644, Typeflag: tar.TypeReg, Size: int64(len(e.Body))}
-		require.NoError(t, tw.WriteHeader(hdr))
-		_, err := tw.Write(e.Body)
-		require.NoError(t, err)
-	}
-	require.NoError(t, tw.Close())
-	require.NoError(t, gz.Close())
 	return buf.Bytes()
 }
 
@@ -184,26 +161,20 @@ func TestSafeExtract_EmptyBody(t *testing.T) {
 	require.True(t, errors.Is(err, ErrInvalidArchive))
 }
 
-func TestSafeExtract_TarGzHappyPath(t *testing.T) {
-	archive := makeTarGz(t, []tarEntry{
-		{Name: "SKILL.md", Body: []byte("---\nname: foo\n---\nbody\n")},
-		{Name: "assets/icon.svg", Body: []byte("<svg/>")},
-	})
-	dir := t.TempDir()
-	res, err := SafeExtract(archive, ExtractOptions{OutputDir: dir})
-	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"SKILL.md", "assets/icon.svg"}, res.Files)
+func TestSafeExtract_RejectsNonZipArchive(t *testing.T) {
+	// gzip magic bytes — should be rejected now that tar.gz is removed.
+	gzipData := []byte{0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00}
+	_, err := SafeExtract(gzipData, ExtractOptions{OutputDir: t.TempDir()})
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrInvalidArchive))
 }
 
-func TestDetectArchiveFormat(t *testing.T) {
+func TestIsZipMagic(t *testing.T) {
 	zipBytes := makeZip(t, []zipEntry{{Name: "SKILL.md", Body: []byte("body")}})
-	require.Equal(t, ArchiveZip, DetectArchiveFormat(zipBytes))
+	require.True(t, isZipMagic(zipBytes))
 
-	tarGzBytes := makeTarGz(t, []tarEntry{{Name: "SKILL.md", Body: []byte("body")}})
-	require.Equal(t, ArchiveTarGz, DetectArchiveFormat(tarGzBytes))
-
-	require.Equal(t, ArchiveUnknown, DetectArchiveFormat([]byte("not an archive")))
-	require.Equal(t, ArchiveUnknown, DetectArchiveFormat(nil))
+	require.False(t, isZipMagic([]byte("not an archive")))
+	require.False(t, isZipMagic(nil))
 }
 
 func TestValidateEntryName(t *testing.T) {
@@ -232,27 +203,4 @@ func TestValidateEntryName(t *testing.T) {
 		require.Equal(t, c.wantOK, ok, "input=%q", c.in)
 		require.Equal(t, c.want, got, "input=%q", c.in)
 	}
-}
-
-func TestSafeExtract_TarGzRejectsEntryWithLinkname(t *testing.T) {
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gz)
-	// Regular-file entry with a non-empty Linkname field (should be rejected).
-	hdr := &tar.Header{
-		Name:     "SKILL.md",
-		Mode:     0644,
-		Typeflag: tar.TypeReg,
-		Size:     5,
-		Linkname: "/etc/passwd",
-	}
-	require.NoError(t, tw.WriteHeader(hdr))
-	_, err := tw.Write([]byte("hello"))
-	require.NoError(t, err)
-	require.NoError(t, tw.Close())
-	require.NoError(t, gz.Close())
-
-	_, extractErr := SafeExtract(buf.Bytes(), ExtractOptions{OutputDir: t.TempDir()})
-	require.Error(t, extractErr)
-	require.True(t, errors.Is(extractErr, ErrUnsafeEntry))
 }

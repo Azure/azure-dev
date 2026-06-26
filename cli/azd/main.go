@@ -302,7 +302,10 @@ func platformUpgradeHintFor(goos string, installedBy installer.InstallType, chan
 	case "darwin":
 		switch installedBy {
 		case installer.InstallTypeBrew:
-			return update.RunUpdateHint("brew uninstall azd && brew install --cask azure/azd/azd")
+			// Homebrew refuses to load casks from the untrusted azure/azd source,
+			// blocking install, upgrade, and even uninstall, so trust the source
+			// first so the uninstall + reinstall that follow aren't blocked.
+			return update.RunUpdateHint("brew trust azure/azd && brew uninstall azd && brew install --cask azure/azd/azd")
 		case installer.InstallTypeSh:
 			return shInstallerHint(isDaily, "https://aka.ms/azd/upgrade/mac")
 		default:

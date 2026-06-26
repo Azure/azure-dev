@@ -12,10 +12,14 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
 // tokenServer creates an httptest.Server that responds to RemoteCredential token
@@ -292,4 +296,106 @@ func TestCredentialProvider_CredentialForCurrentUserWrapsErrors(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "config load boom")
+}
+
+func TestMultiTenantCredentialProvider_GetTokenCredential(t *testing.T) {
+	t.Run("CachesCredential", func(t *testing.T) {
+		m := &Manager{
+			cloud: cloud.AzurePublic(),
+		}
+
+		provider := NewMultiTenantCredentialProvider(m)
+		mtp := provider.(*multiTenantCredentialProvider)
+
+		// Pre-populate cache
+		fakeCred := &fakeTokenCredential{
+			token: azcore.AccessToken{
+				Token:     "cached-token",
+				ExpiresOn: time.Now().Add(time.Hour),
+			},
+		}
+		mtp.tenantCredentials.Store("cached-tenant", fakeCred)
+
+		// Should return cached credential
+		cred, err := provider.GetTokenCredential(
+			t.Context(), "cached-tenant",
+		)
+		require.NoError(t, err)
+		assert.Equal(t, fakeCred, cred)
+	})
+
+	t.Run("ErrorFromCredentialForCurrentUser", func(t *testing.T) {
+		m := &Manager{
+			configManager:     newMemoryConfigManager(),
+			userConfigManager: newMemoryUserConfigManager(),
+			publicClient:      &mockPublicClient{},
+		}
+
+		provider := NewMultiTenantCredentialProvider(m)
+		_, err := provider.GetTokenCredential(
+			t.Context(), "some-tenant",
+		)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrNoCurrentUser)
+	})
+}
+
+// --- ClaimsForCurrentUser ---
+
+func TestClaimsForCurrentUser_NotLoggedIn(t *testing.T) {
+	m := &Manager{
+		configManager:     newMemoryConfigManager(),
+		userConfigManager: newMemoryUserConfigManager(),
+		publicClient:      &mockPublicClient{},
+	}
+
+	_, err := m.ClaimsForCurrentUser(t.Context(), nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrNoCurrentUser)
+}
+
+func TestMultiTenantCredentialProvider_SuccessPath(
+	t *testing.T,
+) {
+	credCache := &memoryCache{cache: make(map[string][]byte)}
+	cfgMgr := newMemoryConfigManager()
+	userCfgMgr := newMemoryUserConfigManager()
+
+	accounts := []public.Account{
+		{HomeAccountID: "home.id"},
+	}
+	pc := &mockPublicClientWithAccounts{accounts: accounts}
+
+	m := &Manager{
+		configManager:     cfgMgr,
+		userConfigManager: userCfgMgr,
+		credentialCache:   credCache,
+		cloud:             cloud.AzurePublic(),
+		publicClient:      pc,
+	}
+
+	// Login as user
+	err := m.saveLoginForPublicClient(public.AuthResult{
+		Account: public.Account{HomeAccountID: "home.id"},
+	})
+	require.NoError(t, err)
+
+	provider := NewMultiTenantCredentialProvider(m)
+	cred, err := provider.GetTokenCredential(
+		t.Context(), "my-tenant",
+	)
+	// The credential is returned, but EnsureLoggedInCredential
+	// will fail since there's no real Azure. But the path through
+	// GetTokenCredential->CredentialForCurrentUser should succeed.
+	// This exercises the non-cached path.
+	//
+	// Note: error comes from EnsureLoggedInCredential trying
+	// to actually get a token
+	if err != nil {
+		// Expected - but we should have gotten past the
+		// CredentialForCurrentUser call
+		assert.NotErrorIs(t, err, ErrNoCurrentUser)
+	} else {
+		assert.NotNil(t, cred)
+	}
 }

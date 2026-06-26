@@ -1284,3 +1284,149 @@ func TestAgentEndpoint_JSONRoundTrip(t *testing.T) {
 			got.AuthorizationSchemes[1].IsolationKeySource)
 	}
 }
+
+func TestAgentObject_RoundTrip_AllFields(t *testing.T) {
+	t.Parallel()
+
+	original := AgentObject{
+		Object: "agent",
+		ID:     "agent-456",
+		Name:   "full-agent",
+		State:  "enabled",
+		AgentEndpoint: &AgentEndpoint{
+			Protocols: []AgentEndpointProtocol{AgentEndpointProtocolResponses},
+		},
+		InstanceIdentity: &AgentIdentityInfo{
+			PrincipalID: "pid-111",
+			ClientID:    "cid-222",
+		},
+		Blueprint: &BlueprintInfo{
+			PrincipalID: "bp-pid-333",
+			ClientID:    "bp-cid-444",
+		},
+		BlueprintReference: &BlueprintReference{
+			Type:        "ManagedAgentIdentityBlueprint",
+			BlueprintID: "bp-id-555",
+		},
+		Versions: struct {
+			Latest AgentVersionObject `json:"latest"`
+		}{
+			Latest: AgentVersionObject{
+				Object:  "agent_version",
+				ID:      "ver-2",
+				Name:    "full-agent",
+				Version: "1",
+			},
+		},
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	s := string(data)
+	for _, field := range []string{
+		`"state"`, `"instance_identity"`, `"blueprint"`, `"blueprint_reference"`,
+		`"principal_id"`, `"client_id"`, `"blueprint_id"`,
+	} {
+		if !strings.Contains(s, field) {
+			t.Errorf("expected JSON to contain %s, got: %s", field, s)
+		}
+	}
+
+	var got AgentObject
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if got.State != "enabled" {
+		t.Errorf("State = %q, want %q", got.State, "enabled")
+	}
+	if got.InstanceIdentity == nil {
+		t.Fatal("InstanceIdentity is nil")
+	}
+	if got.InstanceIdentity.PrincipalID != "pid-111" {
+		t.Errorf("InstanceIdentity.PrincipalID = %q, want %q",
+			got.InstanceIdentity.PrincipalID, "pid-111")
+	}
+	if got.Blueprint == nil {
+		t.Fatal("Blueprint is nil")
+	}
+	if got.Blueprint.PrincipalID != "bp-pid-333" {
+		t.Errorf("Blueprint.PrincipalID = %q, want %q",
+			got.Blueprint.PrincipalID, "bp-pid-333")
+	}
+	if got.BlueprintReference == nil {
+		t.Fatal("BlueprintReference is nil")
+	}
+	if got.BlueprintReference.Type != "ManagedAgentIdentityBlueprint" {
+		t.Errorf("BlueprintReference.Type = %q, want %q",
+			got.BlueprintReference.Type, "ManagedAgentIdentityBlueprint")
+	}
+	if got.BlueprintReference.BlueprintID != "bp-id-555" {
+		t.Errorf("BlueprintReference.BlueprintID = %q, want %q",
+			got.BlueprintReference.BlueprintID, "bp-id-555")
+	}
+}
+
+func TestAgentEndpoint_ProtocolConfiguration_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	original := AgentEndpoint{
+		ProtocolConfiguration: &ProtocolConfiguration{
+			Activity:      &ActivityProtocolConfiguration{EnableM365PublicEndpoint: new(true)},
+			Responses:     &ResponsesProtocolConfiguration{},
+			A2A:           &A2AProtocolConfiguration{},
+			MCP:           &MCPProtocolConfiguration{},
+			Invocations:   &InvocationsProtocolConfiguration{},
+			InvocationsWS: &InvocationsWSProtocolConfiguration{},
+		},
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	s := string(data)
+	for _, field := range []string{
+		`"protocol_configuration"`, `"activity"`, `"responses"`, `"a2a"`,
+		`"mcp"`, `"invocations"`, `"invocations_ws"`, `"enable_m365_public_endpoint"`,
+	} {
+		if !strings.Contains(s, field) {
+			t.Errorf("expected JSON to contain %s, got: %s", field, s)
+		}
+	}
+
+	var got AgentEndpoint
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if got.ProtocolConfiguration == nil {
+		t.Fatal("ProtocolConfiguration is nil")
+	}
+	if got.ProtocolConfiguration.Activity == nil {
+		t.Fatal("Activity is nil")
+	}
+	if got.ProtocolConfiguration.Activity.EnableM365PublicEndpoint == nil ||
+		!*got.ProtocolConfiguration.Activity.EnableM365PublicEndpoint {
+		t.Error("Activity.EnableM365PublicEndpoint should be true")
+	}
+	if got.ProtocolConfiguration.Responses == nil {
+		t.Error("Responses is nil")
+	}
+	if got.ProtocolConfiguration.A2A == nil {
+		t.Error("A2A is nil")
+	}
+	if got.ProtocolConfiguration.MCP == nil {
+		t.Error("MCP is nil")
+	}
+	if got.ProtocolConfiguration.Invocations == nil {
+		t.Error("Invocations is nil")
+	}
+	if got.ProtocolConfiguration.InvocationsWS == nil {
+		t.Error("InvocationsWS is nil")
+	}
+}

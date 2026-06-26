@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -17,7 +20,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_PythonProject_Restore(t *testing.T) {
@@ -264,4 +266,25 @@ func pythonExe() string {
 	} else {
 		return "python3"
 	}
+}
+
+func Test_pythonProject_Requirements(t *testing.T) {
+	p := NewPythonProject(python.NewCli(exec.NewCommandRunner(nil)), environment.NewWithValues("test", nil))
+	reqs := p.Requirements()
+	assert.False(t, reqs.Package.RequireRestore)
+	assert.False(t, reqs.Package.RequireBuild)
+}
+
+func Test_pythonProject_RequiredExternalTools(t *testing.T) {
+	cli := python.NewCli(exec.NewCommandRunner(nil))
+	p := NewPythonProject(cli, environment.NewWithValues("test", nil))
+	tools := p.RequiredExternalTools(t.Context(), &ServiceConfig{})
+	require.Len(t, tools, 1)
+	assert.Equal(t, cli, tools[0])
+}
+
+func Test_pythonProject_Initialize(t *testing.T) {
+	p := NewPythonProject(python.NewCli(exec.NewCommandRunner(nil)), environment.NewWithValues("test", nil))
+	err := p.Initialize(t.Context(), &ServiceConfig{})
+	require.NoError(t, err)
 }

@@ -91,44 +91,6 @@ func TestConfigOptionsAction_JSON(t *testing.T) {
 	require.True(t, foundAgentModelType, agentcopilot.ConfigKeyModelType+" should be present")
 }
 
-func TestConfigOptionsAction_Table(t *testing.T) {
-	t.Parallel()
-	buf := &bytes.Buffer{}
-	mockContext := mocks.NewMockContext(t.Context())
-	console := mockContext.Console
-
-	tempDir := t.TempDir()
-	configPath := tempDir + "/config.json"
-	manager := config.NewManager()
-	fileConfigManager := config.NewFileConfigManager(manager)
-	userConfigManager := config.NewUserConfigManager(fileConfigManager)
-
-	err := fileConfigManager.Save(config.NewEmptyConfig(), configPath)
-	require.NoError(t, err)
-
-	action := newConfigOptionsAction(
-		console,
-		&output.TableFormatter{},
-		buf,
-		userConfigManager,
-		[]string{},
-	)
-
-	_, err = action.Run(*mockContext.Context)
-	require.NoError(t, err)
-
-	outputStr := buf.String()
-	require.Contains(t, outputStr, "KEY")
-	require.Contains(t, outputStr, "DESCRIPTION")
-	require.Contains(t, outputStr, "defaults.subscription")
-	require.Contains(t, outputStr, "alpha.all")
-	require.Contains(t, outputStr, "auth.useAzCliAuth")
-	require.Contains(t, outputStr, "platform.type")
-	require.Contains(t, outputStr, "platform.config")
-	require.Contains(t, outputStr, "cloud.name")
-	require.Contains(t, outputStr, agentcopilot.ConfigKeyModelType)
-}
-
 func TestConfigOptionsAction_DefaultFormat(t *testing.T) {
 	t.Parallel()
 	buf := &bytes.Buffer{}

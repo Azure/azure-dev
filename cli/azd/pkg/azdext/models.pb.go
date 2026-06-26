@@ -873,6 +873,7 @@ type ServiceConfig struct {
 	Docker               *DockerProjectOptions  `protobuf:"bytes,10,opt,name=docker,proto3" json:"docker,omitempty"`
 	Config               *structpb.Struct       `protobuf:"bytes,11,opt,name=config,proto3" json:"config,omitempty"`
 	AdditionalProperties *structpb.Struct       `protobuf:"bytes,12,opt,name=additional_properties,json=additionalProperties,proto3" json:"additional_properties,omitempty"`
+	Uses                 []string               `protobuf:"bytes,13,rep,name=uses,proto3" json:"uses,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -987,6 +988,13 @@ func (x *ServiceConfig) GetConfig() *structpb.Struct {
 func (x *ServiceConfig) GetAdditionalProperties() *structpb.Struct {
 	if x != nil {
 		return x.AdditionalProperties
+	}
+	return nil
+}
+
+func (x *ServiceConfig) GetUses() []string {
+	if x != nil {
+		return x.Uses
 	}
 	return nil
 }
@@ -1416,7 +1424,7 @@ const file_models_proto_rawDesc = "" +
 	"\x10RequiredVersions\x12\x10\n" +
 	"\x03azd\x18\x01 \x01(\tR\x03azd\"-\n" +
 	"\x0fProjectMetadata\x12\x1a\n" +
-	"\btemplate\x18\x01 \x01(\tR\btemplate\"\xda\x03\n" +
+	"\btemplate\x18\x01 \x01(\tR\btemplate\"\xee\x03\n" +
 	"\rServiceConfig\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12.\n" +
 	"\x13resource_group_name\x18\x02 \x01(\tR\x11resourceGroupName\x12#\n" +
@@ -1432,7 +1440,8 @@ const file_models_proto_rawDesc = "" +
 	"\x06docker\x18\n" +
 	" \x01(\v2\x1c.azdext.DockerProjectOptionsR\x06docker\x12/\n" +
 	"\x06config\x18\v \x01(\v2\x17.google.protobuf.StructR\x06config\x12L\n" +
-	"\x15additional_properties\x18\f \x01(\v2\x17.google.protobuf.StructR\x14additionalProperties\"V\n" +
+	"\x15additional_properties\x18\f \x01(\v2\x17.google.protobuf.StructR\x14additionalProperties\x12\x12\n" +
+	"\x04uses\x18\r \x03(\tR\x04uses\"V\n" +
 	"\fInfraOptions\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +

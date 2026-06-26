@@ -158,6 +158,7 @@ func registerProjectMappings() {
 			Docker:               docker,
 			Config:               protoConfig,
 			AdditionalProperties: protoAdditionalProperties,
+			Uses:                 src.Uses,
 		}, nil
 	})
 
@@ -368,6 +369,7 @@ func registerProjectMappings() {
 			RelativePath:      src.RelativePath,
 			OutputPath:        src.OutputPath,
 			Image:             osutil.NewExpandableString(src.Image),
+			Uses:              src.Uses,
 		}
 
 		if src.Host != "" {

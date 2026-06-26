@@ -499,26 +499,7 @@ func (i *installer) resolveSkillUninstallTargets(
 	hosts []string,
 ) ([]SkillHost, error) {
 	if len(hosts) > 0 {
-		targets := make([]SkillHost, 0, len(hosts))
-		for _, name := range hosts {
-			// A requested host is usable only if it is a configured
-			// SkillHost that is also on PATH.
-			idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
-				return h.Host == name
-			})
-			if idx < 0 || i.commandRunner.ToolInPath(name) != nil {
-				supported := make([]string, len(tool.SkillHosts))
-				for j, h := range tool.SkillHosts {
-					supported[j] = h.Host
-				}
-				return nil, fmt.Errorf(
-					"host %q is not available for %s; supported hosts: %s",
-					name, tool.Name, strings.Join(supported, ", "),
-				)
-			}
-			targets = append(targets, tool.SkillHosts[idx])
-		}
-		return targets, nil
+		return i.explicitSkillHostTargets(tool, hosts)
 	}
 
 	// Default / --host all: remove from every host the skill is
@@ -1050,6 +1031,20 @@ func (i *installer) resolveSkillTargets(
 		return []SkillHost{host}, nil
 	}
 
+	return i.explicitSkillHostTargets(tool, hosts)
+}
+
+// explicitSkillHostTargets resolves an explicit list of requested host
+// names to their [SkillHost] definitions. A requested host is usable only
+// when it is a configured SkillHost that is also on PATH; both an unknown
+// name and a known-but-not-on-PATH host fail with an error naming the
+// supported hosts. Shared by the install/upgrade (resolveSkillTargets) and
+// uninstall (resolveSkillUninstallTargets) paths so the host-availability
+// rule lives in one place.
+func (i *installer) explicitSkillHostTargets(
+	tool *ToolDefinition,
+	hosts []string,
+) ([]SkillHost, error) {
 	targets := make([]SkillHost, 0, len(hosts))
 	for _, name := range hosts {
 		// A requested host is usable only if it is a configured SkillHost

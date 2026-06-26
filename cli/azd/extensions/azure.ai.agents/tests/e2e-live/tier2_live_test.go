@@ -443,11 +443,11 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 	case has("select a model"):
 		r.selectByText("gpt-4o-mini")
 
-	// Deployment version / SKU / capacity — azd-core PromptAiDeployment renders
-	// these exact picker messages (prompt_service.go:143 / 190 / 226); accept
-	// defaults. Match the full message rather than the bare keyword so a future
-	// prompt merely containing "version"/"sku"/"capacity" can't match by accident
-	// (it would fall through to the logged default instead).
+	// Deployment version / SKU / capacity — azd-core's PromptAiDeployment renders
+	// these exact picker messages; accept defaults. Match the full message rather
+	// than the bare keyword so a future prompt merely containing
+	// "version"/"sku"/"capacity" can't match by accident (it would fall through to
+	// the logged default instead).
 	case has("select a version for") || has("select a sku for") ||
 		has("enter deployment capacity for"):
 		r.enter()

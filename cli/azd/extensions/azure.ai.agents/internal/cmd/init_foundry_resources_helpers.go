@@ -39,6 +39,17 @@ type FoundryProjectInfo struct {
 	NetworkInjected bool
 }
 
+// Endpoint returns the Foundry project data-plane endpoint derived from the
+// account and project names, or "" when the project is nil or either name is
+// missing. The endpoint is the brownfield signal written onto the
+// azure.ai.project service so provision connects to the existing project.
+func (p *FoundryProjectInfo) Endpoint() string {
+	if p == nil || p.AccountName == "" || p.ProjectName == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", p.AccountName, p.ProjectName)
+}
+
 // FoundryDeploymentInfo holds information about an existing model deployment in a Foundry project.
 type FoundryDeploymentInfo struct {
 	Name        string
@@ -407,7 +418,7 @@ func configureFoundryProjectEnv(
 		return err
 	}
 
-	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", project.AccountName, project.ProjectName)
+	aiFoundryEndpoint := project.Endpoint()
 	if err := setEnvValue(ctx, azdClient, envName, "FOUNDRY_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
 		return err
 	}

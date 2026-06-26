@@ -3010,9 +3010,10 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	}
 
 	// Emit the sibling Foundry resource services (project + deployments,
-	// connections, toolboxes) and wire the agent's uses: to them.
+	// connections, toolboxes) and wire the agent's uses: to them. A selected
+	// existing project contributes its endpoint so provision reuses it.
 	if err := emitResourceServices(
-		ctx, a.azdClient, a.serviceNameOverride,
+		ctx, a.azdClient, a.serviceNameOverride, a.selectedFoundryProject.Endpoint(),
 		resourceDeployments, resourceConnections, resourceToolboxes,
 	); err != nil {
 		return err

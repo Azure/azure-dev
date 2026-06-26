@@ -1156,10 +1156,10 @@ func newSkillTool() *ToolDefinition {
 				MarketplaceAddCommand: []string{
 					"plugin", "marketplace", "add", "https://github.com/microsoft/azure-skills",
 				},
-				PluginInstallCommand:   []string{"plugin", "install", "azure"},
+				PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
 				PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
 				PluginUninstallCommand: []string{"plugin", "uninstall", "azure@azure-skills"},
-				PluginListCommand:      []string{"plugin", "list", "azure@azure-skills"},
+				PluginListCommand:      []string{"plugin", "list", "--json"},
 				PluginName:             "azure@azure-skills",
 			},
 		},
@@ -1255,7 +1255,7 @@ func TestRunSkill_PicksFirstAvailableHost(t *testing.T) {
 			present:    []string{"claude"},
 			wantHost:   "claude",
 			wantCmd:    "claude",
-			wantPlugin: "azure",
+			wantPlugin: "azure@azure-skills",
 		},
 		{
 			name:       "AllPresent_PrefersCopilot",

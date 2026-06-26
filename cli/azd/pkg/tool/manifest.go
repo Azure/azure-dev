@@ -370,18 +370,24 @@ func azureSkills() *ToolDefinition {
 				MarketplaceAddCommand: []string{
 					"plugin", "marketplace", "add", "https://github.com/microsoft/azure-skills",
 				},
-				PluginInstallCommand:   []string{"plugin", "install", "azure"},
+				PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
 				PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
 				PluginUninstallCommand: []string{"plugin", "uninstall", "azure@azure-skills"},
-				PluginListCommand:      []string{"plugin", "list", "azure@azure-skills"},
+				PluginListCommand:      []string{"plugin", "list", "--json"},
 				PluginName:             "azure@azure-skills",
-				// Sample (target-filtered output):
-				//   ❯ azure@azure-skills
-				//     Version: 1.1.70
-				//     Scope: user
-				// Claude only returns the queried plugin, so a single
-				// "Version: x.y.z" line is unambiguous.
-				VersionRegex: `Version:\s*v?(\d+\.\d+\.\d+)`,
+				// `claude plugin list` ignores a plugin-name argument, so
+				// list every plugin as JSON and anchor on the
+				// azure@azure-skills entry. Sample (--json):
+				//   [
+				//     {
+				//       "id": "azure@azure-skills",
+				//       "version": "1.1.73",
+				//       ...
+				//     }
+				//   ]
+				// "version" follows "id" within the same object, so [^}]
+				// keeps the capture scoped to the azure@azure-skills entry.
+				VersionRegex: `"id":\s*"azure@azure-skills"[^}]*?"version":\s*"v?(\d+\.\d+\.\d+)"`,
 			},
 		},
 	}

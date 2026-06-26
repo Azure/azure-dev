@@ -464,12 +464,12 @@ func (d *detector) detectAzdExtension(
 // detectSkill checks whether a skill is installed by running each
 // SkillHost's PluginListCommand. A host is reported as having the skill
 // installed only when its PluginName appears in the listing AND its
-// (required) VersionRegex captures a version — the regex match is the
-// authoritative existence signal, since some hosts echo the queried
-// name even when the plugin is not installed. The captured group
-// becomes InstalledVersion. Hosts whose binary is not on PATH are
-// skipped silently — a missing host is not an error, it just means the
-// skill cannot be installed through that host.
+// (required) VersionRegex captures a version. Because a host's list
+// command reports every installed plugin, the regex anchors on this
+// skill's identity so another plugin's version is never mistaken for
+// it. The captured group becomes InstalledVersion. Hosts whose binary
+// is not on PATH are skipped silently — a missing host is not an error,
+// it just means the skill cannot be installed through that host.
 func (d *detector) detectSkill(
 	ctx context.Context,
 	tool *ToolDefinition,
@@ -535,11 +535,12 @@ func (d *detector) DetectSkillHosts(
 // context cancellation/timeout.
 //
 // It uses the same two-stage gate as the rest of skill detection to
-// avoid false positives on hosts whose list command echoes the queried
-// name in "not found" output (e.g. claude's `plugin list
-// azure@azure-skills`): PluginName must appear in stdout AND VersionRegex
-// must capture a version (the regex anchors on a token present only in
-// installed-plugin output, such as claude's "Version:" line).
+// avoid false positives: PluginName must appear in stdout AND
+// VersionRegex must capture a version. The regex anchors on this
+// skill's identity (the azure@azure-skills entry in claude's `plugin
+// list --json` output, or the plugin name in copilot's `plugin list`),
+// so a host that lists other plugins but not this skill is reported as
+// not installed.
 func (d *detector) skillHostVersion(
 	ctx context.Context,
 	host SkillHost,

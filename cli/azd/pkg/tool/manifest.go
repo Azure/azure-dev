@@ -93,9 +93,14 @@ type SkillHost struct {
 	// an existence-only check.
 	BinaryVersionArgs []string
 	// BinaryVersionRegex is a Go regular expression whose first capture
-	// group matches the host binary's own version (e.g. `\d+\.\d+\.\d+`).
-	// The installer treats a match as proof the host CLI is genuinely
-	// installed. When empty, the functional probe is skipped.
+	// group matches the host binary's own version. To avoid mistaking a
+	// launcher stub for a real CLI, anchor it to the host's `--version`
+	// banner with `(?m)^` (e.g. `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`)
+	// rather than matching a bare semver: a stub's output may contain an
+	// incidental version-shaped token (a bundled runtime version, a path
+	// build number, a URL) that must not count. The installer treats a match
+	// against the probe output as proof the host CLI is genuinely installed.
+	// When empty, the functional probe is skipped.
 	BinaryVersionRegex string
 }
 
@@ -372,8 +377,10 @@ func azureSkills() *ToolDefinition {
 				VersionRegex: `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
 				// Probe the host binary itself so a launcher stub that only
 				// prompts to install the real CLI is not mistaken for a host.
+				// Anchored to copilot's `--version` banner ("GitHub Copilot
+				// CLI 1.0.64-3") so an incidental semver cannot pass.
 				BinaryVersionArgs:  []string{"--version"},
-				BinaryVersionRegex: `(\d+\.\d+\.\d+)`,
+				BinaryVersionRegex: `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`,
 			},
 			{
 				Host:                  "claude",
@@ -391,8 +398,10 @@ func azureSkills() *ToolDefinition {
 				VersionRegex: `Version:\s*v?(\d+\.\d+\.\d+)`,
 				// Probe the host binary itself so a launcher stub that only
 				// prompts to install the real CLI is not mistaken for a host.
+				// Anchored to claude's `--version` banner ("2.1.178 (Claude
+				// Code)") so an incidental semver cannot pass.
 				BinaryVersionArgs:  []string{"--version"},
-				BinaryVersionRegex: `(\d+\.\d+\.\d+)`,
+				BinaryVersionRegex: `(?m)^v?(\d+\.\d+\.\d+)\s+\(Claude Code\)`,
 			},
 		},
 	}

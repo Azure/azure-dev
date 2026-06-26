@@ -162,6 +162,13 @@ type installer struct {
 	httpClient       httpDoer
 	platformMu       sync.Mutex
 	platform         *Platform // lazily populated by ensurePlatform
+	// hostProbe memoizes hostUsable's version-probe result per host for the
+	// installer's lifetime (one process == one command), so the several
+	// host-resolution call sites do not re-spawn `--version` for the same
+	// host. Only on-PATH results are stored (see hostUsable). Guarded by
+	// hostProbeMu.
+	hostProbeMu sync.Mutex
+	hostProbe   map[string]bool
 	// retryBackoff is the initial wait between post-install detection
 	// retries (doubled each attempt). Defaults to 1s; tests may shorten
 	// it to keep the suite fast.
@@ -708,16 +715,50 @@ func (i *installer) resolveSkillTargets(
 // skill — which previously surfaced as the misleading
 // "<skill> was installed via <host> but verification failed".
 //
-// hostUsable runs the host's configured version probe and treats the host
-// as usable only when it reports a real version. The probe runs
-// non-interactively with an empty stdin, so a stub that prompts for input
-// reads EOF and exits instead of hanging. Hosts that do not configure a
-// version probe (BinaryVersionArgs/BinaryVersionRegex) fall back to the
-// existence check.
+// hostUsable shells out to the host's version command (non-interactively,
+// with an empty stdin so a stub that prompts reads EOF and exits instead of
+// hanging) and treats the host as usable only when the output matches the
+// host's BinaryVersionRegex. That regex is anchored to the host's own
+// `--version` banner (e.g. "^GitHub Copilot CLI <ver>"), so an incidental
+// version-shaped token elsewhere in a stub's output does not count. Hosts
+// that do not configure a version probe (BinaryVersionArgs/BinaryVersionRegex)
+// fall back to the existence check.
+//
+// hostUsable is consulted from several host-resolution call sites within one
+// command, so the version-probe result is memoized per host (hostProbe). Only
+// on-PATH results are cached: a host that is not on PATH is re-checked every
+// time (the exec.LookPath check is cheap) so a host installed earlier in the
+// same batch — e.g. `azd tool install github-copilot-cli azure-skills` — is
+// still picked up at run time. The cache assumes an on-PATH host binary is not
+// swapped in place mid-command, which azd never does (it installs hosts to
+// their own package locations).
 func (i *installer) hostUsable(ctx context.Context, host SkillHost) bool {
 	if i.commandRunner.ToolInPath(host.Host) != nil {
 		return false
 	}
+
+	i.hostProbeMu.Lock()
+	if i.hostProbe == nil {
+		i.hostProbe = map[string]bool{}
+	}
+	usable, ok := i.hostProbe[host.Host]
+	i.hostProbeMu.Unlock()
+	if ok {
+		return usable
+	}
+
+	usable = i.probeOnPathHost(ctx, host)
+
+	i.hostProbeMu.Lock()
+	i.hostProbe[host.Host] = usable
+	i.hostProbeMu.Unlock()
+	return usable
+}
+
+// probeOnPathHost runs the version probe for a host already confirmed to be on
+// PATH and reports whether it is a functional CLI. It is the uncached half of
+// hostUsable; see that method for the rationale behind the matching.
+func (i *installer) probeOnPathHost(ctx context.Context, host SkillHost) bool {
 	if len(host.BinaryVersionArgs) == 0 || host.BinaryVersionRegex == "" {
 		return true
 	}
@@ -731,7 +772,7 @@ func (i *installer) hostUsable(ctx context.Context, host SkillHost) bool {
 	if isContextErr(err) {
 		return true
 	}
-	return matchVersion(result.Stdout+result.Stderr, host.BinaryVersionRegex) != ""
+	return matchVersion(result.Stdout+"\n"+result.Stderr, host.BinaryVersionRegex) != ""
 }
 
 // pickSkillHost returns the first SkillHost that is a usable (functional)

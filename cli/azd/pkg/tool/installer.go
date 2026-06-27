@@ -500,10 +500,10 @@ func (i *installer) runSkillUninstall(
 
 // resolveSkillUninstallTargets resolves the host(s) a skill should be
 // removed from. With explicit host names, each must be a configured
-// SkillHost that is on PATH. Without explicit hosts (the default, and
-// also `--host all`), it targets every host the skill is currently
-// installed through; an error is returned when the skill is not
-// installed on any host.
+// SkillHost that is a usable (functional) CLI on PATH. Without explicit
+// hosts (the default, and also `--host all`), it targets every host the
+// skill is currently installed through; an error is returned when the
+// skill is not installed on any host.
 func (i *installer) resolveSkillUninstallTargets(
 	ctx context.Context,
 	tool *ToolDefinition,
@@ -1044,10 +1044,6 @@ func (i *installer) explicitSkillHostTargets(
 ) ([]SkillHost, error) {
 	targets := make([]SkillHost, 0, len(hosts))
 	for _, name := range hosts {
-		// A requested host is usable only if it is a configured SkillHost
-		// that is a functional CLI on PATH. "unknown name", "not on PATH"
-		// and "present but a launcher stub" all mean the host can't be
-		// used, so we point the user at the supported hosts.
 		host, ok := findSkillHost(tool, name)
 		if !ok || !i.hostUsable(ctx, host) {
 			supported := make([]string, len(tool.SkillHosts))
@@ -1092,35 +1088,24 @@ func configuredSkillHostsFor(tool *ToolDefinition, installed []InstalledSkillHos
 	return targets
 }
 
-// hostUsable reports whether an agentic CLI host is a *functional*
-// installation rather than merely a file named like the host on PATH.
+// hostUsable reports whether an agentic CLI host on PATH is a functional
+// CLI rather than a same-named launcher stub.
 //
-// Some environments place a launcher stub on PATH that is not the
-// real CLI — most notably the VS Code GitHub Copilot Chat extension, which
-// drops a small `copilot` stub into its globalStorage and adds that folder
-// to the integrated terminal's PATH. Invoking the stub only prints
-// "Install GitHub Copilot CLI?" and exits 0 without doing anything, so it
-// satisfies a bare exec.LookPath existence check yet cannot install the
-// skill — which previously surfaced as the misleading
-// "<skill> was installed via <host> but verification failed".
+// Some environments put a stub on PATH — notably the VS Code Copilot Chat
+// extension, whose `copilot` stub only prints "Install GitHub Copilot CLI?"
+// and exits 0. It passes a bare existence check but cannot install the skill,
+// which used to surface as a misleading "verification failed".
 //
-// hostUsable shells out to the host's version command (non-interactively,
-// with an empty stdin so a stub that prompts reads EOF and exits instead of
-// hanging) and treats the host as usable only when the output matches the
-// host's BinaryVersionRegex. That regex is anchored to the host's own
-// `--version` banner (e.g. "^GitHub Copilot CLI <ver>"), so an incidental
-// version-shaped token elsewhere in a stub's output does not count. Hosts
-// that do not configure a version probe (BinaryVersionArgs/BinaryVersionRegex)
-// fall back to the existence check.
+// To tell them apart, hostUsable runs the host's version command (with empty
+// stdin so a prompting stub reads EOF and exits) and accepts the host only
+// when the output matches its BinaryVersionRegex, anchored to the host's
+// `--version` banner. Hosts without a version probe fall back to the
+// existence check.
 //
-// hostUsable is consulted from several host-resolution call sites within one
-// command, so the version-probe result is memoized per host (hostProbe). Only
-// on-PATH results are cached: a host that is not on PATH is re-checked every
-// time (the exec.LookPath check is cheap) so a host installed earlier in the
-// same batch — e.g. `azd tool install github-copilot-cli azure-skills` — is
-// still picked up at run time. The cache assumes an on-PATH host binary is not
-// swapped in place mid-command, which azd never does (it installs hosts to
-// their own package locations).
+// Results are memoized per host (hostProbe); only on-PATH hosts are cached,
+// so a host installed earlier in the same batch is still picked up. The cache
+// assumes an on-PATH host binary is not swapped mid-command, which azd never
+// does.
 func (i *installer) hostUsable(ctx context.Context, host SkillHost) bool {
 	if i.commandRunner.ToolInPath(host.Host) != nil {
 		return false

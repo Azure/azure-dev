@@ -246,3 +246,38 @@ func Test_AzureClient_UpdateAppServiceContainerConfig_Error(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "updating container config")
 }
+
+func Test_AzureClient_UpdateAppServiceSlotContainerConfig(t *testing.T) {
+	mockCtx := mocks.NewMockContext(t.Context())
+	client := newAzureClientFromMockContext(mockCtx)
+
+	var capturedBody string
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodPatch &&
+			strings.Contains(req.URL.Path, "/slots/staging")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		bodyBytes, _ := io.ReadAll(req.Body)
+		capturedBody = string(bodyBytes)
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+			armappservice.Site{
+				ID:   new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/my-app/slots/staging"),
+				Name: new("my-app/staging"),
+				Properties: &armappservice.SiteProperties{
+					DefaultHostName: new("my-app-staging.azurewebsites.net"),
+					SiteConfig: &armappservice.SiteConfig{
+						LinuxFxVersion:             new("DOCKER|myregistry.azurecr.io/myapp:v1"),
+						AcrUseManagedIdentityCreds: new(true),
+					},
+				},
+			})
+	})
+
+	err := client.UpdateAppServiceSlotContainerConfig(
+		*mockCtx.Context, "SUB", "RG", "my-app", "staging", "myregistry.azurecr.io/myapp:v1")
+	require.NoError(t, err)
+	assert.NotEmpty(t, capturedBody, "UpdateSlot should have been called with a body")
+	assert.Contains(t, capturedBody, "DOCKER|myregistry.azurecr.io/myapp:v1",
+		"body should contain the correct linuxFxVersion")
+	assert.Contains(t, capturedBody, "acrUseManagedIdentityCreds",
+		"body should enable ACR managed identity")
+}

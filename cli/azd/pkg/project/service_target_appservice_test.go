@@ -485,6 +485,88 @@ func Test_appServiceTarget_Deploy_ZipPath(t *testing.T) {
 	})
 }
 
+func Test_appServiceTarget_Deploy_ContainerSlotPath(t *testing.T) {
+	t.Run("ContainerArtifact_DeploysToSlot", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		azCli := mockazapi.NewAzureClientFromMockContext(mockContext)
+
+		targetResource := environment.NewTargetResource(
+			"SUB_ID", "RG_ID", "WEB_APP_NAME", string(azapi.AzureResourceTypeWebSite),
+		)
+
+		// Mock the slot PATCH call for container config
+		slotUpdateCalled := false
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodPatch &&
+				strings.Contains(request.URL.Path, "/slots/staging")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			slotUpdateCalled = true
+			site := armappservice.Site{
+				Properties: &armappservice.SiteProperties{
+					DefaultHostName: new("webapp-staging.azurewebsites.net"),
+				},
+			}
+			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, site)
+		})
+
+		// Mock GetAppServiceProperties (for Endpoints)
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet &&
+				strings.Contains(request.URL.Path, "/sites/WEB_APP_NAME") &&
+				!strings.Contains(request.URL.Path, "/slots")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			response := armappservice.WebAppsClientGetResponse{
+				Site: armappservice.Site{
+					Properties: &armappservice.SiteProperties{
+						DefaultHostName: new("webapp.azurewebsites.net"),
+					},
+				},
+			}
+			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
+		})
+
+		// Mock slots response with "staging" slot
+		mockSlotsResponse(mockContext, []string{"staging"})
+
+		// Mock GetAppServiceSlotProperties (for Endpoints)
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet &&
+				strings.Contains(request.URL.Path, "/slots/staging")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			site := armappservice.Site{
+				Properties: &armappservice.SiteProperties{
+					DefaultHostName: new("webapp-staging.azurewebsites.net"),
+				},
+			}
+			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, site)
+		})
+
+		// Set slot name env var to target the staging slot
+		env := environment.New("test")
+		env.DotenvSet("AZD_DEPLOY_WEB_SLOT_NAME", "staging")
+
+		sctx := NewServiceContext()
+		require.NoError(t, sctx.Publish.Add(&Artifact{
+			Kind:         ArtifactKindContainer,
+			Location:     "myregistry.azurecr.io/myapp:abc123",
+			LocationKind: LocationKindRemote,
+		}))
+
+		st := &appServiceTarget{
+			env:     env,
+			cli:     azCli,
+			console: mockContext.Console,
+		}
+
+		progress := async.NewNoopProgress[ServiceProgress]()
+		result, err := st.Deploy(*mockContext.Context, &ServiceConfig{Name: "web"}, sctx, targetResource, progress)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.True(t, slotUpdateCalled, "should have called slot PATCH to set container config")
+	})
+}
+
 func Test_appServiceTarget_RequiredExternalTools_Docker(t *testing.T) {
 	t.Run("DockerLanguage_DelegatesToContainerHelper", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(t.Context())

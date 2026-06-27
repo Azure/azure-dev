@@ -152,7 +152,7 @@ stages:
       # Mirrors Increment_Version in eng/pipelines/templates/stages/publish.yml.
       - job: Update_Registry
         dependsOn: 
-          - Publish_Release
+          - Publish_Storage
         condition: >-
           and(
             succeeded(),

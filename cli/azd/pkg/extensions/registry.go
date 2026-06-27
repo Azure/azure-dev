@@ -64,6 +64,8 @@ type ProviderType string
 const (
 	// Service target provider type for custom deployment targets
 	ServiceTargetProviderType ProviderType = "service-target"
+	// Provisioning provider type for custom infrastructure provisioning
+	ProvisioningProviderType ProviderType = "provisioning-provider"
 )
 
 // Extension represents an extension in the registry

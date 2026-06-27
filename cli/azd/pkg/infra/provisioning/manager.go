@@ -530,6 +530,11 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 		providerKey = defaultProvider
 	}
 
+	// Record the resolved provider on the options so it reaches Provider.Initialize.
+	// Extension providers receive this over gRPC and reject an empty value; the built-in
+	// bicep/terraform providers ignore it.
+	m.options.Provider = providerKey
+
 	var provider Provider
 	err = m.serviceLocator.ResolveNamed(string(providerKey), &provider)
 	if err != nil {

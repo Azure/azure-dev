@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -394,4 +395,80 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 
 func defaultProvider() (provisioning.ProviderKind, error) {
 	return provisioning.Bicep, nil
+}
+
+// recordingProvider records the options passed to Initialize.
+type recordingProvider struct {
+	initializedProvider provisioning.ProviderKind
+}
+
+func (p *recordingProvider) Name() string { return "recording" }
+
+func (p *recordingProvider) Initialize(
+	ctx context.Context, projectPath string, options provisioning.Options,
+) error {
+	p.initializedProvider = options.Provider
+	return nil
+}
+
+func (p *recordingProvider) State(
+	ctx context.Context, options *provisioning.StateOptions,
+) (*provisioning.StateResult, error) {
+	return nil, nil
+}
+
+func (p *recordingProvider) Deploy(ctx context.Context) (*provisioning.DeployResult, error) {
+	return nil, nil
+}
+
+func (p *recordingProvider) Preview(ctx context.Context) (*provisioning.DeployPreviewResult, error) {
+	return nil, nil
+}
+
+func (p *recordingProvider) Destroy(
+	ctx context.Context, options provisioning.DestroyOptions,
+) (*provisioning.DestroyResult, error) {
+	return nil, nil
+}
+
+func (p *recordingProvider) EnsureEnv(ctx context.Context) error { return nil }
+
+func (p *recordingProvider) Parameters(ctx context.Context) ([]provisioning.Parameter, error) {
+	return nil, nil
+}
+
+func (p *recordingProvider) PlannedOutputs(ctx context.Context) ([]provisioning.PlannedOutput, error) {
+	return nil, nil
+}
+
+// An unspecified provider is resolved by the default resolver; the manager must hand the
+// resolved name to Provider.Initialize (extension providers validate it).
+func TestManagerForwardsResolvedProviderToInitialize(t *testing.T) {
+	env := environment.NewWithValues("test-env", nil)
+
+	mockContext := mocks.NewMockContext(t.Context())
+	registerContainerDependencies(mockContext, env)
+
+	recording := &recordingProvider{}
+	ioc.RegisterNamedInstance[provisioning.Provider](mockContext.Container, "writeback", recording)
+
+	resolver := func() (provisioning.ProviderKind, error) {
+		return provisioning.ProviderKind("writeback"), nil
+	}
+
+	envManager := &mockenv.MockEnvManager{}
+	mgr := provisioning.NewManager(
+		mockContext.Container,
+		resolver,
+		envManager,
+		env,
+		mockContext.Console,
+		mockContext.AlphaFeaturesManager,
+		nil,
+		cloud.AzurePublic(),
+	)
+
+	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{})
+	require.NoError(t, err)
+	require.Equal(t, provisioning.ProviderKind("writeback"), recording.initializedProvider)
 }

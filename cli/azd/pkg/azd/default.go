@@ -6,11 +6,13 @@ package azd
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cosmosdb"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	infraBicep "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	infraTerraform "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
@@ -86,9 +88,17 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 		container.MustRegisterNamedTransient(string(provider), constructor)
 	}
 
-	// Function to determine the default IaC provider when provisioning
+	// DefaultProviderResolver picks the IaC provider when azure.yaml doesn't set
+	// infra.provider. If the project has no on-disk IaC but uses service hosts owned by an
+	// installed extension that also ships a provisioning provider, route to that provider
+	// (e.g. a Foundry azure.yaml -> microsoft.foundry, no infra/ directory needed).
+	// Otherwise default to bicep.
 	container.MustRegisterSingleton(func() provisioning.DefaultProviderResolver {
 		return func() (provisioning.ProviderKind, error) {
+			if provider, ok := defaultProviderFromExtensions(container); ok {
+				return provider, nil
+			}
+
 			return provisioning.Bicep, nil
 		}
 	})
@@ -152,4 +162,85 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 	})
 
 	return nil
+}
+
+// defaultProviderFromExtensions returns the provisioning provider an installed extension
+// supplies for the loaded project's service hosts. It returns false (so the caller falls
+// back to bicep) when there's no project, no extension manager, or no matching extension.
+func defaultProviderFromExtensions(serviceLocator ioc.ServiceLocator) (provisioning.ProviderKind, bool) {
+	var projectConfig *project.ProjectConfig
+	if err := serviceLocator.Resolve(&projectConfig); err != nil || projectConfig == nil {
+		return "", false
+	}
+
+	var extensionManager *extensions.Manager
+	if err := serviceLocator.Resolve(&extensionManager); err != nil || extensionManager == nil {
+		return "", false
+	}
+
+	installed, err := extensionManager.ListInstalled()
+	if err != nil {
+		return "", false
+	}
+
+	return providerFromInstalledExtensions(projectConfig.Services, installed)
+}
+
+// providerFromInstalledExtensions finds an installed extension that both registers a
+// provisioning provider and serves one of the project's service hosts, and returns that
+// provisioning provider (for example, the Foundry extension serves azure.ai.project and
+// registers microsoft.foundry). It returns false when nothing matches. Extension ids are
+// sorted so the choice is deterministic when more than one extension qualifies.
+func providerFromInstalledExtensions(
+	services map[string]*project.ServiceConfig,
+	installed map[string]*extensions.Extension,
+) (provisioning.ProviderKind, bool) {
+	if len(services) == 0 || len(installed) == 0 {
+		return "", false
+	}
+
+	hosts := make(map[string]struct{}, len(services))
+	for _, svc := range services {
+		if svc != nil && svc.Host != "" {
+			hosts[string(svc.Host)] = struct{}{}
+		}
+	}
+
+	if len(hosts) == 0 {
+		return "", false
+	}
+
+	ids := make([]string, 0, len(installed))
+	for id := range installed {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+
+	for _, id := range ids {
+		ext := installed[id]
+		if ext == nil || !ext.HasCapability(extensions.ProvisioningProviderCapability) {
+			continue
+		}
+
+		var provisioningProvider string
+		servesHost := false
+		for _, provider := range ext.Providers {
+			switch provider.Type {
+			case extensions.ProvisioningProviderType:
+				if provisioningProvider == "" {
+					provisioningProvider = provider.Name
+				}
+			case extensions.ServiceTargetProviderType:
+				if _, ok := hosts[provider.Name]; ok {
+					servesHost = true
+				}
+			}
+		}
+
+		if provisioningProvider != "" && servesHost {
+			return provisioning.ProviderKind(provisioningProvider), true
+		}
+	}
+
+	return "", false
 }

@@ -190,3 +190,53 @@ func Test_AzureClient_GetAppServiceSlotProperties(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, props.HostNames, "my-app-staging.azurewebsites.net")
 }
+
+func Test_AzureClient_UpdateAppServiceContainerConfig(t *testing.T) {
+	mockCtx := mocks.NewMockContext(t.Context())
+	client := newAzureClientFromMockContext(mockCtx)
+
+	var updateCalled bool
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodPatch &&
+			strings.Contains(req.URL.Path, "/Microsoft.Web/sites/my-app") &&
+			!strings.Contains(req.URL.Path, "/slots/")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		updateCalled = true
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+			armappservice.Site{
+				ID:       new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/my-app"),
+				Name:     new("my-app"),
+				Location: new("eastus"),
+				Kind:     new("app,linux,container"),
+				Properties: &armappservice.SiteProperties{
+					DefaultHostName: new("my-app.azurewebsites.net"),
+					SiteConfig: &armappservice.SiteConfig{
+						LinuxFxVersion:             new("DOCKER|myregistry.azurecr.io/myapp:v1"),
+						AcrUseManagedIdentityCreds: new(true),
+					},
+				},
+			})
+	})
+
+	err := client.UpdateAppServiceContainerConfig(
+		*mockCtx.Context, "SUB", "RG", "my-app", "myregistry.azurecr.io/myapp:v1")
+	require.NoError(t, err)
+	assert.True(t, updateCalled, "Update should have been called")
+}
+
+func Test_AzureClient_UpdateAppServiceContainerConfig_Error(t *testing.T) {
+	mockCtx := mocks.NewMockContext(t.Context())
+	client := newAzureClientFromMockContext(mockCtx)
+
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodPatch &&
+			strings.Contains(req.URL.Path, "/Microsoft.Web/sites/my-app")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(req, http.StatusInternalServerError)
+	})
+
+	err := client.UpdateAppServiceContainerConfig(
+		*mockCtx.Context, "SUB", "RG", "my-app", "myregistry.azurecr.io/myapp:v1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "updating container config")
+}

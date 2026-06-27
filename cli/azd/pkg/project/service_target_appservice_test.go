@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
 )
@@ -485,26 +486,43 @@ func Test_appServiceTarget_Deploy_ZipPath(t *testing.T) {
 }
 
 func Test_appServiceTarget_RequiredExternalTools_Docker(t *testing.T) {
-	t.Run("DockerLanguage_ReturnsDependencies", func(t *testing.T) {
-		// When language is docker, RequiredExternalTools should delegate to containerHelper
-		// Since containerHelper is nil in this unit test, we just verify the language check branch
-		target := &appServiceTarget{}
+	t.Run("DockerLanguage_DelegatesToContainerHelper", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		dockerCli := docker.NewCli(mockContext.CommandRunner)
+		containerHelper := NewContainerHelper(
+			nil, nil, nil, nil, dockerCli, nil, mockContext.Console, nil)
+		target := &appServiceTarget{
+			containerHelper: containerHelper,
+		}
 		sc := &ServiceConfig{
 			Language: ServiceLanguageDocker,
 		}
-		// containerHelper is nil, so this will panic if it reaches the delegation
-		// Instead, just verify the function signature works
-		require.NotNil(t, target)
-		require.Equal(t, ServiceLanguageDocker, sc.Language)
+		tools := target.RequiredExternalTools(*mockContext.Context, sc)
+		assert.NotEmpty(t, tools, "should return docker tools for docker language")
 	})
 
-	t.Run("DockerPath_ReturnsDependencies", func(t *testing.T) {
-		target := &appServiceTarget{}
+	t.Run("DockerPath_DelegatesToContainerHelper", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		dockerCli := docker.NewCli(mockContext.CommandRunner)
+		containerHelper := NewContainerHelper(
+			nil, nil, nil, nil, dockerCli, nil, mockContext.Console, nil)
+		target := &appServiceTarget{
+			containerHelper: containerHelper,
+		}
 		sc := &ServiceConfig{
 			Language: ServiceLanguagePython,
 			Docker:   DockerProjectOptions{Path: "./Dockerfile"},
 		}
-		require.NotNil(t, target)
-		require.NotEmpty(t, sc.Docker.Path)
+		tools := target.RequiredExternalTools(*mockContext.Context, sc)
+		assert.NotEmpty(t, tools, "should return docker tools when docker.path is set")
+	})
+
+	t.Run("NonDocker_ReturnsEmpty", func(t *testing.T) {
+		target := &appServiceTarget{}
+		sc := &ServiceConfig{
+			Language: ServiceLanguagePython,
+		}
+		tools := target.RequiredExternalTools(t.Context(), sc)
+		assert.Empty(t, tools, "should return no tools for non-docker language")
 	})
 }

@@ -450,6 +450,37 @@ func (cli *AzureClient) UpdateAppServiceContainerConfig(
 	return nil
 }
 
+// UpdateAppServiceSlotContainerConfig updates the container configuration for a deployment slot.
+// It sets linuxFxVersion to "DOCKER|<imageName>" and enables ACR managed identity authentication.
+func (cli *AzureClient) UpdateAppServiceSlotContainerConfig(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+	slotName string,
+	imageName string,
+) error {
+	client, err := cli.createWebAppsClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	linuxFxVersion := fmt.Sprintf("DOCKER|%s", imageName)
+	_, err = client.UpdateSlot(ctx, resourceGroup, appName, slotName, armappservice.SitePatchResource{
+		Properties: &armappservice.SitePatchResourceProperties{
+			SiteConfig: &armappservice.SiteConfig{
+				LinuxFxVersion:             &linuxFxVersion,
+				AcrUseManagedIdentityCreds: new(true),
+			},
+		},
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("updating container config for app service %s slot %s: %w", appName, slotName, err)
+	}
+
+	return nil
+}
+
 // DeployAppServiceSlotZip deploys a zip file to a specific deployment slot.
 func (cli *AzureClient) DeployAppServiceSlotZip(
 	ctx context.Context,

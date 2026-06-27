@@ -83,6 +83,27 @@ For example, `preprovision` runs before provisioning, `postdeploy` runs after de
 
 The full JSON schema for `azure.yaml` is maintained in the [schemas/](../../schemas/) directory and published for editor validation.
 
+## Host-Specific Notes
+
+### App Service (`host: appservice`)
+
+App Service supports two deployment modes:
+
+- **Zip deploy** (default): When `language` is set to a non-Docker language (e.g., `python`, `js`, `dotnet`), azd builds the code, creates a zip archive, and deploys it via the Kudu zip deploy API.
+- **Container deploy**: When `language: docker` or `docker.path` is set, azd builds the container image, pushes it to ACR, and updates the site's container configuration (`linuxFxVersion`). ACR authentication uses managed identity. This enables Web App for Containers scenarios.
+
+Example container deployment:
+
+```yaml
+services:
+  web:
+    project: ./src/web
+    language: docker
+    host: appservice
+    docker:
+      path: ./Dockerfile
+```
+
 ## See Also
 
 - [azure.yaml JSON Schema](../../schemas/) — Machine-readable schema definition

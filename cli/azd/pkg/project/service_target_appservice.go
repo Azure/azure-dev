@@ -191,13 +191,19 @@ func (st *appServiceTarget) Deploy(
 
 	// Check if this is a container deployment by looking for a container artifact in the publish results
 	if artifact, found := serviceContext.Publish.FindFirst(WithKind(ArtifactKindContainer)); found {
-		return st.containerDeploy(ctx, serviceConfig, targetResource, artifact.Location, progress)
+		imageName := artifact.Location
+		if imageName == "" {
+			return nil, fmt.Errorf(
+				"no container image found in publish artifacts for service: %s", serviceConfig.Name)
+		}
+		return st.containerDeploy(ctx, serviceConfig, targetResource, imageName, progress)
 	}
 
 	return st.zipDeploy(ctx, serviceConfig, serviceContext, targetResource, progress)
 }
 
 // containerDeploy updates the App Service container configuration with the published image.
+// It respects slot selection via AZD_DEPLOY_{SERVICE}_SLOT_NAME, matching the zip deploy behavior.
 func (st *appServiceTarget) containerDeploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -205,17 +211,42 @@ func (st *appServiceTarget) containerDeploy(
 	imageName string,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
-	progress.SetProgress(NewServiceProgress("Updating container configuration"))
-
-	err := st.cli.UpdateAppServiceContainerConfig(
-		ctx,
-		targetResource.SubscriptionId(),
-		targetResource.ResourceGroupName(),
-		targetResource.ResourceName(),
-		imageName,
-	)
+	// Determine deployment targets (main app or slots) using the same logic as zip deploy
+	deployTargets, err := st.determineDeploymentTargets(ctx, serviceConfig, targetResource, progress)
 	if err != nil {
-		return nil, fmt.Errorf("deploying container to app service %s: %w", serviceConfig.Name, err)
+		return nil, fmt.Errorf("determining deployment targets: %w", err)
+	}
+
+	for _, target := range deployTargets {
+		var progressMsg string
+		if target.SlotName == "" {
+			progressMsg = "Updating container configuration"
+		} else {
+			progressMsg = fmt.Sprintf("Updating container configuration for slot '%s'", target.SlotName)
+		}
+		progress.SetProgress(NewServiceProgress(progressMsg))
+
+		if target.SlotName == "" {
+			err = st.cli.UpdateAppServiceContainerConfig(
+				ctx,
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+				imageName,
+			)
+		} else {
+			err = st.cli.UpdateAppServiceSlotContainerConfig(
+				ctx,
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+				target.SlotName,
+				imageName,
+			)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("deploying container to app service %s: %w", serviceConfig.Name, err)
+		}
 	}
 
 	progress.SetProgress(NewServiceProgress("Fetching endpoints for app service"))

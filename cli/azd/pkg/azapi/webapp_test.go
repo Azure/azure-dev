@@ -6,6 +6,7 @@ package azapi
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -195,13 +196,14 @@ func Test_AzureClient_UpdateAppServiceContainerConfig(t *testing.T) {
 	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
-	var updateCalled bool
+	var capturedBody string
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
 		return req.Method == http.MethodPatch &&
 			strings.Contains(req.URL.Path, "/Microsoft.Web/sites/my-app") &&
 			!strings.Contains(req.URL.Path, "/slots/")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
-		updateCalled = true
+		bodyBytes, _ := io.ReadAll(req.Body)
+		capturedBody = string(bodyBytes)
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
 			armappservice.Site{
 				ID:       new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/my-app"),
@@ -221,7 +223,11 @@ func Test_AzureClient_UpdateAppServiceContainerConfig(t *testing.T) {
 	err := client.UpdateAppServiceContainerConfig(
 		*mockCtx.Context, "SUB", "RG", "my-app", "myregistry.azurecr.io/myapp:v1")
 	require.NoError(t, err)
-	assert.True(t, updateCalled, "Update should have been called")
+	assert.NotEmpty(t, capturedBody, "Update should have been called with a body")
+	assert.Contains(t, capturedBody, "DOCKER|myregistry.azurecr.io/myapp:v1",
+		"body should contain the correct linuxFxVersion")
+	assert.Contains(t, capturedBody, "acrUseManagedIdentityCreds",
+		"body should enable ACR managed identity")
 }
 
 func Test_AzureClient_UpdateAppServiceContainerConfig_Error(t *testing.T) {

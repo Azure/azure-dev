@@ -83,7 +83,8 @@ agent name and the second is the message.
 
 Use --input-file/-f to send the contents of a file as the request body
 instead of a positional message argument. This is useful for structured
-or large payloads with the invocations protocol.
+or large payloads with the invocations protocol, or for sending a complete
+Activity object with the activity protocol.
 
 Use --local to target a locally running agent (started via 'azd ai agent run')
 instead of Foundry.
@@ -110,6 +111,12 @@ suppressed in raw mode.`,
 
   # Invoke using a specific protocol
   azd ai agent invoke --protocol invocations "Hello!"
+
+  # Invoke over the activity protocol (wraps the message as a message Activity)
+  azd ai agent invoke --protocol activity_protocol "Hello!"
+
+  # Invoke the activity protocol with a complete Activity object from a file
+  azd ai agent invoke --protocol activity_protocol -f activity.json
 
   # Invoke with a file as the request body
   azd ai agent invoke -f request.json
@@ -203,7 +210,7 @@ suppressed in raw mode.`,
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
 						fmt.Sprintf("unsupported protocol %q for invocation", flags.protocol),
-						"supported protocols are: responses, invocations",
+						"supported protocols are: responses, invocations, activity_protocol",
 					)
 				}
 			}
@@ -214,7 +221,8 @@ suppressed in raw mode.`,
 
 	cmd.Flags().BoolVarP(&flags.local, "local", "l", false, "Invoke on localhost instead of Foundry")
 	cmd.Flags().StringVarP(&flags.inputFile, "input-file", "f", "", "Path to a file whose contents are sent as the request body")
-	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "", "Protocol to use: responses (default) or invocations")
+	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "",
+		"Protocol to use: responses (default), invocations, or activity_protocol")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(
 		&flags.timeout,
@@ -360,16 +368,22 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		switch protocol {
 		case agent_api.AgentProtocolInvocations:
 			return a.invocationsLocal(ctx)
+		case agent_api.AgentProtocolActivityProtocol:
+			return a.activityLocal(ctx)
 		default:
 			return a.responsesLocal(ctx)
 		}
 	}
 
 	// Remote: route by protocol.
-	if protocol == agent_api.AgentProtocolInvocations {
+	switch protocol {
+	case agent_api.AgentProtocolInvocations:
 		return a.invocationsRemote(ctx)
+	case agent_api.AgentProtocolActivityProtocol:
+		return a.activityRemote(ctx)
+	default:
+		return a.responsesRemote(ctx)
 	}
-	return a.responsesRemote(ctx)
 }
 
 // emitInvokeSuccessNextStep prints the resolver-driven Next: block after a

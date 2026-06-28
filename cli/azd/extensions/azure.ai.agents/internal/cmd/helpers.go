@@ -894,7 +894,7 @@ func protocolFromAgentYaml(
 				"agent.yaml declares only non-invocable protocols: %s",
 				strings.Join(names, ", "),
 			),
-			"azd can only invoke agents using the responses or invocations protocols",
+			"azd can only invoke agents using the responses, invocations, or activity protocols",
 		)
 	case 1:
 		// Exactly one invocable protocol — but if the agent declares

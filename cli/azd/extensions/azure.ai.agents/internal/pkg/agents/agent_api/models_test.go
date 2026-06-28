@@ -1201,7 +1201,7 @@ func TestIsInvocable(t *testing.T) {
 		{AgentProtocolResponses, true},
 		{AgentProtocolInvocations, true},
 		{AgentProtocolA2A, false},
-		{AgentProtocolActivityProtocol, false},
+		{AgentProtocolActivityProtocol, true},
 		{AgentProtocol("unknown"), false},
 	}
 

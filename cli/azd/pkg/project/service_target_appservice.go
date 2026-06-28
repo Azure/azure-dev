@@ -58,16 +58,21 @@ func (st *appServiceTarget) Initialize(ctx context.Context, serviceConfig *Servi
 	return nil
 }
 
-// Package prepares deployment artifacts. For container deployments, the container image artifact
-// from the build phase is passed through. For non-container deployments, a zip archive is created.
+// Package prepares deployment artifacts. For container deployments (language=docker, docker.path set,
+// or a container artifact already present), no packaging is needed since the Publish phase handles
+// image build and push. For non-container deployments, a zip archive is created.
 func (st *appServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	// Container deployment: pass through the container artifact from the framework service
-	if _, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
+	// Container deployment: no packaging needed. The Publish phase handles image build/push.
+	// This covers three scenarios:
+	// 1. Local docker build: container artifact already present from framework service
+	// 2. Remote build (docker.RemoteBuild): no artifacts from Package phase by design
+	// 3. Dotnet-publish docker: no artifacts from Package phase by design
+	if st.isContainerDeploy(serviceConfig, serviceContext) {
 		return &ServicePackageResult{}, nil
 	}
 
@@ -116,13 +121,10 @@ func (st *appServiceTarget) Publish(
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
 ) (*ServicePublishResult, error) {
-	// Check for container artifact from the package phase or the build phase
-	hasContainerArtifact := false
-	if _, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
-		hasContainerArtifact = true
-	}
-
-	if !hasContainerArtifact {
+	// Gate on service configuration, not just artifact presence.
+	// Remote build and dotnet-publish docker flows produce no package artifacts by design;
+	// ContainerHelper.Publish handles everything (build + push) in those modes.
+	if !st.isContainerDeploy(serviceConfig, serviceContext) {
 		return &ServicePublishResult{}, nil
 	}
 
@@ -602,4 +604,19 @@ func (st *appServiceTarget) validateTargetResource(
 	}
 
 	return nil
+}
+
+// isContainerDeploy returns true when the service is configured for container deployment.
+// This checks the service configuration (language=docker or docker.path set) as well as
+// the presence of a container artifact (e.g., from --from-package <image>).
+// Remote build and dotnet-publish docker flows produce no package artifacts by design,
+// so artifact presence alone is insufficient.
+func (st *appServiceTarget) isContainerDeploy(serviceConfig *ServiceConfig, serviceContext *ServiceContext) bool {
+	if serviceConfig.Language == ServiceLanguageDocker || serviceConfig.Docker.Path != "" {
+		return true
+	}
+	if _, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
+		return true
+	}
+	return false
 }

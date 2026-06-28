@@ -390,6 +390,34 @@ func Test_appServiceTarget_Package_ContainerArtifact(t *testing.T) {
 		_, foundZip := result.Artifacts.FindFirst(WithKind(ArtifactKindArchive))
 		assert.False(t, foundZip, "should not create zip for container deployments")
 	})
+
+	t.Run("RemoteBuild_NoArtifacts_NoopNoError", func(t *testing.T) {
+		// Remote build and dotnet-publish docker flows produce no package artifacts.
+		// Package() should be a no-op (no zip, no error) when service is configured for docker.
+		sc := &ServiceConfig{
+			Name:     "web",
+			Language: ServiceLanguageDocker,
+			Docker:   DockerProjectOptions{RemoteBuild: true},
+			Project:  &ProjectConfig{Path: t.TempDir()},
+		}
+
+		sctx := NewServiceContext()
+		// Empty package artifacts (simulates remote build behavior)
+
+		st := &appServiceTarget{}
+		progress := async.NewProgress[ServiceProgress]()
+		go func() {
+			for range progress.Progress() {
+			}
+		}()
+
+		result, err := st.Package(t.Context(), sc, sctx, progress)
+		progress.Done()
+
+		require.NoError(t, err, "should not error for remote-build docker service with no artifacts")
+		require.NotNil(t, result)
+		assert.Empty(t, result.Artifacts, "should produce no artifacts for remote build")
+	})
 }
 
 func Test_appServiceTarget_Deploy_ContainerPath(t *testing.T) {

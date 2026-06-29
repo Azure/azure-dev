@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -540,9 +541,7 @@ func (cli *AzureClient) UpdateAppServiceAppSettings(
 	// Merge: existing settings + new env vars (new values overwrite)
 	merged := make(map[string]*string)
 	if existing.Properties != nil {
-		for k, v := range existing.Properties {
-			merged[k] = v
-		}
+		maps.Copy(merged, existing.Properties)
 	}
 	for k, v := range envVars {
 		merged[k] = &v

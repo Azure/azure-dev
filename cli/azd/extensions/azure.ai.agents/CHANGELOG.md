@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fail fast with a corrective hint when `azd ai agent files upload` is given an agent name as its positional argument (mirroring `azd ai agent invoke <agent>`). Previously, in multi-service projects without `-n/--agent-name`, the command could hang silently on the interactive agent picker in non-TTY contexts. The positional argument is the file to upload; select the agent with `-n` and the file with `-f`.
 - Add a `--call-id` flag to `azd ai agent invoke` that sends the `x-agent-foundry-call-id` header on `--local` invocations only. It is ignored for remote Foundry requests.
 - Replace the per-command Foundry isolation-key flags (`--user-isolation-key`, `--chat-isolation-key`, and the session-ownership `--isolation-key`) with a single `--user-identity` flag. The value is sent as the `x-agent-user-id` header for `--local` invocations and as `x-ms-user-identity` for all remote Foundry requests. This is a breaking change with no backward-compatible flag retention.
 

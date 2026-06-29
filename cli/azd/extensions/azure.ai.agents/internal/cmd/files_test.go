@@ -4,10 +4,15 @@
 package cmd
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -162,6 +167,74 @@ func TestFilesStatCommand_HasUserIdentityFlag(t *testing.T) {
 		require.NotNil(t, f, "expected flag %q", name)
 		assert.Equal(t, "", f.DefValue)
 	}
+}
+
+func TestAgentNameMisusedAsFilePositional(t *testing.T) {
+	agentNames := []string{"my-agent", "other-agent"}
+
+	// An existing local file is a valid upload target, even if its name
+	// happens to match an agent service name.
+	tmpDir := t.TempDir()
+	existingFile := filepath.Join(tmpDir, "my-agent")
+	require.NoError(t, os.WriteFile(existingFile, []byte("data"), 0600))
+
+	tests := []struct {
+		name       string
+		positional string
+		agentNames []string
+		want       bool
+	}{
+		{
+			name:       "agent name passed as positional",
+			positional: "my-agent",
+			agentNames: agentNames,
+			want:       true,
+		},
+		{
+			name:       "non-existent file not matching an agent",
+			positional: "does-not-exist.csv",
+			agentNames: agentNames,
+			want:       false,
+		},
+		{
+			name:       "existing file matching an agent name",
+			positional: existingFile,
+			agentNames: agentNames,
+			want:       false,
+		},
+		{
+			name:       "empty positional",
+			positional: "",
+			agentNames: agentNames,
+			want:       false,
+		},
+		{
+			name:       "no agent services declared",
+			positional: "my-agent",
+			agentNames: nil,
+			want:       false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := agentNameMisusedAsFilePositional(tc.positional, tc.agentNames)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestErrAgentNameAsFilePositional(t *testing.T) {
+	err := errAgentNameAsFilePositional("my-agent")
+	require.Error(t, err)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected a *azdext.LocalError")
+	assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+	assert.Equal(t, exterrors.CodeInvalidPositionalArg, localErr.Code)
+	assert.Contains(t, localErr.Message, "my-agent")
+	assert.Contains(t, localErr.Suggestion, "-n my-agent")
+	assert.Contains(t, localErr.Suggestion, "-f <file>")
 }
 
 func TestPrintFileListJSON(t *testing.T) {

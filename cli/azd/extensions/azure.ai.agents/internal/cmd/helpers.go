@@ -699,6 +699,26 @@ func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdCl
 	return info, nil
 }
 
+// agentServiceNames returns the names of all azure.ai.agent services declared
+// in azure.yaml. It returns nil (and no error) when the project cannot be
+// loaded or declares no agent services, so callers can use it for best-effort
+// hints without failing on a missing or unreadable project.
+func agentServiceNames(ctx context.Context, azdClient *azdext.AzdClient) []string {
+	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || projectResponse.Project == nil {
+		return nil
+	}
+
+	var names []string
+	for _, s := range projectResponse.Project.Services {
+		if s.Host == AiAgentHost {
+			names = append(names, s.Name)
+		}
+	}
+
+	return names
+}
+
 // ServiceRunContext holds the resolved context needed for local development.
 type ServiceRunContext struct {
 	ServiceName    string // the resolved service name (from azure.yaml)

@@ -210,6 +210,7 @@ const (
 	CodeOnDiskBicepCompileFailed    = "ondisk_bicep_compile_failed"
 	CodeOnDiskBicepParseFailed      = "ondisk_bicep_parse_failed"
 	CodeOnDiskParametersInvalid     = "ondisk_parameters_invalid"
+	CodeOnDiskTemplateMissing       = "ondisk_template_missing"
 	CodeArmWhatIfFailed             = "arm_what_if_failed"
 )
 

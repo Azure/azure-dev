@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 
 	"azureaiagent/internal/project"
@@ -64,10 +64,21 @@ func emitResourceServices(
 	// sanitize to the same key (e.g. "my conn" and "myconn") fail fast instead
 	// of silently overwriting each other -- AddService overwrites by name.
 	// Seed it with the agent service name, which the caller adds before this
-	// runs, so a resource colliding with the agent is caught too.
+	// runs, plus the project's existing non-project services, so a resource
+	// colliding with the agent or a hand-authored service is caught too. The
+	// existing azure.ai.project service is intentionally left out: it is reused
+	// by resolveProjectServiceKey to keep repeated inits idempotent.
 	usedNames := map[string]string{}
 	if agentServiceName != "" {
 		usedNames[agentServiceName] = "agent service"
+	}
+	if resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{}); err == nil && resp.GetProject() != nil {
+		for name, svc := range resp.GetProject().GetServices() {
+			if name == agentServiceName || svc.GetHost() == AiProjectHost {
+				continue
+			}
+			usedNames[name] = fmt.Sprintf("existing service %q", name)
+		}
 	}
 
 	// One project service owns the model deployments and represents the single
@@ -199,7 +210,7 @@ func existingProjectServiceKey(ctx context.Context, azdClient *azdext.AzdClient)
 	if len(keys) == 0 {
 		return ""
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	return keys[0]
 }
 
@@ -454,7 +465,7 @@ func sortedServices(services map[string]*azdext.ServiceConfig) []*azdext.Service
 	for k := range services {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	out := make([]*azdext.ServiceConfig, 0, len(services))
 	for _, k := range keys {

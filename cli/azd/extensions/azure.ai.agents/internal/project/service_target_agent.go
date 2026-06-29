@@ -1008,6 +1008,14 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	warnDeprecatedScaleSettings(serviceConfig.Config)
 
+	// Provision any declared Foundry memory stores before deploying the agent, since
+	// the agent's memory_search tool depends on the store existing at runtime.
+	if err := p.provisionMemoryStores(
+		ctx, serviceTargetConfig, azdEnv["FOUNDRY_PROJECT_ENDPOINT"], progress,
+	); err != nil {
+		return nil, err
+	}
+
 	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
 	if err != nil {
 		return nil, err
@@ -1056,6 +1064,97 @@ func (p *AgentServiceTargetProvider) Deploy(
 	}
 
 	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, result.agentVersion, result.protocols)
+}
+
+// provisionMemoryStores creates any Foundry memory stores declared in the service target
+// configuration. Provisioning is idempotent: a store that already exists is left unchanged,
+// so deployments are safe to re-run. ChatModel and EmbeddingModel reference model deployment
+// names that must already exist in the Foundry project.
+func (p *AgentServiceTargetProvider) provisionMemoryStores(
+	ctx context.Context,
+	config *ServiceTargetAgentConfig,
+	projectEndpoint string,
+	progress azdext.ProgressReporter,
+) error {
+	if config == nil || len(config.MemoryStores) == 0 {
+		return nil
+	}
+
+	if projectEndpoint == "" {
+		return exterrors.Dependency(
+			exterrors.CodeMissingProjectEndpoint,
+			"cannot provision memory stores: the Foundry project endpoint is not set",
+			"run 'azd provision' or connect to an existing project via "+
+				"'azd ai agent init --project-id <resource-id>'",
+		)
+	}
+
+	client := azure.NewFoundryMemoryStoreClient(projectEndpoint, p.credential)
+
+	for _, store := range config.MemoryStores {
+		if store.Name == "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidMemoryStore,
+				"a memory store in azure.yaml is missing the required 'name' field",
+				"add a 'name' to each entry under the agent service 'memoryStores' list",
+			)
+		}
+		if store.ChatModel == "" || store.EmbeddingModel == "" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidMemoryStore,
+				fmt.Sprintf(
+					"memory store '%s' must specify both 'chatModel' and 'embeddingModel'",
+					store.Name,
+				),
+				"set 'chatModel' and 'embeddingModel' to model deployment names "+
+					"available in your Foundry project",
+			)
+		}
+
+		if progress != nil {
+			progress(fmt.Sprintf("Provisioning memory store %q", store.Name))
+		}
+
+		request := &azure.CreateMemoryStoreRequest{
+			Name:        store.Name,
+			Description: store.Description,
+			Definition: azure.MemoryStoreDefinition{
+				Kind:           azure.MemoryStoreKindDefault,
+				ChatModel:      store.ChatModel,
+				EmbeddingModel: store.EmbeddingModel,
+				Options:        mapMemoryStoreOptions(store.Options),
+			},
+		}
+
+		_, created, err := client.EnsureMemoryStore(ctx, request)
+		if err != nil {
+			return exterrors.ServiceFromAzure(err, exterrors.OpCreateMemoryStore)
+		}
+
+		if created {
+			fmt.Println(output.WithSuccessFormat("Created memory store %q", store.Name))
+		} else {
+			fmt.Println(output.WithGrayFormat("Memory store %q already exists; leaving as-is", store.Name))
+		}
+	}
+
+	return nil
+}
+
+// mapMemoryStoreOptions converts the azure.yaml memory store options into the API request shape.
+// It returns nil when no options are configured so the service applies its own defaults.
+func mapMemoryStoreOptions(options *MemoryStoreOptions) *azure.MemoryStoreOptions {
+	if options == nil {
+		return nil
+	}
+
+	return &azure.MemoryStoreOptions{
+		ChatSummaryEnabled:      options.ChatSummaryEnabled,
+		UserProfileEnabled:      options.UserProfileEnabled,
+		ProceduralMemoryEnabled: options.ProceduralMemoryEnabled,
+		DefaultTTLSeconds:       options.DefaultTtlSeconds,
+		UserProfileDetails:      options.UserProfileDetails,
+	}
 }
 
 // shouldUsePreBuiltImage determines whether to use a pre-built image.

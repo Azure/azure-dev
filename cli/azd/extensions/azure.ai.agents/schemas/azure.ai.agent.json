@@ -39,6 +39,11 @@
       "description": "List of project connections to create via Bicep provisioning.",
       "items": { "$ref": "#/definitions/Connection" }
     },
+    "memoryStores": {
+      "type": "array",
+      "description": "List of Foundry memory stores to provision (create-if-not-exists) during deployment. Memory stores let agents retain context across sessions via the memory_search tool.",
+      "items": { "$ref": "#/definitions/MemoryStore" }
+    },
     "startupCommand": {
       "type": "string",
       "description": "Command to start the agent server (e.g., 'python main.py'). Used by 'azd ai agent run' for local development."
@@ -199,6 +204,30 @@
         "error": { "type": "string", "description": "Error information." }
       },
       "required": ["name", "category", "target", "authType"],
+      "additionalProperties": false
+    },
+    "MemoryStore": {
+      "type": "object",
+      "description": "A Foundry memory store provisioned (create-if-not-exists) during deployment. Backs the agent's memory_search tool so the agent can retain context across sessions.",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the memory store." },
+        "description": { "type": "string", "description": "Description of the memory store." },
+        "chatModel": { "type": "string", "description": "Chat model deployment name used by the memory store (must exist in the Foundry project)." },
+        "embeddingModel": { "type": "string", "description": "Embedding model deployment name used by the memory store (must exist in the Foundry project)." },
+        "options": {
+          "type": "object",
+          "description": "Optional extraction and retention settings for the memory store.",
+          "properties": {
+            "chatSummaryEnabled": { "type": "boolean", "description": "Enable rolling chat-summary memory." },
+            "userProfileEnabled": { "type": "boolean", "description": "Enable durable user-profile memory." },
+            "proceduralMemoryEnabled": { "type": "boolean", "description": "Enable procedural (how-to) memory." },
+            "defaultTtlSeconds": { "type": "integer", "description": "Default time-to-live (seconds) for new memory entries. 0 means no expiration." },
+            "userProfileDetails": { "type": "string", "description": "Guidance on what user-profile information the agent should retain or avoid." }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["name", "chatModel", "embeddingModel"],
       "additionalProperties": false
     }
   }

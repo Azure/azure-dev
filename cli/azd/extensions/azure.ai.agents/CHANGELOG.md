@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- [[#8742]](https://github.com/Azure/azure-dev/issues/8742) Provision Foundry memory stores during `azd deploy`. Declare one or more memory stores under the agent service's `memoryStores` list in `azure.yaml` (with `chatModel`, `embeddingModel`, and optional extraction/retention `options`), and azd creates them in the Foundry project before deploying the agent. Provisioning is idempotent: existing stores are left unchanged, so deployments are safe to re-run.
 - Add a `--call-id` flag to `azd ai agent invoke` that sends the `x-agent-foundry-call-id` header on `--local` invocations only. It is ignored for remote Foundry requests.
 - Replace the per-command Foundry isolation-key flags (`--user-isolation-key`, `--chat-isolation-key`, and the session-ownership `--isolation-key`) with a single `--user-identity` flag. The value is sent as the `x-agent-user-id` header for `--local` invocations and as `x-ms-user-identity` for all remote Foundry requests. This is a breaking change with no backward-compatible flag retention.
 

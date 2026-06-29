@@ -48,6 +48,7 @@ type ServiceTargetAgentConfig struct {
 	ToolConnections []ToolConnection   `json:"toolConnections,omitempty"`
 	Toolboxes       []Toolbox          `json:"toolboxes,omitempty"`
 	Connections     []Connection       `json:"connections,omitempty"`
+	MemoryStores    []MemoryStore      `json:"memoryStores,omitempty"`
 	StartupCommand  string             `json:"startupCommand,omitempty"`
 }
 
@@ -106,6 +107,27 @@ type Toolbox struct {
 	Name        string           `json:"name"`
 	Description string           `json:"description,omitempty"`
 	Tools       []map[string]any `json:"tools"`
+}
+
+// MemoryStore represents a Foundry memory store provisioned (create-if-not-exists)
+// during deployment. It backs the agent's memory_search tool, letting the agent retain
+// context across sessions. ChatModel and EmbeddingModel reference model deployment names
+// available in the Foundry project.
+type MemoryStore struct {
+	Name           string              `json:"name"`
+	Description    string              `json:"description,omitempty"`
+	ChatModel      string              `json:"chatModel"`
+	EmbeddingModel string              `json:"embeddingModel"`
+	Options        *MemoryStoreOptions `json:"options,omitempty"`
+}
+
+// MemoryStoreOptions controls extraction behavior and retention defaults for a memory store.
+type MemoryStoreOptions struct {
+	ChatSummaryEnabled      *bool  `json:"chatSummaryEnabled,omitempty"`
+	UserProfileEnabled      *bool  `json:"userProfileEnabled,omitempty"`
+	ProceduralMemoryEnabled *bool  `json:"proceduralMemoryEnabled,omitempty"`
+	DefaultTtlSeconds       *int   `json:"defaultTtlSeconds,omitempty"`
+	UserProfileDetails      string `json:"userProfileDetails,omitempty"`
 }
 
 // Connection represents a project connection matching the Bicep ConnectionPropertiesV2 spec.

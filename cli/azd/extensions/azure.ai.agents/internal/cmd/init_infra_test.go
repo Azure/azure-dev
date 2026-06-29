@@ -440,12 +440,14 @@ func TestValidateStandaloneEjectArgs(t *testing.T) {
 		args      []string
 		manifest  string
 		src       string
+		image     string
 		wantError bool
 	}{
 		{name: "no extras: ok", args: nil, manifest: "", src: "", wantError: false},
 		{name: "positional arg: refuse", args: []string{"./foo"}, wantError: true},
 		{name: "manifest flag: refuse", manifest: "./agent.yaml", wantError: true},
 		{name: "src flag: refuse", src: "./src/agent", wantError: true},
+		{name: "image flag: refuse", image: "myacr.azurecr.io/agent:1", wantError: true},
 		{
 			name:      "all three set: refuse",
 			args:      []string{"./pos"},
@@ -460,6 +462,7 @@ func TestValidateStandaloneEjectArgs(t *testing.T) {
 			flags := &initFlags{
 				manifestPointer: tt.manifest,
 				src:             tt.src,
+				image:           tt.image,
 			}
 			err := validateStandaloneEjectArgs(tt.args, flags)
 			if !tt.wantError {

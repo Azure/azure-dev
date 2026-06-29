@@ -23,8 +23,7 @@ import (
 )
 
 const (
-	toolboxesApiVersion    = "v1"
-	toolboxesFeatureHeader = "Toolboxes=V1Preview"
+	toolboxesApiVersion = "v1"
 )
 
 // FoundryToolboxClient provides methods for interacting with the Foundry Toolboxes API.
@@ -113,7 +112,6 @@ func (c *FoundryToolboxClient) CreateToolboxVersion(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", toolboxesFeatureHeader)
 
 	if err := req.SetBody(
 		streaming.NopCloser(bytes.NewReader(payload)),
@@ -160,7 +158,6 @@ func (c *FoundryToolboxClient) GetToolbox(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", toolboxesFeatureHeader)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -200,7 +197,6 @@ func (c *FoundryToolboxClient) DeleteToolbox(
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", toolboxesFeatureHeader)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {

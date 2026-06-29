@@ -816,6 +816,16 @@ func gitPushChanges(ctx context.Context,
 		return "", nil
 	}
 
+	// some progress text
+	progressReportStates := []string{
+		"(checkmark) DONE",
+		"(ex) PHAILED"
+	}
+
+	for _, v := range progressReportStates {
+		fmt.Printf("Progress(%s)\n", v)
+	}
+
 	chosenRemote = remotes[*resp.Value]
 
 	taskList := ux.NewTaskList(nil)

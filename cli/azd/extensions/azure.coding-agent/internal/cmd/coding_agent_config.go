@@ -809,7 +809,7 @@ func gitPushChanges(ctx context.Context,
 		// they're going to do the push themselves.
 		fmt.Println(
 			output.WithWarningFormat(
-				"(!) NOTE: copilot-setup-steps.yml must be committed to the main branch of %s before it will take effect!",
+				"(exclamation) NOTE: copilot-setup-steps.yml must be committed to the main branch of %s before it will take effect!",
 				repoSlug,
 			),
 		) //nolint:lll

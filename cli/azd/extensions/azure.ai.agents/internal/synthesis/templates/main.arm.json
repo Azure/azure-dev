@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "15130149524391891581"
+      "templateHash": "15368524875277487765"
     }
   },
   "definitions": {
@@ -294,7 +294,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "769018913626752462"
+              "templateHash": "18099261411510484453"
             }
           },
           "definitions": {
@@ -935,6 +935,9 @@
                   },
                   "foundryProjectPrincipalId": {
                     "value": "[reference('foundryAccount::project', '2025-06-01', 'full').identity.principalId]"
+                  },
+                  "enableNetworkIsolation": {
+                    "value": "[parameters('enableNetworkIsolation')]"
                   }
                 },
                 "template": {
@@ -944,7 +947,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "5205255504807716842"
+                      "templateHash": "2948233716175969636"
                     }
                   },
                   "parameters": {
@@ -985,6 +988,13 @@
                       "type": "string",
                       "metadata": {
                         "description": "Principal id of the Foundry project managed identity; receives AcrPull and is the connection credential identity."
+                      }
+                    },
+                    "enableNetworkIsolation": {
+                      "type": "bool",
+                      "defaultValue": false,
+                      "metadata": {
+                        "description": "When true, the registry disables public network access to stay inside the isolation boundary."
                       }
                     }
                   },
@@ -1028,7 +1038,7 @@
                       },
                       "properties": {
                         "adminUserEnabled": false,
-                        "publicNetworkAccess": "Enabled",
+                        "publicNetworkAccess": "[if(parameters('enableNetworkIsolation'), 'Disabled', 'Enabled')]",
                         "zoneRedundancy": "Disabled"
                       }
                     },

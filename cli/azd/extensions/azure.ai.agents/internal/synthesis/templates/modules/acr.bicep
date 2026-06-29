@@ -28,6 +28,9 @@ param foundryProjectName string
 @description('Principal id of the Foundry project managed identity; receives AcrPull and is the connection credential identity.')
 param foundryProjectPrincipalId string
 
+@description('When true, the registry disables public network access to stay inside the isolation boundary.')
+param enableNetworkIsolation bool = false
+
 // Variables
 
 // Built-in role definition ids. See: https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
@@ -50,7 +53,11 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   }
   properties: {
     adminUserEnabled: false
-    publicNetworkAccess: 'Enabled'
+    // Disable public access when network isolation is enabled so the registry
+    // stays inside the VNet boundary. Docker-backed agents in isolated projects
+    // must pull via the private endpoint; public access would leave a dependency
+    // outside the isolation perimeter and can break pulls in locked-down egress.
+    publicNetworkAccess: enableNetworkIsolation ? 'Disabled' : 'Enabled'
     zoneRedundancy: 'Disabled'
   }
 }

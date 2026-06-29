@@ -251,6 +251,7 @@ module acr 'acr.bicep' = if (includeAcr) {
     foundryAccountName: foundryAccount.name
     foundryProjectName: foundryAccount::project.name
     foundryProjectPrincipalId: foundryAccount::project.identity.principalId
+    enableNetworkIsolation: enableNetworkIsolation
   }
 }
 

@@ -180,8 +180,30 @@ func (a *OptimizeApplyAction) apply(
 		if err := projectpkg.UpsertAgentEnvVars(svc, envUpdates); err != nil {
 			return fmt.Errorf("failed to update agent definition: %w", err)
 		}
+		// Read the current `uses:` value before replacing the whole service entry.
+		// AddService writes back the proto ServiceConfig shape, which doesn't carry
+		// the `uses:` field (a core azd-only field). Reading it first and restoring
+		// it after avoids silently dropping dependency edges that were written by
+		// `setServiceUses` via SetServiceConfigValue.
+		prevUses, err := azdClient.Project().GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
+			ServiceName: svc.Name,
+			Path:        "uses",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to read uses for service %q: %w", svc.Name, err)
+		}
 		if _, err := azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{Service: svc}); err != nil {
 			return fmt.Errorf("failed to persist agent definition: %w", err)
+		}
+		// Restore `uses:` if it was set before the replacement.
+		if prevUses.GetFound() && prevUses.GetValue() != nil {
+			if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+				ServiceName: svc.Name,
+				Path:        "uses",
+				Value:       prevUses.GetValue(),
+			}); err != nil {
+				return fmt.Errorf("failed to restore uses for service %q: %w", svc.Name, err)
+			}
 		}
 	} else {
 		agentYamlPath := filepath.Join(serviceDir, "agent.yaml")

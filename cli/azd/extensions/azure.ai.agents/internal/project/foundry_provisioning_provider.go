@@ -200,10 +200,12 @@ func (p *FoundryProvisioningProvider) Initialize(
 // synthesizer falls back to the process environment.
 func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[string]string {
 	if p.azdClient == nil {
+		log.Printf("[debug] foundry provider: no azd client; network ${VAR} uses process env only")
 		return nil
 	}
 	envClient := p.azdClient.Environment()
 	if envClient == nil {
+		log.Printf("[debug] foundry provider: no environment client; network ${VAR} uses process env only")
 		return nil
 	}
 	curr, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})

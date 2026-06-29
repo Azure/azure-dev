@@ -35,13 +35,13 @@ type ejectArtifact struct {
 // project runs eject only; honoring a positional path, -m, or --src would
 // falsely imply the input was acted upon.
 func validateStandaloneEjectArgs(args []string, flags *initFlags) error {
-	if len(args) == 0 && flags.manifestPointer == "" && flags.src == "" {
+	if len(args) == 0 && flags.manifestPointer == "" && flags.src == "" && flags.image == "" {
 		return nil
 	}
 	return exterrors.Validation(
 		exterrors.CodeInfraEjectConflictingArguments,
 		"`--infra` on an existing project runs eject only and does not "+
-			"accept a positional path, -m/--manifest, or --src",
+			"accept a positional path, -m/--manifest, --src, or --image",
 		"drop the extra argument and run `azd ai agent init --infra` from the project root, "+
 			"or remove --infra to run the normal init flow",
 	)
@@ -122,6 +122,7 @@ func ejectInfra(projectRoot, provider string) error {
 		RawAzureYAML:  rawYAML,
 		ServiceName:   svcName,
 		AcceptedHosts: project.FoundryProvisioningServiceHosts,
+		ProjectRoot:   projectRoot,
 		// Eject writes a static infra/ tree. Keep ${VAR} references verbatim so
 		// the ejected main.parameters.json stays environment-portable; the
 		// on-disk provision flow resolves them from the azd environment.
@@ -151,9 +152,22 @@ func ejectInfra(projectRoot, provider string) error {
 					"or remove the network: block to provision a public account with Terraform",
 			)
 		}
-		return ejectTerraform(projectRoot, infraDir, res.Parameters)
 	}
-	return ejectBicep(infraDir, res.Parameters)
+
+	// Eject writes the whole infra/ tree or none of it: if any writer fails
+	// after MkdirAll, remove the partial directory so the next run isn't blocked
+	// by the "./infra/ already exists" refuse above and the command stays
+	// retryable without manual cleanup.
+	var ejectErr error
+	if provider == project.TerraformProviderName {
+		ejectErr = ejectTerraform(projectRoot, infraDir, res.Parameters)
+	} else {
+		ejectErr = ejectBicep(infraDir, res.Parameters)
+	}
+	if ejectErr != nil {
+		_ = os.RemoveAll(infraDir)
+	}
+	return ejectErr
 }
 
 // ejectBicep writes the embedded Bicep tree plus the synthesized

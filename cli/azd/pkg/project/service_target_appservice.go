@@ -47,7 +47,7 @@ func NewAppServiceTarget(
 
 // Gets the required external tools
 func (st *appServiceTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
-	if serviceConfig.Language == ServiceLanguageDocker {
+	if serviceConfig.Language == ServiceLanguageDocker || serviceConfig.Docker.Path != "" {
 		return st.containerHelper.RequiredExternalTools(ctx, serviceConfig)
 	}
 	return []tools.ExternalTool{}
@@ -260,6 +260,25 @@ func (st *appServiceTarget) containerDeploy(
 		}
 		if err != nil {
 			return nil, fmt.Errorf("deploying container to app service %s: %w", serviceConfig.Name, err)
+		}
+	}
+
+	// Apply environment variables as App Settings if configured
+	if len(serviceConfig.Environment) > 0 {
+		progress.SetProgress(NewServiceProgress("Updating application settings"))
+		envVars, err := serviceConfig.Environment.Expand(st.env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("expanding environment variables: %w", err)
+		}
+
+		if err := st.cli.UpdateAppServiceAppSettings(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+			envVars,
+		); err != nil {
+			return nil, fmt.Errorf("updating app settings for service %s: %w", serviceConfig.Name, err)
 		}
 	}
 
@@ -619,12 +638,10 @@ func (st *appServiceTarget) validateTargetResource(
 }
 
 // isContainerDeploy returns true when the service is configured for container deployment.
-// For App Service, container deployment requires language=docker or a pre-built image.
-// Polyglot containerization (non-docker language + docker.path) is not yet supported for
-// App Service because the composite docker framework only wraps for targets that return
-// RequiresContainer() == true (containerapp/aks).
+// For App Service, container deployment is triggered by language=docker, docker.path set
+// (polyglot containerization), or a pre-built image.
 func (st *appServiceTarget) isContainerDeploy(serviceConfig *ServiceConfig, serviceContext *ServiceContext) bool {
-	if serviceConfig.Language == ServiceLanguageDocker {
+	if serviceConfig.Language == ServiceLanguageDocker || serviceConfig.Docker.Path != "" {
 		return true
 	}
 	if _, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
@@ -633,19 +650,8 @@ func (st *appServiceTarget) isContainerDeploy(serviceConfig *ServiceConfig, serv
 	return false
 }
 
-// validateContainerConfig checks for unsupported container configurations and returns
-// actionable errors instead of silently failing.
-func (st *appServiceTarget) validateContainerConfig(serviceConfig *ServiceConfig) error {
-	// Polyglot containerization (e.g., language: python + docker.path) is not yet supported
-	// for App Service. The composite docker framework only wraps for containerapp/aks targets.
-	if serviceConfig.Language != ServiceLanguageDocker &&
-		serviceConfig.Language != ServiceLanguageNone &&
-		serviceConfig.Docker.Path != "" {
-		return fmt.Errorf(
-			"App Service container deployment with language '%s' and docker.path is not yet supported. "+
-				"Use 'language: docker' with a Dockerfile, or use 'host: containerapp' for polyglot "+
-				"containerization. See https://github.com/Azure/azure-dev/issues/1608 for tracking",
-			serviceConfig.Language)
-	}
+// validateContainerConfig is a no-op; polyglot containerization is now supported via the
+// composite docker framework in service_manager.go.
+func (st *appServiceTarget) validateContainerConfig(_ *ServiceConfig) error {
 	return nil
 }

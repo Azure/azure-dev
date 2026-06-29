@@ -517,6 +517,46 @@ func (cli *AzureClient) ValidateAppServiceForContainerDeploy(
 	return nil
 }
 
+// UpdateAppServiceAppSettings merges the provided environment variables into the App Service's
+// application settings. Existing settings not in the provided map are preserved.
+func (cli *AzureClient) UpdateAppServiceAppSettings(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+	envVars map[string]string,
+) error {
+	client, err := cli.createWebAppsClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	// Get existing app settings to merge (preserve settings not managed by azd)
+	existing, err := client.ListApplicationSettings(ctx, resourceGroup, appName, nil)
+	if err != nil {
+		return fmt.Errorf("listing app settings for %s: %w", appName, err)
+	}
+
+	// Merge: existing settings + new env vars (new values overwrite)
+	merged := make(map[string]*string)
+	if existing.Properties != nil {
+		for k, v := range existing.Properties {
+			merged[k] = v
+		}
+	}
+	for k, v := range envVars {
+		merged[k] = &v
+	}
+
+	_, err = client.UpdateApplicationSettings(ctx, resourceGroup, appName,
+		armappservice.StringDictionary{Properties: merged}, nil)
+	if err != nil {
+		return fmt.Errorf("updating app settings for %s: %w", appName, err)
+	}
+
+	return nil
+}
+
 // DeployAppServiceSlotZip deploys a zip file to a specific deployment slot.
 func (cli *AzureClient) DeployAppServiceSlotZip(
 	ctx context.Context,

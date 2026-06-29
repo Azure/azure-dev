@@ -416,14 +416,14 @@ func Test_appServiceTarget_Initialize(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("PolyglotDocker_ReturnsError", func(t *testing.T) {
+	t.Run("PolyglotDocker_NoError", func(t *testing.T) {
+		// Polyglot containerization (python + docker.path) is now supported
 		target := NewAppServiceTarget(nil, nil, nil, nil, nil)
 		err := target.Initialize(t.Context(), &ServiceConfig{
 			Language: ServiceLanguagePython,
 			Docker:   DockerProjectOptions{Path: "./Dockerfile"},
 		})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not yet supported")
+		require.NoError(t, err)
 	})
 }
 
@@ -687,15 +687,21 @@ func Test_appServiceTarget_RequiredExternalTools_Docker(t *testing.T) {
 		assert.NotEmpty(t, tools, "should return docker tools for docker language")
 	})
 
-	t.Run("DockerPath_WithNonDockerLanguage_ReturnsEmpty", func(t *testing.T) {
-		// Polyglot containerization (non-docker language + docker.path) is not supported for appservice
-		target := &appServiceTarget{}
+	t.Run("DockerPath_WithNonDockerLanguage_DelegatesToContainerHelper", func(t *testing.T) {
+		// Polyglot containerization (non-docker language + docker.path) is now supported
+		mockContext := mocks.NewMockContext(t.Context())
+		dockerCli := docker.NewCli(mockContext.CommandRunner)
+		containerHelper := NewContainerHelper(
+			nil, nil, nil, nil, dockerCli, nil, mockContext.Console, nil)
+		target := &appServiceTarget{
+			containerHelper: containerHelper,
+		}
 		sc := &ServiceConfig{
 			Language: ServiceLanguagePython,
 			Docker:   DockerProjectOptions{Path: "./Dockerfile"},
 		}
-		tools := target.RequiredExternalTools(t.Context(), sc)
-		assert.Empty(t, tools, "should not return docker tools for unsupported polyglot containerization")
+		tools := target.RequiredExternalTools(*mockContext.Context, sc)
+		assert.NotEmpty(t, tools, "should return docker tools when docker.path is set")
 	})
 
 	t.Run("NonDocker_ReturnsEmpty", func(t *testing.T) {

@@ -129,6 +129,16 @@ func (p *connectionServiceTarget) Deploy(
 	expand := func(value string) string { return resolveConnectionEnv(value, env) }
 
 	kebabAuth := normalizeAuthType(strings.TrimSpace(cfg.AuthType))
+	// Identity-based and OAuth2 connections are provisioned by `connection create`
+	// (init/provision), not at deploy time. buildConnectionBody can't build their
+	// bodies, so upserting here would fail azd deploy. Skip them; the api-key,
+	// custom-keys, and none types are still upserted to stay current.
+	if !supportsDeployUpsert(kebabAuth) {
+		if progress != nil {
+			progress(fmt.Sprintf("Connection %q uses %s auth provisioned elsewhere; skipping deploy upsert", name, kebabAuth))
+		}
+		return &azdext.ServiceDeployResult{}, nil
+	}
 	key, customKeys := connectionCredentialArgs(kebabAuth, cfg.Credentials, expand)
 	body, err := buildConnectionBody(
 		cfg.Category, expand(cfg.Target), kebabAuth, key, customKeys,
@@ -208,6 +218,18 @@ func resolveConnectionEnv(value string, env map[string]string) string {
 		return value
 	}
 	return resolved
+}
+
+// supportsDeployUpsert reports whether buildConnectionBody can build a body for
+// authType at deploy time. Identity-based and OAuth2 types are provisioned by
+// `connection create`, so they are skipped during deploy.
+func supportsDeployUpsert(authType string) bool {
+	switch authType {
+	case "api-key", "custom-keys", "none", "":
+		return true
+	default:
+		return false
+	}
 }
 
 // connectionCredentialArgs maps the service entry's credentials map to the key /

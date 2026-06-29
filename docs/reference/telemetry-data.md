@@ -485,7 +485,7 @@ Built-in tool IDs come from azd's curated tool manifest (run `azd tool list` to 
 | `tool.firstrun.install_failed_ids` | string | Comma-separated tool IDs that failed during first-run |
 | `tool.firstrun.install_duration_ms` | measurement | Total first-run install duration (ms) |
 
-**Install / upgrade / check operations:**
+**Install / upgrade / uninstall / check operations:**
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
@@ -493,11 +493,11 @@ Built-in tool IDs come from azd's curated tool manifest (run `azd tool list` to 
 | `tool.ids` | string | Comma-separated tool IDs for a batch operation |
 | `tool.dry_run` | string | Whether `--dry-run` was specified |
 | `tool.install.strategy` | string | Install strategy used. Package-manager values come from the tool manifest (`winget`, `brew`, `apt`, `npm`, `code`); the installer may also report `direct-download`, `command`, or `manual` (no available manager) |
-| `tool.install.success` | string | Whether a single-target install/upgrade succeeded |
-| `tool.install.success_count` | measurement | Tools that succeeded in a batch install/upgrade |
-| `tool.install.failure_count` | measurement | Tools that failed in a batch install/upgrade |
-| `tool.install.failed_ids` | string | Comma-separated tool IDs whose install/upgrade failed |
-| `tool.install.duration_ms` | measurement | Total install/upgrade duration (ms) |
+| `tool.install.success` | string | Whether a single-target install, upgrade, or uninstall succeeded |
+| `tool.install.success_count` | measurement | Tools that succeeded in a batch install/upgrade/uninstall |
+| `tool.install.failure_count` | measurement | Tools that failed in a batch install/upgrade/uninstall |
+| `tool.install.failed_ids` | string | Comma-separated tool IDs whose install/upgrade/uninstall failed |
+| `tool.install.duration_ms` | measurement | Total install/upgrade/uninstall duration (ms) |
 | `tool.upgrade.from_version` | string | Previous version (single-target upgrade) |
 | `tool.upgrade.to_version` | string | New version after a successful upgrade (single-target) |
 | `tool.check.updates_available` | measurement | Installed tools with an available update (`azd tool check`) |
@@ -669,7 +669,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion` | Update adoption |
 | **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type |
 | **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image` | Build method usage, success rates |
-| **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.upgrade`, `cmd.tool.check` | `tool.id`, `tool.install.strategy`, `tool.firstrun.outcome` | First-run adoption, install/upgrade success, update availability |
+| **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.upgrade`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy`, `tool.firstrun.outcome` | First-run adoption, install/upgrade/uninstall success, update availability |
 
 ## See Also
 

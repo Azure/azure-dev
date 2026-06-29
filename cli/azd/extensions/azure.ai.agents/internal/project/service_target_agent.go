@@ -2350,8 +2350,8 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 
 	// Display agent-specific information
 	if hostedDef, ok := request.Definition.(agent_api.HostedAgentDefinition); ok {
-		if hostedDef.Image != "" {
-			fmt.Fprintf(os.Stderr, "Image: %s\n", hostedDef.Image)
+		if hostedDef.ContainerConfiguration != nil && hostedDef.ContainerConfiguration.Image != "" {
+			fmt.Fprintf(os.Stderr, "Image: %s\n", hostedDef.ContainerConfiguration.Image)
 		}
 		fmt.Fprintf(os.Stderr, "CPU: %s\n", hostedDef.CPU)
 		fmt.Fprintf(os.Stderr, "Memory: %s\n", hostedDef.Memory)

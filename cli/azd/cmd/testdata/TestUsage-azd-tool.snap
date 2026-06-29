@@ -5,11 +5,12 @@ Usage
   azd tool [command]
 
 Available Commands
-  check  	: Check for tool updates.
-  install	: Install specified tools.
-  list   	: List all tools with status.
-  show   	: Show details for a specific tool.
-  upgrade	: Upgrade installed tools.
+  check    	: Check for tool updates.
+  install  	: Install specified tools.
+  list     	: List all tools with status.
+  show     	: Show details for a specific tool.
+  uninstall	: Uninstall installed tools.
+  upgrade  	: Upgrade installed tools.
 
 Global Flags
     -C, --cwd string         	: Sets the current working directory.

@@ -89,61 +89,34 @@ func newCaptureClient(statusCode int, body string) (*AgentClient, *captureTransp
 	), transport
 }
 
-func requireIsolationHeaders(
+func requireUserIdentityHeader(
 	t *testing.T,
 	req *http.Request,
-	wantUser, wantChat, wantSession string,
+	wantUser string,
 ) {
 	t.Helper()
 
 	if wantUser == "" {
-		require.Empty(t, req.Header.Values(AgentUserIsolationKeyHeader))
+		require.Empty(t, req.Header.Values(UserIdentityHeader))
 	} else {
-		require.Equal(t, wantUser, req.Header.Get(AgentUserIsolationKeyHeader))
-	}
-
-	if wantChat == "" {
-		require.Empty(t, req.Header.Values(AgentChatIsolationKeyHeader))
-	} else {
-		require.Equal(t, wantChat, req.Header.Get(AgentChatIsolationKeyHeader))
-	}
-
-	if wantSession == "" {
-		require.Empty(t, req.Header.Values(SessionIsolationKeyHeader))
-	} else {
-		require.Equal(t, wantSession, req.Header.Get(SessionIsolationKeyHeader))
+		require.Equal(t, wantUser, req.Header.Get(UserIdentityHeader))
 	}
 }
 
 func TestSessionRequestOptions_ApplyHeaders(t *testing.T) {
 	tests := []struct {
-		name        string
-		options     *SessionRequestOptions
-		wantUser    string
-		wantChat    string
-		wantSession string
+		name     string
+		options  *SessionRequestOptions
+		wantUser string
 	}{
 		{
-			name:     "both user and chat set",
-			options:  &SessionRequestOptions{UserIsolationKey: "user-1", ChatIsolationKey: "chat-1"},
+			name:     "user identity set",
+			options:  &SessionRequestOptions{UserIdentity: "user-1"},
 			wantUser: "user-1",
-			wantChat: "chat-1",
 		},
 		{
-			name:     "user key only",
-			options:  &SessionRequestOptions{UserIsolationKey: "user-only"},
-			wantUser: "user-only",
-		},
-		{
-			name:     "chat key only",
-			options:  &SessionRequestOptions{ChatIsolationKey: "chat-only"},
-			wantChat: "chat-only",
-		},
-		{
-			name:        "session key with user key",
-			options:     &SessionRequestOptions{SessionIsolationKey: "sess-1", UserIsolationKey: "u"},
-			wantUser:    "u",
-			wantSession: "sess-1",
+			name:    "empty user identity",
+			options: &SessionRequestOptions{},
 		},
 		{
 			name:    "nil options is a no-op",
@@ -161,9 +134,7 @@ func TestSessionRequestOptions_ApplyHeaders(t *testing.T) {
 			tt.options.ApplyHeaders(headers)
 
 			require.Equal(t, "Bearer unchanged", headers.Get("Authorization"))
-			require.Equal(t, tt.wantUser, headers.Get(AgentUserIsolationKeyHeader))
-			require.Equal(t, tt.wantChat, headers.Get(AgentChatIsolationKeyHeader))
-			require.Equal(t, tt.wantSession, headers.Get(SessionIsolationKeyHeader))
+			require.Equal(t, tt.wantUser, headers.Get(UserIdentityHeader))
 		})
 	}
 }
@@ -301,7 +272,7 @@ func TestListSessions_Returns200WithPagination(t *testing.T) {
 	require.Equal(t, "next-page-abc", *result.PaginationToken)
 }
 
-func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
+func TestSessionLifecycleOperations_ApplyUserIdentityHeader(t *testing.T) {
 	sessionBody := `{
 		"agent_session_id": "sess-1",
 		"version_indicator": {"type": "version_ref", "agent_version": "3"},
@@ -312,11 +283,10 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 	}`
 
 	tests := []struct {
-		name        string
-		statusCode  int
-		body        string
-		call        func(*AgentClient, *SessionRequestOptions) error
-		wantSession string
+		name       string
+		statusCode int
+		body       string
+		call       func(*AgentClient, *SessionRequestOptions) error
 	}{
 		{
 			name:       "create",
@@ -332,7 +302,6 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 				)
 				return err
 			},
-			wantSession: "session-1",
 		},
 		{
 			name:       "get",
@@ -361,7 +330,6 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 					options,
 				)
 			},
-			wantSession: "session-1",
 		},
 		{
 			name:       "list",
@@ -385,20 +353,18 @@ func TestSessionLifecycleOperations_ApplyIsolationHeaders(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			client, transport := newCaptureClient(tt.statusCode, tt.body)
 			options := &SessionRequestOptions{
-				SessionIsolationKey: tt.wantSession,
-				UserIsolationKey:    "user-1",
-				ChatIsolationKey:    "chat-1",
+				UserIdentity: "user-1",
 			}
 
 			require.NoError(t, tt.call(client, options))
 			require.Len(t, transport.requests, 1)
 			require.Equal(t, "HostedAgents=V1Preview", transport.requests[0].Header.Get("Foundry-Features"))
-			requireIsolationHeaders(t, transport.requests[0], "user-1", "chat-1", tt.wantSession)
+			requireUserIdentityHeader(t, transport.requests[0], "user-1")
 		})
 	}
 }
 
-func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
+func TestSessionFileOperations_ApplyUserIdentityHeader(t *testing.T) {
 	tests := []struct {
 		name       string
 		statusCode int
@@ -506,18 +472,17 @@ func TestSessionFileOperations_ApplyIsolationHeaders(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			client, transport := newCaptureClient(tt.statusCode, tt.body)
 			options := &SessionRequestOptions{
-				UserIsolationKey: "user-1",
-				ChatIsolationKey: "chat-1",
+				UserIdentity: "user-1",
 			}
 
 			require.NoError(t, tt.call(client, options))
 			require.Len(t, transport.requests, 1)
-			requireIsolationHeaders(t, transport.requests[0], "user-1", "chat-1", "")
+			requireUserIdentityHeader(t, transport.requests[0], "user-1")
 		})
 	}
 }
 
-func TestGetAgentSessionLogStream_ApplyIsolationHeaders(t *testing.T) {
+func TestGetAgentSessionLogStream_ApplyUserIdentityHeader(t *testing.T) {
 	reqCh := make(chan *http.Request, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -543,8 +508,7 @@ func TestGetAgentSessionLogStream_ApplyIsolationHeaders(t *testing.T) {
 		50,
 		false,
 		&SessionRequestOptions{
-			UserIsolationKey: "user-1",
-			ChatIsolationKey: "chat-1",
+			UserIdentity: "user-1",
 		},
 	)
 	require.NoError(t, err)
@@ -558,7 +522,7 @@ func TestGetAgentSessionLogStream_ApplyIsolationHeaders(t *testing.T) {
 	require.NotNil(t, request)
 	require.Equal(t, "Bearer test-token", request.Header.Get("Authorization"))
 	require.Equal(t, "HostedAgents=V1Preview", request.Header.Get("Foundry-Features"))
-	requireIsolationHeaders(t, request, "user-1", "chat-1", "")
+	requireUserIdentityHeader(t, request, "user-1")
 }
 
 func TestDeleteAgent_ForceTrue(t *testing.T) {

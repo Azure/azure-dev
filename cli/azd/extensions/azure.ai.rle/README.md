@@ -8,7 +8,6 @@ Quickstart for the `azd ai rle` preview extension. The extension manages an Open
 Install:
 
 - Azure Developer CLI (`azd`): https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd
-- Azure CLI (`az`): https://learn.microsoft.com/cli/azure/install-azure-cli
 - Docker Desktop: https://www.docker.com/products/docker-desktop/
 - Go, if installing from this local source checkout: https://go.dev/doc/install
 - Git, if installing from this local source checkout: https://git-scm.com/downloads
@@ -17,22 +16,7 @@ Verify:
 
 ```powershell
 azd version
-az version
 docker version
-go version
-git --version
-```
-
-Sign in before pulling private ACR images or deploying:
-
-```powershell
-az login
-```
-
-If the local or environment image is in a private ACR, also sign in to that registry:
-
-```powershell
-az acr login --name <acr-name>
 ```
 
 ## Install the extension from this checkout
@@ -92,6 +76,22 @@ template:
   environment:
     image: devrle.azurecr.io/echo-rl:latest
 ```
+
+A custom manifest uses the same OpenEnv-style shape:
+
+```yaml
+name: code_rl
+description: Code RL OpenEnv environment.
+template:
+  name: code_rl
+  kind: openenv
+  local:
+    image: devrle.azurecr.io/code_rl-env:latest
+  environment:
+    image: devrle.azurecr.io/code_rl-env:latest
+```
+
+`template.local.image` is optional. If omitted, local run/invoke use `template.environment.image`.
 
 To initialize from an existing manifest instead:
 
@@ -159,25 +159,8 @@ azd ai rle deploy --project-id <project-id>
 
 Deploy registers `template.environment.image` from `rle.yaml` with the RLE control plane and saves the project/environment details in `.azd-rle.json`.
 
-## Manifest shape
+## Upcoming features
 
-```yaml
-name: code_rl
-description: Code RL OpenEnv environment.
-template:
-  name: code_rl
-  kind: openenv
-  local:
-    image: devrle.azurecr.io/code-rl:latest
-  environment:
-    image: devrle.azurecr.io/code-rl:prod
-```
-
-`template.local.image` is optional. If omitted, local run/invoke use `template.environment.image`.
-
-## Current limitations
-
-- `run` is local only and requires Docker.
-- `invoke` supports local shell mode only (`--local`).
-- `deploy` requires `--project-id`; project selection/creation is not part of `init`.
-- The extension does not build or push images. Images must already exist and be accessible.
+- Remote environment invocation with `azd ai rle invoke`.
+- Playground UI for exploring and testing RLE environments interactively.
+- `azd provision` integration to choose an existing Foundry project or create a new one.

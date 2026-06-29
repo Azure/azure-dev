@@ -347,30 +347,11 @@ func missingLocalRuntimeImageError() error {
 }
 
 func dockerPullFailureSuggestion(image string) string {
-	if registry, ok := acrRegistryName(image); ok {
-		return fmt.Sprintf(
-			"Run az acr login --name %s, or set template.local.image in %s to an image available to Docker.",
-			registry,
-			rleManifestFile,
-		)
-	}
 	return fmt.Sprintf(
-		"Sign in to the image registry if required, or set template.local.image in %s to an image available to Docker.",
+		"Ensure Docker can pull %s, or set template.local.image in %s to an image available to Docker.",
+		image,
 		rleManifestFile,
 	)
-}
-
-func acrRegistryName(image string) (string, bool) {
-	host := strings.ToLower(strings.TrimSpace(strings.SplitN(image, "/", 2)[0]))
-	const suffix = ".azurecr.io"
-	if !strings.HasSuffix(host, suffix) {
-		return "", false
-	}
-	registry := strings.TrimSuffix(host, suffix)
-	if registry == "" {
-		return "", false
-	}
-	return registry, true
 }
 
 func localContainerStatus(cmd *cobra.Command, container string) (running bool, exists bool) {

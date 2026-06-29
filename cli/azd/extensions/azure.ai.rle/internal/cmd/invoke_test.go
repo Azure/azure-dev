@@ -120,13 +120,13 @@ func TestLocalContainerNamesUseEnvironmentName(t *testing.T) {
 	}
 }
 
-func TestDockerPullFailureSuggestionUsesAcrRegistryName(t *testing.T) {
+func TestDockerPullFailureSuggestionUsesImageName(t *testing.T) {
 	suggestion := dockerPullFailureSuggestion("devrle.azurecr.io/echo-rl:latest")
-	if !strings.Contains(suggestion, "az acr login --name devrle") {
-		t.Fatalf("expected ACR login command, got %q", suggestion)
+	if !strings.Contains(suggestion, "Ensure Docker can pull devrle.azurecr.io/echo-rl:latest") {
+		t.Fatalf("expected Docker pull guidance, got %q", suggestion)
 	}
-	if strings.Contains(suggestion, "<registry>") {
-		t.Fatalf("expected concrete registry name, got %q", suggestion)
+	if strings.Contains(suggestion, "az ") {
+		t.Fatalf("did not expect Azure sign-in guidance, got %q", suggestion)
 	}
 }
 

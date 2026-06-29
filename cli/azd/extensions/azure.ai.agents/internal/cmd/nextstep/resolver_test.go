@@ -412,7 +412,7 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,
-		"edit agent.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value",
+		"edit azure.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value",
 		"placeholder fix-up missing")
 	assert.Contains(t, rendered, "azd provision",
 		"toolbox-endpoint branch should route to azd provision")
@@ -552,7 +552,7 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders(t *testing
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,
-		"edit agent.yaml: replace {{AGENT_NAME}} with the actual value",
+		"edit azure.yaml: replace {{AGENT_NAME}} with the actual value",
 		"placeholder fix-up missing")
 	assert.Contains(t, rendered, "azd provision",
 		"coexistence+placeholders: toolbox sub-branch must still emit provision")
@@ -693,7 +693,7 @@ func TestResolveAfterInit_UnresolvedPlaceholders(t *testing.T) {
 			for i, name := range tt.wantPlaceholders {
 				require.Less(t, i, len(out))
 				assert.Equal(t,
-					"edit agent.yaml: replace {{"+name+"}} with the actual value",
+					"edit azure.yaml: replace {{"+name+"}} with the actual value",
 					out[i].Command,
 				)
 			}

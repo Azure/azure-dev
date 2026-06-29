@@ -378,7 +378,7 @@
                         }
                     },
                     {
-                        "comment": "Azure AI Agent host - agent schema composed at the service level; keeps project/runtime/docker/image, disables config",
+                        "comment": "Azure AI Agent host - agent schema composed at the service level; keeps project/runtime/docker/image. config is deprecated: agent settings moved to service level but the old shape stays valid",
                         "if": {
                             "properties": {
                                 "host": { "const": "azure.ai.agent" }
@@ -390,7 +390,10 @@
                                 { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/huimiu/foundry-azure-yaml/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json" }
                             ],
                             "properties": {
-                                "config": false,
+                                "config": {
+                                    "deprecated": true,
+                                    "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json"
+                                },
                                 "k8s": false,
                                 "apiVersion": false,
                                 "network": false

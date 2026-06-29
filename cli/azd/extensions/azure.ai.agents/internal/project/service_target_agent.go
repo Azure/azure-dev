@@ -1082,7 +1082,7 @@ func (p *AgentServiceTargetProvider) provisionMemoryStores(
 
 	if projectEndpoint == "" {
 		return exterrors.Dependency(
-			exterrors.CodeMissingProjectEndpoint,
+			exterrors.CodeMissingAiProjectEndpoint,
 			"cannot provision memory stores: the Foundry project endpoint is not set",
 			"run 'azd provision' or connect to an existing project via "+
 				"'azd ai agent init --project-id <resource-id>'",
@@ -1128,7 +1128,7 @@ func (p *AgentServiceTargetProvider) provisionMemoryStores(
 
 		_, created, err := client.EnsureMemoryStore(ctx, request)
 		if err != nil {
-			return exterrors.ServiceFromAzure(err, exterrors.OpCreateMemoryStore)
+			return exterrors.ServiceFromAzure(err, exterrors.OpProvisionMemoryStore)
 		}
 
 		if created {
@@ -1142,9 +1142,11 @@ func (p *AgentServiceTargetProvider) provisionMemoryStores(
 }
 
 // mapMemoryStoreOptions converts the azure.yaml memory store options into the API request shape.
-// It returns nil when no options are configured so the service applies its own defaults.
+// It returns nil when no options are configured (or all fields are unset) so the service applies
+// its own defaults, rather than sending an empty options object that the service might treat
+// differently from an omitted one.
 func mapMemoryStoreOptions(options *MemoryStoreOptions) *azure.MemoryStoreOptions {
-	if options == nil {
+	if options == nil || memoryStoreOptionsEmpty(options) {
 		return nil
 	}
 
@@ -1155,6 +1157,15 @@ func mapMemoryStoreOptions(options *MemoryStoreOptions) *azure.MemoryStoreOption
 		DefaultTTLSeconds:       options.DefaultTtlSeconds,
 		UserProfileDetails:      options.UserProfileDetails,
 	}
+}
+
+// memoryStoreOptionsEmpty reports whether every memory store option field is unset.
+func memoryStoreOptionsEmpty(options *MemoryStoreOptions) bool {
+	return options.ChatSummaryEnabled == nil &&
+		options.UserProfileEnabled == nil &&
+		options.ProceduralMemoryEnabled == nil &&
+		options.DefaultTtlSeconds == nil &&
+		options.UserProfileDetails == ""
 }
 
 // shouldUsePreBuiltImage determines whether to use a pre-built image.

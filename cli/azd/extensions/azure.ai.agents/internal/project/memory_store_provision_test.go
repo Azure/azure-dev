@@ -69,6 +69,10 @@ func TestProvisionMemoryStores_ValidatesRequiredFields(t *testing.T) {
 func TestMapMemoryStoreOptions(t *testing.T) {
 	require.Nil(t, mapMemoryStoreOptions(nil))
 
+	// An options struct with no fields set should map to nil so the service applies
+	// its own defaults rather than receiving an empty options object.
+	require.Nil(t, mapMemoryStoreOptions(&MemoryStoreOptions{}))
+
 	opts := mapMemoryStoreOptions(&MemoryStoreOptions{
 		ChatSummaryEnabled:      new(true),
 		UserProfileEnabled:      new(false),

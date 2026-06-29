@@ -180,7 +180,7 @@ const (
 	OpListSessions          = "list_sessions"
 	OpCreateToolboxVersion  = "create_toolbox_version"
 	OpGetToolbox            = "get_toolbox"
-	OpCreateMemoryStore     = "create_memory_store"
+	OpProvisionMemoryStore  = "provision_memory_store"
 )
 
 // Error codes for eval and optimize operations.

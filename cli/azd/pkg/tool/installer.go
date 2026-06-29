@@ -30,6 +30,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
+// wingetNoPackageFoundExitCode is winget's
+// APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND ("No packages found"),
+// returned when no installed package matches the uninstall criteria. It is
+// locale-independent, unlike the printed "No installed package found
+// matching input criteria." text. Windows reports it as the unsigned DWORD
+// 0x8A150014; Go's os/exec surfaces it as the int 2316632084, while shells
+// display the signed -1978335212. Comparing via uint32 matches all
+// representations. See:
+// https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md
+const wingetNoPackageFoundExitCode uint32 = 0x8A150014
+
 // InstallResult captures the outcome of an install or upgrade operation.
 type InstallResult struct {
 	// Tool is the definition that was installed or upgraded.
@@ -358,21 +369,51 @@ func (i *installer) runUninstall(
 			return result, nil
 		}
 
-		if err := i.executeUninstall(ctx, strategy); err != nil {
-			// The package manager could not remove the tool. This commonly
-			// happens when a self-updating CLI replaced the copy the package
-			// manager installed (e.g. `copilot update`), so the manager no
-			// longer has a record of the package. If the tool is already
-			// gone, treat the uninstall as complete (idempotent); otherwise
-			// guide the user to remove it manually, since neither the package
-			// manager nor azd can.
+		if res, err := i.executeUninstall(ctx, strategy); err != nil {
+			// The package manager could not remove the tool. If the tool is
+			// already gone, treat the uninstall as complete (idempotent);
+			// otherwise classify the failure below so the user gets guidance
+			// that matches the actual cause.
 			status, detectErr := i.detector.DetectTool(ctx, tool)
 			if detectErr == nil && !status.Installed {
 				result.Success = true
 				result.Duration = time.Since(start)
 				return result, nil
 			}
-			result.Error = i.packageManagerUninstallFailedError(tool, strategy, err)
+
+			// VS Code refuses to remove an extension that other installed
+			// extensions depend on (and `--force` does not override this).
+			// Surface accurate, actionable guidance instead of the generic
+			// "no record" message, which would misattribute the cause.
+			if detail, ok := vscodeDependencyConflict(strategy.PackageManager, res.Stderr); ok {
+				result.Error = i.vscodeDependencyUninstallError(tool, detail)
+				result.Duration = time.Since(start)
+				return result, nil
+			}
+
+			// The package manager no longer has a record of the package
+			// (e.g. a self-updating CLI replaced the manager-installed copy
+			// via its own `update` command). Only this signature warrants
+			// the "updated outside the package manager" guidance.
+			if packageManagerLostRecord(strategy.PackageManager, res) {
+				result.Error = i.packageManagerUninstallFailedError(tool, strategy, res.Stdout+"\n"+res.Stderr)
+				result.Duration = time.Since(start)
+				return result, nil
+			}
+
+			// Any other package-manager failure (permissions, locks,
+			// network, manager-internal errors, etc.): return the actual
+			// error directly without speculating about the cause.
+			if res.Stderr != "" {
+				result.Error = fmt.Errorf(
+					"uninstalling %s with %s failed: %s",
+					tool.Name, strategy.PackageManager, res.Stderr,
+				)
+			} else {
+				result.Error = fmt.Errorf(
+					"running uninstall command for %s: %w", tool.Name, err,
+				)
+			}
 			result.Duration = time.Since(start)
 			return result, nil
 		}
@@ -1312,20 +1353,25 @@ func (i *installer) executeStrategy(
 // given strategy. It is only reached for strategies backed by a known
 // package manager; direct-download and unsupported strategies are
 // handled by runUninstall before this point.
+//
+// The full command result (stdout, stderr, exit code) is returned
+// alongside any error so callers can inspect package-manager diagnostics —
+// for example, VS Code's refusal to remove an extension that other
+// extensions depend on (stderr), or winget reporting that it has no record
+// of the package (stdout).
 func (i *installer) executeUninstall(
 	ctx context.Context,
 	strategy *InstallStrategy,
-) error {
+) (exec.RunResult, error) {
 	cmd, args := buildUninstallCommand(
 		strategy.PackageManager, strategy.PackageId,
 	)
 	if cmd == "" {
-		return fmt.Errorf("strategy produced an empty uninstall command")
+		return exec.RunResult{}, fmt.Errorf("strategy produced an empty uninstall command")
 	}
 
 	runArgs := exec.NewRunArgs(cmd, args...)
-	_, err := i.commandRunner.Run(ctx, runArgs)
-	return err
+	return i.commandRunner.Run(ctx, runArgs)
 }
 
 // executeUninstallCommand runs an explicit uninstall command string (the
@@ -1445,31 +1491,111 @@ func (i *installer) managerUnavailableUninstallError(
 }
 
 // packageManagerUninstallFailedError builds an
-// [errorhandler.ErrorWithSuggestion] for the case where the package
-// manager is present but could not remove a tool that azd still detects
-// as installed. The common cause is a self-updating CLI (for example one
-// updated via its own `update` command) that replaced the copy the
-// package manager installed, so the manager no longer has a record of the
-// package. Since neither the package manager nor azd can remove it
-// automatically, the user is guided to delete it manually.
+// [errorhandler.ErrorWithSuggestion] for the specific case where the
+// package manager is present but no longer has a record of a tool that azd
+// still detects as installed. This is the signature of a self-updating CLI
+// (for example one updated via its own `update` command) that replaced the
+// copy the package manager installed. It is only used when
+// packageManagerLostRecord matches; other failures surface the package
+// manager's error directly. The package manager's reported message (when
+// available) is echoed back, and the user is guided to delete the tool
+// manually since neither the package manager nor azd can.
 func (i *installer) packageManagerUninstallFailedError(
 	tool *ToolDefinition,
 	strategy *InstallStrategy,
-	cause error,
+	reported string,
 ) error {
-	removal := fmt.Sprintf("Please remove %s manually.", tool.Name)
+	suggestion := fmt.Sprintf(
+		"%s could not be removed with %s, which no longer has a record "+
+			"of it. This usually means the tool was updated outside the "+
+			"package manager (for example via its own update command). "+
+			"Please remove %s manually.", tool.Name,
+		strategy.PackageManager,
+		tool.Name,
+	)
 
 	return &errorhandler.ErrorWithSuggestion{
 		Err: fmt.Errorf(
-			"running uninstall command for %s: %w", tool.Name, cause,
+			"running uninstall command for %s: %s", tool.Name, reported,
 		),
-		Message: "Cannot uninstall " + tool.Name,
-		Suggestion: fmt.Sprintf(
-			"%s could not be removed with %s, which no longer has a record "+
-				"of it. This usually means the tool was updated outside the "+
-				"package manager (for example via its own update command). %s",
-			tool.Name, strategy.PackageManager, removal,
+		Message:    "Cannot uninstall " + tool.Name,
+		Suggestion: suggestion,
+	}
+}
+
+// vscodeDependencyConflict reports whether a failed `code
+// --uninstall-extension` run was rejected because other installed
+// extensions depend on the target extension. VS Code blocks this by
+// design (even with --force), printing a message such as:
+//
+//	Cannot uninstall 'Azure Resources' extension. 'Azure App Service'
+//	extension depends on this.
+//
+// When matched, the trimmed VS Code message is returned so callers can
+// echo the specific dependent extensions back to the user.
+func vscodeDependencyConflict(packageManager, stderr string) (string, bool) {
+	if packageManager != "code" {
+		return "", false
+	}
+
+	lower := strings.ToLower(stderr)
+	if strings.Contains(lower, "depend on this") ||
+		strings.Contains(lower, "depends on this") {
+		return strings.TrimSpace(stderr), true
+	}
+
+	return "", false
+}
+
+// packageManagerLostRecord reports whether a failed uninstall indicates the
+// package manager no longer has a record of the package. This is
+// winget-specific: winget tracks installs via the Windows Add/Remove
+// Programs registry, so a self-updating CLI (for example `copilot update`
+// after `winget install GitHub.Copilot`) can replace itself and unregister,
+// leaving winget with no record even though the binary is still on PATH.
+// winget then fails with APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND and
+// prints "No installed package found matching input criteria.".
+//
+// Other managers are intentionally excluded: brew, npm and apt track
+// installs via their own manifests, which self-updates do not disturb, and
+// their "nothing to remove" uninstalls typically exit 0 (npm, for example,
+// prints "up to date"), so they do not reach this path. Their genuine
+// failures surface directly instead, carrying the manager's own message.
+func packageManagerLostRecord(packageManager string, res exec.RunResult) bool {
+	if packageManager != "winget" {
+		return false
+	}
+
+	return uint32(res.ExitCode) == wingetNoPackageFoundExitCode ||
+		strings.Contains(
+			strings.ToLower(res.Stdout+"\n"+res.Stderr),
+			"no installed package found",
+		)
+}
+
+// vscodeDependencyUninstallError builds an
+// [errorhandler.ErrorWithSuggestion] for the case where VS Code refuses to
+// remove an extension because other installed extensions depend on it.
+// Unlike packageManagerUninstallFailedError, this guides the user to
+// remove the dependent extensions first rather than implying the tool was
+// updated outside the package manager.
+func (i *installer) vscodeDependencyUninstallError(
+	tool *ToolDefinition,
+	detail string,
+) error {
+	suggestion := fmt.Sprintf(
+		"%s cannot be removed because other installed VS Code extensions "+
+			"depend on it. Uninstall the dependent extension(s) first, then "+
+			"remove %s.",
+		tool.Name, tool.Name,
+	)
+
+	return &errorhandler.ErrorWithSuggestion{
+		Err: fmt.Errorf(
+			"running uninstall command for %s: %s", tool.Name, detail,
 		),
+		Message:    "Cannot uninstall " + tool.Name,
+		Suggestion: suggestion,
 	}
 }
 

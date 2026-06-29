@@ -6,7 +6,7 @@ We are open to all ideas and we want to get rid of bugs! Use [Discussions](https
 
 ## Building and installation
 
-You need to have `Node.js` and `npm` installed. Node 16 (LTS) is recommended for development.
+You need to have `Node.js` and `npm` installed. Node 20 (LTS) or higher is recommended for development.
 
 1.  **Build the VSIX file containing the extension**
 

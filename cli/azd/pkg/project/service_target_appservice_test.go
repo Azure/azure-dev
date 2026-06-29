@@ -12,6 +12,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -21,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 )
 
 type serviceTargetValidationTest struct {
@@ -334,6 +336,54 @@ func Test_appServiceTarget_Publish(t *testing.T) {
 		result, err := target.Publish(t.Context(), &ServiceConfig{}, sctx, nil, nil, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
+	})
+
+	t.Run("ContainerDeploy_RemoteImageShortCircuit", func(t *testing.T) {
+		// When a container artifact with a registry is present, Publish should
+		// short-circuit (no ContainerHelper call) and return the remote image reference.
+		mockContext := mocks.NewMockContext(t.Context())
+		azCli := mockazapi.NewAzureClientFromMockContext(mockContext)
+		env := environment.New("test")
+		envManager := &mockenv.MockEnvManager{}
+		envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+		targetResource := environment.NewTargetResource(
+			"SUB_ID", "RG_ID", "WEB_APP_NAME", string(azapi.AzureResourceTypeWebSite),
+		)
+
+		sctx := NewServiceContext()
+		require.NoError(t, sctx.Package.Add(&Artifact{
+			Kind:         ArtifactKindContainer,
+			Location:     "myregistry.azurecr.io/myapp:abc123",
+			LocationKind: LocationKindLocal,
+		}))
+
+		st := &appServiceTarget{
+			env:        env,
+			envManager: envManager,
+			cli:        azCli,
+			console:    mockContext.Console,
+		}
+
+		progress := async.NewNoopProgress[ServiceProgress]()
+		result, err := st.Publish(*mockContext.Context, &ServiceConfig{
+			Name:     "web",
+			Language: ServiceLanguageDocker,
+		}, sctx, targetResource, progress, nil)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Should have a remote container artifact
+		artifact, found := result.Artifacts.FindFirst(WithKind(ArtifactKindContainer))
+		require.True(t, found, "should produce container artifact")
+		assert.Equal(t, "myregistry.azurecr.io/myapp:abc123", artifact.Location)
+		assert.Equal(t, LocationKindRemote, artifact.LocationKind)
+
+		// Should have saved IMAGE_NAME to environment
+		envManager.AssertCalled(t, "Save", mock.Anything, mock.Anything)
+		assert.Equal(t, "myregistry.azurecr.io/myapp:abc123",
+			env.GetServiceProperty("web", "IMAGE_NAME"))
 	})
 }
 

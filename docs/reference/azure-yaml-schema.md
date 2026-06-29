@@ -90,7 +90,7 @@ The full JSON schema for `azure.yaml` is maintained in the [schemas/](../../sche
 App Service supports two deployment modes:
 
 - **Zip deploy** (default): When `language` is set to a non-Docker language (e.g., `python`, `js`, `dotnet`), azd builds the code, creates a zip archive, and deploys it via the Kudu zip deploy API.
-- **Container deploy**: When `language: docker` or `docker.path` is set, azd builds the container image, pushes it to ACR, and updates the site's container configuration (`linuxFxVersion`). ACR authentication uses managed identity. This enables Web App for Containers scenarios.
+- **Container deploy**: When `language: docker` or `docker.path` is set, azd builds the container image, pushes it to ACR, and updates the site's container configuration (`linuxFxVersion`). ACR authentication uses managed identity. This enables Web App for Containers scenarios. Currently Linux App Service only.
 
 Example container deployment:
 

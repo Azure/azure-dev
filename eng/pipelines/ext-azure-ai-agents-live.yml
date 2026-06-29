@@ -89,7 +89,11 @@ extends:
 
               # Install the freshly built (live, non-record) extension into the
               # azd config dir: copy the binary where azd expects it and write a
-              # minimal config.json so `azd ai agent` resolves the extension.
+              # config.json so `azd ai agent` resolves the extension. The config
+              # is generated FROM extension.yaml via yq so the manifest fields
+              # (capabilities, namespace, usage, ...) can never drift from a
+              # hand-maintained copy here; only test-specific fields (path,
+              # source, sentinel version) are injected.
               - bash: |
                   set -euo pipefail
                   # Map the agent architecture to azd's expected binary suffix so
@@ -108,25 +112,24 @@ extends:
                   mkdir -p "$EXT_DIR"
                   cp cli/azd/extensions/azure.ai.agents/azure-ai-agents "$EXT_DIR/$BIN_NAME"
                   chmod +x "$EXT_DIR/$BIN_NAME"
-                  cat > "$HOME/.azd/config.json" << EOF
-                  {
-                    "extension": {
-                      "installed": {
-                        "azure.ai.agents": {
-                          "id": "azure.ai.agents",
-                          "namespace": "ai.agent",
-                          "capabilities": ["custom-commands", "lifecycle-events", "mcp-server", "service-target-provider", "metadata"],
-                          "displayName": "Foundry agents (Preview)",
-                          "description": "Ship agents with Microsoft Foundry from your terminal. (Preview)",
-                          "version": "0.0.0-test",
-                          "usage": "azd ai agent <command> [options]",
-                          "path": "extensions/azure.ai.agents/${BIN_NAME}",
-                          "source": "azd"
-                        }
-                      }
-                    }
-                  }
-                  EOF
+                  # yq ships on the azure-sdk Linux images; install the pinned
+                  # version as a fallback if a future image drops it.
+                  command -v yq >/dev/null 2>&1 || go install github.com/mikefarah/yq/v4@v4.44.3
+                  export BIN_NAME
+                  yq -o=json '
+                    .id as $id | {
+                      "extension": {"installed": {$id: {
+                        "id": .id,
+                        "namespace": .namespace,
+                        "capabilities": .capabilities,
+                        "displayName": .displayName,
+                        "description": .description,
+                        "version": "0.0.0-test",
+                        "usage": .usage,
+                        "path": "extensions/azure.ai.agents/" + env(BIN_NAME),
+                        "source": "azd"
+                      }}}
+                    }' cli/azd/extensions/azure.ai.agents/extension.yaml > "$HOME/.azd/config.json"
                 displayName: Install azure.ai.agents extension
 
               # Run the live golden path INSIDE the AzureCLI@2 task so the az CLI

@@ -190,7 +190,8 @@ func warnIfAuthChange(
 
 	if newIsolation == string(agent_api.IsolationKeySourceKindHeader) {
 		fmt.Fprintf(os.Stderr,
-			"   Callers must include the \"x-ms-user-isolation-key\" header, or they will receive 400 errors.\n",
+			"   Callers must include the %q header, or they will receive 400 errors.\n",
+			agent_api.UserIdentityHeader,
 		)
 	}
 

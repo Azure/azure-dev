@@ -1,5 +1,10 @@
 # Release History
 
+## Unreleased
+
+- Add a `--call-id` flag to `azd ai agent invoke` that sends the `x-agent-foundry-call-id` header on `--local` invocations only. It is ignored for remote Foundry requests.
+- Replace the per-command Foundry isolation-key flags (`--user-isolation-key`, `--chat-isolation-key`, and the session-ownership `--isolation-key`) with a single `--user-identity` flag. The value is sent as the `x-agent-user-id` header for `--local` invocations and as `x-ms-user-identity` for all remote Foundry requests. This is a breaking change with no backward-compatible flag retention.
+
 ## 0.1.41-preview (2026-06-19)
 
 - [[#8731]](https://github.com/Azure/azure-dev/pull/8731) Improve the post-deploy `Next:` guidance with a stacked layout that puts each command on its own line above its description, adds a blank line between suggestions, and highlights `azd` commands. The new layout applies across deploy, `azd ai agent show`, `init`, and `doctor`. Thanks @therealjohn for the contribution!

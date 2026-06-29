@@ -45,8 +45,7 @@ func TestFilesUploadCommand_HasFlags(t *testing.T) {
 		"target-path",
 		"agent-name",
 		"session-id",
-		"user-isolation-key",
-		"chat-isolation-key",
+		"user-identity",
 	} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
@@ -72,8 +71,7 @@ func TestFilesDownloadCommand_HasFlags(t *testing.T) {
 		"target-path",
 		"agent-name",
 		"session-id",
-		"user-isolation-key",
-		"chat-isolation-key",
+		"user-identity",
 	} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
@@ -86,10 +84,10 @@ func TestFilesListCommand_DefaultOutputFormat(t *testing.T) {
 	assertOutputFlagOptions(t, cmd, "json", []string{"json", "table"})
 }
 
-func TestFilesListCommand_HasIsolationFlags(t *testing.T) {
+func TestFilesListCommand_HasUserIdentityFlag(t *testing.T) {
 	cmd := newFilesListCommand(nil)
 
-	for _, name := range []string{"user-isolation-key", "chat-isolation-key"} {
+	for _, name := range []string{"user-identity"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 		assert.Equal(t, "", f.DefValue)
@@ -121,8 +119,7 @@ func TestFilesDeleteCommand_HasFlags(t *testing.T) {
 		"recursive",
 		"agent-name",
 		"session-id",
-		"user-isolation-key",
-		"chat-isolation-key",
+		"user-identity",
 	} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
@@ -149,8 +146,7 @@ func TestFilesMkdirCommand_HasFlags(t *testing.T) {
 		"dir",
 		"agent-name",
 		"session-id",
-		"user-isolation-key",
-		"chat-isolation-key",
+		"user-identity",
 	} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
@@ -158,10 +154,10 @@ func TestFilesMkdirCommand_HasFlags(t *testing.T) {
 	}
 }
 
-func TestFilesStatCommand_HasIsolationFlags(t *testing.T) {
+func TestFilesStatCommand_HasUserIdentityFlag(t *testing.T) {
 	cmd := newFilesStatCommand(nil)
 
-	for _, name := range []string{"user-isolation-key", "chat-isolation-key"} {
+	for _, name := range []string{"user-identity"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 		assert.Equal(t, "", f.DefValue)

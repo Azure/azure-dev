@@ -10,7 +10,12 @@ requiredAzdVersion: ">1.23.13"
 language: go
 capabilities:
   - custom-commands
+  - service-target-provider
   - metadata
+providers:
+  - name: azure.ai.skill
+    type: service-target
+    description: Upserts Foundry skills declared as azure.ai.skill services in azure.yaml
 tags:
   - ai
   - skill

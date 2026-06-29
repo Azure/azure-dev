@@ -17,6 +17,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -51,6 +52,345 @@ func TestInitCommand_ForceFlag(t *testing.T) {
 	}
 	if flag.DefValue != "false" {
 		t.Fatalf("expected --force default false, got %q", flag.DefValue)
+	}
+}
+
+// TestHasFoundryProviderDeclared covers the predicate ensureProject
+// uses to suppress the "missing infra/" warning.
+func TestHasFoundryProviderDeclared(t *testing.T) {
+	cases := []struct {
+		name string
+		proj *azdext.ProjectConfig
+		want bool
+	}{
+		{name: "nil project", proj: nil, want: false},
+		{name: "missing infra block", proj: &azdext.ProjectConfig{}, want: false},
+		{
+			name: "different provider",
+			proj: &azdext.ProjectConfig{Infra: &azdext.InfraOptions{Provider: "bicep"}},
+			want: false,
+		},
+		{
+			name: "empty provider",
+			proj: &azdext.ProjectConfig{Infra: &azdext.InfraOptions{}},
+			want: false,
+		},
+		{
+			name: "matches",
+			proj: &azdext.ProjectConfig{Infra: &azdext.InfraOptions{Provider: project.FoundryProviderName}},
+			want: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hasFoundryProviderDeclared(tc.proj); got != tc.want {
+				t.Fatalf("hasFoundryProviderDeclared = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestInitCommand_ImageFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInitCommand(nil)
+
+	flag := cmd.Flags().Lookup("image")
+	require.NotNil(t, flag, "--image flag should be registered")
+	require.Empty(t, flag.DefValue, "expected --image to have empty default")
+}
+
+func TestValidateImageFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		image      string
+		deployMode string
+		wantErr    bool
+		errContain string
+	}{
+		{
+			name:  "empty image is valid",
+			image: "",
+		},
+		{
+			name:  "valid ACR image",
+			image: "myacr.azurecr.io/agent:v1",
+		},
+		{
+			name:  "valid Docker Hub image",
+			image: "docker.io/myorg/agent:latest",
+		},
+		{
+			name:  "valid image without tag",
+			image: "myacr.azurecr.io/agent",
+		},
+		{
+			name: "valid image with digest",
+			image: "myacr.azurecr.io/agent@sha256:" +
+				"76a9463463acf11d4068e8468fb232a3de0709177b6b35de95de6a34b33fa686",
+		},
+		{
+			name:  "valid local registry with port",
+			image: "localhost:5000/myorg/agent:v1",
+		},
+		{
+			name:  "valid registry host with port",
+			image: "registry:5000/myorg/agent:v1",
+		},
+		{
+			name:       "image without registry fails",
+			image:      "agent:v1",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "namespace image without registry fails",
+			image:      "myorg/agent:v1",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "image with URL scheme fails",
+			image:      "https://myacr.azurecr.io/agent:v1",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "image missing repository fails",
+			image:      "myacr.azurecr.io/",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "image with short digest fails",
+			image:      "myacr.azurecr.io/agent@sha256:abc123",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "uppercase repository fails",
+			image:      "myacr.azurecr.io/MyAgent:v1",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "simple name fails",
+			image:      "agent",
+			wantErr:    true,
+			errContain: "must be in format",
+		},
+		{
+			name:       "image with code deploy fails",
+			image:      "myacr.azurecr.io/agent:v1",
+			deployMode: "code",
+			wantErr:    true,
+			errContain: "cannot be used with --deploy-mode code",
+		},
+		{
+			name:       "container deploy mode with image is valid",
+			image:      "myacr.azurecr.io/agent:v1",
+			deployMode: "container",
+		},
+		{
+			name:       "empty deploy mode with image is valid",
+			image:      "myacr.azurecr.io/agent:v1",
+			deployMode: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateImageFlag(tt.image, tt.deployMode)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errContain)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSetImageOnTemplate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		manifest  *agent_yaml.AgentManifest
+		image     string
+		wantImage string
+		wantErr   bool
+	}{
+		{
+			name:      "empty image is noop",
+			manifest:  &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{}},
+			image:     "",
+			wantImage: "",
+		},
+		{
+			name:      "sets image on container agent",
+			manifest:  &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{}},
+			image:     "myacr.azurecr.io/agent:v1",
+			wantImage: "myacr.azurecr.io/agent:v1",
+		},
+		{
+			name:     "nil manifest returns error",
+			manifest: nil,
+			image:    "myacr.azurecr.io/agent:v1",
+			wantErr:  true,
+		},
+		{
+			name:     "non-container agent returns error",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.Workflow{}},
+			image:    "myacr.azurecr.io/agent:v1",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := setImageOnTemplate(tt.manifest, tt.image)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			if tt.image != "" {
+				hostedAgent, ok := tt.manifest.Template.(agent_yaml.ContainerAgent)
+				require.True(t, ok)
+				require.Equal(t, tt.wantImage, hostedAgent.Image)
+			}
+		})
+	}
+}
+
+func TestSkipACR(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		isCodeDeploy bool
+		image        string
+		want         bool
+	}{
+		{
+			name:         "code deploy skips ACR",
+			isCodeDeploy: true,
+			image:        "",
+			want:         true,
+		},
+		{
+			name:         "image flag skips ACR",
+			isCodeDeploy: false,
+			image:        "myacr.azurecr.io/agent:v1",
+			want:         true,
+		},
+		{
+			name:         "both set skips ACR",
+			isCodeDeploy: true,
+			image:        "myacr.azurecr.io/agent:v1",
+			want:         true,
+		},
+		{
+			name:         "neither set does not skip ACR",
+			isCodeDeploy: false,
+			image:        "",
+			want:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			action := &InitAction{
+				isCodeDeploy: tt.isCodeDeploy,
+				flags:        &initFlags{image: tt.image},
+			}
+
+			require.Equal(t, tt.want, action.skipACR())
+		})
+	}
+}
+
+func TestSynthesizeImageManifestFile(t *testing.T) {
+	t.Parallel()
+
+	const agentName = "my-agent"
+	const image = "myacr.azurecr.io/agents/my-agent@sha256:" +
+		"76a9463463acf11d4068e8468fb232a3de0709177b6b35de95de6a34b33fa686"
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image)
+	require.NoError(t, err)
+	require.NotNil(t, cleanup)
+	require.FileExists(t, manifestPath)
+	require.Equal(t, "agent.yaml", filepath.Base(manifestPath))
+
+	content, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+
+	// The synthesized file must parse through the same path the manifest flow uses.
+	template, err := agent_yaml.ExtractAgentDefinition(content)
+	require.NoError(t, err)
+
+	containerAgent, ok := template.(agent_yaml.ContainerAgent)
+	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
+	require.Equal(t, agent_yaml.AgentKindHosted, containerAgent.Kind)
+	require.Equal(t, agentName, containerAgent.Name)
+	require.Equal(t, image, containerAgent.Image)
+	require.Len(t, containerAgent.Protocols, 1)
+	require.Equal(t, "responses", containerAgent.Protocols[0].Protocol)
+	require.Equal(t, "1.0.0", containerAgent.Protocols[0].Version)
+
+	// cleanup removes the temp directory.
+	cleanup()
+	require.NoFileExists(t, manifestPath)
+}
+
+func TestAgentUsesPreBuiltImage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		manifest *agent_yaml.AgentManifest
+		want     bool
+	}{
+		{name: "nil manifest", manifest: nil, want: false},
+		{
+			name:     "container agent with image",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{Image: "myacr.azurecr.io/a:v1"}},
+			want:     true,
+		},
+		{
+			name:     "container agent without image",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{}},
+			want:     false,
+		},
+		{
+			name:     "container agent with whitespace-only image",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{Image: "   "}},
+			want:     false,
+		},
+		{
+			name:     "non-container agent",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.Workflow{}},
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, agentUsesPreBuiltImage(tt.manifest))
+		})
 	}
 }
 

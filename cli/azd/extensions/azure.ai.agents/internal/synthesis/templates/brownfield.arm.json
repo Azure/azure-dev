@@ -1,0 +1,99 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "languageVersion": "2.0",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "3024331125734647570"
+    }
+  },
+  "definitions": {
+    "deploymentsType": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/deploymentType"
+      },
+      "metadata": {
+        "description": "Shape of one model deployment entry in azure.yaml."
+      }
+    },
+    "deploymentType": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "model": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "format": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        },
+        "sku": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "capacity": {
+              "type": "int"
+            }
+          }
+        }
+      },
+      "metadata": {
+        "description": "Shape of a single model deployment."
+      }
+    }
+  },
+  "parameters": {
+    "accountName": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64,
+      "metadata": {
+        "description": "Name of the existing Foundry (AIServices) account."
+      }
+    },
+    "deployments": {
+      "$ref": "#/definitions/deploymentsType",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Model deployments to create or update on the existing account."
+      }
+    }
+  },
+  "resources": {
+    "foundryAccount": {
+      "existing": true,
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2025-06-01",
+      "name": "[parameters('accountName')]"
+    },
+    "modelDeployments": {
+      "copy": {
+        "name": "modelDeployments",
+        "count": "[length(parameters('deployments'))]",
+        "mode": "serial",
+        "batchSize": 1
+      },
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2025-06-01",
+      "name": "[format('{0}/{1}', parameters('accountName'), parameters('deployments')[copyIndex()].name)]",
+      "properties": {
+        "model": "[parameters('deployments')[copyIndex()].model]"
+      },
+      "sku": "[parameters('deployments')[copyIndex()].sku]"
+    }
+  }
+}

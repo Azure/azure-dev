@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"net/url"
 	"os"
@@ -67,6 +68,7 @@ type FoundryProvisioningProvider struct {
 	subID        string
 	location     string
 	rgName       string
+	rgExplicit   bool // AZURE_RESOURCE_GROUP came from env, not the rg-<env> default
 	foundryName  string
 	principalID  string
 	credential   azcore.TokenCredential
@@ -149,6 +151,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 		ServiceName:   svcName,
 		AcceptedHosts: FoundryProvisioningServiceHosts,
 		Env:           p.networkEnvMap(ctx),
+		ProjectRoot:   projectPath,
 	})
 	switch {
 	case errors.Is(err, synthesis.ErrEndpointBrownfield):
@@ -388,9 +391,12 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 	if p.rgName, err = get(envKeyResourceGroup); err != nil || p.rgName == "" {
 		// Default to rg-<env>, matching azd's standard Bicep provisioning,
 		// instead of failing. The subscription-scoped template creates the
-		// resource group when it doesn't exist yet.
+		// resource group when it doesn't exist yet. rgExplicit stays false so
+		// Destroy refuses to delete a group this provider never provisioned.
 		p.rgName = defaultResourceGroupName(p.envName)
 		log.Printf("[debug] %s not set; defaulting to %q", envKeyResourceGroup, p.rgName)
+	} else {
+		p.rgExplicit = true
 	}
 
 	if p.foundryName, err = get(envKeyProjectName); err != nil || p.foundryName == "" {
@@ -500,8 +506,12 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if p.brownfieldEndpoint != "" {
 		progress("Using existing Foundry project (endpoint set); skipping provisioning")
 		// Best-effort tenant lookup so AZURE_TENANT_ID is still surfaced for the
-		// existing-project path (no resources are provisioned here).
-		_ = p.ensureCredential(ctx)
+		// existing-project path (no resources are provisioned here). Log on
+		// failure so a stale login is visible in the debug trace rather than
+		// surfacing later as a confusing "AZURE_TENANT_ID is not set" error.
+		if err := p.ensureCredential(ctx); err != nil {
+			log.Printf("[debug] best-effort tenant lookup for brownfield deploy: %v", err)
+		}
 		return &azdext.ProvisioningDeployResult{
 			Deployment: &azdext.ProvisioningDeployment{
 				Outputs: p.withTenantOutput(brownfieldOutputs(p.brownfieldEndpoint)),
@@ -530,7 +540,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 		Properties: &armresources.DeploymentProperties{
 			Template:   src.armTemplate,
 			Parameters: src.parameters,
-			Mode:       toPtr(armresources.DeploymentModeIncremental),
+			Mode:       new(armresources.DeploymentModeIncremental),
 		},
 		Tags: map[string]*string{
 			"azd-env-name":                  new(p.envName),
@@ -602,6 +612,17 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 			parameters:  merged,
 			sourcePath:  p.onDiskSource.sourcePath,
 		}, nil
+	}
+
+	if p.armTemplate == nil {
+		// On-disk init skips synthesis, so the embedded template is never loaded.
+		// If the on-disk Bicep disappeared between presence check and load there
+		// is nothing to deploy; error out instead of sending an empty template.
+		return nil, exterrors.Validation(
+			exterrors.CodeOnDiskTemplateMissing,
+			"on-disk Bicep template is no longer present and no embedded template is loaded",
+			"restore infra/main.bicep (or main.bicepparam) or re-run init without --infra",
+		)
 	}
 
 	return &templateSource{
@@ -715,7 +736,7 @@ func (p *FoundryProvisioningProvider) Preview(
 		Properties: &armresources.DeploymentWhatIfProperties{
 			Template:   src.armTemplate,
 			Parameters: src.parameters,
-			Mode:       toPtr(armresources.DeploymentModeIncremental),
+			Mode:       new(armresources.DeploymentModeIncremental),
 		},
 	}
 
@@ -785,6 +806,19 @@ func (p *FoundryProvisioningProvider) Destroy(
 				"confirmation, so --force is required", p.rgName),
 			"re-run with `azd down --force` (add `--purge` to also purge "+
 				"soft-deleted Cognitive Services accounts)",
+		)
+	}
+
+	// Fail closed when AZURE_RESOURCE_GROUP was never set: rgName is the rg-<env>
+	// default the provider made up, not a group it provisioned. Deleting it could
+	// wipe an unrelated group that happens to match a common env name like "dev".
+	if !p.rgExplicit {
+		return nil, exterrors.Validation(
+			exterrors.CodeMissingResourceGroup,
+			fmt.Sprintf("%s is not set, so this provider has no record of a resource group "+
+				"it provisioned; refusing to delete the assumed default %q", envKeyResourceGroup, p.rgName),
+			fmt.Sprintf("set the group to delete with `azd env set %s <name>` if it was provisioned here",
+				envKeyResourceGroup),
 		)
 	}
 
@@ -1099,9 +1133,14 @@ func (p *FoundryProvisioningProvider) deploymentsClient(ctx context.Context) (*a
 	return factory.NewDeploymentsClient(), nil
 }
 
-// deploymentName is stable per azd env so re-runs update one record.
+// deploymentName is stable per azd env so re-runs update one record, plus a
+// short hash of the project path so two projects sharing an env name (e.g.
+// "dev") in the same subscription don't write the same deployment and read each
+// other's outputs.
 func (p *FoundryProvisioningProvider) deploymentName() string {
-	return deploymentNamePrefix + p.envName
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(p.projectPath))
+	return fmt.Sprintf("%s%s-%08x", deploymentNamePrefix, p.envName, h.Sum32())
 }
 
 // armParameters wraps the synthesizer-derived values in ARM's {"value": ...}
@@ -1337,12 +1376,6 @@ func isNotFound(err error) bool {
 	respErr, ok := errors.AsType[*azcore.ResponseError](err)
 	return ok && respErr.StatusCode == 404
 }
-
-// toPtr returns a pointer to its arg, for non-addressable expressions where
-// new() can't be used directly.
-//
-//go:fix inline
-func toPtr[T any](v T) *T { return new(v) }
 
 // sanitizeFoundryName trims a name to the [3,32] alnum/hyphen range
 // Foundry projects accept. Conservative: replaces anything else with '-'.

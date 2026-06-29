@@ -250,11 +250,20 @@ func substituteParamValue(
 
 	hasUnsetEnvVar := false
 	substituted, err := envsubst.Eval(string(enc), func(varName string) string {
-		if v, ok := envValues[varName]; ok {
+		v, ok := envValues[varName]
+		if !ok {
+			hasUnsetEnvVar = true
+			return ""
+		}
+		// The value is being injected into a JSON-encoded entry, so JSON-escape
+		// it. Values that are themselves valid azd values can contain quotes,
+		// backslashes (Windows paths), or newlines, which would otherwise corrupt
+		// the encoded string and fail the unmarshal below.
+		escaped, err := json.Marshal(v)
+		if err != nil {
 			return v
 		}
-		hasUnsetEnvVar = true
-		return ""
+		return string(escaped[1 : len(escaped)-1])
 	})
 	if err != nil {
 		return nil, exterrors.Validation(

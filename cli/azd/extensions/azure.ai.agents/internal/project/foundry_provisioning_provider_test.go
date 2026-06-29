@@ -403,11 +403,17 @@ func TestArmInputsToProto(t *testing.T) {
 }
 
 func TestDeploymentName_StableForEnv(t *testing.T) {
-	p := &FoundryProvisioningProvider{envName: "dev"}
-	assert.Equal(t, "azd-foundry-dev", p.deploymentName())
+	p := &FoundryProvisioningProvider{envName: "dev", projectPath: "/proj/a"}
+	first := p.deploymentName()
+	assert.Equal(t, first, p.deploymentName(), "same env+path is stable")
+	assert.True(t, strings.HasPrefix(first, "azd-foundry-dev-"), "carries env and discriminator")
 
 	p.envName = "production"
-	assert.Equal(t, "azd-foundry-production", p.deploymentName())
+	assert.True(t, strings.HasPrefix(p.deploymentName(), "azd-foundry-production-"))
+
+	// Different project paths sharing an env name must not collide.
+	other := &FoundryProvisioningProvider{envName: "dev", projectPath: "/proj/b"}
+	assert.NotEqual(t, first, other.deploymentName())
 }
 
 func TestDeploymentOutputsResources_NilSafe(t *testing.T) {

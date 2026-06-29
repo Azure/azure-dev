@@ -60,6 +60,11 @@ func TestAgentResponseRegion(t *testing.T) {
 			false,
 		},
 		{
+			"standalone 4 before agent line excluded by region",
+			"completed step 4\n[agent] I don't know.\nServer responded in 1s\n",
+			false,
+		},
+		{
 			"missing footer falls back to full text",
 			"using gpt-4o-mini\n[agent] four",
 			true,

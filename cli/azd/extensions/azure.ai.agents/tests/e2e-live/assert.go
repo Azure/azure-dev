@@ -15,6 +15,33 @@ import (
 // (case-insensitive), e.g. "the answer is four".
 var spelledFourRe = regexp.MustCompile(`(?i)\bfour\b`)
 
+// agentLineRe matches the start of an agent reply line, which invoke prints as
+// "[<agentName>] <text>" (invoke.go printf "[%s] %s"). responseEndRe matches the
+// green footer invoke prints after the reply, "Server responded in ..." — the
+// region between them is exactly the model's answer, with no surrounding noise.
+var (
+	agentLineRe   = regexp.MustCompile(`(?m)^\[[^\]]+\] `)
+	responseEndRe = regexp.MustCompile(`Server responded in`)
+)
+
+// agentResponseRegion returns just the agent's printed answer, sliced from the
+// first "[<agent>] " line to the "Server responded in" footer. Scoping the
+// 2+2 check to this region keeps stray "4"s from the rest of the CLI output
+// (model names, versions, status codes) from passing the test. If either marker
+// is missing the format changed, so it returns the full text and lets the
+// standalone-digit rules below guard against false positives.
+func agentResponseRegion(out string) string {
+	start := agentLineRe.FindStringIndex(out)
+	if start == nil {
+		return out
+	}
+	rest := out[start[0]:]
+	if end := responseEndRe.FindStringIndex(rest); end != nil {
+		return rest[:end[0]]
+	}
+	return out
+}
+
 // responseHasExpectedAnswer reports whether text answers "what is 2+2?" with a
 // standalone "4" or the spelled-out word "four".
 //

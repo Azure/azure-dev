@@ -40,3 +40,43 @@ func TestResponseHasExpectedAnswer(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentResponseRegion(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		out  string
+		want bool // responseHasExpectedAnswer over the sliced region
+	}{
+		{
+			"answer scoped between markers",
+			"using model gpt-4o-mini\n[agent] The answer is 4.\nServer responded in 2s (first byte: 1s)\n",
+			true,
+		},
+		{
+			"stray digits outside region rejected",
+			"gpt-4o-mini deployed (404 cached)\n[agent] I am not sure.\nServer responded in 4.0s\n",
+			false,
+		},
+		{
+			"missing footer falls back to full text",
+			"using gpt-4o-mini\n[agent] four",
+			true,
+		},
+		{
+			"no agent line falls back to full text",
+			"the answer is four",
+			true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := responseHasExpectedAnswer(agentResponseRegion(tc.out)); got != tc.want {
+				t.Errorf("region(%q) -> %v, want %v", tc.out, got, tc.want)
+			}
+		})
+	}
+}

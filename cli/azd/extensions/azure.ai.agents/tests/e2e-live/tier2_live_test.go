@@ -215,9 +215,9 @@ func (r *runner) phaseInit(ctx context.Context) error {
 	defer cancel()
 
 	// Deploy mode is NOT an interactive prompt in the template/--agent-name
-	// flow: init auto-resolves it to "container" when a manifest is provided
-	// (init_from_code.go:1373), so it must be chosen via the --deploy-mode flag
-	// (init.go:1306). r.mode is exactly "container" or "code".
+	// flow: promptDeployMode (init_from_code.go) auto-resolves it to "container"
+	// when a manifest is provided, so it must be chosen via newInitCommand's
+	// --deploy-mode flag (init.go). r.mode is exactly "container" or "code".
 	args := []string{"ai", "agent", "init", "--agent-name", r.agentName, "--deploy-mode", r.mode}
 	//nolint:gosec // azd is a trusted fixed binary; args are test-controlled.
 	cmd := exec.CommandContext(ictx, "azd", args...)
@@ -268,7 +268,7 @@ func (r *runner) phaseInit(ctx context.Context) error {
 // prompts cannot be predetermined. A linear ExpectString sequence would desync
 // at the first conditional prompt. Instead we block on output settling (the
 // go-expect read), then dispatch on the verbatim prompt strings the extension
-// prints (each case annotated with its source file:line).
+// prints (each case annotated with the source function that prints it).
 func (r *runner) driveInit(ctx context.Context, exited <-chan struct{}) error {
 	var lastKey string
 	repeat := 0
@@ -342,8 +342,8 @@ func (r *runner) finishInit(ctx context.Context) error {
 }
 
 // isInitComplete reports whether the success marker is on screen. Source:
-// init.go:1483 prints "AI agent definition added to your azd project
-// successfully!" in green at the end of runInitFromManifest.
+// runInitFromManifest (init.go) prints "AI agent definition added to your azd
+// project successfully!" in green at the end.
 func isInitComplete(screen string) bool {
 	return screenContains(screen, "added to your azd project") ||
 		screenContains(screen, "agent definition added")
@@ -359,7 +359,7 @@ func promptKey(prompt string) string {
 }
 
 // dispatchPrompt answers a single survey prompt. Cases are ordered specific →
-// generic and keyed on the verbatim messages the extension prints; the file:line
+// generic and keyed on the verbatim messages the extension prints; the function
 // in each comment points at the source string this matches. The prompt argument
 // is already lowercased (see activePrompt).
 //
@@ -372,9 +372,10 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 	has := func(sub string) bool { return strings.Contains(prompt, sub) }
 
 	switch {
-	// Yes/No confirms. "Continue with this existing agent name?" (init.go:722)
-	// only fires when the unique name already exists; decline it to reach the
-	// fresh-name input. Any other confirm: accept.
+	// Yes/No confirms. "Continue with this existing agent name?"
+	// (resolveExistingAgentNameConflictWithChecker) only fires when the unique
+	// name already exists; decline it to reach the fresh-name input. Any other
+	// confirm: accept.
 	case has("[y/n]") || has("(y/n)") || has("continue with this existing agent name"):
 		if has("continue with this existing agent name") {
 			r.c.send("n")
@@ -383,17 +384,17 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 		}
 		r.c.send(keyEnter)
 
-	// Language select — "Select a language" (init_from_templates_helpers.go:263).
+	// Language select — "Select a language" (promptAgentTemplate).
 	case has("select a language"):
 		r.selectByText("Python")
 
 	// Template select — "Select a starter template" / "Select an agent template"
-	// (init_from_templates_helpers.go:304 / 327).
+	// (promptAgentTemplate).
 	case has("starter template") || has("agent template"):
 		r.selectByText("Basic agent (Invocations")
 
 	// Foundry project hosting — "Select a Foundry project to host your agent..."
-	// (init.go:1752 / 1910); choices "Use an existing..." / "Create a new...".
+	// (runInitFromManifest); choices "Use an existing..." / "Create a new...".
 	case has("foundry project to host"):
 		if r.createProject() {
 			r.selectByText("Create a new Foundry project")
@@ -402,7 +403,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 		}
 
 	// Existing-project picker — "Select a Foundry project"
-	// (init_foundry_resources_helpers.go:1360); only when reusing a project.
+	// (selectFoundryProject); only when reusing a project.
 	case has("select a foundry project"):
 		if p := os.Getenv("E2E_PROJECT"); p != "" {
 			r.selectByText(p)
@@ -411,10 +412,10 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 		}
 
 	// Subscription — the extension prints a descriptive preamble via fmt.Println
-	// (init.go:1709 etc.), but that line isn't the survey "?" line activePrompt
+	// (runInitFromManifest), but that line isn't the survey "?" line activePrompt
 	// reads. ensureSubscription passes an empty request, so the picker shows
-	// azd-core's default message "Select subscription" (prompt_service.go:507) —
-	// match that, not the preamble.
+	// azd-core's default message "Select subscription" (promptSubscriptionMessage)
+	// — match that, not the preamble.
 	case has("select subscription"):
 		if sub := os.Getenv("E2E_SUBSCRIPTION"); sub != "" {
 			r.selectByText(sub[:min(8, len(sub))])
@@ -422,25 +423,25 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 			r.enter()
 		}
 
-	// Location — preamble "Select an Azure location..."
-	// (init_foundry_resources_helpers.go:1004) + azd-core picker.
+	// Location — preamble "Select an Azure location..." (ensureLocation) +
+	// azd-core picker.
 	case has("location") || has("region"):
 		r.selectByText(getenvDefault("E2E_LOCATION", "eastus2"))
 
 	// Manifest model decision — "Model '%s' is specified in the agent manifest."
-	// (init_models.go:463); keep the manifest model (default first choice).
+	// (getModelDetails); keep the manifest model (default first choice).
 	case has("is specified in the agent manifest"):
 		r.enter()
 
-	// Existing deployments / generic proceed — init_models.go:263 / 330.
+	// Existing deployments / generic proceed — getModelDeploymentDetails.
 	case has("how would you like to proceed") || has("existing deployment"):
 		r.enter()
 
-	// Model deployment name input — init_models.go:398 (default = model name).
+	// Model deployment name input — getModelDeploymentDetails (default = model name).
 	case has("model deployment name") || (has("deployment name") && has("model")):
 		r.enter()
 
-	// Model select — "Select a model" (init_models.go:704 etc.).
+	// Model select — "Select a model" (promptForAlternativeModel etc.).
 	case has("select a model"):
 		r.selectByText("gpt-4o-mini")
 
@@ -453,8 +454,8 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 		has("enter deployment capacity for"):
 		r.enter()
 
-	// Code-deploy prompts (init_from_code.go:1508 / 1534 / 1563). Auto-resolved
-	// under userProvidedManifest=true, so kept as defensive handlers only.
+	// Code-deploy prompts (promptCodeConfig). Auto-resolved under
+	// userProvidedManifest=true, so kept as defensive handlers only.
 	case has("select the runtime for your agent"):
 		r.enter() // default Python 3.13
 	case has("entry point"):
@@ -463,18 +464,19 @@ func (r *runner) dispatchPrompt(screen, prompt string) {
 		r.enter() // default remote build
 
 	// Optional infra (blank => create new): ACR login server
-	// (init_foundry_resources_helpers.go:481), App Insights (:606 / :621).
+	// (configureAcrConnection), App Insights (configureAppInsightsConnection).
 	case has("acr login server") || has("container registry"):
 		r.enter()
 	case has("application insights"):
 		r.enter()
 
-	// Startup command (helpers.go:773); blank => skip.
+	// Startup command (resolveStartupCommandForInit); blank => skip.
 	case has("command to start your agent"):
 		r.enter()
 
 	// Replacement agent name after declining the existing-name confirm
-	// (init.go:745) / the name input (init.go:261); accept the default.
+	// (promptForReplacementAgentName) / the name input (resolveInitAgentName);
+	// accept the default.
 	case has("enter a different name for your agent") || has("enter a name for your agent"):
 		r.enter()
 
@@ -560,7 +562,7 @@ func (r *runner) phaseInvoke(ctx context.Context) error {
 			continue
 		}
 
-		if !responseHasExpectedAnswer(out) {
+		if !responseHasExpectedAnswer(agentResponseRegion(out)) {
 			if attempt < maxRetries {
 				r.t.Log("response missing expected '4'/'four'; retrying")
 				if err := sleepCtx(ctx, 15*time.Second); err != nil {

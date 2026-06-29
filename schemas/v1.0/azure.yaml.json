@@ -540,7 +540,7 @@
                         }
                     },
                     {
-                        "comment": "App Service supports containers but not Kubernetes-specific properties",
+                        "comment": "App Service supports docker/image for containers but not k8s, apiVersion, or env (env not yet wired for container deploy)",
                         "if": {
                             "properties": {
                                 "host": { "const": "appservice" }
@@ -549,7 +549,8 @@
                         "then": {
                             "properties": {
                                 "k8s": false,
-                                "apiVersion": false
+                                "apiVersion": false,
+                                "env": false
                             }
                         }
                     },

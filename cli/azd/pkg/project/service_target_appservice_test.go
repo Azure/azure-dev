@@ -404,9 +404,27 @@ func Test_appServiceTarget_RequiredExternalTools(t *testing.T) {
 }
 
 func Test_appServiceTarget_Initialize(t *testing.T) {
-	target := NewAppServiceTarget(nil, nil, nil, nil, nil)
-	err := target.Initialize(t.Context(), nil)
-	require.NoError(t, err)
+	t.Run("NonDocker_NoError", func(t *testing.T) {
+		target := NewAppServiceTarget(nil, nil, nil, nil, nil)
+		err := target.Initialize(t.Context(), &ServiceConfig{Language: ServiceLanguagePython})
+		require.NoError(t, err)
+	})
+
+	t.Run("Docker_NoError", func(t *testing.T) {
+		target := NewAppServiceTarget(nil, nil, nil, nil, nil)
+		err := target.Initialize(t.Context(), &ServiceConfig{Language: ServiceLanguageDocker})
+		require.NoError(t, err)
+	})
+
+	t.Run("PolyglotDocker_ReturnsError", func(t *testing.T) {
+		target := NewAppServiceTarget(nil, nil, nil, nil, nil)
+		err := target.Initialize(t.Context(), &ServiceConfig{
+			Language: ServiceLanguagePython,
+			Docker:   DockerProjectOptions{Path: "./Dockerfile"},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not yet supported")
+	})
 }
 
 func Test_appServiceTarget_Package_ContainerArtifact(t *testing.T) {
@@ -669,20 +687,15 @@ func Test_appServiceTarget_RequiredExternalTools_Docker(t *testing.T) {
 		assert.NotEmpty(t, tools, "should return docker tools for docker language")
 	})
 
-	t.Run("DockerPath_DelegatesToContainerHelper", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(t.Context())
-		dockerCli := docker.NewCli(mockContext.CommandRunner)
-		containerHelper := NewContainerHelper(
-			nil, nil, nil, nil, dockerCli, nil, mockContext.Console, nil)
-		target := &appServiceTarget{
-			containerHelper: containerHelper,
-		}
+	t.Run("DockerPath_WithNonDockerLanguage_ReturnsEmpty", func(t *testing.T) {
+		// Polyglot containerization (non-docker language + docker.path) is not supported for appservice
+		target := &appServiceTarget{}
 		sc := &ServiceConfig{
 			Language: ServiceLanguagePython,
 			Docker:   DockerProjectOptions{Path: "./Dockerfile"},
 		}
-		tools := target.RequiredExternalTools(*mockContext.Context, sc)
-		assert.NotEmpty(t, tools, "should return docker tools when docker.path is set")
+		tools := target.RequiredExternalTools(t.Context(), sc)
+		assert.Empty(t, tools, "should not return docker tools for unsupported polyglot containerization")
 	})
 
 	t.Run("NonDocker_ReturnsEmpty", func(t *testing.T) {

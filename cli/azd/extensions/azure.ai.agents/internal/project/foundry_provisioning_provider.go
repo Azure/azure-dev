@@ -21,6 +21,7 @@ import (
 	"azureaiagent/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
@@ -80,6 +81,11 @@ type FoundryProvisioningProvider struct {
 	// service sets endpoint: (bring-your-own). When non-empty the provider skips
 	// provisioning and connects to that project instead of creating a new one.
 	brownfieldEndpoint string
+
+	// brownfieldDeployments are the model deployments declared under a brownfield
+	// (endpoint:) project service. They are created/upserted on the existing
+	// account at Deploy time; the existing account itself is never re-created.
+	brownfieldDeployments []synthesis.Deployment
 
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
@@ -141,6 +147,9 @@ func (p *FoundryProvisioningProvider) Initialize(
 		if endpoint := foundryServiceEndpoint(rawYAML, svcName); endpoint != "" {
 			warnNetworkIgnoredInBrownfield(rawYAML, svcName)
 			p.brownfieldEndpoint = endpoint
+			if err := p.captureBrownfieldDeployments(rawYAML, svcName); err != nil {
+				return err
+			}
 			return p.resolveEnvName(ctx)
 		}
 		return p.resolveEnv(ctx)
@@ -159,6 +168,9 @@ func (p *FoundryProvisioningProvider) Initialize(
 		// network: has no effect in brownfield mode; warn if both are present.
 		warnNetworkIgnoredInBrownfield(rawYAML, svcName)
 		p.brownfieldEndpoint = foundryServiceEndpoint(rawYAML, svcName)
+		if err := p.captureBrownfieldDeployments(rawYAML, svcName); err != nil {
+			return err
+		}
 		return p.resolveEnvName(ctx)
 	case errors.Is(err, synthesis.ErrServiceNotFound):
 		return exterrors.Dependency(
@@ -506,19 +518,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDeployResult, error) {
 	if p.brownfieldEndpoint != "" {
-		progress("Using existing Foundry project (endpoint set); skipping provisioning")
-		// Best-effort tenant lookup so AZURE_TENANT_ID is still surfaced for the
-		// existing-project path (no resources are provisioned here). Log on
-		// failure so a stale login is visible in the debug trace rather than
-		// surfacing later as a confusing "AZURE_TENANT_ID is not set" error.
-		if err := p.ensureCredential(ctx); err != nil {
-			log.Printf("[debug] best-effort tenant lookup for brownfield deploy: %v", err)
-		}
-		return &azdext.ProvisioningDeployResult{
-			Deployment: &azdext.ProvisioningDeployment{
-				Outputs: p.withTenantOutput(brownfieldOutputs(p.brownfieldEndpoint)),
-			},
-		}, nil
+		return p.deployBrownfield(ctx, progress)
 	}
 
 	progress("Preparing Foundry provisioning template...")
@@ -576,6 +576,164 @@ func (p *FoundryProvisioningProvider) Deploy(
 			Outputs:    p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties))),
 		},
 	}, nil
+}
+
+// captureBrownfieldDeployments records the model deployments declared on a
+// brownfield (endpoint:) project service so Deploy can create them on the
+// existing account. No-op (nil) when none are declared.
+func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(rawYAML []byte, svcName string) error {
+	deployments, err := synthesis.BrownfieldDeployments(rawYAML, svcName)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf("read deployments for existing Foundry project service %q: %s", svcName, err),
+			"check the deployments: list under your azure.ai.project service",
+		)
+	}
+	p.brownfieldDeployments = deployments
+	return nil
+}
+
+// deployBrownfield handles the existing-project (endpoint:) Deploy path. When the
+// service declares deployments:, it creates/upserts them on the existing account
+// via a resource-group-scoped ARM deployment (the account is referenced, never
+// re-created). With no declared deployments it preserves the prior behavior:
+// skip provisioning and only surface the endpoint (plus a best-effort tenant).
+func (p *FoundryProvisioningProvider) deployBrownfield(
+	ctx context.Context,
+	progress grpcbroker.ProgressFunc,
+) (*azdext.ProvisioningDeployResult, error) {
+	if len(p.brownfieldDeployments) == 0 {
+		progress("Using existing Foundry project (endpoint set); skipping provisioning")
+		// Best-effort tenant lookup so AZURE_TENANT_ID is still surfaced for the
+		// existing-project path (no resources are provisioned here). Log on
+		// failure so a stale login is visible in the debug trace rather than
+		// surfacing later as a confusing "AZURE_TENANT_ID is not set" error.
+		if err := p.ensureCredential(ctx); err != nil {
+			log.Printf("[debug] best-effort tenant lookup for brownfield deploy: %v", err)
+		}
+		return &azdext.ProvisioningDeployResult{
+			Deployment: &azdext.ProvisioningDeployment{
+				Outputs: p.withTenantOutput(brownfieldOutputs(p.brownfieldEndpoint)),
+			},
+		}, nil
+	}
+
+	progress("Using existing Foundry project; reconciling declared model deployments...")
+
+	// Locate the existing account (subscription, resource group, account name).
+	// resolveBrownfieldTarget sets p.subID, which the deployments client needs.
+	rg, account, err := p.resolveBrownfieldTarget(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	tmpl, err := brownfieldARMTemplate()
+	if err != nil {
+		return nil, err
+	}
+
+	dep := armresources.Deployment{
+		Properties: &armresources.DeploymentProperties{
+			Template: tmpl,
+			Parameters: map[string]any{
+				"accountName": map[string]any{"value": account},
+				"deployments": map[string]any{"value": p.brownfieldDeployments},
+			},
+			Mode: new(armresources.DeploymentModeIncremental),
+		},
+		Tags: map[string]*string{
+			"azd-env-name": new(p.envName),
+		},
+	}
+
+	client, err := p.deploymentsClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	name := p.deploymentName() + "-models"
+	progress(fmt.Sprintf("Starting model deployment %q on %s...", name, account))
+
+	poller, err := client.BeginCreateOrUpdate(ctx, rg, name, dep, nil)
+	if err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
+	}
+	if _, err := pollWithProgress(ctx, poller, progress, "Model deployment in progress"); err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
+	}
+
+	progress("Model deployments reconciled")
+
+	return &azdext.ProvisioningDeployResult{
+		Deployment: &azdext.ProvisioningDeployment{
+			Outputs: p.withTenantOutput(brownfieldOutputs(p.brownfieldEndpoint)),
+		},
+	}, nil
+}
+
+// resolveBrownfieldTarget locates the existing Foundry account to deploy models
+// into, from AZURE_AI_PROJECT_ID (the canonical project ARM resource ID set by
+// `azd ai agent init` against an existing project). It sets p.subID and returns
+// the resource group and account name.
+func (p *FoundryProvisioningProvider) resolveBrownfieldTarget(ctx context.Context) (string, string, error) {
+	projectID, err := p.envValue(ctx, "AZURE_AI_PROJECT_ID")
+	if err != nil || projectID == "" {
+		return "", "", exterrors.Dependency(
+			exterrors.CodeInvalidServiceConfig,
+			"AZURE_AI_PROJECT_ID is required to create model deployments on an "+
+				"existing Foundry project but is not set in the azd environment",
+			"re-run `azd ai agent init` against the existing project, or set it with "+
+				"`azd env set AZURE_AI_PROJECT_ID <project-resource-id>`",
+		)
+	}
+
+	resID, err := arm.ParseResourceID(projectID)
+	if err != nil || resID.Parent == nil ||
+		resID.SubscriptionID == "" || resID.ResourceGroupName == "" || resID.Parent.Name == "" {
+		return "", "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("parse AZURE_AI_PROJECT_ID %q as a Foundry project resource ID", projectID),
+			"verify AZURE_AI_PROJECT_ID is a full project ARM resource ID of the form "+
+				"/subscriptions/<sub>/resourceGroups/<rg>/providers/"+
+				"Microsoft.CognitiveServices/accounts/<account>/projects/<project>",
+		)
+	}
+
+	p.subID = resID.SubscriptionID
+	return resID.ResourceGroupName, resID.Parent.Name, nil
+}
+
+// envValue reads a single value from the active azd environment, trimmed.
+func (p *FoundryProvisioningProvider) envValue(ctx context.Context, key string) (string, error) {
+	resp, err := p.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: p.envName,
+		Key:     key,
+	})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(resp.Value), nil
+}
+
+// brownfieldARMTemplate loads and parses the embedded resource-group-scoped ARM
+// template that creates model deployments on an existing Foundry account.
+func brownfieldARMTemplate() (map[string]any, error) {
+	tmplBytes, err := synthesis.BrownfieldARMTemplate()
+	if err != nil {
+		return nil, exterrors.Internal(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("load embedded brownfield ARM template: %s", err),
+		)
+	}
+	var tmpl map[string]any
+	if err := json.Unmarshal(tmplBytes, &tmpl); err != nil {
+		return nil, exterrors.Internal(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("parse embedded brownfield ARM template: %s", err),
+		)
+	}
+	return tmpl, nil
 }
 
 // resolveTemplate returns the on-disk Bicep source if present, else the

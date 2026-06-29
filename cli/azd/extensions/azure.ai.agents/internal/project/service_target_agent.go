@@ -1445,10 +1445,14 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
 // and computes its SHA-256. Returns the temp file path and SHA-256 hex string.
 func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serviceConfig *azdext.ServiceConfig) (string, string, error) {
-	// Source directory is the service's directory. Fall back to the directory of
-	// a legacy on-disk agent.yaml when the service path was not resolved.
+	// Source directory is the service's directory. When AGENT_DEFINITION_PATH
+	// overrides the definition, its file may live outside the service path, so
+	// zip the override's directory to capture the right source tree. Fall back to
+	// the definition directory when the service path was not resolved.
 	srcDir := p.servicePath
-	if srcDir == "" {
+	if os.Getenv("AGENT_DEFINITION_PATH") != "" && p.agentDefinitionPath != "" {
+		srcDir = filepath.Dir(p.agentDefinitionPath)
+	} else if srcDir == "" {
 		srcDir = filepath.Dir(p.agentDefinitionPath)
 	}
 

@@ -19,23 +19,17 @@ const (
 
 type rleState struct {
 	Name               string `json:"name"`
-	Recipe             string `json:"recipe"`
+	LocalImage         string `json:"localImage,omitempty"`
 	Image              string `json:"image,omitempty"`
-	Account            string `json:"account"`
+	Port               int    `json:"port,omitempty"`
 	Project            string `json:"project"`
-	Endpoint           string `json:"endpoint,omitempty"`
 	EnvironmentId      string `json:"environmentId,omitempty"`
 	EnvironmentVersion string `json:"environmentVersion,omitempty"`
-	InstanceId         string `json:"instanceId,omitempty"`
-	InstanceEndpoint   string `json:"instanceEndpoint,omitempty"`
 }
 
-func defaultRleState(name string, recipe string) rleState {
+func defaultRleState(name string) rleState {
 	return rleState{
-		Name:    name,
-		Recipe:  recipe,
-		Account: defaultAccountName,
-		Project: defaultProjectName,
+		Name: name,
 	}
 }
 
@@ -46,7 +40,7 @@ func loadRleState() (rleState, error) {
 			Message:    "RLE session has not been initialized.",
 			Code:       "rle_project_not_initialized",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Run azd ai rle init <env-name> first, then run commands from the created session folder.",
+			Suggestion: "Run azd ai rle init first, then run commands from the created session folder.",
 		}
 	}
 	if err != nil {
@@ -56,15 +50,6 @@ func loadRleState() (rleState, error) {
 	var state rleState
 	if err := json.Unmarshal(data, &state); err != nil {
 		return rleState{}, err
-	}
-	if state.Account == "" {
-		state.Account = defaultAccountName
-	}
-	if state.Project == "" {
-		state.Project = defaultProjectName
-	}
-	if state.Recipe == "" {
-		state.Recipe = defaultRecipeName
 	}
 	return state, nil
 }

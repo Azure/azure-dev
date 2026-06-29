@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore abstractmethod asctime devrle gethostname kwargs openenv rstrip urlopen
+
 package cmd
 
 import (
@@ -15,6 +17,17 @@ import (
 
 var envNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
+const defaultEchoManifest = `# RLE environment manifest (OpenEnv-style).
+spec_version: 1
+name: echo_env
+description: A local echo OpenEnv environment.
+template:
+  name: echo_env
+  kind: openenv
+  environment:
+    image: devrle.azurecr.io/echo-rl:latest
+`
+
 func validateEnvName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if !envNamePattern.MatchString(name) {
@@ -23,15 +36,24 @@ func validateEnvName(name string) (string, error) {
 	return name, nil
 }
 
-func validateRecipeName(name string) (string, error) {
-	name = strings.TrimSpace(name)
-	if !envNamePattern.MatchString(name) {
-		return "", fmt.Errorf("invalid recipe name %q", name)
+func slug(name string) string {
+	var builder strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			builder.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash && builder.Len() > 0 {
+			builder.WriteRune('-')
+			lastDash = true
+		}
 	}
-	return name, nil
+	return strings.Trim(builder.String(), "-")
 }
 
-func scaffoldRleSession(name string, dest string, image string, force bool) (string, error) {
+func scaffoldRleSession(name string, dest string, localImage string, registrationImage string, force bool) (string, error) {
 	envClass := toPascal(name)
 	envTitle := toTitle(name)
 	sessionDir := filepath.Join(dest, name)
@@ -49,11 +71,9 @@ func scaffoldRleSession(name string, dest string, image string, force bool) (str
 	files := map[string]string{
 		"models.py":                          modelsTemplate,
 		"client.py":                          clientTemplate,
-		"Dockerfile":                         dockerfileTemplate,
 		"requirements.txt":                   requirementsTemplate,
 		rleManifestFile:                      manifestTemplate,
 		"README.md":                          readmeTemplate,
-		".dockerignore":                      dockerignoreTemplate,
 		"rle_runtime.py":                     runtimeTemplate,
 		"server/" + name + "_environment.py": environmentTemplate,
 		"server/app.py":                      appTemplate,
@@ -61,10 +81,11 @@ func scaffoldRleSession(name string, dest string, image string, force bool) (str
 	}
 
 	replacements := map[string]string{
-		"__ENV_NAME__":  name,
-		"__ENV_CLASS__": envClass,
-		"__ENV_TITLE__": envTitle,
-		"__IMAGE__":     image,
+		"__ENV_NAME__":    name,
+		"__ENV_CLASS__":   envClass,
+		"__ENV_TITLE__":   envTitle,
+		"__LOCAL_IMAGE__": localImage,
+		"__IMAGE__":       registrationImage,
 	}
 
 	for relativePath, content := range files {
@@ -109,24 +130,19 @@ func toTitle(name string) string {
 const manifestTemplate = `# RLE environment manifest (OpenEnv-style).
 spec_version: 1
 name: __ENV_NAME__
-type: rle
-runtime: fastapi
-app: server.app:app
-port: 8000
-image: __IMAGE__
+description: A local echo OpenEnv environment.
+template:
+  name: __ENV_NAME__
+  kind: openenv
+  local:
+    image: __LOCAL_IMAGE__
+  environment:
+    image: __IMAGE__
 `
 
 const requirementsTemplate = `fastapi>=0.110
 uvicorn>=0.29
 pydantic>=2.6
-`
-
-const dockerignoreTemplate = `__pycache__/
-*.pyc
-.venv/
-venv/
-.git/
-.pytest_cache/
 `
 
 const modelsTemplate = `"""Data models for the __ENV_TITLE__ environment."""
@@ -139,19 +155,16 @@ from rle_runtime import Action, Observation
 class __ENV_CLASS__Action(Action):
     """Action for the __ENV_TITLE__ environment."""
 
-    message: str = Field(..., description="Message to send to the environment")
+    message: str = Field(default="hello", description="Message to echo")
 
 
 class __ENV_CLASS__Observation(Observation):
     """Observation returned by the __ENV_TITLE__ environment."""
 
-    echoed_message: str = Field(default="", description="The echoed message")
-    message_length: int = Field(default=0, description="Length of the echoed message")
+    message: str = Field(default="", description="Echo response")
 `
 
 const environmentTemplate = `"""__ENV_TITLE__ environment implementation."""
-
-from __future__ import annotations
 
 import uuid
 from typing import Any, Optional
@@ -162,10 +175,7 @@ from models import __ENV_CLASS__Action, __ENV_CLASS__Observation
 
 
 class __ENV_CLASS__Environment(Environment):
-    """A simple echo environment.
-
-    Replace the reset/step logic below with your own environment dynamics.
-    """
+    """A minimal echo environment for smoke testing the OpenEnv runtime."""
 
     def __init__(self) -> None:
         self._episode_id: Optional[str] = None
@@ -180,20 +190,17 @@ class __ENV_CLASS__Environment(Environment):
         self._episode_id = episode_id or str(uuid.uuid4())
         self._step_count = 0
         return __ENV_CLASS__Observation(
-            echoed_message="",
-            message_length=0,
+            message="Echo environment reset.",
             done=False,
-            reward=None,
+            reward=0.0,
         )
 
     def step(self, action: __ENV_CLASS__Action, **kwargs: Any) -> __ENV_CLASS__Observation:
         self._step_count += 1
-        message = action.message
         return __ENV_CLASS__Observation(
-            echoed_message=message,
-            message_length=len(message),
+            message=f"echo: {action.message}",
             done=False,
-            reward=float(len(message)),
+            reward=0.0,
         )
 
     @property
@@ -231,16 +238,13 @@ if __name__ == "__main__":
 
 const clientTemplate = `"""Minimal HTTP client for the __ENV_TITLE__ environment.
 
-Use this for quick local testing against either:
-  - the container directly (e.g. http://localhost:32891), or
-  - the Foundry data plane gateway, e.g.
-    http://localhost:5001/rle/v1.0/projects/<projectId>/environments/<environmentId>/instances/<instanceId>
+Use this for quick local testing against the container directly
+(for example, http://localhost:32891).
 
 Example:
     from client import __ENV_CLASS__Client
 
-    base = ("http://localhost:5001/rle/v1.0/projects/proj1"
-            "/environments/<environmentId>/instances/<instanceId>")
+    base = "http://localhost:8000"
     c = __ENV_CLASS__Client(base)
     print(c.reset())
     print(c.step({"message": "hello"}))
@@ -285,28 +289,6 @@ class __ENV_CLASS__Client:
         return self._get("/state")
 `
 
-const dockerfileTemplate = `# __ENV_TITLE__ RLE environment image.
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install dependencies first for better layer caching.
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the environment code.
-COPY . .
-
-# OpenEnv-style environments always listen on port 8000.
-EXPOSE 8000
-
-# Container-level health check (pure Python, no curl needed).
-HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=2).status==200 else 1)" || exit 1
-
-CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000"]
-`
-
 const readmeTemplate = `# __ENV_TITLE__ RLE Environment
 
 An OpenEnv-style Reinforcement Learning Environment generated by the ` + "`rle`" + ` CLI.
@@ -315,12 +297,11 @@ An OpenEnv-style Reinforcement Learning Environment generated by the ` + "`rle`"
 
 | File | Purpose |
 | --- | --- |
-| ` + "`rle_runtime.py`" + ` | Self-contained OpenEnv-compatible runtime (base models + FastAPI factory). |
+| ` + "`rle_runtime.py`" + ` | OpenEnv-compatible runtime and FastAPI factory. |
 | ` + "`models.py`" + ` | ` + "`__ENV_CLASS__Action`" + ` / ` + "`__ENV_CLASS__Observation`" + ` data models. |
-| ` + "`server/__ENV_NAME___environment.py`" + ` | ` + "`__ENV_CLASS__Environment`" + ` — your ` + "`reset`" + `/` + "`step`" + `/` + "`state`" + ` logic. |
-| ` + "`server/app.py`" + ` | FastAPI app exposing ` + "`/reset`" + `, ` + "`/step`" + `, ` + "`/state`" + `, ` + "`/health`" + `. |
+| ` + "`server/__ENV_NAME___environment.py`" + ` | Environment reset/step/state logic. |
+| ` + "`server/app.py`" + ` | FastAPI app exposing the OpenEnv endpoints. |
 | ` + "`client.py`" + ` | Minimal HTTP client for testing. |
-| ` + "`Dockerfile`" + ` | Builds the environment image (listens on ` + "`:8000`" + `). |
 | ` + "`rle.yaml`" + ` | Environment manifest. |
 
 ## Run locally (no Docker)
@@ -335,16 +316,27 @@ curl -X POST localhost:8000/step -H 'content-type: application/json' \
 curl localhost:8000/state
 ` + "```" + `
 
-## Deploy into Foundry
+## Run with azd
 
 ` + "```bash" + `
-rle deploy --project <projectId> --path . --name __ENV_NAME__ \
-    --control-plane http://localhost:5000
+azd ai rle run
+azd ai rle invoke --local
 ` + "```" + `
 
-This builds the image, ensures an environment definition exists via the control
-plane, deploys an instance, and prints the data plane endpoint you can call
-` + "`reset`" + `/` + "`step`" + `/` + "`state`" + ` against.
+Inside the invoke shell:
+
+` + "```text" + `
+rle> health
+rle> reset {"seed":0}
+rle> step {"message":"hello"}
+rle> state
+rle> exit
+` + "```" + `
+
+` + "`run`" + ` uses ` + "`template.local.image`" + ` when set, falls back to
+` + "`template.environment.image`" + `, and runs that image locally with Docker.
+
+` + "`deploy`" + ` registers ` + "`template.environment.image`" + ` with RLE.
 `
 
 const runtimeTemplate = `# rle_runtime.py

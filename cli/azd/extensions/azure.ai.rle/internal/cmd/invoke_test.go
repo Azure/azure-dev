@@ -4,133 +4,166 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 )
 
-func TestBuildLoomInvokeArgsUsesStateAndFlags(t *testing.T) {
-	state := rleState{
-		EnvironmentId: "env-123",
-	}
-	flags := &rleInvokeFlags{
-		projectEndpoint:            "https://example.services.ai.azure.com/api/projects/p",
-		numTasks:                   4,
-		modelName:                  "Qwen/Qwen3-32B",
-		rendererName:               "qwen3_disable_thinking",
-		maxTokens:                  1200,
-		loraRank:                   32,
-		groupSize:                  4,
-		groupsPerBatch:             1,
-		maxSteps:                   1,
-		lossFn:                     "importance_sampling",
-		seed:                       42,
-		evalEvery:                  999999,
-		saveEvery:                  999999,
-		removeConstantRewardGroups: true,
-	}
-
-	args := buildLoomInvokeArgs(state, "demo-3", "https://rle.example", flags)
-
-	expected := []string{
-		"project_endpoint=https://example.services.ai.azure.com/api/projects/p",
-		"env_id=env-123",
-		"project=demo-3",
-		"control_plane=https://rle.example",
-		"num_tasks=4",
-		"model_name=Qwen/Qwen3-32B",
-		"renderer_name=qwen3_disable_thinking",
-		"max_tokens=1200",
-		"lora_rank=32",
-		"group_size=4",
-		"groups_per_batch=1",
-		"max_steps=1",
-		"loss_fn=importance_sampling",
-		"seed=42",
-		"eval_every=999999",
-		"save_every=999999",
-		"remove_constant_reward_groups=true",
-	}
-	for _, arg := range expected {
-		if !slices.Contains(args, arg) {
-			t.Fatalf("expected args to contain %q, got %#v", arg, args)
-		}
-	}
-}
-
-func TestBuildLoomInvokeArgsOmitsMaxStepsWhenZero(t *testing.T) {
-	state := rleState{
-		EnvironmentId: "env-123",
-	}
-	flags := &rleInvokeFlags{
-		projectEndpoint: "https://example.services.ai.azure.com/api/projects/p",
-		maxSteps:        0,
-	}
-
-	args := buildLoomInvokeArgs(state, "demo-3", "http://localhost:5000", flags)
-
-	if slices.Contains(args, "max_steps=0") {
-		t.Fatalf("expected max_steps to be omitted, got %#v", args)
-	}
-}
-
-func TestLoomRecipeModuleUsesRecipeName(t *testing.T) {
-	module := loomRecipeModule("code_rl_with_rle")
-	expected := "loom_cookbook.recipes.code_rl_with_rle.train_azure"
-	if module != expected {
-		t.Fatalf("expected %q, got %q", expected, module)
-	}
-}
-
-func TestEnsureLoomRecipeExistsRequiresTrainAzureEntrypoint(t *testing.T) {
-	root := t.TempDir()
-	recipeDir := filepath.Join(root, "loom_cookbook", "recipes", "code_rl_with_rle")
-	if err := os.MkdirAll(recipeDir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(recipeDir, "train_azure.py"), []byte(""), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := ensureLoomRecipeExists(root, "code_rl_with_rle"); err != nil {
-		t.Fatal(err)
-	}
-	if err := ensureLoomRecipeExists(root, "missing_recipe"); err == nil {
-		t.Fatal("expected missing recipe to fail")
-	}
-}
-
-func TestEnsureLoomLocalSourcesAddsLocalSources(t *testing.T) {
-	root := t.TempDir()
-	cookbookPath := filepath.Join(root, ".azd-rle", "recipes", "loom", "loom-cookbook")
-	if err := os.MkdirAll(cookbookPath, 0700); err != nil {
-		t.Fatal(err)
-	}
-	pyprojectPath := filepath.Join(cookbookPath, "pyproject.toml")
-	if err := os.WriteFile(pyprojectPath, []byte("[project]\nname = \"loom-cookbook\"\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	rleSdkPackage := filepath.Join(root, ".azd-rle", "deps", "rle_sdk-0.1.3-py3-none-any.whl")
-
-	if err := ensureLoomLocalSources(cookbookPath, rleSdkPackage); err != nil {
-		t.Fatal(err)
-	}
-
-	data, err := os.ReadFile(pyprojectPath)
+func TestOpenEnvRequestBodyWrapsAction(t *testing.T) {
+	body, err := openEnvRequestBody("step", &openEnvInvokeFlags{action: `{"message":"hello"}`})
 	if err != nil {
 		t.Fatal(err)
 	}
-	contents := string(data)
-	expectedSources := []string{
-		"[tool.uv.sources]",
-		"azure-ai-finetuning-sessions = { path = \"../azure-ai-finetuning-sessions\" }",
-		"rle-sdk = { path = \"../../../deps/rle_sdk-0.1.3-py3-none-any.whl\" }",
+	if string(body) != `{"action":{"message":"hello"}}` {
+		t.Fatalf("unexpected body: %s", body)
 	}
-	for _, expected := range expectedSources {
-		if !strings.Contains(contents, expected) {
-			t.Fatalf("expected pyproject to contain %q, got %s", expected, contents)
+}
+
+func TestOpenEnvRequestBodyUsesRawBody(t *testing.T) {
+	body, err := openEnvRequestBody("step", &openEnvInvokeFlags{
+		action: `{"message":"hello"}`,
+		body:   `{"action":{"message":"override"},"metadata":{"x":1}}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := `{"action":{"message":"override"},"metadata":{"x":1}}`
+	if string(body) != expected {
+		t.Fatalf("expected %s, got %s", expected, body)
+	}
+}
+
+func TestNormalizeOpenEnvOperation(t *testing.T) {
+	operation, err := normalizeOpenEnvOperation("/STEP")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operation != "step" {
+		t.Fatalf("expected step, got %q", operation)
+	}
+	if _, err := normalizeOpenEnvOperation("unknown"); err == nil {
+		t.Fatal("expected unknown operation to fail")
+	}
+}
+
+func TestRunOpenEnvShellCallsCommands(t *testing.T) {
+	var stepBody map[string]any
+	var resetBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/health":
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		case "/reset":
+			if err := json.NewDecoder(r.Body).Decode(&resetBody); err != nil {
+				t.Errorf("decode reset body: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"reset":true}`))
+		case "/step":
+			if err := json.NewDecoder(r.Body).Decode(&stepBody); err != nil {
+				t.Errorf("decode step body: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"reward":1}`))
+		case "/state":
+			_, _ = w.Write([]byte(`{"state":"ready"}`))
+		default:
+			http.NotFound(w, r)
 		}
+	}))
+	defer server.Close()
+
+	input := strings.NewReader("health\nreset {\"seed\":0}\nstep {\"message\":\"hello\"}\nstate\nexit\n")
+	var output bytes.Buffer
+	if err := runOpenEnvShell(input, &output, server.URL, 30); err != nil {
+		t.Fatal(err)
+	}
+
+	if resetBody["seed"] != float64(0) {
+		t.Fatalf("expected reset seed body, got %#v", resetBody)
+	}
+	action, ok := stepBody["action"].(map[string]any)
+	if !ok || action["message"] != "hello" {
+		t.Fatalf("expected wrapped step action, got %#v", stepBody)
+	}
+	if !strings.Contains(output.String(), `"reward": 1`) {
+		t.Fatalf("expected pretty step response in output, got %s", output.String())
+	}
+}
+
+func TestRunOpenEnvShellRequiresStepPayload(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/step" {
+			t.Fatal("step without payload should not call the runtime")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	input := strings.NewReader("step\nexit\n")
+	var output bytes.Buffer
+	if err := runOpenEnvShell(input, &output, server.URL, 30); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "step requires a JSON action payload") {
+		t.Fatalf("expected step payload error, got %s", output.String())
+	}
+}
+
+func TestLocalContainerNamesUseEnvironmentName(t *testing.T) {
+	if name := localContainerName("code_rl"); name != "azd-rle-code-rl" {
+		t.Fatalf("expected local container name, got %q", name)
+	}
+}
+
+func TestDockerPullFailureSuggestionUsesAcrRegistryName(t *testing.T) {
+	suggestion := dockerPullFailureSuggestion("devrle.azurecr.io/echo-rl:latest")
+	if !strings.Contains(suggestion, "az acr login --name devrle") {
+		t.Fatalf("expected ACR login command, got %q", suggestion)
+	}
+	if strings.Contains(suggestion, "<registry>") {
+		t.Fatalf("expected concrete registry name, got %q", suggestion)
+	}
+}
+
+func TestLocalRuntimeImageTreatsManifestAsAuthoritative(t *testing.T) {
+	tempDir := t.TempDir()
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(originalDir); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	manifest := []byte(`
+name: code_rl
+template:
+  kind: openenv
+  local:
+    image:
+  environment:
+    image:
+`)
+	if err := os.WriteFile(filepath.Join(tempDir, rleManifestFile), manifest, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = localRuntimeImage(rleState{
+		Name:       "code_rl",
+		LocalImage: "example.azurecr.io/stale-local:latest",
+		Image:      "example.azurecr.io/stale-env:latest",
+	})
+	if err == nil {
+		t.Fatal("expected empty manifest images to require an image")
 	}
 }

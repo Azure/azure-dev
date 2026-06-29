@@ -15,10 +15,13 @@ version: 0.1.0-preview
 examples:
   - name: init
     description: Scaffold a local RLE environment.
-    usage: azd ai rle init code_rl
+    usage: azd ai rle init
   - name: deploy
     description: Create or update the RLE environment.
-    usage: azd ai rle deploy
+    usage: azd ai rle deploy --project-id <project-id>
+  - name: run
+    description: Pull and run the local RLE environment container.
+    usage: azd ai rle run
   - name: invoke
-    description: Run the Loom RLE training recipe.
-    usage: azd ai rle invoke --recipe code_rl_with_rle
+    description: Open an OpenEnv runtime shell.
+    usage: azd ai rle invoke --local

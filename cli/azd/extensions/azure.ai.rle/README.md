@@ -1,61 +1,43 @@
 # Azure AI RLE extension for azd
+<!-- cspell:ignore openenv devrle -->
 
-The `azure.ai.rle` extension adds the `azd ai rle` command group.
+Quickstart for the `azd ai rle` preview extension. The extension manages an OpenEnv-style RLE environment lifecycle: initialize a local session, run the environment container locally, invoke it through a shell, and register it with the RLE control plane.
 
-## Local setup
-
-### 1. Install prerequisites
+## Prerequisites
 
 Install:
 
 - Azure Developer CLI (`azd`): https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd
-- Go: https://go.dev/doc/install
-- Git, for local development and for fetching the managed Loom recipe: https://git-scm.com/downloads
-- Python: https://www.python.org/downloads/
-- uv, for running the Loom training recipe: https://docs.astral.sh/uv/getting-started/installation/
+- Azure CLI (`az`): https://learn.microsoft.com/cli/azure/install-azure-cli
+- Docker Desktop: https://www.docker.com/products/docker-desktop/
+- Go, if installing from this local source checkout: https://go.dev/doc/install
+- Git, if installing from this local source checkout: https://git-scm.com/downloads
 
 Verify:
 
 ```powershell
 azd version
+az version
+docker version
 go version
 git --version
-python --version
 ```
 
-`az login` is not required for the current `init`/`deploy` flow because deploy calls the RLE control plane directly.
-
-### 2. Check out the branch
-
-```powershell
-git fetch origin
-git checkout farhannawaz/rle-cli
-cd cli\azd\extensions\azure.ai.rle
-```
-
-### 3. Configure the RLE control plane
-
-```powershell
-$env:RLE_ENDPOINT = "http://localhost:5000"
-$env:RLE_PROJECT_NAME = "demo-3"
-```
-
-`http://localhost:5000` is also the built-in default, so you can omit `RLE_ENDPOINT` when using a local RLE control plane. To target the hosted control plane, set `RLE_ENDPOINT` to its URL.
-
-For `invoke`, provide the Azure AI project endpoint as a parameter:
+Sign in before pulling private ACR images or deploying:
 
 ```powershell
 az login
 ```
 
-The environment image is no longer configured through an environment variable. By default,
-`deploy` registers a per-environment image named after the environment (for example
-`devrle.azurecr.io/code-rl:latest`). Use `--image <reference>` to deploy a specific prebuilt
-image instead.
+If the local or environment image is in a private ACR, also sign in to that registry:
 
-### 4. Install the extension into azd
+```powershell
+az acr login --name <acr-name>
+```
 
-Run these commands from the extension directory:
+## Install the extension from this checkout
+
+From `cli\azd\extensions\azure.ai.rle`:
 
 ```powershell
 azd extension install microsoft.azd.extensions
@@ -65,10 +47,6 @@ azd x publish
 azd extension install azure.ai.rle --source local --force
 ```
 
-`azd x build` builds the extension artifacts. `azd x pack` and `azd x publish`
-register them in the local azd extension source, and `azd extension install`
-makes the `azd ai rle` command group available in any terminal.
-
 Verify:
 
 ```powershell
@@ -76,7 +54,7 @@ azd ai rle --help
 azd ai rle version
 ```
 
-After making local code changes, rebuild and update the installed extension with:
+After code changes, rerun:
 
 ```powershell
 azd x build
@@ -85,69 +63,121 @@ azd x publish
 azd extension install azure.ai.rle --source local --force
 ```
 
-### 5. Initialize a local RLE session
+## Configure the RLE control plane
+
+The extension defaults to `http://localhost:5000`. To target another control plane:
 
 ```powershell
-azd ai rle init code_rl
+$env:RLE_ENDPOINT = "https://<rle-control-plane>"
 ```
 
-Init creates a local session folder named `code_rl`, including an OpenEnv-style FastAPI package, `Dockerfile`, `rle.yaml`, and azd-managed dependencies under `.azd-rle\deps`.
+## Quickstart
 
-Deploy from the session folder:
+### 1. Initialize an environment session
+
+Default echo session:
 
 ```powershell
-cd .\code_rl
-azd ai rle deploy --project omi-build-demo-uae
+azd ai rle init
+cd .\echo_env
 ```
 
-Deploy creates or updates the RLE environment and saves the project plus environment id/version locally in `.azd-rle.json`.
+The default echo session is driven by an embedded manifest. The generated `rle.yaml` includes:
 
-### 6. Run Loom training
+```yaml
+name: echo_env
+template:
+  name: echo_env
+  kind: openenv
+  environment:
+    image: devrle.azurecr.io/echo-rl:latest
+```
+
+To initialize from an existing manifest instead:
 
 ```powershell
-azd ai rle invoke `
-  --recipe code_rl_with_rle `
-  --project-endpoint "https://omi-build-demo-uae.services.ai.azure.com/api/projects/omi-build-demo-uae"
+azd ai rle init -m .\rle.yaml
 ```
 
-Invoke runs the selected Loom recipe's `train_azure.py` entrypoint with values from `.azd-rle.json`.
-It passes the deployed RLE environment id, project, and control-plane endpoint to the Loom recipe,
-which uses `rle_sdk` to lease sandboxes and call `reset`/`step` during training.
+`-m` accepts a local path or HTTPS/GitHub blob URL. The session folder name is always inferred from `name` or `template.name` in the manifest.
 
-Invoke fetches Loom branch `code_rl_with_rle` into `.azd-rle\recipes\loom`
-and uses the RLE SDK wheel copied by `init`. You do not need a separate local Loom checkout
-or a separately installed RLE SDK package. The managed Git checkout is shallow, single-branch,
-and tagless (`--depth 1 --single-branch --no-tags`). In the future this recipe dependency can
-move from Git to a published package.
+### 2. Run locally
 
-After fetching Loom, invoke patches only the managed copy of `loom-cookbook\pyproject.toml`
-so `uv` resolves `azure-ai-finetuning-sessions` from the fetched Loom checkout and `rle-sdk`
-from `.azd-rle\deps`.
+```powershell
+azd ai rle run
+```
 
-The default invoke settings are:
+`run` starts a Docker container and waits for `/health`. It uses `template.local.image` when present; otherwise it uses `template.environment.image`. The command does not build an image locally.
+
+Use a custom host port:
+
+```powershell
+azd ai rle run --port 9000
+```
+
+The selected port is saved in `.azd-rle.json` and reused by local invoke.
+
+### 3. Invoke locally
+
+```powershell
+azd ai rle invoke --local
+```
+
+Inside the shell:
 
 ```text
-num_tasks=4
-model_name=Qwen/Qwen3-32B
-renderer_name=qwen3_disable_thinking
-max_tokens=1200
-lora_rank=32
-group_size=4
-groups_per_batch=1
-max_steps=1
-loss_fn=importance_sampling
-seed=42
-eval_every=999999
-save_every=999999
-remove_constant_reward_groups=true
+rle> health
+rle> reset {"seed":0}
+rle> step {"message":"hello"}
+rle> state
+rle> exit
 ```
 
-Override the recipe, task count, or model with flags, for example:
+Supported shell commands:
+
+| Command | Calls |
+|---|---|
+| `health` | `GET /health` |
+| `reset [json]` | `POST /reset` |
+| `step <json-action>` | `POST /step` with `{ "action": <json-action> }` |
+| `state` | `GET /state` |
+| `metadata` | `GET /metadata` |
+| `schema` | `GET /schema` |
+| `exit` / `quit` | Exit shell |
+
+Per-request timeout:
 
 ```powershell
-azd ai rle invoke `
-  --recipe code_rl_with_rle `
-  --project-endpoint "https://omi-build-demo-uae.services.ai.azure.com/api/projects/omi-build-demo-uae" `
-  --num-tasks 4 `
-  --model-name "Qwen/Qwen3-32B"
+azd ai rle invoke --local --timeout 60
 ```
+
+### 4. Deploy/register
+
+```powershell
+azd ai rle deploy --project-id <project-id>
+```
+
+Deploy registers `template.environment.image` from `rle.yaml` with the RLE control plane and saves the project/environment details in `.azd-rle.json`.
+
+## Manifest shape
+
+```yaml
+name: code_rl
+description: Code RL OpenEnv environment.
+template:
+  name: code_rl
+  kind: openenv
+  local:
+    image: devrle.azurecr.io/code-rl:latest
+  environment:
+    image: devrle.azurecr.io/code-rl:prod
+```
+
+`template.local.image` is optional. If omitted, local run/invoke use `template.environment.image`.
+
+## Current limitations
+
+- `run` is local only and requires Docker.
+- `invoke` supports local shell mode only (`--local`).
+- `deploy` requires `--project-id`; project selection/creation is not part of `init`.
+- The extension does not build or push images. Images must already exist and be accessible.

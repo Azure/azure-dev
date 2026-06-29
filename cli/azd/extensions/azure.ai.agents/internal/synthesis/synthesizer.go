@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -62,6 +63,12 @@ type Input struct {
 	// ${VAR} from the azd environment at provision time. When false (the
 	// provision path), ${VAR} is resolved here and a missing variable fails.
 	PreserveVarRefs bool
+
+	// ProjectRoot is the directory holding azure.yaml. When set, $ref file
+	// includes in the service entry (and its deployment items) are resolved
+	// against it before synthesis, so refs become the actual content rather
+	// than zero-valued params. Empty disables resolution.
+	ProjectRoot string
 }
 
 // Result bundles the bicep sources and the parameter values derived
@@ -187,6 +194,16 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, ErrServiceNotFound
 	}
 
+	// Resolve $ref file includes (service-entry-level and per-deployment) so the
+	// decoded service body carries the referenced content, not raw $ref objects.
+	if in.ProjectRoot != "" {
+		var err error
+		node, err = resolveServiceRefs(node, in.ProjectRoot, in.ServiceName)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	var svc projectService
 	if err := node.Decode(&svc); err != nil {
 		return nil, fmt.Errorf("decode service %q: %w", in.ServiceName, err)
@@ -254,6 +271,27 @@ func BrownfieldDeployments(raw []byte, serviceName string) ([]Deployment, error)
 	}
 
 	return svc.Deployments, nil
+}
+
+// resolveServiceRefs expands $ref file includes in one service entry. It decodes
+// the node to the map shape foundry.ResolveFileRefs expects, resolves refs
+// against projectRoot, and re-encodes to a yaml.Node so the rest of Synthesize
+// decodes resolved content instead of raw {"$ref": ...} objects.
+func resolveServiceRefs(node yaml.Node, projectRoot, serviceName string) (yaml.Node, error) {
+	var raw map[string]any
+	if err := node.Decode(&raw); err != nil {
+		// Not a mapping (unexpected for a service entry); leave it untouched.
+		return node, nil
+	}
+	resolved, err := foundry.ResolveFileRefs(raw, projectRoot)
+	if err != nil {
+		return node, fmt.Errorf("resolve $ref includes for service %q: %w", serviceName, err)
+	}
+	var out yaml.Node
+	if err := out.Encode(resolved); err != nil {
+		return node, fmt.Errorf("re-encode service %q after $ref resolution: %w", serviceName, err)
+	}
+	return out, nil
 }
 
 // deriveIncludeAcr reports whether provisioning should create an ACR. In the split

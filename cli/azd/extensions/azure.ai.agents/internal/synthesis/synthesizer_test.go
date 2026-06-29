@@ -6,6 +6,8 @@ package synthesis
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -502,6 +504,37 @@ services:
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a well-formed")
+}
+
+func TestSynthesize_ResolvesDeploymentRef(t *testing.T) {
+	// A deployment item authored as a $ref must be loaded so synthesis sees the
+	// real deployment, not a zero-valued {"$ref": ...} placeholder.
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "deployments"), 0750))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "deployments", "gpt-4o.yaml"), []byte(
+		"name: gpt-4o\nmodel:\n  name: gpt-4o\n  format: OpenAI\n  version: \"2024-08-06\"\nsku:\n  name: Standard\n  capacity: 10\n"),
+		0600))
+
+	yaml := `
+services:
+  my-project:
+    host: azure.ai.project
+    deployments:
+      - $ref: ./deployments/gpt-4o.yaml
+`
+	res, err := Synthesize(Input{
+		RawAzureYAML:  []byte(yaml),
+		ServiceName:   "my-project",
+		AcceptedHosts: []string{"azure.ai.project"},
+		ProjectRoot:   root,
+	})
+	require.NoError(t, err)
+	deployments, ok := res.Parameters["deployments"].([]Deployment)
+	require.True(t, ok, "deployments param should be []Deployment, got %T", res.Parameters["deployments"])
+	require.Len(t, deployments, 1)
+	assert.Equal(t, "gpt-4o", deployments[0].Name)
+	assert.Equal(t, "gpt-4o", deployments[0].Model.Name)
+	assert.Equal(t, 10, deployments[0].Sku.Capacity)
 }
 
 func TestSynthesize_InputValidation(t *testing.T) {

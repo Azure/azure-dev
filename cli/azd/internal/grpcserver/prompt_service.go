@@ -612,15 +612,14 @@ func (s *promptService) PromptAiModel(
 		}
 
 		var err error
-		// Always fetch canonical model data across subscription locations.
-		// Location scoping is applied as a filter so model.Locations remains canonical.
-		models, err = s.aiModelService.ListModels(ctx, subscriptionId, nil)
+		if effectiveFilter != nil {
+			models, err = s.aiModelService.ListFilteredModels(ctx, subscriptionId, effectiveFilter)
+		} else {
+			// Always fetch canonical model data across subscription locations.
+			models, err = s.aiModelService.ListModels(ctx, subscriptionId, nil)
+		}
 		if err != nil {
 			return fmt.Errorf("listing models: %w", err)
-		}
-
-		if effectiveFilter != nil {
-			models = ai.FilterModels(models, effectiveFilter)
 		}
 
 		if req.Quota != nil {

@@ -213,6 +213,18 @@ func (st *appServiceTarget) containerDeploy(
 	imageName string,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
+	// Validate the App Service is configured for container deployment (Linux + DOCKER| linuxFxVersion).
+	// Infrastructure configuration (ACR auth, managed identity) must be set via IaC, not at deploy time.
+	progress.SetProgress(NewServiceProgress("Validating container configuration"))
+	if err := st.cli.ValidateAppServiceForContainerDeploy(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+	); err != nil {
+		return nil, err
+	}
+
 	// Determine deployment targets (main app or slots) using the same logic as zip deploy
 	deployTargets, err := st.determineDeploymentTargets(ctx, serviceConfig, targetResource, progress)
 	if err != nil {
@@ -222,14 +234,14 @@ func (st *appServiceTarget) containerDeploy(
 	for _, target := range deployTargets {
 		var progressMsg string
 		if target.SlotName == "" {
-			progressMsg = "Updating container configuration"
+			progressMsg = "Updating container image"
 		} else {
-			progressMsg = fmt.Sprintf("Updating container configuration for slot '%s'", target.SlotName)
+			progressMsg = fmt.Sprintf("Updating container image for slot '%s'", target.SlotName)
 		}
 		progress.SetProgress(NewServiceProgress(progressMsg))
 
 		if target.SlotName == "" {
-			err = st.cli.UpdateAppServiceContainerConfig(
+			err = st.cli.UpdateAppServiceContainerImage(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
@@ -237,7 +249,7 @@ func (st *appServiceTarget) containerDeploy(
 				imageName,
 			)
 		} else {
-			err = st.cli.UpdateAppServiceSlotContainerConfig(
+			err = st.cli.UpdateAppServiceSlotContainerImage(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),

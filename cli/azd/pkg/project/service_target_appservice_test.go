@@ -495,7 +495,7 @@ func Test_appServiceTarget_Deploy_ContainerPath(t *testing.T) {
 			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, site)
 		})
 
-		// Mock GetAppServiceProperties (for Endpoints)
+		// Mock GetAppServiceProperties (for Validation + Endpoints)
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodGet &&
 				strings.Contains(request.URL.Path, "/sites/WEB_APP_NAME") &&
@@ -503,8 +503,12 @@ func Test_appServiceTarget_Deploy_ContainerPath(t *testing.T) {
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			response := armappservice.WebAppsClientGetResponse{
 				Site: armappservice.Site{
+					Kind: new("app,linux,container"),
 					Properties: &armappservice.SiteProperties{
 						DefaultHostName: new("webapp.azurewebsites.net"),
+						SiteConfig: &armappservice.SiteConfig{
+							LinuxFxVersion: new("DOCKER|placeholder:latest"),
+						},
 					},
 				},
 			}
@@ -587,7 +591,7 @@ func Test_appServiceTarget_Deploy_ContainerSlotPath(t *testing.T) {
 			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, site)
 		})
 
-		// Mock GetAppServiceProperties (for Endpoints)
+		// Mock GetAppServiceProperties (for Validation + Endpoints)
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodGet &&
 				strings.Contains(request.URL.Path, "/sites/WEB_APP_NAME") &&
@@ -595,8 +599,12 @@ func Test_appServiceTarget_Deploy_ContainerSlotPath(t *testing.T) {
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			response := armappservice.WebAppsClientGetResponse{
 				Site: armappservice.Site{
+					Kind: new("app,linux,container"),
 					Properties: &armappservice.SiteProperties{
 						DefaultHostName: new("webapp.azurewebsites.net"),
+						SiteConfig: &armappservice.SiteConfig{
+							LinuxFxVersion: new("DOCKER|placeholder:latest"),
+						},
 					},
 				},
 			}

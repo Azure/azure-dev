@@ -192,7 +192,7 @@ func Test_AzureClient_GetAppServiceSlotProperties(t *testing.T) {
 	assert.Contains(t, props.HostNames, "my-app-staging.azurewebsites.net")
 }
 
-func Test_AzureClient_UpdateAppServiceContainerConfig(t *testing.T) {
+func Test_AzureClient_UpdateAppServiceContainerImage(t *testing.T) {
 	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
@@ -213,24 +213,23 @@ func Test_AzureClient_UpdateAppServiceContainerConfig(t *testing.T) {
 				Properties: &armappservice.SiteProperties{
 					DefaultHostName: new("my-app.azurewebsites.net"),
 					SiteConfig: &armappservice.SiteConfig{
-						LinuxFxVersion:             new("DOCKER|myregistry.azurecr.io/myapp:v1"),
-						AcrUseManagedIdentityCreds: new(true),
+						LinuxFxVersion: new("DOCKER|myregistry.azurecr.io/myapp:v1"),
 					},
 				},
 			})
 	})
 
-	err := client.UpdateAppServiceContainerConfig(
+	err := client.UpdateAppServiceContainerImage(
 		*mockCtx.Context, "SUB", "RG", "my-app", "myregistry.azurecr.io/myapp:v1")
 	require.NoError(t, err)
 	assert.NotEmpty(t, capturedBody, "Update should have been called with a body")
 	assert.Contains(t, capturedBody, "DOCKER|myregistry.azurecr.io/myapp:v1",
 		"body should contain the correct linuxFxVersion")
-	assert.Contains(t, capturedBody, "acrUseManagedIdentityCreds",
-		"body should enable ACR managed identity")
+	assert.NotContains(t, capturedBody, "acrUseManagedIdentityCreds",
+		"should NOT set acrUseManagedIdentityCreds (IaC responsibility)")
 }
 
-func Test_AzureClient_UpdateAppServiceContainerConfig_Error(t *testing.T) {
+func Test_AzureClient_UpdateAppServiceContainerImage_Error(t *testing.T) {
 	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
@@ -241,13 +240,13 @@ func Test_AzureClient_UpdateAppServiceContainerConfig_Error(t *testing.T) {
 		return mocks.CreateEmptyHttpResponse(req, http.StatusInternalServerError)
 	})
 
-	err := client.UpdateAppServiceContainerConfig(
+	err := client.UpdateAppServiceContainerImage(
 		*mockCtx.Context, "SUB", "RG", "my-app", "myregistry.azurecr.io/myapp:v1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "updating container config")
+	assert.Contains(t, err.Error(), "updating container image")
 }
 
-func Test_AzureClient_UpdateAppServiceSlotContainerConfig(t *testing.T) {
+func Test_AzureClient_UpdateAppServiceSlotContainerImage(t *testing.T) {
 	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
@@ -265,19 +264,18 @@ func Test_AzureClient_UpdateAppServiceSlotContainerConfig(t *testing.T) {
 				Properties: &armappservice.SiteProperties{
 					DefaultHostName: new("my-app-staging.azurewebsites.net"),
 					SiteConfig: &armappservice.SiteConfig{
-						LinuxFxVersion:             new("DOCKER|myregistry.azurecr.io/myapp:v1"),
-						AcrUseManagedIdentityCreds: new(true),
+						LinuxFxVersion: new("DOCKER|myregistry.azurecr.io/myapp:v1"),
 					},
 				},
 			})
 	})
 
-	err := client.UpdateAppServiceSlotContainerConfig(
+	err := client.UpdateAppServiceSlotContainerImage(
 		*mockCtx.Context, "SUB", "RG", "my-app", "staging", "myregistry.azurecr.io/myapp:v1")
 	require.NoError(t, err)
 	assert.NotEmpty(t, capturedBody, "UpdateSlot should have been called with a body")
 	assert.Contains(t, capturedBody, "DOCKER|myregistry.azurecr.io/myapp:v1",
 		"body should contain the correct linuxFxVersion")
-	assert.Contains(t, capturedBody, "acrUseManagedIdentityCreds",
-		"body should enable ACR managed identity")
+	assert.NotContains(t, capturedBody, "acrUseManagedIdentityCreds",
+		"should NOT set acrUseManagedIdentityCreds (IaC responsibility)")
 }

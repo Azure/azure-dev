@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -146,8 +147,12 @@ func agentNameMisusedAsFilePositional(positional string, agentNames []string) bo
 		return false
 	}
 
-	// A real, existing local file is always a valid upload target.
-	if _, err := os.Stat(positional); err == nil {
+	// Only treat the positional as a possible agent name when it definitively
+	// does not exist as a local file. An existing file (err == nil) is a valid
+	// upload target, and other stat errors (permission denied, broken symlink)
+	// should fall through to the normal "failed to open" path rather than being
+	// misclassified as an agent name.
+	if _, err := os.Stat(positional); !errors.Is(err, os.ErrNotExist) {
 		return false
 	}
 
@@ -174,9 +179,11 @@ func checkUploadPositionalNotAgentName(ctx context.Context, positional string) e
 		return nil
 	}
 
-	// A real, existing local file is always a valid upload target; skip the
-	// project lookup entirely so the happy path stays fast.
-	if _, err := os.Stat(positional); err == nil {
+	// Skip the project lookup unless the positional definitively does not exist
+	// as a local file. Existing files are valid upload targets, and other stat
+	// errors (permission denied, broken symlink) should surface through the
+	// normal upload error path rather than being read as an agent name.
+	if _, err := os.Stat(positional); !errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 

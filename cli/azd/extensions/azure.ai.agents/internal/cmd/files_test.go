@@ -172,11 +172,9 @@ func TestFilesStatCommand_HasUserIdentityFlag(t *testing.T) {
 func TestAgentNameMisusedAsFilePositional(t *testing.T) {
 	agentNames := []string{"my-agent", "other-agent"}
 
-	// An existing local file is a valid upload target, even if its name
-	// happens to match an agent service name.
-	tmpDir := t.TempDir()
-	existingFile := filepath.Join(tmpDir, "my-agent")
-	require.NoError(t, os.WriteFile(existingFile, []byte("data"), 0600))
+	// Run in a clean working directory so the "non-existent" positionals below
+	// are guaranteed not to resolve to a real file.
+	t.Chdir(t.TempDir())
 
 	tests := []struct {
 		name       string
@@ -193,12 +191,6 @@ func TestAgentNameMisusedAsFilePositional(t *testing.T) {
 		{
 			name:       "non-existent file not matching an agent",
 			positional: "does-not-exist.csv",
-			agentNames: agentNames,
-			want:       false,
-		},
-		{
-			name:       "existing file matching an agent name",
-			positional: existingFile,
 			agentNames: agentNames,
 			want:       false,
 		},
@@ -222,6 +214,19 @@ func TestAgentNameMisusedAsFilePositional(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+
+	// An existing local file wins over an agent-name match. Use a relative
+	// filename in a temp working directory so the positional ("my-agent") both
+	// resolves to a real file (os.Stat succeeds) AND appears in agentNames. This
+	// proves the existence guard -- not slices.Contains -- is what prevents a
+	// real file from being misclassified as an agent name.
+	t.Run("existing file wins over agent-name match", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "my-agent"), []byte("data"), 0600))
+		t.Chdir(tmpDir)
+
+		assert.False(t, agentNameMisusedAsFilePositional("my-agent", agentNames))
+	})
 }
 
 func TestErrAgentNameAsFilePositional(t *testing.T) {

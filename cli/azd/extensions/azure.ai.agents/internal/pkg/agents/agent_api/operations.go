@@ -1384,7 +1384,7 @@ func (c *AgentClient) StopSession(
 
 	u.Path += fmt.Sprintf(
 		"/agents/%s/endpoint/sessions/%s:stop",
-		agentName, sessionID,
+		url.PathEscape(agentName), url.PathEscape(sessionID),
 	)
 
 	query := u.Query()

@@ -406,14 +406,9 @@ resumed by a subsequent invocation. Returns once the session is stopped.`,
 		},
 	}
 
-	// Only register --agent-name, not --output (stop has no
-	// formatted output).
-	cmd.Flags().StringVarP(
-		&flags.agentName, "agent-name", "n", "",
-		"Agent name (matches azure.yaml service name; "+
-			"auto-detected when only one exists)",
-	)
-	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
+	// Register --agent-name and --user-identity, but not --output
+	// (stop has no formatted output).
+	addSessionFlags(cmd, &flags.sessionFlags)
 
 	return cmd
 }

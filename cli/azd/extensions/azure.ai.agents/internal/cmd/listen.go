@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 
@@ -20,6 +21,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // configureExtensionHost wires the service target and event handlers on the
@@ -164,8 +166,22 @@ var (
 	developerRBACErr  error
 )
 
+// duplicateAgentNameWarnOnce ensures the duplicate agent-name warning is emitted
+// at most once per extension process lifetime. Service-level predeploy handlers
+// fire per-service, but the check is project-scoped — a single pass over every
+// azure.ai.agent service surfaces all collisions without repeating the warning
+// for each colliding service.
+var duplicateAgentNameWarnOnce sync.Once
+
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
 	svc := args.Service
+
+	// Warn (once) when multiple agent services resolve to the same Foundry agent
+	// name. Foundry identifies an agent by its name, so such services overwrite
+	// each other on deploy. Advisory only — deploy continues.
+	duplicateAgentNameWarnOnce.Do(func() {
+		warnDuplicateAgentNames(args.Project)
+	})
 
 	deployments, err := collectProjectDeployments(args.Project.Services)
 	if err != nil {
@@ -204,6 +220,71 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig) bool {
 	_, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
 	return err == nil && isHosted
+}
+
+// duplicateAgentNameGroup is a Foundry agent name referenced by more than one
+// azure.ai.agent service, with the colliding azure.yaml service keys sorted for
+// stable output.
+type duplicateAgentNameGroup struct {
+	agentName    string
+	serviceNames []string
+}
+
+// findDuplicateAgentNames groups hosted azure.ai.agent services by their resolved
+// Foundry agent name and returns the groups referenced by two or more services.
+// Foundry uses the agent name as an agent's unique identifier, so services that
+// share a name deploy to the same agent and overwrite each other.
+//
+// Services whose definition can't be resolved, that aren't hosted agents, or that
+// carry an empty name are skipped — their own deploy surfaces any real error. The
+// returned groups (and the service keys within each) are sorted for deterministic
+// output.
+func findDuplicateAgentNames(proj *azdext.ProjectConfig) []duplicateAgentNameGroup {
+	if proj == nil {
+		return nil
+	}
+
+	servicesByAgentName := map[string][]string{}
+	for serviceName, svc := range proj.Services {
+		if svc.GetHost() != AiAgentHost {
+			continue
+		}
+		ca, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+		if err != nil || !isHosted {
+			continue
+		}
+		agentName := strings.TrimSpace(ca.Name)
+		if agentName == "" {
+			continue
+		}
+		servicesByAgentName[agentName] = append(servicesByAgentName[agentName], serviceName)
+	}
+
+	var groups []duplicateAgentNameGroup
+	for agentName, serviceNames := range servicesByAgentName {
+		if len(serviceNames) < 2 {
+			continue
+		}
+		sort.Strings(serviceNames)
+		groups = append(groups, duplicateAgentNameGroup{agentName: agentName, serviceNames: serviceNames})
+	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].agentName < groups[j].agentName })
+	return groups
+}
+
+// warnDuplicateAgentNames prints one warning per agent name shared by multiple
+// azure.ai.agent services. The warning names the colliding service keys and the
+// shared agent name so the user can give each agent a unique name in azure.yaml.
+// It is advisory: deploy continues.
+func warnDuplicateAgentNames(proj *azdext.ProjectConfig) {
+	for _, group := range findDuplicateAgentNames(proj) {
+		fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+			"WARNING: agent name %q is used by multiple services (%s). Foundry identifies an agent "+
+				"by its name, so these services deploy to the same agent and overwrite each other. "+
+				"Give each agent a unique name in azure.yaml.\n",
+			group.agentName, strings.Join(group.serviceNames, ", "),
+		))
+	}
 }
 
 func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {

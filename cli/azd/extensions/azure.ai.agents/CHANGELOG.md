@@ -9,6 +9,7 @@
 - `azd provision` now connects to an existing Foundry project when the `azure.ai.project` service sets `endpoint:` (bring-your-own) instead of failing with a brownfield error, and `azd down` leaves a bring-your-own project in place because azd did not create it.
 - Add a `--call-id` flag to `azd ai agent invoke` that sends the `x-agent-foundry-call-id` header on `--local` invocations only. It is ignored for remote Foundry requests.
 - Replace the per-command Foundry isolation-key flags (`--user-isolation-key`, `--chat-isolation-key`, and the session-ownership `--isolation-key`) with a single `--user-identity` flag. The value is sent as the `x-agent-user-id` header for `--local` invocations and as `x-ms-user-identity` for all remote Foundry requests. This is a breaking change with no backward-compatible flag retention.
+- `azd deploy`/`azd up` now warn when two or more `azure.ai.agent` services resolve to the same Foundry agent `name`. Foundry identifies an agent by its name, so such services deploy to the same agent and overwrite each other; the warning names the colliding services so each can be given a unique name in `azure.yaml`. Deploy still proceeds.
 
 ### Bugs Fixed
 

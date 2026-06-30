@@ -41,6 +41,7 @@ words:
   - aoai
   - authorizationfailed
   - azdaiagent
+  - azuresdk
   - bicepless
   - CLIENTSECRET
   - curr
@@ -89,5 +90,9 @@ words:
   - ttfb
   - Bhadauria
   - ensurepip
+  # Live E2E (Tier 2) Go driver
+  - creack
+  - elive
+  - testdir
   # Test infrastructure
   - recordproxy

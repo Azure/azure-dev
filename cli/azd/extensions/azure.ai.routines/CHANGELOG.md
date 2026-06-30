@@ -1,10 +1,16 @@
 # Release History
 
-## Unreleased
+## 1.0.0-beta.1 (2026-06-30)
 
 ### Features Added
 
-- `azd deploy` now expands `${VAR}` references in a routine's `action.input` against the azd environment, leaving Foundry server-side `${{...}}` expressions untouched.
+- [[#8818]](https://github.com/Azure/azure-dev/pull/8818) `azd deploy` now expands `${VAR}` references in a routine's `action.input` against the azd environment, leaving Foundry server-side `${{...}}` expressions untouched.
+- [[#8890]](https://github.com/Azure/azure-dev/pull/8890) Bump `requiredAzdVersion` to `>=1.27.0`.
+- [[#8651]](https://github.com/Azure/azure-dev/pull/8651) Update Go to 1.26.4 and bump golang.org/x/crypto and golang.org/x/net. Thanks @hemarina for the contribution!
+
+### Bugs Fixed
+
+- [[#8790]](https://github.com/Azure/azure-dev/pull/8790) Add unit tests for `azure.ai.routines` client and fix `MarkHidden` nit.
 
 ## 0.1.0-preview (2026-05-28)
 

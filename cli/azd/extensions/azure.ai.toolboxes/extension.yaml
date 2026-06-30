@@ -3,8 +3,8 @@ capabilities:
     - custom-commands
     - service-target-provider
     - metadata
-description: Manage Microsoft Foundry Toolboxes from your terminal. (Preview)
-displayName: Foundry Toolboxes (Preview)
+description: Manage Microsoft Foundry Toolboxes from your terminal. (Beta)
+displayName: Foundry Toolboxes (Beta)
 id: azure.ai.toolboxes
 language: go
 namespace: ai.toolbox
@@ -16,5 +16,5 @@ tags:
     - ai
     - toolbox
 usage: azd ai toolbox <command> [options]
-version: 0.1.2-preview
+version: 1.0.0-beta.1
 requiredAzdVersion: ">=1.27.0"

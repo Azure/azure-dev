@@ -101,7 +101,9 @@ func runInitFromAzureYaml(
 	content []byte,
 ) error {
 	// Adoption is a fresh-project operation: it lays down the project-root
-	// azure.yaml. When a project already exists we cannot adopt over it.
+	// azure.yaml. When a project already exists we cannot adopt over it;
+	// merging the sample's services into an existing azure.yaml is tracked
+	// separately (#8884).
 	if fileExists("azure.yaml") {
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments,

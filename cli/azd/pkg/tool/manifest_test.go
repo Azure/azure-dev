@@ -438,3 +438,184 @@ func TestGithubCopilotCLI_InstallStrategies(t *testing.T) {
 	_, args = buildUninstallCommand("npm", "@github/copilot", false)
 	assert.Equal(t, []string{"uninstall", "-g", "@github/copilot"}, args)
 }
+
+// TestAzureSkillsHostVersionProbeRegex locks the per-host BinaryVersionRegex
+// against real `--version` banners: each host's regex must capture the version
+// from that host's genuine output and reject non-version output (a launcher
+// stub prompt, the banner prefix without a version, or an incidental semver
+// elsewhere in the stream).
+func TestAzureSkillsHostVersionProbeRegex(t *testing.T) {
+	t.Parallel()
+
+	rx := map[string]string{}
+	for _, h := range azureSkills().SkillHosts {
+		rx[h.Host] = h.BinaryVersionRegex
+	}
+
+	cases := []struct {
+		name    string
+		host    string
+		output  string
+		wantVer string // "" => must not match (host treated as unusable)
+	}{
+		{
+			name:    "copilot real banner",
+			host:    "copilot",
+			output:  "GitHub Copilot CLI 1.0.64-3.\nRun 'copilot update' to check for updates.",
+			wantVer: "1.0.64",
+		},
+		{
+			name:    "claude real banner",
+			host:    "claude",
+			output:  "2.1.178 (Claude Code)",
+			wantVer: "2.1.178",
+		},
+		{
+			name:    "copilot stub prompt",
+			host:    "copilot",
+			output:  "Cannot find GitHub Copilot CLI (https://docs.github.com/copilot)\nInstall GitHub Copilot CLI? ['y/N']",
+			wantVer: "",
+		},
+		{
+			name:    "copilot banner prefix without version",
+			host:    "copilot",
+			output:  "GitHub Copilot CLI is not installed\nnode v20.11.1",
+			wantVer: "",
+		},
+		{
+			name:    "claude version not at line start",
+			host:    "claude",
+			output:  "see https://example.com/1.2.3 (Claude Code plugin)",
+			wantVer: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.wantVer, matchVersion(tc.output, rx[tc.host]))
+		})
+	}
+
+	// Variadic form preserves order across all platforms.
+	a := InstallStrategy{PackageManager: "winget", PackageId: "A"}
+	b := InstallStrategy{PackageManager: "npm", PackageId: "B"}
+	multi := allPlatforms(a, b)
+	for _, os := range []string{"windows", "darwin", "linux"} {
+		assert.Equal(t, []InstallStrategy{a, b}, multi[os])
+	}
+}
+
+// TestGithubCopilotCLI_InstallStrategies guards that the per-platform install
+// strategies and the derived uninstall commands for the GitHub Copilot CLI
+// match the official docs (issue #8831): npm on all platforms, winget on
+// Windows, a Homebrew cask on macOS+Linux, and the install script (binary
+// removal on uninstall) on macOS+Linux.
+func TestGithubCopilotCLI_InstallStrategies(t *testing.T) {
+	t.Parallel()
+
+	tool := FindTool("github-copilot-cli")
+	require.NotNil(t, tool)
+
+	// helper: does the platform list contain a strategy matching pred?
+	has := func(platform string, pred func(InstallStrategy) bool) bool {
+		for _, s := range tool.InstallStrategies[platform] {
+			if pred(s) {
+				return true
+			}
+		}
+		return false
+	}
+	isWinget := func(s InstallStrategy) bool {
+		return s.PackageManager == "winget" && s.PackageId == "GitHub.Copilot"
+	}
+	isNpm := func(s InstallStrategy) bool {
+		return s.PackageManager == "npm" && s.PackageId == "@github/copilot"
+	}
+	isBrewCask := func(s InstallStrategy) bool {
+		return s.PackageManager == "brew" && s.PackageId == "copilot-cli" && s.Cask
+	}
+	isScript := func(s InstallStrategy) bool {
+		return s.PackageManager == "" &&
+			strings.Contains(s.InstallCommand, "copilot-install")
+	}
+
+	// Windows: winget (preferred) + npm.
+	assert.True(t, has("windows", isWinget), "windows winget")
+	assert.True(t, has("windows", isNpm), "windows npm")
+
+	// macOS: brew cask + npm + install script.
+	assert.True(t, has("darwin", isBrewCask), "darwin brew cask")
+	assert.True(t, has("darwin", isNpm), "darwin npm")
+	assert.True(t, has("darwin", isScript), "darwin install script")
+
+	// Linux: brew cask (preferred) + npm + install script.
+	assert.True(t, has("linux", isBrewCask), "linux brew cask")
+	assert.True(t, has("linux", isNpm), "linux npm")
+	assert.True(t, has("linux", isScript), "linux install script")
+
+	// The derived uninstall commands match the official documentation.
+	_, args := buildUninstallCommand("brew", "copilot-cli", true)
+	assert.Equal(t, []string{"uninstall", "--cask", "copilot-cli"}, args)
+	_, args = buildUninstallCommand("npm", "@github/copilot", false)
+	assert.Equal(t, []string{"uninstall", "-g", "@github/copilot"}, args)
+}
+
+// TestAzureSkillsHostVersionProbeRegex locks the per-host BinaryVersionRegex
+// against real `--version` banners: each host's regex must capture the version
+// from that host's genuine output and reject non-version output (a launcher
+// stub prompt, the banner prefix without a version, or an incidental semver
+// elsewhere in the stream).
+func TestAzureSkillsHostVersionProbeRegex(t *testing.T) {
+	t.Parallel()
+
+	rx := map[string]string{}
+	for _, h := range azureSkills().SkillHosts {
+		rx[h.Host] = h.BinaryVersionRegex
+	}
+
+	cases := []struct {
+		name    string
+		host    string
+		output  string
+		wantVer string // "" => must not match (host treated as unusable)
+	}{
+		{
+			name:    "copilot real banner",
+			host:    "copilot",
+			output:  "GitHub Copilot CLI 1.0.64-3.\nRun 'copilot update' to check for updates.",
+			wantVer: "1.0.64",
+		},
+		{
+			name:    "claude real banner",
+			host:    "claude",
+			output:  "2.1.178 (Claude Code)",
+			wantVer: "2.1.178",
+		},
+		{
+			name:    "copilot stub prompt",
+			host:    "copilot",
+			output:  "Cannot find GitHub Copilot CLI (https://docs.github.com/copilot)\nInstall GitHub Copilot CLI? ['y/N']",
+			wantVer: "",
+		},
+		{
+			name:    "copilot banner prefix without version",
+			host:    "copilot",
+			output:  "GitHub Copilot CLI is not installed\nnode v20.11.1",
+			wantVer: "",
+		},
+		{
+			name:    "claude version not at line start",
+			host:    "claude",
+			output:  "see https://example.com/1.2.3 (Claude Code plugin)",
+			wantVer: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.wantVer, matchVersion(tc.output, rx[tc.host]))
+		})
+	}
+}

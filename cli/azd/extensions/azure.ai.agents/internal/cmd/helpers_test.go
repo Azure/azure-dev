@@ -12,8 +12,11 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	goyaml "go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
 )
 
@@ -209,18 +212,6 @@ func TestProtocolFromAgentYaml(t *testing.T) {
 			wantProto: "invocations",
 		},
 		{
-			name:       "no file",
-			noFile:     true,
-			wantErr:    true,
-			errContain: "could not read agent.yaml",
-		},
-		{
-			name:       "invalid yaml",
-			yaml:       "protocols: [[[invalid",
-			wantErr:    true,
-			errContain: "could not parse agent.yaml",
-		},
-		{
 			name:       "no protocols field",
 			yaml:       "name: my-agent\n",
 			wantErr:    true,
@@ -272,18 +263,10 @@ func TestProtocolFromAgentYaml(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			dir := t.TempDir()
-			yamlPath := filepath.Join(dir, "agent.yaml")
+			var agentDef agent_yaml.ContainerAgent
+			require.NoError(t, goyaml.Unmarshal([]byte(tt.yaml), &agentDef))
 
-			if !tt.noFile {
-				if err := os.WriteFile(
-					yamlPath, []byte(tt.yaml), 0600,
-				); err != nil {
-					t.Fatalf("failed to write agent.yaml: %v", err)
-				}
-			}
-
-			got, err := protocolFromAgentYaml(yamlPath)
+			got, err := protocolFromContainerAgent(agentDef)
 
 			if tt.wantErr {
 				if err == nil {
@@ -311,19 +294,19 @@ func TestSetACREnvVar(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		isCodeDeploy bool
-		wantValue    string
+		name      string
+		skipACR   bool
+		wantValue string
 	}{
 		{
-			name:         "code deploy sets true",
-			isCodeDeploy: true,
-			wantValue:    "true",
+			name:      "skip ACR sets true",
+			skipACR:   true,
+			wantValue: "true",
 		},
 		{
-			name:         "container deploy sets false",
-			isCodeDeploy: false,
-			wantValue:    "false",
+			name:      "container deploy sets false",
+			skipACR:   false,
+			wantValue: "false",
 		},
 	}
 
@@ -339,7 +322,7 @@ func TestSetACREnvVar(t *testing.T) {
 			workflowServer := &testWorkflowServiceServer{}
 			azdClient := newTestAzdClient(t, envServer, workflowServer)
 
-			err := setACREnvVar(t.Context(), azdClient, "test-env", tt.isCodeDeploy)
+			err := setACREnvVar(t.Context(), azdClient, "test-env", tt.skipACR)
 			require.NoError(t, err)
 			require.Equal(t, tt.wantValue, envServer.values["test-env"]["AZD_AGENT_SKIP_ACR"])
 		})
@@ -426,9 +409,9 @@ func newHelpersTestAzdClient(
 func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
 	t.Parallel()
 
-	// Create a temp dir with agent.yaml declaring the "responses" protocol.
+	// Create a temp dir with a hosted agent.yaml declaring the "responses" protocol.
 	svcDir := t.TempDir()
-	agentYaml := "protocols:\n  - protocol: responses\n    version: \"1.0\"\n"
+	agentYaml := "kind: hosted\nname: my-agent\nprotocols:\n  - protocol: responses\n    version: \"1.0\"\n"
 	require.NoError(t, os.WriteFile(filepath.Join(svcDir, "agent.yaml"), []byte(agentYaml), 0600))
 
 	tests := []struct {
@@ -508,7 +491,7 @@ func TestResolveAgentProtocol_MultipleServicesPromptsOnce(t *testing.T) {
 	t.Parallel()
 
 	svcDir := t.TempDir()
-	agentYaml := "protocols:\n  - protocol: responses\n    version: \"1.0\"\n"
+	agentYaml := "kind: hosted\nname: my-agent\nprotocols:\n  - protocol: responses\n    version: \"1.0\"\n"
 	require.NoError(t, os.WriteFile(filepath.Join(svcDir, "agent.yaml"), []byte(agentYaml), 0600))
 
 	projectServer := &helpersProjectServer{

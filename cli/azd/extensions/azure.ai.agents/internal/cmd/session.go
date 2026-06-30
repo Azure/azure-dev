@@ -24,7 +24,7 @@ import (
 
 // sessionFlags holds common flags shared by all session subcommands.
 type sessionFlags struct {
-	isolationHeaderFlags
+	userIdentityFlags
 	agentName string
 	noPrompt  bool
 	output    string
@@ -46,8 +46,8 @@ Agent details are automatically resolved from the azd environment.
 Use --agent-name to select a specific agent when the project has
 multiple azure.ai.agent services.
 
-For agents configured with header-based isolation, pass --user-isolation-key
-and --chat-isolation-key on each session operation.`,
+For agents configured with header-based isolation, pass --user-identity
+on each session operation.`,
 	}
 
 	cmd.AddCommand(newSessionCreateCommand(extCtx))
@@ -65,7 +65,7 @@ func addSessionFlags(cmd *cobra.Command, flags *sessionFlags) {
 		"Agent name (matches azure.yaml service name; "+
 			"auto-detected when only one exists)",
 	)
-	addIsolationHeaderFlags(cmd, &flags.isolationHeaderFlags)
+	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
 }
 
 // sessionContext holds the resolved agent context for session operations.
@@ -132,9 +132,8 @@ func resolveSessionContext(
 
 type sessionCreateFlags struct {
 	sessionFlags
-	sessionID    string
-	version      string
-	isolationKey string
+	sessionID string
+	version   string
 }
 
 func newSessionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -143,7 +142,7 @@ func newSessionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
-		Use:   "create [agent-name] [version] [isolation-key]",
+		Use:   "create [agent-name] [version]",
 		Short: "Create a new session for a hosted agent.",
 		Long: `Create a new session for a hosted agent endpoint.
 
@@ -153,10 +152,9 @@ is ready for invocations once the command completes.
 The agent name is auto-detected when only one azure.ai.agent service exists
 in azure.yaml. The version defaults to the deployed agent version from the
 azd environment (AGENT_{SERVICE}_VERSION) when omitted.
-The session ownership isolation key is derived from the Entra token by default.
 
 Positional arguments can be used instead of flags:
-  azd ai agent sessions create [agent-name] [version] [isolation-key]`,
+  azd ai agent sessions create [agent-name] [version]`,
 		Example: `  # Create a session (auto-detect agent, latest version)
   azd ai agent sessions create
 
@@ -171,7 +169,7 @@ Positional arguments can be used instead of flags:
 
   # Create with a specific session ID
   azd ai agent sessions create --session-id my-session`,
-		Args: cobra.MaximumNArgs(3),
+		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.noPrompt = extCtx.NoPrompt
 			flags.output = extCtx.OutputFormat
@@ -180,11 +178,6 @@ Positional arguments can be used instead of flags:
 
 			// Positional args fill in missing flags
 			switch len(args) {
-			case 3:
-				if flags.isolationKey == "" {
-					flags.isolationKey = args[2]
-				}
-				fallthrough
 			case 2:
 				if flags.version == "" {
 					flags.version = args[1]
@@ -215,11 +208,6 @@ Positional arguments can be used instead of flags:
 		&flags.version, "version", "",
 		"Agent version to back the session "+
 			"(auto-resolved from azd environment if omitted)",
-	)
-	cmd.Flags().StringVar(
-		&flags.isolationKey, "isolation-key", "",
-		"Session ownership isolation key header value "+
-			"("+agent_api.SessionIsolationKeyHeader+"; derived from Entra token by default)",
 	)
 
 	return cmd
@@ -274,7 +262,7 @@ func (a *SessionCreateAction) Run(ctx context.Context) error {
 		sc.agentName,
 		request,
 		DefaultAgentAPIVersion,
-		a.flags.sessionRequestOptionsWithSessionKey(a.flags.isolationKey),
+		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
 		return exterrors.ServiceFromAzure(
@@ -389,7 +377,6 @@ func (a *SessionShowAction) Run(ctx context.Context) error {
 
 type sessionDeleteFlags struct {
 	sessionFlags
-	isolationKey string
 }
 
 func newSessionDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -403,14 +390,9 @@ func newSessionDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Delete a hosted agent session synchronously.
 
 Terminates the hosted agent session and deletes the persistent filesystem
-volume. Returns once cleanup is complete.
-
-The session ownership isolation key is derived from the Entra token by default.`,
+volume. Returns once cleanup is complete.`,
 		Example: `  # Delete a session
-  azd ai agent sessions delete my-session
-
-  # Delete with an explicit session ownership isolation key
-  azd ai agent sessions delete my-session --isolation-key sk-abc123`,
+  azd ai agent sessions delete my-session`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.noPrompt = extCtx.NoPrompt
@@ -429,12 +411,7 @@ The session ownership isolation key is derived from the Entra token by default.`
 		"Agent name (matches azure.yaml service name; "+
 			"auto-detected when only one exists)",
 	)
-	cmd.Flags().StringVar(
-		&flags.isolationKey, "isolation-key", "",
-		"Session ownership isolation key header value "+
-			"("+agent_api.SessionIsolationKeyHeader+"; derived from Entra token by default)",
-	)
-	addIsolationHeaderFlags(cmd, &flags.isolationHeaderFlags)
+	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
 
 	return cmd
 }
@@ -463,7 +440,7 @@ func (a *SessionDeleteAction) Run(ctx context.Context) error {
 		sc.agentName,
 		a.sessionID,
 		DefaultAgentAPIVersion,
-		a.flags.sessionRequestOptionsWithSessionKey(a.flags.isolationKey),
+		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
 		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&

@@ -123,7 +123,7 @@ func runReuseDefinition(
 	}
 
 	isCodeDeploy := def.CodeConfiguration != nil
-	if err := action.addToProject(ctx, srcDir, def.Name, isCodeDeploy); err != nil {
+	if err := action.addToProject(ctx, srcDir, def, isCodeDeploy); err != nil {
 		return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 	}
 

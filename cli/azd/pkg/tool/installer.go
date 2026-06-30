@@ -125,10 +125,11 @@ type Installer interface {
 	) (*InstallResult, error)
 
 	// AvailableSkillHosts returns the names of the tool's configured
-	// SkillHosts that are currently on PATH, in manifest order
-	// (preferred host first). It returns nil for non-skill tools or
-	// when none of the hosts are available.
-	AvailableSkillHosts(tool *ToolDefinition) []string
+	// SkillHosts that are currently usable (a functional CLI on PATH, per
+	// hostUsable), in manifest order (preferred host first). It returns nil
+	// for non-skill tools or when none of the hosts are usable. It probes
+	// the host binaries, so it takes a context.
+	AvailableSkillHosts(ctx context.Context, tool *ToolDefinition) []string
 
 	// Uninstall removes the given tool from the current platform. For
 	// skill tools the optional [WithHosts] option restricts removal to
@@ -185,6 +186,13 @@ type installer struct {
 	httpClient       httpDoer
 	platformMu       sync.Mutex
 	platform         *Platform // lazily populated by ensurePlatform
+	// hostProbe memoizes hostUsable's version-probe result per host for the
+	// installer's lifetime (one process == one command), so the several
+	// host-resolution call sites do not re-spawn `--version` for the same
+	// host. Only on-PATH results are stored (see hostUsable). Guarded by
+	// hostProbeMu.
+	hostProbeMu sync.Mutex
+	hostProbe   map[string]bool
 	// retryBackoff is the initial wait between post-install detection
 	// retries (doubled each attempt). Defaults to 1s; tests may shorten
 	// it to keep the suite fast.
@@ -258,16 +266,19 @@ func (i *installer) Upgrade(
 }
 
 // AvailableSkillHosts returns the names of the tool's configured
-// SkillHosts that are currently on PATH, in manifest order (preferred
-// host first). It returns nil for non-skill tools or when none of the
-// hosts are available.
-func (i *installer) AvailableSkillHosts(tool *ToolDefinition) []string {
+// SkillHosts that are currently usable, in manifest order (preferred host
+// first). A host counts only if [installer.hostUsable] confirms it is a
+// functional CLI — not merely a same-named launcher stub on PATH — so the
+// interactive host picker never offers a host the install path would later
+// reject. It returns nil for non-skill tools or when none of the hosts are
+// usable.
+func (i *installer) AvailableSkillHosts(ctx context.Context, tool *ToolDefinition) []string {
 	if tool.Category != ToolCategorySkill {
 		return nil
 	}
 	var present []string
 	for _, host := range tool.SkillHosts {
-		if i.commandRunner.ToolInPath(host.Host) == nil {
+		if i.hostUsable(ctx, host) {
 			present = append(present, host.Host)
 		}
 	}
@@ -713,17 +724,17 @@ func (i *installer) runSkillUninstall(
 
 // resolveSkillUninstallTargets resolves the host(s) a skill should be
 // removed from. With explicit host names, each must be a configured
-// SkillHost that is on PATH. Without explicit hosts (the default, and
-// also `--host all`), it targets every host the skill is currently
-// installed through; an error is returned when the skill is not
-// installed on any host.
+// SkillHost that is a usable (functional) CLI on PATH. Without explicit
+// hosts (the default, and also `--host all`), it targets every host the
+// skill is currently installed through; an error is returned when the
+// skill is not installed on any host.
 func (i *installer) resolveSkillUninstallTargets(
 	ctx context.Context,
 	tool *ToolDefinition,
 	hosts []string,
 ) ([]SkillHost, error) {
 	if len(hosts) > 0 {
-		return i.explicitSkillHostTargets(tool, hosts)
+		return i.explicitSkillHostTargets(ctx, tool, hosts)
 	}
 
 	// Default / --host all: remove from every host the skill is
@@ -1141,13 +1152,14 @@ func (i *installer) resolveSkillTargets(
 		if allAvailable {
 			var onPath []SkillHost
 			for _, host := range tool.SkillHosts {
-				if i.commandRunner.ToolInPath(host.Host) == nil {
+				if i.hostUsable(ctx, host) {
 					onPath = append(onPath, host)
 				}
 			}
-			// No host CLI present at all — surface the install guidance.
+			// No usable host CLI present at all — surface the install
+			// guidance.
 			if len(onPath) == 0 {
-				host, err := i.pickSkillHost(tool)
+				host, err := i.pickSkillHost(ctx, tool)
 				if err != nil {
 					return nil, err
 				}
@@ -1231,35 +1243,33 @@ func (i *installer) resolveSkillTargets(
 				),
 			}
 		}
-		host, err := i.pickSkillHost(tool)
+		host, err := i.pickSkillHost(ctx, tool)
 		if err != nil {
 			return nil, err
 		}
 		return []SkillHost{host}, nil
 	}
 
-	return i.explicitSkillHostTargets(tool, hosts)
+	return i.explicitSkillHostTargets(ctx, tool, hosts)
 }
 
 // explicitSkillHostTargets resolves an explicit list of requested host
 // names to their [SkillHost] definitions. A requested host is usable only
-// when it is a configured SkillHost that is also on PATH; both an unknown
-// name and a known-but-not-on-PATH host fail with an error naming the
+// when it is a configured SkillHost that is also a functional CLI on PATH
+// (see [installer.hostUsable]); an unknown name, a host not on PATH, and a
+// host present only as a launcher stub all fail with an error naming the
 // supported hosts. Shared by the install/upgrade (resolveSkillTargets) and
 // uninstall (resolveSkillUninstallTargets) paths so the host-availability
 // rule lives in one place.
 func (i *installer) explicitSkillHostTargets(
+	ctx context.Context,
 	tool *ToolDefinition,
 	hosts []string,
 ) ([]SkillHost, error) {
 	targets := make([]SkillHost, 0, len(hosts))
 	for _, name := range hosts {
-		// A requested host is usable only if it is a configured SkillHost
-		// that is also on PATH. "unknown name" and "known but not on PATH"
-		// both mean the host can't be used, so we point the user at the
-		// supported hosts.
 		host, ok := findSkillHost(tool, name)
-		if !ok || i.commandRunner.ToolInPath(name) != nil {
+		if !ok || !i.hostUsable(ctx, host) {
 			supported := make([]string, len(tool.SkillHosts))
 			for j, h := range tool.SkillHosts {
 				supported[j] = h.Host
@@ -1302,18 +1312,81 @@ func configuredSkillHostsFor(tool *ToolDefinition, installed []InstalledSkillHos
 	return targets
 }
 
-// pickSkillHost returns the first SkillHost whose binary is on PATH.
-// When none of the configured hosts is available it returns an
-// [errorhandler.ErrorWithSuggestion] (all four fields populated per the
-// AGENTS.md completeness rule) that recommends installing GitHub
-// Copilot CLI via `azd tool install github-copilot-cli` — a single
-// command the user can copy-paste without leaving azd.
+// hostUsable reports whether an agentic CLI host on PATH is a functional
+// CLI rather than a same-named launcher stub.
+//
+// Some environments put a stub on PATH — notably the VS Code Copilot Chat
+// extension, whose `copilot` stub only prints "Install GitHub Copilot CLI?"
+// and exits 0. It passes a bare existence check but cannot install the skill,
+// which used to surface as a misleading "verification failed".
+//
+// To tell them apart, hostUsable runs the host's version command (with empty
+// stdin so a prompting stub reads EOF and exits) and accepts the host only
+// when the output matches its BinaryVersionRegex, anchored to the host's
+// `--version` banner. Hosts without a version probe fall back to the
+// existence check.
+//
+// Results are memoized per host (hostProbe); only on-PATH hosts are cached,
+// so a host installed earlier in the same batch is still picked up. The cache
+// assumes an on-PATH host binary is not swapped mid-command, which azd never
+// does.
+func (i *installer) hostUsable(ctx context.Context, host SkillHost) bool {
+	if i.commandRunner.ToolInPath(host.Host) != nil {
+		return false
+	}
+
+	i.hostProbeMu.Lock()
+	if i.hostProbe == nil {
+		i.hostProbe = map[string]bool{}
+	}
+	usable, ok := i.hostProbe[host.Host]
+	i.hostProbeMu.Unlock()
+	if ok {
+		return usable
+	}
+
+	usable = i.probeOnPathHost(ctx, host)
+
+	i.hostProbeMu.Lock()
+	i.hostProbe[host.Host] = usable
+	i.hostProbeMu.Unlock()
+	return usable
+}
+
+// probeOnPathHost runs the version probe for a host already confirmed to be on
+// PATH and reports whether it is a functional CLI. It is the uncached half of
+// hostUsable; see that method for the rationale behind the matching.
+func (i *installer) probeOnPathHost(ctx context.Context, host SkillHost) bool {
+	if len(host.BinaryVersionArgs) == 0 || host.BinaryVersionRegex == "" {
+		return true
+	}
+	result, err := i.commandRunner.Run(
+		ctx,
+		exec.NewRunArgs(host.Host, host.BinaryVersionArgs...).
+			WithStdIn(strings.NewReader("")),
+	)
+	// A cancelled/timed-out probe is not evidence the host is a stub; do
+	// not penalize it here (context handling is the caller's concern).
+	if isContextErr(err) {
+		return true
+	}
+	return matchVersion(result.Stdout+"\n"+result.Stderr, host.BinaryVersionRegex) != ""
+}
+
+// pickSkillHost returns the first SkillHost that is a usable (functional)
+// CLI — see [installer.hostUsable], which rejects launcher stubs that merely
+// share the host's name on PATH. When none of the configured hosts is usable
+// it returns an [errorhandler.ErrorWithSuggestion] (all four fields populated
+// per the AGENTS.md completeness rule) that recommends installing GitHub
+// Copilot CLI via `azd tool install github-copilot-cli` — a single command
+// the user can copy-paste without leaving azd.
 func (i *installer) pickSkillHost(
+	ctx context.Context,
 	tool *ToolDefinition,
 ) (SkillHost, error) {
 	var checked []string
 	for _, host := range tool.SkillHosts {
-		if err := i.commandRunner.ToolInPath(host.Host); err == nil {
+		if i.hostUsable(ctx, host) {
 			return host, nil
 		}
 		checked = append(checked, host.Host)

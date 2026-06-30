@@ -28,7 +28,10 @@ words:
   - westeurope
   # Project terms
   - ABAC
+  - abbrs
   - acrpush
+  - alnum
+  - foundryproject
   - agentignore
   - ADLS
   - agentserver
@@ -38,6 +41,7 @@ words:
   - aoai
   - authorizationfailed
   - azdaiagent
+  - bicepless
   - CLIENTSECRET
   - curr
   - dataagent
@@ -53,9 +57,11 @@ words:
   - mcpservertoolalwaysrequireapprovalmode
   - mcpservertoolneverrequireapprovalmode
   - mcpservertoolspecifyapprovalmode
+  - purgeable
   - mypy
   - myregistry
   - normalises
+  - ondisk
   - openapitool
   - posixpath
   - projectpkg
@@ -64,6 +70,7 @@ words:
   - schedulerun
   - Toolsets
   - underscoped
+  - unparseable
   - Vnext
   - webp
   # Doctor / next-step terms

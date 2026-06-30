@@ -25,6 +25,7 @@ type resolveEnvStubEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	envName string
 	get     map[string]string
+	getErr  map[string]error
 	set     map[string]string
 }
 
@@ -37,6 +38,9 @@ func (s *resolveEnvStubEnvServer) GetCurrent(
 func (s *resolveEnvStubEnvServer) GetValue(
 	_ context.Context, req *azdext.GetEnvRequest,
 ) (*azdext.KeyValueResponse, error) {
+	if err := s.getErr[req.Key]; err != nil {
+		return nil, err
+	}
 	return &azdext.KeyValueResponse{Value: s.get[req.Key]}, nil
 }
 
@@ -199,4 +203,64 @@ func TestResolveEnv_CancelledSubscriptionPromptReturnsCancelled(t *testing.T) {
 	var local *azdext.LocalError
 	require.ErrorAs(t, err, &local)
 	assert.Equal(t, exterrors.CodeCancelled, local.Code)
+}
+
+func TestResolveEnv_CancelledLocationPromptReturnsCancelled(t *testing.T) {
+	// Subscription resolves, but the user cancels the location prompt. resolveEnv
+	// must return a cancellation error and not persist partial state.
+	env := &resolveEnvStubEnvServer{
+		envName: "foundry-bugbash",
+		get:     map[string]string{envKeySubscriptionID: "00000000-0000-0000-0000-000000000001"},
+	}
+	prompt := &resolveEnvStubPromptServer{
+		locationErr: status.Error(codes.Canceled, "user cancelled"),
+	}
+	client := newResolveEnvTestClient(t, env, prompt)
+
+	p := &FoundryProvisioningProvider{azdClient: client}
+	err := p.resolveEnv(t.Context())
+	require.Error(t, err)
+
+	var local *azdext.LocalError
+	require.ErrorAs(t, err, &local)
+	assert.Equal(t, exterrors.CodeCancelled, local.Code)
+}
+
+func TestResolveEnv_SubscriptionReadErrorSurfaces(t *testing.T) {
+	// A genuine environment read failure must be surfaced, not masked by a
+	// prompt: GetValue returns ("", nil) for an unset key, so an error here
+	// means the environment itself could not be read.
+	env := &resolveEnvStubEnvServer{
+		envName: "foundry-bugbash",
+		get:     map[string]string{},
+		getErr:  map[string]error{envKeySubscriptionID: status.Error(codes.Internal, "env read failed")},
+	}
+	prompt := &resolveEnvStubPromptServer{}
+	client := newResolveEnvTestClient(t, env, prompt)
+
+	p := &FoundryProvisioningProvider{azdClient: client}
+	err := p.resolveEnv(t.Context())
+	require.Error(t, err)
+
+	assert.Equal(t, 0, prompt.subscriptionN, "a read failure must not trigger a prompt")
+	var local *azdext.LocalError
+	require.ErrorAs(t, err, &local)
+	assert.Equal(t, exterrors.CodeEnvironmentValuesFailed, local.Code)
+}
+
+func TestResolveEnv_EmptySubscriptionResponseReturnsError(t *testing.T) {
+	// Defensive: a subscription response with a blank id must not be persisted;
+	// fail with an actionable error instead of writing an empty value.
+	env := &resolveEnvStubEnvServer{envName: "foundry-bugbash", get: map[string]string{}}
+	prompt := &resolveEnvStubPromptServer{subscriptionID: "   "}
+	client := newResolveEnvTestClient(t, env, prompt)
+
+	p := &FoundryProvisioningProvider{azdClient: client}
+	err := p.resolveEnv(t.Context())
+	require.Error(t, err)
+
+	var local *azdext.LocalError
+	require.ErrorAs(t, err, &local)
+	assert.Equal(t, exterrors.CodeMissingAzureSubscription, local.Code)
+	assert.Empty(t, env.set, "an empty subscription id must not be persisted")
 }

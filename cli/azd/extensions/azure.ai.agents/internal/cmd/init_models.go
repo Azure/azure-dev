@@ -27,6 +27,10 @@ import (
 
 var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standard"}
 
+// defaultDeploymentCapacity is the preferred deployment capacity for agent model deployments.
+// This overrides the lower SKU default (typically 10) which is insufficient for agents.
+const defaultDeploymentCapacity int32 = 50
+
 // errModelSkipped is a sentinel error returned by getModelDetails when the
 // user explicitly chooses "Skip this model" from the model-selection prompt.
 // Callers MUST use errors.Is to detect this case and drop the model from the
@@ -521,6 +525,7 @@ func (a *modelSelector) getModelDetails(
 			ModelName:    model.Name,
 			Options: &azdext.AiModelDeploymentOptions{
 				Locations: []string{currentLocation},
+				Capacity:  new(int32(defaultDeploymentCapacity)),
 			},
 			Quota: &azdext.QuotaCheckOptions{
 				MinRemainingCapacity: 1,
@@ -560,7 +565,7 @@ func (a *modelSelector) getModelDetails(
 func resolveNoPromptCapacity(candidate *azdext.AiModelDeployment) (int32, bool) {
 	capacity := candidate.Capacity
 	if capacity <= 0 {
-		capacity = max(candidate.Sku.MinCapacity, int32(1))
+		capacity = defaultDeploymentCapacity
 	}
 
 	if candidate.Sku.CapacityStep > 0 && capacity%candidate.Sku.CapacityStep != 0 {

@@ -37,7 +37,7 @@ services:
           version: "2024-07-18"
         sku:
           name: GlobalStandard
-          capacity: 10
+          capacity: 50
     agents:
       - name: my-agent
         docker:

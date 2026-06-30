@@ -33,30 +33,30 @@ func TestResolveNoPromptCapacity(t *testing.T) {
 			wantOk:       true,
 		},
 		{
-			name: "zero capacity defaults to max(minCapacity, 1)",
+			name: "zero capacity defaults to defaultDeploymentCapacity",
 			candidate: &azdext.AiModelDeployment{
 				Capacity: 0,
 				Sku:      &azdext.AiModelSku{MinCapacity: 5},
 			},
-			wantCapacity: 5,
+			wantCapacity: defaultDeploymentCapacity,
 			wantOk:       true,
 		},
 		{
-			name: "zero capacity with zero minCapacity defaults to 1",
+			name: "zero capacity with zero minCapacity defaults to defaultDeploymentCapacity",
 			candidate: &azdext.AiModelDeployment{
 				Capacity: 0,
 				Sku:      &azdext.AiModelSku{MinCapacity: 0},
 			},
-			wantCapacity: 1,
+			wantCapacity: defaultDeploymentCapacity,
 			wantOk:       true,
 		},
 		{
-			name: "negative capacity defaults to max(minCapacity, 1)",
+			name: "negative capacity defaults to defaultDeploymentCapacity",
 			candidate: &azdext.AiModelDeployment{
 				Capacity: -3,
 				Sku:      &azdext.AiModelSku{MinCapacity: 2},
 			},
-			wantCapacity: 2,
+			wantCapacity: defaultDeploymentCapacity,
 			wantOk:       true,
 		},
 		{
@@ -78,12 +78,12 @@ func TestResolveNoPromptCapacity(t *testing.T) {
 			wantOk:       true,
 		},
 		{
-			name: "enforces minCapacity then step alignment",
+			name: "enforces step alignment on defaultDeploymentCapacity",
 			candidate: &azdext.AiModelDeployment{
 				Capacity: 0,
 				Sku:      &azdext.AiModelSku{MinCapacity: 10, CapacityStep: 3},
 			},
-			wantCapacity: 12, // min=10, rounded up to next step of 3
+			wantCapacity: 51, // default=50, rounded up to next step of 3
 			wantOk:       true,
 		},
 		{
@@ -91,6 +91,15 @@ func TestResolveNoPromptCapacity(t *testing.T) {
 			candidate: &azdext.AiModelDeployment{
 				Capacity: 20,
 				Sku:      &azdext.AiModelSku{MaxCapacity: 10},
+			},
+			wantCapacity: 0,
+			wantOk:       false,
+		},
+		{
+			name: "defaultDeploymentCapacity exceeds maxCapacity returns false",
+			candidate: &azdext.AiModelDeployment{
+				Capacity: 0,
+				Sku:      &azdext.AiModelSku{MaxCapacity: 30},
 			},
 			wantCapacity: 0,
 			wantOk:       false,

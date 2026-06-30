@@ -612,10 +612,10 @@ func (s *promptService) PromptAiModel(
 		}
 
 		var err error
+		// Both paths fetch canonical model data across subscription locations.
 		if effectiveFilter != nil {
 			models, err = s.aiModelService.ListFilteredModels(ctx, subscriptionId, effectiveFilter)
 		} else {
-			// Always fetch canonical model data across subscription locations.
 			models, err = s.aiModelService.ListModels(ctx, subscriptionId, nil)
 		}
 		if err != nil {

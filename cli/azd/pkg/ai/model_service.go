@@ -624,9 +624,8 @@ func (s *AiModelService) convertToAiModelsAt(
 			if m.Model == nil || m.Model.Name == nil {
 				continue
 			}
-			// Always drop versions whose inference endpoint has retired (ARM
-			// deprecation.inference is in the past; inference now returns 410 Gone),
-			// regardless of any explicitly requested lifecycle statuses.
+			// Always drop versions whose inference endpoint has retired, regardless
+			// of any explicitly requested lifecycle statuses.
 			if modelInferenceRetired(m.Model.Deprecation, now) {
 				continue
 			}
@@ -637,9 +636,7 @@ func (s *AiModelService) convertToAiModelsAt(
 				if !slices.Contains(statuses, modelLifecycleStatusValue(m.Model.LifecycleStatus)) {
 					continue
 				}
-			} else if modelLifecycleExcluded(m.Model.LifecycleStatus) {
-				// Default new-deployment view excludes customer-facing Deprecated
-				// (ARM "Deprecating") and Retired (ARM "Deprecated") models.
+			} else if modelVersionExcluded(m.Model, now) {
 				continue
 			}
 			name := *m.Model.Name

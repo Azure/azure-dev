@@ -42,11 +42,11 @@ func (s *aiModelService) ListModels(
 		filterOpts = protoToFilterOptions(req.Filter)
 	}
 
+	// Both paths fetch canonical model data across subscription locations.
 	var models []ai.AiModel
 	if filterOpts != nil {
 		models, err = s.modelService.ListFilteredModels(ctx, subscriptionId, filterOpts)
 	} else {
-		// Always fetch canonical model data across subscription locations.
 		models, err = s.modelService.ListModels(ctx, subscriptionId, nil)
 	}
 	if err != nil {

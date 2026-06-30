@@ -10,7 +10,7 @@
 
 ### Bugs Fixed
 
-- [[#8790]](https://github.com/Azure/azure-dev/pull/8790) Add unit tests for `azure.ai.routines` client and fix `MarkHidden` nit.
+- [[#8790]](https://github.com/Azure/azure-dev/pull/8790) Fix hidden command visibility nit and add unit tests for the `azure.ai.routines` client.
 
 ## 0.1.0-preview (2026-05-28)
 

@@ -197,4 +197,19 @@ func TestBrownfieldParams(t *testing.T) {
 		assert.Equal(t, map[string]any{"value": "westus2"}, params["location"])
 		assert.Equal(t, map[string]any{"value": p.brownfieldACRName("acct")}, params["acrName"])
 	})
+
+	t.Run("omits location when unresolved so template default applies", func(t *testing.T) {
+		t.Parallel()
+		// AZURE_LOCATION unset and no usable credential => brownfieldLocation
+		// returns ""; the param must be omitted, not set to "".
+		p := &FoundryProvisioningProvider{
+			envName:            "dev",
+			brownfieldEndpoint: "https://acct.services.ai.azure.com/api/projects/my-project",
+			azdClient:          newKVEnvClient(t, map[string]string{}),
+		}
+		params := p.brownfieldParams(t.Context(), "acct", "rg", true)
+
+		assert.Contains(t, params, "includeAcr")
+		assert.NotContains(t, params, "location")
+	})
 }

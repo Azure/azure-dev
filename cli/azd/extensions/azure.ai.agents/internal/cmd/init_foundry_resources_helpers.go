@@ -383,7 +383,8 @@ func lookupAcrResourceId(
 // ACR and AppInsights connections. This is the shared implementation used by both init flows.
 // When skipACR is true, ACR connection discovery and configuration is skipped (used for code deploy).
 // When bicepless is true, AppInsights is left to the provisioning provider; ACR is still configured
-// for a container agent (skipACR false), since the provider does not create one for an existing project.
+// for a container agent (skipACR false) so its endpoint is wired here when the project already has a
+// registry connection, or the provider is signaled to create one on provision (the create-new path).
 func configureFoundryProjectEnv(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,

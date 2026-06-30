@@ -703,8 +703,12 @@ func (p *FoundryProvisioningProvider) brownfieldParams(
 		params["includeAcr"] = map[string]any{"value": true}
 		params["acrName"] = map[string]any{"value": p.brownfieldACRName(account)}
 		params["projectName"] = map[string]any{"value": p.brownfieldProjectName()}
-		params["location"] = map[string]any{"value": p.brownfieldLocation(ctx, rg)}
 		params["tags"] = map[string]any{"value": map[string]string{"azd-env-name": p.envName}}
+		// Only set location when resolved; an empty value would override the
+		// template default (resourceGroup().location) and fail the deployment.
+		if loc := p.brownfieldLocation(ctx, rg); loc != "" {
+			params["location"] = map[string]any{"value": loc}
+		}
 	}
 	return params
 }

@@ -112,7 +112,6 @@ func (c *FoundryToolboxClient) CreateToolboxVersion(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-
 	if err := req.SetBody(
 		streaming.NopCloser(bytes.NewReader(payload)),
 		"application/json",
@@ -158,7 +157,6 @@ func (c *FoundryToolboxClient) GetToolbox(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
@@ -196,7 +194,6 @@ func (c *FoundryToolboxClient) DeleteToolbox(
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {

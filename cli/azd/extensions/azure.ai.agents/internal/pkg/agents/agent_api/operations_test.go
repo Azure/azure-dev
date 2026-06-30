@@ -775,7 +775,6 @@ func TestZipDeployRequest_NoAgentNameHeader_OnUpdate(t *testing.T) {
 	require.Equal(t, "sha", transport.lastReq.Header.Get("x-ms-code-zip-sha256"))
 }
 
-
 // ---------------------------------------------------------------------------
 // DownloadAgentCode tests
 // ---------------------------------------------------------------------------
@@ -842,20 +841,6 @@ func TestDownloadAgentCode_IncludesVersionParam(t *testing.T) {
 	defer result.Body.Close()
 
 	require.Equal(t, "3", transport.lastReq.URL.Query().Get("agent_version"))
-}
-
-func TestDownloadAgentCode_SetsFeatureHeader(t *testing.T) {
-	transport := &downloadTransport{
-		statusCode: http.StatusOK,
-		respBody:   "fake-zip",
-		respHeader: http.Header{},
-	}
-	client := newTestClient("https://test.example.com/api/projects/proj", transport)
-
-	result, err := client.DownloadAgentCode(context.Background(), "my-agent", "v1", "")
-	require.NoError(t, err)
-	defer result.Body.Close()
-
 }
 
 func TestDownloadAgentCode_ReturnsResponseHeaders(t *testing.T) {

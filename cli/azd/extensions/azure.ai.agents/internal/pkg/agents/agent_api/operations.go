@@ -362,7 +362,6 @@ func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, 
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
@@ -972,7 +971,6 @@ func (c *AgentClient) DownloadAgentCode(
 	}
 
 	runtime.SkipBodyDownload(req)
-
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {

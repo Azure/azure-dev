@@ -114,7 +114,6 @@ func (c *Client) routineRunsURL(routineName string, extraQuery ...string) string
 	return base
 }
 
-
 // GetRoutine retrieves a routine by name.
 func (c *Client) GetRoutine(ctx context.Context, name string) (*Routine, error) {
 	req, err := runtime.NewRequest(ctx, http.MethodGet, c.routineURL(name))

@@ -434,7 +434,15 @@ func (i *installer) runUninstall(
 			// via its own `update` command). Only this signature warrants
 			// the "updated outside the package manager" guidance.
 			if packageManagerLostRecord(strategy.PackageManager, res) {
-				result.Error = i.packageManagerUninstallFailedError(tool, strategy, res.Stdout+"\n"+res.Stderr)
+				// Echo the manager's own message when it has one; some
+				// managers signal the lost-record case via an exit code with
+				// little or no output, so fall back to the command error to
+				// avoid a blank/noisy message.
+				reported := strings.TrimSpace(res.Stdout + "\n" + res.Stderr)
+				if reported == "" {
+					reported = err.Error()
+				}
+				result.Error = i.packageManagerUninstallFailedError(tool, strategy, reported)
 				result.Duration = time.Since(start)
 				return result, nil
 			}
@@ -1824,7 +1832,10 @@ func packageManagerLostRecord(packageManager string, res exec.RunResult) bool {
 		return false
 	}
 
-	return uint32(res.ExitCode) == wingetNoPackageFoundExitCode ||
+	// Windows exit codes are unsigned 32-bit values, so compare the low 32
+	// bits to match regardless of how the sign bit is represented.
+	exitCode := uint32(res.ExitCode) //nolint:gosec // 32-bit Windows exit code
+	return exitCode == wingetNoPackageFoundExitCode ||
 		strings.Contains(
 			strings.ToLower(res.Stdout+"\n"+res.Stderr),
 			"no installed package found",

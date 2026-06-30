@@ -4,6 +4,7 @@
 package tool
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -397,12 +398,7 @@ func TestGithubCopilotCLI_InstallStrategies(t *testing.T) {
 
 	// helper: does the platform list contain a strategy matching pred?
 	has := func(platform string, pred func(InstallStrategy) bool) bool {
-		for _, s := range tool.InstallStrategies[platform] {
-			if pred(s) {
-				return true
-			}
-		}
-		return false
+		return slices.ContainsFunc(tool.InstallStrategies[platform], pred)
 	}
 	isWinget := func(s InstallStrategy) bool {
 		return s.PackageManager == "winget" && s.PackageId == "GitHub.Copilot"

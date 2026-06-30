@@ -2874,6 +2874,61 @@ func TestUninstall_NonSkill_PackageManagerNoRecord_GuidesManualRemoval(t *testin
 	assert.Contains(t, ews.Suggestion, "remove Self Updating CLI manually")
 }
 
+// TestUninstall_NonSkill_PackageManagerNoRecord_EmptyOutput_FallsBackToError
+// covers the lost-record case where winget signals the failure via its exit
+// code alone, with no stdout/stderr text. The surfaced error must fall back to
+// the command error instead of being blank.
+func TestUninstall_NonSkill_PackageManagerNoRecord_EmptyOutput_FallsBackToError(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "windows" {
+		t.Skip("winget (the lost-record case) is only available on Windows")
+	}
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("winget", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "winget" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "v1.8.0"})
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "winget" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		// Lost record signalled by exit code only — no output text.
+		return exec.RunResult{ExitCode: int(wingetNoPackageFoundExitCode)},
+			errors.New("exit status 0x8a150014")
+	})
+
+	det := installedDetector("1.0.0")
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	tool := &ToolDefinition{
+		Id:            "self-updating-cli",
+		Name:          "Self Updating CLI",
+		DetectCommand: "azd-nonexistent-cli-xyz",
+		Category:      ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "winget",
+			PackageId:      "GitHub.Copilot",
+		}),
+	}
+
+	result, err := inst.Uninstall(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+
+	var ews *errorhandler.ErrorWithSuggestion
+	require.ErrorAs(t, result.Error, &ews)
+	// The surfaced error must not be blank; it falls back to the command error.
+	assert.Contains(t, ews.Error(), "exit status 0x8a150014")
+	assert.Contains(t, ews.Suggestion, "no longer has a record")
+}
+
 // TestUninstall_NonSkill_PackageManagerGenericFailure_ReturnsErrorDirectly
 // covers a package-manager uninstall that fails for a reason OTHER than a
 // lost record (here, a permissions error) while azd still detects the tool.

@@ -287,6 +287,49 @@ func TestPackageManagerVersionProvider_Brew(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// PackageManagerVersionProvider — multi-method selection
+// ---------------------------------------------------------------------------
+
+// TestPackageManagerVersionProvider_FallsBackToNextManager verifies that for a
+// multi-method tool (the Copilot CLI lists brew before npm) the latest-version
+// lookup tries the next manager when the first one's query fails — e.g. on a
+// system without Homebrew the brew query errors and npm answers instead.
+func TestPackageManagerVersionProvider_FallsBackToNextManager(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	// brew is not installed: its query fails with a command error.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "brew"
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 1}, errors.New("brew: command not found")
+	})
+	// npm answers with the version.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" &&
+			len(args.Args) >= 3 &&
+			args.Args[0] == "view" &&
+			args.Args[1] == "@github/copilot" &&
+			args.Args[2] == "version"
+	}).Respond(exec.RunResult{Stdout: "1.0.65\n"})
+
+	provider := NewPackageManagerVersionProvider(runner)
+	tool := &ToolDefinition{
+		Id: "github-copilot-cli",
+		InstallStrategies: map[string][]InstallStrategy{
+			runtime.GOOS: {
+				{PackageManager: "brew", PackageId: "copilot-cli", Cask: true},
+				{PackageManager: "npm", PackageId: "@github/copilot"},
+			},
+		},
+	}
+
+	version, err := provider.GetLatestVersion(t.Context(), tool)
+	require.NoError(t, err)
+	assert.Equal(t, "1.0.65", version)
+}
+
+// ---------------------------------------------------------------------------
 // PackageManagerVersionProvider — no strategy
 // ---------------------------------------------------------------------------
 

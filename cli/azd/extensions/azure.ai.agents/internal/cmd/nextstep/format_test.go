@@ -208,7 +208,7 @@ func TestPrintAllNext(t *testing.T) {
 				},
 				{
 					Command:     "azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>",
-					Description: "supply the agent.yaml variable",
+					Description: "supply the azure.yaml variable",
 					Priority:    6,
 				},
 				{
@@ -224,7 +224,7 @@ func TestPrintAllNext(t *testing.T) {
 				"  azure.yaml has unresolved manifest placeholders\n" +
 				"\n" +
 				"  azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>\n" +
-				"  supply the agent.yaml variable\n" +
+				"  supply the azure.yaml variable\n" +
 				"\n" +
 				"  azd deploy\n" +
 				"  when ready to deploy to Azure\n",

@@ -347,6 +347,8 @@ func agentNeedsAcr(a agentBlock) bool {
 	}
 	// "hosted" is the only container kind; an empty kind defaults to hosted for
 	// back-compat. Other explicit kinds (prompt, workflow) do not build.
+	// NOTE: if a future non-container kind can omit kind:, replace this
+	// default-to-hosted with an explicit allowlist so it does not trigger ACR.
 	kind := strings.TrimSpace(a.Kind)
 	return kind == "" || strings.EqualFold(kind, "hosted")
 }

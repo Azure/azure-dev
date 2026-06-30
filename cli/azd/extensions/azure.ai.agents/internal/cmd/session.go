@@ -392,7 +392,8 @@ func newSessionStopCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 Terminates the session's running compute while preserving its persistent
 filesystem volume. Unlike 'delete', the session is retained and can be
-resumed by a subsequent invocation. Returns once the session is stopped.`,
+resumed by a subsequent invocation. Returns once the session is stopped.
+Stopping a session that is already stopped succeeds without error.`,
 		Example: `  # Stop a session
   azd ai agent sessions stop my-session`,
 		Args: cobra.ExactArgs(1),
@@ -440,17 +441,30 @@ func (a *SessionStopAction) Run(ctx context.Context) error {
 		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
-		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
-			respErr.StatusCode == http.StatusNotFound {
-			return exterrors.Validation(
-				exterrors.CodeSessionNotFound,
-				fmt.Sprintf(
-					"session %q not found or has been deleted",
-					a.sessionID,
-				),
-				"use 'azd ai agent sessions list' to see "+
-					"available sessions",
-			)
+		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
+			// Stopping an already-stopped session is a no-op; treat the
+			// 409 as success so 'stop' is idempotent (like 'delete'
+			// tolerating an already-deleted session).
+			if respErr.StatusCode == http.StatusConflict &&
+				respErr.ErrorCode == "session_already_stopped" {
+				fmt.Printf(
+					"Session %q is already stopped for agent %q.\n",
+					a.sessionID, sc.agentName,
+				)
+				return nil
+			}
+
+			if respErr.StatusCode == http.StatusNotFound {
+				return exterrors.Validation(
+					exterrors.CodeSessionNotFound,
+					fmt.Sprintf(
+						"session %q not found or has been deleted",
+						a.sessionID,
+					),
+					"use 'azd ai agent sessions list' to see "+
+						"available sessions",
+				)
+			}
 		}
 		return exterrors.ServiceFromAzure(
 			err, exterrors.OpStopSession,

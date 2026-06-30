@@ -538,21 +538,60 @@ func TestDeleteSession_500_ProducesServiceError(t *testing.T) {
 
 // classifyStopSessionError reproduces the error handling from
 // newSessionStopCommand so we can test the classification without an
-// end-to-end context.
+// end-to-end context. It returns nil for errors that 'stop' treats as
+// an idempotent success (an already-stopped session).
 func classifyStopSessionError(err error, sessionID string) error {
-	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
-		respErr.StatusCode == http.StatusNotFound {
-		return exterrors.Validation(
-			exterrors.CodeSessionNotFound,
-			fmt.Sprintf(
-				"session %q not found or has been deleted",
-				sessionID,
-			),
-			"use 'azd ai agent sessions list' to see "+
-				"available sessions",
-		)
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
+		if respErr.StatusCode == http.StatusConflict &&
+			respErr.ErrorCode == "session_already_stopped" {
+			return nil
+		}
+
+		if respErr.StatusCode == http.StatusNotFound {
+			return exterrors.Validation(
+				exterrors.CodeSessionNotFound,
+				fmt.Sprintf(
+					"session %q not found or has been deleted",
+					sessionID,
+				),
+				"use 'azd ai agent sessions list' to see "+
+					"available sessions",
+			)
+		}
 	}
 	return exterrors.ServiceFromAzure(err, exterrors.OpStopSession)
+}
+
+func TestStopSession_409AlreadyStopped_IsSuccess(t *testing.T) {
+	azErr := &azcore.ResponseError{
+		StatusCode: http.StatusConflict,
+		ErrorCode:  "session_already_stopped",
+	}
+
+	result := classifyStopSessionError(azErr, "my-session-id")
+	require.NoError(
+		t, result,
+		"an already-stopped session should be treated as success",
+	)
+}
+
+func TestStopSession_409Other_ProducesServiceError(t *testing.T) {
+	azErr := &azcore.ResponseError{
+		StatusCode: http.StatusConflict,
+		ErrorCode:  "session_conflict",
+	}
+
+	result := classifyStopSessionError(azErr, "my-session-id")
+	require.Error(
+		t, result,
+		"an unrelated 409 should still surface as an error",
+	)
+
+	var svcErr *azdext.ServiceError
+	require.True(
+		t, errors.As(result, &svcErr),
+		"unrelated 409 should produce a ServiceError, got: %T", result,
+	)
 }
 
 func TestStopSession_404_ProducesValidationError(t *testing.T) {

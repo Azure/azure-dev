@@ -519,6 +519,9 @@ func (a *modelSelector) getModelDetails(
 		case "use_existing":
 			deployment, err := a.promptExistingDeployment(ctx)
 			if err != nil {
+				if exterrors.IsCancellation(err) {
+					return nil, err
+				}
 				return nil, fmt.Errorf("failed to select existing deployment: %w", err)
 			}
 			return nil, &existingDeploymentError{Deployment: deployment}
@@ -779,6 +782,10 @@ func (a *modelSelector) promptModelFromCatalog(ctx context.Context) (*azdext.AiM
 // promptExistingDeployment shows the list of existing deployments in the
 // Foundry project and lets the user pick one.
 func (a *modelSelector) promptExistingDeployment(ctx context.Context) (*project.Deployment, error) {
+	if len(a.allDeployments) == 0 {
+		return nil, fmt.Errorf("no existing deployments available")
+	}
+
 	type labeledDeployment struct {
 		label string
 		info  *FoundryDeploymentInfo

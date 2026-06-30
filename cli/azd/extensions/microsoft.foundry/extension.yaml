@@ -13,7 +13,7 @@ dependencies:
   - id: azure.ai.connections
     version: "~1.0.0-beta.1"
   - id: azure.ai.inspector
-    version: "~0.0.1-preview"
+    version: "~1.0.0-beta.1"
   - id: azure.ai.projects
     version: "~1.0.0-beta.1"
   - id: azure.ai.routines

@@ -20,7 +20,7 @@ import (
 
 // filesFlags holds the common flags shared by all file subcommands.
 type filesFlags struct {
-	isolationHeaderFlags
+	userIdentityFlags
 	agentName string // optional: agent name (matches azure.yaml service name)
 	session   string // optional: explicit session ID override
 }
@@ -41,8 +41,8 @@ azd environment. Use --agent-name to select a specific agent when the project
 has multiple azure.ai.agent services. The session ID is automatically resolved
 from the last invoke session, or can be overridden with --session-id.
 
-For agents configured with header-based isolation, pass --user-isolation-key
-and --chat-isolation-key on each file operation.`,
+For agents configured with header-based isolation, pass --user-identity
+on each file operation.`,
 	}
 
 	cmd.AddCommand(newFilesUploadCommand(extCtx))
@@ -59,7 +59,7 @@ and --chat-isolation-key on each file operation.`,
 func addFilesFlags(cmd *cobra.Command, flags *filesFlags) {
 	cmd.Flags().StringVarP(&flags.agentName, "agent-name", "n", "", "Agent name (matches azure.yaml service name; auto-detected when only one exists)")
 	cmd.Flags().StringVarP(&flags.session, "session-id", "s", "", "Session ID override (defaults to last invoke session)")
-	addIsolationHeaderFlags(cmd, &flags.isolationHeaderFlags)
+	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
 }
 
 // filesContext holds the resolved agent context and session for file operations.

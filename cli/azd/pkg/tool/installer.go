@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -112,10 +113,22 @@ type Installer interface {
 	) (*InstallResult, error)
 
 	// AvailableSkillHosts returns the names of the tool's configured
-	// SkillHosts that are currently on PATH, in manifest order
-	// (preferred host first). It returns nil for non-skill tools or
-	// when none of the hosts are available.
-	AvailableSkillHosts(tool *ToolDefinition) []string
+	// SkillHosts that are currently usable (a functional CLI on PATH, per
+	// hostUsable), in manifest order (preferred host first). It returns nil
+	// for non-skill tools or when none of the hosts are usable. It probes
+	// the host binaries, so it takes a context.
+	AvailableSkillHosts(ctx context.Context, tool *ToolDefinition) []string
+
+	// Uninstall removes the given tool from the current platform. For
+	// skill tools the optional [WithHosts] option restricts removal to
+	// the named agentic CLI hosts; with neither [WithHosts] nor
+	// [WithAllAvailableHosts] the skill is removed from every host it is
+	// installed through.
+	Uninstall(
+		ctx context.Context,
+		tool *ToolDefinition,
+		opts ...InstallOption,
+	) (*InstallResult, error)
 }
 
 // installConfig holds the resolved options for an install or upgrade
@@ -161,6 +174,13 @@ type installer struct {
 	httpClient       httpDoer
 	platformMu       sync.Mutex
 	platform         *Platform // lazily populated by ensurePlatform
+	// hostProbe memoizes hostUsable's version-probe result per host for the
+	// installer's lifetime (one process == one command), so the several
+	// host-resolution call sites do not re-spawn `--version` for the same
+	// host. Only on-PATH results are stored (see hostUsable). Guarded by
+	// hostProbeMu.
+	hostProbeMu sync.Mutex
+	hostProbe   map[string]bool
 	// retryBackoff is the initial wait between post-install detection
 	// retries (doubled each attempt). Defaults to 1s; tests may shorten
 	// it to keep the suite fast.
@@ -229,20 +249,367 @@ func (i *installer) Upgrade(
 }
 
 // AvailableSkillHosts returns the names of the tool's configured
-// SkillHosts that are currently on PATH, in manifest order (preferred
-// host first). It returns nil for non-skill tools or when none of the
-// hosts are available.
-func (i *installer) AvailableSkillHosts(tool *ToolDefinition) []string {
+// SkillHosts that are currently usable, in manifest order (preferred host
+// first). A host counts only if [installer.hostUsable] confirms it is a
+// functional CLI — not merely a same-named launcher stub on PATH — so the
+// interactive host picker never offers a host the install path would later
+// reject. It returns nil for non-skill tools or when none of the hosts are
+// usable.
+func (i *installer) AvailableSkillHosts(ctx context.Context, tool *ToolDefinition) []string {
 	if tool.Category != ToolCategorySkill {
 		return nil
 	}
 	var present []string
 	for _, host := range tool.SkillHosts {
-		if i.commandRunner.ToolInPath(host.Host) == nil {
+		if i.hostUsable(ctx, host) {
 			present = append(present, host.Host)
 		}
 	}
 	return present
+}
+
+// Uninstall removes a tool from the current platform. Skills are
+// removed through their agent host plugin command(s); other tools are
+// removed via the platform package manager (or by deleting a
+// directly-downloaded artifact).
+func (i *installer) Uninstall(
+	ctx context.Context,
+	tool *ToolDefinition,
+	opts ...InstallOption,
+) (*InstallResult, error) {
+	var cfg installConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	if tool.Category == ToolCategorySkill {
+		// For uninstall, both an explicit `--host all`
+		// (cfg.allAvailableHosts) and an omitted --host mean "remove the
+		// skill from every host it is installed through" — azd cannot
+		// remove a plugin from a host that never installed it. So only
+		// the explicit host names need to be threaded through; the
+		// empty-hosts branch of resolveSkillUninstallTargets handles both
+		// the default and `--host all`.
+		return i.runSkillUninstall(ctx, tool, cfg.hosts)
+	}
+	return i.runUninstall(ctx, tool)
+}
+
+// runUninstall removes a non-skill tool using the platform's package
+// manager (or by deleting a directly-downloaded artifact) and verifies
+// the tool is no longer detected. It mirrors run but inverts the
+// post-operation verification: success means the tool is gone.
+func (i *installer) runUninstall(
+	ctx context.Context,
+	tool *ToolDefinition,
+) (*InstallResult, error) {
+	start := time.Now()
+	result := &InstallResult{Tool: tool}
+
+	// 1. Detect the platform (cached after the first call).
+	platform, err := i.ensurePlatform(ctx)
+	if err != nil {
+		result.Error = fmt.Errorf("detecting platform: %w", err)
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+
+	// 2. Select the strategy used to install on this platform.
+	strategy := i.platformDetector.SelectStrategy(tool, platform)
+	if strategy == nil {
+		result.Error = fmt.Errorf(
+			"no install strategy for %s on platform %s",
+			tool.Name, platform.OS,
+		)
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+
+	// 3. Execute the uninstall using the matching mechanism. An explicit
+	//    UninstallCommand takes precedence (mirrors how install prefers
+	//    InstallCommand), then a package-manager removal; anything else
+	//    has no automated uninstall path.
+	if strategy.DirectDownloadUrl != "" {
+		// Direct download: azd removes the artifact it placed locally.
+		result.Strategy = "direct-download"
+		if err := i.executeDirectDownloadUninstall(strategy); err != nil {
+			result.Error = fmt.Errorf(
+				"removing downloaded artifact for %s: %w", tool.Name, err,
+			)
+			result.Duration = time.Since(start)
+			return result, nil
+		}
+	} else if strategy.UninstallCommand != "" {
+		// Explicit uninstall command (e.g. `azd extension uninstall ...`).
+		result.Strategy = "command"
+		if err := i.executeUninstallCommand(ctx, strategy.UninstallCommand); err != nil {
+			// If the tool is already gone, treat the uninstall as complete
+			// (idempotent), mirroring the package-manager path below.
+			// Otherwise surface the command failure.
+			status, detectErr := i.detector.DetectTool(ctx, tool)
+			if detectErr == nil && !status.Installed {
+				result.Success = true
+				result.Duration = time.Since(start)
+				return result, nil
+			}
+			result.Error = fmt.Errorf(
+				"running uninstall command for %s: %w", tool.Name, err,
+			)
+			result.Duration = time.Since(start)
+			return result, nil
+		}
+	} else if strategy.PackageManager != "" && strategy.PackageId != "" {
+		result.Strategy = strategy.PackageManager
+
+		// The package manager must be available to remove the tool.
+		if !platform.HasManager(strategy.PackageManager) {
+			result.Strategy = "manual"
+			result.Error = i.managerUnavailableUninstallError(tool, strategy)
+			result.Duration = time.Since(start)
+			return result, nil
+		}
+
+		if err := i.executeUninstall(ctx, strategy); err != nil {
+			// The package manager could not remove the tool. This commonly
+			// happens when a self-updating CLI replaced the copy the package
+			// manager installed (e.g. `copilot update`), so the manager no
+			// longer has a record of the package. If the tool is already
+			// gone, treat the uninstall as complete (idempotent); otherwise
+			// guide the user to remove it manually, since neither the package
+			// manager nor azd can.
+			status, detectErr := i.detector.DetectTool(ctx, tool)
+			if detectErr == nil && !status.Installed {
+				result.Success = true
+				result.Duration = time.Since(start)
+				return result, nil
+			}
+			result.Error = i.packageManagerUninstallFailedError(tool, strategy, err)
+			result.Duration = time.Since(start)
+			return result, nil
+		}
+	} else {
+		// Tools installed via a custom shell command with no reverse
+		// command (and no package manager) have no automated uninstall.
+		result.Strategy = "manual"
+		result.Error = i.uninstallUnsupportedError(tool, strategy)
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+
+	// 4. Verify removal by detecting the tool again. Non-CLI tools may
+	//    need a brief delay before the package manager stops reporting
+	//    them, so we retry with exponential backoff.
+	maxAttempts := 1
+	if tool.Category != ToolCategoryCLI {
+		maxAttempts = 4 // 1 initial + 3 retries
+	}
+
+	var status *ToolStatus
+	gone, verifyErr := i.retryDetect(ctx, maxAttempts, tool.Name, func() (bool, error) {
+		var e error
+		status, e = i.detector.DetectTool(ctx, tool)
+		if e != nil {
+			return false, e
+		}
+		return !status.Installed, nil
+	})
+	if verifyErr != nil {
+		result.Error = fmt.Errorf(
+			"verifying removal of %s: %w", tool.Name, verifyErr,
+		)
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+
+	if !gone {
+		result.Error = fmt.Errorf(
+			"%s uninstall ran but the tool is still detected", tool.Name,
+		)
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+
+	// 5. Success — the tool is no longer detected.
+	result.Success = true
+	result.Duration = time.Since(start)
+	return result, nil
+}
+
+// runSkillUninstall removes a skill from the resolved target host(s) and
+// verifies, per host, that the skill is no longer present. It mirrors
+// runSkill but uses each host's PluginUninstallCommand and inverts the
+// verification (success means the plugin is gone).
+func (i *installer) runSkillUninstall(
+	ctx context.Context,
+	tool *ToolDefinition,
+	hosts []string,
+) (*InstallResult, error) {
+	start := time.Now()
+	result := &InstallResult{Tool: tool}
+
+	if len(tool.SkillHosts) == 0 {
+		result.Error = fmt.Errorf("%s has no SkillHosts configured", tool.Name)
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+
+	targets, err := i.resolveSkillUninstallTargets(ctx, tool, hosts)
+	if err != nil {
+		result.Error = err
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+
+	var (
+		succeeded []string
+		failures  []error
+	)
+	for _, host := range targets {
+		fmt.Fprintf(os.Stderr, "\nUninstalling %s from %s\n", tool.Name, host.Host)
+		if hostErr := i.uninstallSkillForHost(ctx, tool, host); hostErr != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", host.Host, hostErr))
+			continue
+		}
+		succeeded = append(succeeded, host.Host)
+	}
+
+	result.Strategy = strings.Join(succeeded, ", ")
+	result.Duration = time.Since(start)
+
+	// On failure, preserve the wrapped error for a single host so callers
+	// can match it with errors.Is/As; summarize when several hosts fail.
+	if len(failures) > 0 {
+		if len(failures) == 1 {
+			result.Error = failures[0]
+		} else {
+			msgs := make([]string, len(failures))
+			for j, f := range failures {
+				msgs[j] = f.Error()
+			}
+			result.Error = fmt.Errorf(
+				"%s could not be uninstalled for %d host(s): %s",
+				tool.Name, len(failures), strings.Join(msgs, "; "),
+			)
+		}
+		return result, nil
+	}
+
+	result.Success = true
+	return result, nil
+}
+
+// resolveSkillUninstallTargets resolves the host(s) a skill should be
+// removed from. With explicit host names, each must be a configured
+// SkillHost that is a usable (functional) CLI on PATH. Without explicit
+// hosts (the default, and also `--host all`), it targets every host the
+// skill is currently installed through; an error is returned when the
+// skill is not installed on any host.
+func (i *installer) resolveSkillUninstallTargets(
+	ctx context.Context,
+	tool *ToolDefinition,
+	hosts []string,
+) ([]SkillHost, error) {
+	if len(hosts) > 0 {
+		return i.explicitSkillHostTargets(ctx, tool, hosts)
+	}
+
+	// Default / --host all: remove from every host the skill is
+	// currently installed through.
+	installed, err := i.detector.DetectSkillHosts(ctx, tool)
+	if err != nil {
+		return nil, err
+	}
+
+	targets := configuredSkillHostsFor(tool, installed)
+
+	if len(targets) == 0 {
+		// Nothing to do. No Links: the suggestion is self-contained.
+		return nil, &errorhandler.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"%s is not installed on any available host", tool.Name,
+			),
+			Message: "Cannot uninstall " + tool.Name,
+			Suggestion: fmt.Sprintf(
+				"%s is not installed through any agent host, so there is "+
+					"nothing to uninstall.", tool.Name,
+			),
+		}
+	}
+	return targets, nil
+}
+
+// uninstallSkillForHost removes the skill through a single host and
+// verifies it is no longer present on that host.
+func (i *installer) uninstallSkillForHost(
+	ctx context.Context,
+	tool *ToolDefinition,
+	host SkillHost,
+) error {
+	if err := i.runSkillHostUninstallCommand(ctx, host); err != nil {
+		return err
+	}
+	return i.verifySkillUninstalled(ctx, tool, host)
+}
+
+// runSkillHostUninstallCommand executes the host's plugin-uninstall
+// command interactively (so any host prompts are answered by the user
+// directly). A non-zero exit is returned as an error; the caller verifies
+// via the detector and decides whether the error is fatal.
+func (i *installer) runSkillHostUninstallCommand(
+	ctx context.Context,
+	host SkillHost,
+) error {
+	cmd := host.PluginUninstallCommand
+	if len(cmd) == 0 {
+		return fmt.Errorf(
+			"host %q has no uninstall command configured", host.Host,
+		)
+	}
+
+	runArgs := exec.NewRunArgs(host.Host, cmd...).WithInteractive(true)
+	if _, err := i.commandRunner.Run(ctx, runArgs); err != nil {
+		return fmt.Errorf(
+			"running `%s %s`: %w",
+			host.Host, strings.Join(cmd, " "), err,
+		)
+	}
+
+	return nil
+}
+
+// verifySkillUninstalled confirms the skill is no longer detectable
+// through the specific host it was removed via. Like verifySkillInstalled
+// it is host-scoped and retries with backoff because plugin-list output
+// can lag the uninstall action.
+func (i *installer) verifySkillUninstalled(
+	ctx context.Context,
+	tool *ToolDefinition,
+	host SkillHost,
+) error {
+	const maxAttempts = 4 // 1 initial + 3 retries
+
+	gone, err := i.retryDetect(ctx, maxAttempts, tool.Name, func() (bool, error) {
+		installed, detectErr := i.detector.DetectSkillHosts(ctx, tool)
+		if detectErr != nil {
+			return false, detectErr
+		}
+		for _, h := range installed {
+			if h.Host == host.Host {
+				return false, nil // still installed on this host
+			}
+		}
+		return true, nil // no longer installed via this host
+	})
+	if err != nil {
+		return fmt.Errorf("verifying removal of %s: %w", tool.Name, err)
+	}
+	if !gone {
+		return fmt.Errorf(
+			"%s was uninstalled via %s but verification failed",
+			tool.Name, host.Host,
+		)
+	}
+	return nil
 }
 
 // run is the shared implementation for Install and Upgrade.
@@ -561,13 +928,14 @@ func (i *installer) resolveSkillTargets(
 		if allAvailable {
 			var onPath []SkillHost
 			for _, host := range tool.SkillHosts {
-				if i.commandRunner.ToolInPath(host.Host) == nil {
+				if i.hostUsable(ctx, host) {
 					onPath = append(onPath, host)
 				}
 			}
-			// No host CLI present at all — surface the install guidance.
+			// No usable host CLI present at all — surface the install
+			// guidance.
 			if len(onPath) == 0 {
-				host, err := i.pickSkillHost(tool)
+				host, err := i.pickSkillHost(ctx, tool)
 				if err != nil {
 					return nil, err
 				}
@@ -627,16 +995,7 @@ func (i *installer) resolveSkillTargets(
 			}
 
 			if len(installed) > 0 {
-				targets := make([]SkillHost, 0, len(installed))
-				for _, inst := range installed {
-					idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
-						return h.Host == inst.Host
-					})
-					if idx >= 0 {
-						targets = append(targets, tool.SkillHosts[idx])
-					}
-				}
-				if len(targets) > 0 {
+				if targets := configuredSkillHostsFor(tool, installed); len(targets) > 0 {
 					return targets, nil
 				}
 			}
@@ -660,23 +1019,33 @@ func (i *installer) resolveSkillTargets(
 				),
 			}
 		}
-		host, err := i.pickSkillHost(tool)
+		host, err := i.pickSkillHost(ctx, tool)
 		if err != nil {
 			return nil, err
 		}
 		return []SkillHost{host}, nil
 	}
 
+	return i.explicitSkillHostTargets(ctx, tool, hosts)
+}
+
+// explicitSkillHostTargets resolves an explicit list of requested host
+// names to their [SkillHost] definitions. A requested host is usable only
+// when it is a configured SkillHost that is also a functional CLI on PATH
+// (see [installer.hostUsable]); an unknown name, a host not on PATH, and a
+// host present only as a launcher stub all fail with an error naming the
+// supported hosts. Shared by the install/upgrade (resolveSkillTargets) and
+// uninstall (resolveSkillUninstallTargets) paths so the host-availability
+// rule lives in one place.
+func (i *installer) explicitSkillHostTargets(
+	ctx context.Context,
+	tool *ToolDefinition,
+	hosts []string,
+) ([]SkillHost, error) {
 	targets := make([]SkillHost, 0, len(hosts))
 	for _, name := range hosts {
-		// A requested host is usable only if it is a configured SkillHost
-		// that is also on PATH. "unknown name" and "known but not on PATH"
-		// both mean the host can't be used, so we point the user at the
-		// supported hosts.
-		idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
-			return h.Host == name
-		})
-		if idx < 0 || i.commandRunner.ToolInPath(name) != nil {
+		host, ok := findSkillHost(tool, name)
+		if !ok || !i.hostUsable(ctx, host) {
 			supported := make([]string, len(tool.SkillHosts))
 			for j, h := range tool.SkillHosts {
 				supported[j] = h.Host
@@ -686,23 +1055,114 @@ func (i *installer) resolveSkillTargets(
 				name, tool.Name, strings.Join(supported, ", "),
 			)
 		}
-		targets = append(targets, tool.SkillHosts[idx])
+		targets = append(targets, host)
 	}
 	return targets, nil
 }
 
-// pickSkillHost returns the first SkillHost whose binary is on PATH.
-// When none of the configured hosts is available it returns an
-// [errorhandler.ErrorWithSuggestion] (all four fields populated per the
-// AGENTS.md completeness rule) that recommends installing GitHub
-// Copilot CLI via `azd tool install github-copilot-cli` — a single
-// command the user can copy-paste without leaving azd.
+// findSkillHost returns the configured SkillHost with the given host name and
+// whether one was found. It centralizes the SkillHosts lookup shared by the
+// skill install/upgrade and uninstall paths.
+func findSkillHost(tool *ToolDefinition, name string) (SkillHost, bool) {
+	idx := slices.IndexFunc(tool.SkillHosts, func(h SkillHost) bool {
+		return h.Host == name
+	})
+	if idx < 0 {
+		return SkillHost{}, false
+	}
+	return tool.SkillHosts[idx], true
+}
+
+// configuredSkillHostsFor maps a set of installed hosts back to their
+// configured SkillHost definitions, in installed order, skipping any host that
+// is no longer a configured SkillHost. Shared by the upgrade
+// (resolveSkillTargets) and uninstall (resolveSkillUninstallTargets) paths,
+// which both act on "the hosts the skill is currently installed through".
+func configuredSkillHostsFor(tool *ToolDefinition, installed []InstalledSkillHost) []SkillHost {
+	targets := make([]SkillHost, 0, len(installed))
+	for _, inst := range installed {
+		if host, ok := findSkillHost(tool, inst.Host); ok {
+			targets = append(targets, host)
+		}
+	}
+	return targets
+}
+
+// hostUsable reports whether an agentic CLI host on PATH is a functional
+// CLI rather than a same-named launcher stub.
+//
+// Some environments put a stub on PATH — notably the VS Code Copilot Chat
+// extension, whose `copilot` stub only prints "Install GitHub Copilot CLI?"
+// and exits 0. It passes a bare existence check but cannot install the skill,
+// which used to surface as a misleading "verification failed".
+//
+// To tell them apart, hostUsable runs the host's version command (with empty
+// stdin so a prompting stub reads EOF and exits) and accepts the host only
+// when the output matches its BinaryVersionRegex, anchored to the host's
+// `--version` banner. Hosts without a version probe fall back to the
+// existence check.
+//
+// Results are memoized per host (hostProbe); only on-PATH hosts are cached,
+// so a host installed earlier in the same batch is still picked up. The cache
+// assumes an on-PATH host binary is not swapped mid-command, which azd never
+// does.
+func (i *installer) hostUsable(ctx context.Context, host SkillHost) bool {
+	if i.commandRunner.ToolInPath(host.Host) != nil {
+		return false
+	}
+
+	i.hostProbeMu.Lock()
+	if i.hostProbe == nil {
+		i.hostProbe = map[string]bool{}
+	}
+	usable, ok := i.hostProbe[host.Host]
+	i.hostProbeMu.Unlock()
+	if ok {
+		return usable
+	}
+
+	usable = i.probeOnPathHost(ctx, host)
+
+	i.hostProbeMu.Lock()
+	i.hostProbe[host.Host] = usable
+	i.hostProbeMu.Unlock()
+	return usable
+}
+
+// probeOnPathHost runs the version probe for a host already confirmed to be on
+// PATH and reports whether it is a functional CLI. It is the uncached half of
+// hostUsable; see that method for the rationale behind the matching.
+func (i *installer) probeOnPathHost(ctx context.Context, host SkillHost) bool {
+	if len(host.BinaryVersionArgs) == 0 || host.BinaryVersionRegex == "" {
+		return true
+	}
+	result, err := i.commandRunner.Run(
+		ctx,
+		exec.NewRunArgs(host.Host, host.BinaryVersionArgs...).
+			WithStdIn(strings.NewReader("")),
+	)
+	// A cancelled/timed-out probe is not evidence the host is a stub; do
+	// not penalize it here (context handling is the caller's concern).
+	if isContextErr(err) {
+		return true
+	}
+	return matchVersion(result.Stdout+"\n"+result.Stderr, host.BinaryVersionRegex) != ""
+}
+
+// pickSkillHost returns the first SkillHost that is a usable (functional)
+// CLI — see [installer.hostUsable], which rejects launcher stubs that merely
+// share the host's name on PATH. When none of the configured hosts is usable
+// it returns an [errorhandler.ErrorWithSuggestion] (all four fields populated
+// per the AGENTS.md completeness rule) that recommends installing GitHub
+// Copilot CLI via `azd tool install github-copilot-cli` — a single command
+// the user can copy-paste without leaving azd.
 func (i *installer) pickSkillHost(
+	ctx context.Context,
 	tool *ToolDefinition,
 ) (SkillHost, error) {
 	var checked []string
 	for _, host := range tool.SkillHosts {
-		if err := i.commandRunner.ToolInPath(host.Host); err == nil {
+		if i.hostUsable(ctx, host) {
 			return host, nil
 		}
 		checked = append(checked, host.Host)
@@ -921,6 +1381,48 @@ func (i *installer) executeStrategy(
 	return err
 }
 
+// executeUninstall runs the package-manager uninstall command for the
+// given strategy. It is only reached for strategies backed by a known
+// package manager; direct-download and unsupported strategies are
+// handled by runUninstall before this point.
+func (i *installer) executeUninstall(
+	ctx context.Context,
+	strategy *InstallStrategy,
+) error {
+	cmd, args := buildUninstallCommand(
+		strategy.PackageManager, strategy.PackageId,
+	)
+	if cmd == "" {
+		return fmt.Errorf("strategy produced an empty uninstall command")
+	}
+
+	runArgs := exec.NewRunArgs(cmd, args...)
+	_, err := i.commandRunner.Run(ctx, runArgs)
+	return err
+}
+
+// executeUninstallCommand runs an explicit uninstall command string (the
+// reverse of an InstallCommand, e.g. `azd extension uninstall <id>`).
+// Commands containing shell operators are executed through the system
+// shell; otherwise the command is split into an executable plus args.
+func (i *installer) executeUninstallCommand(
+	ctx context.Context,
+	command string,
+) error {
+	if containsShellOperators(command) {
+		return i.executeShellCommand(ctx, command)
+	}
+
+	cmd, args := splitCommand(command)
+	if cmd == "" {
+		return fmt.Errorf("empty uninstall command")
+	}
+
+	runArgs := exec.NewRunArgs(cmd, args...)
+	_, err := i.commandRunner.Run(ctx, runArgs)
+	return err
+}
+
 // buildCommand constructs the executable name and argument list for
 // the given strategy. For upgrades the package-manager upgrade
 // variant is preferred; when unavailable the install command is used
@@ -991,6 +1493,82 @@ func (i *installer) managerUnavailableError(
 		Message:    "Cannot install " + tool.Name,
 		Suggestion: suggestion,
 		Links:      links,
+	}
+}
+
+// managerUnavailableUninstallError builds an
+// [errorhandler.ErrorWithSuggestion] for the case where the package
+// manager required to remove a tool is not available on this platform.
+func (i *installer) managerUnavailableUninstallError(
+	tool *ToolDefinition,
+	strategy *InstallStrategy,
+) error {
+	return &errorhandler.ErrorWithSuggestion{
+		Err: fmt.Errorf(
+			"package manager %q not available on this platform",
+			strategy.PackageManager,
+		),
+		Message: "Cannot uninstall " + tool.Name,
+		Suggestion: fmt.Sprintf(
+			"Package manager %q is not available. "+
+				"Please remove %s manually using the tool you originally installed it with.",
+			strategy.PackageManager, tool.Name,
+		),
+	}
+}
+
+// packageManagerUninstallFailedError builds an
+// [errorhandler.ErrorWithSuggestion] for the case where the package
+// manager is present but could not remove a tool that azd still detects
+// as installed. The common cause is a self-updating CLI (for example one
+// updated via its own `update` command) that replaced the copy the
+// package manager installed, so the manager no longer has a record of the
+// package. Since neither the package manager nor azd can remove it
+// automatically, the user is guided to delete it manually.
+func (i *installer) packageManagerUninstallFailedError(
+	tool *ToolDefinition,
+	strategy *InstallStrategy,
+	cause error,
+) error {
+	removal := fmt.Sprintf("Please remove %s manually.", tool.Name)
+
+	return &errorhandler.ErrorWithSuggestion{
+		Err: fmt.Errorf(
+			"running uninstall command for %s: %w", tool.Name, cause,
+		),
+		Message: "Cannot uninstall " + tool.Name,
+		Suggestion: fmt.Sprintf(
+			"%s could not be removed with %s, which no longer has a record "+
+				"of it. This usually means the tool was updated outside the "+
+				"package manager (for example via its own update command). %s",
+			tool.Name, strategy.PackageManager, removal,
+		),
+	}
+}
+
+func (i *installer) uninstallUnsupportedError(
+	tool *ToolDefinition,
+	strategy *InstallStrategy,
+) error {
+	var links []errorhandler.ErrorLink
+	if strategy.FallbackUrl != "" {
+		links = append(links, errorhandler.ErrorLink{
+			URL:   strategy.FallbackUrl,
+			Title: tool.Name + " installation instructions",
+		})
+	}
+
+	return &errorhandler.ErrorWithSuggestion{
+		Err: fmt.Errorf(
+			"no automated uninstall available for %s", tool.Name,
+		),
+		Message: "Cannot uninstall " + tool.Name,
+		Suggestion: fmt.Sprintf(
+			"azd cannot uninstall %s automatically. "+
+				"Please remove it manually using the tool you originally installed it with.",
+			tool.Name,
+		),
+		Links: links,
 	}
 }
 
@@ -1084,6 +1662,38 @@ func (i *installer) executeDirectDownload(
 		if err := os.Chmod(destPath, 0o755); err != nil {
 			return fmt.Errorf("chmod: %w", err)
 		}
+	}
+
+	return nil
+}
+
+// executeDirectDownloadUninstall removes the artifact that
+// executeDirectDownload placed in the well-known tool install
+// directory. A missing file is treated as success so that uninstall is
+// idempotent.
+func (i *installer) executeDirectDownloadUninstall(
+	strategy *InstallStrategy,
+) error {
+	destDir, err := toolInstallDir()
+	if err != nil {
+		return fmt.Errorf("install dir: %w", err)
+	}
+
+	u, err := url.Parse(strategy.DirectDownloadUrl)
+	if err != nil {
+		return fmt.Errorf("parsing download URL: %w", err)
+	}
+	fileName := filepath.Base(u.Path)
+	if fileName == "." || fileName == "/" || fileName == "" {
+		return fmt.Errorf(
+			"cannot determine filename from download URL: %s",
+			strategy.DirectDownloadUrl,
+		)
+	}
+	destPath := filepath.Join(destDir, fileName)
+
+	if err := os.Remove(destPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("removing artifact: %w", err)
 	}
 
 	return nil
@@ -1272,6 +1882,34 @@ func buildCodeCommand(
 		args = append(args, "--force")
 	}
 	return "code", args
+}
+
+// buildUninstallCommand returns the command and arguments to remove a
+// package previously installed by the given package manager. It returns
+// an empty command for unknown managers.
+func buildUninstallCommand(
+	manager string,
+	packageID string,
+) (string, []string) {
+	switch manager {
+	case "winget":
+		return "winget", []string{
+			"uninstall",
+			"--id", packageID,
+			"--accept-source-agreements",
+			"-e",
+		}
+	case "brew":
+		return "brew", []string{"uninstall", packageID}
+	case "apt":
+		return "sudo", []string{"apt-get", "remove", "-y", packageID}
+	case "npm":
+		return "npm", []string{"uninstall", "-g", packageID}
+	case "code":
+		return "code", []string{"--uninstall-extension", packageID}
+	default:
+		return "", nil
+	}
 }
 
 // -----------------------------------------------------------------------

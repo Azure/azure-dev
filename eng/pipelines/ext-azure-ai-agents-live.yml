@@ -209,10 +209,24 @@ extends:
                   inlineScript: |
                     azd config set auth.useAzCliAuth true
                     echo "Best-effort teardown of any leaked resources..."
+                    # RFC 3339 UTC instant for the EngSys DeleteAfter cleanup tag.
+                    delete_after=$(date -u -d '+2 days' +%Y-%m-%dT%H:%M:%SZ)
                     for dir in /tmp/e2e-tests/tier2-*/; do
                       [ -d "$dir" ] || continue
                       proj=$(find "$dir" -maxdepth 2 -name azure.yaml -exec dirname {} \; | head -1)
-                      if [ -n "$proj" ]; then
-                        ( cd "$proj" && azd down --force --purge --no-prompt ) 2>&1 || true
-                      fi
+                      [ -n "$proj" ] || continue
+                      (
+                        cd "$proj"
+                        # Tag the resource group before attempting `azd down` so the
+                        # EngSys garbage collector can still reclaim it if the delete
+                        # below fails - the cleanup pipeline keys off DeleteAfter.
+                        rg=$(azd env get-values 2>/dev/null \
+                          | sed -n 's/^AZURE_RESOURCE_GROUP="\(.*\)"$/\1/p' | head -1)
+                        if [ -n "$rg" ]; then
+                          echo "Tagging $rg with DeleteAfter=$delete_after"
+                          az group update --name "$rg" \
+                            --set "tags.DeleteAfter=$delete_after" --output none || true
+                        fi
+                        azd down --force --purge --no-prompt
+                      ) 2>&1 || true
                     done

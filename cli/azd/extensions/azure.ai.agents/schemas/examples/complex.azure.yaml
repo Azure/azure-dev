@@ -1,0 +1,170 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+# Exercises the split Foundry resource surface: project deployments + network,
+# connection services, toolbox services, skill services, routine services, hosted
+# + prompt agent services, inline tools, and external file references ($ref).
+# Schema-validation fixture for the integration branch (see ../README.md).
+# File-ref paths are illustrative.
+name: foundry-complex
+
+metadata:
+  template: foundry-complex@0.0.1
+
+services:
+  ai-project:
+    host: azure.ai.project
+    # Private networking: provision a VNet-bound (network-secured) account.
+    # Omit this block for a public account.
+    network:
+      # Egress: inject the agent into a customer subnet (BYO VNet). Omit
+      # agentSubnet to use the Microsoft-managed network instead.
+      agentSubnet:
+        vnet: ${AZURE_VNET_ID}
+        name: agent-subnet
+        prefix: 192.168.0.0/24
+      # Ingress: the account private endpoint (required). Establishes the
+      # private data plane (public network access disabled).
+      peSubnet:
+        vnet: ${AZURE_VNET_ID}
+        name: pe-subnet
+        prefix: 192.168.1.0/24
+      dns:
+        resourceGroup: rg-private-dns
+        subscription: ${AZURE_DNS_SUBSCRIPTION_ID}
+    deployments:
+      - name: gpt-4o
+        model:
+          format: OpenAI
+          name: gpt-4o
+          version: "2024-08-06"
+        sku:
+          name: GlobalStandard
+          capacity: 50
+      - $ref: ./deployments/embeddings.yaml
+
+  search-conn:
+    host: azure.ai.connection
+    uses:
+      - ai-project
+    category: CognitiveSearch
+    target: https://my-search.search.windows.net
+    authType: ApiKey
+    credentials:
+      key: ${SEARCH_API_KEY}
+
+  bing-conn:
+    host: azure.ai.connection
+    uses:
+      - ai-project
+    category: ApiKey
+    target: https://api.bing.microsoft.com
+    authType: ApiKey
+
+  research-tools:
+    host: azure.ai.toolbox
+    uses:
+      - ai-project
+      - search-conn
+      - bing-conn
+    description: Tools used by research agents.
+    tools:
+      - type: bing_grounding
+        connection: bing-conn
+      - type: azure_ai_search
+        connection: search-conn
+      - type: code_interpreter
+
+  summarize:
+    host: azure.ai.skill
+    uses:
+      - research-tools
+    description: Summarize long documents.
+    instructions: ./skills/summarize.md
+    tools:
+      - code_interpreter
+
+  translate:
+    host: azure.ai.skill
+    uses:
+      - research-tools
+    $ref: ./skills/translate.yaml
+
+  researcher:
+    host: azure.ai.agent
+    project: ./agents/researcher
+    uses:
+      - ai-project
+      - search-conn
+      - bing-conn
+      - research-tools
+    kind: hosted
+    name: researcher
+    description: Hosted research agent built from source.
+    runtime:
+      stack: python
+      version: "3.12"
+    startupCommand: python main.py
+    toolboxes:
+      - research-tools
+    env:
+      LOG_LEVEL: info
+      MODEL_ENDPOINT: ${{project.endpoint}}
+    protocols:
+      - protocol: a2a
+        version: "0.2"
+    container:
+      resources:
+        cpu: "1.0"
+        memory: 2Gi
+
+  writer:
+    host: azure.ai.agent
+    project: ./agents/writer
+    uses:
+      - ai-project
+      - research-tools
+      - summarize
+    kind: hosted
+    name: writer
+    description: Prompt agent backed by the summarize skill.
+    skill: summarize
+    toolboxes:
+      - research-tools
+
+  triage:
+    host: azure.ai.agent
+    project: ./agents/triage
+    uses:
+      - ai-project
+      - research-tools
+    $ref: ./agents/triage.yaml
+
+  nightly-digest:
+    host: azure.ai.routine
+    uses:
+      - researcher
+    description: Summarize the day's documents every night.
+    triggers:
+      default:
+        type: schedule
+        cron_expression: "0 2 * * *"
+    action:
+      type: invoke_agent_responses_api
+      agent_name: researcher
+      input:
+        topic: ${DIGEST_TOPIC}
+
+  on-upload:
+    host: azure.ai.routine
+    uses:
+      - writer
+    description: React to newly uploaded blobs.
+    triggers:
+      default:
+        type: event
+        filter:
+          source: blob
+          eventType: Microsoft.Storage.BlobCreated
+    action:
+      type: invoke_agent_responses_api
+      agent_name: writer

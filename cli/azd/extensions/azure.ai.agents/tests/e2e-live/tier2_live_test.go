@@ -48,6 +48,13 @@ const (
 	invokeTimeout    = 3 * time.Minute
 	monitorTimeout   = 60 * time.Second
 	teardownTimeout  = 10 * time.Minute
+	tagTimeout       = 2 * time.Minute
+
+	// deleteAfterRetention is how far ahead the DeleteAfter cleanup tag is set
+	// on the provisioned resource group. It must exceed a full run so a healthy
+	// in-flight test is never reclaimed, with margin to inspect a failed run
+	// before the EngSys garbage collector deletes it.
+	deleteAfterRetention = 48 * time.Hour
 
 	// Event-driven tuning for the interactive init loop. promptQuiet is how long
 	// the survey UI must stop emitting before we treat the current prompt as
@@ -502,6 +509,13 @@ func (r *runner) phaseProvision(ctx context.Context) error {
 	if code != 0 {
 		return fmt.Errorf("azd provision failed (exit %d)", code)
 	}
+
+	// Stamp the resource group with a DeleteAfter cleanup tag as soon as it
+	// exists. The post-run `azd down` teardown is the primary cleanup, but it is
+	// unreliable in CI (the agent can exhaust its post-timeout budget, crash
+	// mid-delete, or lose its network connection); the tag lets the EngSys
+	// garbage collector reclaim the group regardless. Best-effort: never fails.
+	r.tagResourceGroupForCleanup(ctx)
 	return nil
 }
 
@@ -617,6 +631,75 @@ func (r *runner) runAzd(ctx context.Context, dir string, timeout time.Duration, 
 	err := cmd.Run()
 	lw.flush()
 	return buf.String(), exitCode(err)
+}
+
+// tagResourceGroupForCleanup best-effort stamps a DeleteAfter tag on the
+// provisioned resource group so the EngSys garbage collector can find and
+// delete it even when the explicit `azd down` teardown never runs. Failures are
+// logged and ignored: the tag is a safety net layered on top of teardown, not a
+// gate on the test. See the EngSys resource-management spec for the tag format.
+func (r *runner) tagResourceGroupForCleanup(ctx context.Context) {
+	vals := r.azdEnvValues(ctx)
+	rg := vals["AZURE_RESOURCE_GROUP"]
+	if rg == "" {
+		r.t.Log("skip DeleteAfter tag: AZURE_RESOURCE_GROUP not found in azd env")
+		return
+	}
+	// EngSys expects an RFC 3339 / ISO 8601 UTC instant; the group is reclaimed
+	// once that time has passed. `--set tags.DeleteAfter=` adds just this one
+	// tag, leaving azd's own tags (e.g. azd-env-name) intact.
+	deleteAfter := time.Now().UTC().Add(deleteAfterRetention).Format(time.RFC3339)
+	args := []string{"group", "update", "--name", rg,
+		"--set", "tags.DeleteAfter=" + deleteAfter, "--output", "none"}
+	if sub := vals["AZURE_SUBSCRIPTION_ID"]; sub != "" {
+		args = append(args, "--subscription", sub)
+	}
+	if out, code := r.runQuiet(ctx, r.projectDir, tagTimeout, "az", args...); code != 0 {
+		r.t.Logf("warning: could not tag resource group %q with DeleteAfter (exit %d): %s",
+			rg, code, truncate(strings.TrimSpace(out), 200))
+		return
+	}
+	r.t.Logf("tagged resource group %q with DeleteAfter=%s", rg, deleteAfter)
+}
+
+// azdEnvValues returns the project's azd environment as a key→value map. Output
+// is captured quietly (never streamed to the test log) because azd env values
+// can include provisioning secrets. A failure yields an empty map.
+func (r *runner) azdEnvValues(ctx context.Context) map[string]string {
+	out, code := r.runQuiet(ctx, r.projectDir, tagTimeout, "azd", "env", "get-values")
+	vals := map[string]string{}
+	if code != 0 {
+		r.t.Logf("warning: azd env get-values failed (exit %d)", code)
+		return vals
+	}
+	// Lines are KEY="value"; Cut on the first '=' so values containing '=' are
+	// preserved, then strip the surrounding quotes azd always emits.
+	for _, line := range strings.Split(out, "\n") {
+		key, val, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok {
+			continue
+		}
+		vals[strings.TrimSpace(key)] = strings.Trim(strings.TrimSpace(val), `"`)
+	}
+	return vals
+}
+
+// runQuiet runs name+args in dir with a timeout and returns combined output and
+// exit code WITHOUT streaming to the test log. Used for commands whose output
+// may carry secrets (`azd env get-values`) or is pure side effect (`az group
+// update`).
+func (r *runner) runQuiet(
+	ctx context.Context, dir string, timeout time.Duration, name string, args ...string,
+) (string, int) {
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	//nolint:gosec // name and args are fixed, test-controlled values.
+	cmd := exec.CommandContext(cctx, name, args...)
+	cmd.Dir = dir
+	cmd.Env = r.env
+	out, err := cmd.CombinedOutput()
+	return string(out), exitCode(err)
 }
 
 // selectByText filters a survey list by typing target, waits (event-driven) for

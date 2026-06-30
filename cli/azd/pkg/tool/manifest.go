@@ -65,6 +65,9 @@ type SkillHost struct {
 	PluginInstallCommand []string
 	// PluginUpdateCommand updates the plugin to its latest version.
 	PluginUpdateCommand []string
+	// PluginUninstallCommand removes the plugin from the host
+	// (e.g. ["plugin", "uninstall", "azure@azure-skills"]).
+	PluginUninstallCommand []string
 	// PluginListCommand lists installed plugins on the host
 	// (e.g. ["plugin", "list"]). The detector runs this command and
 	// searches the output for PluginName to decide whether the skill
@@ -80,6 +83,28 @@ type SkillHost struct {
 	// captured group as InstalledVersion). A host with an empty
 	// VersionRegex is never reported as installed.
 	VersionRegex string
+	// BinaryVersionArgs are the CLI arguments that make the host binary
+	// print its own version (e.g. ["--version"]). Together with
+	// BinaryVersionRegex these let the installer confirm the host is a
+	// genuine, functional CLI before installing through it — not merely a
+	// file of the same name on PATH. Some environments place a launcher
+	// stub on PATH (e.g. the VS Code GitHub Copilot Chat extension drops a
+	// small `copilot` stub into its globalStorage and adds that folder to
+	// the integrated terminal's PATH) that exits 0 but only prompts to
+	// install the real CLI; such a stub passes a bare PATH existence check
+	// yet cannot install the skill. When empty, the installer falls back to
+	// an existence-only check.
+	BinaryVersionArgs []string
+	// BinaryVersionRegex is a Go regular expression whose first capture
+	// group matches the host binary's own version. To avoid mistaking a
+	// launcher stub for a real CLI, anchor it to the host's `--version`
+	// banner with `(?m)^` (e.g. `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`)
+	// rather than matching a bare semver: a stub's output may contain an
+	// incidental version-shaped token (a bundled runtime version, a path
+	// build number, a URL) that must not count. The installer treats a match
+	// against the probe output as proof the host CLI is genuinely installed.
+	// When empty, the functional probe is skipped.
+	BinaryVersionRegex string
 }
 
 // InstallStrategy describes how to install a tool on a specific platform.
@@ -91,6 +116,12 @@ type InstallStrategy struct {
 	// InstallCommand is the full shell command when a simple package-manager install
 	// does not apply (e.g. "curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash").
 	InstallCommand string
+	// UninstallCommand is the full command that reverses InstallCommand
+	// when no package-manager uninstall applies (e.g.
+	// "azd extension uninstall azure.ai.agents"). When empty and no
+	// package manager is configured, azd reports that it cannot uninstall
+	// the tool automatically.
+	UninstallCommand string
 	// DirectDownloadUrl is a URL to a binary or archive that azd downloads
 	// directly. When set, azd downloads the artifact, verifies its checksum
 	// (if provided), and makes it available locally. This path is used
@@ -329,7 +360,8 @@ func azdAIExtensions() *ToolDefinition {
 		DetectCommand: "azd",
 		VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
 		InstallStrategies: allPlatforms(InstallStrategy{
-			InstallCommand: "azd extension install azure.ai.agents --source azd",
+			InstallCommand:   "azd extension install azure.ai.agents --source azd",
+			UninstallCommand: "azd extension uninstall azure.ai.agents",
 		}),
 	}
 }
@@ -345,29 +377,51 @@ func azureSkills() *ToolDefinition {
 		Website:  "https://github.com/microsoft/azure-skills",
 		SkillHosts: []SkillHost{
 			{
-				Host:                  "copilot",
-				MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
-				PluginInstallCommand:  []string{"plugin", "install", "azure@azure-skills"},
-				PluginUpdateCommand:   []string{"plugin", "update", "azure@azure-skills"},
-				PluginListCommand:     []string{"plugin", "list"},
-				PluginName:            "azure@azure-skills",
+				Host:                   "copilot",
+				MarketplaceAddCommand:  []string{"plugin", "marketplace", "add", "microsoft/azure-skills"},
+				PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
+				PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
+				PluginUninstallCommand: []string{"plugin", "uninstall", "azure@azure-skills"},
+				PluginListCommand:      []string{"plugin", "list"},
+				PluginName:             "azure@azure-skills",
 				// Sample: "  • azure@azure-skills (v1.1.70)"
 				VersionRegex: `azure@azure-skills[^\n]*?(\d+\.\d+\.\d+)`,
+				// Probe the host binary itself so a launcher stub that only
+				// prompts to install the real CLI is not mistaken for a host.
+				// Anchored to copilot's `--version` banner ("GitHub Copilot
+				// CLI 1.0.64-3") so an incidental semver cannot pass.
+				BinaryVersionArgs:  []string{"--version"},
+				BinaryVersionRegex: `(?m)^GitHub Copilot CLI\s+v?(\d+\.\d+\.\d+)`,
 			},
 			{
-				Host:                  "claude",
-				MarketplaceAddCommand: []string{"plugin", "marketplace", "add", "https://github.com/microsoft/azure-skills"},
-				PluginInstallCommand:  []string{"plugin", "install", "azure"},
-				PluginUpdateCommand:   []string{"plugin", "update", "azure@azure-skills"},
-				PluginListCommand:     []string{"plugin", "list", "azure@azure-skills"},
-				PluginName:            "azure@azure-skills",
-				// Sample (target-filtered output):
-				//   ❯ azure@azure-skills
-				//     Version: 1.1.70
-				//     Scope: user
-				// Claude only returns the queried plugin, so a single
-				// "Version: x.y.z" line is unambiguous.
-				VersionRegex: `Version:\s*v?(\d+\.\d+\.\d+)`,
+				Host: "claude",
+				MarketplaceAddCommand: []string{
+					"plugin", "marketplace", "add", "https://github.com/microsoft/azure-skills",
+				},
+				PluginInstallCommand:   []string{"plugin", "install", "azure@azure-skills"},
+				PluginUpdateCommand:    []string{"plugin", "update", "azure@azure-skills"},
+				PluginUninstallCommand: []string{"plugin", "uninstall", "azure@azure-skills"},
+				PluginListCommand:      []string{"plugin", "list", "--json"},
+				PluginName:             "azure@azure-skills",
+				// `claude plugin list` ignores a plugin-name argument, so
+				// list every plugin as JSON and anchor on the
+				// azure@azure-skills entry. Sample (--json):
+				//   [
+				//     {
+				//       "id": "azure@azure-skills",
+				//       "version": "1.1.73",
+				//       ...
+				//     }
+				//   ]
+				// "version" follows "id" within the same object, so [^}]
+				// keeps the capture scoped to the azure@azure-skills entry.
+				VersionRegex: `"id":\s*"azure@azure-skills"[^}]*?"version":\s*"v?(\d+\.\d+\.\d+)"`,
+				// Probe the host binary itself so a launcher stub that only
+				// prompts to install the real CLI is not mistaken for a host.
+				// Anchored to claude's `--version` banner ("2.1.178 (Claude
+				// Code)") so an incidental semver cannot pass.
+				BinaryVersionArgs:  []string{"--version"},
+				BinaryVersionRegex: `(?m)^v?(\d+\.\d+\.\d+)\s+\(Claude Code\)`,
 			},
 		},
 	}

@@ -1,0 +1,37 @@
+parameters:
+  - name: PublishUploadLocations
+    type: string
+  - name: StorageContainerName
+    type: string
+    default: '`$web'
+
+steps:
+  - pwsh: |
+      if (Test-Path -Path release/_manifest) {
+        Remove-Item -Path release/_manifest -Recurse -Force
+      }
+      Write-Host "Release:"
+      Get-ChildItem -Recurse release/ | Select-Object -Property Length,FullName
+    displayName: Remove _manifest folder
+
+  - task: AzurePowerShell@5
+    displayName: Upload release to storage account
+    inputs:
+      azureSubscription: 'Azure SDK Artifacts'
+      azurePowerShellVersion: LatestVersion
+      pwsh: true
+      ScriptType: InlineScript
+      Inline: |
+        $uploadLocations = "${{ parameters.PublishUploadLocations }}" -split ';'
+
+        Get-ChildItem release/
+        foreach ($folder in $uploadLocations) {
+          Write-Host "Upload to ${{ parameters.StorageContainerName }}/azd/extensions/$folder"
+          azcopy copy "release/*" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/azd/extensions/$folder" --overwrite=true
+          if ($LASTEXITCODE) {
+            Write-Error "Upload failed"
+            exit 1
+          }
+        }
+    env:
+      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'

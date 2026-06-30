@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/Connection.json",
+  "title": "Foundry project connection",
+  "description": "A project connection (matches the existing azure.ai.agent.json Connection shape). Items in a connections array may be inline or a $ref to an external file.",
+  "oneOf": [
+    { "$ref": "#/definitions/Inline" },
+    { "$ref": "FileRef.json" }
+  ],
+  "definitions": {
+    "Inline": {
+      "type": "object",
+      "required": ["name", "category", "target", "authType"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Connection name.",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{2,32}$"
+        },
+        "category": {
+          "type": "string",
+          "description": "Connection category (e.g., 'CustomKeys', 'ApiKey', 'AzureOpenAI', 'CognitiveSearch', 'RemoteTool')."
+        },
+        "target": {
+          "type": "string",
+          "description": "Target endpoint URL or ARM resource ID."
+        },
+        "authType": {
+          "type": "string",
+          "description": "Authentication type.",
+          "enum": [
+            "AAD",
+            "AccessKey",
+            "AccountKey",
+            "AgenticIdentity",
+            "AgenticIdentityToken",
+            "ApiKey",
+            "CustomKeys",
+            "ManagedIdentity",
+            "None",
+            "OAuth2",
+            "PAT",
+            "ProjectManagedIdentity",
+            "SAS",
+            "ServicePrincipal",
+            "UserEntraToken",
+            "UsernamePassword"
+          ]
+        },
+        "credentials": {
+          "type": "object",
+          "description": "Credentials. Values may contain ${VAR} (azd env, resolved client-side) or ${{...}} (Foundry server-side resolution, passed through untouched).",
+          "additionalProperties": true
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional metadata as key-value pairs.",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    }
+  }
+}

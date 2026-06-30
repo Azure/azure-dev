@@ -28,7 +28,12 @@ type mockInstaller struct {
 		tool *ToolDefinition,
 		opts ...InstallOption,
 	) (*InstallResult, error)
-	availableSkillHostsFn func(tool *ToolDefinition) []string
+	uninstallFn func(
+		ctx context.Context,
+		tool *ToolDefinition,
+		opts ...InstallOption,
+	) (*InstallResult, error)
+	availableSkillHostsFn func(ctx context.Context, tool *ToolDefinition) []string
 }
 
 func (m *mockInstaller) Install(
@@ -59,11 +64,25 @@ func (m *mockInstaller) Upgrade(
 	}, nil
 }
 
-func (m *mockInstaller) AvailableSkillHosts(tool *ToolDefinition) []string {
+func (m *mockInstaller) AvailableSkillHosts(ctx context.Context, tool *ToolDefinition) []string {
 	if m.availableSkillHostsFn != nil {
-		return m.availableSkillHostsFn(tool)
+		return m.availableSkillHostsFn(ctx, tool)
 	}
 	return nil
+}
+
+func (m *mockInstaller) Uninstall(
+	ctx context.Context,
+	tool *ToolDefinition,
+	opts ...InstallOption,
+) (*InstallResult, error) {
+	if m.uninstallFn != nil {
+		return m.uninstallFn(ctx, tool, opts...)
+	}
+	return &InstallResult{
+		Tool:    tool,
+		Success: true,
+	}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -511,6 +530,149 @@ func TestManager_UpgradeTools(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// UninstallTools
+// ---------------------------------------------------------------------------
+
+func TestManager_UninstallTools(t *testing.T) {
+	t.Parallel()
+
+	t.Run("DelegatesToInstaller", func(t *testing.T) {
+		t.Parallel()
+
+		var uninstalledIDs []string
+		inst := &mockInstaller{
+			uninstallFn: func(
+				_ context.Context,
+				tool *ToolDefinition,
+				_ ...InstallOption,
+			) (*InstallResult, error) {
+				uninstalledIDs = append(uninstalledIDs, tool.Id)
+				return &InstallResult{
+					Tool:    tool,
+					Success: true,
+				}, nil
+			},
+		}
+
+		mgr := NewManager(
+			&mockDetector{}, inst, nil,
+		)
+
+		results, err := mgr.UninstallTools(
+			t.Context(),
+			[]string{"az-cli", "github-copilot-cli"},
+		)
+
+		require.NoError(t, err)
+		require.Len(t, results, 2)
+		assert.Contains(t, uninstalledIDs, "az-cli")
+		assert.Contains(t, uninstalledIDs, "github-copilot-cli")
+	})
+
+	t.Run("ForwardsInstallOptions", func(t *testing.T) {
+		t.Parallel()
+
+		var gotOpts int
+		inst := &mockInstaller{
+			uninstallFn: func(
+				_ context.Context,
+				tool *ToolDefinition,
+				opts ...InstallOption,
+			) (*InstallResult, error) {
+				gotOpts = len(opts)
+				return &InstallResult{Tool: tool, Success: true}, nil
+			},
+		}
+
+		mgr := NewManager(&mockDetector{}, inst, nil)
+
+		_, err := mgr.UninstallTools(
+			t.Context(),
+			[]string{"az-cli"},
+			WithHosts("copilot"),
+		)
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, gotOpts, "install options must be forwarded to the installer")
+	})
+
+	t.Run("RecordsFailureWithoutAbortingBatch", func(t *testing.T) {
+		t.Parallel()
+
+		inst := &mockInstaller{
+			uninstallFn: func(
+				_ context.Context,
+				tool *ToolDefinition,
+				_ ...InstallOption,
+			) (*InstallResult, error) {
+				if tool.Id == "az-cli" {
+					return nil, errors.New("boom")
+				}
+				return &InstallResult{Tool: tool, Success: true}, nil
+			},
+		}
+
+		mgr := NewManager(&mockDetector{}, inst, nil)
+
+		results, err := mgr.UninstallTools(
+			t.Context(),
+			[]string{"az-cli", "github-copilot-cli"},
+		)
+
+		require.NoError(t, err)
+		require.Len(t, results, 2)
+		assert.Error(t, results[0].Error)
+		assert.True(t, results[1].Success)
+	})
+
+	t.Run("UninstallsSkillsBeforeHostCLIs", func(t *testing.T) {
+		t.Parallel()
+
+		var order []string
+		inst := &mockInstaller{
+			uninstallFn: func(
+				_ context.Context,
+				tool *ToolDefinition,
+				_ ...InstallOption,
+			) (*InstallResult, error) {
+				order = append(order, tool.Id)
+				return &InstallResult{Tool: tool, Success: true}, nil
+			},
+		}
+
+		mgr := NewManager(&mockDetector{}, inst, nil)
+
+		// IDs supplied in manifest order (host CLI before skill), which is
+		// what `--all` and the interactive picker produce. The skill must
+		// still be uninstalled first so its host CLI is on PATH to remove
+		// it; otherwise removing the host first would orphan the skill.
+		_, err := mgr.UninstallTools(
+			t.Context(),
+			[]string{"github-copilot-cli", "azure-skills"},
+		)
+
+		require.NoError(t, err)
+		require.Equal(t, []string{"azure-skills", "github-copilot-cli"}, order)
+	})
+
+	t.Run("UnknownIDReturnsError", func(t *testing.T) {
+		t.Parallel()
+
+		mgr := NewManager(
+			&mockDetector{}, &mockInstaller{}, nil,
+		)
+
+		results, err := mgr.UninstallTools(
+			t.Context(),
+			[]string{"nonexistent"},
+		)
+
+		require.Error(t, err)
+		assert.Nil(t, results)
+	})
+}
+
+// ---------------------------------------------------------------------------
 // Manager — UpdateChecker delegation methods
 // ---------------------------------------------------------------------------
 
@@ -642,13 +804,13 @@ func TestManager_UpgradeAll(t *testing.T) {
 
 func TestManager_AvailableSkillHosts(t *testing.T) {
 	installer := &mockInstaller{
-		availableSkillHostsFn: func(_ *ToolDefinition) []string {
+		availableSkillHostsFn: func(_ context.Context, _ *ToolDefinition) []string {
 			return []string{"copilot", "claude"}
 		},
 	}
 	m := NewManager(&mockDetector{}, installer, nil)
 
-	got := m.AvailableSkillHosts(&ToolDefinition{
+	got := m.AvailableSkillHosts(t.Context(), &ToolDefinition{
 		Id:       "azure-skills",
 		Category: ToolCategorySkill,
 	})

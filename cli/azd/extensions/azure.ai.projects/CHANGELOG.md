@@ -1,5 +1,11 @@
 # Release History
 
+## Unreleased
+
+### Features Added
+
+- The `azure.ai.projects` extension now registers the `azure.ai.project` service-target host so `azd deploy`/`azd up` can walk the Foundry project service in `azure.yaml`. The project and its model deployments are provisioned by the built-in `microsoft.foundry` Bicep provider, so the deploy step is a no-op that owns the host.
+
 ## 0.1.0-preview (2026-05-28)
 
 Initial preview release of the Foundry Projects extension.

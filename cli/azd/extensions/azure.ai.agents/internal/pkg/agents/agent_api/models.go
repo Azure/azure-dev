@@ -211,54 +211,34 @@ type CodeConfigurationAPI struct {
 	DependencyResolution string   `json:"dependency_resolution,omitempty"`
 }
 
-// HostedAgentDefinition represents a hosted agent that can be either container-based
-// (with Image) or code-based (with CodeConfiguration). The protocol versions JSON
-// field name differs: container uses "container_protocol_versions" while code uses
-// "protocol_versions". Custom marshaling handles this automatically.
-type HostedAgentDefinition struct {
-	AgentDefinition
-	ProtocolVersions     []ProtocolVersionRecord `json:"-"` // marshaled dynamically based on deploy mode
-	CPU                  string                  `json:"cpu"`
-	Memory               string                  `json:"memory"`
-	EnvironmentVariables map[string]string       `json:"environment_variables,omitempty"`
-	Image                string                  `json:"image,omitempty"`              // container deploy only
-	CodeConfiguration    *CodeConfigurationAPI   `json:"code_configuration,omitempty"` // code deploy only
+// ContainerConfigurationAPI represents the container_configuration block in the API request.
+// Used for container deploy mode to specify the pre-built container image.
+type ContainerConfigurationAPI struct {
+	Image string `json:"image"`
 }
 
-// MarshalJSON implements custom JSON marshaling for HostedAgentDefinition.
-// Code deploy agents use "protocol_versions"; container agents use "container_protocol_versions".
-func (d HostedAgentDefinition) MarshalJSON() ([]byte, error) {
-	type Alias HostedAgentDefinition
-
-	if d.CodeConfiguration != nil {
-		// Code deploy: use protocol_versions
-		return json.Marshal(struct {
-			Alias
-			ProtocolVersions []ProtocolVersionRecord `json:"protocol_versions"`
-		}{
-			Alias:            Alias(d),
-			ProtocolVersions: d.ProtocolVersions,
-		})
-	}
-
-	// Container deploy: use container_protocol_versions
-	return json.Marshal(struct {
-		Alias
-		ContainerProtocolVersions []ProtocolVersionRecord `json:"container_protocol_versions"`
-	}{
-		Alias:                     Alias(d),
-		ContainerProtocolVersions: d.ProtocolVersions,
-	})
+// HostedAgentDefinition represents a hosted agent that can be either container-based
+// (with ContainerConfiguration) or code-based (with CodeConfiguration).
+// Both deploy modes now use "protocol_versions" in the serialized JSON.
+type HostedAgentDefinition struct {
+	AgentDefinition
+	ProtocolVersions       []ProtocolVersionRecord    `json:"protocol_versions,omitempty"`
+	CPU                    string                     `json:"cpu"`
+	Memory                 string                     `json:"memory"`
+	EnvironmentVariables   map[string]string          `json:"environment_variables,omitempty"`
+	ContainerConfiguration *ContainerConfigurationAPI `json:"container_configuration,omitempty"` // container deploy only
+	CodeConfiguration      *CodeConfigurationAPI      `json:"code_configuration,omitempty"`      // code deploy only
+	Image                  string                     `json:"image,omitempty"`                   // deprecated: for backward compat deserialization only
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling for HostedAgentDefinition.
-// It reads protocol versions from either "protocol_versions" or "container_protocol_versions".
+// It reads protocol versions from either "protocol_versions" or legacy "container_protocol_versions",
+// and image from either "container_configuration.image" or legacy top-level "image".
 func (d *HostedAgentDefinition) UnmarshalJSON(data []byte) error {
 	type Alias HostedAgentDefinition
 
 	var raw struct {
 		Alias
-		ProtocolVersions          []ProtocolVersionRecord `json:"protocol_versions"`
 		ContainerProtocolVersions []ProtocolVersionRecord `json:"container_protocol_versions"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -266,11 +246,18 @@ func (d *HostedAgentDefinition) UnmarshalJSON(data []byte) error {
 	}
 
 	*d = HostedAgentDefinition(raw.Alias)
-	if len(raw.ProtocolVersions) > 0 {
-		d.ProtocolVersions = raw.ProtocolVersions
-	} else {
+
+	// Backward compat: if protocol_versions is empty, fall back to legacy container_protocol_versions
+	if len(d.ProtocolVersions) == 0 && len(raw.ContainerProtocolVersions) > 0 {
 		d.ProtocolVersions = raw.ContainerProtocolVersions
 	}
+
+	// Backward compat: if container_configuration is not set but legacy top-level image is, migrate it
+	if d.ContainerConfiguration == nil && d.Image != "" {
+		d.ContainerConfiguration = &ContainerConfigurationAPI{Image: d.Image}
+		d.Image = "" // clear deprecated field
+	}
+
 	return nil
 }
 

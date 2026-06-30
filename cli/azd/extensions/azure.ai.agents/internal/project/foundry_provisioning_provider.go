@@ -387,19 +387,19 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 	}
 
 	if p.subID, err = get(envKeySubscriptionID); err != nil || p.subID == "" {
-		return exterrors.Dependency(
-			exterrors.CodeMissingAzureSubscription,
-			fmt.Sprintf("%s is required but not set in azd environment %q", envKeySubscriptionID, p.envName),
-			fmt.Sprintf("run `azd env set %s <subscription-id>`", envKeySubscriptionID),
-		)
+		// Not set yet: prompt for a subscription (matching core `azd up`) and
+		// persist it, instead of failing. Under `--no-prompt` this surfaces an
+		// actionable "run `azd env set ...`" error so CI/scripts stay deterministic.
+		if err := p.promptSubscription(ctx); err != nil {
+			return err
+		}
 	}
 
 	if p.location, err = get(envKeyLocation); err != nil || p.location == "" {
-		return exterrors.Dependency(
-			exterrors.CodeMissingAzureLocation,
-			fmt.Sprintf("%s is required but not set in azd environment %q", envKeyLocation, p.envName),
-			fmt.Sprintf("run `azd env set %s <region>`", envKeyLocation),
-		)
+		// Not set yet: prompt for a location and persist it, instead of failing.
+		if err := p.promptLocation(ctx); err != nil {
+			return err
+		}
 	}
 
 	if p.rgName, err = get(envKeyResourceGroup); err != nil || p.rgName == "" {
@@ -424,6 +424,85 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 		log.Printf("[debug] %s not set; skipping developer role assignment", envKeyPrincipalID)
 	}
 
+	return nil
+}
+
+// promptSubscription asks the user to select an Azure subscription when
+// AZURE_SUBSCRIPTION_ID is not set, then persists the choice to the azd
+// environment and updates p.subID. This mirrors core `azd up`, which prompts
+// for a subscription instead of failing.
+//
+// Under `--no-prompt` the azd host returns a "prompt required" error; that case
+// is surfaced as an actionable Dependency error naming the env var to set so
+// headless callers stay deterministic. Tenant resolution is left to
+// ensureCredential, which looks up the user access tenant from the subscription.
+func (p *FoundryProvisioningProvider) promptSubscription(ctx context.Context) error {
+	resp, err := p.azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("subscription selection was cancelled")
+		}
+		if exterrors.IsPromptRequired(err) {
+			return exterrors.Dependency(
+				exterrors.CodeMissingAzureSubscription,
+				fmt.Sprintf("%s is required but not set in azd environment %q", envKeySubscriptionID, p.envName),
+				fmt.Sprintf("run `azd env set %s <subscription-id>`, or run interactively to pick one",
+					envKeySubscriptionID),
+			)
+		}
+		return exterrors.Dependency(
+			exterrors.CodeMissingAzureSubscription,
+			fmt.Sprintf("failed to select an Azure subscription: %s", err),
+			"retry, or run interactively to pick one",
+		)
+	}
+
+	p.subID = resp.GetSubscription().GetId()
+	return p.setEnv(ctx, envKeySubscriptionID, p.subID)
+}
+
+// promptLocation asks the user to select an Azure location when AZURE_LOCATION
+// is not set, then persists the choice and updates p.location. It mirrors
+// promptSubscription's cancellation and `--no-prompt` handling. The prompt is
+// scoped to the resolved subscription; no region allow-list is applied, matching
+// core `azd up`.
+func (p *FoundryProvisioningProvider) promptLocation(ctx context.Context) error {
+	resp, err := p.azdClient.Prompt().PromptLocation(ctx, &azdext.PromptLocationRequest{
+		AzureContext: &azdext.AzureContext{
+			Scope: &azdext.AzureScope{SubscriptionId: p.subID, TenantId: p.tenantID},
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("location selection was cancelled")
+		}
+		if exterrors.IsPromptRequired(err) {
+			return exterrors.Dependency(
+				exterrors.CodeMissingAzureLocation,
+				fmt.Sprintf("%s is required but not set in azd environment %q", envKeyLocation, p.envName),
+				fmt.Sprintf("run `azd env set %s <region>`, or run interactively to pick one", envKeyLocation),
+			)
+		}
+		return exterrors.Dependency(
+			exterrors.CodeMissingAzureLocation,
+			fmt.Sprintf("failed to select an Azure location: %s", err),
+			"retry, or run interactively to pick one",
+		)
+	}
+
+	p.location = resp.GetLocation().GetName()
+	return p.setEnv(ctx, envKeyLocation, p.location)
+}
+
+// setEnv persists a single key/value to the active azd environment.
+func (p *FoundryProvisioningProvider) setEnv(ctx context.Context, key, value string) error {
+	if _, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: p.envName,
+		Key:     key,
+		Value:   value,
+	}); err != nil {
+		return fmt.Errorf("persist %s to azd environment %q: %w", key, p.envName, err)
+	}
 	return nil
 }
 

@@ -1095,11 +1095,13 @@ func (p *AgentServiceTargetProvider) Deploy(
 // shouldUsePreBuiltImage determines whether to use a pre-built image.
 //
 // Behavior:
-//   - If no image is configured in agent.yaml, always build from Dockerfile.
+//   - If no image is configured in the loaded agent definition, always build from Dockerfile.
+//     The image usually comes from the azure.yaml service image field, but can come from
+//     a legacy agent.yaml fallback.
 //   - In non-interactive mode (--no-prompt), the prompt returns the default
 //     selection (index 0 = build from Dockerfile) automatically.
 //   - In interactive mode, prompt the user. The default is to build, so users
-//     who happen to have an image in agent.yaml are not silently switched onto
+//     who happen to have an image configured are not silently switched onto
 //     the pre-built path.
 func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 	ctx context.Context,
@@ -1111,7 +1113,7 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 	}
 
 	if p.shouldSkipACRForEnvironment(ctx) {
-		log.Printf("AZD_AGENT_SKIP_ACR=true: using pre-built image from agent.yaml")
+		log.Printf("AZD_AGENT_SKIP_ACR=true: using pre-built image from agent definition")
 		return true, nil
 	}
 
@@ -1414,7 +1416,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 				exterrors.CodeMissingPublishedContainer,
 				"published container artifact not found: no remote container artifact was found in service "+
 					"publish artifacts and no pre-built image was specified",
-				"either set 'image' in agent.yaml, "+
+				"either set 'image' on the azure.yaml agent service, "+
 					"or run 'azd package' and 'azd publish' to build from a Dockerfile",
 			)
 		}

@@ -382,9 +382,8 @@ func lookupAcrResourceId(
 // configureFoundryProjectEnv sets all Foundry project environment variables and discovers
 // ACR and AppInsights connections. This is the shared implementation used by both init flows.
 // When skipACR is true, ACR connection discovery and configuration is skipped (used for code deploy).
-// When bicepless is true, both ACR and AppInsights connection discovery
-// and prompting are skipped after the basic project identity env vars
-// are seeded; the extension's provisioning provider owns those resources.
+// When bicepless is true, AppInsights is left to the provisioning provider; ACR is still configured
+// for a container agent (skipACR false), since the provider does not create one for an existing project.
 func configureFoundryProjectEnv(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -429,7 +428,12 @@ func configureFoundryProjectEnv(
 	}
 
 	if bicepless {
-		return nil
+		// The provisioning provider owns ACR/AppInsights for a new project, but a
+		// container agent on an existing project needs a registry it won't create.
+		if skipACR {
+			return nil
+		}
+		return configureExistingProjectAcr(ctx, azdClient, credential, envName, project, subscriptionId)
 	}
 
 	// Discover and configure connections (ACR, AppInsights)
@@ -475,6 +479,39 @@ func configureFoundryProjectEnv(
 	}
 
 	return nil
+}
+
+// configureExistingProjectAcr discovers the ACR connections on an existing
+// Foundry project and runs the ACR selection/question for a container agent in
+// the bicepless flow. A failure to list connections is non-fatal: configureAcrConnection
+// then prompts for a login server (or to create one during provision).
+func configureExistingProjectAcr(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	credential azcore.TokenCredential,
+	envName string,
+	project FoundryProjectInfo,
+	subscriptionId string,
+) error {
+	var acrConnections []azure.Connection
+	foundryClient, err := azure.NewFoundryProjectsClient(project.AccountName, project.ProjectName, credential)
+	if err != nil {
+		return fmt.Errorf("creating Foundry client: %w", err)
+	}
+	connections, err := foundryClient.GetAllConnections(ctx)
+	if err != nil {
+		fmt.Printf(
+			"Could not get Microsoft Foundry project connections: %v. "+
+				"You will be asked to provide a container registry.\n", err)
+	} else {
+		for _, conn := range connections {
+			if conn.Type == azure.ConnectionTypeContainerRegistry {
+				acrConnections = append(acrConnections, conn)
+			}
+		}
+	}
+
+	return configureAcrConnection(ctx, azdClient, credential, envName, subscriptionId, acrConnections)
 }
 
 // configureAcrConnection handles ACR connection selection and env var setting.

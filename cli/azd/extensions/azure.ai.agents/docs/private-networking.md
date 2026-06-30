@@ -23,7 +23,7 @@ services:
     deployments:
       - name: gpt-4o-mini
         model: { format: OpenAI, name: gpt-4o-mini, version: "2024-07-18" }
-        sku: { name: GlobalStandard, capacity: 10 }
+        sku: { name: GlobalStandard, capacity: 50 }
     network:
       # ----- Egress: agent runtime network (pick ONE) -----
       #

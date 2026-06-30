@@ -1175,6 +1175,7 @@ func resolveModelDeployments(
 		ModelName:    model.Name,
 		Options: &azdext.AiModelDeploymentOptions{
 			Locations: []string{location},
+			Capacity:  new(defaultDeploymentCapacity),
 		},
 		Quota: &azdext.QuotaCheckOptions{
 			MinRemainingCapacity: 1,

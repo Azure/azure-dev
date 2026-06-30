@@ -214,16 +214,16 @@ func TestInstall_WithInstallCommand(t *testing.T) {
 		Id:       "custom-tool",
 		Name:     "Custom Tool",
 		Category: ToolCategoryCLI,
-		InstallStrategies: map[string]InstallStrategy{
-			"windows": {
+		InstallStrategies: map[string][]InstallStrategy{
+			"windows": {{
 				InstallCommand: "curl -sL https://example.com/install.sh",
-			},
-			"darwin": {
+			}},
+			"darwin": {{
 				InstallCommand: "curl -sL https://example.com/install.sh",
-			},
-			"linux": {
+			}},
+			"linux": {{
 				InstallCommand: "curl -sL https://example.com/install.sh",
-			},
+			}},
 		},
 	}
 
@@ -299,7 +299,7 @@ func TestInstall_NoStrategyForPlatform(t *testing.T) {
 		Id:                "no-strategy",
 		Name:              "No Strategy",
 		Category:          ToolCategoryCLI,
-		InstallStrategies: map[string]InstallStrategy{},
+		InstallStrategies: map[string][]InstallStrategy{},
 	}
 
 	result, err := inst.Install(t.Context(), tool)
@@ -687,6 +687,7 @@ func TestBuildManagerCommand(t *testing.T) {
 		manager   string
 		packageID string
 		upgrade   bool
+		cask      bool
 		expectCmd string
 		expectArg string // action keyword to find in args
 	}{
@@ -721,6 +722,24 @@ func TestBuildManagerCommand(t *testing.T) {
 			upgrade:   true,
 			expectCmd: "brew",
 			expectArg: "upgrade",
+		},
+		{
+			name:      "BrewCaskInstall",
+			manager:   "brew",
+			packageID: "copilot-cli",
+			upgrade:   false,
+			cask:      true,
+			expectCmd: "brew",
+			expectArg: "--cask",
+		},
+		{
+			name:      "BrewCaskUpgrade",
+			manager:   "brew",
+			packageID: "copilot-cli",
+			upgrade:   true,
+			cask:      true,
+			expectCmd: "brew",
+			expectArg: "--cask",
 		},
 		{
 			name:      "AptInstall",
@@ -784,7 +803,7 @@ func TestBuildManagerCommand(t *testing.T) {
 			t.Parallel()
 
 			cmd, args := buildManagerCommand(
-				tt.manager, tt.packageID, tt.upgrade,
+				tt.manager, tt.packageID, tt.upgrade, tt.cask,
 			)
 
 			assert.Equal(t, tt.expectCmd, cmd)
@@ -2295,6 +2314,237 @@ func TestUninstall_NonSkill_UsesPackageManagerUninstall(t *testing.T) {
 	assert.Contains(t, capturedArgs, "@test/tool")
 }
 
+// copilotMultiMethodTool returns a github-copilot-cli-like tool with the
+// multi-method matrix on every platform (npm, brew cask, install script).
+func copilotMultiMethodTool() *ToolDefinition {
+	return &ToolDefinition{
+		Id:            "github-copilot-cli",
+		Name:          "GitHub Copilot CLI",
+		DetectCommand: "copilot",
+		Category:      ToolCategoryCLI,
+		InstallStrategies: allPlatforms(
+			InstallStrategy{PackageManager: "npm", PackageId: "@github/copilot"},
+			InstallStrategy{PackageManager: "brew", PackageId: "copilot-cli", Cask: true},
+			InstallStrategy{InstallCommand: "curl -fsSL https://gh.io/copilot-install | bash"},
+		),
+	}
+}
+
+// TestUninstall_MultiMethod_NpmOwns_UninstallsViaNpm verifies detect-then-remove
+// picks the package manager that actually has the tool: npm reports it
+// installed, so azd uninstalls via npm even though npm is not the first
+// strategy on every platform.
+func TestUninstall_MultiMethod_NpmOwns_UninstallsViaNpm(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	// Detection: npm has a record of the package.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "ls")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "@github/copilot@1.0.0"})
+
+	var capturedArgs []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "uninstall")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		capturedArgs = args.Args
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	det := &mockDetector{detectToolFn: func(
+		_ context.Context, tool *ToolDefinition,
+	) (*ToolStatus, error) {
+		return &ToolStatus{Tool: tool, Installed: false}, nil
+	}}
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+
+	result, err := inst.Uninstall(t.Context(), copilotMultiMethodTool())
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success, "result.Error=%v", result.Error)
+	assert.Contains(t, capturedArgs, "uninstall")
+	assert.Contains(t, capturedArgs, "@github/copilot")
+}
+
+// TestUninstall_MultiMethod_NoManagerOwns_GuidesBinaryRemoval verifies the
+// detect-then-remove fallback: no package manager has a record of the tool but
+// it is still detected on PATH (a script/direct install), so azd names the
+// actual binary to remove.
+func TestUninstall_MultiMethod_NoManagerOwns_GuidesBinaryRemoval(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+	// Detection: npm does NOT have the package (exit non-zero).
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" && slices.Contains(args.Args, "ls")
+	}).RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 1, Stdout: "(empty)"}, errors.New("exit status 1")
+	})
+
+	// The tool is still detected on PATH (installed via the script).
+	det := installedDetector("1.2.3")
+
+	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
+	inst.(*installer).lookPath = func(string) (string, error) {
+		return "/home/dev/.local/bin/copilot", nil
+	}
+
+	result, err := inst.Uninstall(t.Context(), copilotMultiMethodTool())
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+
+	var ews *errorhandler.ErrorWithSuggestion
+	require.ErrorAs(t, result.Error, &ews)
+	assert.Contains(t, ews.Suggestion, "install script")
+	assert.Contains(t, ews.Suggestion, "/home/dev/.local/bin/copilot")
+}
+
+// TestManagerHasPackage verifies the per-manager "is installed" probes.
+func TestManagerHasPackage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		strategy InstallStrategy
+		respond  func(*mockexec.MockCommandRunner)
+		want     bool
+	}{
+		{
+			name:     "NpmInstalled",
+			strategy: InstallStrategy{PackageManager: "npm", PackageId: "@github/copilot"},
+			respond: func(r *mockexec.MockCommandRunner) {
+				r.When(func(a exec.RunArgs, _ string) bool { return a.Cmd == "npm" }).
+					Respond(exec.RunResult{ExitCode: 0, Stdout: "@github/copilot@1.0.0"})
+			},
+			want: true,
+		},
+		{
+			name:     "NpmNotInstalled",
+			strategy: InstallStrategy{PackageManager: "npm", PackageId: "@github/copilot"},
+			respond: func(r *mockexec.MockCommandRunner) {
+				r.When(func(a exec.RunArgs, _ string) bool { return a.Cmd == "npm" }).
+					RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+						return exec.RunResult{ExitCode: 1, Stdout: "(empty)"}, errors.New("exit 1")
+					})
+			},
+			want: false,
+		},
+		{
+			name:     "BrewCaskInstalled",
+			strategy: InstallStrategy{PackageManager: "brew", PackageId: "copilot-cli", Cask: true},
+			respond: func(r *mockexec.MockCommandRunner) {
+				r.When(func(a exec.RunArgs, _ string) bool { return a.Cmd == "brew" }).
+					Respond(exec.RunResult{ExitCode: 0, Stdout: "/opt/homebrew/.../copilot"})
+			},
+			want: true,
+		},
+		{
+			name:     "BrewCaskNotInstalled",
+			strategy: InstallStrategy{PackageManager: "brew", PackageId: "copilot-cli", Cask: true},
+			respond: func(r *mockexec.MockCommandRunner) {
+				r.When(func(a exec.RunArgs, _ string) bool { return a.Cmd == "brew" }).
+					RespondFn(func(_ exec.RunArgs) (exec.RunResult, error) {
+						return exec.RunResult{ExitCode: 1}, errors.New("not installed")
+					})
+			},
+			want: false,
+		},
+		{
+			name:     "WingetInstalled",
+			strategy: InstallStrategy{PackageManager: "winget", PackageId: "GitHub.Copilot"},
+			respond: func(r *mockexec.MockCommandRunner) {
+				r.When(func(a exec.RunArgs, _ string) bool { return a.Cmd == "winget" }).
+					Respond(exec.RunResult{ExitCode: 0, Stdout: "GitHub Copilot  GitHub.Copilot  1.0"})
+			},
+			want: true,
+		},
+		{
+			name:     "WingetNotInstalled",
+			strategy: InstallStrategy{PackageManager: "winget", PackageId: "GitHub.Copilot"},
+			respond: func(r *mockexec.MockCommandRunner) {
+				r.When(func(a exec.RunArgs, _ string) bool { return a.Cmd == "winget" }).
+					Respond(exec.RunResult{ExitCode: 0, Stdout: "No installed package found matching input criteria."})
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			runner := mockexec.NewMockCommandRunner()
+			tt.respond(runner)
+			inst := NewInstaller(runner, NewPlatformDetector(runner), &mockDetector{})
+			got := inst.(*installer).managerHasPackage(t.Context(), &tt.strategy)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestSelfManagedRemovalSuggestion verifies the manual-removal guidance both
+// when the binary path is resolvable and when it is not.
+func TestSelfManagedRemovalSuggestion(t *testing.T) {
+	t.Parallel()
+
+	tool := &ToolDefinition{Name: "GitHub Copilot CLI", DetectCommand: "copilot"}
+
+	withPath := selfManagedRemovalSuggestion(tool, "/home/dev/.local/bin/copilot")
+	assert.Contains(t, withPath, "install script")
+	assert.Contains(t, withPath, "/home/dev/.local/bin/copilot")
+	assert.Contains(t, withPath, "Remove it manually")
+
+	noPath := selfManagedRemovalSuggestion(tool, "")
+	assert.Contains(t, noPath, `"copilot"`)
+	assert.Contains(t, noPath, "from your PATH manually")
+}
+
+// TestIsSystemBinaryPath verifies detection of system-owned binary locations.
+func TestIsSystemBinaryPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"/usr/local/bin/copilot", true},
+		{"/usr/bin/copilot", true},
+		{"/opt/tools/bin/copilot", true},
+		{"/bin/sh", true},
+		{"/Library/Foo/copilot", true},
+		{"/home/dev/.local/bin/copilot", false},
+		{`C:\Users\dev\copilot.exe`, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, isSystemBinaryPath(tt.path))
+		})
+	}
+}
+
 func TestUninstall_NonSkill_StillDetectedReportsFailure(t *testing.T) {
 	t.Parallel()
 
@@ -2914,22 +3164,24 @@ func TestBuildUninstallCommand(t *testing.T) {
 		name      string
 		manager   string
 		packageID string
+		cask      bool
 		expectCmd string
 		expectArg string // action keyword to find in args
 	}{
-		{"Winget", "winget", "Microsoft.AzureCLI", "winget", "uninstall"},
-		{"Brew", "brew", "azure-cli", "brew", "uninstall"},
-		{"Apt", "apt", "azure-cli", "sudo", "remove"},
-		{"Npm", "npm", "@azure/mcp", "npm", "uninstall"},
-		{"Code", "code", "ms-azuretools.vscode-bicep", "code", "--uninstall-extension"},
-		{"UnknownManagerReturnsEmpty", "unknown-mgr", "pkg", "", ""},
+		{"Winget", "winget", "Microsoft.AzureCLI", false, "winget", "uninstall"},
+		{"Brew", "brew", "azure-cli", false, "brew", "uninstall"},
+		{"BrewCask", "brew", "copilot-cli", true, "brew", "--cask"},
+		{"Apt", "apt", "azure-cli", false, "sudo", "remove"},
+		{"Npm", "npm", "@azure/mcp", false, "npm", "uninstall"},
+		{"Code", "code", "ms-azuretools.vscode-bicep", false, "code", "--uninstall-extension"},
+		{"UnknownManagerReturnsEmpty", "unknown-mgr", "pkg", false, "", ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			cmd, args := buildUninstallCommand(tt.manager, tt.packageID)
+			cmd, args := buildUninstallCommand(tt.manager, tt.packageID, tt.cask)
 
 			assert.Equal(t, tt.expectCmd, cmd)
 			if tt.expectArg != "" {
@@ -3196,8 +3448,8 @@ func TestUninstall_NoStrategyForPlatform(t *testing.T) {
 		Id:       "no-strategy",
 		Name:     "No Strategy Tool",
 		Category: ToolCategoryCLI,
-		InstallStrategies: map[string]InstallStrategy{
-			"plan9": {PackageManager: "npm", PackageId: "x"},
+		InstallStrategies: map[string][]InstallStrategy{
+			"plan9": {{PackageManager: "npm", PackageId: "x"}},
 		},
 	}
 

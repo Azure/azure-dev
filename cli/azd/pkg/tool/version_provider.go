@@ -55,17 +55,20 @@ func (p *PackageManagerVersionProvider) GetLatestVersion(
 	ctx context.Context,
 	tool *ToolDefinition,
 ) (string, error) {
-	strategy, ok := tool.InstallStrategies[runtime.GOOS]
-	if !ok {
-		return "", fmt.Errorf(
-			"no install strategy for %s on %s",
-			tool.Id, runtime.GOOS,
-		)
+	// Pick the first strategy on this platform that names a package manager.
+	var strategy InstallStrategy
+	found := false
+	for _, s := range tool.InstallStrategies[runtime.GOOS] {
+		if s.PackageManager != "" && s.PackageId != "" {
+			strategy = s
+			found = true
+			break
+		}
 	}
-
-	if strategy.PackageManager == "" || strategy.PackageId == "" {
+	if !found {
 		return "", fmt.Errorf(
-			"no package manager configured for %s", tool.Id,
+			"no package manager configured for %s on %s",
+			tool.Id, runtime.GOOS,
 		)
 	}
 
@@ -151,13 +154,17 @@ func parseWingetVersion(output string) (string, error) {
 	)
 }
 
-// brewInfoJSON models the relevant subset of `brew info --json=v2`.
+// brewInfoJSON models the relevant subset of `brew info --json=v2`. brew
+// returns separate arrays for formulae and casks; the Copilot CLI is a cask.
 type brewInfoJSON struct {
 	Formulae []struct {
 		Versions struct {
 			Stable string `json:"stable"`
 		} `json:"versions"`
 	} `json:"formulae"`
+	Casks []struct {
+		Version string `json:"version"`
+	} `json:"casks"`
 }
 
 // queryBrew runs `brew info <pkg> --json=v2` and parses the stable
@@ -185,14 +192,18 @@ func (p *PackageManagerVersionProvider) queryBrew(
 		)
 	}
 
-	if len(info.Formulae) == 0 ||
-		info.Formulae[0].Versions.Stable == "" {
-		return "", fmt.Errorf(
-			"no stable version found for %s in brew", packageID,
-		)
+	if len(info.Formulae) > 0 &&
+		info.Formulae[0].Versions.Stable != "" {
+		return info.Formulae[0].Versions.Stable, nil
 	}
 
-	return info.Formulae[0].Versions.Stable, nil
+	if len(info.Casks) > 0 && info.Casks[0].Version != "" {
+		return info.Casks[0].Version, nil
+	}
+
+	return "", fmt.Errorf(
+		"no stable version found for %s in brew", packageID,
+	)
 }
 
 // queryApt runs `apt-cache policy <pkg>` and parses the Candidate
@@ -467,9 +478,9 @@ func SelectVersionProvider(
 		return nil
 
 	default:
-		// CLI and Server tools: check if a package manager
-		// strategy is available for the current platform.
-		if strategy, ok := tool.InstallStrategies[runtime.GOOS]; ok {
+		// CLI and Server tools: check if any package-manager strategy for
+		// the current platform is queryable for the latest version.
+		for _, strategy := range tool.InstallStrategies[runtime.GOOS] {
 			if strategy.PackageManager != "" &&
 				strategy.PackageId != "" &&
 				isQueryableManager(strategy.PackageManager) {

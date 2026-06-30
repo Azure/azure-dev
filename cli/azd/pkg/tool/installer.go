@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -188,6 +189,9 @@ type installer struct {
 	// retries (doubled each attempt). Defaults to 1s; tests may shorten
 	// it to keep the suite fast.
 	retryBackoff time.Duration
+	// lookPath resolves an executable's absolute path on PATH. Defaults to
+	// os/exec.LookPath; tests may substitute a deterministic resolver.
+	lookPath func(string) (string, error)
 }
 
 // httpDoer is an interface satisfied by [*http.Client] for testing.
@@ -209,6 +213,7 @@ func NewInstaller(
 		detector:         detector,
 		httpClient:       http.DefaultClient,
 		retryBackoff:     time.Second,
+		lookPath:         osexec.LookPath,
 	}
 }
 
@@ -226,6 +231,7 @@ func NewInstallerWithHTTPClient(
 		detector:         detector,
 		httpClient:       httpClient,
 		retryBackoff:     time.Second,
+		lookPath:         osexec.LookPath,
 	}
 }
 
@@ -314,7 +320,8 @@ func (i *installer) runUninstall(
 		return result, nil
 	}
 
-	// 2. Select the strategy used to install on this platform.
+	// 2. Select the strategy used to install on this platform. SelectStrategy
+	//    returns the install-preferred (first available) strategy.
 	strategy := i.platformDetector.SelectStrategy(tool, platform)
 	if strategy == nil {
 		result.Error = fmt.Errorf(
@@ -323,6 +330,26 @@ func (i *installer) runUninstall(
 		)
 		result.Duration = time.Since(start)
 		return result, nil
+	}
+
+	// 2a. For tools with several install methods, the install-preferred
+	//     strategy is not necessarily the one that installed the tool. Detect
+	//     which method actually owns the install and uninstall via that
+	//     (detect-then-remove).
+	if strategies := i.platformDetector.SelectStrategies(
+		tool, platform,
+	); len(strategies) > 1 {
+		if detected := i.detectInstallingStrategy(
+			ctx, strategies, platform,
+		); detected != nil {
+			strategy = detected
+		} else {
+			// No package manager has a record of the tool. If it is still
+			// detected on PATH it was installed by a self-contained method
+			// (install script / direct download); guide the user to the
+			// binary. Otherwise it is already gone.
+			return i.uninstallWithoutManagerOwner(ctx, tool, start)
+		}
 	}
 
 	// 3. Execute the uninstall using the matching mechanism. An explicit
@@ -463,6 +490,162 @@ func (i *installer) runUninstall(
 	result.Success = true
 	result.Duration = time.Since(start)
 	return result, nil
+}
+
+// detectInstallingStrategy returns the strategy whose package manager currently
+// has a record of the tool installed, or nil when no package-manager strategy
+// owns it. Strategies are checked in list order, so the preferred manager wins
+// when several report the tool. A nil result combined with the tool still being
+// detected on PATH indicates a self-contained install (e.g. the install
+// script) that no package manager tracks.
+func (i *installer) detectInstallingStrategy(
+	ctx context.Context,
+	strategies []InstallStrategy,
+	platform *Platform,
+) *InstallStrategy {
+	for idx := range strategies {
+		s := &strategies[idx]
+		if s.PackageManager == "" || s.PackageId == "" {
+			continue
+		}
+		if !platform.HasManager(s.PackageManager) {
+			continue
+		}
+		if i.managerHasPackage(ctx, s) {
+			return s
+		}
+	}
+	return nil
+}
+
+// managerHasPackage reports whether the strategy's package manager currently
+// has a record of the package installed. Each manager exposes a different
+// "list" command, but all exit non-zero when the package is absent. For npm
+// and winget the package id must also appear in the output as a guard against
+// partial matches; brew's list prints artifact paths, so its exit code alone
+// is used.
+func (i *installer) managerHasPackage(
+	ctx context.Context,
+	s *InstallStrategy,
+) bool {
+	switch s.PackageManager {
+	case "npm":
+		res, err := i.commandRunner.Run(ctx, exec.NewRunArgs(
+			"npm", "ls", "-g", s.PackageId, "--depth=0",
+		))
+		return err == nil && strings.Contains(res.Stdout, s.PackageId)
+	case "brew":
+		args := []string{"list"}
+		if s.Cask {
+			args = append(args, "--cask")
+		}
+		args = append(args, s.PackageId)
+		_, err := i.commandRunner.Run(ctx, exec.NewRunArgs("brew", args...))
+		return err == nil
+	case "winget":
+		res, err := i.commandRunner.Run(ctx, exec.NewRunArgs(
+			"winget", "list", "--id", s.PackageId, "-e",
+			"--accept-source-agreements",
+		))
+		return err == nil && strings.Contains(res.Stdout, s.PackageId)
+	default:
+		return false
+	}
+}
+
+// uninstallWithoutManagerOwner handles a multi-method tool that no package
+// manager has a record of. When the tool is already gone the uninstall is
+// idempotently successful; otherwise it was installed by a self-contained
+// method (install script / direct download), so azd guides the user to remove
+// the detected binary.
+func (i *installer) uninstallWithoutManagerOwner(
+	ctx context.Context,
+	tool *ToolDefinition,
+	start time.Time,
+) (*InstallResult, error) {
+	result := &InstallResult{Tool: tool, Strategy: "manual"}
+
+	if status, err := i.detector.DetectTool(ctx, tool); err == nil &&
+		!status.Installed {
+		result.Success = true
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+
+	result.Error = i.binaryRemovalUninstallError(tool)
+	result.Duration = time.Since(start)
+	return result, nil
+}
+
+// binaryRemovalUninstallError builds an [errorhandler.ErrorWithSuggestion] for
+// a tool that is present but not tracked by any package manager azd can use
+// (installed via the install script or a direct download). It names the actual
+// on-PATH binary and the command to remove it.
+func (i *installer) binaryRemovalUninstallError(tool *ToolDefinition) error {
+	binaryPath := ""
+	if tool.DetectCommand != "" && i.lookPath != nil {
+		if resolved, err := i.lookPath(tool.DetectCommand); err == nil {
+			binaryPath = resolved
+		}
+	}
+
+	return &errorhandler.ErrorWithSuggestion{
+		Err: fmt.Errorf(
+			"%s is not tracked by a package manager on this system", tool.Name,
+		),
+		Message:    "Cannot uninstall " + tool.Name,
+		Suggestion: selfManagedRemovalSuggestion(tool, binaryPath),
+	}
+}
+
+// selfManagedRemovalSuggestion builds manual-removal guidance for a binary not
+// tracked by a package manager. When binaryPath is non-empty it names the exact
+// file and the command to remove it (with sudo for system locations).
+func selfManagedRemovalSuggestion(tool *ToolDefinition, binaryPath string) string {
+	intro := fmt.Sprintf(
+		"%s was installed outside a package manager azd can use on this "+
+			"platform (for example via the install script or a direct "+
+			"download).",
+		tool.Name,
+	)
+
+	if binaryPath == "" {
+		return fmt.Sprintf(
+			"%s Remove the %q binary from your PATH manually.",
+			intro, tool.DetectCommand,
+		)
+	}
+
+	return fmt.Sprintf(
+		"%s Remove it manually:\n\n%s",
+		intro, removeCommandFor(binaryPath),
+	)
+}
+
+// removeCommandFor returns the OS-appropriate command to delete the file at
+// binaryPath, prefixing sudo for system locations on Unix.
+func removeCommandFor(binaryPath string) string {
+	if runtime.GOOS == "windows" {
+		return fmt.Sprintf("Remove-Item '%s'", binaryPath)
+	}
+	if isSystemBinaryPath(binaryPath) {
+		return fmt.Sprintf("sudo rm %q", binaryPath)
+	}
+	return fmt.Sprintf("rm %q", binaryPath)
+}
+
+// isSystemBinaryPath reports whether binaryPath lives in a system-owned
+// location that typically requires elevated privileges to modify.
+func isSystemBinaryPath(binaryPath string) bool {
+	systemPrefixes := []string{
+		"/usr/", "/opt/", "/bin/", "/sbin/", "/Library/",
+	}
+	for _, prefix := range systemPrefixes {
+		if strings.HasPrefix(binaryPath, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // runSkillUninstall removes a skill from the resolved target host(s) and
@@ -1364,7 +1547,7 @@ func (i *installer) executeUninstall(
 	strategy *InstallStrategy,
 ) (exec.RunResult, error) {
 	cmd, args := buildUninstallCommand(
-		strategy.PackageManager, strategy.PackageId,
+		strategy.PackageManager, strategy.PackageId, strategy.Cask,
 	)
 	if cmd == "" {
 		return exec.RunResult{}, fmt.Errorf("strategy produced an empty uninstall command")
@@ -1413,6 +1596,7 @@ func (i *installer) buildCommand(
 			strategy.PackageManager,
 			strategy.PackageId,
 			true,
+			strategy.Cask,
 		)
 	}
 
@@ -1428,6 +1612,7 @@ func (i *installer) buildCommand(
 			strategy.PackageManager,
 			strategy.PackageId,
 			false,
+			strategy.Cask,
 		)
 	}
 
@@ -1856,17 +2041,19 @@ func copyFilePath(src, dst string) error {
 // -----------------------------------------------------------------------
 
 // buildManagerCommand returns the command and arguments for a
-// well-known package manager install or upgrade operation.
+// well-known package manager install or upgrade operation. cask applies
+// only to Homebrew, adding the `--cask` flag.
 func buildManagerCommand(
 	manager string,
 	packageID string,
 	upgrade bool,
+	cask bool,
 ) (string, []string) {
 	switch manager {
 	case "winget":
 		return buildWingetCommand(packageID, upgrade)
 	case "brew":
-		return buildBrewCommand(packageID, upgrade)
+		return buildBrewCommand(packageID, upgrade, cask)
 	case "apt":
 		return buildAptCommand(packageID, upgrade)
 	case "npm":
@@ -1895,13 +2082,18 @@ func buildWingetCommand(
 }
 
 func buildBrewCommand(
-	packageID string, upgrade bool,
+	packageID string, upgrade bool, cask bool,
 ) (string, []string) {
 	action := "install"
 	if upgrade {
 		action = "upgrade"
 	}
-	return "brew", []string{action, packageID}
+	args := []string{action}
+	if cask {
+		args = append(args, "--cask")
+	}
+	args = append(args, packageID)
+	return "brew", args
 }
 
 func buildAptCommand(
@@ -1938,11 +2130,13 @@ func buildCodeCommand(
 }
 
 // buildUninstallCommand returns the command and arguments to remove a
-// package previously installed by the given package manager. It returns
-// an empty command for unknown managers.
+// package previously installed by the given package manager. cask applies
+// only to Homebrew, adding the `--cask` flag. It returns an empty command
+// for unknown managers.
 func buildUninstallCommand(
 	manager string,
 	packageID string,
+	cask bool,
 ) (string, []string) {
 	switch manager {
 	case "winget":
@@ -1953,7 +2147,12 @@ func buildUninstallCommand(
 			"-e",
 		}
 	case "brew":
-		return "brew", []string{"uninstall", packageID}
+		args := []string{"uninstall"}
+		if cask {
+			args = append(args, "--cask")
+		}
+		args = append(args, packageID)
+		return "brew", args
 	case "apt":
 		return "sudo", []string{"apt-get", "remove", "-y", packageID}
 	case "npm":

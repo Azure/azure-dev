@@ -1773,18 +1773,19 @@ func (a *toolShowAction) displayToolDetails(
 	if len(toolDef.InstallStrategies) > 0 {
 		var strategyRows [][]string
 		for _, platform := range slices.Sorted(maps.Keys(toolDef.InstallStrategies)) {
-			strategy := toolDef.InstallStrategies[platform]
-			label := strategy.PackageManager
-			if label == "" {
-				label = "command"
+			for _, strategy := range toolDef.InstallStrategies[platform] {
+				label := strategy.PackageManager
+				if label == "" {
+					label = "command"
+				}
+				detail := strategy.PackageId
+				if detail == "" {
+					detail = strategy.InstallCommand
+				}
+				strategyRows = append(strategyRows, []string{
+					platform, ":", fmt.Sprintf("%s (%s)", label, detail),
+				})
 			}
-			detail := strategy.PackageId
-			if detail == "" {
-				detail = strategy.InstallCommand
-			}
-			strategyRows = append(strategyRows, []string{
-				platform, ":", fmt.Sprintf("%s (%s)", label, detail),
-			})
 		}
 		if err := writeSection("Install Strategies", strategyRows); err != nil {
 			return err

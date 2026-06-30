@@ -217,16 +217,23 @@ extends:
                       [ -n "$proj" ] || continue
                       (
                         cd "$proj"
-                        # Tag the resource group before attempting `azd down` so the
-                        # EngSys garbage collector can still reclaim it if the delete
-                        # below fails - the cleanup pipeline keys off DeleteAfter.
-                        rg=$(azd env get-values 2>/dev/null \
-                          | sed -n 's/^AZURE_RESOURCE_GROUP="\(.*\)"$/\1/p' | head -1)
-                        if [ -n "$rg" ]; then
-                          echo "Tagging $rg with DeleteAfter=$delete_after"
+                        # Tag the resource group(s) before attempting `azd down` so
+                        # the EngSys garbage collector can still reclaim them if the
+                        # delete below fails - the cleanup pipeline keys off
+                        # DeleteAfter. Enumerate by azd env name rather than reading
+                        # AZURE_RESOURCE_GROUP from env values, which a provision that
+                        # times out may not have persisted yet; azd creates the group
+                        # as rg-<env> at the start of provisioning, so the name is
+                        # known even when the run dies mid-deploy.
+                        for d in .azure/*/; do
+                          [ -d "$d" ] || continue
+                          name=${d#.azure/}
+                          name=${name%/}
+                          rg="rg-$name"
+                          echo "Tagging $rg (env=$name) with DeleteAfter=$delete_after"
                           az group update --name "$rg" \
                             --set "tags.DeleteAfter=$delete_after" --output none || true
-                        fi
+                        done
                         azd down --force --purge --no-prompt
                       ) 2>&1 || true
                     done

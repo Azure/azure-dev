@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,6 +88,70 @@ func foundryProjectName(content []byte) string {
 	return ""
 }
 
+// readManifestContentForInitDetection returns the pointed-at YAML content for
+// init-mode routing. It first uses the cheap peek path; when that cannot read a
+// GitHub URL (for example, a private repository), it falls back to the
+// authenticated GitHub CLI download path so private unified azure.yaml samples
+// can still be classified and adopted.
+func readManifestContentForInitDetection(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	manifestPointer string,
+	httpClient *http.Client,
+) ([]byte, bool) {
+	if content, ok := readManifestContentForPeek(ctx, manifestPointer, httpClient); ok {
+		return content, true
+	}
+	if azdClient == nil || !strings.Contains(manifestPointer, "://") {
+		return nil, false
+	}
+
+	parsedURL, err := url.Parse(manifestPointer)
+	if err != nil || !strings.Contains(parsedURL.Hostname(), "github") {
+		return nil, false
+	}
+
+	commandRunner := exec.NewCommandRunner(&exec.RunnerOptions{
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+	})
+	console := input.NewConsole(
+		false, // noPrompt
+		true,  // isTerminal
+		input.Writers{Output: os.Stdout},
+		input.ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
+		},
+		nil, // formatter
+		nil, // externalPromptCfg
+	)
+	ghCli := github.NewGitHubCli(console, commandRunner)
+	if err := ghCli.EnsureInstalled(ctx); err != nil {
+		log.Printf("detect unified azure.yaml: ensuring gh is installed: %v", err)
+		return nil, false
+	}
+
+	urlInfo, err := parseGitHubUrlForAdopt(ctx, azdClient, manifestPointer)
+	if err != nil {
+		log.Printf("detect unified azure.yaml: parsing GitHub URL: %v", err)
+		return nil, false
+	}
+
+	apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
+	if urlInfo.Branch != "" {
+		apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
+	}
+	content, err := downloadGithubManifest(ctx, urlInfo, apiPath, ghCli)
+	if err != nil {
+		log.Printf("detect unified azure.yaml: downloading GitHub file: %v", err)
+		return nil, false
+	}
+
+	return []byte(content), true
+}
+
 // runInitFromAzureYaml adopts a sample's unified Foundry `azure.yaml` as the
 // project-root manifest instead of generating one from an agent manifest
 // (#8798). The sample's `azure.yaml` and the files it references are placed at
@@ -100,15 +166,17 @@ func runInitFromAzureYaml(
 	httpClient *http.Client,
 	content []byte,
 ) error {
+	targetDir, folderDisplay := adoptTargetDir(flags, foundryProjectName(content))
+
 	// Adoption is a fresh-project operation: it lays down the project-root
-	// azure.yaml. When a project already exists we cannot adopt over it;
-	// merging the sample's services into an existing azure.yaml is tracked
-	// separately (#8884).
-	if fileExists("azure.yaml") {
+	// azure.yaml. When the target already contains an azd project manifest we
+	// cannot adopt over it; merging the sample's services into an existing
+	// azure.yaml is tracked separately (#8884).
+	if projectManifestExists(targetDir) {
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments,
-			"a project azure.yaml already exists in this directory, so the sample's "+
-				"unified azure.yaml cannot be adopted here",
+			fmt.Sprintf("a project azure.yaml already exists in %q, so the sample's "+
+				"unified azure.yaml cannot be adopted there", targetDir),
 			"run this command in an empty directory (or pass a new target directory) to "+
 				"adopt the sample, or add an individual agent to this project with "+
 				"'azd ai agent init -m <agent.manifest.yaml>'",
@@ -122,8 +190,6 @@ func runInitFromAzureYaml(
 		return err
 	}
 	defer cleanup()
-
-	targetDir, folderDisplay := adoptTargetDir(flags, foundryProjectName(content))
 
 	fmt.Println(output.WithGrayFormat("Adopting the sample's azure.yaml as your project manifest..."))
 
@@ -179,6 +245,11 @@ func folderDisplayIfNew(dir string) string {
 	return ""
 }
 
+func projectManifestExists(dir string) bool {
+	return fileExists(filepath.Join(dir, "azure.yaml")) ||
+		fileExists(filepath.Join(dir, "azure.yml"))
+}
+
 // stageAzureYamlTemplate produces a local directory that azd-core can adopt as a
 // template (`azd init -t <dir>`): it contains the sample's azure.yaml at its
 // root alongside the sibling files/dirs the manifest references.
@@ -200,7 +271,7 @@ func stageAzureYamlTemplate(
 	if isLocalFilePath(pointer) {
 		dir := filepath.Dir(pointer)
 		base := strings.ToLower(filepath.Base(pointer))
-		if base == "azure.yaml" || base == "azure.yml" {
+		if base == "azure.yaml" {
 			return dir, noop, nil
 		}
 
@@ -226,6 +297,10 @@ func stageAzureYamlTemplate(
 			cleanup()
 			return "", noop, fmt.Errorf("writing staged azure.yaml: %w", err)
 		}
+		if err := os.Remove(filepath.Join(staging, filepath.Base(pointer))); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			cleanup()
+			return "", noop, fmt.Errorf("removing staged source manifest: %w", err)
+		}
 		return staging, cleanup, nil
 	}
 
@@ -240,6 +315,36 @@ func stageAzureYamlTemplate(
 		return "", noop, err
 	}
 	return staging, cleanup, nil
+}
+
+// ensureStagedAzureYaml normalizes a staged template so azd-core sees
+// azure.yaml at the template root. azd-core only adopts azure.yaml; if a sample
+// ships azure.yml, copy it to azure.yaml and remove the alias to avoid leaving
+// duplicate project manifests in the initialized project.
+func ensureStagedAzureYaml(staging string) (bool, error) {
+	azureYaml := filepath.Join(staging, "azure.yaml")
+	if fileExists(azureYaml) {
+		return true, nil
+	}
+
+	azureYml := filepath.Join(staging, "azure.yml")
+	if !fileExists(azureYml) {
+		return false, nil
+	}
+
+	//nolint:gosec // azure.yml is in a temp staging dir produced by this command
+	data, err := os.ReadFile(azureYml)
+	if err != nil {
+		return false, fmt.Errorf("reading staged azure.yml: %w", err)
+	}
+	//nolint:gosec // staging dir is from os.MkdirTemp and the filename is a constant
+	if err := os.WriteFile(azureYaml, data, osutil.PermissionFile); err != nil {
+		return false, fmt.Errorf("writing staged azure.yaml: %w", err)
+	}
+	if err := os.Remove(azureYml); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return false, fmt.Errorf("removing staged azure.yml: %w", err)
+	}
+	return true, nil
 }
 
 // stageRemoteAzureYaml downloads the directory containing the remote azure.yaml
@@ -260,8 +365,14 @@ func stageRemoteAzureYaml(
 		err := downloadDirectoryContentsWithoutGhCli(
 			ctx, urlInfo.RepoSlug, dirPath, dirPath, urlInfo.Branch, staging, httpClient,
 		)
-		if err == nil && stagedAzureYamlExists(staging) {
-			return nil
+		if err == nil {
+			hasAzureYaml, normalizeErr := ensureStagedAzureYaml(staging)
+			if normalizeErr != nil {
+				return normalizeErr
+			}
+			if hasAzureYaml {
+				return nil
+			}
 		}
 	}
 
@@ -306,7 +417,11 @@ func stageRemoteAzureYaml(
 		)
 	}
 
-	if !stagedAzureYamlExists(staging) {
+	hasAzureYaml, err := ensureStagedAzureYaml(staging)
+	if err != nil {
+		return err
+	}
+	if !hasAzureYaml {
 		return exterrors.Validation(
 			exterrors.CodeInvalidManifestPointer,
 			"no azure.yaml was found in the downloaded sample directory",

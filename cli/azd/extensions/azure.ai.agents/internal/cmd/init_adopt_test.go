@@ -181,6 +181,35 @@ func TestStagedAzureYamlExists(t *testing.T) {
 	})
 }
 
+func TestProjectManifestExists(t *testing.T) {
+	t.Run("azure.yaml present", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte("name: x\n"), 0600))
+		require.True(t, projectManifestExists(dir))
+	})
+
+	t.Run("azure.yml present", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.yml"), []byte("name: x\n"), 0600))
+		require.True(t, projectManifestExists(dir))
+	})
+
+	t.Run("absent", func(t *testing.T) {
+		require.False(t, projectManifestExists(t.TempDir()))
+	})
+}
+
+func TestEnsureStagedAzureYaml_NormalizesAzureYml(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.yml"), []byte("name: foundry-simple\n"), 0600))
+
+	ok, err := ensureStagedAzureYaml(dir)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.True(t, fileExists(filepath.Join(dir, "azure.yaml")))
+	require.False(t, fileExists(filepath.Join(dir, "azure.yml")))
+}
+
 // TestStageAzureYamlTemplate_LocalAzureYaml verifies a local pointer named
 // azure.yaml uses its parent directory directly as the template (no temp copy).
 func TestStageAzureYamlTemplate_LocalAzureYaml(t *testing.T) {
@@ -195,6 +224,24 @@ func TestStageAzureYamlTemplate_LocalAzureYaml(t *testing.T) {
 
 	require.Equal(t, sampleDir, staging)
 	require.True(t, stagedAzureYamlExists(staging))
+}
+
+// TestStageAzureYamlTemplate_LocalAzureYmlRenamed verifies azure.yml is staged
+// as azure.yaml so azd-core adopts the sample manifest instead of generating a
+// default azure.yaml.
+func TestStageAzureYamlTemplate_LocalAzureYmlRenamed(t *testing.T) {
+	sampleDir := t.TempDir()
+	azureYml := filepath.Join(sampleDir, "azure.yml")
+	require.NoError(t, os.WriteFile(azureYml, []byte("name: foundry-simple\nservices: {}\n"), 0600))
+
+	flags := &initFlags{manifestPointer: azureYml}
+	staging, cleanup, err := stageAzureYamlTemplate(t.Context(), flags, nil, nil)
+	require.NoError(t, err)
+	defer cleanup()
+
+	require.NotEqual(t, sampleDir, staging)
+	require.True(t, fileExists(filepath.Join(staging, "azure.yaml")))
+	require.False(t, fileExists(filepath.Join(staging, "azure.yml")))
 }
 
 // TestStageAzureYamlTemplate_LocalRenamesToAzureYaml verifies a local pointer
@@ -214,6 +261,7 @@ func TestStageAzureYamlTemplate_LocalRenamesToAzureYaml(t *testing.T) {
 
 	require.NotEqual(t, sampleDir, staging)
 	require.True(t, stagedAzureYamlExists(staging))
+	require.False(t, fileExists(filepath.Join(staging, "sample.yaml")))
 	// Sibling files are carried into the staging directory.
 	require.True(t, fileExists(filepath.Join(staging, "agents", "main.py")))
 }

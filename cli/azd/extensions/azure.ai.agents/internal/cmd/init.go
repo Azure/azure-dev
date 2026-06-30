@@ -1222,12 +1222,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 				// Detect whether the pointer is a unified Foundry azure.yaml
 				// (adopt it as the project manifest) versus an agent manifest
-				// (generate the project). Best-effort: when the content can't be
-				// peeked (e.g. a private repo not reachable unauthenticated), fall
-				// through to the manifest path, which performs the full
-				// authenticated download. See #8798.
-				if content, ok := readManifestContentForPeek(
-					ctx, flags.manifestPointer, httpClient,
+				// (generate the project). For private GitHub URLs, the detector
+				// falls back to the authenticated gh CLI download path before
+				// deciding whether this is a unified azure.yaml. See #8798.
+				if content, ok := readManifestContentForInitDetection(
+					ctx, azdClient, flags.manifestPointer, httpClient,
 				); ok && looksLikeFoundryAzureYaml(content) {
 					if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
 						if exterrors.IsCancellation(err) {

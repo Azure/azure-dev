@@ -484,6 +484,39 @@ postbuild:
 	})
 }
 
+func TestServiceImageSavedToYaml(t *testing.T) {
+	t.Parallel()
+
+	projectConfig := &ProjectConfig{
+		Name: "test-project",
+		Services: map[string]*ServiceConfig{
+			"agent": {
+				RelativePath: "src/agent",
+				Host:         "azure.ai.agent",
+				Language:     "docker",
+				Image:        osutil.NewExpandableString("myacr.azurecr.io/agent:v1"),
+			},
+		},
+	}
+	projectFile := filepath.Join(t.TempDir(), "azure.yaml")
+
+	err := Save(t.Context(), projectConfig, projectFile)
+	require.NoError(t, err)
+
+	fileContent, err := os.ReadFile(projectFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(fileContent), "image: myacr.azurecr.io/agent:v1")
+
+	loadedProject, err := Load(t.Context(), projectFile)
+	require.NoError(t, err)
+	require.Contains(t, loadedProject.Services, "agent")
+	assert.Equal(
+		t,
+		"myacr.azurecr.io/agent:v1",
+		loadedProject.Services["agent"].Image.MustEnvsubst(func(string) string { return "" }),
+	)
+}
+
 func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 	t.Run("DefaultValuesNotWritten", func(t *testing.T) {
 		// Create a minimal project config with no infra settings

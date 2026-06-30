@@ -216,58 +216,46 @@ func TestValidateImageFlag(t *testing.T) {
 	}
 }
 
-func TestSetImageOnTemplate(t *testing.T) {
+func TestPreBuiltImageForInit(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		manifest  *agent_yaml.AgentManifest
-		image     string
-		wantImage string
-		wantErr   bool
+		name     string
+		manifest *agent_yaml.AgentManifest
+		flag     string
+		want     string
 	}{
+		{name: "empty", manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{}}, want: ""},
+		{name: "nil manifest", manifest: nil, want: ""},
+		{name: "non-container agent", manifest: &agent_yaml.AgentManifest{Template: agent_yaml.Workflow{}}, want: ""},
 		{
-			name:      "empty image is noop",
-			manifest:  &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{}},
-			image:     "",
-			wantImage: "",
+			name:     "manifest image",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{Image: "myacr.azurecr.io/agent:v1"}},
+			want:     "myacr.azurecr.io/agent:v1",
 		},
 		{
-			name:      "sets image on container agent",
-			manifest:  &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{}},
-			image:     "myacr.azurecr.io/agent:v1",
-			wantImage: "myacr.azurecr.io/agent:v1",
+			name:     "flag image wins",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{Image: "myacr.azurecr.io/agent:v1"}},
+			flag:     "override.azurecr.io/agent:v2",
+			want:     "override.azurecr.io/agent:v2",
 		},
 		{
-			name:     "nil manifest returns error",
-			manifest: nil,
-			image:    "myacr.azurecr.io/agent:v1",
-			wantErr:  true,
+			name:     "trims flag image",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{}},
+			flag:     "  myacr.azurecr.io/agent:v1  ",
+			want:     "myacr.azurecr.io/agent:v1",
 		},
 		{
-			name:     "non-container agent returns error",
-			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.Workflow{}},
-			image:    "myacr.azurecr.io/agent:v1",
-			wantErr:  true,
+			name:     "trims manifest image",
+			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{Image: "  myacr.azurecr.io/agent:v1  "}},
+			want:     "myacr.azurecr.io/agent:v1",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-
-			err := setImageOnTemplate(tt.manifest, tt.image)
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-
-			if tt.image != "" {
-				hostedAgent, ok := tt.manifest.Template.(agent_yaml.ContainerAgent)
-				require.True(t, ok)
-				require.Equal(t, tt.wantImage, hostedAgent.Image)
-			}
+			require.Equal(t, tt.want, preBuiltImageForInit(tt.manifest, tt.flag))
 		})
 	}
 }
@@ -345,7 +333,7 @@ func TestSynthesizeImageManifestFile(t *testing.T) {
 	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
 	require.Equal(t, agent_yaml.AgentKindHosted, containerAgent.Kind)
 	require.Equal(t, agentName, containerAgent.Name)
-	require.Equal(t, image, containerAgent.Image)
+	require.Empty(t, containerAgent.Image)
 	require.Len(t, containerAgent.Protocols, 1)
 	require.Equal(t, "responses", containerAgent.Protocols[0].Protocol)
 	require.Equal(t, "1.0.0", containerAgent.Protocols[0].Version)
@@ -355,43 +343,53 @@ func TestSynthesizeImageManifestFile(t *testing.T) {
 	require.NoFileExists(t, manifestPath)
 }
 
-func TestAgentUsesPreBuiltImage(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		manifest *agent_yaml.AgentManifest
-		want     bool
-	}{
-		{name: "nil manifest", manifest: nil, want: false},
-		{
-			name:     "container agent with image",
-			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{Image: "myacr.azurecr.io/a:v1"}},
-			want:     true,
-		},
-		{
-			name:     "container agent without image",
-			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{}},
-			want:     false,
-		},
-		{
-			name:     "container agent with whitespace-only image",
-			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{Image: "   "}},
-			want:     false,
-		},
-		{
-			name:     "non-container agent",
-			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.Workflow{}},
-			want:     false,
+func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
+	const image = "myacr.azurecr.io/agents/my-agent:v1"
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	action := &InitAction{
+		azdClient:           client,
+		environment:         &azdext.Environment{Name: "test-env"},
+		flags:               &initFlags{image: image, noPrompt: true},
+		serviceNameOverride: "my-agent",
+	}
+	description := "Hosted container agent using a pre-built image"
+	manifest := &agent_yaml.AgentManifest{
+		Template: agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind:        agent_yaml.AgentKindHosted,
+				Name:        "my-agent",
+				Description: &description,
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "1.0.0"},
+			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			require.Equal(t, tt.want, agentUsesPreBuiltImage(tt.manifest))
-		})
+	_, err := captureStdout(t, func() error {
+		return action.addToProject(t.Context(), "src/my-agent", manifest)
+	})
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+
+	var agentService *azdext.ServiceConfig
+	for _, service := range server.added {
+		if service.GetName() == "my-agent" {
+			agentService = service
+			break
+		}
 	}
+	require.NotNil(t, agentService)
+	require.Equal(t, image, agentService.GetImage())
+	require.Equal(t, "docker", agentService.GetLanguage())
+	require.NotNil(t, agentService.GetDocker())
+	require.NotNil(t, agentService.GetAdditionalProperties())
+
+	_, hasInlineImage := agentService.GetAdditionalProperties().GetFields()["image"]
+	require.False(t, hasInlineImage, "pre-built image must ride on the top-level service image field")
 }
 
 func TestValidateInitAgentName(t *testing.T) {

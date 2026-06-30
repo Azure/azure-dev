@@ -34,6 +34,18 @@ var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standar
 // from manifest.Resources in ProcessModels so no deployment is provisioned.
 var errModelSkipped = errors.New("user skipped model")
 
+// existingDeploymentError wraps a project.Deployment selected by the user
+// from the project's existing deployments inside getModelDetails. The caller
+// (getModelDeploymentDetails) detects this via errors.As and returns the
+// deployment with isNew=false.
+type existingDeploymentError struct {
+	Deployment *project.Deployment
+}
+
+func (e *existingDeploymentError) Error() string {
+	return "user selected existing deployment"
+}
+
 func (a *modelSelector) loadAiCatalog(ctx context.Context) error {
 	if a.modelCatalog != nil {
 		return nil
@@ -182,6 +194,7 @@ func (a *InitAction) getModelDeploymentDetails(
 	}
 
 	foundryProjectId := resp.Value
+	var allDeployments []FoundryDeploymentInfo
 	if foundryProjectId != "" {
 		parts := strings.Split(foundryProjectId, "/")
 		if len(parts) < 9 {
@@ -193,9 +206,10 @@ func (a *InitAction) getModelDeploymentDetails(
 		resourceGroup := parts[4]
 		accountName := parts[8]
 
-		allDeployments, err := listProjectDeployments(ctx, a.credential, subscription, resourceGroup, accountName)
-		if err != nil {
-			return nil, false, fmt.Errorf("failed to list deployments: %w", err)
+		var listErr error
+		allDeployments, listErr = listProjectDeployments(ctx, a.credential, subscription, resourceGroup, accountName)
+		if listErr != nil {
+			return nil, false, fmt.Errorf("failed to list deployments: %w", listErr)
 		}
 
 		matchingDeployments := make(map[string]*FoundryDeploymentInfo)
@@ -383,13 +397,27 @@ func (a *InitAction) getModelDeploymentDetails(
 		}
 	}
 
-	modelDetails, err := a.getModelSelector().getModelDetails(ctx, model.Id, true)
+	// Share existing deployments with the model selector so it can offer
+	// "Use an existing deployment" when the user picks "Choose a different model".
+	selector := a.getModelSelector()
+	if foundryProjectId != "" {
+		selector.allDeployments = allDeployments
+	}
+
+	modelDetails, err := selector.getModelDetails(ctx, model.Id, true)
 	if err != nil {
 		if errors.Is(err, errModelSkipped) {
 			// Propagate the sentinel unwrapped so ProcessModels can detect
 			// the skip and drop the resource from manifest.Resources.
 			return nil, false, err
 		}
+
+		// User selected an existing deployment from the project via
+		// the "Use an existing deployment" option in the model selector.
+		if existing, ok := errors.AsType[*existingDeploymentError](err); ok {
+			return existing.Deployment, false, nil
+		}
+
 		return nil, false, fmt.Errorf("failed to get model details: %w", err)
 	}
 
@@ -448,7 +476,13 @@ func (a *modelSelector) getModelDetails(
 		// selector for both interactively-detected manifests and the -m flow.
 		choices := []*azdext.SelectChoice{
 			{Label: fmt.Sprintf("Use '%s' (from manifest)", model.Name), Value: "keep"},
-			{Label: "Choose a different model", Value: "change"},
+			{Label: "Choose a different model to deploy", Value: "change"},
+		}
+		if len(a.allDeployments) > 0 {
+			choices = append(choices, &azdext.SelectChoice{
+				Label: "Use an existing deployment from this project",
+				Value: "use_existing",
+			})
 		}
 		if allowSkip {
 			choices = append(choices, &azdext.SelectChoice{
@@ -482,6 +516,15 @@ func (a *modelSelector) getModelDetails(
 				return nil, fmt.Errorf("no model selected, exiting")
 			}
 			model = selectedModel
+		case "use_existing":
+			deployment, err := a.promptExistingDeployment(ctx)
+			if err != nil {
+				if exterrors.IsCancellation(err) {
+					return nil, err
+				}
+				return nil, fmt.Errorf("failed to select existing deployment: %w", err)
+			}
+			return nil, &existingDeploymentError{Deployment: deployment}
 		case "skip":
 			fmt.Println(output.WithWarningFormat(
 				"Skipped model '%s'. The agent will not have a model deployed.", model.Name))
@@ -734,6 +777,71 @@ func (a *modelSelector) promptModelFromCatalog(ctx context.Context) (*azdext.AiM
 	}
 
 	return modelResp.Model, nil
+}
+
+// promptExistingDeployment shows the list of existing deployments in the
+// Foundry project and lets the user pick one.
+func (a *modelSelector) promptExistingDeployment(ctx context.Context) (*project.Deployment, error) {
+	if len(a.allDeployments) == 0 {
+		return nil, fmt.Errorf("no existing deployments available")
+	}
+
+	type labeledDeployment struct {
+		label string
+		info  *FoundryDeploymentInfo
+	}
+
+	items := make([]labeledDeployment, 0, len(a.allDeployments))
+	for i := range a.allDeployments {
+		d := &a.allDeployments[i]
+		items = append(items, labeledDeployment{
+			label: fmt.Sprintf("%s (%s v%s)", d.Name, d.ModelName, d.Version),
+			info:  d,
+		})
+	}
+
+	slices.SortFunc(items, func(a, b labeledDeployment) int {
+		return strings.Compare(a.label, b.label)
+	})
+
+	choices := make([]*azdext.SelectChoice, len(items))
+	for i, item := range items {
+		choices[i] = &azdext.SelectChoice{
+			Label: item.label,
+			Value: item.label,
+		}
+	}
+
+	defaultIdx := int32(0)
+	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "Select an existing deployment",
+			Choices:       choices,
+			SelectedIndex: &defaultIdx,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, exterrors.Cancelled("deployment selection was cancelled")
+		}
+		return nil, fmt.Errorf("failed to prompt for deployment selection: %w", err)
+	}
+
+	d := items[*resp.Value].info
+	fmt.Printf("Using existing deployment: %s\n", d.Name)
+
+	return &project.Deployment{
+		Name: d.Name,
+		Model: project.DeploymentModel{
+			Name:    d.ModelName,
+			Format:  d.ModelFormat,
+			Version: d.Version,
+		},
+		Sku: project.DeploymentSku{
+			Name:     d.SkuName,
+			Capacity: d.SkuCapacity,
+		},
+	}, nil
 }
 
 func (a *modelSelector) promptForModelLocationMismatch(

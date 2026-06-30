@@ -7,6 +7,7 @@ import (
 	"azureaiagent/internal/project"
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -316,4 +317,46 @@ func TestUpdateEnvLocation(t *testing.T) {
 			assert.Equal(t, tt.wantLocation, ms.azureContext.Scope.Location)
 		})
 	}
+}
+
+func TestExistingDeploymentError(t *testing.T) {
+	t.Parallel()
+
+	deployment := &project.Deployment{
+		Name: "my-gpt4",
+		Model: project.DeploymentModel{
+			Name:    "gpt-4",
+			Format:  "OpenAI",
+			Version: "2024-05-13",
+		},
+		Sku: project.DeploymentSku{
+			Name:     "Standard",
+			Capacity: 10,
+		},
+	}
+
+	t.Run("errors.As unwraps existingDeploymentError", func(t *testing.T) {
+		t.Parallel()
+
+		err := &existingDeploymentError{Deployment: deployment}
+		wrapped := fmt.Errorf("outer: %w", err)
+
+		existing, ok := errors.AsType[*existingDeploymentError](wrapped)
+		require.True(t, ok)
+		assert.Equal(t, deployment, existing.Deployment)
+	})
+
+	t.Run("Error returns descriptive message", func(t *testing.T) {
+		t.Parallel()
+
+		err := &existingDeploymentError{Deployment: deployment}
+		assert.Equal(t, "user selected existing deployment", err.Error())
+	})
+
+	t.Run("does not match errModelSkipped", func(t *testing.T) {
+		t.Parallel()
+
+		err := &existingDeploymentError{Deployment: deployment}
+		assert.False(t, errors.Is(err, errModelSkipped))
+	})
 }

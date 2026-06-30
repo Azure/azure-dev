@@ -259,8 +259,8 @@ func githubCopilotCLI() *ToolDefinition {
 				{InstallCommand: "curl -fsSL https://gh.io/copilot-install | bash"},
 			},
 			"linux": {
-				{PackageManager: "npm", PackageId: "@github/copilot"},
 				{PackageManager: "brew", PackageId: "copilot-cli", Cask: true},
+				{PackageManager: "npm", PackageId: "@github/copilot"},
 				{InstallCommand: "curl -fsSL https://gh.io/copilot-install | bash"},
 			},
 		},

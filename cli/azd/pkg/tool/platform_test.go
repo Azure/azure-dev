@@ -372,6 +372,7 @@ func TestPlatformManagersTable(t *testing.T) {
 		managers := platformManagers["linux"]
 		require.Contains(t, managers, "apt")
 		require.Contains(t, managers, "snap")
+		require.Contains(t, managers, "brew")
 		require.Contains(t, managers, "npm")
 		require.Contains(t, managers, "code")
 	})

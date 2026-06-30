@@ -16,7 +16,7 @@ import (
 var platformManagers = map[string][]string{
 	"windows": {"winget", "npm", "code"},
 	"darwin":  {"brew", "npm", "code"},
-	"linux":   {"apt", "snap", "npm", "code"},
+	"linux":   {"apt", "snap", "brew", "npm", "code"},
 }
 
 // Platform describes the detected operating system and the package managers

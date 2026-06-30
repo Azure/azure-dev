@@ -427,9 +427,9 @@ func TestGithubCopilotCLI_InstallStrategies(t *testing.T) {
 	assert.True(t, has("darwin", isNpm), "darwin npm")
 	assert.True(t, has("darwin", isScript), "darwin install script")
 
-	// Linux: npm (preferred) + brew cask + install script.
-	assert.True(t, has("linux", isNpm), "linux npm")
+	// Linux: brew cask (preferred) + npm + install script.
 	assert.True(t, has("linux", isBrewCask), "linux brew cask")
+	assert.True(t, has("linux", isNpm), "linux npm")
 	assert.True(t, has("linux", isScript), "linux install script")
 
 	// The derived uninstall commands match the official documentation.

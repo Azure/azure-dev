@@ -17,3 +17,4 @@ tags:
     - project
 usage: azd ai project <command> [options]
 version: 0.1.1-preview
+requiredAzdVersion: ">=1.27.0"

@@ -6,7 +6,7 @@ tags:
     - ai
     - foundry
 version: 0.1.0-preview
-requiredAzdVersion: ">1.25.2"
+requiredAzdVersion: ">=1.27.0"
 dependencies:
   - id: azure.ai.agents
     version: "~0.1.0-preview"

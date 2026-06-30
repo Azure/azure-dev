@@ -6,7 +6,7 @@ description: Manage Microsoft Foundry skills (reusable agent behavioral guidelin
 usage: azd ai skill <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
 version: 0.1.1-preview
-requiredAzdVersion: ">1.23.13"
+requiredAzdVersion: ">=1.27.0"
 language: go
 capabilities:
   - custom-commands

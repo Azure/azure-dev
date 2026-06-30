@@ -313,10 +313,8 @@ func resolveServiceRefs(node yaml.Node, projectRoot, serviceName string) (yaml.N
 // deliberate: docker: is not in the agent schema and is dropped by omitempty
 // when remoteBuild is false, so it is not a reliable build signal.
 func deriveIncludeAcr(services map[string]yaml.Node, svc projectService) bool {
-	for _, a := range svc.Agents {
-		if agentNeedsAcr(a) {
-			return true
-		}
+	if slices.ContainsFunc(svc.Agents, agentNeedsAcr) {
+		return true
 	}
 
 	for _, node := range services {

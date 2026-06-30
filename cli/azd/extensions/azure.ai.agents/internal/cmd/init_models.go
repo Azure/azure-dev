@@ -525,7 +525,7 @@ func (a *modelSelector) getModelDetails(
 			ModelName:    model.Name,
 			Options: &azdext.AiModelDeploymentOptions{
 				Locations: []string{currentLocation},
-				Capacity:  new(int32(defaultDeploymentCapacity)),
+				Capacity:  new(defaultDeploymentCapacity),
 			},
 			Quota: &azdext.QuotaCheckOptions{
 				MinRemainingCapacity: 1,
@@ -564,7 +564,8 @@ func (a *modelSelector) getModelDetails(
 
 func resolveNoPromptCapacity(candidate *azdext.AiModelDeployment) (int32, bool) {
 	capacity := candidate.Capacity
-	if capacity <= 0 {
+	defaulted := capacity <= 0
+	if defaulted {
 		capacity = defaultDeploymentCapacity
 	}
 
@@ -577,7 +578,17 @@ func resolveNoPromptCapacity(candidate *azdext.AiModelDeployment) (int32, bool) 
 		capacity = candidate.Sku.MinCapacity
 	}
 	if candidate.Sku.MaxCapacity > 0 && capacity > candidate.Sku.MaxCapacity {
-		return 0, false
+		if !defaulted {
+			return 0, false
+		}
+		// Clamp down to the highest step-aligned capacity within max.
+		capacity = candidate.Sku.MaxCapacity
+		if step := candidate.Sku.CapacityStep; step > 0 && capacity%step != 0 {
+			capacity = (capacity / step) * step
+		}
+		if capacity < candidate.Sku.MinCapacity || capacity <= 0 {
+			return 0, false
+		}
 	}
 
 	if candidate.RemainingQuota != nil && float64(capacity) > *candidate.RemainingQuota {

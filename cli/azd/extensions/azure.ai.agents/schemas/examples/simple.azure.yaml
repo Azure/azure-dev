@@ -15,7 +15,7 @@ services:
           version: "2024-07-18"
         sku:
           name: GlobalStandard
-          capacity: 10
+          capacity: 50
 
   assistant:
     host: azure.ai.agent

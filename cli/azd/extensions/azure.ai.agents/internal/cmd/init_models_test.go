@@ -96,13 +96,22 @@ func TestResolveNoPromptCapacity(t *testing.T) {
 			wantOk:       false,
 		},
 		{
-			name: "defaultDeploymentCapacity exceeds maxCapacity returns false",
+			name: "defaultDeploymentCapacity clamped to maxCapacity",
 			candidate: &azdext.AiModelDeployment{
 				Capacity: 0,
 				Sku:      &azdext.AiModelSku{MaxCapacity: 30},
 			},
-			wantCapacity: 0,
-			wantOk:       false,
+			wantCapacity: 30,
+			wantOk:       true,
+		},
+		{
+			name: "defaultDeploymentCapacity clamped and step-aligned down",
+			candidate: &azdext.AiModelDeployment{
+				Capacity: 0,
+				Sku:      &azdext.AiModelSku{MaxCapacity: 50, CapacityStep: 7},
+			},
+			wantCapacity: 49, // 50/7=7*7=49
+			wantOk:       true,
 		},
 		{
 			name: "exceeds remaining quota returns false",

@@ -210,6 +210,15 @@ func TestEnsureStagedAzureYaml_NormalizesAzureYml(t *testing.T) {
 	require.False(t, fileExists(filepath.Join(dir, "azure.yml")))
 }
 
+func TestClearStagingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "partial.txt"), []byte("partial"), 0600))
+
+	require.NoError(t, clearStagingDirectory(dir))
+	require.True(t, fileExists(dir))
+	require.False(t, fileExists(filepath.Join(dir, "partial.txt")))
+}
+
 // TestStageAzureYamlTemplate_LocalAzureYaml verifies a local pointer named
 // azure.yaml uses its parent directory directly as the template (no temp copy).
 func TestStageAzureYamlTemplate_LocalAzureYaml(t *testing.T) {

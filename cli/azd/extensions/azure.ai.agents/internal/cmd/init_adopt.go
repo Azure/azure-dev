@@ -282,6 +282,9 @@ func stageAzureYamlTemplate(
 			return "", noop, fmt.Errorf("creating staging dir: %w", err)
 		}
 		cleanup := func() { _ = os.RemoveAll(staging) }
+		// Staging is all-or-nothing: without azure.yaml at the template root,
+		// azd-core would generate a default manifest instead of adopting this
+		// sample, so every error path removes the partial copy.
 		if err := copyDirectory(dir, staging); err != nil {
 			cleanup()
 			return "", noop, fmt.Errorf("staging sample directory: %w", err)
@@ -347,6 +350,16 @@ func ensureStagedAzureYaml(staging string) (bool, error) {
 	return true, nil
 }
 
+func clearStagingDirectory(staging string) error {
+	if err := os.RemoveAll(staging); err != nil {
+		return fmt.Errorf("clearing staging directory: %w", err)
+	}
+	if err := os.MkdirAll(staging, osutil.PermissionDirectory); err != nil {
+		return fmt.Errorf("recreating staging directory: %w", err)
+	}
+	return nil
+}
+
 // stageRemoteAzureYaml downloads the directory containing the remote azure.yaml
 // into staging. It first tries an unauthenticated public download (no gh CLI),
 // then falls back to the GitHub CLI for private repositories or URL forms the
@@ -360,7 +373,9 @@ func stageRemoteAzureYaml(
 ) error {
 	fmt.Println(output.WithGrayFormat("Downloading sample from GitHub..."))
 
+	triedPublicDownload := false
 	if urlInfo := parseGitHubUrlNaive(pointer); urlInfo != nil {
+		triedPublicDownload = true
 		dirPath := parentDirOf(urlInfo.FilePath)
 		err := downloadDirectoryContentsWithoutGhCli(
 			ctx, urlInfo.RepoSlug, dirPath, dirPath, urlInfo.Branch, staging, httpClient,
@@ -373,6 +388,12 @@ func stageRemoteAzureYaml(
 			if hasAzureYaml {
 				return nil
 			}
+		}
+	}
+
+	if triedPublicDownload {
+		if err := clearStagingDirectory(staging); err != nil {
+			return err
 		}
 	}
 

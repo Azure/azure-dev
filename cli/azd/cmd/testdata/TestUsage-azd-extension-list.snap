@@ -6,7 +6,7 @@ Usage
 
 Flags
         --installed     	: List installed extensions
-        --source string 	: Filter extensions by source
+    -s, --source string 	: Filter extensions by registered source name or registry location (URL or file path).
         --tags strings  	: Filter extensions by tags
 
 Global Flags

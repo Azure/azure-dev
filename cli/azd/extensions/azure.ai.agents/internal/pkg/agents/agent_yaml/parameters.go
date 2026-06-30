@@ -58,8 +58,8 @@ func ProcessManifestParameters(
 	// either a parameter the manifest author forgot to declare under
 	// `parameters:` (typo / drift) or a literal `{{...}}` token the
 	// author intends to ship as-is. Either case warrants the warning,
-	// and the `Edit agent.yaml` advice is actionable from this point
-	// onward (the caller will write agent.yaml to disk moments later).
+	// and the `Edit azure.yaml` advice is actionable from this point
+	// onward (the caller will write the definition to azure.yaml).
 	//
 	// Earlier call sites of `InjectParameterValuesIntoManifest` (notably
 	// `ProcessModels` in init_models.go which substitutes only model
@@ -77,16 +77,16 @@ func ProcessManifestParameters(
 }
 
 // warnUnresolvedManifestPlaceholders re-marshals the template that will be
-// written to agent.yaml and prints a stdout warning naming any surviving
+// written to azure.yaml and prints a stdout warning naming any surviving
 // `{{NAME}}` placeholders. The nextstep guidance system uses the same
 // `PlaceholderPattern` so the warning names and the post-init `Next:` block
 // stay aligned (a placeholder reported in the warning must show up in the
 // Next: block, and vice versa).
 //
-// Scans only `manifest.Template` because that's what `writeAgentDefinitionFile`
-// marshals to agent.yaml; placeholders in other manifest sections (parameters,
+// Scans only `manifest.Template` because that's what gets written to
+// azure.yaml; placeholders in other manifest sections (parameters,
 // resources) never reach the on-disk file, so naming them in an
-// "Edit agent.yaml" warning would mislead the user.
+// "Edit azure.yaml" warning would mislead the user.
 func warnUnresolvedManifestPlaceholders(manifest *AgentManifest) error {
 	templateBytes, err := yaml.Marshal(manifest.Template)
 	if err != nil {
@@ -99,8 +99,8 @@ func warnUnresolvedManifestPlaceholders(manifest *AgentManifest) error {
 	}
 
 	fmt.Printf(
-		"Warning: agent.yaml has %d unresolved placeholder(s): %s. "+
-			"Edit agent.yaml and replace each `{{NAME}}` with the actual value before deploying.\n",
+		"Warning: azure.yaml has %d unresolved placeholder(s): %s. "+
+			"Edit azure.yaml and replace each `{{NAME}}` with the actual value before deploying.\n",
 		len(remaining),
 		strings.Join(remaining, ", "),
 	)

@@ -127,7 +127,7 @@ services:
 			wantIncludeAcr: false,
 		},
 		{
-			name: "greenfield hosted agent runtime-only (no docker)",
+			name: "greenfield hosted agent runtime-only (no docker) => ACR on",
 			yaml: `
 name: my-foundry-agent
 services:
@@ -149,6 +149,115 @@ services:
         runtime:
           stack: python
           version: "3.12"
+`,
+			serviceName:    "my-project",
+			wantDeployLen:  1,
+			wantIncludeAcr: true,
+		},
+		{
+			// Schema-conformant hand-authored shape (see schemas/examples/simple.azure.yaml):
+			// hosted agent built from source with no docker:/image:/codeConfiguration:.
+			name: "schema-conformant hosted agent, no docker => ACR on",
+			yaml: `
+services:
+  assistant:
+    host: azure.ai.agent
+    project: ./agents/assistant
+    kind: hosted
+    name: assistant
+    uses:
+      - ai-project
+  ai-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-4o-mini
+        model: {format: OpenAI, name: gpt-4o-mini, version: "2024-07-18"}
+        sku: {capacity: 10, name: GlobalStandard}
+`,
+			serviceName:    "ai-project",
+			wantDeployLen:  1,
+			wantIncludeAcr: true,
+		},
+		{
+			name: "sibling hosted agent, kind omitted defaults hosted => ACR on",
+			yaml: `
+services:
+  assistant:
+    host: azure.ai.agent
+    project: ./agents/assistant
+    name: assistant
+  ai-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-4o-mini
+        model: {format: OpenAI, name: gpt-4o-mini, version: "2024-07-18"}
+        sku: {capacity: 10, name: GlobalStandard}
+`,
+			serviceName:    "ai-project",
+			wantDeployLen:  1,
+			wantIncludeAcr: true,
+		},
+		{
+			name: "sibling hosted agent with codeConfiguration => no ACR",
+			yaml: `
+services:
+  assistant:
+    host: azure.ai.agent
+    project: ./agents/assistant
+    kind: hosted
+    name: assistant
+    codeConfiguration:
+      runtime: python_3_13
+      entryPoint: app.py
+  ai-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-4o-mini
+        model: {format: OpenAI, name: gpt-4o-mini, version: "2024-07-18"}
+        sku: {capacity: 10, name: GlobalStandard}
+`,
+			serviceName:    "ai-project",
+			wantDeployLen:  1,
+			wantIncludeAcr: false,
+		},
+		{
+			name: "sibling hosted agent with image, no docker => no ACR",
+			yaml: `
+services:
+  assistant:
+    host: azure.ai.agent
+    project: ./agents/assistant
+    kind: hosted
+    name: assistant
+    image: myprivacr.azurecr.io/agents/assistant:v1
+  ai-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-4o-mini
+        model: {format: OpenAI, name: gpt-4o-mini, version: "2024-07-18"}
+        sku: {capacity: 10, name: GlobalStandard}
+`,
+			serviceName:    "ai-project",
+			wantDeployLen:  1,
+			wantIncludeAcr: false,
+		},
+		{
+			name: "inline hosted agent with codeConfiguration => no ACR",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-4.1-mini
+        model: {format: OpenAI, name: gpt-4.1-mini, version: "2025-04-14"}
+        sku: {capacity: 10, name: GlobalStandard}
+    agents:
+      - name: my-agent
+        kind: hosted
+        project: src/my-agent
+        codeConfiguration:
+          runtime: dotnet_10
+          entryPoint: MyAgent.dll
 `,
 			serviceName:    "my-project",
 			wantDeployLen:  1,

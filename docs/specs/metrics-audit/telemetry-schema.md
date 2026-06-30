@@ -207,6 +207,7 @@ not emitted by azd spans.
 | Extension version from | `extension.version.from` | SystemMetadata | FeatureInsight | Installed version before an upgrade |
 | Extension version to | `extension.version.to` | SystemMetadata | FeatureInsight | Target version after an upgrade |
 | Extension source | `extension.source` | SystemMetadata | FeatureInsight | Registry source used for the upgrade |
+| Extension source kind | `extension.source.kind` | SystemMetadata | FeatureInsight | Allowed values: `none`, `registered`, `location` |
 | Extension source from | `extension.source.from` | SystemMetadata | FeatureInsight | Registry source before a promotion |
 | Extension source to | `extension.source.to` | SystemMetadata | FeatureInsight | Registry source after a promotion |
 | Upgrade duration | `extension.upgrade.duration_ms` | SystemMetadata | PerformanceAndHealth | **Measurement** — time in ms for one upgrade |

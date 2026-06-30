@@ -3540,9 +3540,9 @@ func TestRemoveContainerFiles(t *testing.T) {
 	t.Run("removes Dockerfile and .dockerignore when present", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM python:3.13"), 0644))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, ".dockerignore"), []byte("__pycache__"), 0644))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "app.py"), []byte("print('hi')"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM python:3.13"), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".dockerignore"), []byte("__pycache__"), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "app.py"), []byte("print('hi')"), 0600))
 
 		removeContainerFiles(dir)
 
@@ -3567,7 +3567,7 @@ func TestRemoveContainerFiles(t *testing.T) {
 		dir := t.TempDir()
 		files := []string{"requirements.txt", "app.py", "README.md"}
 		for _, f := range files {
-			require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("content"), 0644))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("content"), 0600))
 		}
 
 		removeContainerFiles(dir)

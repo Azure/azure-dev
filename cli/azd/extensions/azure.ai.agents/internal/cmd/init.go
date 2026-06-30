@@ -1594,13 +1594,6 @@ func (a *InitAction) Run(ctx context.Context) error {
 			a.isCodeDeploy = (deployMode == "code")
 
 			if a.isCodeDeploy {
-				// For GitHub-downloaded templates, remove container-only files
-				// that are not needed for code deploy. Skip for local manifests
-				// to avoid deleting user-owned files during re-init.
-				if a.isGitHubUrl(a.flags.manifestPointer) {
-					removeContainerFiles(targetDir)
-				}
-
 				// Prompt for code configuration and update the manifest
 				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt, codeDeployOptions{
 					runtime:       a.flags.runtime,
@@ -1609,6 +1602,14 @@ func (a *InitAction) Run(ctx context.Context) error {
 				}, a.userProvidedManifest)
 				if err != nil {
 					return fmt.Errorf("prompting for code configuration: %w", err)
+				}
+
+				// Remove container-only files only after configuration succeeds,
+				// so a cancelled prompt or error doesn't leave the directory in
+				// an inconsistent state. Only applies to GitHub-downloaded
+				// templates to avoid deleting user-owned files.
+				if a.isGitHubUrl(a.flags.manifestPointer) {
+					removeContainerFiles(targetDir)
 				}
 
 				hostedAgent := agentManifest.Template.(agent_yaml.ContainerAgent)

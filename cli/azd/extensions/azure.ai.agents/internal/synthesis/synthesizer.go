@@ -106,24 +106,30 @@ type DeploymentSku struct {
 	Capacity int    `yaml:"capacity" json:"capacity"`
 }
 
-// dockerBlock is the subset of a docker: object we read to decide whether a registry is needed.
-type dockerBlock struct {
-	Path string `yaml:"path"`
+// codeConfigBlock marks an agent as a code (ZIP) deploy. Its presence is the
+// signal; the keys are camelCase because the unified azure.ai.agent service
+// entry is serialized from the agent definition's JSON tags.
+type codeConfigBlock struct {
+	Runtime    string `yaml:"runtime,omitempty"`
+	EntryPoint string `yaml:"entryPoint,omitempty"`
 }
 
-// agentBlock is the subset of a legacy inline agent entry we inspect.
+// agentBlock is the subset of an agent entry we inspect — both the legacy inline
+// agents[] shape and the unified azure.ai.agent service shape.
 type agentBlock struct {
-	Name   string       `yaml:"name"`
-	Docker *dockerBlock `yaml:"docker,omitempty"`
-	Image  string       `yaml:"image,omitempty"`
+	Name              string           `yaml:"name,omitempty"`
+	Kind              string           `yaml:"kind,omitempty"`
+	Image             string           `yaml:"image,omitempty"`
+	CodeConfiguration *codeConfigBlock `yaml:"codeConfiguration,omitempty"`
 }
 
 // serviceBlock is the subset of a service entry we inspect for cross-service provisioning inputs.
 type serviceBlock struct {
-	Host   string       `yaml:"host"`
-	Docker *dockerBlock `yaml:"docker,omitempty"`
-	Image  string       `yaml:"image,omitempty"`
-	Agents []agentBlock `yaml:"agents,omitempty"`
+	Host              string           `yaml:"host"`
+	Kind              string           `yaml:"kind,omitempty"`
+	Image             string           `yaml:"image,omitempty"`
+	CodeConfiguration *codeConfigBlock `yaml:"codeConfiguration,omitempty"`
+	Agents            []agentBlock     `yaml:"agents,omitempty"`
 }
 
 // projectService is the subset of a host: azure.ai.project service body the synthesizer reads.
@@ -293,17 +299,22 @@ func resolveServiceRefs(node yaml.Node, projectRoot, serviceName string) (yaml.N
 	return out, nil
 }
 
-// deriveIncludeAcr reports whether provisioning should create an ACR. In the split
-// azure.yaml shape, project provisioning reads the azure.ai.project service while
-// Docker build settings live on sibling azure.ai.agent services. Until ACR gets a
-// first-class project-level switch, any Docker-backed agent in the single-project
-// file requires ACR. The legacy inline agents[] scan is kept for hand-authored
-// transitional files and tests.
+// deriveIncludeAcr reports whether provisioning should create an ACR. An ACR is
+// needed when any agent is a hosted, build-from-source agent: azd builds its
+// image and pushes it to the registry. Agents live on sibling azure.ai.agent
+// services in the split shape, or under agents[] in the legacy inline shape;
+// both are scanned. The decision mirrors the deploy-time contract:
+//
+//   - codeConfiguration present -> code (ZIP) deploy, no ACR
+//   - image present             -> pre-built image (BYO registry), no ACR
+//   - otherwise (hosted)        -> container build from source, needs ACR
+//
+// Keying on image/codeConfiguration rather than the optional docker: block is
+// deliberate: docker: is not in the agent schema and is dropped by omitempty
+// when remoteBuild is false, so it is not a reliable build signal.
 func deriveIncludeAcr(services map[string]yaml.Node, svc projectService) bool {
-	for _, a := range svc.Agents {
-		if a.Docker != nil && strings.TrimSpace(a.Image) == "" {
-			return true
-		}
+	if slices.ContainsFunc(svc.Agents, agentNeedsAcr) {
+		return true
 	}
 
 	for _, node := range services {
@@ -311,11 +322,33 @@ func deriveIncludeAcr(services map[string]yaml.Node, svc projectService) bool {
 		if err := node.Decode(&service); err != nil {
 			continue
 		}
-		if service.Host == "azure.ai.agent" && service.Docker != nil && strings.TrimSpace(service.Image) == "" {
+		if service.Host != "azure.ai.agent" {
+			continue
+		}
+		if agentNeedsAcr(agentBlock{
+			Kind:              service.Kind,
+			Image:             service.Image,
+			CodeConfiguration: service.CodeConfiguration,
+		}) {
 			return true
 		}
 	}
 	return false
+}
+
+// agentNeedsAcr reports whether a single agent entry builds a container image
+// from source (and therefore requires an ACR). Pre-built images and code/ZIP
+// deploys do not; any other hosted agent does.
+func agentNeedsAcr(a agentBlock) bool {
+	if a.CodeConfiguration != nil || strings.TrimSpace(a.Image) != "" {
+		return false
+	}
+	// "hosted" is the only container kind; an empty kind defaults to hosted for
+	// back-compat. Other explicit kinds (prompt, workflow) do not build.
+	// NOTE: if a future non-container kind can omit kind:, replace this
+	// default-to-hosted with an explicit allowlist so it does not trigger ACR.
+	kind := strings.TrimSpace(a.Kind)
+	return kind == "" || strings.EqualFold(kind, "hosted")
 }
 
 // Network mode values surfaced for telemetry and emitted as bicep params.

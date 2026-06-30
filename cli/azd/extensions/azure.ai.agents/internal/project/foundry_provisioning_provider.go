@@ -706,16 +706,19 @@ func (p *FoundryProvisioningProvider) captureBrownfieldDeployments(rawYAML []byt
 	return nil
 }
 
-// deployBrownfield handles the existing-project (endpoint:) Deploy path. When the
-// service declares deployments:, it creates/upserts them on the existing account
-// via a resource-group-scoped ARM deployment (the account is referenced, never
-// re-created). With no declared deployments it preserves the prior behavior:
-// skip provisioning and only surface the endpoint (plus a best-effort tenant).
+// deployBrownfield handles the existing-project (endpoint:) Deploy path. Via a
+// single resource-group-scoped ARM deployment against the existing (referenced,
+// never re-created) account it reconciles declared model deployments and, when
+// init flagged "acr" as pending provision, creates a container registry for the
+// hosted agent. With neither needed it skips provisioning and only surfaces the
+// endpoint (plus a best-effort tenant).
 func (p *FoundryProvisioningProvider) deployBrownfield(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDeployResult, error) {
-	if len(p.brownfieldDeployments) == 0 {
+	createACR := p.brownfieldACRRequested(ctx)
+
+	if len(p.brownfieldDeployments) == 0 && !createACR {
 		progress("Using existing Foundry project (endpoint set); skipping provisioning")
 		// Best-effort tenant lookup so AZURE_TENANT_ID is still surfaced for the
 		// existing-project path (no resources are provisioned here). Log on
@@ -731,7 +734,14 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 		}, nil
 	}
 
-	progress("Using existing Foundry project; reconciling declared model deployments...")
+	switch {
+	case len(p.brownfieldDeployments) > 0 && createACR:
+		progress("Using existing Foundry project; reconciling model deployments and container registry...")
+	case createACR:
+		progress("Using existing Foundry project; creating container registry...")
+	default:
+		progress("Using existing Foundry project; reconciling declared model deployments...")
+	}
 
 	// Locate the existing account (subscription, resource group, account name).
 	// resolveBrownfieldTarget sets p.subID, which the deployments client needs.
@@ -747,12 +757,9 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 
 	dep := armresources.Deployment{
 		Properties: &armresources.DeploymentProperties{
-			Template: tmpl,
-			Parameters: map[string]any{
-				"accountName": map[string]any{"value": account},
-				"deployments": map[string]any{"value": p.brownfieldDeployments},
-			},
-			Mode: new(armresources.DeploymentModeIncremental),
+			Template:   tmpl,
+			Parameters: p.brownfieldParams(ctx, account, rg, createACR),
+			Mode:       new(armresources.DeploymentModeIncremental),
 		},
 		Tags: map[string]*string{
 			"azd-env-name": new(p.envName),
@@ -764,24 +771,183 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 		return nil, err
 	}
 
-	name := p.deploymentName() + "-models"
-	progress(fmt.Sprintf("Starting model deployment %q on %s...", name, account))
+	name := p.brownfieldDeploymentName()
+	progress(fmt.Sprintf("Starting deployment %q on %s...", name, account))
 
 	poller, err := client.BeginCreateOrUpdate(ctx, rg, name, dep, nil)
 	if err != nil {
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
 	}
-	if _, err := pollWithProgress(ctx, poller, progress, "Model deployment in progress"); err != nil {
+	resp, err := pollWithProgress(ctx, poller, progress, "Brownfield deployment in progress")
+	if err != nil {
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
 	}
 
-	progress("Model deployments reconciled")
+	progress("Existing Foundry project reconciled")
+
+	// Merge endpoint/project outputs with any ACR outputs the template emitted,
+	// skipping empty values (includeAcr=false leg) so we don't clobber the env.
+	outputs := brownfieldOutputs(p.brownfieldEndpoint)
+	for k, v := range armOutputsToProto(deploymentOutputs(resp.Properties)) {
+		if v != nil && v.Value == "" {
+			continue
+		}
+		outputs[k] = v
+	}
 
 	return &azdext.ProvisioningDeployResult{
 		Deployment: &azdext.ProvisioningDeployment{
-			Outputs: p.withTenantOutput(brownfieldOutputs(p.brownfieldEndpoint)),
+			Outputs: p.withTenantOutput(outputs),
 		},
 	}, nil
+}
+
+// brownfieldParams builds the ARM parameter set for brownfield.arm.json, shared
+// by the Deploy and Preview paths. ACR params are added only when createACR.
+func (p *FoundryProvisioningProvider) brownfieldParams(
+	ctx context.Context, account, rg string, createACR bool,
+) map[string]any {
+	params := map[string]any{
+		"accountName": map[string]any{"value": account},
+		"deployments": map[string]any{"value": p.brownfieldDeployments},
+	}
+	if createACR {
+		params["includeAcr"] = map[string]any{"value": true}
+		params["acrName"] = map[string]any{"value": p.brownfieldACRName(account)}
+		params["projectName"] = map[string]any{"value": p.brownfieldProjectName()}
+		params["tags"] = map[string]any{"value": map[string]string{"azd-env-name": p.envName}}
+		// Only set location when resolved; an empty value would override the
+		// template default (resourceGroup().location) and fail the deployment.
+		if loc := p.brownfieldLocation(ctx, rg); loc != "" {
+			params["location"] = map[string]any{"value": loc}
+		}
+	}
+	return params
+}
+
+// previewBrownfield runs a resource-group-scoped what-if on brownfield.arm.json
+// so `azd provision --preview` shows the container registry and/or model
+// deployments that Deploy would create on the existing account. With nothing to
+// provision it reports an empty preview.
+func (p *FoundryProvisioningProvider) previewBrownfield(
+	ctx context.Context,
+	progress grpcbroker.ProgressFunc,
+) (*azdext.ProvisioningPreviewResult, error) {
+	createACR := p.brownfieldACRRequested(ctx)
+	if len(p.brownfieldDeployments) == 0 && !createACR {
+		progress("Using existing Foundry project (endpoint set); nothing to provision")
+		return &azdext.ProvisioningPreviewResult{
+			Preview: &azdext.ProvisioningDeploymentPreview{},
+		}, nil
+	}
+
+	progress("Computing deployment plan...")
+
+	rg, account, err := p.resolveBrownfieldTarget(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tmpl, err := brownfieldARMTemplate()
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := p.deploymentsClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	whatIf := armresources.DeploymentWhatIf{
+		Properties: &armresources.DeploymentWhatIfProperties{
+			Template:   tmpl,
+			Parameters: p.brownfieldParams(ctx, account, rg, createACR),
+			Mode:       new(armresources.DeploymentModeIncremental),
+		},
+	}
+
+	poller, err := client.BeginWhatIf(ctx, rg, p.brownfieldDeploymentName(), whatIf, nil)
+	if err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentWhatIf)
+	}
+	resp, err := pollWithProgress(ctx, poller, progress, "What-if analysis in progress")
+	if err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentWhatIf)
+	}
+	if err := whatIfFailure(resp.WhatIfOperationResult); err != nil {
+		return nil, err
+	}
+
+	return &azdext.ProvisioningPreviewResult{
+		Preview: &azdext.ProvisioningDeploymentPreview{
+			Summary: summarizeWhatIf(resp.WhatIfOperationResult),
+			Changes: whatIfChanges(resp.WhatIfOperationResult),
+		},
+	}, nil
+}
+
+// brownfieldACRRequested reports whether the brownfield Deploy should create a
+// container registry: init flagged "acr" in AI_AGENT_PENDING_PROVISION and no
+// AZURE_CONTAINER_REGISTRY_ENDPOINT is set yet. Best-effort; an env read error
+// disables creation rather than failing the deploy.
+func (p *FoundryProvisioningProvider) brownfieldACRRequested(ctx context.Context) bool {
+	if endpoint, _ := p.envValue(ctx, "AZURE_CONTAINER_REGISTRY_ENDPOINT"); endpoint != "" {
+		return false
+	}
+	pending, err := p.envValue(ctx, "AI_AGENT_PENDING_PROVISION")
+	if err != nil {
+		return false
+	}
+	for reason := range strings.SplitSeq(pending, ",") {
+		if strings.TrimSpace(reason) == "acr" {
+			return true
+		}
+	}
+	return false
+}
+
+// brownfieldProjectName returns the existing project name for the ACR connection,
+// preferring the value parsed from the endpoint and falling back to p.foundryName.
+func (p *FoundryProvisioningProvider) brownfieldProjectName() string {
+	if name := projectNameFromEndpoint(p.brownfieldEndpoint); name != "" {
+		return name
+	}
+	return p.foundryName
+}
+
+// brownfieldACRName derives a deterministic, ARM-valid container registry name
+// (alphanumeric, 5-50 chars, lowercase) for the brownfield ACR. The hash of the
+// account + project + env keeps re-runs stable and avoids collisions across
+// environments that reuse the same Foundry account.
+func (p *FoundryProvisioningProvider) brownfieldACRName(account string) string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(account + "|" + p.brownfieldProjectName() + "|" + p.envName))
+	return fmt.Sprintf("acr%08x", h.Sum32())
+}
+
+// brownfieldLocation resolves the region for the new registry from AZURE_LOCATION
+// (seeded by init), falling back to the existing resource group's location.
+func (p *FoundryProvisioningProvider) brownfieldLocation(ctx context.Context, rg string) string {
+	if loc, _ := p.envValue(ctx, envKeyLocation); loc != "" {
+		return loc
+	}
+	return p.resourceGroupLocation(ctx, rg)
+}
+
+// resourceGroupLocation returns the location of an existing resource group, or
+// "" on any error (the caller falls back to another source).
+func (p *FoundryProvisioningProvider) resourceGroupLocation(ctx context.Context, rg string) string {
+	if err := p.ensureCredential(ctx); err != nil {
+		return ""
+	}
+	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := factory.NewResourceGroupsClient().Get(ctx, rg, nil)
+	if err != nil || resp.Location == nil {
+		return ""
+	}
+	return *resp.Location
 }
 
 // resolveBrownfieldTarget locates the existing Foundry account to deploy models
@@ -985,10 +1151,7 @@ func (p *FoundryProvisioningProvider) Preview(
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
 	if p.brownfieldEndpoint != "" {
-		progress("Using existing Foundry project (endpoint set); nothing to provision")
-		return &azdext.ProvisioningPreviewResult{
-			Preview: &azdext.ProvisioningDeploymentPreview{},
-		}, nil
+		return p.previewBrownfield(ctx, progress)
 	}
 
 	progress("Computing deployment plan...")
@@ -1413,6 +1576,21 @@ func (p *FoundryProvisioningProvider) deploymentName() string {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(p.projectPath))
 	return fmt.Sprintf("%s%s-%08x", deploymentNamePrefix, p.envName, h.Sum32())
+}
+
+// brownfieldDeploymentName is deploymentName plus a "-brownfield" suffix, capped
+// at ARM's 64-character deployment-name limit. The trailing path hash and suffix
+// are preserved (uniqueness and intent); only the env-name portion is truncated.
+func (p *FoundryProvisioningProvider) brownfieldDeploymentName() string {
+	const maxLen = 64
+	name := p.deploymentName() + "-brownfield"
+	if len(name) <= maxLen {
+		return name
+	}
+	const suffix = "-brownfield"
+	hashTail := name[len(name)-len(suffix)-9 : len(name)-len(suffix)] // "-<8 hex>"
+	keep := maxLen - len(hashTail) - len(suffix)
+	return name[:keep] + hashTail + suffix
 }
 
 // armParameters wraps the synthesizer-derived values in ARM's {"value": ...}

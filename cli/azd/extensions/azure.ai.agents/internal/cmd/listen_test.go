@@ -4,9 +4,11 @@
 package cmd
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -767,4 +769,44 @@ func TestFindDuplicateAgentNames(t *testing.T) {
 func TestFindDuplicateAgentNames_NilProject(t *testing.T) {
 	t.Parallel()
 	require.Nil(t, findDuplicateAgentNames(nil))
+}
+
+func TestWarnDuplicateAgentNames_WritesWarningOnce(t *testing.T) {
+	// Do not run in parallel: this test temporarily redirects process stderr.
+	proj := &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"toolbox-agent-4": inlineAgentService(t, "toolbox-agent-4", "toolbox-agent-2"),
+			"toolbox-agent-2": inlineAgentService(t, "toolbox-agent-2", "toolbox-agent-2"),
+			"other":           inlineAgentService(t, "other", "other-agent"),
+		},
+	}
+
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stderr = w
+	t.Cleanup(func() {
+		os.Stderr = oldStderr
+		_ = r.Close()
+		_ = w.Close()
+	})
+
+	var once sync.Once
+	once.Do(func() { warnDuplicateAgentNames(proj) })
+	once.Do(func() { warnDuplicateAgentNames(proj) })
+
+	require.NoError(t, w.Close())
+	os.Stderr = oldStderr
+
+	var buf bytes.Buffer
+	_, err = buf.ReadFrom(r)
+	require.NoError(t, err)
+
+	warning := buf.String()
+	assert.Equal(t, 1, strings.Count(warning, "WARNING: agent name"))
+	assert.Contains(t, warning, `agent name "toolbox-agent-2"`)
+	assert.Contains(t, warning, "toolbox-agent-2, toolbox-agent-4")
+	assert.Contains(t, warning, "azure.yaml")
+	assert.NotContains(t, warning, "other-agent")
 }

@@ -386,7 +386,17 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 		return strings.TrimSpace(resp.Value), nil
 	}
 
-	if p.subID, err = get(envKeySubscriptionID); err != nil || p.subID == "" {
+	// A read error (env not found / corrupted / transport) is distinct from a
+	// key that is simply unset: GetValue returns ("", nil) for an absent key.
+	// Surface read failures; only prompt when the value is present-but-empty.
+	if p.subID, err = get(envKeySubscriptionID); err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf("read %s from azd environment %q: %s", envKeySubscriptionID, p.envName, err),
+			"verify the azd environment is accessible, then retry",
+		)
+	}
+	if p.subID == "" {
 		// Not set yet: prompt for a subscription (matching core `azd up`) and
 		// persist it, instead of failing. Under `--no-prompt` this surfaces an
 		// actionable "run `azd env set ...`" error so CI/scripts stay deterministic.
@@ -395,7 +405,14 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 		}
 	}
 
-	if p.location, err = get(envKeyLocation); err != nil || p.location == "" {
+	if p.location, err = get(envKeyLocation); err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf("read %s from azd environment %q: %s", envKeyLocation, p.envName, err),
+			"verify the azd environment is accessible, then retry",
+		)
+	}
+	if p.location == "" {
 		// Not set yet: prompt for a location and persist it, instead of failing.
 		if err := p.promptLocation(ctx); err != nil {
 			return err
@@ -457,7 +474,15 @@ func (p *FoundryProvisioningProvider) promptSubscription(ctx context.Context) er
 		)
 	}
 
-	p.subID = resp.GetSubscription().GetId()
+	subID := strings.TrimSpace(resp.GetSubscription().GetId())
+	if subID == "" {
+		return exterrors.Dependency(
+			exterrors.CodeMissingAzureSubscription,
+			"subscription selection returned an empty subscription id",
+			fmt.Sprintf("retry, or run `azd env set %s <subscription-id>`", envKeySubscriptionID),
+		)
+	}
+	p.subID = subID
 	return p.setEnv(ctx, envKeySubscriptionID, p.subID)
 }
 
@@ -490,7 +515,15 @@ func (p *FoundryProvisioningProvider) promptLocation(ctx context.Context) error 
 		)
 	}
 
-	p.location = resp.GetLocation().GetName()
+	location := strings.TrimSpace(resp.GetLocation().GetName())
+	if location == "" {
+		return exterrors.Dependency(
+			exterrors.CodeMissingAzureLocation,
+			"location selection returned an empty location name",
+			fmt.Sprintf("retry, or run `azd env set %s <region>`", envKeyLocation),
+		)
+	}
+	p.location = location
 	return p.setEnv(ctx, envKeyLocation, p.location)
 }
 

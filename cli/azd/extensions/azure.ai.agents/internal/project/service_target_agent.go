@@ -1273,7 +1273,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	protocols := agentDef.Protocols
 	if len(protocols) == 0 {
 		protocols = []agent_yaml.ProtocolVersionRecord{
-			{Protocol: string(agent_api.AgentProtocolResponses), Version: "1.0.0"},
+			{Protocol: string(agent_api.AgentProtocolResponses), Version: "2.0.0"},
 		}
 	}
 

@@ -962,6 +962,12 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
 		Long: `Initialize a new AI agent project.
 
+When -m points at a sample's unified azure.yaml (a project manifest that
+declares services with host: azure.ai.project / azure.ai.agent / ...), that
+azure.yaml is adopted as the project manifest and its referenced files are
+placed at the project root. When -m points at an agent manifest instead, the
+project's azure.yaml is generated from it.
+
 The agent name written to agent.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
 creates a new version of that existing agent instead of a separate agent.
@@ -971,7 +977,11 @@ a reusable sample or manifest.
 
 A default .agentignore file is generated to control which files are excluded
 from code-deploy ZIP packaging (uses .gitignore syntax).`,
-		Example: `  # Initialize from an agent manifest
+		Example: `  # Adopt a sample's unified azure.yaml as the project manifest
+  azd ai agent init -m ./azure.yaml
+  azd ai agent init -m https://github.com/Azure-Samples/<repo>/blob/main/azure.yaml
+
+  # Initialize from an agent manifest
   azd ai agent init -m ./agent.manifest.yaml
 
   # Initialize from a manifest with a unique Foundry agent name
@@ -1192,6 +1202,23 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				// instead of a manifest file — before downloading templates.
 				if err := checkNotDirectory(flags.manifestPointer); err != nil {
 					return err
+				}
+
+				// Detect whether the pointer is a unified Foundry azure.yaml
+				// (adopt it as the project manifest) versus an agent manifest
+				// (generate the project). For private GitHub URLs, the detector
+				// falls back to the authenticated gh CLI download path before
+				// deciding whether this is a unified azure.yaml. See #8798.
+				if content, ok := readManifestContentForInitDetection(
+					ctx, azdClient, flags.manifestPointer, httpClient,
+				); ok && looksLikeFoundryAzureYaml(content) {
+					if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
+						if exterrors.IsCancellation(err) {
+							return exterrors.Cancelled("initialization was cancelled")
+						}
+						return err
+					}
+					return nil
 				}
 
 				// Resolve the agent name BEFORE creating the project folder
@@ -1475,7 +1502,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Name of the AI model to use (e.g., 'gpt-4o'). If not specified, defaults to 'gpt-4.1-mini'. Mutually exclusive with --model-deployment, with --model-deployment being used if both are provided")
 
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
-		"Path or URI to an agent manifest to add to your azd project")
+		"Path or URI to an agent manifest, or to a sample's unified azure.yaml to adopt as the project manifest")
 
 	cmd.Flags().StringVar(&flags.agentName, "agent-name", "",
 		"Foundry agent name to write to agent.yaml. Reusing a name creates a new version of the existing agent.")
@@ -1704,23 +1731,7 @@ func ensureProject(
 	if err != nil {
 		fmt.Println("Let's get your project initialized.")
 
-		// Environment creation is handled separately in ensureEnvironment
-		envName := flags.env
-		if envName == "" {
-			// Derive environment name from target folder
-			envBase := targetDir
-			if targetDir == "." {
-				cwd, cwdErr := os.Getwd()
-				if cwdErr == nil {
-					envBase = filepath.Base(cwd)
-				}
-			}
-			base := sanitizeAgentName(envBase)
-			if len(base) > 59 {
-				base = strings.TrimRight(base[:59], "-")
-			}
-			envName = base + "-dev"
-		}
+		envName := deriveEnvName(flags, targetDir)
 
 		// Scaffold a minimal project via `azd init -t <empty dir> <targetDir>`.
 		// We use an empty template dir rather than `--minimal` (which can't
@@ -1739,55 +1750,8 @@ func ensureProject(
 		}
 		defer os.RemoveAll(emptyTemplateDir)
 
-		initArgs := []string{
-			"init", "-t", emptyTemplateDir, targetDir,
-			"--environment", envName,
-		}
-
-		// We don't have a project yet
-		// Dispatch a workflow to init the project
-		workflow := &azdext.Workflow{
-			Name: "init",
-			Steps: []*azdext.WorkflowStep{
-				{Command: &azdext.WorkflowCommand{Args: initArgs}},
-			},
-		}
-
-		_, err = azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
-			Workflow: workflow,
-		})
-
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("project initialization was cancelled")
-			}
-			return nil, exterrors.Dependency(
-				exterrors.CodeProjectInitFailed,
-				fmt.Sprintf("failed to initialize project: %s", err),
-				"",
-			)
-		}
-
-		// Best-effort: generate a salt so uniqueString()-based resource names
-		// differ across project recreations. If anything fails the Bicep
-		// templates fall back to the original deterministic hash.
-		salt := ensureResourceTokenSalt(ctx, azdClient, envName)
-
-		// Best-effort: write a salted AZURE_RESOURCE_GROUP so recreated
-		// projects get a fresh RG (avoiding collisions with leftovers from
-		// a prior teardown). Skipped when salt generation failed or when
-		// AZURE_RESOURCE_GROUP is already set.
-		ensureResourceGroupName(ctx, azdClient, envName, salt)
-
-		// Sync the extension process into the new project directory so that
-		// subsequent local file operations see the scaffolded project.
-		if targetDir != "." {
-			if chdirErr := os.Chdir(targetDir); chdirErr != nil {
-				return nil, fmt.Errorf(
-					"changing to project directory %q: %w",
-					targetDir, chdirErr,
-				)
-			}
+		if err := scaffoldProject(ctx, azdClient, targetDir, emptyTemplateDir, envName); err != nil {
+			return nil, err
 		}
 
 		if err := writeFoundryProvider(ctx, azdClient); err != nil {
@@ -1834,6 +1798,88 @@ func ensureProject(
 	}
 
 	return projectResponse.Project, nil
+}
+
+// deriveEnvName resolves the azd environment name for a new project: the
+// explicit --environment flag when set, otherwise a sanitized name derived from
+// the target folder (or the current directory when targetDir is ".").
+func deriveEnvName(flags *initFlags, targetDir string) string {
+	if flags.env != "" {
+		return flags.env
+	}
+
+	envBase := targetDir
+	if targetDir == "." {
+		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+			envBase = filepath.Base(cwd)
+		}
+	}
+	base := sanitizeAgentName(envBase)
+	if len(base) > 59 {
+		base = strings.TrimRight(base[:59], "-")
+	}
+	return base + "-dev"
+}
+
+// scaffoldProject runs `azd init -t <templateDir> <targetDir> --environment
+// <envName>` via the Workflow API, seeds best-effort salt/resource-group env
+// vars, and changes the extension process into the new project directory.
+//
+// templateDir is the directory azd-core copies as the template: an empty
+// staging dir when generating a project from an agent manifest, or a sample
+// directory carrying a unified azure.yaml when adopting it (#8798). azd-core
+// copies a local template directory wholesale and only writes azure.yaml when
+// one is absent, so an adopted sample's azure.yaml lands at the project root
+// unchanged.
+func scaffoldProject(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	targetDir string,
+	templateDir string,
+	envName string,
+) error {
+	workflow := &azdext.Workflow{
+		Name: "init",
+		Steps: []*azdext.WorkflowStep{
+			{Command: &azdext.WorkflowCommand{Args: []string{
+				"init", "-t", templateDir, targetDir,
+				"--environment", envName,
+			}}},
+		},
+	}
+
+	if _, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+		Workflow: workflow,
+	}); err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("project initialization was cancelled")
+		}
+		return exterrors.Dependency(
+			exterrors.CodeProjectInitFailed,
+			fmt.Sprintf("failed to initialize project: %s", err),
+			"",
+		)
+	}
+
+	// Best-effort: generate a salt so uniqueString()-based resource names
+	// differ across project recreations, and write a salted
+	// AZURE_RESOURCE_GROUP so recreated projects get a fresh RG. If anything
+	// fails the Bicep templates fall back to the original deterministic hash.
+	salt := ensureResourceTokenSalt(ctx, azdClient, envName)
+	ensureResourceGroupName(ctx, azdClient, envName, salt)
+
+	// Sync the extension process into the new project directory so that
+	// subsequent local file operations see the scaffolded project.
+	if targetDir != "." {
+		if chdirErr := os.Chdir(targetDir); chdirErr != nil {
+			return fmt.Errorf(
+				"changing to project directory %q: %w",
+				targetDir, chdirErr,
+			)
+		}
+	}
+
+	return nil
 }
 
 // writeFoundryProvider stamps `infra.provider: <FoundryProviderName>`

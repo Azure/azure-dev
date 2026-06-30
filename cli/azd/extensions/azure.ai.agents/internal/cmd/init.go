@@ -665,7 +665,7 @@ func synthesizeImageManifestFile(agentName, image string) (string, func(), error
 			"name":        agentName,
 			"description": fmt.Sprintf("Hosted container agent using pre-built image %s", image),
 			"protocols": []map[string]any{
-				{"protocol": "responses", "version": "1.0.0"},
+				{"protocol": "responses", "version": "2.0.0"},
 			},
 		},
 	}

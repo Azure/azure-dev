@@ -24,7 +24,7 @@ func sampleContainerAgent() agent_yaml.ContainerAgent {
 			Description: new("A basic agent hosted by Foundry."),
 		},
 		Protocols: []agent_yaml.ProtocolVersionRecord{
-			{Protocol: "responses", Version: "1.0.0"},
+			{Protocol: "responses", Version: "2.0.0"},
 		},
 		EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
 			{Name: "FOUNDRY_MODEL_DEPLOYMENT_NAME", Value: "gpt-4.1-mini"},

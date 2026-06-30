@@ -587,7 +587,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			name:          "responses only",
 			flagProtocols: []string{"responses"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "1.0.0"},
+				{Protocol: "responses", Version: "2.0.0"},
 			},
 		},
 		{
@@ -601,7 +601,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			name:          "both protocols",
 			flagProtocols: []string{"responses", "invocations"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "1.0.0"},
+				{Protocol: "responses", Version: "2.0.0"},
 				{Protocol: "invocations", Version: "1.0.0"},
 			},
 		},
@@ -615,7 +615,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			name:          "duplicates are removed",
 			flagProtocols: []string{"responses", "responses", "invocations"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "1.0.0"},
+				{Protocol: "responses", Version: "2.0.0"},
 				{Protocol: "invocations", Version: "1.0.0"},
 			},
 		},
@@ -666,8 +666,8 @@ func TestPromptProtocols_NoPromptDefault(t *testing.T) {
 	if got[0].Protocol != "responses" {
 		t.Errorf("protocol = %q, want %q", got[0].Protocol, "responses")
 	}
-	if got[0].Version != "1.0.0" {
-		t.Errorf("version = %q, want %q", got[0].Version, "1.0.0")
+	if got[0].Version != "2.0.0" {
+		t.Errorf("version = %q, want %q", got[0].Version, "2.0.0")
 	}
 }
 
@@ -722,7 +722,7 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 				}, nil
 			},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "1.0.0"},
+				{Protocol: "responses", Version: "2.0.0"},
 				{Protocol: "invocations", Version: "1.0.0"},
 			},
 		},
@@ -737,7 +737,7 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 				}, nil
 			},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "1.0.0"},
+				{Protocol: "responses", Version: "2.0.0"},
 			},
 		},
 		{

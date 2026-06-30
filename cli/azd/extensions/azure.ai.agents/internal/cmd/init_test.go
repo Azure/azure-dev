@@ -336,7 +336,7 @@ func TestSynthesizeImageManifestFile(t *testing.T) {
 	require.Empty(t, containerAgent.Image)
 	require.Len(t, containerAgent.Protocols, 1)
 	require.Equal(t, "responses", containerAgent.Protocols[0].Protocol)
-	require.Equal(t, "1.0.0", containerAgent.Protocols[0].Version)
+	require.Equal(t, "2.0.0", containerAgent.Protocols[0].Version)
 
 	// cleanup removes the temp directory.
 	cleanup()
@@ -362,7 +362,7 @@ func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
 				Description: &description,
 			},
 			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "1.0.0"},
+				{Protocol: "responses", Version: "2.0.0"},
 			},
 		},
 	}

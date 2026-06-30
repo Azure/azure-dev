@@ -38,7 +38,7 @@ func newSessionCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Manage sessions for a hosted agent endpoint.",
 		Long: `Manage sessions for a hosted agent endpoint.
 
-Create, show, list, and delete hosted agent sessions.
+Create, show, stop, list, and delete hosted agent sessions.
 Sessions provide persistent compute and filesystem state for 
 hosted agent invocations.
 
@@ -52,6 +52,7 @@ on each session operation.`,
 
 	cmd.AddCommand(newSessionCreateCommand(extCtx))
 	cmd.AddCommand(newSessionShowCommand(extCtx))
+	cmd.AddCommand(newSessionStopCommand(extCtx))
 	cmd.AddCommand(newSessionDeleteCommand(extCtx))
 	cmd.AddCommand(newSessionListCommand(extCtx))
 
@@ -369,6 +370,104 @@ func (a *SessionShowAction) Run(ctx context.Context) error {
 	}
 
 	return printSession(session, a.flags.output)
+}
+
+// ---------------------------------------------------------------------------
+// session stop
+// ---------------------------------------------------------------------------
+
+type sessionStopFlags struct {
+	sessionFlags
+}
+
+func newSessionStopCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	flags := &sessionStopFlags{}
+	action := &SessionStopAction{flags: flags}
+	extCtx = ensureExtensionContext(extCtx)
+
+	cmd := &cobra.Command{
+		Use:   "stop <session-id>",
+		Short: "Stop a running session.",
+		Long: `Stop a running hosted agent session.
+
+Terminates the session's running compute while preserving its persistent
+filesystem volume. Unlike 'delete', the session is retained and can be
+resumed by a subsequent invocation. Returns once the session is stopped.`,
+		Example: `  # Stop a session
+  azd ai agent sessions stop my-session`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags.noPrompt = extCtx.NoPrompt
+
+			ctx := azdext.WithAccessToken(cmd.Context())
+
+			action.sessionID = args[0]
+			return action.Run(ctx)
+		},
+	}
+
+	// Only register --agent-name, not --output (stop has no
+	// formatted output).
+	cmd.Flags().StringVarP(
+		&flags.agentName, "agent-name", "n", "",
+		"Agent name (matches azure.yaml service name; "+
+			"auto-detected when only one exists)",
+	)
+	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
+
+	return cmd
+}
+
+// SessionStopAction implements stopping a running session.
+type SessionStopAction struct {
+	flags     *sessionStopFlags
+	sessionID string
+}
+
+func (a *SessionStopAction) Run(ctx context.Context) error {
+	sc, err := resolveSessionContext(ctx, a.flags.agentName, a.flags.noPrompt)
+	if err != nil {
+		return err
+	}
+
+	credential, err := newAgentCredential()
+	if err != nil {
+		return err
+	}
+
+	client := agent_api.NewAgentClient(sc.endpoint, credential)
+
+	err = client.StopSession(
+		ctx,
+		sc.agentName,
+		a.sessionID,
+		DefaultAgentAPIVersion,
+		a.flags.sessionRequestOptions(),
+	)
+	if err != nil {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+			respErr.StatusCode == http.StatusNotFound {
+			return exterrors.Validation(
+				exterrors.CodeSessionNotFound,
+				fmt.Sprintf(
+					"session %q not found or has been deleted",
+					a.sessionID,
+				),
+				"use 'azd ai agent sessions list' to see "+
+					"available sessions",
+			)
+		}
+		return exterrors.ServiceFromAzure(
+			err, exterrors.OpStopSession,
+		)
+	}
+
+	fmt.Printf(
+		"Session %q stopped for agent %q.\n",
+		a.sessionID, sc.agentName,
+	)
+
+	return nil
 }
 
 // ---------------------------------------------------------------------------

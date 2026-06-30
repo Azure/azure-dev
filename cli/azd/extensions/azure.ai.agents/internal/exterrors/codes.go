@@ -181,6 +181,7 @@ const (
 	OpCreateSession         = "create_session"
 	OpGetSession            = "get_session"
 	OpDeleteSession         = "delete_session"
+	OpStopSession           = "stop_session"
 	OpListSessions          = "list_sessions"
 	OpCreateToolboxVersion  = "create_toolbox_version"
 	OpGetToolbox            = "get_toolbox"

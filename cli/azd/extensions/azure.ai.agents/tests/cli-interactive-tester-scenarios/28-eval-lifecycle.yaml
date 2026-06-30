@@ -1,0 +1,41 @@
+# Tier 2 (cloud E2E) — `eval` lifecycle against the deployed shared agent.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+# Exercises eval init -> list -> show. Uses a tiny sample budget to keep the run
+# cheap and fast. The agent and Foundry project endpoint are auto-detected from
+# the shared agent's azure.yaml.
+#
+# IMPORTANT — eval init is ASYNC: with --no-wait it submits dataset generation
+# (datagen-*) and evaluator generation (evaluatorgen-*) jobs and returns
+# immediately, surfacing those job IDs and writing eval.yaml. It does NOT create
+# an eval "run" — `azd ai agent eval run` does that. So right after a --no-wait
+# init, `eval list` will typically show 0 rows (generation still in progress) and
+# `eval show` with no eval-id will error cleanly ("no eval-id provided and none
+# found ..."). The goal here is to confirm each command EXECUTES and degrades
+# gracefully, not that a run appears instantly.
+name: "eval-lifecycle"
+command: "azd ai agent eval init --max-samples 15 --no-wait"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:eval", "serial-only"]
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Run 'eval init --max-samples 15 --no-wait'; the agent and project endpoint are auto-detected from azure.yaml. Accept the default eval suite name when prompted."
+  - "If asked how to provide the agent instruction, choose 'Type inline' and give a short description; decline including agent traces; when prompted for an eval/generation model, accept the deployed model default."
+  - "Confirm 'eval init' returns WITHOUT blocking (because of --no-wait) and surfaces async job identifiers — dataset generation (datagen-*) and evaluator generation (evaluatorgen-*) — and reports that eval.yaml was written."
+  - "Run 'azd ai agent eval list' and confirm it renders the eval table cleanly and exits 0. NOTE: because init is async, the list may legitimately show 0 rows immediately after a --no-wait init (generation still in progress, and no run has been created yet) — an empty list here is NOT a failure."
+  - "Run 'azd ai agent eval show' and confirm it either prints details for an eval-id or errors CLEANLY with a helpful message (e.g. 'no eval-id provided and none found ... run eval init first or pass an eval-id') and a non-zero exit — no crash or stack trace."
+  - "Take a screenshot of the eval init, list, and show output."
+  - "Report a finding ONLY if: eval init hangs despite --no-wait, the async job IDs are not surfaced, any of the commands crash / print a stack trace, or auth/endpoint errors occur. (An empty eval list or an eval-id-required message immediately after init is expected, not a failure.)"
+
+post:
+  - run: "echo 'eval-lifecycle complete; eval runs are managed in Foundry and incur no standing local resources'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "note: no local teardown required"
+    continue_on_error: true

@@ -1,0 +1,22 @@
+# Tier 2 (cloud E2E) — `monitor` console logs for the last session.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully,
+# and at least one invoke has happened so a session exists to stream logs from.
+name: "monitor-console"
+command: "bash"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:monitor", "serial-only"]
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Ensure recent activity: run 'azd ai agent invoke \"generate some output\"' so the session has console logs."
+  - "Run: azd ai agent monitor --tail 50. Confirm recent console (stdout/stderr) log lines are fetched and printed, then the command exits (no --follow)."
+  - "Confirm timestamps are shown in local time by default and the output is readable."
+  - "Take a screenshot of the log output."
+  - "Report a finding if no session can be auto-resolved, if logs are empty despite recent activity, or if the output is garbled."

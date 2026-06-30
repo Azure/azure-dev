@@ -1,0 +1,43 @@
+# Tier 2 (cloud E2E) — submit an `optimize` job, then list / status / cancel it.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+# Optimization is an expensive iterative process, so this scenario caps it at a
+# single iteration, submits with --no-wait, then immediately cancels to avoid
+# incurring a full optimization run. The agent is auto-detected from azure.yaml.
+#
+# ⚠️ ADDITIONAL PREREQUISITE — Agent Optimizer enrollment: the optimize command
+# group is preview-gated PER SUBSCRIPTION. If the target subscription is not
+# registered for Agent Optimizer, both 'optimize' (submit) and 'optimize list'
+# return a clean HTTP 400 with error code 'SubscriptionNotRegistered' and a
+# signup link (https://aka.ms/ao/quickstart), and the submit->status->cancel
+# lifecycle cannot be exercised. To run the full happy path, first register the
+# subscription for Agent Optimizer. When enrollment is absent, the CORRECT
+# behavior is the clean gated error below (capture it and stop) — that is an
+# acceptable outcome for this scenario, not a product failure.
+name: "optimize-submit-and-cancel"
+command: "azd ai agent optimize --eval-model {model} --max-iterations 1 --no-wait"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:optimize", "serial-only"]
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Run 'optimize --eval-model {model} --max-iterations 1 --no-wait' to submit an optimization job without blocking; the agent is auto-detected from azure.yaml. Work through the prompts (use the project eval.yaml, accept the baseline instruction file, skip skills/tools, provide a dataset, accept the optimization model)."
+  - "GATING CHECK: if the command (or 'optimize list') returns a clean HTTP 400 with error code 'SubscriptionNotRegistered' (subscription not registered for Agent Optimizer, signup at https://aka.ms/ao/quickstart), this subscription is not enrolled. Confirm the error is CLEAN (structured error body, code, signup link, non-zero exit — no crash/hang), capture a screenshot, report it as an enrollment-gap finding, and STOP — the remaining list/status/cancel steps cannot run without enrollment."
+  - "If the job IS submitted successfully (subscription enrolled): confirm the command returns without blocking (because of --no-wait) and surfaces a job identifier."
+  - "Run 'azd ai agent optimize list' and confirm the just-submitted job appears with a status."
+  - "Run 'azd ai agent optimize status <id>' using the job id and confirm it prints status details without crashing (a queued/running status is acceptable)."
+  - "Run 'azd ai agent optimize cancel <id>' using the job id to cancel the job, and confirm it reports the job was cancelled (or already terminal)."
+  - "Take a screenshot of the list / status / cancel output."
+  - "Report a finding if submit hangs despite --no-wait, the job id is not surfaced (when enrolled), list/status error out unexpectedly, cancel fails to stop a still-running job, or any command crashes / prints a stack trace rather than a clean error."
+
+post:
+  - run: "echo 'optimize-submit-and-cancel complete; job was cancelled, no standing local resources'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "note: job cancelled, no local teardown required"
+    continue_on_error: true

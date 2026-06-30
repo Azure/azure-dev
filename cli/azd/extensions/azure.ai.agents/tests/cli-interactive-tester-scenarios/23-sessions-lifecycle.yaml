@@ -1,0 +1,25 @@
+# Tier 2 (cloud E2E) — `sessions` lifecycle: create, list, show, delete.
+#
+# Precondition: 20-setup-deploy-shared-agent.yaml has been run successfully.
+# Targets the `sessions` command group end-to-end in one run.
+name: "sessions-lifecycle"
+command: "bash"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:sessions", "serial-only"]
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 20-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Run: azd ai agent sessions create. Confirm a new session is created and note its session ID."
+  - "Run: azd ai agent sessions list --output table. Confirm the newly created session appears in the list."
+  - "Run: azd ai agent sessions show <session-id> using the ID from create. Confirm session details (status, version) are shown."
+  - "Run: azd ai agent sessions delete <session-id>. Confirm the session is deleted (synchronously)."
+  - "Run: azd ai agent sessions list again. The service SOFT-DELETES sessions, so it is EXPECTED and acceptable for the entry to still appear with status 'deleted' (it should NOT appear as 'active'). Either the entry being gone OR present with status 'deleted' is a PASS."
+  - "Run: azd ai agent sessions show <session-id> for the deleted session and confirm it reports the session as not found / deleted (this verifies the delete took effect even though list may still show it)."
+  - "Take a screenshot after each step."
+  - "Report a finding only if any subcommand errors, if the created session is missing from list before delete, or if after delete the session still shows as 'active' (a soft-deleted 'deleted' status is NOT a finding)."

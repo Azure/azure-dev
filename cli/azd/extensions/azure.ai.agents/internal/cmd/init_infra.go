@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -129,6 +130,19 @@ func ejectInfra(projectRoot, provider string) error {
 		PreserveVarRefs: true,
 	})
 	if err != nil {
+		// A brownfield (endpoint:) project provisions through the extension's
+		// brownfield path, which never compiles ./infra/. Ejecting IaC for it
+		// would be misleading, so refuse with a clear message instead of the
+		// raw synthesizer error.
+		if errors.Is(err, synthesis.ErrEndpointBrownfield) {
+			return exterrors.Validation(
+				exterrors.CodeInfraEjectBrownfieldUnsupported,
+				"`azd ai agent init --infra` is not supported for a project that reuses an existing "+
+					"Foundry resource (the azure.ai.project service sets endpoint:)",
+				"remove --infra: the extension provisions the existing project (and any required "+
+					"container registry) directly with `azd provision`",
+			)
+		}
 		// Reuse the provider's vocabulary so eject and provision report
 		// consistent codes for the same azure.yaml problems.
 		return exterrors.Validation(

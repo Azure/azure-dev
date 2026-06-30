@@ -149,6 +149,25 @@ services:
 	assert.Contains(t, localErr.Message, "[agent-a agent-b]")
 }
 
+func TestEjectInfra_RefusesWhenBrownfieldEndpoint(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+services:
+  ai-project:
+    host: azure.ai.project
+    endpoint: https://acct.services.ai.azure.com/api/projects/p1
+`)
+
+	err := ejectInfra(dir, "bicep")
+	require.Error(t, err)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInfraEjectBrownfieldUnsupported, localErr.Code)
+	assert.Contains(t, localErr.Message, "endpoint:")
+}
+
 func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
 	// Intentionally NOT parallel: this test captures os.Stdout, and running
 	// it concurrently with other stdout-capturing tests in the same package

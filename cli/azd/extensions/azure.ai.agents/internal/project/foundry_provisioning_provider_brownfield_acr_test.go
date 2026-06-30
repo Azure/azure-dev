@@ -6,7 +6,10 @@ package project
 import (
 	"context"
 	"net"
+	"strings"
 	"testing"
+
+	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -142,4 +145,56 @@ func TestBrownfieldProjectName(t *testing.T) {
 		brownfieldEndpoint: "https://acct.services.ai.azure.com/",
 	}
 	assert.Equal(t, "fallback", p2.brownfieldProjectName())
+}
+
+func TestBrownfieldDeploymentName(t *testing.T) {
+	t.Parallel()
+
+	// Short env name: full "<name>-brownfield" fits under 64 chars.
+	short := &FoundryProvisioningProvider{envName: "dev", projectPath: "/p"}
+	name := short.brownfieldDeploymentName()
+	assert.LessOrEqual(t, len(name), 64)
+	assert.True(t, strings.HasSuffix(name, "-brownfield"), "got %q", name)
+	assert.Equal(t, short.deploymentName()+"-brownfield", name)
+
+	// Long env name: must be capped at 64 while keeping the suffix.
+	long := &FoundryProvisioningProvider{
+		envName:     "agent-framework-agent-basic-invocations-dev",
+		projectPath: "/some/long/project/path",
+	}
+	lname := long.brownfieldDeploymentName()
+	assert.LessOrEqual(t, len(lname), 64, "got %q (len %d)", lname, len(lname))
+	assert.True(t, strings.HasSuffix(lname, "-brownfield"), "got %q", lname)
+}
+
+func TestBrownfieldParams(t *testing.T) {
+	t.Parallel()
+
+	deployments := []synthesis.Deployment{{Name: "gpt-4o-mini"}}
+
+	t.Run("without ACR carries only account and deployments", func(t *testing.T) {
+		t.Parallel()
+		p := &FoundryProvisioningProvider{envName: "dev", brownfieldDeployments: deployments}
+		params := p.brownfieldParams(t.Context(), "acct", "rg", false)
+
+		assert.Equal(t, map[string]any{"value": "acct"}, params["accountName"])
+		assert.Equal(t, map[string]any{"value": deployments}, params["deployments"])
+		assert.NotContains(t, params, "includeAcr")
+		assert.NotContains(t, params, "acrName")
+	})
+
+	t.Run("with ACR adds registry params", func(t *testing.T) {
+		t.Parallel()
+		p := &FoundryProvisioningProvider{
+			envName:            "dev",
+			brownfieldEndpoint: "https://acct.services.ai.azure.com/api/projects/my-project",
+			azdClient:          newKVEnvClient(t, map[string]string{"AZURE_LOCATION": "westus2"}),
+		}
+		params := p.brownfieldParams(t.Context(), "acct", "rg", true)
+
+		assert.Equal(t, map[string]any{"value": true}, params["includeAcr"])
+		assert.Equal(t, map[string]any{"value": "my-project"}, params["projectName"])
+		assert.Equal(t, map[string]any{"value": "westus2"}, params["location"])
+		assert.Equal(t, map[string]any{"value": p.brownfieldACRName("acct")}, params["acrName"])
+	})
 }

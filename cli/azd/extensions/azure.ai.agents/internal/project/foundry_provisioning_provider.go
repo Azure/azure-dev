@@ -643,23 +643,10 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 		return nil, err
 	}
 
-	params := map[string]any{
-		"accountName": map[string]any{"value": account},
-		"deployments": map[string]any{"value": p.brownfieldDeployments},
-	}
-	if createACR {
-		acrName := p.brownfieldACRName(account)
-		params["includeAcr"] = map[string]any{"value": true}
-		params["acrName"] = map[string]any{"value": acrName}
-		params["projectName"] = map[string]any{"value": p.brownfieldProjectName()}
-		params["location"] = map[string]any{"value": p.brownfieldLocation(ctx, rg)}
-		params["tags"] = map[string]any{"value": map[string]string{"azd-env-name": p.envName}}
-	}
-
 	dep := armresources.Deployment{
 		Properties: &armresources.DeploymentProperties{
 			Template:   tmpl,
-			Parameters: params,
+			Parameters: p.brownfieldParams(ctx, account, rg, createACR),
 			Mode:       new(armresources.DeploymentModeIncremental),
 		},
 		Tags: map[string]*string{
@@ -672,7 +659,7 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 		return nil, err
 	}
 
-	name := p.deploymentName() + "-brownfield"
+	name := p.brownfieldDeploymentName()
 	progress(fmt.Sprintf("Starting deployment %q on %s...", name, account))
 
 	poller, err := client.BeginCreateOrUpdate(ctx, rg, name, dep, nil)
@@ -699,6 +686,85 @@ func (p *FoundryProvisioningProvider) deployBrownfield(
 	return &azdext.ProvisioningDeployResult{
 		Deployment: &azdext.ProvisioningDeployment{
 			Outputs: p.withTenantOutput(outputs),
+		},
+	}, nil
+}
+
+// brownfieldParams builds the ARM parameter set for brownfield.arm.json, shared
+// by the Deploy and Preview paths. ACR params are added only when createACR.
+func (p *FoundryProvisioningProvider) brownfieldParams(
+	ctx context.Context, account, rg string, createACR bool,
+) map[string]any {
+	params := map[string]any{
+		"accountName": map[string]any{"value": account},
+		"deployments": map[string]any{"value": p.brownfieldDeployments},
+	}
+	if createACR {
+		params["includeAcr"] = map[string]any{"value": true}
+		params["acrName"] = map[string]any{"value": p.brownfieldACRName(account)}
+		params["projectName"] = map[string]any{"value": p.brownfieldProjectName()}
+		params["location"] = map[string]any{"value": p.brownfieldLocation(ctx, rg)}
+		params["tags"] = map[string]any{"value": map[string]string{"azd-env-name": p.envName}}
+	}
+	return params
+}
+
+// previewBrownfield runs a resource-group-scoped what-if on brownfield.arm.json
+// so `azd provision --preview` shows the container registry and/or model
+// deployments that Deploy would create on the existing account. With nothing to
+// provision it reports an empty preview.
+func (p *FoundryProvisioningProvider) previewBrownfield(
+	ctx context.Context,
+	progress grpcbroker.ProgressFunc,
+) (*azdext.ProvisioningPreviewResult, error) {
+	createACR := p.brownfieldACRRequested(ctx)
+	if len(p.brownfieldDeployments) == 0 && !createACR {
+		progress("Using existing Foundry project (endpoint set); nothing to provision")
+		return &azdext.ProvisioningPreviewResult{
+			Preview: &azdext.ProvisioningDeploymentPreview{},
+		}, nil
+	}
+
+	progress("Computing deployment plan...")
+
+	rg, account, err := p.resolveBrownfieldTarget(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tmpl, err := brownfieldARMTemplate()
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := p.deploymentsClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	whatIf := armresources.DeploymentWhatIf{
+		Properties: &armresources.DeploymentWhatIfProperties{
+			Template:   tmpl,
+			Parameters: p.brownfieldParams(ctx, account, rg, createACR),
+			Mode:       new(armresources.DeploymentModeIncremental),
+		},
+	}
+
+	poller, err := client.BeginWhatIf(ctx, rg, p.brownfieldDeploymentName(), whatIf, nil)
+	if err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentWhatIf)
+	}
+	resp, err := pollWithProgress(ctx, poller, progress, "What-if analysis in progress")
+	if err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentWhatIf)
+	}
+	if err := whatIfFailure(resp.WhatIfOperationResult); err != nil {
+		return nil, err
+	}
+
+	return &azdext.ProvisioningPreviewResult{
+		Preview: &azdext.ProvisioningDeploymentPreview{
+			Summary: summarizeWhatIf(resp.WhatIfOperationResult),
+			Changes: whatIfChanges(resp.WhatIfOperationResult),
 		},
 	}, nil
 }
@@ -969,10 +1035,7 @@ func (p *FoundryProvisioningProvider) Preview(
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
 	if p.brownfieldEndpoint != "" {
-		progress("Using existing Foundry project (endpoint set); nothing to provision")
-		return &azdext.ProvisioningPreviewResult{
-			Preview: &azdext.ProvisioningDeploymentPreview{},
-		}, nil
+		return p.previewBrownfield(ctx, progress)
 	}
 
 	progress("Computing deployment plan...")
@@ -1397,6 +1460,21 @@ func (p *FoundryProvisioningProvider) deploymentName() string {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(p.projectPath))
 	return fmt.Sprintf("%s%s-%08x", deploymentNamePrefix, p.envName, h.Sum32())
+}
+
+// brownfieldDeploymentName is deploymentName plus a "-brownfield" suffix, capped
+// at ARM's 64-character deployment-name limit. The trailing path hash and suffix
+// are preserved (uniqueness and intent); only the env-name portion is truncated.
+func (p *FoundryProvisioningProvider) brownfieldDeploymentName() string {
+	const maxLen = 64
+	name := p.deploymentName() + "-brownfield"
+	if len(name) <= maxLen {
+		return name
+	}
+	const suffix = "-brownfield"
+	hashTail := name[len(name)-len(suffix)-9 : len(name)-len(suffix)] // "-<8 hex>"
+	keep := maxLen - len(hashTail) - len(suffix)
+	return name[:keep] + hashTail + suffix
 }
 
 // armParameters wraps the synthesizer-derived values in ARM's {"value": ...}

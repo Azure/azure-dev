@@ -530,11 +530,11 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 //
 // {{NAME}} placeholders are reported separately because the user cannot
 // fix them with `azd env set` — the placeholder is literally inside
-// agent.yaml and would land in the container as `{{NAME}}` at deploy
+// azure.yaml and would land in the container as `{{NAME}}` at deploy
 // time. The resolver surfaces an "edit azure.yaml" suggestion for each.
 //
 // All three result lists are deduplicated and sorted ascending. Read
-// errors on individual agent.yaml files are silent: the resolver should
+// errors on individual azure.yaml files are silent: the resolver should
 // fall back to the default branch rather than emit guidance that
 // mentions variables we cannot prove are needed. Transport errors from
 // src.EnvValue are appended to errs so AssembleState's caller can

@@ -239,7 +239,7 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 			for _, key := range manual[:limit] {
 				out = append(out, Suggestion{
 					Command:     fmt.Sprintf("azd env set %s <value>", key),
-					Description: "referenced by agent.yaml but not set in azd env",
+					Description: "referenced by azure.yaml but not set in azd env",
 					Priority:    priority,
 				})
 				priority++

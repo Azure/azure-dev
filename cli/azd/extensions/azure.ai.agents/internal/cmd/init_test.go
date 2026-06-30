@@ -3533,3 +3533,48 @@ func TestEnsureResourceGroupNameSkipsWhenSaltEmpty(t *testing.T) {
 	_, ok := envServer.values["myapp-dev"][resourceGroupEnvKey]
 	require.False(t, ok, "no AZURE_RESOURCE_GROUP should be written when salt is empty")
 }
+
+func TestRemoveContainerFiles(t *testing.T) {
+	t.Parallel()
+
+	t.Run("removes Dockerfile and .dockerignore when present", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM python:3.13"), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".dockerignore"), []byte("__pycache__"), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "app.py"), []byte("print('hi')"), 0600))
+
+		removeContainerFiles(dir)
+
+		_, err := os.Stat(filepath.Join(dir, "Dockerfile"))
+		require.True(t, os.IsNotExist(err), "Dockerfile should be removed")
+		_, err = os.Stat(filepath.Join(dir, ".dockerignore"))
+		require.True(t, os.IsNotExist(err), ".dockerignore should be removed")
+		// Other files are untouched
+		_, err = os.Stat(filepath.Join(dir, "app.py"))
+		require.NoError(t, err, "app.py should still exist")
+	})
+
+	t.Run("no error when files do not exist", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		// Should not panic or error when directory has no Dockerfile
+		removeContainerFiles(dir)
+	})
+
+	t.Run("leaves other files untouched", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		files := []string{"requirements.txt", "app.py", "README.md"}
+		for _, f := range files {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("content"), 0600))
+		}
+
+		removeContainerFiles(dir)
+
+		for _, f := range files {
+			_, err := os.Stat(filepath.Join(dir, f))
+			require.NoError(t, err, "%s should still exist", f)
+		}
+	})
+}

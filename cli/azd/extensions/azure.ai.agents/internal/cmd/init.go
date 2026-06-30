@@ -1503,7 +1503,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
 
 	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "",
-		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'container' in --no-prompt.")
+		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'code' for Python/.NET projects in --no-prompt.")
 
 	cmd.Flags().StringVar(&flags.runtime, "runtime", "",
 		"Runtime for code deploy (e.g., 'python_3_13', 'python_3_14', 'dotnet_10'). Required with --deploy-mode code --no-prompt.")
@@ -1607,6 +1607,14 @@ func (a *InitAction) Run(ctx context.Context) error {
 				}, a.userProvidedManifest)
 				if err != nil {
 					return fmt.Errorf("prompting for code configuration: %w", err)
+				}
+
+				// Remove container-only files only after configuration succeeds,
+				// so a cancelled prompt or error doesn't leave the directory in
+				// an inconsistent state. Only applies to GitHub-downloaded
+				// templates to avoid deleting user-owned files.
+				if a.isGitHubUrl(a.flags.manifestPointer) {
+					removeContainerFiles(targetDir)
 				}
 
 				hostedAgent := agentManifest.Template.(agent_yaml.ContainerAgent)
@@ -2806,6 +2814,18 @@ func (a *InitAction) downloadAgentYaml(
 	}
 
 	return agentManifest, targetDir, nil
+}
+
+// removeContainerFiles removes Dockerfile and .dockerignore from targetDir.
+// Called when code deploy is selected so container-only files from downloaded
+// samples are not left in the project.
+func removeContainerFiles(targetDir string) {
+	for _, name := range []string{"Dockerfile", ".dockerignore"} {
+		p := filepath.Join(targetDir, name)
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			log.Printf("warning: failed to remove %s: %v", p, err)
+		}
+	}
 }
 
 // writeAgentIgnoreFile generates a default .agentignore in targetDir if one does

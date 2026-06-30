@@ -47,10 +47,96 @@
     "startupCommand": {
       "type": "string",
       "description": "Command to start the agent server (e.g., 'python main.py'). Used by 'azd ai agent run' for local development."
+    },
+    "kind": {
+      "type": "string",
+      "description": "The agent kind. Currently only 'hosted' is supported.",
+      "enum": ["hosted"]
+    },
+    "name": {
+      "type": "string",
+      "description": "The agent name."
+    },
+    "displayName": {
+      "type": "string",
+      "description": "Optional human-friendly display name for the agent."
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional description of the agent."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional metadata key-value pairs for the agent.",
+      "additionalProperties": true
+    },
+    "protocols": {
+      "type": "array",
+      "description": "Invocation protocols the agent implements (e.g., responses, invocations, a2a).",
+      "items": { "$ref": "#/definitions/ProtocolVersionRecord" }
+    },
+    "agentEndpoint": {
+      "type": "object",
+      "description": "Agent endpoint configuration (protocols, version selection, auth).",
+      "additionalProperties": true
+    },
+    "agentCard": {
+      "type": "object",
+      "description": "A2A discovery metadata for the agent.",
+      "additionalProperties": true
+    },
+    "codeConfiguration": {
+      "$ref": "#/definitions/CodeConfiguration"
+    },
+    "policies": {
+      "type": "array",
+      "description": "Governance policies attached to the agent (e.g., Responsible AI).",
+      "items": { "$ref": "#/definitions/Policy" }
+    },
+    "inputSchema": {
+      "type": "object",
+      "description": "Optional input schema for the agent.",
+      "additionalProperties": true
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Optional output schema for the agent.",
+      "additionalProperties": true
     }
   },
-  "additionalProperties": false,
+  "additionalProperties": true,
   "definitions": {
+    "ProtocolVersionRecord": {
+      "type": "object",
+      "description": "A protocol the agent implements, with its version.",
+      "properties": {
+        "protocol": { "type": "string", "description": "Protocol name (e.g., 'responses', 'invocations', 'a2a')." },
+        "version": { "type": "string", "description": "Protocol version." }
+      },
+      "required": ["protocol"],
+      "additionalProperties": false
+    },
+    "CodeConfiguration": {
+      "type": "object",
+      "description": "Code deploy configuration. When present, the agent is deployed from source (ZIP) instead of a container image.",
+      "properties": {
+        "runtime": { "type": "string", "description": "Runtime identifier (e.g., 'python_3_12', 'dotnet_9')." },
+        "entryPoint": { "type": "string", "description": "Entry point for the agent source." },
+        "dependencyResolution": { "type": "string", "description": "Dependency resolution mode (e.g., 'bundled', 'remote_build')." }
+      },
+      "required": ["runtime", "entryPoint"],
+      "additionalProperties": false
+    },
+    "Policy": {
+      "type": "object",
+      "description": "A safety or governance policy attached to the agent.",
+      "properties": {
+        "type": { "type": "string", "description": "Policy type (e.g., 'rai_policy')." },
+        "raiPolicyName": { "type": "string", "description": "ARM resource ID of the RAI policy (for type 'rai_policy')." }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
     "ContainerSettings": {
       "type": "object",
       "description": "Container configuration for the Azure AI Agent Service target",

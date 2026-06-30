@@ -350,7 +350,7 @@ type cmdMockInstaller struct {
 	uninstall func(
 		ctx context.Context, t *tool.ToolDefinition, opts ...tool.InstallOption,
 	) (*tool.InstallResult, error)
-	availableSkillHosts func(t *tool.ToolDefinition) []string
+	availableSkillHosts func(ctx context.Context, t *tool.ToolDefinition) []string
 }
 
 func (m *cmdMockInstaller) Install(
@@ -371,9 +371,9 @@ func (m *cmdMockInstaller) Upgrade(
 	return &tool.InstallResult{Tool: t, Success: true}, nil
 }
 
-func (m *cmdMockInstaller) AvailableSkillHosts(t *tool.ToolDefinition) []string {
+func (m *cmdMockInstaller) AvailableSkillHosts(ctx context.Context, t *tool.ToolDefinition) []string {
 	if m.availableSkillHosts != nil {
-		return m.availableSkillHosts(t)
+		return m.availableSkillHosts(ctx, t)
 	}
 	return nil
 }
@@ -663,7 +663,7 @@ func TestResolveHostOptions(t *testing.T) {
 
 	newAction := func(args []string, flags *toolInstallFlags, present []string) *toolInstallAction {
 		installer := &cmdMockInstaller{
-			availableSkillHosts: func(_ *tool.ToolDefinition) []string {
+			availableSkillHosts: func(_ context.Context, _ *tool.ToolDefinition) []string {
 				return present
 			},
 		}
@@ -944,7 +944,7 @@ func TestResolveHostOptions_Upgrade(t *testing.T) {
 
 	newAction := func(flags *toolUpgradeFlags, present []string) *toolUpgradeAction {
 		installer := &cmdMockInstaller{
-			availableSkillHosts: func(_ *tool.ToolDefinition) []string {
+			availableSkillHosts: func(_ context.Context, _ *tool.ToolDefinition) []string {
 				return present
 			},
 		}

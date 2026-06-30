@@ -1,14 +1,19 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
 capabilities:
     - custom-commands
+    - service-target-provider
     - metadata
 description: Manage Microsoft Foundry Connections from your terminal. (Preview)
 displayName: Foundry Connections (Preview)
 id: azure.ai.connections
 language: go
 namespace: ai.connection
+providers:
+    - name: azure.ai.connection
+      type: service-target
+      description: Upserts Foundry connections declared as azure.ai.connection services in azure.yaml
 tags:
     - ai
     - connection
 usage: azd ai connection <command> [options]
-version: 0.1.2-preview
+version: 0.1.3-preview

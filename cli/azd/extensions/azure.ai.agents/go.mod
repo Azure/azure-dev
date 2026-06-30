@@ -37,7 +37,7 @@ require github.com/denormal/go-gitignore v0.0.0-20180930084346-ae8ad1d07817
 
 require (
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
-	github.com/creack/pty v1.1.17
+	github.com/creack/pty v1.1.24
 	github.com/hinshun/vt10x v0.0.0-20220119200601-820417d04eec
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0

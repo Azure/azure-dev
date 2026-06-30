@@ -14,7 +14,7 @@
 ### Bugs Fixed
 
 - [[#8859]](https://github.com/Azure/azure-dev/issues/8859) `azd up` now prompts for an Azure subscription and location when `AZURE_SUBSCRIPTION_ID` or `AZURE_LOCATION` is not set, matching core `azd up`, instead of failing. Under `--no-prompt` it still returns an actionable `azd env set ...` error.
-- [[#8586]](https://github.com/Azure/azure-dev/issues/8586) Fail fast with a corrective hint when `azd ai agent files upload` is given an agent name as its positional argument (mirroring `azd ai agent invoke <agent>`). Previously, in multi-service projects without `-n/--agent-name`, the command could hang silently on the interactive agent picker in non-TTY contexts. The positional argument is the file to upload; select the agent with `-n` and the file with `-f`.
+- [[#8586]](https://github.com/Azure/azure-dev/issues/8586) `azd ai agent files upload` now accepts `[agent] [file]` positional arguments, mirroring `azd ai agent invoke [agent] [message]`. The first positional is the agent name and the second is the file to upload (with a single positional, it is the file, or the agent when `--file/-f` already supplies the file). This fixes the previous trap where passing the agent name as the positional left the agent unset and, in multi-service projects without `-n/--agent-name`, hung silently on the interactive agent picker in non-TTY contexts.
 
 ## 0.1.41-preview (2026-06-19)
 

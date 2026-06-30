@@ -4,15 +4,10 @@
 package cmd
 
 import (
-	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 
-	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -169,77 +164,71 @@ func TestFilesStatCommand_HasUserIdentityFlag(t *testing.T) {
 	}
 }
 
-func TestAgentNameMisusedAsFilePositional(t *testing.T) {
-	agentNames := []string{"my-agent", "other-agent"}
-
-	// Run in a clean working directory so the "non-existent" positionals below
-	// are guaranteed not to resolve to a real file.
-	t.Chdir(t.TempDir())
-
+func TestBindUploadPositionals(t *testing.T) {
 	tests := []struct {
-		name       string
-		positional string
-		agentNames []string
-		want       bool
+		name          string
+		args          []string
+		agentName     string // current --agent-name/-n value
+		file          string // current --file/-f value
+		wantAgentName string
+		wantFile      string
 	}{
 		{
-			name:       "agent name passed as positional",
-			positional: "my-agent",
-			agentNames: agentNames,
-			want:       true,
+			name:          "two args set agent then file",
+			args:          []string{"my-agent", "./input.csv"},
+			wantAgentName: "my-agent",
+			wantFile:      "./input.csv",
 		},
 		{
-			name:       "non-existent file not matching an agent",
-			positional: "does-not-exist.csv",
-			agentNames: agentNames,
-			want:       false,
+			name:          "single arg is file when no file flag",
+			args:          []string{"./input.csv"},
+			wantAgentName: "",
+			wantFile:      "./input.csv",
 		},
 		{
-			name:       "empty positional",
-			positional: "",
-			agentNames: agentNames,
-			want:       false,
+			name:          "single arg is agent when file flag set",
+			args:          []string{"my-agent"},
+			file:          "./input.csv",
+			wantAgentName: "my-agent",
+			wantFile:      "./input.csv",
 		},
 		{
-			name:       "no agent services declared",
-			positional: "my-agent",
-			agentNames: nil,
-			want:       false,
+			name:          "no args keeps flag values",
+			args:          nil,
+			agentName:     "my-agent",
+			file:          "./input.csv",
+			wantAgentName: "my-agent",
+			wantFile:      "./input.csv",
+		},
+		{
+			name:          "two args override flag values",
+			args:          []string{"pos-agent", "./pos.csv"},
+			agentName:     "flag-agent",
+			file:          "./flag.csv",
+			wantAgentName: "pos-agent",
+			wantFile:      "./pos.csv",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := agentNameMisusedAsFilePositional(tc.positional, tc.agentNames)
-			assert.Equal(t, tc.want, got)
+			gotAgent, gotFile := bindUploadPositionals(tc.args, tc.agentName, tc.file)
+			assert.Equal(t, tc.wantAgentName, gotAgent)
+			assert.Equal(t, tc.wantFile, gotFile)
 		})
 	}
-
-	// An existing local file wins over an agent-name match. Use a relative
-	// filename in a temp working directory so the positional ("my-agent") both
-	// resolves to a real file (os.Stat succeeds) AND appears in agentNames. This
-	// proves the existence guard -- not slices.Contains -- is what prevents a
-	// real file from being misclassified as an agent name.
-	t.Run("existing file wins over agent-name match", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "my-agent"), []byte("data"), 0600))
-		t.Chdir(tmpDir)
-
-		assert.False(t, agentNameMisusedAsFilePositional("my-agent", agentNames))
-	})
 }
 
-func TestErrAgentNameAsFilePositional(t *testing.T) {
-	err := errAgentNameAsFilePositional("my-agent")
-	require.Error(t, err)
+func TestFilesUploadCommand_AcceptsAgentAndFilePositionals(t *testing.T) {
+	cmd := newFilesUploadCommand(nil)
 
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok, "expected a *azdext.LocalError")
-	assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
-	assert.Equal(t, exterrors.CodeInvalidPositionalArg, localErr.Code)
-	assert.Contains(t, localErr.Message, "my-agent")
-	assert.Contains(t, localErr.Suggestion, "-n my-agent")
-	assert.Contains(t, localErr.Suggestion, "-f <file>")
+	assert.Equal(t, "upload [agent] [file]", cmd.Use)
+	// Accepts zero, one, or two positional arguments.
+	require.NotNil(t, cmd.Args)
+	assert.NoError(t, cmd.Args(cmd, []string{}))
+	assert.NoError(t, cmd.Args(cmd, []string{"agent"}))
+	assert.NoError(t, cmd.Args(cmd, []string{"agent", "file"}))
+	assert.Error(t, cmd.Args(cmd, []string{"a", "b", "c"}))
 }
 
 func TestPrintFileListJSON(t *testing.T) {

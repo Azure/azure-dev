@@ -6,12 +6,10 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"text/tabwriter"
 
 	"azureaiagent/internal/exterrors"
@@ -135,71 +133,24 @@ type FilesUploadAction struct {
 	sessionID string
 }
 
-// agentNameMisusedAsFilePositional reports whether the positional value passed
-// to `files upload` looks like an agent name rather than a file path: it does
-// not exist as a local file but matches one of the declared agent service
-// names. This is the common mistake of mirroring `azd ai agent invoke <agent>`,
-// where the positional is the agent. For `files upload` the positional is the
-// file to upload, so this lets us fail fast with a hint instead of falling
-// through to agent auto-detect and hanging on the interactive service picker.
-func agentNameMisusedAsFilePositional(positional string, agentNames []string) bool {
-	if positional == "" {
-		return false
+// bindUploadPositionals maps the [agent] [file] positionals onto the upload
+// flags, mirroring `azd ai agent invoke [agent] [message]`. The first
+// positional is the agent name and the second is the file to upload. With a
+// single positional it is the agent name when a file is already supplied via
+// --file/-f, otherwise it is the file itself. agentName and file are the
+// current flag values; the resolved values are returned.
+func bindUploadPositionals(args []string, agentName, file string) (string, string) {
+	switch len(args) {
+	case 2:
+		return args[0], args[1]
+	case 1:
+		if file != "" {
+			return args[0], file
+		}
+		return agentName, args[0]
+	default:
+		return agentName, file
 	}
-
-	// Only treat the positional as a possible agent name when it definitively
-	// does not exist as a local file. An existing file (err == nil) is a valid
-	// upload target, and other stat errors (permission denied, broken symlink)
-	// should fall through to the normal "failed to open" path rather than being
-	// misclassified as an agent name.
-	if _, err := os.Stat(positional); !errors.Is(err, os.ErrNotExist) {
-		return false
-	}
-
-	return slices.Contains(agentNames, positional)
-}
-
-// errAgentNameAsFilePositional builds the corrective validation error returned
-// when a user passes an agent name where `files upload` expects a file path.
-func errAgentNameAsFilePositional(positional string) error {
-	return exterrors.Validation(
-		exterrors.CodeInvalidPositionalArg,
-		fmt.Sprintf("%q is an agent name, but the positional argument to `files upload` is the file to upload", positional),
-		fmt.Sprintf("Pass the agent with -n and the file with -f, e.g. azd ai agent files upload -n %s -f <file>", positional),
-	)
-}
-
-// checkUploadPositionalNotAgentName guards `files upload` against the common
-// mistake of passing an agent name as the positional argument. When the
-// positional does not exist locally but matches an azure.ai.agent service in
-// azure.yaml, it returns a fail-fast validation error. Otherwise it returns nil
-// (including when the project cannot be loaded), letting the normal flow run.
-func checkUploadPositionalNotAgentName(ctx context.Context, positional string) error {
-	if positional == "" {
-		return nil
-	}
-
-	// Skip the project lookup unless the positional definitively does not exist
-	// as a local file. Existing files are valid upload targets, and other stat
-	// errors (permission denied, broken symlink) should surface through the
-	// normal upload error path rather than being read as an agent name.
-	if _, err := os.Stat(positional); !errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		// Can't verify against the project; let the normal flow surface a
-		// clearer error (e.g. "failed to open local file").
-		return nil
-	}
-	defer azdClient.Close()
-
-	if !agentNameMisusedAsFilePositional(positional, agentServiceNames(ctx, azdClient)) {
-		return nil
-	}
-
-	return errAgentNameAsFilePositional(positional)
 }
 
 func newFilesUploadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -207,7 +158,7 @@ func newFilesUploadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
-		Use:   "upload [file]",
+		Use:   "upload [agent] [file]",
 		Short: "Upload a file to a hosted agent session.",
 		Long: `Upload a file to a hosted agent session.
 
@@ -215,42 +166,40 @@ Reads a local file and uploads it to the specified remote path
 in the session's filesystem. If --target-path is not provided,
 the remote path defaults to the local filename.
 
-The positional argument is the local FILE to upload, not the agent name.
-Select the agent with --agent-name/-n when the project has multiple
-azure.ai.agent services.
+Positional arguments mirror 'azd ai agent invoke [agent] [message]'. With two
+arguments the first is the agent name and the second is the file to upload.
+With a single argument it is the agent name when --file/-f already supplies the
+file, otherwise it is the file itself. The agent is auto-detected from
+azure.yaml when not provided.
 
 Agent details are automatically resolved from the azd environment.`,
-		Example: `  # Upload a file (remote path defaults to filename)
+		Example: `  # Upload a file (agent auto-detected, remote path defaults to filename)
   azd ai agent files upload ./data/input.csv
+
+  # Upload a file to a specific agent
+  azd ai agent files upload my-agent ./data/input.csv
 
   # Upload to a specific remote path
   azd ai agent files upload ./input.csv --target-path /data/input.csv
 
-  # Upload selecting a specific agent (file via -f, agent via -n)
+  # Upload using flags
   azd ai agent files upload --file ./input.csv --agent-name my-agent`,
-		Args: cobra.MaximumNArgs(1),
+		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 
-			// Guard against the common mistake of passing an agent name as the
-			// positional (mirroring `azd ai agent invoke <agent>`). The upload
-			// positional is the FILE to upload, so fail fast with a hint instead
-			// of falling through to agent auto-detect and hanging on the
-			// interactive service picker in multi-service projects. Inspect the
-			// raw positional so the check still fires when the file came from -f.
-			if len(args) > 0 {
-				if err := checkUploadPositionalNotAgentName(ctx, args[0]); err != nil {
-					return err
-				}
-			}
+			// Mirror `azd ai agent invoke [agent] [message]`: the first
+			// positional is the agent name and the second is the file to
+			// upload. With a single positional, it is the agent name when
+			// --file/-f already supplies the file, otherwise it is the file.
+			flags.agentName, flags.file = bindUploadPositionals(args, flags.agentName, flags.file)
 
-			if len(args) > 0 && flags.file == "" {
-				flags.file = args[0]
-			}
 			if flags.file == "" {
-				return fmt.Errorf(
-					"file path is required as a positional argument " +
-						"or via --file",
+				return exterrors.Validation(
+					exterrors.CodeInvalidPositionalArg,
+					"a file argument or --file is required",
+					"provide the file to upload as a positional argument "+
+						"(e.g. azd ai agent files upload [agent] <file>) or use --file/-f",
 				)
 			}
 

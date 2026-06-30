@@ -674,7 +674,7 @@ func (r *runner) azdEnvValues(ctx context.Context) map[string]string {
 	}
 	// Lines are KEY="value"; Cut on the first '=' so values containing '=' are
 	// preserved, then strip the surrounding quotes azd always emits.
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		key, val, ok := strings.Cut(strings.TrimSpace(line), "=")
 		if !ok {
 			continue

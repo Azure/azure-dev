@@ -62,8 +62,13 @@ type Arg struct {
 	Description string
 	IsOptional  bool
 	Suggestions []string
-	Generator   string
-	Template    string
+	// Generator is a single Fig generator expression (e.g. "azdGenerators.listExtensions").
+	// For multiple generators on one argument, use Generators instead.
+	Generator string
+	// Generators holds multiple Fig generator expressions rendered as an array
+	// (e.g. ["azdGenerators.listExtensions", "filepaths({ extensions: ['zip'] })"]).
+	// When set, it takes precedence over Generator.
+	Generators []string
 }
 
 // CommandContext contains information about a command for custom processing

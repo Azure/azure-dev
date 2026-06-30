@@ -1,3 +1,5 @@
+import { filepaths } from '../helpers/filepaths';
+
 interface AzdEnvListItem {
 	Name: string;
 	DotEnvPath: string;
@@ -5687,8 +5689,7 @@ const completionSpec: Fig.Spec = {
 					],
 					args: {
 						name: 'extension-id|extension-bundle.zip',
-						generators: azdGenerators.listExtensions,
-						template: 'filepaths',
+						generators: [azdGenerators.listExtensions, filepaths({ extensions: ['zip'] })],
 					},
 				},
 				{

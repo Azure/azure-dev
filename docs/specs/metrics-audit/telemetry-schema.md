@@ -21,7 +21,7 @@ OpenTelemetry span name or event name.
 | `ExtensionPromoteEvent` | `ext.promote` | Extension registry promotion (e.g., dev → main) |
 | `CopilotInitializeEvent` | `copilot.initialize` | Copilot initialization event |
 | `CopilotSessionEvent` | `copilot.session` | Copilot session lifecycle event |
-| `PreflightValidationEvent` | `validation.preflight` | Local preflight validation outcome |
+| `ProvisionValidationEvent` | `validation.provision` | Local provision validation outcome |
 | `HooksExecEvent` | `hooks.exec` | Lifecycle hook execution |
 | `AksPostprovisionSkipEvent` | `aks.postprovision.skip` | AKS postprovision hook skipped (cluster not yet available) |
 | `ArmDeploySubscriptionEvent` | `arm.deploy.subscription` | ARM subscription-scope deploy |
@@ -323,15 +323,15 @@ no file paths, no user-identifiable data, no raw error text.
 | Upgrade to version | `tool.upgrade.to_version` | SystemMetadata | FeatureInsight | New version after a successful upgrade |
 | Updates available | `tool.check.updates_available` | SystemMetadata | FeatureInsight | **Measurement** — number of installed tools with an available update |
 
-### Preflight Validation
+### Provision Validation
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
-| Outcome | `validation.preflight.outcome` | SystemMetadata | FeatureInsight | Values: `passed`, `warnings_accepted`, `aborted_by_errors`, `aborted_by_user`, `skipped`, `error` |
-| Diagnostic IDs | `validation.preflight.diagnostics` | SystemMetadata | FeatureInsight | List of diagnostic IDs emitted by preflight checks (fixed code-defined enum, e.g. `role_assignment_missing`, `role_assignment_conditional`) |
-| Rule IDs | `validation.preflight.rules` | SystemMetadata | FeatureInsight | List of rule IDs that were executed (fixed code-defined enum, e.g. `role_assignment_permissions`) |
-| Warning count | `validation.preflight.warning.count` | SystemMetadata | FeatureInsight | **Measurement** |
-| Error count | `validation.preflight.error.count` | SystemMetadata | FeatureInsight | **Measurement** |
+| Outcome | `validation.provision.outcome` | SystemMetadata | FeatureInsight | Values: `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `skipped`, `error` |
+| Diagnostic IDs | `validation.provision.diagnostics` | SystemMetadata | FeatureInsight | List of diagnostic IDs emitted by validation checks (fixed code-defined enum, e.g. `role_assignment_missing`, `role_assignment_conditional`) |
+| Rule IDs | `validation.provision.rules` | SystemMetadata | FeatureInsight | List of rule IDs that were executed (fixed code-defined enum, e.g. `role_assignment_permissions`) |
+| Warning count | `validation.provision.warning.count` | SystemMetadata | FeatureInsight | **Measurement** |
+| Error count | `validation.provision.error.count` | SystemMetadata | FeatureInsight | **Measurement** |
 
 ### Provision
 

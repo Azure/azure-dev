@@ -16,11 +16,11 @@ func TestDemoValidationCheck_AlwaysReturnsWarning(t *testing.T) {
 	t.Run("no ARM template", func(t *testing.T) {
 		valCtx := &azdext.ValidationContext{
 			ContextID: "test-ctx",
-			CheckType: "local-preflight",
+			CheckType: "provision",
 			Data:      map[string][]byte{},
 		}
 		req := &azdext.ValidationCheckRequest{
-			CheckType: "local-preflight",
+			CheckType: "provision",
 			RuleId:    "demo_warning",
 			ContextId: "test-ctx",
 		}
@@ -42,13 +42,13 @@ func TestDemoValidationCheck_AlwaysReturnsWarning(t *testing.T) {
 		resourcesJSON := []byte(`[{"type": "a"}, {"type": "b"}, {"type": "c"}]`)
 		valCtx := &azdext.ValidationContext{
 			ContextID: "test-ctx-2",
-			CheckType: "local-preflight",
+			CheckType: "provision",
 			Data: map[string][]byte{
 				azdext.ValidationContextPredictedResources: resourcesJSON,
 			},
 		}
 		req := &azdext.ValidationCheckRequest{
-			CheckType: "local-preflight",
+			CheckType: "provision",
 			RuleId:    "demo_warning",
 			ContextId: "test-ctx-2",
 		}

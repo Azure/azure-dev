@@ -78,11 +78,11 @@ var (
 var (
 	ErrNoArgsProvided     = errors.New("required arguments not provided")
 	ErrInvalidArgValue    = errors.New("invalid argument value")
-	ErrOperationCancelled = errors.New("operation cancelled by user")
+	ErrOperationCancelled = errors.New("operation canceled by user")
 
-	// ErrAbortedByUser indicates the user intentionally declined to proceed (e.g. preflight warnings).
+	// ErrAbortedByUser indicates the user intentionally declined to proceed (e.g. provision validation warnings).
 	// This is not a failure — the CLI should exit with code 0.
-	ErrAbortedByUser = errors.New("operation aborted by user")
+	ErrAbortedByUser = errors.New("operation canceled by user")
 )
 
 // Config errors

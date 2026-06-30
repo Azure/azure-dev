@@ -253,20 +253,20 @@ type armTemplate struct {
 	Outputs         map[string]armTemplateOutputDef    `json:"outputs,omitempty"`
 }
 
-// PreflightCheckSeverity indicates the severity level of a preflight check result.
-type PreflightCheckSeverity int
+// ProvisionValidationCheckSeverity indicates the severity level of a validation check result.
+type ProvisionValidationCheckSeverity int
 
 const (
-	// PreflightCheckWarning indicates a non-blocking issue that should be reported to the user.
-	PreflightCheckWarning PreflightCheckSeverity = iota
-	// PreflightCheckError indicates a blocking issue that should prevent deployment.
-	PreflightCheckError
+	// ProvisionValidationCheckWarning indicates a non-blocking issue that should be reported to the user.
+	ProvisionValidationCheckWarning ProvisionValidationCheckSeverity = iota
+	// ProvisionValidationCheckError indicates a blocking issue that should prevent deployment.
+	ProvisionValidationCheckError
 )
 
-// PreflightCheckResult holds the outcome of a single preflight check function.
-type PreflightCheckResult struct {
+// ProvisionValidationCheckResult holds the outcome of a single validation check function.
+type ProvisionValidationCheckResult struct {
 	// Severity indicates whether this result is a warning or a blocking error.
-	Severity PreflightCheckSeverity
+	Severity ProvisionValidationCheckSeverity
 	// DiagnosticID is a unique, stable identifier for this specific finding type
 	// (e.g. "role_assignment_missing"). Used in telemetry to correlate actioned
 	// warnings with deployment outcomes and to track error frequency over time.
@@ -277,10 +277,10 @@ type PreflightCheckResult struct {
 	// It should be dynamically generated with context-specific advice when possible.
 	Suggestion string
 	// Links is an optional list of reference links related to the finding.
-	Links []ux.PreflightReportLink
+	Links []ux.ProvisionValidationReportLink
 }
 
-// validationContext provides the data and utilities available to preflight check functions.
+// validationContext provides the data and utilities available to validation check functions.
 // It acts as a bag of convenient values that checks may inspect to produce their results.
 type validationContext struct {
 	// Console provides user interaction capabilities (prompts, messages).
@@ -337,35 +337,35 @@ type snapshotResult struct {
 	PredictedResources []armTemplateResource `json:"predictedResources"`
 }
 
-// PreflightCheckFn is a function that performs a single preflight validation check.
+// ProvisionValidationCheckFn is a function that performs a single provision validation check.
 // It receives the execution context and a validationContext containing the console,
 // analyzed resource properties, and the deployment snapshot.
 // It returns zero or more results describing findings (or nil/empty if there is
 // nothing to report) and an error if the check itself failed to execute.
-type PreflightCheckFn func(
+type ProvisionValidationCheckFn func(
 	ctx context.Context,
 	valCtx *validationContext,
-) ([]PreflightCheckResult, error)
+) ([]ProvisionValidationCheckResult, error)
 
-// PreflightCheck pairs a unique rule identifier with its check function.
+// ProvisionValidationCheck pairs a unique rule identifier with its check function.
 // The RuleID is a stable, unique string used in telemetry to identify which rule
 // produced a result (e.g. for crash tracking). Each rule may emit results with
 // different DiagnosticIDs to distinguish specific finding types.
-type PreflightCheck struct {
+type ProvisionValidationCheck struct {
 	// RuleID is a unique, stable identifier for the rule (e.g. "role_assignment_permissions").
 	RuleID string
 	// Fn is the check function that performs the validation.
-	Fn PreflightCheckFn
+	Fn ProvisionValidationCheckFn
 }
 
-// localArmPreflight provides local (client-side) validation of an ARM template before deployment.
+// provisionValidator provides local (client-side) validation of an ARM template before deployment.
 // It parses the template and parameters to build a comprehensive view of all resources that would
 // be deployed, enabling early detection of issues without making Azure API calls.
 //
 // Callers can register additional check functions via AddCheck before calling validate. Each
 // registered function is invoked with the analyzed resource properties, and the results are
 // collected and returned alongside the resource properties.
-type localArmPreflight struct {
+type provisionValidator struct {
 	// modulePath is the absolute path to the source Bicep module (e.g. /project/infra/main.bicep).
 	modulePath string
 	// bicepCli is the Bicep CLI wrapper used to run bicep commands such as snapshot.
@@ -377,18 +377,18 @@ type localArmPreflight struct {
 	// deployments, enabling Bicep to resolve resourceGroup().location. This is looked up from
 	// the actual resource group (when it exists) or falls back to AZURE_LOCATION.
 	envLocation string
-	checks      []PreflightCheck
+	checks      []ProvisionValidationCheck
 }
 
-// newLocalArmPreflight creates a new instance of localArmPreflight.
+// newProvisionValidator creates a new instance of provisionValidator.
 // modulePath is the path to the source Bicep module file (e.g. "infra/main.bicep").
 // bicepCli is the Bicep CLI wrapper used to invoke bicep commands.
 // target is the deployment scope used to populate snapshot options; it may be nil.
 // envLocation is the resolved location for RG deployments (from RG lookup or AZURE_LOCATION).
-func newLocalArmPreflight(
+func newProvisionValidator(
 	modulePath string, bicepCli *bicep.Cli, target infra.Deployment, envLocation string,
-) *localArmPreflight {
-	return &localArmPreflight{
+) *provisionValidator {
+	return &provisionValidator{
 		modulePath:  modulePath,
 		bicepCli:    bicepCli,
 		target:      target,
@@ -396,22 +396,22 @@ func newLocalArmPreflight(
 	}
 }
 
-// AddCheck registers a preflight check to be executed during validate.
+// AddCheck registers a validation check to be executed during validate.
 // Checks are invoked in the order they are added.
-func (l *localArmPreflight) AddCheck(check PreflightCheck) {
+func (l *provisionValidator) AddCheck(check ProvisionValidationCheck) {
 	l.checks = append(l.checks, check)
 }
 
-// validate performs local preflight validation on the given ARM template and parameters.
+// validate performs local provision validation on the given ARM template and parameters.
 // It parses the template, resolves parameters, analyzes the resources, and then runs all
 // registered check functions. It returns the validation context (for extension dispatch),
 // the collected results from all checks, and an error if template parsing fails.
-func (l *localArmPreflight) validate(
+func (l *provisionValidator) validate(
 	ctx context.Context,
 	console input.Console,
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
-) (*validationContext, []PreflightCheckResult, error) {
+) (*validationContext, []ProvisionValidationCheckResult, error) {
 	_, err := l.parseTemplate(armTemplate)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parsing ARM template: %w", err)
@@ -429,7 +429,7 @@ func (l *localArmPreflight) validate(
 
 		bicepParamContent := generateBicepParam(bicepFileName, armParameters)
 
-		tmpFile, err := os.CreateTemp(moduleDir, "preflight-*.bicepparam")
+		tmpFile, err := os.CreateTemp(moduleDir, "validation-*.bicepparam")
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating temp bicepparam file: %w", err)
 		}
@@ -469,10 +469,10 @@ func (l *localArmPreflight) validate(
 	// The snapshot contains the fully resolved deployment graph with expressions evaluated,
 	// conditions applied, and copy loops expanded.
 	// If the snapshot fails (e.g., older Bicep binary without snapshot support), skip local
-	// preflight rather than blocking the deployment.
+	// validation rather than blocking the deployment.
 	data, err := l.bicepCli.Snapshot(ctx, bicepParamFile, snapshotOpts)
 	if err != nil {
-		log.Printf("local preflight: skipping checks, bicep snapshot unavailable: %v", err)
+		log.Printf("provision validation: skipping checks, bicep snapshot unavailable: %v", err)
 		return nil, nil, nil
 	}
 
@@ -493,11 +493,11 @@ func (l *localArmPreflight) validate(
 
 	// Initialize to a non-nil empty slice so the caller can distinguish "checks ran
 	// but found nothing" (empty slice) from "checks were skipped" (nil).
-	results := []PreflightCheckResult{}
+	results := []ProvisionValidationCheckResult{}
 	for _, check := range l.checks {
 		checkResults, err := check.Fn(ctx, valCtx)
 		if err != nil {
-			return valCtx, results, fmt.Errorf("preflight check %q failed: %w", check.RuleID, err)
+			return valCtx, results, fmt.Errorf("validation check %q failed: %w", check.RuleID, err)
 		}
 		results = append(results, checkResults...)
 	}
@@ -506,7 +506,7 @@ func (l *localArmPreflight) validate(
 }
 
 // parseTemplate unmarshals a raw ARM template into the parser's own armTemplate structure.
-func (l *localArmPreflight) parseTemplate(raw azure.RawArmTemplate) (*armTemplate, error) {
+func (l *provisionValidator) parseTemplate(raw azure.RawArmTemplate) (*armTemplate, error) {
 	var tmpl armTemplate
 	if err := json.Unmarshal(raw, &tmpl); err != nil {
 		return nil, fmt.Errorf("unmarshalling ARM template JSON: %w", err)
@@ -618,7 +618,7 @@ func toBicepValue(v any) string {
 	}
 }
 
-// resourcesProperties contains derived properties from analyzing the collected preflight resources.
+// resourcesProperties contains derived properties from analyzing the collected validation resources.
 type resourcesProperties struct {
 	// HasRoleAssignments indicates whether the deployment includes one or more
 	// Microsoft.Authorization/roleAssignments resources.

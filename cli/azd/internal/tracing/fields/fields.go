@@ -645,59 +645,59 @@ var (
 	}
 )
 
-// Preflight validation related fields
+// Provision validation related fields
 var (
-	// PreflightOutcomeKey records the outcome of preflight validation.
+	// ProvisionValidationOutcomeKey records the outcome of provision validation.
 	//
-	// Example: "passed", "warnings_accepted", "aborted_by_errors",
-	//          "aborted_by_user", "skipped", "error"
-	PreflightOutcomeKey = AttributeKey{
-		Key:            attribute.Key("validation.preflight.outcome"),
+	// Example: "passed", "warnings_accepted", "canceled_by_errors",
+	//          "canceled_by_user", "skipped", "error"
+	ProvisionValidationOutcomeKey = AttributeKey{
+		Key:            attribute.Key("validation.provision.outcome"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
 
-	// PreflightDiagnosticsKey records the list of diagnostic IDs emitted by preflight checks.
+	// ProvisionValidationDiagnosticsKey records the list of diagnostic IDs emitted by validation checks.
 	//
 	// Example: ["role_assignment_missing", "role_assignment_conditional"]
-	PreflightDiagnosticsKey = AttributeKey{
-		Key:            attribute.Key("validation.preflight.diagnostics"),
+	ProvisionValidationDiagnosticsKey = AttributeKey{
+		Key:            attribute.Key("validation.provision.diagnostics"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
 
-	// PreflightRulesKey records the list of rule IDs that were executed.
+	// ProvisionValidationRulesKey records the list of rule IDs that were executed.
 	//
 	// Example: ["role_assignment_permissions"]
-	PreflightRulesKey = AttributeKey{
-		Key:            attribute.Key("validation.preflight.rules"),
+	ProvisionValidationRulesKey = AttributeKey{
+		Key:            attribute.Key("validation.provision.rules"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
 
-	// PreflightWarningCountKey records the number of warnings produced by preflight validation.
-	PreflightWarningCountKey = AttributeKey{
-		Key:            attribute.Key("validation.preflight.warning.count"),
-		Classification: SystemMetadata,
-		Purpose:        FeatureInsight,
-		IsMeasurement:  true,
-	}
-
-	// PreflightErrorCountKey records the number of errors produced by preflight validation.
-	PreflightErrorCountKey = AttributeKey{
-		Key:            attribute.Key("validation.preflight.error.count"),
+	// ProvisionValidationWarningCountKey records the number of warnings produced by provision validation.
+	ProvisionValidationWarningCountKey = AttributeKey{
+		Key:            attribute.Key("validation.provision.warning.count"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,
 	}
 
-	// PreflightExtensionRulesKey records the list of rule IDs from extension-provided
-	// validation checks that were executed. Separate from PreflightRulesKey (core rules)
+	// ProvisionValidationErrorCountKey records the number of errors produced by provision validation.
+	ProvisionValidationErrorCountKey = AttributeKey{
+		Key:            attribute.Key("validation.provision.error.count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+
+	// ProvisionValidationExtensionRulesKey records the list of rule IDs from extension-provided
+	// validation checks that were executed. Separate from ProvisionValidationRulesKey (core rules)
 	// to distinguish the source of checks in telemetry.
 	//
 	// Example: ["todo_resource_name", "naming_convention"]
-	PreflightExtensionRulesKey = AttributeKey{
-		Key:            attribute.Key("validation.preflight.extension_rules"),
+	ProvisionValidationExtensionRulesKey = AttributeKey{
+		Key:            attribute.Key("validation.provision.extension_rules"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}

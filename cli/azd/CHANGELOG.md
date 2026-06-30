@@ -6,6 +6,8 @@
 
 ### Breaking Changes
 
+- [[#7113]](https://github.com/Azure/azure-dev/issues/7113) Rename azd's client-side "preflight" feature to **provision validation** to avoid confusion with the Azure ARM Preflight API. The local validation toggle moves from `provision.preflight` to a new `validation.provision` config key (`azd config set validation.provision off`), and `provision.preflight` now controls **only** the server-side ARM preflight call. Provisioning telemetry events/fields are renamed from `validation.preflight*` to `validation.provision*`, the validation outcome values `aborted_by_errors`/`aborted_by_user` are renamed to `canceled_by_errors`/`canceled_by_user`, and the extension validation `check_type` is renamed from `local-preflight` to `provision`. Users who previously set `provision.preflight off` to disable azd's local checks should now also set `validation.provision off`.
+
 ### Bugs Fixed
 
 ### Other Changes

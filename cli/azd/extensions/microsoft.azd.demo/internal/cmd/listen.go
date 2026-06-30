@@ -39,7 +39,7 @@ func newListenCommand() *cobra.Command {
 					return project.NewDemoProvisioningProvider(azdClient)
 				}).
 				WithValidationCheck(azdext.ValidationCheckRegistration{
-					CheckType: "local-preflight",
+					CheckType: "provision",
 					RuleID:    "demo_warning",
 					Factory: func() azdext.ValidationCheckProvider {
 						return project.NewDemoValidationCheck()

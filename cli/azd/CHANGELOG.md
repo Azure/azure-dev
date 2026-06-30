@@ -4,6 +4,8 @@
 
 ### Features Added
 
+- [[#8847]](https://github.com/Azure/azure-dev/pull/8847) Add container deployment support for App Service. Services configured with `host: appservice` and `language: docker` (or `docker.path`) now push the container image to ACR and update the site's container configuration, enabling Web App for Containers scenarios.
+
 ### Breaking Changes
 
 ### Bugs Fixed

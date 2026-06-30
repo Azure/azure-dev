@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -418,6 +419,141 @@ func (cli *AzureClient) GetAppServiceSlots(
 	}
 
 	return slots, nil
+}
+
+// UpdateAppServiceContainerImage updates the container image for a Linux Web App for Containers.
+// It only sets linuxFxVersion to "DOCKER|<imageName>"; infrastructure configuration (ACR auth,
+// managed identity) must be set via IaC (bicep/terraform), not at deploy time.
+func (cli *AzureClient) UpdateAppServiceContainerImage(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+	imageName string,
+) error {
+	client, err := cli.createWebAppsClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	linuxFxVersion := fmt.Sprintf("DOCKER|%s", imageName)
+	_, err = client.Update(ctx, resourceGroup, appName, armappservice.SitePatchResource{
+		Properties: &armappservice.SitePatchResourceProperties{
+			SiteConfig: &armappservice.SiteConfig{
+				LinuxFxVersion: &linuxFxVersion,
+			},
+		},
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("updating container image for app service %s: %w", appName, err)
+	}
+
+	return nil
+}
+
+// UpdateAppServiceSlotContainerImage updates the container image for a deployment slot.
+// It only sets linuxFxVersion; infrastructure configuration must be set via IaC.
+func (cli *AzureClient) UpdateAppServiceSlotContainerImage(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+	slotName string,
+	imageName string,
+) error {
+	client, err := cli.createWebAppsClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	linuxFxVersion := fmt.Sprintf("DOCKER|%s", imageName)
+	_, err = client.UpdateSlot(ctx, resourceGroup, appName, slotName, armappservice.SitePatchResource{
+		Properties: &armappservice.SitePatchResourceProperties{
+			SiteConfig: &armappservice.SiteConfig{
+				LinuxFxVersion: &linuxFxVersion,
+			},
+		},
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("updating container image for app service %s slot %s: %w", appName, slotName, err)
+	}
+
+	return nil
+}
+
+// ValidateAppServiceForContainerDeploy checks that the App Service is configured for container
+// deployment (Linux kind with an existing DOCKER| linuxFxVersion). Returns an error with
+// actionable suggestions if the site is not ready for container deployment.
+func (cli *AzureClient) ValidateAppServiceForContainerDeploy(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+) error {
+	response, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
+	if err != nil {
+		return err
+	}
+
+	if response.Kind == nil || !strings.Contains(*response.Kind, "linux") {
+		return fmt.Errorf(
+			"app service '%s' is not configured as a Linux app. "+
+				"Container deployment requires a Linux App Service Plan. "+
+				"Set 'kind: linux' in your bicep/terraform configuration",
+			appName)
+	}
+
+	if response.Properties == nil || response.Properties.SiteConfig == nil ||
+		response.Properties.SiteConfig.LinuxFxVersion == nil ||
+		!strings.HasPrefix(strings.ToUpper(*response.Properties.SiteConfig.LinuxFxVersion), "DOCKER|") {
+		return fmt.Errorf(
+			"app service '%s' is not configured for container deployment. "+
+				"Ensure your infrastructure sets linuxFxVersion to a DOCKER| image "+
+				"and configures ACR access (e.g., acrUseManagedIdentityCreds) in bicep/terraform. "+
+				"azd deploy only updates the image reference; infrastructure configuration "+
+				"must be provisioned first via 'azd provision'",
+			appName)
+	}
+
+	return nil
+}
+
+// UpdateAppServiceAppSettings merges the provided environment variables into the App Service's
+// application settings. Existing settings not in the provided map are preserved.
+func (cli *AzureClient) UpdateAppServiceAppSettings(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+	envVars map[string]string,
+) error {
+	client, err := cli.createWebAppsClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	// Get existing app settings to merge (preserve settings not managed by azd)
+	existing, err := client.ListApplicationSettings(ctx, resourceGroup, appName, nil)
+	if err != nil {
+		return fmt.Errorf("listing app settings for %s: %w", appName, err)
+	}
+
+	// Merge: existing settings + new env vars (new values overwrite)
+	merged := make(map[string]*string)
+	if existing.Properties != nil {
+		maps.Copy(merged, existing.Properties)
+	}
+	for k, v := range envVars {
+		merged[k] = &v
+	}
+
+	_, err = client.UpdateApplicationSettings(ctx, resourceGroup, appName,
+		armappservice.StringDictionary{Properties: merged}, nil)
+	if err != nil {
+		return fmt.Errorf("updating app settings for %s: %w", appName, err)
+	}
+
+	return nil
 }
 
 // DeployAppServiceSlotZip deploys a zip file to a specific deployment slot.

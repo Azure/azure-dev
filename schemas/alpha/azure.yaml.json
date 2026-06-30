@@ -222,22 +222,6 @@
                         "type": "string",
                         "title": "Required. The type of Azure resource used for service implementation",
                         "description": "The Azure service that will be used as the target for deployment operations for the service.",
-                        "enum": [
-                            "appservice",
-                            "containerapp",
-                            "function",
-                            "springapp",
-                            "staticwebapp",
-                            "aks",
-                            "ai.endpoint",
-                            "azure.ai.agent",
-                            "microsoft.foundry",
-                            "azure.ai.project",
-                            "azure.ai.connection",
-                            "azure.ai.toolbox",
-                            "azure.ai.skill",
-                            "azure.ai.routine"
-                        ],
                         "examples": [
                             "appservice",
                             "containerapp",

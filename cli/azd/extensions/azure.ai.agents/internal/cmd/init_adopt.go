@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -112,13 +113,13 @@ func readManifestContentForInitDetection(
 	}
 
 	commandRunner := exec.NewCommandRunner(&exec.RunnerOptions{
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
 	})
 	console := input.NewConsole(
 		false, // noPrompt
 		true,  // isTerminal
-		input.Writers{Output: os.Stdout},
+		input.Writers{Output: io.Discard},
 		input.ConsoleHandles{
 			Stderr: os.Stderr,
 			Stdin:  os.Stdin,

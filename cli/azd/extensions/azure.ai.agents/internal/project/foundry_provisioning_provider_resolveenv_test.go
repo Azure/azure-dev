@@ -264,3 +264,45 @@ func TestResolveEnv_EmptySubscriptionResponseReturnsError(t *testing.T) {
 	assert.Equal(t, exterrors.CodeMissingAzureSubscription, local.Code)
 	assert.Empty(t, env.set, "an empty subscription id must not be persisted")
 }
+
+func TestResolveEnv_LocationReadErrorSurfaces(t *testing.T) {
+	// A location read failure is distinct from an unset AZURE_LOCATION value and
+	// must be surfaced instead of falling through to the location prompt.
+	env := &resolveEnvStubEnvServer{
+		envName: "foundry-bugbash",
+		get:     map[string]string{envKeySubscriptionID: "00000000-0000-0000-0000-000000000001"},
+		getErr:  map[string]error{envKeyLocation: status.Error(codes.Internal, "env read failed")},
+	}
+	prompt := &resolveEnvStubPromptServer{}
+	client := newResolveEnvTestClient(t, env, prompt)
+
+	p := &FoundryProvisioningProvider{azdClient: client}
+	err := p.resolveEnv(t.Context())
+	require.Error(t, err)
+
+	assert.Equal(t, 0, prompt.subscriptionN, "subscription was already set; no prompt expected")
+	assert.Equal(t, 0, prompt.locationN, "a read failure must not trigger a prompt")
+	var local *azdext.LocalError
+	require.ErrorAs(t, err, &local)
+	assert.Equal(t, exterrors.CodeEnvironmentValuesFailed, local.Code)
+}
+
+func TestResolveEnv_EmptyLocationResponseReturnsError(t *testing.T) {
+	// Defensive: a location response with a blank name must not be persisted;
+	// fail with an actionable error instead of writing an empty value.
+	env := &resolveEnvStubEnvServer{
+		envName: "foundry-bugbash",
+		get:     map[string]string{envKeySubscriptionID: "00000000-0000-0000-0000-000000000001"},
+	}
+	prompt := &resolveEnvStubPromptServer{location: "   "}
+	client := newResolveEnvTestClient(t, env, prompt)
+
+	p := &FoundryProvisioningProvider{azdClient: client}
+	err := p.resolveEnv(t.Context())
+	require.Error(t, err)
+
+	var local *azdext.LocalError
+	require.ErrorAs(t, err, &local)
+	assert.Equal(t, exterrors.CodeMissingAzureLocation, local.Code)
+	assert.Empty(t, env.set, "an empty location name must not be persisted")
+}

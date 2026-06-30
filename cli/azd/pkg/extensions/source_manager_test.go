@@ -146,6 +146,13 @@ func TestSourceManager_List(t *testing.T) {
 	require.Equal(t, expected, *sources[0])
 }
 
+func TestNormalizeSourceKey(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "my-source", NormalizeSourceKey("My Source"))
+	require.Equal(t, "my.source", NormalizeSourceKey("My.Source"))
+}
+
 func TestSourceManager_CreateSource_Bundle(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	ctx := t.Context()

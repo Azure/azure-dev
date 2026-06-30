@@ -66,9 +66,10 @@ type initFlags struct {
 	// image specifies a pre-built container image URL (e.g., "myacr.azurecr.io/agent:v1").
 	// When set without --manifest, init synthesizes a minimal hosted container manifest and
 	// routes through the manifest flow, skipping template/language selection and code
-	// scaffolding (there is no source to scaffold). It also writes the image field to
-	// agent.yaml, skips Dockerfile generation, and skips ACR connection prompts. Requires
-	// --agent-name when no --manifest is given. Incompatible with --deploy-mode code.
+	// scaffolding (there is no source to scaffold). The image is written to the generated
+	// azure.yaml service's top-level image field, skips Dockerfile generation, and skips ACR
+	// connection prompts. Requires --agent-name when no --manifest is given. Incompatible
+	// with --deploy-mode code.
 	image string
 	// force, when true, lets headless callers (--no-prompt) pre-consent to
 	// overwrite prompts that would otherwise return a structured error. It
@@ -624,46 +625,30 @@ func updateAgentDefinition(
 	}
 }
 
-// setImageOnTemplate sets the Image field on a ContainerAgent template.
-// When --image is provided, this function updates the manifest so the image URL
-// is persisted in agent.yaml and used during deployment instead of building from Dockerfile.
-func setImageOnTemplate(agentManifest *agent_yaml.AgentManifest, image string) error {
-	if image == "" {
-		return nil
+// preBuiltImageForInit returns the pre-built image that should be written to the
+// azure.yaml service image field. The --image flag wins over any image carried by
+// a user-provided manifest because it is the explicit CLI override.
+func preBuiltImageForInit(agentManifest *agent_yaml.AgentManifest, flagImage string) string {
+	if image := strings.TrimSpace(flagImage); image != "" {
+		return image
 	}
 	if agentManifest == nil {
-		return fmt.Errorf("agent manifest is nil")
-	}
-
-	hostedAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent)
-	if !ok {
-		return fmt.Errorf("--image is only supported for hosted container agents, got %T", agentManifest.Template)
-	}
-
-	hostedAgent.Image = image
-	agentManifest.Template = hostedAgent
-	return nil
-}
-
-// agentUsesPreBuiltImage reports whether the manifest's template is a hosted
-// container agent that references a pre-built image. For such agents azd does
-// not build from source, so build-time concerns like the startup command and
-// ACR setup do not apply. Covers both the --image flag (synthesized manifest)
-// and a user-provided -m manifest that already specifies an image.
-func agentUsesPreBuiltImage(agentManifest *agent_yaml.AgentManifest) bool {
-	if agentManifest == nil {
-		return false
+		return ""
 	}
 	ca, ok := agentManifest.Template.(agent_yaml.ContainerAgent)
-	return ok && strings.TrimSpace(ca.Image) != ""
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(ca.Image)
 }
 
 // synthesizeImageManifestFile writes a minimal hosted container agent manifest to a
 // temporary file for the bring-your-own-image flow (--image without --manifest).
 // Routing through the manifest path lets init skip template/language selection and code
 // scaffolding, since a pre-built image needs none of those. The returned cleanup removes
-// the temp directory; callers should defer it. The image is also persisted by
-// setImageOnTemplate during Run, but is included here so the manifest is self-describing.
+// the temp directory; callers should defer it. The image is intentionally not embedded
+// in the temporary manifest; init writes --image to the generated azure.yaml service's
+// top-level image field.
 func synthesizeImageManifestFile(agentName, image string) (string, func(), error) {
 	noop := func() {}
 
@@ -679,7 +664,6 @@ func synthesizeImageManifestFile(agentName, image string) (string, func(), error
 			"kind":        string(agent_yaml.AgentKindHosted),
 			"name":        agentName,
 			"description": fmt.Sprintf("Hosted container agent using pre-built image %s", image),
-			"image":       image,
 			"protocols": []map[string]any{
 				{"protocol": "responses", "version": "1.0.0"},
 			},
@@ -1101,7 +1085,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// there is no source to scaffold and no template/language to choose.
 			// Synthesize a minimal hosted container manifest and route it through the
 			// manifest flow, which skips the init-mode / template / language prompts
-			// and code scaffolding. The image is wired into agent.yaml and ACR is
+			// and code scaffolding. The image is wired into azure.yaml and ACR is
 			// skipped by the existing --image handling in InitAction.Run.
 			if flags.image != "" && flags.manifestPointer == "" {
 				// Validate early so we fail before initializing a project/template.
@@ -1530,7 +1514,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
 
 	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "",
-		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'container' in --no-prompt.")
+		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'code' for Python/.NET projects in --no-prompt.")
 
 	cmd.Flags().StringVar(&flags.runtime, "runtime", "",
 		"Runtime for code deploy (e.g., 'python_3_13', 'python_3_14', 'dotnet_10'). Required with --deploy-mode code --no-prompt.")
@@ -1636,6 +1620,14 @@ func (a *InitAction) Run(ctx context.Context) error {
 					return fmt.Errorf("prompting for code configuration: %w", err)
 				}
 
+				// Remove container-only files only after configuration succeeds,
+				// so a cancelled prompt or error doesn't leave the directory in
+				// an inconsistent state. Only applies to GitHub-downloaded
+				// templates to avoid deleting user-owned files.
+				if a.isGitHubUrl(a.flags.manifestPointer) {
+					removeContainerFiles(targetDir)
+				}
+
 				hostedAgent := agentManifest.Template.(agent_yaml.ContainerAgent)
 				hostedAgent.CodeConfiguration = codeConfig
 				agentManifest.Template = hostedAgent
@@ -1703,11 +1695,6 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return err
 		}
 		if err := setAgentNameOnTemplate(agentManifest, agentName); err != nil {
-			return err
-		}
-
-		// Set pre-built image if --image was provided
-		if err := setImageOnTemplate(agentManifest, a.flags.image); err != nil {
 			return err
 		}
 
@@ -2854,6 +2841,18 @@ func (a *InitAction) downloadAgentYaml(
 	return agentManifest, targetDir, nil
 }
 
+// removeContainerFiles removes Dockerfile and .dockerignore from targetDir.
+// Called when code deploy is selected so container-only files from downloaded
+// samples are not left in the project.
+func removeContainerFiles(targetDir string) {
+	for _, name := range []string{"Dockerfile", ".dockerignore"} {
+		p := filepath.Join(targetDir, name)
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			log.Printf("warning: failed to remove %s: %v", p, err)
+		}
+	}
+}
+
 // writeAgentIgnoreFile generates a default .agentignore in targetDir if one does
 // not already exist. The agent definition itself is no longer written to disk —
 // it lives as service-level properties in azure.yaml — but .agentignore is still
@@ -2984,10 +2983,12 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		}
 	}
 
+	preBuiltImage := preBuiltImageForInit(agentManifest, a.flags.image)
+
 	// Detect startup command. Skipped for code deploy (uses ZIP packaging) and
 	// when the agent uses a pre-built container image, since the image's own
 	// entrypoint runs and no startup command applies.
-	if !a.isCodeDeploy && !agentUsesPreBuiltImage(agentManifest) {
+	if !a.isCodeDeploy && preBuiltImage == "" {
 		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
 		if err != nil {
 			return err
@@ -3032,7 +3033,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		RelativePath:         targetDir,
 		Host:                 AiAgentHost,
 		Language:             "docker",
-		Image:                containerDef.Image,
+		Image:                preBuiltImage,
 		AdditionalProperties: agentProps,
 	}
 

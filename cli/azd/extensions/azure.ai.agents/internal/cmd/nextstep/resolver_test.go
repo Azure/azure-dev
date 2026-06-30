@@ -263,7 +263,7 @@ func TestResolveAfterInit_CreatedFolder(t *testing.T) {
 
 // TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape locks the
 // single-missing-manual-var case end-to-end. Three asserts: the env-set
-// line has the enriched "referenced by agent.yaml but not set in azd
+// line has the enriched "referenced by azure.yaml but not set in azd
 // env" description, the `azd ai agent run` follow-up immediately follows
 // the env-set lines, and the trailing `azd deploy` reminder is preserved.
 // This is the canonical B2 fix shape from issue #7975's "Example output
@@ -280,7 +280,7 @@ func TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape(t *testing.T) {
 	require.Len(t, out, 4)
 
 	assert.Equal(t, "azd env set MY_API_KEY <value>", out[0].Command)
-	assert.Equal(t, "referenced by agent.yaml but not set in azd env", out[0].Description,
+	assert.Equal(t, "referenced by azure.yaml but not set in azd env", out[0].Description,
 		"enriched description must explain WHY the env-set is needed")
 	assert.False(t, out[0].Trailing)
 
@@ -412,7 +412,7 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,
-		"edit agent.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value",
+		"edit azure.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value",
 		"placeholder fix-up missing")
 	assert.Contains(t, rendered, "azd provision",
 		"toolbox-endpoint branch should route to azd provision")
@@ -552,7 +552,7 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders(t *testing
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,
-		"edit agent.yaml: replace {{AGENT_NAME}} with the actual value",
+		"edit azure.yaml: replace {{AGENT_NAME}} with the actual value",
 		"placeholder fix-up missing")
 	assert.Contains(t, rendered, "azd provision",
 		"coexistence+placeholders: toolbox sub-branch must still emit provision")
@@ -693,7 +693,7 @@ func TestResolveAfterInit_UnresolvedPlaceholders(t *testing.T) {
 			for i, name := range tt.wantPlaceholders {
 				require.Less(t, i, len(out))
 				assert.Equal(t,
-					"edit agent.yaml: replace {{"+name+"}} with the actual value",
+					"edit azure.yaml: replace {{"+name+"}} with the actual value",
 					out[i].Command,
 				)
 			}

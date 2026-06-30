@@ -4,11 +4,14 @@
 package cmd
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -658,4 +661,152 @@ func TestEnrichToolboxFromConnections_EmptyTarget(t *testing.T) {
 	assert.False(t, hasURL)
 	// server_label should still be set.
 	assert.Equal(t, "no-target", tb.Tools[0]["server_label"])
+}
+
+// ---------------------------------------------------------------------------
+// findDuplicateAgentNames
+// ---------------------------------------------------------------------------
+
+// inlineAgentService builds an azure.ai.agent service whose inline definition
+// resolves to a hosted agent with the given Foundry agent name. serviceName is
+// the azure.yaml service key; agentName is the unique Foundry identifier.
+func inlineAgentService(t *testing.T, serviceName, agentName string) *azdext.ServiceConfig {
+	t.Helper()
+	ca := agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind:        agent_yaml.AgentKindHosted,
+			Name:        agentName,
+			Description: new("test agent"),
+		},
+		Protocols: []agent_yaml.ProtocolVersionRecord{
+			{Protocol: "responses", Version: "1.0.0"},
+		},
+	}
+	props, err := project.AgentDefinitionToServiceProperties(ca, nil)
+	require.NoError(t, err)
+	return &azdext.ServiceConfig{Name: serviceName, Host: AiAgentHost, AdditionalProperties: props}
+}
+
+func TestFindDuplicateAgentNames(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		services map[string]*azdext.ServiceConfig
+		want     []duplicateAgentNameGroup
+	}{
+		{
+			name:     "no services",
+			services: nil,
+			want:     nil,
+		},
+		{
+			name: "unique agent names",
+			services: map[string]*azdext.ServiceConfig{
+				"svc-a": inlineAgentService(t, "svc-a", "agent-a"),
+				"svc-b": inlineAgentService(t, "svc-b", "agent-b"),
+			},
+			want: nil,
+		},
+		{
+			name: "two services share one name",
+			services: map[string]*azdext.ServiceConfig{
+				// Mirrors the issue: two service keys, same agent name.
+				"toolbox-agent-4": inlineAgentService(t, "toolbox-agent-4", "toolbox-agent-2"),
+				"toolbox-agent-2": inlineAgentService(t, "toolbox-agent-2", "toolbox-agent-2"),
+				"other":           inlineAgentService(t, "other", "other-agent"),
+			},
+			want: []duplicateAgentNameGroup{
+				{agentName: "toolbox-agent-2", serviceNames: []string{"toolbox-agent-2", "toolbox-agent-4"}},
+			},
+		},
+		{
+			name: "three services share one name",
+			services: map[string]*azdext.ServiceConfig{
+				"svc-c": inlineAgentService(t, "svc-c", "shared"),
+				"svc-a": inlineAgentService(t, "svc-a", "shared"),
+				"svc-b": inlineAgentService(t, "svc-b", "shared"),
+			},
+			want: []duplicateAgentNameGroup{
+				{agentName: "shared", serviceNames: []string{"svc-a", "svc-b", "svc-c"}},
+			},
+		},
+		{
+			name: "multiple duplicate groups sorted by agent name",
+			services: map[string]*azdext.ServiceConfig{
+				"z1": inlineAgentService(t, "z1", "zebra"),
+				"z2": inlineAgentService(t, "z2", "zebra"),
+				"a1": inlineAgentService(t, "a1", "alpha"),
+				"a2": inlineAgentService(t, "a2", "alpha"),
+			},
+			want: []duplicateAgentNameGroup{
+				{agentName: "alpha", serviceNames: []string{"a1", "a2"}},
+				{agentName: "zebra", serviceNames: []string{"z1", "z2"}},
+			},
+		},
+		{
+			name: "non-agent host and unresolvable services are skipped",
+			services: map[string]*azdext.ServiceConfig{
+				// Same name as the agent but a different host — not a collision.
+				"web":   {Name: "web", Host: "containerapp", RelativePath: "."},
+				"agent": inlineAgentService(t, "agent", "shared-name"),
+				// azure.ai.agent host but no resolvable definition — skipped.
+				"empty": {Name: "empty", Host: AiAgentHost, RelativePath: "."},
+			},
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			proj := &azdext.ProjectConfig{Path: t.TempDir(), Services: tt.services}
+			require.Equal(t, tt.want, findDuplicateAgentNames(proj))
+		})
+	}
+}
+
+func TestFindDuplicateAgentNames_NilProject(t *testing.T) {
+	t.Parallel()
+	require.Nil(t, findDuplicateAgentNames(nil))
+}
+
+func TestWarnDuplicateAgentNames_WritesWarningOnce(t *testing.T) {
+	// Do not run in parallel: this test temporarily redirects process stderr.
+	proj := &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"toolbox-agent-4": inlineAgentService(t, "toolbox-agent-4", "toolbox-agent-2"),
+			"toolbox-agent-2": inlineAgentService(t, "toolbox-agent-2", "toolbox-agent-2"),
+			"other":           inlineAgentService(t, "other", "other-agent"),
+		},
+	}
+
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stderr = w
+	t.Cleanup(func() {
+		os.Stderr = oldStderr
+		_ = r.Close()
+		_ = w.Close()
+	})
+
+	var once sync.Once
+	once.Do(func() { warnDuplicateAgentNames(proj) })
+	once.Do(func() { warnDuplicateAgentNames(proj) })
+
+	require.NoError(t, w.Close())
+	os.Stderr = oldStderr
+
+	var buf bytes.Buffer
+	_, err = buf.ReadFrom(r)
+	require.NoError(t, err)
+
+	warning := buf.String()
+	assert.Equal(t, 1, strings.Count(warning, "WARNING: agent name"))
+	assert.Contains(t, warning, `agent name "toolbox-agent-2"`)
+	assert.Contains(t, warning, "toolbox-agent-2, toolbox-agent-4")
+	assert.Contains(t, warning, "azure.yaml")
+	assert.NotContains(t, warning, "other-agent")
 }

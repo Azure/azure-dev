@@ -701,10 +701,16 @@ func TestTracingDisclaimer(t *testing.T) {
 	require.Equal(t, "https://aka.ms/disable-tracing", disableTracingURL)
 }
 
-// TestConfigureFoundryProjectEnv_BicepLessShortCircuits verifies that
-// bicepless=true seeds identity env vars and returns before any Foundry
-// data-plane call. The nil credential turns a regression that re-enables
-// connection discovery into a nil-pointer panic.
+// TestConfigureFoundryProjectEnv_BicepLessShortCircuits verifies that for a
+// code-deploy agent (skipACR=true), bicepless=true seeds identity env vars and
+// returns before any Foundry data-plane call. The nil credential turns a
+// regression that re-enables connection discovery into a nil-pointer panic.
+//
+// Note: when skipACR is false (a hosted container agent), bicepless deliberately
+// does NOT short-circuit — it configures ACR so the agent has a registry to push
+// to even on an existing (brownfield) project. That path issues a Foundry
+// connections call and is covered by manual/integration testing rather than here,
+// since it needs a real Foundry projects client.
 func TestConfigureFoundryProjectEnv_BicepLessShortCircuits(t *testing.T) {
 	t.Parallel()
 
@@ -725,8 +731,8 @@ func TestConfigureFoundryProjectEnv_BicepLessShortCircuits(t *testing.T) {
 	err := configureFoundryProjectEnv(
 		t.Context(), azdClient, nil, envName,
 		project, project.SubscriptionId,
-		false, // skipACR
-		true,  // bicepless
+		true, // skipACR (code deploy)
+		true, // bicepless
 	)
 	require.NoError(t, err)
 
@@ -751,6 +757,6 @@ func TestConfigureFoundryProjectEnv_BicepLessShortCircuits(t *testing.T) {
 		"APPLICATIONINSIGHTS_RESOURCE_ID",
 		"APPLICATIONINSIGHTS_CONNECTION_NAME",
 	} {
-		require.Empty(t, written[key], "must not write %q when bicepless is true", key)
+		require.Empty(t, written[key], "must not write %q when bicepless+skipACR", key)
 	}
 }

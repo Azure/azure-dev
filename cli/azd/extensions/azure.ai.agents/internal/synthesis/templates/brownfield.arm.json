@@ -1,0 +1,222 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "languageVersion": "2.0",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "18238410234443260141"
+    }
+  },
+  "definitions": {
+    "deploymentsType": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/deploymentType"
+      },
+      "metadata": {
+        "description": "Shape of one model deployment entry in azure.yaml."
+      }
+    },
+    "deploymentType": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "model": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "format": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        },
+        "sku": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "capacity": {
+              "type": "int"
+            }
+          }
+        }
+      },
+      "metadata": {
+        "description": "Shape of a single model deployment."
+      }
+    }
+  },
+  "parameters": {
+    "accountName": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64,
+      "metadata": {
+        "description": "Name of the existing Foundry (AIServices) account."
+      }
+    },
+    "projectName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of the existing Foundry project that receives the ACR connection. Required when includeAcr is true."
+      }
+    },
+    "deployments": {
+      "$ref": "#/definitions/deploymentsType",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Model deployments to create or update on the existing account."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for the container registry. Defaults to the resource group location."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags applied to created resources."
+      }
+    },
+    "includeAcr": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Create an Azure Container Registry and wire it to the existing project. Set true for a hosted container agent."
+      }
+    },
+    "acrName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Container registry name. 5-50 alphanumeric chars. Required when includeAcr is true."
+      }
+    }
+  },
+  "variables": {
+    "acrPullRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]"
+  },
+  "resources": {
+    "foundryAccountPreview::project": {
+      "existing": true,
+      "type": "Microsoft.CognitiveServices/accounts/projects",
+      "apiVersion": "2025-04-01-preview",
+      "name": "[format('{0}/{1}', parameters('accountName'), parameters('projectName'))]"
+    },
+    "foundryAccount": {
+      "existing": true,
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2025-06-01",
+      "name": "[parameters('accountName')]"
+    },
+    "modelDeployments": {
+      "copy": {
+        "name": "modelDeployments",
+        "count": "[length(parameters('deployments'))]",
+        "mode": "serial",
+        "batchSize": 1
+      },
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2025-06-01",
+      "name": "[format('{0}/{1}', parameters('accountName'), parameters('deployments')[copyIndex()].name)]",
+      "properties": {
+        "model": "[parameters('deployments')[copyIndex()].model]"
+      },
+      "sku": "[parameters('deployments')[copyIndex()].sku]"
+    },
+    "foundryAccountPreview": {
+      "existing": true,
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2025-04-01-preview",
+      "name": "[parameters('accountName')]"
+    },
+    "registry": {
+      "condition": "[parameters('includeAcr')]",
+      "type": "Microsoft.ContainerRegistry/registries",
+      "apiVersion": "2023-07-01",
+      "name": "[parameters('acrName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "sku": {
+        "name": "Premium"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "adminUserEnabled": false,
+        "publicNetworkAccess": "Enabled",
+        "zoneRedundancy": "Disabled"
+      }
+    },
+    "foundryAcrPull": {
+      "condition": "[parameters('includeAcr')]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName'))]",
+      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName')), resourceId('Microsoft.CognitiveServices/accounts/projects', parameters('accountName'), parameters('projectName')), variables('acrPullRoleId'))]",
+      "properties": {
+        "principalId": "[reference('foundryAccountPreview::project', '2025-04-01-preview', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal",
+        "roleDefinitionId": "[variables('acrPullRoleId')]"
+      },
+      "dependsOn": [
+        "foundryAccountPreview::project",
+        "registry"
+      ]
+    },
+    "acrConnection": {
+      "condition": "[parameters('includeAcr')]",
+      "type": "Microsoft.CognitiveServices/accounts/projects/connections",
+      "apiVersion": "2025-04-01-preview",
+      "name": "[format('{0}/{1}/{2}-conn', parameters('accountName'), parameters('projectName'), parameters('acrName'))]",
+      "properties": {
+        "category": "ContainerRegistry",
+        "target": "[reference('registry').loginServer]",
+        "authType": "ManagedIdentity",
+        "credentials": {
+          "clientId": "[reference('foundryAccountPreview::project', '2025-04-01-preview', 'full').identity.principalId]",
+          "resourceId": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName'))]"
+        },
+        "isSharedToAll": true,
+        "metadata": {
+          "ResourceId": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName'))]"
+        }
+      },
+      "dependsOn": [
+        "foundryAccountPreview::project",
+        "foundryAcrPull",
+        "registry"
+      ]
+    }
+  },
+  "outputs": {
+    "AZURE_CONTAINER_REGISTRY_ENDPOINT": {
+      "type": "string",
+      "value": "[if(parameters('includeAcr'), reference('registry').loginServer, '')]"
+    },
+    "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": {
+      "type": "string",
+      "value": "[if(parameters('includeAcr'), resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName')), '')]"
+    },
+    "AZURE_AI_PROJECT_ACR_CONNECTION_NAME": {
+      "type": "string",
+      "value": "[if(parameters('includeAcr'), format('{0}-conn', parameters('acrName')), '')]"
+    }
+  }
+}

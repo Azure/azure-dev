@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/Deployment.json",
+  "title": "Foundry model deployment",
+  "description": "A model deployment on the Foundry project. Matches the existing azure.ai.agent.json shape (name, model, sku). Items in a deployments array may be inline or a $ref to an external file.",
+  "oneOf": [
+    { "$ref": "#/definitions/Inline" },
+    { "$ref": "FileRef.json" }
+  ],
+  "definitions": {
+    "Inline": {
+      "type": "object",
+      "required": ["name", "model", "sku"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the model deployment."
+        },
+        "model": {
+          "type": "object",
+          "required": ["format", "name", "version"],
+          "additionalProperties": false,
+          "properties": {
+            "format": { "type": "string", "description": "Model format (e.g., 'OpenAI')." },
+            "name":   { "type": "string", "description": "Model name (e.g., 'gpt-4.1-mini')." },
+            "version":{ "type": "string", "description": "Model version (e.g., '2025-04-14')." }
+          }
+        },
+        "sku": {
+          "type": "object",
+          "required": ["capacity", "name"],
+          "additionalProperties": false,
+          "properties": {
+            "capacity": { "type": "integer", "description": "SKU capacity (TPM units)." },
+            "name":     { "type": "string",  "description": "SKU name (e.g., 'Standard', 'GlobalStandard', 'GlobalBatch')." }
+          }
+        }
+      }
+    }
+  }
+}

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features Added
+
+- The `azure.ai.toolboxes` extension now registers an `azure.ai.toolbox` service-target host. `azd deploy`/`azd up` upsert each `host: azure.ai.toolbox` service in `azure.yaml` as a new toolbox version, resolving named `connection` references to their project connection IDs, expanding `${VAR}` references, and publishing the toolbox MCP endpoint to the azd environment.
+
 ## 0.1.1-preview (2026-06-19)
 
 ### Features

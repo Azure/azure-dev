@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features Added
+
+- The `azure.ai.connections` extension now registers an `azure.ai.connection` service-target host. `azd deploy`/`azd up` upsert each `host: azure.ai.connection` service in `azure.yaml` onto the Foundry project with an idempotent ARM CreateOrUpdate, expanding `${VAR}` secrets from the azd environment while passing Foundry server-side `${{...}}` expressions through untouched.
+
 ## 0.1.2-preview (2026-06-19)
 
 ### Bugs Fixed

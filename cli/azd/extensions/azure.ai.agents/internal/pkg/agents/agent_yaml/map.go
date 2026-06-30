@@ -401,8 +401,12 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 	if hostedAgent.CodeConfiguration != nil {
 		cmdPrefix := RuntimeCmdPrefix(hostedAgent.CodeConfiguration.Runtime)
 		entryPoint := []string{cmdPrefix, hostedAgent.CodeConfiguration.EntryPoint}
-		depRes := ""
-		if hostedAgent.CodeConfiguration.DependencyResolution != nil {
+		// Foundry requires dependency_resolution for code deploy; default to
+		// remote_build (matching `azd ai agent init --dep-resolution`) when the
+		// author omits it, so the create-agent request isn't rejected with a 400.
+		depRes := DefaultDependencyResolution
+		if hostedAgent.CodeConfiguration.DependencyResolution != nil &&
+			*hostedAgent.CodeConfiguration.DependencyResolution != "" {
 			depRes = *hostedAgent.CodeConfiguration.DependencyResolution
 		}
 

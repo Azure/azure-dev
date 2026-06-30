@@ -26,6 +26,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newContextCommand())
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
+	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
 
 	// Register -p / --project-endpoint as a persistent flag inherited by
 	// connection CRUD subcommands (list, show, create, update, delete).
@@ -40,4 +41,14 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newConnectionDeleteCommand(extCtx))
 
 	return rootCmd
+}
+
+// configureExtensionHost is the listen callback. It registers the
+// azure.ai.connection service target so `azd up`/`azd deploy` upsert connections
+// declared as services in azure.yaml.
+func configureExtensionHost(host *azdext.ExtensionHost) {
+	azdClient := host.Client()
+	host.WithServiceTarget(aiConnectionHost, func() azdext.ServiceTargetProvider {
+		return newConnectionServiceTarget(azdClient)
+	})
 }

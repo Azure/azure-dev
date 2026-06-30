@@ -373,3 +373,62 @@ func TestAllPlatforms(t *testing.T) {
 		assert.Equal(t, strategy, got)
 	}
 }
+
+// TestAzureSkillsHostVersionProbeRegex locks the per-host BinaryVersionRegex
+// against real `--version` banners: each host's regex must capture the version
+// from that host's genuine output and reject non-version output (a launcher
+// stub prompt, the banner prefix without a version, or an incidental semver
+// elsewhere in the stream).
+func TestAzureSkillsHostVersionProbeRegex(t *testing.T) {
+	t.Parallel()
+
+	rx := map[string]string{}
+	for _, h := range azureSkills().SkillHosts {
+		rx[h.Host] = h.BinaryVersionRegex
+	}
+
+	cases := []struct {
+		name    string
+		host    string
+		output  string
+		wantVer string // "" => must not match (host treated as unusable)
+	}{
+		{
+			name:    "copilot real banner",
+			host:    "copilot",
+			output:  "GitHub Copilot CLI 1.0.64-3.\nRun 'copilot update' to check for updates.",
+			wantVer: "1.0.64",
+		},
+		{
+			name:    "claude real banner",
+			host:    "claude",
+			output:  "2.1.178 (Claude Code)",
+			wantVer: "2.1.178",
+		},
+		{
+			name:    "copilot stub prompt",
+			host:    "copilot",
+			output:  "Cannot find GitHub Copilot CLI (https://docs.github.com/copilot)\nInstall GitHub Copilot CLI? ['y/N']",
+			wantVer: "",
+		},
+		{
+			name:    "copilot banner prefix without version",
+			host:    "copilot",
+			output:  "GitHub Copilot CLI is not installed\nnode v20.11.1",
+			wantVer: "",
+		},
+		{
+			name:    "claude version not at line start",
+			host:    "claude",
+			output:  "see https://example.com/1.2.3 (Claude Code plugin)",
+			wantVer: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.wantVer, matchVersion(tc.output, rx[tc.host]))
+		})
+	}
+}

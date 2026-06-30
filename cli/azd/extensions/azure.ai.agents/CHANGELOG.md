@@ -2,9 +2,19 @@
 
 ## Unreleased
 
-- Fail fast with a corrective hint when `azd ai agent files upload` is given an agent name as its positional argument (mirroring `azd ai agent invoke <agent>`). Previously, in multi-service projects without `-n/--agent-name`, the command could hang silently on the interactive agent picker in non-TTY contexts. The positional argument is the file to upload; select the agent with `-n` and the file with `-f`.
+### Features Added
+
+- `azd ai agent init` now writes each Foundry resource as its own `azure.yaml` service entry instead of bundling everything into the agent service. Model deployments become a single `azure.ai.project` service, each connection becomes an `azure.ai.connection` service, and each toolbox becomes an `azure.ai.toolbox` service, all wired to the agent through `uses:`. The agents extension registers the `azure.ai.project`, `azure.ai.connection`, and `azure.ai.toolbox` service-target hosts itself as no-ops (the resources are created by Bicep at provision time), so only this extension needs to be installed for `azd up`/`azd deploy` to walk the new service entries. Provisioning behavior is unchanged: the agent extension re-sources deployments, connections, and toolboxes from the sibling services when setting provisioning environment variables and creating toolsets, falling back to a pre-split non-network `azure.yaml` that still bundles them on the agent service so existing projects keep provisioning without re-running `init`.
+- The `azure.ai.project`, `azure.ai.connection`, and `azure.ai.toolbox` hosts are now owned by their sibling extensions (`azure.ai.projects`, `azure.ai.connections`, `azure.ai.toolboxes`) as real deploy-time service targets. The agents extension no longer registers them as no-op hosts, and toolboxes are reconciled at `azd deploy` by the `azure.ai.toolbox` target rather than created during `azd provision`.
+- `azd provision` now connects to an existing Foundry project when the `azure.ai.project` service sets `endpoint:` (bring-your-own) instead of failing with a brownfield error, and `azd down` leaves a bring-your-own project in place because azd did not create it.
 - Add a `--call-id` flag to `azd ai agent invoke` that sends the `x-agent-foundry-call-id` header on `--local` invocations only. It is ignored for remote Foundry requests.
 - Replace the per-command Foundry isolation-key flags (`--user-isolation-key`, `--chat-isolation-key`, and the session-ownership `--isolation-key`) with a single `--user-identity` flag. The value is sent as the `x-agent-user-id` header for `--local` invocations and as `x-ms-user-identity` for all remote Foundry requests. This is a breaking change with no backward-compatible flag retention.
+- `azd deploy`/`azd up` now warn when two or more `azure.ai.agent` services resolve to the same Foundry agent `name`. Foundry identifies an agent by its name, so such services deploy to the same agent and overwrite each other; the warning names the colliding services so each can be given a unique name in `azure.yaml`. Deploy still proceeds.
+
+### Bugs Fixed
+
+- [[#8859]](https://github.com/Azure/azure-dev/issues/8859) `azd up` now prompts for an Azure subscription and location when `AZURE_SUBSCRIPTION_ID` or `AZURE_LOCATION` is not set, matching core `azd up`, instead of failing. Under `--no-prompt` it still returns an actionable `azd env set ...` error.
+- [[#8586]](https://github.com/Azure/azure-dev/issues/8586) Fail fast with a corrective hint when `azd ai agent files upload` is given an agent name as its positional argument (mirroring `azd ai agent invoke <agent>`). Previously, in multi-service projects without `-n/--agent-name`, the command could hang silently on the interactive agent picker in non-TTY contexts. The positional argument is the file to upload; select the agent with `-n` and the file with `-f`.
 
 ## 0.1.41-preview (2026-06-19)
 

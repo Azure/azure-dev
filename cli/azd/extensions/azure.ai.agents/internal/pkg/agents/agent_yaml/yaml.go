@@ -191,6 +191,12 @@ type CodeConfiguration struct {
 	DependencyResolution *string `json:"dependencyResolution,omitempty" yaml:"dependency_resolution,omitempty"`
 }
 
+// DefaultDependencyResolution is the dependency-resolution mode used for code
+// deploy when a CodeConfiguration omits one. Foundry's create-agent API rejects
+// an empty dependency_resolution, so callers default to this value (the same
+// default as `azd ai agent init --dep-resolution`).
+const DefaultDependencyResolution = "remote_build"
+
 // PolicyType identifies the kind of governance policy attached to a hosted agent.
 type PolicyType string
 

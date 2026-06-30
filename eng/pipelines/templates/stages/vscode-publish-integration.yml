@@ -100,28 +100,65 @@ stages:
                   parameters:
                     PublishLocations: azd/vscode/pr/$(PRNumber)
 
-                - pwsh: |
-                    $downloadUrl = "$(publish-storage-static-host)/azd/vscode/pr/$(PRNumber)/azure-dev-$(VSIX_VERSION).vsix"
+      - job: Comment_On_PR
+        dependsOn: Publish_For_PR
+        condition: >-
+          and(
+            succeeded(),
+            ne(variables['Skip.Release'], 'true'),
+            or(
+              eq('PullRequest', variables['BuildReasonOverride']),
+              and(
+                eq('', variables['BuildReasonOverride']),
+                eq(variables['Build.Reason'], 'PullRequest')
+              )
+            )
+          )
 
-                    $content = @"
-                    <!-- #comment-vscode-pr -->
-                    ## VSCode Extension Installation Instructions
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
 
-                    1. Download the extension at $downloadUrl
-                    2. Extract the extension from the compressed file
-                    3. In vscode
-                      a. Open "Extensions" (Ctrl+Shift+X)
-                      b. Click the \`...\` menu at top of Extensions sidebar
-                      c. Click "Install from VSIX"
-                      d. Select location of downloaded file
-                    "@
-                    $file = New-TemporaryFile
-                    Set-Content -Path $file -Value $content
-                    Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
-                  displayName: Write body content to temporary file
+        steps:
+          - checkout: self
 
-                - template: /eng/pipelines/templates/steps/update-prcomment.yml
-                  parameters:
-                    PrNumber: $(PRNumber)
-                    Tag: '<!-- #comment-vscode-pr -->'
-                    BodyFile: $(CommentBodyFile)
+          - template: /eng/pipelines/templates/steps/vscode-set-metadata-variables.yml
+
+          - pwsh: |
+              $PRNumber = '$(System.PullRequest.PullRequestNumber)'
+              if ($env:PRNUMBEROVERRIDE) {
+                Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
+                $PRNumber = $env:PRNUMBEROVERRIDE
+              }
+              Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
+            displayName: Set PR Number Variable
+
+          - pwsh: |
+              $downloadUrl = "$(publish-storage-static-host)/azd/vscode/pr/$(PRNumber)/azure-dev-$(VSIX_VERSION).vsix"
+
+              $content = @"
+              <!-- #comment-vscode-pr -->
+              ## VSCode Extension Installation Instructions
+
+              1. Download the extension at $downloadUrl
+              2. Extract the extension from the compressed file
+              3. In vscode
+                a. Open "Extensions" (Ctrl+Shift+X)
+                b. Click the \`...\` menu at top of Extensions sidebar
+                c. Click "Install from VSIX"
+                d. Select location of downloaded file
+              "@
+              $file = New-TemporaryFile
+              Set-Content -Path $file -Value $content
+              Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
+            displayName: Write body content to temporary file
+
+          - template: /eng/common/pipelines/templates/steps/login-to-github.yml
+          
+          - template: /eng/pipelines/templates/steps/update-prcomment.yml
+            parameters:
+              PrNumber: $(PRNumber)
+              Tag: '<!-- #comment-vscode-pr -->'
+              BodyFile: $(CommentBodyFile)
+              GitHubToken: $(GH_TOKEN)

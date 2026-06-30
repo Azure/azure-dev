@@ -22,6 +22,8 @@ import (
 
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
+	"azureaiagent/internal/pkg/paths"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -117,7 +119,10 @@ func (a *OptimizeApplyAction) apply(
 		return err
 	}
 
-	serviceDir := filepath.Join(project.Path, svc.RelativePath)
+	serviceDir, err := paths.JoinAllowRoot(project.Path, svc.RelativePath)
+	if err != nil {
+		return fmt.Errorf("invalid service path for %s: %w", svc.Name, err)
+	}
 	candidateDir := filepath.Join(serviceDir, agentConfigsDir, a.flags.candidate)
 
 	_, _ = bold.Fprintf(out, "Applying optimization candidate %s...\n\n", a.flags.candidate)
@@ -160,15 +165,55 @@ func (a *OptimizeApplyAction) apply(
 	}
 	fmt.Fprintf(out, "  → %s\n", filepath.Join(candidateDir, opt_eval.MetadataFile))
 
-	// Step 3: Write OPTIMIZATION_LOCAL_DIR and OPTIMIZATION_CANDIDATE_ID into agent.yaml
-	// so the deploy pipeline knows which local optimization config to use.
-	agentYamlPath := filepath.Join(serviceDir, "agent.yaml")
-	fmt.Fprintf(out, "  Updating %s...\n", agentYamlPath)
-	if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_LOCAL_DIR", agentConfigsDir); err != nil {
-		return fmt.Errorf("failed to update agent.yaml: %w", err)
+	// Step 3: Persist OPTIMIZATION_LOCAL_DIR and OPTIMIZATION_CANDIDATE_ID onto the
+	// agent definition so the deploy pipeline knows which local optimization
+	// config to use. New projects carry the definition inline in azure.yaml;
+	// older projects still keep it in an on-disk agent.yaml.
+	envUpdates := map[string]string{
+		"OPTIMIZATION_LOCAL_DIR":    agentConfigsDir,
+		"OPTIMIZATION_CANDIDATE_ID": a.flags.candidate,
 	}
-	if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_CANDIDATE_ID", a.flags.candidate); err != nil {
-		return fmt.Errorf("failed to update agent.yaml: %w", err)
+	if _, _, found, _, err := projectpkg.AgentDefinitionFromService(svc); err != nil {
+		return fmt.Errorf("failed to read agent definition: %w", err)
+	} else if found {
+		fmt.Fprintf(out, "  Updating agent definition in azure.yaml...\n")
+		if err := projectpkg.UpsertAgentEnvVars(svc, envUpdates); err != nil {
+			return fmt.Errorf("failed to update agent definition: %w", err)
+		}
+		// Read the current `uses:` value before replacing the whole service entry.
+		// AddService writes back the proto ServiceConfig shape, which doesn't carry
+		// the `uses:` field (a core azd-only field). Reading it first and restoring
+		// it after avoids silently dropping dependency edges that were written by
+		// `setServiceUses` via SetServiceConfigValue.
+		prevUses, err := azdClient.Project().GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
+			ServiceName: svc.Name,
+			Path:        "uses",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to read uses for service %q: %w", svc.Name, err)
+		}
+		if _, err := azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{Service: svc}); err != nil {
+			return fmt.Errorf("failed to persist agent definition: %w", err)
+		}
+		// Restore `uses:` if it was set before the replacement.
+		if prevUses.GetFound() && prevUses.GetValue() != nil {
+			if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+				ServiceName: svc.Name,
+				Path:        "uses",
+				Value:       prevUses.GetValue(),
+			}); err != nil {
+				return fmt.Errorf("failed to restore uses for service %q: %w", svc.Name, err)
+			}
+		}
+	} else {
+		agentYamlPath := filepath.Join(serviceDir, "agent.yaml")
+		fmt.Fprintf(out, "  Updating %s...\n", agentYamlPath)
+		if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_LOCAL_DIR", agentConfigsDir); err != nil {
+			return fmt.Errorf("failed to update agent.yaml: %w", err)
+		}
+		if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_CANDIDATE_ID", a.flags.candidate); err != nil {
+			return fmt.Errorf("failed to update agent.yaml: %w", err)
+		}
 	}
 
 	// Step 4: Store candidate ID in the azd environment for tracking.

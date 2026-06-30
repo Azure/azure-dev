@@ -37,7 +37,7 @@ type ServiceConfig struct {
 	// The relative path to the project folder from the project root
 	RelativePath string `yaml:"project,omitempty"`
 	// The azure hosting model to use, ex) appservice, function, containerapp
-	Host ServiceTargetKind `yaml:"host,omitempty"`
+	Host ServiceTargetKind `yaml:"host"`
 	// The programming language of the project
 	Language ServiceLanguageKind `yaml:"language,omitempty"`
 	// The output path for build artifacts

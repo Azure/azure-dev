@@ -737,3 +737,42 @@ func Test_HooksConfig_RoundTrip(t *testing.T) {
 	require.Len(t, restored["postprovision"], 1)
 	assert.Equal(t, "echo bye", restored["postprovision"][0].Run)
 }
+
+func TestServiceConfig_MarshalYAML_OmitsEmptyOptionalFields(t *testing.T) {
+	svc := &ServiceConfig{
+		Host: ContainerAppTarget,
+	}
+
+	data, err := yaml.Marshal(svc)
+	require.NoError(t, err)
+	output := string(data)
+
+	// host is required and must always be present
+	assert.Contains(t, output, "host: containerapp")
+
+	// optional fields with zero values should be omitted
+	assert.NotContains(t, output, "project:")
+	assert.NotContains(t, output, "language:")
+}
+
+func TestPipelineOptions_MarshalYAML_OmitsEmptyFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		options PipelineOptions
+	}{
+		{"all zero values", PipelineOptions{}},
+		{"empty slices", PipelineOptions{Variables: []string{}, Secrets: []string{}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := yaml.Marshal(tt.options)
+			require.NoError(t, err)
+			output := string(data)
+
+			assert.NotContains(t, output, "provider:")
+			assert.NotContains(t, output, "variables:")
+			assert.NotContains(t, output, "secrets:")
+		})
+	}
+}

@@ -40,18 +40,8 @@ jobs:
           # Install the developer extension (provides 'azd x' commands).
           # The built-in 'azd' source is auto-registered, so no source-add needed.
           azd extension install microsoft.azd.extensions --no-prompt
-
-      - name: Build, publish & install inspector dependency
-        working-directory: cli/azd/extensions/azure.ai.inspector
-        run: |
-          # Publish the branch version locally so azure.ai.agents can satisfy its
-          # inspector dependency without relying on the released registry version.
-          pwsh -File ci-build.ps1 -OutputFileName azure-ai-inspector-linux-amd64 -Version $(cat version.txt | tr -d '\r\n')
-          mkdir -p bin
-          mv azure-ai-inspector-linux-amd64 bin/
-          azd x pack
-          azd x publish
-          azd extension install azure.ai.inspector --source local --force --no-prompt
+          # Pre-install the inspector dependency so the local install can resolve it.
+          azd extension install azure.ai.inspector --no-prompt
 
       - name: Build extension (ci-build.ps1)
         working-directory: cli/azd/extensions/azure.ai.agents

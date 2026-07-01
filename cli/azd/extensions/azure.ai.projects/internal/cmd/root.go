@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"azure.ai.projects/pkg/provisioning"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -34,13 +36,16 @@ func NewRootCommand() *cobra.Command {
 	return rootCmd
 }
 
-// configureExtensionHost is the listen callback. It registers the
-// azure.ai.project service target so `azd up`/`azd deploy` can walk the project
-// service declared in azure.yaml. The project itself is provisioned by the
-// built-in microsoft.foundry Bicep provider, so the target is a no-op at deploy.
+// configureExtensionHost is the listen callback. It registers both project-host
+// surfaces: the azure.ai.project service target for `azd deploy` traversal and
+// the microsoft.foundry provisioning provider for `azd provision`.
 func configureExtensionHost(host *azdext.ExtensionHost) {
 	azdClient := host.Client()
-	host.WithServiceTarget(aiProjectHost, func() azdext.ServiceTargetProvider {
-		return newProjectServiceTarget(azdClient)
-	})
+	host.
+		WithServiceTarget(aiProjectHost, func() azdext.ServiceTargetProvider {
+			return newProjectServiceTarget(azdClient)
+		}).
+		WithProvisioningProvider(provisioning.FoundryProviderName, func() azdext.ProvisioningProvider {
+			return provisioning.NewFoundryProvisioningProvider(azdClient)
+		})
 }

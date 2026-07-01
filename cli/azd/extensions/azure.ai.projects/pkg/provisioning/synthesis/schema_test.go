@@ -19,7 +19,7 @@ import (
 
 // schemaPath is the editor-tooling JSON schema for the Foundry project service body,
 // resolved from this package directory.
-const schemaPath = "../../../azure.ai.projects/schemas/azure.ai.project.json"
+const schemaPath = "../../../schemas/azure.ai.project.json"
 
 // TestSchema_NetworkStructuralInvariants guards the network surface of the
 // hand-maintained JSON schema against drift from the synthesizer's contract:

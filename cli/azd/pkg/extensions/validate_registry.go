@@ -199,17 +199,18 @@ func validateUniqueLatestServiceTargetProviders(result *RegistryValidationResult
 			}
 			seenInExtension[normalizedProviderName] = struct{}{}
 
-			if existingExtId, has := providers[normalizedProviderName]; has {
+			extensionVersion := fmt.Sprintf("%s@%s", ext.Id, latestVersion.Version)
+			if existingExtensionVersion, has := providers[normalizedProviderName]; has {
 				result.addError(fmt.Sprintf(
-					"service-target provider %q is declared by multiple latest extension versions: %s and %s",
+					"service-target provider %q is declared by multiple latest extension versions: %q and %q",
 					provider.Name,
-					existingExtId,
-					ext.Id,
+					existingExtensionVersion,
+					extensionVersion,
 				))
 				continue
 			}
 
-			providers[normalizedProviderName] = ext.Id
+			providers[normalizedProviderName] = extensionVersion
 		}
 	}
 }

@@ -527,7 +527,7 @@ func TestValidateRegistry_DuplicateLatestServiceTargetProvider(t *testing.T) {
 	require.Contains(t,
 		issueMessages(result.Issues),
 		`service-target provider "Azure.AI.Project" is declared by multiple latest extension versions: `+
-			`publisher.first and publisher.second`,
+			`"publisher.first@1.0.0" and "publisher.second@1.0.0"`,
 	)
 }
 

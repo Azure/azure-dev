@@ -149,6 +149,8 @@ func verifyAzureYamlDeployments(
 	envName string,
 	entries []foundryDeploymentEntry,
 	noPrompt bool,
+	modelDeploymentFlag string,
+	modelFlag string,
 ) (deploymentsToKeep []project.Deployment, referencedDeployments []project.Deployment, err error) {
 	// Get the Foundry project ID from the environment.
 	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
@@ -181,6 +183,35 @@ func verifyAzureYamlDeployments(
 	allDeployments, listErr := listProjectDeployments(ctx, credential, subscription, resourceGroup, accountName)
 	if listErr != nil {
 		return nil, nil, fmt.Errorf("failed to list deployments in Foundry project: %w", listErr)
+	}
+
+	// --model-deployment flag: auto-select the named deployment, skip interactive loop.
+	if modelDeploymentFlag != "" {
+		for _, d := range allDeployments {
+			if strings.EqualFold(d.Name, modelDeploymentFlag) {
+				log.Printf("--model-deployment: using existing deployment '%s' (model: %s, version: %s)",
+					d.Name, d.ModelName, d.Version)
+				referencedDeployments = append(referencedDeployments, project.Deployment{
+					Name: d.Name,
+					Model: project.DeploymentModel{
+						Name:    d.ModelName,
+						Format:  d.ModelFormat,
+						Version: d.Version,
+					},
+					Sku: project.DeploymentSku{
+						Name:     d.SkuName,
+						Capacity: d.SkuCapacity,
+					},
+				})
+				// All azure.yaml deployments are removed (existing deployment is used instead).
+				return nil, referencedDeployments, nil
+			}
+		}
+		return nil, nil, exterrors.Validation(
+			exterrors.CodeModelDeploymentNotFound,
+			fmt.Sprintf("model deployment %q not found in Foundry project", modelDeploymentFlag),
+			"verify the deployment name or omit --model-deployment to select interactively",
+		)
 	}
 
 	for _, entry := range entries {
@@ -304,7 +335,7 @@ func verifyAzureYamlDeployments(
 				referencedDeployments = append(referencedDeployments, dep)
 
 			case selected == "change":
-				newDep, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments)
+				newDep, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments, modelFlag)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -364,7 +395,7 @@ func verifyAzureYamlDeployments(
 				referencedDeployments = append(referencedDeployments, dep)
 
 			case "change":
-				newDep, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments)
+				newDep, err := promptAlternativeDeployment(ctx, azdClient, azureContext, allDeployments, modelFlag)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -391,6 +422,7 @@ func promptAlternativeDeployment(
 	azdClient *azdext.AzdClient,
 	azureContext *azdext.AzureContext,
 	allDeployments []FoundryDeploymentInfo,
+	modelFlag string,
 ) (*project.Deployment, error) {
 	// Offer "browse catalog" or "use existing deployment" if any exist.
 	altChoices := []*azdext.SelectChoice{
@@ -421,12 +453,17 @@ func promptAlternativeDeployment(
 	case "catalog":
 		// Use the full model + deployment prompt which handles version,
 		// SKU, and capacity selection (same as manifest path).
+		defaultModel := "gpt-4.1-mini"
+		if modelFlag != "" {
+			defaultModel = modelFlag
+		}
 		promptReq := &azdext.PromptAiModelRequest{
 			AzureContext: azureContext,
 			Filter:       agentModelFilter([]string{azureContext.Scope.Location}, nil),
 			SelectOptions: &azdext.SelectOptions{
 				Message: "Select a model",
 			},
+			DefaultValue: defaultModel,
 		}
 
 		modelResp, err := azdClient.Prompt().PromptAiModel(ctx, promptReq)
@@ -734,7 +771,7 @@ func runInitFromAzureYaml(
 	if len(deploymentEntries) > 0 && result != nil && result.Credential != nil {
 		deploymentsToKeep, referencedDeployments, err := verifyAzureYamlDeployments(
 			ctx, azdClient, result.Credential, azureContext, env.Name,
-			deploymentEntries, flags.noPrompt,
+			deploymentEntries, flags.noPrompt, flags.modelDeployment, flags.model,
 		)
 		if err != nil {
 			if exterrors.IsCancellation(err) {

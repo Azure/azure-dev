@@ -30,7 +30,7 @@ jobs:
           # Check all go.mod files
           echo ""
           echo "Checking go.mod files..."
-          for f in $(find cli/azd -name 'go.mod'); do
+          while IFS= read -r -d '' f; do
             VERSION=$(grep -m1 '^go ' "$f" | awk '{print $2}')
             if [ "$VERSION" != "$EXPECTED" ]; then
               echo "::error file=$f::Go version mismatch: found '$VERSION', expected '$EXPECTED'"
@@ -38,7 +38,7 @@ jobs:
             else
               echo "  OK: $f ($VERSION)"
             fi
-          done
+          done < <(find cli/azd -name 'go.mod' -print0)
 
           # Check ADO pipeline template
           echo ""

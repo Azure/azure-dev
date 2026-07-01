@@ -62,8 +62,11 @@ type Arg struct {
 	Description string
 	IsOptional  bool
 	Suggestions []string
-	Generator   string
-	Template    string
+	// Generator is a single TypeScript generator expression (e.g. "azdGenerators.listEnvironments").
+	Generator string
+	// Generators, when non-empty, takes precedence over Generator and renders as an array
+	// (e.g. [azdGenerators.listExtensions, filepaths({ extensions: ['zip'] })]).
+	Generators []string
 }
 
 // CommandContext contains information about a command for custom processing

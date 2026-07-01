@@ -587,7 +587,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			name:          "responses only",
 			flagProtocols: []string{"responses"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "1.0.0"},
+				{Protocol: "responses", Version: "2.0.0"},
 			},
 		},
 		{
@@ -601,7 +601,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			name:          "both protocols",
 			flagProtocols: []string{"responses", "invocations"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "1.0.0"},
+				{Protocol: "responses", Version: "2.0.0"},
 				{Protocol: "invocations", Version: "1.0.0"},
 			},
 		},
@@ -615,7 +615,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			name:          "duplicates are removed",
 			flagProtocols: []string{"responses", "responses", "invocations"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "1.0.0"},
+				{Protocol: "responses", Version: "2.0.0"},
 				{Protocol: "invocations", Version: "1.0.0"},
 			},
 		},
@@ -666,8 +666,8 @@ func TestPromptProtocols_NoPromptDefault(t *testing.T) {
 	if got[0].Protocol != "responses" {
 		t.Errorf("protocol = %q, want %q", got[0].Protocol, "responses")
 	}
-	if got[0].Version != "1.0.0" {
-		t.Errorf("version = %q, want %q", got[0].Version, "1.0.0")
+	if got[0].Version != "2.0.0" {
+		t.Errorf("version = %q, want %q", got[0].Version, "2.0.0")
 	}
 }
 
@@ -722,7 +722,7 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 				}, nil
 			},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "1.0.0"},
+				{Protocol: "responses", Version: "2.0.0"},
 				{Protocol: "invocations", Version: "1.0.0"},
 			},
 		},
@@ -737,7 +737,7 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 				}, nil
 			},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "1.0.0"},
+				{Protocol: "responses", Version: "2.0.0"},
 			},
 		},
 		{
@@ -844,11 +844,11 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 			wantErrContain: "invalid --deploy-mode value",
 		},
 		{
-			name:           "no flag + noPrompt defaults to container",
+			name:           "no flag + noPrompt defaults to code",
 			noPrompt:       true,
 			showCodeDeploy: true,
 			flag:           "",
-			want:           "container",
+			want:           "code",
 		},
 		{
 			name:           "no flag + showCodeDeploy=false defaults to container",
@@ -858,12 +858,12 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 			want:           "container",
 		},
 		{
-			name:                 "userProvidedManifest + showCodeDeploy auto-selects container",
+			name:                 "userProvidedManifest + showCodeDeploy auto-selects code",
 			noPrompt:             false,
 			showCodeDeploy:       true,
 			flag:                 "",
 			userProvidedManifest: true,
-			want:                 "container",
+			want:                 "code",
 		},
 		{
 			name:                 "showCodeDeploy=false returns container regardless of userProvidedManifest",

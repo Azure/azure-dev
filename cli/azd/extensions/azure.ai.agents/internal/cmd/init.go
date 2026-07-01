@@ -66,9 +66,10 @@ type initFlags struct {
 	// image specifies a pre-built container image URL (e.g., "myacr.azurecr.io/agent:v1").
 	// When set without --manifest, init synthesizes a minimal hosted container manifest and
 	// routes through the manifest flow, skipping template/language selection and code
-	// scaffolding (there is no source to scaffold). It also writes the image field to
-	// agent.yaml, skips Dockerfile generation, and skips ACR connection prompts. Requires
-	// --agent-name when no --manifest is given. Incompatible with --deploy-mode code.
+	// scaffolding (there is no source to scaffold). The image is written to the generated
+	// azure.yaml service's top-level image field, skips Dockerfile generation, and skips ACR
+	// connection prompts. Requires --agent-name when no --manifest is given. Incompatible
+	// with --deploy-mode code.
 	image string
 	// force, when true, lets headless callers (--no-prompt) pre-consent to
 	// overwrite prompts that would otherwise return a structured error. It
@@ -624,46 +625,30 @@ func updateAgentDefinition(
 	}
 }
 
-// setImageOnTemplate sets the Image field on a ContainerAgent template.
-// When --image is provided, this function updates the manifest so the image URL
-// is persisted in agent.yaml and used during deployment instead of building from Dockerfile.
-func setImageOnTemplate(agentManifest *agent_yaml.AgentManifest, image string) error {
-	if image == "" {
-		return nil
+// preBuiltImageForInit returns the pre-built image that should be written to the
+// azure.yaml service image field. The --image flag wins over any image carried by
+// a user-provided manifest because it is the explicit CLI override.
+func preBuiltImageForInit(agentManifest *agent_yaml.AgentManifest, flagImage string) string {
+	if image := strings.TrimSpace(flagImage); image != "" {
+		return image
 	}
 	if agentManifest == nil {
-		return fmt.Errorf("agent manifest is nil")
-	}
-
-	hostedAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent)
-	if !ok {
-		return fmt.Errorf("--image is only supported for hosted container agents, got %T", agentManifest.Template)
-	}
-
-	hostedAgent.Image = image
-	agentManifest.Template = hostedAgent
-	return nil
-}
-
-// agentUsesPreBuiltImage reports whether the manifest's template is a hosted
-// container agent that references a pre-built image. For such agents azd does
-// not build from source, so build-time concerns like the startup command and
-// ACR setup do not apply. Covers both the --image flag (synthesized manifest)
-// and a user-provided -m manifest that already specifies an image.
-func agentUsesPreBuiltImage(agentManifest *agent_yaml.AgentManifest) bool {
-	if agentManifest == nil {
-		return false
+		return ""
 	}
 	ca, ok := agentManifest.Template.(agent_yaml.ContainerAgent)
-	return ok && strings.TrimSpace(ca.Image) != ""
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(ca.Image)
 }
 
 // synthesizeImageManifestFile writes a minimal hosted container agent manifest to a
 // temporary file for the bring-your-own-image flow (--image without --manifest).
 // Routing through the manifest path lets init skip template/language selection and code
 // scaffolding, since a pre-built image needs none of those. The returned cleanup removes
-// the temp directory; callers should defer it. The image is also persisted by
-// setImageOnTemplate during Run, but is included here so the manifest is self-describing.
+// the temp directory; callers should defer it. The image is intentionally not embedded
+// in the temporary manifest; init writes --image to the generated azure.yaml service's
+// top-level image field.
 func synthesizeImageManifestFile(agentName, image string) (string, func(), error) {
 	noop := func() {}
 
@@ -679,9 +664,8 @@ func synthesizeImageManifestFile(agentName, image string) (string, func(), error
 			"kind":        string(agent_yaml.AgentKindHosted),
 			"name":        agentName,
 			"description": fmt.Sprintf("Hosted container agent using pre-built image %s", image),
-			"image":       image,
 			"protocols": []map[string]any{
-				{"protocol": "responses", "version": "1.0.0"},
+				{"protocol": "responses", "version": "2.0.0"},
 			},
 		},
 	}
@@ -978,6 +962,12 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
 		Long: `Initialize a new AI agent project.
 
+When -m points at a sample's unified azure.yaml (a project manifest that
+declares services with host: azure.ai.project / azure.ai.agent / ...), that
+azure.yaml is adopted as the project manifest and its referenced files are
+placed at the project root. When -m points at an agent manifest instead, the
+project's azure.yaml is generated from it.
+
 The agent name written to agent.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
 creates a new version of that existing agent instead of a separate agent.
@@ -987,7 +977,11 @@ a reusable sample or manifest.
 
 A default .agentignore file is generated to control which files are excluded
 from code-deploy ZIP packaging (uses .gitignore syntax).`,
-		Example: `  # Initialize from an agent manifest
+		Example: `  # Adopt a sample's unified azure.yaml as the project manifest
+  azd ai agent init -m ./azure.yaml
+  azd ai agent init -m https://github.com/Azure-Samples/<repo>/blob/main/azure.yaml
+
+  # Initialize from an agent manifest
   azd ai agent init -m ./agent.manifest.yaml
 
   # Initialize from a manifest with a unique Foundry agent name
@@ -1091,7 +1085,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// there is no source to scaffold and no template/language to choose.
 			// Synthesize a minimal hosted container manifest and route it through the
 			// manifest flow, which skips the init-mode / template / language prompts
-			// and code scaffolding. The image is wired into agent.yaml and ACR is
+			// and code scaffolding. The image is wired into azure.yaml and ACR is
 			// skipped by the existing --image handling in InitAction.Run.
 			if flags.image != "" && flags.manifestPointer == "" {
 				// Validate early so we fail before initializing a project/template.
@@ -1208,6 +1202,23 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				// instead of a manifest file — before downloading templates.
 				if err := checkNotDirectory(flags.manifestPointer); err != nil {
 					return err
+				}
+
+				// Detect whether the pointer is a unified Foundry azure.yaml
+				// (adopt it as the project manifest) versus an agent manifest
+				// (generate the project). For private GitHub URLs, the detector
+				// falls back to the authenticated gh CLI download path before
+				// deciding whether this is a unified azure.yaml. See #8798.
+				if content, ok := readManifestContentForInitDetection(
+					ctx, azdClient, flags.manifestPointer, httpClient,
+				); ok && looksLikeFoundryAzureYaml(content) {
+					if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
+						if exterrors.IsCancellation(err) {
+							return exterrors.Cancelled("initialization was cancelled")
+						}
+						return err
+					}
+					return nil
 				}
 
 				// Resolve the agent name BEFORE creating the project folder
@@ -1491,7 +1502,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Name of the AI model to use (e.g., 'gpt-4o'). If not specified, defaults to 'gpt-4.1-mini'. Mutually exclusive with --model-deployment, with --model-deployment being used if both are provided")
 
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
-		"Path or URI to an agent manifest to add to your azd project")
+		"Path or URI to an agent manifest, or to a sample's unified azure.yaml to adopt as the project manifest")
 
 	cmd.Flags().StringVar(&flags.agentName, "agent-name", "",
 		"Foundry agent name to write to agent.yaml. Reusing a name creates a new version of the existing agent.")
@@ -1503,7 +1514,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
 
 	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "",
-		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'container' in --no-prompt.")
+		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'code' for Python/.NET projects in --no-prompt.")
 
 	cmd.Flags().StringVar(&flags.runtime, "runtime", "",
 		"Runtime for code deploy (e.g., 'python_3_13', 'python_3_14', 'dotnet_10'). Required with --deploy-mode code --no-prompt.")
@@ -1609,6 +1620,14 @@ func (a *InitAction) Run(ctx context.Context) error {
 					return fmt.Errorf("prompting for code configuration: %w", err)
 				}
 
+				// Remove container-only files only after configuration succeeds,
+				// so a cancelled prompt or error doesn't leave the directory in
+				// an inconsistent state. Only applies to GitHub-downloaded
+				// templates to avoid deleting user-owned files.
+				if a.isGitHubUrl(a.flags.manifestPointer) {
+					removeContainerFiles(targetDir)
+				}
+
 				hostedAgent := agentManifest.Template.(agent_yaml.ContainerAgent)
 				hostedAgent.CodeConfiguration = codeConfig
 				agentManifest.Template = hostedAgent
@@ -1679,11 +1698,6 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return err
 		}
 
-		// Set pre-built image if --image was provided
-		if err := setImageOnTemplate(agentManifest, a.flags.image); err != nil {
-			return err
-		}
-
 		// Generate .agentignore. The agent definition now lives in azure.yaml,
 		// not in an on-disk agent.yaml, but .agentignore is still used to scope
 		// code-deploy ZIP packaging.
@@ -1717,23 +1731,7 @@ func ensureProject(
 	if err != nil {
 		fmt.Println("Let's get your project initialized.")
 
-		// Environment creation is handled separately in ensureEnvironment
-		envName := flags.env
-		if envName == "" {
-			// Derive environment name from target folder
-			envBase := targetDir
-			if targetDir == "." {
-				cwd, cwdErr := os.Getwd()
-				if cwdErr == nil {
-					envBase = filepath.Base(cwd)
-				}
-			}
-			base := sanitizeAgentName(envBase)
-			if len(base) > 59 {
-				base = strings.TrimRight(base[:59], "-")
-			}
-			envName = base + "-dev"
-		}
+		envName := deriveEnvName(flags, targetDir)
 
 		// Scaffold a minimal project via `azd init -t <empty dir> <targetDir>`.
 		// We use an empty template dir rather than `--minimal` (which can't
@@ -1752,55 +1750,8 @@ func ensureProject(
 		}
 		defer os.RemoveAll(emptyTemplateDir)
 
-		initArgs := []string{
-			"init", "-t", emptyTemplateDir, targetDir,
-			"--environment", envName,
-		}
-
-		// We don't have a project yet
-		// Dispatch a workflow to init the project
-		workflow := &azdext.Workflow{
-			Name: "init",
-			Steps: []*azdext.WorkflowStep{
-				{Command: &azdext.WorkflowCommand{Args: initArgs}},
-			},
-		}
-
-		_, err = azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
-			Workflow: workflow,
-		})
-
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("project initialization was cancelled")
-			}
-			return nil, exterrors.Dependency(
-				exterrors.CodeProjectInitFailed,
-				fmt.Sprintf("failed to initialize project: %s", err),
-				"",
-			)
-		}
-
-		// Best-effort: generate a salt so uniqueString()-based resource names
-		// differ across project recreations. If anything fails the Bicep
-		// templates fall back to the original deterministic hash.
-		salt := ensureResourceTokenSalt(ctx, azdClient, envName)
-
-		// Best-effort: write a salted AZURE_RESOURCE_GROUP so recreated
-		// projects get a fresh RG (avoiding collisions with leftovers from
-		// a prior teardown). Skipped when salt generation failed or when
-		// AZURE_RESOURCE_GROUP is already set.
-		ensureResourceGroupName(ctx, azdClient, envName, salt)
-
-		// Sync the extension process into the new project directory so that
-		// subsequent local file operations see the scaffolded project.
-		if targetDir != "." {
-			if chdirErr := os.Chdir(targetDir); chdirErr != nil {
-				return nil, fmt.Errorf(
-					"changing to project directory %q: %w",
-					targetDir, chdirErr,
-				)
-			}
+		if err := scaffoldProject(ctx, azdClient, targetDir, emptyTemplateDir, envName); err != nil {
+			return nil, err
 		}
 
 		if err := writeFoundryProvider(ctx, azdClient); err != nil {
@@ -1847,6 +1798,88 @@ func ensureProject(
 	}
 
 	return projectResponse.Project, nil
+}
+
+// deriveEnvName resolves the azd environment name for a new project: the
+// explicit --environment flag when set, otherwise a sanitized name derived from
+// the target folder (or the current directory when targetDir is ".").
+func deriveEnvName(flags *initFlags, targetDir string) string {
+	if flags.env != "" {
+		return flags.env
+	}
+
+	envBase := targetDir
+	if targetDir == "." {
+		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+			envBase = filepath.Base(cwd)
+		}
+	}
+	base := sanitizeAgentName(envBase)
+	if len(base) > 59 {
+		base = strings.TrimRight(base[:59], "-")
+	}
+	return base + "-dev"
+}
+
+// scaffoldProject runs `azd init -t <templateDir> <targetDir> --environment
+// <envName>` via the Workflow API, seeds best-effort salt/resource-group env
+// vars, and changes the extension process into the new project directory.
+//
+// templateDir is the directory azd-core copies as the template: an empty
+// staging dir when generating a project from an agent manifest, or a sample
+// directory carrying a unified azure.yaml when adopting it (#8798). azd-core
+// copies a local template directory wholesale and only writes azure.yaml when
+// one is absent, so an adopted sample's azure.yaml lands at the project root
+// unchanged.
+func scaffoldProject(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	targetDir string,
+	templateDir string,
+	envName string,
+) error {
+	workflow := &azdext.Workflow{
+		Name: "init",
+		Steps: []*azdext.WorkflowStep{
+			{Command: &azdext.WorkflowCommand{Args: []string{
+				"init", "-t", templateDir, targetDir,
+				"--environment", envName,
+			}}},
+		},
+	}
+
+	if _, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+		Workflow: workflow,
+	}); err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("project initialization was cancelled")
+		}
+		return exterrors.Dependency(
+			exterrors.CodeProjectInitFailed,
+			fmt.Sprintf("failed to initialize project: %s", err),
+			"",
+		)
+	}
+
+	// Best-effort: generate a salt so uniqueString()-based resource names
+	// differ across project recreations, and write a salted
+	// AZURE_RESOURCE_GROUP so recreated projects get a fresh RG. If anything
+	// fails the Bicep templates fall back to the original deterministic hash.
+	salt := ensureResourceTokenSalt(ctx, azdClient, envName)
+	ensureResourceGroupName(ctx, azdClient, envName, salt)
+
+	// Sync the extension process into the new project directory so that
+	// subsequent local file operations see the scaffolded project.
+	if targetDir != "." {
+		if chdirErr := os.Chdir(targetDir); chdirErr != nil {
+			return fmt.Errorf(
+				"changing to project directory %q: %w",
+				targetDir, chdirErr,
+			)
+		}
+	}
+
+	return nil
 }
 
 // writeFoundryProvider stamps `infra.provider: <FoundryProviderName>`
@@ -2808,6 +2841,18 @@ func (a *InitAction) downloadAgentYaml(
 	return agentManifest, targetDir, nil
 }
 
+// removeContainerFiles removes Dockerfile and .dockerignore from targetDir.
+// Called when code deploy is selected so container-only files from downloaded
+// samples are not left in the project.
+func removeContainerFiles(targetDir string) {
+	for _, name := range []string{"Dockerfile", ".dockerignore"} {
+		p := filepath.Join(targetDir, name)
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			log.Printf("warning: failed to remove %s: %v", p, err)
+		}
+	}
+}
+
 // writeAgentIgnoreFile generates a default .agentignore in targetDir if one does
 // not already exist. The agent definition itself is no longer written to disk —
 // it lives as service-level properties in azure.yaml — but .agentignore is still
@@ -2938,10 +2983,12 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		}
 	}
 
+	preBuiltImage := preBuiltImageForInit(agentManifest, a.flags.image)
+
 	// Detect startup command. Skipped for code deploy (uses ZIP packaging) and
 	// when the agent uses a pre-built container image, since the image's own
 	// entrypoint runs and no startup command applies.
-	if !a.isCodeDeploy && !agentUsesPreBuiltImage(agentManifest) {
+	if !a.isCodeDeploy && preBuiltImage == "" {
 		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
 		if err != nil {
 			return err
@@ -2986,7 +3033,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		RelativePath:         targetDir,
 		Host:                 AiAgentHost,
 		Language:             "docker",
-		Image:                containerDef.Image,
+		Image:                preBuiltImage,
 		AdditionalProperties: agentProps,
 	}
 

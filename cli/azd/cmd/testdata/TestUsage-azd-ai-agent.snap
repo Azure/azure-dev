@@ -1,5 +1,5 @@
 
-Ship agents with Microsoft Foundry from your terminal. (Preview)
+Ship agents with Microsoft Foundry from your terminal. (Beta)
 
 Usage
   azd ai agent [flags]

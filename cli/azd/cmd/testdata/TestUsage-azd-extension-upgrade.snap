@@ -7,7 +7,7 @@ Usage
 Flags
         --all                    	: Upgrade all installed extensions
         --no-dependency-upgrades 	: Do not upgrade dependencies when upgrading an extension that has dependencies
-    -s, --source string          	: The extension source to use for upgrades
+    -s, --source string          	: The registered source name or registry location (URL or file path) to use for upgrades.
     -v, --version string         	: The version of the extension to upgrade to
 
 Global Flags

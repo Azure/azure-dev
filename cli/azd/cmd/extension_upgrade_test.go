@@ -54,7 +54,7 @@ func createUpgradeTestManager(
 	installed map[string]*extensions.Extension,
 	registryURL string,
 	registry extensions.Registry,
-) *extensions.Manager {
+) (*extensions.Manager, *extensions.SourceManager) {
 	t.Helper()
 
 	userConfigManager := config.NewUserConfigManager(mockCtx.ConfigManager)
@@ -95,7 +95,7 @@ func createUpgradeTestManager(
 	)
 	require.NoError(t, err)
 
-	return manager
+	return manager, sourceManager
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +121,7 @@ func TestUpgradeAction_ContextCancellation(t *testing.T) {
 		testExtMeta("ext-c", "2.0.0", "test"),
 	)
 
-	manager := createUpgradeTestManager(
+	manager, sourceManager := createUpgradeTestManager(
 		t, mockCtx, installed, registryURL, registry,
 	)
 
@@ -139,6 +139,7 @@ func TestUpgradeAction_ContextCancellation(t *testing.T) {
 		&output.JsonFormatter{},
 		&buf,
 		mockinput.NewMockConsole(),
+		sourceManager,
 		manager,
 	)
 
@@ -250,7 +251,7 @@ func TestUpgradeOneExtension(t *testing.T) {
 			t.Parallel()
 
 			mockCtx := mocks.NewMockContext(context.Background())
-			manager := createUpgradeTestManager(
+			manager, sourceManager := createUpgradeTestManager(
 				t, mockCtx, tt.installed, registryURL, tt.registry,
 			)
 
@@ -260,6 +261,7 @@ func TestUpgradeOneExtension(t *testing.T) {
 				formatter:        &output.JsonFormatter{},
 				writer:           &bytes.Buffer{},
 				console:          mockinput.NewMockConsole(),
+				sourceManager:    sourceManager,
 				extensionManager: manager,
 			}
 
@@ -305,7 +307,7 @@ func TestUpgradeAction_MixedBatch(t *testing.T) {
 		// "missing" not in registry
 	)
 
-	manager := createUpgradeTestManager(
+	manager, sourceManager := createUpgradeTestManager(
 		t, mockCtx, installed, registryURL, registry,
 	)
 
@@ -319,6 +321,7 @@ func TestUpgradeAction_MixedBatch(t *testing.T) {
 		&output.JsonFormatter{},
 		&buf,
 		mockinput.NewMockConsole(),
+		sourceManager,
 		manager,
 	)
 
@@ -462,7 +465,7 @@ func TestUpgradeOneExtension_DelistedSkipped(t *testing.T) {
 	// Empty registry — extension no longer listed
 	registry := testRegistry()
 
-	manager := createUpgradeTestManager(
+	manager, sourceManager := createUpgradeTestManager(
 		t, mockCtx, installed, registryURL, registry,
 	)
 
@@ -474,6 +477,7 @@ func TestUpgradeOneExtension_DelistedSkipped(t *testing.T) {
 		formatter:        &output.JsonFormatter{},
 		writer:           &bytes.Buffer{},
 		console:          mockinput.NewMockConsole(),
+		sourceManager:    sourceManager,
 		extensionManager: manager,
 	}
 

@@ -97,6 +97,7 @@ message ServiceConfig {
   DockerProjectOptions docker = 10;
   google.protobuf.Struct config = 11;
   google.protobuf.Struct additional_properties = 12;
+  repeated string uses = 13;
 }
 
 // InfraOptions message definition

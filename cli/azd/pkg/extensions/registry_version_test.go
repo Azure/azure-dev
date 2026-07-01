@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -319,6 +320,23 @@ func TestErrUnsupportedRegistrySchema_Formatting(t *testing.T) {
 		"3.0", "1.0",
 	)
 	assert.Equal(t, expected, err.Error())
+}
+
+func TestNewUnsupportedRegistrySchemaError(t *testing.T) {
+	schemaErr := &ErrUnsupportedRegistrySchema{
+		SchemaVersion:       "3.0",
+		MaxSupportedVersion: "1.0",
+	}
+
+	err := NewUnsupportedRegistrySchemaError(schemaErr)
+	require.ErrorIs(t, err, schemaErr)
+
+	suggestionErr, ok := errors.AsType[*errorhandler.ErrorWithSuggestion](err)
+	require.True(t, ok)
+	require.Equal(t, schemaErr.Error(), suggestionErr.Message)
+	require.Contains(t, suggestionErr.Suggestion, "Upgrade azd")
+	require.Len(t, suggestionErr.Links, 1)
+	require.Equal(t, "https://aka.ms/azd/install", suggestionErr.Links[0].URL)
 }
 
 func TestValidateRegistry_NilRegistry(t *testing.T) {

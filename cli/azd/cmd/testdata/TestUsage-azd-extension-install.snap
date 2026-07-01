@@ -6,7 +6,7 @@ Usage
 
 Flags
     -f, --force          	: Force installation, including downgrades and reinstalls
-    -s, --source string  	: The extension source to use for installs
+    -s, --source string  	: The extension source to use for installs. Accepts a registered source name or a registry location (URL or file path) to register and install from.
     -v, --version string 	: The version of the extension to install
 
 Global Flags

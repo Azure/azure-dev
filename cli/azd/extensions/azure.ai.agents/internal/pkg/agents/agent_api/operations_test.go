@@ -187,6 +187,47 @@ func TestGetSession_404ReturnsError(t *testing.T) {
 	require.Error(t, err, "404 should be an error from GetSession")
 }
 
+func TestStopSession_Accepts204(t *testing.T) {
+	client := newTestClient(
+		"https://test.example.com/api/projects/proj",
+		&fakeTransport{statusCode: http.StatusNoContent},
+	)
+
+	err := client.StopSession(
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
+	)
+	require.NoError(t, err, "204 No Content should be treated as success")
+}
+
+func TestStopSession_Rejects500(t *testing.T) {
+	client := newTestClient(
+		"https://test.example.com/api/projects/proj",
+		&fakeTransport{statusCode: http.StatusInternalServerError},
+	)
+
+	err := client.StopSession(
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
+	)
+	require.Error(t, err, "500 should be an error")
+}
+
+func TestStopSession_PostsToStopPath(t *testing.T) {
+	client, transport := newCaptureClient(http.StatusNoContent, "")
+
+	err := client.StopSession(
+		t.Context(), "my-agent", "sess-1", AgentEndpointAPIVersion, nil,
+	)
+	require.NoError(t, err)
+	require.Len(t, transport.requests, 1)
+
+	req := transport.requests[0]
+	require.Equal(t, http.MethodPost, req.Method)
+	require.Contains(
+		t, req.URL.Path,
+		"/agents/my-agent/endpoint/sessions/sess-1:stop",
+	)
+}
+
 // fakeBodyTransport returns a canned status code and JSON body.
 type fakeBodyTransport struct {
 	statusCode int

@@ -1,5 +1,5 @@
 
-Manage Microsoft Foundry Connections from your terminal. (Preview)
+Manage Microsoft Foundry Connections from your terminal. (Beta)
 
 Usage
   azd ai connection [flags]

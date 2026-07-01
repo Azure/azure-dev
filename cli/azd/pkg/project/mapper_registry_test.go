@@ -52,6 +52,7 @@ func TestServiceConfigMapping(t *testing.T) {
 		Host:         ContainerAppTarget,
 		Language:     ServiceLanguageDotNet,
 		RelativePath: "./src/api",
+		Uses:         []string{"db", "cache"},
 		AdditionalProperties: map[string]any{
 			"customField": "customValue",
 		},
@@ -65,6 +66,7 @@ func TestServiceConfigMapping(t *testing.T) {
 	require.Equal(t, string(ContainerAppTarget), protoConfig.Host)
 	require.Equal(t, string(ServiceLanguageDotNet), protoConfig.Language)
 	require.Equal(t, "./src/api", protoConfig.RelativePath)
+	require.Equal(t, []string{"db", "cache"}, protoConfig.Uses)
 	require.NotNil(t, protoConfig.AdditionalProperties)
 	additionalPropsMap := protoConfig.AdditionalProperties.AsMap()
 	require.Equal(t, "customValue", additionalPropsMap["customField"])
@@ -348,6 +350,7 @@ func TestServiceConfigRoundTripMapping(t *testing.T) {
 		Language:     ServiceLanguageDotNet,
 		RelativePath: "./src/api",
 		Config:       originalConfig,
+		Uses:         []string{"db", "cache"},
 		AdditionalProperties: map[string]any{
 			"roundTripField": "roundTripValue",
 			"nestedData":     map[string]any{"key": "value"},
@@ -369,6 +372,7 @@ func TestServiceConfigRoundTripMapping(t *testing.T) {
 	require.Equal(t, originalServiceConfig.Host, roundTripServiceConfig.Host)
 	require.Equal(t, originalServiceConfig.Language, roundTripServiceConfig.Language)
 	require.Equal(t, originalServiceConfig.RelativePath, roundTripServiceConfig.RelativePath)
+	require.Equal(t, originalServiceConfig.Uses, roundTripServiceConfig.Uses)
 
 	// Verify config data (note: some type conversions are expected due to JSON/protobuf handling)
 	require.NotNil(t, roundTripServiceConfig.Config)

@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	foundryprovisioning "azure.ai.projects/pkg/provisioning"
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents"
@@ -1542,7 +1543,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"When azure.yaml already exists, runs as a standalone eject and skips the init prompts.")
 	// NoOptDefVal makes a bare `--infra` resolve to "bicep" while still allowing
 	// `--infra=terraform` / `--infra=bicep`. Absent flag stays "" (no eject).
-	cmd.Flags().Lookup("infra").NoOptDefVal = project.BicepProviderName
+	cmd.Flags().Lookup("infra").NoOptDefVal = foundryprovisioning.BicepProviderName
 
 	return cmd
 }
@@ -1774,7 +1775,7 @@ func ensureProject(
 		))
 
 		// Skip the warning when the project has already opted into the
-		// extension's provisioning provider (which intentionally omits infra/).
+		// microsoft.foundry provisioning provider (which intentionally omits infra/).
 		if !hasFoundryProviderDeclared(projectResponse.Project) {
 			infraDir := filepath.Join(projectResponse.Project.Path, "infra")
 			if _, statErr := os.Stat(infraDir); os.IsNotExist(statErr) {
@@ -1783,7 +1784,7 @@ func ensureProject(
 						"'infra.provider: %s'. If you need Azure infrastructure for deployment, "+
 						"set that provider in azure.yaml, or run "+
 						"'azd ai agent init --infra' to generate an infra/ directory.\n",
-					project.FoundryProviderName,
+					foundryprovisioning.FoundryProviderName,
 				))
 			}
 		}
@@ -1885,7 +1886,7 @@ func scaffoldProject(
 // writeFoundryProvider stamps `infra.provider: <FoundryProviderName>`
 // onto azure.yaml and removes the starter's `infra.path: ./infra`.
 func writeFoundryProvider(ctx context.Context, azdClient *azdext.AzdClient) error {
-	value, err := structpb.NewValue(project.FoundryProviderName)
+	value, err := structpb.NewValue(foundryprovisioning.FoundryProviderName)
 	if err != nil {
 		return exterrors.Internal(
 			exterrors.CodeProjectInitFailed,
@@ -1905,7 +1906,7 @@ func writeFoundryProvider(ctx context.Context, azdClient *azdext.AzdClient) erro
 			exterrors.CodeProjectInitFailed,
 			fmt.Sprintf(
 				"failed to set infra.provider=%s on azure.yaml: %s",
-				project.FoundryProviderName, err,
+				foundryprovisioning.FoundryProviderName, err,
 			),
 			"check that azure.yaml is writable and re-run the command",
 		)
@@ -1926,13 +1927,13 @@ func writeFoundryProvider(ctx context.Context, azdClient *azdext.AzdClient) erro
 	return nil
 }
 
-// hasFoundryProviderDeclared reports whether azure.yaml already
-// declares this extension's provisioning provider.
+// hasFoundryProviderDeclared reports whether azure.yaml already declares
+// the microsoft.foundry provisioning provider.
 func hasFoundryProviderDeclared(proj *azdext.ProjectConfig) bool {
 	if proj == nil || proj.Infra == nil {
 		return false
 	}
-	return proj.Infra.Provider == project.FoundryProviderName
+	return proj.Infra.Provider == foundryprovisioning.FoundryProviderName
 }
 
 func getExistingEnvironment(ctx context.Context, envName string, azdClient *azdext.AzdClient) *azdext.Environment {

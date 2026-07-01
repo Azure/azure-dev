@@ -15,9 +15,9 @@ import (
 	"strings"
 	"text/template"
 
+	foundryprovisioning "azure.ai.projects/pkg/provisioning"
+	"azure.ai.projects/pkg/provisioning/synthesis"
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/project"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/fatih/color"
 	"go.yaml.in/yaml/v3"
@@ -54,10 +54,10 @@ func validateStandaloneEjectArgs(args []string, flags *initFlags) error {
 // caller only invokes this when the flag was set (flags.infra != "").
 func parseInfraProvider(value string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case project.BicepProviderName:
-		return project.BicepProviderName, nil
-	case project.TerraformProviderName:
-		return project.TerraformProviderName, nil
+	case foundryprovisioning.BicepProviderName:
+		return foundryprovisioning.BicepProviderName, nil
+	case foundryprovisioning.TerraformProviderName:
+		return foundryprovisioning.TerraformProviderName, nil
 	default:
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
@@ -122,7 +122,7 @@ func ejectInfra(projectRoot, provider string) error {
 	res, err := synthesis.Synthesize(synthesis.Input{
 		RawAzureYAML:  rawYAML,
 		ServiceName:   svcName,
-		AcceptedHosts: project.FoundryProvisioningServiceHosts,
+		AcceptedHosts: foundryprovisioning.FoundryProvisioningServiceHosts,
 		ProjectRoot:   projectRoot,
 		// Eject writes a static infra/ tree. Keep ${VAR} references verbatim so
 		// the ejected main.parameters.json stays environment-portable; the
@@ -152,7 +152,7 @@ func ejectInfra(projectRoot, provider string) error {
 		)
 	}
 
-	if provider == project.TerraformProviderName {
+	if provider == foundryprovisioning.TerraformProviderName {
 		// Private networking is Bicep-only today: the Terraform module has no
 		// VNet / private-endpoint / DNS / networkInjections resources, so ejecting
 		// it for a network: service would silently drop the config and provision a
@@ -173,7 +173,7 @@ func ejectInfra(projectRoot, provider string) error {
 	// by the "./infra/ already exists" refuse above and the command stays
 	// retryable without manual cleanup.
 	var ejectErr error
-	if provider == project.TerraformProviderName {
+	if provider == foundryprovisioning.TerraformProviderName {
 		ejectErr = ejectTerraform(projectRoot, infraDir, res.Parameters)
 	} else {
 		ejectErr = ejectBicep(infraDir, res.Parameters)
@@ -202,7 +202,7 @@ func ejectBicep(infraDir string, params map[string]any) error {
 		return strings.Compare(a.relPath, b.relPath)
 	})
 
-	printEjectSummary(written, project.BicepProviderName)
+	printEjectSummary(written, foundryprovisioning.BicepProviderName)
 	return nil
 }
 
@@ -235,10 +235,10 @@ func ejectTerraform(projectRoot, infraDir string, params map[string]any) error {
 	written = append(written, tfvarsArtifact)
 
 	// Stamp the provider so `azd provision` dispatches to azd-core's Terraform
-	// provider instead of this extension's microsoft.foundry provider. Done
+	// provider instead of the project extension's microsoft.foundry provider. Done
 	// after the files land so a stamp failure does not leave azure.yaml
 	// pointing at an infra/ that was never written.
-	if err := stampInfraProvider(projectRoot, project.TerraformProviderName); err != nil {
+	if err := stampInfraProvider(projectRoot, foundryprovisioning.TerraformProviderName); err != nil {
 		// Best-effort cleanup so a half-ejected project isn't left behind.
 		_ = os.RemoveAll(infraDir)
 		return err
@@ -248,7 +248,7 @@ func ejectTerraform(projectRoot, infraDir string, params map[string]any) error {
 		return strings.Compare(a.relPath, b.relPath)
 	})
 
-	printEjectSummary(written, project.TerraformProviderName)
+	printEjectSummary(written, foundryprovisioning.TerraformProviderName)
 	return nil
 }
 
@@ -276,11 +276,11 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 	var matches []string
 	var misplacedNetwork []string
 	for name, s := range r.Services {
-		if slices.Contains(project.FoundryProjectServiceHosts, s.Host) {
+		if slices.Contains(foundryprovisioning.FoundryProjectServiceHosts, s.Host) {
 			matches = append(matches, name)
 			continue
 		}
-		if project.IsFoundryNetworkHost(s.Host) && !s.Network.IsZero() {
+		if foundryprovisioning.IsFoundryNetworkHost(s.Host) && !s.Network.IsZero() {
 			misplacedNetwork = append(misplacedNetwork, name)
 		}
 	}
@@ -289,7 +289,7 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
 			fmt.Sprintf("network: is only supported on services with host: %s (found on %v)",
-				project.FoundryProjectHost, misplacedNetwork),
+				foundryprovisioning.FoundryProjectHost, misplacedNetwork),
 			"move the network: block to the azure.ai.project service (for example, services.ai-project)",
 		)
 	}
@@ -300,7 +300,7 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 	case 0:
 		var legacyMatches []string
 		for name, s := range r.Services {
-			if slices.Contains(project.FoundryLegacyProvisioningHosts, s.Host) {
+			if slices.Contains(foundryprovisioning.FoundryLegacyProvisioningHosts, s.Host) {
 				legacyMatches = append(legacyMatches, name)
 			}
 		}
@@ -311,16 +311,16 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 			return "", exterrors.Dependency(
 				exterrors.CodeInfraEjectNoFoundryService,
 				fmt.Sprintf("no foundry provisioning service found in azure.yaml (looking for host in %v); "+
-					"nothing to eject", project.FoundryProvisioningServiceHosts),
+					"nothing to eject", foundryprovisioning.FoundryProvisioningServiceHosts),
 				fmt.Sprintf("add a service with `host: %s` to azure.yaml, "+
-					"or remove --infra to run init normally", project.FoundryProjectHost),
+					"or remove --infra to run init normally", foundryprovisioning.FoundryProjectHost),
 			)
 		default:
 			slices.Sort(legacyMatches)
 			return "", exterrors.Dependency(
 				exterrors.CodeInfraEjectMultipleFoundryServices,
 				fmt.Sprintf("multiple legacy services declare a foundry provisioning host %v (%v); only one is supported",
-					project.FoundryLegacyProvisioningHosts, legacyMatches),
+					foundryprovisioning.FoundryLegacyProvisioningHosts, legacyMatches),
 				"keep a single azure.ai.project service per project, or a single pre-split foundry service",
 			)
 		}
@@ -331,7 +331,7 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 		return "", exterrors.Dependency(
 			exterrors.CodeInfraEjectMultipleFoundryServices,
 			fmt.Sprintf("multiple services declare a foundry project host %v (%v); only one is supported",
-				project.FoundryProjectServiceHosts, matches),
+				foundryprovisioning.FoundryProjectServiceHosts, matches),
 			"keep a single azure.ai.project service per project",
 		)
 	}
@@ -740,7 +740,7 @@ func printEjectSummary(written []ejectArtifact, provider string) {
 		fmt.Printf("  %s %s\n", color.GreenString("Created"), a.relPath)
 	}
 	fmt.Println()
-	if provider == project.TerraformProviderName {
+	if provider == foundryprovisioning.TerraformProviderName {
 		fmt.Printf("  %s azure.yaml (infra.provider: terraform)\n", color.GreenString("Updated"))
 		fmt.Println()
 	}

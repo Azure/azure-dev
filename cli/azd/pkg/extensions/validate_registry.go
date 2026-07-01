@@ -163,7 +163,55 @@ func ValidateExtensions(exts []*ExtensionMetadata, strict bool) *RegistryValidat
 		}
 	}
 
+	validateUniqueLatestServiceTargetProviders(result, exts)
+
 	return result
+}
+
+func validateUniqueLatestServiceTargetProviders(result *RegistryValidationResult, exts []*ExtensionMetadata) {
+	providers := map[string]string{}
+
+	for _, ext := range exts {
+		if ext == nil || ext.Id == "" {
+			continue
+		}
+
+		latestVersion := findLatestVersion(ext.Versions)
+		if latestVersion == nil {
+			continue
+		}
+
+		seenInExtension := map[string]struct{}{}
+		for _, provider := range latestVersion.Providers {
+			if provider.Type != ServiceTargetProviderType || provider.Name == "" {
+				continue
+			}
+
+			normalizedProviderName := strings.ToLower(provider.Name)
+			if _, has := seenInExtension[normalizedProviderName]; has {
+				result.addError(fmt.Sprintf(
+					"extension %q declares service-target provider %q more than once in latest version %q",
+					ext.Id,
+					provider.Name,
+					latestVersion.Version,
+				))
+				continue
+			}
+			seenInExtension[normalizedProviderName] = struct{}{}
+
+			if existingExtId, has := providers[normalizedProviderName]; has {
+				result.addError(fmt.Sprintf(
+					"service-target provider %q is declared by multiple latest extension versions: %s and %s",
+					provider.Name,
+					existingExtId,
+					ext.Id,
+				))
+				continue
+			}
+
+			providers[normalizedProviderName] = ext.Id
+		}
+	}
 }
 
 // validateExtension validates a single extension metadata entry.

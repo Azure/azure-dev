@@ -8,6 +8,8 @@
 
 ### Bugs Fixed
 
+- Omit empty `project` and `language` keys when saving `azure.yaml`, so code-less resource hosts such as `azure.ai.project` no longer emit an invalid `project: ""` that fails schema validation.
+
 ### Other Changes
 
 ## 1.27.0 (2026-06-30)

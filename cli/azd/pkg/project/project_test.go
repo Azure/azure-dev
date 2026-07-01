@@ -517,6 +517,33 @@ func TestServiceImageSavedToYaml(t *testing.T) {
 	)
 }
 
+// TestCodelessServiceOmitsProjectAndLanguage verifies that a code-less resource
+// host (e.g. azure.ai.project) does not emit empty "project:" or "language:"
+// keys. The azure.yaml schema disallows "project" for these hosts, so writing
+// an empty value produces an invalid file that fails schema validation.
+func TestCodelessServiceOmitsProjectAndLanguage(t *testing.T) {
+	t.Parallel()
+
+	projectConfig := &ProjectConfig{
+		Name: "test-project",
+		Services: map[string]*ServiceConfig{
+			"foundry": {
+				Host: "azure.ai.project",
+			},
+		},
+	}
+	projectFile := filepath.Join(t.TempDir(), "azure.yaml")
+
+	err := Save(t.Context(), projectConfig, projectFile)
+	require.NoError(t, err)
+
+	fileContent, err := os.ReadFile(projectFile)
+	require.NoError(t, err)
+	assert.NotContains(t, string(fileContent), "project:")
+	assert.NotContains(t, string(fileContent), "language:")
+	assert.Contains(t, string(fileContent), "host: azure.ai.project")
+}
+
 func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 	t.Run("DefaultValuesNotWritten", func(t *testing.T) {
 		// Create a minimal project config with no infra settings

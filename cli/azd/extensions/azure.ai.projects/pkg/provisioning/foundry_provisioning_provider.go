@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package project
+package provisioning
 
 import (
 	"context"
@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/synthesis"
+	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/pkg/provisioning/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"

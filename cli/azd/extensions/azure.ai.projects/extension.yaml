@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
 capabilities:
     - custom-commands
+    - provisioning-provider
     - service-target-provider
     - metadata
 description: Manage Microsoft Foundry Project resources from your terminal. (Beta)
@@ -9,6 +10,9 @@ id: azure.ai.projects
 language: go
 namespace: ai.project
 providers:
+    - name: microsoft.foundry
+      type: provisioning-provider
+      description: Provisions a Microsoft Foundry project from azure.yaml without an on-disk infra/ directory
     - name: azure.ai.project
       type: service-target
       description: Owns the azure.ai.project host so azd can walk the Foundry project service in azure.yaml

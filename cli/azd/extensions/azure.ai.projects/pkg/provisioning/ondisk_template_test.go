@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package project
+package provisioning
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"sort"
 	"testing"
 
-	"azureaiagent/internal/exterrors"
+	"azure.ai.projects/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"

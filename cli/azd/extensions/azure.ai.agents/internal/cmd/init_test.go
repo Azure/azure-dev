@@ -14,10 +14,10 @@ import (
 	"strings"
 	"testing"
 
+	foundryprovisioning "azure.ai.projects/pkg/provisioning"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -77,7 +77,7 @@ func TestHasFoundryProviderDeclared(t *testing.T) {
 		},
 		{
 			name: "matches",
-			proj: &azdext.ProjectConfig{Infra: &azdext.InfraOptions{Provider: project.FoundryProviderName}},
+			proj: &azdext.ProjectConfig{Infra: &azdext.InfraOptions{Provider: foundryprovisioning.FoundryProviderName}},
 			want: true,
 		},
 	}

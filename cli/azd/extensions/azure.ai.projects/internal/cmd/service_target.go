@@ -18,10 +18,10 @@ var _ azdext.ServiceTargetProvider = (*projectServiceTarget)(nil)
 
 // projectServiceTarget owns the azure.ai.project host. The Foundry project, its model
 // deployments, the underlying Account, and RBAC are provisioned at `azd provision` by the
-// built-in `microsoft.foundry` Bicep provider (or by the user's own infra), so this
+// project extension's `microsoft.foundry` provider (or by the user's own infra), so this
 // target has no deploy-time work: Package, Publish, and Deploy are no-ops. It exists so
-// the azure.ai.projects extension owns the project host (rather than the shared no-op
-// shim in the agents extension) and so `azd deploy`/`azd up` can walk a project entry.
+// the azure.ai.projects extension owns the project host and so `azd deploy`/`azd up` can
+// walk a project entry.
 //
 // When the project entry sets `endpoint:` (bring-your-own project), provisioning is
 // skipped by the provider and azd connects to the existing project; this target still
@@ -91,7 +91,7 @@ func (p *projectServiceTarget) Publish(
 }
 
 // Deploy is a no-op; the project and its model deployments are created at provision time
-// by the built-in microsoft.foundry Bicep provider (or the user's infra). Removing the
+// by the microsoft.foundry provider (or the user's infra). Removing the
 // service from azure.yaml stops azd managing the project but does not delete it; teardown
 // runs through `azd down`.
 func (p *projectServiceTarget) Deploy(

@@ -4,7 +4,7 @@
 
 ### Features Added
 
-- [[#8818]](https://github.com/Azure/azure-dev/pull/8818) The `azure.ai.projects` extension now registers the `azure.ai.project` service-target host so `azd deploy`/`azd up` can walk the Foundry project service in `azure.yaml`. The project and its model deployments are provisioned by the built-in `microsoft.foundry` Bicep provider, so the deploy step is a no-op that owns the host.
+- [[#8818]](https://github.com/Azure/azure-dev/pull/8818) The `azure.ai.projects` extension now registers the `azure.ai.project` service-target host so `azd deploy`/`azd up` can walk the Foundry project service in `azure.yaml`. The project and its model deployments are provisioned by the `microsoft.foundry` provider, so the deploy step is a no-op that owns the host.
 - [[#8890]](https://github.com/Azure/azure-dev/pull/8890) Bump `requiredAzdVersion` to `>=1.27.0`.
 - [[#8651]](https://github.com/Azure/azure-dev/pull/8651) Update Go to 1.26.4 and bump golang.org/x/crypto and golang.org/x/net. Thanks @hemarina for the contribution!
 

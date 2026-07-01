@@ -329,7 +329,7 @@ func validateExtensionDependencies(
 	availableVersions map[string][]string,
 ) {
 	for i := range ext.Versions {
-		validateDependencies(result, fmt.Sprintf("versions[%d]", i), &ext.Versions[i], availableVersions)
+		validateDependencies(result, &ext.Versions[i], availableVersions)
 	}
 }
 
@@ -344,25 +344,26 @@ func validateExtensionDependencies(
 // an error, because it can never be resolved (this is the failure that breaks
 // coordinated multi-extension bumps). The same constraint matcher used by the
 // installer is reused so validation mirrors install-time resolution.
+//
+// Messages name the depending version and dependency directly (rather than array
+// indices) so a failure reads clearly on its own; the owning extension id is
+// supplied by the caller's context (grouped output or a test prefix).
 func validateDependencies(
 	result *ExtensionValidationResult,
-	prefix string,
 	ver *ExtensionVersion,
 	availableVersions map[string][]string,
 ) {
 	for _, dep := range ver.Dependencies {
-		depPrefix := fmt.Sprintf("%s.dependencies[%s]", prefix, dep.Id)
-
 		if dep.Id == "" {
-			result.addError(fmt.Sprintf("%s: dependency missing required field 'id'", prefix))
+			result.addError(fmt.Sprintf("version %s declares a dependency with no 'id'", ver.Version))
 			continue
 		}
 
 		versions, known := availableVersions[dep.Id]
 		if !known {
 			result.addWarning(fmt.Sprintf(
-				"%s: dependency '%s' is not present in this registry "+
-					"(it may be provided by another source)", depPrefix, dep.Id))
+				"version %s depends on %s, which is not in this registry (it may come from another source)",
+				ver.Version, dep.Id))
 			continue
 		}
 
@@ -381,8 +382,8 @@ func validateDependencies(
 
 		if !satisfied {
 			result.addError(fmt.Sprintf(
-				"%s: dependency '%s' constraint %q is not satisfied by any published version (available: %s)",
-				depPrefix, dep.Id, dep.Version, strings.Join(versions, ", ")))
+				"version %s depends on %s %q, but no published version satisfies it (available: %s)",
+				ver.Version, dep.Id, dep.Version, strings.Join(versions, ", ")))
 		}
 	}
 }

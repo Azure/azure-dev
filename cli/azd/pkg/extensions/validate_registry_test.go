@@ -634,7 +634,7 @@ func TestValidateExtensions_Dependencies_UnsatisfiableConstraintIsError(t *testi
 	require.NotEmpty(t, errs)
 	require.Contains(t, errs[0].Message, "publisher.child")
 	require.Contains(t, errs[0].Message, "~1.0.0-beta.1")
-	require.Contains(t, errs[0].Message, "not satisfied")
+	require.Contains(t, errs[0].Message, "no published version satisfies it")
 }
 
 func TestValidateExtensions_Dependencies_AbsentDependencyIsWarning(t *testing.T) {
@@ -648,7 +648,7 @@ func TestValidateExtensions_Dependencies_AbsentDependencyIsWarning(t *testing.T)
 	warnings := warningsOnly(result.Extensions[0].Issues)
 	require.NotEmpty(t, warnings)
 	require.Contains(t, warnings[0].Message, "publisher.missing")
-	require.Contains(t, warnings[0].Message, "not present in this registry")
+	require.Contains(t, warnings[0].Message, "not in this registry")
 }
 
 func TestValidateExtensions_Dependencies_EmptyConstraintSatisfiedByAnyVersion(t *testing.T) {

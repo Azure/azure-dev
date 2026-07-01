@@ -150,14 +150,26 @@ stages:
       # Updates the selected extension registry after the GitHub Release exists.
       # Production registry updates also refresh global command snapshots.
       # Mirrors Increment_Version in eng/pipelines/templates/stages/publish.yml.
+      #
+      # >>> TEMPORARY (manual pipeline test on this branch): normally this job is
+      # `dependsOn: Publish_Storage` with a `succeeded()` condition, so running with
+      # Skip.Publish=true (which skips Create_GitHub_Release and Publish_Storage)
+      # would also skip this job. For manual testing of the registry PR creation,
+      # we run it independently of the skipped publish jobs. The manual path only
+      # needs an existing GitHub release (for `azd x publish --repo`), not the
+      # Publish_Storage output. REVERT this block to the dependsOn/condition below
+      # before merging:
+      #   dependsOn:
+      #     - Publish_Storage
+      #   condition: >-
+      #     and(
+      #       succeeded(),
+      #       ne('true', variables['Skip.RegistryUpdate'])
+      #     )
       - job: Update_Registry
-        dependsOn: 
-          - Publish_Storage
+        dependsOn: []
         condition: >-
-          and(
-            succeeded(),
-            ne('true', variables['Skip.RegistryUpdate'])
-          )
+          ne('true', variables['Skip.RegistryUpdate'])
 
         pool:
           name: $(LINUXPOOL)

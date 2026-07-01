@@ -39,14 +39,12 @@ jobs:
       # other advisory findings are warnings and do not fail this step, so routine
       # extension releases are not blocked. Runs on the same trigger as registry.json.
       - name: Validate registry dependency consistency
-        id: validate_registry
-        run: go test ./pkg/extensions -run '^TestRegistryFileIsValid$' -v
-
-      - name: Explain registry validation failure
-        if: failure() && steps.validate_registry.outcome == 'failure'
         run: |
-          echo "::error::registry.json has an unsatisfiable dependency: a pinned dependency version is not published in the registry."
-          echo "Fix: publish the dependency's pinned version before updating the dependent extension. The test output above names the extension, constraint, and available versions."
+          if ! go test ./pkg/extensions -run '^TestRegistryFileIsValid$' -v; then
+            echo "::error::registry.json has an unsatisfiable dependency: a pinned dependency version is not published in the registry."
+            echo "Suggestion: publish the dependency's pinned version before updating the dependent extension. The test output above names the extension, constraint, and available versions."
+            exit 1
+          fi
 
       - name: Run FigSpec snapshot test
         id: figspec

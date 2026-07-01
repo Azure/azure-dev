@@ -30,7 +30,7 @@ jobs:
           # Check all go.mod files
           echo ""
           echo "Checking go.mod files..."
-          for f in $(find cli/azd -name 'go.mod'); do
+          while IFS= read -r f; do
             VERSION=$(grep -m1 '^go ' "$f" | awk '{print $2}')
             if [ "$VERSION" != "$EXPECTED" ]; then
               echo "::error file=$f::Go version mismatch: found '$VERSION', expected '$EXPECTED'"
@@ -38,7 +38,7 @@ jobs:
             else
               echo "  OK: $f ($VERSION)"
             fi
-          done
+          done < <(find cli/azd -name 'go.mod')
 
           # Check ADO pipeline template
           echo ""
@@ -57,7 +57,7 @@ jobs:
           # Check Dockerfiles referencing golang:<version> base images
           echo ""
           echo "Checking Dockerfiles..."
-          for f in $(find cli/azd -name 'Dockerfile'); do
+          while IFS= read -r f; do
             DOCKER_VERSION=$(grep -oP 'golang:\K[\d.]+' "$f" | head -1)
             if [ -n "$DOCKER_VERSION" ] && [ "$DOCKER_VERSION" != "$EXPECTED" ]; then
               echo "::error file=$f::Dockerfile golang version mismatch: found '$DOCKER_VERSION', expected '$EXPECTED'"
@@ -65,7 +65,7 @@ jobs:
             elif [ -n "$DOCKER_VERSION" ]; then
               echo "  OK: $f (golang:$DOCKER_VERSION)"
             fi
-          done
+          done < <(find cli/azd -name 'Dockerfile')
 
           # Check devcontainer.json Go feature version
           echo ""

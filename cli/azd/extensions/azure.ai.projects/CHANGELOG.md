@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.2 (2026-07-01)
+
+### Other Changes
+
+- Patch release to align version with `azure.ai.agents` 1.0.0-beta.2. No functional changes.
+
 ## 1.0.0-beta.1 (2026-06-30)
 
 ### Features Added

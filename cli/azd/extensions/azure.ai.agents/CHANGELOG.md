@@ -4,6 +4,7 @@
 
 ### Bugs Fixed
 
+- [[#8917]](https://github.com/Azure/azure-dev/pull/8917) Fix an `InvalidTemplate` error when deploying a brownfield (`endpoint:`) Foundry project that declares model deployments without creating a container registry. The `projectName` ARM parameter is now always set, so the referenced `Microsoft.CognitiveServices/accounts/projects` resource gets a valid two-segment name.
 - [[#8901]](https://github.com/Azure/azure-dev/pull/8901) Remove duplicate service-target provider claims from the `azure.ai.agents` extension manifest for hosts now owned by the split Foundry extensions (`azure.ai.projects`, `azure.ai.connections`, `azure.ai.toolboxes`). Thanks @huimiu for the contribution!
 
 ## 1.0.0-beta.1 (2026-06-30)
